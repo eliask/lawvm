@@ -147,6 +147,13 @@ _AT_END_STEP_INSERTED_RE = re.compile(
     r"(?:\s*,?\s*(?:and)?\s*[.;]?)?$",
     re.I,
 )
+_BEFORE_STEP_INSERTED_RE = re.compile(
+    r"before\s+Step\s+(?P<step>[0-9A-Z]{1,4}),?\s+"
+    r"(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)\s*"
+    r"[—–-]?\s*[“”\"'‘]?(?P<replacement>.{1,900}?)[”\"'’]?"
+    r"(?:\s*,?\s*(?:and)?\s*[.;]?)?$",
+    re.I,
+)
 _AMOUNT_SPECIFIED_SUBSTITUTED_RE = re.compile(
     r"for\s+the\s+amount\s+specified\s+in\s+section\s+[^.;“”\"'‘]{1,180}?\s+"
     r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+"
@@ -223,6 +230,7 @@ UK_AT_END_WORDS_IN_PARENTHESES_INSERT_RULE_ID = (
     "uk_effect_at_end_words_in_parentheses_insert_text_patch"
 )
 UK_AT_END_STEP_INSERT_RULE_ID = "uk_effect_at_end_step_insert_text_patch"
+UK_BEFORE_STEP_INSERT_RULE_ID = "uk_effect_before_step_insert_text_patch"
 UK_AMOUNT_SPECIFIED_SUBSTITUTION_RULE_ID = (
     "uk_effect_amount_specified_substitution_text_patch"
 )
@@ -949,6 +957,18 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
                     "original": f"TEXT_AT_END_OF_STEP{US}{step}",
                     "replacement": replacement,
                     "rule_id": UK_AT_END_STEP_INSERT_RULE_ID,
+                }
+            )
+
+    for m in _BEFORE_STEP_INSERTED_RE.finditer(text):
+        step = m.group("step").strip().upper()
+        replacement = re.sub(r"\s+\.$", "", m.group("replacement").strip()).strip()
+        if step and replacement:
+            subs.append(
+                {
+                    "original": f"TEXT_BEFORE_STEP{US}{step}",
+                    "replacement": replacement,
+                    "rule_id": UK_BEFORE_STEP_INSERT_RULE_ID,
                 }
             )
 

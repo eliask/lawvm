@@ -619,6 +619,102 @@ def test_replay_at_end_step_insert_blocks_ambiguous_step_children() -> None:
     assert adjudications[0].detail["blocking"] is True
 
 
+def test_replay_before_step_insert_inserts_before_unique_flat_step_boundary() -> None:
+    op = LegalOperation(
+        op_id="uk_test_before_step_replay",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "809q"), ("subsection", "3"))),
+        text_patch=_replace_patch(
+            f"TEXT_BEFORE_STEP{US}1",
+            "Step A1 Find the amount of TRF capital.",
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="809Q",
+                    attrs={"eId": "section-809q"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            attrs={"eId": "section-809q-3"},
+                            text=(
+                                "The extent is to be determined as follows. "
+                                "Step 1 Find income. Step 2 Find gains."
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == (
+        "The extent is to be determined as follows. "
+        "Step A1 Find the amount of TRF capital. Step 1 Find income. Step 2 Find gains."
+    )
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_before_step_text_rewrite_applied"
+    assert adjudications[0].detail["source_shape"] == "before_step_selector"
+
+
+def test_replay_before_step_insert_blocks_ambiguous_step_boundaries() -> None:
+    op = LegalOperation(
+        op_id="uk_test_before_step_ambiguous",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "809q"), ("subsection", "3"))),
+        text_patch=_replace_patch(f"TEXT_BEFORE_STEP{US}1", "Step A1 Inserted."),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="809Q",
+                    attrs={"eId": "section-809q"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            attrs={"eId": "section-809q-3"},
+                            text="Step 1 First. Step 1 Duplicate.",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "Step 1 First. Step 1 Duplicate."
+    assert len(adjudications) == 1
+    assert adjudications[0].detail["blocking"] is True
+
+
 def test_replay_words_before_type_substitution_replaces_intro_only() -> None:
     op = LegalOperation(
         op_id="uk_test_words_before_type_replay",
@@ -43285,6 +43381,64 @@ def test_compile_at_end_step_insert_lowers_to_step_boundary_selector() -> None:
     ]
     assert len(records) == 1
     assert records[0]["reason_code"] == "at_end_step_insert"
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
+def test_compile_before_step_insert_lowers_to_step_boundary_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>a before Step 1 insert\u2014 Step A1 Find the amount of TRF capital.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-cec5ef5d1895531f067bcd852fab4c3c",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-06",
+        affected_uri="/id/ukpga/2007/3/section/809Q/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 809Q(3)",
+        affecting_uri="/id/ukpga/2025/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="8",
+        affecting_provisions="Sch. 10 para. 15(2)(a)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2025-03-20", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "809q"), ("subsection", "3"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == f"TEXT_BEFORE_STEP{US}1"
+    assert op.text_patch.replacement == "Step A1 Find the amount of TRF capital"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_before_step_insert_text_patch"
+        in op.provenance_tags
+    )
+    records = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_before_step_insert_text_patch"
+    ]
+    assert len(records) == 1
+    assert records[0]["reason_code"] == "before_step_insert"
     assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
 
 

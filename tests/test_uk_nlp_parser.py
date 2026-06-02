@@ -993,6 +993,20 @@ def test_parse_fragment_substitution_handles_at_end_step_insert() -> None:
     ]
 
 
+def test_parse_fragment_substitution_handles_before_step_insert() -> None:
+    subs = parse_fragment_substitution(
+        "a before Step 1 insert\u2014 Step A1 Find the amount of TRF capital."
+    )
+
+    assert subs == [
+        {
+            "original": f"TEXT_BEFORE_STEP{US}1",
+            "replacement": "Step A1 Find the amount of TRF capital",
+            "rule_id": "uk_effect_before_step_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_amount_specified_substitution() -> None:
     subs = parse_fragment_substitution(
         "1 For the amount specified in section 12(3) of ITA 2007 "

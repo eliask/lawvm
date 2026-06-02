@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace as dc_replace
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable, NamedTuple, Optional, TypeAlias
 
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
@@ -662,6 +663,24 @@ def _step_selector_label(match: str) -> str:
     return _clean_num(match[len(prefix) :].strip().upper())
 
 
+def _before_step_selector_label(match: str) -> str:
+    prefix = f"TEXT_BEFORE_STEP{US}"
+    if not match.startswith(prefix):
+        return ""
+    return _clean_num(match[len(prefix) :].strip().upper())
+
+
+@lru_cache(maxsize=64)
+def _step_boundary_pattern(step_label: str) -> re.Pattern[str]:
+    return re.compile(rf"\bStep\s*{re.escape(step_label)}\b(?![0-9A-Za-z])", flags=re.I)
+
+
+def _step_boundary_matches(text: str, step_label: str) -> list[re.Match[str]]:
+    if not step_label or "step" not in text.casefold():
+        return []
+    return list(_step_boundary_pattern(step_label).finditer(text))
+
+
 def _text_node_matches_step_selector(node: UKMutableNode, step_label: str) -> bool:
     if not step_label:
         return False
@@ -703,6 +722,20 @@ def _append_text_with_boundary(text: str, insertion: str) -> str:
         else " "
     )
     return f"{text}{joiner}{insertion}"
+
+
+def _insert_text_before_index(text: str, insertion: str, index: int) -> str:
+    prefix = text[:index]
+    suffix = text[index:]
+    before = _append_text_with_boundary(prefix, insertion)
+    joiner_after = (
+        ""
+        if not suffix
+        or before.endswith((" ", "\t", "\n", "\r"))
+        or suffix.startswith((" ", ",", ".", ";", ":", ")"))
+        else " "
+    )
+    return f"{before}{joiner_after}{suffix}"
 
 
 def _rewrite_definition_entry_text(
@@ -1412,6 +1445,54 @@ class UKReplayTextApplyMixin:
             recovery_rule_ids_out.append("uk_replay_at_end_step_text_rewrite_applied")
         return rebuilt, True
 
+    def _apply_before_step_text_insert_on_subtree(
+        self,
+        node: UKMutableNode,
+        match: str,
+        insertion: str,
+        *,
+        recovery_rule_ids_out: Optional[list[str]] = None,
+    ) -> tuple[UKMutableNode, bool]:
+        step_label = _before_step_selector_label(match)
+        if not step_label or not insertion:
+            return node, False
+        candidates: list[TextNodeRewriteCandidate] = []
+        for path, text_node in _text_nodes_in_document_order(node):
+            text = text_node.text or ""
+            boundary_matches = _step_boundary_matches(text, step_label)
+            if len(boundary_matches) == 1:
+                candidates.append(
+                    (
+                        path,
+                        text_node,
+                        _insert_text_before_index(text, insertion, boundary_matches[0].start()),
+                    )
+                )
+            elif not boundary_matches and _text_node_matches_step_selector(text_node, step_label):
+                candidates.append(
+                    (
+                        path,
+                        text_node,
+                        _insert_text_before_index(text, insertion, 0),
+                    )
+                )
+            elif len(boundary_matches) > 1:
+                return node, False
+        if len(candidates) != 1:
+            return node, False
+        path, text_node, new_text = candidates[0]
+        replacement_node = dc_replace(text_node, text=new_text)
+        if not path:
+            self._replace_node_in_statute(node, replacement_node)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_before_step_text_rewrite_applied")
+            return replacement_node, True
+        rebuilt = self._replace_descendant_at_path(node, path, replacement_node)
+        self._replace_node_in_statute(node, rebuilt)
+        if recovery_rule_ids_out is not None:
+            recovery_rule_ids_out.append("uk_replay_before_step_text_rewrite_applied")
+        return rebuilt, True
+
     def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
         self,
         node: UKMutableNode,
@@ -1495,6 +1576,13 @@ class UKReplayTextApplyMixin:
             return node, False
         if match.startswith(f"TEXT_AT_END_OF_STEP{US}"):
             return self._apply_at_end_of_step_text_insert_on_subtree(
+                node,
+                match,
+                replacement,
+                recovery_rule_ids_out=recovery_rule_ids_out,
+            )
+        if match.startswith(f"TEXT_BEFORE_STEP{US}"):
+            return self._apply_before_step_text_insert_on_subtree(
                 node,
                 match,
                 replacement,
@@ -2169,6 +2257,13 @@ class UKReplayTextApplyMixin:
 
         if match.startswith(f"TEXT_AT_END_OF_STEP{US}"):
             return self._apply_at_end_of_step_text_insert_on_subtree(
+                node,
+                match,
+                replacement,
+                recovery_rule_ids_out=recovery_rule_ids_out,
+            )
+        if match.startswith(f"TEXT_BEFORE_STEP{US}"):
+            return self._apply_before_step_text_insert_on_subtree(
                 node,
                 match,
                 replacement,
