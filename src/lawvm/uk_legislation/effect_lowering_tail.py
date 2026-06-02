@@ -519,6 +519,16 @@ def append_unlowered_overlap_substitution_rejection(
             "blocks instead of applying a broad quoted-word deletion to the "
             "feed target."
         )
+    elif unlowered_overlap_substitution_reason == "amount_specified_source_target_mismatch":
+        lowering_rule_id = "uk_effect_amount_specified_source_target_mismatch_rejected"
+        family = "target_resolution_recovery"
+        reason_code = "amount_specified_source_target_mismatch"
+        reason = (
+            "UK source explicitly names the section whose specified amount is "
+            "to be replaced, but that source target does not match the effect-feed "
+            "target; lowering blocks instead of applying a unique-fee selector to "
+            "a different target."
+        )
     else:
         source_shape_classification = _unlowered_overlap_source_shape_classification(
             extracted_text,

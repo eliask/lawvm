@@ -45827,6 +45827,113 @@ def test_compile_amount_specified_substitution_lowers_to_unique_fee_selector() -
     assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
 
 
+def test_compile_amount_specified_replaced_with_tax_year_lowers_to_unique_fee_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <Text>2 For the tax year 2009-10 the amount specified in section 10(5)
+          (basic rate limit) is replaced with \u201c\u00a336,600\u201d .</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-81373ddb187cfafdd672d43f5fb0b7ce",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2009-04-06",
+        affected_uri="/id/ukpga/2007/3/section/10/subsection/5",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 10(5)",
+        affecting_uri="/id/uksi/2008/3023",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2008",
+        affecting_number="3023",
+        affecting_provisions="art. 2",
+        affecting_title="The Income Tax (Indexation) Order 2008",
+        in_force_dates=[],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "10"), ("subsection", "5"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_UNIQUE_FEE_SUM"
+    assert op.text_patch.replacement == "\u00a336,600"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_amount_specified_substitution_text_patch"
+        in op.provenance_tags
+    )
+    records = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_amount_specified_substitution_text_patch"
+    ]
+    assert len(records) == 1
+    assert records[0]["reason_code"] == "amount_specified_unique_fee_substitution"
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
+def test_compile_amount_specified_blocks_mismatched_source_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <Text>2 For the tax year 2009-10 the amount specified in section 10(5)
+          (basic rate limit) is replaced with \u201c\u00a336,600\u201d .</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_amount_specified_mismatch",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2009-04-06",
+        affected_uri="/id/ukpga/2007/3/section/12/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 12(3)",
+        affecting_uri="/id/uksi/2008/3023",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2008",
+        affecting_number="3023",
+        affecting_provisions="art. 2",
+        affecting_title="The Income Tax (Indexation) Order 2008",
+        in_force_dates=[],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    records = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_amount_specified_source_target_mismatch_rejected"
+    ]
+    assert len(records) == 1
+    assert records[0]["reason_code"] == "amount_specified_source_target_mismatch"
+
+
 def test_compile_after_anchor_ordinal_insert_preserves_bounded_occurrence() -> None:
     extracted_el = ET.fromstring(
         f"""

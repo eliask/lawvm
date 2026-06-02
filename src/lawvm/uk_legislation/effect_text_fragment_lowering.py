@@ -96,6 +96,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     lower_labeled_child_end_range_selector,
     UK_CHILD_QUALIFIED_RANGE_SUBSTITUTION_RULE_ID,
     UK_INTERPRETATION_ENTRIES_RELATING_REPEAL_RULE_ID,
+    UK_AMOUNT_SPECIFIED_SUBSTITUTION_RULE_ID,
     UK_METADATA_CARRIED_DEFINITION_ENTRY_REPEAL_RULE_ID,
     UK_METADATA_CARRIED_DEFINITION_QUOTED_WORD_REPEAL_RULE_ID,
     UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID,
@@ -121,6 +122,41 @@ _SOURCE_CHILD_WHERE_ORDINAL_INSERT_RE = re.compile(
     r"occurs?,? insert [“\"'‘](?P<inserted>[^”\"'’]{1,1000})[”\"'’]",
     flags=re.I,
 )
+_AMOUNT_SPECIFIED_SOURCE_TARGET_RE = re.compile(
+    r"\bamount\s+specified\s+in\s+section\s+"
+    r"(?P<section>[0-9]+[A-Za-z]?)"
+    r"(?P<suffix>(?:\s*\([0-9A-Za-z]+\)){0,4})",
+    flags=re.I,
+)
+_AMOUNT_SPECIFIED_SUFFIX_LABEL_RE = re.compile(r"\(([0-9A-Za-z]+)\)")
+
+
+def _amount_specified_source_target_path(text: str) -> tuple[tuple[str, str], ...]:
+    match = _AMOUNT_SPECIFIED_SOURCE_TARGET_RE.search(text)
+    if match is None:
+        return ()
+    path: list[tuple[str, str]] = [("section", _clean_num(match.group("section")))]
+    suffix_labels = _AMOUNT_SPECIFIED_SUFFIX_LABEL_RE.findall(match.group("suffix") or "")
+    suffix_kinds = ("subsection", "paragraph", "subparagraph", "item")
+    for kind, label in zip(suffix_kinds, suffix_labels):
+        path.append((kind, _clean_num(label)))
+    return tuple(path)
+
+
+def _amount_specified_source_target_matches(
+    *,
+    fragment: dict[str, Any],
+    extracted_text: str,
+    target: LegalAddress,
+) -> bool:
+    if str(fragment.get("rule_id") or "") != UK_AMOUNT_SPECIFIED_SUBSTITUTION_RULE_ID:
+        return True
+    source_path = _amount_specified_source_target_path(extracted_text)
+    if not source_path:
+        return True
+    return tuple(target.path) == source_path
+
+
 @dataclass(frozen=True)
 class UKTextFragmentLowering:
     target: LegalAddress
@@ -1171,6 +1207,22 @@ def _promote_text_fragment_substitutions(
         ]
 
     primary = subs[0]
+    if not _amount_specified_source_target_matches(
+        fragment=primary,
+        extracted_text=extracted_text,
+        target=target,
+    ):
+        return UKTextFragmentLowering(
+            target=target,
+            curr_action=None,
+            content_ir=None,
+            fragment_subs=subs,
+            op_text_match=None,
+            op_text_replacement=None,
+            op_text_occurrence=0,
+            op_text_end_occurrence=0,
+            unlowered_overlap_reason="amount_specified_source_target_mismatch",
+        )
     target = _refine_source_carried_child_text_target(
         effect=effect,
         target=target,

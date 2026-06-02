@@ -167,8 +167,9 @@ _BEFORE_QUOTED_ANCHOR_INSERT_PREFIX_RE = re.compile(
     re.I,
 )
 _AMOUNT_SPECIFIED_SUBSTITUTED_RE = re.compile(
-    r"for\s+the\s+amount\s+specified\s+in\s+section\s+[^.;“”\"'‘]{1,180}?\s+"
-    r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+"
+    r"(?:for\s+(?:(?:the\s+)?tax\s+year\s+[0-9]{4}[–-][0-9]{2},?\s+)?)?"
+    r"the\s+amount\s+specified\s+in\s+section\s+[^.;“”\"'‘]{1,180}?\s+"
+    r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted|(?:is|are)\s+replaced\s+with)\s+"
     r"[“\"'‘](?P<replacement>[^“”\"'‘]{1,80})[”\"'’]",
     re.I,
 )
