@@ -1485,11 +1485,11 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
     # This is a text-span replacement across the target subtree, not a
     # structural child-label range like FROM_(a)_TO_(b).
     matches_range_substituted = re.finditer(
-        r"for (?:the )?words? from\s+(?:the\s+(?P<start_pre_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+)?[“\"'‘](?P<start>.*?)[”\"'’]"
+        r"for (?:the )?words? from\s+(?:(?:the\s+)?(?P<start_pre_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+)?[“\"'‘](?P<start>.*?)[”\"'’]"
         r"(?:(?:\s+where|,\s+where)(?:\s+(?:it|they|those words?))?\s+"
         r"(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
         r"(?:occurs?|occurring|appears?),?)?"
-        r"\s+to\s+(?:the\s+(?P<end_pre_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+)?[“\"'‘](?P<end>.*?)[”\"'’]"
+        r"\s+to\s+(?:(?:the\s+)?(?P<end_pre_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+)?[“\"'‘](?P<end>.*?)[”\"'’]"
         r"(?:(?:,\s+where)(?:\s+(?:it|they|those words?))?\s+"
         r"(?P<end_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
         r"(?:occurs?|occurring|appears?),?)?"

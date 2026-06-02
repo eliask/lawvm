@@ -2401,6 +2401,22 @@ def test_parse_fragment_substitution_handles_range_from_first_occurrence() -> No
     ]
 
 
+def test_parse_fragment_substitution_handles_range_from_bare_first_anchor() -> None:
+    subs = parse_fragment_substitution(
+        "i for the words from first \u201cas\u201d to \u201cconsidering\u201d substitute "
+        "\u201c consider \u201d ,"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_as_TO_considering",
+            "replacement": "consider",
+            "occurrence": "1",
+            "rule_id": "uk_effect_range_occurrence_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_range_comma_where_it_occurs() -> None:
     subs = parse_fragment_substitution(
         "a for the words from \u201cshall\u201d, where it second occurs, to "

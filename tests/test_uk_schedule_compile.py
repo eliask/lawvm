@@ -27991,6 +27991,64 @@ def test_compile_range_from_first_occurrence_to_text_replace() -> None:
     assert ops[0].text_patch.replacement == "an employee of a relevant authority"
 
 
+def test_compile_range_from_bare_first_anchor_to_text_replace() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="section-149-3-a-i">
+          <Pnumber>i</Pnumber>
+          <Text>i for the words from first \u201cas\u201d to \u201cconsidering\u201d substitute \u201c consider \u201d ,</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-4c0c4655f75025d5c807d4b69b543dee",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2011-03-01",
+        affected_uri="/id/asp/2006/1/schedule/1/paragraph/1/subparagraph/3",
+        affected_class="ScottishAct",
+        affected_year="2006",
+        affected_number="1",
+        affected_provisions="Sch. 1 para. 1(3)",
+        affecting_uri="/id/asp/2010/17",
+        affecting_class="ScottishAct",
+        affecting_year="2010",
+        affecting_number="17",
+        affecting_provisions="s. 149(3)(a)(i)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2011-03-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (
+        ("schedule", "1"),
+        ("paragraph", "1"),
+        ("subparagraph", "3"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_as_TO_considering"
+    assert ops[0].text_patch.selector.occurrence == 1
+    assert ops[0].text_patch.replacement == "consider"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_range_occurrence_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert not any(
+        record.get("rule_id") == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
 def test_compile_same_anchor_adjacent_occurrence_range_to_text_replace() -> None:
     extracted_el = ET.fromstring(
         f"""
