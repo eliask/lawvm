@@ -332,7 +332,7 @@ def _unlowered_overlap_source_shape_classification(
         r"\bfor\s+(?:paragraphs|sub-?paragraphs|subsections)\s+"
         r"\([0-9A-Za-z]+\)\s+(?:and|to)\s+\([0-9A-Za-z]+\)"
         r"(?:\s+of\s+the\s+definition\s+of\s+[“\"'‘][^”\"'’]+[”\"'’])?"
-        r".*\bsubstitute\b",
+        r".*\bsubstitut(?:e|ed)\b",
         text,
         re.I,
     ):

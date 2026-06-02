@@ -37386,6 +37386,14 @@ def test_compile_table_paragraph_at_end_insert_stays_blocked_without_note_model(
             "structural_child_range_substitution_requires_owned_payload",
         ),
         (
+            "67 In section 199(5), for paragraphs (a) and (b) there shall be "
+            "substituted “by OFCOM under section 21, 41, 42, 55, 103, 109, 110, "
+            "111 or 120”.",
+            "s. 199(5)",
+            "uk_effect_structural_child_range_substitution_rejected",
+            "structural_child_range_substitution_requires_owned_payload",
+        ),
+        (
             "b for “exit charge payment plan”, in each case where it occurs without "
             "“an” before it, substitute “CT exit charge payment plan” (but this does "
             "not apply to paragraph 10(2A)).",
