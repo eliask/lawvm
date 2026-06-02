@@ -4232,6 +4232,25 @@ def _parse_trailing_repeals_and_omissions(text: str, subs: list) -> None:
             }
         )
 
+    matches_imperative_all_occurrences_word_repeal = re.finditer(
+        r"\bomit\s*,\s+"
+        r"in\s+(?:each|both)\s+places?\s*,\s+"
+        rf"(?:the\s+)?(?:word|words)?\s*[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_imperative_all_occurrences_word_repeal:
+        original = m.group("original").strip()
+        if not original:
+            continue
+        subs.append(
+            {
+                "original": original,
+                "replacement": "",
+                "rule_id": UK_ALL_OCCURRENCES_WORD_REPEAL_RULE_ID,
+            }
+        )
+
     matches_ordinal_word_repeal = re.finditer(
         r"(?:the\s+)?word\s+[“\"'‘](?P<original>.*?)[”\"'’],?\s+"
         rf"in\s+the\s+(?P<ordinal>{_ORDINAL_OCCURRENCE_WORDS})\s+"

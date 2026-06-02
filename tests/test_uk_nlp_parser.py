@@ -3309,6 +3309,21 @@ def test_parse_fragment_substitution_handles_all_occurrences_word_repeal() -> No
     ]
 
 
+def test_parse_fragment_substitution_handles_imperative_all_occurrences_omission() -> None:
+    subs = parse_fragment_substitution(
+        "30 In section 76 (approval and signing of accounts), omit, in each place, "
+        "\u201cto the Authority\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "to the Authority",
+            "replacement": "",
+            "rule_id": "uk_effect_all_occurrences_word_repeal_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_ordinal_word_repeal() -> None:
     subs = parse_fragment_substitution(
         "a in subsection (1), the word \u201cqualifying\u201d in the first place where "

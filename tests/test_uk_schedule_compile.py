@@ -31442,6 +31442,71 @@ def test_compile_all_occurrences_word_repeal_records_observation() -> None:
     assert observations[0]["occurrence"] == 0
 
 
+def test_compile_imperative_all_occurrences_omission_lowers_text_repeal() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-9-paragraph-30">
+          <Pnumber>30</Pnumber>
+          <Text>30 In section 76 (approval and signing of accounts), omit, in each place, \u201cto the Authority\u201d.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-a99f1ec17a3a90a5cbbb60482eb4ab08",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2023-05-24",
+        affected_uri="/id/ukpga/1992/40/section/76",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1992",
+        affected_number="40",
+        affected_provisions="s. 76",
+        affecting_uri="/id/uksi/2013/496",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2013",
+        affecting_number="496",
+        affecting_provisions="Sch. 9 para. 30",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2013-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.target.path == (("section", "76"),)
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.DELETE
+    assert op.text_patch.selector.match_text == "to the Authority"
+    assert op.text_patch.selector.occurrence == 0
+    assert op.text_patch.replacement is None
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_all_occurrences_word_repeal_text_patch"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_all_occurrences_word_repeal_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["reason_code"] == "explicit_all_occurrences_text_patch"
+    assert observations[0]["target"] == "section:76"
+    assert observations[0]["text_match"] == "to the Authority"
+
+
 def test_compile_ordinal_word_repeal_records_observation() -> None:
     extracted_el = ET.fromstring(
         f"""
