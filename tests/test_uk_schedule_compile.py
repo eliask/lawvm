@@ -45931,6 +45931,74 @@ def test_compile_first_two_places_substitution_preserves_bounded_occurrences() -
     assert [_required_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["2", "1"]
 
 
+def test_compile_first_three_places_substitution_preserves_bounded_occurrences() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-26-paragraph-15-2">
+          <Pnumber>2</Pnumber>
+          <Text>2 In subsection (1), for \u201crequirement or condition\u201d, in the first three places, substitute \u201c provision, criterion or practice \u201d .</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-c1ae293a9e441cd5bd4fc8eef249e32c",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2021-12-08",
+        affected_uri="/id/ukpga/1989/38/section/12/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1989",
+        affected_number="38",
+        affected_provisions="s. 12(1)",
+        affecting_uri="/id/ukpga/2010/15",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2010",
+        affecting_number="15",
+        affecting_provisions="Sch. 26 para. 15(2)",
+        affecting_title="Equality Act 2010",
+        in_force_dates=[{"date": "2010-10-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert lowering_rejections == []
+    assert len(ops) == 3
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_REPLACE,
+    ]
+    assert [op.target.path for op in ops] == [
+        (("section", "12"), ("subsection", "1")),
+        (("section", "12"), ("subsection", "1")),
+        (("section", "12"), ("subsection", "1")),
+    ]
+    assert [op.text_patch.selector.occurrence for op in ops if op.text_patch is not None] == [3, 2, 1]
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
+        "requirement or condition",
+        "requirement or condition",
+        "requirement or condition",
+    ]
+    assert [op.text_patch.replacement for op in ops if op.text_patch is not None] == [
+        " provision, criterion or practice ",
+        " provision, criterion or practice ",
+        " provision, criterion or practice ",
+    ]
+    assert all(
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_first_second_occurrence_substitution_text_patch"
+        in op.provenance_tags
+        for op in ops
+    )
+    assert [_required_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["3", "2", "1"]
+
+
 def test_compile_quoted_word_where_multiple_ordinal_substitution_preserves_bounded_occurrences() -> None:
     extracted_el = ET.fromstring(
         f"""

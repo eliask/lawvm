@@ -1286,22 +1286,27 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
             }
         )
 
-    matches_first_second_substituted = re.finditer(
+    matches_initial_ordinal_places_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“”\"'‘](.*?)[”\"'’],?\s+"
-        r"(?:\(\s*)?in the (?:first and second|first two) places?"
+        r"(?:\(\s*)?in the (?P<scope>first and second|first two|first three) places?"
         r"(?:\s+(?:where\s+)?(?:it|they|those words?)\s+(?:occurs?|appear)s?)?"
         r"(?:\s*\))?,?\s+substitute\s+[“”\"'‘](.*?)[”\"'’]",
         text,
         re.I,
     )
-    for m in matches_first_second_substituted:
+    for m in matches_initial_ordinal_places_substituted:
         # Emit in descending occurrence order so sequential replay changes the
-        # second original occurrence before the first one.
-        for occurrence in ("2", "1"):
+        # later original occurrences before earlier ones.
+        occurrences = (
+            ("3", "2", "1")
+            if m.group("scope").lower() == "first three"
+            else ("2", "1")
+        )
+        for occurrence in occurrences:
             subs.append(
                 {
                     "original": m.group(1),
-                    "replacement": m.group(2),
+                    "replacement": m.group(3),
                     "occurrence": occurrence,
                     "rule_id": "uk_effect_first_second_occurrence_substitution_text_patch",
                 }

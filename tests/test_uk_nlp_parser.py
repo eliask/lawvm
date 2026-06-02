@@ -1189,6 +1189,35 @@ def test_parse_fragment_substitution_handles_first_two_places_substitution() -> 
     ]
 
 
+def test_parse_fragment_substitution_handles_first_three_places_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "2 In subsection (1), for \u201crequirement or condition\u201d, "
+        "in the first three places, substitute "
+        "\u201c provision, criterion or practice \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "requirement or condition",
+            "replacement": " provision, criterion or practice ",
+            "occurrence": "3",
+            "rule_id": "uk_effect_first_second_occurrence_substitution_text_patch",
+        },
+        {
+            "original": "requirement or condition",
+            "replacement": " provision, criterion or practice ",
+            "occurrence": "2",
+            "rule_id": "uk_effect_first_second_occurrence_substitution_text_patch",
+        },
+        {
+            "original": "requirement or condition",
+            "replacement": " provision, criterion or practice ",
+            "occurrence": "1",
+            "rule_id": "uk_effect_first_second_occurrence_substitution_text_patch",
+        },
+    ]
+
+
 def test_parse_fragment_substitution_handles_ordinal_substitution() -> None:
     subs = parse_fragment_substitution(
         "8 In Schedule 16, in paragraph 11(4)(b), for first \u201cby\u201d substitute \u201cbe\u201d ."
