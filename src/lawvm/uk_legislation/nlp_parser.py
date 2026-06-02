@@ -2848,7 +2848,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         r"(?:\s+(?:(?:where|that)\s+)?(?:(?:it|they|those|these)\s+words?\s+|(?:it|they)\s+)?"
         r"(?:occurs?|occurring|appear)s?(?:\s+in\s+[^,;]+)?)?))?"
         r"(?P<insert_separator>\s*,?\s+)(?:there is inserted|there are inserted|there shall be inserted|there is entered|there are entered|there shall be entered|insert|enter)"
-        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](.*?)[”\"'’]",
+        r"(?:\s*,)?(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](.*?)[”\"'’]",
         text,
         re.I,
     )

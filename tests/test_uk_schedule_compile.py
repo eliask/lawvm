@@ -3099,6 +3099,60 @@ def test_ordinary_quoted_anchor_insert_keeps_normal_quote_rule() -> None:
     ]
 
 
+def test_compile_after_quoted_anchor_insert_accepts_comma_after_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-paragraph-3">
+          <Pnumber>3</Pnumber>
+          <Text>3 In section 103(1) (appeals), after \u201cand section 38 of the Sheriff Courts (Scotland) Act 1971 (appeal in summary causes)\u201d insert, \u201cand section 82 of the Courts Reform (Scotland) Act 2014 (appeals from simple procedure cases)\u201d.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-6a6cd00fb6f30a53c1053997996a794f",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-11-28",
+        affected_uri="/id/ukpga/1987/18/section/103/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1987",
+        affected_number="18",
+        affected_provisions="s. 103(1)",
+        affecting_uri="/id/asp/2014/18",
+        affecting_class="ScottishAct",
+        affecting_year="2014",
+        affecting_number="18",
+        affecting_provisions="Sch. 5 para. 3",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2016-11-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    anchor = "and section 38 of the Sheriff Courts (Scotland) Act 1971 (appeal in summary causes)"
+    inserted = "and section 82 of the Courts Reform (Scotland) Act 2014 (appeals from simple procedure cases)"
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "103"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == anchor
+    assert ops[0].text_patch.selector.occurrence == 0
+    assert ops[0].text_patch.replacement == f"{anchor} {inserted}"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_after_quoted_anchor_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
 def test_after_quoted_anchor_include_lowers_as_target_local_text_insert() -> None:
     fragments = parse_fragment_substitution('after "persons" include "(including nominees)".')
 
