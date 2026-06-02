@@ -451,6 +451,14 @@ _UK_MULTI_WHEREVER_OCCURRING_SUBSTITUTION_RE = re.compile(
     rf"(?:(?:the\s+)?words?\s+)?[“”\"'‘](?P<replacement>{_NON_QUOTE}{{0,500}}?)[”\"'’]",
     re.I,
 )
+_UK_WHEREVER_IT_OCCURS_PASSIVE_SUBSTITUTION_RE = re.compile(
+    r"for\s+(?:(?:the\s+)?words?\s+)?"
+    rf"[“”\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’],?\s+"
+    r"wherever\s+(?:it|that\s+word|those\s+words?)\s+"
+    r"(?:occurs?|appears?),?\s+there\s+(?:is|are|shall\s+be)\s+substituted\s+"
+    rf"(?:(?:the\s+)?words?\s+)?[“”\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+    re.I,
+)
 _UK_UNQUOTED_ALL_OCCURRENCES_SUBSTITUTION_RE = re.compile(
     r"\bfor\s+(?P<original>[A-Z][A-Za-z0-9&().,'’ -]{1,250}?)\s+"
     r"(?:in|at)\s+each\s+place\s+(?:(?:where|that)\s+)?(?:it|they)\s+"
@@ -999,6 +1007,15 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
                 "original": m.group("original").strip(),
                 "replacement": m.group("replacement"),
                 "rule_id": UK_WHEREVER_THEY_OCCUR_SUBSTITUTION_RULE_ID,
+            }
+        )
+
+    for m in _UK_WHEREVER_IT_OCCURS_PASSIVE_SUBSTITUTION_RE.finditer(text):
+        subs.append(
+            {
+                "original": m.group("original").strip(),
+                "replacement": m.group("replacement").strip(),
+                "rule_id": "uk_effect_wherever_occurring_substitution_text_patch",
             }
         )
 

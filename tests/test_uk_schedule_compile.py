@@ -31827,6 +31827,64 @@ def test_compile_both_places_there_is_substituted_records_all_occurrences_observ
     assert all_occurrence_record["occurrence"] == 0
 
 
+def test_compile_wherever_it_occurs_there_is_substituted_records_all_occurrences_observation() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-paragraph-10">
+          <Pnumber>10</Pnumber>
+          <Text>10 In section 90 (poindings), for \u201ca poinding\u201d, wherever it occurs, there is substituted \u201c an attachment \u201d .</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-3fd93ca3787a96d3335c55fac2f42fb3",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2008-04-22",
+        affected_uri="/id/ukpga/1987/18/section/90",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1987",
+        affected_number="18",
+        affected_provisions="s. 90",
+        affecting_uri="/id/asp/2007/3",
+        affecting_class="ScottishAct",
+        affecting_year="2007",
+        affecting_number="3",
+        affecting_provisions="Sch. 1 para. 10",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2008-04-22", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "90"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "a poinding"
+    assert ops[0].text_patch.selector.occurrence == 0
+    assert ops[0].text_patch.replacement == "an attachment"
+    all_occurrence_records = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_wherever_occurring_substitution_text_patch"
+    ]
+    assert len(all_occurrence_records) == 1
+    assert all_occurrence_records[0]["reason_code"] == "explicit_all_occurrences_text_patch"
+    assert all_occurrence_records[0]["blocking"] is False
+    assert all_occurrence_records[0]["target"] == "section:90"
+    assert all_occurrence_records[0]["text_match"] == "a poinding"
+    assert all_occurrence_records[0]["replacement"] == "an attachment"
+    assert all_occurrence_records[0]["occurrence"] == 0
+
+
 def test_compile_respectively_there_is_substituted_records_all_occurrences_observations() -> None:
     extracted_el = ET.fromstring(
         f"""
