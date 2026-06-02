@@ -53691,6 +53691,68 @@ def test_compile_at_end_insert_with_carried_parent_context() -> None:
     assert lowering_records[0]["blocking"] is False
 
 
+def test_compile_at_end_insert_with_cited_section_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-17">
+          <Pnumber>17</Pnumber>
+          <Text>17 At the end of section 91(9) of the Land Registration Act 2002
+          (application of section 36A of the Companies Act 1985 in relation to
+          electronic conveyancing), insert \u201c(and subsection (8) of that section,
+          in so far as it relates to the document, shall be read accordingly)\u201d.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-31f1a27f706bbf3867a69c6cc506f491",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-07-18",
+        affected_uri="/id/ukpga/2002/9/section/91/subsection/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2002",
+        affected_number="9",
+        affected_provisions="s. 91(9)",
+        affecting_uri="/id/uksi/2005/1906",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2005",
+        affecting_number="1906",
+        affecting_provisions="Sch. 1 para. 17",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2005-07-18", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "91"), ("subsection", "9"))
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.APPEND
+    assert op.text_patch.selector.match_text == "TEXT_END"
+    assert op.text_patch.replacement == (
+        "(and subsection (8) of that section, in so far as it relates to the "
+        "document, shall be read accordingly)"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_at_end_carried_parent_context_text_insertion_patch"
+        in op.provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_at_end_carried_parent_context_text_insertion_patch"
+    ]
+    assert lowering_records[0]["reason_code"] == "explicit_at_end_carried_parent_context_insert"
+    assert lowering_records[0]["blocking"] is False
+
+
 def test_compile_source_parent_at_end_text_payload_lowers_append() -> None:
     source_root = ET.fromstring(
         f"""

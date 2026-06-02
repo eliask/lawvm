@@ -190,15 +190,15 @@ _PASSIVE_QUOTED_SUBSTITUTED_RE = re.compile(
     re.I,
 )
 
-_UK_CARRIED_PARENT_CONTEXT_RE = (
-    r"\s+of\s+(?:(?:that|the)\s+)?"
-    r"(?:paragraph|sub-paragraph|subsection|section)"
-    r"(?:\s+\([^)]+\)|\s+[0-9A-Za-z]+)?"
-    r"(?:\s+of\s+(?:that|the)\s+Schedule)?"
-)
 _UK_SOURCE_ASIDE_RE = r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)?\))?"
 _UK_TEXT_BOUNDARY_UNIT_RE = r"(?:regulation|paragraph|sub-paragraph|subsection|section)"
 _UK_TEXT_BOUNDARY_SUFFIX_RE = r"(?:\s+[0-9A-Za-z]+)?(?:\s*\([^)]+\))*"
+_UK_CARRIED_PARENT_CONTEXT_RE = (
+    r"\s+of\s+(?:(?:that|the)\s+)?"
+    r"(?:paragraph|sub-paragraph|subsection|section)"
+    rf"{_UK_TEXT_BOUNDARY_SUFFIX_RE}"
+    r"(?:\s+of\s+(?:that|the)\s+Schedule)?"
+)
 
 _UK_AT_END_TARGET_QUALIFIER_RE = (
     r"(?: of (?:(?:that|the) )?"
@@ -211,6 +211,10 @@ _UK_AT_END_TARGET_QUALIFIER_RE = (
 )
 _UK_CARRIED_ENACTMENT_CONTEXT_RE = (
     r"(?:\s+of\s+(?:that\s+Act|(?:the\s+)?[A-Z][^,;“”]*?\bAct\s+\d{4}))?"
+    rf"{_UK_SOURCE_ASIDE_RE}"
+)
+_UK_REQUIRED_CARRIED_ENACTMENT_CONTEXT_RE = (
+    r"\s+of\s+(?:that\s+Act|(?:the\s+)?[A-Z][^,;“”]*?\bAct\s+\d{4})"
     rf"{_UK_SOURCE_ASIDE_RE}"
 )
 _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID = (
@@ -4048,6 +4052,24 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         re.I,
     )
     for m in matches_at_end_carried_parent_insert:
+        subs.append(
+            {
+                "original": "TEXT_FROM__TO_END",
+                "replacement": m.group("inserted").strip(),
+                "rule_id": UK_AT_END_CARRIED_PARENT_CONTEXT_INSERT_RULE_ID,
+            }
+        )
+
+    matches_at_end_cited_target_insert = re.finditer(
+        r"at the end of (?:(?:that|the) )?"
+        rf"{_UK_TEXT_BOUNDARY_UNIT_RE}{_UK_TEXT_BOUNDARY_SUFFIX_RE}"
+        rf"{_UK_REQUIRED_CARRIED_ENACTMENT_CONTEXT_RE},?\s+"
+        r"(?:insert|there is inserted|there are inserted|there shall be inserted)"
+        rf"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>{_NON_QUOTE}{{1,800}})[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_at_end_cited_target_insert:
         subs.append(
             {
                 "original": "TEXT_FROM__TO_END",

@@ -1999,6 +1999,26 @@ def test_parse_fragment_substitution_handles_at_end_insert_with_carried_parent_c
     ]
 
 
+def test_parse_fragment_substitution_handles_at_end_insert_with_cited_section_context() -> None:
+    subs = parse_fragment_substitution(
+        "17 At the end of section 91(9) of the Land Registration Act 2002 "
+        "(application of section 36A of the Companies Act 1985 in relation to "
+        "electronic conveyancing), insert \u201c(and subsection (8) of that section, "
+        "in so far as it relates to the document, shall be read accordingly)\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": (
+                "(and subsection (8) of that section, in so far as it relates "
+                "to the document, shall be read accordingly)"
+            ),
+            "rule_id": "uk_effect_at_end_carried_parent_context_text_insertion_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_after_entry_for_of_insert() -> None:
     subs = parse_fragment_substitution(
         "Schedule 3 is amended by the insertion, after the entry for "
