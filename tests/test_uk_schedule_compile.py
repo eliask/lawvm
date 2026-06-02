@@ -10444,6 +10444,63 @@ def test_compile_at_end_definition_insert() -> None:
     )
 
 
+def test_compile_at_end_definition_unquoted_dash_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="regulation-8-b">
+          <Pnumber>b</Pnumber>
+          <Text>b at the end of the definition of \u201cthe applicable Community Rules\u201d insert\u2014 and includes the European Agreement concerning the Work of Crews of Vehicles engaged in International Road Transport of 1st July 1970 , as amended, as applied by Article 2(3) of the Community Drivers' Hours Regulation .</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-159e9ec81b09c3d6c3eae35ae2b6ed43",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2007-04-11",
+        affected_uri="/id/ukpga/1968/73/section/103/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1968",
+        affected_number="73",
+        affected_provisions="s. 103(1)",
+        affecting_uri="/id/uksi/2007/1819",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2007",
+        affecting_number="1819",
+        affecting_provisions="reg. 8(b)",
+        affecting_title="Test Amendment Regulations",
+        in_force_dates=[{"date": "2007-04-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "103"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        f"TEXT_IN_DEFINITION_the applicable Community Rules{US}AT_END"
+    )
+    assert ops[0].text_patch.replacement == (
+        "and includes the European Agreement concerning the Work of Crews of "
+        "Vehicles engaged in International Road Transport of 1st July 1970 , "
+        "as amended, as applied by Article 2(3) of the Community Drivers' "
+        "Hours Regulation"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_in_definition_at_end_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
 def test_at_end_definition_target_context_insert_fragment_parses() -> None:
     fragments = parse_fragment_substitution(
         "120 In section 31 of the 1989 Act (care and supervision orders), at "

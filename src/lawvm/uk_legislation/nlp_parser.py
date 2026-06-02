@@ -3524,6 +3524,26 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
                 }
             )
 
+    matches_definition_at_end_unquoted_insert_prefix = re.finditer(
+        r"at\s+the\s+end\s+of\s+the\s+definition\s+of\s+"
+        r"[“\"'‘](?P<term>[^“”\"'‘’]{1,300})[”\"'’],?\s+"
+        r"(?:insert|there is inserted|there are inserted|there shall be inserted)"
+        r"\s*[—-]?\s+(?P<inserted>.{1,1200}?)(?:\s+\.)?$",
+        text,
+        re.I | re.S,
+    )
+    for m in matches_definition_at_end_unquoted_insert_prefix:
+        inserted = m.group("inserted").strip()
+        term = m.group("term").strip()
+        if inserted and term:
+            subs.append(
+                {
+                    "original": f"TEXT_IN_DEFINITION_{term}{US}AT_END",
+                    "replacement": inserted,
+                    "rule_id": "uk_effect_in_definition_at_end_insert_text_patch",
+                }
+            )
+
     matches_definition_at_end_target_context_insert = re.finditer(
         r"at\s+the\s+end\s+of\s+the\s+definition\s+of\s+"
         r"[“\"'‘](?P<term>[^“”\"'‘’]{1,300})[”\"'’]\s+"
