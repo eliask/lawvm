@@ -40831,6 +40831,234 @@ def test_replay_exception_entry_insert_requires_unique_local_anchor() -> None:
     )
 
 
+def test_compile_exception_entry_omission_lowers_to_local_schedule_entry_repeal() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-5-paragraph-3-7">
+          <Pnumber>7</Pnumber>
+          <Text>7 In section 836 (jointly held property), in subsection (3) omit exceptions D and DA.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-0cd9de28c1aeb4f7bf43d126a59f0369",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-06",
+        affected_uri="/id/ukpga/2007/3/section/836/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 836(3)",
+        affecting_uri="/id/ukpga/2025/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="8",
+        affecting_provisions="Sch. 5 para. 3(7)",
+        affecting_title="Finance Act 2025",
+        in_force_dates=[{"date": "2025-05-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPEAL
+    assert op.target.path == (("section", "836"), ("subsection", "3"))
+    assert op.payload is None
+    assert op.witness_rule_id == "uk_effect_schedule_list_entry_repeal"
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("schedule_list_entry_repeal_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_repeal_selector:"))
+    assert selector["anchors"] == ["Exception D", "Exception DA"]
+    assert selector["entry_carrier_family"] == "non_schedule_local_list"
+    assert selector["source_anchor_form"] == "exception_label"
+    assert any(
+        record["rule_id"] == "uk_effect_schedule_list_entry_repeal"
+        and record["reason_code"] == "explicit_schedule_list_entry_repeal_anchor"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_local_entry_relation_omission_remains_frontier() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="section-38-2-a-iii">
+          <Pnumber>iii</Pnumber>
+          <Text>iii in section 150(1), omit the entry relating to section 134(5)(a), and</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-bd03cd75553dc81a9ce1b18f8215438b",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2020-10-14",
+        affected_uri="/id/ukpga/2007/3/section/150/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 150(1)",
+        affecting_uri="/id/ukpga/2020/14",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2020",
+        affecting_number="14",
+        affecting_provisions="s. 38(2)(a)(iii)",
+        affecting_title="Finance Act 2020",
+        in_force_dates=[{"date": "2020-10-14", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert not any(
+        record["rule_id"] == "uk_effect_schedule_list_entry_repeal"
+        for record in lowering_records
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
+def test_replay_exception_entry_omission_requires_all_local_anchors_unique() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-5-paragraph-3-7">
+          <Pnumber>7</Pnumber>
+          <Text>7 In section 836, in subsection (3) omit exceptions D and DA.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_exception_entry_omission",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-06",
+        affected_uri="/id/ukpga/2007/3/section/836/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 836(3)",
+        affecting_uri="/id/ukpga/2025/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="8",
+        affecting_provisions="Sch. 5 para. 3(7)",
+        affecting_title="Finance Act 2025",
+        in_force_dates=[{"date": "2025-05-06", "prospective": "false"}],
+    )
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+    assert len(ops) == 1
+
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="836",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            children=(
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Exception C Prior exception."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Exception D Overseas income."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Exception DA EEA holiday accommodation."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Exception E Later exception."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [child.text for child in subsection.children] == [
+        "Exception C Prior exception.",
+        "Exception E Later exception.",
+    ]
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_repeal_resolved"
+        and adjudication.detail.get("deleted_count") == 2
+        and adjudication.detail.get("carrier_kind") == "subsection"
+        for adjudication in adjudications
+    )
+
+    ambiguous_base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="836",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            children=(
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Exception D Overseas income."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Exception D Duplicate witness."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Exception DA EEA holiday accommodation."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    ambiguous_adjudications: list[CompileAdjudication] = []
+
+    ambiguous_replayed = replay_uk_ops(
+        ambiguous_base,
+        ops,
+        adjudications_out=ambiguous_adjudications,
+    )
+
+    ambiguous_subsection = ambiguous_replayed.body.children[0].children[0]
+    assert [child.text for child in ambiguous_subsection.children] == [
+        "Exception D Overseas income.",
+        "Exception D Duplicate witness.",
+        "Exception DA EEA holiday accommodation.",
+    ]
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_repeal_unresolved"
+        and adjudication.detail.get("reason_code") == "anchor_not_unique"
+        and adjudication.detail.get("anchor") == "Exception D"
+        and adjudication.detail.get("blocking") is True
+        for adjudication in ambiguous_adjudications
+    )
+
+
 def test_compile_schedule_list_entry_table_payload_uses_parent_instruction_for_block_payload() -> None:
     source_root = ET.fromstring(
         f"""

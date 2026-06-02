@@ -9,6 +9,7 @@ executor implementation.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any, NamedTuple, Protocol
 
 from lawvm.core.ir import LegalAddress, LegalOperation
@@ -986,20 +987,31 @@ class UKReplayScheduleListApplyMixin:
     ) -> bool:
         carrier_node, _, _ = self._find_node_by_target(target)
         carrier_kind = _uk_kind_value(carrier_node.kind) if carrier_node is not None else ""
-        if carrier_node is None or carrier_kind not in {
+        local_list_repeal_carrier = (
+            str(selector.get("entry_carrier_family") or "") == "non_schedule_local_list"
+            and carrier_kind in {"section", "subsection"}
+        )
+        if (
+            carrier_node is None
+            or (
+                carrier_kind
+                not in {
             "schedule",
             "part",
             "chapter",
             "division",
             "paragraph",
             "subparagraph",
-        }:
+                }
+                and not local_list_repeal_carrier
+            )
+        ):
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_UNRESOLVED_RULE_ID,
                 message=(
                     "UK replay skipped schedule-list-entry repeal: target did "
-                    "not resolve to a schedule or schedule-partition carrier."
+                    "not resolve to a supported direct entry carrier."
                 ),
                 op=op,
                 detail=_schedule_entry_detail(
@@ -1030,7 +1042,7 @@ class UKReplayScheduleListApplyMixin:
             )
             return False
         entry_rows: list[_ScheduleListEntryRow] = []
-        if carrier_kind in {"schedule", "paragraph", "subparagraph"}:
+        if carrier_kind in {"schedule", "paragraph", "subparagraph"} or local_list_repeal_carrier:
             entry_rows = [
                 _ScheduleListEntryRow(carrier_node, idx, child)
                 for idx, child in enumerate(carrier_node.children)
@@ -1048,14 +1060,22 @@ class UKReplayScheduleListApplyMixin:
             _collect_partition_entry_rows(carrier_node)
 
         def _entry_text_norm(child: UKMutableNode) -> str:
-            if carrier_kind in {"schedule", "paragraph", "subparagraph"}:
+            if carrier_kind in {"schedule", "paragraph", "subparagraph"} or local_list_repeal_carrier:
                 return _compact_normalized_text(child.text)
             return _compact_numbered_schedule_entry_text(child.text)
 
         def _entry_text_article_norm(child: UKMutableNode) -> str:
-            if carrier_kind in {"schedule", "paragraph", "subparagraph"}:
+            if carrier_kind in {"schedule", "paragraph", "subparagraph"} or local_list_repeal_carrier:
                 return _compact_schedule_entry_anchor_without_article(child.text)
             return _compact_numbered_schedule_entry_text_without_article(child.text)
+
+        def _exception_label_matches(anchor: str) -> list[_ScheduleListEntryRow]:
+            match = re.fullmatch(r"\s*Exception\s+(?P<label>[0-9A-Z]{1,4})\s*", anchor, re.I)
+            if match is None:
+                return []
+            label = re.escape(match.group("label"))
+            label_re = re.compile(rf"^\s*Exception\s+{label}(?![0-9A-Z])\b", re.I)
+            return [entry_row for entry_row in entry_rows if label_re.search(entry_row.child.text or "")]
 
         def _matches_for_anchor(anchor: str) -> _ScheduleListEntryAnchorMatch:
             anchor_norm = _compact_normalized_text(anchor)
@@ -1066,6 +1086,9 @@ class UKReplayScheduleListApplyMixin:
             ]
             if matches:
                 return _ScheduleListEntryAnchorMatch(matches, "exact")
+            matches = _exception_label_matches(anchor)
+            if matches:
+                return _ScheduleListEntryAnchorMatch(matches, "exception_label")
             matches = [
                 entry_row
                 for entry_row in entry_rows

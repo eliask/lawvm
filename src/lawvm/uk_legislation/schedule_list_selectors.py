@@ -304,6 +304,22 @@ def _quoted_schedule_entry_repeal_anchors(raw: str) -> tuple[str, ...]:
     return tuple(anchors)
 
 
+def _split_exception_repeal_anchors(raw: str) -> tuple[str, ...]:
+    anchors: list[str] = []
+    seen: set[str] = set()
+    for part in re.split(r"\s*(?:,|;|\band\b)\s*", str(raw or ""), flags=re.I):
+        label = part.strip().upper()
+        if not re.fullmatch(r"[0-9A-Z]{1,4}", label):
+            continue
+        anchor = f"Exception {label}"
+        key = _compact_normalized_text(anchor)
+        if key in seen:
+            continue
+        seen.add(key)
+        anchors.append(anchor)
+    return tuple(anchors)
+
+
 def _uk_schedule_list_entry_repeal_selector(
     *,
     target_ref: str,
@@ -320,25 +336,52 @@ def _uk_schedule_list_entry_repeal_selector(
     if not text:
         return None
     target_surface = f"{target_ref} {target}".lower()
+    target_leaf_kind = _addr_leaf_kind(target)
+    local_list_carrier_target = _addr_container(target) != "schedule" and target_leaf_kind in {
+        "section",
+        "subsection",
+    }
     if (
         "table" in target_surface
         or _is_heading_only_ref(target_ref)
-        or _addr_leaf_kind(target) not in {
-            "schedule",
-            "part",
-            "chapter",
-            "division",
-            "paragraph",
-            "subparagraph",
-        }
+        or (
+            not local_list_carrier_target
+            and target_leaf_kind not in {
+                "schedule",
+                "part",
+                "chapter",
+                "division",
+                "paragraph",
+                "subparagraph",
+            }
+        )
     ):
         return None
-    if _addr_leaf_kind(target) in {"paragraph", "subparagraph"} and not re.search(
+    if target_leaf_kind in {"paragraph", "subparagraph"} and not re.search(
         r"\bentr(?:y|ies)\b",
         text,
         re.I,
     ):
         return None
+    if local_list_carrier_target:
+        match = re.search(
+            r"\bomit(?:ted)?\s+exceptions?\s+(?P<anchors>[0-9A-Z]{1,4}(?:\s*(?:,|;|\band\b)\s*[0-9A-Z]{1,4})*)\b",
+            text,
+            re.I,
+        )
+        if match is None:
+            return None
+        anchors = _split_exception_repeal_anchors(match.group("anchors"))
+        if not anchors:
+            return None
+        return {
+            "rule_id": UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
+            "anchors": list(anchors),
+            "target_ref": target_ref,
+            "target": str(target),
+            "entry_carrier_family": "non_schedule_local_list",
+            "source_anchor_form": "exception_label",
+        }
 
     match = re.search(
         r"\b(?:the\s+)?(?:entry|entries)\s+(?:relating\s+to|for)\s*[—–-]?\s+"
@@ -369,7 +412,7 @@ def _uk_schedule_list_entry_repeal_selector(
                 match = re.search(r"\bomit(?:ted)?\s+[“\"'](?P<anchor>.+?)[”\"']", text, re.I)
             if match is not None:
                 anchors = (_strip_schedule_entry_repeal_anchor(match.group("anchor")),)
-    if not anchors and _addr_leaf_kind(target) == "schedule":
+    if not anchors and target_leaf_kind == "schedule":
         label = target.path[-1][1] if target.path else ""
         label_pattern = re.escape(str(label or ""))
         match = re.search(
