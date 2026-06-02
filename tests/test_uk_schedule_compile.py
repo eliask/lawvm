@@ -7057,6 +7057,21 @@ def test_before_nested_quoted_anchor_block_insert_fragment_parses() -> None:
     ]
 
 
+def test_before_nested_quoted_anchor_inline_insert_fragment_parses() -> None:
+    fragments = parse_fragment_substitution(
+        "a in paragraph (1)(c), before \u201c\u2018qualified\u2019\u201d insert "
+        "\u201csubject to paragraph (1A),\u201d; and"
+    )
+
+    assert fragments == [
+        {
+            "original": "\u2018qualified\u2019",
+            "replacement": "subject to paragraph (1A), \u2018qualified\u2019",
+            "rule_id": "uk_effect_before_nested_quoted_anchor_insert_text_patch",
+        }
+    ]
+
+
 def test_compile_before_nested_quoted_anchor_block_insert() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -7105,6 +7120,65 @@ def test_compile_before_nested_quoted_anchor_block_insert() -> None:
     assert op.text_patch.replacement == "\u201cprohibited modification\u201d \u201cregulated modification\u201d"
     assert (
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_before_nested_quoted_anchor_block_insert_text_patch"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
+def test_compile_before_nested_quoted_anchor_inline_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="regulation-4-a">
+          <Pnumber>a</Pnumber>
+          <Text>a in paragraph (1)(c), before \u201c\u2018qualified\u2019\u201d insert
+          \u201csubject to paragraph (1A),\u201d; and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-2078053b2cc1a0ce6e5bdf185e74865e",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-11-07",
+        affected_uri="/id/uksi/2002/3026/regulation/4/paragraph/1/sub-paragraph/c",
+        affected_class="UnitedKingdomStatutoryInstrument",
+        affected_year="2002",
+        affected_number="3026",
+        affected_provisions="reg. 4(1)(c)",
+        affecting_uri="/id/uksi/2006/2530",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2006",
+        affecting_number="2530",
+        affecting_provisions="reg. 4(a)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2006-10-09", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (
+        ("section", "4"),
+        ("subsection", "1"),
+        ("paragraph", "c"),
+    )
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "\u2018qualified\u2019"
+    assert op.text_patch.replacement == "subject to paragraph (1A), \u2018qualified\u2019"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_before_nested_quoted_anchor_insert_text_patch"
         in op.provenance_tags
     )
     assert not any(

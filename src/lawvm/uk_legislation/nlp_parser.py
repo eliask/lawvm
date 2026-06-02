@@ -154,6 +154,12 @@ _BEFORE_STEP_INSERTED_RE = re.compile(
     r"(?:\s*,?\s*(?:and)?\s*[.;]?)?$",
     re.I,
 )
+_BEFORE_NESTED_QUOTED_ANCHOR_INSERT_RE = re.compile(
+    rf"before\s+[“\"'‘]\s*(?P<original>[“\"'‘]{_NON_QUOTE}{{1,500}}[”\"'’])\s*[”\"'’]"
+    r",?\s+(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)"
+    rf"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>{_NON_QUOTE}{{1,500}})[”\"'’]",
+    re.I,
+)
 _AMOUNT_SPECIFIED_SUBSTITUTED_RE = re.compile(
     r"for\s+the\s+amount\s+specified\s+in\s+section\s+[^.;“”\"'‘]{1,180}?\s+"
     r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+"
@@ -219,6 +225,9 @@ UK_AFTER_QUOTED_ANCHOR_CLOSING_QUOTE_INSERT_RULE_ID = (
 )
 UK_BEFORE_QUOTED_ANCHOR_ALL_OCCURRENCES_INSERT_RULE_ID = (
     "uk_effect_before_quoted_anchor_all_occurrences_insert_text_patch"
+)
+UK_BEFORE_NESTED_QUOTED_ANCHOR_INSERT_RULE_ID = (
+    "uk_effect_before_nested_quoted_anchor_insert_text_patch"
 )
 UK_AFTER_REFERENCE_SECTION_INSERT_RULE_ID = (
     "uk_effect_after_reference_section_insert_text_patch"
@@ -3443,6 +3452,18 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
                 "original": original,
                 "replacement": f"{inserted}{joiner}{original}",
                 "rule_id": "uk_effect_before_nested_quoted_anchor_block_insert_text_patch",
+            }
+        )
+
+    for m in _BEFORE_NESTED_QUOTED_ANCHOR_INSERT_RE.finditer(text):
+        original = m.group("original").strip()
+        inserted = m.group("inserted").strip()
+        joiner = "" if inserted.endswith((" ", "(", "/", "-")) else " "
+        subs.append(
+            {
+                "original": original,
+                "replacement": f"{inserted}{joiner}{original}",
+                "rule_id": UK_BEFORE_NESTED_QUOTED_ANCHOR_INSERT_RULE_ID,
             }
         )
 
