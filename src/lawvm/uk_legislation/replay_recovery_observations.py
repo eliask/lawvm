@@ -202,6 +202,16 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         strict_disposition="record",
         source_shape="at_end_words_in_parentheses_selector",
     ),
+    "uk_replay_at_end_step_text_rewrite_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied a text insertion at the end of a named Step "
+            "after proving the resolved target has exactly one matching Step "
+            "text node."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="at_end_step_selector",
+    ),
     "uk_replay_unique_fee_sum_text_rewrite_applied": UKReplayRecoveryObservation(
         message=(
             "UK replay applied an amount-specified text rewrite after proving "

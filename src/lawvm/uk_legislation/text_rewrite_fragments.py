@@ -29,6 +29,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_AFTER_REFERENCE_SECTION_INSERT_RULE_ID,
     UK_AFTER_WORDS_IN_BRACKETS_INSERT_RULE_ID,
     UK_AT_END_WORDS_IN_PARENTHESES_INSERT_RULE_ID,
+    UK_AT_END_STEP_INSERT_RULE_ID,
     UK_AMOUNT_SPECIFIED_SUBSTITUTION_RULE_ID,
     UK_AFTER_ANCHOR_BEFORE_FINAL_WORD_SUBSTITUTION_RULE_ID,
     UK_AFTER_ANCHOR_TO_END_UNQUOTED_SUBSTITUTION_RULE_ID,
@@ -756,6 +757,31 @@ def append_basic_text_rewrite_observations(
                     "parenthesized words; lowering preserves this as a bounded "
                     "inside-parentheses insertion rather than appending after "
                     "the parenthesized span."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": str(fragment.get("original") or ""),
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
+                },
+            )
+    if UK_AT_END_STEP_INSERT_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if str(fragment.get("rule_id") or "") != UK_AT_END_STEP_INSERT_RULE_ID:
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_AT_END_STEP_INSERT_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="at_end_step_insert",
+                reason=(
+                    "UK effect source inserts text at the end of a named Step; "
+                    "lowering preserves this as a Step-boundary selector rather "
+                    "than appending to the whole target provision."
                 ),
                 effect=effect,
                 extracted_el=extracted_el,

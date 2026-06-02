@@ -979,6 +979,20 @@ def test_parse_fragment_substitution_handles_at_end_words_in_parentheses_insert(
     ]
 
 
+def test_parse_fragment_substitution_handles_at_end_step_insert() -> None:
+    subs = parse_fragment_substitution(
+        "at the end of Step 4 insert\u2014 \u201cSee also section 863I of ITTOIA 2005\u201d"
+    )
+
+    assert subs == [
+        {
+            "original": f"TEXT_AT_END_OF_STEP{US}4",
+            "replacement": "See also section 863I of ITTOIA 2005",
+            "rule_id": "uk_effect_at_end_step_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_amount_specified_substitution() -> None:
     subs = parse_fragment_substitution(
         "1 For the amount specified in section 12(3) of ITA 2007 "

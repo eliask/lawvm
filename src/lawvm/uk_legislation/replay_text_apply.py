@@ -655,6 +655,40 @@ def _text_nodes_in_document_order(
     return text_nodes
 
 
+def _step_selector_label(match: str) -> str:
+    prefix = f"TEXT_AT_END_OF_STEP{US}"
+    if not match.startswith(prefix):
+        return ""
+    return _clean_num(match[len(prefix) :].strip().upper())
+
+
+def _text_node_matches_step_selector(node: UKMutableNode, step_label: str) -> bool:
+    if not step_label:
+        return False
+    source_ordinal = _clean_num(str(node.attrs.get("source_ordinal", "")).upper())
+    if source_ordinal == step_label:
+        return True
+    text = " ".join((node.text or "").split()).casefold()
+    for prefix in (f"step {step_label.casefold()}", f"step{step_label.casefold()}"):
+        if text == prefix:
+            return True
+        if text.startswith(prefix):
+            next_char = text[len(prefix) : len(prefix) + 1]
+            return bool(next_char and not next_char.isalnum())
+    return False
+
+
+def _append_text_with_boundary(text: str, insertion: str) -> str:
+    joiner = (
+        ""
+        if not text
+        or text.endswith((" ", "\t", "\n", "\r"))
+        or insertion.startswith((" ", ",", ".", ";", ":", ")"))
+        else " "
+    )
+    return f"{text}{joiner}{insertion}"
+
+
 def _rewrite_definition_entry_text(
     text: str,
     *,
@@ -1328,6 +1362,40 @@ class UKReplayTextApplyMixin:
 
         def _log(self, message: str) -> None: ...
 
+    def _apply_at_end_of_step_text_insert_on_subtree(
+        self,
+        node: UKMutableNode,
+        match: str,
+        insertion: str,
+        *,
+        recovery_rule_ids_out: Optional[list[str]] = None,
+    ) -> tuple[UKMutableNode, bool]:
+        step_label = _step_selector_label(match)
+        if not step_label or not insertion:
+            return node, False
+        step_nodes = [
+            (path, text_node)
+            for path, text_node in _text_nodes_in_document_order(node)
+            if _text_node_matches_step_selector(text_node, step_label)
+        ]
+        if len(step_nodes) != 1:
+            return node, False
+        path, text_node = step_nodes[0]
+        replacement_node = dc_replace(
+            text_node,
+            text=_append_text_with_boundary(text_node.text or "", insertion),
+        )
+        if not path:
+            self._replace_node_in_statute(node, replacement_node)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_at_end_step_text_rewrite_applied")
+            return replacement_node, True
+        rebuilt = self._replace_descendant_at_path(node, path, replacement_node)
+        self._replace_node_in_statute(node, rebuilt)
+        if recovery_rule_ids_out is not None:
+            recovery_rule_ids_out.append("uk_replay_at_end_step_text_rewrite_applied")
+        return rebuilt, True
+
     def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
         self,
         node: UKMutableNode,
@@ -1409,6 +1477,13 @@ class UKReplayTextApplyMixin:
         text = node.text or ""
         if not text:
             return node, False
+        if match.startswith(f"TEXT_AT_END_OF_STEP{US}"):
+            return self._apply_at_end_of_step_text_insert_on_subtree(
+                node,
+                match,
+                replacement,
+                recovery_rule_ids_out=recovery_rule_ids_out,
+            )
         if match.startswith("TEXT_FEE_SUM_"):
             old_fee = match[len("TEXT_FEE_SUM_"):]
             found_matches = []
@@ -2075,6 +2150,14 @@ class UKReplayTextApplyMixin:
             True if at least one substitution was made; False otherwise.
         """
         text_nodes = _text_nodes_in_document_order(node)
+
+        if match.startswith(f"TEXT_AT_END_OF_STEP{US}"):
+            return self._apply_at_end_of_step_text_insert_on_subtree(
+                node,
+                match,
+                replacement,
+                recovery_rule_ids_out=recovery_rule_ids_out,
+            )
 
         if match.startswith(_EXCEPT_PHRASE_SELECTOR_PREFIX):
             parts = match.split(US, 2)

@@ -514,6 +514,111 @@ def test_replay_at_end_words_in_parentheses_blocks_ambiguous_parenthesized_spans
     assert adjudications[0].detail["blocking"] is True
 
 
+def test_replay_at_end_step_insert_appends_to_unique_step_child() -> None:
+    op = LegalOperation(
+        op_id="uk_test_at_end_step_replay",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "23"),)),
+        text_patch=_replace_patch(
+            f"TEXT_AT_END_OF_STEP{US}4",
+            "See also section 863I of ITTOIA 2005.",
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="23",
+                    attrs={"eId": "section-23"},
+                    text="Take the following steps.",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SCHEDULE_ENTRY,
+                            text="Step 1 Identify total income.",
+                            attrs={"source_ordinal": "1"},
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.SCHEDULE_ENTRY,
+                            text="Step 4 Calculate tax.",
+                            attrs={"source_ordinal": "4"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    section = executor.statute.body.children[0]
+    assert section.text == "Take the following steps."
+    assert section.children[0].text == "Step 1 Identify total income."
+    assert (
+        section.children[1].text
+        == "Step 4 Calculate tax. See also section 863I of ITTOIA 2005."
+    )
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_at_end_step_text_rewrite_applied"
+    assert adjudications[0].detail["source_shape"] == "at_end_step_selector"
+
+
+def test_replay_at_end_step_insert_blocks_ambiguous_step_children() -> None:
+    op = LegalOperation(
+        op_id="uk_test_at_end_step_ambiguous",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "23"),)),
+        text_patch=_replace_patch(f"TEXT_AT_END_OF_STEP{US}4", "extra"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="23",
+                    attrs={"eId": "section-23"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SCHEDULE_ENTRY,
+                            text="Step 4 Calculate tax.",
+                            attrs={"source_ordinal": "4"},
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.SCHEDULE_ENTRY,
+                            text="Step 4 Alternative calculation.",
+                            attrs={"source_ordinal": "4"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    section = executor.statute.body.children[0]
+    assert section.children[0].text == "Step 4 Calculate tax."
+    assert section.children[1].text == "Step 4 Alternative calculation."
+    assert len(adjudications) == 1
+    assert adjudications[0].detail["blocking"] is True
+
+
 def test_replay_unique_fee_sum_replaces_single_currency_amount() -> None:
     op = LegalOperation(
         op_id="uk_test_unique_fee_sum_replay",
@@ -43011,6 +43116,67 @@ def test_compile_at_end_words_in_parentheses_insert_lowers_to_inside_parentheses
     ]
     assert len(records) == 1
     assert records[0]["reason_code"] == "at_end_words_in_parentheses_insert"
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
+def test_compile_at_end_step_insert_lowers_to_step_boundary_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>19</Pnumber>
+          <Text>at the end of Step 4 insert\u2014
+          \u201cSee also section 863I of ITTOIA 2005 (sections 863E and 863I of
+          that Act: certain income of members of firms involving companies:
+          alternative calculation of profits).\u201d</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-05b76f3cb098f6580f027dbc4a353bc2",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2014-04-06",
+        affected_uri="/id/ukpga/2007/3/section/23",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 23",
+        affecting_uri="/id/ukpga/2014/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2014",
+        affecting_number="26",
+        affecting_provisions="Sch. 17 para. 19",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2014-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "23"),)
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == f"TEXT_AT_END_OF_STEP{US}4"
+    assert op.text_patch.replacement.startswith("See also section 863I of ITTOIA 2005")
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_at_end_step_insert_text_patch"
+        in op.provenance_tags
+    )
+    records = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_at_end_step_insert_text_patch"
+    ]
+    assert len(records) == 1
+    assert records[0]["reason_code"] == "at_end_step_insert"
     assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
 
 
