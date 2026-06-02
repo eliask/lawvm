@@ -1179,6 +1179,17 @@ _DEFINITION_ANCHOR_TAIL_INSERT_RE = re.compile(
     r"substitute\s+a\s+semicolon\s+and\s+after\s+that\s+definition\s+insert\b",
     flags=re.I,
 )
+_SCHEDULE_NOTE_SOURCE_INSERT_RE = re.compile(
+    r"\b(?:in\s+the\s+notes?(?:\s+to\s+schedule\s+[0-9A-Za-z]+)?\s*,?\s+)?"
+    r"(?:after|before)\s+the\s+(?:note|paragraph)\s+"
+    r"(?:relating\s+to|on)\b.{0,500}?\binsert\b",
+    flags=re.I,
+)
+_SCHEDULE_NOTE_SOURCE_OMIT_RE = re.compile(
+    r"\b(?:in\s+the\s+notes?(?:\s+to\s+schedule\s+[0-9A-Za-z]+)?\s*,?\s+)?"
+    r"omit\s+the\s+(?:note|paragraph)\s+(?:relating\s+to|on)\b",
+    flags=re.I,
+)
 
 
 def _looks_like_definition_list_end_insert_instruction(text: str) -> bool:
@@ -1200,6 +1211,23 @@ def _looks_like_definition_anchor_tail_insert_instruction(text: str) -> bool:
     if "full stop" not in norm or "semicolon" not in norm:
         return False
     return bool(_DEFINITION_ANCHOR_TAIL_INSERT_RE.search(norm))
+
+
+def _looks_like_schedule_note_source_instruction(text: str, *, target_paths: Iterable[str] = ()) -> bool:
+    norm = _normalize_effect_text(text)
+    targets_norm = " ".join(str(path or "").lower() for path in target_paths)
+    if "note" not in norm and "note" not in targets_norm:
+        return False
+    if not re.search(r"\b(?:insert|omit|substitute)\b", norm):
+        return False
+    return bool(
+        _SCHEDULE_NOTE_SOURCE_INSERT_RE.search(norm)
+        or _SCHEDULE_NOTE_SOURCE_OMIT_RE.search(norm)
+        or (
+            re.search(r"(?:^|[:/ -])notes?\b", targets_norm) is not None
+            and re.search(r"\b(?:in\s+the\s+notes?|the\s+note\s+relating\s+to|the\s+paragraph\s+(?:relating\s+to|on))\b", norm)
+        )
+    )
 
 
 def _looks_like_schedule_list_entry_instruction(text: str) -> bool:
@@ -1875,6 +1903,8 @@ def classify_uk_effect_source_pathology(
         if "uk_effect_application_modification_table_rejected" in lowering_rules:
             return "application_modification_payload_out_of_scope"
         if "uk_effect_schedule_note_target_rejected" in lowering_rules:
+            return "schedule_note_target_unsupported"
+        if _looks_like_schedule_note_source_instruction(norm_text, target_paths=targets):
             return "schedule_note_target_unsupported"
         targets_norm = " ".join(targets).lower()
         if re.search(r"(?:^|[:/ -])cross[-_ ]?heading\b", targets_norm):

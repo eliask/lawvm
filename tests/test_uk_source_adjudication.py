@@ -2443,6 +2443,58 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_note_target() -> Non
     assert result["rule_id"] == "uk_manual_frontier_schedule_note_candidate"
 
 
+def test_classify_uk_effect_schedule_note_source_insert_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "d after the note relating to the Ministry of Defence insert— "
+            "Ministry of Justice The reference to the Ministry of Justice "
+            "includes the Public Trustee."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["Sch. 2"],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "schedule_note_target_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_schedule_note_source_omission_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text="c omit the note relating to the Department for Constitutional Affairs;",
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["Sch. 2"],
+        effect_type="words omitted",
+        is_structural=True,
+    )
+
+    assert pathology == "schedule_note_target_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_schedule_notes_target_omission_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text="b in the Notes, omit the paragraph on the Health Protection Agency.",
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["Sch. 2 Notes"],
+        effect_type="words omitted",
+        is_structural=True,
+    )
+
+    assert pathology == "schedule_note_target_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_manual_compile_frontier_marks_heading_facet_pathology() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",
