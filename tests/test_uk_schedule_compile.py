@@ -58950,6 +58950,77 @@ def test_compile_after_paragraph_insert_connector_sibling_lowers_schedule_parent
     )
 
 
+def test_compile_after_paragraph_insert_connector_sibling_lowers_roman_and_connector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="schedule-11-paragraph-3-7-a-iii">
+          <Pnumber>iii</Pnumber>
+          <Text>iii at the end of paragraph (d) insert , and e any activity
+          incidental or ancillary to any activity mentioned in paragraphs
+          (za) to (d); ;</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-8a494ec24e15f514e1d9a9695a87c500",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-04-06",
+        affected_uri="/id/ukpga/2007/3/section/809EZE/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 809EZE(1)",
+        affecting_uri="/id/ukpga/2026/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2026",
+        affecting_number="11",
+        affecting_provisions="Sch. 11 para. 3(7)(a)(iii)",
+        affecting_title="Finance Act 2026",
+        in_force_dates=[],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+    )
+
+    rule_id = "uk_effect_after_paragraph_insert_connector_sibling_lowered"
+    assert [op.action for op in ops] == [StructuralAction.TEXT_REPLACE, StructuralAction.INSERT]
+    assert [op.witness_rule_id for op in ops] == [rule_id, rule_id]
+    assert ops[0].target.path == (
+        ("section", "809eze"),
+        ("subsection", "1"),
+        ("paragraph", "d"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
+    assert ops[0].text_patch.replacement == ", and"
+    assert ops[1].target.path == (
+        ("section", "809eze"),
+        ("subsection", "1"),
+        ("paragraph", "e"),
+    )
+    assert ops[1].payload is not None
+    assert ops[1].payload.kind is IRNodeKind.PARAGRAPH
+    assert ops[1].payload.label == "e"
+    assert ops[1].payload.text == (
+        "any activity incidental or ancillary to any activity mentioned in "
+        "paragraphs (za) to (d);"
+    )
+    assert any(
+        row["rule_id"] == rule_id
+        and row["anchor_patch"] == ", and"
+        and row["anchor_target"] == "section:809eze/subsection:1/paragraph:d"
+        and row["payload"]["target"] == "section:809eze/subsection:1/paragraph:e"
+        for row in observations
+    )
+
+
 def test_compile_after_paragraph_insert_connector_sibling_replays_tail_and_insert() -> None:
     extracted_el = ET.fromstring(
         f"""

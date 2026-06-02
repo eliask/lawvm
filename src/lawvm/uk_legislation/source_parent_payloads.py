@@ -197,9 +197,9 @@ _UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_TEXT_RE = re.compile(
 # Backreference replaced with [a-z]; \s+ inside
 # optional group → literal ' '; .+? bounded to .{0,2000} $ (caller strips).
 _UK_AFTER_PARAGRAPH_INSERT_CONNECTOR_SIBLING_TEXT_RE = re.compile(
-    r"^\s*(?P<row_label>[a-z]) (?:[a-z] )?"
+    r"^\s*(?P<row_label>(?:[ivxlcdm]+|[a-z])) (?:(?:[ivxlcdm]+|[a-z]) )?"
     r"(?:(?:at\s+the\s+end\s+of|after)\s+paragraph\s+\((?P<anchor>[a-z])\),?\s+)"
-    r"insert\s+(?P<connector>,\s*or)\s+(?P<label>[a-z]) (?P<text>.{0,2000})$",
+    r"insert\s+(?P<connector>,\s*(?:or|and))\s+(?P<label>[a-z]) (?P<text>.{0,2000})$",
     flags=re.I | re.S,
 )
 _UK_AFTER_PARAGRAPH_INSERT_BLOCK_AMENDMENT_INSTRUCTION_RE = re.compile(
