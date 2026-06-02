@@ -55538,6 +55538,143 @@ def test_compile_schedule_list_entry_repeal_splits_comma_and_final_and_list() ->
     ]
 
 
+def test_compile_quoted_schedule_entries_for_repeal_lowers_to_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-29-paragraph-32">
+          <Text>32 In Schedule 4 (index of defined expressions), omit the entries for—
+          \u201c buying back securities, in the context of a repo (in Part 11) \u201d ,
+          \u201c company UK REIT (in Chapter 2 of Part 11) \u201d .</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-ab63af593febc97239d0b0f8bcfb8de8",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-04-01",
+        affected_uri="/id/ukpga/2007/3/schedule/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="Sch. 4",
+        affecting_uri="/id/ukpga/2026/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2026",
+        affecting_number="11",
+        affecting_provisions="Sch. 29 para. 32",
+        affecting_title="Finance Act 2026",
+        in_force_dates=[{"date": "2026-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPEAL
+    assert op.target == LegalAddress(path=(("schedule", "4"),))
+    assert op.witness_rule_id == "uk_effect_schedule_list_entry_repeal"
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("schedule_list_entry_repeal_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_repeal_selector:"))
+    assert selector["anchors"] == [
+        "buying back securities, in the context of a repo (in Part 11)",
+        "company UK REIT (in Chapter 2 of Part 11)",
+    ]
+    assert selector["source_anchor_form"] == "quoted_entries_for"
+    assert any(
+        record["rule_id"] == "uk_effect_schedule_list_entry_repeal"
+        and record["reason_code"] == "explicit_schedule_list_entry_repeal_anchor"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_replay_quoted_schedule_entries_for_repeal_requires_all_anchors_unique() -> None:
+    op = LegalOperation(
+        op_id="uk_test_quoted_schedule_entries_for_repeal",
+        sequence=0,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("schedule", "4"),)),
+        provenance_tags=(
+            'schedule_list_entry_repeal_selector:{"rule_id":"uk_effect_schedule_list_entry_repeal",'
+            '"anchors":["buying back securities, in the context of a repo (in Part 11)",'
+            '"company UK REIT (in Chapter 2 of Part 11)"],'
+            '"source_anchor_form":"quoted_entries_for"}',
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 4",
+                children=(
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="buying back securities, in the context of a repo (in Part 11)"),
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="company UK REIT (in Chapter 2 of Part 11)"),
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="unrelated surviving entry"),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    assert [child.text for child in replayed.supplements[0].children] == ["unrelated surviving entry"]
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_repeal_resolved"
+        and adjudication.detail.get("deleted_count") == 2
+        and adjudication.detail.get("carrier_kind") == "schedule"
+        for adjudication in adjudications
+    )
+
+    missing_base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 4",
+                children=(
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="buying back securities, in the context of a repo (in Part 11)"),
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="unrelated surviving entry"),
+                ),
+            ),
+        ),
+    )
+    missing_adjudications: list[CompileAdjudication] = []
+
+    missing_replayed = replay_uk_ops(
+        missing_base,
+        [op],
+        adjudications_out=missing_adjudications,
+    )
+
+    assert [child.text for child in missing_replayed.supplements[0].children] == [
+        "buying back securities, in the context of a repo (in Part 11)",
+        "unrelated surviving entry",
+    ]
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_repeal_unresolved"
+        and adjudication.detail.get("reason_code") == "anchor_not_unique"
+        and adjudication.detail.get("anchor") == "company UK REIT (in Chapter 2 of Part 11)"
+        and adjudication.detail.get("blocking") is True
+        for adjudication in missing_adjudications
+    )
+
+
 def test_replay_schedule_list_entry_repeal_deletes_only_matched_entry() -> None:
     op = LegalOperation(
         op_id="uk_test_schedule_entry_repeal",

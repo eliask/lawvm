@@ -30,6 +30,10 @@ _TYPE_LABEL_LIST_ENTRY_REPEAL_RE = re.compile(
     r"(?P<anchors>[0-9A-Z]{1,4}(?:\s*(?:,|;|\band\b)\s*[0-9A-Z]{1,4})*)\b",
     re.I,
 )
+_QUOTED_SCHEDULE_ENTRIES_FOR_REPEAL_RE = re.compile(
+    r"\bomit(?:ted)?\s+(?:the\s+)?entries\s+for\s*[—–-]?\s*(?P<anchors>.+)$",
+    re.I,
+)
 
 _ENTRY_ORDINALS = {
     "first": 1,
@@ -516,6 +520,10 @@ def _uk_schedule_list_entry_repeal_selector(
         )
         if match is not None:
             anchors = _quoted_schedule_entry_repeal_anchors(match.group("anchors"))
+    if not anchors and target_leaf_kind == "schedule":
+        match = _QUOTED_SCHEDULE_ENTRIES_FOR_REPEAL_RE.search(text)
+        if match is not None:
+            anchors = _quoted_schedule_entry_repeal_anchors(match.group("anchors"))
     if not anchors:
         return None
     selector = {
@@ -526,6 +534,8 @@ def _uk_schedule_list_entry_repeal_selector(
     }
     if match is not None and "in schedule" in match.group(0).lower():
         selector["source_anchor_form"] = "repeal_table_schedule_entries"
+    if match is not None and match.re is _QUOTED_SCHEDULE_ENTRIES_FOR_REPEAL_RE:
+        selector["source_anchor_form"] = "quoted_entries_for"
     return selector
 
 
