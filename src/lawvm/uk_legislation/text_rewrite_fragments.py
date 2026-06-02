@@ -75,6 +75,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_SECTION_REFERENCE_REPEAL_RULE_ID,
     UK_IN_DEFINITION_AT_END_TARGET_CONTEXT_INSERT_RULE_ID,
     UK_UNQUOTED_DEFINITION_RANGE_TO_END_SUBSTITUTION_RULE_ID,
+    UK_UNQUOTED_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID,
     _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID,
 )
 from lawvm.uk_legislation.provenance_notes import NOTE_FRAGMENT_SUB, NOTE_TEXT_REWRITE_RULE
@@ -193,6 +194,7 @@ UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
         UK_ALL_OCCURRENCES_WORD_REPEAL_RULE_ID,
         "uk_effect_in_definition_after_anchor_all_occurrences_insert_text_patch",
         UK_MULTI_WHEREVER_OCCURRING_SUBSTITUTION_RULE_ID,
+        UK_UNQUOTED_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID,
         "uk_effect_respectively_all_occurrences_substitution_text_patch",
         "uk_effect_source_parent_grouped_after_anchor_all_occurrences_insert_text_patch",
         "uk_effect_source_parent_each_provision_substitution_text_patch",

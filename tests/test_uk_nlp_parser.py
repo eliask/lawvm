@@ -918,6 +918,22 @@ def test_parse_fragment_substitution_handles_wherever_occurring_passive_substitu
     ]
 
 
+def test_parse_fragment_substitution_handles_unquoted_all_occurrences_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "2 In section 144 of the Transport Act 1968 for London Regional "
+        "Transport in each place where it occurs there shall be substituted "
+        "\u201c Transport for London \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "London Regional Transport",
+            "replacement": "Transport for London",
+            "rule_id": "uk_effect_unquoted_all_occurrences_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_multiple_wherever_occurring_passive_substitution() -> None:
     subs = parse_fragment_substitution(
         "6 In section 14, for \u201cThe Commission\u201d and \u201cthe Commission\u201d, wherever "

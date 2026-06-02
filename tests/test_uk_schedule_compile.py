@@ -30612,6 +30612,72 @@ def test_compile_wherever_occurring_records_all_occurrences_lowering_observation
     ]
 
 
+def test_compile_unquoted_all_occurrences_substitution_records_observation() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="section-301-2">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>2 In section 144 of the Transport Act 1968 (transfer and
+            disposal of historical records and relics) for London Regional
+            Transport in each place where it occurs there shall be substituted
+            \u201c Transport for London \u201d .</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-6f8d80f0950fc652107f4cd91fb3126e",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2000-07-03",
+        affected_uri="/id/ukpga/1968/73/section/144",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1968",
+        affected_number="73",
+        affected_provisions="s. 144",
+        affecting_uri="/id/ukpga/1999/29/section/301",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1999",
+        affecting_number="29",
+        affecting_provisions="s. 301(2)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2000-07-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "144"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "London Regional Transport"
+    assert ops[0].text_patch.selector.occurrence == 0
+    assert ops[0].text_patch.replacement == "Transport for London"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_unquoted_all_occurrences_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_unquoted_all_occurrences_substitution_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["reason_code"] == "explicit_all_occurrences_text_patch"
+    assert observations[0]["blocking"] is False
+    assert observations[0]["text_match"] == "London Regional Transport"
+    assert observations[0]["replacement"] == "Transport for London"
+    assert not any(record["blocking"] is True for record in lowering_records)
+
+
 def test_compile_multi_wherever_occurring_active_substitution() -> None:
     extracted_el = ET.fromstring(
         f"""
