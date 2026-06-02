@@ -37342,6 +37342,91 @@ def test_compile_embedded_table_structural_subsection_substitution_is_not_table_
     )
 
 
+def test_compile_multi_target_letter_suffix_insert_promotions_survive_text_fragment_phase() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-5-paragraph-13-b">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>b after subsection (3) insert—</Text>
+            <BlockAmendment>
+              <P2>
+                <Pnumber>3A</Pnumber>
+                <P2para>
+                  <Text>The permitted limit” means—</Text>
+                  <P3>
+                    <Pnumber>a</Pnumber>
+                    <P3para>
+                      <Text>if the issuing company is a knowledge-intensive company, 500, and</Text>
+                    </P3para>
+                  </P3>
+                  <P3>
+                    <Pnumber>b</Pnumber>
+                    <P3para>
+                      <Text>in any other case, 250.</Text>
+                    </P3para>
+                  </P3>
+                </P2para>
+              </P2>
+              <P2>
+                <Pnumber>3B</Pnumber>
+                <P2para>
+                  <Text>The Treasury may by regulations amend subsection (3A)(a) or (b).</Text>
+                </P2para>
+              </P2>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-2a830b5478caa39df663d0e8f4309830",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-06",
+        affected_uri="/id/ukpga/2007/3/section/186A/subsection/3A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 186A(3A)(3B)",
+        affecting_uri="/id/ukpga/2015/33/schedule/5/paragraph/13/b",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2015",
+        affecting_number="33",
+        affecting_provisions="Sch. 5 para. 13(b)",
+        affecting_title="Finance (No. 2) Act 2015",
+        in_force_dates=[{"date": "2015-11-18", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert [op.action for op in ops] == [StructuralAction.INSERT, StructuralAction.INSERT]
+    assert [str(op.target) for op in ops] == [
+        "section:186a/subsection:3a",
+        "section:186a/subsection:3b",
+    ]
+    assert [op.payload.label for op in ops if op.payload is not None] == ["3A", "3B"]
+    assert [
+        row["target"]
+        for row in lowering_rejections
+        if row["rule_id"] == "uk_effect_after_anchor_insert_promoted"
+    ] == [
+        "section:186a/subsection:3a",
+        "section:186a/subsection:3b",
+    ]
+    assert not any(
+        row["rule_id"] == "uk_effect_structural_sibling_insert_rejected"
+        for row in lowering_rejections
+    )
+
+
 def test_compile_direct_table_after_that_entry_instruction_rejects_without_source_context() -> None:
     extracted_el = ET.fromstring(
         f"""

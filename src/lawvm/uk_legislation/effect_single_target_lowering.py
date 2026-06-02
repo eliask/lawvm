@@ -31,6 +31,7 @@ from lawvm.uk_legislation.effect_schedule_lowering import (
     try_lower_schedule_table_end_rows_insert,
 )
 from lawvm.uk_legislation.effect_substitution_normalization import (
+    UK_SUBSTITUTED_SOURCE_OWNED_INSERT_RULE_IDS,
     lower_substituted_payload_insert_normalization,
 )
 from lawvm.uk_legislation.effect_operation_finalization import (
@@ -718,6 +719,14 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
     target = structural_sibling_insert.target
     content_ir = structural_sibling_insert.content_ir
     structural_sibling_insert_detail = structural_sibling_insert.detail
+    if (
+        structural_sibling_insert_detail is None
+        and substitution_insert_normalization.witness_rule_id
+        in UK_SUBSTITUTED_SOURCE_OWNED_INSERT_RULE_IDS
+    ):
+        structural_sibling_insert_detail = {
+            "source_rule_id": substitution_insert_normalization.witness_rule_id
+        }
 
     amendment_program_inserted_parent_child_insert = (
         _fragment_substitution_amendment_program_inserted_parent_child_insert(
