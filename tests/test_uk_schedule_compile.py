@@ -619,6 +619,56 @@ def test_replay_at_end_step_insert_blocks_ambiguous_step_children() -> None:
     assert adjudications[0].detail["blocking"] is True
 
 
+def test_replay_words_before_type_substitution_replaces_intro_only() -> None:
+    op = LegalOperation(
+        op_id="uk_test_words_before_type_replay",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "558"),)),
+        text_patch=_replace_patch(
+            "TEXT_BEFORE_CHILD_type_1",
+            "The following are the types of investment mentioned in subsection (1)(a)\u2014",
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="558",
+                    attrs={"eId": "section-558"},
+                    text="Old words before the Type list.",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SCHEDULE_ENTRY,
+                            text="Type 1 An investment to which section 559 applies.",
+                            attrs={"source_ordinal": "1"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    section = executor.statute.body.children[0]
+    assert (
+        section.text
+        == "The following are the types of investment mentioned in subsection (1)(a)\u2014"
+    )
+    assert section.children[0].text == "Type 1 An investment to which section 559 applies."
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_source_carried_before_child_text_rewrite_applied"
+
+
 def test_replay_unique_fee_sum_replaces_single_currency_amount() -> None:
     op = LegalOperation(
         op_id="uk_test_unique_fee_sum_replay",
@@ -42485,6 +42535,64 @@ def test_compile_before_child_block_substitution_strips_source_payload_label() -
     assert lowering_records[0]["blocking"] is False
     assert lowering_records[0]["strict_disposition"] == "record"
     assert lowering_records[0]["target"] == "section:50/subsection:6"
+
+
+def test_compile_words_before_type_substitution_lowers_to_before_child_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>a for the words before Type 1 substitute
+          \u201cThe following are the types of investment mentioned in subsection (1)(a)\u2014\u201d ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-a123084b51e82cb1b991987e88d7d0c5",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-06",
+        affected_uri="/id/ukpga/2007/3/section/558/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 558(2)",
+        affecting_uri="/id/ukpga/2011/25",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="25",
+        affecting_provisions="s. 55(4)(a)(11)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2012-03-14", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "558"), ("subsection", "2"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_BEFORE_CHILD_type_1"
+    assert (
+        ops[0].text_patch.replacement
+        == "The following are the types of investment mentioned in subsection (1)(a)\u2014"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_before_child_text_substitution_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_before_child_text_substitution_patch"
+    ]
+    assert lowering_records[0]["reason_code"] == "explicit_before_child_substitution_text_patch"
+    assert lowering_records[0]["blocking"] is False
 
 
 def test_compile_compound_lettered_text_patches_emit_one_op_per_fragment() -> None:

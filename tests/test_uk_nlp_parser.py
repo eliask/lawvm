@@ -2065,6 +2065,21 @@ def test_parse_fragment_substitution_handles_words_before_child_substitution() -
     ]
 
 
+def test_parse_fragment_substitution_handles_words_before_type_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "a for the words before Type 1 substitute "
+        "\u201cThe following are the types of investment mentioned in subsection (1)(a)\u2014\u201d ;"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_BEFORE_CHILD_type_1",
+            "replacement": "The following are the types of investment mentioned in subsection (1)(a)\u2014",
+            "rule_id": "uk_effect_before_child_text_substitution_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_unquoted_words_before_child_block() -> None:
     subs = parse_fragment_substitution(
         "2 In subsection (6) for the words before paragraph (a) substitute\u2014 "

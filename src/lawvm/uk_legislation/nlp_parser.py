@@ -1830,6 +1830,23 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
             )
         )
 
+    matches_words_before_type_substituted = re.finditer(
+        r"for (?:the )?words? before Type\s+(?P<label>[0-9A-Z]{1,4}),?\s+"
+        r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_words_before_type_substituted:
+        subs.append(
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=BeforeChildSelector("type", m.group("label").strip()),
+                    replacement=m.group("replacement").strip(),
+                    rule_id=UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID,
+                )
+            )
+        )
+
     matches_words_before_child_block_substituted = re.finditer(
         r"for (?:the )?words? before "
         r"(paragraph|sub-paragraph|subsection)\s+\(([0-9A-Za-z]+)\),?\s+"

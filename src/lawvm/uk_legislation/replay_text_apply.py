@@ -678,6 +678,22 @@ def _text_node_matches_step_selector(node: UKMutableNode, step_label: str) -> bo
     return False
 
 
+def _text_node_matches_type_selector(node: UKMutableNode, type_label: str) -> bool:
+    if not type_label:
+        return False
+    source_ordinal = _clean_num(str(node.attrs.get("source_ordinal", "")).upper())
+    if source_ordinal == type_label:
+        return True
+    text = " ".join((node.text or "").split()).casefold()
+    prefix = f"type {type_label.casefold()}"
+    if text == prefix:
+        return True
+    if not text.startswith(prefix):
+        return False
+    next_char = text[len(prefix) : len(prefix) + 1]
+    return bool(next_char and not next_char.isalnum())
+
+
 def _append_text_with_boundary(text: str, insertion: str) -> str:
     joiner = (
         ""
@@ -2669,9 +2685,17 @@ class UKReplayTextApplyMixin:
             direct_child_matches = [
                 child
                 for child in node.children
-                if (child.kind.value if isinstance(child.kind, IRNodeKind) else str(child.kind))
-                == child_kind
-                and _clean_num(child.label or "") == _clean_num(child_label)
+                if (
+                    (child.kind.value if isinstance(child.kind, IRNodeKind) else str(child.kind))
+                    == child_kind
+                    and _clean_num(child.label or "") == _clean_num(child_label)
+                )
+                or (
+                    child_kind == "type"
+                    and (child.kind.value if isinstance(child.kind, IRNodeKind) else str(child.kind))
+                    == IRNodeKind.SCHEDULE_ENTRY.value
+                    and _text_node_matches_type_selector(child, _clean_num(child_label))
+                )
             ]
             if len(direct_child_matches) != 1:
                 return node, False
