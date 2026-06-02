@@ -2644,6 +2644,25 @@ def _parse_leading_substitutions(text: str, subs: list) -> None:
             }
         )
 
+    matches_mixed_body_heading_each_place_substituted = re.finditer(
+        rf"for\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]\s+"
+        r"in\s+(?:each|both)\s+places?\s*"
+        r"\((?P<scope>[^)]{1,300}\bheading\b[^)]{0,300})\)\s+"
+        rf"substitute\s+[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_mixed_body_heading_each_place_substituted:
+        if not re.search(r"\b(?:including\s+)?(?:in\s+)?(?:the\s+)?(?:italic\s+)?heading\b", m.group("scope"), re.I):
+            continue
+        subs.append(
+            {
+                "original": m.group("original").strip(),
+                "replacement": m.group("replacement").strip(),
+                "rule_id": UK_MIXED_BODY_HEADING_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID,
+            }
+        )
+
     matches_mixed_body_heading_substituted = re.finditer(
         r"for\s+(?:(?:the\s+)?words?\s+)?"
         r"[“\"'‘](?P<original>[^\"'\u201c\u201d\u2018\u2019]{1,500})[”\"'’]\s*"

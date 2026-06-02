@@ -37341,6 +37341,70 @@ def test_compile_mixed_body_heading_text_substitution_lowers_current_body_lane()
     assert not any(record["blocking"] is True for record in lowering_rejections)
 
 
+def test_compile_each_place_including_heading_substitution_lowers_current_body_lane() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-7-paragraph-35">
+          <Pnumber>35</Pnumber>
+          <Text>35 In section 87 (procedure for determining the budget requirement) for
+          \u201cbudget\u201d in each place (including the heading) substitute
+          \u201ccouncil tax\u201d.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-a3321d90b92db948b1f25ad50da5c42f",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-02-12",
+        affected_uri="/id/ukpga/1999/29/section/87",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1999",
+        affected_number="29",
+        affected_provisions="s. 87",
+        affecting_uri="/id/ukpga/2007/28",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="28",
+        affecting_provisions="Sch. 7 para. 35",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2009-02-12", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "87"),)
+    assert op.text_patch == _replace_patch("budget", "council tax")
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_mixed_body_heading_all_occurrences_substitution_text_patch"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"]
+        == "uk_effect_mixed_body_heading_all_occurrences_substitution_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["reason_code"] == "explicit_all_occurrences_text_patch"
+    assert observations[0]["target"] == "section:87"
+    assert observations[0]["text_match"] == "budget"
+
+
 def test_compile_mixed_body_heading_text_substitution_splits_heading_facet() -> None:
     extracted_el = ET.fromstring(
         f"""
