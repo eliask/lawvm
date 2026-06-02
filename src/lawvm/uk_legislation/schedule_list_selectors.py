@@ -549,6 +549,23 @@ def _uk_schedule_list_entry_repeal_selector(
                     "source_anchor_form": "type_label",
                 }
         match = re.search(
+            r"\bomit(?:ted)?\s+(?:the\s+)?entry\s+(?:relating\s+to|for)\s+"
+            r"[“\"']?(?P<anchor>.+?)[”\"']?(?:,?\s+and\b|[.;,]|$)",
+            text,
+            re.I,
+        )
+        if match is not None:
+            anchor = _strip_schedule_entry_repeal_anchor(match.group("anchor"))
+            if anchor:
+                return {
+                    "rule_id": UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
+                    "anchors": [anchor],
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "entry_carrier_family": "non_schedule_local_list",
+                    "source_anchor_form": "local_entry_relating_to",
+                }
+        match = re.search(
             r"\bomit(?:ted)?\s+exceptions?\s+(?P<anchors>[0-9A-Z]{1,4}(?:\s*(?:,|;|\band\b)\s*[0-9A-Z]{1,4})*)\b",
             text,
             re.I,

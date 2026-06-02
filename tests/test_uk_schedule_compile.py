@@ -42124,7 +42124,7 @@ def test_compile_exception_entry_omission_lowers_to_local_schedule_entry_repeal(
     )
 
 
-def test_compile_local_entry_relation_omission_remains_frontier() -> None:
+def test_compile_local_entry_relation_omission_lowers_to_local_schedule_entry() -> None:
     extracted_el = ET.fromstring(
         f"""
         <P4 xmlns="{_LEG_NS}" id="section-38-2-a-iii">
@@ -42161,15 +42161,150 @@ def test_compile_local_entry_relation_omission_remains_frontier() -> None:
         lowering_rejections_out=lowering_records,
     )
 
-    assert ops == []
-    assert not any(
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPEAL
+    assert op.target.path == (("section", "150"), ("subsection", "1"))
+    assert op.payload is None
+    assert op.witness_rule_id == "uk_effect_schedule_list_entry_repeal"
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("schedule_list_entry_repeal_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_repeal_selector:"))
+    assert selector["anchors"] == ["section 134(5)(a)"]
+    assert selector["entry_carrier_family"] == "non_schedule_local_list"
+    assert selector["source_anchor_form"] == "local_entry_relating_to"
+    assert any(
         record["rule_id"] == "uk_effect_schedule_list_entry_repeal"
+        and record["reason_code"] == "explicit_schedule_list_entry_repeal_anchor"
+        and record["blocking"] is False
         for record in lowering_records
     )
+
+
+def test_replay_local_entry_relation_omission_requires_unique_local_anchor() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}">
+          <Text>iii in section 150(1), omit the entry relating to section 134(5)(a), and</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_local_entry_relation_omission",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2020-10-14",
+        affected_uri="/id/ukpga/2007/3/section/150/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 150(1)",
+        affecting_uri="/id/ukpga/2020/14",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2020",
+        affecting_number="14",
+        affecting_provisions="s. 38(2)(a)(iii)",
+        affecting_title="Finance Act 2020",
+        in_force_dates=[{"date": "2020-10-14", "prospective": "false"}],
+    )
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+    assert len(ops) == 1
+
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="150",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.SCHEDULE_ENTRY,
+                                    text="section 130 (first witness),",
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.SCHEDULE_ENTRY,
+                                    text="section 134(5)(a) (relief claim),",
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.SCHEDULE_ENTRY,
+                                    text="section 140 (final witness).",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [child.text for child in subsection.children] == [
+        "section 130 (first witness),",
+        "section 140 (final witness).",
+    ]
     assert any(
-        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
-        and record["blocking"] is True
-        for record in lowering_records
+        adjudication.kind == "uk_replay_schedule_list_entry_repeal_resolved"
+        and adjudication.detail.get("deleted_count") == 1
+        and adjudication.detail.get("match_modes") == {"section 134(5)(a)": "prefix"}
+        for adjudication in adjudications
+    )
+
+    ambiguous_base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="150",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="section 134(5)(a) first."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="section 134(5)(a) second."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    ambiguous_adjudications: list[CompileAdjudication] = []
+
+    ambiguous_replayed = replay_uk_ops(
+        ambiguous_base,
+        ops,
+        adjudications_out=ambiguous_adjudications,
+    )
+
+    ambiguous_subsection = ambiguous_replayed.body.children[0].children[0]
+    assert [child.text for child in ambiguous_subsection.children] == [
+        "section 134(5)(a) first.",
+        "section 134(5)(a) second.",
+    ]
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_repeal_unresolved"
+        and adjudication.detail.get("reason_code") == "anchor_not_unique"
+        and adjudication.detail.get("anchor") == "section 134(5)(a)"
+        and adjudication.detail.get("blocking") is True
+        for adjudication in ambiguous_adjudications
     )
 
 
