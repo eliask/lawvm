@@ -2463,6 +2463,27 @@ def test_classify_uk_effect_schedule_note_source_insert_pathology() -> None:
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_schedule_note_headed_source_insert_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P2",
+        extracted_text=(
+            "5 After the paragraph in the Notes headed “Ministry of Justice” "
+            "insert— Serious Organised Crime Agency In the case of the "
+            "Serious Organised Crime Agency, an investigation may be conducted "
+            "only in respect of transferred functions."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["Sch. 2"],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "schedule_note_target_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_schedule_note_source_omission_pathology() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P3",
@@ -3633,6 +3654,25 @@ def test_classify_uk_effect_omit_entry_for_source_pathology() -> None:
         op_actions=[],
         payload_kinds=[],
         payload_texts=[],
+        effect_type="words omitted",
+        is_structural=True,
+    )
+
+    assert pathology == "schedule_list_entry_target_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_omit_following_entries_source_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P2",
+        extracted_text=(
+            "3 Omit the following entries— “Agricultural dwelling house "
+            "advisory committees.” “Agricultural wages committees.”"
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["Sch. 2"],
         effect_type="words omitted",
         is_structural=True,
     )

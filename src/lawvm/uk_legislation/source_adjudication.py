@@ -1181,8 +1181,9 @@ _DEFINITION_ANCHOR_TAIL_INSERT_RE = re.compile(
 )
 _SCHEDULE_NOTE_SOURCE_INSERT_RE = re.compile(
     r"\b(?:in\s+the\s+notes?(?:\s+to\s+schedule\s+[0-9A-Za-z]+)?\s*,?\s+)?"
-    r"(?:after|before)\s+the\s+(?:note|paragraph)\s+"
-    r"(?:relating\s+to|on)\b.{0,500}?\binsert\b",
+    r"(?:after|before)\s+the\s+(?:(?:note|paragraph)\s+"
+    r"(?:relating\s+to|on)|paragraph\s+in\s+the\s+notes?\s+headed)\b"
+    r".{0,500}?\binsert\b",
     flags=re.I,
 )
 _SCHEDULE_NOTE_SOURCE_OMIT_RE = re.compile(
@@ -1239,6 +1240,7 @@ def _looks_like_schedule_list_entry_instruction(text: str) -> bool:
         )
         or re.search(r"\bfor\s+(?:the\s+)?entry\s+(?:beginning|that\s+begins?)\b", norm)
         or re.search(r"\bomit\s+(?:the\s+)?entry\s+for\b", norm)
+        or re.search(r"\bomit\s+the\s+following\s+entries\b", norm)
     ):
         return False
     if re.search(r"\b(?:table|column|row)\b", norm):
