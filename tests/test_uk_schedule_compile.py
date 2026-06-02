@@ -3416,6 +3416,92 @@ def test_subsequently_occurs_substitution_remains_unlowered_without_boundary() -
     assert fragments == []
 
 
+def test_compile_subsequently_occurs_substitution_uses_source_sibling_boundary() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-2-paragraph-2-7-b">
+          <Pnumber>b</Pnumber>
+          <Text>b in subsection (2)—</Text>
+          <P4 id="schedule-2-paragraph-2-7-b-i">
+            <Pnumber>i</Pnumber>
+            <Text>i for “president of the panel” substitute “Chamber President”;</Text>
+          </P4>
+          <P4 id="schedule-2-paragraph-2-7-b-ii">
+            <Pnumber>ii</Pnumber>
+            <Text>ii for “panel” in each place that it subsequently occurs substitute “First-tier Tribunal”;</Text>
+          </P4>
+        </P3>
+        """
+    )
+    extracted_el = source_root.find(
+        f"./{{{_LEG_NS}}}P4[@id='schedule-2-paragraph-2-7-b-ii']"
+    )
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_subsequently_occurs_from_source_sibling",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-12-01",
+        affected_uri="/id/asp/2006/1/section/28A",
+        affected_class="ScottishAct",
+        affected_year="2006",
+        affected_number="1",
+        affected_provisions="s. 28A(2)",
+        affecting_uri="/id/ssi/2016/338",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2016",
+        affecting_number="338",
+        affecting_provisions="Sch. 2 para. 2(7)(b)(ii)",
+        affecting_title="Test Amendment Regulations",
+        in_force_dates=[{"date": "2016-12-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "28a"), ("subsection", "2"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        f"TEXT_EACH_OTHER_OCCURRENCE_AFTER_FIRST_SIBLING{US}"
+        f"Chamber President{US}panel"
+    )
+    assert ops[0].text_patch.replacement == "First-tier Tribunal"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}"
+        "uk_effect_sibling_first_then_subsequent_occurrence_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"]
+        == "uk_effect_sibling_first_then_subsequent_occurrence_substitution_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["family"] == "source_context_elaboration"
+    assert observations[0]["reason_code"] == (
+        "relative_each_other_place_resolved_from_first_occurrence_sibling"
+    )
+    assert observations[0]["source_sibling_label"] == "1"
+    assert observations[0]["source_sibling_rule_id"] == "fragment_substitution"
+    assert observations[0]["selector_mode"] == (
+        "subsequent_occurrence_after_sibling_containing_substitution"
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
 def test_parenthesized_ordinal_places_substitution_lowers_each_named_occurrence() -> None:
     fragments = parse_fragment_substitution(
         'for "GDPR" (in the second and third places) substitute "UK GDPR"'

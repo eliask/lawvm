@@ -165,8 +165,19 @@ _EACH_OTHER_PLACE_SUBSTITUTION_RE = re.compile(
     r"(|the words? )[“\”’’](?P<replacement>[^”\”’’]{0,500})[“\”’’]",
     flags=re.I,
 )
+_SUBSEQUENT_OCCURRENCE_SUBSTITUTION_RE = re.compile(
+    r"\bfor (|the words? )[“\”’’](?P<original>[^”\”’’]{1,300})[“\”’’],? "
+    r"(|in each place )(?:where|that) (?:it|they|those words?) subsequently "
+    r"(?:occurs?|occur|appears?|appear),? "
+    r"(?:substitute|there (?:is|are|shall be) substituted) "
+    r"(|the words? )[“\”’’](?P<replacement>[^”\”’’]{1,500})[“\”’’]",
+    flags=re.I,
+)
 
 _SOURCE_SUBORDINATE_ROW_TAGS = frozenset({"P1", "P2", "P3", "P4", "P5", "P6"})
+_UK_SIBLING_FIRST_THEN_SUBSEQUENT_OCCURRENCE_SUBSTITUTION_RULE_ID = (
+    "uk_effect_sibling_first_then_subsequent_occurrence_substitution_text_patch"
+)
 _SOURCE_PARENT_AT_END_TEXT_INSERT_RULE_ID = "uk_effect_source_parent_at_end_text_insertion_patch"
 _SOURCE_PARENT_AT_END_QUOTED_LIST_TEXT_INSERT_RULE_ID = (
     "uk_effect_source_parent_at_end_quoted_list_text_insertion_patch"
@@ -481,6 +492,7 @@ def append_source_fragment_context_observations(
         if each_other_rule_id not in {
             UK_AFTER_QUOTED_ANCHOR_EACH_OTHER_PLACE_INSERT_RULE_ID,
             UK_SIBLING_FIRST_THEN_EACH_OTHER_PLACE_SUBSTITUTION_RULE_ID,
+            _UK_SIBLING_FIRST_THEN_SUBSEQUENT_OCCURRENCE_SUBSTITUTION_RULE_ID,
         }:
             continue
         _append_uk_effect_lowering_observation(
@@ -824,6 +836,49 @@ def _previous_source_sibling_first_occurrence_rule(
     return None
 
 
+def _previous_source_sibling_anchor_containing_substitution(
+    *,
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
+    anchor: str,
+) -> Optional[dict[str, str]]:
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    if not ancestors or extracted_el is None:
+        return None
+    parent = ancestors[0]
+    normalized_anchor = " ".join(anchor.split()).strip()
+    if not normalized_anchor:
+        return None
+    anchor_in_phrase = f" {normalized_anchor.casefold()} "
+    for child in parent:
+        if child is extracted_el or child.get("id") == extracted_el.get("id"):
+            break
+        sibling_label = _clean_num(_direct_structural_num(child))
+        for sibling_fragment in parse_fragment_substitution(_text_content(child)):
+            sibling_original = " ".join(
+                str(sibling_fragment.get("original") or "").split()
+            ).strip()
+            sibling_phrase = f" {sibling_original.casefold()} "
+            if anchor_in_phrase not in sibling_phrase:
+                continue
+            sibling_replacement = " ".join(
+                str(sibling_fragment.get("replacement") or "").split()
+            ).strip()
+            if not sibling_replacement:
+                continue
+            return {
+                "source_sibling_label": sibling_label,
+                "source_sibling_rule_id": str(
+                    sibling_fragment.get("rule_id") or "fragment_substitution"
+                ),
+                "source_sibling_replacement": sibling_replacement,
+                "source_sibling_original": sibling_original,
+            }
+    return None
+
+
 def _fragment_substitution_each_other_place_from_sibling(
     *,
     extracted_el: Optional[ET._Element],
@@ -871,6 +926,30 @@ def _fragment_substitution_each_other_place_from_sibling(
             "selector_mode": "all_remaining_after_first_occurrence_sibling",
             **sibling,
             "rule_id": UK_SIBLING_FIRST_THEN_EACH_OTHER_PLACE_SUBSTITUTION_RULE_ID,
+        }
+
+    if "subsequently" not in text.lower():
+        return None
+    subsequent_match = _SUBSEQUENT_OCCURRENCE_SUBSTITUTION_RE.search(text)
+    if subsequent_match is not None:
+        original = " ".join(subsequent_match.group("original").split()).strip()
+        replacement = " ".join(subsequent_match.group("replacement").split()).strip()
+        sibling = _previous_source_sibling_anchor_containing_substitution(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            anchor=original,
+        )
+        if not original or not replacement or sibling is None:
+            return None
+        return {
+            "original": (
+                f"TEXT_EACH_OTHER_OCCURRENCE_AFTER_FIRST_SIBLING"
+                f"{US}{str(sibling.get('source_sibling_replacement') or '')}{US}{original}"
+            ),
+            "replacement": replacement,
+            "selector_mode": "subsequent_occurrence_after_sibling_containing_substitution",
+            **sibling,
+            "rule_id": _UK_SIBLING_FIRST_THEN_SUBSEQUENT_OCCURRENCE_SUBSTITUTION_RULE_ID,
         }
 
     return None
