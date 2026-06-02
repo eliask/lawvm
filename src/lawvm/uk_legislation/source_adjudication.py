@@ -1685,11 +1685,13 @@ def _looks_like_relative_other_place_occurrence(text: str) -> bool:
     norm = _normalize_effect_text(text)
     if not norm:
         return False
+    if "each other place" not in norm:
+        return False
     return bool(
         re.search(
-            r"\beach\s+other\s+place\s+"
+            r"\beach\s+other\s+place\b"
             r"(?:(?:where|in\s+which)\s+(?:it|they|those\s+words?)\s+)?"
-            r"(?:occurs?|occurring|appears?)\b",
+            r"(?:(?:occurs?|occurring|appears?)\b)?",
             norm,
         )
     )

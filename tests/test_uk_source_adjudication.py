@@ -3776,6 +3776,23 @@ def test_classify_uk_effect_relative_other_place_occurrence() -> None:
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_bare_relative_other_place_occurrence() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "b for “Authority”, in each other place, substitute “FCA or the PRA”."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == "relative_other_place_occurrence_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_referent_qualified_text_substitution() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P3",
