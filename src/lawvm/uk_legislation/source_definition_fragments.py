@@ -42,6 +42,9 @@ _SOURCE_CARRIED_FRAGMENT_ACTION_RE = re.compile(
 UK_DEFINITION_CHILD_RANGE_SUBSTITUTION_RULE_ID = (
     "uk_effect_definition_child_range_substitution_text_patch"
 )
+UK_SOURCE_CARRIED_DEICTIC_DEFINITION_ENTRY_INSERT_RULE_ID = (
+    "uk_effect_source_carried_deictic_definition_entry_insert_text_patch"
+)
 _UK_DEFINITION_CHILD_RANGE_SUBSTITUTION_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"In\s+section\s+(?P<section>[0-9A-Za-z]+)\s*"
@@ -53,6 +56,15 @@ _UK_DEFINITION_CHILD_RANGE_SUBSTITUTION_RE = re.compile(
 )
 _UK_SECTION_SUBSECTION_TARGET_RE = re.compile(
     r"^\s*s\.\s*(?P<section>[0-9A-Za-z]+)\s*\((?P<subsection>[0-9A-Za-z]+)\)\s*$",
+    flags=re.I,
+)
+_UK_DEICTIC_DEFINITION_ENTRY_DANGLING_OPEN_QUOTE_RE = re.compile(
+    r"^(?P<prefix>\s*(?:[,;]\s*)?(?:(?:and|or)\s+)?)"
+    r"(?P<term>[^“”\"';]{1,180}?)[”\"]\s+"
+    r"(?P<predicate>"
+    r"means|includes|has\s+the\s+same\s+meaning|is\s+to\s+be\s+construed|"
+    r"shall\s+be\s+construed"
+    r")\b",
     flags=re.I,
 )
 _UK_DEFINITION_CHILD_RANGE_PAYLOAD_ITEM_RE = re.compile(
@@ -848,18 +860,33 @@ def append_source_definition_fragment_observations(
 
     for definition_entry_context_fragment in fragment_subs or []:
         rule_id = str(definition_entry_context_fragment.get("rule_id") or "")
-        if rule_id == "uk_effect_source_carried_definition_entry_insert_text_patch":
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id=rule_id,
-                family="source_context_elaboration",
-                reason_code="definition_insert_anchor_resolved_from_parent_source",
-                reason=(
+        if rule_id in {
+            "uk_effect_source_carried_definition_entry_insert_text_patch",
+            UK_SOURCE_CARRIED_DEICTIC_DEFINITION_ENTRY_INSERT_RULE_ID,
+        }:
+            if rule_id == UK_SOURCE_CARRIED_DEICTIC_DEFINITION_ENTRY_INSERT_RULE_ID:
+                reason_code = "definition_insert_anchor_resolved_from_deictic_sibling_source"
+                reason = (
+                    "UK source payload contains an inserted definition entry and "
+                    "the row says 'after that definition'; the immediately "
+                    "preceding same-parent source row names the definition anchor. "
+                    "Lowering combines those source-local facts instead of "
+                    "guessing definition placement from live text."
+                )
+            else:
+                reason_code = "definition_insert_anchor_resolved_from_parent_source"
+                reason = (
                     "UK source payload contains only the inserted definition entry, "
                     "while the parent source instruction names the definition anchor; "
                     "lowering combines those source-local facts instead of guessing "
                     "definition placement from live text."
-                ),
+                )
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=rule_id,
+                family="source_context_elaboration",
+                reason_code=reason_code,
+                reason=reason,
                 effect=effect,
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
@@ -869,6 +896,9 @@ def append_source_definition_fragment_observations(
                     "source_parent_id": str(definition_entry_context_fragment.get("source_parent_id") or ""),
                     "source_anchor_definition_term": str(
                         definition_entry_context_fragment.get("source_anchor_definition_term") or ""
+                    ),
+                    "source_deictic_sibling_id": str(
+                        definition_entry_context_fragment.get("source_deictic_sibling_id") or ""
                     ),
                     "text_match": op_text_match,
                     "replacement": op_text_replacement,
@@ -1158,6 +1188,19 @@ def _normalize_trailing_double_comma(text: str) -> str:
     return f"{before_last[:-1].rstrip()},"
 
 
+def _normalize_definition_payload_dangling_open_quote(text: str) -> tuple[str, bool]:
+    """Repair a definition-list payload whose first term lost its opening quote."""
+    match = _UK_DEICTIC_DEFINITION_ENTRY_DANGLING_OPEN_QUOTE_RE.search(text)
+    if match is None:
+        return text, False
+    prefix = match.group("prefix")
+    term = " ".join(match.group("term").split()).strip()
+    if not term:
+        return text, False
+    replacement = f"{prefix}“{term}” {match.group('predicate')}"
+    return f"{text[: match.start()]}{replacement}{text[match.end():]}", True
+
+
 def _source_after_definition_insert_term(text: str) -> str:
     """Extract the anchor term from a bounded definition-entry insert formula."""
     normalized = " ".join((text or "").split())
@@ -1262,6 +1305,106 @@ def _source_parent_appropriate_place_definition_entry_insert_context(
             "source_parent_context_preview": candidate_text[:500],
         }
     return None
+
+
+def _source_definition_term_from_quoted_definition_phrase(text: str) -> str:
+    """Extract a quoted term from a bounded ``definition of "X"`` phrase."""
+    normalized = " ".join((text or "").split())
+    if not normalized:
+        return ""
+    lower = normalized.lower()
+    needle = "definition of"
+    start = 0
+    while True:
+        idx = lower.find(needle, start)
+        if idx < 0:
+            return ""
+        pos = idx + len(needle)
+        while pos < len(normalized) and normalized[pos].isspace():
+            pos += 1
+        if lower.startswith("the ", pos):
+            pos += len("the ")
+            while pos < len(normalized) and normalized[pos].isspace():
+                pos += 1
+        if pos >= len(normalized):
+            return ""
+        close_quote = _SOURCE_DEFINITION_QUOTE_CLOSE.get(normalized[pos])
+        if close_quote is None:
+            start = idx + 1
+            continue
+        close = normalized.find(close_quote, pos + 1)
+        if close < 0:
+            return ""
+        if close - pos > 240:
+            start = pos + 1
+            continue
+        return normalized[pos + 1 : close].strip()
+
+
+def _previous_same_parent_structural_sibling(el: ET._Element) -> Optional[ET._Element]:
+    parent = el.getparent()
+    if parent is None:
+        return None
+    siblings = [child for child in parent if isinstance(child.tag, str) and _direct_structural_num(child)]
+    try:
+        index = siblings.index(el)
+    except ValueError:
+        return None
+    if index <= 0:
+        return None
+    return siblings[index - 1]
+
+
+def _nearest_id_bearing_ancestor(el: ET._Element) -> str:
+    current: Optional[ET._Element] = el.getparent()
+    while current is not None:
+        source_id = current.get("id")
+        if source_id:
+            return str(source_id)
+        current = current.getparent()
+    return ""
+
+
+def _source_carried_deictic_definition_entry_insert(
+    *,
+    extracted_el: Optional[ET._Element],
+) -> Optional[dict[str, str]]:
+    """Resolve ``after that definition`` from an immediate same-parent sibling."""
+    if extracted_el is None:
+        return None
+    instruction_text = _instruction_text_before_amendment_container(extracted_el)
+    if not re.search(r"\bafter\s+that\s+definition\s+insert(?:ed)?\b", instruction_text, re.I):
+        return None
+    previous = _previous_same_parent_structural_sibling(extracted_el)
+    if previous is None:
+        return None
+    previous_text = _source_local_instruction_text_for_carried_payload(previous)
+    anchor_term = _source_definition_term_from_quoted_definition_phrase(previous_text)
+    if not anchor_term:
+        return None
+    block_amendments = [
+        descendant for descendant in extracted_el.iter() if _tag(descendant) == "BlockAmendment"
+    ]
+    if len(block_amendments) != 1:
+        return None
+    inserted = " ".join(_text_content(block_amendments[0]).split()).strip()
+    payload_rule_ids: list[str] = []
+    inserted, quote_normalized = _normalize_definition_payload_dangling_open_quote(inserted)
+    if quote_normalized:
+        payload_rule_ids.append(
+            "uk_effect_source_carried_definition_entry_payload_open_quote_normalized"
+        )
+    if not inserted or not _looks_like_definition_entry_payload(inserted):
+        return None
+    return {
+        "original": f"TEXT_AFTER_DEFINITION_{anchor_term}",
+        "replacement": inserted,
+        "source_parent_id": _nearest_id_bearing_ancestor(previous),
+        "source_anchor_definition_term": anchor_term,
+        "source_deictic_sibling_id": str(previous.get("id") or ""),
+        "payload_normalization_rule_ids": US.join(payload_rule_ids),
+        "rule_id": UK_SOURCE_CARRIED_DEICTIC_DEFINITION_ENTRY_INSERT_RULE_ID,
+    }
 
 
 def _fragment_substitution_source_carried_definition_child_at_end_insert(
@@ -1592,6 +1735,11 @@ def _fragment_substitution_source_carried_definition_entry_insert(
             "uk_effect_source_carried_definition_entry_payload_punctuation_normalized"
         )
     if not inserted or not _looks_like_definition_entry_payload(inserted):
+        deictic_fragment = _source_carried_deictic_definition_entry_insert(
+            extracted_el=extracted_el,
+        )
+        if deictic_fragment is not None:
+            return deictic_fragment
         return None
     if appropriate_place_without_anchor:
         return None

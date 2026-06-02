@@ -12347,6 +12347,191 @@ def test_compile_source_carried_definition_entry_insert_from_parent_context() ->
     assert observations[0]["blocking"] is False
 
 
+def test_compile_source_carried_deictic_definition_entry_insert_from_sibling_context() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <Schedule id="schedule-37">
+              <P1 id="schedule-37-paragraph-5">
+                <Pnumber>5</Pnumber>
+                <P1para>
+                  <P2 id="schedule-37-paragraph-5-6">
+                    <Pnumber>6</Pnumber>
+                    <P2para>
+                      <Text>In subsection (7)—</Text>
+                      <P3 id="schedule-37-paragraph-5-6-a">
+                        <Pnumber>a</Pnumber>
+                        <P3para>
+                          <Text>omit the “and” before the definition of “designated”, and</Text>
+                        </P3para>
+                      </P3>
+                      <P3 id="schedule-37-paragraph-5-6-b">
+                        <Pnumber>b</Pnumber>
+                        <P3para>
+                          <Text>after that definition insert </Text>
+                          <BlockAmendment>
+                            <Text>, and</Text>
+                            <UnorderedList Class="Definition">
+                              <ListItem>
+                                <Para>
+                                  <Text>the EU civilian staff” means—</Text>
+                                  <OrderedList Decoration="parens" Type="alpha">
+                                    <ListItem>
+                                      <Para>
+                                        <Text>civilian personnel seconded by a member State, and</Text>
+                                      </Para>
+                                    </ListItem>
+                                    <ListItem>
+                                      <Para>
+                                        <Text>civilian personnel made available to the EU.</Text>
+                                      </Para>
+                                    </ListItem>
+                                  </OrderedList>
+                                </Para>
+                              </ListItem>
+                            </UnorderedList>
+                          </BlockAmendment>
+                        </P3para>
+                      </P3>
+                    </P2para>
+                  </P2>
+                </P1para>
+              </P1>
+            </Schedule>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='schedule-37-paragraph-5-6-b']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-a6d8fde58536481b0e351b17bf4a501c",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-07-17",
+        affected_uri="/id/ukpga/2007/3/section/833/subsection/7",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 833(7)",
+        affecting_uri="/id/ukpga/2012/14",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2012",
+        affecting_number="14",
+        affecting_provisions="Sch. 37 para. 5(6)(b)",
+        affecting_title="Finance Act 2012",
+        in_force_dates=[{"date": "2012-07-17", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "833"), ("subsection", "7"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_DEFINITION_designated"
+    assert ops[0].text_patch.replacement.startswith(', and “the EU civilian staff” means—')
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_deictic_definition_entry_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    observation = next(
+        record
+        for record in observations
+        if record["rule_id"]
+        == "uk_effect_source_carried_deictic_definition_entry_insert_text_patch"
+    )
+    assert observation["blocking"] is False
+    assert observation["reason_code"] == (
+        "definition_insert_anchor_resolved_from_deictic_sibling_source"
+    )
+    assert observation["source_parent_id"] == "schedule-37-paragraph-5-6"
+    assert observation["source_anchor_definition_term"] == "designated"
+    assert observation["source_deictic_sibling_id"] == "schedule-37-paragraph-5-6-a"
+    assert observation["payload_normalization_rule_ids"] == (
+        "uk_effect_source_carried_definition_entry_payload_open_quote_normalized",
+    )
+
+
+def test_compile_source_carried_deictic_definition_entry_requires_sibling_anchor() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P2 id="schedule-37-paragraph-5-6">
+              <Pnumber>6</Pnumber>
+              <P2para>
+                <Text>In subsection (7)—</Text>
+                <P3 id="schedule-37-paragraph-5-6-b">
+                  <Pnumber>b</Pnumber>
+                  <P3para>
+                    <Text>after that definition insert </Text>
+                    <BlockAmendment>
+                      <Text>, and</Text>
+                      <UnorderedList Class="Definition">
+                        <ListItem>
+                          <Para>
+                            <Text>the EU civilian staff” means— civilian personnel.</Text>
+                          </Para>
+                        </ListItem>
+                      </UnorderedList>
+                    </BlockAmendment>
+                  </P3para>
+                </P3>
+              </P2para>
+            </P2>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-deictic-definition-without-sibling",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-07-17",
+        affected_uri="/id/ukpga/2007/3/section/833/subsection/7",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 833(7)",
+        affecting_uri="/id/ukpga/2012/14",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2012",
+        affecting_number="14",
+        affecting_provisions="Sch. 37 para. 5(6)(b)",
+        affecting_title="Finance Act 2012",
+        in_force_dates=[{"date": "2012-07-17", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert not any(
+        record["rule_id"] == "uk_effect_source_carried_deictic_definition_entry_insert_text_patch"
+        for record in observations
+    )
+    assert any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in observations)
+
+
 def test_compile_source_range_pseudo_definition_entry_inserts_with_explicit_anchors() -> None:
     source_range = ET.fromstring(
         f"""
