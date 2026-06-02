@@ -128,6 +128,16 @@ def rule_counts(rejections: list[dict[str, Any]]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def _record_rule_ids(rows: tuple[dict[str, Any], ...]) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            str(row.get("rule_id") or "")
+            for row in rows
+            if str(row.get("rule_id") or "")
+        )
+    )
+
+
 def lowering_rejection_rule_counts(rejections: list[dict[str, Any]]) -> dict[str, int]:
     return rule_counts(rejections)
 
@@ -314,7 +324,16 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
                 "affecting_provisions": effect.affecting_provisions,
                 "manual_compile_status": manual_frontier["status"],
                 "manual_compile_rule_id": manual_frontier["rule_id"],
+                "manual_compile_reason": manual_frontier["reason"],
                 "owner_phase": manual_frontier_owner_phase,
+                "source_pathology": source_pathology or "",
+                "compiled_op_count": len(op_rows),
+                "manual_compile_lowering_rule_ids": _record_rule_ids(
+                    lowering_observation_rows
+                ),
+                "manual_compile_blocking_lowering_rule_ids": _record_rule_ids(
+                    lowering_rejection_rows
+                ),
                 "source": {
                     "text_preview": _text_snippet(
                         extracted,

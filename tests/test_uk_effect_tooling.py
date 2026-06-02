@@ -2799,6 +2799,94 @@ def test_single_uk_effect_report_includes_deterministic_frontier_claim_template(
     assert report["suggested_claim_template"]["text_preimages"] == ["he", "him"]
 
 
+def test_single_uk_effect_frontier_work_item_preserves_projection_detail() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-postimage-chain",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-02-15",
+        affected_uri="/id/ukpga/1968/73/section/121/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1968",
+        affected_number="73",
+        affected_provisions="s. 121(1)",
+        affecting_uri="/id/uksi/2003/1615",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2003",
+        affecting_number="1615",
+        affecting_provisions="Sch. 1 para. 4(3)",
+        affecting_title="Test Regulations",
+    )
+    extracted = ET.fromstring(
+        """
+        <P2 id="schedule-1-paragraph-4-3">
+          <Pnumber>3</Pnumber>
+          <Text>for the reference to London Regional Transport there shall be substituted a reference to Transport for London.</Text>
+        </P2>
+        """
+    )
+
+    report = uk_effect_report_jsonable(
+        statute_id="ukpga/1968/73",
+        effect=effect,
+        source_pathology="",
+        extracted=extracted,
+        lowering_rejections=[
+            {
+                "rule_id": "uk_effect_reference_to_substitution_text_patch",
+                "blocking": False,
+            }
+        ],
+        compare_shape="text_patch_replacement_present_without_preimage",
+        candidate=False,
+        op_rows=[
+            {
+                "op_id": "eff-postimage-chain",
+                "action": "text_replace",
+                "target": "section:121/subsection:1",
+                "payload_kind": "-",
+                "resolver_eid": "section-121-1",
+                "base_target_present": True,
+                "oracle_target_present": True,
+                "base_descendant_present": False,
+                "oracle_descendant_present": False,
+                "parent_eid": "section-121",
+                "base_parent_present": True,
+                "oracle_parent_present": True,
+                "payload": None,
+            }
+        ],
+    )
+
+    assert report["summary"]["compiled_op_count"] == 1
+    assert report["manual_compile_frontier"]["rule_id"] == (
+        "uk_manual_frontier_text_patch_postimage_chain_gap"
+    )
+    assert report["execution_authorization"]["authorization_status"] == (
+        "source_insufficient"
+    )
+    assert report["execution_authorization"]["replay_authorized"] is False
+    detail = report["frontier_work_item"]["detail"]
+    assert detail["source_pathology"] == ""
+    assert detail["compiled_op_count"] == 1
+    assert detail["manual_compile_reason"] == (
+        "The quoted preimage is absent from available target surfaces while the "
+        "replacement text is already visible; acquire or prove the intermediate "
+        "amendment chain before treating the current postimage as replay evidence."
+    )
+    assert detail["lowering_rule_ids"] == [
+        "uk_effect_reference_to_substitution_text_patch"
+    ]
+    assert detail["blocking_lowering_rule_ids"] == []
+    assert report["frontier_work_item"]["compare_witness"]["compare_shape"] == (
+        "text_patch_replacement_present_without_preimage"
+    )
+    assert report["frontier_work_item"]["target_witness"]["resolver_eids"] == [
+        "section-121-1"
+    ]
+
+
 def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) -> None:
     effect = UKEffectRecord(
         effect_id="eff-heading",
