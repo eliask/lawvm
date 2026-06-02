@@ -8583,6 +8583,72 @@ def test_compile_at_end_quoted_dash_insert_to_text_append() -> None:
     assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
 
 
+def test_compile_at_end_following_sentence_insert_to_text_append() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-4-paragraph-17-5">
+          <Pnumber>5</Pnumber>
+          <Text>5 At the end insert the following sentence\u2014 \u201cIn the case of an
+          application by the civil partner of the deceased, the court shall also,
+          unless at the date of the death a separation order under Chapter 2 of
+          Part 2 of the Civil Partnership Act 2004 was in force and the separation
+          was continuing, have regard to the provision which would have been
+          made for the applicant.\u201d</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-595ef56ef8f7686377a5a95c7e39d55b",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-05-25",
+        affected_uri="/id/ukpga/1975/63/section/3/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1975",
+        affected_number="63",
+        affected_provisions="s. 3(2)",
+        affecting_uri="/id/ukpga/2004/33",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2004",
+        affecting_number="33",
+        affecting_provisions="Sch. 4 para. 17(5)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2005-12-05", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_at_end_quoted_dash_text_insertion_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["reason_code"] == "explicit_at_end_quoted_dash_text_insertion_patch"
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "3"), ("subsection", "2"))
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.APPEND
+    assert op.text_patch.selector.match_text == "TEXT_END"
+    assert op.text_patch.replacement == (
+        "In the case of an application by the civil partner of the deceased, the "
+        "court shall also, unless at the date of the death a separation order "
+        "under Chapter 2 of Part 2 of the Civil Partnership Act 2004 was in force "
+        "and the separation was continuing, have regard to the provision which "
+        "would have been made for the applicant."
+    )
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
 def test_compile_sentence_bounded_at_end_insert_ignores_following_source_row() -> None:
     extracted_el = ET.fromstring(
         f"""

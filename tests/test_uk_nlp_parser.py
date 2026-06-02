@@ -2019,6 +2019,26 @@ def test_parse_fragment_substitution_handles_at_end_insert_with_cited_section_co
     ]
 
 
+def test_parse_fragment_substitution_handles_at_end_following_sentence_insert() -> None:
+    subs = parse_fragment_substitution(
+        "5 At the end insert the following sentence\u2014 \u201cIn the case of an "
+        "application by the civil partner of the deceased, the court shall also "
+        "have regard to the provision which would have been made.\u201d"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": (
+                "In the case of an application by the civil partner of the "
+                "deceased, the court shall also have regard to the provision "
+                "which would have been made."
+            ),
+            "rule_id": "uk_effect_at_end_quoted_dash_text_insertion_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_after_entry_for_of_insert() -> None:
     subs = parse_fragment_substitution(
         "Schedule 3 is amended by the insertion, after the entry for "

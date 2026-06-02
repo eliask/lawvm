@@ -4156,7 +4156,8 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
     matches_at_end_quoted_dash_insert = re.finditer(
         rf"at the end{_UK_AT_END_TARGET_QUALIFIER_RE}"
         r"(?:\s+\([^)]*\))?,?\s+"
-        rf"insert\s*[—-]\s+[“\"'‘](?P<inserted>{_NON_QUOTE}{{1,800}})[”\"'’]\s*\.?\s*$",
+        r"insert(?:\s+the\s+following\s+sentence)?\s*[—-]\s+"
+        rf"[“\"'‘](?P<inserted>{_NON_QUOTE}{{1,800}})[”\"'’]\s*\.?\s*$",
         text,
         re.I,
     )
