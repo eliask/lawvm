@@ -785,6 +785,8 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
     )
     curr_action = structural_child_substitution_reclassification.curr_action
     content_ir = structural_child_substitution_reclassification.content_ir
+    if structural_child_substitution_reclassification.target is not None:
+        target = structural_child_substitution_reclassification.target
 
     definition_child_text_omission_lowering = lower_source_carried_definition_child_text_omission(
         effect=effect,

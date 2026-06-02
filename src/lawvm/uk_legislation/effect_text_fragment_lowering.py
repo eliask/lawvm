@@ -73,6 +73,7 @@ from lawvm.uk_legislation.source_table_entry_paragraph import (
     append_source_carried_table_entry_paragraph_observation,
 )
 from lawvm.uk_legislation.source_text_reclassifications import (
+    UK_EFFECT_WORD_SUBSTITUTION_PARENT_CHILD_REPLACEMENT_RULE_ID,
     UK_EFFECT_WORD_SUBSTITUTION_STRUCTURAL_CHILD_REPLACEMENT_RULE_ID,
     lower_quote_only_word_omission,
     source_claims_child_qualified_word_omission,
@@ -388,7 +389,10 @@ def lower_uk_text_fragment_rewrite(
         and curr_action == "replace"
         and content_ir is not None
         and dict(content_ir.get("attrs") or {}).get("source_rule_id")
-        == UK_EFFECT_WORD_SUBSTITUTION_STRUCTURAL_CHILD_REPLACEMENT_RULE_ID
+        in {
+            UK_EFFECT_WORD_SUBSTITUTION_PARENT_CHILD_REPLACEMENT_RULE_ID,
+            UK_EFFECT_WORD_SUBSTITUTION_STRUCTURAL_CHILD_REPLACEMENT_RULE_ID,
+        }
         and content_ir.get("kind") == _addr_leaf_kind(target)
         and _clean_num(str(content_ir.get("label") or "")) == _clean_num(_addr_leaf_label(target) or "")
     ):

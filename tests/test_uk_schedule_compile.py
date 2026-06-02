@@ -35206,6 +35206,101 @@ def test_compile_flat_target_paragraph_substitution_lowers_exact_structural_repl
     assert lowering_records[0]["strict_disposition"] == "block"
 
 
+def test_compile_parent_target_child_paragraph_substitution_refines_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="regulation-6-3-a">
+          <Pnumber>a</Pnumber>
+          <Text>a for paragraph (c) substitute—
+          c a Gibraltar multilateral trading facility within the meaning given
+          by Article 26(11)(b)(ii) of that Regulation. ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-dec346c44fa32c9c69973de485a79575",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2019-12-31",
+        affected_uri="/id/ukpga/2007/3/section/564G/subsection/2A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 564G(2A)",
+        affecting_uri="/id/uksi/2019/818",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2019",
+        affecting_number="818",
+        affecting_provisions="reg. 6(3)(a)",
+        affecting_title="Financial Services Test Regulations 2019",
+        in_force_dates=[{"date": "2019-12-31", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPLACE
+    assert op.target.path == (("section", "564g"), ("subsection", "2a"), ("paragraph", "c"))
+    payload = _required_payload(op)
+    assert payload.kind is IRNodeKind.PARAGRAPH
+    assert payload.label == "c"
+    assert payload.text == (
+        "a Gibraltar multilateral trading facility within the meaning given "
+        "by Article 26(11)(b)(ii) of that Regulation."
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_word_substitution_parent_child_replacement_reclassified"
+    ]
+    assert lowering_records[0]["family"] == "target_resolution_recovery"
+    assert lowering_records[0]["target"] == "section:564g/subsection:2a"
+    assert lowering_records[0]["refined_target"] == "section:564g/subsection:2a/paragraph:c"
+
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="564G",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2A",
+                            children=(
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="first condition,"),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="b", text="second condition, or"),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="c", text="old paragraph."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [child.text for child in subsection.children] == [
+        "first condition,",
+        "second condition, or",
+        "a Gibraltar multilateral trading facility within the meaning given "
+        "by Article 26(11)(b)(ii) of that Regulation.",
+    ]
+
+
 def test_compile_mixed_body_heading_text_substitution_lowers_current_body_lane() -> None:
     extracted_el = ET.fromstring(
         f"""
