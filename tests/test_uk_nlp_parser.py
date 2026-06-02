@@ -2558,6 +2558,24 @@ def test_parse_fragment_substitution_handles_range_comma_where_it_occurs() -> No
     ]
 
 
+def test_parse_fragment_substitution_handles_range_start_place_occurrence() -> None:
+    subs = parse_fragment_substitution(
+        "4 In section 113(5), in the definition of \u201crelevant authority\u201d "
+        "for the words from \u201cany\u201d in the second place where it occurs "
+        "to \u201corder)\u201d substitute \u201c, except where applying for the order, "
+        "Scottish Water or any local authority\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_any_TO_order)",
+            "replacement": ", except where applying for the order, Scottish Water or any local authority",
+            "occurrence": "2",
+            "rule_id": "uk_effect_range_occurrence_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_range_comma_before_substitute() -> None:
     subs = parse_fragment_substitution(
         "for the words from \u201cmeans\u2014\u201d to \u201c(and\u201d, substitute \u201creplacement\u201d"

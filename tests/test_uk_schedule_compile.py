@@ -29114,6 +29114,63 @@ def test_compile_range_start_plural_where_occurrence_to_text_replace() -> None:
     assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
 
 
+def test_compile_range_start_place_occurrence_to_text_replace() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-paragraph-7-4">
+          <Pnumber>4</Pnumber>
+          <Text>4 In section 113(5) (byelaws in respect of waterways owned or
+          managed by certain bodies) , in the definition of \u201crelevant
+          authority\u201d for the words from \u201cany\u201d in the second place where it
+          occurs to \u201corder)\u201d substitute \u201c, except where applying for the order,
+          Scottish Water or any local authority\u201d.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-9b8e3ce214cce8c3a7bdc21e183bffed",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2004-07-14",
+        affected_uri="/id/ukpga/1968/73/section/113/subsection/5",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1968",
+        affected_number="73",
+        affected_provisions="s. 113(5)",
+        affecting_uri="/id/uksi/2004/1822/schedule",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2004",
+        affecting_number="1822",
+        affecting_provisions="Sch. para. 7(4)",
+        affecting_title="Test Instrument",
+        in_force_dates=[{"date": "2004-07-14", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "113"), ("subsection", "5"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_any_TO_order)"
+    assert ops[0].text_patch.selector.occurrence == 2
+    assert ops[0].text_patch.replacement == (
+        ", except where applying for the order, Scottish Water or any local authority"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_range_occurrence_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
 def test_compile_range_end_place_occurrence_to_text_replace() -> None:
     extracted_el = ET.fromstring(
         f"""

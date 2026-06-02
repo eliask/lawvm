@@ -1611,6 +1611,8 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
         r"(?:(?:\s+where|,\s+where)(?:\s+(?:it|they|those words?))?\s+"
         r"(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
         r"(?:occurs?|occurring|appears?),?)?"
+        r"(?:\s+in\s+the\s+(?P<start_place_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)"
+        r"\s+place\s+(?:where\s+)?(?:it|they|those words?)\s+(?:occurs?|occurring|appears?),?)?"
         r"\s+to\s+(?:(?:the\s+)?(?P<end_pre_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+)?[“\"'‘](?P<end>.*?)[”\"'’]"
         r"(?:(?:,\s+where)(?:\s+(?:it|they|those words?))?\s+"
         r"(?P<end_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
@@ -1640,6 +1642,9 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
             patch["rule_id"] = "uk_effect_range_occurrence_substitution_text_patch"
         if m.group("ordinal"):
             patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("ordinal").lower()]
+            patch["rule_id"] = "uk_effect_range_occurrence_substitution_text_patch"
+        if m.group("start_place_ordinal"):
+            patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("start_place_ordinal").lower()]
             patch["rule_id"] = "uk_effect_range_occurrence_substitution_text_patch"
         if m.group("end_pre_ordinal"):
             patch["end_occurrence"] = _ORDINAL_OCCURRENCES[m.group("end_pre_ordinal").lower()]
