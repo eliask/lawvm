@@ -21,7 +21,8 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 _SOURCE_CARRIED_STRUCTURAL_SIBLING_INSERT_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"(?:in\s+.{1,240}?,\s*)?"
-    r"after\s+(?P<source_kind>sub-?paragraph|paragraph|subsection|item)\s+"
+    r"(?P<direction>after|before)\s+"
+    r"(?P<source_kind>sub-?paragraph|paragraph|subsection|item)\s+"
     r"\((?P<anchor_label>[0-9A-Za-z]+)\),?\s+"
     r"insert\s*[—-]\s*(?P<inserted_label>[0-9A-Za-z]+)\s+"
     r"(?P<inserted_text>.+?)\s*$",
@@ -93,6 +94,7 @@ def _structural_sibling_insert_from_source(
         return None
     inserted_label = _clean_num(match.group("inserted_label"))
     anchor_label = _clean_num(match.group("anchor_label"))
+    direction = str(match.group("direction") or "").lower()
     if not inserted_label or not anchor_label or inserted_label == anchor_label:
         return None
     target_leaf_label = _clean_num(_addr_leaf_label(target) or "")
@@ -125,6 +127,7 @@ def _structural_sibling_insert_from_source(
     return {
         "anchor_label": anchor_label,
         "child_kind": child_kind,
+        "direction": direction,
         "inserted_label": inserted_label,
         "inserted_text": inserted_text,
         "new_target": str(new_target),
@@ -180,6 +183,7 @@ def lower_source_structural_sibling_insert(
         "attrs": {
             "source_rule_id": "uk_effect_structural_sibling_insert_lowered",
             "source_anchor_child_label": detail["anchor_label"],
+            "source_anchor_direction": detail["direction"],
             "source_child_kind": detail["source_kind"],
         },
         "children": [],
@@ -191,7 +195,7 @@ def lower_source_structural_sibling_insert(
         reason_code="source_owned_structural_sibling_insert",
         reason=(
             "UK source text explicitly inserts a new labelled structural "
-            "sibling after a named child of the affected parent; lowering "
+            "sibling before or after a named child of the affected parent; lowering "
             "emits a child insert at the source-owned sibling target "
             "instead of appending payload text to the anchor."
         ),
@@ -201,6 +205,7 @@ def lower_source_structural_sibling_insert(
         detail={
             "original_target_ref": target_ref,
             "source_anchor_child_label": detail["anchor_label"],
+            "source_anchor_direction": detail["direction"],
             "source_child_kind": detail["source_kind"],
             "inserted_child_kind": detail["child_kind"],
             "inserted_child_label": detail["inserted_label"],

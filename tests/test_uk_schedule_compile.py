@@ -4797,6 +4797,109 @@ def test_compile_source_owned_schedule_structural_sibling_insert() -> None:
     assert paragraph.children[1].attrs["eId"] == "schedule-10-paragraph-1-aa"
 
 
+def test_compile_source_owned_body_structural_sibling_insert_before_anchor() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="schedule-11-paragraph-3-7-a-i">
+          <Pnumber>i</Pnumber>
+          <P4para>
+            <Text>i before paragraph (a) insert— za the provision of investment advice, ;</Text>
+          </P4para>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-a8920e85dc2695f0641e68d08103413b",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-04-17",
+        affected_uri="/id/ukpga/2007/3/section/809EZE/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 809EZE(1)",
+        affecting_uri="/id/ukpga/2026/11/schedule/11/paragraph/3/7/a/i",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2026",
+        affecting_number="11",
+        affecting_provisions="Sch. 11 para. 3(7)(a)(i)",
+        affecting_title="Finance Act 2026",
+        in_force_dates=[{"date": "2026-03-18", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert str(ops[0].target) == "section:809eze/subsection:1/paragraph:za"
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.PARAGRAPH
+    assert ops[0].payload.label == "za"
+    assert ops[0].payload.text == "the provision of investment advice, ;"
+    anchor_witness = _required_payload(ops[0]).attrs["rewrite_witness"][
+        "insertion_anchor_witness"
+    ]
+    assert anchor_witness == {
+        "preceding_eid": None,
+        "following_eid": "section-809eze-1-a",
+        "anchor_source": "extracted_source_before_clause",
+    }
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_structural_sibling_insert_lowered"
+    ]
+    assert lowering_records[0]["source_anchor_direction"] == "before"
+    assert lowering_records[0]["target"] == "section:809eze/subsection:1/paragraph:za"
+    assert lowering_records[0]["blocking"] is False
+
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="809EZE",
+                    attrs={"eId": "section-809eze"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            attrs={"eId": "section-809eze-1"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text="existing paragraph a;",
+                                    attrs={"eId": "section-809eze-1-a"},
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="b",
+                                    text="existing paragraph b.",
+                                    attrs={"eId": "section-809eze-1-b"},
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+
+    replayed = replay_uk_ops(base, ops)
+    subsection = replayed.body.children[0].children[0]
+    assert [child.label for child in subsection.children] == ["za", "a", "b"]
+    assert subsection.children[0].attrs["eId"] == "section-809eze-1-za"
+
+
 def test_compile_source_owned_structural_sibling_insert_when_feed_targets_inserted_child() -> None:
     extracted_el = ET.fromstring(
         f"""
