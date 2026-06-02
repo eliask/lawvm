@@ -32,9 +32,10 @@ _AFTER_WORDS_INSERTED_BY_SIBLING_RE = re.compile(
 )
 
 _GROUPED_ANCHOR_OCCURRENCE_CHILD_RE = re.compile(
-    r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+the\s+"
+    r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+(?:in\s+)?(?:the\s+)?"
     r"(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
-    r"time\s+it\s+(?:appears|occurs),?\s+substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*;?\s*$",
+    r"(?:time\s+it\s+(?:appears|occurs)|places?(?:\s+(?:where\s+)?it\s+(?:appears|occurs))?)"
+    r",?\s+substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*[.;]?(?:\s+and)?\s*$",
     flags=re.I,
 )
 

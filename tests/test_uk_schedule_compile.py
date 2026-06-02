@@ -11702,6 +11702,106 @@ def test_compile_grouped_anchor_occurrence_substitution_uses_parent_source_conte
     ) == "schedule-1-paragraph-8-4-a"
 
 
+def test_compile_grouped_anchor_place_substitution_uses_parent_source_context() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <P1 id="schedule-9-paragraph-12">
+            <Pnumber>12</Pnumber>
+            <P1para>
+              <Text>In section 25(4) (power of court to declare dissolution void), for \u201cAuthority\u201d\u2014</Text>
+              <P3 id="schedule-9-paragraph-12-a">
+                <Pnumber>a</Pnumber>
+                <P3para>
+                  <Text>in the first place, substitute \u201cFCA and, if the society is a PRA-authorised person, the PRA\u201d; and</Text>
+                </P3para>
+              </P3>
+              <P3 id="schedule-9-paragraph-12-b">
+                <Pnumber>b</Pnumber>
+                <P3para>
+                  <Text>in second place, substitute \u201cFCA\u201d.</Text>
+                </P3para>
+              </P3>
+            </P1para>
+          </P1>
+        </Legislation>
+        """
+    )
+    effect_base = dict(
+        applied=True,
+        requires_applied=True,
+        modified="2013-04-01",
+        affected_uri="/id/ukpga/1992/40/section/25/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1992",
+        affected_number="40",
+        affected_provisions="s. 25(4)",
+        affecting_uri="/id/uksi/2013/496",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2013",
+        affecting_number="496",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2013-04-01", "prospective": "false"}],
+    )
+    cases = (
+        (
+            "schedule-9-paragraph-12-a",
+            UKEffectRecord(
+                effect_id="uk_test_grouped_anchor_first_place_substitution",
+                effect_type="words substituted",
+                affecting_provisions="Sch. 9 para. 12(a)",
+                **effect_base,
+            ),
+            1,
+            "FCA and, if the society is a PRA-authorised person, the PRA",
+        ),
+        (
+            "schedule-9-paragraph-12-b",
+            UKEffectRecord(
+                effect_id="uk_test_grouped_anchor_second_place_substitution",
+                effect_type="word substituted",
+                affecting_provisions="Sch. 9 para. 12(b)",
+                **effect_base,
+            ),
+            2,
+            "FCA",
+        ),
+    )
+
+    for source_id, effect, occurrence, replacement in cases:
+        extracted_el = next(el for el in source_root.iter() if el.get("id") == source_id)
+        lowering_records: list[dict[str, Any]] = []
+
+        ops = compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_records,
+            source_root=source_root,
+        )
+
+        assert len(ops) == 1
+        assert ops[0].action is StructuralAction.TEXT_REPLACE
+        assert ops[0].target.path == (("section", "25"), ("subsection", "4"))
+        assert ops[0].text_patch is not None
+        assert ops[0].text_patch.selector.match_text == "Authority"
+        assert ops[0].text_patch.selector.occurrence == occurrence
+        assert ops[0].text_patch.replacement == replacement
+        assert (
+            f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_grouped_anchor_occurrence_substitution_text_patch"
+            in ops[0].provenance_tags
+        )
+        assert [
+            record["rule_id"]
+            for record in lowering_records
+            if record["rule_id"] == "uk_effect_grouped_anchor_occurrence_substitution_text_patch"
+        ] == ["uk_effect_grouped_anchor_occurrence_substitution_text_patch"]
+        assert not any(
+            record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+            for record in lowering_records
+        )
+
+
 def test_compile_source_parent_each_provision_substitution_from_child_target_row() -> None:
     source_root = ET.fromstring(
         f"""
