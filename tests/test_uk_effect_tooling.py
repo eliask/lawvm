@@ -2867,6 +2867,16 @@ def test_single_uk_effect_frontier_work_item_preserves_projection_detail() -> No
         "source_insufficient"
     )
     assert report["execution_authorization"]["replay_authorized"] is False
+    assert report["frontier_work_item"]["candidate_operation_family"] == (
+        "source_chain_text_patch"
+    )
+    assert report["frontier_work_item"]["required_validator_checks"] == [
+        "source_chain_contains_preimage_to_postimage_transition",
+        "claim_identifies_intermediate_amendment_effect",
+        "claim_links_current_postimage_to_source_instruction",
+        "claim_preserves_effect_feed_target_identity",
+        "changed_paths_are_within_text_patch_target",
+    ]
     detail = report["frontier_work_item"]["detail"]
     assert detail["source_pathology"] == ""
     assert detail["compiled_op_count"] == 1

@@ -9,6 +9,40 @@ from lawvm.core.frontier_work_item import FrontierWorkItem
 from lawvm.core.source_witness import source_witness_from_mapping
 
 
+_FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
+    "uk_manual_frontier_text_patch_preimage_chain_gap": {
+        "candidate_operation_family": "source_chain_text_patch",
+        "required_validator_checks": (
+            "source_chain_contains_missing_preimage_state",
+            "claim_identifies_intermediate_amendment_effect",
+            "claim_proves_text_patch_preimage_boundary",
+            "claim_preserves_effect_feed_target_identity",
+            "changed_paths_are_within_text_patch_target",
+        ),
+    },
+    "uk_manual_frontier_text_patch_target_source_chain_gap": {
+        "candidate_operation_family": "source_chain_text_patch",
+        "required_validator_checks": (
+            "source_chain_contains_amendment_created_target",
+            "claim_identifies_target_creation_effect",
+            "claim_proves_text_patch_preimage_boundary",
+            "claim_preserves_created_target_identity",
+            "changed_paths_are_within_text_patch_target",
+        ),
+    },
+    "uk_manual_frontier_text_patch_postimage_chain_gap": {
+        "candidate_operation_family": "source_chain_text_patch",
+        "required_validator_checks": (
+            "source_chain_contains_preimage_to_postimage_transition",
+            "claim_identifies_intermediate_amendment_effect",
+            "claim_links_current_postimage_to_source_instruction",
+            "claim_preserves_effect_feed_target_identity",
+            "changed_paths_are_within_text_patch_target",
+        ),
+    },
+}
+
+
 def uk_frontier_work_item_from_manual_frontier_row(
     row: Mapping[str, Any],
 ) -> FrontierWorkItem:
@@ -49,6 +83,7 @@ def uk_frontier_work_item_from_manual_frontier_row(
         or row.get("rule_id")
         or frontier_family
     )
+    family_defaults = _mapping(_FRONTIER_FAMILY_DEFAULTS.get(frontier_family))
     detail = {
         "statute_id": statute_id,
         "effect_id": effect_id,
@@ -109,12 +144,19 @@ def uk_frontier_work_item_from_manual_frontier_row(
         frontier_family=frontier_family,
         frontier_status=frontier_status,
         candidate_operation_family=str(
-            template.get("action_family") or row.get("work_item_kind") or ""
+            template.get("action_family")
+            or row.get("work_item_kind")
+            or family_defaults.get("candidate_operation_family")
+            or ""
         ),
         candidate_targets=_candidate_targets(row),
         guidance_refs=_string_tuple(template.get("guidance_refs")),
         required_claim_kind=str(row.get("claim_kind") or "semantic_compile"),
-        required_validator_checks=_string_tuple(template.get("required_validator_checks")),
+        required_validator_checks=_first_string_tuple(
+            template.get("required_validator_checks"),
+            row.get("required_validator_checks"),
+            family_defaults.get("required_validator_checks"),
+        ),
         required_proofs=_string_tuple(row.get("required_proofs")),
         safe_default=str(row.get("safe_default") or ""),
         forbidden_shortcuts=_string_tuple(row.get("forbidden_shortcuts")),
