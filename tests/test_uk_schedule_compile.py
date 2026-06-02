@@ -55352,6 +55352,170 @@ def test_compile_schedule_list_entry_replace_splits_source_owned_multi_entry_pay
     assert observations[0]["blocking"] is False
 
 
+def test_compile_plural_schedule_index_entry_replace_lowers_to_contiguous_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-36-3">
+          <Text>3 For the entries relating to \u201cstarting rate\u201d and
+          \u201cstarting rate limit\u201d substitute— starting rate for savings
+          section 7 starting rate limit for savings section 12 .</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-1fc3c41d772e6efcfb6a1957ecfb63cd",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-04-06",
+        affected_uri="/id/ukpga/2007/3/schedule/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="Sch. 4",
+        affecting_uri="/id/ukpga/2026/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2026",
+        affecting_number="11",
+        affecting_provisions="Sch. 1 para. 36(3)",
+        affecting_title="Finance Act 2026",
+        in_force_dates=[{"date": "2026-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPLACE
+    assert op.target == LegalAddress(path=(("schedule", "4"),))
+    assert op.payload is not None
+    assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
+    assert op.payload.text == "starting rate for savings section 7"
+    assert op.payload.attrs["replacement_texts"] == (
+        "starting rate for savings section 7",
+        "starting rate limit for savings section 12",
+    )
+    assert op.witness_rule_id == "uk_effect_schedule_list_entry_replace"
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("schedule_list_entry_replace_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_replace_selector:"))
+    assert selector["anchors"] == ["starting rate", "starting rate limit"]
+    assert selector["replacement_texts"] == [
+        "starting rate for savings section 7",
+        "starting rate limit for savings section 12",
+    ]
+    assert selector["source_anchor_form"] == "plural_quoted_entries_relating_to"
+    assert selector["replacement_payload_form"] == "index_entry_section_ref_sequence"
+    assert any(
+        record["rule_id"] == "uk_effect_schedule_list_entry_replace"
+        and record["reason_code"] == "explicit_schedule_list_entry_replace_anchor"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_replay_plural_schedule_index_entry_replace_requires_contiguous_anchors() -> None:
+    op = LegalOperation(
+        op_id="uk_test_plural_schedule_index_entry_replace",
+        sequence=0,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("schedule", "4"),)),
+        payload=IRNode(
+            kind=IRNodeKind.SCHEDULE_ENTRY,
+            text="starting rate for savings section 7",
+            attrs={
+                "replacement_texts": (
+                    "starting rate for savings section 7",
+                    "starting rate limit for savings section 12",
+                ),
+            },
+        ),
+        provenance_tags=(
+            'schedule_list_entry_replace_selector:{"rule_id":"uk_effect_schedule_list_entry_replace",'
+            '"anchor":"starting rate","anchors":["starting rate","starting rate limit"],'
+            '"replacement_text":"starting rate for savings section 7",'
+            '"replacement_texts":["starting rate for savings section 7",'
+            '"starting rate limit for savings section 12"],'
+            '"source_anchor_form":"plural_quoted_entries_relating_to"}',
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 4",
+                children=(
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="starting rate section 7"),
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="starting rate limit section 12"),
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="unrelated surviving entry"),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    assert [child.text for child in replayed.supplements[0].children] == [
+        "starting rate for savings section 7",
+        "starting rate limit for savings section 12",
+        "unrelated surviving entry",
+    ]
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_replace_resolved"
+        and adjudication.detail.get("reason_code") == "explicit_entry_anchors_unique_multi_replacement"
+        and adjudication.detail.get("matched_indices") == (0, 1)
+        and adjudication.detail.get("replacement_count") == 2
+        for adjudication in adjudications
+    )
+
+    non_contiguous_base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 4",
+                children=(
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="starting rate section 7"),
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="unrelated intervening entry"),
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="starting rate limit section 12"),
+                ),
+            ),
+        ),
+    )
+    non_contiguous_adjudications: list[CompileAdjudication] = []
+
+    non_contiguous_replayed = replay_uk_ops(
+        non_contiguous_base,
+        [op],
+        adjudications_out=non_contiguous_adjudications,
+    )
+
+    assert [child.text for child in non_contiguous_replayed.supplements[0].children] == [
+        "starting rate section 7",
+        "unrelated intervening entry",
+        "starting rate limit section 12",
+    ]
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_replace_unresolved"
+        and adjudication.detail.get("reason_code") == "anchors_not_contiguous_in_source_order"
+        and adjudication.detail.get("blocking") is True
+        for adjudication in non_contiguous_adjudications
+    )
+
+
 def test_compile_schedule_list_entry_replace_handles_bare_quoted_entry() -> None:
     extracted_el = ET.fromstring(
         f"""

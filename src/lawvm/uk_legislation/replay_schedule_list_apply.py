@@ -1414,8 +1414,14 @@ class UKReplayScheduleListApplyMixin:
                 ),
             )
             return False
-        anchor = str(selector.get("anchor") or "")
-        if not _compact_normalized_text(anchor):
+        raw_anchors = selector.get("anchors")
+        anchors = (
+            tuple(str(anchor or "") for anchor in raw_anchors)
+            if isinstance(raw_anchors, list)
+            else (str(selector.get("anchor") or ""),)
+        )
+        anchors = tuple(anchor for anchor in anchors if _compact_normalized_text(anchor))
+        if not anchors:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID,
@@ -1435,21 +1441,33 @@ class UKReplayScheduleListApplyMixin:
             for idx, child in enumerate(carrier_node.children)
             if _uk_kind_value(child.kind) == "schedule_entry"
         ]
-        anchor_norm = _compact_normalized_text(anchor)
-        matches = [
-            row
-            for row in entry_rows
-            if _compact_normalized_text(row.child.text) == anchor_norm
-        ]
-        match_mode = "exact"
-        if not matches:
+
+        def _matches_for_replace_anchor(anchor: str) -> _ScheduleListEntryAnchorMatch:
+            anchor_norm = _compact_normalized_text(anchor)
+            matches = [
+                row
+                for row in entry_rows
+                if _compact_normalized_text(row.child.text) == anchor_norm
+            ]
+            if matches:
+                return _ScheduleListEntryAnchorMatch(matches, "exact")
+            if (
+                str(selector.get("source_anchor_form") or "")
+                == "plural_quoted_entries_relating_to"
+            ):
+                matches = [
+                    row
+                    for row in entry_rows
+                    if _compact_normalized_text(row.child.text).startswith(f"{anchor_norm}section")
+                ]
+                return _ScheduleListEntryAnchorMatch(matches, "index_entry_section_ref")
             matches = [
                 row
                 for row in entry_rows
                 if _compact_normalized_text(row.child.text).startswith(anchor_norm)
             ]
-            match_mode = "prefix"
-        if not matches:
+            if matches:
+                return _ScheduleListEntryAnchorMatch(matches, "prefix")
             article_anchor_norm = _compact_schedule_entry_anchor_without_article(anchor)
             matches = [
                 row
@@ -1460,14 +1478,23 @@ class UKReplayScheduleListApplyMixin:
                     or _compact_schedule_entry_anchor_without_article(row.child.text).startswith(article_anchor_norm)
                 )
             ]
-            match_mode = "article"
-        if len(matches) != 1:
+            if matches:
+                return _ScheduleListEntryAnchorMatch(matches, "article")
+            return _ScheduleListEntryAnchorMatch([], "none")
+
+        source_replacement_texts = selector.get("replacement_texts")
+        replacement_texts = (
+            tuple(str(text) for text in source_replacement_texts)
+            if isinstance(source_replacement_texts, (list, tuple))
+            else ()
+        )
+        if len(anchors) > 1 and len(replacement_texts) != len(anchors):
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID,
                 message=(
-                    "UK replay skipped schedule-list-entry replacement: entry "
-                    "anchor did not resolve uniquely."
+                    "UK replay skipped schedule-list-entry replacement: plural "
+                    "entry replacement did not carry a one-for-one payload."
                 ),
                 op=op,
                 detail=_schedule_entry_detail(
@@ -1475,59 +1502,127 @@ class UKReplayScheduleListApplyMixin:
                     target,
                     selector,
                     blocking=True,
-                    anchor=anchor,
-                    reason_code="anchor_not_unique",
-                    anchor_match_count=len(matches),
-                    entry_count=len(entry_rows),
+                    reason_code="plural_replacement_arity_mismatch",
+                    anchor_count=len(anchors),
+                    replacement_count=len(replacement_texts),
                     carrier_kind=carrier_kind,
                 ),
             )
             return False
-        replace_idx = matches[0].index
-        if match_mode == "prefix":
+        matched_rows: list[_ScheduleListEntryRow] = []
+        match_modes: dict[str, str] = {}
+        for anchor in anchors:
+            matches, match_mode = _matches_for_replace_anchor(anchor)
+            if len(matches) != 1:
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID,
+                    message=(
+                        "UK replay skipped schedule-list-entry replacement: entry "
+                        "anchor did not resolve uniquely."
+                    ),
+                    op=op,
+                    detail=_schedule_entry_detail(
+                        op,
+                        target,
+                        selector,
+                        blocking=True,
+                        anchor=anchor,
+                        reason_code="anchor_not_unique",
+                        anchor_match_count=len(matches),
+                        entry_count=len(entry_rows),
+                        carrier_kind=carrier_kind,
+                    ),
+                )
+                return False
+            matched_rows.append(matches[0])
+            match_modes[anchor] = match_mode
+        matched_indices = tuple(row.index for row in matched_rows)
+        if len(set(matched_indices)) != len(matched_indices):
             _append_uk_replay_adjudication(
                 self.adjudications_out,
-                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_PREFIX_NORMALIZED_RULE_ID,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID,
                 message=(
-                    "UK replay resolved a schedule-list-entry anchor as the "
-                    "unique prefix of a longer source entry."
+                    "UK replay skipped schedule-list-entry replacement: multiple "
+                    "anchors resolved to the same entry child."
                 ),
                 op=op,
                 detail=_schedule_entry_detail(
                     op,
                     target,
                     selector,
-                    blocking=False,
-                    reason_code="anchor_prefix_unique",
-                    anchor_match_count=len(matches),
-                    entry_count=len(entry_rows),
+                    blocking=True,
+                    reason_code="anchor_collision",
+                    matched_indices=matched_indices,
+                    carrier_kind=carrier_kind,
                 ),
             )
-        elif match_mode == "article":
+            return False
+        replace_start = min(matched_indices)
+        replace_end = max(matched_indices)
+        expected_indices = tuple(range(replace_start, replace_end + 1))
+        if len(anchors) > 1 and matched_indices != expected_indices:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
-                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_ARTICLE_NORMALIZED_RULE_ID,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID,
                 message=(
-                    "UK replay resolved a schedule-list-entry anchor after "
-                    "normalizing a leading article."
+                    "UK replay skipped schedule-list-entry replacement: plural "
+                    "entry anchors were not contiguous in source order."
                 ),
                 op=op,
                 detail=_schedule_entry_detail(
                     op,
                     target,
                     selector,
-                    blocking=False,
-                    reason_code="anchor_leading_article_unique",
-                    anchor_match_count=len(matches),
-                    entry_count=len(entry_rows),
+                    blocking=True,
+                    reason_code="anchors_not_contiguous_in_source_order",
+                    matched_indices=matched_indices,
+                    expected_indices=expected_indices,
+                    carrier_kind=carrier_kind,
                 ),
             )
-        source_replacement_texts = selector.get("replacement_texts")
-        replacement_texts = (
-            tuple(str(text) for text in source_replacement_texts)
-            if isinstance(source_replacement_texts, (list, tuple))
-            else ()
-        )
+            return False
+        for anchor, match_mode in match_modes.items():
+            if match_mode == "prefix":
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_PREFIX_NORMALIZED_RULE_ID,
+                    message=(
+                        "UK replay resolved a schedule-list-entry anchor as the "
+                        "unique prefix of a longer source entry."
+                    ),
+                    op=op,
+                    detail=_schedule_entry_detail(
+                        op,
+                        target,
+                        selector,
+                        blocking=False,
+                        anchor=anchor,
+                        reason_code="anchor_prefix_unique",
+                        anchor_match_count=1,
+                        entry_count=len(entry_rows),
+                    ),
+                )
+            elif match_mode == "article":
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_ARTICLE_NORMALIZED_RULE_ID,
+                    message=(
+                        "UK replay resolved a schedule-list-entry anchor after "
+                        "normalizing a leading article."
+                    ),
+                    op=op,
+                    detail=_schedule_entry_detail(
+                        op,
+                        target,
+                        selector,
+                        blocking=False,
+                        anchor=anchor,
+                        reason_code="anchor_leading_article_unique",
+                        anchor_match_count=1,
+                        entry_count=len(entry_rows),
+                    ),
+                )
         replacement_nodes = (
             tuple(
                 UKMutableNode(
@@ -1547,12 +1642,13 @@ class UKReplayScheduleListApplyMixin:
             for key in ("eId", "id"):
                 replacement_node.attrs.pop(key, None)
         children = list(carrier_node.children)
-        children[replace_idx : replace_idx + 1] = list(replacement_nodes)
-        reason_code = (
-            "explicit_entry_anchor_unique_multi_replacement"
-            if len(replacement_nodes) > 1
-            else "explicit_entry_anchor_unique"
-        )
+        children[replace_start : replace_end + 1] = list(replacement_nodes)
+        if len(anchors) > 1:
+            reason_code = "explicit_entry_anchors_unique_multi_replacement"
+        elif len(replacement_nodes) > 1:
+            reason_code = "explicit_entry_anchor_unique_multi_replacement"
+        else:
+            reason_code = "explicit_entry_anchor_unique"
         _replace_schedule_list_children_with_event(
             self,
             container=carrier_node,
@@ -1575,8 +1671,10 @@ class UKReplayScheduleListApplyMixin:
                 selector,
                 blocking=False,
                 reason_code=reason_code,
-                matched_index=replace_idx,
-                match_mode=match_mode,
+                matched_index=matched_indices[0],
+                matched_indices=matched_indices,
+                match_mode=next(iter(match_modes.values()), ""),
+                match_modes=match_modes,
                 entry_count=len(entry_rows),
                 replacement_count=len(replacement_nodes),
                 carrier_kind=carrier_kind,

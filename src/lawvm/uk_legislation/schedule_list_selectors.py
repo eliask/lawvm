@@ -34,6 +34,15 @@ _QUOTED_SCHEDULE_ENTRIES_FOR_REPEAL_RE = re.compile(
     r"\bomit(?:ted)?\s+(?:the\s+)?entries\s+for\s*[—–-]?\s*(?P<anchors>.+)$",
     re.I,
 )
+_PLURAL_RELATING_ENTRIES_REPLACE_RE = re.compile(
+    r"\bfor\s+(?:the\s+)?entries\s+(?:relating\s+to|for)\s+"
+    r"(?P<anchors>.+?)\s+substitute\s*[—–-]?\s*(?P<payload>.+)$",
+    re.I,
+)
+_INDEX_ENTRY_SECTION_REF_RE = re.compile(
+    r"\bsection\s+[0-9A-Za-z]+(?:\([^)]{1,50}\))*\b",
+    re.I,
+)
 
 _ENTRY_ORDINALS = {
     "first": 1,
@@ -138,6 +147,27 @@ def split_schedule_entry_replace_payload(raw: str) -> tuple[str, ...]:
     if len(parts) < 2:
         return (payload,)
     return parts
+
+
+def _split_index_entry_replace_payload(raw: str, *, expected_count: int) -> tuple[str, ...]:
+    payload = _strip_schedule_entry_payload(raw)
+    if expected_count < 2 or not payload:
+        return ()
+    matches = tuple(_INDEX_ENTRY_SECTION_REF_RE.finditer(payload))
+    if len(matches) != expected_count:
+        return ()
+    parts: list[str] = []
+    start = 0
+    for match in matches:
+        part = _strip_schedule_entry_payload(payload[start : match.end()])
+        if not part:
+            return ()
+        parts.append(part)
+        start = match.end()
+    trailing = payload[start:].strip(" ,;.")
+    if trailing:
+        return ()
+    return tuple(parts)
 
 
 def _schedule_list_entry_selector_from_parts(
@@ -603,6 +633,26 @@ def _uk_schedule_list_entry_replace_selector(
         not schedule_carrier_target and not local_list_carrier_target
     ):
         return None
+    match = _PLURAL_RELATING_ENTRIES_REPLACE_RE.search(text)
+    if match is not None:
+        anchors = _quoted_schedule_entry_repeal_anchors(match.group("anchors"))
+        raw_payload = str(match.group("payload") or "")
+        replacement_texts = _split_index_entry_replace_payload(
+            raw_payload,
+            expected_count=len(anchors),
+        )
+        if anchors and replacement_texts and len(anchors) == len(replacement_texts):
+            return {
+                "rule_id": UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID,
+                "anchor": anchors[0],
+                "anchors": list(anchors),
+                "replacement_text": replacement_texts[0],
+                "replacement_texts": replacement_texts,
+                "target_ref": target_ref,
+                "target": str(target),
+                "source_anchor_form": "plural_quoted_entries_relating_to",
+                "replacement_payload_form": "index_entry_section_ref_sequence",
+            }
     match = re.search(
         r"\bfor\s+(?:the\s+)?entry\s+(?:relating\s+to|for)\s+"
         r"(?P<anchor>.+?)\s+substitute\s*[—–-]?\s*(?P<payload>.+)$",
