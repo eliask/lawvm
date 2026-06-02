@@ -40626,6 +40626,211 @@ def test_compile_subsection_list_entry_insert_preserves_entry_boundary() -> None
     )
 
 
+def test_compile_exception_entry_insert_lowers_to_local_schedule_entry() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Schedule id="schedule-14">
+            <P2 id="schedule-14-paragraph-3-5">
+              <Pnumber>5</Pnumber>
+              <P2para>
+                <Text>5 In section 836 (jointly held property), in subsection (3),
+                after exception D insert—</Text>
+                <BlockAmendment>
+                  <P2>
+                    <Text>Exception DA Income arising from an overseas property business.</Text>
+                  </P2>
+                </BlockAmendment>
+              </P2para>
+            </P2>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-c33bf3cf518515efb1ae774b05e6502e",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2011-07-19",
+        affected_uri="/id/ukpga/2007/3/section/836/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 836(3)",
+        affecting_uri="/id/ukpga/2011/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="11",
+        affecting_provisions="Sch. 14 para. 3(5)",
+        affecting_title="Finance Act 2011",
+        in_force_dates=[{"date": "2011-07-19", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.INSERT
+    assert op.target.path == (("section", "836"), ("subsection", "3"))
+    assert op.payload is not None
+    assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
+    assert op.payload.text == "Exception DA Income arising from an overseas property business"
+    assert op.payload.attrs["source_rule_id"] == "uk_non_schedule_list_entry_insert_payload"
+    assert op.witness_rule_id == "uk_effect_non_schedule_list_entry_insert"
+    selector_note = next(note for note in op.provenance_tags if note.startswith("schedule_list_entry_selector:"))
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_selector:"))
+    assert selector["direction"] == "after"
+    assert selector["anchor_text"] == "Exception D"
+    assert selector["source_anchor_form"] == "exception_label"
+    assert selector["entry_carrier_family"] == "non_schedule_local_list"
+    assert any(
+        record["rule_id"] == "uk_effect_non_schedule_list_entry_insert"
+        and record["reason_code"] == "explicit_schedule_list_entry_anchor"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_replay_exception_entry_insert_requires_unique_local_anchor() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Schedule id="schedule-14">
+            <P2 id="schedule-14-paragraph-3-5">
+              <Pnumber>5</Pnumber>
+              <P2para>
+                <Text>5 In section 836, in subsection (3), after exception D insert—</Text>
+                <BlockAmendment>
+                  <P2>
+                    <Text>Exception DA Income arising from an overseas property business.</Text>
+                  </P2>
+                </BlockAmendment>
+              </P2para>
+            </P2>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_exception_entry_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2011-07-19",
+        affected_uri="/id/ukpga/2007/3/section/836/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 836(3)",
+        affecting_uri="/id/ukpga/2011/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="11",
+        affecting_provisions="Sch. 14 para. 3(5)",
+        affecting_title="Finance Act 2011",
+        in_force_dates=[{"date": "2011-07-19", "prospective": "false"}],
+    )
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, source_root=source_root)
+    assert len(ops) == 1
+
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="836",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            children=(
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Exception C Prior exception."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Exception D Overseas income."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Exception E Later exception."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [child.text for child in subsection.children] == [
+        "Exception C Prior exception.",
+        "Exception D Overseas income.",
+        "Exception DA Income arising from an overseas property business",
+        "Exception E Later exception.",
+    ]
+    assert not any(
+        adjudication.kind == "uk_replay_schedule_list_entry_anchor_unresolved"
+        for adjudication in adjudications
+    )
+
+    ambiguous_base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="836",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            children=(
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Exception D Overseas income."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Exception D Duplicate witness."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    ambiguous_adjudications: list[CompileAdjudication] = []
+
+    ambiguous_replayed = replay_uk_ops(
+        ambiguous_base,
+        ops,
+        adjudications_out=ambiguous_adjudications,
+    )
+
+    ambiguous_subsection = ambiguous_replayed.body.children[0].children[0]
+    assert [child.text for child in ambiguous_subsection.children] == [
+        "Exception D Overseas income.",
+        "Exception D Duplicate witness.",
+    ]
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_anchor_unresolved"
+        and adjudication.detail.get("reason_code") == "anchor_not_unique"
+        and adjudication.detail.get("blocking") is True
+        for adjudication in ambiguous_adjudications
+    )
+
+
 def test_compile_schedule_list_entry_table_payload_uses_parent_instruction_for_block_payload() -> None:
     source_root = ET.fromstring(
         f"""

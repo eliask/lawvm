@@ -200,10 +200,23 @@ def _uk_schedule_list_entry_insert_selector(
             text,
             re.I,
         )
+    exception_label_anchor = False
+    if match is None and local_list_carrier_target:
+        match = re.search(
+            r"\b(?P<direction>before|after)\s+(?:the\s+)?"
+            r"exception\s+(?P<anchor>[0-9A-Z]{1,4})\s+"
+            r"(?:,?\s*there\s+is\s+inserted|insert\b)\s*[—–-]?\s*(?P<payload>.+)$",
+            text,
+            re.I,
+        )
+        exception_label_anchor = match is not None
     if match is not None:
+        anchor = match.group("anchor")
+        if exception_label_anchor:
+            anchor = f"Exception {anchor}"
         selector = _schedule_list_entry_selector_from_parts(
             direction=str(match.group("direction") or "").lower(),
-            anchor_text=match.group("anchor"),
+            anchor_text=anchor,
             inserted_text=match.group("payload"),
             target_ref=target_ref,
             target=target,
@@ -213,6 +226,8 @@ def _uk_schedule_list_entry_insert_selector(
             selector["entry_carrier_family"] = entry_carrier_family
         if selector is not None and re.search(r"\bentry\s+relation\s+to\b", text, re.I):
             selector["source_anchor_form"] = "entry_relation_to_typo"
+        if selector is not None and exception_label_anchor:
+            selector["source_anchor_form"] = "exception_label"
         ordinal = match.groupdict().get("ordinal")
         if selector is not None and ordinal:
             selector["anchor_ordinal"] = _ENTRY_ORDINALS[ordinal.lower()]

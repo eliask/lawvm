@@ -58,9 +58,10 @@ UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RULE_ID = (
 )
 
 SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE = re.compile(
-    r"\b(?:before|after)\s+(?:the\s+)?entry\s+"
-    r"(?:relating\s+to|relation\s+to|for)\s+.+?"
-    r"(?:,?\s+there\s+is\s+inserted|\s+insert\b)",
+    r"\b(?:before|after)\s+(?:the\s+)?(?:"
+    r"entry\s+(?:relating\s+to|relation\s+to|for)\s+.+?|"
+    r"exception\s+[0-9A-Z]{1,4}"
+    r")\s*,?\s*(?:there\s+is\s+inserted|insert\b)",
     flags=re.I | re.S,
 )
 SOURCE_PARENT_TABLE_ENTRY_INSERT_RE = re.compile(
@@ -399,7 +400,7 @@ def _could_match_source_parent_schedule_entry_insert(text: str) -> bool:
     """Cheap necessary-condition guard for the broad schedule-entry regex."""
     lowered = text.lower()
     return (
-        "entry" in lowered
+        ("entry" in lowered or "exception" in lowered)
         and "insert" in lowered
         and ("before" in lowered or "after" in lowered)
     )
