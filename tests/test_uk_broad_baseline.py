@@ -1005,6 +1005,17 @@ def test_summarize_results_aggregates_manual_frontier_authorization() -> None:
                     "manual_claim_required": 2,
                     "source_insufficient": 1,
                 },
+                "manual_frontier_work_item_candidate_operation_family_counts": {
+                    "facet_text_rewrite": 2,
+                    "source_chain_text_patch": 1,
+                },
+                "manual_frontier_work_item_required_validator_check_counts": {
+                    "changed_paths_are_within_declared_facet_target": 2,
+                    "changed_paths_are_within_text_patch_target": 1,
+                    "claim_preserves_effect_feed_target_identity": 1,
+                },
+                "manual_frontier_work_item_missing_candidate_operation_family_count": 4,
+                "manual_frontier_work_item_missing_required_validator_checks_count": 5,
             },
         ]
     )
@@ -1029,6 +1040,17 @@ def test_summarize_results_aggregates_manual_frontier_authorization() -> None:
         "manual_claim_required": 2,
         "source_insufficient": 1,
     }
+    assert summary["manual_frontier_work_item_candidate_operation_family_counts"] == {
+        "facet_text_rewrite": 2,
+        "source_chain_text_patch": 1,
+    }
+    assert summary["manual_frontier_work_item_required_validator_check_counts"] == {
+        "changed_paths_are_within_declared_facet_target": 2,
+        "changed_paths_are_within_text_patch_target": 1,
+        "claim_preserves_effect_feed_target_identity": 1,
+    }
+    assert summary["manual_frontier_work_item_missing_candidate_operation_family_count"] == 4
+    assert summary["manual_frontier_work_item_missing_required_validator_checks_count"] == 5
 
 
 def test_compile_rejection_bucket_ignores_nonblocking_observations() -> None:

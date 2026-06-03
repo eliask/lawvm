@@ -428,6 +428,30 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 "authorization_status",
             )
         )
+        result["manual_frontier_work_item_candidate_operation_family_counts"] = (
+            _manual_frontier_work_item_field_counts(
+                manual_frontier_records,
+                "candidate_operation_family",
+            )
+        )
+        result["manual_frontier_work_item_required_validator_check_counts"] = (
+            _manual_frontier_work_item_sequence_field_counts(
+                manual_frontier_records,
+                "required_validator_checks",
+            )
+        )
+        result[
+            "manual_frontier_work_item_missing_candidate_operation_family_count"
+        ] = _manual_frontier_work_item_missing_field_count(
+            manual_frontier_records,
+            "candidate_operation_family",
+        )
+        result["manual_frontier_work_item_missing_required_validator_checks_count"] = (
+            _manual_frontier_work_item_missing_sequence_field_count(
+                manual_frontier_records,
+                "required_validator_checks",
+            )
+        )
         result["manual_frontier_rule_owner_phase_counts"] = (
             _manual_frontier_rule_owner_phase_counts(manual_frontier_records)
         )
@@ -642,6 +666,36 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     manual_frontier_work_item_authorization_status_counts = _aggregate_row_count_maps(
         results, "manual_frontier_work_item_authorization_status_counts"
     )
+    manual_frontier_work_item_candidate_operation_family_counts = (
+        _aggregate_row_count_maps(
+            results,
+            "manual_frontier_work_item_candidate_operation_family_counts",
+        )
+    )
+    manual_frontier_work_item_required_validator_check_counts = (
+        _aggregate_row_count_maps(
+            results,
+            "manual_frontier_work_item_required_validator_check_counts",
+        )
+    )
+    manual_frontier_work_item_missing_candidate_operation_family_count = sum(
+        int(
+            row.get(
+                "manual_frontier_work_item_missing_candidate_operation_family_count"
+            )
+            or 0
+        )
+        for row in results
+    )
+    manual_frontier_work_item_missing_required_validator_checks_count = sum(
+        int(
+            row.get(
+                "manual_frontier_work_item_missing_required_validator_checks_count"
+            )
+            or 0
+        )
+        for row in results
+    )
     manual_frontier_rule_owner_phase_counts = _aggregate_row_count_maps(
         results, "manual_frontier_rule_owner_phase_counts"
     )
@@ -799,6 +853,18 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "manual_frontier_work_item_authorization_status_counts": (
             manual_frontier_work_item_authorization_status_counts
+        ),
+        "manual_frontier_work_item_candidate_operation_family_counts": (
+            manual_frontier_work_item_candidate_operation_family_counts
+        ),
+        "manual_frontier_work_item_required_validator_check_counts": (
+            manual_frontier_work_item_required_validator_check_counts
+        ),
+        "manual_frontier_work_item_missing_candidate_operation_family_count": (
+            manual_frontier_work_item_missing_candidate_operation_family_count
+        ),
+        "manual_frontier_work_item_missing_required_validator_checks_count": (
+            manual_frontier_work_item_missing_required_validator_checks_count
         ),
         "manual_frontier_rule_owner_phase_counts": (
             manual_frontier_rule_owner_phase_counts
@@ -1447,6 +1513,57 @@ def _manual_frontier_work_item_field_counts(
     return dict(sorted(counts.items()))
 
 
+def _manual_frontier_work_item_sequence_field_counts(
+    rows: list[dict[str, Any]],
+    field: str,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        work_item = row.get("frontier_work_item")
+        if not isinstance(work_item, dict):
+            continue
+        values = work_item.get(field) or ()
+        if not isinstance(values, list | tuple):
+            counts[f"invalid_{field}_shape"] += 1
+            continue
+        counts.update(str(value) for value in values if str(value))
+    return dict(sorted(counts.items()))
+
+
+def _manual_frontier_work_item_missing_field_count(
+    rows: list[dict[str, Any]],
+    field: str,
+) -> int:
+    missing = 0
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        work_item = row.get("frontier_work_item")
+        if not isinstance(work_item, dict) or not str(work_item.get(field) or ""):
+            missing += 1
+    return missing
+
+
+def _manual_frontier_work_item_missing_sequence_field_count(
+    rows: list[dict[str, Any]],
+    field: str,
+) -> int:
+    missing = 0
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        work_item = row.get("frontier_work_item")
+        if not isinstance(work_item, dict):
+            missing += 1
+            continue
+        values = work_item.get(field) or ()
+        if not isinstance(values, list | tuple) or not any(str(value) for value in values):
+            missing += 1
+    return missing
+
+
 def _compile_authorization_rows(
     rows: list[dict[str, Any]],
     *,
@@ -1848,6 +1965,42 @@ def run_driver(
             ].items()
         )
         print(f"  manual_frontier_work_item_authorization_status_counts: {counts}")
+    if summary["manual_frontier_work_item_candidate_operation_family_counts"]:
+        counts = ", ".join(
+            f"{family}={count}"
+            for family, count in summary[
+                "manual_frontier_work_item_candidate_operation_family_counts"
+            ].items()
+        )
+        print(
+            "  manual_frontier_work_item_candidate_operation_family_counts: "
+            f"{counts}"
+        )
+    if summary["manual_frontier_work_item_required_validator_check_counts"]:
+        counts = ", ".join(
+            f"{check}={count}"
+            for check, count in summary[
+                "manual_frontier_work_item_required_validator_check_counts"
+            ].items()
+        )
+        print(
+            "  manual_frontier_work_item_required_validator_check_counts: "
+            f"{counts}"
+        )
+    missing_family_count = int(
+        summary.get("manual_frontier_work_item_missing_candidate_operation_family_count")
+        or 0
+    )
+    missing_check_count = int(
+        summary.get("manual_frontier_work_item_missing_required_validator_checks_count")
+        or 0
+    )
+    if missing_family_count or missing_check_count:
+        print(
+            "  manual_frontier_work_item_missing_completeness_counts: "
+            f"candidate_operation_family={missing_family_count}, "
+            f"required_validator_checks={missing_check_count}"
+        )
     if summary["manual_frontier_rule_owner_phase_counts"]:
         counts = ", ".join(
             f"{phase_rule}={count}"
