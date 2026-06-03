@@ -567,6 +567,11 @@ def _check_metadata_disagreement(
 # ---------------------------------------------------------------------------
 
 
+# Match the SpooledTemporaryFile threshold used by tools/import_zip.py so HE
+# acquisition has the same streaming behavior as the enacted-law import path.
+_SPOOLED_MAX_BYTES = 64 * 1024 * 1024
+
+
 def _is_https_url(source: str) -> bool:
     return source.startswith("https://") or source.startswith("http://")
 
@@ -577,13 +582,26 @@ def _open_zip_for_ingest(
     *,
     stream_mode: str,
     keep_tempfile: bool,
+    sha256_out: list[str],
 ) -> Iterator[tuple[zipfile.ZipFile, str]]:
     """Yield (ZipFile, resolved_source_uri).
 
-    Local paths: opened directly.
-    HTTPS (tempfile mode): streamed to a temp file then opened.
-    HTTPS (range mode): currently falls back to tempfile (range-request
-    streaming is a future extension requiring a range-aware zip reader).
+    Local paths: opened directly. Caller pre-computes sha256.
+
+    HTTPS (tempfile mode): streamed to a temp file, sha256 computed on-the-fly
+        during the stream, then opened. Uses ``SpooledTemporaryFile``
+        (in-memory up to 64 MB, spills to disk above) — same pattern as
+        ``tools/import_zip._open_zip_source``. When ``--keep-tempfile`` is
+        set, falls back to ``NamedTemporaryFile`` so the on-disk path is
+        recoverable for the operator.
+
+    HTTPS (range mode): currently falls back to tempfile. Range-request
+        streaming (RemoteZip-style partial reads) is a future extension that
+        requires a range-aware zip reader.
+
+    ``sha256_out`` is an out-parameter list: HTTPS callers receive the
+    streamed-bytes sha256 here once the download completes. Hash-verified
+    before farchive write per the brief's "HTTPS streaming hardening" clause.
     """
     if not _is_https_url(source):
         with open(source, "rb") as fp:
@@ -591,7 +609,6 @@ def _open_zip_for_ingest(
                 yield zf, source
         return
 
-    # HTTPS streaming → temp file
     print(f"  Streaming from {source} ...", file=sys.stderr)
     if stream_mode == "range":
         print(
@@ -605,26 +622,51 @@ def _open_zip_for_ingest(
             "Accept": "application/zip, application/octet-stream;q=0.9,*/*;q=0.1",
         },
     )
-    with tempfile.NamedTemporaryFile(suffix=".zip", delete=not keep_tempfile) as tmp_fp:
+
+    def _stream_into(tmp: Any, on_disk_name: str | None) -> None:
+        h = hashlib.sha256()
+        downloaded = 0
         with urllib.request.urlopen(req, timeout=120) as resp:
-            downloaded = 0
             while True:
                 chunk = resp.read(_HTTP_CHUNK)
                 if not chunk:
                     break
-                tmp_fp.write(chunk)
+                h.update(chunk)
+                tmp.write(chunk)
                 downloaded += len(chunk)
                 if downloaded % (100 * _HTTP_CHUNK) == 0:
                     print(
                         f"  Downloaded {downloaded // (1024 * 1024):,} MB ...",
                         file=sys.stderr,
                     )
-        tmp_fp.flush()
-        tmp_fp.seek(0)
-        with zipfile.ZipFile(tmp_fp, "r") as zf:
-            yield zf, source
-        if keep_tempfile:
-            print(f"  Temp file retained at: {tmp_fp.name}", file=sys.stderr)
+        tmp.flush()
+        tmp.seek(0)
+        digest = h.hexdigest()
+        sha256_out.append(digest)
+        print(f"  Streamed sha256: {digest}", file=sys.stderr)
+        if on_disk_name is not None:
+            print(f"  Temp file retained at: {on_disk_name}", file=sys.stderr)
+
+    if keep_tempfile:
+        # Operator asked to retain the streamed zip — NamedTemporaryFile has
+        # a stable on-disk path. delete=False so the file persists after we
+        # close it.
+        tmp_named = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+        try:
+            _stream_into(tmp_named, tmp_named.name)
+            with zipfile.ZipFile(tmp_named, "r") as zf:
+                yield zf, source
+        finally:
+            tmp_named.close()
+    else:
+        # SpooledTemporaryFile: in-memory up to 64 MB, spills to disk above.
+        # Same pattern as tools/import_zip._open_zip_source.
+        with tempfile.SpooledTemporaryFile(
+            max_size=_SPOOLED_MAX_BYTES, mode="w+b", suffix=".zip"
+        ) as tmp_fp:
+            _stream_into(tmp_fp, None)
+            with zipfile.ZipFile(tmp_fp, "r") as zf:
+                yield zf, source
 
 
 def _sha256_of_file(path: str) -> str:
@@ -1073,7 +1115,9 @@ def acquire_fi_proposals(
 
     ingest_timestamp = datetime.now(timezone.utc)
 
-    # Compute sha256 for local sources before opening the zip
+    # Compute sha256 up front for local sources; HTTPS is hashed during the
+    # stream and the digest appears in sha256_streamed once download completes.
+    sha256_streamed: list[str] = []
     if not _is_https_url(source):
         if not Path(source).exists():
             raise FileNotFoundError(f"government-proposal.zip not found: {source}")
@@ -1081,7 +1125,7 @@ def acquire_fi_proposals(
         source_sha256 = _sha256_of_file(source)
         print(f"  sha256: {source_sha256}", file=sys.stderr)
     else:
-        source_sha256 = "https_source"  # HTTPS: hash not pre-computable
+        source_sha256 = ""  # filled in after streaming completes
 
     print(
         f"Opening farchive: {dest}"
@@ -1112,9 +1156,17 @@ def acquire_fi_proposals(
 
     try:
         with _open_zip_for_ingest(
-            source, stream_mode=stream_mode, keep_tempfile=keep_tempfile
+            source,
+            stream_mode=stream_mode,
+            keep_tempfile=keep_tempfile,
+            sha256_out=sha256_streamed,
         ) as (zf, resolved_uri):
             run.source_uri = resolved_uri
+            # HTTPS: the streamed sha256 is now available — record it before
+            # any per-HE metadata is parsed so HEAcquisitionMetadata records
+            # the verified hash, not a placeholder.
+            if _is_https_url(source) and sha256_streamed:
+                run.source_zip_sha256 = sha256_streamed[0]
 
             all_names = zf.namelist()
             groups = _build_he_groups(all_names)

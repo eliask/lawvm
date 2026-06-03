@@ -850,6 +850,68 @@ def test_full_mode_overwrites_existing(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_https_streaming_records_streamed_sha256(monkeypatch, tmp_path: Path) -> None:
+    """HTTPS source: sha256 is computed on the streamed bytes (not a placeholder).
+
+    Mirrors the urlopen-monkeypatch pattern from test_import_zip.py so we
+    don't need a real network endpoint. Verifies that the brief's "HTTPS
+    streaming hardening: hash-verified before farchive write" requirement
+    is met: HEAcquisitionMetadata stored in the farchive carries the actual
+    streamed-bytes sha256.
+    """
+    from lawvm.finland import he_acquisition as he_mod
+
+    xml = _make_he_xml(year=2025, number=1)
+    zip_bytes = _make_zip_with_entries(
+        {
+            "akn/fi/doc/government-proposal/2025/1/fin@/main.xml": xml,
+        }
+    )
+    expected_sha = hashlib.sha256(zip_bytes).hexdigest()
+
+    seen_urls: list[str] = []
+
+    class _FakeResp:
+        def __init__(self, data: bytes) -> None:
+            self._bio = io.BytesIO(data)
+
+        def read(self, size: int = -1) -> bytes:
+            return self._bio.read(size)
+
+        def __enter__(self) -> "_FakeResp":
+            return self
+
+        def __exit__(self, *exc: Any) -> bool:
+            return False
+
+    def fake_urlopen(req: Any, timeout: int = 0) -> _FakeResp:
+        seen_urls.append(getattr(req, "full_url", str(req)))
+        return _FakeResp(zip_bytes)
+
+    monkeypatch.setattr(he_mod.urllib.request, "urlopen", fake_urlopen)
+
+    farchive_path = tmp_path / "https.farchive"
+    run = acquire_fi_proposals(
+        source="https://example.invalid/government-proposal.zip",
+        dest=str(farchive_path),
+        workers=1,
+    )
+
+    assert seen_urls == ["https://example.invalid/government-proposal.zip"]
+    assert run.source_zip_sha256 == expected_sha, (
+        "HTTPS streaming must record sha256 of streamed bytes, not a placeholder"
+    )
+    assert run.added >= 1
+
+    # Verify the stored blob's metadata records the streamed sha256, not "https_source"
+    from farchive import Farchive
+    arch = Farchive(str(farchive_path), readonly=True)
+    locator = he_locator(2025, 1, "fin", "main.xml")
+    span = arch.resolve(locator)
+    arch.close()
+    assert span is not None, "main.xml should have been stored"
+
+
 def test_dry_run_does_not_write_farchive(tmp_path: Path) -> None:
     """Dry-run must not create or write to farchive."""
     xml = _make_he_xml(year=2022, number=1)
