@@ -3467,6 +3467,77 @@ def build_evidence_bundle(
 
     source_pathologies = list(oracle_result.source_pathologies or [])
     contingent_effective_sources = [str(v) for v in oracle_result.contingent_effective_sources if str(v)]
+
+    # Trigger coverage certificates — one per contingent activation rule.
+    # Built from compiled_ops that carry is_contingent=True and an activation_rule.
+    # Uses the amendment_index to determine whether a commencement decree was found.
+    _trigger_coverage_certificates: List[Dict[str, Any]] = []
+    _trigger_coverage_search_failures: List[Dict[str, Any]] = []
+    if contingent_effective_sources:
+        try:
+            from lawvm.core.temporal import ActivationRule as _ActivationRule
+            from lawvm.finland.amendment_index import get_amendment_children as _get_amendment_children
+            from lawvm.finland.trigger_coverage import (
+                produce_certificates_for_activation_rules as _produce_certs,
+            )
+
+            _amendment_children_map = _get_amendment_children()
+            _statute_amendment_children = tuple(
+                str(c) for c in _amendment_children_map.get(statute_id, []) if str(c)
+            )
+
+            # Collect contingent activation rules from compiled ops
+            _contingent_rules: List[_ActivationRule] = []
+            _seen_amendment_ids: set[str] = set()
+            for _cop in replay_compiled_ops:
+                if not isinstance(_cop, dict):
+                    continue
+                if not _cop.get("is_contingent"):
+                    continue
+                _ar_raw = _cop.get("activation_rule")
+                if not isinstance(_ar_raw, dict):
+                    continue
+                _amendment_id = str(_cop.get("source_statute") or _cop.get("source") or "")
+                if _amendment_id not in contingent_effective_sources:
+                    continue
+                if _amendment_id in _seen_amendment_ids:
+                    continue
+                _seen_amendment_ids.add(_amendment_id)
+                _kind = str(_ar_raw.get("kind") or "")
+                if _kind not in ("pending_decree", "pending_condition"):
+                    continue
+                _contingent_rules.append(
+                    _ActivationRule(
+                        kind=_kind,  # type: ignore[arg-type]
+                        effective_date=str(_ar_raw.get("effective_date") or ""),
+                        condition_ref=str(_ar_raw.get("condition_ref") or ""),
+                        raw_text=str(_ar_raw.get("raw_text") or ""),
+                    )
+                )
+
+            if _contingent_rules:
+                import datetime as _dt
+
+                _cert_result = _produce_certs(
+                    statute_id=statute_id,
+                    amendment_id="|".join(sorted(_seen_amendment_ids)),
+                    activation_rules=_contingent_rules,
+                    amendment_children=_statute_amendment_children,
+                    as_of=_dt.date.today(),
+                )
+                _trigger_coverage_certificates = [
+                    c.to_dict() for c in _cert_result.certificates
+                ]
+                _trigger_coverage_search_failures = [
+                    f.to_dict() for f in _cert_result.search_failures
+                ]
+        except (NameError, TypeError, AttributeError):
+            raise  # programming bugs — fail loud
+        except Exception as exc:
+            _evidence_context_diagnostics.append(
+                _evidence_context_degradation("trigger_coverage_certificates", exc)
+            )
+
     should_include_bisect = include_bisect or any(
         str(item.get("diagnosis") or "") in _REPLAY_BUG_DIAGNOSES for item in section_results
     )
@@ -3831,6 +3902,8 @@ def build_evidence_bundle(
                 diagnostics=_evidence_context_diagnostics,
             ),
         },
+        "trigger_coverage_certificates": _trigger_coverage_certificates,
+        "trigger_coverage_search_failures": _trigger_coverage_search_failures,
     }
 
 
