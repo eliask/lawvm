@@ -6499,6 +6499,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also export fi_refs.parquet (ReferenceMention cross-statute citations)",
     )
+    ep_p.add_argument(
+        "--include-actors",
+        dest="include_actors",
+        action="store_true",
+        help="also export fi_actors.parquet (ActorMention institutional actor mentions)",
+    )
 
     # --- report ---
     report_p = sub.add_parser(
@@ -6708,6 +6714,66 @@ def _build_parser() -> argparse.ArgumentParser:
         help="directory containing fi_refs.parquet (default: .tmp/projections)",
     )
     refs_p.add_argument(
+        "-o",
+        "--output-format",
+        dest="output_format",
+        default="table",
+        choices=["table", "json", "jsonl", "csv", "parquet"],
+        help="output format (default: table)",
+    )
+    # Note: -j/--jurisdiction is inherited from _P parent parser
+
+    # --- actors ---
+    actors_p = sub.add_parser(
+        "actors",
+        help="query ActorMention institutional actor mentions from fi_actors.parquet",
+        description=(
+            "Query the fi_actors.parquet projection produced by 'lawvm export-projections'. "
+            "Without filters, shows schema and row count. "
+            "With filters, returns matching actor mentions."
+        ),
+        parents=_P,
+    )
+    actors_p.add_argument(
+        "--statute",
+        metavar="STATUTE_ID",
+        help="filter to actors FROM this statute (e.g. '711/2022')",
+    )
+    actors_p.add_argument(
+        "--provision",
+        metavar="PROVISION_REF",
+        help="filter to actors in this provision (e.g. '711/2022/7')",
+    )
+    actors_p.add_argument(
+        "--modal-kind",
+        dest="modal_kind",
+        metavar="KIND",
+        choices=["duty", "discretion", "permission", "prohibition",
+                 "mention", "passive-obligation", "passive_obligation", "unresolved"],
+        help="filter by modal kind: duty|discretion|permission|prohibition|mention|passive-obligation|unresolved",
+    )
+    actors_p.add_argument(
+        "--confidence",
+        metavar="CONF",
+        choices=["exact", "registry_resolved", "registry-resolved",
+                 "lifecycle_resolved", "lifecycle-resolved", "unresolved"],
+        help="filter by resolution confidence: exact|registry-resolved|lifecycle-resolved|unresolved",
+    )
+    actors_p.add_argument(
+        "--role-pattern",
+        dest="role_pattern",
+        metavar="PATTERN",
+        help="SQL SIMILAR TO pattern on actor_canonical_id / actor_canonical_show_as",
+    )
+    actors_p.add_argument("--as-of", metavar="DATE", help="filter to mentions valid at DATE")
+    actors_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
+    actors_p.add_argument(
+        "--data-dir",
+        dest="data_dir",
+        default=".tmp/projections",
+        help="directory containing fi_actors.parquet (default: .tmp/projections)",
+    )
+    actors_p.add_argument(
         "-o",
         "--output-format",
         dest="output_format",
@@ -7858,6 +7924,11 @@ def main() -> None:
         from lawvm.tools.refs_query import main as refs_main
 
         refs_main(args)
+
+    elif args.command == "actors":
+        from lawvm.tools.actors_query import main as actors_main
+
+        actors_main(args)
 
     elif args.command == "bench-report":
         from lawvm.tools.bench_report import main as bench_report_main
