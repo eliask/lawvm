@@ -284,6 +284,36 @@ The compiler should emit pathology or adjudication when:
   sentinel in the preceding section tail
 - replay would otherwise need to guess semantics after canonicalization
 
+### 7.1 Non-executable disposition
+
+Some pathologies and adjudications are diagnostic only; others must block
+execution.
+
+A finding should become a non-executable/manual-frontier row when:
+
+- no unique canonical operation is justified by the source witness, payload
+  shape, and live target state
+- applying the likely operation would destroy addressable live structure
+- the system would have to choose between multiple plausible target carriers
+- the missing evidence belongs to source acquisition, payload extraction, or
+  typed elaboration rather than deterministic replay
+- the remaining issue is an editorial/oracle comparison artifact rather than
+  enacted source law
+
+Such rows must state `executable=false` and `replay_authorized=false`.
+They may include proposed canonical operations, but those operations are review
+scaffolds only until a deterministic validator accepts the required proof.
+
+Finland-specific rows should at minimum carry:
+
+- source-pathology or adjudication code
+- owner phase
+- affected statute and target surface
+- source witness locator/hash or an explicit reason why it is absent
+- candidate live carriers or the fact that none is uniquely available
+- safe default and forbidden shortcut
+- required proof before replay can be authorized
+
 ## 8. Current Important Pathology Families
 
 ### 8.1 Base missing chapter span

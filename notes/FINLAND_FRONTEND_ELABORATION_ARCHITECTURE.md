@@ -332,7 +332,105 @@ The first item should make Finland's non-replay frontier inspectable in the
 same style as UK: rows that need human/LLM/editorial interpretation must remain
 non-executable until a validator emits canonical operations and provenance.
 
-## 8. Non-Goals
+## 8. Finland Non-Executable Frontier
+
+Finland does have a real non-executable frontier. It is narrower than the UK
+frontier because the Finland source shape and current frontend are stronger,
+but it should be explicit.
+
+The rule is:
+
+- if the source/payload/live-state evidence does not justify one canonical
+  operation, the compiler should emit a typed frontier row, not a best-effort
+  replay operation
+- frontier rows must carry `executable=false` and `replay_authorized=false`
+  until a validator turns a manual or LLM compilation claim into canonical ops
+- the row must name the owning phase: source acquisition, payload extraction,
+  typed elaboration, canonical compilation, replay, oracle comparison, or
+  editorial adjudication
+
+Candidate Finland frontier families:
+
+- attachment-only or source-incomplete amendments where the operative legal
+  payload is outside the machine-readable law XML
+- empty operative bodies or corrigenda whose correction record is visible but
+  not safely lowerable into a text or structural operation
+- malformed broad section/container replacement bodies where literal replay
+  would risk destructive shape loss
+- sparse subsection/item payloads whose live slot assignment is not unique
+  under the typed elaboration evidence order
+- container payloads that overbundle standalone child sections and cannot be
+  pruned with a source-proved membership boundary
+- missing base-source spans such as textual `Puuttuu luvut 7-11` sentinels
+  before a later amendment targets the absent region
+- recodification, relabel, or section-identity drift where the executable
+  source chain does not prove the migration path
+- duplicate or ambiguous live targets where a target phrase could map to more
+  than one live carrier
+- temporary, expiry, commencement, or transitional overlays where the operative
+  point-in-time state cannot be proved from the current timeline
+- editorial/oracle artifacts such as inline repeal stubs, synthetic eId
+  renames, stale oracle ranges, or metadata-collapsed dates that affect
+  comparison but are not themselves executable amendment law
+- old clause grammar or semantic continuation forms that remain outside the
+  current deterministic Finland clause target surface
+
+The frontier row should include:
+
+- source witness locator and hash when available
+- bounded source snippet or payload preview
+- affected statute, affected target surface, and candidate live carriers
+- candidate operation families, if known
+- safe default, usually "do not mutate"
+- forbidden shortcut, for example "do not broad-replace the whole section" or
+  "do not choose first unmatched slot"
+- required proof before replay authorization
+- link to the source-pathology/adjudication family that caused the block
+
+Existing source-pathology records are therefore not only diagnostics. Some are
+also candidates for non-executable workqueue export when replay would otherwise
+guess.
+
+### 8.1 Finland guidance reference packet
+
+Manual-frontier rows may also carry guidance references. These references are
+adjudication aids, not executable law and not overrides for the enacted source
+text.
+
+The default Finland packet should use:
+
+- Lainkirjoittajan opas, for statute structure, amendment drafting,
+  provisions, attachments, commencement, transitional provisions, and repeal
+  technique
+- Hallituksen esityksen laatimisohjeet (HELO), when a frontier row depends on
+  explanatory-material structure, impact-assessment claims, or source
+  justification outside the enacted amendment body
+- law-drafting process and consultation guides only when the disputed row
+  depends on preparatory-material provenance, hearing status, or branch context
+  rather than enacted text
+- Finlex source/oracle metadata notes when the problem is an editorial
+  publication artifact, inline repeal stub, consolidated eId rewrite, date
+  collapse, or corrigendum witness
+
+A guidance reference on a frontier row should state:
+
+- guide title and stable URL
+- section or heading when available
+- why the guidance is relevant to the source-shape or target-ontology question
+- whether it supports a deterministic parser rule, a manual claim checklist, or
+  only a non-binding triage hint
+
+Examples:
+
+- an unnumbered paragraph peer can cite Finnish statute-structure guidance as
+  support for why the XML shape is not a legitimate law-unit ontology
+- an attachment-only amendment can cite attachment/statute-structure guidance
+  to explain why source acquisition, not replay, owns the missing payload
+- commencement or transitional uncertainty can cite commencement/transitional
+  drafting guidance to list the required temporal fields before replay can be
+  authorized
+
+## 9. Non-Goals
 
 The target architecture is **not**:
 
@@ -341,7 +439,7 @@ The target architecture is **not**:
 - hiding malformed source behind “best effort” silent normalization
 - replacing explicit typed heuristics with opaque model guesses
 
-## 9. Practical Summary
+## 10. Practical Summary
 
 The optimal principled shape is:
 
