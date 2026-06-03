@@ -209,6 +209,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_address_parse.py",
         "test_admissible_binding.py",
         "test_authority.py",
+        "test_branch_graph_parser.py",
         "test_branch_projection.py",
         "test_canonical_intent_kinds.py",
         "test_clause_ast.py",

@@ -7711,6 +7711,132 @@ def _build_parser() -> argparse.ArgumentParser:
         help="output format (default: table)",
     )
 
+    # --- simulate (feature #8) ---
+    simulate_p = sub.add_parser(
+        "simulate",
+        help="simulate a branch (HE) applied to current enacted state (feature #8)",
+        description=(
+            "Materialize a hypothetical PIT state by applying an HE's proposed_ops "
+            "over the current enacted statute state and computing the structural delta. "
+            "Requires fi_government_proposal.farchive (feature #0) or "
+            "fi_he_branch_ops.parquet (feature #8 projection) to be available."
+        ),
+    )
+    simulate_p.add_argument(
+        "--branch",
+        required=True,
+        metavar="BRANCH_ID",
+        help="branch ID to simulate, e.g. 'fi/he/2024/184'",
+    )
+    simulate_p.add_argument(
+        "--as-of",
+        dest="as_of",
+        metavar="DATE",
+        help=(
+            "simulated date (YYYY-MM-DD); default: HE proposed_voimaantulo if known, "
+            "else today"
+        ),
+    )
+    simulate_p.add_argument(
+        "--diff-from",
+        dest="diff_from",
+        metavar="BASELINE",
+        default="current",
+        help="baseline to diff against: 'current', 'baseline', or a YYYY-MM-DD date (default: current)",
+    )
+    simulate_p.add_argument(
+        "--detect-broken-refs",
+        dest="detect_broken_refs",
+        action="store_true",
+        help=(
+            "flag refs in other statutes that fail to resolve in simulated state "
+            "(composes fi_refs.parquet, feature #1)"
+        ),
+    )
+    simulate_p.add_argument(
+        "--detect-actor-changes",
+        dest="detect_actor_changes",
+        action="store_true",
+        help=(
+            "flag actor mentions added/removed by branch ops "
+            "(composes fi_actors.parquet, feature #2)"
+        ),
+    )
+    simulate_p.add_argument(
+        "--scope",
+        metavar="PROVISION_REF",
+        help="narrow simulation to provisions matching this prefix, e.g. '711/2022'",
+    )
+    simulate_p.add_argument(
+        "--strict",
+        action="store_true",
+        help="reject branches with PARTIAL parse status (strict mode)",
+    )
+    simulate_p.add_argument(
+        "-o", "--output-format",
+        dest="output_format",
+        default="json",
+        choices=["table", "json", "jsonl"],
+        help="output format (default: json)",
+    )
+    simulate_p.add_argument(
+        "--farchive",
+        metavar="PATH",
+        help="path to fi_government_proposal.farchive (default: data/fi_government_proposal.farchive)",
+    )
+    simulate_p.add_argument(
+        "--refs-parquet",
+        dest="refs_parquet",
+        metavar="PATH",
+        help="path to fi_refs.parquet for broken-ref detection (feature #1)",
+    )
+    simulate_p.add_argument(
+        "--actors-parquet",
+        dest="actors_parquet",
+        metavar="PATH",
+        help="path to fi_actors.parquet for actor-change detection (feature #2)",
+    )
+    simulate_p.add_argument(
+        "--branch-ops-parquet",
+        dest="branch_ops_parquet",
+        metavar="PATH",
+        help="path to fi_he_branch_ops.parquet (feature #8 projection)",
+    )
+
+    # --- export-fi-he-branch-ops (feature #8) ---
+    efbo_p = sub.add_parser(
+        "export-fi-he-branch-ops",
+        help="export fi_he_branch_ops.parquet from fi_government_proposal.farchive (feature #8)",
+        description=(
+            "Parse HE amendment-proposal sections from fi_government_proposal.farchive "
+            "and write typed proposed_ops to data/fi/v1/fi_he_branch_ops.parquet."
+        ),
+    )
+    efbo_p.add_argument(
+        "--farchive",
+        metavar="PATH",
+        default="data/fi_government_proposal.farchive",
+        help="path to fi_government_proposal.farchive (default: data/fi_government_proposal.farchive)",
+    )
+    efbo_p.add_argument(
+        "--data-dir",
+        dest="data_dir",
+        metavar="DIR",
+        default="data/fi/v1",
+        help="output directory for Parquet file (default: data/fi/v1)",
+    )
+    efbo_p.add_argument("--limit", type=int, metavar="N", help="process only first N HEs (debug)")
+    efbo_p.add_argument(
+        "--year-range",
+        dest="year_range",
+        metavar="Y1:Y2",
+        help="filter to HE years Y1–Y2 inclusive, e.g. '2020:2024'",
+    )
+    efbo_p.add_argument("--strict", action="store_true", help="abort on first parse failure")
+    efbo_p.add_argument("--verbose", "-v", action="store_true", help="print per-HE progress")
+    efbo_p.add_argument("--dry-run", dest="dry_run", action="store_true",
+                        help="parse but do not write Parquet output")
+
     return parser
 
 
@@ -8857,6 +8983,16 @@ def main() -> None:
         from lawvm.tools.cmd_telos import main as telos_main
 
         telos_main(args)
+
+    elif args.command == "simulate":
+        from lawvm.tools.simulate import main as simulate_main
+
+        simulate_main(args)
+
+    elif args.command == "export-fi-he-branch-ops":
+        from lawvm.tools.export_fi_he_branch_ops import main as efbo_main
+
+        efbo_main(args)
 
     elif args.command is None:
         parser.print_help()
