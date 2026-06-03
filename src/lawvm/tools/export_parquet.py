@@ -228,6 +228,22 @@ def _project_one_statute(
             events = sd.get("events", []) if sd else []
             events_json = json.dumps(events, ensure_ascii=False) if events else "[]"
 
+            # --- Telos-section flag (#5) ---
+            from lawvm.finland.telos_section_flag import classify_telos_section
+            telos_result = (
+                classify_telos_section(
+                    replay_node,
+                    replay_node.label,
+                    statute_id,
+                )
+                if replay_node is not None
+                else None
+            )
+            is_purpose_section = bool(telos_result and telos_result.is_purpose_section)
+            purpose_text_snippet: Optional[str] = (
+                telos_result.purpose_text_snippet if telos_result is not None else None
+            )
+
             result["sections"].append({
                 "statute_id": statute_id,
                 "section_key": key,
@@ -238,6 +254,8 @@ def _project_one_statute(
                 "replay_text": replay_text_sec,
                 "similarity": round(similarity, 6),
                 "events": events_json,
+                "is_purpose_section": is_purpose_section,
+                "purpose_text_snippet": purpose_text_snippet,
             })
     except (NameError, TypeError, AttributeError):
         raise
