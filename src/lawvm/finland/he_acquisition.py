@@ -793,10 +793,19 @@ def _read_he_group(
     source_zip_sha256: str,
     ingest_timestamp: datetime,
     languages_in_he: tuple[str, ...],
+    include_pdfs: bool = False,
 ) -> _HEReadResult:
     """Phase 1: read all files for one HE from the zip and parse metadata.
 
     Must be called with zip_lock held. Does NOT touch farchive.
+
+    When include_pdfs is False (default), main.pdf entries are skipped at
+    blob-creation time — LawVM's text-state-compiler scope does not extract
+    text from PDFs and the 97.6% FULL_AKN majority has redundant XML +
+    PDF content. Saves ~6-12 GB of farchive storage for the full FI corpus.
+    The 2.4% PDF_WRAPPER HEs still get their main.xml stub + metadata
+    projection, just no underlying PDF blob; they can be re-acquired with
+    include_pdfs=True if the PDF text becomes needed later.
     """
     failures: list[HEAcquisitionFailure] = []
     disagreements: list[HEMetadataDisagreement] = []
@@ -914,6 +923,11 @@ def _read_he_group(
 
         # Read all file bytes for this language variant
         for filename, entry_name in file_map.items():
+            # PDF policy: skip main.pdf blobs by default (LawVM doesn't
+            # extract PDF text; XML + metadata is sufficient). Re-run
+            # with include_pdfs=True if PDF blobs are ever needed.
+            if not include_pdfs and filename.endswith(".pdf"):
+                continue
             locator = he_locator(year, number, lang, filename)
             entry_data: bytes
             try:
@@ -1068,6 +1082,7 @@ def acquire_fi_proposals(
     strict: bool = False,
     verbose: bool = False,
     dry_run: bool = False,
+    include_pdfs: bool = False,
 ) -> HEIngestRun:
     """Acquire Finnish government proposals into fi_government_proposal.farchive.
 
@@ -1115,17 +1130,17 @@ def acquire_fi_proposals(
 
     ingest_timestamp = datetime.now(timezone.utc)
 
-    # Compute sha256 up front for local sources; HTTPS is hashed during the
-    # stream and the digest appears in sha256_streamed once download completes.
+    # No outer-zip sha256 computation: inner per-file blobs are already
+    # content-addressed by sha256 at the farchive blob layer, so the outer
+    # container hash is redundant provenance. Finlex updates the
+    # government-proposal.zip daily so there is also no canonical hash to
+    # verify against. Provenance comes from source_uri + ingest_timestamp +
+    # per-blob content addressing.
     sha256_streamed: list[str] = []
     if not _is_https_url(source):
         if not Path(source).exists():
             raise FileNotFoundError(f"government-proposal.zip not found: {source}")
-        print(f"  Computing sha256 of {source} ...", file=sys.stderr)
-        source_sha256 = _sha256_of_file(source)
-        print(f"  sha256: {source_sha256}", file=sys.stderr)
-    else:
-        source_sha256 = ""  # filled in after streaming completes
+    source_sha256 = ""  # never computed; field retained for HEAcquisitionMetadata back-compat
 
     print(
         f"Opening farchive: {dest}"
@@ -1198,6 +1213,7 @@ def acquire_fi_proposals(
                         source_zip_sha256=run.source_zip_sha256,
                         ingest_timestamp=ingest_timestamp,
                         languages_in_he=langs,
+                        include_pdfs=include_pdfs,
                     )
 
             done = 0
@@ -1286,6 +1302,7 @@ def main(args: object) -> None:
     strict = getattr(args, "strict", False)
     verbose = getattr(args, "verbose", False)
     dry_run = getattr(args, "dry_run", False)
+    include_pdfs = getattr(args, "include_pdfs", False)
 
     run = acquire_fi_proposals(
         source=source,
@@ -1299,6 +1316,7 @@ def main(args: object) -> None:
         strict=strict,
         verbose=verbose,
         dry_run=dry_run,
+        include_pdfs=include_pdfs,
     )
 
     assert run.failures is not None

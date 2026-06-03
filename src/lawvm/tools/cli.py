@@ -6473,6 +6473,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="retain streamed zip after ingest (HTTPS mode only)",
     )
     acquire_he_p.add_argument(
+        "--include-pdfs",
+        dest="include_pdfs",
+        action="store_true",
+        help=(
+            "store main.pdf blobs in the farchive (default: false). LawVM does "
+            "not extract PDF text; structured XML + metadata is sufficient for "
+            "all current consumers. Default-off saves ~6-12 GB on the full FI "
+            "corpus. Pass this flag only if a downstream consumer needs PDF "
+            "content (and consider re-acquiring with --full to add them later)."
+        ),
+    )
+    acquire_he_p.add_argument(
         "--strict",
         action="store_true",
         help="abort on first acquisition failure with non-zero exit",
