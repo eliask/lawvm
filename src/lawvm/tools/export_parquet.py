@@ -376,6 +376,9 @@ def export_projections(
     include_refs: bool = False,
     include_actors: bool = False,
     include_pools: bool = False,
+    include_he_corpus: bool = False,
+    he_farchive: Optional[str] = None,
+    he_data_dir: Optional[str] = None,
 ) -> Dict[str, int]:
     """Export corpus projections to JSONL (and optionally Parquet).
 
@@ -513,6 +516,20 @@ def export_projections(
         )
         counts["fi_pools"] = pools_count
 
+    # --- fi_he_corpus/atoms/law_refs/signatures: HE corpus projection ---
+    if include_he_corpus:
+        print("\nExporting fi_he_corpus projection...")
+        from lawvm.tools.export_fi_he_corpus import project_he_corpus
+        _he_farchive = he_farchive or "data/fi_government_proposal.farchive"
+        _he_data_dir = he_data_dir or "data/fi/v1"
+        he_counts = project_he_corpus(
+            farchive_path=_he_farchive,
+            data_dir=_he_data_dir,
+            use_parquet=use_parquet,
+            limit=limit,
+        )
+        counts.update(he_counts)
+
     print()
     for name, n in counts.items():
         print(f"  {name}: {n:,} rows")
@@ -535,4 +552,7 @@ def main(args: Any) -> None:
         include_refs=getattr(args, "include_refs", False),
         include_actors=getattr(args, "include_actors", False),
         include_pools=getattr(args, "include_pools", False),
+        include_he_corpus=getattr(args, "include_he_corpus", False),
+        he_farchive=getattr(args, "he_farchive", None),
+        he_data_dir=getattr(args, "he_data_dir", None),
     )

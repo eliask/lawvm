@@ -55,6 +55,9 @@ Subcommands:
     sql                             Ad-hoc SQL over LawVM projections (DuckDB).
     refs                            Query ReferenceMention cross-statute citations from fi_refs.parquet.
     pools                           Query PoolMention budget-line/quantity mentions from fi_pools.parquet.
+    fi-proposals                    Query Finnish government proposals from fi_he_corpus.parquet.
+    fi-proposal-show <HE_ID>        Per-HE structural overview (atoms, law_refs, signatures).
+    sync-fi-proposals               Acquire HE corpus and rebuild fi_he_* Parquet projections.
     bench-report                    Summarise a bench run CSV without re-running the bench.
     parse-johto <text>              Parse a Finnish amendment johtolause text and show parsed ops.
 
@@ -6601,6 +6604,225 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also export fi_pools.parquet (PoolMention budget-line/quantity mentions)",
     )
+    ep_p.add_argument(
+        "--include-he-corpus",
+        dest="include_he_corpus",
+        action="store_true",
+        help="also export fi_he_corpus/atoms/law_refs/signatures Parquet from fi_government_proposal.farchive",
+    )
+    ep_p.add_argument(
+        "--he-farchive",
+        dest="he_farchive",
+        default=None,
+        metavar="PATH",
+        help="fi_government_proposal.farchive path (default: data/fi_government_proposal.farchive)",
+    )
+    ep_p.add_argument(
+        "--he-data-dir",
+        dest="he_data_dir",
+        default=None,
+        metavar="PATH",
+        help="HE projection output directory (default: data/fi/v1)",
+    )
+
+    # --- fi-proposals ---
+    fp_p = sub.add_parser(
+        "fi-proposals",
+        help="query Finnish government proposals from fi_he_corpus.parquet",
+        description=(
+            "Query the fi_he_corpus.parquet projection produced by 'lawvm sync-fi-proposals'. "
+            "Without filters, shows the schema and row count."
+        ),
+        parents=_P,
+    )
+    fp_p.add_argument(
+        "--ministry",
+        metavar="TEXT",
+        help="filter by ministry name or canonical_id (substring match)",
+    )
+    fp_p.add_argument(
+        "--year",
+        type=int,
+        metavar="YEAR",
+        help="filter to HEs from this year",
+    )
+    fp_p.add_argument(
+        "--year-range",
+        dest="year_range",
+        metavar="Y1:Y2",
+        help="filter to HEs in year range Y1:Y2 inclusive",
+    )
+    fp_p.add_argument(
+        "--lifecycle",
+        metavar="STATE",
+        help="filter by finlex_state (e.g. 'closed', 'open')",
+    )
+    fp_p.add_argument(
+        "--structured-only",
+        dest="structured_only",
+        action="store_true",
+        help="only show FULL_AKN HEs (is_structured=True)",
+    )
+    fp_p.add_argument(
+        "--pdf-only",
+        dest="pdf_only",
+        action="store_true",
+        help="only show PDF_WRAPPER HEs (is_structured=False)",
+    )
+    fp_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
+    fp_p.add_argument(
+        "--data-dir",
+        dest="data_dir",
+        default="data/fi/v1",
+        help="directory containing fi_he_corpus.parquet (default: data/fi/v1)",
+    )
+    fp_p.add_argument(
+        "-o",
+        "--output-format",
+        dest="output_format",
+        default="table",
+        choices=["table", "json", "jsonl", "csv", "parquet"],
+        help="output format (default: table)",
+    )
+
+    # --- fi-proposal-show ---
+    fps_p = sub.add_parser(
+        "fi-proposal-show",
+        help="show per-HE structural overview from fi_he_* projections",
+        description=(
+            "Show metadata + optionally atoms, law_refs, and signatures for one HE. "
+            "Default output: metadata only. Use --include-atoms etc. to add body atoms."
+        ),
+        parents=_P,
+    )
+    fps_p.add_argument(
+        "he_id",
+        help="HE identifier, e.g. 'HE 98/1996 vp'",
+    )
+    fps_p.add_argument(
+        "--include-atoms",
+        dest="include_atoms",
+        action="store_true",
+        help="include fi_he_atoms rows (body structure)",
+    )
+    fps_p.add_argument(
+        "--include-law-refs",
+        dest="include_law_refs",
+        action="store_true",
+        help="include fi_he_law_refs rows (citations to enacted statutes)",
+    )
+    fps_p.add_argument(
+        "--include-signatures",
+        dest="include_signatures",
+        action="store_true",
+        help="include fi_he_signatures rows (President/minister signatures)",
+    )
+    fps_p.add_argument("--limit", type=int, metavar="N", help="limit rows for large tables")
+    fps_p.add_argument(
+        "--data-dir",
+        dest="data_dir",
+        default="data/fi/v1",
+        help="directory containing fi_he_*.parquet (default: data/fi/v1)",
+    )
+    fps_p.add_argument(
+        "-o",
+        "--output-format",
+        dest="output_format",
+        default="table",
+        choices=["table", "json", "jsonl"],
+        help="output format (default: table)",
+    )
+
+    # --- sync-fi-proposals ---
+    sfp_p = sub.add_parser(
+        "sync-fi-proposals",
+        help="acquire Finnish government proposals and rebuild Parquet projections",
+        description=(
+            "Two-step composition: (1) acquire-fi-proposals updates the farchive, "
+            "(2) rebuilds fi_he_corpus/atoms/law_refs/signatures under data/fi/v1/. "
+            "Both steps are separately invokable; this provides one ergonomic entrypoint."
+        ),
+    )
+    sfp_p.add_argument(
+        "--source",
+        metavar="LOCATION",
+        default=None,
+        help="local path or https:// URL to government-proposal.zip",
+    )
+    sfp_p.add_argument(
+        "--farchive",
+        metavar="PATH",
+        default=None,
+        help="farchive DB path (default: data/fi_government_proposal.farchive)",
+    )
+    sfp_p.add_argument(
+        "--data-dir",
+        dest="data_dir",
+        default=None,
+        metavar="PATH",
+        help="projection output directory (default: data/fi/v1)",
+    )
+    sfp_p.add_argument(
+        "--lang",
+        default="fin",
+        choices=["fin", "swe"],
+        help="language to project (default: fin)",
+    )
+    sfp_p.add_argument(
+        "--full",
+        action="store_true",
+        help="re-ingest all HEs (default: incremental)",
+    )
+    sfp_p.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        metavar="N",
+        help="parallel zip-extract workers (default: 4)",
+    )
+    sfp_p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="debug: process only first N HE groups",
+    )
+    sfp_p.add_argument(
+        "--year-range",
+        dest="year_range",
+        default=None,
+        metavar="Y1:Y2",
+        help="debug: only HEs in year range Y1:Y2 inclusive",
+    )
+    sfp_p.add_argument(
+        "--strict",
+        action="store_true",
+        help="abort on first acquisition failure",
+    )
+    sfp_p.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="print per-HE progress",
+    )
+    sfp_p.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="parse and classify without writing farchive or projections",
+    )
+    sfp_p.add_argument(
+        "--projection-only",
+        dest="projection_only",
+        action="store_true",
+        help="skip acquisition; only rebuild projections from existing farchive",
+    )
+    sfp_p.add_argument(
+        "--no-parquet",
+        dest="no_parquet",
+        action="store_true",
+        help="write JSONL only (no Parquet)",
+    )
 
     # --- report ---
     report_p = sub.add_parser(
@@ -8094,6 +8316,21 @@ def main() -> None:
         from lawvm.tools.pools_query import main as pools_main
 
         pools_main(args)
+
+    elif args.command == "fi-proposals":
+        from lawvm.tools.fi_proposals_query import main as fi_proposals_main
+
+        fi_proposals_main(args)
+
+    elif args.command == "fi-proposal-show":
+        from lawvm.tools.fi_proposal_show import main as fi_proposal_show_main
+
+        fi_proposal_show_main(args)
+
+    elif args.command == "sync-fi-proposals":
+        from lawvm.tools.sync_fi_proposals import main as sync_fi_proposals_main
+
+        sync_fi_proposals_main(args)
 
     elif args.command == "bench-report":
         from lawvm.tools.bench_report import main as bench_report_main
