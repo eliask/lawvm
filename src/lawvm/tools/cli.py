@@ -57,6 +57,7 @@ Subcommands:
     pools                           Query PoolMention budget-line/quantity mentions from fi_pools.parquet.
     fi-proposals                    Query Finnish government proposals from fi_he_corpus.parquet.
     fi-proposal-show <HE_ID>        Per-HE structural overview (atoms, law_refs, signatures).
+    fi-proposal-bundle --he HE_ID   Typed JSON bundle aggregating #1-#5 projections for one HE.
     sync-fi-proposals               Acquire HE corpus and rebuild fi_he_* Parquet projections.
     rebuild-indexes                 Regenerate Tier 2 Parquet projections from Tier 1 farchive.
     build-index-db                  Compose Tier 2 Parquets into a single DuckDB .db file.
@@ -6740,6 +6741,143 @@ def _build_parser() -> argparse.ArgumentParser:
         help="output format (default: table)",
     )
 
+    # --- fi-proposal-bundle ---
+    fpb_p = sub.add_parser(
+        "fi-proposal-bundle",
+        help="typed JSON bundle aggregating #1-#5 projections for one HE",
+        description=(
+            "Compose already-projected Parquet tables (features #1-#5) into a single "
+            "typed JSON bundle for one Finnish government proposal.  No new extraction. "
+            "Use --all for a complete bundle or select individual --include-* flags. "
+            "PDF_WRAPPER HEs return metadata-only bundles with warnings."
+        ),
+    )
+    fpb_p.add_argument(
+        "--he",
+        dest="he_id",
+        default=None,
+        metavar="HE_ID",
+        help=(
+            "HE identifier, e.g. 'HE 98/1996 vp', 'HE/2024/184', or 'HE-184/2024'. "
+            "CLI normalises all forms to corpus he_id."
+        ),
+    )
+    fpb_p.add_argument(
+        "--branch",
+        dest="branch_id",
+        default=None,
+        metavar="BRANCH_ID",
+        help="alternative: branch context ID (if BranchContext uses different IDs)",
+    )
+    fpb_p.add_argument(
+        "--include-atoms",
+        dest="include_atoms",
+        action="store_true",
+        help="include fi_he_atoms rows (body structure atoms, FULL_AKN only)",
+    )
+    fpb_p.add_argument(
+        "--include-law-refs",
+        dest="include_law_refs",
+        action="store_true",
+        help="include fi_he_law_refs rows (typed citations to enacted statutes)",
+    )
+    fpb_p.add_argument(
+        "--include-actors",
+        dest="include_actors",
+        action="store_true",
+        help=(
+            "include actor mentions from fi_actors.parquet for statutes referenced "
+            "by this HE (requires --include-law-refs data to resolve target statutes)"
+        ),
+    )
+    fpb_p.add_argument(
+        "--include-pools",
+        dest="include_pools",
+        action="store_true",
+        help=(
+            "include pool/quantity mentions from fi_pools.parquet for statutes "
+            "referenced by this HE"
+        ),
+    )
+    fpb_p.add_argument(
+        "--include-telos",
+        dest="include_telos",
+        action="store_true",
+        help=(
+            "include telos/purpose section text from sections.parquet for parent "
+            "statutes referenced by this HE (requires feature #5 telos flag applied)"
+        ),
+    )
+    fpb_p.add_argument(
+        "--include-replay-status",
+        dest="include_replay_status",
+        action="store_true",
+        help=(
+            "include replay-vs-oracle classification for parent statutes from "
+            "statutes.parquet (clean/partial/diverged/unknown)"
+        ),
+    )
+    fpb_p.add_argument(
+        "--include-text",
+        dest="include_text",
+        default="none",
+        choices=["none", "affected", "before-after"],
+        help=(
+            "text rehydration mode for affected provisions (default: none). "
+            "'affected' and 'before-after' not yet implemented in projection-based bundle."
+        ),
+    )
+    fpb_p.add_argument(
+        "--include-signatures",
+        dest="include_signatures",
+        action="store_true",
+        help="include fi_he_signatures rows (President/minister signatures, FULL_AKN only)",
+    )
+    fpb_p.add_argument(
+        "--all",
+        dest="include_all",
+        action="store_true",
+        help="shorthand for all --include-* flags",
+    )
+    fpb_p.add_argument(
+        "--limit",
+        type=int,
+        metavar="N",
+        help="limit rows for large per-section tables (atoms, refs, actors, pools)",
+    )
+    fpb_p.add_argument(
+        "--he-data-dir",
+        dest="he_data_dir",
+        default="data/fi/v1",
+        metavar="PATH",
+        help="directory containing fi_he_*.parquet (default: data/fi/v1)",
+    )
+    fpb_p.add_argument(
+        "--projections-data-dir",
+        dest="projections_data_dir",
+        default=".tmp/projections",
+        metavar="PATH",
+        help=(
+            "directory containing fi_actors/fi_pools/sections/statutes.parquet "
+            "(default: .tmp/projections)"
+        ),
+    )
+    fpb_p.add_argument(
+        "-o",
+        "--output-format",
+        dest="output_format",
+        default="json",
+        choices=["json", "jsonl", "table"],
+        help="output format (default: json)",
+    )
+    fpb_p.add_argument(
+        "-j",
+        "--jurisdiction",
+        dest="jurisdiction",
+        default="fi",
+        help="jurisdiction (currently only 'fi' supported; default: fi)",
+    )
+
     # --- sync-fi-proposals ---
     sfp_p = sub.add_parser(
         "sync-fi-proposals",
@@ -8664,6 +8802,11 @@ def main() -> None:
         from lawvm.tools.fi_proposal_show import main as fi_proposal_show_main
 
         fi_proposal_show_main(args)
+
+    elif args.command == "fi-proposal-bundle":
+        from lawvm.tools.fi_proposal_bundle import main as fi_proposal_bundle_main
+
+        fi_proposal_bundle_main(args)
 
     elif args.command == "sync-fi-proposals":
         from lawvm.tools.sync_fi_proposals import main as sync_fi_proposals_main
