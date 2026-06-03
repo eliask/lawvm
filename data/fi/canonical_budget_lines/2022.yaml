@@ -1,0 +1,148 @@
+# Finnish state budget canonical budget-line registry — year 2022.
+#
+# Source: Talousarviolaki structure (paaluokka.luku.momentti).
+# Hand-curated representative subset.
+
+year: 2022
+
+lines:
+  - canonical_id: "fi.budget.28.10.01"
+    paaluokka: 28
+    luku: 10
+    momentti: 1
+    show_as: "Valtiovarainministeriö, toimintamenot"
+    momentti_code: "28.10.01"
+
+  - canonical_id: "fi.budget.28.91.50"
+    paaluokka: 28
+    luku: 91
+    momentti: 50
+    show_as: "Valtionosuus kunnille (kiinteä määräraha)"
+    momentti_code: "28.91.50"
+    estimated_amount: 8300000000
+
+  - canonical_id: "fi.budget.28.92.30"
+    paaluokka: 28
+    luku: 92
+    momentti: 30
+    show_as: "Valtion osuus kuntien peruspalvelujen valtionosuudesta"
+    momentti_code: "28.92.30"
+
+  - canonical_id: "fi.budget.29.10.01"
+    paaluokka: 29
+    luku: 10
+    momentti: 1
+    show_as: "Opetus- ja kulttuuriministeriö, toimintamenot"
+    momentti_code: "29.10.01"
+
+  - canonical_id: "fi.budget.29.20.30"
+    paaluokka: 29
+    luku: 20
+    momentti: 30
+    show_as: "Valtionosuus ja -avustus yleissivistävän koulutuksen käyttökustannuksiin"
+    momentti_code: "29.20.30"
+
+  - canonical_id: "fi.budget.29.30.30"
+    paaluokka: 29
+    luku: 30
+    momentti: 30
+    show_as: "Valtionosuus ja -avustus ammatillisen koulutuksen käyttökustannuksiin"
+    momentti_code: "29.30.30"
+
+  - canonical_id: "fi.budget.30.10.01"
+    paaluokka: 30
+    luku: 10
+    momentti: 1
+    show_as: "Maa- ja metsätalousministeriö, toimintamenot"
+    momentti_code: "30.10.01"
+
+  - canonical_id: "fi.budget.30.20.44"
+    paaluokka: 30
+    luku: 20
+    momentti: 44
+    show_as: "Luonnonhaittakorvaukset"
+    momentti_code: "30.20.44"
+
+  - canonical_id: "fi.budget.30.20.46"
+    paaluokka: 30
+    luku: 20
+    momentti: 46
+    show_as: "Maatalouden ympäristökorvaukset"
+    momentti_code: "30.20.46"
+
+  - canonical_id: "fi.budget.31.10.01"
+    paaluokka: 31
+    luku: 10
+    momentti: 1
+    show_as: "Liikenne- ja viestintäministeriö, toimintamenot"
+    momentti_code: "31.10.01"
+
+  - canonical_id: "fi.budget.31.10.77"
+    paaluokka: 31
+    luku: 10
+    momentti: 77
+    show_as: "Väyläverkon kehittäminen (siirtomääräraha 3 v)"
+    momentti_code: "31.10.77"
+
+  - canonical_id: "fi.budget.32.01.01"
+    paaluokka: 32
+    luku: 1
+    momentti: 1
+    show_as: "Työ- ja elinkeinoministeriö, toimintamenot"
+    momentti_code: "32.01.01"
+
+  - canonical_id: "fi.budget.32.30.51"
+    paaluokka: 32
+    luku: 30
+    momentti: 51
+    show_as: "Julkiset työvoima- ja yrityspalvelut (siirtomääräraha 2 v)"
+    momentti_code: "32.30.51"
+
+  - canonical_id: "fi.budget.33.01.01"
+    paaluokka: 33
+    luku: 1
+    momentti: 1
+    show_as: "Sosiaali- ja terveysministeriö, toimintamenot"
+    momentti_code: "33.01.01"
+
+  - canonical_id: "fi.budget.33.10.60"
+    paaluokka: 33
+    luku: 10
+    momentti: 60
+    show_as: "Kansaneläkelaitoksen toimintamenot"
+    momentti_code: "33.10.60"
+
+  - canonical_id: "fi.budget.33.20.50"
+    paaluokka: 33
+    luku: 20
+    momentti: 50
+    show_as: "Valtionosuus sairausvakuutuslaista johtuviin menoihin"
+    momentti_code: "33.20.50"
+
+  - canonical_id: "fi.budget.33.20.52"
+    paaluokka: 33
+    luku: 20
+    momentti: 52
+    show_as: "Valtionosuus työttömyysturvasta"
+    momentti_code: "33.20.52"
+
+  - canonical_id: "fi.budget.33.20.55"
+    paaluokka: 33
+    luku: 20
+    momentti: 55
+    show_as: "Valtionosuus eläkemenoista"
+    momentti_code: "33.20.55"
+
+  - canonical_id: "fi.budget.26.10.01"
+    paaluokka: 26
+    luku: 10
+    momentti: 1
+    show_as: "Sisäministeriö, toimintamenot"
+    momentti_code: "26.10.01"
+
+  - canonical_id: "fi.budget.26.40.01"
+    paaluokka: 26
+    luku: 40
+    momentti: 1
+    show_as: "Poliisitoimi, toimintamenot"
+    momentti_code: "26.40.01"

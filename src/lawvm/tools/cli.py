@@ -54,6 +54,7 @@ Subcommands:
     export-projections              Export canonical LawVM projections to JSONL/Parquet.
     sql                             Ad-hoc SQL over LawVM projections (DuckDB).
     refs                            Query ReferenceMention cross-statute citations from fi_refs.parquet.
+    pools                           Query PoolMention budget-line/quantity mentions from fi_pools.parquet.
     bench-report                    Summarise a bench run CSV without re-running the bench.
     parse-johto <text>              Parse a Finnish amendment johtolause text and show parsed ops.
 
@@ -6505,6 +6506,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also export fi_actors.parquet (ActorMention institutional actor mentions)",
     )
+    ep_p.add_argument(
+        "--include-pools",
+        dest="include_pools",
+        action="store_true",
+        help="also export fi_pools.parquet (PoolMention budget-line/quantity mentions)",
+    )
 
     # --- report ---
     report_p = sub.add_parser(
@@ -6774,6 +6781,65 @@ def _build_parser() -> argparse.ArgumentParser:
         help="directory containing fi_actors.parquet (default: .tmp/projections)",
     )
     actors_p.add_argument(
+        "-o",
+        "--output-format",
+        dest="output_format",
+        default="table",
+        choices=["table", "json", "jsonl", "csv", "parquet"],
+        help="output format (default: table)",
+    )
+    # Note: -j/--jurisdiction is inherited from _P parent parser
+
+    # --- pools ---
+    pools_p = sub.add_parser(
+        "pools",
+        help="query PoolMention budget-line/quantity mentions from fi_pools.parquet",
+        description=(
+            "Query the fi_pools.parquet projection produced by 'lawvm export-projections'. "
+            "Without filters, shows schema and row count. "
+            "With filters, returns matching pool/quantity mentions."
+        ),
+        parents=_P,
+    )
+    pools_p.add_argument(
+        "--statute",
+        metavar="STATUTE_ID",
+        help="filter to pools FROM this statute (e.g. '711/2022')",
+    )
+    pools_p.add_argument(
+        "--provision",
+        metavar="PROVISION_REF",
+        help="filter to pools in this provision (e.g. '711/2022/3')",
+    )
+    pools_p.add_argument(
+        "--quantity-kind",
+        dest="quantity_kind",
+        metavar="KIND",
+        choices=["budget_line", "budget-line", "fiscal_pool", "fiscal-pool",
+                 "capacity_cap", "capacity-cap", "threshold",
+                 "formula_term", "formula-term", "unresolved"],
+        help="filter by quantity kind: budget-line|fiscal-pool|capacity-cap|threshold|formula-term|unresolved",
+    )
+    pools_p.add_argument(
+        "--confidence",
+        metavar="CONF",
+        choices=["exact", "approximate", "unresolved"],
+        help="filter by resolution confidence: exact|approximate|unresolved",
+    )
+    pools_p.add_argument(
+        "--unit",
+        metavar="UNIT",
+        help="filter by unit string (e.g. 'g Cd/ha/5 v', 'EUR')",
+    )
+    pools_p.add_argument("--as-of", metavar="DATE", help="filter to mentions valid at DATE")
+    pools_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
+    pools_p.add_argument(
+        "--data-dir",
+        dest="data_dir",
+        default=".tmp/projections",
+        help="directory containing fi_pools.parquet (default: .tmp/projections)",
+    )
+    pools_p.add_argument(
         "-o",
         "--output-format",
         dest="output_format",
@@ -7929,6 +7995,11 @@ def main() -> None:
         from lawvm.tools.actors_query import main as actors_main
 
         actors_main(args)
+
+    elif args.command == "pools":
+        from lawvm.tools.pools_query import main as pools_main
+
+        pools_main(args)
 
     elif args.command == "bench-report":
         from lawvm.tools.bench_report import main as bench_report_main

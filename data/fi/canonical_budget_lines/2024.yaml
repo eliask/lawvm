@@ -1,0 +1,300 @@
+# Finnish state budget canonical budget-line registry — year 2024.
+#
+# Source: Talousarviolaki structure (paaluokka.luku.momentti).
+# Hand-curated representative subset covering major paaluokat:
+#   24 = Ulkoministeriön hallinnonala
+#   25 = Oikeusministeriön hallinnonala
+#   26 = Sisäministeriön hallinnonala
+#   28 = Valtiovarainministeriön hallinnonala
+#   29 = Opetus- ja kulttuuriministeriön hallinnonala
+#   30 = Maa- ja metsätalousministeriön hallinnonala
+#   31 = Liikenne- ja viestintäministeriön hallinnonala
+#   32 = Työ- ja elinkeinoministeriön hallinnonala
+#   33 = Sosiaali- ja terveysministeriön hallinnonala
+#
+# Lifecycle note: momentti numbers may renumber across budget years.
+# See cross-year lineage in canonical_budget_line_registry.py.
+
+year: 2024
+
+lines:
+  # ---------------------------------------------------------------------------
+  # 28 Valtiovarainministeriön hallinnonala
+  # ---------------------------------------------------------------------------
+
+  - canonical_id: "fi.budget.28.10.01"
+    paaluokka: 28
+    luku: 10
+    momentti: 1
+    show_as: "Valtiovarainministeriö, toimintamenot"
+    momentti_code: "28.10.01"
+
+  - canonical_id: "fi.budget.28.20.01"
+    paaluokka: 28
+    luku: 20
+    momentti: 1
+    show_as: "Valtion yhteisten tietojärjestelmien ja tietotekniikkapalvelujen ohjaus ja kehittäminen"
+    momentti_code: "28.20.01"
+
+  - canonical_id: "fi.budget.28.70.05"
+    paaluokka: 28
+    luku: 70
+    momentti: 5
+    show_as: "Veikkaus Oy:n tuottojen käyttäminen"
+    momentti_code: "28.70.05"
+
+  - canonical_id: "fi.budget.28.91.50"
+    paaluokka: 28
+    luku: 91
+    momentti: 50
+    show_as: "Valtionosuus kunnille (kiinteä määräraha)"
+    momentti_code: "28.91.50"
+    estimated_amount: 8500000000
+
+  - canonical_id: "fi.budget.28.92.30"
+    paaluokka: 28
+    luku: 92
+    momentti: 30
+    show_as: "Valtion osuus kuntien peruspalvelujen valtionosuudesta"
+    momentti_code: "28.92.30"
+
+  # ---------------------------------------------------------------------------
+  # 29 Opetus- ja kulttuuriministeriön hallinnonala
+  # ---------------------------------------------------------------------------
+
+  - canonical_id: "fi.budget.29.10.01"
+    paaluokka: 29
+    luku: 10
+    momentti: 1
+    show_as: "Opetus- ja kulttuuriministeriö, toimintamenot"
+    momentti_code: "29.10.01"
+
+  - canonical_id: "fi.budget.29.10.20"
+    paaluokka: 29
+    luku: 10
+    momentti: 20
+    show_as: "Korkeakoulujen ja tiedelaitosten yhteiset menot"
+    momentti_code: "29.10.20"
+
+  - canonical_id: "fi.budget.29.20.30"
+    paaluokka: 29
+    luku: 20
+    momentti: 30
+    show_as: "Valtionosuus ja -avustus yleissivistävän koulutuksen käyttökustannuksiin"
+    momentti_code: "29.20.30"
+
+  - canonical_id: "fi.budget.29.30.30"
+    paaluokka: 29
+    luku: 30
+    momentti: 30
+    show_as: "Valtionosuus ja -avustus ammatillisen koulutuksen käyttökustannuksiin"
+    momentti_code: "29.30.30"
+
+  - canonical_id: "fi.budget.29.40.50"
+    paaluokka: 29
+    luku: 40
+    momentti: 50
+    show_as: "Valtionosuus ja -avustus ammattikorkeakoulujen toimintaan"
+    momentti_code: "29.40.50"
+
+  - canonical_id: "fi.budget.29.40.55"
+    paaluokka: 29
+    luku: 40
+    momentti: 55
+    show_as: "Opetus- ja kulttuuritoimen rahoitus (kiinteä)"
+    momentti_code: "29.40.55"
+
+  - canonical_id: "fi.budget.29.80.30"
+    paaluokka: 29
+    luku: 80
+    momentti: 30
+    show_as: "Valtionosuus kirjastoille"
+    momentti_code: "29.80.30"
+
+  - canonical_id: "fi.budget.29.80.52"
+    paaluokka: 29
+    luku: 80
+    momentti: 52
+    show_as: "Veikkauksen ja raha-arpajaisten voittovarat urheilun ja liikuntakasvatuksen edistämiseen"
+    momentti_code: "29.80.52"
+
+  # ---------------------------------------------------------------------------
+  # 30 Maa- ja metsätalousministeriön hallinnonala
+  # ---------------------------------------------------------------------------
+
+  - canonical_id: "fi.budget.30.10.01"
+    paaluokka: 30
+    luku: 10
+    momentti: 1
+    show_as: "Maa- ja metsätalousministeriö, toimintamenot"
+    momentti_code: "30.10.01"
+
+  - canonical_id: "fi.budget.30.10.40"
+    paaluokka: 30
+    luku: 10
+    momentti: 40
+    show_as: "Luonnonvarakeskuksen toimintamenot"
+    momentti_code: "30.10.40"
+
+  - canonical_id: "fi.budget.30.20.41"
+    paaluokka: 30
+    luku: 20
+    momentti: 41
+    show_as: "EU:n osaksi rahoittama maaseudun kehittäminen"
+    momentti_code: "30.20.41"
+
+  - canonical_id: "fi.budget.30.20.44"
+    paaluokka: 30
+    luku: 20
+    momentti: 44
+    show_as: "Luonnonhaittakorvaukset"
+    momentti_code: "30.20.44"
+
+  - canonical_id: "fi.budget.30.20.46"
+    paaluokka: 30
+    luku: 20
+    momentti: 46
+    show_as: "Maatalouden ympäristökorvaukset"
+    momentti_code: "30.20.46"
+
+  - canonical_id: "fi.budget.30.40.22"
+    paaluokka: 30
+    luku: 40
+    momentti: 22
+    show_as: "Vesien- ja ympäristönhoidon edistäminen"
+    momentti_code: "30.40.22"
+
+  # ---------------------------------------------------------------------------
+  # 31 Liikenne- ja viestintäministeriön hallinnonala
+  # ---------------------------------------------------------------------------
+
+  - canonical_id: "fi.budget.31.10.01"
+    paaluokka: 31
+    luku: 10
+    momentti: 1
+    show_as: "Liikenne- ja viestintäministeriö, toimintamenot"
+    momentti_code: "31.10.01"
+
+  - canonical_id: "fi.budget.31.10.76"
+    paaluokka: 31
+    luku: 10
+    momentti: 76
+    show_as: "Liikenneverkot, liikenteen palvelut ja viestintäverkot (siirtomääräraha 3 v)"
+    momentti_code: "31.10.76"
+
+  - canonical_id: "fi.budget.31.10.77"
+    paaluokka: 31
+    luku: 10
+    momentti: 77
+    show_as: "Väyläverkon kehittäminen (siirtomääräraha 3 v)"
+    momentti_code: "31.10.77"
+
+  # ---------------------------------------------------------------------------
+  # 32 Työ- ja elinkeinoministeriön hallinnonala
+  # ---------------------------------------------------------------------------
+
+  - canonical_id: "fi.budget.32.01.01"
+    paaluokka: 32
+    luku: 1
+    momentti: 1
+    show_as: "Työ- ja elinkeinoministeriö, toimintamenot"
+    momentti_code: "32.01.01"
+
+  - canonical_id: "fi.budget.32.30.01"
+    paaluokka: 32
+    luku: 30
+    momentti: 1
+    show_as: "Työ- ja elinkeinotoimistojen toimintamenot"
+    momentti_code: "32.30.01"
+
+  - canonical_id: "fi.budget.32.30.51"
+    paaluokka: 32
+    luku: 30
+    momentti: 51
+    show_as: "Julkiset työvoima- ja yrityspalvelut (siirtomääräraha 2 v)"
+    momentti_code: "32.30.51"
+
+  - canonical_id: "fi.budget.32.50.40"
+    paaluokka: 32
+    luku: 50
+    momentti: 40
+    show_as: "Yritysten kehittämishankkeiden tukeminen"
+    momentti_code: "32.50.40"
+
+  # ---------------------------------------------------------------------------
+  # 33 Sosiaali- ja terveysministeriön hallinnonala
+  # ---------------------------------------------------------------------------
+
+  - canonical_id: "fi.budget.33.01.01"
+    paaluokka: 33
+    luku: 1
+    momentti: 1
+    show_as: "Sosiaali- ja terveysministeriö, toimintamenot"
+    momentti_code: "33.01.01"
+
+  - canonical_id: "fi.budget.33.10.53"
+    paaluokka: 33
+    luku: 10
+    momentti: 53
+    show_as: "Valtionosuus sosiaaliturvaan"
+    momentti_code: "33.10.53"
+
+  - canonical_id: "fi.budget.33.10.60"
+    paaluokka: 33
+    luku: 10
+    momentti: 60
+    show_as: "Kansaneläkelaitoksen toimintamenot"
+    momentti_code: "33.10.60"
+
+  - canonical_id: "fi.budget.33.20.50"
+    paaluokka: 33
+    luku: 20
+    momentti: 50
+    show_as: "Valtionosuus sairausvakuutuslaista johtuviin menoihin"
+    momentti_code: "33.20.50"
+
+  - canonical_id: "fi.budget.33.20.51"
+    paaluokka: 33
+    luku: 20
+    momentti: 51
+    show_as: "Valtionosuus lasten kotihoidon ja yksityisen hoidon tuesta sekä lastenhoidon tuista"
+    momentti_code: "33.20.51"
+
+  - canonical_id: "fi.budget.33.20.52"
+    paaluokka: 33
+    luku: 20
+    momentti: 52
+    show_as: "Valtionosuus työttömyysturvasta"
+    momentti_code: "33.20.52"
+
+  - canonical_id: "fi.budget.33.20.55"
+    paaluokka: 33
+    luku: 20
+    momentti: 55
+    show_as: "Valtionosuus eläkemenoista"
+    momentti_code: "33.20.55"
+
+  - canonical_id: "fi.budget.33.60.30"
+    paaluokka: 33
+    luku: 60
+    momentti: 30
+    show_as: "Valtion korvaus terveyden- ja sosiaalihuollon yksiköille"
+    momentti_code: "33.60.30"
+
+  # ---------------------------------------------------------------------------
+  # 26 Sisäministeriön hallinnonala
+  # ---------------------------------------------------------------------------
+
+  - canonical_id: "fi.budget.26.10.01"
+    paaluokka: 26
+    luku: 10
+    momentti: 1
+    show_as: "Sisäministeriö, toimintamenot"
+    momentti_code: "26.10.01"
+
+  - canonical_id: "fi.budget.26.40.01"
+    paaluokka: 26
+    luku: 40
+    momentti: 1
+    show_as: "Poliisitoimi, toimintamenot"
+    momentti_code: "26.40.01"

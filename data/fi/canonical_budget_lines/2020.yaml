@@ -1,0 +1,125 @@
+# Finnish state budget canonical budget-line registry — year 2020.
+#
+# Source: Talousarviolaki structure (paaluokka.luku.momentti).
+# Hand-curated representative subset.
+#
+# Lifecycle note: fi.budget.28.91.50 did not yet exist with this exact momentti
+# in 2020 -- it was 28.91.51 at that time (see lineage in registry).
+
+year: 2020
+
+lines:
+  - canonical_id: "fi.budget.28.10.01"
+    paaluokka: 28
+    luku: 10
+    momentti: 1
+    show_as: "Valtiovarainministeriö, toimintamenot"
+    momentti_code: "28.10.01"
+
+  - canonical_id: "fi.budget.28.91.51"
+    paaluokka: 28
+    luku: 91
+    momentti: 51
+    show_as: "Valtionosuus kunnille (kiinteä määräraha)"
+    momentti_code: "28.91.51"
+    estimated_amount: 8100000000
+    lineage_successor_id: "fi.budget.28.91.50"
+    lineage_successor_year: 2022
+
+  - canonical_id: "fi.budget.28.92.30"
+    paaluokka: 28
+    luku: 92
+    momentti: 30
+    show_as: "Valtion osuus kuntien peruspalvelujen valtionosuudesta"
+    momentti_code: "28.92.30"
+
+  - canonical_id: "fi.budget.29.10.01"
+    paaluokka: 29
+    luku: 10
+    momentti: 1
+    show_as: "Opetus- ja kulttuuriministeriö, toimintamenot"
+    momentti_code: "29.10.01"
+
+  - canonical_id: "fi.budget.29.20.30"
+    paaluokka: 29
+    luku: 20
+    momentti: 30
+    show_as: "Valtionosuus ja -avustus yleissivistävän koulutuksen käyttökustannuksiin"
+    momentti_code: "29.20.30"
+
+  - canonical_id: "fi.budget.29.30.30"
+    paaluokka: 29
+    luku: 30
+    momentti: 30
+    show_as: "Valtionosuus ja -avustus ammatillisen koulutuksen käyttökustannuksiin"
+    momentti_code: "29.30.30"
+
+  - canonical_id: "fi.budget.30.10.01"
+    paaluokka: 30
+    luku: 10
+    momentti: 1
+    show_as: "Maa- ja metsätalousministeriö, toimintamenot"
+    momentti_code: "30.10.01"
+
+  - canonical_id: "fi.budget.30.20.44"
+    paaluokka: 30
+    luku: 20
+    momentti: 44
+    show_as: "Luonnonhaittakorvaukset"
+    momentti_code: "30.20.44"
+
+  - canonical_id: "fi.budget.30.20.46"
+    paaluokka: 30
+    luku: 20
+    momentti: 46
+    show_as: "Maatalouden ympäristökorvaukset"
+    momentti_code: "30.20.46"
+
+  - canonical_id: "fi.budget.31.10.01"
+    paaluokka: 31
+    luku: 10
+    momentti: 1
+    show_as: "Liikenne- ja viestintäministeriö, toimintamenot"
+    momentti_code: "31.10.01"
+
+  - canonical_id: "fi.budget.32.01.01"
+    paaluokka: 32
+    luku: 1
+    momentti: 1
+    show_as: "Työ- ja elinkeinoministeriö, toimintamenot"
+    momentti_code: "32.01.01"
+
+  - canonical_id: "fi.budget.33.01.01"
+    paaluokka: 33
+    luku: 1
+    momentti: 1
+    show_as: "Sosiaali- ja terveysministeriö, toimintamenot"
+    momentti_code: "33.01.01"
+
+  - canonical_id: "fi.budget.33.20.50"
+    paaluokka: 33
+    luku: 20
+    momentti: 50
+    show_as: "Valtionosuus sairausvakuutuslaista johtuviin menoihin"
+    momentti_code: "33.20.50"
+
+  - canonical_id: "fi.budget.33.20.52"
+    paaluokka: 33
+    luku: 20
+    momentti: 52
+    show_as: "Valtionosuus työttömyysturvasta"
+    momentti_code: "33.20.52"
+
+  - canonical_id: "fi.budget.26.10.01"
+    paaluokka: 26
+    luku: 10
+    momentti: 1
+    show_as: "Sisäministeriö, toimintamenot"
+    momentti_code: "26.10.01"
+
+  - canonical_id: "fi.budget.26.40.01"
+    paaluokka: 26
+    luku: 40
+    momentti: 1
+    show_as: "Poliisitoimi, toimintamenot"
+    momentti_code: "26.40.01"

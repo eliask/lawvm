@@ -375,6 +375,7 @@ def export_projections(
     use_parquet: bool = True,
     include_refs: bool = False,
     include_actors: bool = False,
+    include_pools: bool = False,
 ) -> Dict[str, int]:
     """Export corpus projections to JSONL (and optionally Parquet).
 
@@ -500,6 +501,18 @@ def export_projections(
         )
         counts["fi_actors"] = actors_count
 
+    # --- fi_pools.parquet: PoolMention projection ---
+    if include_pools:
+        print("\nExporting fi_pools projection...")
+        from lawvm.tools.export_fi_pools import export_fi_pools
+        pools_count = export_fi_pools(
+            corpus,
+            data_dir=data_dir,
+            use_parquet=use_parquet,
+            limit=limit,
+        )
+        counts["fi_pools"] = pools_count
+
     print()
     for name, n in counts.items():
         print(f"  {name}: {n:,} rows")
@@ -521,4 +534,5 @@ def main(args: Any) -> None:
         limit=getattr(args, "limit", None),
         include_refs=getattr(args, "include_refs", False),
         include_actors=getattr(args, "include_actors", False),
+        include_pools=getattr(args, "include_pools", False),
     )
