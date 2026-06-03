@@ -2430,10 +2430,16 @@ def test_uk_effects_summary_counts_are_stable() -> None:
         "manual_frontier_work_item_authorization_status_counts": {
             "source_insufficient": 1,
         },
-        "manual_frontier_work_item_candidate_operation_family_counts": {},
-        "manual_frontier_work_item_required_validator_check_counts": {},
-        "manual_frontier_work_item_missing_candidate_operation_family_count": 1,
-        "manual_frontier_work_item_missing_required_validator_checks_count": 1,
+        "manual_frontier_work_item_candidate_operation_family_counts": {
+            "source_acquisition_or_payload_extraction": 1,
+        },
+        "manual_frontier_work_item_required_validator_check_counts": {
+            "claim_blocks_replay_until_source_payload_is_available": 1,
+            "official_source_witness_contains_payload_or_instruction": 1,
+            "payload_or_instruction_witness_is_not_empty": 1,
+        },
+        "manual_frontier_work_item_missing_candidate_operation_family_count": 0,
+        "manual_frontier_work_item_missing_required_validator_checks_count": 0,
         "suggested_claim_template_status_counts": {},
         "total_compiled_ops": 2,
         "rows_with_resolver_eids": 1,

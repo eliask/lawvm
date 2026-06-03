@@ -10,6 +10,124 @@ from lawvm.core.source_witness import source_witness_from_mapping
 
 
 _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
+    "uk_manual_frontier_appropriate_place_definition_entry_candidate": {
+        "candidate_operation_family": "definition_entry_insert",
+        "required_validator_checks": (
+            "source_witness_contains_exact_appropriate_place_instruction",
+            "payload_is_complete_definition_entry",
+            "claim_supplies_exact_definition_entry_anchor_or_insertion_index",
+            "target_subtree_contains_definition_list_surface",
+            "inserted_term_is_not_already_present_in_target_at_effective_preimage",
+            "changed_paths_remain_inside_claimed_interpretation_target",
+        ),
+    },
+    "uk_manual_frontier_application_by_reference_out_of_scope": {
+        "candidate_operation_family": "non_textual_or_out_of_scope",
+        "required_validator_checks": (
+            "claim_identifies_application_by_reference_semantics",
+            "claim_confirms_no_direct_text_or_tree_mutation",
+            "claim_preserves_affected_statute_text_state",
+        ),
+    },
+    "uk_manual_frontier_commencement_effect_out_of_scope": {
+        "candidate_operation_family": "non_textual_or_out_of_scope",
+        "required_validator_checks": (
+            "claim_identifies_commencement_or_temporal_semantics",
+            "claim_confirms_no_direct_text_or_tree_mutation",
+            "claim_routes_effect_to_temporal_applicability_model",
+        ),
+    },
+    "uk_manual_frontier_misselected_target_context_source_insufficient": {
+        "candidate_operation_family": "source_target_reconciliation",
+        "required_validator_checks": (
+            "source_witness_matches_effect_feed_target_context",
+            "claim_reconciles_source_target_and_feed_target",
+            "claim_blocks_replay_until_target_identity_is_proved",
+        ),
+    },
+    "uk_manual_frontier_missing_payload_source_insufficient": {
+        "candidate_operation_family": "source_acquisition_or_payload_extraction",
+        "required_validator_checks": (
+            "official_source_witness_contains_payload_or_instruction",
+            "payload_or_instruction_witness_is_not_empty",
+            "claim_blocks_replay_until_source_payload_is_available",
+        ),
+    },
+    "uk_manual_frontier_nested_definition_child_structural_substitution_candidate": {
+        "candidate_operation_family": "nested_definition_child_structural_substitution",
+        "required_validator_checks": (
+            "source_witness_names_outer_definition_child_and_nested_child",
+            "claim_identifies_exact_nested_definition_child_node",
+            "claim_preserves_unclaimed_definition_children",
+            "claim_materializes_replacement_payload_as_structural_child_units",
+            "changed_paths_are_within_claimed_nested_definition_boundary",
+        ),
+    },
+    "uk_manual_frontier_non_textual_or_out_of_scope": {
+        "candidate_operation_family": "non_textual_or_out_of_scope",
+        "required_validator_checks": (
+            "claim_identifies_non_textual_or_unadmitted_replay_semantics",
+            "claim_confirms_no_direct_text_or_tree_mutation",
+            "claim_preserves_affected_statute_text_state",
+        ),
+    },
+    "uk_manual_frontier_repeal_table_candidate": {
+        "candidate_operation_family": "table_repeal_or_omission",
+        "required_validator_checks": (
+            "source_witness_targets_table_repeal_or_omission",
+            "claim_identifies_exact_table_carrier",
+            "claim_identifies_every_repealed_row_column_or_cell",
+            "claim_preserves_unclaimed_table_rows_columns_and_cells",
+            "changed_paths_are_within_declared_table_repeal_boundary",
+        ),
+    },
+    "uk_manual_frontier_source_carried_structured_tail_substitution_candidate": {
+        "candidate_operation_family": "source_carried_structured_tail_substitution",
+        "required_validator_checks": (
+            "source_witness_contains_tail_range_and_structured_replacement",
+            "claim_identifies_exact_tail_preimage_boundary",
+            "claim_materializes_replacement_payload_as_child_units_not_flat_text",
+            "claim_preserves_unclaimed_existing_child_units_and_parent_text",
+            "changed_paths_are_within_claimed_tail_and_child_payload_boundaries",
+        ),
+    },
+    "uk_manual_frontier_source_pathology_insufficient": {
+        "candidate_operation_family": "source_pathology_resolution",
+        "required_validator_checks": (
+            "official_source_witness_resolves_source_pathology",
+            "payload_or_instruction_witness_is_complete",
+            "claim_blocks_replay_until_source_pathology_is_resolved",
+        ),
+    },
+    "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate": {
+        "candidate_operation_family": "definition_entry_insert",
+        "required_validator_checks": (
+            "effect_metadata_names_pseudo_definition_target",
+            "payload_is_complete_definition_entry",
+            "claim_supplies_exact_definition_entry_anchor_or_insertion_index",
+            "target_subtree_contains_definition_list_surface",
+            "inserted_term_is_not_already_present_in_target_at_effective_preimage",
+            "changed_paths_remain_inside_claimed_interpretation_target",
+        ),
+    },
+    "uk_manual_frontier_table_entry_candidate": {
+        "candidate_operation_family": "table_surface_mutation",
+        "required_validator_checks": (
+            "source_witness_targets_table_entry_or_column_surface",
+            "claim_identifies_exact_table_carrier",
+            "claim_identifies_row_or_column_boundary",
+            "claim_preserves_unclaimed_rows_columns_and_cells",
+            "changed_paths_are_within_claimed_table_surface",
+        ),
+    },
+    "uk_manual_frontier_unsupported_effect_family": {
+        "candidate_operation_family": "non_textual_or_out_of_scope",
+        "required_validator_checks": (
+            "claim_identifies_unsupported_effect_family",
+            "claim_confirms_no_direct_text_or_tree_mutation",
+            "claim_preserves_affected_statute_text_state",
+        ),
+    },
     "uk_manual_frontier_text_patch_preimage_chain_gap": {
         "candidate_operation_family": "source_chain_text_patch",
         "required_validator_checks": (

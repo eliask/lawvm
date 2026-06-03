@@ -7,8 +7,40 @@ from types import SimpleNamespace
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.semantic_types import FacetKind, StructuralAction
+from lawvm.uk_legislation.frontier_work_items import (
+    uk_frontier_work_item_from_manual_frontier_row,
+)
 
 import scripts.uk_broad_baseline as uk_broad_baseline
+
+
+def test_compile_diagnostic_frontier_work_item_uses_family_defaults() -> None:
+    work_item = uk_frontier_work_item_from_manual_frontier_row(
+        {
+            "statute_id": "ukpga/1968/73",
+            "effect_id": "eff-table",
+            "affecting_act_id": "uksi/2003/1615",
+            "affected_provisions": "Sch. 12 table",
+            "manual_compile_status": "manual_compile_candidate",
+            "manual_compile_rule_id": "uk_manual_frontier_table_entry_candidate",
+            "owner_phase": "typed_elaboration",
+            "replay_authorized": False,
+            "executable": False,
+            "authorization_status": "manual_claim_required",
+            "required_proofs": ["mutation_boundary_proof"],
+            "safe_default": "block_until_validated_claim_authorizes_replay",
+            "forbidden_shortcuts": ["unvalidated_manual_claim_execution"],
+        }
+    ).to_dict()
+
+    assert work_item["candidate_operation_family"] == "table_surface_mutation"
+    assert work_item["required_validator_checks"] == [
+        "source_witness_targets_table_entry_or_column_surface",
+        "claim_identifies_exact_table_carrier",
+        "claim_identifies_row_or_column_boundary",
+        "claim_preserves_unclaimed_rows_columns_and_cells",
+        "changed_paths_are_within_claimed_table_surface",
+    ]
 
 
 def test_score_one_reports_too_small_current_as_source_frontier(monkeypatch) -> None:
