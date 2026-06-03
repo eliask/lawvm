@@ -20,52 +20,29 @@ Per JURISDICTION_CLI_TOOLING_CONTRACT.md §4: common flags
 """
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from typing import Any, List, Optional
+
+from lawvm.tools._cli_duckdb import (
+    as_of_conditions,
+    find_source_file,
+    require_duckdb,
+    source_expr_for_path,
+)
+from lawvm.tools._cli_output import emit_rows, format_table, json_safe
 
 
 # ---------------------------------------------------------------------------
 # Default data-dir
 # ---------------------------------------------------------------------------
 
-
-def _default_data_dir() -> str:
-    return ".tmp/projections"
-
-
-def _fi_actors_path(data_dir: str) -> Path:
-    """Return the path to fi_actors.parquet in data_dir."""
-    return Path(data_dir) / "fi_actors.parquet"
-
-
-def _fi_actors_jsonl_path(data_dir: str) -> Path:
-    return Path(data_dir) / "fi_actors.jsonl"
-
-
-# ---------------------------------------------------------------------------
-# DuckDB query runner
-# ---------------------------------------------------------------------------
-
-
-def _check_duckdb() -> bool:
-    try:
-        import duckdb  # noqa: F401  # ty: ignore[unresolved-import]
-        return True
-    except ImportError:
-        return False
+_DEFAULT_DATA_DIR = ".tmp/projections"
 
 
 def _find_actors_source(data_dir: str) -> Optional[Path]:
     """Return path to fi_actors.parquet or fi_actors.jsonl, preferring Parquet."""
-    p = _fi_actors_path(data_dir)
-    if p.exists():
-        return p
-    j = _fi_actors_jsonl_path(data_dir)
-    if j.exists():
-        return j
-    return None
+    return find_source_file(data_dir, "fi_actors")
 
 
 def _build_query(
@@ -80,11 +57,7 @@ def _build_query(
     limit: Optional[int] = None,
 ) -> str:
     """Build DuckDB SQL for fi_actors with applied filters."""
-    suffix = Path(actors_source).suffix.lower()
-    if suffix == ".parquet":
-        source_expr = f"read_parquet('{actors_source}')"
-    else:
-        source_expr = f"read_json_auto('{actors_source}')"
+    source_expr = source_expr_for_path(Path(actors_source))
 
     # Columns to select
     cols = [
@@ -132,12 +105,7 @@ def _build_query(
         )
 
     if as_of:
-        conditions.append(
-            f"(valid_at_start IS NULL OR valid_at_start <= '{as_of}')"
-        )
-        conditions.append(
-            f"(valid_at_end IS NULL OR valid_at_end >= '{as_of}')"
-        )
+        conditions.extend(as_of_conditions(as_of))
 
     where_clause = (" WHERE " + " AND ".join(conditions)) if conditions else ""
     limit_clause = f" LIMIT {limit}" if limit else ""
@@ -148,41 +116,6 @@ def _build_query(
         f" ORDER BY source_statute_id, source_provision_ref_str, actor_canonical_id"
         f"{limit_clause}"
     )
-
-
-def _format_table(columns: List[str], rows: List[tuple]) -> str:
-    """Format query results as an aligned text table."""
-    if not rows:
-        return "(0 rows)"
-
-    str_rows = [[str(v) if v is not None else "" for v in row] for row in rows]
-
-    widths = [len(c) for c in columns]
-    for row in str_rows:
-        for i, val in enumerate(row):
-            if i < len(widths):
-                widths[i] = max(widths[i], min(len(val), 50))
-
-    header = "  ".join(c.ljust(w) for c, w in zip(columns, widths, strict=True))
-    separator = "  ".join("-" * w for w in widths)
-
-    lines = [header, separator]
-    for row in str_rows:
-        line = "  ".join(
-            val[:50].ljust(w) for val, w in zip(row, widths, strict=True)
-        )
-        lines.append(line)
-
-    lines.append(f"({len(rows)} row{'s' if len(rows) != 1 else ''})")
-    return "\n".join(lines)
-
-
-def _json_safe(v: Any) -> Any:
-    if v is None:
-        return None
-    if isinstance(v, (int, float, str, bool)):
-        return v
-    return str(v)
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +158,7 @@ def run_actors(
     role_pattern: Optional[str] = None,
     as_of: Optional[str] = None,
     limit: Optional[int] = None,
-    data_dir: str = ".tmp/projections",
+    data_dir: str = _DEFAULT_DATA_DIR,
     output_format: str = "table",
     jurisdiction: str = "fi",
 ) -> None:
@@ -250,27 +183,14 @@ def run_actors(
         _print_schema()
         sys.exit(1)
 
-    if not _check_duckdb():
-        print(
-            "error: duckdb is not installed.\n\n"
-            "Install it with:\n"
-            "  uv pip install duckdb\n",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    import duckdb  # ty: ignore[unresolved-import]
+    duckdb = require_duckdb()
 
     # If no filters specified, just show schema + row count
     has_filters = any([statute, provision, modal_kind, confidence, role_pattern, as_of])
     if not has_filters and not limit:
         _print_schema()
         con = duckdb.connect(":memory:")
-        suffix = actors_path.suffix.lower()
-        if suffix == ".parquet":
-            src = f"read_parquet('{actors_path}')"
-        else:
-            src = f"read_json_auto('{actors_path}')"
+        src = source_expr_for_path(actors_path)
         row_count = con.execute(f"SELECT count(*) FROM {src}").fetchone()
         con.close()
         if row_count:
@@ -294,33 +214,15 @@ def run_actors(
         result = con.execute(query)
         columns = [desc[0] for desc in result.description]
         rows = result.fetchall()
-
-        if output_format == "json":
-            out = []
-            for row in rows:
-                out.append(dict(zip(columns, [_json_safe(v) for v in row], strict=True)))
-            print(json.dumps(out, indent=2, ensure_ascii=False))
-        elif output_format == "jsonl":
-            for row in rows:
-                obj = dict(zip(columns, [_json_safe(v) for v in row], strict=True))
-                print(json.dumps(obj, ensure_ascii=False))
-        elif output_format == "csv":
-            import csv as csv_mod
-            import io
-            buf = io.StringIO()
-            writer = csv_mod.writer(buf)
-            writer.writerow(columns)
-            for row in rows:
-                writer.writerow(row)
-            print(buf.getvalue(), end="")
-        elif output_format == "parquet":
-            out_path = Path(data_dir) / "_actors_query_result.parquet"
-            con.execute(
-                f"COPY ({query}) TO '{out_path}' (FORMAT PARQUET)"
-            )
-            print(f"Written {len(rows)} rows to {out_path}")
-        else:
-            print(_format_table(columns, rows))
+        emit_rows(
+            columns=columns,
+            rows=rows,
+            output_format=output_format,
+            data_dir=data_dir,
+            result_stem="_actors_query_result",
+            duckdb_query=query,
+            duckdb_con=con,
+        )
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -342,7 +244,7 @@ def main(args: Any) -> None:
         role_pattern=getattr(args, "role_pattern", None),
         as_of=getattr(args, "as_of", None),
         limit=getattr(args, "limit", None),
-        data_dir=getattr(args, "data_dir", ".tmp/projections"),
+        data_dir=getattr(args, "data_dir", _DEFAULT_DATA_DIR),
         output_format=getattr(args, "output_format", "table"),
         jurisdiction=getattr(args, "jurisdiction", "fi"),
     )

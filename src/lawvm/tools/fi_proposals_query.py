@@ -4,40 +4,22 @@ See module docstring for full usage.
 """
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from typing import Any, List, Optional
 
+from lawvm.tools._cli_duckdb import (
+    find_source_file,
+    require_duckdb,
+    source_expr_for_path,
+)
+from lawvm.tools._cli_output import emit_rows, format_table, json_safe
 
-def _default_data_dir() -> str:
-    return "data/fi/v1"
-
-
-def _fi_he_corpus_path(data_dir: str) -> Path:
-    return Path(data_dir) / "fi_he_corpus.parquet"
-
-
-def _fi_he_corpus_jsonl_path(data_dir: str) -> Path:
-    return Path(data_dir) / "fi_he_corpus.jsonl"
-
-
-def _check_duckdb() -> bool:
-    try:
-        import duckdb  # noqa: F401
-        return True
-    except ImportError:
-        return False
+_DEFAULT_DATA_DIR = "data/fi/v1"
 
 
 def _find_corpus_source(data_dir: str) -> Optional[Path]:
-    p = _fi_he_corpus_path(data_dir)
-    if p.exists():
-        return p
-    j = _fi_he_corpus_jsonl_path(data_dir)
-    if j.exists():
-        return j
-    return None
+    return find_source_file(data_dir, "fi_he_corpus")
 
 
 def _build_proposals_query(
@@ -51,11 +33,7 @@ def _build_proposals_query(
     pdf_only: bool = False,
     limit: Optional[int] = None,
 ) -> str:
-    suffix = Path(source).suffix.lower()
-    if suffix == ".parquet":
-        source_expr = f"read_parquet('{source}')"
-    else:
-        source_expr = f"read_json_auto('{source}')"
+    source_expr = source_expr_for_path(Path(source))
 
     cols = [
         "he_id", "he_year", "he_number", "he_uri", "lang",
@@ -121,34 +99,6 @@ def _print_schema() -> None:
         print(f"    {col:35s} {typ:20s} {desc}")
 
 
-def _format_table(columns: List[str], rows: List[tuple]) -> str:
-    if not rows:
-        return "(0 rows)"
-    str_rows = [[str(v) if v is not None else "" for v in row] for row in rows]
-    widths = [len(c) for c in columns]
-    for row in str_rows:
-        for i, val in enumerate(row):
-            if i < len(widths):
-                widths[i] = max(widths[i], min(len(val), 60))
-    header = "  ".join(c.ljust(w) for c, w in zip(columns, widths, strict=True))
-    separator = "  ".join("-" * w for w in widths)
-    lines = [header, separator]
-    for row in str_rows:
-        lines.append("  ".join(
-            val[:60].ljust(w) for val, w in zip(row, widths, strict=True)
-        ))
-    lines.append(f"({len(rows)} row{'s' if len(rows) != 1 else ''})")
-    return "\n".join(lines)
-
-
-def _json_safe(v: Any) -> Any:
-    if v is None:
-        return None
-    if isinstance(v, (int, float, str, bool, list)):
-        return v
-    return str(v)
-
-
 def run_fi_proposals(
     *,
     ministry: Optional[str] = None,
@@ -158,7 +108,7 @@ def run_fi_proposals(
     structured_only: bool = False,
     pdf_only: bool = False,
     limit: Optional[int] = None,
-    data_dir: str = "data/fi/v1",
+    data_dir: str = _DEFAULT_DATA_DIR,
     output_format: str = "table",
     jurisdiction: str = "fi",
 ) -> None:
@@ -176,18 +126,13 @@ def run_fi_proposals(
         _print_schema()
         sys.exit(1)
 
-    if not _check_duckdb():
-        print("error: duckdb is not installed. Install with: uv pip install duckdb", file=sys.stderr)
-        sys.exit(1)
-
-    import duckdb
+    duckdb = require_duckdb()
 
     has_filters = any([ministry, year is not None, year_range, lifecycle, structured_only, pdf_only])
     if not has_filters and not limit:
         _print_schema()
         con = duckdb.connect(":memory:")
-        suffix = corpus_path.suffix.lower()
-        src = f"read_parquet('{corpus_path}')" if suffix == ".parquet" else f"read_json_auto('{corpus_path}')"
+        src = source_expr_for_path(corpus_path)
         row_count = con.execute(f"SELECT count(*) FROM {src}").fetchone()
         con.close()
         if row_count:
@@ -207,27 +152,15 @@ def run_fi_proposals(
         result = con.execute(query)
         columns = [desc[0] for desc in result.description]
         rows = result.fetchall()
-
-        if output_format == "json":
-            out = [dict(zip(columns, [_json_safe(v) for v in row], strict=True)) for row in rows]
-            print(json.dumps(out, indent=2, ensure_ascii=False))
-        elif output_format == "jsonl":
-            for row in rows:
-                print(json.dumps(dict(zip(columns, [_json_safe(v) for v in row], strict=True)), ensure_ascii=False))
-        elif output_format == "csv":
-            import csv as csv_mod, io
-            buf = io.StringIO()
-            writer = csv_mod.writer(buf)
-            writer.writerow(columns)
-            for row in rows:
-                writer.writerow(row)
-            print(buf.getvalue(), end="")
-        elif output_format == "parquet":
-            out_path = Path(data_dir) / "_fi_proposals_query_result.parquet"
-            con.execute(f"COPY ({query}) TO '{out_path}' (FORMAT PARQUET)")
-            print(f"Written {len(rows)} rows to {out_path}")
-        else:
-            print(_format_table(columns, rows))
+        emit_rows(
+            columns=columns,
+            rows=rows,
+            output_format=output_format,
+            data_dir=data_dir,
+            result_stem="_fi_proposals_query_result",
+            duckdb_query=query,
+            duckdb_con=con,
+        )
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -246,7 +179,7 @@ def main(args: Any) -> None:
         structured_only=getattr(args, "structured_only", False),
         pdf_only=getattr(args, "pdf_only", False),
         limit=getattr(args, "limit", None),
-        data_dir=getattr(args, "data_dir", "data/fi/v1"),
+        data_dir=getattr(args, "data_dir", _DEFAULT_DATA_DIR),
         output_format=getattr(args, "output_format", "table"),
         jurisdiction=getattr(args, "jurisdiction", "fi"),
     )

@@ -62,6 +62,11 @@ Subcommands:
     build-index-db                  Compose Tier 2 Parquets into a single DuckDB .db file.
     bench-report                    Summarise a bench run CSV without re-running the bench.
     parse-johto <text>              Parse a Finnish amendment johtolause text and show parsed ops.
+    topic --topic STRING            Keyword/FTS search across statute sections and HE body atoms.
+    follow-refs --start REF         Multi-hop reference traversal from a provision.
+    pit-timeline --provision REF    Provision amendment history (index-backed).
+    pit-diff --provision REF        Provision diff between two PIT dates (index-backed).
+    telos [--statute STATUTE_ID]    Query telos/purpose sections (feature #5).
 
 Usage:
     lawvm bisect 2006/1299
@@ -7342,6 +7347,232 @@ def _build_parser() -> argparse.ArgumentParser:
         help="print per-table progress and row counts",
     )
 
+    # --- topic ---
+    topic_p = sub.add_parser(
+        "topic",
+        help="keyword / full-text search across statute sections and HE body atoms",
+        description=(
+            "Search statute section text (sections.parquet replay_text) and "
+            "HE body atoms (fi_he_atoms.parquet text_content) for a keyword "
+            "or full-text query. "
+            "keyword mode (default): case-insensitive substring match. "
+            "fts mode: DuckDB FTS extension; requires 'lawvm build-index-db --fts'."
+        ),
+        parents=_P,
+    )
+    topic_p.add_argument(
+        "--topic",
+        required=True,
+        metavar="STRING",
+        help="search term or phrase",
+    )
+    topic_p.add_argument(
+        "--mode",
+        default="keyword",
+        choices=["keyword", "fts"],
+        help="search mode: keyword (default, ILIKE match) or fts (DuckDB FTS index)",
+    )
+    topic_p.add_argument(
+        "--statute-filter",
+        dest="statute_filter",
+        metavar="PATTERN",
+        help="filter results to statute IDs matching this glob pattern (e.g. '7*/202*')",
+    )
+    topic_p.add_argument(
+        "--db-path",
+        dest="db_path",
+        default="data/fi/v1/lawvm.db",
+        metavar="DB_PATH",
+        help="DuckDB .db file for fts mode (default: data/fi/v1/lawvm.db)",
+    )
+    topic_p.add_argument("--as-of", dest="as_of", metavar="DATE",
+                         help="filter records valid at DATE (YYYY-MM-DD; best-effort for sections)")
+    topic_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
+    topic_p.add_argument(
+        "--data-dir", dest="data_dir", default=".tmp/projections",
+        help="directory containing sections.parquet and fi_he_atoms.parquet (default: .tmp/projections)",
+    )
+    topic_p.add_argument(
+        "-o", "--output-format", dest="output_format", default="table",
+        choices=["table", "json", "jsonl", "csv", "parquet"],
+        help="output format (default: table)",
+    )
+
+    # --- follow-refs ---
+    fr_p = sub.add_parser(
+        "follow-refs",
+        help="multi-hop reference traversal from a provision (backed by fi_refs.parquet)",
+        description=(
+            "Traverse the citation graph from --start up to --depth hops. "
+            "Returns an edge list annotated with depth and direction. "
+            "Backed by fi_refs.parquet."
+        ),
+        parents=_P,
+    )
+    fr_p.add_argument(
+        "--start",
+        required=True,
+        metavar="PROVISION_REF",
+        help="starting provision reference, e.g. '711/2022' or '711/2022/7'",
+    )
+    fr_p.add_argument(
+        "--depth",
+        type=int,
+        default=1,
+        metavar="N",
+        help="number of hops to traverse (default: 1)",
+    )
+    fr_p.add_argument(
+        "--direction",
+        default="forward",
+        choices=["forward", "reverse", "both"],
+        help="traversal direction: forward (outgoing), reverse (incoming), both (default: forward)",
+    )
+    fr_p.add_argument(
+        "--include-broken",
+        dest="include_broken",
+        action="store_true",
+        help="include references with cite_confidence='broken'",
+    )
+    fr_p.add_argument("--as-of", dest="as_of", metavar="DATE",
+                      help="filter reference validity to DATE (YYYY-MM-DD)")
+    fr_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
+    fr_p.add_argument(
+        "--data-dir", dest="data_dir", default=".tmp/projections",
+        help="directory containing fi_refs.parquet (default: .tmp/projections)",
+    )
+    fr_p.add_argument(
+        "-o", "--output-format", dest="output_format", default="table",
+        choices=["table", "json", "jsonl", "csv", "parquet"],
+        help="output format (default: table)",
+    )
+
+    # --- pit-timeline ---
+    pt_p = sub.add_parser(
+        "pit-timeline",
+        help="provision amendment history (index-backed; see 'timeline' for live PIT replay)",
+        description=(
+            "Show amendment operations affecting a provision, backed by ops.parquet. "
+            "Filters by statute ID and optionally by section and date range. "
+            "For live PIT replay, use 'lawvm timeline <statute_id>'."
+        ),
+        parents=_P,
+    )
+    pt_p.add_argument(
+        "--provision",
+        required=True,
+        metavar="PROVISION_REF",
+        help="provision reference: statute_id (e.g. '2002/738') or section ref (e.g. '2002/738/7')",
+    )
+    pt_p.add_argument(
+        "--since",
+        metavar="DATE",
+        help="only show amendments from this year onwards (YYYY-MM-DD)",
+    )
+    pt_p.add_argument(
+        "--until",
+        metavar="DATE",
+        help="only show amendments up to this year (YYYY-MM-DD)",
+    )
+    pt_p.add_argument(
+        "--include-amendments",
+        dest="include_amendments",
+        action="store_true",
+        help="include HE/source act information (requires fi_he_law_refs)",
+    )
+    pt_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
+    pt_p.add_argument(
+        "--data-dir", dest="data_dir", default=".tmp/projections",
+        help="directory containing ops.parquet (default: .tmp/projections)",
+    )
+    pt_p.add_argument(
+        "-o", "--output-format", dest="output_format", default="table",
+        choices=["table", "json", "jsonl", "csv", "parquet"],
+        help="output format (default: table)",
+    )
+
+    # --- pit-diff ---
+    pd_p = sub.add_parser(
+        "pit-diff",
+        help="provision text + structural diff between two PIT states (index-backed)",
+        description=(
+            "Show amendment ops affecting a provision between t1 and t2, "
+            "backed by ops.parquet. Optionally includes current section text "
+            "(sections.parquet) and reference state diff (fi_refs.parquet). "
+            "For per-provision replay-vs-oracle diff, use 'lawvm diff <statute_id>'."
+        ),
+        parents=_P,
+    )
+    pd_p.add_argument(
+        "--provision",
+        required=True,
+        metavar="PROVISION_REF",
+        help="provision reference, e.g. '2002/738' or '2002/738/7'",
+    )
+    pd_p.add_argument(
+        "--t1",
+        required=True,
+        metavar="DATE",
+        help="start date (YYYY-MM-DD)",
+    )
+    pd_p.add_argument(
+        "--t2",
+        required=True,
+        metavar="DATE",
+        help="end date (YYYY-MM-DD)",
+    )
+    pd_p.add_argument(
+        "--include-text",
+        dest="include_text",
+        action="store_true",
+        help="include current section text from sections.parquet",
+    )
+    pd_p.add_argument(
+        "--include-refs",
+        dest="include_refs",
+        action="store_true",
+        help="include reference changes from fi_refs.parquet valid_at intervals",
+    )
+    pd_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
+    pd_p.add_argument(
+        "--data-dir", dest="data_dir", default=".tmp/projections",
+        help="directory containing ops.parquet (default: .tmp/projections)",
+    )
+    pd_p.add_argument(
+        "-o", "--output-format", dest="output_format", default="table",
+        choices=["table", "json", "jsonl", "csv", "parquet"],
+        help="output format (default: table)",
+    )
+
+    # --- telos ---
+    telos_p = sub.add_parser(
+        "telos",
+        help="query telos/purpose sections from sections.parquet (feature #5)",
+        description=(
+            "Return purpose/telos sections (is_purpose_section=true) for a statute "
+            "or all statutes, backed by sections.parquet. "
+            "Requires telos-section flag (feature #5) to have been applied to the export."
+        ),
+        parents=_P,
+    )
+    telos_p.add_argument(
+        "--statute",
+        metavar="STATUTE_ID",
+        help="filter to one statute, e.g. '711/2022'",
+    )
+    telos_p.add_argument("--as-of", dest="as_of", metavar="DATE",
+                         help="best-effort temporal filter (YYYY-MM-DD)")
+    telos_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
+    telos_p.add_argument(
+        "--data-dir", dest="data_dir", default=".tmp/projections",
+        help="directory containing sections.parquet (default: .tmp/projections)",
+    )
+    telos_p.add_argument(
+        "-o", "--output-format", dest="output_format", default="table",
+        choices=["table", "json", "jsonl", "csv", "parquet"],
+        help="output format (default: table)",
+    )
+
     return parser
 
 
@@ -8458,6 +8689,31 @@ def main() -> None:
         from lawvm.tools.parse_johto import main as parse_johto_main
 
         parse_johto_main(args)
+
+    elif args.command == "topic":
+        from lawvm.tools.cmd_topic import main as topic_main
+
+        topic_main(args)
+
+    elif args.command == "follow-refs":
+        from lawvm.tools.cmd_follow_refs import main as follow_refs_main
+
+        follow_refs_main(args)
+
+    elif args.command == "pit-timeline":
+        from lawvm.tools.cmd_pit_timeline import main as pit_timeline_main
+
+        pit_timeline_main(args)
+
+    elif args.command == "pit-diff":
+        from lawvm.tools.cmd_pit_diff import main as pit_diff_main
+
+        pit_diff_main(args)
+
+    elif args.command == "telos":
+        from lawvm.tools.cmd_telos import main as telos_main
+
+        telos_main(args)
 
     elif args.command is None:
         parser.print_help()
