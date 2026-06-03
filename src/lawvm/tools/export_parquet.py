@@ -373,6 +373,7 @@ def export_projections(
     mode: str = "finlex_oracle",
     limit: Optional[int] = None,
     use_parquet: bool = True,
+    include_refs: bool = False,
 ) -> Dict[str, int]:
     """Export corpus projections to JSONL (and optionally Parquet).
 
@@ -474,6 +475,18 @@ def export_projections(
         if parquet_ok:
             print("  (Also wrote Parquet files)")
 
+    # --- fi_refs.parquet: ReferenceMention projection ---
+    if include_refs:
+        print("\nExporting fi_refs projection...")
+        from lawvm.tools.export_fi_refs import export_fi_refs
+        refs_count = export_fi_refs(
+            corpus,
+            data_dir=data_dir,
+            use_parquet=use_parquet,
+            limit=limit,
+        )
+        counts["fi_refs"] = refs_count
+
     print()
     for name, n in counts.items():
         print(f"  {name}: {n:,} rows")
@@ -493,4 +506,5 @@ def main(args: Any) -> None:
         workers=getattr(args, "workers", 0),
         mode=getattr(args, "mode", "finlex_oracle"),
         limit=getattr(args, "limit", None),
+        include_refs=getattr(args, "include_refs", False),
     )

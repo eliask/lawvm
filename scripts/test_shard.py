@@ -158,6 +158,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_finland_rulebook_cli.py",
         "test_finland_rulebook_export.py",
         "test_finland_rulebook_registries.py",
+        "test_reference_mention.py",
         "test_wrapup_preservation.py",
     ),
     "evidence_claims": (

@@ -53,6 +53,7 @@ Subcommands:
     ee-corpus acquire|curate|current|replayable|stats  Acquire, curate, or show stats for Estonia corpus artifacts.
     export-projections              Export canonical LawVM projections to JSONL/Parquet.
     sql                             Ad-hoc SQL over LawVM projections (DuckDB).
+    refs                            Query ReferenceMention cross-statute citations from fi_refs.parquet.
     bench-report                    Summarise a bench run CSV without re-running the bench.
     parse-johto <text>              Parse a Finnish amendment johtolause text and show parsed ops.
 
@@ -6492,6 +6493,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="replay mode (default: finlex_oracle)",
     )
     ep_p.add_argument("--limit", type=int, metavar="N", help="process only first N statutes")
+    ep_p.add_argument(
+        "--include-refs",
+        dest="include_refs",
+        action="store_true",
+        help="also export fi_refs.parquet (ReferenceMention cross-statute citations)",
+    )
 
     # --- report ---
     report_p = sub.add_parser(
@@ -6634,6 +6641,81 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["table", "json", "csv"],
         help="output format (default: table)",
     )
+
+    # --- refs ---
+    refs_p = sub.add_parser(
+        "refs",
+        help="query ReferenceMention cross-statute citations from fi_refs.parquet",
+        description=(
+            "Query the fi_refs.parquet projection produced by 'lawvm export-projections'. "
+            "Without filters, shows schema and row count. "
+            "With --from / --to / --confidence filters, returns matching citation edges."
+        ),
+        parents=_P,
+    )
+    refs_p.add_argument(
+        "--from",
+        dest="from_ref",
+        metavar="STATUTE_OR_REF",
+        help="citations FROM this statute or provision (e.g. '711/2022' or '711/2022/7')",
+    )
+    refs_p.add_argument(
+        "--to",
+        dest="to_ref",
+        metavar="STATUTE_OR_REF",
+        help="citations TO this statute or provision (e.g. '711/2022' or '711/2022/7')",
+    )
+    refs_p.add_argument(
+        "--cite-kind",
+        dest="cite_kind",
+        choices=["internal", "cross-statute", "eu", "treaty", "non-statutory-instrument"],
+        help="filter by citation kind",
+    )
+    refs_p.add_argument(
+        "--confidence",
+        choices=["exact", "approximate", "ambiguous", "unresolved", "broken"],
+        help="filter by confidence level",
+    )
+    refs_p.add_argument(
+        "--broken-after",
+        dest="broken_after",
+        metavar="DATE",
+        help="citations that became BROKEN after DATE (YYYY-MM-DD)",
+    )
+    refs_p.add_argument(
+        "--broken-before",
+        dest="broken_before",
+        metavar="DATE",
+        help="citations that became BROKEN before DATE (YYYY-MM-DD)",
+    )
+    refs_p.add_argument(
+        "--as-of",
+        dest="as_of",
+        metavar="DATE",
+        help="show references valid at DATE (YYYY-MM-DD)",
+    )
+    refs_p.add_argument(
+        "--include-source-span",
+        dest="include_source_span",
+        action="store_true",
+        help="include source_span_file / source_span_byte_offset / source_span_len columns",
+    )
+    refs_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
+    refs_p.add_argument(
+        "--data-dir",
+        dest="data_dir",
+        default=".tmp/projections",
+        help="directory containing fi_refs.parquet (default: .tmp/projections)",
+    )
+    refs_p.add_argument(
+        "-o",
+        "--output-format",
+        dest="output_format",
+        default="table",
+        choices=["table", "json", "jsonl", "csv", "parquet"],
+        help="output format (default: table)",
+    )
+    # Note: -j/--jurisdiction is inherited from _P parent parser
 
     # --- bench-report ---
     bench_report_p = sub.add_parser(
@@ -7771,6 +7853,11 @@ def main() -> None:
         from lawvm.tools.sql_query import main as sql_main
 
         sql_main(args)
+
+    elif args.command == "refs":
+        from lawvm.tools.refs_query import main as refs_main
+
+        refs_main(args)
 
     elif args.command == "bench-report":
         from lawvm.tools.bench_report import main as bench_report_main
