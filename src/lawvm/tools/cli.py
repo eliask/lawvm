@@ -6390,6 +6390,95 @@ def _build_parser() -> argparse.ArgumentParser:
         help="number of entries per store_batch commit (default: 2000)",
     )
 
+    # --- acquire-fi-proposals ---
+    acquire_he_p = sub.add_parser(
+        "acquire-fi-proposals",
+        help="ingest Finnish government proposals (HEs) into fi_government_proposal.farchive",
+        description=(
+            "Ingest Finlex's government-proposal.zip AKN batch dump into "
+            "data/fi_government_proposal.farchive (isolated from finlex.farchive). "
+            "Default source: $LAWVM_GOVPROP_ZIP or ~/Downloads/government-proposal.zip. "
+            "Per-jurisdiction convention: {jurisdiction_code}_{corpus}.farchive."
+        ),
+    )
+    acquire_he_p.add_argument(
+        "--source",
+        metavar="LOCATION",
+        default=None,
+        help=(
+            "local path or https:// URL to government-proposal.zip "
+            "(default: $LAWVM_GOVPROP_ZIP or ~/Downloads/government-proposal.zip)"
+        ),
+    )
+    acquire_he_p.add_argument(
+        "--dest",
+        metavar="PATH",
+        default=None,
+        help="farchive DB path (default: data/fi_government_proposal.farchive)",
+    )
+    acquire_he_p.add_argument(
+        "--full",
+        action="store_true",
+        help="re-ingest everything, overwriting existing farchive entries (default: incremental)",
+    )
+    acquire_he_p.add_argument(
+        "--incremental",
+        action="store_true",
+        default=True,
+        help="only ingest HE locators not already in farchive (default)",
+    )
+    acquire_he_p.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        metavar="N",
+        help="parallel zip-extract worker threads (default: 4)",
+    )
+    acquire_he_p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="debug: ingest only first N HE groups",
+    )
+    acquire_he_p.add_argument(
+        "--year-range",
+        dest="year_range",
+        default=None,
+        metavar="Y1:Y2",
+        help="debug: only HEs in year range Y1:Y2 inclusive",
+    )
+    acquire_he_p.add_argument(
+        "--stream-mode",
+        dest="stream_mode",
+        choices=["tempfile", "range"],
+        default="tempfile",
+        help="HTTPS streaming mode: tempfile (default) or range",
+    )
+    acquire_he_p.add_argument(
+        "--keep-tempfile",
+        dest="keep_tempfile",
+        action="store_true",
+        help="retain streamed zip after ingest (HTTPS mode only)",
+    )
+    acquire_he_p.add_argument(
+        "--strict",
+        action="store_true",
+        help="abort on first acquisition failure with non-zero exit",
+    )
+    acquire_he_p.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="print per-HE progress",
+    )
+    acquire_he_p.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="parse and classify without writing to farchive",
+    )
+
     # --- structural-review ---
     sr_p = sub.add_parser(
         "structural-review",
@@ -7859,6 +7948,11 @@ def main() -> None:
         from lawvm.tools.import_zip import main as import_zip_main
 
         import_zip_main(args)
+
+    elif args.command == "acquire-fi-proposals":
+        from lawvm.finland.he_acquisition import main as acquire_he_main
+
+        acquire_he_main(args)
 
     elif args.command == "structural-review":
         from lawvm.tools.structural_review import (
