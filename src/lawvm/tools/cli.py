@@ -58,6 +58,8 @@ Subcommands:
     fi-proposals                    Query Finnish government proposals from fi_he_corpus.parquet.
     fi-proposal-show <HE_ID>        Per-HE structural overview (atoms, law_refs, signatures).
     sync-fi-proposals               Acquire HE corpus and rebuild fi_he_* Parquet projections.
+    rebuild-indexes                 Regenerate Tier 2 Parquet projections from Tier 1 farchive.
+    build-index-db                  Compose Tier 2 Parquets into a single DuckDB .db file.
     bench-report                    Summarise a bench run CSV without re-running the bench.
     parse-johto <text>              Parse a Finnish amendment johtolause text and show parsed ops.
 
@@ -7235,6 +7237,111 @@ def _build_parser() -> argparse.ArgumentParser:
         help="emit JSON",
     )
 
+    # --- rebuild-indexes ---
+    ri_p = sub.add_parser(
+        "rebuild-indexes",
+        help="regenerate Tier 2 Parquet projections from Tier 1 farchive",
+        description=(
+            "Regenerate Tier 2 Parquet+zstd projections "
+            "(data/{jurisdiction}/{schema-version}/*.parquet) from the current "
+            "Tier 1 farchive state. Incremental mode (default) skips projections "
+            "whose state files show they are already up-to-date. Full mode "
+            "unconditionally regenerates all projections. "
+            "See TIER_2_STORAGE_ARCHITECTURE.md for the three-tier model."
+        ),
+        parents=_P,
+    )
+    ri_p.add_argument(
+        "--incremental",
+        action="store_true",
+        default=False,
+        help="only regenerate stale projections (default behaviour)",
+    )
+    ri_p.add_argument(
+        "--full",
+        action="store_true",
+        default=False,
+        help="discard incremental state and regenerate all projections",
+    )
+    ri_p.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        metavar="N",
+        help="parallel workers (default: cpu_count - 2)",
+    )
+    ri_p.add_argument(
+        "--data-dir",
+        dest="data_dir",
+        default=None,
+        metavar="DIR",
+        help="root data directory containing farchives (default: data)",
+    )
+    ri_p.add_argument(
+        "--schema-version",
+        dest="schema_version",
+        default=None,
+        metavar="SV",
+        help="Tier 2 schema version (default: v1)",
+    )
+    ri_p.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="print per-projection progress",
+    )
+
+    # --- build-index-db ---
+    bid_p = sub.add_parser(
+        "build-index-db",
+        help="compose Tier 2 Parquets into a single DuckDB .db file",
+        description=(
+            "Wraps each .parquet in the Tier 2 directory as a DuckDB view inside "
+            "a single portable .db file. Optionally builds FTS indexes on text "
+            "columns. The .db is suitable for portable single-file consumers. "
+            "Run 'lawvm rebuild-indexes' first to generate the Parquet projections."
+        ),
+        parents=_P,
+    )
+    bid_p.add_argument(
+        "--data-dir",
+        dest="data_dir",
+        default=None,
+        metavar="DIR",
+        help="root data directory (default: data)",
+    )
+    bid_p.add_argument(
+        "--out",
+        dest="out",
+        default=None,
+        metavar="DB_PATH",
+        help=(
+            "output .db file path "
+            "(default: data/{jurisdiction}/{schema-version}/lawvm.db)"
+        ),
+    )
+    bid_p.add_argument(
+        "--fts",
+        action="store_true",
+        help=(
+            "build DuckDB FTS index on section text and fi_he_atoms text_content "
+            "for use with 'lawvm topic --mode fts'"
+        ),
+    )
+    bid_p.add_argument(
+        "--schema-version",
+        dest="schema_version",
+        default=None,
+        metavar="SV",
+        help="Tier 2 schema version to compose (default: v1)",
+    )
+    bid_p.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="print per-table progress and row counts",
+    )
+
     return parser
 
 
@@ -8336,6 +8443,16 @@ def main() -> None:
         from lawvm.tools.bench_report import main as bench_report_main
 
         bench_report_main(args)
+
+    elif args.command == "rebuild-indexes":
+        from lawvm.tools.rebuild_indexes import main as rebuild_indexes_main
+
+        rebuild_indexes_main(args)
+
+    elif args.command == "build-index-db":
+        from lawvm.tools.build_index_db import main as build_index_db_main
+
+        build_index_db_main(args)
 
     elif args.command == "parse-johto":
         from lawvm.tools.parse_johto import main as parse_johto_main
