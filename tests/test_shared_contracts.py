@@ -31,6 +31,11 @@ from lawvm.core.frozen_values import FrozenDict
 from lawvm.core.mutation_accounting import build_mutation_invariant_reports
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.core.mutation_events import MutationEvent
+from lawvm.core.proof_obligations import (
+    PROOF_OBLIGATION_BLOCKED,
+    PROOF_OBLIGATION_COMPLETE,
+    ProofObligationCertificate,
+)
 from lawvm.core.source_witness import (
     DigestWitness,
     SourceWitness,
@@ -163,6 +168,42 @@ def test_frontier_work_item_rejects_replay_promotion() -> None:
 
     assert "frontier work items must be non-executable" in issues
     assert "frontier work items must not be replay-authorized" in issues
+
+
+def test_proof_obligation_certificate_records_blocked_promotion() -> None:
+    certificate = ProofObligationCertificate(
+        scope_id="uk-frontier:eff-1:proofs",
+        phase="typed_elaboration",
+        rule_id="test_proof_boundary",
+        reason="target is proved but mutation boundary still blocks replay",
+        proof_status=PROOF_OBLIGATION_BLOCKED,
+        proved_proofs=("target_candidate_set_completeness",),
+        missing_proofs=("mutation_boundary_proof",),
+        blocker_counts={"mutation_boundary_proof": 1},
+        next_promotion_allowed=False,
+        next_promotion_requires=("mutation_boundary_proof",),
+        detail={"proof_obligation_not_replay_authorization": True},
+    )
+
+    data = certificate.to_dict()
+
+    assert data["proof_status"] == "blocked"
+    assert data["proved_proofs"] == ["target_candidate_set_completeness"]
+    assert data["missing_proofs"] == ["mutation_boundary_proof"]
+    assert data["next_promotion_allowed"] is False
+    assert data["proof_obligation_not_replay_authorization"] is True
+
+
+def test_proof_obligation_certificate_complete_rejects_missing_proofs() -> None:
+    with pytest.raises(ValueError, match="requires no missing_proofs"):
+        ProofObligationCertificate(
+            scope_id="uk-frontier:eff-1:proofs",
+            phase="typed_elaboration",
+            rule_id="test_proof_boundary",
+            reason="invalid complete certificate",
+            proof_status=PROOF_OBLIGATION_COMPLETE,
+            missing_proofs=("mutation_boundary_proof",),
+        )
 
 
 def test_agreement_residual_classifies_without_replay_promotion() -> None:

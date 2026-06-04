@@ -12,6 +12,10 @@ from lawvm.core.candidate_set_certificate import (
 )
 from lawvm.core.execution_authorization import validate_execution_authorization
 from lawvm.core.frontier_work_item import FrontierWorkItem, validate_frontier_work_item
+from lawvm.core.proof_obligations import (
+    PROOF_OBLIGATION_BLOCKED,
+    ProofObligationCertificate,
+)
 from lawvm.core.source_witness import source_witness_from_mapping
 from lawvm.core.target_resolution import (
     SCOPE_CONFIDENCE_EXPLICIT_SOURCE,
@@ -787,6 +791,16 @@ def uk_frontier_work_item_from_manual_frontier_row(
     )
     if exclusion_scope_certificate:
         detail["exclusion_scope_certificate"] = exclusion_scope_certificate
+    proof_obligation_certificate = _proof_obligation_certificate(
+        work_item_id=work_item_id,
+        owner_phase=owner_phase,
+        frontier_family=frontier_family,
+        candidate_set_certificate=detail["candidate_set_certificate"],
+        source_membership_certificate=source_membership_certificate,
+        exclusion_scope_certificate=exclusion_scope_certificate,
+    )
+    if proof_obligation_certificate:
+        detail["proof_obligation_certificate"] = proof_obligation_certificate
     detail["target_resolution_certificate"] = _target_resolution_certificate(
         owner_phase=owner_phase,
         target_witness=target_witness,
@@ -1242,6 +1256,123 @@ def _scoped_occurrence_exclusion_surfaces(source_preview: str) -> tuple[str, ...
         if clause:
             return (clause,)
     return ()
+
+
+def _proof_obligation_certificate(
+    *,
+    work_item_id: str,
+    owner_phase: str,
+    frontier_family: str,
+    candidate_set_certificate: Mapping[str, Any],
+    source_membership_certificate: Mapping[str, Any],
+    exclusion_scope_certificate: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    if (
+        frontier_family
+        == "uk_manual_frontier_multi_enactment_specified_provisions_text_patch"
+    ):
+        proved = _proved_frontier_common_proofs(candidate_set_certificate)
+        blockers: dict[str, int] = {}
+        if _certificate_status_is_complete(source_membership_certificate):
+            proved += ("source_list_membership",)
+        else:
+            blockers["source_list_membership"] = 1
+        missing = (
+            "matching_alternate_preimage_selection",
+            "live_target_preimage_proof",
+            "canonical_operation_compilation",
+            "mutation_boundary_proof",
+        )
+        blockers.update({proof: 1 for proof in missing})
+        return _blocked_proof_certificate(
+            work_item_id=work_item_id,
+            owner_phase=owner_phase,
+            frontier_family=frontier_family,
+            rule_id="uk_frontier_multi_enactment_proof_obligation_projection",
+            reason=(
+                "source-list membership and target candidates can be proved "
+                "without authorizing replay; alternate preimage selection, "
+                "live target preimage proof, canonical compilation, and "
+                "mutation-boundary proof still block promotion"
+            ),
+            proved_proofs=proved,
+            missing_proofs=missing,
+            blocker_counts=blockers,
+        )
+    if (
+        frontier_family
+        == "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate"
+    ):
+        proved = _proved_frontier_common_proofs(candidate_set_certificate)
+        blockers = {}
+        if _certificate_status_is_complete(exclusion_scope_certificate):
+            proved += ("source_exclusion_scope",)
+        else:
+            blockers["source_exclusion_scope"] = 1
+        missing = (
+            "live_occurrence_selector",
+            "excluded_occurrence_preservation_proof",
+            "canonical_operation_compilation",
+            "mutation_boundary_proof",
+        )
+        blockers.update({proof: 1 for proof in missing})
+        return _blocked_proof_certificate(
+            work_item_id=work_item_id,
+            owner_phase=owner_phase,
+            frontier_family=frontier_family,
+            rule_id="uk_frontier_scoped_occurrence_proof_obligation_projection",
+            reason=(
+                "source exclusion scope and target candidates can be proved "
+                "without authorizing replay; live occurrence selection, "
+                "excluded-occurrence preservation, canonical compilation, and "
+                "mutation-boundary proof still block promotion"
+            ),
+            proved_proofs=proved,
+            missing_proofs=missing,
+            blocker_counts=blockers,
+        )
+    return {}
+
+
+def _proved_frontier_common_proofs(
+    candidate_set_certificate: Mapping[str, Any],
+) -> tuple[str, ...]:
+    if _certificate_status_is_complete(candidate_set_certificate):
+        return ("target_candidate_set_completeness",)
+    return ()
+
+
+def _certificate_status_is_complete(certificate: Mapping[str, Any]) -> bool:
+    return str(certificate.get("completeness_status") or "") == CANDIDATE_SET_COMPLETE
+
+
+def _blocked_proof_certificate(
+    *,
+    work_item_id: str,
+    owner_phase: str,
+    frontier_family: str,
+    rule_id: str,
+    reason: str,
+    proved_proofs: tuple[str, ...],
+    missing_proofs: tuple[str, ...],
+    blocker_counts: Mapping[str, int],
+) -> Mapping[str, Any]:
+    return ProofObligationCertificate(
+        scope_id=f"uk-frontier-work-item:{work_item_id}:proof-obligations",
+        phase=owner_phase or "unknown",
+        rule_id=rule_id,
+        reason=reason,
+        proof_status=PROOF_OBLIGATION_BLOCKED,
+        proved_proofs=proved_proofs,
+        missing_proofs=missing_proofs,
+        blocker_counts=blocker_counts,
+        next_promotion_allowed=False,
+        next_promotion_requires=missing_proofs,
+        detail={
+            "frontier_family": frontier_family,
+            "proof_obligation_not_replay_authorization": True,
+        },
+    ).to_dict()
 
 
 def _target_resolution_certificate(
