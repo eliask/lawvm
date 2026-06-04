@@ -21,6 +21,8 @@ import json
 import re
 from typing import Any, Dict, List
 
+import lawvm.finland.section_resolver  # noqa: F401 — registers FI section resolver at import time
+
 
 def _amendment_id_to_version_tag(amendment_id: str) -> str:
     """Convert '2020/959' → '20200959' (YYYY + zero-padded 4-digit number)."""
@@ -40,39 +42,25 @@ def _normalize_section_label(label: str) -> str:
 
 
 def _find_section_el(oracle_root: Any, section_filter: str) -> Any | None:
-    """Find a section element by address or Finnish num label.
+    """Delegate to the registered Finnish section resolver.
 
-    section_filter can be:
-      - 'section:2'  → searches eId="sec_2" first, then <num>2 §</num>
-      - '2 §'        → searches <num>2 §</num>
+    The CLI is Finland-only by virtue of its corpus imports; the resolver
+    implementation lives in finland/ and the jurisdiction-agnostic locator
+    format lives in core/. Kept as a thin wrapper here for test continuity.
+
+    If the input parses as a hierarchical locator, the resolver's verdict
+    is authoritative — we do NOT fall through to raw num-text matching,
+    because that would silently widen `section:3` to a deeply-nested
+    section and `subsection:1` to whatever has `<num>1 §</num>`.
     """
     if not section_filter:
         return None
-
-    # Try eId first: 'section:2' → eId='sec_2'
-    if section_filter.startswith("section:"):
-        label = section_filter[len("section:"):]
-        eid = f"sec_{label}"
-        el = oracle_root.find(f'.//*[@eId="{eid}"]')
-        if el is not None:
-            return el
-
-    # Build num text to search
-    num_text = section_filter
-    if ":" in section_filter:
-        num_text = section_filter.split(":", 1)[1].strip()
-    if "§" not in num_text:
-        num_text = num_text + " §"
-    wanted_label = _normalize_section_label(num_text)
-
-    for sec in oracle_root.findall(".//{*}section"):
-        num_el = sec.find("{*}num")
-        if num_el is None:
-            num_el = sec.find("num")
-        if num_el is not None and num_el.text and _normalize_section_label(num_el.text) == wanted_label:
-            return sec
-
-    return None
+    from lawvm.core.locator import get_section_resolver, parse_locator_string
+    resolver = get_section_resolver("fi")
+    locator = parse_locator_string(section_filter)
+    if locator is not None:
+        return resolver.resolve(oracle_root, locator)
+    return resolver.resolve_raw(oracle_root, section_filter)
 
 
 def build_oracle_text_bundle(
