@@ -92,6 +92,15 @@ from lawvm.uk_legislation.witness_sidecars import _witness_for_op
 UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID = (
     "uk_effect_metadata_carried_quoted_words_repeal_text_patch"
 )
+UK_METADATA_CARRIED_OMITTING_WORDS_REPEAL_RULE_ID = (
+    "uk_effect_metadata_carried_omitting_words_repeal_text_patch"
+)
+UK_METADATA_CARRIED_SUBSTITUTING_WORDS_RULE_ID = (
+    "uk_effect_metadata_carried_substituting_words_text_patch"
+)
+UK_MIXED_STRUCTURAL_TEXT_REWRITE_TEXT_HALF_REPEAL_RULE_ID = (
+    "uk_effect_mixed_structural_text_rewrite_text_half_repeal"
+)
 UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID = (
     "uk_effect_metadata_carried_after_ordinal_insert_text_patch"
 )
@@ -1661,6 +1670,71 @@ def append_basic_text_rewrite_observations(
                 "replacement": op_text_replacement,
             },
         )
+    if UK_METADATA_CARRIED_OMITTING_WORDS_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_METADATA_CARRIED_OMITTING_WORDS_REPEAL_RULE_ID,
+            family="effect_feed_elaboration",
+            reason_code="metadata_action_source_omitting_words_repeal",
+            reason=(
+                "The official UK effect feed supplies the word-level omission "
+                "action and affected target, while the source instruction names "
+                "the same target and quoted words; lowering combines those "
+                "source surfaces into bounded TEXT_REPEAL operations."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "fragment_count": len(fragment_subs or []),
+            },
+        )
+    if UK_METADATA_CARRIED_SUBSTITUTING_WORDS_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_METADATA_CARRIED_SUBSTITUTING_WORDS_RULE_ID,
+            family="effect_feed_elaboration",
+            reason_code="metadata_action_source_substituting_words",
+            reason=(
+                "The official UK effect feed supplies the word-level "
+                "substitution action and affected target, while the source "
+                "instruction names the same target, replacement, and preimage; "
+                "lowering combines those source surfaces into a bounded "
+                "TEXT_REPLACE operation."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+            },
+        )
+    if UK_MIXED_STRUCTURAL_TEXT_REWRITE_TEXT_HALF_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_MIXED_STRUCTURAL_TEXT_REWRITE_TEXT_HALF_REPEAL_RULE_ID,
+            family="effect_feed_elaboration",
+            reason_code="mixed_structural_text_rewrite_text_half_repeal",
+            reason=(
+                "UK source combines structural repeal and a target-local text "
+                "repeal; lowering compiles only the source-named text half for "
+                "the effect-feed target and leaves structural sibling repeal to "
+                "separate source/effect authority."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+            },
+        )
     if UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID in rule_ids:
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
@@ -3158,6 +3232,7 @@ def _separate_multi_quoted_word_repeal_fragments(
             not in {
                 UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
                 UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
+                UK_METADATA_CARRIED_OMITTING_WORDS_REPEAL_RULE_ID,
             }
             or replacement
             or not original

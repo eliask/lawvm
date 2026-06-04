@@ -9813,6 +9813,242 @@ def test_compile_metadata_carried_scoped_quoted_words_repeal_splits_fragments() 
     assert rows[0]["target"] == "section:42/subsection:7/paragraph:a"
 
 
+def test_compile_metadata_carried_omitting_words_repeal_from_section_subsection_source() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="article-2">
+          <Pnumber>2</Pnumber>
+          <Text>2 The list in section 94(4) of the Nationality, Immigration and Asylum Act 2002 is amended by omitting “(l) Bulgaria” and “(q) Romania”.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_metadata_carried_omitting_words_repeal",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2006-12-07",
+        affected_uri="/id/ukpga/2002/41/section/94/subsection/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2002",
+        affected_number="41",
+        affected_provisions="s. 94(4)",
+        affecting_uri="/id/uksi/2006/3215",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2006",
+        affecting_number="3215",
+        affecting_provisions="art. 2",
+        affecting_title="Test Order 2006",
+        in_force_dates=[{"date": "2006-12-07", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert [op.action for op in ops] == [StructuralAction.TEXT_REPEAL, StructuralAction.TEXT_REPEAL]
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
+        "(l) Bulgaria",
+        "(q) Romania",
+    ]
+    assert all(
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_metadata_carried_omitting_words_repeal_text_patch"
+        in op.provenance_tags
+        for op in ops
+    )
+    rows = [
+        row
+        for row in lowering_records
+        if row["rule_id"] == "uk_effect_metadata_carried_omitting_words_repeal_text_patch"
+    ]
+    assert len(rows) == 1
+    assert rows[0]["blocking"] is False
+    assert rows[0]["target"] == "section:94/subsection:4"
+
+
+def test_compile_metadata_carried_substituting_words_from_scoped_source() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="regulation-5-2-b-ii">
+          <Pnumber>ii</Pnumber>
+          <Text>ii by substituting in subsection (2) the word “not” for the words “neither retired from regular employment nor otherwise”.</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_metadata_carried_substituting_words",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="1989-10-06",
+        affected_uri="/id/ukpga/1965/51/section/37/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1965",
+        affected_number="51",
+        affected_provisions="s. 37(2)",
+        affecting_uri="/id/uksi/1989/1642",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="1989",
+        affecting_number="1642",
+        affecting_provisions="reg. 5(2)(b)(ii)",
+        affecting_title="Test Regulations 1989",
+        in_force_dates=[{"date": "1989-10-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        "neither retired from regular employment nor otherwise"
+    )
+    assert ops[0].text_patch.replacement == "not"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_metadata_carried_substituting_words_text_patch"
+        in ops[0].provenance_tags
+    )
+    rows = [
+        row
+        for row in lowering_records
+        if row["rule_id"] == "uk_effect_metadata_carried_substituting_words_text_patch"
+    ]
+    assert len(rows) == 1
+    assert rows[0]["blocking"] is False
+    assert rows[0]["target"] == "section:37/subsection:2"
+
+
+def test_compile_metadata_carried_omitting_words_requires_source_scope_match() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="article-2">
+          <Pnumber>2</Pnumber>
+          <Text>2 The list in section 94(5) of the Nationality, Immigration and Asylum Act 2002 is amended by omitting “(l) Bulgaria”.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_metadata_carried_omitting_words_scope_mismatch",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2006-12-07",
+        affected_uri="/id/ukpga/2002/41/section/94/subsection/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2002",
+        affected_number="41",
+        affected_provisions="s. 94(4)",
+        affecting_uri="/id/uksi/2006/3215",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2006",
+        affecting_number="3215",
+        affecting_provisions="art. 2",
+        affecting_title="Test Order 2006",
+        in_force_dates=[{"date": "2006-12-07", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert ops == []
+    assert all(
+        row["rule_id"] != "uk_effect_metadata_carried_omitting_words_repeal_text_patch"
+        for row in lowering_records
+    )
+
+
+def test_compile_mixed_structural_text_rewrite_lowers_only_text_half() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-19-paragraph-20-3">
+          <Pnumber>3</Pnumber>
+          <Text>3 Omit subsections (4) and (4A), and in subsection (5) the words from “and the reference in subsection (4)” to the end.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_mixed_structural_text_rewrite_text_half",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="1998-07-31",
+        affected_uri="/id/ukpga/1970/9/section/42/subsection/5",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 42(5)",
+        affecting_uri="/id/ukpga/1998/36",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1998",
+        affecting_number="36",
+        affecting_provisions="Sch. 19 para. 20(3)",
+        affecting_title="Finance Act 1998",
+        in_force_dates=[{"date": "1998-07-31", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "42"), ("subsection", "5"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        "TEXT_FROM_and the reference in subsection (4)_TO_END"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_mixed_structural_text_rewrite_text_half_repeal"
+        in ops[0].provenance_tags
+    )
+    rows = [
+        row
+        for row in lowering_records
+        if row["rule_id"] == "uk_effect_mixed_structural_text_rewrite_text_half_repeal"
+    ]
+    assert len(rows) == 1
+    assert rows[0]["blocking"] is False
+    assert rows[0]["target"] == "section:42/subsection:5"
+
+
+def test_compile_mixed_structural_text_rewrite_requires_text_half_scope_match() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-19-paragraph-20-3">
+          <Pnumber>3</Pnumber>
+          <Text>3 Omit subsections (4) and (4A), and in subsection (6) the words from “and the reference in subsection (4)” to the end.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_mixed_structural_text_rewrite_text_half_scope_mismatch",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="1998-07-31",
+        affected_uri="/id/ukpga/1970/9/section/42/subsection/5",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 42(5)",
+        affecting_uri="/id/ukpga/1998/36",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1998",
+        affecting_number="36",
+        affecting_provisions="Sch. 19 para. 20(3)",
+        affecting_title="Finance Act 1998",
+        in_force_dates=[{"date": "1998-07-31", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert ops == []
+    assert all(
+        row["rule_id"] != "uk_effect_mixed_structural_text_rewrite_text_half_repeal"
+        for row in lowering_records
+    )
+
+
 def test_compile_metadata_carried_scoped_quoted_words_repeal_requires_matching_scope() -> None:
     extracted_el = ET.fromstring(
         f"""

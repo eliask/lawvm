@@ -103,6 +103,9 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     UK_AMOUNT_SPECIFIED_SUBSTITUTION_RULE_ID,
     UK_METADATA_CARRIED_DEFINITION_ENTRY_REPEAL_RULE_ID,
     UK_METADATA_CARRIED_DEFINITION_QUOTED_WORD_REPEAL_RULE_ID,
+    UK_METADATA_CARRIED_OMITTING_WORDS_REPEAL_RULE_ID,
+    UK_METADATA_CARRIED_SUBSTITUTING_WORDS_RULE_ID,
+    UK_MIXED_STRUCTURAL_TEXT_REWRITE_TEXT_HALF_REPEAL_RULE_ID,
     UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID,
     UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID,
     UK_AFTER_ANCHOR_SUBSTITUTE_TAIL_SUBSTITUTION_RULE_ID,
@@ -850,6 +853,15 @@ def _extract_text_fragment_substitutions(
         if table_column_parent_blocks_generic_at_end_insert
         else parse_fragment_substitution(extracted_text)
     )
+    mixed_structural_text_rewrite_text_half = (
+        _effect_mixed_structural_text_rewrite_text_half_repeal_fragment(
+            effect_type=effect.effect_type,
+            extracted_text=extracted_text,
+            target=target,
+        )
+    )
+    if mixed_structural_text_rewrite_text_half is not None:
+        subs = [mixed_structural_text_rewrite_text_half]
     if not subs:
         beginning_each_child_insert = _effect_beginning_each_child_text_insert_fragment(
             target=target,
@@ -944,6 +956,16 @@ def _extract_text_fragment_substitutions(
         if metadata_carried_word_repeal is not None:
             subs = [metadata_carried_word_repeal]
     if not subs:
+        metadata_carried_omitting_words_repeals = (
+            _effect_metadata_carried_omitting_words_repeal_fragments(
+                effect_type=effect.effect_type,
+                extracted_text=extracted_text,
+                target=target,
+            )
+        )
+        if metadata_carried_omitting_words_repeals:
+            subs = list(metadata_carried_omitting_words_repeals)
+    if not subs:
         ordinal_sentence_beginning_repeal = _effect_ordinal_sentence_beginning_repeal_fragment(
             effect_type=effect.effect_type,
             extracted_text=extracted_text,
@@ -978,6 +1000,16 @@ def _extract_text_fragment_substitutions(
         )
         if metadata_carried_after_substitute_insert is not None:
             subs = [metadata_carried_after_substitute_insert]
+    if not subs:
+        metadata_carried_substituting_words = (
+            _effect_metadata_carried_substituting_words_fragment(
+                effect_type=effect.effect_type,
+                extracted_text=extracted_text,
+                target=target,
+            )
+        )
+        if metadata_carried_substituting_words is not None:
+            subs = [metadata_carried_substituting_words]
     if not subs:
         after_anchor_substitute_tail_substitution = (
             _effect_after_anchor_substitute_tail_substitution_fragment(
@@ -1916,8 +1948,86 @@ def _effect_metadata_carried_quoted_words_repeal_fragment(
     }
 
 
+def _effect_metadata_carried_omitting_words_repeal_fragments(
+    *,
+    effect_type: str,
+    extracted_text: str,
+    target: LegalAddress,
+) -> tuple[dict[str, str], ...]:
+    norm_effect_type = " ".join(str(effect_type or "").lower().split())
+    if norm_effect_type not in {"word repealed", "words repealed", "word omitted", "words omitted"}:
+        return ()
+    text = " ".join(str(extracted_text or "").split()).strip()
+    lowered = text.lower()
+    if not text or not re.search(r"\bomitt?ing\b|\bomit\b|\bomitted\b", lowered):
+        return ()
+    if re.search(r"\bwhere\s+they\s+occur\b|\bsubject\s+to\b|\bexcept\b", lowered):
+        return ()
+    if not _metadata_carried_quote_scope_matches_target(text, target):
+        return ()
+    quote_matches = tuple(re.finditer(r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\")", text))
+    if not quote_matches:
+        return ()
+    fragments = tuple(
+        " ".join((match.group("curly") or match.group("double") or "").split()).strip()
+        for match in quote_matches
+    )
+    fragments = tuple(fragment for fragment in fragments if fragment)
+    if not fragments:
+        return ()
+    return tuple(
+        {
+            "original": fragment,
+            "replacement": "",
+            "rule_id": UK_METADATA_CARRIED_OMITTING_WORDS_REPEAL_RULE_ID,
+        }
+        for fragment in fragments
+    )
+
+
+def _effect_mixed_structural_text_rewrite_text_half_repeal_fragment(
+    *,
+    effect_type: str,
+    extracted_text: str,
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect_type or "").lower().split())
+    if norm_effect_type not in {"word repealed", "words repealed", "word omitted", "words omitted"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    lowered = text.lower()
+    if (
+        not text
+        or "omit subsection" not in lowered
+        or " words from " not in lowered
+        or " to the end" not in lowered
+    ):
+        return None
+    target_kind = _addr_leaf_kind(target)
+    target_label = _clean_num(_addr_leaf_label(target) or "")
+    if target_kind != "subsection" or not target_label:
+        return None
+    match = re.search(
+        rf"\bin\s+subsection\s*\(\s*{re.escape(target_label)}\s*\)"
+        r".{0,160}?\bwords\s+from\s+[“\"](?P<anchor>[^”\"]{1,500})[”\"]"
+        r".{0,80}?\bto\s+the\s+end\b",
+        text,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    anchor = " ".join(match.group("anchor").split()).strip()
+    if not anchor:
+        return None
+    return {
+        "original": f"TEXT_FROM_{anchor}_TO_END",
+        "replacement": "",
+        "rule_id": UK_MIXED_STRUCTURAL_TEXT_REWRITE_TEXT_HALF_REPEAL_RULE_ID,
+    }
+
+
 def _target_section_ref_pattern(target: LegalAddress) -> Optional[re.Pattern[str]]:
-    if len(target.path) < 3 or target.path[0][0] != "section":
+    if len(target.path) < 2 or target.path[0][0] != "section":
         return None
     section_label = _clean_num(target.path[0][1])
     if not section_label:
@@ -1954,6 +2064,58 @@ def _metadata_carried_quote_scope_matches_target(text: str, target: LegalAddress
     if section_ref_pattern is not None and section_ref_pattern.search(text):
         return True
     return False
+
+
+def _effect_metadata_carried_substituting_words_fragment(
+    *,
+    effect_type: str,
+    extracted_text: str,
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect_type or "").lower().split())
+    if norm_effect_type not in {"word substituted", "words substituted", "substituted for words"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    lowered = text.lower()
+    if not text or "substitut" not in lowered:
+        return None
+    if re.search(r"\bwhere\s+they?\s+refer\b|\bwhere\s+it\s+refers\b|\bexcept\b", lowered):
+        return None
+    if not _metadata_carried_quote_scope_matches_target(text, target):
+        return None
+    substituting_idx = lowered.find("substituting ")
+    if substituting_idx < 0:
+        return None
+    first_quote_idx = min(
+        (idx for idx in (text.find(q, substituting_idx) for q in _QUOTE_PAIRS) if idx >= 0),
+        default=-1,
+    )
+    if first_quote_idx < 0:
+        return None
+    replacement = _read_quoted(text, first_quote_idx)
+    if replacement is None:
+        return None
+    for_idx = lowered.find(" for ", replacement[1])
+    if for_idx < 0:
+        return None
+    original_quote_idx = min(
+        (idx for idx in (text.find(q, for_idx) for q in _QUOTE_PAIRS) if idx >= 0),
+        default=-1,
+    )
+    if original_quote_idx < 0:
+        return None
+    original = _read_quoted(text, original_quote_idx)
+    if original is None:
+        return None
+    original_text = " ".join(original[0].split()).strip()
+    replacement_text = " ".join(replacement[0].split()).strip()
+    if not original_text or not replacement_text:
+        return None
+    return {
+        "original": original_text,
+        "replacement": replacement_text,
+        "rule_id": UK_METADATA_CARRIED_SUBSTITUTING_WORDS_RULE_ID,
+    }
 
 
 def _effect_metadata_carried_scoped_quoted_words_repeal_fragments(
