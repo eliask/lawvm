@@ -3206,6 +3206,12 @@ def test_uk_candidates_full_mode_exports_manual_compile_evidence_jsonl(
         "rows": 1,
         "statuses": ["manual_compile_candidate"],
     }
+    assert payload["evidence_jsonl"]["manual_compile_evidence_jsonl"] == {
+        "path": str(out_path),
+        "rows": 1,
+        "statuses": ["manual_compile_candidate"],
+    }
+    assert str(out_path) in payload["written_paths"]
     assert rows[0]["statute_id"] == "ukpga/2000/1"
     assert rows[0]["effect_id"] == "eff-heading"
     assert rows[0]["work_item_kind"] == "semantic_compile_candidate"
@@ -3419,6 +3425,12 @@ def test_uk_candidates_manual_compile_evidence_jsonl_can_export_frontend_candida
         "rows": 1,
         "statuses": ["deterministic_frontend_candidate"],
     }
+    assert payload["evidence_jsonl"]["manual_compile_evidence_jsonl"] == {
+        "path": str(out_path),
+        "rows": 1,
+        "statuses": ["deterministic_frontend_candidate"],
+    }
+    assert str(out_path) in payload["written_paths"]
     assert rows[0]["effect_id"] == "eff-frontend"
     assert rows[0]["manual_compile_status"] == "deterministic_frontend_candidate"
     assert rows[0]["manual_compile_rule_id"] == (
@@ -3466,6 +3478,12 @@ def test_uk_candidates_manual_compile_evidence_jsonl_writes_empty_frontier(
         "rows": 0,
         "statuses": ["manual_compile_candidate"],
     }
+    assert payload["evidence_jsonl"]["manual_compile_evidence_jsonl"] == {
+        "path": str(out_path),
+        "rows": 0,
+        "statuses": ["manual_compile_candidate"],
+    }
+    assert str(out_path) in payload["written_paths"]
     assert out_path.read_text(encoding="utf-8") == ""
 
 

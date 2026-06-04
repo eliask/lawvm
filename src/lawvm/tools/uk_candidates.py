@@ -3214,6 +3214,17 @@ def _attach_replay_adjudication_evidence_report(
     )
 
 
+def _attach_manual_compile_evidence_report(
+    report: dict[str, Any],
+    evidence_report: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    return _attach_evidence_jsonl_report(
+        report,
+        "manual_compile_evidence_jsonl",
+        evidence_report,
+    )
+
+
 def _attach_residual_claim_evidence_report(
     report: dict[str, Any],
     evidence_report: Mapping[str, Any] | None,
@@ -3950,12 +3961,19 @@ def main(args: "argparse.Namespace") -> None:
                 summary_count_limit=summary_count_limit,
                 row_count_limit=row_count_limit,
             )
-            if manual_compile_evidence_jsonl_path is not None:
-                report["manual_compile_evidence_jsonl"] = {
+            manual_compile_evidence_jsonl_report = (
+                {
                     "path": str(manual_compile_evidence_jsonl_path),
                     "rows": manual_compile_evidence_jsonl_count,
                     "statuses": sorted(manual_compile_evidence_statuses),
                 }
+                if manual_compile_evidence_jsonl_path is not None
+                else None
+            )
+            _attach_manual_compile_evidence_report(
+                report,
+                manual_compile_evidence_jsonl_report,
+            )
             _attach_replay_adjudication_evidence_report(
                 report,
                 replay_adjudication_evidence_jsonl_report,
@@ -5157,12 +5175,19 @@ def main(args: "argparse.Namespace") -> None:
             summary_count_limit=summary_count_limit,
             row_count_limit=row_count_limit,
         )
-        if manual_compile_evidence_jsonl_path is not None:
-            report["manual_compile_evidence_jsonl"] = {
+        manual_compile_evidence_jsonl_report = (
+            {
                 "path": str(manual_compile_evidence_jsonl_path),
                 "rows": manual_compile_evidence_jsonl_count,
                 "statuses": sorted(manual_compile_evidence_statuses),
             }
+            if manual_compile_evidence_jsonl_path is not None
+            else None
+        )
+        _attach_manual_compile_evidence_report(
+            report,
+            manual_compile_evidence_jsonl_report,
+        )
         _attach_replay_adjudication_evidence_report(
             report,
             replay_adjudication_evidence_jsonl_report,
