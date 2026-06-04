@@ -2564,6 +2564,7 @@ def test_parse_fragment_substitution_handles_there_is_substituted() -> None:
         {
             "original": "the Director",
             "replacement": "the OFT",
+            "rule_id": "uk_effect_passive_quoted_substitution_text_patch",
         }
     ]
 
@@ -2606,6 +2607,7 @@ def test_parse_fragment_substitution_handles_wherever_it_appears() -> None:
         {
             "original": "exit day",
             "replacement": "IP completion day",
+            "rule_id": "uk_effect_wherever_they_occur_substitution_text_patch",
         }
     ]
 
@@ -3775,6 +3777,7 @@ def test_parse_fragment_substitution_handles_there_shall_be_substituted() -> Non
         {
             "original": "Act concerned",
             "replacement": "1998 Act",
+            "rule_id": "uk_effect_passive_quoted_substitution_text_patch",
         }
     ]
 

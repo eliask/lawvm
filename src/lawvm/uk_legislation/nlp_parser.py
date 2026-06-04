@@ -1142,10 +1142,14 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
         )
 
     for m in _PASSIVE_QUOTED_SUBSTITUTED_RE.finditer(text):
+        original_raw = m.group("original")
+        replacement_raw = m.group("replacement")
+        if original_raw != original_raw.strip() or replacement_raw != replacement_raw.strip():
+            continue
         subs.append(
             {
-                "original": m.group("original").strip(),
-                "replacement": m.group("replacement"),
+                "original": original_raw.strip(),
+                "replacement": replacement_raw,
                 "rule_id": UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID,
             }
         )
@@ -2493,6 +2497,10 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
     )
     for m in matches_from_beginning_block_substituted:
         replacement = m.group(2).strip()
+        replacement_prefix = text[m.start() : m.start(2)]
+        quoted_replacement = replacement.startswith(tuple(_QUOTE_CHARS))
+        if quoted_replacement and not re.search(r"substitute\s*[—-]\s*$", replacement_prefix, re.I):
+            continue
         closing_quote = {"“": "”", '"': '"', "'": "'", "‘": "’"}.get(replacement[:1])
         if closing_quote and replacement.endswith(closing_quote):
             replacement = replacement[1:-1].strip()
@@ -3098,7 +3106,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
     )
     for m in matches_after_anchor_block_insert:
         original = m.group("original").strip()
-        inserted = re.sub(r"\s*\.$", "", m.group("inserted").strip()).strip()
+        inserted = m.group("inserted").strip()
         if inserted and not inserted.startswith(("“", '"', "'", "‘")):
             joiner = "" if inserted.startswith((" ", ",", ".", ";", ":", ")")) else " "
             subs.append(
@@ -3603,6 +3611,8 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
     for m in matches_definition_at_end_unquoted_insert_prefix:
         inserted = m.group("inserted").strip()
         term = m.group("term").strip()
+        if inserted.startswith(tuple(_QUOTE_CHARS)):
+            continue
         if inserted and term:
             subs.append(
                 {
