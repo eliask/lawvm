@@ -23517,6 +23517,87 @@ def test_compile_repeal_table_quoted_words_text_repeal() -> None:
     )
 
 
+def test_compile_repeal_table_quoted_words_after_source_notes_header() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <P1 id="section-139">
+            <P1para>
+              <Text>The enactments mentioned in Schedule 20 to this Act are hereby repealed to the extent specified in the third column of that Schedule.</Text>
+            </P1para>
+          </P1>
+          <Schedule id="schedule-20">
+            <Title>Repeals</Title>
+            <Table>
+              <tfoot>
+                <tr><td colspan="3">1. These repeals have effect in relation to instruments executed on or after 1st October 1999.</td></tr>
+                <tr><td colspan="3">2. The repeals do not have effect in relation to transfers or other instruments relating to units under a unit trust scheme.</td></tr>
+                <tr><td colspan="3">This does not affect their operation in relation to other conveyances.</td></tr>
+                <tr><td colspan="3">(a) conveyances or transfers on sale of property other than units under a unit trust scheme; and</td></tr>
+                <tr><td colspan="3">(b) bearer instruments constituting units under a unit trust scheme.</td></tr>
+              </tfoot>
+              <tbody>
+                <tr><th>Chapter</th><th>Short title</th><th>Extent of repeal</th></tr>
+                <tr>
+                  <td>1933 c. 19.</td>
+                  <td>The Finance Act 1933.</td>
+                  <td>In section 42, the words “and subsection (1) of section 15”.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//P1")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_source_notes_before_header",
+        effect_type="repealed in part",
+        applied=True,
+        requires_applied=True,
+        modified="1999-10-01",
+        affected_uri="/id/ukpga/1933/19/section/42",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1933",
+        affected_number="19",
+        affected_provisions="s. 42",
+        affecting_uri="/id/ukpga/1999/16",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1999",
+        affecting_number="16",
+        affecting_provisions="s. 139 Sch. 20 Pt. 5(1) Notes 1 2",
+        affecting_title="Finance Act 1999",
+        affected_title="Finance Act 1933",
+        in_force_dates=[{"date": "1999-10-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "42"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "and subsection (1) of section 15"
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_quoted_words_text_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_quoted_words_text_repeal"
+        and record["reason_code"] == "unique_repeal_table_extent_row_quoted_words"
+        and record["enactment_match_basis"] == "explicit_short_citation"
+        and record["extent_cell"]
+        == "In section 42, the words “and subsection (1) of section 15”."
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_quoted_word_immediately_preceding_it_targets_parent() -> None:
     source_root = ET.fromstring(
         """

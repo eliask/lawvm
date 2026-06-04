@@ -1114,7 +1114,9 @@ def _uk_table_is_repeal_extent_source_table(
     *,
     source_is_repeal_schedule: bool = False,
 ) -> _UKRepealTableColumns | None:
-    for row in _uk_table_rows_with_rowspans(table)[:4]:
+    # legislation.gov.uk current XML can serialize explanatory tfoot rows before
+    # tbody, so the legal table header may not be among the first physical rows.
+    for row in _uk_table_rows_with_rowspans(table)[:8]:
         columns = _uk_repeal_table_columns(row)
         if columns is not None:
             return columns
