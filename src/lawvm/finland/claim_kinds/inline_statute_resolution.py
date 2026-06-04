@@ -75,6 +75,16 @@ _CITE_VUODEN_RE = re.compile(
 # Pattern 4: bare NNNN/YYYY or NNN/YY in text → number=group1, year=group2
 _CITE_SLASHONLY_RE = re.compile(r"\b(\d{1,4})/(\d{2,4})\b")
 
+# Pattern 5: Finnish date-decorated statute form DD.M[M].YYYY/NNNN or (DD.M[M].YYYY/NNNN)
+# e.g. "11.12.2014/1055" → year=2014, number=1055
+#      "(29.1.1999/77)"  → year=1999, number=77
+# The date part (day.month) precedes the statute year; the statute number follows the slash.
+# Bounded: day \d{1,2}, month \d{1,2}, year \d{4}, statute number \d{1,4}.
+# Substring guard: requires "." digit pattern (Finnish date separator).
+_CITE_DATE_DECORATED_RE = re.compile(
+    r"\b\d{1,2}\.\d{1,2}\.(\d{4})/(\d{1,4})\b"
+)
+
 
 def _expand_year(raw_year: int) -> int:
     """Expand a 2-digit year to 4 digits using the 19xx convention.
@@ -114,7 +124,8 @@ def _extract_year_number(citation_form: str) -> Optional[Tuple[int, int]]:
     """Try to extract (year, statute_number) from a citation form string.
 
     Finnish statute IDs are NNNN/YYYY (e.g. '1234/2020' = statute 1234 of 2020).
-    Also handles legacy 2-digit-year citations (e.g. '(71/23)' = statute 71 of 1923).
+    Also handles legacy 2-digit-year citations (e.g. '(71/23)' = statute 71 of 1923)
+    and Finnish date-decorated forms (e.g. '11.12.2014/1055' or '(29.1.1999/77)').
     Returns (year, statute_number) or None if no known pattern matches.
     Tries patterns in specificity order; returns first match.
     """
@@ -124,6 +135,15 @@ def _extract_year_number(citation_form: str) -> Optional[Tuple[int, int]]:
 
     # vuoden YYYY lain N:o NNNN → group1=year (4-digit), group2=number
     m = _CITE_VUODEN_RE.search(citation_form)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+
+    # Finnish date-decorated form DD.M[M].YYYY/NNNN (higher specificity than bare slash)
+    # e.g. "11.12.2014/1055" → year=2014, number=1055
+    #      "(29.1.1999/77)"  → year=1999, number=77
+    # Must be tried before _CITE_SLASHONLY_RE to avoid year/number inversion:
+    # _CITE_SLASHONLY_RE would match "1999/77" → (year=77, number=1999) which is wrong.
+    m = _CITE_DATE_DECORATED_RE.search(citation_form)
     if m:
         return int(m.group(1)), int(m.group(2))
 

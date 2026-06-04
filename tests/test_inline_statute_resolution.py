@@ -240,3 +240,51 @@ class TestExtractYearNumber:
 
     def test_no_digit_year_returns_none(self):
         assert _extract_year_number("laki ilman numeroa") is None
+
+    # -------------------------------------------------------------------
+    # Date-decorated citation forms (real-corpus regression 2026-06-04)
+    # Qwen extracts citation forms like "11.12.2014/1055" and "(29.1.1999/77)"
+    # where the date (DD.MM.YYYY) precedes the statute number after the slash.
+    # Without the _CITE_DATE_DECORATED_RE guard, _CITE_SLASHONLY_RE would
+    # match "2014/1055" → (year=1055, number=2014) — inverting year/number.
+    # -------------------------------------------------------------------
+
+    def test_date_decorated_form_dd_mm_yyyy_slash_number(self):
+        """'11.12.2014/1055' → statute 1055 of year 2014 → (2014, 1055)."""
+        result = _extract_year_number("11.12.2014/1055")
+        assert result == (2014, 1055), f"Expected (2014, 1055), got {result}"
+
+    def test_date_decorated_form_parenthesized(self):
+        """'(29.1.1999/77)' → statute 77 of year 1999 → (1999, 77)."""
+        result = _extract_year_number("(29.1.1999/77)")
+        assert result == (1999, 77), f"Expected (1999, 77), got {result}"
+
+    def test_date_decorated_form_single_digit_month(self):
+        """'5.3.2000/123' → statute 123 of year 2000 → (2000, 123)."""
+        result = _extract_year_number("5.3.2000/123")
+        assert result == (2000, 123), f"Expected (2000, 123), got {result}"
+
+    def test_date_decorated_entailment_validator_passes(self):
+        """End-to-end: date-decorated citation form passes entailment validation."""
+        span_text = "Sovellettavaksi tulee 11.12.2014/1055 mukainen sääntely."
+        result = _validate_entailment(
+            resolved_statute_id="1055/2014",
+            citation_form="11.12.2014/1055",
+            span_text=span_text,
+        )
+        assert result.passed, f"Expected pass for date-decorated form: {result.reason}"
+
+    def test_date_decorated_paren_entailment_validator_passes(self):
+        """End-to-end: parenthesized date-decorated citation form passes."""
+        span_text = "Luonnonsuojelulain (29.1.1999/77) mukaiseksi erityiseksi suojelualueeksi."
+        result = _validate_entailment(
+            resolved_statute_id="77/1999",
+            citation_form="(29.1.1999/77)",
+            span_text=span_text,
+        )
+        assert result.passed, f"Expected pass for parenthesized date form: {result.reason}"
+
+    def test_plain_parenthesized_not_broken(self):
+        """'(71/23)' still works correctly after adding date-decorated pattern."""
+        result = _extract_year_number("(71/23)")
+        assert result == (1923, 71), f"Expected (1923, 71), got {result}"
