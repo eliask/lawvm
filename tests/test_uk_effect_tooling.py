@@ -3177,6 +3177,20 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
     assert payload["frontier_work_item"]["detail"]["candidate_set_certificate"] == (
         payload["candidate_set_certificate"]
     )
+    assert payload["agreement_residual"]["agreement_surface"] == (
+        "manual_compile_frontier_vs_current_oracle"
+    )
+    assert payload["agreement_residual"]["family"] == "source_pathology"
+    assert payload["agreement_residual"]["status"] == "frontier"
+    assert payload["agreement_residual"]["missing_proofs"] == (
+        payload["execution_authorization"]["required_proofs"]
+    )
+    assert "oracle_backed_mutation" in payload["agreement_residual"][
+        "forbidden_shortcuts"
+    ]
+    assert payload["frontier_work_item"]["detail"]["agreement_residual"] == (
+        payload["agreement_residual"]
+    )
     assert payload["frontier_work_item"]["executable"] is False
     assert payload["frontier_work_item"]["replay_authorized"] is False
     assert payload["frontier_work_item"]["source_witness"]["source_sha256"] == (
@@ -3724,6 +3738,21 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
     assert payload["candidate_set_certificate"]["next_promotion_allowed"] is False
     assert payload["frontier_work_item"]["detail"]["candidate_set_certificate"] == (
         payload["candidate_set_certificate"]
+    )
+    assert payload["agreement_residual"]["residual_id"] == payload["work_item_id"]
+    assert payload["agreement_residual"]["family"] == "source_pathology"
+    assert payload["agreement_residual"]["status"] == "frontier"
+    assert payload["agreement_residual"]["missing_proofs"] == (
+        payload["required_proofs"]
+    )
+    assert payload["agreement_residual"]["detail"][
+        "candidate_set_completeness_status"
+    ] == "complete"
+    assert "manual_claim_as_replay_authority" in payload["agreement_residual"][
+        "forbidden_shortcuts"
+    ]
+    assert payload["frontier_work_item"]["detail"]["agreement_residual"] == (
+        payload["agreement_residual"]
     )
     assert payload["frontier_work_item"]["executable"] is False
     assert payload["frontier_work_item"]["replay_authorized"] is False

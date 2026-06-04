@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, NamedTuple, Optional
 
+from lawvm.core.agreement_residual import AgreementResidual
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.source_witness import (
@@ -1533,6 +1534,8 @@ def _effect_report_row_jsonable(
             payload["frontier_work_item"]
         )
     )
+    payload["agreement_residual"] = _manual_compile_agreement_residual(payload)
+    _attach_agreement_residual_to_frontier_work_item(payload)
     return payload
 
 
@@ -1546,6 +1549,133 @@ def _candidate_set_certificate_from_frontier_work_item(
         return {}
     certificate = detail.get("candidate_set_certificate")
     return dict(certificate) if isinstance(certificate, Mapping) else {}
+
+
+def _manual_compile_agreement_residual(payload: Mapping[str, Any]) -> dict[str, Any]:
+    authorization = payload.get("execution_authorization")
+    authorization_payload = authorization if isinstance(authorization, Mapping) else {}
+    frontier_work_item = payload.get("frontier_work_item")
+    work_item_payload = frontier_work_item if isinstance(frontier_work_item, Mapping) else {}
+    if not str(payload.get("manual_compile_status") or "") and not work_item_payload:
+        return {}
+    work_item_id = str(
+        payload.get("work_item_id")
+        or work_item_payload.get("work_item_id")
+        or payload.get("effect_id")
+        or "unknown"
+    )
+    candidate_set_certificate = payload.get("candidate_set_certificate")
+    certificate_payload = (
+        candidate_set_certificate if isinstance(candidate_set_certificate, Mapping) else {}
+    )
+    return AgreementResidual(
+        residual_id=work_item_id,
+        jurisdiction="uk",
+        agreement_surface="manual_compile_frontier_vs_current_oracle",
+        family=_manual_compile_agreement_residual_family(payload),
+        status="frontier",
+        owner_phase=str(
+            payload.get("owner_phase")
+            or payload.get("manual_compile_owner_phase")
+            or work_item_payload.get("owner_phase")
+            or "typed_elaboration"
+        ),
+        rule_id="uk_manual_compile_accepted_non_executable_frontier",
+        source_artifact_id=str(payload.get("statute_id") or ""),
+        replay_count=0,
+        oracle_count=0,
+        missing_proofs=tuple(
+            str(proof)
+            for proof in (
+                payload.get("required_proofs")
+                or authorization_payload.get("required_proofs")
+                or ()
+            )
+        ),
+        safe_default="record_manual_frontier_without_mutating_replay",
+        forbidden_shortcuts=_manual_compile_agreement_forbidden_shortcuts(payload),
+        detail={
+            "effect_id": str(payload.get("effect_id") or ""),
+            "manual_compile_status": str(payload.get("manual_compile_status") or ""),
+            "manual_compile_rule_id": str(payload.get("manual_compile_rule_id") or ""),
+            "source_pathology": str(payload.get("source_pathology") or ""),
+            "compare_shape": _manual_compile_compare_shape(payload),
+            "candidate_set_completeness_status": str(
+                certificate_payload.get("completeness_status") or ""
+            ),
+            "compiled_op_count": int(payload.get("compiled_op_count") or 0),
+            "suggested_claim_template_status": str(
+                payload.get("suggested_claim_template_status") or ""
+            ),
+            "authorization_status": str(
+                payload.get("authorization_status")
+                or authorization_payload.get("authorization_status")
+                or ""
+            ),
+        },
+    ).to_dict()
+
+
+def _manual_compile_agreement_residual_family(payload: Mapping[str, Any]) -> str:
+    if str(payload.get("source_pathology") or ""):
+        return "source_pathology"
+    if _manual_compile_compare_shape(payload) not in {"", "commensurable"}:
+        return "non_commensurable_surface"
+    return "accepted_non_executable_frontier"
+
+
+def _manual_compile_compare_shape(payload: Mapping[str, Any]) -> str:
+    compare_shape = payload.get("compare_shape")
+    if compare_shape:
+        return str(compare_shape)
+    target_context = payload.get("target_context")
+    if isinstance(target_context, Mapping):
+        return str(target_context.get("compare_shape") or "")
+    frontier_work_item = payload.get("frontier_work_item")
+    if isinstance(frontier_work_item, Mapping):
+        compare_witness = frontier_work_item.get("compare_witness")
+        if isinstance(compare_witness, Mapping):
+            return str(compare_witness.get("compare_shape") or "")
+    return ""
+
+
+def _manual_compile_agreement_forbidden_shortcuts(
+    payload: Mapping[str, Any],
+) -> tuple[str, ...]:
+    shortcuts = [
+        str(shortcut)
+        for shortcut in payload.get("forbidden_shortcuts") or ()
+        if str(shortcut)
+    ]
+    execution_authorization = payload.get("execution_authorization")
+    if isinstance(execution_authorization, Mapping):
+        shortcuts.extend(
+            str(shortcut)
+            for shortcut in execution_authorization.get("forbidden_shortcuts") or ()
+            if str(shortcut)
+        )
+    for shortcut in (
+        "manual_claim_as_replay_authority",
+        "oracle_backed_mutation",
+        "agreement_as_execution_authorization",
+    ):
+        if shortcut not in shortcuts:
+            shortcuts.append(shortcut)
+    return tuple(dict.fromkeys(shortcuts))
+
+
+def _attach_agreement_residual_to_frontier_work_item(payload: dict[str, Any]) -> None:
+    frontier_work_item = payload.get("frontier_work_item")
+    agreement_residual = payload.get("agreement_residual")
+    if not isinstance(frontier_work_item, dict) or not isinstance(
+        agreement_residual,
+        Mapping,
+    ):
+        return
+    detail = frontier_work_item.get("detail")
+    if not isinstance(detail, dict):
+        return
+    detail["agreement_residual"] = dict(agreement_residual)
 
 
 def _manual_compile_work_item_id(
@@ -1766,6 +1896,8 @@ def _manual_compile_evidence_row_jsonable(
             payload["frontier_work_item"]
         )
     )
+    payload["agreement_residual"] = _manual_compile_agreement_residual(payload)
+    _attach_agreement_residual_to_frontier_work_item(payload)
     return payload
 
 
