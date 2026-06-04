@@ -20,6 +20,12 @@ Validation pipeline (per §9 step 6):
   If all pass: write to proposed/ with validator_status=entailment_verified.
   If any fail: write rejection record with reason.
 
+Source bytes (Piece 3):
+  Each frontier row fetches real source bytes via the SourceBytesProvider
+  registry (lawvm.core.manual_claims.source_provider). The 'fi' provider is
+  registered at CLI startup via register_fi_source_provider(). Rows whose
+  provider returns None are skipped and logged as frontier_skipped_no_source.
+
 AGENTS.md §1.10: no broad try/except in non-test code.
 """
 from __future__ import annotations
@@ -57,11 +63,36 @@ from lawvm.core.manual_claims.proposal_backend import (
     ProposedClaim,
     QuotedSource,
 )
+from lawvm.core.manual_claims.source_provider import (
+    FetchedSource,
+    SourceBytesProvider,
+    get_source_provider,
+    register_source_provider,
+)
 from lawvm.core.manual_claims.state import project_state
 from lawvm.core.manual_claims.storage import ClaimStore
 
 _DEFAULT_DATA_DIR = "data/fi/v1"
 _MANUAL_CLAIMS_SUBDIR = "manual_claims"
+
+
+# ---------------------------------------------------------------------------
+# Source provider registration helper
+# ---------------------------------------------------------------------------
+
+
+def register_fi_source_provider(corpus_root=None) -> None:
+    """Register the Finland FinlexSectionSourceProvider for jurisdiction 'fi'.
+
+    Called at CLI startup (propose-claims and validate-claims handlers in cli.py).
+    corpus_root: optional Path override for the finlex.farchive location.
+    """
+    from lawvm.finland.source_providers.finlex_section import FinlexSectionSourceProvider
+    from pathlib import Path
+    provider = FinlexSectionSourceProvider(
+        corpus_root=Path(corpus_root) if corpus_root is not None else None
+    )
+    register_source_provider("fi", provider)
 
 # Inline statute citation patterns reused from inline_statute_resolution.py
 # (module-scope compile per AGENTS.md §1.11)
@@ -83,8 +114,35 @@ def _make_backend(backend_name: str) -> object:
     raise ValueError(f"Unknown backend: {backend_name!r}. Choose 'mock' or 'qwen'.")
 
 
-def _get_store(data_dir: str) -> ClaimStore:
+def _get_store(data_dir: str, *, claim_store_root: Optional[str] = None) -> ClaimStore:
+    if claim_store_root is not None:
+        return ClaimStore(Path(claim_store_root))
     return ClaimStore(Path(data_dir) / _MANUAL_CLAIMS_SUBDIR)
+
+
+def _fetch_source_for_frontier(
+    frontier_row: object,
+    jurisdiction: str = "fi",
+) -> Optional[Tuple[bytes, str]]:
+    """Fetch (source_bytes, cited_span_hash) for a frontier row via registered provider.
+
+    Returns None if no provider is registered or the provider returns None for
+    this row (e.g. statute not in corpus, section not found). Callers should
+    log a frontier_skipped_no_source event and continue to the next row.
+    """
+    statute_id = getattr(frontier_row, "statute_id", "")
+    provision_ref = getattr(frontier_row, "provision_ref", None)
+    scope = ClaimScope(
+        statute_id=statute_id,
+        provision_ref=provision_ref,
+        valid_at_start=None,
+        valid_at_end=None,
+    )
+    provider = get_source_provider(jurisdiction)
+    fetched = provider.fetch(scope)
+    if fetched is None:
+        return None
+    return fetched.bytes_, fetched.sha256_hex
 
 
 def _cli_producer(model_id: Optional[str] = None) -> Producer:
@@ -589,13 +647,14 @@ def _process_one_frontier(
 def cmd_propose_from_frontier(args: object) -> int:
     """--from-frontier handler."""
     data_dir: str = getattr(args, "data_dir", _DEFAULT_DATA_DIR)
+    claim_store_root: Optional[str] = getattr(args, "claim_store_root", None)
     kind: str = getattr(args, "kind", "fi.v1.INLINE_STATUTE_RESOLUTION") or "fi.v1.INLINE_STATUTE_RESOLUTION"
     limit: int = getattr(args, "limit", 100) or 100
     no_cap: bool = getattr(args, "max_claims_no_cap", False)
     backend_name: str = getattr(args, "backend", "mock") or "mock"
 
     backend = _make_backend(backend_name)
-    store = _get_store(data_dir)
+    store = _get_store(data_dir, claim_store_root=claim_store_root)
     store.ensure_dirs()
 
     frontier_rows = _scan_frontier_from_parquet(data_dir, kind)
@@ -611,10 +670,16 @@ def cmd_propose_from_frontier(args: object) -> int:
     skipped_count = 0
 
     for fr in frontier_rows[:effective_limit]:
-        # For mock: use empty source bytes (entailment validator will use the span bytes)
-        # For qwen: would need real source bytes from corpus store
-        source_bytes = b"lain 1234/2020"  # minimal source for mock testing
-        cited_span_hash = hashlib.sha256(source_bytes).hexdigest()
+        fetched = _fetch_source_for_frontier(fr)
+        if fetched is None:
+            print(
+                f"  frontier_skipped_no_source: {fr.statute_id!r} "
+                f"provision={fr.provision_ref!r}",
+                file=sys.stderr,
+            )
+            skipped_count += 1
+            continue
+        source_bytes, cited_span_hash = fetched
 
         producer = _cli_producer(model_id=getattr(backend, "model_name", None))
 
@@ -647,11 +712,12 @@ def cmd_propose_gap_discovery(args: object) -> int:
         return 1
 
     data_dir: str = getattr(args, "data_dir", _DEFAULT_DATA_DIR)
+    claim_store_root: Optional[str] = getattr(args, "claim_store_root", None)
     kind: str = getattr(args, "kind", "fi.v1.INLINE_STATUTE_RESOLUTION") or "fi.v1.INLINE_STATUTE_RESOLUTION"
     backend_name: str = getattr(args, "backend", "mock") or "mock"
 
     backend = _make_backend(backend_name)
-    store = _get_store(data_dir)
+    store = _get_store(data_dir, claim_store_root=claim_store_root)
     store.ensure_dirs()
 
     gap_rows = _discover_gaps_from_he(he_id, data_dir, kind)
@@ -661,10 +727,19 @@ def cmd_propose_gap_discovery(args: object) -> int:
 
     print(f"discovered {len(gap_rows)} gap(s) in {he_id!r}")
     proposed_count = 0
+    skipped_count = 0
 
     for gr in gap_rows:
-        source_bytes = b"lain 1234/2020"
-        cited_span_hash = hashlib.sha256(source_bytes).hexdigest()
+        fetched = _fetch_source_for_frontier(gr)
+        if fetched is None:
+            print(
+                f"  frontier_skipped_no_source: {gr.statute_id!r} "
+                f"provision={getattr(gr, 'provision_ref', None)!r}",
+                file=sys.stderr,
+            )
+            skipped_count += 1
+            continue
+        source_bytes, cited_span_hash = fetched
         producer = _cli_producer(model_id=getattr(backend, "model_name", None))
 
         result = _process_one_frontier(
@@ -682,7 +757,7 @@ def cmd_propose_gap_discovery(args: object) -> int:
         if result is not None:
             proposed_count += 1
 
-    print(f"\ngap-discovery: {proposed_count} proposed")
+    print(f"\ngap-discovery: {proposed_count} proposed, {skipped_count} skipped")
     return 0
 
 
@@ -691,6 +766,7 @@ def cmd_propose_specific(args: object) -> int:
     he_id: str = getattr(args, "he", None)
     kind: str = getattr(args, "kind", "fi.v1.INLINE_STATUTE_RESOLUTION")
     data_dir: str = getattr(args, "data_dir", _DEFAULT_DATA_DIR)
+    claim_store_root: Optional[str] = getattr(args, "claim_store_root", None)
     backend_name: str = getattr(args, "backend", "mock") or "mock"
 
     if not he_id:
@@ -698,7 +774,7 @@ def cmd_propose_specific(args: object) -> int:
         return 1
 
     backend = _make_backend(backend_name)
-    store = _get_store(data_dir)
+    store = _get_store(data_dir, claim_store_root=claim_store_root)
     store.ensure_dirs()
 
     gap_id_src = f"{kind}:{he_id}:specific"
@@ -714,8 +790,14 @@ def cmd_propose_specific(args: object) -> int:
         pipeline_run_id="specific",
     )
 
-    source_bytes = b"lain 1234/2020"
-    cited_span_hash = hashlib.sha256(source_bytes).hexdigest()
+    fetched = _fetch_source_for_frontier(frontier_row)
+    if fetched is None:
+        print(
+            f"  frontier_skipped_no_source: {he_id!r} (no oracle in corpus)",
+            file=sys.stderr,
+        )
+        return 1
+    source_bytes, cited_span_hash = fetched
     producer = _cli_producer(model_id=getattr(backend, "model_name", None))
 
     result = _process_one_frontier(
@@ -736,6 +818,10 @@ def cmd_propose_specific(args: object) -> int:
 def main(args: object) -> None:
     # Activate Finland claim kinds
     import lawvm.finland.claim_kinds  # noqa: F401
+
+    # Register the Finland source provider for jurisdiction 'fi'.
+    # Uses the default corpus store path unless overridden by env var.
+    register_fi_source_provider()
 
     from_frontier: bool = getattr(args, "from_frontier", False)
     gap_discovery: bool = getattr(args, "gap_discovery", False)
