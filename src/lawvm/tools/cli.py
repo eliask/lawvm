@@ -6680,6 +6680,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="also export fi_inline_citations.parquet (InlineCitation body-prose citations)",
     )
     ep_p.add_argument(
+        "--include-sections-text",
+        dest="include_sections_text",
+        action="store_true",
+        help=(
+            "also export fi_sections_text.parquet (oracle section-text projection; "
+            "enables 'lawvm topic' to search enacted-statute text)"
+        ),
+    )
+    ep_p.add_argument(
         "--he-farchive",
         dest="he_farchive",
         default=None,
@@ -7842,6 +7851,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "-o", "--output-format", dest="output_format", default="table",
         choices=["table", "json", "jsonl", "csv", "parquet"],
         help="output format (default: table)",
+    )
+    topic_p.add_argument(
+        "--source-filter",
+        dest="source_filter_kind",
+        default="both",
+        choices=["statutes", "hes", "both"],
+        help=(
+            "filter search sources: 'statutes' = enacted statute sections only "
+            "(fi_sections_text.parquet), 'hes' = HE atoms only (fi_he_atoms.parquet), "
+            "'both' = all sources (default)"
+        ),
     )
 
     # --- follow-refs ---
