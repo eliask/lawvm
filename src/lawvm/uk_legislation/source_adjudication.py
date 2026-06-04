@@ -174,6 +174,7 @@ _UK_MANUAL_FRONTIER_OUT_OF_SCOPE_PATHOLOGIES = frozenset(
         "as_if_application_modification_unsupported",
         "commencement_effect_out_of_scope",
         "conditional_temporal_repeal_unsupported",
+        "temporary_as_if_word_omission_unsupported",
     }
 )
 _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClassification] = {
@@ -216,6 +217,11 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "non_textual_or_out_of_scope",
         "uk_manual_frontier_as_if_application_modification_out_of_scope",
         "The source is an applied/as-if modification clause rather than a direct mutation of the affected statute text/tree under the current UK replay model.",
+    ),
+    "temporary_as_if_word_omission_unsupported": _ManualFrontierClassification(
+        "non_textual_or_out_of_scope",
+        "uk_manual_frontier_as_if_application_modification_out_of_scope",
+        "The source temporarily applies a provision as if words were omitted, rather than directly repealing printed text in the affected statute under the current UK replay model.",
     ),
     "commencement_effect_out_of_scope": _ManualFrontierClassification(
         "non_textual_or_out_of_scope",

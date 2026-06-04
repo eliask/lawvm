@@ -1264,7 +1264,7 @@ def test_classify_uk_manual_compile_frontier_marks_broad_schedule_flat_payload_s
     assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
 
 
-def test_classify_uk_manual_compile_frontier_marks_temporary_as_if_word_omission_source_insufficient() -> None:
+def test_classify_uk_manual_compile_frontier_marks_temporary_as_if_word_omission_out_of_scope() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="",
         source_pathology="temporary_as_if_word_omission_unsupported",
@@ -1284,8 +1284,33 @@ def test_classify_uk_manual_compile_frontier_marks_temporary_as_if_word_omission
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
-    assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
+    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["rule_id"] == "uk_manual_frontier_as_if_application_modification_out_of_scope"
+
+
+def test_classify_uk_manual_compile_frontier_marks_nonblocking_temporary_as_if_word_omission_out_of_scope() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="",
+        source_pathology="temporary_as_if_word_omission_unsupported",
+        extracted_tag="P1",
+        extracted_text=(
+            "Subsection (3) shall have effect as if the words after court-martial "
+            "were omitted."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_empty_type_as_if_words_omitted_rejected",
+                "blocking": False,
+                "replay_relevance": "source_pathology_out_of_scope",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["rule_id"] == "uk_manual_frontier_as_if_application_modification_out_of_scope"
 
 
 def test_classify_uk_manual_compile_frontier_marks_reference_only_fragment_source_insufficient() -> None:
