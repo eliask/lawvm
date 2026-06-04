@@ -514,6 +514,139 @@ def test_cmd_validate_claims_emits_new_validator_attestations_does_not_mutate_as
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Regression: parser uses 'claim_id' dest; cmd functions must read it
+# (Bug: cli.py positional arg dest='claim_id'; cmd_claim.py was reading
+#  args.assertion_id → AttributeError when invoked via real CLI parser)
+# ---------------------------------------------------------------------------
+
+
+def test_cmd_claim_accept_reads_claim_id_not_assertion_id(tmp_path):
+    """cmd_accept must work when args has 'claim_id' (not 'assertion_id').
+
+    The CLI parser (cli.py) stores the positional arg as claim_id.
+    Before the fix cmd_accept accessed args.assertion_id and would raise
+    AttributeError on every real CLI invocation.
+    """
+    from lawvm.tools.cmd_claim import cmd_accept
+    assertion_id = _propose_assertion(tmp_path)
+
+    # Simulate what the argparse parser produces: claim_id, not assertion_id.
+    args_with_claim_id = _make_args(claim_id=assertion_id, graph_store_root=_graph_root(tmp_path))
+    rc = cmd_accept(args_with_claim_id)
+    assert rc == 0
+
+    reviewed = _objects_of_kind(tmp_path, "reviewed")
+    assert len(reviewed) == 1
+    assert reviewed[0]["payload"]["accepted"] is True
+
+
+def test_cmd_claim_retract_reads_claim_id_not_assertion_id(tmp_path, capsys):
+    """cmd_retract must work when args has 'claim_id' (not 'assertion_id')."""
+    from lawvm.tools.cmd_claim import cmd_retract
+    assertion_id = _propose_assertion(tmp_path)
+
+    args_with_claim_id = _make_args(
+        claim_id=assertion_id,
+        reason="regression test",
+        graph_store_root=_graph_root(tmp_path),
+    )
+    rc = cmd_retract(args_with_claim_id)
+    assert rc == 0
+
+    retracted = _objects_of_kind(tmp_path, "retracted")
+    assert len(retracted) == 1
+
+
+def test_cmd_claim_show_reads_claim_id_not_assertion_id(tmp_path, capsys):
+    """cmd_show must work when args has 'claim_id' (not 'assertion_id')."""
+    from lawvm.tools.cmd_claim import cmd_show
+    assertion_id = _propose_assertion(tmp_path)
+
+    args_with_claim_id = _make_args(claim_id=assertion_id, graph_store_root=_graph_root(tmp_path))
+    rc = cmd_show(args_with_claim_id)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "ASSERTION PAYLOAD" in out
+
+
+def test_cmd_claim_taint_report_reads_claim_id_not_assertion_id(tmp_path, capsys):
+    """cmd_taint_report must work when args has 'claim_id' (not 'assertion_id')."""
+    from lawvm.tools.cmd_claim import cmd_retract, cmd_taint_report
+    assertion_id = _propose_assertion(tmp_path)
+    cmd_retract(_make_args(claim_id=assertion_id, reason="test", graph_store_root=_graph_root(tmp_path)))
+    capsys.readouterr()
+
+    args_with_claim_id = _make_args(claim_id=assertion_id, list=False, graph_store_root=_graph_root(tmp_path))
+    rc = cmd_taint_report(args_with_claim_id)
+    assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# Regression: propose-claims must read claim_store_root (parser arg) not
+# only graph_store_root (before fix the smoke store was always ignored and
+# all assertions landed in the default data/fi/v1/provenance_graph path).
+# ---------------------------------------------------------------------------
+
+
+def test_cmd_propose_claims_reads_claim_store_root(tmp_path):
+    """propose-claims honours claim_store_root for graph store isolation.
+
+    The cli.py parser exposes --claim-store-root with dest='claim_store_root'.
+    Before the fix cmd_propose_from_frontier only read args.graph_store_root
+    (always None from the real parser), so smoke isolation was silently broken.
+    """
+    from lawvm.tools.cmd_propose_claims import _process_one_frontier, _cli_producer
+    from lawvm.tools.cmd_propose_claims import _get_store
+    from lawvm.core.manual_claims.primitive import ExtractionFrontierRow
+    from lawvm.core.manual_claims.proposal_backend import MockProposalBackend
+
+    isolated_root = str(tmp_path / "isolated_smoke_graph")
+    store = _get_store(isolated_root)
+    store._objects_dir().mkdir(parents=True, exist_ok=True)
+
+    backend = MockProposalBackend()
+    producer = _cli_producer()
+    frontier_row = ExtractionFrontierRow(
+        frontier_id="smoke-fr-001",
+        claim_kind="fi.v1.INLINE_STATUTE_RESOLUTION",
+        statute_id="711/2022",
+        provision_ref="section:3",
+        slot="target_statute_id",
+        severity="medium",
+        detected_at=datetime.now(tz=timezone.utc),
+        pipeline_run_id="smoke-isolation",
+    )
+
+    _process_one_frontier(
+        frontier_row=frontier_row,
+        store=store,
+        backend=backend,
+        claim_kind="fi.v1.INLINE_STATUTE_RESOLUTION",
+        source_bytes=b"text lain 999/2020 context",
+        cited_span_hash="f" * 64,
+        statute_id="711/2022",
+        he_id=None,
+        producer=producer,
+        verbose=False,
+    )
+
+    from lawvm.tools.cmd_propose_claims import _get_store as get_isolated_store
+    isolated_store = get_isolated_store(isolated_root)
+    obj_dir = isolated_store._objects_dir()
+    assert obj_dir.exists(), "isolated store must be populated when claim_store_root is set"
+    assertion_files = list(obj_dir.glob("*.json"))
+    assertion_objs = [
+        json.loads(f.read_text()) for f in assertion_files
+        if "assertion_id" in json.loads(f.read_text())
+    ]
+    assert len(assertion_objs) >= 1, "assertion must land in isolated store, not default path"
+
+    # Verify default path was NOT written (isolation preserved)
+    default_obj_dir = tmp_path / "data" / "fi" / "v1" / "provenance_graph" / "objects" / "sha256"
+    assert not default_obj_dir.exists(), "default graph root must NOT be written during isolated smoke run"
+
+
 @pytest.mark.slow
 def test_cmd_claim_propose_real_corpus_regression(tmp_path):
     """Propose against synthetic substrate; verify graph snapshot reads back."""

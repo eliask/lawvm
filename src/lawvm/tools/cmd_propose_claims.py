@@ -684,7 +684,10 @@ def _discover_gaps_from_he(
 
 def cmd_propose_from_frontier(args: object) -> int:
     data_dir: str = getattr(args, "data_dir", "data/fi/v1")
-    graph_store_root: Optional[str] = getattr(args, "graph_store_root", None)
+    graph_store_root: Optional[str] = (
+        getattr(args, "graph_store_root", None)
+        or getattr(args, "claim_store_root", None)
+    )
     kind: str = getattr(args, "kind", "fi.v1.INLINE_STATUTE_RESOLUTION") or "fi.v1.INLINE_STATUTE_RESOLUTION"
     limit: int = getattr(args, "limit", 100) or 100
     no_cap: bool = getattr(args, "max_claims_no_cap", False)
@@ -744,7 +747,10 @@ def cmd_propose_gap_discovery(args: object) -> int:
         return 1
 
     data_dir: str = getattr(args, "data_dir", "data/fi/v1")
-    graph_store_root: Optional[str] = getattr(args, "graph_store_root", None)
+    graph_store_root: Optional[str] = (
+        getattr(args, "graph_store_root", None)
+        or getattr(args, "claim_store_root", None)
+    )
     kind: str = getattr(args, "kind", "fi.v1.INLINE_STATUTE_RESOLUTION") or "fi.v1.INLINE_STATUTE_RESOLUTION"
     backend_name: str = getattr(args, "backend", "mock") or "mock"
 
@@ -794,7 +800,10 @@ def cmd_propose_specific(args: object) -> int:
     he_id: str = getattr(args, "he", None)
     kind: str = getattr(args, "kind", "fi.v1.INLINE_STATUTE_RESOLUTION")
     data_dir: str = getattr(args, "data_dir", "data/fi/v1")
-    graph_store_root: Optional[str] = getattr(args, "graph_store_root", None)
+    graph_store_root: Optional[str] = (
+        getattr(args, "graph_store_root", None)
+        or getattr(args, "claim_store_root", None)
+    )
     backend_name: str = getattr(args, "backend", "mock") or "mock"
 
     if not he_id:
