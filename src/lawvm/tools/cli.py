@@ -8276,6 +8276,88 @@ def _build_parser() -> argparse.ArgumentParser:
         help="which validator(s) to run (default: all)",
     )
 
+    # taint-report (Slice 5)
+    claim_taint_p = claim_sub.add_parser(
+        "taint-report",
+        help="show taint reports for retracted claims (Slice 5)",
+    )
+    claim_taint_p.add_argument(
+        "claim_id", nargs="?", default=None,
+        help="claim ID to show taint report for (omit with --list or --build)",
+    )
+    claim_taint_p.add_argument(
+        "--list", action="store_true", dest="list",
+        help="list all taint reports",
+    )
+    claim_taint_p.add_argument(
+        "--build", metavar="BUILD_ID", dest="build", default=None,
+        help="show all taint reports affecting a specific build",
+    )
+
+    # propose-claims (Slice 4) — top-level command
+    propose_claims_p = sub.add_parser(
+        "propose-claims",
+        help="LLM-aided claim proposal pipeline (Slice 4)",
+    )
+    propose_claims_p.add_argument(
+        "--data-dir", dest="data_dir", default="data/fi/v1",
+        help="base data directory",
+    )
+    propose_claims_p.add_argument(
+        "--from-frontier", action="store_true", dest="from_frontier",
+        help="propose claims for frontier rows (NULL target_statute_id slots)",
+    )
+    propose_claims_p.add_argument(
+        "--gap-discovery", action="store_true", dest="gap_discovery",
+        help="scan HE body for plain-text citations not in deterministic output",
+    )
+    propose_claims_p.add_argument(
+        "--he", metavar="HE_ID", dest="he", default=None,
+        help="HE ID for gap-discovery or specific gap rescue",
+    )
+    propose_claims_p.add_argument(
+        "--kind", metavar="CLAIM_KIND", default="fi.v1.INLINE_STATUTE_RESOLUTION",
+        help="claim kind to propose (default: fi.v1.INLINE_STATUTE_RESOLUTION)",
+    )
+    propose_claims_p.add_argument(
+        "--limit", type=int, default=100,
+        help="max proposals per invocation (default: 100)",
+    )
+    propose_claims_p.add_argument(
+        "--max-claims-no-cap", action="store_true", dest="max_claims_no_cap",
+        help="remove the --limit cap (adversary #2 guard)",
+    )
+    propose_claims_p.add_argument(
+        "--backend", choices=["mock", "qwen"], default="mock",
+        help="LLM backend to use (default: mock)",
+    )
+
+    # validate-claims (Slice 4) — top-level command
+    validate_claims_p = sub.add_parser(
+        "validate-claims",
+        help="run validators on proposed claims (Slice 4)",
+    )
+    validate_claims_p.add_argument(
+        "--data-dir", dest="data_dir", default="data/fi/v1",
+        help="base data directory",
+    )
+    validate_claims_p.add_argument(
+        "--claim-id", dest="claim_id", metavar="CLAIM_ID", default=None,
+        help="validate one specific claim",
+    )
+    validate_claims_p.add_argument(
+        "--all", action="store_true", dest="all",
+        help="validate all filed claims",
+    )
+    validate_claims_p.add_argument(
+        "--kind", metavar="CLAIM_KIND", default=None,
+        help="filter by claim kind (with --all)",
+    )
+    validate_claims_p.add_argument(
+        "--status", metavar="STATUS", default=None,
+        help="filter by lifecycle status (with --all)",
+    )
+
     return parser
 
 
@@ -9459,6 +9541,18 @@ def main() -> None:
         from lawvm.tools.cmd_claim import main as claim_main
 
         claim_main(args)
+
+    elif args.command == "propose-claims":
+        import lawvm.finland.claim_kinds  # noqa: F401
+        from lawvm.tools.cmd_propose_claims import main as propose_main
+
+        propose_main(args)
+
+    elif args.command == "validate-claims":
+        import lawvm.finland.claim_kinds  # noqa: F401
+        from lawvm.tools.cmd_validate_claims import main as validate_claims_main
+
+        validate_claims_main(args)
 
     elif args.command is None:
         parser.print_help()

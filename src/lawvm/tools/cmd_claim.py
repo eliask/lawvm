@@ -1,19 +1,20 @@
 """lawvm claim — operator CLI for manual compilation claims.
 
-Subcommands (Slice 1+2 only; Slices 3-5 deferred):
-  propose   --claim-file FILE.json [--validator span|entailment|all]
-  accept    CLAIM_ID
-  reject    CLAIM_ID --reason "..."
-  retract   CLAIM_ID --reason "..."
-  list      [--kind ...] [--layer ...] [--review-status ...] [--status ...]
-  show      CLAIM_ID
+Subcommands (Slices 1-5):
+  propose         --claim-file FILE.json [--validator span|entailment|all]
+  accept          CLAIM_ID
+  reject          CLAIM_ID --reason "..."
+  retract         CLAIM_ID --reason "..."  (Slice 5: emits taint report)
+  list            [--kind ...] [--layer ...] [--review-status ...] [--status ...]
+  show            CLAIM_ID
+  validate        CLAIM_ID [--validator ...]
+  taint-report    CLAIM_ID | --list | --build BUILD_ID
 
 Design:
   - NO projection mutation here (Slice 3 concern).
   - State transitions write ClaimStateEvents to events.jsonl.
   - Current state is materialized in states/current/.
-  - 'show' renders all four records: claim + state + event history +
-    composition decisions (empty in Slice 2).
+  - 'retract' now emits ClaimRetractionTaintReport (Slice 5).
   - Self-authorization is impossible: the CLI is the only path to state
     transitions; claim files asserting review_status=human_reviewed cannot
     self-promote (test_self_authorization_impossible).
@@ -148,15 +149,6 @@ def cmd_propose(args: object) -> int:
     store.append_event(event)
 
     # Initial state
-    state = ClaimState(
-        claim_id=claim.claim_id,
-        status=ClaimStatus.PROPOSED,
-        review_status=ReviewStatus.PROPOSED,
-        validator_status=validator_status,
-        confidence=claim.requested_profiles[0].value if claim.requested_profiles else "medium",  # type: ignore[assignment]
-        last_updated=now,
-    )
-    # Use confidence from claim — we stored it as a placeholder; rebuild properly
     from lawvm.core.manual_claims.primitive import ClaimConfidence
     state = ClaimState(
         claim_id=claim.claim_id,
@@ -289,15 +281,93 @@ def cmd_reject(args: object) -> int:
 
 
 # ---------------------------------------------------------------------------
-# retract
+# retract (Slice 5 — emits taint report)
 # ---------------------------------------------------------------------------
 
 
+def _build_taint_report(
+    claim_id: str,
+    retraction_event: ClaimStateEvent,
+    store: ClaimStore,
+    claim: object,
+) -> object:
+    """Build ClaimRetractionTaintReport from consumed events for this claim."""
+    from lawvm.core.manual_claims.taint_report import (
+        AffectedBuild,
+        ClaimRetractionTaintReport,
+        InvalidatedPITInterval,
+    )
+    from datetime import date
+
+    retraction_ts = retraction_event.timestamp
+    retraction_event_id = f"{claim_id}:{retraction_ts.isoformat()}"
+
+    # Scan event log for consumed events with this claim_id
+    affected_builds = []
+    seen_build_ids: set = set()
+
+    for event in store.read_events(claim_id):
+        if event.event_kind != "consumed":
+            continue
+        payload = {}
+        try:
+            payload = json.loads(event.reason)
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        build_id = payload.get("build_id", "")
+        if not build_id or build_id in seen_build_ids:
+            continue
+        seen_build_ids.add(build_id)
+
+        profile = payload.get("profile", "")
+        projection_path = payload.get("projection_artifact_path", "")
+        row_hashes = tuple(payload.get("row_hashes", []))
+
+        # Derive invalidated PIT intervals from claim's valid_at
+        valid_at = getattr(claim, "valid_at", None)
+        pit_intervals = ()
+        if valid_at is not None:
+            interval_start = valid_at[0]
+            interval_end = valid_at[1]
+            target_locator = getattr(claim, "claim_scope", None)
+            statute_id_str = getattr(target_locator, "statute_id", "") if target_locator else ""
+            provision_ref_str = getattr(target_locator, "provision_ref", "") if target_locator else ""
+            locator = provision_ref_str or statute_id_str or "unknown"
+            pit_intervals = (
+                InvalidatedPITInterval(
+                    target_locator=locator,
+                    interval_start=interval_start,
+                    interval_end=interval_end,
+                ),
+            )
+
+        dependent_artifacts = tuple(payload.get("dependent_downstream_artifacts", []))
+
+        affected_builds.append(AffectedBuild(
+            build_id=build_id,
+            profile=profile,
+            projection_artifact_path=projection_path,
+            affected_projection_row_hashes=row_hashes,
+            invalidated_PIT_intervals=pit_intervals,
+            dependent_downstream_artifacts=dependent_artifacts,
+        ))
+
+    return ClaimRetractionTaintReport(
+        retracted_claim_id=claim_id,
+        retraction_event_id=retraction_event_id,
+        retraction_timestamp=retraction_ts,
+        retraction_reason=retraction_event.reason,
+        affected_builds=tuple(affected_builds),
+    )
+
+
 def cmd_retract(args: object) -> int:
-    """Retract an accepted claim. (Taint report is Slice 5.)"""
+    """Retract an accepted claim. Emits taint report for affected builds (Slice 5)."""
     claim_id: str = args.claim_id  # type: ignore[attr-defined]
     reason: str = args.reason  # type: ignore[attr-defined]
-    store = _get_store(getattr(args, "data_dir", _DEFAULT_DATA_DIR))
+    data_dir: str = getattr(args, "data_dir", _DEFAULT_DATA_DIR)
+    store = _get_store(data_dir)
 
     if not store.claim_exists(claim_id):
         print(f"error: claim not found: {claim_id}", file=sys.stderr)
@@ -341,8 +411,107 @@ def cmd_retract(args: object) -> int:
     store.write_state(new_state)
 
     print(f"retracted: {claim_id}")
-    print("note: taint report for affected builds is deferred to Slice 5")
+
+    # Slice 5: build + write taint report
+    claim = store.read_claim(claim_id)
+    report = _build_taint_report(claim_id, event, store, claim)
+
+    taint_reports_dir = store._base / "claim_taint_reports"
+    from lawvm.core.manual_claims.taint_report import write_taint_report, report_to_dict
+    write_taint_report(report, taint_reports_dir)  # type: ignore[arg-type]
+
+    # Emit taint_report_emitted event
+    report_path_str = str(taint_reports_dir)
+    taint_event = ClaimStateEvent(
+        claim_id=claim_id,
+        event_kind="taint_report_emitted",
+        timestamp=now,
+        producer=producer,
+        old_status=None,
+        new_status=None,
+        reason=json.dumps({
+            "retraction_event_id": f"{claim_id}:{now.isoformat()}",
+            "taint_reports_dir": report_path_str,
+            "affected_builds": len(report.affected_builds),  # type: ignore[attr-defined]
+        }),
+    )
+    store.append_event(taint_event)
+
+    # Print the taint report
+    affected = getattr(report, "affected_builds", ())
+    if affected:
+        print(f"\ntaint report: {len(affected)} affected build(s)")
+        for ab in affected:
+            print(f"  build: {ab.build_id}")
+            print(f"  profile: {ab.profile}")
+            print(f"  projection: {ab.projection_artifact_path}")
+            print(f"  row hashes: {len(ab.affected_projection_row_hashes)}")
+            for iv in ab.invalidated_PIT_intervals:
+                end_str = iv.interval_end.isoformat() if iv.interval_end else "open"
+                print(f"    PIT interval [{iv.interval_start} .. {end_str}] for {iv.target_locator}")
+    else:
+        print("taint report: no consumed builds found (claim was not used in any build)")
+
     return 0
+
+
+# ---------------------------------------------------------------------------
+# taint-report
+# ---------------------------------------------------------------------------
+
+
+def cmd_taint_report(args: object) -> int:
+    """Show taint reports: for a specific claim, list all, or by build."""
+    data_dir: str = getattr(args, "data_dir", _DEFAULT_DATA_DIR)
+    claim_id: Optional[str] = getattr(args, "claim_id", None)
+    list_all: bool = getattr(args, "list", False)
+    build_id: Optional[str] = getattr(args, "build", None)
+
+    taint_reports_dir = Path(data_dir) / _MANUAL_CLAIMS_SUBDIR / "claim_taint_reports"
+
+    from lawvm.core.manual_claims.taint_report import (
+        find_taint_reports_for_claim,
+        find_taint_reports_for_build,
+        list_all_taint_reports,
+        read_taint_report,
+        report_to_dict,
+    )
+
+    if claim_id and not list_all and not build_id:
+        paths = find_taint_reports_for_claim(taint_reports_dir, claim_id)
+        if not paths:
+            print(f"no taint reports found for claim {claim_id}")
+            return 0
+        for p in paths:
+            report = read_taint_report(p)
+            print(json.dumps(report_to_dict(report), indent=2, sort_keys=True))
+        return 0
+
+    if list_all:
+        paths = list_all_taint_reports(taint_reports_dir)
+        if not paths:
+            print("no taint reports found")
+            return 0
+        print(f"{len(paths)} taint report(s):")
+        for p in paths:
+            report = read_taint_report(p)
+            ab_count = len(report.affected_builds)
+            print(f"  {report.retracted_claim_id[:32]}... — {ab_count} affected build(s) — {p.name}")
+        return 0
+
+    if build_id:
+        paths = find_taint_reports_for_build(taint_reports_dir, build_id)
+        if not paths:
+            print(f"no taint reports found for build {build_id}")
+            return 0
+        print(f"{len(paths)} taint report(s) for build {build_id}:")
+        for p in paths:
+            report = read_taint_report(p)
+            print(json.dumps(report_to_dict(report), indent=2, sort_keys=True))
+        return 0
+
+    print("error: one of CLAIM_ID, --list, or --build BUILD_ID required", file=sys.stderr)
+    return 1
 
 
 # ---------------------------------------------------------------------------
@@ -494,19 +663,44 @@ def cmd_validate(args: object) -> int:
         print(f"warning: unknown claim kind {claim.claim_kind!r} — no validators available")
         return 0
 
+    now = _now()
+    producer = _cli_producer()
     rc = 0
+
     if validator_arg in ("span", "all") and spec.span_validator:
         result = spec.span_validator(claim, b"")
         status = "PASSED" if result.passed else "FAILED"
         print(f"span_verified: {status} — {result.reason}")
-        if not result.passed:
+        if result.passed:
+            event = ClaimStateEvent(
+                claim_id=claim_id,
+                event_kind="span_verified",
+                timestamp=now,
+                producer=producer,
+                old_status=None,
+                new_status=None,
+                reason=result.reason,
+            )
+            store.append_event(event)
+        else:
             rc = 1
 
     if validator_arg in ("entailment", "all") and spec.entailment_validator:
         result = spec.entailment_validator(claim, b"")
         status = "PASSED" if result.passed else "FAILED"
         print(f"entailment_verified: {status} — {result.reason}")
-        if not result.passed:
+        if result.passed:
+            event = ClaimStateEvent(
+                claim_id=claim_id,
+                event_kind="entailment_verified",
+                timestamp=now,
+                producer=producer,
+                old_status=None,
+                new_status=None,
+                reason=result.reason,
+            )
+            store.append_event(event)
+        else:
             rc = 1
 
     return rc
@@ -527,6 +721,7 @@ def main(args: object) -> None:
         "list": cmd_list,
         "show": cmd_show,
         "validate": cmd_validate,
+        "taint-report": cmd_taint_report,
     }
     fn = dispatch.get(subcmd)
     if fn is None:

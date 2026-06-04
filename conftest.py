@@ -24,6 +24,13 @@ warnings.filterwarnings(
 )
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers",
+        "requires_local_llm: test requires a local LLM server at http://localhost:11434",
+    )
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--run-slow",

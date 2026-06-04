@@ -426,8 +426,12 @@ def export_fi_refs(
 
     # For non-deterministic profiles, apply NULL-slot fills from claims
     composition_events: List[Any] = []
+    consumed_claim_ids: List[str] = []
+    accepted_claims: List[Any] = []
     if profile != ProfileTag.DETERMINISTIC_ONLY and precedence_registry is not None:
         accepted_claims = _load_accepted_inline_statute_claims(claims_base_dir)
+        # Slice 5: strict-mode guard — refuse retracted claims
+        _check_no_retracted_claims_in_strict(accepted_claims, profile)
         if accepted_claims:
             all_mention_rows, _ = _apply_null_slot_fills(
                 all_mention_rows,
@@ -437,6 +441,11 @@ def export_fi_refs(
                 precedence_registry,
                 composition_events,
             )
+            # Track which claims were consumed (those that actually filled a slot)
+            for row in all_mention_rows:
+                cid = row.get("claim_id")
+                if cid and cid not in consumed_claim_ids:
+                    consumed_claim_ids.append(cid)
 
     # Write outputs
     profile_stem = _profile_filename("fi_refs", profile)
@@ -444,6 +453,7 @@ def export_fi_refs(
     # Always write JSONL
     jsonl_count = _write_jsonl(out / f"{profile_stem}.jsonl", all_mention_rows)
 
+    parquet_path_str = str(out / f"{profile_stem}.parquet")
     if use_parquet:
         # Write profile-stamped parquet (canonical)
         ok = _try_write_parquet(out / f"{profile_stem}.parquet", all_mention_rows, profile)
@@ -458,8 +468,131 @@ def export_fi_refs(
     else:
         print(f"  fi_refs ({profile.value}): {jsonl_count:,} rows (JSONL)")
 
+    # Slice 5: emit consumed events for each claim used in this build
+    if consumed_claim_ids and claims_base_dir is not None:
+        claim_rows = [r for r in all_mention_rows if r.get("claim_id")]
+        track_consumption_for_build(
+            build_id=build_id,
+            profile=profile,
+            projection_artifact_path=parquet_path_str,
+            consumed_claim_ids=consumed_claim_ids,
+            affected_projection_rows=claim_rows,
+            claims_base_dir=claims_base_dir,
+        )
+
     # Write diagnostics
     if all_diag_rows:
         _write_jsonl(out / "fi_refs_diagnostics.jsonl", all_diag_rows)
 
     return jsonl_count
+
+
+# ---------------------------------------------------------------------------
+# Slice 5: consumption tracking + strict-mode retraction guard
+# ---------------------------------------------------------------------------
+
+
+def _hash_row(row: dict) -> str:
+    """Stable hash for a projection row (for taint-report row tracking)."""
+    import hashlib
+    serialized = json.dumps(
+        {k: str(v) for k, v in sorted(row.items()) if k != "emit_profile"},
+        sort_keys=True,
+    )
+    return hashlib.sha256(serialized.encode()).hexdigest()[:32]
+
+
+def track_consumption_for_build(
+    build_id: str,
+    profile: ProfileTag,
+    projection_artifact_path: str,
+    consumed_claim_ids: List[str],
+    affected_projection_rows: List[Dict[str, Any]],
+    claims_base_dir: Path,
+) -> None:
+    """Emit a ClaimStateEvent(event_kind='consumed') for each consumed claim.
+
+    Per §5.1 of UNIFIED_MANUAL_CLAIMS_DESIGN.md v2.2.
+    Records build_id, profile, row_hashes, and invalidated_PIT_intervals in
+    the event reason payload (JSON).
+
+    Called by export_fi_refs after the parquet write completes.
+    """
+    from lawvm.core.manual_claims.storage import ClaimStore
+    from lawvm.core.manual_claims.primitive import (
+        ClaimStateEvent,
+        Producer,
+    )
+    from datetime import datetime, timezone
+
+    if not consumed_claim_ids:
+        return
+
+    store = ClaimStore(claims_base_dir)
+    row_hashes = [_hash_row(r) for r in affected_projection_rows]
+
+    now = datetime.now(tz=timezone.utc)
+    producer = Producer(
+        producer_kind="tool",
+        handle=None,
+        model_id=None,
+        timestamp=now,
+        environment="lawvm-export-fi-refs",
+    )
+
+    for claim_id in consumed_claim_ids:
+        if not store.claim_exists(claim_id):
+            continue
+
+        claim = store.read_claim(claim_id)
+        valid_at = claim.valid_at
+
+        reason_payload = json.dumps({
+            "build_id": build_id,
+            "profile": profile.value,
+            "projection_artifact_path": projection_artifact_path,
+            "row_hashes": row_hashes,
+            "invalidated_PIT_intervals": [
+                {
+                    "target_locator": (
+                        claim.claim_scope.provision_ref or claim.claim_scope.statute_id
+                    ),
+                    "interval_start": valid_at[0].isoformat(),
+                    "interval_end": valid_at[1].isoformat() if valid_at[1] else None,
+                }
+            ],
+            "dependent_downstream_artifacts": [],
+        })
+
+        event = ClaimStateEvent(
+            claim_id=claim_id,
+            event_kind="consumed",
+            timestamp=now,
+            producer=producer,
+            old_status=None,
+            new_status=None,
+            reason=reason_payload,
+        )
+        store.append_event(event)
+
+
+def _check_no_retracted_claims_in_strict(
+    accepted_claims: List[Any],
+    profile: ProfileTag,
+) -> None:
+    """For strict profile: raise if any claim to be consumed is retracted.
+
+    Per §5.4: strict-mode builds refuse to incorporate retracted claims.
+    Operator must rebuild (new build_id = clean by construction).
+    """
+    if profile != ProfileTag.STRICT_WITH_ATTESTED_CLAIMS:
+        return
+
+    from lawvm.core.manual_claims.primitive import ClaimStatus
+
+    for claim, state in accepted_claims:
+        if state.status == ClaimStatus.RETRACTED:
+            raise SystemExit(
+                f"error: strict profile refuses retracted claim {claim.claim_id[:32]}... "
+                "Retract the claim and rebuild to produce a clean artifact."
+            )
