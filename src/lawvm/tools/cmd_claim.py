@@ -56,6 +56,21 @@ def _get_store(graph_store_root: str) -> GraphStore:
     return GraphStore(Path(graph_store_root))
 
 
+def _resolve_graph_store_root(args: object) -> str:
+    """Resolve graph store root from args (claim_id/graph_store_root), env, or default.
+
+    Priority: args.graph_store_root > LAWVM_GRAPH_STORE_ROOT env > _DEFAULT_GRAPH_ROOT.
+    The 'claim' CLI parser does not yet expose --graph-store-root (Task S3); this
+    function bridges that gap via the env var for smoke/test isolation.
+    """
+    import os
+    return (
+        getattr(args, "graph_store_root", None)
+        or os.environ.get("LAWVM_GRAPH_STORE_ROOT")
+        or _DEFAULT_GRAPH_ROOT
+    )
+
+
 def _cli_producer() -> Producer:
     return Producer(
         producer_id="lawvm.cli.operator",
@@ -265,7 +280,7 @@ def cmd_propose(args: object) -> int:
         return 1
 
     assertion = _load_assertion_from_file(claim_file)
-    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
     store._objects_dir().mkdir(parents=True, exist_ok=True)
 
@@ -283,8 +298,8 @@ def cmd_propose(args: object) -> int:
 
 def cmd_accept(args: object) -> int:
     """Emit reviewed attestation with accepted=True."""
-    assertion_id: str = args.assertion_id  # type: ignore[attr-defined]
-    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    assertion_id: str = getattr(args, "claim_id", None) or getattr(args, "assertion_id")  # type: ignore[attr-defined]
+    graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
     if _read_assertion_from_store(store, assertion_id) is None:
@@ -305,9 +320,9 @@ def cmd_accept(args: object) -> int:
 
 def cmd_reject(args: object) -> int:
     """Emit reviewed attestation with accepted=False."""
-    assertion_id: str = args.assertion_id  # type: ignore[attr-defined]
+    assertion_id: str = getattr(args, "claim_id", None) or getattr(args, "assertion_id")  # type: ignore[attr-defined]
     reason: str = args.reason  # type: ignore[attr-defined]
-    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
     if _read_assertion_from_store(store, assertion_id) is None:
@@ -328,9 +343,9 @@ def cmd_reject(args: object) -> int:
 
 def cmd_retract(args: object) -> int:
     """Emit retracted attestation; render retraction taint report."""
-    assertion_id: str = args.assertion_id  # type: ignore[attr-defined]
+    assertion_id: str = getattr(args, "claim_id", None) or getattr(args, "assertion_id")  # type: ignore[attr-defined]
     reason: str = args.reason  # type: ignore[attr-defined]
-    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
     if _read_assertion_from_store(store, assertion_id) is None:
@@ -367,7 +382,7 @@ def cmd_supersede(args: object) -> int:
     old_id: str = args.old_assertion_id  # type: ignore[attr-defined]
     new_file = Path(args.with_file)  # type: ignore[attr-defined]
     delta_reason: str = getattr(args, "delta_reason", "") or ""
-    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
     if _read_assertion_from_store(store, old_id) is None:
@@ -405,9 +420,9 @@ def cmd_supersede(args: object) -> int:
 
 def cmd_show(args: object) -> int:
     """Render assertion + attestations + authorization result."""
-    assertion_id: str = args.assertion_id  # type: ignore[attr-defined]
+    assertion_id: str = getattr(args, "claim_id", None) or getattr(args, "assertion_id")  # type: ignore[attr-defined]
     profile_name: Optional[str] = getattr(args, "profile", None)
-    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
     assertion = _read_assertion_from_store(store, assertion_id)
@@ -495,7 +510,7 @@ def cmd_list(args: object) -> int:
     kind_filter: Optional[str] = getattr(args, "kind", None)
     layer_filter: Optional[str] = getattr(args, "layer", None)
     has_attestation_kind: Optional[str] = getattr(args, "has_attestation_kind", None)
-    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
     assertions = _load_all_assertions(store)
@@ -549,7 +564,7 @@ def cmd_list(args: object) -> int:
 def cmd_history(args: object) -> int:
     """Show all assertions targeting a provision_ref over time, chronologically."""
     target_ref: str = args.target  # type: ignore[attr-defined]
-    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
     assertions = _load_all_assertions(store)
@@ -579,7 +594,7 @@ def cmd_history(args: object) -> int:
 def cmd_disputes(args: object) -> int:
     """Show conflicting assertion pairs for a statute."""
     statute_id: str = args.statute  # type: ignore[attr-defined]
-    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
     assertions = [
@@ -613,9 +628,9 @@ def cmd_disputes(args: object) -> int:
 
 def cmd_taint_report(args: object) -> int:
     """Compute retraction taint at query time (not from stored taint)."""
-    assertion_id: Optional[str] = getattr(args, "assertion_id", None)
+    assertion_id: Optional[str] = getattr(args, "claim_id", None) or getattr(args, "assertion_id", None)
     list_all: bool = getattr(args, "list", False)
-    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
     graph = _build_live_snapshot(store)

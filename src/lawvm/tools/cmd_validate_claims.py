@@ -38,6 +38,21 @@ def _get_store(graph_store_root: str) -> GraphStore:
     return GraphStore(Path(graph_store_root))
 
 
+def _resolve_graph_store_root(args: object) -> str:
+    """Resolve graph store root from args, env, or default.
+
+    Priority: args.graph_store_root > LAWVM_GRAPH_STORE_ROOT env > _DEFAULT_GRAPH_ROOT.
+    The 'validate-claims' CLI parser does not yet expose --graph-store-root (Task S3);
+    this function bridges that gap via the env var for smoke/test isolation.
+    """
+    import os
+    return (
+        getattr(args, "graph_store_root", None)
+        or os.environ.get("LAWVM_GRAPH_STORE_ROOT")
+        or _DEFAULT_GRAPH_ROOT
+    )
+
+
 def _tool_producer() -> Producer:
     return Producer(
         producer_id="lawvm.validate-claims.tool",
@@ -217,8 +232,8 @@ def _validate_one_assertion(
 
 
 def cmd_validate_one(args: object) -> int:
-    assertion_id: str = args.assertion_id  # type: ignore[attr-defined]
-    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    assertion_id: str = getattr(args, "claim_id", None) or getattr(args, "assertion_id")  # type: ignore[attr-defined]
+    graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
     obj_path = store._objects_dir() / f"{assertion_id}.json"
@@ -229,13 +244,39 @@ def cmd_validate_one(args: object) -> int:
     d = json.loads(obj_path.read_text(encoding="utf-8"))
     assertion = _deserialize_assertion(d)
 
-    passed = _validate_one_assertion(assertion, store, b"", verbose=True)
+    # Fetch source bytes for span/entailment validators (same strategy as propose-claims).
+    from lawvm.core.manual_claims.primitive import ClaimScope
+    from lawvm.core.manual_claims.source_provider import get_source_provider
+
+    statute_id = str(assertion.scope.get("statute_id", ""))
+    provision_ref = str(assertion.scope.get("provision_ref", "")) or None
+
+    source_bytes: bytes = b""
+    jurisdiction = str(assertion.jurisdiction or "fi")
+    from lawvm.core.manual_claims.source_provider import _PROVIDERS
+    source_provider = _PROVIDERS.get(jurisdiction)
+    if source_provider is None:
+        print(f"  warning: no source provider for jurisdiction {jurisdiction!r} — validators run on empty bytes", file=sys.stderr)
+    if source_provider is not None:
+        scope = ClaimScope(
+            statute_id=statute_id,
+            provision_ref=provision_ref,
+            valid_at_start=assertion.valid_at.start,
+            valid_at_end=assertion.valid_at.end,
+        )
+        fetched = source_provider.fetch(scope)
+        if fetched is not None:
+            source_bytes = fetched.bytes_
+        else:
+            print(f"  warning: source not found for {statute_id!r} — validators will run on empty bytes", file=sys.stderr)
+
+    passed = _validate_one_assertion(assertion, store, source_bytes, verbose=True)
     _write_live_snapshot(store)
     return 0 if passed else 1
 
 
 def cmd_validate_all(args: object) -> int:
-    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    graph_store_root = _resolve_graph_store_root(args)
     kind_filter: Optional[str] = getattr(args, "kind", None)
     missing_kind: Optional[str] = getattr(args, "missing_attestation_kind", None)
 
@@ -269,7 +310,14 @@ def cmd_validate_all(args: object) -> int:
 
 
 def main(args: object) -> None:
-    assertion_id: Optional[str] = getattr(args, "assertion_id", None)
+    # Register Finnish source provider so span/entailment validators can fetch source bytes.
+    from lawvm.tools.cmd_propose_claims import register_fi_source_provider
+    register_fi_source_provider()
+
+    assertion_id: Optional[str] = (
+        getattr(args, "claim_id", None)
+        or getattr(args, "assertion_id", None)
+    )
     all_flag: bool = getattr(args, "all", False)
 
     if assertion_id:
