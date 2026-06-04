@@ -37,7 +37,7 @@ from lawvm.tools._cli_output import emit_rows, format_table, json_safe
 # Default data-dir
 # ---------------------------------------------------------------------------
 
-_DEFAULT_DATA_DIR = ".tmp/projections"
+_DEFAULT_DATA_DIR = "data/fi/v1"
 
 
 def _find_pools_source(data_dir: str) -> Optional[Path]:
@@ -166,6 +166,8 @@ def run_pools(
             file=sys.stderr,
         )
         sys.exit(1)
+
+    print(f"Using projections from {data_dir}/ (override with --data-dir)", file=sys.stderr)
 
     pools_path = _find_pools_source(data_dir)
 

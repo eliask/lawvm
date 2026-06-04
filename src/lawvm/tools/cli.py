@@ -60,6 +60,8 @@ Subcommands:
     fi-proposals                    Query Finnish government proposals from fi_he_corpus.parquet.
     fi-proposal-show <HE_ID>        Per-HE structural overview (atoms, law_refs, signatures).
     fi-proposal-bundle --he HE_ID   Typed JSON bundle aggregating #1-#5 projections for one HE.
+    fi-proposal-history --statute S All HEs that touched a statute (legislative history).
+    fi-proposals-competing --statute S Pending HEs that concurrently amend the same statute.
     sync-fi-proposals               Acquire HE corpus and rebuild fi_he_* Parquet projections.
     rebuild-indexes                 Regenerate Tier 2 Parquet projections from Tier 1 farchive.
     build-index-db                  Compose Tier 2 Parquets into a single DuckDB .db file.
@@ -6914,11 +6916,11 @@ def _build_parser() -> argparse.ArgumentParser:
     fpb_p.add_argument(
         "--projections-data-dir",
         dest="projections_data_dir",
-        default=".tmp/projections",
+        default="data/fi/v1",
         metavar="PATH",
         help=(
             "directory containing fi_actors/fi_pools/sections/statutes.parquet "
-            "(default: .tmp/projections)"
+            "(default: data/fi/v1)"
         ),
     )
     fpb_p.add_argument(
@@ -6935,6 +6937,119 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="jurisdiction",
         default="fi",
         help="jurisdiction (currently only 'fi' supported; default: fi)",
+    )
+
+    # --- fi-proposal-history ---
+    fph_p = sub.add_parser(
+        "fi-proposal-history",
+        help="show all HEs that touched a statute (legislative amendment history)",
+        description=(
+            "Query fi_he_law_refs + fi_he_corpus to list all government proposals "
+            "that touched a given statute.  The most common first lausunto question: "
+            "'What HEs have amended statute X?' "
+            "Requires fi_he_corpus.parquet and fi_he_law_refs.parquet in --data-dir."
+        ),
+        parents=_P,
+    )
+    fph_p.add_argument(
+        "--statute",
+        required=True,
+        metavar="STATUTE_ID",
+        help="statute to query, e.g. '2014/527'",
+    )
+    fph_p.add_argument(
+        "--lifecycle",
+        metavar="STATE",
+        choices=["all", "pending", "closed", "enacted", "rejected"],
+        default="all",
+        help="filter by finlex_state: all|pending|closed|enacted|rejected (default: all)",
+    )
+    fph_p.add_argument(
+        "--year-range",
+        dest="year_range",
+        metavar="Y1:Y2",
+        help="narrow to HEs in year range Y1:Y2 inclusive",
+    )
+    fph_p.add_argument(
+        "--ministry",
+        metavar="TEXT",
+        help="filter by ministry name or canonical_id (substring match)",
+    )
+    fph_p.add_argument(
+        "--include-provisions",
+        dest="include_provisions",
+        action="store_true",
+        help="show which specific provisions of the statute each HE touched",
+    )
+    fph_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
+    fph_p.add_argument(
+        "--data-dir",
+        dest="data_dir",
+        default="data/fi/v1",
+        metavar="PATH",
+        help="directory containing fi_he_corpus.parquet and fi_he_law_refs.parquet (default: data/fi/v1)",
+    )
+    fph_p.add_argument(
+        "-o",
+        "--output-format",
+        dest="output_format",
+        default="table",
+        choices=["table", "json", "jsonl", "csv"],
+        help="output format (default: table)",
+    )
+
+    # --- fi-proposals-competing ---
+    fpc_p = sub.add_parser(
+        "fi-proposals-competing",
+        help="show pending HEs that simultaneously amend the same statute (collision detection)",
+        description=(
+            "Detect concurrent pending government proposals that amend the same statute, "
+            "which may cause conflicting section renumbering or overlapping provision edits. "
+            "Requires fi_he_corpus.parquet and fi_he_law_refs.parquet in --data-dir."
+        ),
+        parents=_P,
+    )
+    fpc_p.add_argument(
+        "--statute",
+        required=True,
+        metavar="STATUTE_ID",
+        help="statute to check for concurrent amendments, e.g. '1995/1558'",
+    )
+    fpc_p.add_argument(
+        "--as-of",
+        dest="as_of",
+        metavar="DATE",
+        help="check competing proposals as of DATE (YYYY-MM-DD; default: today)",
+    )
+    fpc_p.add_argument(
+        "--lifecycle-window",
+        dest="lifecycle_window",
+        metavar="WINDOW",
+        choices=["pending", "active-this-year", "all"],
+        default="pending",
+        help="lifecycle window: pending|active-this-year|all (default: pending)",
+    )
+    fpc_p.add_argument(
+        "--provision-overlap",
+        dest="provision_overlap",
+        action="store_true",
+        help="show specific provision overlaps between competing HEs",
+    )
+    fpc_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
+    fpc_p.add_argument(
+        "--data-dir",
+        dest="data_dir",
+        default="data/fi/v1",
+        metavar="PATH",
+        help="directory containing fi_he_corpus.parquet and fi_he_law_refs.parquet (default: data/fi/v1)",
+    )
+    fpc_p.add_argument(
+        "-o",
+        "--output-format",
+        dest="output_format",
+        default="table",
+        choices=["table", "json", "jsonl", "csv"],
+        help="output format (default: table)",
     )
 
     # --- sync-fi-proposals ---
@@ -7232,8 +7347,8 @@ def _build_parser() -> argparse.ArgumentParser:
     refs_p.add_argument(
         "--data-dir",
         dest="data_dir",
-        default=".tmp/projections",
-        help="directory containing fi_refs.parquet (default: .tmp/projections)",
+        default="data/fi/v1",
+        help="directory containing fi_refs.parquet (default: data/fi/v1)",
     )
     refs_p.add_argument(
         "-o",
@@ -7292,8 +7407,8 @@ def _build_parser() -> argparse.ArgumentParser:
     actors_p.add_argument(
         "--data-dir",
         dest="data_dir",
-        default=".tmp/projections",
-        help="directory containing fi_actors.parquet (default: .tmp/projections)",
+        default="data/fi/v1",
+        help="directory containing fi_actors.parquet (default: data/fi/v1)",
     )
     actors_p.add_argument(
         "-o",
@@ -7351,8 +7466,8 @@ def _build_parser() -> argparse.ArgumentParser:
     pools_p.add_argument(
         "--data-dir",
         dest="data_dir",
-        default=".tmp/projections",
-        help="directory containing fi_pools.parquet (default: .tmp/projections)",
+        default="data/fi/v1",
+        help="directory containing fi_pools.parquet (default: data/fi/v1)",
     )
     pools_p.add_argument(
         "-o",
@@ -7419,8 +7534,8 @@ def _build_parser() -> argparse.ArgumentParser:
     prep_refs_p.add_argument(
         "--data-dir",
         dest="data_dir",
-        default=".tmp/projections",
-        help="directory containing fi_preparatory_refs.parquet (default: .tmp/projections)",
+        default="data/fi/v1",
+        help="directory containing fi_preparatory_refs.parquet (default: data/fi/v1)",
     )
     prep_refs_p.add_argument(
         "-o",
@@ -7485,8 +7600,8 @@ def _build_parser() -> argparse.ArgumentParser:
     ic_p.add_argument(
         "--data-dir",
         dest="data_dir",
-        default=".tmp/projections",
-        help="directory containing fi_inline_citations.parquet (default: .tmp/projections)",
+        default="data/fi/v1",
+        help="directory containing fi_inline_citations.parquet (default: data/fi/v1)",
     )
     ic_p.add_argument(
         "-o",
@@ -7720,8 +7835,8 @@ def _build_parser() -> argparse.ArgumentParser:
                          help="filter records valid at DATE (YYYY-MM-DD; best-effort for sections)")
     topic_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
     topic_p.add_argument(
-        "--data-dir", dest="data_dir", default=".tmp/projections",
-        help="directory containing sections.parquet and fi_he_atoms.parquet (default: .tmp/projections)",
+        "--data-dir", dest="data_dir", default="data/fi/v1",
+        help="directory containing sections.parquet and fi_he_atoms.parquet (default: data/fi/v1)",
     )
     topic_p.add_argument(
         "-o", "--output-format", dest="output_format", default="table",
@@ -7769,8 +7884,8 @@ def _build_parser() -> argparse.ArgumentParser:
                       help="filter reference validity to DATE (YYYY-MM-DD)")
     fr_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
     fr_p.add_argument(
-        "--data-dir", dest="data_dir", default=".tmp/projections",
-        help="directory containing fi_refs.parquet (default: .tmp/projections)",
+        "--data-dir", dest="data_dir", default="data/fi/v1",
+        help="directory containing fi_refs.parquet (default: data/fi/v1)",
     )
     fr_p.add_argument(
         "-o", "--output-format", dest="output_format", default="table",
@@ -7813,8 +7928,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     pt_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
     pt_p.add_argument(
-        "--data-dir", dest="data_dir", default=".tmp/projections",
-        help="directory containing ops.parquet (default: .tmp/projections)",
+        "--data-dir", dest="data_dir", default="data/fi/v1",
+        help="directory containing ops.parquet (default: data/fi/v1)",
     )
     pt_p.add_argument(
         "-o", "--output-format", dest="output_format", default="table",
@@ -7866,8 +7981,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     pd_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
     pd_p.add_argument(
-        "--data-dir", dest="data_dir", default=".tmp/projections",
-        help="directory containing ops.parquet (default: .tmp/projections)",
+        "--data-dir", dest="data_dir", default="data/fi/v1",
+        help="directory containing ops.parquet (default: data/fi/v1)",
     )
     pd_p.add_argument(
         "-o", "--output-format", dest="output_format", default="table",
@@ -7895,8 +8010,8 @@ def _build_parser() -> argparse.ArgumentParser:
                          help="best-effort temporal filter (YYYY-MM-DD)")
     telos_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
     telos_p.add_argument(
-        "--data-dir", dest="data_dir", default=".tmp/projections",
-        help="directory containing sections.parquet (default: .tmp/projections)",
+        "--data-dir", dest="data_dir", default="data/fi/v1",
+        help="directory containing sections.parquet (default: data/fi/v1)",
     )
     telos_p.add_argument(
         "-o", "--output-format", dest="output_format", default="table",
@@ -7994,6 +8109,12 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="branch_ops_parquet",
         metavar="PATH",
         help="path to fi_he_branch_ops.parquet (feature #8 projection)",
+    )
+    simulate_p.add_argument(
+        "--debug-parse",
+        dest="debug_parse",
+        action="store_true",
+        help="include full parse_findings list in output (diagnostic mode)",
     )
 
     # --- export-fi-he-branch-ops (feature #8) ---
@@ -9136,6 +9257,16 @@ def main() -> None:
         from lawvm.tools.fi_proposal_bundle import main as fi_proposal_bundle_main
 
         fi_proposal_bundle_main(args)
+
+    elif args.command == "fi-proposal-history":
+        from lawvm.tools.fi_proposal_history import main as fi_proposal_history_main
+
+        fi_proposal_history_main(args)
+
+    elif args.command == "fi-proposals-competing":
+        from lawvm.tools.fi_proposals_competing import main as fi_proposals_competing_main
+
+        fi_proposals_competing_main(args)
 
     elif args.command == "sync-fi-proposals":
         from lawvm.tools.sync_fi_proposals import main as sync_fi_proposals_main

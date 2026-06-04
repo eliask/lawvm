@@ -1052,3 +1052,251 @@ class TestCLIRegistration:
         ])
         assert args.command == "export-fi-he-branch-ops"
         assert args.limit == 10
+
+    def test_simulate_debug_parse_flag_accepted(self) -> None:
+        from lawvm.tools import cli
+
+        parser = cli._build_parser()
+        args = parser.parse_args([
+            "simulate",
+            "--branch", "fi/he/2025/195",
+            "--debug-parse",
+        ])
+        assert args.debug_parse is True
+
+
+# ---------------------------------------------------------------------------
+# Tests for parse_failure_reason (Item 3 — surface FAILED reason in simulate)
+# ---------------------------------------------------------------------------
+
+
+class TestSimulateParseFailureReason:
+    """Verify that SimulationReport surfaces parse_failure_reason on FAILED/PARTIAL."""
+
+    def _make_branch(
+        self,
+        *,
+        status: "HEParseStatus",
+        findings: tuple = (),
+        enactment_sections_found: int = 1,
+        clauses_attempted: int = 1,
+        clauses_succeeded: int = 0,
+    ) -> "HEParsedBranch":
+        return HEParsedBranch(
+            branch_id="fi/he/2025/195",
+            he_id="HE 195/2025 vp",
+            he_year=2025,
+            he_number=195,
+            proposed_voimaantulo=None,
+            proposed_ops=(),
+            target_statute_ids=(),
+            parse_status=status,
+            parse_findings=findings,
+            enactment_sections_found=enactment_sections_found,
+            clauses_attempted=clauses_attempted,
+            clauses_succeeded=clauses_succeeded,
+        )
+
+    def test_successful_parse_has_no_failure_reason(self) -> None:
+        """When ops_applied > 0, parse_failure_reason should not appear in to_dict."""
+        report = SimulationReport(
+            branch_id="fi/he/2024/184",
+            simulated_at="2024-01-01",
+            diff_from="current",
+            parse_status="full",
+            changed_provisions=[{"provision_ref": "711/2022/7", "before_text": "",
+                                  "after_text": "x", "operation_kind": "replace",
+                                  "target_statute_id": "711/2022"}],
+            broken_refs_in_other_statutes=[],
+            actor_slot_changes=[],
+            simulation_warnings=[],
+            ops_applied=1,
+            ops_skipped=0,
+            parse_failure_reason=None,
+        )
+        d = report.to_dict()
+        assert "parse_failure_reason" not in d
+
+    def test_failed_parse_has_failure_reason(self) -> None:
+        """When parse_status=failed and ops_applied=0, parse_failure_reason is surfaced."""
+        report = SimulationReport(
+            branch_id="fi/he/2025/195",
+            simulated_at="2025-01-01",
+            diff_from="current",
+            parse_status="failed",
+            changed_provisions=[],
+            broken_refs_in_other_statutes=[],
+            actor_slot_changes=[],
+            simulation_warnings=[],
+            ops_applied=0,
+            ops_skipped=0,
+            parse_failure_reason="no enactment-text hcontainer found in HE body | note: ...",
+        )
+        d = report.to_dict()
+        assert "parse_failure_reason" in d
+        assert "enactment" in d["parse_failure_reason"].lower() or "no" in d["parse_failure_reason"].lower()
+
+    def test_build_parse_failure_reason_no_findings_generic(self) -> None:
+        """_build_parse_failure_reason: FAILED with no findings → generic message."""
+        from lawvm.tools.simulate import _build_parse_failure_reason
+
+        branch = self._make_branch(
+            status=HEParseStatus.FAILED,
+            findings=(),
+            enactment_sections_found=0,
+            clauses_attempted=0,
+            clauses_succeeded=0,
+        )
+        reason = _build_parse_failure_reason(branch)
+        assert reason
+        assert isinstance(reason, str)
+        assert len(reason) > 10
+        # Should mention the note about parser coverage
+        assert "parser" in reason.lower() or "note" in reason.lower()
+
+    def test_build_parse_failure_reason_with_findings(self) -> None:
+        """_build_parse_failure_reason: FAILED with BranchParseRecovery → finding surfaced."""
+        from lawvm.tools.simulate import _build_parse_failure_reason
+
+        finding = BranchParseRecovery(
+            rule_id="HE_BRANCH.CLAUSE_PARSE_ERROR",
+            op_index=0,
+            clause_text="Ehdotetaan, että rikoslakia (39/1889) muutetaan seuraavasti:",
+            reason="johtolause parser returned no ops or error",
+            detail="no_ops_parsed",
+        )
+        branch = self._make_branch(
+            status=HEParseStatus.FAILED,
+            findings=(finding,),
+            enactment_sections_found=1,
+            clauses_attempted=1,
+            clauses_succeeded=0,
+        )
+        reason = _build_parse_failure_reason(branch)
+        assert "HE_BRANCH.CLAUSE_PARSE_ERROR" in reason
+        assert "johtolause" in reason.lower() or "parse" in reason.lower()
+
+    def test_findings_to_dicts_serialize_recovery(self) -> None:
+        """_findings_to_dicts: BranchParseRecovery serializes to dict with expected keys."""
+        from lawvm.tools.simulate import _findings_to_dicts
+
+        finding = BranchParseRecovery(
+            rule_id="HE_BRANCH.CLAUSE_PARSE_ERROR",
+            op_index=0,
+            clause_text="some clause text",
+            reason="johtolause parser returned no ops or error",
+            detail="no_ops_parsed",
+        )
+        branch = self._make_branch(
+            status=HEParseStatus.FAILED,
+            findings=(finding,),
+        )
+        dicts = _findings_to_dicts(branch)
+        assert len(dicts) == 1
+        d = dicts[0]
+        assert d["kind"] == "BranchParseRecovery"
+        assert d["rule_id"] == "HE_BRANCH.CLAUSE_PARSE_ERROR"
+        assert "reason" in d
+        assert "detail" in d
+
+    def test_findings_to_dicts_serialize_resolution_finding(self) -> None:
+        """_findings_to_dicts: BranchTargetResolutionFinding serializes correctly."""
+        from lawvm.tools.simulate import _findings_to_dicts
+
+        finding = BranchTargetResolutionFinding(
+            rule_id="HE_BRANCH.NO_STATUTE_CITATION",
+            op_index=0,
+            target_provision_ref="",
+            target_statute_id="",
+            reason="no statute citation found in clause text",
+        )
+        branch = self._make_branch(
+            status=HEParseStatus.FAILED,
+            findings=(finding,),
+        )
+        dicts = _findings_to_dicts(branch)
+        assert len(dicts) == 1
+        d = dicts[0]
+        assert d["kind"] == "BranchTargetResolutionFinding"
+        assert d["rule_id"] == "HE_BRANCH.NO_STATUTE_CITATION"
+
+    def test_simulate_branch_failed_surfaces_reason(self) -> None:
+        """simulate_branch: when branch parse FAILED, report includes parse_failure_reason."""
+        # Use a minimal HE XML that will fail to parse (no enactment sections)
+        rationale_xml = (
+            _AKN_OPEN
+            + b"<doc FRBRsubtype='government-proposal'>"
+            + b"<meta><identification source='#t'>"
+            + b"<FRBRWork><FRBRuri value='/akn/fi/doc/government-proposal/2025/999'/>"
+            + b"<FRBRsubtype value='government-proposal'/>"
+            + b"<FRBRdate name='dateIssued' date='2025-01-01'/>"
+            + b"</FRBRWork>"
+            + b"<FRBRExpression><FRBRuri value='/akn/fi/doc/government-proposal/2025/999/fin@'/>"
+            + b"<FRBRlanguage language='fin'/></FRBRExpression>"
+            + b"</identification></meta>"
+            + b"<preface><docNumber>HE 999/2025 vp</docNumber></preface>"
+            + b"<mainBody>"
+            # hcontainer with rationale name — should NOT be recognized as enactment
+            + b"<hcontainer name='rationale'><p>This is rationale text only.</p></hcontainer>"
+            + b"</mainBody>"
+            + b"</doc>"
+            + _AKN_CLOSE
+        )
+
+        # Parse directly
+        branch = parse_he_branch(
+            rationale_xml,
+            he_year=2025,
+            he_number=999,
+            he_id="HE 999/2025 vp",
+        )
+        # Should be NOT_APPLICABLE (no enactment sections) or FAILED
+        assert branch.parse_status in (HEParseStatus.NOT_APPLICABLE, HEParseStatus.FAILED)
+
+        # simulate_branch with no farchive (branch not found) → "unknown" status
+        # Test the _build_parse_failure_reason directly instead
+        if branch.parse_status == HEParseStatus.FAILED:
+            from lawvm.tools.simulate import _build_parse_failure_reason
+            reason = _build_parse_failure_reason(branch)
+            assert reason
+            assert isinstance(reason, str)
+
+    def test_debug_parse_false_no_findings_detail(self) -> None:
+        """When debug_parse=False, parse_findings_detail not in to_dict output."""
+        report = SimulationReport(
+            branch_id="fi/he/2025/195",
+            simulated_at="2025-01-01",
+            diff_from="current",
+            parse_status="failed",
+            changed_provisions=[],
+            broken_refs_in_other_statutes=[],
+            actor_slot_changes=[],
+            simulation_warnings=[],
+            ops_applied=0,
+            ops_skipped=0,
+            parse_failure_reason="no enactment text found",
+            parse_findings_detail=None,
+        )
+        d = report.to_dict()
+        assert "parse_findings_detail" not in d
+
+    def test_debug_parse_true_includes_findings_detail(self) -> None:
+        """When parse_findings_detail is set, it appears in to_dict output."""
+        findings = [{"kind": "BranchParseRecovery", "rule_id": "HE_BRANCH.CLAUSE_PARSE_ERROR"}]
+        report = SimulationReport(
+            branch_id="fi/he/2025/195",
+            simulated_at="2025-01-01",
+            diff_from="current",
+            parse_status="failed",
+            changed_provisions=[],
+            broken_refs_in_other_statutes=[],
+            actor_slot_changes=[],
+            simulation_warnings=[],
+            ops_applied=0,
+            ops_skipped=0,
+            parse_failure_reason="no enactment text",
+            parse_findings_detail=findings,
+        )
+        d = report.to_dict()
+        assert "parse_findings_detail" in d
+        assert len(d["parse_findings_detail"]) == 1

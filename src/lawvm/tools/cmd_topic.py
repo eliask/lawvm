@@ -45,7 +45,7 @@ from lawvm.tools._cli_output import emit_rows, format_table, json_safe
 # Default data-dir
 # ---------------------------------------------------------------------------
 
-_DEFAULT_DATA_DIR = ".tmp/projections"
+_DEFAULT_DATA_DIR = "data/fi/v1"
 _DEFAULT_DB_PATH = "data/fi/v1/lawvm.db"
 
 
@@ -280,6 +280,8 @@ def run_topic(
             file=sys.stderr,
         )
         sys.exit(1)
+
+    print(f"Using projections from {data_dir}/ (override with --data-dir)", file=sys.stderr)
 
     require_duckdb()
 

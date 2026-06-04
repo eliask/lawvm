@@ -42,7 +42,7 @@ from lawvm.tools._cli_duckdb import (
 from lawvm.tools._cli_output import emit_rows
 
 
-_DEFAULT_DATA_DIR = ".tmp/projections"
+_DEFAULT_DATA_DIR = "data/fi/v1"
 
 
 def _build_ops_diff_query(
@@ -155,6 +155,8 @@ def run_pit_diff(
             file=sys.stderr,
         )
         sys.exit(1)
+
+    print(f"Using projections from {data_dir}/ (override with --data-dir)", file=sys.stderr)
 
     ops_path = find_source_file(data_dir, "ops")
     if ops_path is None:

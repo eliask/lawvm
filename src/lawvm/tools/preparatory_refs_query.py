@@ -44,7 +44,7 @@ from lawvm.tools._cli_output import emit_rows, format_table, json_safe
 # ---------------------------------------------------------------------------
 
 
-_DEFAULT_DATA_DIR = ".tmp/projections"
+_DEFAULT_DATA_DIR = "data/fi/v1"
 
 
 def _find_preparatory_refs_source(data_dir: str) -> Optional[Path]:
@@ -177,7 +177,7 @@ def run_preparatory_refs(
     eu_celex: Optional[str] = None,
     as_of: Optional[str] = None,
     limit: Optional[int] = None,
-    data_dir: str = ".tmp/projections",
+    data_dir: str = _DEFAULT_DATA_DIR,
     output_format: str = "table",
     jurisdiction: str = "fi",
 ) -> None:
@@ -189,6 +189,8 @@ def run_preparatory_refs(
             file=sys.stderr,
         )
         sys.exit(1)
+
+    print(f"Using projections from {data_dir}/ (override with --data-dir)", file=sys.stderr)
 
     refs_path = _find_preparatory_refs_source(data_dir)
 

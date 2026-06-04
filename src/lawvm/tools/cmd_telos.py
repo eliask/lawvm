@@ -32,7 +32,7 @@ from lawvm.tools._cli_duckdb import (
 from lawvm.tools._cli_output import emit_rows
 
 
-_DEFAULT_DATA_DIR = ".tmp/projections"
+_DEFAULT_DATA_DIR = "data/fi/v1"
 
 
 def _build_telos_query(
@@ -77,6 +77,8 @@ def run_telos(
             file=sys.stderr,
         )
         sys.exit(1)
+
+    print(f"Using projections from {data_dir}/ (override with --data-dir)", file=sys.stderr)
 
     sections_path = find_source_file(data_dir, "sections")
     if sections_path is None:
