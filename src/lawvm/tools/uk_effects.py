@@ -1039,6 +1039,7 @@ def uk_effects_report_jsonable(
     filters: _EffectFilters,
     summary_only: bool = False,
     matched_effect_count_before_limit: int | None = None,
+    bounded_match_scan: bool = False,
     source: dict[str, Any] | None = None,
     parse_rejections: tuple[dict[str, Any], ...] = (),
     source_parse_observations: tuple[dict[str, Any], ...] = (),
@@ -1079,6 +1080,12 @@ def uk_effects_report_jsonable(
             "applied": True,
             "matched_effect_count_exact": False,
             "summary_scope": "emitted_fast_limit_rows",
+        }
+    if bounded_match_scan:
+        detail["bounded_match_scan"] = {
+            "applied": True,
+            "matched_effect_count_exact": False,
+            "summary_scope": "emitted_bounded_rows",
         }
     report_rows: tuple[dict[str, Any], ...] = ()
     if not summary_only:
@@ -1910,9 +1917,6 @@ def main(args: "argparse.Namespace") -> None:
     if fast_limit and summary_only:
         print("error: --fast-limit cannot be combined with --summary-only", file=sys.stderr)
         sys.exit(2)
-    if fast_limit and evidence_jsonl_arg:
-        print("error: --fast-limit cannot be combined with --evidence-jsonl", file=sys.stderr)
-        sys.exit(2)
     if evidence_jsonl_arg and not (
         manual_compile_status_filter
         or manual_compile_rule_filter
@@ -1986,7 +1990,18 @@ def main(args: "argparse.Namespace") -> None:
             or manual_compile_rule_filter
             or claim_template_status_filter
         )
-        fast_limit_active = bool(fast_limit and post_summary_filter and limit is not None)
+        evidence_jsonl_bounded = bool(
+            evidence_jsonl_arg
+            and post_summary_filter
+            and limit is not None
+            and limit > 0
+        )
+        bounded_match_scan = bool(
+            (fast_limit or evidence_jsonl_bounded)
+            and post_summary_filter
+            and limit is not None
+            and limit > 0
+        )
         if fast_limit and not post_summary_filter:
             print("error: --fast-limit requires a diagnostic post-summary filter", file=sys.stderr)
             sys.exit(2)
@@ -1998,7 +2013,7 @@ def main(args: "argparse.Namespace") -> None:
             post_summary_filter=post_summary_filter,
         )
         report_row_list: list[_EffectReportRow] = []
-        if fast_limit_active:
+        if bounded_match_scan:
             for effect in rows_to_summarize:
                 summary = summarize_uk_effect(
                     effect,
@@ -2074,7 +2089,7 @@ def main(args: "argparse.Namespace") -> None:
             )
             else len(rows)
         )
-        if limit is not None and not fast_limit_active:
+        if limit is not None and not bounded_match_scan:
             report_rows = report_rows[:limit]
 
         evidence_jsonl_path = Path(evidence_jsonl_arg) if evidence_jsonl_arg else None
@@ -2095,6 +2110,7 @@ def main(args: "argparse.Namespace") -> None:
                 filters=filters,
                 summary_only=summary_only,
                 matched_effect_count_before_limit=matched_effect_count_before_limit,
+                bounded_match_scan=bounded_match_scan and not fast_limit,
                 source=_effect_context_source_jsonable(context),
                 parse_rejections=tuple(parse_rejections),
                 source_parse_observations=context.source_parse_observations,
@@ -2125,9 +2141,9 @@ def main(args: "argparse.Namespace") -> None:
             matched_effect_count_before_limit=matched_effect_count_before_limit,
         )
         _print_uk_effects_summary(summary_counts)
-        if fast_limit_active:
+        if bounded_match_scan:
             print(
-                "Fast limit: exact post-summary match count skipped; "
+                "Bounded match scan: exact post-summary match count skipped; "
                 "summary covers emitted rows only."
             )
         if evidence_jsonl_path is not None:

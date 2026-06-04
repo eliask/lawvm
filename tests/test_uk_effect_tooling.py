@@ -9028,6 +9028,144 @@ def test_uk_effects_evidence_jsonl_accepts_manual_compile_rule_filter(
     assert rows[0]["replay_regime"] == expected_regime
 
 
+def test_uk_effects_evidence_jsonl_manual_rule_limit_stops_after_filtered_rows(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    import farchive
+
+    db_path = tmp_path / "uk.farchive"
+    db_path.write_bytes(b"placeholder")
+    out_path = tmp_path / "manual" / "rows.jsonl"
+    effects = [
+        UKEffectRecord(
+            effect_id=f"eff-{index}",
+            effect_type="words substituted",
+            applied=True,
+            requires_applied=False,
+            modified=f"2025-01-0{index}",
+            affected_uri="/id/ukpga/2000/1",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="2000",
+            affected_number="1",
+            affected_provisions=f"s. {index}",
+            affecting_uri=f"/id/ukpga/2025/{index}",
+            affecting_class="UnitedKingdomPublicGeneralAct",
+            affecting_year="2025",
+            affecting_number=str(index),
+            affecting_provisions=f"s. {index + 10}",
+            affecting_title="Test Act",
+        )
+        for index in (1, 2, 3)
+    ]
+    summarized: list[str] = []
+
+    class FakeArchive:
+        def __init__(self, path):
+            self.path = path
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    def fake_summary(effect, archive, context, **kwargs):
+        summarized.append(effect.effect_id)
+        return _EffectSummary(
+            source_pathology="unhandled_instruction_text",
+            compare_shape="commensurable",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_heading_only_ref_rejected", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview='In the title, for "old" substitute "new".',
+            applicability_mode=kwargs["applicability_mode"],
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_heading_facet_candidate"
+                if effect.effect_id != "eff-2"
+                else "uk_manual_frontier_unclassified"
+            ),
+            manual_compile_reason="Heading facet requires manual compile.",
+        )
+
+    monkeypatch.setattr(farchive, "Farchive", FakeArchive)
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
+        lambda *_args, **_kwargs: effects,
+    )
+    monkeypatch.setattr(
+        uk_effects,
+        "build_uk_effect_summary_context",
+        lambda statute_id, archive: _EffectSummaryContext(
+            statute_id=statute_id,
+            enacted_ir=None,
+            oracle_ir=None,
+            base_eids=set(),
+            oracle_eids=set(),
+            base_text_map={},
+            oracle_eid_map={},
+            oracle_text_map={},
+            resolver=None,
+            affecting_xml_cache={},
+            archive_path=str(db_path),
+            enacted_url="https://example.test/enacted.xml",
+            oracle_url="https://example.test/current.xml",
+            enacted_source_status="available",
+            oracle_source_status="available",
+        ),
+    )
+    monkeypatch.setattr(uk_effects, "summarize_uk_effect", fake_summary)
+
+    uk_effects.main(
+        Namespace(
+            statute_id="ukpga/2000/1",
+            db=str(db_path),
+            affected_contains="",
+            affecting_contains="",
+            effect_type_contains="",
+            source_pathology="",
+            lowering_rule="",
+            lowering_reason_code="",
+            source_acquisition_rule="",
+            manual_compile_status="",
+            manual_compile_rule="uk_manual_frontier_heading_facet_candidate",
+            claim_template_status="",
+            limit=1,
+            fast_limit=False,
+            applied_only=False,
+            structural_only=False,
+            candidate_only=False,
+            non_candidate_only=False,
+            json=True,
+            summary_only=False,
+            evidence_jsonl=str(out_path),
+            uk_applicability_mode="effective_date_plus_feed_applied",
+            uk_source_first_candidate=True,
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    rows = [json.loads(line) for line in out_path.read_text(encoding="utf-8").splitlines()]
+    assert summarized == ["eff-1"]
+    assert [row["effect_id"] for row in payload["rows"]] == ["eff-1"]
+    assert [row["effect_id"] for row in rows] == ["eff-1"]
+    assert payload["manual_compile_evidence_jsonl"]["rows"] == 1
+    assert payload["bounded_match_scan"] == {
+        "applied": True,
+        "matched_effect_count_exact": False,
+        "summary_scope": "emitted_bounded_rows",
+    }
+
+
 def test_uk_effect_report_jsonable_records_single_effect_evidence() -> None:
     from lawvm.uk_legislation.uk_amendment_replay import UKEffectRecord
 
