@@ -112,6 +112,26 @@ _ACTIVE_UNCLASSIFIED_RESIDUAL_BUCKETS = frozenset(
         "structural_match_eid_scheme_residual",
     }
 )
+_NON_CORE_COMPARISON_TRIAGE_BUCKETS = frozenset(
+    {
+        "base_metadata_only_frontier",
+        "body_oracle_collapsed_range_granularity_residual",
+        "body_nested_list_oracle_granularity_residual",
+        "effect_feed_absent_frontier",
+        "error",
+        "manual_compile_frontier_residual",
+        "no_compiled_ops_frontier",
+        "no_effect_rows_frontier",
+        "nonreplay_effect_frontier",
+        "oracle_expansion_without_effects",
+        "retained_eu_mixed_representation_residual",
+        "retained_eu_schedule_oracle_granularity_residual",
+        "retained_repeal_oracle_branch",
+        "structural_match_eid_scheme_residual",
+        "temporal_commencement_frontier",
+        "zero_oracle_retention",
+    }
+)
 _MANUAL_SOURCE_CHAIN_FRONTIER_REASONS = frozenset(
     {
         "manual_frontier_manual_compile_candidate",
@@ -860,6 +880,8 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         )
         > 0
     ]
+    comparison_core_rows = [r for r in scored if _is_comparison_core_row(r)]
+    comparison_non_core_rows = [r for r in scored if not _is_comparison_core_row(r)]
     return {
         "scored": scored,
         "errored": errored,
@@ -1030,6 +1052,30 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             str(r.get("statute_id") or "")
             for r in deterministic_frontend_candidate_rows
         ),
+        "comparison_core_count": len(comparison_core_rows),
+        "comparison_core_statutes": sorted(
+            str(r.get("statute_id") or "") for r in comparison_core_rows
+        ),
+        "comparison_core_mean_aligned": _mean_score_field(
+            comparison_core_rows,
+            "aligned",
+        ),
+        "comparison_core_mean_aligned_excluding_grounding_collateral": _mean_score_field(
+            comparison_core_rows,
+            "aligned_excluding_grounding_collateral",
+            fallback_field="aligned",
+        ),
+        "comparison_non_core_count": len(comparison_non_core_rows),
+        "comparison_non_core_bucket_counts": dict(
+            sorted(
+                Counter(
+                    _triage_bucket_for_row(row) for row in comparison_non_core_rows
+                ).items()
+            )
+        ),
+        "comparison_non_core_statutes": sorted(
+            str(r.get("statute_id") or "") for r in comparison_non_core_rows
+        ),
         "zero_oracle_retention_count": len(zero_oracle_retention),
         "zero_oracle_retention_statutes": sorted(
             str(r.get("statute_id") or "") for r in zero_oracle_retention
@@ -1187,6 +1233,33 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
     if _is_bounded_low_volume_residual(row):
         return "bounded_low_volume_residual"
     return "residual_after_grounding"
+
+
+def _is_comparison_core_row(row: dict[str, Any]) -> bool:
+    bucket = _triage_bucket_for_row(row)
+    return (
+        not bucket.startswith("source_frontier:")
+        and bucket not in _NON_CORE_COMPARISON_TRIAGE_BUCKETS
+    )
+
+
+def _mean_score_field(
+    rows: list[dict[str, Any]],
+    field: str,
+    *,
+    fallback_field: str | None = None,
+) -> float | None:
+    values: list[float] = []
+    for row in rows:
+        value = row.get(field)
+        if value is None and fallback_field is not None:
+            value = row.get(fallback_field)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        values.append(float(value))
+    if not values:
+        return None
+    return round(sum(values) / len(values), 2)
 
 
 def _agreement_residual_for_row(row: dict[str, Any]) -> AgreementResidual:
@@ -2293,6 +2366,24 @@ def run_driver(
             f"metadata_only_base={metadata_only_base_total}  errors={len(errored)}"
             f"  source_frontier={len(source_frontier)}"
         )
+        core_avg = summary["comparison_core_mean_aligned"]
+        core_avg_no_gc = summary[
+            "comparison_core_mean_aligned_excluding_grounding_collateral"
+        ]
+        if core_avg is not None and core_avg_no_gc is not None:
+            print(
+                "  comparison_core="
+                f"{summary['comparison_core_count']} rows  "
+                f"mean aligned={core_avg:.2f}%  "
+                f"mean aligned_no_gc={core_avg_no_gc:.2f}%  "
+                f"non_core={summary['comparison_non_core_count']}"
+            )
+        else:
+            print(
+                "  comparison_core="
+                f"{summary['comparison_core_count']} rows  "
+                f"non_core={summary['comparison_non_core_count']}"
+            )
         if summary["zero_oracle_retention_count"]:
             print(
                 "  zero_oracle_retention="

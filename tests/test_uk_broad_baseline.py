@@ -333,6 +333,26 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
     assert summary["zero_oracle_retention_count"] == 1
     assert summary["zero_oracle_retention_statutes"] == ["ukpga/1938/22"]
     assert summary["zero_oracle_retention_eids"] == 420
+    assert summary["comparison_core_count"] == 2
+    assert summary["comparison_core_statutes"] == [
+        "ukpga/1986/61",
+        "ukpga/1992/41",
+    ]
+    assert summary["comparison_core_mean_aligned"] == 57.45
+    assert summary["comparison_core_mean_aligned_excluding_grounding_collateral"] == 74.8
+    assert summary["comparison_non_core_count"] == 4
+    assert summary["comparison_non_core_bucket_counts"] == {
+        "base_metadata_only_frontier": 1,
+        "no_effect_rows_frontier": 1,
+        "structural_match_eid_scheme_residual": 1,
+        "zero_oracle_retention": 1,
+    }
+    assert summary["comparison_non_core_statutes"] == [
+        "eur/2019/1841",
+        "ukpga/1938/22",
+        "ukpga/1961/60",
+        "uksi/2000/1043",
+    ]
     assert summary["triage_buckets"] == {
         "base_metadata_only_frontier": 1,
         "error": 1,
