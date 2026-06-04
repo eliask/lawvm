@@ -84,7 +84,57 @@ def source_shape_blocks_before_text_patch_lowering(
         extracted_text,
         original_targets_str,
     )
+    if (
+        source_shape_classification.rule_id
+        == "uk_effect_multi_enactment_specified_provisions_text_patch_rejected"
+        and _multi_enactment_specified_target_membership_proved(
+            extracted_text=extracted_text,
+            original_targets_str=original_targets_str,
+        )
+    ):
+        return False
     return source_shape_classification.rule_id in _PRE_TARGET_OVERLAP_REJECTION_RULE_IDS
+
+
+def _multi_enactment_specified_target_membership_proved(
+    *,
+    extracted_text: Optional[str],
+    original_targets_str: list[str],
+) -> bool:
+    source_preview = _normalize_citation_text(str(extracted_text or ""))
+    if not source_preview:
+        return False
+    return any(
+        needle in source_preview
+        for target in original_targets_str
+        for needle in _specified_provision_membership_needles(target)
+        if needle
+    )
+
+
+def _specified_provision_membership_needles(target: str) -> tuple[str, ...]:
+    normalized = _normalize_citation_text(target)
+    if not normalized:
+        return ()
+    needles = [normalized]
+    if normalized.startswith("s. "):
+        needles.append(f"section {normalized[3:].strip()}")
+    elif normalized.startswith("s "):
+        needles.append(f"section {normalized[2:].strip()}")
+    return tuple(dict.fromkeys(needles))
+
+
+def _normalize_citation_text(text: str) -> str:
+    cleaned = (
+        str(text or "")
+        .replace("\u2018", "'")
+        .replace("\u2019", "'")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
+        .replace("\u00a0", " ")
+        .lower()
+    )
+    return " ".join(cleaned.split())
 
 
 def _looks_like_appropriate_place_insert_text(text: str) -> bool:

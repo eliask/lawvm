@@ -240,6 +240,15 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         strict_disposition="record",
         source_shape="unique_literal_selector",
     ),
+    "uk_replay_alternate_unique_literal_text_rewrite_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied an alternate-preimage text rewrite after proving "
+            "exactly one source-listed literal matches the resolved target."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="alternate_unique_literal_selector",
+    ),
     "uk_replay_each_other_place_after_anchor_insert_applied": UKReplayRecoveryObservation(
         message=(
             "UK replay applied a relative each-other-place insertion after "

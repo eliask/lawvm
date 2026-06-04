@@ -42,6 +42,7 @@ TextNodeRegexMatchesByPath: TypeAlias = dict[
 
 _EXCEPT_PHRASE_SELECTOR_PREFIX = f"TEXT_EXCEPT_PHRASE{US}"
 _EXCEPT_CHILD_SELECTOR_PREFIX = f"TEXT_EXCEPT_CHILD{US}"
+_ALTERNATE_UNIQUE_SELECTOR_PREFIX = f"TEXT_ALTERNATE_UNIQUE{US}"
 
 
 class DefinitionTextRewriteResult(NamedTuple):
@@ -75,6 +76,16 @@ class ExceptPhraseTextRewrite(NamedTuple):
 class DirectChildTextRewriteMatch(NamedTuple):
     index: int
     child: UKMutableNode
+
+
+def _alternate_unique_literals(match: str) -> tuple[str, ...]:
+    if not match.startswith(_ALTERNATE_UNIQUE_SELECTOR_PREFIX):
+        return ()
+    return tuple(
+        literal.strip()
+        for literal in match[len(_ALTERNATE_UNIQUE_SELECTOR_PREFIX) :].split(US)
+        if literal.strip()
+    )
 
 
 def _rewrite_except_phrase_substitution(
@@ -1707,6 +1718,25 @@ class UKReplayTextApplyMixin:
                 recovery_rule_ids_out.append("uk_replay_unique_literal_text_rewrite_applied")
             return rebuilt, True
 
+        alternate_literals = _alternate_unique_literals(match)
+        if alternate_literals:
+            found_matches: list[re.Match[str]] = []
+            for literal in alternate_literals:
+                found_matches.extend(re.finditer(re.escape(literal), text))
+            if len(found_matches) != 1:
+                return node, False
+            literal_match = found_matches[0]
+            rebuilt = dc_replace(
+                node,
+                text=f"{text[: literal_match.start()]}{replacement}{text[literal_match.end() :]}",
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append(
+                    "uk_replay_alternate_unique_literal_text_rewrite_applied"
+                )
+            return rebuilt, True
+
         if match == "TEXT_ALL":
             rebuilt = dc_replace(node, text=replacement)
             self._replace_node_in_statute(node, rebuilt)
@@ -2546,6 +2576,39 @@ class UKReplayTextApplyMixin:
             self._replace_node_in_statute(node, rebuilt)
             if recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.append("uk_replay_unique_literal_text_rewrite_applied")
+            return rebuilt, True
+
+        alternate_literals = _alternate_unique_literals(match)
+        if alternate_literals:
+            all_matches: list[TextNodeRegexMatch] = []
+            for path, text_node in text_nodes:
+                for literal in alternate_literals:
+                    for literal_match in re.finditer(
+                        re.escape(literal),
+                        text_node.text or "",
+                    ):
+                        all_matches.append((path, text_node, literal_match))
+            if len(all_matches) != 1:
+                return node, False
+            path, text_node, literal_match = all_matches[0]
+            old_text = text_node.text or ""
+            replacement_node = dc_replace(
+                text_node,
+                text=f"{old_text[: literal_match.start()]}{replacement}{old_text[literal_match.end() :]}",
+            )
+            if not path:
+                self._replace_node_in_statute(node, replacement_node)
+                if recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_alternate_unique_literal_text_rewrite_applied"
+                    )
+                return replacement_node, True
+            rebuilt = self._replace_descendant_at_path(node, path, replacement_node)
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append(
+                    "uk_replay_alternate_unique_literal_text_rewrite_applied"
+                )
             return rebuilt, True
 
         if match == "TEXT_IN_BRACKETS":

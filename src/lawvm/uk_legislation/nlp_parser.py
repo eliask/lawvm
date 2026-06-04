@@ -343,6 +343,9 @@ UK_UNQUOTED_ANCHOR_QUOTED_SUBSTITUTION_RULE_ID = (
 UK_QUOTED_SUBSTITUTION_SCOPE_NOTE_RULE_ID = (
     "uk_effect_quoted_substitution_scope_note_text_patch"
 )
+UK_ALTERNATE_PREIMAGE_SUBSTITUTION_RULE_ID = (
+    "uk_effect_alternate_preimage_substitution_text_patch"
+)
 UK_QUOTED_SUBSTITUTE_DASH_QUOTED_PAYLOAD_RULE_ID = (
     "uk_effect_quoted_substitute_dash_quoted_payload_text_patch"
 )
@@ -540,6 +543,14 @@ _QUOTED_SUBSTITUTION_SCOPE_NOTE_RE = re.compile(
     rf"for\s+(?:(?:the\s+)?words?\s+)?"
     rf"[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]\s*"
     r"\((?P<scope_note>[^()]{1,500})\),?\s+substitute\s+"
+    rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+    re.I,
+)
+_ALTERNATE_PREIMAGE_SUBSTITUTION_RE = re.compile(
+    rf"for\s+(?:(?:the\s+)?words?\s+)?"
+    rf"[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]\s*"
+    rf"\(\s*or\s+[“\"'‘](?P<alternate>{_NON_QUOTE}{{1,500}})[”\"'’]\s*\)"
+    r",?\s+substitute\s+"
     rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
     re.I,
 )
@@ -1038,6 +1049,8 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
         re.I,
     )
     for m in matches:
+        if _ALTERNATE_PREIMAGE_SUBSTITUTION_RE.search(m.group(0)):
+            continue
         subs.append({"original": m.group(1), "replacement": m.group(2)})
 
     matches_wherever_occurring_substituted = re.finditer(
@@ -2766,6 +2779,22 @@ def _parse_leading_substitutions(text: str, subs: list) -> None:
                 "original": original,
                 "replacement": m.group("replacement").strip(),
                 "rule_id": UK_UNQUOTED_ANCHOR_QUOTED_SUBSTITUTION_RULE_ID,
+            }
+        )
+
+    for m in _ALTERNATE_PREIMAGE_SUBSTITUTION_RE.finditer(text):
+        originals = tuple(
+            part.strip()
+            for part in (m.group("original"), m.group("alternate"))
+            if part.strip()
+        )
+        if len(originals) < 2:
+            continue
+        subs.append(
+            {
+                "original": f"TEXT_ALTERNATE_UNIQUE{US}{US.join(originals)}",
+                "replacement": m.group("replacement").strip(),
+                "rule_id": UK_ALTERNATE_PREIMAGE_SUBSTITUTION_RULE_ID,
             }
         )
 

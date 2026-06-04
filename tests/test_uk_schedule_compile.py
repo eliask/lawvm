@@ -28,6 +28,7 @@ from lawvm.uk_legislation.source_adjudication import (
 )
 from lawvm.uk_legislation.nlp_parser import (
     UK_AFTER_ANCHOR_TO_END_UNQUOTED_SUBSTITUTION_RULE_ID,
+    UK_ALTERNATE_PREIMAGE_SUBSTITUTION_RULE_ID,
     UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID,
     UK_AT_END_NOT_AS_PART_INSERT_RULE_ID,
     UK_AT_END_STRAY_FULL_STOP_INSERT_RULE_ID,
@@ -947,6 +948,121 @@ def test_replay_unique_literal_repeal_blocks_multiple_literals() -> None:
 
     subsection = executor.statute.body.children[0].children[0]
     assert subsection.text == "Type 12 and Type 12 both appear."
+    assert len(adjudications) == 1
+    assert adjudications[0].detail["blocking"] is True
+
+
+def test_parse_alternate_preimage_substitution_uses_unique_alternate_selector() -> None:
+    fragments = parse_fragment_substitution(
+        'In the specified provisions, for "seven" (or "7") substitute "14".'
+    )
+
+    assert fragments == [
+        {
+            "original": f"TEXT_ALTERNATE_UNIQUE{US}seven{US}7",
+            "replacement": "14",
+            "rule_id": UK_ALTERNATE_PREIMAGE_SUBSTITUTION_RULE_ID,
+        }
+    ]
+
+
+def test_replay_alternate_unique_literal_replaces_single_matching_alternate() -> None:
+    op = LegalOperation(
+        op_id="uk_test_alternate_unique_literal_replace",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "95"), ("subsection", "2"), ("paragraph", "b"))),
+        text_patch=_replace_patch(f"TEXT_ALTERNATE_UNIQUE{US}seven{US}7", "14"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2003/14",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="95",
+                    attrs={"eId": "section-95"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            attrs={"eId": "section-95-2"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="b",
+                                    attrs={"eId": "section-95-2-b"},
+                                    text="The period is 7 days.",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    paragraph = executor.statute.body.children[0].children[0].children[0]
+    assert paragraph.text == "The period is 14 days."
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_alternate_unique_literal_text_rewrite_applied"
+    assert adjudications[0].detail["source_shape"] == "alternate_unique_literal_selector"
+
+
+def test_replay_alternate_unique_literal_blocks_multiple_matching_alternates() -> None:
+    op = LegalOperation(
+        op_id="uk_test_alternate_unique_literal_replace_ambiguous",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "95"), ("subsection", "2"), ("paragraph", "b"))),
+        text_patch=_replace_patch(f"TEXT_ALTERNATE_UNIQUE{US}seven{US}7", "14"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2003/14",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="95",
+                    attrs={"eId": "section-95"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            attrs={"eId": "section-95-2"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="b",
+                                    attrs={"eId": "section-95-2-b"},
+                                    text="The period is seven days, not 7 days.",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    paragraph = executor.statute.body.children[0].children[0].children[0]
+    assert paragraph.text == "The period is seven days, not 7 days."
     assert len(adjudications) == 1
     assert adjudications[0].detail["blocking"] is True
 
@@ -38849,7 +38965,7 @@ def test_compile_table_paragraph_at_end_insert_stays_blocked_without_note_model(
         (
             "1 In the specified provisions of the following enactments, for “seven” "
             "(or “7”) substitute “14” — TMA 1970 Section 106A(2)(b).",
-            "s. 106A(2)(b)",
+            "s. 95(2)(b)",
             "uk_effect_multi_enactment_specified_provisions_text_patch_rejected",
             "multi_enactment_specified_provisions_text_patch_requires_target_row_claim",
         ),
@@ -38936,6 +39052,59 @@ def test_compile_overlap_frontier_records_specific_rejection_families(
     assert rejection["reason_code"] == expected_reason_code
     assert rejection["strict_disposition"] == "block"
     assert rejection["blocking"] is True
+
+
+def test_compile_multi_enactment_specified_provision_with_listed_target_lowers_alternate_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>1</Pnumber>
+          <P2para>
+            <Text>1 In the specified provisions of the following enactments, for
+            “seven” (or “7”) substitute “14” — FA 2003 Section 95(2)(b).</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_multi_enactment_listed_target_text_patch",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2003/14/section/95/subsection/2/paragraph/b",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2003",
+        affected_number="14",
+        affected_provisions="s. 95(2)(b)",
+        affecting_uri="/id/uksi/2025/1",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="art. 2",
+        affecting_title="Test Amendment Order",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action == StructuralAction.TEXT_REPLACE
+    assert str(ops[0].target) == "section:95/subsection:2/paragraph:b"
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == f"TEXT_ALTERNATE_UNIQUE{US}seven{US}7"
+    assert ops[0].text_patch.replacement == "14"
+    assert not any(
+        record.get("rule_id")
+        == "uk_effect_multi_enactment_specified_provisions_text_patch_rejected"
+        for record in lowering_records
+    )
 
 
 def test_compile_inserted_subsection_child_range_substitution_lowers_replace_and_repeal() -> None:
