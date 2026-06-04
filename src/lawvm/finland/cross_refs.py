@@ -354,8 +354,10 @@ def extract_cross_refs(
 # ---------------------------------------------------------------------------
 
 # Finnish text patterns for EU legislation citations:
-#   "(EY) N:o 999/2001" or "(EU) N:o 2016/679"  — most common
-#   "999/2001/EY" or "2016/679/EU"               — alternative order
+#   "(EY) N:o 999/2001"     — old number-first form  (P1)
+#   "(EU) 2016/679"         — modern year-first form  (P1B)
+#   "999/2001/EY"           — alternative order       (P2)
+#   CELEX "32016R0679"      — legislative history     (CELEX)
 _EU_TYPE_MAP = {
     'asetus':    'reg',    # regulation
     'direktiivi': 'dir',   # directive
@@ -364,14 +366,25 @@ _EU_TYPE_MAP = {
 }
 _EU_JURISDICTION = re.compile(r'\b(EU|EY|ETY|EURATOM|ETA)\b')
 
-# Pattern 1: "(EY|EU|ETY|EURATOM|ETA) N:o NUMBER/YEAR"
+# Pattern 1a: "(EY|EU|ETY|EURATOM|ETA) N:o NUMBER/YEAR" — old number-first form
+# e.g. "(EY) N:o 999/2001"
 _EU_REF_P1 = re.compile(
-    r'\((?:EU|EY|ETY|EURATOM|ETA)\)\s*N:o\s+(\d+)/(\d{4})',
+    r'\((?:EU|EY|ETY|EURATOM|ETA)\)\s*N:o\s+(\d{1,6})/(\d{4})',
+    re.I,
+)
+# Pattern 1b: "(EU|EY|...) YEAR/NUMBER" — modern year-first form (GDPR-style)
+# e.g. "(EU) 2016/679" or "(EU) 2017/2226".
+# Distinguished from the N:o form by the absence of "N:o" before the digits,
+# and from domestic statute citations by the preceding jurisdiction marker.
+# Bounded quantifiers: year is exactly 4 digits; number is 1-6 digits.
+# Substring guard: caller checks '(EU' / '(EY' / etc. before invoking.
+_EU_REF_P1B = re.compile(
+    r'\((?:EU|EY|ETY|EURATOM|ETA)\)\s+(\d{4})/(\d{1,6})\b',
     re.I,
 )
 # Pattern 2: "NUMBER/YEAR/EY|EU|ETY|EURATOM|ETA" (with word boundary)
 _EU_REF_P2 = re.compile(
-    r'(\d+)/(\d{4})/(?:EU|EY|ETY|EURATOM|ETA)\b',
+    r'(\d{1,6})/(\d{4})/(?:EU|EY|ETY|EURATOM|ETA)\b',
     re.I,
 )
 # CELEX number: "3YYYYRNNNN" (R=regulation, L=directive, D=decision)
@@ -411,7 +424,8 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
     source_section is the AKN section label if detectable.
 
     Pattern coverage:
-      - "(EU|EY|ETY) N:o NUMBER/YEAR"  — main body text
+      - "(EU|EY|ETY) N:o NUMBER/YEAR"  — old number-first form
+      - "(EU) YEAR/NUMBER"              — modern year-first form (GDPR-style, e.g. 2016/679)
       - "NUMBER/YEAR/EU|EY"             — alternative notation
       - CELEX numbers "3YYYYRNNNN"      — legislative history notes
 
@@ -444,6 +458,16 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
         number, year = m.group(1), m.group(2)
         eu_type = _classify_eu_type(text, m.start())
         _add(eu_type, year, number, m.start())
+
+    # Pattern 1b: modern year-first form "(EU) 2016/679".
+    # Substring guard: skip if no '(' in text (eliminates ~99% of calls on
+    # plain-number text).  The guard 'EU)' / '(EY)' / etc. already requires
+    # the opening paren from the regex, so a simple '(' guard suffices.
+    if '(' in text:
+        for m in _EU_REF_P1B.finditer(text):
+            year, number = m.group(1), m.group(2)
+            eu_type = _classify_eu_type(text, m.start())
+            _add(eu_type, year, number, m.start())
 
     for m in _EU_REF_P2.finditer(text):
         number, year = m.group(1), m.group(2)

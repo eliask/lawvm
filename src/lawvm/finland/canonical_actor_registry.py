@@ -150,7 +150,7 @@ _REGISTRY_SEED: List[CanonicalActor] = [
     # -----------------------------------------------------------------------
     CanonicalActor(
         canonical_id="fi.ministry.stm",
-        show_as="Sosiaali- ja terveysministerio",
+        show_as="Sosiaali- ja terveysministeriö",
         actor_type="ministry",
         level="state",
         lifecycle=(
@@ -158,16 +158,24 @@ _REGISTRY_SEED: List[CanonicalActor] = [
                 active_from=date(1993, 1, 1),
                 active_until=None,
                 phrase_variants=(
-                    "Sosiaali- ja terveysministerio",
+                    "Sosiaali- ja terveysministeriö",
+                    "sosiaali- ja terveysministeriön",
+                    "sosiaali- ja terveysministeriö",
                     "STM",
+                    # ASCII-approximated forms kept for backward compatibility with
+                    # pre-Unicode sources and existing tests.
+                    "Sosiaali- ja terveysministerio",
                     "sosiaali- ja terveysministerion",
                     "sosiaali- ja terveysministerio",
                     # Generic short forms registered here to create deliberate ambiguity
-                    # when a bare 'Ministerio'/'ministerio' appears without qualifier.
-                    # This encodes the domain fact that unqualified 'ministerio' in Finnish
+                    # when a bare 'Ministeriö'/'ministeriö' appears without qualifier.
+                    # This encodes the domain fact that unqualified 'ministeriö' in Finnish
                     # legal prose is always ambiguous -- any of the 12 ministries could
                     # be meant. We register the generic forms in two ministry entries
                     # to ensure REGISTRY.lookup() returns multiple candidates.
+                    "Ministeriö",
+                    "ministeriö",
+                    # Legacy ASCII forms also kept as ambiguous markers.
                     "Ministerio",
                     "ministerio",
                 ),
@@ -177,7 +185,7 @@ _REGISTRY_SEED: List[CanonicalActor] = [
     ),
     CanonicalActor(
         canonical_id="fi.ministry.sm",
-        show_as="Sisaministerio",
+        show_as="Sisäministeriö",
         actor_type="ministry",
         level="state",
         lifecycle=(
@@ -185,8 +193,11 @@ _REGISTRY_SEED: List[CanonicalActor] = [
                 active_from=date(1918, 1, 1),
                 active_until=None,
                 phrase_variants=(
-                    "Sisaministerio",
+                    "Sisäministeriö",
+                    "sisäministeriön",
+                    "sisäministeriö",
                     "SM",
+                    "Sisaministerio",
                     "sisaministerion",
                     "sisaministerio",
                 ),
@@ -196,7 +207,7 @@ _REGISTRY_SEED: List[CanonicalActor] = [
     ),
     CanonicalActor(
         canonical_id="fi.ministry.lvm",
-        show_as="Liikenne- ja viestintaministerio",
+        show_as="Liikenne- ja viestintäministeriö",
         actor_type="ministry",
         level="state",
         lifecycle=(
@@ -204,8 +215,11 @@ _REGISTRY_SEED: List[CanonicalActor] = [
                 active_from=date(2000, 1, 1),
                 active_until=None,
                 phrase_variants=(
-                    "Liikenne- ja viestintaministerio",
+                    "Liikenne- ja viestintäministeriö",
+                    "liikenne- ja viestintäministeriön",
+                    "liikenne- ja viestintäministeriö",
                     "LVM",
+                    "Liikenne- ja viestintaministerio",
                     "liikenne- ja viestintaministerion",
                     "liikenne- ja viestintaministerio",
                 ),
@@ -215,7 +229,7 @@ _REGISTRY_SEED: List[CanonicalActor] = [
     ),
     CanonicalActor(
         canonical_id="fi.ministry.mmm",
-        show_as="Maa- ja metsatalousministerio",
+        show_as="Maa- ja metsätalousministeriö",
         actor_type="ministry",
         level="state",
         lifecycle=(
@@ -223,8 +237,11 @@ _REGISTRY_SEED: List[CanonicalActor] = [
                 active_from=date(1995, 4, 1),
                 active_until=None,
                 phrase_variants=(
-                    "Maa- ja metsatalousministerio",
+                    "Maa- ja metsätalousministeriö",
+                    "maa- ja metsätalousministeriön",
+                    "maa- ja metsätalousministeriö",
                     "MMM",
+                    "Maa- ja metsatalousministerio",
                     "maa- ja metsatalousministerion",
                     "maa- ja metsatalousministerio",
                 ),
@@ -234,7 +251,7 @@ _REGISTRY_SEED: List[CanonicalActor] = [
     ),
     CanonicalActor(
         canonical_id="fi.ministry.okm",
-        show_as="Opetus- ja kultturiministerio",
+        show_as="Opetus- ja kulttuuriministeriö",
         actor_type="ministry",
         level="state",
         lifecycle=(
@@ -242,8 +259,11 @@ _REGISTRY_SEED: List[CanonicalActor] = [
                 active_from=date(2010, 5, 1),
                 active_until=None,
                 phrase_variants=(
-                    "Opetus- ja kultturiministerio",
+                    "Opetus- ja kulttuuriministeriö",
+                    "opetus- ja kulttuuriministeriön",
+                    "opetus- ja kulttuuriministeriö",
                     "OKM",
+                    "Opetus- ja kultturiministerio",
                     "opetus- ja kultturiministerion",
                     "opetus- ja kultturiministerio",
                 ),
@@ -253,7 +273,7 @@ _REGISTRY_SEED: List[CanonicalActor] = [
     ),
     CanonicalActor(
         canonical_id="fi.ministry.vm",
-        show_as="Valtiovarainministerio",
+        show_as="Valtiovarainministeriö",
         actor_type="ministry",
         level="state",
         lifecycle=(
@@ -261,8 +281,11 @@ _REGISTRY_SEED: List[CanonicalActor] = [
                 active_from=date(1918, 1, 1),
                 active_until=None,
                 phrase_variants=(
-                    "Valtiovarainministerio",
+                    "Valtiovarainministeriö",
+                    "valtiovarainministeriön",
+                    "valtiovarainministeriö",
                     "VM",
+                    "Valtiovarainministerio",
                     "valtiovarainministerion",
                     "valtiovarainministerio",
                 ),
@@ -272,7 +295,7 @@ _REGISTRY_SEED: List[CanonicalActor] = [
     ),
     CanonicalActor(
         canonical_id="fi.ministry.tem",
-        show_as="Tyo- ja elinkeinoministério",
+        show_as="Työ- ja elinkeinoministeriö",
         actor_type="ministry",
         level="state",
         lifecycle=(
@@ -280,8 +303,11 @@ _REGISTRY_SEED: List[CanonicalActor] = [
                 active_from=date(2008, 1, 1),
                 active_until=None,
                 phrase_variants=(
-                    "Tyo- ja elinkeinoministerio",
+                    "Työ- ja elinkeinoministeriö",
+                    "työ- ja elinkeinoministeriön",
+                    "työ- ja elinkeinoministeriö",
                     "TEM",
+                    "Tyo- ja elinkeinoministerio",
                     "tyo- ja elinkeinoministerion",
                     "tyo- ja elinkeinoministerio",
                 ),
@@ -291,7 +317,7 @@ _REGISTRY_SEED: List[CanonicalActor] = [
     ),
     CanonicalActor(
         canonical_id="fi.ministry.ym",
-        show_as="Ymparistoministerio",
+        show_as="Ympäristöministeriö",
         actor_type="ministry",
         level="state",
         lifecycle=(
@@ -299,8 +325,11 @@ _REGISTRY_SEED: List[CanonicalActor] = [
                 active_from=date(1983, 1, 1),
                 active_until=None,
                 phrase_variants=(
-                    "Ymparistoministerio",
+                    "Ympäristöministeriö",
+                    "ympäristöministeriön",
+                    "ympäristöministeriö",
                     "YM",
+                    "Ymparistoministerio",
                     "ymparistoministerion",
                     "ymparistoministerio",
                 ),
@@ -310,7 +339,7 @@ _REGISTRY_SEED: List[CanonicalActor] = [
     ),
     CanonicalActor(
         canonical_id="fi.ministry.om",
-        show_as="Oikeusministerio",
+        show_as="Oikeusministeriö",
         actor_type="ministry",
         level="state",
         lifecycle=(
@@ -318,12 +347,18 @@ _REGISTRY_SEED: List[CanonicalActor] = [
                 active_from=date(1918, 1, 1),
                 active_until=None,
                 phrase_variants=(
-                    "Oikeusministerio",
+                    "Oikeusministeriö",
+                    "oikeusministeriön",
+                    "oikeusministeriö",
                     "OM",
+                    "Oikeusministerio",
                     "oikeusministerion",
                     "oikeusministerio",
                     # Generic short forms also registered here (second entry) so that
-                    # REGISTRY.lookup('ministerio') returns >= 2 candidates -> AMBIGUOUS.
+                    # REGISTRY.lookup('ministeriö') returns >= 2 candidates -> AMBIGUOUS.
+                    "Ministeriö",
+                    "ministeriö",
+                    # Legacy ASCII forms also kept as ambiguous markers.
                     "Ministerio",
                     "ministerio",
                 ),
@@ -333,7 +368,7 @@ _REGISTRY_SEED: List[CanonicalActor] = [
     ),
     CanonicalActor(
         canonical_id="fi.ministry.plm",
-        show_as="Puolustusministerio",
+        show_as="Puolustusministeriö",
         actor_type="ministry",
         level="state",
         lifecycle=(
@@ -341,8 +376,11 @@ _REGISTRY_SEED: List[CanonicalActor] = [
                 active_from=date(1918, 1, 1),
                 active_until=None,
                 phrase_variants=(
-                    "Puolustusministerio",
+                    "Puolustusministeriö",
+                    "puolustusministeriön",
+                    "puolustusministeriö",
                     "PLM",
+                    "Puolustusministerio",
                     "puolustusministerion",
                     "puolustusministerio",
                 ),
@@ -352,7 +390,7 @@ _REGISTRY_SEED: List[CanonicalActor] = [
     ),
     CanonicalActor(
         canonical_id="fi.ministry.um",
-        show_as="Ulkoministerio",
+        show_as="Ulkoministeriö",
         actor_type="ministry",
         level="state",
         lifecycle=(
@@ -360,8 +398,11 @@ _REGISTRY_SEED: List[CanonicalActor] = [
                 active_from=date(1918, 1, 1),
                 active_until=None,
                 phrase_variants=(
-                    "Ulkoministerio",
+                    "Ulkoministeriö",
+                    "ulkoministeriön",
+                    "ulkoministeriö",
                     "UM",
+                    "Ulkoministerio",
                     "ulkoministerion",
                     "ulkoministerio",
                 ),
@@ -416,7 +457,7 @@ _REGISTRY_SEED: List[CanonicalActor] = [
     ),
     CanonicalActor(
         canonical_id="fi.agency.traficom",
-        show_as="Liikenne- ja viestintavirasto",
+        show_as="Liikenne- ja viestintävirasto",
         actor_type="agency",
         level="state",
         parent_id="fi.ministry.lvm",
@@ -433,13 +474,17 @@ _REGISTRY_SEED: List[CanonicalActor] = [
                 predecessor_id="fi.agency.traficom",
                 successor_id="fi.agency.traficom",
             ),
-            # Current: Liikenne- ja viestintavirasto (Traficom), from 2019-01-01
+            # Current: Liikenne- ja viestintävirasto (Traficom), from 2019-01-01
             LifecyclePeriod(
                 active_from=date(2019, 1, 1),
                 active_until=None,
                 phrase_variants=(
-                    "Liikenne- ja viestintavirasto",
+                    "Liikenne- ja viestintävirasto",
+                    "liikenne- ja viestintäviraston",
+                    "Liikenne- ja viestintäviraston",
                     "Traficom",
+                    # ASCII-approximated forms kept for backward compatibility.
+                    "Liikenne- ja viestintavirasto",
                     "liikenne- ja viestintaviraston",
                     "Liikenne- ja viestintaviraston",
                 ),
@@ -448,7 +493,7 @@ _REGISTRY_SEED: List[CanonicalActor] = [
     ),
     CanonicalActor(
         canonical_id="fi.agency.stuk",
-        show_as="Sateilyturvakeskus",
+        show_as="Säteilyturvakeskus",
         actor_type="agency",
         level="state",
         parent_id="fi.ministry.stm",
@@ -457,8 +502,11 @@ _REGISTRY_SEED: List[CanonicalActor] = [
                 active_from=date(1983, 1, 1),
                 active_until=None,
                 phrase_variants=(
-                    "Sateilyturvakeskus",
+                    "Säteilyturvakeskus",
+                    "Säteilyturvakeskuksen",
+                    "säteilyturvakeskuksen",
                     "STUK",
+                    "Sateilyturvakeskus",
                     "Sateilyturvakeskuksen",
                     "sateilyturvakeskuksen",
                 ),
@@ -487,7 +535,7 @@ _REGISTRY_SEED: List[CanonicalActor] = [
     ),
     CanonicalActor(
         canonical_id="fi.agency.fimea",
-        show_as="Laakealan turvallisuus- ja kehittamiskeskus",
+        show_as="Lääkealan turvallisuus- ja kehittämiskeskus",
         actor_type="agency",
         level="state",
         parent_id="fi.ministry.stm",
@@ -496,6 +544,8 @@ _REGISTRY_SEED: List[CanonicalActor] = [
                 active_from=date(2009, 11, 1),
                 active_until=None,
                 phrase_variants=(
+                    "Lääkealan turvallisuus- ja kehittämiskeskus",
+                    "lääkealan turvallisuus- ja kehittämiskeskuksen",
                     "Fimea",
                     "Fimean",
                     "Laakealan turvallisuus- ja kehittamiskeskus",
@@ -653,7 +703,7 @@ _REGISTRY_SEED: List[CanonicalActor] = [
     ),
     CanonicalActor(
         canonical_id="fi.agency.kela",
-        show_as="Kansanelakelaitos",
+        show_as="Kansaneläkelaitos",
         actor_type="institution",
         level="state",
         lifecycle=(
@@ -661,9 +711,12 @@ _REGISTRY_SEED: List[CanonicalActor] = [
                 active_from=date(1937, 1, 1),
                 active_until=None,
                 phrase_variants=(
-                    "Kansanelakelaitos",
+                    "Kansaneläkelaitos",
+                    "kansaneläkelaitoksen",
+                    "Kansaneläkelaitoksen",
                     "Kela",
                     "Kelan",
+                    "Kansanelakelaitos",
                     "kansanelakelaitos",
                     "kansanelakela",
                 ),
@@ -709,7 +762,7 @@ _REGISTRY_SEED: List[CanonicalActor] = [
     ),
     CanonicalActor(
         canonical_id="fi.agency.ttl",
-        show_as="Tyoterveyslaitos",
+        show_as="Työterveyslaitos",
         actor_type="institution",
         level="state",
         lifecycle=(
@@ -717,8 +770,11 @@ _REGISTRY_SEED: List[CanonicalActor] = [
                 active_from=date(1945, 1, 1),
                 active_until=None,
                 phrase_variants=(
-                    "Tyoterveyslaitos",
+                    "Työterveyslaitos",
+                    "työterveyslaitoksen",
+                    "Työterveyslaitoksen",
                     "TTL",
+                    "Tyoterveyslaitos",
                     "tyoterveyslaitoksen",
                     "Tyoterveyslaitoksen",
                 ),
