@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -134,8 +135,29 @@ def _write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> int:
     return len(rows)
 
 
-def _try_write_parquet(path: Path, rows: List[Dict[str, Any]]) -> bool:
-    """Try to write rows as Parquet. Returns True if successful."""
+def _attach_compile_metadata(table: Any, compile_metadata: Any) -> Any:
+    """Attach CompileMetadata fields to a pyarrow Table's schema metadata."""
+    if compile_metadata is None:
+        warnings.warn(
+            "Parquet emit without CompileMetadata is deprecated; "
+            "pass compile_metadata to ensure artifact reproducibility",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return table
+    existing = table.schema.metadata or {}
+    meta = dict(existing)
+    for k, v in compile_metadata.to_metadata_dict().items():
+        meta[k.encode()] = v.encode()
+    return table.replace_schema_metadata(meta)
+
+
+def _try_write_parquet(
+    path: Path,
+    rows: List[Dict[str, Any]],
+    compile_metadata: Any = None,
+) -> bool:
+    """Try to write rows as Parquet with optional compile metadata. Returns True if ok."""
     try:
         import pyarrow as pa  # ty: ignore[unresolved-import]
         import pyarrow.parquet as pq  # ty: ignore[unresolved-import]
@@ -158,12 +180,14 @@ def _try_write_parquet(path: Path, rows: List[Dict[str, Any]]) -> bool:
             pa.field("source_span_byte_len", pa.int64()),
         ])
         table = pa.table({col: [] for col in schema.names}, schema=schema)
+        table = _attach_compile_metadata(table, compile_metadata)
         path.parent.mkdir(parents=True, exist_ok=True)
         pq.write_table(table, str(path), compression="zstd")
         return True
 
     path.parent.mkdir(parents=True, exist_ok=True)
     table = pa.Table.from_pylist(rows)
+    table = _attach_compile_metadata(table, compile_metadata)
     pq.write_table(table, str(path), compression="zstd")
     return True
 
@@ -175,6 +199,7 @@ def export_fi_inline_citations(
     use_parquet: bool = True,
     he_farchive_path: Optional[str] = None,
     limit: Optional[int] = None,
+    compile_metadata: Optional[Any] = None,
 ) -> int:
     """Export fi_inline_citations.parquet projection.
 
@@ -241,7 +266,7 @@ def export_fi_inline_citations(
     jsonl_count = _write_jsonl(out / "fi_inline_citations.jsonl", all_citation_rows)
 
     if use_parquet:
-        ok = _try_write_parquet(out / "fi_inline_citations.parquet", all_citation_rows)
+        ok = _try_write_parquet(out / "fi_inline_citations.parquet", all_citation_rows, compile_metadata)
         if ok:
             print(f"  fi_inline_citations: {jsonl_count:,} rows (Parquet + JSONL)")
         else:
