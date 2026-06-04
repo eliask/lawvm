@@ -14,7 +14,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-05-28T15:33:49.859528753Z"
+exclude-newer = "2026-05-28T16:12:19.795033856Z"
 exclude-newer-span = "P7D"
 
 [[package]]
@@ -590,6 +590,7 @@ dependencies = [
     { name = "icontract" },
     { name = "lxml" },
     { name = "ortools" },
+    { name = "pyarrow" },
     { name = "python-levenshtein" },
     { name = "pyyaml" },
     { name = "zstandard" },
@@ -627,6 +628,7 @@ requires-dist = [
     { name = "icontract", specifier = ">=2.7.3" },
     { name = "lxml", specifier = ">=6.0.0" },
     { name = "ortools", specifier = ">=9.15.6755" },
+    { name = "pyarrow", specifier = ">=24.0.0" },
     { name = "pyarrow", marker = "extra == 'analytics'", specifier = ">=15.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0" },
     { name = "python-levenshtein" },
