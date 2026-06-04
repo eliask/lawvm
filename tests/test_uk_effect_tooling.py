@@ -891,6 +891,125 @@ def test_manual_frontier_diagnostic_records_claim_template_status() -> None:
     )
 
 
+def test_manual_frontier_out_of_scope_reclassifies_lowering_rejection() -> None:
+    diagnostics: list[dict[str, object]] = []
+    lowering_rejections: list[dict[str, object]] = [
+        {
+            "rule_id": "uk_effect_lowering_no_supported_action_rejected",
+            "blocking": True,
+            "strict_disposition": "block",
+        }
+    ]
+
+    append_manual_compile_frontier_diagnostic(
+        diagnostics,
+        effect=UKEffectRecord(
+            effect_id="effect-out-of-scope",
+            effect_type="",
+            applied=True,
+            requires_applied=True,
+            modified="2024-01-01",
+            affected_uri="/id/ukpga/1962/31/section/17",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="1962",
+            affected_number="31",
+            affected_provisions="s. 17",
+            affecting_uri="/id/uksi/2002/790",
+            affecting_class="UnitedKingdomStatutoryInstrument",
+            affecting_year="2002",
+            affecting_number="790",
+            affecting_provisions="Sch. 3 para. 1",
+            affecting_title="Synthetic Transfer Order",
+        ),
+        source_pathology="",
+        extracted_tag="P1",
+        extracted_text=(
+            "The function under section 17 shall be treated as exercisable by "
+            "the authority and shall be transferred to the department."
+        ),
+        lowering_rejections_out=lowering_rejections,
+        lowering_rejection_start_index=0,
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert diagnostics[0]["manual_compile_status"] == "non_textual_or_out_of_scope"
+    assert (
+        diagnostics[0]["manual_compile_rule_id"]
+        == "uk_manual_frontier_unsupported_effect_family"
+    )
+    assert diagnostics[0]["blocking_lowering_rule_ids"] == ()
+    assert lowering_rejections[0]["blocking"] is False
+    assert lowering_rejections[0]["strict_disposition"] == "record"
+    assert (
+        lowering_rejections[0]["nonblocking_reclassification_rule_id"]
+        == "uk_effect_manual_frontier_nonreplay_lowering_observed"
+    )
+    assert lowering_rejections[0]["replay_relevance"] == "manual_frontier_out_of_scope"
+    assert (
+        lowering_rejections[0]["manual_compile_rule_id"]
+        == "uk_manual_frontier_unsupported_effect_family"
+    )
+    assert (
+        lowering_rejections[0]["manual_compile_status"]
+        == "non_textual_or_out_of_scope"
+    )
+
+
+def test_uk_effect_report_out_of_scope_frontier_has_no_blocking_lowering() -> None:
+    extracted = ET.Element("P1")
+    extracted.text = (
+        "The function under section 17 shall be treated as exercisable by "
+        "the authority and shall be transferred to the department."
+    )
+    lowering_rejections: list[dict[str, object]] = [
+        {
+            "rule_id": "uk_effect_lowering_no_supported_action_rejected",
+            "blocking": True,
+            "strict_disposition": "block",
+        }
+    ]
+
+    payload = uk_effect_report_jsonable(
+        statute_id="ukpga/1962/31",
+        effect=UKEffectRecord(
+            effect_id="effect-out-of-scope",
+            effect_type="",
+            applied=True,
+            requires_applied=True,
+            modified="2024-01-01",
+            affected_uri="/id/ukpga/1962/31/section/17",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="1962",
+            affected_number="31",
+            affected_provisions="s. 17",
+            affecting_uri="/id/uksi/2002/790",
+            affecting_class="UnitedKingdomStatutoryInstrument",
+            affecting_year="2002",
+            affecting_number="790",
+            affecting_provisions="Sch. 3 para. 1",
+            affecting_title="Synthetic Transfer Order",
+        ),
+        source_pathology="",
+        extracted=extracted,
+        lowering_rejections=lowering_rejections,
+        compare_shape="",
+        candidate=False,
+        op_rows=[],
+    )
+
+    assert payload["lowering"]["has_blocking_rejection"] is False
+    assert payload["lowering"]["blocking_rejection_rule_counts"] == {}
+    assert payload["lowering"]["rejections"] == []
+    assert payload["lowering"]["observations"][0]["blocking"] is False
+    assert (
+        payload["lowering"]["observations"][0]["nonblocking_reclassification_rule_id"]
+        == "uk_effect_manual_frontier_nonreplay_lowering_observed"
+    )
+    assert lowering_rejections[0]["blocking"] is False
+
+
 def test_uk_effect_fmt_target_preserves_heading_facet() -> None:
     target = LegalAddress(path=(("section", "1"),), special=FacetKind.HEADING)
 

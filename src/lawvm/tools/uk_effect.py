@@ -268,6 +268,9 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
     from lawvm.uk_legislation.frontier_work_items import (
         uk_frontier_work_item_from_manual_frontier_row,
     )
+    from lawvm.uk_legislation.lowering_records import (
+        mark_manual_frontier_nonreplay_lowering_rejections_nonblocking,
+    )
     from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_manual_frontier
     from lawvm.uk_legislation.source_adjudication import classify_uk_manual_compile_frontier
 
@@ -275,8 +278,6 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
         dict(item) for item in source_acquisition_rejections
     )
     source_acquisition_rejection_rows = _blocking_rows(source_acquisition_observation_rows)
-    lowering_observation_rows = tuple(dict(item) for item in lowering_rejections)
-    lowering_rejection_rows = _blocking_rows(lowering_observation_rows)
     parse_observation_rows = tuple(dict(item) for item in parse_rejections)
     parse_rejection_rows = _blocking_rows(parse_observation_rows)
     source_parse_observation_rows = tuple(dict(item) for item in source_parse_observations)
@@ -292,6 +293,13 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
         structural_for_replay=effect.is_structural_for_replay(applicability_mode=applicability_mode),
         compare_shape=compare_shape,
     )
+    mark_manual_frontier_nonreplay_lowering_rejections_nonblocking(
+        manual_frontier=manual_frontier,
+        lowering_rejections=lowering_rejections,
+        start_index=0,
+    )
+    lowering_observation_rows = tuple(dict(item) for item in lowering_rejections)
+    lowering_rejection_rows = _blocking_rows(lowering_observation_rows)
     suggested_claim_template = _manual_compile_claim_template_for_effect_report(
         statute_id=statute_id,
         effect=effect,
@@ -857,8 +865,12 @@ def main(args: "argparse.Namespace") -> None:
     from lawvm.uk_legislation.source_adjudication import (
         classify_uk_effect_compare_shape,
         classify_uk_effect_source_pathology,
+        classify_uk_manual_compile_frontier,
         is_core_uk_effect_compare_candidate,
         is_core_uk_effect_source_candidate,
+    )
+    from lawvm.uk_legislation.lowering_records import (
+        mark_manual_frontier_nonreplay_lowering_rejections_nonblocking,
     )
     from lawvm.uk_legislation.uk_grafter import (
         extract_eid_map_bytes,
@@ -1253,8 +1265,29 @@ def main(args: "argparse.Namespace") -> None:
             oracle_has_text=oracle_has_text,
             oracle_has_children=oracle_has_children,
         )
+    manual_frontier = classify_uk_manual_compile_frontier(
+        effect_type=effect.effect_type or "",
+        source_pathology=source_pathology,
+        extracted_tag=_tag(extracted) if extracted is not None else "",
+        extracted_text=_text_snippet(extracted, limit=100000 if show_text else 300),
+        lowering_rejections=lowering_rejections,
+        compiled_op_count=len(op_rows),
+        replay_applicable=effect.is_applicable_for_replay(
+            applicability_mode=applicability_mode
+        ),
+        structural_for_replay=effect.is_structural_for_replay(
+            applicability_mode=applicability_mode
+        ),
+        compare_shape=compare_shape,
+    )
+    mark_manual_frontier_nonreplay_lowering_rejections_nonblocking(
+        manual_frontier=manual_frontier,
+        lowering_rejections=lowering_rejections,
+        start_index=lowering_rejection_count_before,
+    )
     candidate = (
-        is_core_uk_effect_source_candidate(source_pathology)
+        manual_frontier["status"] != "non_textual_or_out_of_scope"
+        and is_core_uk_effect_source_candidate(source_pathology)
         and (not ops or is_core_uk_effect_compare_candidate(compare_shape))
         and not has_blocking_lowering_rejection(lowering_rejections)
     )

@@ -324,6 +324,9 @@ def summarize_uk_effect(
         get_affecting_act_xml_from_archive,
         uk_effect_requires_affecting_source_for_replay,
     )
+    from lawvm.uk_legislation.lowering_records import (
+        mark_manual_frontier_nonreplay_lowering_rejections_nonblocking,
+    )
     from lawvm.uk_legislation.uk_amendment_replay import (
         _build_affecting_source_context,
         _extract_from_affecting_source_context_with_observations,
@@ -610,11 +613,6 @@ def summarize_uk_effect(
         oracle_has_text=oracle_has_text,
         oracle_has_children=oracle_has_children,
     )
-    candidate = (
-        is_core_uk_effect_source_candidate(source_pathology)
-        and is_core_uk_effect_compare_candidate(compare_shape)
-        and not has_blocking_lowering_rejection(lowering_rejections)
-    )
     manual_frontier = classify_uk_manual_compile_frontier(
         effect_type=effect.effect_type or "",
         source_pathology=source_pathology,
@@ -625,6 +623,17 @@ def summarize_uk_effect(
         replay_applicable=effect.is_applicable_for_replay(applicability_mode=applicability_mode),
         structural_for_replay=structural_for_replay,
         compare_shape=compare_shape,
+    )
+    mark_manual_frontier_nonreplay_lowering_rejections_nonblocking(
+        manual_frontier=manual_frontier,
+        lowering_rejections=lowering_rejections,
+        start_index=lowering_rejection_count_before,
+    )
+    candidate = (
+        manual_frontier["status"] != "non_textual_or_out_of_scope"
+        and is_core_uk_effect_source_candidate(source_pathology)
+        and is_core_uk_effect_compare_candidate(compare_shape)
+        and not has_blocking_lowering_rejection(lowering_rejections)
     )
     return _EffectSummary(
         source_pathology=source_pathology,

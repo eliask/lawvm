@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from lxml import etree as ET
 import re
-from typing import Any, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.compile_records import is_blocking_compile_record
@@ -463,6 +463,38 @@ def mark_source_pathology_nonreplay_lowering_rejections_nonblocking(
     return changed
 
 
+def mark_manual_frontier_nonreplay_lowering_rejections_nonblocking(
+    *,
+    manual_frontier: Mapping[str, str],
+    lowering_rejections: list[dict[str, Any]],
+    start_index: int,
+) -> bool:
+    if manual_frontier.get("status") != "non_textual_or_out_of_scope":
+        return False
+    if start_index >= len(lowering_rejections):
+        return False
+    changed = False
+    for rejection in lowering_rejections[start_index:]:
+        if not is_blocking_compile_record(rejection):
+            continue
+        rejection["blocking"] = False
+        rejection["strict_disposition"] = "record"
+        rejection["nonblocking_reclassification_rule_id"] = (
+            "uk_effect_manual_frontier_nonreplay_lowering_observed"
+        )
+        rejection["replay_relevance"] = "manual_frontier_out_of_scope"
+        rejection["manual_compile_rule_id"] = manual_frontier.get("rule_id", "")
+        rejection["manual_compile_status"] = manual_frontier.get("status", "")
+        rejection["reclassification_reason"] = (
+            "Manual-frontier classification proves this row is outside direct "
+            "UK text/tree replay; the lowering diagnostic is evidence, not a "
+            "replay blocker."
+        )
+        _ensure_uk_owner_phase(rejection)
+        changed = True
+    return changed
+
+
 def _lowering_record_rule_ids(rows: tuple[dict[str, Any], ...]) -> tuple[str, ...]:
     return tuple(str(row.get("rule_id") or "") for row in rows if row.get("rule_id"))
 
@@ -498,6 +530,15 @@ def append_manual_compile_frontier_diagnostic(
         replay_applicable=replay_applicable,
         structural_for_replay=structural_for_replay,
     )
+    if lowering_rejections_out is not None:
+        mark_manual_frontier_nonreplay_lowering_rejections_nonblocking(
+            manual_frontier=manual_frontier,
+            lowering_rejections=lowering_rejections_out,
+            start_index=lowering_rejection_start_index,
+        )
+        current_lowering_rejections = tuple(
+            lowering_rejections_out[lowering_rejection_start_index:]
+        )
     record = _effect_diagnostic(
         rule_id="uk_manual_compile_frontier_classified",
         family="manual_compile_frontier",
