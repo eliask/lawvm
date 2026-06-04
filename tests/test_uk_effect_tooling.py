@@ -3038,6 +3038,22 @@ def test_uk_effects_summary_counts_are_stable() -> None:
         },
         "manual_frontier_work_item_missing_candidate_operation_family_count": 0,
         "manual_frontier_work_item_missing_required_validator_checks_count": 0,
+        "manual_frontier_agreement_residual_family_counts": {
+            "source_pathology": 1,
+        },
+        "manual_frontier_agreement_residual_status_counts": {
+            "frontier": 1,
+        },
+        "manual_frontier_agreement_residual_owner_phase_counts": {
+            "affecting_source_extraction": 1,
+        },
+        "manual_frontier_agreement_residual_rule_counts": {
+            "uk_manual_compile_accepted_non_executable_frontier": 1,
+        },
+        "manual_frontier_agreement_residual_missing_proof_counts": {
+            "official_source_witness": 1,
+            "payload_or_instruction_witness": 1,
+        },
         "suggested_claim_template_status_counts": {},
         "total_compiled_ops": 2,
         "rows_with_resolver_eids": 1,
@@ -7345,6 +7361,15 @@ def test_print_uk_effects_summary_prints_manual_compile_frontier(capsys) -> None
             "manual_compile_candidate_rule_counts": {
                 "uk_manual_frontier_heading_facet_candidate": 1,
             },
+            "manual_frontier_agreement_residual_family_counts": {
+                "source_pathology": 1,
+            },
+            "manual_frontier_agreement_residual_status_counts": {
+                "frontier": 1,
+            },
+            "manual_frontier_agreement_residual_missing_proof_counts": {
+                "mutation_boundary_proof": 1,
+            },
             "suggested_claim_template_status_counts": {"available": 1},
             "total_compiled_ops": 0,
             "rows_with_resolver_eids": 0,
@@ -7362,6 +7387,14 @@ def test_print_uk_effects_summary_prints_manual_compile_frontier(capsys) -> None
     assert "  uk_manual_frontier_heading_facet_candidate: 1" in out
     assert "Manual compile candidate rules:" in out
     assert "  uk_manual_frontier_heading_facet_candidate: 1" in out
+    assert (
+        "Manual frontier agreement residual families: source_pathology=1" in out
+    )
+    assert "Manual frontier agreement residual statuses: frontier=1" in out
+    assert (
+        "Manual frontier agreement residual missing proofs: "
+        "mutation_boundary_proof=1"
+    ) in out
 
 
 def test_uk_effects_summary_counts_templates_for_actionable_frontier_only() -> None:

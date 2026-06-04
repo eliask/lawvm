@@ -754,6 +754,11 @@ def uk_effects_summary_counts(
     manual_frontier_work_item_source_witness_digest_coverage_counts: dict[str, int] = {}
     manual_frontier_work_item_missing_candidate_operation_family_count = 0
     manual_frontier_work_item_missing_required_validator_checks_count = 0
+    manual_frontier_agreement_residual_family_counts: dict[str, int] = {}
+    manual_frontier_agreement_residual_status_counts: dict[str, int] = {}
+    manual_frontier_agreement_residual_owner_phase_counts: dict[str, int] = {}
+    manual_frontier_agreement_residual_rule_counts: dict[str, int] = {}
+    manual_frontier_agreement_residual_missing_proof_counts: dict[str, int] = {}
     suggested_claim_template_status_counts: dict[str, int] = {}
     lowering_observation_owner_phase_counts: dict[str, int] = {}
     lowering_rejection_owner_phase_counts: dict[str, int] = {}
@@ -907,6 +912,38 @@ def uk_effects_summary_counts(
                         )
                         + 1
                     )
+                agreement_residual = _manual_compile_agreement_residual(
+                    {
+                        "statute_id": statute_id,
+                        "effect_id": effect.effect_id,
+                        "manual_compile_status": summary.manual_compile_status,
+                        "manual_compile_rule_id": summary.manual_compile_rule_id,
+                        "source_pathology": summary.source_pathology or "",
+                        "compare_shape": summary.compare_shape or "",
+                        "compiled_op_count": summary.n_ops,
+                        "execution_authorization": authorization.to_dict(),
+                        "required_proofs": authorization.required_proofs,
+                        "owner_phase": owner_phase_key,
+                        "frontier_work_item": work_item,
+                        "candidate_set_certificate": (
+                            _candidate_set_certificate_from_frontier_work_item(
+                                work_item
+                            )
+                        ),
+                    }
+                )
+                _count_agreement_residual(
+                    agreement_residual,
+                    family_counts=manual_frontier_agreement_residual_family_counts,
+                    status_counts=manual_frontier_agreement_residual_status_counts,
+                    owner_phase_counts=(
+                        manual_frontier_agreement_residual_owner_phase_counts
+                    ),
+                    rule_counts=manual_frontier_agreement_residual_rule_counts,
+                    missing_proof_counts=(
+                        manual_frontier_agreement_residual_missing_proof_counts
+                    ),
+                )
         template_status = _actionable_claim_template_status(
             statute_id=statute_id,
             row=row,
@@ -1059,6 +1096,21 @@ def uk_effects_summary_counts(
         "manual_frontier_work_item_missing_required_validator_checks_count": (
             manual_frontier_work_item_missing_required_validator_checks_count
         ),
+        "manual_frontier_agreement_residual_family_counts": dict(
+            sorted(manual_frontier_agreement_residual_family_counts.items())
+        ),
+        "manual_frontier_agreement_residual_status_counts": dict(
+            sorted(manual_frontier_agreement_residual_status_counts.items())
+        ),
+        "manual_frontier_agreement_residual_owner_phase_counts": dict(
+            sorted(manual_frontier_agreement_residual_owner_phase_counts.items())
+        ),
+        "manual_frontier_agreement_residual_rule_counts": dict(
+            sorted(manual_frontier_agreement_residual_rule_counts.items())
+        ),
+        "manual_frontier_agreement_residual_missing_proof_counts": dict(
+            sorted(manual_frontier_agreement_residual_missing_proof_counts.items())
+        ),
         "suggested_claim_template_status_counts": dict(
             sorted(suggested_claim_template_status_counts.items())
         ),
@@ -1139,6 +1191,37 @@ def _work_item_candidate_set_status(work_item: Mapping[str, Any]) -> str:
     if not isinstance(certificate, Mapping):
         return ""
     return str(certificate.get("completeness_status") or "")
+
+
+def _count_agreement_residual(
+    residual: Mapping[str, Any],
+    *,
+    family_counts: dict[str, int],
+    status_counts: dict[str, int],
+    owner_phase_counts: dict[str, int],
+    rule_counts: dict[str, int],
+    missing_proof_counts: dict[str, int],
+) -> None:
+    if not residual:
+        return
+    family = str(residual.get("family") or "")
+    if family:
+        family_counts[family] = family_counts.get(family, 0) + 1
+    status = str(residual.get("status") or "")
+    if status:
+        status_counts[status] = status_counts.get(status, 0) + 1
+    owner_phase = str(residual.get("owner_phase") or "")
+    if owner_phase:
+        owner_phase_counts[owner_phase] = owner_phase_counts.get(owner_phase, 0) + 1
+    rule_id = str(residual.get("rule_id") or "")
+    if rule_id:
+        rule_counts[rule_id] = rule_counts.get(rule_id, 0) + 1
+    for proof in residual.get("missing_proofs") or ():
+        proof_key = str(proof)
+        if proof_key:
+            missing_proof_counts[proof_key] = (
+                missing_proof_counts.get(proof_key, 0) + 1
+            )
 
 
 def uk_effects_report_jsonable(
@@ -2026,6 +2109,33 @@ def _print_uk_effects_summary(summary_counts: dict[str, Any]) -> None:
         print("Manual compile candidate rules:")
         for rule_id, count in manual_compile_candidate_rule_counts.items():
             print(f"  {rule_id}: {count}")
+    agreement_family_counts = summary_counts.get(
+        "manual_frontier_agreement_residual_family_counts",
+        {},
+    )
+    if agreement_family_counts:
+        print(
+            "Manual frontier agreement residual families: "
+            + _format_count_map(agreement_family_counts)
+        )
+    agreement_status_counts = summary_counts.get(
+        "manual_frontier_agreement_residual_status_counts",
+        {},
+    )
+    if agreement_status_counts:
+        print(
+            "Manual frontier agreement residual statuses: "
+            + _format_count_map(agreement_status_counts)
+        )
+    agreement_missing_proof_counts = summary_counts.get(
+        "manual_frontier_agreement_residual_missing_proof_counts",
+        {},
+    )
+    if agreement_missing_proof_counts:
+        print(
+            "Manual frontier agreement residual missing proofs: "
+            + _format_count_map(agreement_missing_proof_counts)
+        )
     source_acquisition_rejection_rule_counts = summary_counts.get(
         "source_acquisition_rejection_rule_counts",
         {},
