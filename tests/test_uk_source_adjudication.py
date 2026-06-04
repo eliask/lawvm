@@ -3862,6 +3862,51 @@ def test_classify_uk_effect_reference_act_shall_apply_as_if_source_pathology() -
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_reference_act_shall_apply_in_relation_as_if_source_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "The Documentary Evidence Act 1868 shall apply in relation to the "
+            "First Secretary of State and the Secretary of State for Transport— "
+            "a as if references to orders and regulations included references "
+            "to any document, and b as if the officers mentioned in column 2 "
+            "of the Schedule included any officer authorised to act on behalf "
+            "of the Secretary of State."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        lowering_rule_ids=["uk_effect_lowering_no_supported_action_rejected"],
+        target_paths=["Act"],
+        effect_type="",
+        is_structural=True,
+    )
+
+    assert pathology == "application_by_reference_effect_out_of_scope"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_reference_act_shall_apply_as_it_applies_source_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P2",
+        extracted_text=(
+            "The Documentary Evidence Act 1868 shall apply to an authorisation "
+            "given in writing by the Secretary of State for the purposes of this "
+            "Act as it applies to an order made by him."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        lowering_rule_ids=["uk_effect_lowering_no_supported_action_rejected"],
+        target_paths=["Act"],
+        effect_type="",
+        is_structural=True,
+    )
+
+    assert pathology == "application_by_reference_effect_out_of_scope"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_reference_act_has_effect_as_if_source_pathology() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P1",

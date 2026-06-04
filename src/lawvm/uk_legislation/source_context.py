@@ -73,6 +73,14 @@ _SAME_LEVEL_SECTION_PARENTHESES_RE = re.compile(
     r"\s*\(\s*(?P<second>[0-9]+[A-Za-z]?)\s*\)\s*$",
     flags=re.I,
 )
+_COMPACT_SAME_KIND_COMPOUND_REF_RE = re.compile(
+    r"^\s*(?P<kind>s|section|art|article|rule|reg|regulation)\.?\s*"
+    r"(?P<first>[0-9]+[A-Za-z]?)(?P<first_tail>(?:\s*\([^)]{1,40}\)){1,6})"
+    r"\s+"
+    r"(?P<second>[0-9]+[A-Za-z]?)(?P<second_tail>(?:\s*\([^)]{1,40}\)){1,6})"
+    r"\s*$",
+    flags=re.I,
+)
 @dataclass(frozen=True)
 class UKAffectingSourceContext:
     xml_bytes: Optional[bytes]
@@ -606,6 +614,25 @@ def _same_level_parenthetical_source_component(
 
 
 def _compound_reference_parts(provision_ref: str) -> tuple[str, str] | None:
+    compact_same_kind = _COMPACT_SAME_KIND_COMPOUND_REF_RE.fullmatch(provision_ref)
+    if compact_same_kind is not None:
+        kind = compact_same_kind.group("kind").lower()
+        keyword = {
+            "section": "s.",
+            "s": "s.",
+            "article": "art.",
+            "art": "art.",
+            "regulation": "reg.",
+            "reg": "reg.",
+            "rule": "rule",
+        }.get(kind, kind)
+        first = _clean_num(compact_same_kind.group("first"))
+        second = _clean_num(compact_same_kind.group("second"))
+        first_tail = "".join(compact_same_kind.group("first_tail").split())
+        second_tail = "".join(compact_same_kind.group("second_tail").split())
+        if first and second and first != second and first_tail and second_tail:
+            return f"{keyword} {first}{first_tail}", f"{keyword} {second}{second_tail}"
+
     same_schedule_paragraphs = _SAME_SCHEDULE_COMPOUND_PARAGRAPH_RE.fullmatch(
         provision_ref
     )

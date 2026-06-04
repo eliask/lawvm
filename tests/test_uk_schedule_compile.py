@@ -65980,6 +65980,69 @@ def test_compound_source_ref_prefers_concrete_table_omission_over_repeal_part() 
     assert observations[0]["split_selected_part"] == "first"
 
 
+def test_compact_same_kind_article_source_ref_expands_second_ref() -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_compact_same_kind_article_source_ref",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2001-07-26",
+        affected_uri="/id/ukpga/1868/37",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1868",
+        affected_number="37",
+        affected_provisions="Act",
+        affecting_uri="/id/uksi/2001/2568",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2001",
+        affecting_number="2568",
+        affecting_provisions="art. 3(5) 4(5)",
+        affecting_title="Application-by-reference compact article source",
+    )
+    xml_bytes = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="article-3">
+          <Pnumber>3</Pnumber>
+          <P1para>
+            <P2 id="article-3-5">
+              <Pnumber>5</Pnumber>
+              <Text>The Documentary Evidence Act 1868 shall apply in relation to the Secretary of State for Transport, Local Government and the Regions as if references to orders and regulations included references to any document.</Text>
+            </P2>
+          </P1para>
+        </P1>
+        <P1 id="article-4">
+          <Pnumber>4</Pnumber>
+          <P1para>
+            <P2 id="article-4-5">
+              <Pnumber>5</Pnumber>
+              <Text>The Documentary Evidence Act 1868 shall apply in relation to the Secretary of State for Environment, Food and Rural Affairs as if references to orders and regulations included references to any document.</Text>
+            </P2>
+          </P1para>
+        </P1>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    context, parse_error = uk_replay_mod._build_affecting_source_context(
+        xml_bytes=xml_bytes,
+        locator="memory://compact-same-kind-article",
+        authority_layer="AFFECTING_ACT_TEXT",
+    )
+    assert parse_error is None
+
+    extracted, observations = uk_replay_mod._extract_from_affecting_source_context_with_observations(
+        context,
+        effect,
+    )
+
+    assert extracted is not None
+    assert extracted.get("id") == "article-4-5"
+    assert observations[0]["rule_id"] == "uk_affecting_act_compound_reference_split_fallback"
+    assert observations[0]["split_first_part"] == "art. 3(5)"
+    assert observations[0]["split_second_part"] == "art. 4(5)"
+    assert observations[0]["split_selected_part"] == "second"
+
+
 def test_pipeline_compile_ops_extracts_compound_payload_range_source_ref(
     monkeypatch,
 ) -> None:
