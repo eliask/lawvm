@@ -778,6 +778,15 @@ def uk_frontier_work_item_from_manual_frontier_row(
     )
     if source_membership_certificate:
         detail["source_membership_certificate"] = source_membership_certificate
+    exclusion_scope_certificate = _exclusion_scope_certificate(
+        work_item_id=work_item_id,
+        owner_phase=owner_phase,
+        frontier_family=frontier_family,
+        source_witness=normalized_source_witness,
+        target_witness=target_witness,
+    )
+    if exclusion_scope_certificate:
+        detail["exclusion_scope_certificate"] = exclusion_scope_certificate
     detail["target_resolution_certificate"] = _target_resolution_certificate(
         owner_phase=owner_phase,
         target_witness=target_witness,
@@ -1140,6 +1149,99 @@ def _normalize_citation_text(text: str) -> str:
         .lower()
     )
     return " ".join(cleaned.split())
+
+
+def _exclusion_scope_certificate(
+    *,
+    work_item_id: str,
+    owner_phase: str,
+    frontier_family: str,
+    source_witness: Mapping[str, Any],
+    target_witness: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    if (
+        frontier_family
+        != "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate"
+    ):
+        return {}
+    source_preview = str(
+        source_witness.get("extended_text_preview")
+        or source_witness.get("bounded_preview")
+        or source_witness.get("text_preview")
+        or ""
+    )
+    exclusion_surfaces = _scoped_occurrence_exclusion_surfaces(source_preview)
+    blockers: dict[str, int] = {}
+    if not source_preview:
+        blockers["source_preview_unavailable"] = 1
+    if source_preview and not exclusion_surfaces:
+        blockers["exclusion_scope_not_proved"] = 1
+    return CandidateSetCertificate(
+        scope_id=f"uk-frontier-work-item:{work_item_id}:exclusion-scope",
+        candidate_set_kind="uk_scoped_occurrence_exclusion_scopes",
+        phase=owner_phase or "unknown",
+        rule_id="uk_frontier_scoped_occurrence_exclusion_scope_projection",
+        reason=(
+            "source exclusion scope is a witness proof for the deterministic "
+            "compiler frontier; it does not select live text occurrences or "
+            "authorize replay"
+        ),
+        completeness_status=(
+            CANDIDATE_SET_COMPLETE
+            if exclusion_surfaces
+            else CANDIDATE_SET_UNAVAILABLE
+        ),
+        candidate_count=len(exclusion_surfaces),
+        candidate_ids=exclusion_surfaces,
+        missing_candidate_count=0 if exclusion_surfaces else 1,
+        blocker_counts=blockers,
+        blocker_families=tuple(blockers),
+        next_promotion_allowed=False,
+        next_promotion_requires=(
+            "live_occurrence_selector",
+            "excluded_occurrence_preservation_proof",
+            "canonical_operation_compilation",
+            "mutation_boundary_proof",
+        ),
+        detail={
+            "source_exclusion_status": (
+                "proved_in_bounded_source_preview"
+                if exclusion_surfaces
+                else "unproved_from_bounded_source_preview"
+            ),
+            "source_witness_role": str(source_witness.get("source_role") or ""),
+            "source_witness_preview_digest": str(
+                source_witness.get("preview_digest") or ""
+            ),
+            "target_witness_surface": str(target_witness.get("surface") or ""),
+            "exclusion_scope_not_replay_authorization": True,
+        },
+    ).to_dict()
+
+
+def _scoped_occurrence_exclusion_surfaces(source_preview: str) -> tuple[str, ...]:
+    normalized = " ".join(str(source_preview or "").split())
+    lowered = normalized.lower()
+    for marker in (
+        "except as otherwise provided by ",
+        "except as mentioned in ",
+    ):
+        start = lowered.find(marker)
+        if start < 0:
+            continue
+        clause = normalized[start + len(marker) :]
+        clause_lower = clause.lower()
+        end_positions = tuple(
+            position
+            for needle in (", substitute", " substitute", ".")
+            if (position := clause_lower.find(needle)) >= 0
+        )
+        if end_positions:
+            clause = clause[: min(end_positions)]
+        clause = clause.strip(" ,.;")
+        if clause:
+            return (clause,)
+    return ()
 
 
 def _target_resolution_certificate(

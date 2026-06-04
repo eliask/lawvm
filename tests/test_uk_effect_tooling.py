@@ -891,6 +891,110 @@ def test_uk_frontier_work_item_multi_enactment_keeps_unproved_membership_blocked
     assert work_item["replay_authorized"] is False
 
 
+@pytest.mark.parametrize(
+    ("source_text", "expected_exclusion"),
+    [
+        (
+            (
+                'For "Commission", in each place except as mentioned in '
+                'sub-paragraph (3), substitute "Director General".'
+            ),
+            "sub-paragraph (3)",
+        ),
+        (
+            (
+                'For "Commission", in each place except as otherwise provided '
+                'by subsection (5) (including in the heading), substitute '
+                '"Director General".'
+            ),
+            "subsection (5) (including in the heading)",
+        ),
+    ],
+)
+def test_uk_frontier_work_item_scoped_occurrence_records_exclusion_scope_certificate(
+    source_text: str,
+    expected_exclusion: str,
+) -> None:
+    work_item = uk_frontier_work_item_from_manual_frontier_row(
+        {
+            "statute_id": "ukpga/2002/30",
+            "effect_id": "eff-scoped-occurrence",
+            "affecting_act_id": "ukpga/2017/3",
+            "manual_compile_rule_id": (
+                "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate"
+            ),
+            "manual_compile_status": "deterministic_frontend_candidate",
+            "owner_phase": "source_pathology_manual_frontier",
+            "authorization_status": "deterministic_frontend_work_required",
+            "safe_default": "block_until_compiler_rule_is_owned",
+            "required_proofs": [
+                "canonical_operation_compilation",
+                "mutation_boundary_proof",
+            ],
+            "forbidden_shortcuts": ["oracle_backed_mutation", "target_guessing"],
+            "replay_authorized": False,
+            "executable": False,
+            "source": {"text_preview": source_text},
+            "affected_provisions": "s. 10",
+        }
+    ).to_dict()
+
+    certificate = work_item["detail"]["exclusion_scope_certificate"]
+
+    assert certificate["candidate_set_kind"] == "uk_scoped_occurrence_exclusion_scopes"
+    assert certificate["completeness_status"] == "complete"
+    assert certificate["candidate_ids"] == [expected_exclusion]
+    assert certificate["source_exclusion_status"] == "proved_in_bounded_source_preview"
+    assert certificate["next_promotion_allowed"] is False
+    assert certificate["next_promotion_requires"] == [
+        "live_occurrence_selector",
+        "excluded_occurrence_preservation_proof",
+        "canonical_operation_compilation",
+        "mutation_boundary_proof",
+    ]
+    assert certificate["exclusion_scope_not_replay_authorization"] is True
+    assert work_item["replay_authorized"] is False
+
+
+def test_uk_frontier_work_item_scoped_occurrence_keeps_unproved_exclusion_blocked() -> None:
+    work_item = uk_frontier_work_item_from_manual_frontier_row(
+        {
+            "statute_id": "ukpga/2002/30",
+            "effect_id": "eff-scoped-unproved",
+            "affecting_act_id": "ukpga/2017/3",
+            "manual_compile_rule_id": (
+                "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate"
+            ),
+            "manual_compile_status": "deterministic_frontend_candidate",
+            "owner_phase": "source_pathology_manual_frontier",
+            "authorization_status": "deterministic_frontend_work_required",
+            "safe_default": "block_until_compiler_rule_is_owned",
+            "required_proofs": [
+                "canonical_operation_compilation",
+                "mutation_boundary_proof",
+            ],
+            "forbidden_shortcuts": ["oracle_backed_mutation", "target_guessing"],
+            "replay_authorized": False,
+            "executable": False,
+            "source": {
+                "text_preview": 'For "Commission" substitute "Director General".'
+            },
+            "affected_provisions": "s. 10",
+        }
+    ).to_dict()
+
+    certificate = work_item["detail"]["exclusion_scope_certificate"]
+
+    assert certificate["completeness_status"] == "unavailable"
+    assert certificate["candidate_ids"] == []
+    assert certificate["blocker_counts"] == {"exclusion_scope_not_proved": 1}
+    assert certificate["source_exclusion_status"] == (
+        "unproved_from_bounded_source_preview"
+    )
+    assert certificate["next_promotion_allowed"] is False
+    assert work_item["replay_authorized"] is False
+
+
 @pytest.mark.parametrize("rule_id", sorted(UK_CLAIM_TEMPLATE_RULE_IDS))
 def test_uk_claim_template_rule_ids_all_render_nonempty_templates(rule_id: str) -> None:
     effect = UKEffectRecord(
