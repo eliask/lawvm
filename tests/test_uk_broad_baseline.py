@@ -2204,6 +2204,28 @@ def test_run_driver_writes_broad_baseline_report(
     assert "Wrote broad-baseline evidence report" in capsys.readouterr().out
 
 
+def test_load_ids_file_accepts_newline_and_csv_forms(tmp_path) -> None:
+    newline_path = tmp_path / "ids.txt"
+    newline_path.write_text(
+        "ukpga/1992/41\n\n# comment\nukpga/1986/61  # trailing note\n",
+        encoding="utf-8",
+    )
+    csv_path = tmp_path / "ids.csv"
+    csv_path.write_text(
+        "statute_id,type\nukpga/1992/41,ukpga\nukpga/1986/61,ukpga\n",
+        encoding="utf-8",
+    )
+
+    assert uk_broad_baseline._load_ids_file(newline_path) == [
+        "ukpga/1992/41",
+        "ukpga/1986/61",
+    ]
+    assert uk_broad_baseline._load_ids_file(csv_path) == [
+        "ukpga/1992/41",
+        "ukpga/1986/61",
+    ]
+
+
 def test_report_from_snapshot_recomputes_report_layer_annotations(
     tmp_path,
     capsys,

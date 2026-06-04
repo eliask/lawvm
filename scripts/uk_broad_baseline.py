@@ -3349,6 +3349,28 @@ def _load_snapshot_row_list(rows: list[Any]) -> list[dict[str, Any]]:
     return results
 
 
+def _load_ids_file(path: Path) -> list[str]:
+    """Load statute IDs from a newline file or a CSV with a statute_id column."""
+    text = path.read_text(encoding="utf-8-sig")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return []
+    first = lines[0]
+    if "," in first and "statute_id" in {part.strip() for part in first.split(",")}:
+        import csv
+        import io
+
+        rows = csv.DictReader(io.StringIO(text))
+        ids = []
+        for index, row in enumerate(rows, start=2):
+            statute_id = str(row.get("statute_id") or "").strip()
+            if not statute_id:
+                raise ValueError(f"{path}: row {index} is missing statute_id")
+            ids.append(statute_id)
+        return ids
+    return [line.split("#", 1)[0].strip() for line in lines if line.split("#", 1)[0].strip()]
+
+
 def _hard_gate_exit_code(
     summary: dict[str, Any],
     *,
@@ -4448,6 +4470,14 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--one", metavar="ID", help="Score a single statute (subprocess unit; prints one JSON line)")
     ap.add_argument("--ids", nargs="+", help="Explicit statute IDs to score")
+    ap.add_argument(
+        "--ids-file",
+        type=Path,
+        help=(
+            "Read statute IDs from a newline-delimited file or a CSV with a "
+            "statute_id column"
+        ),
+    )
     ap.add_argument("--sample", type=int, help="Sample N statutes with both enacted+current in the archive")
     ap.add_argument("--seed", type=int, default=0, help="Sample RNG seed (default 0)")
     ap.add_argument("--classes", nargs="+", help="Restrict sample to these act-type classes (e.g. ukpga uksi)")
@@ -4629,10 +4659,12 @@ def main(argv: list[str] | None = None) -> int:
     ids: list[str] = []
     if args.ids:
         ids.extend(args.ids)
+    if args.ids_file:
+        ids.extend(_load_ids_file(args.ids_file))
     if args.sample:
         ids.extend(sample_statutes(args.sample, args.seed, args.classes))
     if not ids:
-        ap.error("nothing to do: pass --one, --ids, --sample, or --compare")
+        ap.error("nothing to do: pass --one, --ids, --ids-file, --sample, or --compare")
     return run_driver(
         ids,
         args.out,
