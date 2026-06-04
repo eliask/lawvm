@@ -247,6 +247,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="stop replay before this amendment (temporal PIT): show statute state "
         "as it was immediately before AMENDMENT_ID was applied",
     )
+    dump_p.add_argument(
+        "--db",
+        metavar="PATH",
+        help="UK farchive path for UK --after parse dumps (default: data/uk_legislation.farchive)",
+    )
 
     # --- source-dump ---
     source_dump_p = sub.add_parser(
@@ -267,6 +272,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="emit JSON",
+    )
+    source_dump_p.add_argument(
+        "--db",
+        metavar="PATH",
+        help="UK farchive path for UK source dumps (default: data/uk_legislation.farchive)",
     )
 
     # --- inspect-amendment ---
@@ -8403,19 +8413,11 @@ def main() -> None:
         bisect_section_main(args)
 
     elif args.command == "dump":
-        j = getattr(args, "jurisdiction", "fi")
-        if j == "uk":
-            print("ERROR: lawvm dump does not yet support -j uk", file=sys.stderr)
-            raise SystemExit(2)
         from lawvm.tools.dump import main as dump_main
 
         dump_main(args)
 
     elif args.command == "source-dump":
-        j = getattr(args, "jurisdiction", "fi")
-        if j == "uk":
-            print("ERROR: lawvm source-dump does not yet support -j uk", file=sys.stderr)
-            raise SystemExit(2)
         from lawvm.tools.source_dump import main as source_dump_main
 
         source_dump_main(args)

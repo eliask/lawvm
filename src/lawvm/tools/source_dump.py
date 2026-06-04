@@ -3,11 +3,35 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional
 
 from lxml import etree
 
 from lawvm.corpus_store import get_corpus_store
+
+_LEG_BASE = "https://www.legislation.gov.uk"
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_DEFAULT_UK_ARCHIVE_PATH = _REPO_ROOT / "data" / "uk_legislation.farchive"
+_UK_ACT_TYPES = frozenset(
+    {
+        "aep",
+        "aosp",
+        "apgb",
+        "apni",
+        "asp",
+        "gbla",
+        "mnia",
+        "mwa",
+        "nia",
+        "nisi",
+        "ssi",
+        "ukcm",
+        "ukla",
+        "ukpga",
+        "uksi",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -37,9 +61,13 @@ def _tag(el: etree._Element) -> str:
 
 
 def _num_text(el: etree._Element) -> str:
-    num = el.find("{*}num")
-    if num is None:
-        num = el.find("num")
+    num = None
+    for name in ("num", "Pnumber", "Number"):
+        num = el.find(f"{{*}}{name}")
+        if num is None:
+            num = el.find(name)
+        if num is not None:
+            break
     if num is not None and num.text:
         return " ".join(num.text.split()).strip()
     return ""
@@ -59,9 +87,16 @@ def _nearest_ancestor(node: etree._Element, kind: str) -> Optional[etree._Elemen
 
 
 def _label_for_kind(node: etree._Element) -> str:
-    if _tag(node) in {"chapter", "part", "section"}:
+    if _tag(node) in {"chapter", "part", "section", "P1", "Section", "Article", "Rule"}:
         return _normalize_label(_num_text(node))
     return ""
+
+
+def _address_kind_matches(node: etree._Element, wanted_kind: str) -> bool:
+    tag = _tag(node)
+    if wanted_kind == "section":
+        return tag in {"section", "P1", "Section", "Article", "Rule"}
+    return tag == wanted_kind
 
 
 def _matches_address(node: etree._Element, parts: list[_AddressPart]) -> bool:
@@ -70,7 +105,10 @@ def _matches_address(node: etree._Element, parts: list[_AddressPart]) -> bool:
     section_part = next((part for part in parts if part.kind == "section"), None)
     if section_part is None:
         return False
-    if _tag(node) != "section" or _normalize_label(_num_text(node)) != _normalize_label(section_part.label):
+    if (
+        not _address_kind_matches(node, "section")
+        or _normalize_label(_num_text(node)) != _normalize_label(section_part.label)
+    ):
         return False
     chapter_part = next((part for part in parts if part.kind == "chapter"), None)
     if chapter_part is not None:
@@ -94,14 +132,29 @@ def _find_addressed_element(root: etree._Element, address: str | None) -> etree.
     # Prefer exact section matches when an address includes a section.
     section_part = next((part for part in parts if part.kind == "section"), None)
     if section_part is not None:
-        sections = root.findall(".//{*}section")
+        sections = (
+            root.findall(".//{*}section")
+            + root.findall(".//{*}P1")
+            + root.findall(".//{*}Section")
+            + root.findall(".//{*}Article")
+            + root.findall(".//{*}Rule")
+        )
         for section in sections:
             if _matches_address(section, parts):
                 return section
 
     # Fall back to the first matching node of the requested terminal kind.
     terminal = parts[-1]
-    nodes = root.findall(f".//{{*}}{terminal.kind}")
+    if terminal.kind == "section":
+        nodes = (
+            root.findall(".//{*}section")
+            + root.findall(".//{*}P1")
+            + root.findall(".//{*}Section")
+            + root.findall(".//{*}Article")
+            + root.findall(".//{*}Rule")
+        )
+    else:
+        nodes = root.findall(f".//{{*}}{terminal.kind}")
     for node in nodes:
         if _normalize_label(_label_for_kind(node)) == _normalize_label(terminal.label):
             if terminal.kind == "chapter":
@@ -119,6 +172,29 @@ def _format_xml_lines(xml_text: str) -> str:
     lines = xml_text.splitlines()
     width = max(3, len(str(len(lines))))
     return "\n".join(f"{idx:>{width}} | {line}" for idx, line in enumerate(lines, start=1))
+
+
+def is_uk_statute_id(statute_id: str) -> bool:
+    parts = statute_id.strip("/").split("/")
+    return len(parts) == 3 and parts[0] in _UK_ACT_TYPES and all(parts)
+
+
+def _uk_enacted_locator(statute_id: str) -> str:
+    return f"{_LEG_BASE}/{statute_id}/enacted/data.xml"
+
+
+def _uk_title(root: etree._Element) -> str:
+    for query in (
+        ".//{*}docTitle",
+        ".//{*}Title",
+        ".//{*}LongTitle",
+    ):
+        title_el = root.find(query)
+        if title_el is not None:
+            title = etree.tostring(title_el, method="text", encoding="unicode").strip()
+            if title:
+                return " ".join(title.split())
+    return ""
 
 
 def build_source_dump(statute_id: str, address: str | None = None) -> dict[str, Any]:
@@ -152,6 +228,58 @@ def build_source_dump(statute_id: str, address: str | None = None) -> dict[str, 
     }
 
 
+def build_uk_source_dump(
+    statute_id: str,
+    address: str | None = None,
+    *,
+    db_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Return a farchive-backed UK enacted XML inspection payload."""
+    if not is_uk_statute_id(statute_id):
+        raise SystemExit(
+            f"invalid UK statute id: {statute_id!r} "
+            "(expected act_type/year/number, e.g. ukpga/2020/17)"
+        )
+
+    archive_path = Path(db_path) if db_path else _DEFAULT_UK_ARCHIVE_PATH
+    if not archive_path.exists():
+        raise SystemExit(
+            f"UK farchive not found at {archive_path}. "
+            "Run: uv run lawvm uk-corpus all"
+        )
+
+    from farchive import Farchive
+
+    locator = _uk_enacted_locator(statute_id)
+    archive = Farchive(archive_path)
+    try:
+        xml_bytes = archive.get(locator)
+    finally:
+        archive.close()
+    if xml_bytes is None:
+        raise SystemExit(f"UK enacted XML not found in farchive for {statute_id}: {locator}")
+
+    root = etree.fromstring(xml_bytes)
+    selected = _find_addressed_element(root, address)
+    xml_text = etree.tostring(selected, encoding="unicode", pretty_print=True).strip()
+    if not xml_text:
+        xml_text = etree.tostring(root, encoding="unicode", pretty_print=True).strip()
+
+    return {
+        "statute_id": statute_id,
+        "jurisdiction": "uk",
+        "stage": "PARSE (UK enacted source XML from farchive, no replay)",
+        "archive_path": str(archive_path),
+        "source_url": locator,
+        "title": _uk_title(root),
+        "address": address or "",
+        "selected_kind": _tag(selected),
+        "selected_label": _label_for_kind(selected),
+        "xml": xml_text,
+        "lines": xml_text.splitlines(),
+    }
+
+
 def _format_text(bundle: dict[str, Any]) -> str:
     header = [
         f"Statute  : {bundle['statute_id']}",
@@ -159,14 +287,29 @@ def _format_text(bundle: dict[str, Any]) -> str:
         f"Address  : {bundle.get('address') or '(entire source XML)'}",
         f"Kind     : {bundle.get('selected_kind') or '(unknown)'}",
         f"Label    : {bundle.get('selected_label') or '(none)'}",
-        "",
     ]
+    if bundle.get("stage"):
+        header.append(f"Stage    : {bundle['stage']}")
+    if bundle.get("source_url"):
+        header.append(f"Source   : {bundle['source_url']}")
+    if bundle.get("archive_path"):
+        header.append(f"Archive  : {bundle['archive_path']}")
+    header.append("")
     return "\n".join(header + [_format_xml_lines(bundle["xml"])])
 
 
 def main(args) -> None:
     try:
-        bundle = build_source_dump(args.statute_id, getattr(args, "address", None))
+        statute_id = args.statute_id
+        jurisdiction = getattr(args, "jurisdiction", "fi")
+        if jurisdiction == "uk" or is_uk_statute_id(statute_id):
+            bundle = build_uk_source_dump(
+                statute_id,
+                getattr(args, "address", None),
+                db_path=getattr(args, "db", None),
+            )
+        else:
+            bundle = build_source_dump(statute_id, getattr(args, "address", None))
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1) from exc

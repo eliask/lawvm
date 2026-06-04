@@ -111,6 +111,13 @@ def _heading_text(el: etree._Element) -> str:
 
 def dump_parse(sid: str, address: Optional[str] = None) -> None:
     """Show base statute structure (after XML parse, before any amendments)."""
+    from lawvm.tools.source_dump import build_uk_source_dump, is_uk_statute_id, _format_text
+
+    if is_uk_statute_id(sid):
+        bundle = build_uk_source_dump(sid, address)
+        print(_format_text(bundle))
+        return
+
     cs = get_corpus()
     xml_bytes = cs.read_source(sid)
     if xml_bytes is None:
@@ -380,16 +387,38 @@ def main(args) -> None:
     source = getattr(args, "source", None)
     address = getattr(args, "address", None)
     sid = args.statute_id
+    from lawvm.tools.source_dump import build_uk_source_dump, is_uk_statute_id, _format_text
+
+    jurisdiction = getattr(args, "jurisdiction", "fi")
+    is_uk_dump = jurisdiction == "uk" or is_uk_statute_id(sid)
 
     if after == "parse":
-        dump_parse(sid, address)
+        if is_uk_dump:
+            bundle = build_uk_source_dump(sid, address, db_path=getattr(args, "db", None))
+            print(_format_text(bundle))
+        else:
+            dump_parse(sid, address)
     elif after in ("extract", "normalize"):
+        if is_uk_dump:
+            print(
+                "ERROR: UK lawvm dump currently supports farchive-backed --after parse only; "
+                "use lawvm uk-effect/uk-effects for UK effect extraction tooling.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
         if not source:
             print("ERROR: --after extract/normalize requires --source <amendment_id>",
                   file=sys.stderr)
             sys.exit(1)
         dump_extract(sid, source, after_normalize=(after == "normalize"), address=address)
     else:
+        if is_uk_dump:
+            print(
+                "ERROR: UK lawvm dump currently supports farchive-backed --after parse only; "
+                "use lawvm uk-replay for UK replay output.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
         # Default ("apply" or no --after): full replay
         stop_before = getattr(args, "before", "") or ""
         dump_apply(sid, address, stop_before=stop_before)
