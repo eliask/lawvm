@@ -2355,9 +2355,9 @@ def _aggregate_manual_frontier_work_item_target_resolution_status_counts(
             )
         )
         if not row_status_counts:
-            row_status_counts["unproven"] += (
-                _target_resolution_packet_count_without_status(row)
-            )
+            unproven_count = _target_resolution_packet_count_without_status(row)
+            if unproven_count:
+                row_status_counts["unproven"] += unproven_count
         counts.update(row_status_counts)
     return dict(sorted(counts.items()))
 
