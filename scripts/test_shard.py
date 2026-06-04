@@ -168,6 +168,17 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_reference_mention.py",
         "test_telos_section_flag.py",
         "test_wrapup_preservation.py",
+        # writer E + F + G additions
+        "test_fi_proposal_history.py",
+        "test_fi_proposals_competing.py",
+        "test_fi_sections_text.py",
+        "test_inline_citation.py",
+        "test_preparatory_reference.py",
+        # manual claims slices 1+2
+        "test_cmd_claim.py",
+        "test_inline_statute_resolution.py",
+        "test_manual_claims_primitive.py",
+        "test_manual_claims_storage.py",
     ),
     "evidence_claims": (
         "test_evidence.py",
