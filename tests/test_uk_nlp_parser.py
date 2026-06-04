@@ -4145,6 +4145,36 @@ def test_parse_fragment_substitution_handles_is_replaced_with() -> None:
     assert subs == [{"original": "Alpha", "replacement": "Beta"}]
 
 
+def test_parse_fragment_substitution_handles_imperative_replace_with() -> None:
+    subs = parse_fragment_substitution(
+        "a in subsection (2)(a) replace “itself” with “themselves”; and"
+    )
+
+    assert subs == [
+        {
+            "original": "itself",
+            "replacement": "themselves",
+            "rule_id": "uk_effect_imperative_replace_with_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_imperative_replace_first_reference() -> None:
+    subs = parse_fragment_substitution(
+        "c in subsection (3) replace the first reference to “National Assembly” "
+        "with “Welsh Ministers”; and"
+    )
+
+    assert subs == [
+        {
+            "original": "National Assembly",
+            "replacement": "Welsh Ministers",
+            "occurrence": "1",
+            "rule_id": "uk_effect_imperative_replace_reference_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_from_beginning_block_substitution() -> None:
     subs = parse_fragment_substitution(
         "2 For the words from the beginning to “the registrar may” substitute— "

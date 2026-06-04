@@ -13,6 +13,7 @@ constants and ``REGEX_TO_GRAMMAR_MIGRATION.md`` for the full inventory):
     substitution:
         for Selector substitute Payload
         for Selector there is/are substituted Payload
+        replace Selector with Payload
         Selector is/are replaced with Payload
         (quoted / block / passive / child-qualified / mixed body+heading)
 
@@ -327,6 +328,12 @@ UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID = "uk_effect_except_phrase_substitution_te
 UK_EXCEPT_CHILD_SUBSTITUTION_RULE_ID = "uk_effect_except_child_substitution_text_patch"
 UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID = "uk_effect_passive_quoted_substitution_text_patch"
 UK_BARE_QUOTED_SUBSTITUTION_RULE_ID = "uk_effect_bare_quoted_substitution_text_patch"
+UK_IMPERATIVE_REPLACE_WITH_SUBSTITUTION_RULE_ID = (
+    "uk_effect_imperative_replace_with_substitution_text_patch"
+)
+UK_IMPERATIVE_REPLACE_REFERENCE_SUBSTITUTION_RULE_ID = (
+    "uk_effect_imperative_replace_reference_substitution_text_patch"
+)
 UK_WHEREVER_APPEARING_SUBSTITUTION_RULE_ID = (
     "uk_effect_wherever_appearing_substitution_text_patch"
 )
@@ -536,6 +543,19 @@ _UK_UNQUOTED_ALL_OCCURRENCES_SUBSTITUTION_RE = re.compile(
 _BARE_QUOTED_SUBSTITUTION_RE = re.compile(
     rf"(?:^|[,;]\s+)[“\"'‘](?P<original>{_NON_QUOTE}{{1,700}})[”\"'’]\s+"
     rf"substitute\s+[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,700}})[”\"'’]",
+    re.I,
+)
+_IMPERATIVE_REPLACE_REFERENCE_SUBSTITUTION_RE = re.compile(
+    r"\breplace\s+the\s+"
+    rf"(?P<ordinal>{_ORDINAL_OCCURRENCE_WORDS})\s+reference\s+to\s+"
+    rf"[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]\s+with\s+"
+    rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+    re.I,
+)
+_IMPERATIVE_REPLACE_WITH_SUBSTITUTION_RE = re.compile(
+    r"\breplace\s+(?:the\s+)?(?:words?\s+)?"
+    rf"[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]\s+with\s+"
+    rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
     re.I,
 )
 
@@ -2713,6 +2733,28 @@ def _parse_leading_substitutions(text: str, subs: list) -> None:
     ``text`` (already UK-normalized by the caller) and appends to ``subs`` in
     order.  Extracted verbatim; ordering and output are unchanged.
     """
+    lower_text = text.lower()
+    if "replace" in lower_text and " with " in lower_text:
+        for m in _IMPERATIVE_REPLACE_REFERENCE_SUBSTITUTION_RE.finditer(text):
+            ordinal = m.group("ordinal").lower()
+            subs.append(
+                {
+                    "original": m.group("original").strip(),
+                    "replacement": m.group("replacement").strip(),
+                    "occurrence": _ORDINAL_OCCURRENCES[ordinal],
+                    "rule_id": UK_IMPERATIVE_REPLACE_REFERENCE_SUBSTITUTION_RULE_ID,
+                }
+            )
+
+        for m in _IMPERATIVE_REPLACE_WITH_SUBSTITUTION_RE.finditer(text):
+            subs.append(
+                {
+                    "original": m.group("original").strip(),
+                    "replacement": m.group("replacement").strip(),
+                    "rule_id": UK_IMPERATIVE_REPLACE_WITH_SUBSTITUTION_RULE_ID,
+                }
+            )
+
     matches_nested_quote_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.+)[”\"'’],?\s+"
         r"substitute\s*[—-]?\s+[“\"'‘](?P<replacement>.+)[”\"'’]\s*[,;]?$",
@@ -5187,13 +5229,22 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[UKTextRewriteFragmen
     subs = []
 
     text = normalize_uk_parser_text(text)
+    normalized_lower_text = text.lower()
     _parse_leading_substitutions(text, subs)
 
     _parse_respectively_and_anchored_inserts(text, subs)
 
-    _parse_trailing_inserts(text, subs)
+    if any(
+        cue in normalized_lower_text
+        for cue in ("insert", "include", "add", "replac", "definition")
+    ):
+        _parse_trailing_inserts(text, subs)
 
-    _parse_trailing_repeals_and_omissions(text, subs)
+    if any(
+        cue in normalized_lower_text
+        for cue in ("omit", "repeal", "cease", "revok", "delete", "leave out", "definition")
+    ):
+        _parse_trailing_repeals_and_omissions(text, subs)
 
     # Pattern 3: Reversed-order substitution: substitute "X" for "Y"
     # Requires that the original (after "for") starts with a quote character —
