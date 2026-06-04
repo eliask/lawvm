@@ -5,6 +5,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from lawvm.core.candidate_set_certificate import (
+    CANDIDATE_SET_COMPLETE,
+    CANDIDATE_SET_UNAVAILABLE,
+    CandidateSetCertificate,
+)
 from lawvm.core.frontier_work_item import FrontierWorkItem
 from lawvm.core.source_witness import source_witness_from_mapping
 
@@ -622,6 +627,9 @@ def uk_frontier_work_item_from_manual_frontier_row(
         or row.get("rule_id")
         or frontier_family
     )
+    work_item_id = str(
+        row.get("work_item_id") or f"uk-frontier-{source_artifact_id}-{source_unit_id}"
+    )
     family_defaults = _mapping(_FRONTIER_FAMILY_DEFAULTS.get(frontier_family))
     detail = {
         "statute_id": statute_id,
@@ -673,6 +681,7 @@ def uk_frontier_work_item_from_manual_frontier_row(
     target_witness = _target_witness(row)
     compare_witness = _compare_witness(row, target_witness=target_witness)
     execution_authorization = _execution_authorization_packet(row)
+    candidate_targets = _candidate_targets(row)
     owner_phase = str(
         row.get("current_owner_phase")
         or row.get("owner_phase")
@@ -711,11 +720,19 @@ def uk_frontier_work_item_from_manual_frontier_row(
         or ""
     )
     detail["execution_authorization"] = execution_authorization
+    detail["candidate_set_certificate"] = _candidate_target_set_certificate(
+        work_item_id=work_item_id,
+        owner_phase=owner_phase,
+        candidate_targets=candidate_targets,
+        frontier_family=frontier_family,
+        target_witness=target_witness,
+    )
     detail["packet_completeness"] = _packet_completeness(
         execution_authorization=execution_authorization,
         source_witness=normalized_source_witness,
         target_witness=target_witness,
         compare_witness=compare_witness,
+        candidate_set_certificate=detail["candidate_set_certificate"],
         owner_phase=owner_phase,
         frontier_family=frontier_family,
         frontier_status=frontier_status,
@@ -728,9 +745,7 @@ def uk_frontier_work_item_from_manual_frontier_row(
         authorization_status=authorization_status,
     )
     return FrontierWorkItem(
-        work_item_id=str(
-            row.get("work_item_id") or f"uk-frontier-{source_artifact_id}-{source_unit_id}"
-        ),
+        work_item_id=work_item_id,
         jurisdiction="uk",
         source_artifact_id=source_artifact_id,
         source_unit_id=source_unit_id,
@@ -746,7 +761,7 @@ def uk_frontier_work_item_from_manual_frontier_row(
             or family_defaults.get("candidate_operation_family")
             or ""
         ),
-        candidate_targets=_candidate_targets(row),
+        candidate_targets=candidate_targets,
         guidance_refs=_string_tuple(template.get("guidance_refs")),
         required_claim_kind=str(row.get("claim_kind") or "semantic_compile"),
         required_validator_checks=required_validator_checks,
@@ -842,12 +857,55 @@ def _execution_authorization_packet(row: Mapping[str, Any]) -> Mapping[str, Any]
     )
 
 
+def _candidate_target_set_certificate(
+    *,
+    work_item_id: str,
+    owner_phase: str,
+    candidate_targets: tuple[str, ...],
+    frontier_family: str,
+    target_witness: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    has_candidates = bool(candidate_targets)
+    blockers = {} if has_candidates else {"candidate_targets_unavailable": 1}
+    certificate = CandidateSetCertificate(
+        scope_id=f"uk-frontier-work-item:{work_item_id}",
+        candidate_set_kind="uk_frontier_work_item_candidate_targets",
+        phase=owner_phase or "unknown",
+        rule_id="uk_frontier_work_item_candidate_target_set_projection",
+        reason=(
+            "candidate target surfaces are bounded by the manual-frontier work "
+            "item target witness and do not authorize replay"
+        ),
+        completeness_status=(
+            CANDIDATE_SET_COMPLETE if has_candidates else CANDIDATE_SET_UNAVAILABLE
+        ),
+        candidate_count=len(candidate_targets),
+        candidate_ids=candidate_targets,
+        missing_candidate_count=0 if has_candidates else 1,
+        blocker_counts=blockers,
+        blocker_families=tuple(blockers),
+        next_promotion_allowed=False,
+        next_promotion_requires=(
+            "target_candidate_set_completeness",
+            "execution_authorization",
+            "mutation_boundary_proof",
+        ),
+        detail={
+            "frontier_family_for_projection": frontier_family,
+            "target_witness_surface": str(target_witness.get("surface") or ""),
+            "target_witness_has_resolver_eids": bool(target_witness.get("resolver_eids")),
+        },
+    )
+    return certificate.to_dict()
+
+
 def _packet_completeness(
     *,
     execution_authorization: Mapping[str, Any],
     source_witness: Mapping[str, Any],
     target_witness: Mapping[str, Any],
     compare_witness: Mapping[str, Any],
+    candidate_set_certificate: Mapping[str, Any],
     owner_phase: str,
     frontier_family: str,
     frontier_status: str,
@@ -874,6 +932,7 @@ def _packet_completeness(
         ),
         "has_target_witness": bool(target_witness),
         "has_compare_witness": bool(compare_witness),
+        "has_candidate_set_certificate": bool(candidate_set_certificate),
         "has_required_validator_checks": bool(required_validator_checks),
         "has_required_proofs": bool(required_proofs),
         "has_safe_default": bool(safe_default),
@@ -893,6 +952,7 @@ def _packet_completeness(
         and checks["has_frontier_status"]
         and checks["has_source_witness"]
         and checks["has_target_witness"]
+        and checks["has_candidate_set_certificate"]
         and checks["has_required_validator_checks"]
         and checks["has_required_proofs"]
         and checks["has_safe_default"]

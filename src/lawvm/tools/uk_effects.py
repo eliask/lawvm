@@ -744,6 +744,7 @@ def uk_effects_summary_counts(
     manual_frontier_work_item_required_validator_check_counts: dict[str, int] = {}
     manual_frontier_work_item_packet_ready_counts: dict[str, int] = {}
     manual_frontier_work_item_packet_missing_field_counts: dict[str, int] = {}
+    manual_frontier_work_item_candidate_set_status_counts: dict[str, int] = {}
     manual_frontier_work_item_missing_candidate_operation_family_count = 0
     manual_frontier_work_item_missing_required_validator_checks_count = 0
     suggested_claim_template_status_counts: dict[str, int] = {}
@@ -867,6 +868,17 @@ def uk_effects_summary_counts(
                             )
                             + 1
                         )
+                candidate_set_status = _work_item_candidate_set_status(work_item)
+                if candidate_set_status:
+                    manual_frontier_work_item_candidate_set_status_counts[
+                        candidate_set_status
+                    ] = (
+                        manual_frontier_work_item_candidate_set_status_counts.get(
+                            candidate_set_status,
+                            0,
+                        )
+                        + 1
+                    )
         template_status = _actionable_claim_template_status(
             statute_id=statute_id,
             row=row,
@@ -1002,6 +1014,9 @@ def uk_effects_summary_counts(
         "manual_frontier_work_item_packet_missing_field_counts": dict(
             sorted(manual_frontier_work_item_packet_missing_field_counts.items())
         ),
+        "manual_frontier_work_item_candidate_set_status_counts": dict(
+            sorted(manual_frontier_work_item_candidate_set_status_counts.items())
+        ),
         "manual_frontier_work_item_missing_candidate_operation_family_count": (
             manual_frontier_work_item_missing_candidate_operation_family_count
         ),
@@ -1078,6 +1093,16 @@ def _work_item_packet_completeness(
         return {}
     packet = detail.get("packet_completeness")
     return packet if isinstance(packet, Mapping) else {}
+
+
+def _work_item_candidate_set_status(work_item: Mapping[str, Any]) -> str:
+    detail = work_item.get("detail")
+    if not isinstance(detail, Mapping):
+        return ""
+    certificate = detail.get("candidate_set_certificate")
+    if not isinstance(certificate, Mapping):
+        return ""
+    return str(certificate.get("completeness_status") or "")
 
 
 def uk_effects_report_jsonable(

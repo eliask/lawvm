@@ -522,6 +522,11 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 manual_frontier_records
             )
         )
+        result["manual_frontier_work_item_candidate_set_status_counts"] = (
+            _manual_frontier_work_item_candidate_set_status_counts(
+                manual_frontier_records
+            )
+        )
         result[
             "manual_frontier_work_item_missing_candidate_operation_family_count"
         ] = _manual_frontier_work_item_missing_field_count(
@@ -809,6 +814,9 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     manual_frontier_work_item_packet_missing_field_counts = _aggregate_row_count_maps(
         results, "manual_frontier_work_item_packet_missing_field_counts"
     )
+    manual_frontier_work_item_candidate_set_status_counts = _aggregate_row_count_maps(
+        results, "manual_frontier_work_item_candidate_set_status_counts"
+    )
     manual_frontier_work_item_missing_candidate_operation_family_count = sum(
         int(
             row.get(
@@ -1004,6 +1012,9 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "manual_frontier_work_item_packet_missing_field_counts": (
             manual_frontier_work_item_packet_missing_field_counts
+        ),
+        "manual_frontier_work_item_candidate_set_status_counts": (
+            manual_frontier_work_item_candidate_set_status_counts
         ),
         "manual_frontier_work_item_missing_candidate_operation_family_count": (
             manual_frontier_work_item_missing_candidate_operation_family_count
@@ -2041,6 +2052,28 @@ def _manual_frontier_work_item_packet_missing_field_counts(
     return dict(sorted(counts.items()))
 
 
+def _manual_frontier_work_item_candidate_set_status_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        work_item = row.get("frontier_work_item")
+        if not isinstance(work_item, dict):
+            continue
+        detail = work_item.get("detail")
+        if not isinstance(detail, dict):
+            continue
+        certificate = detail.get("candidate_set_certificate")
+        if not isinstance(certificate, dict):
+            continue
+        status = str(certificate.get("completeness_status") or "")
+        if status:
+            counts[status] += 1
+    return dict(sorted(counts.items()))
+
+
 def _manual_frontier_work_item_packet_completeness(
     row: dict[str, Any],
 ) -> Mapping[str, Any]:
@@ -2706,6 +2739,14 @@ def run_driver(
             "  manual_frontier_work_item_packet_missing_field_counts: "
             f"{counts}"
         )
+    if summary["manual_frontier_work_item_candidate_set_status_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary[
+                "manual_frontier_work_item_candidate_set_status_counts"
+            ].items()
+        )
+        print(f"  manual_frontier_work_item_candidate_set_status_counts: {counts}")
     missing_family_count = int(
         summary.get("manual_frontier_work_item_missing_candidate_operation_family_count")
         or 0

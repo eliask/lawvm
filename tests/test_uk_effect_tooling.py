@@ -658,6 +658,15 @@ def test_uk_frontier_work_item_defaults_cover_grounding_corpus_families(
     assert work_item_payload["detail"]["packet_completeness"][
         "non_executable_frontier_invariant"
     ] is True
+    assert work_item_payload["detail"]["candidate_set_certificate"][
+        "candidate_set_kind"
+    ] == "uk_frontier_work_item_candidate_targets"
+    assert work_item_payload["detail"]["candidate_set_certificate"][
+        "completeness_status"
+    ] == "complete"
+    assert work_item_payload["detail"]["candidate_set_certificate"][
+        "next_promotion_allowed"
+    ] is False
 
 
 def test_uk_frontier_work_item_preserves_execution_authorization_packet() -> None:
@@ -701,6 +710,33 @@ def test_uk_frontier_work_item_preserves_execution_authorization_packet() -> Non
     assert authorization["replay_authorized"] is False
     assert work_item["detail"]["packet_completeness"]["has_authorization_rule_id"] is True
     assert work_item["detail"]["packet_completeness"]["missing_fields"] == []
+
+
+def test_uk_frontier_work_item_marks_missing_target_candidates_unavailable() -> None:
+    work_item = uk_frontier_work_item_from_manual_frontier_row(
+        {
+            "statute_id": "ukpga/2000/1",
+            "effect_id": "eff-no-target",
+            "manual_compile_rule_id": "uk_manual_frontier_unclassified",
+            "manual_compile_status": "manual_compile_candidate",
+            "owner_phase": "typed_elaboration",
+            "safe_default": "block_and_classify_before_replay",
+            "required_proofs": ["target_identity", "mutation_boundary_proof"],
+            "forbidden_shortcuts": ["target_guessing"],
+            "replay_authorized": False,
+            "executable": False,
+            "authorization_status": "manual_claim_required",
+            "source": {"text_preview": "source preview"},
+        }
+    ).to_dict()
+
+    certificate = work_item["detail"]["candidate_set_certificate"]
+
+    assert certificate["completeness_status"] == "unavailable"
+    assert certificate["candidate_count"] == 0
+    assert certificate["missing_candidate_count"] == 1
+    assert certificate["blocker_counts"] == {"candidate_targets_unavailable": 1}
+    assert certificate["next_promotion_allowed"] is False
 
 
 @pytest.mark.parametrize("rule_id", sorted(UK_CLAIM_TEMPLATE_RULE_IDS))
@@ -2965,6 +3001,7 @@ def test_uk_effects_summary_counts_are_stable() -> None:
         "manual_frontier_work_item_packet_missing_field_counts": {
             "source_digest_or_preview_digest": 1,
         },
+        "manual_frontier_work_item_candidate_set_status_counts": {"complete": 1},
         "manual_frontier_work_item_missing_candidate_operation_family_count": 0,
         "manual_frontier_work_item_missing_required_validator_checks_count": 0,
         "suggested_claim_template_status_counts": {},
@@ -7371,6 +7408,9 @@ def test_uk_effects_summary_counts_templates_for_actionable_frontier_only() -> N
     assert summary["manual_frontier_work_item_packet_ready_counts"] == {"ready": 4}
     assert summary["manual_frontier_work_item_packet_missing_field_counts"] == {
         "source_digest_or_preview_digest": 4,
+    }
+    assert summary["manual_frontier_work_item_candidate_set_status_counts"] == {
+        "complete": 4,
     }
     assert summary["manual_frontier_work_item_missing_candidate_operation_family_count"] == 0
     assert summary["manual_frontier_work_item_missing_required_validator_checks_count"] == 0
