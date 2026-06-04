@@ -339,6 +339,49 @@ def uk_execution_authorization_from_semantic_claim_validation(
     )
 
 
+def uk_execution_authorization_from_residual_claim(
+    *,
+    claim: Mapping[str, Any],
+    owner_phase: str,
+    validator_status: str = "not_validated",
+    strict_disposition: str = "record",
+    quirks_disposition: str = "record",
+) -> ExecutionAuthorization:
+    """Build authorization facts for UK residual-claim workqueue rows."""
+    tier = str(claim.get("selected_tier") or "UNRESOLVED")
+    kind = str(claim.get("selected_kind") or "unknown")
+    status = f"residual_claim_{_status_token(tier)}"
+    return ExecutionAuthorization(
+        executable=False,
+        replay_authorized=False,
+        authorization_status=status,
+        authorization_rule_id="uk_execution_authorization_residual_claim_workqueue",
+        owner_phase=owner_phase,
+        strict_disposition=strict_disposition,
+        quirks_disposition=quirks_disposition,
+        validator_status=validator_status,
+        required_proofs=(
+            "source_identity",
+            "oracle_commensurability",
+            "candidate_set_completeness",
+            "residual_adjudication_review",
+            "mutation_boundary_proof",
+        ),
+        safe_default="treat_residual_claim_as_workqueue_evidence_not_replay_authority",
+        forbidden_shortcuts=(
+            "residual_claim_as_replay_authority",
+            "oracle_score_as_source_truth",
+            "candidate_overlap_as_execution_authorization",
+            "target_guessing",
+        ),
+        detail={
+            "selected_tier": tier,
+            "selected_kind": kind,
+            "comparison_class": str(claim.get("comparison_class") or ""),
+        },
+    )
+
+
 def _non_authorized_compile_record(
     *,
     status: str,
@@ -376,6 +419,12 @@ def _non_authorized_compile_record(
             "record_phase": str(record.get("phase") or ""),
         },
     )
+
+
+def _status_token(value: str) -> str:
+    token = str(value or "").strip().lower()
+    normalized = "".join(ch if ch.isalnum() else "_" for ch in token)
+    return "_".join(part for part in normalized.split("_") if part) or "unknown"
 
 
 def _non_authorized_frontier(

@@ -4992,6 +4992,44 @@ def test_uk_candidates_fast_json_exports_residual_claim_evidence_jsonl(
     )
     assert evidence_rows[0]["validator_status"] == "not_validated"
     assert evidence_rows[0]["work_item_id"].startswith("uk-residual-claim-")
+    assert evidence_rows[0]["owner_phase"] == "compare_oracle_classification"
+    assert evidence_rows[0]["executable"] is False
+    assert evidence_rows[0]["replay_authorized"] is False
+    assert evidence_rows[0]["authorization_status"] == "residual_claim_unresolved"
+    assert evidence_rows[0]["execution_authorization"][
+        "authorization_rule_id"
+    ] == "uk_execution_authorization_residual_claim_workqueue"
+    assert evidence_rows[0]["execution_authorization"]["required_proofs"] == [
+        "source_identity",
+        "oracle_commensurability",
+        "candidate_set_completeness",
+        "residual_adjudication_review",
+        "mutation_boundary_proof",
+    ]
+    assert (
+        "residual_claim_as_replay_authority"
+        in evidence_rows[0]["execution_authorization"]["forbidden_shortcuts"]
+    )
+    assert evidence_rows[0]["candidate_set_certificate"]["completeness_status"] == (
+        "unavailable"
+    )
+    assert evidence_rows[0]["candidate_set_certificate"]["blocker_counts"] == {
+        "candidate_analysis_unavailable": 1,
+    }
+    assert evidence_rows[0]["candidate_set_certificate"][
+        "next_promotion_allowed"
+    ] is False
+    work_item = evidence_rows[0]["frontier_work_item"]
+    assert work_item["work_item_id"] == evidence_rows[0]["work_item_id"]
+    assert work_item["frontier_status"] == "residual_claim_unresolved"
+    assert work_item["owner_phase"] == "compare_oracle_classification"
+    assert work_item["source_witness"]["source_role"] == "uk_residual_claim_evidence"
+    assert work_item["source_witness"]["digest"]
+    assert work_item["detail"]["candidate_set_certificate"] == (
+        evidence_rows[0]["candidate_set_certificate"]
+    )
+    assert work_item["executable"] is False
+    assert work_item["replay_authorized"] is False
     assert evidence_rows[0]["bench_label"] == "demo"
     assert evidence_rows[0]["statute_id"] == "asc/2024/6"
     assert evidence_rows[0]["uk_residual_claim"]["only_in_replayed_count"] == 53
@@ -5107,6 +5145,20 @@ def test_uk_residual_claim_evidence_rows_preserve_analyzed_root_samples() -> Non
     )
 
     assert len(rows) == 1
+    assert rows[0]["candidate_set_certificate"]["completeness_status"] == "truncated"
+    assert rows[0]["candidate_set_certificate"]["candidate_count"] == 1
+    assert rows[0]["candidate_set_certificate"]["candidate_ids"] == ["key-demo"]
+    assert rows[0]["candidate_set_certificate"]["missing_candidate_count"] == 3
+    assert rows[0]["candidate_set_certificate"]["blocker_counts"] == {
+        "candidate_samples_omitted": 3,
+    }
+    assert rows[0]["frontier_work_item"]["candidate_targets"] == [
+        "part-1",
+        "schedule-1",
+    ]
+    assert rows[0]["frontier_work_item"]["detail"]["candidate_set_certificate"] == (
+        rows[0]["candidate_set_certificate"]
+    )
     assert rows[0]["residual_evidence"] == {
         "backed_residual_roots": ["part-1"],
         "defeated_residual_roots": ["schedule-1"],

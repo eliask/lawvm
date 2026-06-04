@@ -14,12 +14,14 @@ from typing import TYPE_CHECKING, Any, Callable, Mapping, NamedTuple, Sequence, 
 from lawvm.core.candidate_set_certificate import (
     CANDIDATE_SET_COMPLETE,
     CANDIDATE_SET_TRUNCATED,
+    CANDIDATE_SET_UNAVAILABLE,
     CandidateSetCertificate,
 )
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frontier_work_item import FrontierWorkItem
 from lawvm.uk_legislation.execution_authorization import (
+    uk_execution_authorization_from_residual_claim,
     uk_execution_authorization_from_replay_adjudication,
 )
 from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_diagnostic
@@ -256,6 +258,106 @@ def _uk_residual_claim_work_item_id(
     return f"uk-residual-claim-{digest}"
 
 
+def _residual_claim_source_witness(
+    row: Mapping[str, Any],
+    claim: Mapping[str, object],
+) -> dict[str, Any]:
+    digest_payload = {
+        "statute_id": str(row.get("statute_id") or ""),
+        "claim": dict(claim),
+        "residual_roots": list(row.get("residual_roots") or ()),
+        "backed_residual_roots": list(row.get("backed_residual_roots") or ()),
+        "defeated_residual_roots": list(row.get("defeated_residual_roots") or ()),
+        "enacted_source_sha256": str(row.get("enacted_source_sha256") or ""),
+        "oracle_source_sha256": str(row.get("oracle_source_sha256") or ""),
+    }
+    digest = hashlib.sha256(
+        json.dumps(digest_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    return {
+        "source_role": "uk_residual_claim_evidence",
+        "digest": digest,
+        "statute_id": str(row.get("statute_id") or ""),
+        "selected_kind": str(claim.get("selected_kind") or ""),
+        "selected_tier": str(claim.get("selected_tier") or ""),
+        "enacted_source_sha256": str(row.get("enacted_source_sha256") or ""),
+        "oracle_source_sha256": str(row.get("oracle_source_sha256") or ""),
+    }
+
+
+def _residual_claim_candidate_ids(row: Mapping[str, Any]) -> tuple[str, ...]:
+    ids: list[str] = []
+    for sample in row.get("residual_candidate_samples") or ():
+        if not isinstance(sample, Mapping):
+            continue
+        candidate_id = str(sample.get("effect_id") or sample.get("op_id") or "")
+        if candidate_id:
+            ids.append(candidate_id)
+    for sample in row.get("residual_candidate_root_samples") or ():
+        if not isinstance(sample, Mapping):
+            continue
+        candidate_id = str(sample.get("effect_id") or sample.get("op_id") or "")
+        if candidate_id:
+            ids.append(candidate_id)
+    return tuple(dict.fromkeys(ids))
+
+
+def _residual_claim_candidate_set_certificate(
+    row: Mapping[str, Any],
+    *,
+    work_item_id: str,
+    owner_phase: str,
+) -> dict[str, Any]:
+    candidate_ids = _residual_claim_candidate_ids(row)
+    raw_candidate_count = int(row.get("residual_candidate_effect_count") or 0)
+    candidate_count = max(raw_candidate_count, len(candidate_ids))
+    omitted = int(row.get("residual_candidate_samples_omitted") or 0) + int(
+        row.get("residual_candidate_root_samples_omitted") or 0
+    )
+    status = str(row.get("status") or "")
+    blockers: dict[str, int] = {}
+    if not status or status == "frontier prefilter only":
+        completeness_status = CANDIDATE_SET_UNAVAILABLE
+        blockers["candidate_analysis_unavailable"] = 1
+    elif omitted:
+        completeness_status = CANDIDATE_SET_TRUNCATED
+        blockers["candidate_samples_omitted"] = omitted
+    else:
+        completeness_status = CANDIDATE_SET_COMPLETE
+    return CandidateSetCertificate(
+        scope_id=f"{work_item_id}:residual-candidates",
+        candidate_set_kind="uk_residual_claim_candidate_overlap",
+        phase=owner_phase,
+        rule_id="uk_residual_claim_candidate_set_projection",
+        reason=(
+            "residual-claim work item candidate overlap is bounded by saved "
+            "bench/candidate analysis evidence"
+        ),
+        completeness_status=completeness_status,
+        candidate_count=candidate_count,
+        candidate_ids=candidate_ids,
+        missing_candidate_count=omitted,
+        selected_candidate_ids=candidate_ids,
+        blocker_counts=blockers,
+        blocker_families=tuple(blockers),
+        next_promotion_allowed=False,
+        next_promotion_requires=(
+            "candidate_set_completeness",
+            "source_identity",
+            "oracle_commensurability",
+            "execution_authorization",
+            "mutation_boundary_proof",
+        ),
+        detail={
+            "residual_status": status,
+            "raw_candidate_effect_count": raw_candidate_count,
+            "residual_candidate_op_count": int(
+                row.get("residual_candidate_op_count") or 0
+            ),
+        },
+    ).to_dict()
+
+
 def _uk_residual_claim_evidence_row_from_candidate_row(
     row: Mapping[str, Any],
     *,
@@ -274,21 +376,94 @@ def _uk_residual_claim_evidence_row_from_candidate_row(
     if not _uk_residual_claim_has_reviewable_evidence(claim):
         return None
     statute_id = str(row.get("statute_id") or "")
+    owner_record = {
+        "rule_id": "uk_residual_claim_frontier_workqueue",
+        "family": "residual_claim_frontier",
+        "phase": "oracle_adjudication",
+    }
+    owner_phase = uk_phase_owner_for_diagnostic(owner_record)
+    work_item_id = _uk_residual_claim_work_item_id(
+        label=label,
+        statute_id=statute_id,
+        claim=claim,
+    )
+    authorization = uk_execution_authorization_from_residual_claim(
+        claim=claim,
+        owner_phase=owner_phase,
+    ).to_dict()
+    candidate_set_certificate = _residual_claim_candidate_set_certificate(
+        row,
+        work_item_id=work_item_id,
+        owner_phase=owner_phase,
+    )
+    source_witness = _residual_claim_source_witness(row, claim)
+    residual_roots = tuple(str(root) for root in row.get("residual_roots") or ())
+    compare_witness = {
+        "comparison_class": str(row.get("comparison_class") or ""),
+        "frontier_score": float(row.get("frontier_score") or -1.0),
+        "only_in_replayed_count": _int_claim_field(claim, "only_in_replayed_count"),
+        "only_in_oracle_count": _int_claim_field(claim, "only_in_oracle_count"),
+        "section_claim_count": _int_claim_field(claim, "section_claim_count"),
+    }
+    frontier_work_item = FrontierWorkItem(
+        work_item_id=work_item_id,
+        jurisdiction="uk",
+        source_artifact_id=statute_id,
+        source_unit_id=(
+            f"residual-claim:{claim.get('selected_tier') or 'UNRESOLVED'}:"
+            f"{claim.get('selected_kind') or 'unknown'}"
+        ),
+        source_witness=source_witness,
+        target_witness={
+            "residual_roots": list(residual_roots),
+            "backed_residual_roots": list(row.get("backed_residual_roots") or ()),
+            "defeated_residual_roots": list(
+                row.get("defeated_residual_roots") or ()
+            ),
+        },
+        compare_witness=compare_witness,
+        owner_phase=owner_phase,
+        frontier_family=f"uk_residual_claim_{claim.get('selected_kind') or 'unknown'}",
+        frontier_status=str(authorization["authorization_status"]),
+        candidate_operation_family="uk_residual_claim_adjudication",
+        candidate_targets=residual_roots,
+        required_claim_kind="residual_claim_resolution",
+        required_validator_checks=(
+            "validate_residual_claim_against_source_and_oracle",
+            "prove_candidate_set_completeness",
+            "prove_mutation_boundary_before_replay",
+        ),
+        required_proofs=tuple(authorization["required_proofs"]),
+        safe_default=str(authorization["safe_default"]),
+        forbidden_shortcuts=tuple(authorization["forbidden_shortcuts"]),
+        executable=bool(authorization["executable"]),
+        replay_authorized=bool(authorization["replay_authorized"]),
+        authorization_status=str(authorization["authorization_status"]),
+        detail={
+            "execution_authorization": authorization,
+            "candidate_set_certificate": candidate_set_certificate,
+            "claim_status": str(claim.get("selected_tier") or "UNRESOLVED"),
+            "validator_status": "not_validated",
+        },
+    ).to_dict()
     return {
         "schema": "lawvm.uk_residual_claim_frontier.v1",
         "rule_id": "uk_residual_claim_frontier_workqueue",
         "family": "residual_claim_frontier",
         "phase": "oracle_adjudication",
+        "owner_phase": owner_phase,
         "jurisdiction": "uk",
         "work_item_kind": "residual_claim_review",
         "claim_kind": str(claim.get("selected_kind") or "unknown"),
         "claim_status": str(claim.get("selected_tier") or "UNRESOLVED"),
         "validator_status": "not_validated",
-        "work_item_id": _uk_residual_claim_work_item_id(
-            label=label,
-            statute_id=statute_id,
-            claim=claim,
-        ),
+        "work_item_id": work_item_id,
+        "execution_authorization": authorization,
+        "frontier_work_item": frontier_work_item,
+        "candidate_set_certificate": candidate_set_certificate,
+        "executable": bool(authorization["executable"]),
+        "replay_authorized": bool(authorization["replay_authorized"]),
+        "authorization_status": str(authorization["authorization_status"]),
         "bench_label": label,
         "statute_id": statute_id,
         "score_mode": str(row.get("score_mode") or ""),
