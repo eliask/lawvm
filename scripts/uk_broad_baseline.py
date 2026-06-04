@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections.abc import Mapping
 from collections import Counter
 import json
 import random
@@ -1125,10 +1126,7 @@ def _annotate_row_work_selection(row: dict[str, Any]) -> dict[str, Any]:
 
 def _row_with_agreement_residual(row: dict[str, Any]) -> dict[str, Any]:
     payload = dict(row)
-    residual = payload.get("agreement_residual")
-    if not isinstance(residual, dict):
-        payload["agreement_residual"] = _agreement_residual_for_row(payload).to_dict()
-    return payload
+    return _annotate_row_work_selection(payload)
 
 
 def _triage_bucket_for_row(row: dict[str, Any]) -> str:
@@ -1981,6 +1979,119 @@ def sample_statutes(n: int, seed: int, classes: Optional[list[str]]) -> list[str
     return both[:n]
 
 
+def _load_snapshot_results(snapshot_path: Path) -> list[dict[str, Any]]:
+    raw = json.loads(snapshot_path.read_text())
+    if isinstance(raw, Mapping):
+        results: list[dict[str, Any]] = []
+        for statute_id, row in raw.items():
+            if not isinstance(row, Mapping):
+                raise ValueError(
+                    f"snapshot row for {statute_id!r} must be an object"
+                )
+            payload = dict(row)
+            payload.setdefault("statute_id", str(statute_id))
+            results.append(payload)
+        return results
+    if isinstance(raw, list):
+        results = []
+        for index, row in enumerate(raw):
+            if not isinstance(row, Mapping):
+                raise ValueError(f"snapshot row {index} must be an object")
+            payload = dict(row)
+            if not payload.get("statute_id"):
+                raise ValueError(f"snapshot row {index} is missing statute_id")
+            results.append(payload)
+        return results
+    raise ValueError("snapshot must be a statute-id object map or row list")
+
+
+def _hard_gate_exit_code(
+    summary: dict[str, Any],
+    *,
+    fail_on_active_unclassified_residuals: bool = False,
+    fail_on_manual_frontier_template_gaps: bool = False,
+    fail_on_frontier_work_item_gaps: bool = False,
+    fail_on_deterministic_frontend_candidates: bool = False,
+    fail_on_non_manual_source_chain_frontier: bool = False,
+) -> int:
+    if (
+        fail_on_active_unclassified_residuals
+        and summary["active_unclassified_residual_count"]
+    ):
+        return 1
+    if (
+        fail_on_manual_frontier_template_gaps
+        and summary["manual_frontier_template_gap_rule_counts"]
+    ):
+        return 1
+    if fail_on_frontier_work_item_gaps and (
+        summary["manual_frontier_work_item_missing_candidate_operation_family_count"]
+        or summary["manual_frontier_work_item_missing_required_validator_checks_count"]
+    ):
+        return 1
+    if (
+        fail_on_deterministic_frontend_candidates
+        and summary["deterministic_frontend_candidate_count"]
+    ):
+        return 1
+    if (
+        fail_on_non_manual_source_chain_frontier
+        and summary["non_manual_source_chain_frontier_count"]
+    ):
+        return 1
+    return 0
+
+
+def run_report_from_snapshot(
+    snapshot_path: Path,
+    out_report: Path,
+    *,
+    fail_on_active_unclassified_residuals: bool = False,
+    fail_on_manual_frontier_template_gaps: bool = False,
+    fail_on_frontier_work_item_gaps: bool = False,
+    fail_on_deterministic_frontend_candidates: bool = False,
+    fail_on_non_manual_source_chain_frontier: bool = False,
+) -> int:
+    """Regenerate the typed report envelope from a saved raw snapshot.
+
+    This is intentionally report-only: it does not rescore statutes, read the
+    archive, or promote agreement evidence into replay authority.  It exists so
+    report-layer classifier fixes can refresh stale EvidenceSurfaceReport files
+    without rerunning a broad UK replay sweep.
+    """
+    results = _load_snapshot_results(snapshot_path)
+    results = [_annotate_row_work_selection(dict(row)) for row in results]
+    ids = [str(row.get("statute_id") or "") for row in results]
+    report = uk_broad_baseline_report_jsonable(
+        results,
+        ids=ids,
+        snapshot_path=snapshot_path,
+    )
+    out_report.parent.mkdir(parents=True, exist_ok=True)
+    out_report.write_text(json.dumps(report, indent=2, sort_keys=True))
+    summary = report["summary"]
+    print(
+        f"Wrote broad-baseline evidence report -> {out_report} "
+        f"(from snapshot {snapshot_path}; scored={summary['scored_count']} "
+        f"source_frontier={summary['source_frontier_count']} "
+        f"active_unclassified={summary['active_unclassified_residual_count']} "
+        f"non_manual_source_chain={summary['non_manual_source_chain_frontier_count']})",
+        flush=True,
+    )
+    return _hard_gate_exit_code(
+        summary,
+        fail_on_active_unclassified_residuals=fail_on_active_unclassified_residuals,
+        fail_on_manual_frontier_template_gaps=fail_on_manual_frontier_template_gaps,
+        fail_on_frontier_work_item_gaps=fail_on_frontier_work_item_gaps,
+        fail_on_deterministic_frontend_candidates=(
+            fail_on_deterministic_frontend_candidates
+        ),
+        fail_on_non_manual_source_chain_frontier=(
+            fail_on_non_manual_source_chain_frontier
+        ),
+    )
+
+
 def run_driver(
     ids: list[str],
     out: Optional[Path],
@@ -2516,6 +2627,16 @@ def main(argv: list[str] | None = None) -> int:
             "agreement run without changing the raw snapshot format"
         ),
     )
+    ap.add_argument(
+        "--report-from-snapshot",
+        type=Path,
+        metavar="SNAPSHOT",
+        help=(
+            "Regenerate only the typed EvidenceSurfaceReport envelope from an "
+            "existing raw snapshot, using current report-layer classifiers. "
+            "Requires --out-report and does not rescore statutes."
+        ),
+    )
     ap.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"), help="Compare two snapshots")
     ap.add_argument(
         "--fail-on-active-unclassified-residuals",
@@ -2558,6 +2679,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.parallel < 1:
         print("error: --parallel must be a positive integer", file=sys.stderr)
         return 2
+    if args.report_from_snapshot and not args.out_report:
+        print("error: --report-from-snapshot requires --out-report", file=sys.stderr)
+        return 2
 
     if args.one:
         row = score_one(args.one)
@@ -2566,6 +2690,24 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.compare:
         return run_compare(Path(args.compare[0]), Path(args.compare[1]))
+    if args.report_from_snapshot:
+        return run_report_from_snapshot(
+            args.report_from_snapshot,
+            args.out_report,
+            fail_on_active_unclassified_residuals=(
+                args.fail_on_active_unclassified_residuals
+            ),
+            fail_on_manual_frontier_template_gaps=(
+                args.fail_on_manual_frontier_template_gaps
+            ),
+            fail_on_frontier_work_item_gaps=args.fail_on_frontier_work_item_gaps,
+            fail_on_deterministic_frontend_candidates=(
+                args.fail_on_deterministic_frontend_candidates
+            ),
+            fail_on_non_manual_source_chain_frontier=(
+                args.fail_on_non_manual_source_chain_frontier
+            ),
+        )
 
     ids: list[str] = []
     if args.ids:

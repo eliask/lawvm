@@ -1653,6 +1653,90 @@ def test_run_driver_writes_broad_baseline_report(
     assert "Wrote broad-baseline evidence report" in capsys.readouterr().out
 
 
+def test_report_from_snapshot_recomputes_report_layer_annotations(
+    tmp_path,
+    capsys,
+) -> None:
+    snapshot_path = tmp_path / "snapshot.json"
+    report_path = tmp_path / "report.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "ukpga/1992/41": {
+                    "statute_id": "ukpga/1992/41",
+                    "score_status": "scored",
+                    "aligned": 98.7,
+                    "aligned_excluding_grounding_collateral": 98.7,
+                    "unaligned": 98.7,
+                    "n_replay": 10,
+                    "n_oracle": 10,
+                    "triage_bucket": "stale_old_bucket",
+                    "agreement_residual": {"family": "stale_old_family"},
+                }
+            }
+        )
+    )
+
+    assert (
+        uk_broad_baseline.run_report_from_snapshot(snapshot_path, report_path)
+        == 0
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["filters"]["ids"] == ["ukpga/1992/41"]
+    assert report["filters"]["snapshot_path"] == str(snapshot_path)
+    assert report["summary"]["scored_count"] == 1
+    assert report["rows"][0]["triage_bucket"] == "high_fidelity_after_grounding"
+    assert report["rows"][0]["agreement_residual"]["family"] == "agreement"
+    assert "from snapshot" in capsys.readouterr().out
+
+
+def test_report_from_snapshot_fail_flags_use_recomputed_summary(tmp_path) -> None:
+    snapshot_path = tmp_path / "snapshot.json"
+    report_path = tmp_path / "report.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "ukpga/1986/61": {
+                    "statute_id": "ukpga/1986/61",
+                    "score_status": "scored",
+                    "aligned": 50.9,
+                    "aligned_excluding_grounding_collateral": 50.9,
+                    "unaligned": 50.5,
+                    "n_replay": 289,
+                    "n_oracle": 568,
+                    "n_only_in_oracle": 279,
+                    "n_only_in_replayed": 0,
+                }
+            }
+        )
+    )
+
+    assert (
+        uk_broad_baseline.run_report_from_snapshot(
+            snapshot_path,
+            report_path,
+            fail_on_active_unclassified_residuals=True,
+        )
+        == 1
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["summary"]["active_unclassified_residual_count"] == 1
+
+
+def test_main_report_from_snapshot_requires_out_report(tmp_path, capsys) -> None:
+    snapshot_path = tmp_path / "snapshot.json"
+    snapshot_path.write_text("{}")
+
+    assert (
+        uk_broad_baseline.main(["--report-from-snapshot", str(snapshot_path)])
+        == 2
+    )
+
+    assert "--report-from-snapshot requires --out-report" in capsys.readouterr().err
+
+
 def test_run_driver_parallel_preserves_report_input_order(
     monkeypatch,
     tmp_path,
