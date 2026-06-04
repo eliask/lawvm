@@ -2329,6 +2329,28 @@ def _is_uk_non_textual_modification_effect_type(effect_type_norm: str) -> bool:
     return first in _UK_NON_TEXTUAL_MODIFICATION_EFFECT_VERBS
 
 
+def _has_source_parent_heading_substitution_context(
+    lowering_rows: Iterable[dict[str, Any]],
+) -> bool:
+    for row in lowering_rows:
+        if (
+            str(row.get("rule_id") or "")
+            != "uk_effect_source_payload_without_instruction_context_rejected"
+        ):
+            continue
+        parent_preview = " ".join(
+            str(row.get("source_parent_context_preview") or "").lower().split()
+        )
+        if "heading" not in parent_preview:
+            continue
+        if "for a reference to " not in parent_preview:
+            continue
+        if " substitute a reference to " not in parent_preview:
+            continue
+        return True
+    return False
+
+
 def classify_uk_manual_compile_frontier(  # noqa: PLR0913
     *,
     effect_type: str,
@@ -2474,6 +2496,22 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "non_textual_or_out_of_scope",
             "rule_id": "uk_manual_frontier_non_textual_or_out_of_scope",
             "reason": "The selected replay lens does not admit this row as a structural text/tree replay effect.",
+        }
+
+    if (
+        source_pathology_norm == "fragment_context_missing"
+        and effect_type_norm.startswith(("word ", "words "))
+        and _has_source_parent_heading_substitution_context(lowering_rows)
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_heading_facet_candidate",
+            "reason": (
+                "The extracted child source is only a payload fragment, but the "
+                "source parent supplies a complete substitution instruction for "
+                "the headings referred to; a heading-facet claim or compiler must "
+                "prove the exact facet carrier before replay."
+            ),
         }
 
     insufficient_source_pathology_result = _uk_manual_frontier_classification(

@@ -1240,6 +1240,64 @@ def test_classify_uk_manual_compile_frontier_source_pathology_blocks_heading_cla
     assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
 
 
+def test_classify_uk_manual_compile_frontier_uses_parent_heading_context() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="fragment_context_missing",
+        extracted_tag="P4",
+        extracted_text="ii regulation 13 (enforcement body: the Office of Rail Regulation);",
+        lowering_rejections=(
+            {
+                "rule_id": (
+                    "uk_effect_source_payload_without_instruction_context_rejected"
+                ),
+                "blocking": True,
+                "source_parent_id": "schedule-paragraph-10",
+                "source_parent_context_preview": (
+                    "In the following enactments and in the headings referred to, "
+                    "for a reference to the Office of Rail Regulation substitute "
+                    "a reference to the Office of Rail and Road-"
+                ),
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_heading_facet_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_does_not_infer_heading_without_parent_heading_context() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="fragment_context_missing",
+        extracted_tag="P4",
+        extracted_text="ii regulation 13 (enforcement body: the Office of Rail Regulation);",
+        lowering_rejections=(
+            {
+                "rule_id": (
+                    "uk_effect_source_payload_without_instruction_context_rejected"
+                ),
+                "blocking": True,
+                "source_parent_id": "schedule-paragraph-10",
+                "source_parent_context_preview": (
+                    "In the following enactments, for a reference to the Office "
+                    "of Rail Regulation substitute a reference to the Office of "
+                    "Rail and Road-"
+                ),
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "source_insufficient"
+    assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
+
+
 def test_classify_uk_manual_compile_frontier_marks_broad_schedule_flat_payload_source_insufficient() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="substituted",
