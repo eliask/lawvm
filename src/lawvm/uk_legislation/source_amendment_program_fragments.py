@@ -32,6 +32,18 @@ _SOURCE_CARRIED_MULTI_SUBUNIT_REPEAL_RE = re.compile(
     r",?\s+are\s+repealed\s*\.?\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_CARRIED_MULTI_SUBUNIT_SUBSTITUTION_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"(?:in\s+section\s+(?P<section>[0-9A-Za-z]+)\b[^,]{0,400},\s+)?"
+    r"for\s+(?:the\s+words?\s+)?[“\"'‘](?P<original>[^”\"'’]{1,500})[”\"'’],?\s+"
+    r"where\s+(?:it|they|those\s+words?)\s+"
+    r"(?:occurs?|occur|appears?|appear)\s+in\s+subsections?\s+"
+    r"(?P<labels>\([0-9A-Za-z]+\)(?:\s*(?:,|and)\s*\([0-9A-Za-z]+\))*)"
+    r",?\s+(?:there\s+(?:is|are|shall\s+be)\s+substituted|substitute)\s+"
+    r"(?:the\s+words?\s+)?[“\"'‘](?P<replacement>[^”\"'’]{1,800})[”\"'’]"
+    r"\s*[.;]?(?:\s+(?:and|or))?\s*$",
+    flags=re.I,
+)
 _SOURCE_AMENDMENT_INSERTED_TEXT_SUBSTITUTION_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"in\s+paragraph\s+(?P<paragraph>[0-9A-Za-z]+)\b.*?,\s+"
@@ -124,6 +136,58 @@ def _fragment_substitution_source_carried_multi_subunit_repeal(
         "source_child_labels": ",".join(labels),
         "rule_id": "uk_effect_source_carried_multi_subunit_repeal_text_patch",
     }
+
+
+def _fragment_substitution_source_carried_multi_subunit_substitution(
+    *,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Resolve source rows that rewrite quoted text in explicitly named child subsections."""
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return None
+    match = _SOURCE_CARRIED_MULTI_SUBUNIT_SUBSTITUTION_RE.match(text)
+    if match is None:
+        return None
+    labels = tuple(_clean_num(label) for label in re.findall(r"\(([0-9A-Za-z]+)\)", match.group("labels")))
+    labels = tuple(label for label in labels if label)
+    if len(labels) < 2:
+        return None
+    original = " ".join(match.group("original").split()).strip()
+    replacement = " ".join(match.group("replacement").split()).strip()
+    if not original or not replacement:
+        return None
+    source_section = _clean_num(match.group("section") or "")
+    target_section = _clean_num(_addr_field(target, "section") or "")
+    target_child_kind = _addr_leaf_kind(target)
+    target_child_label = _clean_num(_addr_leaf_label(target) or "")
+    if target_child_kind == "subsection":
+        if target_child_label not in labels:
+            return None
+        if source_section and target_section and source_section != target_section:
+            return None
+        return {
+            "original": original,
+            "replacement": replacement,
+            "source_section_label": source_section or target_section,
+            "source_child_labels": ",".join(labels),
+            "source_target_mode": "effect_feed_child_target",
+            "rule_id": "uk_effect_source_carried_multi_subunit_substitution_text_patch",
+        }
+    if source_section:
+        if not target_section or source_section != target_section:
+            return None
+        label_part = "_".join(labels)
+        return {
+            "original": f"TEXT_IN_CHILDREN_subsection_{label_part}{US}{original}",
+            "replacement": replacement,
+            "source_section_label": source_section,
+            "source_child_labels": ",".join(labels),
+            "source_target_mode": "source_named_parent_target",
+            "rule_id": "uk_effect_source_carried_multi_subunit_substitution_text_patch",
+        }
+    return None
 
 
 def _fragment_substitution_amendment_inserted_text_substitution(

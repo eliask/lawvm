@@ -19364,6 +19364,108 @@ def test_compile_source_carried_multi_subunit_repeal_rejects_mismatched_section_
     assert lowering_records[0]["blocking"] is True
 
 
+def test_compile_source_carried_multi_subunit_substitution_from_child_effect_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-3-paragraph-29-1-a">
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>a for \u201cpoinding\u201d, where it occurs in subsections (1) and (7) there is substituted \u201c attachment \u201d ; and</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-source-carried-multi-subunit-substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2002-12-30",
+        affected_uri="/id/ukpga/2002/29/section/285/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2002",
+        affected_number="29",
+        affected_provisions="s. 285(1)",
+        affecting_uri="/id/asp/2002/17",
+        affecting_class="ScottishAct",
+        affecting_year="2002",
+        affecting_number="17",
+        affecting_provisions="Sch. 3 para. 29(1)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2002-12-30", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "285"), ("subsection", "1"))
+    assert ops[0].text_patch == _replace_patch("poinding", "attachment")
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_multi_subunit_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    observations = [
+        row
+        for row in lowering_records
+        if row["rule_id"] == "uk_effect_source_carried_multi_subunit_substitution_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["source_child_labels"] == "1,7"
+    assert observations[0]["source_target_mode"] == "effect_feed_child_target"
+
+
+def test_compile_source_carried_multi_subunit_substitution_rejects_unlisted_child_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>a for \u201cpoinding\u201d, where it occurs in subsections (1) and (7) there is substituted \u201c attachment \u201d ; and</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-source-carried-multi-subunit-substitution-mismatch",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2002-12-30",
+        affected_uri="/id/ukpga/2002/29/section/285/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2002",
+        affected_number="29",
+        affected_provisions="s. 285(2)",
+        affecting_uri="/id/asp/2002/17",
+        affecting_class="ScottishAct",
+        affecting_year="2002",
+        affecting_number="17",
+        affecting_provisions="Sch. 3 para. 29(1)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2002-12-30", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert "uk_effect_source_carried_multi_subunit_substitution_text_patch" not in {
+        row["rule_id"] for row in lowering_records
+    }
+
+
 def test_compile_amendment_inserted_text_substitution_from_exact_schedule_instruction_context() -> None:
     extracted_el = ET.fromstring(
         f"""

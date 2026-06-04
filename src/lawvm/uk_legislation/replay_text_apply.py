@@ -988,6 +988,25 @@ def _delete_source_carried_child_text(
     return new_text, count > 0
 
 
+def _replace_source_carried_child_text(
+    text: str,
+    *,
+    original: str,
+    replacement: str,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[str, bool]:
+    if original in text:
+        return text.replace(original, replacement), True
+    pattern = _text_patch_pattern(
+        original,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    new_text, count = re.subn(pattern, replacement, text, flags=re.I | re.S)
+    return new_text, count > 0
+
+
 def _insert_at_end_of_definition_text(
     text: str,
     *,
@@ -2893,7 +2912,7 @@ class UKReplayTextApplyMixin:
                 match,
                 flags=re.S,
             )
-            if child_match is None or replacement:
+            if child_match is None:
                 return node, False
             child_kind = child_match.group(1)
             child_labels = tuple(label for label in child_match.group(2).split("_") if label)
@@ -2914,12 +2933,21 @@ class UKReplayTextApplyMixin:
             new_children = list(node.children)
             for label in child_labels:
                 direct_match = direct_matches[label]
-                new_text, changed = _delete_source_carried_child_text(
-                    direct_match.child.text or "",
-                    original=original,
-                    allow_punctuation_spacing=allow_punctuation_spacing,
-                    allow_word_punctuation_elision=allow_word_punctuation_elision,
-                )
+                if replacement:
+                    new_text, changed = _replace_source_carried_child_text(
+                        direct_match.child.text or "",
+                        original=original,
+                        replacement=replacement,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                else:
+                    new_text, changed = _delete_source_carried_child_text(
+                        direct_match.child.text or "",
+                        original=original,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
                 if not changed:
                     return node, False
                 new_children[direct_match.index] = dc_replace(direct_match.child, text=new_text)

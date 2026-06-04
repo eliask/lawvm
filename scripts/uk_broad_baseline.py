@@ -205,6 +205,22 @@ def _retained_repeal_oracle_targets(
     return sorted(targets)
 
 
+def _op_targets_schedule_surface(op: Any) -> bool:
+    target = getattr(op, "target", None)
+    if target is None:
+        return False
+    for kind, _label in getattr(target, "path", ()) or ():
+        if str(kind or "").lower() == "schedule":
+            return True
+    return str(getattr(target, "special", "") or "").lower() == "schedule"
+
+
+def _oracle_only_schedule_eids(oracle_only_eids: set[str]) -> list[str]:
+    return sorted(
+        eid for eid in oracle_only_eids if str(eid or "").startswith("schedule")
+    )
+
+
 def _mutation_boundary_diagnostics(
     mutation_events: list[Any],
 ) -> dict[str, Any]:
@@ -548,6 +564,9 @@ def score_one(statute_id: str) -> dict[str, Any]:
                     ops,
                     oracle_only_eids,
                 )
+                oracle_only_schedule_eids = _oracle_only_schedule_eids(
+                    oracle_only_eids
+                )
                 result["n_common"] = len(common_eids)
                 result["n_only_in_oracle"] = len(oracle_only_eids)
                 result["n_only_in_replayed"] = len(replay_compare_eids - oracle_compare_eids)
@@ -556,6 +575,15 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 result["retained_repeal_oracle_targets"] = retained_repeal_targets
                 result["n_retained_repeal_oracle_targets"] = len(
                     retained_repeal_targets
+                )
+                result["n_oracle_only_schedule_eids"] = len(
+                    oracle_only_schedule_eids
+                )
+                result["oracle_only_schedule_eid_samples"] = (
+                    oracle_only_schedule_eids[:20]
+                )
+                result["has_schedule_targeting_ops"] = any(
+                    _op_targets_schedule_surface(op) for op in ops
                 )
                 result["n_grounding_collateral"] = len(collateral_score.collateral_eids)
                 result.update(_mutation_boundary_diagnostics(mutation_events))
@@ -1116,6 +1144,8 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
         return "grounding_dominated_residual"
     if _is_manual_compile_frontier_residual(row):
         return "manual_compile_frontier_residual"
+    if _is_oracle_expansion_without_effects(row):
+        return "oracle_expansion_without_effects"
     if _is_temporal_commencement_frontier(row):
         return "temporal_commencement_frontier"
     if int(row.get("n_retained_repeal_oracle_targets") or 0) > 0:
@@ -1190,6 +1220,7 @@ def _agreement_residual_family(bucket: str) -> str:
         "no_compiled_ops_frontier",
         "no_effect_rows_frontier",
         "nonreplay_effect_frontier",
+        "oracle_expansion_without_effects",
         "temporal_commencement_frontier",
     }:
         return "source_footing_gap"
@@ -1222,6 +1253,7 @@ def _agreement_residual_status(bucket: str, row: dict[str, Any]) -> str:
         return "frontier"
     if bucket in {
         "manual_compile_frontier_residual",
+        "oracle_expansion_without_effects",
         "zero_oracle_retention",
         "base_metadata_only_frontier",
         "retained_repeal_oracle_branch",
@@ -1256,6 +1288,7 @@ def _agreement_residual_owner_phase(bucket: str) -> str:
         "effect_feed_absent_frontier",
         "no_effect_rows_frontier",
         "nonreplay_effect_frontier",
+        "oracle_expansion_without_effects",
         "temporal_commencement_frontier",
     }:
         return UK_PHASE_EFFECT_METADATA_FRONTEND
@@ -1285,6 +1318,7 @@ def _agreement_residual_missing_proofs(
         "no_effect_rows_frontier",
         "nonreplay_effect_frontier",
         "no_compiled_ops_frontier",
+        "oracle_expansion_without_effects",
     }:
         proofs.append("source_identity")
     if bucket == "temporal_commencement_frontier":
@@ -1409,6 +1443,19 @@ def _is_temporal_commencement_frontier(row: dict[str, Any]) -> bool:
         and int(count or 0) > 0
     }
     return not other_counts
+
+
+def _is_oracle_expansion_without_effects(row: dict[str, Any]) -> bool:
+    """Classify current-oracle schedule expansions not backed by replay effects."""
+    n_oracle_only_schedule_eids = int(row.get("n_oracle_only_schedule_eids") or 0)
+    if n_oracle_only_schedule_eids <= 0:
+        return False
+    n_only_in_oracle = int(row.get("n_only_in_oracle") or 0)
+    if n_only_in_oracle <= 0:
+        return False
+    if bool(row.get("has_schedule_targeting_ops")):
+        return False
+    return n_oracle_only_schedule_eids * 2 >= n_only_in_oracle
 
 
 def _has_missing_structural_payload_record(row: dict[str, Any]) -> bool:

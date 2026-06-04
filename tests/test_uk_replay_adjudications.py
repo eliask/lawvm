@@ -10529,6 +10529,62 @@ def test_executor_deletes_source_carried_multi_subunit_text_only_from_named_chil
     assert adjudications[0].detail["source_shape"] == "source_carried_multi_child_selector"
 
 
+def test_executor_replaces_source_carried_multi_subunit_text_only_in_named_children() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2002/29",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="285",
+                    text="",
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="A poinding remedy."),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="No poinding rewrite."),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="7", text="Another poinding remedy."),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_carried_multi_subunit_substitution",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "285"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="TEXT_IN_CHILDREN_subsection_1_7\x1fpoinding",
+                    occurrence=0,
+                ),
+                replacement="attachment",
+            ),
+            source=_source(),
+        )
+    )
+
+    section = executor.statute.body.children[0]
+    assert [child.text for child in section.children] == [
+        "A attachment remedy.",
+        "No poinding rewrite.",
+        "Another attachment remedy.",
+    ]
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_source_carried_multi_child_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["source_shape"] == "source_carried_multi_child_selector"
+
+
 def test_executor_rejects_multi_subunit_text_delete_when_named_child_missing() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

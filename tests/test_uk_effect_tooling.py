@@ -93,9 +93,11 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_definition_list_end_insert_candidate",
         "uk_manual_frontier_effect_metadata_carried_text_patch_candidate",
         "uk_manual_frontier_heading_facet_candidate",
+        "uk_manual_frontier_labeled_child_end_range_candidate",
         "uk_manual_frontier_mixed_body_heading_text_substitution_split",
         "uk_manual_frontier_parser_or_extraction_candidate",
         "uk_manual_frontier_range_to_container_candidate",
+        "uk_manual_frontier_relative_other_place_occurrence_candidate",
         "uk_manual_frontier_referent_qualified_text_substitution_candidate",
         "uk_manual_frontier_repeal_table_candidate",
         "uk_manual_frontier_schedule_list_entry_candidate",
@@ -431,6 +433,10 @@ def test_uk_manual_claim_template_status_only_labels_actionable_rows() -> None:
             "source_acquisition_or_payload_extraction",
         ),
         (
+            "uk_manual_frontier_labeled_child_end_range_candidate",
+            "labeled_child_end_range_text_patch",
+        ),
+        (
             "uk_manual_frontier_schedule_list_entry_candidate",
             "schedule_list_entry_mutation",
         ),
@@ -454,6 +460,10 @@ def test_uk_manual_claim_template_status_only_labels_actionable_rows() -> None:
         (
             "uk_manual_frontier_table_appropriate_place_candidate",
             "table_surface_mutation",
+        ),
+        (
+            "uk_manual_frontier_table_crossheading_candidate",
+            "table_crossheading_text_rewrite",
         ),
         ("uk_manual_frontier_table_entry_placement_insert", "table_surface_mutation"),
         ("uk_manual_frontier_unclassified", "unclassified_manual_frontier"),
@@ -6024,6 +6034,13 @@ def test_uk_manual_compile_evidence_jsonl_templates_source_carried_structured_pa
             "tail_range_with_structured_payload_required",
             "source_carried_structured_payload_units",
             "claim_materializes_replacement_payload_as_child_units_not_flat_text",
+        ),
+        (
+            "uk_manual_frontier_relative_other_place_occurrence_candidate",
+            "relative_occurrence_text_patch",
+            "relative_other_place_requires_first_occurrence_context",
+            "preceding_first_occurrence_source_sibling_or_equivalent_context",
+            "claim_preserves_the_first_occurrence_and_unselected_occurrences",
         ),
     ],
 )

@@ -727,6 +727,72 @@ def test_summarize_results_classifies_temporal_commencement_frontier() -> None:
     assert summary["active_unclassified_residual_count"] == 0
 
 
+def test_summarize_results_classifies_oracle_expansion_without_effects() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1959/49",
+                "score_status": "scored",
+                "aligned": 29.33,
+                "aligned_excluding_grounding_collateral": 29.33,
+                "unaligned": 28.67,
+                "n_grounding_collateral": 0,
+                "n_replay": 44,
+                "n_oracle": 150,
+                "n_only_in_oracle": 106,
+                "n_only_in_replayed": 0,
+                "n_effects": 8,
+                "n_ops": 8,
+                "n_oracle_only_schedule_eids": 100,
+                "has_schedule_targeting_ops": False,
+                "manual_frontier_status_counts": {
+                    "deterministic_frontend_supported": 8,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"oracle_expansion_without_effects": 1}
+    assert summary["agreement_residual_family_counts"] == {
+        "source_footing_gap": 1,
+    }
+    assert summary["agreement_residual_status_counts"] == {"frontier": 1}
+    assert summary["agreement_residual_owner_phase_counts"] == {
+        "effect_metadata_frontend": 1,
+    }
+    assert summary["active_unclassified_residual_count"] == 0
+
+
+def test_summarize_results_does_not_classify_schedule_expansion_when_ops_target_schedule() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1959/49",
+                "score_status": "scored",
+                "aligned": 29.33,
+                "aligned_excluding_grounding_collateral": 29.33,
+                "unaligned": 28.67,
+                "n_grounding_collateral": 0,
+                "n_replay": 44,
+                "n_oracle": 150,
+                "n_only_in_oracle": 106,
+                "n_only_in_replayed": 0,
+                "n_effects": 8,
+                "n_ops": 8,
+                "n_oracle_only_schedule_eids": 100,
+                "has_schedule_targeting_ops": True,
+                "manual_frontier_status_counts": {
+                    "deterministic_frontend_supported": 8,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"residual_after_grounding": 1}
+    assert summary["agreement_residual_family_counts"] == {"replay_bug": 1}
+    assert summary["active_unclassified_residual_count"] == 1
+
+
 def test_summarize_results_counts_empty_effect_feed_frontier() -> None:
     summary = uk_broad_baseline.summarize_results(
         [

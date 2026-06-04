@@ -66,6 +66,17 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_declared_amendment_program_target",
         ),
     },
+    "uk_manual_frontier_deictic_structural_sibling_insert_candidate": {
+        "candidate_operation_family": "structural_sibling_insert",
+        "required_validator_checks": (
+            "source_witness_uses_deictic_sibling_anchor",
+            "claim_identifies_exact_parent_and_anchor_sibling",
+            "claim_proves_anchor_resolution_from_source_or_live_preimage",
+            "claim_identifies_each_inserted_sibling_payload",
+            "claim_preserves_anchor_and_unclaimed_siblings",
+            "changed_paths_are_within_declared_sibling_insertion_boundary",
+        ),
+    },
     "uk_manual_frontier_deictic_amendment_program_target_candidate": {
         "candidate_operation_family": "amendment_program_target_mutation",
         "required_validator_checks": (
@@ -214,6 +225,16 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_blocks_replay_until_complete_instruction_is_proved",
         ),
     },
+    "uk_manual_frontier_labeled_child_end_range_candidate": {
+        "candidate_operation_family": "labeled_child_end_range_text_patch",
+        "required_validator_checks": (
+            "source_witness_names_quoted_preimage_and_child_endpoint",
+            "claim_identifies_exact_child_carrier_and_endpoint",
+            "claim_text_preimage_matches_effective_child_surface",
+            "claim_materializes_replacement_payload_without_parent_widening",
+            "changed_paths_are_within_declared_child_end_range_boundary",
+        ),
+    },
     "uk_manual_frontier_misselected_target_context_source_insufficient": {
         "candidate_operation_family": "source_target_reconciliation",
         "required_validator_checks": (
@@ -246,6 +267,16 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "compiler_or_claim_identifies_exact_replacement_or_inserted_payload",
             "target_scope_is_the_effect_target_or_source_named_descendant_only",
             "changed_paths_are_within_declared_target_and_payload_boundaries",
+        ),
+    },
+    "uk_manual_frontier_relative_other_place_occurrence_candidate": {
+        "candidate_operation_family": "relative_occurrence_text_patch",
+        "required_validator_checks": (
+            "source_witness_contains_relative_other_place_formula",
+            "claim_identifies_preceding_first_occurrence_source_sibling_or_equivalent_context",
+            "claim_identifies_exact_original_and_replacement_or_inserted_text",
+            "claim_preserves_the_first_occurrence_and_unselected_occurrences",
+            "changed_paths_are_within_declared_relative_occurrence_text_carrier",
         ),
     },
     "uk_manual_frontier_nested_definition_child_structural_substitution_candidate": {
@@ -372,6 +403,16 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_claimed_child_range_boundary",
         ),
     },
+    "uk_manual_frontier_structural_sibling_insert_candidate": {
+        "candidate_operation_family": "structural_sibling_insert",
+        "required_validator_checks": (
+            "source_witness_names_before_or_after_sibling_anchor",
+            "claim_identifies_exact_parent_and_anchor_sibling",
+            "claim_identifies_each_inserted_sibling_payload",
+            "claim_preserves_anchor_and_unclaimed_siblings",
+            "changed_paths_are_within_declared_sibling_insertion_boundary",
+        ),
+    },
     "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate": {
         "candidate_operation_family": "definition_entry_insert",
         "required_validator_checks": (
@@ -400,6 +441,16 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_identifies_row_or_column_boundary",
             "claim_preserves_unclaimed_rows_columns_and_cells",
             "changed_paths_are_within_claimed_table_surface",
+        ),
+    },
+    "uk_manual_frontier_table_crossheading_candidate": {
+        "candidate_operation_family": "table_crossheading_text_rewrite",
+        "required_validator_checks": (
+            "source_witness_targets_table_crossheading_surface",
+            "claim_identifies_exact_table_and_crossheading_carrier",
+            "claim_preserves_unclaimed_table_rows_columns_and_cells",
+            "claim_text_preimage_matches_table_crossheading_surface",
+            "changed_paths_are_within_declared_table_crossheading_boundary",
         ),
     },
     "uk_manual_frontier_table_appropriate_place_candidate": {

@@ -273,9 +273,9 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "The source substitutes a tail range with visibly structured child material; a claim or future compiler must preserve the carried child structure instead of flattening it into host text.",
     ),
     "relative_other_place_occurrence_unsupported": _ManualFrontierClassification(
-        "deterministic_frontend_candidate",
+        "manual_compile_candidate",
         "uk_manual_frontier_relative_other_place_occurrence_candidate",
-        "The source uses a relative occurrence phrase such as 'each other place'; compile needs sibling-aware occurrence selection instead of rewriting every target occurrence.",
+        "The source uses a relative occurrence phrase such as 'each other place'; replay needs a sibling-aware occurrence proof unless lowering has already found the preceding first-occurrence source sibling.",
     ),
     "referent_qualified_text_substitution_unsupported": _ManualFrontierClassification(
         "deterministic_frontend_candidate",
@@ -288,9 +288,9 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "The source applies a quoted text patch only to each occurrence outside named exclusions; compile needs an owned occurrence selector with exclusion proof instead of all-occurrences replay.",
     ),
     "structural_sibling_insert_unsupported": _ManualFrontierClassification(
-        "deterministic_frontend_candidate",
+        "manual_compile_candidate",
         "uk_manual_frontier_structural_sibling_insert_candidate",
-        "The source inserts new structural siblings after a named child; a future compiler must emit sibling insert operations instead of appending payload text to the anchor child.",
+        "The source inserts new structural siblings after a named child; a claim or future compiler must prove the exact parent, anchor sibling, inserted payload, and mutation boundary before replay.",
     ),
     "heading_facet_target_unsupported": _ManualFrontierClassification(
         "manual_compile_candidate",
@@ -2650,6 +2650,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "source_or_feed_target_conflict",
             "rule_id": "uk_manual_frontier_child_qualified_word_omission_target_mismatch",
             "reason": "The source explicitly scopes a quoted word omission to a child provision that differs from the effect-feed target; replay needs a source-feed target adjudication before lowering.",
+        }
+
+    if "uk_effect_labeled_child_end_range_target_rejected" in blocking_rules:
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_labeled_child_end_range_candidate",
+            "reason": "The source substitutes text from a quoted preimage to the end of a named child provision, but the effect-feed target is not the child carrier; a claim or future compiler must prove the exact child endpoint and mutation boundary before replay.",
         }
 
     if "uk_effect_amount_specified_source_target_mismatch_rejected" in blocking_rules:

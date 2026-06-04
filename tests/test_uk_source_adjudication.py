@@ -2156,6 +2156,33 @@ def test_classify_uk_manual_compile_frontier_marks_child_tail_sibling_insert() -
     assert result["rule_id"] == "uk_manual_frontier_structural_sibling_insert_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_labeled_child_end_range() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P2",
+        extracted_text=(
+            "In sub-paragraph (13A) for \u201crelates\u201d to the end of paragraph "
+            "(b) substitute- a relates to the inspection of anything; b gives "
+            "the person exercising the function the opportunity."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_labeled_child_end_range_target_rejected",
+                "blocking": True,
+                "target_suffix_kind": "paragraph",
+                "target_suffix_label": "b",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_labeled_child_end_range_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_amendment_program_target() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",
@@ -3429,9 +3456,9 @@ def test_classify_uk_manual_compile_frontier_marks_relative_occurrence_pathology
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_relative_other_place_occurrence_candidate"
-    assert "sibling-aware occurrence selection" in result["reason"]
+    assert "sibling-aware occurrence proof" in result["reason"]
 
 
 def test_classify_uk_manual_compile_frontier_marks_scoped_occurrence_exclusion_pathology() -> None:

@@ -590,6 +590,8 @@ def _required_operation_family_proof_semantics(
         return ("table_repeal_or_omission_boundary_preservation",)
     if action_family == "referent_qualified_text_substitution":
         return ("referent_qualified_occurrence_scope_claim",)
+    if action_family == "relative_occurrence_text_patch":
+        return ("relative_occurrence_scope_claim",)
     if action_family == "whole_act_listed_enactments_text_patch":
         return ("whole_act_listed_enactments_scope_and_exclusions",)
     if action_family == "savings_qualified_text_omission":
@@ -600,6 +602,8 @@ def _required_operation_family_proof_semantics(
         return ("source_carried_multi_subunit_boundary_claim",)
     if action_family == "source_carried_child_tail_text_rewrite":
         return ("source_carried_child_tail_boundary_claim",)
+    if action_family == "labeled_child_end_range_text_patch":
+        return ("labeled_child_end_range_boundary_claim",)
     if action_family == "source_carried_structured_text_patch":
         return ("source_carried_structured_payload_boundary_claim",)
     if action_family == "source_carried_structured_tail_substitution":
@@ -1371,6 +1375,54 @@ def manual_compile_suggested_claim_template(
             }
         )
         return template
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_relative_other_place_occurrence_candidate"
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="relative_occurrence_text_patch",
+            placement_family="relative_other_place_requires_first_occurrence_context",
+            required_ownership=[
+                "relative_occurrence_formula",
+                "preceding_first_occurrence_source_sibling_or_equivalent_context",
+                "quoted_preimage_or_anchor_text",
+                "replacement_or_inserted_text",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_contains_relative_other_place_formula",
+                "claim_identifies_preceding_first_occurrence_source_sibling_or_equivalent_context",
+                "claim_identifies_exact_original_and_replacement_or_inserted_text",
+                "claim_preserves_the_first_occurrence_and_unselected_occurrences",
+                "changed_paths_are_within_declared_relative_occurrence_text_carrier",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_labeled_child_end_range_candidate"
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="labeled_child_end_range_text_patch",
+            placement_family="source_named_child_endpoint_requires_target_reconciliation",
+            required_ownership=[
+                "quoted_text_preimage",
+                "named_child_endpoint",
+                "exact_child_carrier",
+                "replacement_payload",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_names_quoted_preimage_and_child_endpoint",
+                "claim_identifies_exact_child_carrier_and_endpoint",
+                "claim_text_preimage_matches_effective_child_surface",
+                "claim_materializes_replacement_payload_without_parent_widening",
+                "changed_paths_are_within_declared_child_end_range_boundary",
+            ],
+        )
     if (
         summary.manual_compile_rule_id
         == "uk_manual_frontier_referent_qualified_text_substitution_candidate"

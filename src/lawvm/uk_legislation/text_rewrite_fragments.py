@@ -145,6 +145,9 @@ UK_SOURCE_CARRIED_BETWEEN_PARAGRAPHS_SUBSTITUTION_RULE_ID = (
 UK_SOURCE_CARRIED_MULTI_SUBUNIT_REPEAL_RULE_ID = (
     "uk_effect_source_carried_multi_subunit_repeal_text_patch"
 )
+UK_SOURCE_CARRIED_MULTI_SUBUNIT_SUBSTITUTION_RULE_ID = (
+    "uk_effect_source_carried_multi_subunit_substitution_text_patch"
+)
 UK_DEFINITION_CHILD_AND_TAIL_SUBSTITUTION_RULE_ID = (
     "uk_effect_definition_child_and_tail_substitution_text_patch"
 )
@@ -2611,6 +2614,31 @@ def append_source_carried_substitution_rewrite_observations(
                 "text_match": op_text_match,
                 "source_child_labels": str(primary.get("source_child_labels") or ""),
                 "source_section_label": str(primary.get("source_section_label") or ""),
+            },
+        )
+    if UK_SOURCE_CARRIED_MULTI_SUBUNIT_SUBSTITUTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_SOURCE_CARRIED_MULTI_SUBUNIT_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="source_carried_multi_subunit_substitution_lowered",
+            reason=(
+                "UK source text explicitly substitutes quoted words where "
+                "they occur in named child subsections; lowering preserves "
+                "the source-named child labels and only rewrites the effect "
+                "target child or source-named child set."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "source_child_labels": str(primary.get("source_child_labels") or ""),
+                "source_section_label": str(primary.get("source_section_label") or ""),
+                "source_target_mode": str(primary.get("source_target_mode") or ""),
             },
         )
     if UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID in rule_ids:
