@@ -1,8 +1,12 @@
 """uk_acquire.py — Per-statute UK legislation acquisition helpers.
 
-Shared library used by:
-  - lawvm uk-acquire              (single-statute CLI)
-  - lawvm uk-corpus               (full-corpus batch)
+This module backs ``lawvm uk-acquire``: the single-statute/debug acquisition
+surface.  Full-corpus acquisition lives in ``lawvm.tools.uk_corpus`` because it
+has different orchestration, rate-limiting, and resumability needs.
+
+The two command surfaces must still share source-state semantics.  Common
+classification and Multiple Choices candidate discovery belongs in
+``lawvm.uk_legislation.source_state`` rather than in either CLI wrapper.
 
 Handles:
   - Fetching enacted XML for a statute (immutable, stored once).
@@ -10,8 +14,7 @@ Handles:
   - Fetching effects feed pages for a statute (slow-mutable, TTL-governed).
 
 Rate limiting and retry are handled by the caller or by the simple internal
-HTTP helpers here.  For full-corpus acquisition, ``lawvm uk-corpus``
-has its own rate-limiter — this module is tuned for single-statute interactive use.
+HTTP helpers here.  This module is tuned for single-statute interactive use.
 """
 
 from __future__ import annotations

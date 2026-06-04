@@ -3708,12 +3708,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "uk-acquire",
         help="download enacted XML, current XML, and effects feed for one UK statute",
         description=(
-            "Acquire primary source artifacts for a single UK statute into the "
-            "Farchive DB.  Fetches enacted XML (immutable, stored once), current "
-            "XML (slow-mutable, TTL-governed), and effects feed pages "
-            "(slow-mutable, TTL-governed).  Use --affecting to also pre-fetch "
-            "missing affecting act XMLs.  Use --dry-run to preview without "
-            "downloading anything."
+            "Single-statute UK acquisition/debug surface.  Fetches primary "
+            "source artifacts for one UK statute into the Farchive DB: enacted "
+            "XML (immutable, stored once), current XML (slow-mutable, "
+            "TTL-governed), and effects feed pages (slow-mutable, "
+            "TTL-governed).  Use --affecting to also pre-fetch missing "
+            "affecting act XMLs.  Use --dry-run to preview without downloading "
+            "anything.  For full-corpus orchestration, use lawvm uk-corpus all; "
+            "both surfaces share UK source-state and Multiple Choices rules."
         ),
     )
     uk_acquire_p.add_argument(
@@ -3770,10 +3772,17 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- uk-corpus (native corpus sync; harmonized with ee-corpus / nz-corpus) ---
     uk_corpus_p = sub.add_parser(
         "uk-corpus",
-        help="UK corpus acquisition into the Farchive (enumerate, download, affecting, refresh)",
+        help=(
+            "UK corpus acquisition into the Farchive "
+            "(enumerate, download, affecting, refresh, repair)"
+        ),
         description=(
-            "Native UK corpus sync. Single resumable, idempotent pipeline that only "
-            "fetches what is missing or stale. Replaces the former acquire_uk_corpus.py script."
+            "Native UK corpus sync.  Resumable, idempotent batch pipeline that "
+            "only fetches what is missing or stale: enumerate primary rows, "
+            "download enacted/current/effects sources, fetch affecting acts, "
+            "refresh mutable sources, and repair cached Multiple Choices "
+            "ambiguity pages.  For one-statute debugging, use lawvm uk-acquire; "
+            "both surfaces share UK source-state and Multiple Choices rules."
         ),
     )
     uk_corpus_sub = uk_corpus_p.add_subparsers(dest="uk_corpus_command", metavar="<subcommand>")

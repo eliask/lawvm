@@ -1054,6 +1054,26 @@ def test_uk_corpus_repair_multiple_choices_parser_defaults() -> None:
     assert args.delay == 0
 
 
+def test_uk_acquire_and_corpus_help_explain_operator_scope(capsys) -> None:
+    parser = cli._build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["uk-acquire", "--help"])
+    text = capsys.readouterr().out
+    assert "Single-statute UK acquisition/debug surface" in text
+    assert "For full-corpus orchestration, use lawvm uk-corpus all" in text
+    assert "share UK source-state" in text
+    assert "Multiple Choices rules" in text
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["uk-corpus", "--help"])
+    text = capsys.readouterr().out
+    assert "Resumable, idempotent batch pipeline" in text
+    assert "For one-statute debugging, use lawvm uk-acquire" in text
+    assert "share UK source-state" in text
+    assert "Choices rules" in text
+
+
 def test_uk_replay_payload_preserves_effect_source_diagnostic_lanes() -> None:
     payload = build_uk_replay_payload(
         statute_id="ukpga/2000/1",
