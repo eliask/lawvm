@@ -667,6 +667,26 @@ def test_uk_frontier_work_item_defaults_cover_grounding_corpus_families(
     assert work_item_payload["detail"]["candidate_set_certificate"][
         "next_promotion_allowed"
     ] is False
+    target_resolution = work_item_payload["detail"]["target_resolution_certificate"]
+    assert target_resolution["family"] == "target_resolution"
+    assert target_resolution["rule_id"] == (
+        "uk_frontier_work_item_target_resolution_projection"
+    )
+    assert target_resolution["target_resolution_status"] == "resolved"
+    assert target_resolution["source_target"] == "s. 1"
+    assert target_resolution["selected_target"] == "s. 1"
+    assert target_resolution["candidate_count"] == 1
+    assert target_resolution["target_candidates"] == [
+        {
+            "target": "s. 1",
+            "reason": "manual_frontier_candidate_target",
+            "target_witness_surface": "effect_feed_affected_provisions",
+            "target_resolution_not_replay_authorization": True,
+        }
+    ]
+    assert work_item_payload["detail"]["packet_completeness"][
+        "has_target_resolution_certificate"
+    ] is True
 
 
 def test_uk_frontier_work_item_preserves_execution_authorization_packet() -> None:
@@ -731,12 +751,20 @@ def test_uk_frontier_work_item_marks_missing_target_candidates_unavailable() -> 
     ).to_dict()
 
     certificate = work_item["detail"]["candidate_set_certificate"]
+    target_resolution = work_item["detail"]["target_resolution_certificate"]
 
     assert certificate["completeness_status"] == "unavailable"
     assert certificate["candidate_count"] == 0
     assert certificate["missing_candidate_count"] == 1
     assert certificate["blocker_counts"] == {"candidate_targets_unavailable": 1}
     assert certificate["next_promotion_allowed"] is False
+    assert target_resolution["target_resolution_status"] == "unresolved"
+    assert target_resolution["source_target"] == "unknown"
+    assert target_resolution["candidate_count"] == 0
+    assert "selected_target" not in target_resolution
+    assert work_item["detail"]["packet_completeness"][
+        "has_target_resolution_certificate"
+    ] is True
 
 
 @pytest.mark.parametrize("rule_id", sorted(UK_CLAIM_TEMPLATE_RULE_IDS))

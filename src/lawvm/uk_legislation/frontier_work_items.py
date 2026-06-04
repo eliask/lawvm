@@ -12,6 +12,15 @@ from lawvm.core.candidate_set_certificate import (
 )
 from lawvm.core.frontier_work_item import FrontierWorkItem
 from lawvm.core.source_witness import source_witness_from_mapping
+from lawvm.core.target_resolution import (
+    SCOPE_CONFIDENCE_EXPLICIT_SOURCE,
+    SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
+    TARGET_AMBIGUOUS,
+    TARGET_RESOLVED,
+    TARGET_UNRESOLVED,
+    TargetResolutionCandidate,
+    TargetResolutionCertificate,
+)
 
 
 _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
@@ -727,12 +736,18 @@ def uk_frontier_work_item_from_manual_frontier_row(
         frontier_family=frontier_family,
         target_witness=target_witness,
     )
+    detail["target_resolution_certificate"] = _target_resolution_certificate(
+        owner_phase=owner_phase,
+        target_witness=target_witness,
+        candidate_targets=candidate_targets,
+    )
     detail["packet_completeness"] = _packet_completeness(
         execution_authorization=execution_authorization,
         source_witness=normalized_source_witness,
         target_witness=target_witness,
         compare_witness=compare_witness,
         candidate_set_certificate=detail["candidate_set_certificate"],
+        target_resolution_certificate=detail["target_resolution_certificate"],
         owner_phase=owner_phase,
         frontier_family=frontier_family,
         frontier_status=frontier_status,
@@ -899,6 +914,66 @@ def _candidate_target_set_certificate(
     return certificate.to_dict()
 
 
+def _target_resolution_certificate(
+    *,
+    owner_phase: str,
+    target_witness: Mapping[str, Any],
+    candidate_targets: tuple[str, ...],
+) -> Mapping[str, Any]:
+    source_target = str(
+        target_witness.get("affected_provisions")
+        or (candidate_targets[0] if candidate_targets else "")
+        or "unknown"
+    )
+    candidates = tuple(
+        TargetResolutionCandidate(
+            target=target,
+            reason="manual_frontier_candidate_target",
+            detail={
+                "target_witness_surface": str(target_witness.get("surface") or ""),
+                "target_resolution_not_replay_authorization": True,
+            },
+        )
+        for target in candidate_targets
+    )
+    resolver_eids = _string_tuple(target_witness.get("resolver_eids"))
+    candidate_count = len(candidate_targets)
+    selected_target = candidate_targets[0] if candidate_count == 1 else ""
+    if candidate_count == 0:
+        status = TARGET_UNRESOLVED
+    elif candidate_count == 1:
+        status = TARGET_RESOLVED
+    else:
+        status = TARGET_AMBIGUOUS
+    return TargetResolutionCertificate(
+        rule_id="uk_frontier_work_item_target_resolution_projection",
+        phase=owner_phase or "unknown",
+        reason=(
+            "manual-frontier target witness is projected for validation and "
+            "does not authorize replay"
+        ),
+        status=status,
+        source_target=source_target,
+        candidate_count=candidate_count,
+        candidates=candidates,
+        selected_target=selected_target,
+        scope_confidence=(
+            SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT
+            if resolver_eids
+            else SCOPE_CONFIDENCE_EXPLICIT_SOURCE
+        ),
+        blocking=False,
+        strict_disposition="record",
+        quirks_disposition="record",
+        detail={
+            "target_witness_surface": str(target_witness.get("surface") or ""),
+            "affected_provisions": str(target_witness.get("affected_provisions") or ""),
+            "resolver_eids": resolver_eids,
+            "target_resolution_not_replay_authorization": True,
+        },
+    ).to_diagnostic_detail()
+
+
 def _packet_completeness(
     *,
     execution_authorization: Mapping[str, Any],
@@ -906,6 +981,7 @@ def _packet_completeness(
     target_witness: Mapping[str, Any],
     compare_witness: Mapping[str, Any],
     candidate_set_certificate: Mapping[str, Any],
+    target_resolution_certificate: Mapping[str, Any],
     owner_phase: str,
     frontier_family: str,
     frontier_status: str,
@@ -931,6 +1007,7 @@ def _packet_completeness(
             source_witness.get("digest") or source_witness.get("preview_digest")
         ),
         "has_target_witness": bool(target_witness),
+        "has_target_resolution_certificate": bool(target_resolution_certificate),
         "has_compare_witness": bool(compare_witness),
         "has_candidate_set_certificate": bool(candidate_set_certificate),
         "has_required_validator_checks": bool(required_validator_checks),
@@ -952,6 +1029,7 @@ def _packet_completeness(
         and checks["has_frontier_status"]
         and checks["has_source_witness"]
         and checks["has_target_witness"]
+        and checks["has_target_resolution_certificate"]
         and checks["has_candidate_set_certificate"]
         and checks["has_required_validator_checks"]
         and checks["has_required_proofs"]

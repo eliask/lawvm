@@ -78,6 +78,15 @@ def test_compile_diagnostic_frontier_work_item_uses_family_defaults() -> None:
     ).to_dict()
 
     assert work_item["candidate_operation_family"] == "table_surface_mutation"
+    assert work_item["detail"]["target_resolution_certificate"][
+        "target_resolution_status"
+    ] == "resolved"
+    assert work_item["detail"]["target_resolution_certificate"]["source_target"] == (
+        "Sch. 12 table"
+    )
+    assert work_item["detail"]["packet_completeness"][
+        "has_target_resolution_certificate"
+    ] is True
     assert work_item["required_validator_checks"] == [
         "source_witness_targets_table_entry_or_column_surface",
         "claim_identifies_exact_table_carrier",
