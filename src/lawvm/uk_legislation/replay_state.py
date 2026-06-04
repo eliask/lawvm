@@ -684,9 +684,40 @@ class UKReplayStateMixin:
                 return found
         return None
 
+    def _tree_path_for_mutable_node_from_parent_index(
+        self,
+        node: UKMutableNode,
+    ) -> TreePath | None:
+        self._ensure_eid_lookup_index()
+        parts: list[tuple[str, str]] = []
+        current = node
+        while True:
+            if current is self.statute.body:
+                return tuple(reversed(parts))
+            supplement_idx = _identity_index(self.statute.supplements, current)
+            if supplement_idx is not None:
+                parts.append((_kind_str(current.kind), current.label or ""))
+                return tuple(reversed(parts))
+            parent_entry = self._eid_lookup_parent_entry(current)
+            if parent_entry is None:
+                return None
+            parent, idx = parent_entry
+            parts.append((_kind_str(current.kind), current.label or ""))
+            if parent is self.statute.body:
+                return tuple(reversed(parts))
+            if parent is None:
+                if idx is not None and 0 <= idx < len(self.statute.supplements):
+                    if self.statute.supplements[idx] is current:
+                        return tuple(reversed(parts))
+                return None
+            current = parent
+
     def _tree_path_for_mutable_node(self, node: UKMutableNode) -> TreePath | None:
         if self.statute.body is node:
             return ()
+        indexed_path = self._tree_path_for_mutable_node_from_parent_index(node)
+        if indexed_path is not None:
+            return indexed_path
         found = self._find_tree_path_to_node(self.statute.body, node)
         if found is not None:
             return found

@@ -68911,6 +68911,50 @@ def test_executor_skips_payload_invariant_check_without_new_tree_violation(
     assert [child.label for child in executor.statute.body.children] == ["1", "2"]
 
 
+def test_executor_tree_path_for_mutable_node_uses_parent_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2000/22",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="",
+                            attrs={"eId": "section-1-subsection-1"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute, adjudications_out=[])
+    node = executor.statute.body.children[0].children[0]
+    executor._ensure_eid_lookup_index()
+
+    def fail_recursive_scan(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("indexed node path should not require recursive scan")
+
+    monkeypatch.setattr(executor, "_find_tree_path_to_node", fail_recursive_scan)
+
+    assert executor._tree_path_for_mutable_node(node) == (
+        ("section", "1"),
+        ("subsection", "1"),
+    )
+
+
 def test_executor_scopes_schedule_descendant_invariant_scan_to_parent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
