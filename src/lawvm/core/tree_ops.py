@@ -1155,7 +1155,8 @@ def _iter_duplicate_order_tree_invariant_violations(
                             next_label=labels[i + 1],
                         )
         for child, child_kind, child_label in child_entries:
-            yield from _check(child, path + ((child_kind, child_label),))
+            if child.children:
+                yield from _check(child, path + ((child_kind, child_label),))
 
     yield from _check(tree, root_path)
 
