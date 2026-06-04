@@ -2136,6 +2136,51 @@ def test_report_from_snapshot_can_fail_on_mutation_boundary_unexplained(
     assert report["summary"]["mutation_boundary_unexplained_path_count"] == 2
 
 
+def test_report_from_snapshot_can_fail_on_frontier_work_item_packet_gaps(
+    tmp_path,
+) -> None:
+    snapshot_path = tmp_path / "snapshot.json"
+    report_path = tmp_path / "report.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "ukpga/2008/17": {
+                    "statute_id": "ukpga/2008/17",
+                    "score_status": "scored",
+                    "aligned": 86.0,
+                    "aligned_excluding_grounding_collateral": 86.0,
+                    "unaligned": 86.0,
+                    "n_replay": 100,
+                    "n_oracle": 110,
+                    "manual_frontier_work_item_packet_ready_counts": {
+                        "not_ready": 1,
+                    },
+                    "manual_frontier_work_item_packet_missing_field_counts": {
+                        "execution_authorization": 1,
+                    },
+                }
+            }
+        )
+    )
+
+    assert (
+        uk_broad_baseline.run_report_from_snapshot(
+            snapshot_path,
+            report_path,
+            fail_on_frontier_work_item_packet_gaps=True,
+        )
+        == 1
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["summary"]["manual_frontier_work_item_packet_ready_counts"] == {
+        "not_ready": 1,
+    }
+    assert report["summary"][
+        "manual_frontier_work_item_packet_missing_field_counts"
+    ] == {"execution_authorization": 1}
+
+
 def test_report_from_snapshot_can_fail_on_frontier_source_witness_gaps(
     tmp_path,
 ) -> None:
@@ -2415,6 +2460,46 @@ def test_run_driver_can_fail_on_frontier_work_item_gaps(monkeypatch, capsys) -> 
     assert (
         "manual_frontier_work_item_source_witness_digest_coverage_counts: "
         "preview_digest=2"
+    ) in out
+
+
+def test_run_driver_can_fail_on_frontier_work_item_packet_gaps(
+    monkeypatch,
+    capsys,
+) -> None:
+    def fake_run(*_args, **_kwargs):
+        row = {
+            "statute_id": "ukpga/2008/17",
+            "score_status": "scored",
+            "aligned": 86.0,
+            "aligned_excluding_grounding_collateral": 86.0,
+            "unaligned": 86.0,
+            "n_replay": 100,
+            "n_oracle": 110,
+            "manual_frontier_work_item_packet_ready_counts": {
+                "not_ready": 1,
+            },
+            "manual_frontier_work_item_packet_missing_field_counts": {
+                "execution_authorization": 1,
+            },
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["ukpga/2008/17"],
+            None,
+            fail_on_frontier_work_item_packet_gaps=True,
+        )
+        == 1
+    )
+    out = capsys.readouterr().out
+    assert "manual_frontier_work_item_packet_ready_counts: not_ready=1" in out
+    assert (
+        "manual_frontier_work_item_packet_missing_field_counts: "
+        "execution_authorization=1"
     ) in out
 
 
