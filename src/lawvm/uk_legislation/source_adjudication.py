@@ -178,9 +178,9 @@ _UK_MANUAL_FRONTIER_OUT_OF_SCOPE_PATHOLOGIES = frozenset(
 )
 _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClassification] = {
     "amendment_text_target_unsupported": _ManualFrontierClassification(
-        "deterministic_frontend_candidate",
+        "manual_compile_candidate",
         "uk_manual_frontier_amendment_program_target_candidate",
-        "The source targets text inserted by another amendment instruction; this needs an explicit amendment-program compilation lane, not a base-text guess.",
+        "The source targets text inserted by another amendment instruction; a claim or future amendment-program compiler must prove the parent instruction, created target, and mutation boundary before replay.",
     ),
     "schedule_list_entry_target_unsupported": _ManualFrontierClassification(
         "manual_compile_candidate",
@@ -248,9 +248,9 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "The source changes the terminal punctuation of a named definition and inserts following tail text after that definition; compile must split the compound instruction and prove the definition boundary plus inserted tail before replay.",
     ),
     "sentence_scoped_repeated_insert_unsupported": _ManualFrontierClassification(
-        "deterministic_frontend_candidate",
+        "manual_compile_candidate",
         "uk_manual_frontier_sentence_scoped_repeated_insert_candidate",
-        "The source inserts text at the end of each selected sentence; compile must add a typed sentence-boundary selector and prove each insertion boundary before replay.",
+        "The source inserts text at the end of each selected sentence; a claim or future sentence-boundary compiler must prove each insertion boundary before replay.",
     ),
     "application_modification_payload_out_of_scope": _ManualFrontierClassification(
         "non_textual_or_out_of_scope",
@@ -442,6 +442,10 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_after_anchor_to_end_text_rewrite_applied",
         "uk_replay_after_words_in_brackets_text_rewrite_applied",
         "uk_replay_amendment_program_inserted_parent_child_insert_applied",
+        "uk_replay_at_end_step_text_rewrite_applied",
+        "uk_replay_at_end_words_in_parentheses_text_rewrite_applied",
+        "uk_replay_before_step_text_rewrite_applied",
+        "uk_replay_connector_preceding_child_list_entry_insert_resolved",
         "uk_replay_contextual_word_anchor_kind_normalized",
         "uk_replay_contextual_word_text_rewrite_applied",
         "uk_replay_amendment_insert_tail_text_rewrite_applied",
@@ -483,6 +487,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_schedule_list_entry_anchor_ordinal_resolved",
         "uk_replay_schedule_list_entry_anchor_parenthetical_paragraph_normalized",
         "uk_replay_schedule_list_entry_anchor_prefix_normalized",
+        "uk_replay_schedule_list_entry_beginning_position_resolved",
         "uk_replay_schedule_list_entry_table_anchor_citation_short_title_normalized",
         "uk_replay_schedule_list_entry_end_position_resolved",
         "uk_replay_schedule_list_entry_group_anchor_resolved",
@@ -526,6 +531,8 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_text_match_word_punctuation_elided",
         "uk_replay_numeric_list_trailing_comma_anchor_normalized",
         "uk_replay_text_range_anchor_word_boundary_normalized",
+        "uk_replay_unique_fee_sum_text_rewrite_applied",
+        "uk_replay_unique_literal_text_rewrite_applied",
         "uk_replay_heading_respectively_all_occurrences_absent_observed",
         "uk_replay_labeled_child_end_range_applied",
         "uk_replay_node_local_range_text_rewrite_applied",
@@ -2868,9 +2875,9 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
         and _looks_like_sentence_scoped_repeated_insert_instruction(extracted_text_norm)
     ):
         return {
-            "status": "deterministic_frontend_candidate",
+            "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_sentence_scoped_repeated_insert_candidate",
-            "reason": "The source inserts text at the end of each of a bounded sentence set; a deterministic sentence-boundary compiler must prove sentence segmentation and insert before the selected sentence terminators before replay.",
+            "reason": "The source inserts text at the end of each of a bounded sentence set; a claim or future sentence-boundary compiler must prove sentence segmentation and insert before the selected sentence terminators before replay.",
         }
 
     if (

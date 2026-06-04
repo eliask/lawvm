@@ -1564,7 +1564,7 @@ def test_classify_uk_manual_compile_frontier_marks_sentence_scoped_repeated_inse
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_sentence_scoped_repeated_insert_candidate"
 
 
@@ -2146,7 +2146,7 @@ def test_classify_uk_manual_compile_frontier_marks_amendment_program_target() ->
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_amendment_program_target_candidate"
 
 
@@ -2203,7 +2203,7 @@ def test_classify_uk_manual_compile_frontier_keeps_explicit_amendment_program_an
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_amendment_program_target_candidate"
 
 
