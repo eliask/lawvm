@@ -32426,6 +32426,128 @@ def test_compile_varied_by_substituting_single_amount_lowers_exact_occurrence() 
     )
 
 
+def test_compile_varied_by_substituting_target_clause_lowers_exact_occurrences() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="article-2">
+          <Pnumber>2</Pnumber>
+          <Text>2 The maximum amounts of a candidate's election expenses at a
+          local government election in Scotland shall be varied by substituting
+          for the sums “£242” and “4.7p” in section 76(2)(b)(ii) of the
+          Representation of the People Act 1983, the sums “£600” and “5p”,
+          respectively.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_varied_by_substituting_target_clause",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-01-28",
+        affected_uri="/id/ukpga/1983/2/section/76/subsection/2/paragraph/b/subparagraph/ii",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1983",
+        affected_number="2",
+        affected_provisions="s. 76(2)(b)(ii)",
+        affecting_uri="/id/ssi/2005/102",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2005",
+        affecting_number="102",
+        affecting_provisions="art. 2",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2005-01-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 2
+    assert [
+        (
+            op.text_patch.selector.match_text,
+            op.text_patch.selector.occurrence,
+            op.text_patch.replacement,
+        )
+        for op in ops
+        if op.text_patch is not None
+    ] == [
+        ("£242", 1, "£600"),
+        ("4.7p", 1, "5p"),
+    ]
+    assert [
+        "text_rewrite_rule:uk_effect_varied_by_substituting_text_patch"
+        in op.provenance_tags
+        for op in ops
+    ] == [True, True]
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
+def test_compile_varied_by_substituting_sum_of_clause_lowers_exact_occurrence() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="article-2">
+          <Pnumber>2</Pnumber>
+          <Text>2 The maximum amount of a candidate's election expenses at a
+          local government election in Scotland is varied by substituting, for
+          the sum of “£705” in section 76(2)(b)(ii) of the Representation of the
+          People Act 1983, the sum of “£740”.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_varied_by_substituting_sum_of_clause",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-03-01",
+        affected_uri="/id/ukpga/1983/2/section/76/subsection/2/paragraph/b/subparagraph/ii",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1983",
+        affected_number="2",
+        affected_provisions="s. 76(2)(b)(ii)",
+        affecting_uri="/id/ssi/2016/263",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2016",
+        affecting_number="263",
+        affecting_provisions="art. 2",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2016-03-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "£705"
+    assert ops[0].text_patch.selector.occurrence == 1
+    assert ops[0].text_patch.replacement == "£740"
+    assert (
+        "text_rewrite_rule:uk_effect_varied_by_substituting_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_compile_word_substitution_structural_child_replacement_reclassified() -> None:
     extracted_el = ET.fromstring(
         f"""

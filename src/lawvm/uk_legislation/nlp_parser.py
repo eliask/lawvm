@@ -197,11 +197,13 @@ _QUOTED_TERM_LIST_PATTERN = (
     rf"(?:\s*(?:,|and)\s*[“\"'‘]{_NON_QUOTE}{{1,120}}[”\"'’]){{0,4}}"
 )
 _VARIED_BY_SUBSTITUTING_RE = re.compile(
-    r"shall\s+be\s+varied\s+by\s+substituting\s+for\s+"
-    r"(?:(?:the\s+)?(?:words?|amounts?|sums?)\s+)?"
+    r"(?:shall\s+be|is|are)\s+varied\s+by\s+substituting\s*,?\s+for\s+"
+    r"(?:(?:the\s+)?(?:words?|amounts?|sums?)(?:\s+of)?\s+)?"
     rf"(?P<originals>{_QUOTED_TERM_LIST_PATTERN})"
+    r"(?:\s+in\s+(?:section|subsection|paragraph|article|regulation)\s+"
+    rf"{_NON_QUOTE}{{1,240}}?)?"
     r"\s*,?\s+"
-    r"(?:(?:the\s+)?(?:words?|amounts?|sums?)\s+)?"
+    r"(?:(?:the\s+)?(?:words?|amounts?|sums?)(?:\s+of)?\s+)?"
     rf"(?P<replacements>{_QUOTED_TERM_LIST_PATTERN})"
     r"(?:\s*,?\s*respectively)?(?=\s*(?:[,.;)]|$))",
     re.I,

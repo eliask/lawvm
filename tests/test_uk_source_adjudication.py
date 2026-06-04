@@ -2033,6 +2033,31 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_list_entry_before_ge
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_schedule_end_insert_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text=(
+            "2 Schedule 15 to the Enterprise Act 2002 (Enactments conferring "
+            "functions) is amended by inserting at the end "
+            "\u201cGambling Act 2005 (c.19) \u201d."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_table_row_omission_manual() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words omitted",

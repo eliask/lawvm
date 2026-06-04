@@ -1266,11 +1266,16 @@ def _looks_like_schedule_list_entry_instruction(text: str) -> bool:
         or re.search(r"\bfor\s+(?:the\s+)?entry\s+(?:beginning|that\s+begins?)\b", norm)
         or re.search(r"\bomit\s+(?:the\s+)?entry\s+for\b", norm)
         or re.search(r"\bomit\s+the\s+following\s+entries\b", norm)
+        or re.search(
+            r"\bschedule\s+[0-9A-Za-z]+\b.{0,160}\b"
+            r"(?:insert|inserting|insertion)\s+at\s+the\s+end\b",
+            norm,
+        )
     ):
         return False
     if re.search(r"\b(?:table|column|row)\b", norm):
         return False
-    return bool(re.search(r"\b(?:insert|insertion|substitute|omit|repeal)\b", norm))
+    return bool(re.search(r"\b(?:insert|inserting|insertion|substitute|omit|repeal)\b", norm))
 
 
 def _looks_like_table_entry_instruction(text: str, *, target_paths: Iterable[str] = ()) -> bool:
