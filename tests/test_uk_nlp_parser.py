@@ -114,6 +114,30 @@ def test_parse_fragment_substitution_handles_bare_quoted_substitution_after_targ
     ]
 
 
+def test_parse_fragment_substitution_handles_unquoted_anchor_quoted_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "12 In paragraph 2(a) of Schedule 7, for listing rules substitute "
+        "“Part 6 rules”."
+    )
+
+    assert subs == [
+        {
+            "original": "listing rules",
+            "replacement": "Part 6 rules",
+            "rule_id": "uk_effect_unquoted_anchor_quoted_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_does_not_text_patch_structural_unquoted_anchor() -> None:
+    subs = parse_fragment_substitution("for paragraph (a) substitute “replacement text”.")
+
+    assert all(
+        sub.get("rule_id") != "uk_effect_unquoted_anchor_quoted_substitution_text_patch"
+        for sub in subs
+    )
+
+
 def test_parse_fragment_substitution_handles_quoted_substitute_dash_quoted_payload() -> None:
     subs = parse_fragment_substitution(
         "a for \u201c ISSUED IN ACCORDANCE WITH DIRECTIVE 1999/105/EC \u201d "

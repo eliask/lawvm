@@ -79,6 +79,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_IN_DEFINITION_AT_END_TARGET_CONTEXT_INSERT_RULE_ID,
     UK_UNQUOTED_DEFINITION_RANGE_TO_END_SUBSTITUTION_RULE_ID,
     UK_UNQUOTED_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID,
+    UK_UNQUOTED_ANCHOR_QUOTED_SUBSTITUTION_RULE_ID,
     _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID,
 )
 from lawvm.uk_legislation.provenance_notes import NOTE_FRAGMENT_SUB, NOTE_TEXT_REWRITE_RULE
@@ -422,6 +423,34 @@ def append_basic_text_rewrite_observations(
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
     rule_ids = _fragment_rule_ids(fragment_subs)
+    if UK_UNQUOTED_ANCHOR_QUOTED_SUBSTITUTION_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if (
+                str(fragment.get("rule_id") or "")
+                != UK_UNQUOTED_ANCHOR_QUOTED_SUBSTITUTION_RULE_ID
+            ):
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_UNQUOTED_ANCHOR_QUOTED_SUBSTITUTION_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="explicit_unquoted_anchor_quoted_substitution_text_patch",
+                reason=(
+                    "UK source explicitly substitutes a quoted payload for an "
+                    "unquoted textual anchor; lowering preserves the exact anchor "
+                    "and replacement as a bounded target-local text patch."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": str(fragment.get("original") or ""),
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
+                },
+            )
     if UK_REFERENCE_TO_SUBSTITUTION_RULE_ID in rule_ids:
         for fragment in fragment_subs or []:
             if str(fragment.get("rule_id") or "") != UK_REFERENCE_TO_SUBSTITUTION_RULE_ID:

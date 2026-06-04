@@ -222,6 +222,18 @@ _VARIED_BY_SUBSTITUTING_RE = re.compile(
     r"(?:\s*,?\s*respectively)?(?=\s*(?:[,.;)]|$))",
     re.I,
 )
+_UNQUOTED_ANCHOR_QUOTED_SUBSTITUTION_RE = re.compile(
+    r"\bfor\s+(?P<original>[A-Za-z][A-Za-z0-9&/().\-\s]{1,160}?)\s+"
+    r"substitute\s*[—-]?\s+"
+    rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]\s*[,.;]?",
+    re.I,
+)
+_UNQUOTED_ANCHOR_STRUCTURAL_PREFIX_RE = re.compile(
+    r"^(?:articles?|chapters?|paragraphs?|parts?|regulations?|rules?|"
+    r"schedules?|sections?|sub-?paragraphs?|subsections?|"
+    r"the\s+(?:amount\s+specified|opening\s+words|words?\s+(?:after|before|from|in)\b))",
+    re.I,
+)
 
 _UK_SOURCE_ASIDE_RE = r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)?\))?"
 _UK_TEXT_BOUNDARY_UNIT_RE = r"(?:regulation|paragraph|sub-paragraph|subsection|section)"
@@ -324,6 +336,9 @@ UK_MULTI_WHEREVER_OCCURRING_SUBSTITUTION_RULE_ID = (
 UK_REFERENCE_TO_SUBSTITUTION_RULE_ID = "uk_effect_reference_to_substitution_text_patch"
 UK_UNQUOTED_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID = (
     "uk_effect_unquoted_all_occurrences_substitution_text_patch"
+)
+UK_UNQUOTED_ANCHOR_QUOTED_SUBSTITUTION_RULE_ID = (
+    "uk_effect_unquoted_anchor_quoted_substitution_text_patch"
 )
 UK_QUOTED_SUBSTITUTION_SCOPE_NOTE_RULE_ID = (
     "uk_effect_quoted_substitution_scope_note_text_patch"
@@ -2741,6 +2756,18 @@ def _parse_leading_substitutions(text: str, subs: list) -> None:
                     "rule_id": "uk_effect_quoted_anchor_block_substitution_text_patch",
                 }
             )
+
+    for m in _UNQUOTED_ANCHOR_QUOTED_SUBSTITUTION_RE.finditer(text):
+        original = m.group("original").strip(" \t\r\n,.;")
+        if _UNQUOTED_ANCHOR_STRUCTURAL_PREFIX_RE.match(original):
+            continue
+        subs.append(
+            {
+                "original": original,
+                "replacement": m.group("replacement").strip(),
+                "rule_id": UK_UNQUOTED_ANCHOR_QUOTED_SUBSTITUTION_RULE_ID,
+            }
+        )
 
     for m in _QUOTED_SUBSTITUTION_SCOPE_NOTE_RE.finditer(text):
         if not _is_non_occurrence_scope_note(m.group("scope_note")):

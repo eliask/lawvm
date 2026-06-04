@@ -8416,6 +8416,69 @@ def test_compile_at_end_subsection_of_section_unquoted_dash_insert_to_text_appen
     ]
 
 
+def test_compile_unquoted_anchor_quoted_substitution_to_text_patch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-12">
+          <Pnumber>12</Pnumber>
+          <Text>
+            12 In paragraph 2(a) of Schedule 7 (the Authority as competent
+            authority for Part 6), for listing rules substitute “Part 6 rules”.
+          </Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-f5a518ffaa280251c1ea1bbf95c9c720",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-07-01",
+        affected_uri="/id/ukpga/2000/8/schedule/7/paragraph/2/sub-paragraph/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="8",
+        affected_provisions="Sch. 7 para. 2(a)",
+        affecting_uri="/id/uksi/2005/381",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2005",
+        affecting_number="381",
+        affecting_provisions="Sch. 1 para. 12",
+        affecting_title=(
+            "Financial Services and Markets Act 2000 (Markets in Financial "
+            "Instruments) Regulations 2005"
+        ),
+        in_force_dates=[{"date": "2005-07-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("schedule", "7"), ("paragraph", "2"), ("item", "a"))
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.REPLACE
+    assert op.text_patch.selector.match_text == "listing rules"
+    assert _required_text_patch_replacement(op) == "Part 6 rules"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_unquoted_anchor_quoted_substitution_text_patch"
+        in op.provenance_tags
+    )
+    assert [
+        record
+        for record in lowering_records
+        if record.get("rule_id") == "uk_effect_unquoted_anchor_quoted_substitution_text_patch"
+        and record.get("text_match") == "listing rules"
+    ]
+
+
 def test_at_end_dangling_insert_quote_fragment_parses_as_append() -> None:
     fragments = parse_fragment_substitution(
         "4 In subsection (3) (person liable for tax is person to whom income "
