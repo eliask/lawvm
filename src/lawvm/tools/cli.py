@@ -79,6 +79,7 @@ Usage:
     lawvm bisect 2006/1299 --verbose
     lawvm bisect-section 2006/1299 --section '63 §'
     lawvm dump 2006/1299 --after parse
+    lawvm dump ukpga/2002/30 --db data/uk_legislation.farchive
     lawvm dump 2006/1299 --after extract --source 2017/794
     lawvm source-dump 2006/1299 --address 'chapter:3/section:12'
     lawvm inspect-amendment 2006/1299 --source 2017/794
@@ -220,7 +221,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="inspect pipeline state at a named stage",
         description=(
             "Show statute state at a pipeline stage. "
-            "Default (no --after): full replay body text. "
+            "Default (no --after): full replay body text for Finland; "
+            "archive-backed source parse for UK IDs. "
             "--after parse: base statute structure. "
             "--after extract/normalize: ops from one amendment (requires --source)."
         ),
@@ -229,7 +231,7 @@ def _build_parser() -> argparse.ArgumentParser:
     dump_p.add_argument(
         "--after",
         choices=["parse", "extract", "normalize", "resolve", "apply"],
-        help="pipeline stage to dump (default: apply)",
+        help="pipeline stage to dump (default: apply for FI, source parse for UK)",
     )
     dump_p.add_argument(
         "--source",
@@ -250,7 +252,7 @@ def _build_parser() -> argparse.ArgumentParser:
     dump_p.add_argument(
         "--db",
         metavar="PATH",
-        help="UK farchive path for UK --after parse dumps (default: data/uk_legislation.farchive)",
+        help="UK farchive path for UK source-parse dumps (default: data/uk_legislation.farchive)",
     )
 
     # --- source-dump ---

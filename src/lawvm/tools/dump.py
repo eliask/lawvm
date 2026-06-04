@@ -7,7 +7,7 @@ Named stages (MIGRATION_SPEC.md appendix):
   apply      Final replayed state (full pipeline)
 
 Usage:
-    lawvm dump <statute_id>                              # final replayed body text
+    lawvm dump <statute_id>                              # FI final replayed body text; UK source parse
     lawvm dump <statute_id> --after parse                # base statute structure
     lawvm dump <statute_id> --after extract --source <amendment_id>
     lawvm dump <statute_id> --after normalize --source <amendment_id>
@@ -392,7 +392,7 @@ def main(args) -> None:
     jurisdiction = getattr(args, "jurisdiction", "fi")
     is_uk_dump = jurisdiction == "uk" or is_uk_statute_id(sid)
 
-    if after == "parse":
+    if after == "parse" or (after is None and is_uk_dump):
         if is_uk_dump:
             bundle = build_uk_source_dump(sid, address, db_path=getattr(args, "db", None))
             print(_format_text(bundle))
