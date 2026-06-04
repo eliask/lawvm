@@ -2411,6 +2411,7 @@ def _hard_gate_exit_code(
     fail_on_non_manual_source_chain_frontier: bool = False,
     fail_on_mutation_boundary_unexplained: bool = False,
     fail_on_frontier_work_item_packet_gaps: bool = False,
+    fail_on_frontier_candidate_set_gaps: bool = False,
     fail_on_frontier_source_witness_gaps: bool = False,
 ) -> int:
     if (
@@ -2447,6 +2448,10 @@ def _hard_gate_exit_code(
         summary
     ):
         return 1
+    if fail_on_frontier_candidate_set_gaps and _frontier_candidate_set_gap_count(
+        summary
+    ):
+        return 1
     if fail_on_frontier_source_witness_gaps and _frontier_source_witness_gap_count(
         summary
     ):
@@ -2465,6 +2470,16 @@ def _frontier_work_item_packet_gap_count(summary: Mapping[str, Any]) -> int:
         int(ready_counts.get("not_ready", 0) or 0)
         + int(ready_counts.get("missing_packet_completeness", 0) or 0)
         + sum(int(count or 0) for count in missing_counts.values())
+    )
+
+
+def _frontier_candidate_set_gap_count(summary: Mapping[str, Any]) -> int:
+    status_counts = summary.get("manual_frontier_work_item_candidate_set_status_counts")
+    status_counts = status_counts if isinstance(status_counts, Mapping) else {}
+    return sum(
+        int(count or 0)
+        for status, count in status_counts.items()
+        if str(status) != "complete"
     )
 
 
@@ -2495,6 +2510,7 @@ def run_report_from_snapshot(
     fail_on_non_manual_source_chain_frontier: bool = False,
     fail_on_mutation_boundary_unexplained: bool = False,
     fail_on_frontier_work_item_packet_gaps: bool = False,
+    fail_on_frontier_candidate_set_gaps: bool = False,
     fail_on_frontier_source_witness_gaps: bool = False,
 ) -> int:
     """Regenerate the typed report envelope from a saved raw snapshot.
@@ -2540,6 +2556,7 @@ def run_report_from_snapshot(
         fail_on_frontier_work_item_packet_gaps=(
             fail_on_frontier_work_item_packet_gaps
         ),
+        fail_on_frontier_candidate_set_gaps=fail_on_frontier_candidate_set_gaps,
         fail_on_frontier_source_witness_gaps=fail_on_frontier_source_witness_gaps,
     )
 
@@ -2557,6 +2574,7 @@ def run_driver(
     fail_on_non_manual_source_chain_frontier: bool = False,
     fail_on_mutation_boundary_unexplained: bool = False,
     fail_on_frontier_work_item_packet_gaps: bool = False,
+    fail_on_frontier_candidate_set_gaps: bool = False,
     fail_on_frontier_source_witness_gaps: bool = False,
 ) -> int:
     workers = max(1, int(parallel or 1))
@@ -3111,6 +3129,10 @@ def run_driver(
         summary
     ):
         return 1
+    if fail_on_frontier_candidate_set_gaps and _frontier_candidate_set_gap_count(
+        summary
+    ):
+        return 1
     if fail_on_frontier_source_witness_gaps and _frontier_source_witness_gap_count(
         summary
     ):
@@ -3232,6 +3254,14 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     ap.add_argument(
+        "--fail-on-frontier-candidate-set-gaps",
+        action="store_true",
+        help=(
+            "Exit nonzero when manual-frontier CandidateSetCertificate "
+            "status counters contain any non-complete status"
+        ),
+    )
+    ap.add_argument(
         "--fail-on-frontier-source-witness-gaps",
         action="store_true",
         help=(
@@ -3277,6 +3307,9 @@ def main(argv: list[str] | None = None) -> int:
             fail_on_frontier_work_item_packet_gaps=(
                 args.fail_on_frontier_work_item_packet_gaps
             ),
+            fail_on_frontier_candidate_set_gaps=(
+                args.fail_on_frontier_candidate_set_gaps
+            ),
             fail_on_frontier_source_witness_gaps=(
                 args.fail_on_frontier_source_witness_gaps
             ),
@@ -3310,6 +3343,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
         fail_on_frontier_work_item_packet_gaps=(
             args.fail_on_frontier_work_item_packet_gaps
+        ),
+        fail_on_frontier_candidate_set_gaps=(
+            args.fail_on_frontier_candidate_set_gaps
         ),
         fail_on_frontier_source_witness_gaps=(
             args.fail_on_frontier_source_witness_gaps
