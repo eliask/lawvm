@@ -34,7 +34,7 @@ def _load_corpus_store() -> Any:
 def _get_statute_xml(statute_id: str, store: Any) -> Optional[bytes]:
     """Get XML bytes for a statute from the corpus store."""
     try:
-        return store.get_xml(statute_id)
+        return store.read_oracle(statute_id)
     except Exception:
         return None
 

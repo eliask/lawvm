@@ -27,7 +27,6 @@ from lawvm.core.reference_mention import reference_mention_to_row
 
 def _load_corpus_store() -> Any:
     """Load the Finland consolidated corpus store for XML acquisition."""
-    from lawvm.finland.consolidated_store import ConsolidatedStore
     from lawvm.finland.corpus import get_corpus_store
     return get_corpus_store()
 
@@ -38,7 +37,7 @@ def _get_statute_xml(statute_id: str, store: Any) -> Optional[bytes]:
     Returns None if the statute is not available.
     """
     try:
-        return store.get_xml(statute_id)
+        return store.read_oracle(statute_id)
     except Exception:
         return None
 

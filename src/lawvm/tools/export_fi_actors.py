@@ -37,7 +37,7 @@ def _get_statute_xml(statute_id: str, store: Any) -> Optional[bytes]:
     Returns None if the statute is not available.
     """
     try:
-        return store.get_xml(statute_id)
+        return store.read_oracle(statute_id)
     except Exception:
         return None
 
