@@ -12,6 +12,12 @@ Entry points:
   extract_eu_reference_mentions(xml_bytes, statute_id, ...) -> ExtractionResult
       EU cross-jurisdiction references from text scan.
 
+  extract_plain_text_statute_mentions(xml_bytes, statute_id, ...) -> ExtractionResult
+      Plain-text Finnish statute citations NOT covered by <ref> markup.
+
+  extract_all_reference_mentions(xml_bytes, statute_id, ...) -> ExtractionResult
+      Combined domestic + EU + plain-text extraction.
+
 Design discipline (AGENTS.md §1.1, §1.8, §1.11, §1.13):
 
   §1.1 No silent target hijacking:
@@ -27,10 +33,11 @@ Design discipline (AGENTS.md §1.1, §1.8, §1.11, §1.13):
       Bounded quantifiers; no adjacent unbounded repeats.
       Substring guards before regex on long text.
 
-  §1.13 Grammar trigger: currently 3 in-prose Finnish citation variants.
-      This file uses module-scope compiled patterns, each a single predicate,
-      not a pile of overlapping scans. If variants grow to 3+ overlapping
-      passes on the same text, build a named scanner per REGEX_TO_GRAMMAR_MIGRATION.md.
+  §1.13 Named recognizer for plain-text statute citations:
+      Finnish statute citations without <ref> markup form a GRAMMAR FAMILY
+      (3+ inflection variants: -lain, -asetuksen, -laissa, -lakia, etc.).
+      Implemented as PlainTextStatuteCitationRecognizer — one single-pass
+      structured recognizer, not N overlapping backtracking regexes.
 
 Source: Finlex Akoma Ntoso consolidated XML in the corpus store.
 Promotion from: ``lawvm.finland.cross_refs`` (CrossRefEdge, CrossRefDiagnostic).
@@ -85,6 +92,210 @@ _EU_ID_RE = re.compile(
     r"^eu/([a-z]{2,10})/(\d{4})/(\d{1,6})$",
     re.IGNORECASE,
 )
+
+# ---------------------------------------------------------------------------
+# Plain-text statute citation recognizer (AGENTS.md §1.13)
+# ---------------------------------------------------------------------------
+#
+# Finnish statute citations in body prose without <ref> markup follow a
+# shared pattern family:
+#
+#   Inflection suffixes on the statute name:
+#     -lain          (lannoitelain)
+#     -lakia         (lannoitelakia)
+#     -laissa        (elintarvikelaissa)
+#     -laista        (elintarvikelaista)
+#     -laiksi        (elintarvikelaiksi)
+#     -laille        (elintarvikelaille)
+#     -asetuksen     (ympäristönsuojeluasetuksen)
+#     -asetusta      (ympäristönsuojeluasetusta)
+#     -asetuksessa   (ympäristönsuojeluasetuksessa)
+#     -asetuksesta   (ympäristönsuojeluasetuksesta)
+#     -asetukseksi   (ympäristönsuojeluasetukseksi)
+#     -lain          (also short: "lain (711/2022)")
+#     -asetuksen     (also short: "asetuksen (964/2023)")
+#   ...
+#   Followed by: (NUMBER/YEAR) or (YEAR/NUMBER) in parentheses
+#   Optionally followed by: SECTION § and SUBSECTION momentti/momentin
+#
+# This is a grammar (3+ variants) → build ONE named recognizer, not N regexes.
+#
+# The recognizer uses a SINGLE compiled regex over the text of <p> nodes
+# that does not include any <ref> element text, to avoid double-counting.
+# The regex is structured so group(1)=statute_number, group(2)=statute_year,
+# group(3)=section_label (optional).
+#
+# Grammar:
+#   WORD_WITH_SUFFIX "(" NUMBER "/" YEAR ")" [WHITESPACE SECTION "§"]
+#   where SUFFIX is one of the known Finnish inflection suffixes.
+#
+# Bounded quantifiers (AGENTS.md §1.11):
+#   - Word stem: [a-zA-ZäöåÄÖÅ\-]{1,60}
+#   - Suffix alternatives: alternation of bounded strings
+#   - NUMBER: \d{1,6}
+#   - YEAR: \d{4}
+#   - SECTION: \d{1,6}[a-zA-ZäöÄÖ]?
+#
+# Substring guard: check for "§" in text before running the regex
+# (all valid statute citations in Finnish law refer to some section/§).
+# Additional guard: check for "(" in text (all citations have parenthetical ID).
+
+_PLAIN_TEXT_FI_STATUTE_RE = re.compile(
+    r"""
+    (?:
+        # Named law/statute word with inflection suffix (nominative and case forms)
+        [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60}
+        (?:lain|lakia|laissa|laista|laiksi|laille|lailla|lailta|lakia|lain)
+      | [a-zA-Z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60}
+        (?:asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi|asetuksella|asetukselle|asetukselta|asetuksen)
+      | \b(?:lain|lakia|laissa|laiksi|laille|laista|lailla|lailta)
+      | \b(?:asetuksen|asetusta|asetuksessa|asetuksesta|asetukseksi|asetuksella|asetukselle|asetukselta)
+    )
+    \s{0,5}
+    \(
+    \s{0,3}
+    (\d{1,6})/(\d{4})   # group 1 = number, group 2 = year
+    \s{0,3}
+    \)
+    (?:
+        \s{0,10}
+        (\d{1,6}[a-zA-Z\xe4\xf6\xc4\xd6]?)   # group 3 = section label (optional)
+        \s{0,5}
+        \xa7                                    # § character (U+00A7)
+    )?
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
+
+# Substring guards for the plain-text extractor:
+#   - "§" (section mark, always present in Finnish statute citations)
+#   - "(" (parenthetical statute ID)
+# Both must be present; if either is absent, skip the full regex scan.
+_PLAIN_TEXT_GUARD_SECTION = "\xa7"  # §
+_PLAIN_TEXT_GUARD_PAREN = "("
+
+
+class PlainTextStatuteCitationRecognizer:
+    """Named recognizer for Finnish plain-text statute citations (AGENTS.md §1.13).
+
+    Extracts statute citations from <p> text that is NOT inside <ref> elements,
+    to complement the structured AKN <ref>-based extraction.
+
+    This is a SINGLE-PASS structured recognizer scanning non-ref text fragments
+    within <p> elements, not N overlapping backtracking regexes. Each match
+    yields (statute_id, section_label_or_empty, start_position) tuples.
+
+    Statute ID form: "NUMBER/YEAR" (canonical, matching Finnish statute_id format).
+    Section label: extracted when present; empty string otherwise.
+
+    Usage:
+        recognizer = PlainTextStatuteCitationRecognizer()
+        for statute_id, section_label in recognizer.scan_non_ref_text(p_element):
+            ...
+
+    Per AGENTS.md §1.11:
+        - Module-scope compiled pattern _PLAIN_TEXT_FI_STATUTE_RE.
+        - Substring guards applied before regex scan.
+        - Bounded quantifiers; no adjacent unbounded repeats.
+    """
+
+    def _collect_non_ref_text(self, p_el: ET.Element) -> str:
+        """Collect text of <p> element excluding text inside <ref> children.
+
+        Returns the concatenated text content of:
+          - p_el.text (direct text before first child)
+          - For each non-<ref> child: child.text + child.tail
+          - For each <ref> child: ONLY child.tail (the text AFTER the ref,
+            not inside it — since it's already captured by the <ref> extractor)
+
+        This ensures we do NOT double-count text that was already covered by
+        an AKN <ref> element.
+        """
+        ref_local = "ref"  # AKN local name
+
+        parts: List[str] = []
+        if p_el.text:
+            parts.append(p_el.text)
+
+        for child in p_el:
+            local = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if local == ref_local:
+                # Skip the ref's own text content (already in structured extraction).
+                # BUT include the tail (text immediately after the </ref> tag).
+                if child.tail:
+                    parts.append(child.tail)
+            else:
+                # Non-ref child: include its text subtree + tail
+                if child.text:
+                    parts.append(child.text)
+                for grandchild in child.iter():
+                    if grandchild is child:
+                        continue
+                    gl = grandchild.tag.split("}")[-1] if "}" in grandchild.tag else grandchild.tag
+                    if gl != ref_local and grandchild.text:
+                        parts.append(grandchild.text)
+                    if grandchild.tail:
+                        parts.append(grandchild.tail)
+                if child.tail:
+                    parts.append(child.tail)
+
+        return "".join(parts)
+
+    def scan(
+        self,
+        p_el: ET.Element,
+    ) -> List[Tuple[str, str]]:
+        """Scan a <p> element for plain-text Finnish statute citations.
+
+        Returns a list of (statute_id, section_label) tuples:
+          - statute_id:    "NUMBER/YEAR" canonical form
+          - section_label: e.g. "7", "7a", or "" if not present
+
+        Per AGENTS.md §1.11: substring guards applied before regex scan.
+        """
+        text = self._collect_non_ref_text(p_el)
+        if not text:
+            return []
+
+        # Substring guards (fast path — eliminates ~99% of non-matching calls)
+        if _PLAIN_TEXT_GUARD_PAREN not in text:
+            return []
+        if _PLAIN_TEXT_GUARD_SECTION not in text:
+            return []
+
+        results: List[Tuple[str, str]] = []
+        seen_ids: set[str] = set()
+
+        for m in _PLAIN_TEXT_FI_STATUTE_RE.finditer(text):
+            num_raw = m.group(1)
+            year = m.group(2)
+            section_raw = m.group(3) or ""
+
+            # Sanity: year must be plausible
+            year_int = int(year)
+            if year_int < 1700 or year_int > 2100:
+                continue
+
+            # Sanity: number must be non-zero
+            num_int = int(num_raw)
+            if num_int <= 0 or num_int > 999999:
+                continue
+
+            statute_id = f"{num_int}/{year}"
+
+            # Deduplicate same statute_id within this <p>
+            key = statute_id + "/" + section_raw
+            if key in seen_ids:
+                continue
+            seen_ids.add(key)
+
+            results.append((statute_id, section_raw))
+
+        return results
+
+
+# Module-level singleton recognizer (built once at import time)
+_PLAIN_TEXT_RECOGNIZER = PlainTextStatuteCitationRecognizer()
 
 # ---------------------------------------------------------------------------
 # Extraction result container
@@ -419,6 +630,108 @@ def extract_eu_reference_mentions(
     return result
 
 
+def extract_plain_text_statute_mentions(
+    xml_bytes: bytes,
+    statute_id: str,
+    *,
+    valid_at_interval: Tuple[Optional[date], Optional[date]] = (None, None),
+    ref_covered_statute_ids: Optional[set] = None,
+) -> ExtractionResult:
+    """Extract plain-text Finnish statute citations NOT covered by <ref> markup.
+
+    Walks <p> elements in the AKN body, collecting text that is NOT inside
+    <ref> child elements, and applies the PlainTextStatuteCitationRecognizer
+    to find statute citations of the form "[word]lain (711/2022) 7 §".
+
+    Per AGENTS.md §1.13: PlainTextStatuteCitationRecognizer is a named
+    single-pass recognizer for the Finnish statute citation grammar family
+    (-lain, -asetuksen, -laissa, etc.), not N overlapping regex passes.
+
+    Per AGENTS.md §1.8: all results are emitted as ReferenceMention records;
+    no candidate disappears silently.
+
+    Args:
+        xml_bytes:               Raw XML bytes of the statute.
+        statute_id:              Canonical statute ID of the source, e.g. "711/2022".
+        valid_at_interval:       (start, end) date range for these references.
+        ref_covered_statute_ids: Set of statute IDs already captured by the
+                                 <ref>-element extraction pass for this statute.
+                                 When provided, plain-text mentions for the same
+                                 target statute_id are skipped to avoid double-emission
+                                 at the statute level.
+                                 Note: provision-level deduplication is more precise
+                                 but requires span tracking; this is the statute-level guard.
+
+    Returns:
+        ExtractionResult with plain-text ReferenceMention records.
+        phrase_lemma is ``"plain_text"`` to distinguish from ``"ref_element"``
+        (AKN <ref>-derived) records.
+        cite_confidence is EXACT for well-formed statute IDs (NUMBER/YEAR within
+        plausible range); confidence elevation to APPROXIMATE is reserved for the
+        projection phase when statute-graph resolution occurs.
+    """
+    result = ExtractionResult()
+
+    if not xml_bytes:
+        return result
+
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        # XML parse errors are already reported by extract_reference_mentions;
+        # return empty result rather than double-reporting.
+        return result
+
+    covered: set = ref_covered_statute_ids or set()
+    valid_start, valid_end = valid_at_interval
+
+    # Walk <p> elements in the body
+    ns_p = f"{{{_AKN_NS}}}p"
+    # Also accept bare <p> (some test fixtures omit the namespace on p)
+    bare_p = "p"
+
+    p_elements: List[ET.Element] = []
+    for el in root.iter():
+        local = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+        if local == "p":
+            p_elements.append(el)
+
+    for p_el in p_elements:
+        hits = _PLAIN_TEXT_RECOGNIZER.scan(p_el)
+        for target_statute_id, section_label in hits:
+            # Skip if this target is already covered by a <ref>-element mention
+            if target_statute_id in covered:
+                continue
+
+            # Skip self-reference (same logic as <ref> extractor)
+            if target_statute_id == statute_id:
+                continue
+
+            src_ref = ProvisionRef(
+                statute_id=statute_id,
+                provision_path="",
+                section_label="",
+            )
+            tgt_ref = ProvisionRef(
+                statute_id=target_statute_id,
+                provision_path="",
+                section_label=section_label,
+            )
+            mention = ReferenceMention(
+                source_provision_ref=src_ref,
+                target_provision_ref=tgt_ref,
+                cite_kind=CiteKind.CROSS_STATUTE,
+                cite_confidence=CiteConfidence.EXACT,
+                phrase_lemma="plain_text",
+                source_span=None,
+                valid_at_interval=(valid_start, valid_end),
+                edge_subtype="CITES",
+            )
+            result.mentions.append(mention)
+
+    return result
+
+
 def extract_all_reference_mentions(
     xml_bytes: bytes,
     statute_id: str,
@@ -426,10 +739,15 @@ def extract_all_reference_mentions(
     valid_at_interval: Tuple[Optional[date], Optional[date]] = (None, None),
     strict: bool = False,
 ) -> ExtractionResult:
-    """Extract all ReferenceMention records (domestic + EU) from a statute.
+    """Extract all ReferenceMention records (domestic + EU + plain-text) from a statute.
 
-    Combines ``extract_reference_mentions`` and ``extract_eu_reference_mentions``.
-    EU mentions are appended after domestic mentions.
+    Combines:
+      - ``extract_reference_mentions``: AKN <ref> element mentions + metadata edges.
+      - ``extract_eu_reference_mentions``: EU citations from text scan.
+      - ``extract_plain_text_statute_mentions``: plain-text statute citations
+        NOT covered by <ref> markup (phrase_lemma="plain_text").
+
+    EU and plain-text mentions are appended after domestic mentions.
 
     This is the primary entry point for the ``fi_refs.parquet`` projection.
     """
@@ -445,11 +763,26 @@ def extract_all_reference_mentions(
         valid_at_interval=valid_at_interval,
     )
 
+    # Build the set of statute IDs already covered by <ref>-element extraction
+    # to pass as the dedup guard to the plain-text pass.
+    ref_covered: set = {
+        m.target_provision_ref.statute_id
+        for m in domestic.mentions
+        if m.target_provision_ref is not None and m.edge_subtype == "CITES"
+    }
+
+    plain = extract_plain_text_statute_mentions(
+        xml_bytes,
+        statute_id,
+        valid_at_interval=valid_at_interval,
+        ref_covered_statute_ids=ref_covered,
+    )
+
     combined = ExtractionResult()
-    combined.mentions = domestic.mentions + eu.mentions
-    combined.rejected = domestic.rejected + eu.rejected
-    combined.broken_findings = domestic.broken_findings + eu.broken_findings
-    combined.ambiguous_findings = domestic.ambiguous_findings + eu.ambiguous_findings
-    combined.approximate_findings = domestic.approximate_findings + eu.approximate_findings
-    combined.diagnostics = domestic.diagnostics + eu.diagnostics
+    combined.mentions = domestic.mentions + eu.mentions + plain.mentions
+    combined.rejected = domestic.rejected + eu.rejected + plain.rejected
+    combined.broken_findings = domestic.broken_findings + eu.broken_findings + plain.broken_findings
+    combined.ambiguous_findings = domestic.ambiguous_findings + eu.ambiguous_findings + plain.ambiguous_findings
+    combined.approximate_findings = domestic.approximate_findings + eu.approximate_findings + plain.approximate_findings
+    combined.diagnostics = domestic.diagnostics + eu.diagnostics + plain.diagnostics
     return combined

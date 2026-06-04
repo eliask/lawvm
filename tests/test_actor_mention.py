@@ -868,3 +868,236 @@ class TestSchemaStability:
         row = actor_mention_to_row(mention)
         actual_cols = list(row.keys())
         assert actual_cols == self.EXPECTED_COLUMNS
+
+
+# ===========================================================================
+# Task 3: Finnish Unicode character normalization in actor registry
+# ===========================================================================
+
+
+class TestActorRegistryUnicodeNormalization:
+    """Regression tests for proper Finnish Unicode in the canonical actor registry.
+
+    The registry previously used ASCII-approximated names (e.g.
+    'Sosiaali- ja terveysministerio' without ö). Real Finlex XML contains
+    proper Finnish characters. These tests verify the registry matches both
+    the proper Unicode forms AND retains backward-compat ASCII forms.
+
+    Per AGENTS.md §1.6: lifecycle / registry resolution must not silently alias.
+    All phrase_variants are explicit in the registry; no normalisation at lookup time.
+    """
+
+    # ── Proper Unicode forms: ministries ────────────────────────────────────
+
+    def test_stm_unicode_proper_lookup(self) -> None:
+        """'Sosiaali- ja terveysministeriö' (with ö) resolves to fi.ministry.stm."""
+        canonical_id, candidates = REGISTRY.lookup("Sosiaali- ja terveysministeriö")
+        assert canonical_id == "fi.ministry.stm", (
+            f"Expected fi.ministry.stm, got {canonical_id} (candidates={candidates})"
+        )
+
+    def test_stm_unicode_genitive_lookup(self) -> None:
+        """'sosiaali- ja terveysministeriön' (genitive ö) resolves to fi.ministry.stm."""
+        canonical_id, candidates = REGISTRY.lookup("sosiaali- ja terveysministeriön")
+        assert canonical_id == "fi.ministry.stm"
+
+    def test_stm_ascii_fallback_still_resolves(self) -> None:
+        """ASCII-approximated 'Sosiaali- ja terveysministerio' still resolves (backward compat)."""
+        canonical_id, candidates = REGISTRY.lookup("Sosiaali- ja terveysministerio")
+        assert canonical_id == "fi.ministry.stm"
+
+    def test_sm_unicode_sisäministeriö(self) -> None:
+        """'Sisäministeriö' (with ä, ö) resolves to fi.ministry.sm."""
+        canonical_id, candidates = REGISTRY.lookup("Sisäministeriö")
+        assert canonical_id == "fi.ministry.sm"
+
+    def test_lvm_unicode_liikenne_ja_viestintäministeriö(self) -> None:
+        """'Liikenne- ja viestintäministeriö' resolves to fi.ministry.lvm."""
+        canonical_id, candidates = REGISTRY.lookup("Liikenne- ja viestintäministeriö")
+        assert canonical_id == "fi.ministry.lvm"
+
+    def test_mmm_unicode_maa_ja_metsätalousministeriö(self) -> None:
+        """'Maa- ja metsätalousministeriö' resolves to fi.ministry.mmm."""
+        canonical_id, candidates = REGISTRY.lookup("Maa- ja metsätalousministeriö")
+        assert canonical_id == "fi.ministry.mmm"
+
+    def test_okm_unicode_opetus_ja_kulttuuriministeriö(self) -> None:
+        """'Opetus- ja kulttuuriministeriö' resolves to fi.ministry.okm."""
+        canonical_id, candidates = REGISTRY.lookup("Opetus- ja kulttuuriministeriö")
+        assert canonical_id == "fi.ministry.okm"
+
+    def test_vm_unicode_valtiovarainministeriö(self) -> None:
+        """'Valtiovarainministeriö' resolves to fi.ministry.vm."""
+        canonical_id, candidates = REGISTRY.lookup("Valtiovarainministeriö")
+        assert canonical_id == "fi.ministry.vm"
+
+    def test_tem_unicode_työ_ja_elinkeinoministeriö(self) -> None:
+        """'Työ- ja elinkeinoministeriö' resolves to fi.ministry.tem."""
+        canonical_id, candidates = REGISTRY.lookup("Työ- ja elinkeinoministeriö")
+        assert canonical_id == "fi.ministry.tem"
+
+    def test_ym_unicode_ympäristöministeriö(self) -> None:
+        """'Ympäristöministeriö' resolves to fi.ministry.ym."""
+        canonical_id, candidates = REGISTRY.lookup("Ympäristöministeriö")
+        assert canonical_id == "fi.ministry.ym"
+
+    def test_om_unicode_oikeusministeriö(self) -> None:
+        """'Oikeusministeriö' resolves to fi.ministry.om."""
+        canonical_id, candidates = REGISTRY.lookup("Oikeusministeriö")
+        assert canonical_id == "fi.ministry.om"
+
+    def test_plm_unicode_puolustusministeriö(self) -> None:
+        """'Puolustusministeriö' resolves to fi.ministry.plm."""
+        canonical_id, candidates = REGISTRY.lookup("Puolustusministeriö")
+        assert canonical_id == "fi.ministry.plm"
+
+    def test_um_unicode_ulkoministeriö(self) -> None:
+        """'Ulkoministeriö' resolves to fi.ministry.um."""
+        canonical_id, candidates = REGISTRY.lookup("Ulkoministeriö")
+        assert canonical_id == "fi.ministry.um"
+
+    # ── Proper Unicode forms: agencies ──────────────────────────────────────
+
+    def test_traficom_unicode_liikenne_ja_viestintävirasto(self) -> None:
+        """'Liikenne- ja viestintävirasto' (with ä) resolves to fi.agency.traficom."""
+        canonical_id, candidates = REGISTRY.lookup("Liikenne- ja viestintävirasto")
+        assert canonical_id == "fi.agency.traficom"
+
+    def test_traficom_unicode_genitive(self) -> None:
+        """'liikenne- ja viestintäviraston' (genitive, with ä) resolves to fi.agency.traficom."""
+        canonical_id, candidates = REGISTRY.lookup("liikenne- ja viestintäviraston")
+        assert canonical_id == "fi.agency.traficom"
+
+    def test_traficom_ascii_fallback(self) -> None:
+        """ASCII 'Liikenne- ja viestintavirasto' still resolves (backward compat)."""
+        canonical_id, candidates = REGISTRY.lookup("Liikenne- ja viestintavirasto")
+        assert canonical_id == "fi.agency.traficom"
+
+    def test_stuk_unicode_säteilyturvakeskus(self) -> None:
+        """'Säteilyturvakeskus' (with ä) resolves to fi.agency.stuk."""
+        canonical_id, candidates = REGISTRY.lookup("Säteilyturvakeskus")
+        assert canonical_id == "fi.agency.stuk"
+
+    def test_stuk_ascii_fallback(self) -> None:
+        """ASCII 'Sateilyturvakeskus' still resolves (backward compat)."""
+        canonical_id, candidates = REGISTRY.lookup("Sateilyturvakeskus")
+        assert canonical_id == "fi.agency.stuk"
+
+    def test_fimea_unicode_lääkealan(self) -> None:
+        """'Lääkealan turvallisuus- ja kehittämiskeskus' (with ä) resolves to fi.agency.fimea."""
+        canonical_id, candidates = REGISTRY.lookup(
+            "Lääkealan turvallisuus- ja kehittämiskeskus"
+        )
+        assert canonical_id == "fi.agency.fimea"
+
+    def test_kela_unicode_kansaneläkelaitos(self) -> None:
+        """'Kansaneläkelaitos' (with ä, ä) resolves to fi.agency.kela."""
+        canonical_id, candidates = REGISTRY.lookup("Kansaneläkelaitos")
+        assert canonical_id == "fi.agency.kela"
+
+    def test_kela_ascii_fallback(self) -> None:
+        """ASCII 'Kansanelakelaitos' still resolves (backward compat)."""
+        canonical_id, candidates = REGISTRY.lookup("Kansanelakelaitos")
+        assert canonical_id == "fi.agency.kela"
+
+    def test_ttl_unicode_työterveyslaitos(self) -> None:
+        """'Työterveyslaitos' (with ö) resolves to fi.agency.ttl."""
+        canonical_id, candidates = REGISTRY.lookup("Työterveyslaitos")
+        assert canonical_id == "fi.agency.ttl"
+
+    # ── Ambiguity: 'ministeriö' without qualifier is ambiguous ───────────────
+
+    def test_ministeriö_unicode_is_ambiguous(self) -> None:
+        """'ministeriö' (Unicode) alone is ambiguous (registered in STM + OM)."""
+        canonical_id, candidates = REGISTRY.lookup("ministeriö")
+        assert canonical_id is None, (
+            "Bare 'ministeriö' must be ambiguous (None canonical_id)"
+        )
+        assert len(candidates) >= 2, (
+            f"Expected >=2 candidates for 'ministeriö', got {candidates}"
+        )
+
+    def test_Ministeriö_uppercase_is_ambiguous(self) -> None:
+        """'Ministeriö' (uppercase Unicode) alone is ambiguous."""
+        canonical_id, candidates = REGISTRY.lookup("Ministeriö")
+        assert canonical_id is None
+        assert len(candidates) >= 2
+
+    # ── Show-as values use proper Unicode ───────────────────────────────────
+
+    def test_stm_show_as_is_unicode(self) -> None:
+        """STM show_as is the proper Unicode name."""
+        actor = REGISTRY.get_actor("fi.ministry.stm")
+        assert actor is not None
+        assert actor.show_as == "Sosiaali- ja terveysministeriö"
+
+    def test_stuk_show_as_is_unicode(self) -> None:
+        """STUK show_as is the proper Unicode name."""
+        actor = REGISTRY.get_actor("fi.agency.stuk")
+        assert actor is not None
+        assert actor.show_as == "Säteilyturvakeskus"
+
+    def test_traficom_show_as_is_unicode(self) -> None:
+        """Traficom show_as is the proper Unicode name."""
+        actor = REGISTRY.get_actor("fi.agency.traficom")
+        assert actor is not None
+        assert actor.show_as == "Liikenne- ja viestintävirasto"
+
+    # ── Prose extraction with Unicode phrases ───────────────────────────────
+
+    def test_prose_scan_extracts_unicode_stm(self) -> None:
+        """Prose scanner extracts 'Sosiaali- ja terveysministeriö' from AKN body."""
+        xml = (
+            b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+            b"<act><body>"
+            b"<section><num>1 \xc2\xa7</num>"
+            b"<paragraph><content><p>"
+            b"Sosiaali- ja terveysminist\xc3\xa9ri\xc3\xb6 on toimivaltainen viranomainen."
+            b"</p></content></paragraph>"
+            b"</section>"
+            b"</body></act></akomaNtoso>"
+        )
+        # Use the proper UTF-8 encoding of "Sosiaali- ja terveysministeriö on toimivaltainen."
+        xml_unicode = (
+            "<akomaNtoso xmlns='http://docs.oasis-open.org/legaldocml/ns/akn/3.0'>"
+            "<act><body>"
+            "<section><num>1 §</num>"
+            "<paragraph><content><p>"
+            "Sosiaali- ja terveysministeriö on toimivaltainen viranomainen."
+            "</p></content></paragraph>"
+            "</section>"
+            "</body></act></akomaNtoso>"
+        ).encode("utf-8")
+        result = extract_actor_mentions(xml_unicode, "2010/400")
+        registry_mentions = [
+            m for m in result.mentions
+            if m.resolution_confidence == ActorResolutionConfidence.REGISTRY_RESOLVED
+        ]
+        stm_mentions = [
+            m for m in registry_mentions
+            if m.actor_canonical_id == "fi.ministry.stm"
+        ]
+        assert len(stm_mentions) >= 1, (
+            f"Expected STM mention from Unicode phrase, got {result.mentions}"
+        )
+
+    def test_prose_scan_extracts_unicode_säteilyturvakeskus(self) -> None:
+        """Prose scanner extracts 'Säteilyturvakeskus' (with ä) from AKN body."""
+        xml_unicode = (
+            "<akomaNtoso xmlns='http://docs.oasis-open.org/legaldocml/ns/akn/3.0'>"
+            "<act><body>"
+            "<section><num>3 §</num>"
+            "<paragraph><content><p>"
+            "Säteilyturvakeskus valvoo säteilytoimintaa."
+            "</p></content></paragraph>"
+            "</section>"
+            "</body></act></akomaNtoso>"
+        ).encode("utf-8")
+        result = extract_actor_mentions(xml_unicode, "2018/859")
+        stuk_mentions = [
+            m for m in result.mentions
+            if m.actor_canonical_id == "fi.agency.stuk"
+        ]
+        assert len(stuk_mentions) >= 1, (
+            f"Expected STUK mention from Unicode 'Säteilyturvakeskus', got {result.mentions}"
+        )
