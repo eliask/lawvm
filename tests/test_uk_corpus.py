@@ -379,6 +379,58 @@ def test_do_repair_multiple_choices_scans_cached_markers_for_leaf_candidates() -
     assert archive.store_calls == [(url, leaf_xml, "xml") for url in leaf_urls]
 
 
+def test_do_repair_multiple_choices_recurses_past_self_linking_candidate() -> None:
+    statute_id = "ukpga/Geo5Sess2/13/4"
+    current_url = f"{acquire_uk_corpus._LEG_BASE}/{statute_id}/data.xml"
+    self_enacted_url = f"{acquire_uk_corpus._LEG_BASE}/{statute_id}/enacted/data.xml"
+    leaf_urls = [
+        f"{acquire_uk_corpus._LEG_BASE}/ukpga/Geo5/13/4/data.xml",
+        f"{acquire_uk_corpus._LEG_BASE}/ukpga/Geo5/13/4/enacted/data.xml",
+    ]
+    ambiguity_blob = b"""<div id="content">
+    <h1>Multiple Choices</h1>
+    <p>The link that you've followed could mean either of the following:</p>
+    <a href="/ukpga/Geo5Sess2/13/4">Trade Facilities and Loans Guarantee Act 1922</a>
+    <a href="/ukpga/Geo5/13/4">Trade Facilities and Loans Guarantee Act 1922</a>
+    </div>"""
+    leaf_xml = b"<Legislation>" + (b"leaf" * 40) + b"</Legislation>"
+    archive = _FakeArchive()
+    archive.store(current_url, b"HTTP 300 Multiple Choices")
+    archive.store_calls.clear()
+    http = _FakeHTTP(
+        {
+            current_url: 300,
+            self_enacted_url: 300,
+            **{url: 200 for url in leaf_urls},
+        },
+        data_by_url={
+            current_url: ambiguity_blob,
+            self_enacted_url: ambiguity_blob,
+            **{url: leaf_xml for url in leaf_urls},
+        },
+    )
+
+    result = acquire_uk_corpus.do_repair_multiple_choices(
+        cast(Any, archive),
+        cast(Any, http),
+        statute_ids={statute_id},
+    )
+
+    assert result == {
+        "ambiguous_locators": 1,
+        "ambiguous_groups": 1,
+        "repaired_locators": 1,
+        "candidate_source_urls": 4,
+        "candidate_sources_available": 2,
+        "candidate_sources": 2,
+        "direct_sources": 0,
+        "no_candidates": 0,
+        "failed": 0,
+    }
+    assert http.calls == [current_url, self_enacted_url, *leaf_urls]
+    assert archive.store_calls == [(url, leaf_xml, "xml") for url in leaf_urls]
+
+
 def test_do_repair_multiple_choices_reports_already_available_leaf_candidates() -> None:
     statute_id = "ukpga/1955/18"
     current_url = f"{acquire_uk_corpus._LEG_BASE}/{statute_id}/data.xml"

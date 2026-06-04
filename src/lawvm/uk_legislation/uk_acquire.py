@@ -29,7 +29,7 @@ from lawvm.core.http_identity import LAWVM_USER_AGENT
 from lawvm.uk_legislation.source_state import (
     UKSourceStatus,
     classify_uk_source_blob,
-    uk_multiple_choice_candidate_data_urls,
+    fetch_uk_multiple_choice_candidate_sources,
 )
 
 _LEG_BASE = "https://www.legislation.gov.uk"
@@ -241,20 +241,18 @@ def _fetch_multiple_choice_candidate_sources(
     include_enacted: bool,
     delay: float,
     timer: list[float],
+    source_url: str = "",
 ) -> int:
-    fetched = 0
-    for url in uk_multiple_choice_candidate_data_urls(
+    return fetch_uk_multiple_choice_candidate_sources(
         blob,
         include_current=include_current,
         include_enacted=include_enacted,
-    ):
-        if _source_cached_available(archive, url):
-            continue
-        data, status = _http_get(url, delay=delay, last_time=timer)
-        if data and _source_fetch_error(data, status) is None:
-            _store_if_new(archive, url, data, "xml")
-            fetched += 1
-    return fetched
+        source_url=source_url,
+        cached_available=lambda url: _source_cached_available(archive, url),
+        fetch=lambda url: _http_get(url, delay=delay, last_time=timer),
+        source_error=_source_fetch_error,
+        store_available=lambda url, data: _store_if_new(archive, url, data, "xml"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +379,7 @@ def acquire_statute(
                     include_enacted=True,
                     delay=delay,
                     timer=timer,
+                    source_url=enacted_url,
                 )
             )
             report.enacted_error = error
@@ -420,6 +419,7 @@ def acquire_statute(
                     include_enacted=True,
                     delay=delay,
                     timer=timer,
+                    source_url=current_url,
                 )
             )
             report.current_error = error

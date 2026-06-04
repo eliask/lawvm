@@ -1,6 +1,7 @@
 """UK archive source-surface availability classification."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from html.parser import HTMLParser
@@ -328,6 +329,58 @@ def uk_multiple_choice_candidate_data_urls(
                 urls.append(url)
                 seen.add(url)
     return tuple(urls)
+
+
+def fetch_uk_multiple_choice_candidate_sources(
+    blob: bytes | None,
+    *,
+    include_current: bool,
+    include_enacted: bool,
+    source_url: str = "",
+    cached_available: Callable[[str], bool],
+    fetch: Callable[[str], tuple[bytes | None, int | None]],
+    source_error: Callable[[bytes | None, int | None], str | None],
+    store_available: Callable[[str, bytes], bool],
+    unresolved_nested_multiple_choice: Callable[[str], None] | None = None,
+    max_depth: int = 4,
+) -> int:
+    """Fetch available leaf XML witnesses named by UK Multiple Choices pages.
+
+    This is an acquisition rule, not target selection.  The ambiguous URL is
+    never stored as authoritative XML and no candidate is promoted as canonical.
+    Nested Multiple Choices pages are crawled with loop protection so bad aliases
+    like self-linking regnal-session pages can still expose real leaf witnesses.
+    """
+
+    def crawl(current_blob: bytes | None, origin_url: str, seen: set[str], depth: int) -> int:
+        if depth > max_depth:
+            return 0
+        if origin_url:
+            seen.add(origin_url)
+        fetched = 0
+        for url in uk_multiple_choice_candidate_data_urls(
+            current_blob,
+            include_current=include_current,
+            include_enacted=include_enacted,
+        ):
+            if url in seen:
+                continue
+            seen.add(url)
+            if cached_available(url):
+                continue
+            data, status = fetch(url)
+            error = source_error(data, status)
+            if data and error is None:
+                if store_available(url, data):
+                    fetched += 1
+            elif data and error == UKSourceStatus.MULTIPLE_CHOICES.value:
+                nested_fetched = crawl(data, url, seen, depth + 1)
+                if nested_fetched == 0 and unresolved_nested_multiple_choice is not None:
+                    unresolved_nested_multiple_choice(url)
+                fetched += nested_fetched
+        return fetched
+
+    return crawl(blob, source_url, set(), 0)
 
 
 def _normalise_uk_multiple_choice_candidate_href(href: str) -> str:

@@ -13,7 +13,7 @@ Subcommands (``lawvm uk-corpus <sub>``):
              resolve cached Multiple Choices markers into leaf source locators
   stats      archive summary
   train-dict / repack   compression maintenance
-  all        acquire + affecting + refresh
+  all        acquire + affecting + refresh + repair-multiple-choices
 
 Immutability model:
   Enacted/affecting XML  IMMUTABLE  store once (skip if digest present)
@@ -47,6 +47,7 @@ from lawvm.core.http_identity import LAWVM_USER_AGENT
 from lawvm.uk_legislation.source_state import (
     UKSourceStatus,
     classify_uk_source_blob,
+    fetch_uk_multiple_choice_candidate_sources,
     uk_multiple_choice_candidate_data_urls,
 )
 
@@ -294,18 +295,6 @@ def _store_source_xml_if_available(
     return _store_if_new(archive, url, data, "xml")
 
 
-def _fetch_store_source_xml(
-    archive: Farchive,
-    http: _HTTP,
-    url: str,
-) -> tuple[bool, str]:
-    data, status = http.get_with_status(url)
-    source_error = _source_xml_fetch_error(data, status)
-    if not data or source_error is not None:
-        return False, source_error or "transport_error"
-    return _store_source_xml_if_available(archive, url, data), "available"
-
-
 def _fetch_multiple_choice_candidate_sources(
     archive: Farchive,
     http: _HTTP,
@@ -313,24 +302,29 @@ def _fetch_multiple_choice_candidate_sources(
     *,
     include_current: bool,
     include_enacted: bool,
+    source_url: str = "",
 ) -> int:
-    fetched = 0
-    for url in uk_multiple_choice_candidate_data_urls(
+    def cached_available(url: str) -> bool:
+        return _cached_source_xml_status(archive, url) is UKSourceStatus.AVAILABLE
+
+    return fetch_uk_multiple_choice_candidate_sources(
         blob,
         include_current=include_current,
         include_enacted=include_enacted,
-    ):
-        if _cached_source_xml_status(archive, url) is UKSourceStatus.AVAILABLE:
-            continue
-        stored, status = _fetch_store_source_xml(archive, http, url)
-        if stored:
-            fetched += 1
-        elif status == UKSourceStatus.MULTIPLE_CHOICES.value:
-            print(
-                f"  [source-frontier] nested Multiple Choices candidate {url}; not stored",
-                file=sys.stderr,
-            )
-    return fetched
+        source_url=source_url,
+        cached_available=cached_available,
+        fetch=http.get_with_status,
+        source_error=_source_xml_fetch_error,
+        store_available=lambda url, data: _store_source_xml_if_available(
+            archive,
+            url,
+            data,
+        ),
+        unresolved_nested_multiple_choice=lambda url: print(
+            f"  [source-frontier] nested Multiple Choices candidate {url}; not stored",
+            file=sys.stderr,
+        ),
+    )
 
 
 def _available_candidate_source_count(
@@ -446,6 +440,7 @@ def do_download(
                     data,
                     include_current=not enacted_only,
                     include_enacted=True,
+                    source_url=enacted_url,
                 )
             elif data and source_error is None and _store_source_xml_if_available(
                 archive,
@@ -470,6 +465,7 @@ def do_download(
                         data,
                         include_current=True,
                         include_enacted=True,
+                        source_url=current_url,
                     )
                 elif data and source_error is None and _store_source_xml_if_available(
                     archive,
@@ -524,6 +520,7 @@ def do_affecting(
                 data,
                 include_current=False,
                 include_enacted=True,
+                source_url=url,
             )
             n_fail += 1
             if diagnostics_out is not None:
@@ -579,6 +576,7 @@ def do_refresh(
                         data,
                         include_current=True,
                         include_enacted=True,
+                        source_url=current_url,
                     )
                 elif data and source_error is None and _store_source_xml_if_available(
                     archive,
@@ -603,6 +601,7 @@ def do_refresh(
                     data,
                     include_current=True,
                     include_enacted=True,
+                    source_url=loc,
                 )
             elif data and source_error is None:
                 _store_source_xml_if_available(archive, loc, data)
@@ -694,6 +693,7 @@ def do_repair_multiple_choices(
                 data,
                 include_current=True,
                 include_enacted=True,
+                source_url=loc,
             )
             n_candidate_sources_available += _available_candidate_source_count(
                 archive,

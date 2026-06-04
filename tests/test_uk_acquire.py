@@ -13,6 +13,7 @@ from lawvm.uk_legislation.uk_acquire import (
     UKAcquireReport,
     UKAcquirePlan,
     _parse_statute_id,
+    _fetch_multiple_choice_candidate_sources,
     _store_if_new,
     build_acquire_plan,
     acquire_statute,
@@ -478,6 +479,56 @@ def test_acquire_statute_fetches_multiple_choices_leaf_candidates(monkeypatch) -
         ("https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/enacted/data.xml", "xml"),
         ("https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/enacted/data.xml", "xml"),
     ]
+
+
+def test_acquire_multiple_choices_candidate_fetch_recurses_past_self_link(
+    monkeypatch,
+) -> None:
+    archive = _FakeArchive()
+    current_url = "https://www.legislation.gov.uk/ukpga/Geo5Sess2/13/4/data.xml"
+    self_enacted_url = (
+        "https://www.legislation.gov.uk/ukpga/Geo5Sess2/13/4/enacted/data.xml"
+    )
+    leaf_urls = [
+        "https://www.legislation.gov.uk/ukpga/Geo5/13/4/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Geo5/13/4/enacted/data.xml",
+    ]
+    ambiguity_blob = b"""<div id="content">
+    <h1>Multiple Choices</h1>
+    <p>The link that you've followed could mean either of the following:</p>
+    <a href="/ukpga/Geo5Sess2/13/4">Trade Facilities and Loans Guarantee Act 1922</a>
+    <a href="/ukpga/Geo5/13/4">Trade Facilities and Loans Guarantee Act 1922</a>
+    </div>"""
+    leaf_xml = b"<Legislation>" + (b"leaf" * 40) + b"</Legislation>"
+    calls: list[str] = []
+
+    def fake_get(
+        url: str,
+        delay: float = 0.5,
+        last_time: list[float] | None = None,
+    ) -> tuple[bytes, int]:
+        calls.append(url)
+        if url == self_enacted_url:
+            return ambiguity_blob, 300
+        if url in leaf_urls:
+            return leaf_xml, 200
+        raise AssertionError(f"unexpected fetch {url}")
+
+    monkeypatch.setattr("lawvm.uk_legislation.uk_acquire._http_get", fake_get)
+
+    fetched = _fetch_multiple_choice_candidate_sources(
+        archive,
+        ambiguity_blob,
+        include_current=True,
+        include_enacted=True,
+        delay=0,
+        timer=[0.0],
+        source_url=current_url,
+    )
+
+    assert fetched == 2
+    assert calls == [self_enacted_url, *leaf_urls]
+    assert archive.store_calls == [(url, "xml") for url in leaf_urls]
 
 
 def test_acquire_statute_full_fetches_all_three(monkeypatch) -> None:
