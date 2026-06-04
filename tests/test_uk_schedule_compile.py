@@ -32305,6 +32305,127 @@ def test_compile_respectively_before_replacements_lowers_all_occurrences() -> No
     )
 
 
+def test_compile_varied_by_substituting_respectively_lowers_exact_occurrences() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="article-3">
+          <Pnumber>3</Pnumber>
+          <Text>3 In section 197(1) of the 1983 Act, the maximum amount of a
+          candidate's election expenses at a ward election in the City of London
+          shall be varied by substituting for the amounts “£219” and “4.3p”,
+          the amounts “£266” and “5.2p”, respectively.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_varied_by_substituting_respectively",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-01-28",
+        affected_uri="/id/ukpga/1983/2/section/197/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1983",
+        affected_number="2",
+        affected_provisions="s. 197(1)",
+        affecting_uri="/id/uksi/2005/153",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2005",
+        affecting_number="153",
+        affecting_provisions="art. 3",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2005-01-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 2
+    assert [
+        (
+            op.text_patch.selector.match_text,
+            op.text_patch.selector.occurrence,
+            op.text_patch.replacement,
+        )
+        for op in ops
+        if op.text_patch is not None
+    ] == [
+        ("£219", 1, "£266"),
+        ("4.3p", 1, "5.2p"),
+    ]
+    assert [
+        "text_rewrite_rule:uk_effect_varied_by_substituting_text_patch"
+        in op.provenance_tags
+        for op in ops
+    ] == [True, True]
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
+def test_compile_varied_by_substituting_single_amount_lowers_exact_occurrence() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="article-4">
+          <Pnumber>4</Pnumber>
+          <Text>4 In section 197(2) of the 1983 Act, the maximum amount of a
+          candidate's election expenses at an election by liverymen in common
+          hall shall be varied by substituting for the amount “23.3p”, the
+          amount “28.3p”.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_varied_by_substituting_single_amount",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-01-28",
+        affected_uri="/id/ukpga/1983/2/section/197/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1983",
+        affected_number="2",
+        affected_provisions="s. 197(2)",
+        affecting_uri="/id/uksi/2005/153",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2005",
+        affecting_number="153",
+        affecting_provisions="art. 4",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2005-01-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "23.3p"
+    assert ops[0].text_patch.selector.occurrence == 1
+    assert ops[0].text_patch.replacement == "28.3p"
+    assert (
+        "text_rewrite_rule:uk_effect_varied_by_substituting_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_compile_word_substitution_structural_child_replacement_reclassified() -> None:
     extracted_el = ET.fromstring(
         f"""

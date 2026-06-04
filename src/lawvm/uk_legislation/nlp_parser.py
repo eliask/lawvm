@@ -189,6 +189,23 @@ _PASSIVE_QUOTED_SUBSTITUTED_RE = re.compile(
     rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
     re.I,
 )
+UK_VARIED_BY_SUBSTITUTING_TEXT_PATCH_RULE_ID = (
+    "uk_effect_varied_by_substituting_text_patch"
+)
+_QUOTED_TERM_LIST_PATTERN = (
+    rf"[“\"'‘]{_NON_QUOTE}{{1,120}}[”\"'’]"
+    rf"(?:\s*(?:,|and)\s*[“\"'‘]{_NON_QUOTE}{{1,120}}[”\"'’]){{0,4}}"
+)
+_VARIED_BY_SUBSTITUTING_RE = re.compile(
+    r"shall\s+be\s+varied\s+by\s+substituting\s+for\s+"
+    r"(?:(?:the\s+)?(?:words?|amounts?|sums?)\s+)?"
+    rf"(?P<originals>{_QUOTED_TERM_LIST_PATTERN})"
+    r"\s*,?\s+"
+    r"(?:(?:the\s+)?(?:words?|amounts?|sums?)\s+)?"
+    rf"(?P<replacements>{_QUOTED_TERM_LIST_PATTERN})"
+    r"(?:\s*,?\s*respectively)?(?=\s*(?:[,.;)]|$))",
+    re.I,
+)
 
 _UK_SOURCE_ASIDE_RE = r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)?\))?"
 _UK_TEXT_BOUNDARY_UNIT_RE = r"(?:regulation|paragraph|sub-paragraph|subsection|section)"
@@ -880,6 +897,22 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
     ordering and output are unchanged.
     """
     respectively_spans: list[tuple[int, int]] = []
+
+    for m in _VARIED_BY_SUBSTITUTING_RE.finditer(text):
+        originals = _quoted_terms(m.group("originals"))
+        replacements = _quoted_terms(m.group("replacements"))
+        if not originals or len(originals) != len(replacements):
+            continue
+        for original, replacement in zip(originals, replacements, strict=True):
+            subs.append(
+                {
+                    "original": original,
+                    "replacement": replacement,
+                    "occurrence": "1",
+                    "rule_id": UK_VARIED_BY_SUBSTITUTING_TEXT_PATCH_RULE_ID,
+                }
+            )
+        respectively_spans.append(m.span())
 
     matches_respectively_there_is_substituted = re.finditer(
         r"for\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original_1>.*?)[”\"'’]\s+and\s+"
