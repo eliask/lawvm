@@ -1171,6 +1171,79 @@ def test_summarize_results_counts_bounded_low_volume_residuals() -> None:
     assert summary["active_unclassified_residual_count"] == 0
 
 
+def test_summarize_results_routes_body_nested_list_oracle_granularity() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1939/82",
+                "score_status": "scored",
+                "aligned": 89.66,
+                "aligned_excluding_grounding_collateral": 89.66,
+                "unaligned": 51.11,
+                "base_source_has_body": True,
+                "base_source_has_schedules": False,
+                "oracle_source_has_body": True,
+                "oracle_source_has_schedules": False,
+                "n_grounding_collateral": 0,
+                "n_replay": 26,
+                "n_oracle": 29,
+                "n_only_in_oracle": 3,
+                "n_only_in_replayed": 0,
+                "n_effects": 1,
+                "n_ops": 1,
+                "n_compile_rejections": 1,
+                "n_blocking_compile_rejections": 0,
+                "oracle_only_eid_samples": [
+                    "section-8-1-a-1",
+                    "section-8-1-a-2",
+                    "section-8-1-a-3",
+                ],
+                "manual_frontier_status_counts": {
+                    "deterministic_frontend_supported": 1,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {
+        "body_nested_list_oracle_granularity_residual": 1
+    }
+    assert summary["agreement_residual_family_counts"] == {
+        "topology_granularity_mismatch": 1,
+    }
+    assert summary["agreement_residual_owner_phase_counts"] == {
+        "compare_oracle_classification": 1,
+    }
+    assert summary["active_unclassified_residual_count"] == 0
+
+
+def test_body_nested_list_oracle_granularity_requires_eid_samples() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1939/82",
+                "score_status": "scored",
+                "aligned": 89.66,
+                "aligned_excluding_grounding_collateral": 89.66,
+                "unaligned": 51.11,
+                "base_source_has_body": True,
+                "base_source_has_schedules": False,
+                "oracle_source_has_body": True,
+                "oracle_source_has_schedules": False,
+                "n_grounding_collateral": 0,
+                "n_replay": 26,
+                "n_oracle": 29,
+                "n_only_in_oracle": 3,
+                "n_only_in_replayed": 0,
+                "n_compile_rejections": 1,
+                "n_blocking_compile_rejections": 0,
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"bounded_low_volume_residual": 1}
+
+
 def test_summarize_results_routes_low_volume_manual_frontier_residuals() -> None:
     summary = uk_broad_baseline.summarize_results(
         [

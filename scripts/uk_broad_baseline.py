@@ -574,9 +574,12 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 oracle_only_schedule_eids = _oracle_only_schedule_eids(
                     oracle_only_eids
                 )
+                replay_only_eids = replay_compare_eids - oracle_compare_eids
                 result["n_common"] = len(common_eids)
                 result["n_only_in_oracle"] = len(oracle_only_eids)
-                result["n_only_in_replayed"] = len(replay_compare_eids - oracle_compare_eids)
+                result["n_only_in_replayed"] = len(replay_only_eids)
+                result["oracle_only_eid_samples"] = sorted(oracle_only_eids)[:20]
+                result["replay_only_eid_samples"] = sorted(replay_only_eids)[:20]
                 result["n_replay"] = len(replay_compare_eids)
                 result["n_oracle"] = len(oracle_compare_eids)
                 result["retained_repeal_oracle_targets"] = retained_repeal_targets
@@ -1176,6 +1179,8 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
         return "retained_eu_mixed_representation_residual"
     if _is_retained_eu_schedule_oracle_granularity_residual(row):
         return "retained_eu_schedule_oracle_granularity_residual"
+    if _is_body_nested_list_oracle_granularity_residual(row):
+        return "body_nested_list_oracle_granularity_residual"
     if _is_bounded_low_volume_residual(row):
         return "bounded_low_volume_residual"
     return "residual_after_grounding"
@@ -1219,6 +1224,8 @@ def _agreement_residual_for_row(row: dict[str, Any]) -> AgreementResidual:
             ),
             "n_only_in_oracle": _nonnegative_int(row.get("n_only_in_oracle")),
             "n_only_in_replayed": _nonnegative_int(row.get("n_only_in_replayed")),
+            "oracle_only_eid_samples": row.get("oracle_only_eid_samples") or [],
+            "replay_only_eid_samples": row.get("replay_only_eid_samples") or [],
             "manual_frontier_status_counts": row.get("manual_frontier_status_counts")
             or {},
             "compile_rejection_rule_counts": row.get("compile_rejection_rule_counts")
@@ -1252,6 +1259,7 @@ def _agreement_residual_family(bucket: str) -> str:
         return "oracle_editorial_pathology"
     if bucket in {
         "bounded_low_volume_residual",
+        "body_nested_list_oracle_granularity_residual",
         "retained_eu_schedule_oracle_granularity_residual",
         "retained_eu_mixed_representation_residual",
         "structural_match_eid_scheme_residual",
@@ -1279,6 +1287,7 @@ def _agreement_residual_status(bucket: str, row: dict[str, Any]) -> str:
         "oracle_expansion_without_effects",
         "zero_oracle_retention",
         "base_metadata_only_frontier",
+        "body_nested_list_oracle_granularity_residual",
         "retained_repeal_oracle_branch",
         "retained_eu_schedule_oracle_granularity_residual",
     }:
@@ -1303,6 +1312,7 @@ def _agreement_residual_owner_phase(bucket: str) -> str:
         return UK_PHASE_AFFECTING_SOURCE_EXTRACTION
     if bucket in {
         "base_metadata_only_frontier",
+        "body_nested_list_oracle_granularity_residual",
         "zero_oracle_retention",
         "retained_repeal_oracle_branch",
         "retained_eu_schedule_oracle_granularity_residual",
@@ -1368,6 +1378,7 @@ def _agreement_residual_missing_proofs(
         proofs.append("canonical_operation_compilation")
     if bucket in {
         "bounded_low_volume_residual",
+        "body_nested_list_oracle_granularity_residual",
         "retained_eu_schedule_oracle_granularity_residual",
         "retained_eu_mixed_representation_residual",
         "structural_match_eid_scheme_residual",
@@ -1587,6 +1598,42 @@ def _is_retained_eu_schedule_oracle_granularity_residual(row: dict[str, Any]) ->
     if not isinstance(status_counts, dict):
         return False
     return int(status_counts.get("deterministic_frontend_supported") or 0) >= n_effects
+
+
+def _is_body_nested_list_oracle_granularity_residual(row: dict[str, Any]) -> bool:
+    """Classify bounded body-list oracle child expansion without replay promotion."""
+    if not bool(row.get("base_source_has_body")):
+        return False
+    if not bool(row.get("oracle_source_has_body")):
+        return False
+    if bool(row.get("base_source_has_schedules")):
+        return False
+    if bool(row.get("oracle_source_has_schedules")):
+        return False
+    n_only_in_oracle = int(row.get("n_only_in_oracle") or 0)
+    n_only_in_replayed = int(row.get("n_only_in_replayed") or 0)
+    if n_only_in_oracle <= 0 or n_only_in_replayed > 0:
+        return False
+    if n_only_in_oracle > _LOW_VOLUME_RESIDUAL_MAX_MISSES:
+        return False
+    if int(row.get("n_blocking_compile_rejections") or 0) > 0:
+        return False
+    samples = row.get("oracle_only_eid_samples") or ()
+    if not isinstance(samples, list | tuple):
+        return False
+    return bool(samples) and all(
+        _looks_like_nested_body_list_eid(str(eid)) for eid in samples
+    )
+
+
+def _looks_like_nested_body_list_eid(eid: str) -> bool:
+    parts = [part for part in eid.split("-") if part]
+    if len(parts) < 5:
+        return False
+    parent = parts[-2]
+    child = parts[-1]
+    roman = {"i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"}
+    return len(parent) == 1 and parent.isalpha() and (child.isdigit() or child in roman)
 
 
 def _is_bounded_low_volume_residual(row: dict[str, Any]) -> bool:
