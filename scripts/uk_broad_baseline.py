@@ -161,6 +161,8 @@ _OFFICIAL_EMPTY_EFFECT_FEED_FRONTIER_REASONS = frozenset(
 )
 _SOURCE_OR_ORACLE_PATHOLOGY_FRONTIER_REASONS = frozenset(
     {
+        "base_and_oracle_metadata_only",
+        "base_metadata_only",
         "base_multiple_choices",
         "base_too_small",
         "oracle_metadata_only",
@@ -366,6 +368,17 @@ def score_one(statute_id: str) -> dict[str, Any]:
         current_source = classify_uk_statute_xml_content(current)
         result.update(_source_state_fields("base", base_source))
         result.update(_source_state_fields("oracle", current_source))
+        if base_source.status.value == "metadata_only":
+            source_frontier_reason = (
+                "base_and_oracle_metadata_only"
+                if current_source.status.value == "metadata_only"
+                else "base_metadata_only"
+            )
+            return {
+                **result,
+                "score_status": "source_frontier",
+                "source_frontier_reason": source_frontier_reason,
+            }
         if base_source.status.value in {"too_small", "multiple_choices", "parse_error"}:
             return {
                 **result,

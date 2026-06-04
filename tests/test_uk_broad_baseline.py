@@ -15,6 +15,49 @@ from lawvm.uk_legislation.frontier_work_items import (
 import scripts.uk_broad_baseline as uk_broad_baseline
 
 
+def _uk_available_statute_xml() -> bytes:
+    return b"""<?xml version="1.0"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    NumberOfProvisions="1">
+  <Body><P1 id="section-1"><Pnumber>1</Pnumber><P1para>Text.</P1para></P1></Body>
+</Legislation>"""
+
+
+def _uk_metadata_only_statute_xml() -> bytes:
+    return b"""<?xml version="1.0"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    NumberOfProvisions="0">
+  <Metadata><Title>Metadata-only test fixture</Title></Metadata>
+</Legislation>"""
+
+
+def _install_score_one_archive(
+    monkeypatch,
+    *,
+    enacted_xml: bytes,
+    current_xml: bytes,
+) -> None:
+    class FakeFarchive:
+        def __init__(self, _path):
+            pass
+
+        def get(self, locator: str) -> bytes | None:
+            if locator.endswith("/enacted/data.xml"):
+                return enacted_xml
+            if locator.endswith("/data.xml"):
+                return current_xml
+            return None
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setitem(
+        sys.modules,
+        "farchive",
+        SimpleNamespace(Farchive=FakeFarchive),
+    )
+
+
 def test_compile_diagnostic_frontier_work_item_uses_family_defaults() -> None:
     work_item = uk_frontier_work_item_from_manual_frontier_row(
         {
@@ -76,6 +119,89 @@ def test_score_one_reports_multiple_choices_current_as_source_frontier(monkeypat
     assert row["base_source_status"] == "available"
     assert row["oracle_source_status"] == "multiple_choices"
     assert "error" not in row
+
+
+def test_score_one_reports_both_metadata_only_as_base_and_oracle_source_frontier(
+    monkeypatch,
+) -> None:
+    _install_score_one_archive(
+        monkeypatch,
+        enacted_xml=_uk_metadata_only_statute_xml(),
+        current_xml=_uk_metadata_only_statute_xml(),
+    )
+
+    row = uk_broad_baseline.score_one("ukpga/1824/74")
+
+    assert row["score_status"] == "source_frontier"
+    assert row["source_frontier_reason"] == "base_and_oracle_metadata_only"
+    assert row["base_source_status"] == "metadata_only"
+    assert row["oracle_source_status"] == "metadata_only"
+    assert "error" not in row
+
+
+def test_score_one_reports_base_metadata_only_before_oracle_source_state(
+    monkeypatch,
+) -> None:
+    _install_score_one_archive(
+        monkeypatch,
+        enacted_xml=_uk_metadata_only_statute_xml(),
+        current_xml=_uk_available_statute_xml(),
+    )
+
+    row = uk_broad_baseline.score_one("ukpga/1851/28")
+
+    assert row["score_status"] == "source_frontier"
+    assert row["source_frontier_reason"] == "base_metadata_only"
+    assert row["base_source_status"] == "metadata_only"
+    assert row["oracle_source_status"] == "available"
+    assert "error" not in row
+
+
+def test_score_one_reports_oracle_metadata_only_when_base_is_available(
+    monkeypatch,
+) -> None:
+    _install_score_one_archive(
+        monkeypatch,
+        enacted_xml=_uk_available_statute_xml(),
+        current_xml=_uk_metadata_only_statute_xml(),
+    )
+
+    row = uk_broad_baseline.score_one("ukpga/1859/57")
+
+    assert row["score_status"] == "source_frontier"
+    assert row["source_frontier_reason"] == "oracle_metadata_only"
+    assert row["base_source_status"] == "available"
+    assert row["oracle_source_status"] == "metadata_only"
+    assert "error" not in row
+
+
+def test_metadata_only_source_frontiers_are_pathology_not_non_manual_chain() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1824/74",
+                "score_status": "source_frontier",
+                "source_frontier_reason": "base_and_oracle_metadata_only",
+            },
+            {
+                "statute_id": "ukpga/1851/28",
+                "score_status": "source_frontier",
+                "source_frontier_reason": "base_metadata_only",
+            },
+        ]
+    )
+
+    assert summary["source_chain_frontier_reasons"] == {
+        "base_and_oracle_metadata_only": 1,
+        "base_metadata_only": 1,
+    }
+    assert summary["non_manual_source_chain_frontier_count"] == 0
+    assert summary["non_manual_source_chain_frontier_statutes"] == []
+    assert summary["source_or_oracle_pathology_frontier_count"] == 2
+    assert summary["source_or_oracle_pathology_frontier_reasons"] == {
+        "base_and_oracle_metadata_only": 1,
+        "base_metadata_only": 1,
+    }
 
 
 def test_sample_statutes_excludes_multiple_choices_and_includes_regnal_leaves(
