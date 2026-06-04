@@ -376,8 +376,29 @@ def _write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> int:
 # Parquet writer (optional — falls back to JSONL)
 # ---------------------------------------------------------------------------
 
-def _try_write_parquet(path: Path, rows: List[Dict[str, Any]]) -> bool:
-    """Try to write rows as Parquet. Returns True if successful."""
+def _attach_compile_metadata(table: Any, compile_metadata: Any) -> Any:
+    """Attach CompileMetadata fields to a pyarrow Table's schema metadata."""
+    if compile_metadata is None:
+        warnings.warn(
+            "Parquet emit without CompileMetadata is deprecated; "
+            "pass compile_metadata to ensure artifact reproducibility",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return table
+    existing = table.schema.metadata or {}
+    meta = dict(existing)
+    for k, v in compile_metadata.to_metadata_dict().items():
+        meta[k.encode()] = v.encode()
+    return table.replace_schema_metadata(meta)
+
+
+def _try_write_parquet(
+    path: Path,
+    rows: List[Dict[str, Any]],
+    compile_metadata: Any = None,
+) -> bool:
+    """Try to write rows as Parquet with optional compile metadata. Returns True if ok."""
     try:
         import pyarrow as pa  # ty: ignore[unresolved-import]
         import pyarrow.parquet as pq  # ty: ignore[unresolved-import]
@@ -389,6 +410,7 @@ def _try_write_parquet(path: Path, rows: List[Dict[str, Any]]) -> bool:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     table = pa.Table.from_pylist(rows)
+    table = _attach_compile_metadata(table, compile_metadata)
     pq.write_table(table, str(path))
     return True
 
@@ -414,6 +436,7 @@ def export_projections(
     include_sections_text: bool = False,
     he_farchive: Optional[str] = None,
     he_data_dir: Optional[str] = None,
+    compile_metadata: Optional[Any] = None,
 ) -> Dict[str, int]:
     """Export corpus projections to JSONL (and optionally Parquet).
 
@@ -509,7 +532,7 @@ def export_projections(
             ("findings", all_findings),
             ("ops", all_ops),
         ]:
-            if _try_write_parquet(out / f"{name}.parquet", rows):
+            if _try_write_parquet(out / f"{name}.parquet", rows, compile_metadata):
                 parquet_ok = True
 
         if parquet_ok:
@@ -574,6 +597,7 @@ def export_projections(
             data_dir=data_dir,
             use_parquet=use_parquet,
             limit=limit,
+            compile_metadata=compile_metadata,
         )
         counts["fi_preparatory_refs"] = prep_count
 
@@ -588,6 +612,7 @@ def export_projections(
             use_parquet=use_parquet,
             he_farchive_path=_he_farchive_path,
             limit=limit,
+            compile_metadata=compile_metadata,
         )
         counts["fi_inline_citations"] = inline_count
 
@@ -600,6 +625,7 @@ def export_projections(
             data_dir=data_dir,
             use_parquet=use_parquet,
             limit=limit,
+            compile_metadata=compile_metadata,
         )
         counts["fi_sections_text"] = sections_text_count
 

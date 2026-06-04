@@ -338,12 +338,14 @@ def _dispatch_projection(
         return _rebuild_fi_inline_citations_projection(
             data_dir=data_dir,
             out_dir=out_dir,
+            compile_metadata=compile_metadata,
         )
 
     if name == "fi_sections_text":
         return _rebuild_fi_sections_text_projection(
             data_dir=data_dir,
             out_dir=out_dir,
+            compile_metadata=compile_metadata,
         )
 
     if name in ("statutes", "sections", "findings", "ops"):
@@ -352,6 +354,7 @@ def _dispatch_projection(
             data_dir=data_dir,
             out_dir=out_dir,
             jurisdiction=jurisdiction,
+            compile_metadata=compile_metadata,
         )
 
     # Unknown projection — log and skip (not an error; allow forward-compat)
@@ -420,7 +423,7 @@ def _rebuild_fi_crosslink_projection(
 
     if name == "fi_preparatory_refs":
         from lawvm.tools.export_fi_preparatory_refs import export_fi_preparatory_refs
-        return export_fi_preparatory_refs(corpus, data_dir=str(out_dir), use_parquet=True)
+        return export_fi_preparatory_refs(corpus, data_dir=str(out_dir), use_parquet=True, compile_metadata=compile_metadata)
 
     return 0
 
@@ -429,6 +432,7 @@ def _rebuild_fi_inline_citations_projection(
     *,
     data_dir: str,
     out_dir: Path,
+    compile_metadata: Optional[Any] = None,
 ) -> int:
     """Rebuild fi_inline_citations from finlex.farchive + fi_government_proposal.farchive."""
     corpus = _load_default_fi_corpus(data_dir)
@@ -446,6 +450,7 @@ def _rebuild_fi_inline_citations_projection(
         data_dir=str(out_dir),
         use_parquet=True,
         he_farchive_path=he_farchive_path,
+        compile_metadata=compile_metadata,
     )
 
 
@@ -453,6 +458,7 @@ def _rebuild_fi_sections_text_projection(
     *,
     data_dir: str,
     out_dir: Path,
+    compile_metadata: Optional[Any] = None,
 ) -> int:
     """Rebuild fi_sections_text from finlex.farchive oracle corpus."""
     corpus = _load_default_fi_corpus(data_dir)
@@ -468,6 +474,7 @@ def _rebuild_fi_sections_text_projection(
         corpus,
         data_dir=str(out_dir),
         use_parquet=True,
+        compile_metadata=compile_metadata,
     )
 
 
@@ -477,6 +484,7 @@ def _rebuild_core_projections(
     data_dir: str,
     out_dir: Path,
     jurisdiction: str,
+    compile_metadata: Optional[Any] = None,
 ) -> int:
     """Rebuild statutes / sections / findings / ops from export_parquet."""
     from lawvm.tools.export_parquet import export_projections
@@ -496,6 +504,7 @@ def _rebuild_core_projections(
         include_actors=False,
         include_pools=False,
         include_he_corpus=False,
+        compile_metadata=compile_metadata,
     )
     return counts.get(name, 0)
 

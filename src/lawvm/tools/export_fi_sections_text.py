@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -138,8 +139,29 @@ def _write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> int:
     return len(rows)
 
 
-def _try_write_parquet(path: Path, rows: List[Dict[str, Any]]) -> bool:
-    """Try to write rows as Parquet with zstd compression.
+def _attach_compile_metadata(table: Any, compile_metadata: Any) -> Any:
+    """Attach CompileMetadata fields to a pyarrow Table's schema metadata."""
+    if compile_metadata is None:
+        warnings.warn(
+            "Parquet emit without CompileMetadata is deprecated; "
+            "pass compile_metadata to ensure artifact reproducibility",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return table
+    existing = table.schema.metadata or {}
+    meta = dict(existing)
+    for k, v in compile_metadata.to_metadata_dict().items():
+        meta[k.encode()] = v.encode()
+    return table.replace_schema_metadata(meta)
+
+
+def _try_write_parquet(
+    path: Path,
+    rows: List[Dict[str, Any]],
+    compile_metadata: Any = None,
+) -> bool:
+    """Try to write rows as Parquet with zstd compression and optional compile metadata.
 
     Returns True if successful.
     """
@@ -157,10 +179,12 @@ def _try_write_parquet(path: Path, rows: List[Dict[str, Any]]) -> bool:
             {col: [] for col in FI_SECTIONS_TEXT_COLUMNS},
             schema=schema,
         )
+        table = _attach_compile_metadata(table, compile_metadata)
         pq.write_table(table, str(path), compression="zstd")
         return True
 
     table = pa.Table.from_pylist(rows, schema=schema)
+    table = _attach_compile_metadata(table, compile_metadata)
     pq.write_table(table, str(path), compression="zstd")
     return True
 
@@ -176,6 +200,7 @@ def export_fi_sections_text(
     data_dir: str = ".tmp/projections",
     use_parquet: bool = True,
     limit: Optional[int] = None,
+    compile_metadata: Optional[Any] = None,
 ) -> int:
     """Export fi_sections_text.parquet projection for a corpus of Finnish statutes.
 
@@ -224,7 +249,7 @@ def export_fi_sections_text(
 
     parquet_written = False
     if use_parquet:
-        ok = _try_write_parquet(out / "fi_sections_text.parquet", all_section_rows)
+        ok = _try_write_parquet(out / "fi_sections_text.parquet", all_section_rows, compile_metadata)
         if ok:
             parquet_written = True
             print(
