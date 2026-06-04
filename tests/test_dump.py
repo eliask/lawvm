@@ -174,3 +174,53 @@ def test_source_dump_parse_routes_j_uk_to_farchive(monkeypatch, tmp_path) -> Non
     assert bundle["selected_kind"] == "P1"
     assert bundle["selected_label"] == "II"
     assert "Native source." in bundle["xml"]
+
+
+def test_source_dump_main_routes_j_uk_to_farchive(monkeypatch, tmp_path, capsys) -> None:
+    xml = b"""<Legislation xmlns='http://www.legislation.gov.uk/namespaces/legislation'>
+  <Primary>
+    <Body>
+      <P1 id='section-10'>
+        <Pnumber>10</Pnumber>
+        <P1para><Text>Main source dump reads farchive.</Text></P1para>
+      </P1>
+    </Body>
+  </Primary>
+</Legislation>
+"""
+    db_path = tmp_path / "uk_legislation.farchive"
+    db_path.write_bytes(b"")
+    seen: dict[str, Any] = {}
+
+    class DummyArchive:
+        def __init__(self, path):
+            seen["path"] = path
+
+        def get(self, locator: str) -> bytes | None:
+            seen["locator"] = locator
+            return xml
+
+        def close(self) -> None:
+            seen["closed"] = True
+
+    fake_farchive = types.ModuleType("farchive")
+    fake_farchive.Farchive = DummyArchive
+    monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
+
+    source_dump.main(
+        Namespace(
+            statute_id="ukpga/2002/30",
+            address="section:10",
+            json=False,
+            jurisdiction="uk",
+            db=str(db_path),
+        )
+    )
+
+    out = capsys.readouterr().out
+    assert seen["path"] == db_path
+    assert seen["locator"] == "https://www.legislation.gov.uk/ukpga/2002/30/enacted/data.xml"
+    assert seen["closed"] is True
+    assert "Stage    : PARSE (UK enacted source XML from farchive, no replay)" in out
+    assert f"Archive  : {db_path}" in out
+    assert "Main source dump reads farchive." in out

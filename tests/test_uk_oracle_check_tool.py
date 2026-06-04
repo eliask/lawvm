@@ -16,8 +16,6 @@ Guard tests (no archive required):
   - lawvm -j uk lower-audit exits 2
   - lawvm -j uk step-attribution exits 2
   - lawvm -j uk blame exits 2
-  - lawvm -j uk dump exits 2
-  - lawvm -j uk source-dump exits 2
   - lawvm -j uk inspect-amendment exits 2
   - lawvm -j uk snapshot-debug exits 2
   - lawvm -j uk product-debug exits 2
@@ -233,8 +231,6 @@ _GUARD_COMMANDS: list[tuple[str, list[str]]] = [
     ("lower-audit", ["ukpga/1978/30"]),
     ("step-attribution", ["ukpga/1978/30"]),
     ("blame", ["ukpga/1978/30"]),
-    ("dump", ["ukpga/1978/30"]),
-    ("source-dump", ["ukpga/1978/30"]),
     # inspect-amendment, snapshot-debug, product-debug require --source
     ("inspect-amendment", ["ukpga/1978/30", "--source", "ukpga/2012/10"]),
     ("snapshot-debug", ["ukpga/1978/30", "--source", "ukpga/2012/10"]),
