@@ -3816,6 +3816,42 @@ def test_executor_uses_typed_text_patch_without_legacy_text_fields() -> None:
     assert executor.statute.body.children[0].text == "Alpha new Beta"
 
 
+def test_executor_treats_regex_fallback_replacement_as_literal_source_text() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="1", text="Alpha old   text Beta"),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_replace_literal_backslash_digit",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="old text", occurrence=0),
+                replacement=r"7\5 kilograms",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert adjudications == []
+    assert executor.statute.body.children[0].text == r"Alpha 7\5 kilograms Beta"
+
+
 def test_executor_classifies_same_target_text_patch_preimage_drift() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

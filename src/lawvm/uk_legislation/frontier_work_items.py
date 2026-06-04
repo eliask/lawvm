@@ -249,6 +249,24 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_claimed_definition_child_insert_boundary",
         ),
     },
+    "uk_manual_frontier_definition_anchor_tail_insert_candidate": {
+        "candidate_operation_family": "definition_child_and_tail_substitution",
+        "required_validator_checks": (
+            "source_witness_names_definition_anchor_and_tail_insert_payload",
+            "claim_identifies_exact_definition_anchor_child",
+            "claim_targets_only_tail_after_anchor_or_declared_insert_boundary",
+            "claim_preserves_unclaimed_definition_entry_body_and_children",
+            "changed_paths_are_within_claimed_definition_tail_insert_boundary",
+        ),
+    },
+    "uk_manual_frontier_definition_range_to_end_source_context_insufficient": {
+        "candidate_operation_family": "source_acquisition_or_payload_extraction",
+        "required_validator_checks": (
+            "source_witness_contains_definition_range_to_end_context",
+            "complete_parent_instruction_context_witness_is_available",
+            "claim_blocks_replay_until_instruction_context_is_proved",
+        ),
+    },
     "uk_manual_frontier_heading_facet_candidate": {
         "candidate_operation_family": "facet_text_rewrite",
         "required_validator_checks": (
@@ -319,6 +337,16 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_declared_target_and_payload_boundaries",
         ),
     },
+    "uk_manual_frontier_effect_metadata_carried_text_patch_candidate": {
+        "candidate_operation_family": "metadata_carried_text_patch",
+        "required_validator_checks": (
+            "effect_metadata_supplies_action_family_and_target",
+            "source_fragment_supplies_exact_text_preimage_or_payload",
+            "claim_reconciles_metadata_action_with_source_fragment_shape",
+            "target_scope_is_the_effect_target_or_source_named_descendant_only",
+            "changed_paths_are_within_declared_target_and_text_patch_boundary",
+        ),
+    },
     "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate": {
         "candidate_operation_family": "parser_or_extraction_gap",
         "required_validator_checks": (
@@ -387,6 +415,24 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_declared_table_repeal_boundary",
         ),
     },
+    "uk_manual_frontier_repeal_table_feed_source_target_gap": {
+        "candidate_operation_family": "source_target_reconciliation",
+        "required_validator_checks": (
+            "source_witness_targets_table_repeal_or_omission",
+            "claim_reconciles_source_table_target_and_effect_feed_target",
+            "claim_blocks_replay_until_target_identity_is_proved",
+        ),
+    },
+    "uk_manual_frontier_referent_qualified_text_substitution_candidate": {
+        "candidate_operation_family": "referent_qualified_text_substitution",
+        "required_validator_checks": (
+            "source_witness_contains_referent_qualified_substitution",
+            "claim_identifies_referent_scope_and_target_carrier",
+            "claim_text_preimage_matches_referent_qualified_surface",
+            "claim_preserves_occurrences_outside_the_referent_scope",
+            "changed_paths_are_within_declared_referent_qualified_text_boundary",
+        ),
+    },
     "uk_manual_frontier_savings_qualified_text_omission_candidate": {
         "candidate_operation_family": "savings_qualified_text_omission",
         "required_validator_checks": (
@@ -436,6 +482,26 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_text_preimage_matches_each_claimed_surface",
             "claim_preserves_unclaimed_body_text_heading_text_and_children",
             "changed_paths_are_within_declared_body_and_facet_targets",
+        ),
+    },
+    "uk_manual_frontier_mixed_structural_definition_repeal_split": {
+        "candidate_operation_family": "mixed_structural_definition_repeal_split",
+        "required_validator_checks": (
+            "source_witness_contains_mixed_definition_structural_and_text_repeal",
+            "claim_splits_definition_entry_repeal_from_text_repeal",
+            "claim_identifies_each_mutated_definition_surface",
+            "claim_preserves_unclaimed_definition_text_and_children",
+            "changed_paths_are_within_declared_definition_split_boundaries",
+        ),
+    },
+    "uk_manual_frontier_mixed_structural_text_rewrite_split": {
+        "candidate_operation_family": "mixed_structural_text_rewrite_split",
+        "required_validator_checks": (
+            "source_witness_contains_mixed_structural_and_text_rewrite",
+            "claim_splits_structural_operation_from_text_rewrite",
+            "claim_identifies_each_mutated_structural_and_text_surface",
+            "claim_preserves_unclaimed_parent_and_sibling_text",
+            "changed_paths_are_within_declared_mixed_rewrite_boundaries",
         ),
     },
     "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate": {
@@ -544,6 +610,26 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_claimed_table_surface",
         ),
     },
+    "uk_manual_frontier_table_deictic_this_subsection_insert": {
+        "candidate_operation_family": "table_surface_mutation",
+        "required_validator_checks": (
+            "source_witness_contains_table_deictic_this_subsection_insert",
+            "claim_resolves_deictic_table_target_from_source_context",
+            "claim_identifies_exact_table_carrier",
+            "claim_preserves_unclaimed_rows_columns_and_cells",
+            "changed_paths_are_within_claimed_table_surface",
+        ),
+    },
+    "uk_manual_frontier_table_entry_deictic_candidate": {
+        "candidate_operation_family": "table_surface_mutation",
+        "required_validator_checks": (
+            "source_witness_targets_deictic_table_entry_or_column_surface",
+            "claim_resolves_deictic_table_entry_from_source_context",
+            "claim_identifies_exact_table_carrier",
+            "claim_preserves_unclaimed_rows_columns_and_cells",
+            "changed_paths_are_within_claimed_table_surface",
+        ),
+    },
     "uk_manual_frontier_table_crossheading_candidate": {
         "candidate_operation_family": "table_crossheading_text_rewrite",
         "required_validator_checks": (
@@ -629,6 +715,27 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_excludes_words_amended_by_named_same_schedule_paragraphs",
             "claim_excludes_words_inserted_by_same_act_unless_otherwise_provided",
             "changed_paths_are_within_declared_whole_act_text_carriers",
+        ),
+    },
+    "uk_manual_frontier_range_to_container_candidate": {
+        "candidate_operation_family": "range_to_container_substitution",
+        "required_validator_checks": (
+            "source_witness_contains_range_to_container_substitution",
+            "claim_identifies_every_replaced_source_unit_in_range",
+            "claim_identifies_container_payload_root_and_all_owned_children",
+            "claim_emits_lineage_or_migration_events_for_displaced_units",
+            "claim_preserves_crossheading_or_heading_facet_scope",
+            "changed_paths_are_within_source_range_or_declared_migration_paths",
+        ),
+    },
+    "uk_manual_frontier_scoped_occurrence_substitution_with_exclusions": {
+        "candidate_operation_family": "parser_or_extraction_gap",
+        "required_validator_checks": (
+            "source_witness_contains_scoped_occurrence_formula_with_exclusions",
+            "compiler_or_claim_identifies_exact_text_preimage_and_replacement",
+            "compiler_or_claim_identifies_each_excluded_occurrence_scope",
+            "claim_preserves_occurrences_inside_named_exclusions",
+            "changed_paths_are_within_declared_non_excluded_occurrence_boundaries",
         ),
     },
 }

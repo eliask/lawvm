@@ -89,6 +89,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_crossheading_source_target_mismatch",
         "uk_manual_frontier_deictic_amendment_program_target_candidate",
         "uk_manual_frontier_deictic_structural_sibling_insert_candidate",
+        "uk_manual_frontier_definition_anchor_tail_insert_candidate",
         "uk_manual_frontier_definition_child_and_tail_substitution_candidate",
         "uk_manual_frontier_definition_child_structural_insert_candidate",
         "uk_manual_frontier_definition_child_structural_substitution_candidate",
@@ -97,6 +98,8 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_effect_metadata_carried_text_patch_candidate",
         "uk_manual_frontier_heading_facet_candidate",
         "uk_manual_frontier_labeled_child_end_range_candidate",
+        "uk_manual_frontier_mixed_structural_definition_repeal_split",
+        "uk_manual_frontier_mixed_structural_text_rewrite_split",
         "uk_manual_frontier_mixed_body_heading_text_substitution_split",
         "uk_manual_frontier_multi_enactment_specified_provisions_text_patch",
         "uk_manual_frontier_parser_or_extraction_candidate",
@@ -109,6 +112,8 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_schedule_note_candidate",
         "uk_manual_frontier_sentence_scoped_repeated_insert_candidate",
         "uk_manual_frontier_savings_qualified_text_omission_candidate",
+        "uk_manual_frontier_scoped_occurrence_substitution_with_exclusions",
+        "uk_manual_frontier_scoped_occurrence_program_exclusion_candidate",
         "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate",
         "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate",
         "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
@@ -120,6 +125,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_table_appropriate_place_candidate",
         "uk_manual_frontier_table_column_insert_candidate",
         "uk_manual_frontier_table_crossheading_candidate",
+        "uk_manual_frontier_table_deictic_this_subsection_insert",
         "uk_manual_frontier_table_entry_candidate",
         "uk_manual_frontier_table_entry_deictic_candidate",
         "uk_manual_frontier_table_entry_placement_insert",
@@ -559,8 +565,20 @@ def test_uk_manual_compile_evidence_jsonl_templates_source_target_reconciliation
             "source_target_reconciliation",
         ),
         (
+            "uk_manual_frontier_definition_anchor_tail_insert_candidate",
+            "definition_child_and_tail_substitution",
+        ),
+        (
             "uk_manual_frontier_definition_child_structural_insert_candidate",
             "definition_child_structural_insert",
+        ),
+        (
+            "uk_manual_frontier_definition_range_to_end_source_context_insufficient",
+            "source_acquisition_or_payload_extraction",
+        ),
+        (
+            "uk_manual_frontier_effect_metadata_carried_text_patch_candidate",
+            "metadata_carried_text_patch",
         ),
         (
             "uk_manual_frontier_external_act_target_out_of_scope",
@@ -609,6 +627,30 @@ def test_uk_manual_compile_evidence_jsonl_templates_source_target_reconciliation
             "whole_act_repeal_with_exceptions",
         ),
         (
+            "uk_manual_frontier_range_to_container_candidate",
+            "range_to_container_substitution",
+        ),
+        (
+            "uk_manual_frontier_referent_qualified_text_substitution_candidate",
+            "referent_qualified_text_substitution",
+        ),
+        (
+            "uk_manual_frontier_repeal_table_feed_source_target_gap",
+            "source_target_reconciliation",
+        ),
+        (
+            "uk_manual_frontier_mixed_structural_definition_repeal_split",
+            "mixed_structural_definition_repeal_split",
+        ),
+        (
+            "uk_manual_frontier_mixed_structural_text_rewrite_split",
+            "mixed_structural_text_rewrite_split",
+        ),
+        (
+            "uk_manual_frontier_scoped_occurrence_substitution_with_exclusions",
+            "parser_or_extraction_gap",
+        ),
+        (
             "uk_manual_frontier_table_appropriate_place_candidate",
             "table_surface_mutation",
         ),
@@ -616,6 +658,11 @@ def test_uk_manual_compile_evidence_jsonl_templates_source_target_reconciliation
             "uk_manual_frontier_table_crossheading_candidate",
             "table_crossheading_text_rewrite",
         ),
+        (
+            "uk_manual_frontier_table_deictic_this_subsection_insert",
+            "table_surface_mutation",
+        ),
+        ("uk_manual_frontier_table_entry_deictic_candidate", "table_surface_mutation"),
         ("uk_manual_frontier_table_entry_placement_insert", "table_surface_mutation"),
         ("uk_manual_frontier_unclassified", "unclassified_manual_frontier"),
         (

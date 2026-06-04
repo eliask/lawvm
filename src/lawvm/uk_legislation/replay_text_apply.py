@@ -81,6 +81,11 @@ class DirectChildTextRewriteMatch(NamedTuple):
     child: UKMutableNode
 
 
+def _literal_regex_replacement(replacement: str) -> Callable[[re.Match[str]], str]:
+    """Return source payload text literally, not as a regex replacement template."""
+    return lambda _match: replacement
+
+
 def _alternate_unique_literals(match: str) -> tuple[str, ...]:
     if not match.startswith(_ALTERNATE_UNIQUE_SELECTOR_PREFIX):
         return ()
@@ -1043,7 +1048,12 @@ def _replace_source_carried_child_text(
         allow_punctuation_spacing=allow_punctuation_spacing,
         allow_word_punctuation_elision=allow_word_punctuation_elision,
     )
-    new_text, count = re.subn(pattern, replacement, text, flags=re.I | re.S)
+    new_text, count = re.subn(
+        pattern,
+        _literal_regex_replacement(replacement),
+        text,
+        flags=re.I | re.S,
+    )
     return new_text, count > 0
 
 
@@ -1212,7 +1222,12 @@ def _rewrite_each_anchor_in_definition_entry_text(
     anchor_matches = list(re.finditer(anchor_pattern, entry_text, flags=re.I | re.S))
     if not anchor_matches:
         return text, False
-    rewritten_entry = re.sub(anchor_pattern, replacement, entry_text, flags=re.I | re.S)
+    rewritten_entry = re.sub(
+        anchor_pattern,
+        _literal_regex_replacement(replacement),
+        entry_text,
+        flags=re.I | re.S,
+    )
     new_text = f"{text[:definition_match.start()]}{rewritten_entry}{text[definition_match.end():]}"
     return " ".join(new_text.split()).strip(), True
 
@@ -2100,7 +2115,12 @@ class UKReplayTextApplyMixin:
                 allow_punctuation_spacing=allow_punctuation_spacing,
                 allow_word_punctuation_elision=allow_word_punctuation_elision,
             )
-            new_text, count = re.subn(pattern, replacement, text, flags=re.I)
+            new_text, count = re.subn(
+                pattern,
+                _literal_regex_replacement(replacement),
+                text,
+                flags=re.I,
+            )
             if count == 0:
                 return node, False
             rebuilt = dc_replace(node, text=new_text)
@@ -2266,7 +2286,12 @@ class UKReplayTextApplyMixin:
                 text = text.replace(old, new)
             else:
                 pattern = re.escape(old).replace(r"\ ", r"\s+")
-                new_text, count = re.subn(pattern, new, text, flags=re.I)
+                new_text, count = re.subn(
+                    pattern,
+                    _literal_regex_replacement(new),
+                    text,
+                    flags=re.I,
+                )
                 if count > 0:
                     text = new_text
         rebuilt = dc_replace(node, text=text, children=list(children))
@@ -3678,7 +3703,13 @@ class UKReplayTextApplyMixin:
                         + child_text[match_obj.end() :]
                     )
                 else:
-                    new_text, count = re.subn(pattern, replacement_text, child_text, count=1, flags=re.I | re.S)
+                    new_text, count = re.subn(
+                        pattern,
+                        _literal_regex_replacement(replacement_text),
+                        child_text,
+                        count=1,
+                        flags=re.I | re.S,
+                    )
                     if count != 1:
                         return node, False
                 rebuilt_child = dc_replace(child_node, text=" ".join(new_text.split()).strip())
@@ -4298,7 +4329,12 @@ class UKReplayTextApplyMixin:
                         allow_punctuation_spacing=allow_punctuation_spacing,
                         allow_word_punctuation_elision=allow_word_punctuation_elision,
                     )
-                    new_text, count = re.subn(pattern, replacement, text, flags=re.I)
+                    new_text, count = re.subn(
+                        pattern,
+                        _literal_regex_replacement(replacement),
+                        text,
+                        flags=re.I,
+                    )
                     if count > 0:
                         rebuilt = self._replace_descendant_at_path(
                             rebuilt,

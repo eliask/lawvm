@@ -645,6 +645,10 @@ def _required_operation_family_proof_semantics(
         return ("text_rewrite_source_preimage_and_live_target",)
     if action_family == "mixed_body_heading_text_substitution_split":
         return ("mixed_body_heading_split_boundary_claim",)
+    if action_family == "mixed_structural_definition_repeal_split":
+        return ("mixed_structural_definition_repeal_split_boundary_claim",)
+    if action_family == "mixed_structural_text_rewrite_split":
+        return ("mixed_structural_text_rewrite_split_boundary_claim",)
     if action_family == "schedule_part_wrapper_insertion":
         return ("structural_insert_source_payload_and_live_parent",)
     if action_family == "schedule_list_entry_mutation":
@@ -692,6 +696,8 @@ def _required_operation_family_proof_semantics(
         return ("source_carried_structured_tail_boundary_claim",)
     if action_family == "metadata_carried_text_patch":
         return ("effect_metadata_source_fragment_text_patch_boundary_claim",)
+    if action_family == "scoped_occurrence_substitution_with_exclusions":
+        return ("scoped_occurrence_exclusion_boundary_claim",)
     if action_family == "source_target_reconciliation":
         return ("source_feed_target_reconciliation_claim",)
     if action_family == "range_to_container_substitution":
@@ -705,6 +711,8 @@ def _required_operation_family_proof_semantics(
             semantics.append("appropriate_place_anchor_or_ordering_claim")
         return tuple(semantics)
     if action_family == "definition_child_and_tail_substitution":
+        return ("definition_child_text_tail_boundary_claim",)
+    if action_family == "definition_anchor_tail_insert":
         return ("definition_child_text_tail_boundary_claim",)
     if action_family == "definition_child_structural_substitution":
         return ("definition_child_structural_payload_boundary_claim",)
@@ -1965,6 +1973,146 @@ def manual_compile_suggested_claim_template(
                 "claim_reconciles_metadata_action_with_source_fragment_shape",
                 "target_scope_is_the_effect_target_or_source_named_descendant_only",
                 "changed_paths_are_within_declared_target_and_text_patch_boundary",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_definition_anchor_tail_insert_candidate"
+    ):
+        detail = _first_blocking_lowering_rejection_detail(row=row)
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="definition_anchor_tail_insert",
+            placement_family=str(
+                detail.get("reason_code")
+                or "definition_anchor_tail_insert_requires_tail_boundary_claim"
+            ),
+            required_ownership=[
+                "definition_anchor_child_identity",
+                "tail_insert_payload_boundary",
+                "effective_definition_entry_preimage",
+                "unclaimed_definition_body_and_children",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_names_definition_anchor_and_tail_insert_payload",
+                "claim_identifies_exact_definition_anchor_child",
+                "claim_targets_only_tail_after_anchor_or_declared_insert_boundary",
+                "claim_preserves_unclaimed_definition_entry_body_and_children",
+                "changed_paths_are_within_claimed_definition_tail_insert_boundary",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_mixed_structural_definition_repeal_split"
+    ):
+        detail = _first_blocking_lowering_rejection_detail(row=row)
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="mixed_structural_definition_repeal_split",
+            placement_family=str(
+                detail.get("reason_code")
+                or "mixed_definition_structural_and_text_repeal_requires_split_claim"
+            ),
+            required_ownership=[
+                "definition_structural_repeal_boundary",
+                "definition_text_repeal_boundary",
+                "split_between_structural_and_text_surfaces",
+                "unclaimed_definition_text_and_children",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_contains_mixed_definition_structural_and_text_repeal",
+                "claim_splits_definition_entry_repeal_from_text_repeal",
+                "claim_identifies_each_mutated_definition_surface",
+                "claim_preserves_unclaimed_definition_text_and_children",
+                "changed_paths_are_within_declared_definition_split_boundaries",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_mixed_structural_text_rewrite_split"
+    ):
+        detail = _first_blocking_lowering_rejection_detail(row=row)
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="mixed_structural_text_rewrite_split",
+            placement_family=str(
+                detail.get("reason_code")
+                or "mixed_structural_and_text_rewrite_requires_split_claim"
+            ),
+            required_ownership=[
+                "structural_mutation_boundary",
+                "text_rewrite_preimage_and_payload",
+                "split_between_structural_and_text_surfaces",
+                "unclaimed_parent_and_sibling_text",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_contains_mixed_structural_and_text_rewrite",
+                "claim_splits_structural_operation_from_text_rewrite",
+                "claim_identifies_each_mutated_structural_and_text_surface",
+                "claim_preserves_unclaimed_parent_and_sibling_text",
+                "changed_paths_are_within_declared_mixed_rewrite_boundaries",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_scoped_occurrence_substitution_with_exclusions"
+    ):
+        detail = _first_blocking_lowering_rejection_detail(row=row)
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="scoped_occurrence_substitution_with_exclusions",
+            placement_family=str(
+                detail.get("reason_code")
+                or "scoped_occurrence_substitution_with_exclusions_requires_selector"
+            ),
+            required_ownership=[
+                "quoted_text_preimage_and_replacement_payload",
+                "non_excluded_occurrence_selector",
+                "named_exclusion_scope",
+                "effective_target_text_preimage",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_contains_scoped_occurrence_formula_with_exclusions",
+                "compiler_or_claim_identifies_exact_text_preimage_and_replacement",
+                "compiler_or_claim_identifies_each_excluded_occurrence_scope",
+                "claim_preserves_occurrences_inside_named_exclusions",
+                "changed_paths_are_within_declared_non_excluded_occurrence_boundaries",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_table_deictic_this_subsection_insert"
+    ):
+        detail = _first_blocking_lowering_rejection_detail(row=row)
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="table_surface_mutation",
+            placement_family=str(
+                detail.get("reason_code")
+                or "table_deictic_this_subsection_insert_requires_source_context"
+            ),
+            required_ownership=[
+                "deictic_table_target_resolution",
+                "table_carrier_identity",
+                "inserted_row_or_cell_payload",
+                "unclaimed_table_rows_columns_and_cells",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_contains_table_deictic_this_subsection_insert",
+                "claim_resolves_deictic_table_target_from_source_context",
+                "claim_identifies_exact_table_carrier",
+                "claim_preserves_unclaimed_rows_columns_and_cells",
+                "changed_paths_are_within_claimed_table_surface",
             ],
         )
     if (
