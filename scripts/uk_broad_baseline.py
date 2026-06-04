@@ -43,6 +43,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections.abc import Mapping
 from collections import Counter
+import hashlib
 import json
 import random
 import re
@@ -55,6 +56,8 @@ from lawvm.core.agreement_residual import AgreementResidual
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.core.source_witness import (
+    DigestWitness,
+    SourceWitness,
     source_witness_digest_coverage,
     source_witness_role_key,
 )
@@ -350,8 +353,30 @@ def score_one(statute_id: str) -> dict[str, Any]:
     result: dict[str, Any] = {"statute_id": statute_id}
     archive = Farchive(DB_PATH)
     try:
-        enacted = archive.get(f"{_LEG_BASE}/{statute_id}/enacted/data.xml")
-        current = archive.get(f"{_LEG_BASE}/{statute_id}/data.xml")
+        enacted_locator = f"{_LEG_BASE}/{statute_id}/enacted/data.xml"
+        current_locator = f"{_LEG_BASE}/{statute_id}/data.xml"
+        enacted = archive.get(enacted_locator)
+        current = archive.get(current_locator)
+        result.update(
+            _source_witness_fields(
+                "base",
+                statute_id=statute_id,
+                locator=enacted_locator,
+                source_lane="enacted_xml",
+                data=enacted,
+                source_status="absent" if not enacted else "unclassified",
+            )
+        )
+        result.update(
+            _source_witness_fields(
+                "oracle",
+                statute_id=statute_id,
+                locator=current_locator,
+                source_lane="current_xml",
+                data=current,
+                source_status="absent" if not current else "unclassified",
+            )
+        )
         if not enacted:
             return {
                 **result,
@@ -372,6 +397,26 @@ def score_one(statute_id: str) -> dict[str, Any]:
         current_source = classify_uk_statute_xml_content(current)
         result.update(_source_state_fields("base", base_source))
         result.update(_source_state_fields("oracle", current_source))
+        result.update(
+            _source_witness_fields(
+                "base",
+                statute_id=statute_id,
+                locator=enacted_locator,
+                source_lane="enacted_xml",
+                data=enacted,
+                source_status=base_source.status.value,
+            )
+        )
+        result.update(
+            _source_witness_fields(
+                "oracle",
+                statute_id=statute_id,
+                locator=current_locator,
+                source_lane="current_xml",
+                data=current,
+                source_status=current_source.status.value,
+            )
+        )
         if base_source.status.value == "metadata_only":
             source_frontier_reason = (
                 "base_and_oracle_metadata_only"
@@ -688,6 +733,12 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     source_frontier_reasons = Counter(
         str(r.get("source_frontier_reason") or "unknown") for r in source_frontier
     )
+    source_frontier_source_witness_role_counts = (
+        _source_frontier_source_witness_role_counts(source_frontier)
+    )
+    source_frontier_source_witness_digest_coverage_counts = (
+        _source_frontier_source_witness_digest_coverage_counts(source_frontier)
+    )
     source_chain_frontier_reasons = Counter(
         reason
         for r in results
@@ -964,6 +1015,12 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "errored": errored,
         "source_frontier": source_frontier,
         "source_frontier_reasons": dict(sorted(source_frontier_reasons.items())),
+        "source_frontier_source_witness_role_counts": (
+            source_frontier_source_witness_role_counts
+        ),
+        "source_frontier_source_witness_digest_coverage_counts": (
+            source_frontier_source_witness_digest_coverage_counts
+        ),
         "source_chain_frontier_reasons": dict(
             sorted(source_chain_frontier_reasons.items())
         ),
@@ -2280,6 +2337,30 @@ def _aggregate_row_count_maps(
     return dict(sorted(counts.items()))
 
 
+def _source_frontier_source_witness_role_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        for side in ("base", "oracle"):
+            witness = row.get(f"{side}_source_witness")
+            witness = witness if isinstance(witness, Mapping) else {}
+            counts[f"{side}:{source_witness_role_key(witness)}"] += 1
+    return dict(sorted(counts.items()))
+
+
+def _source_frontier_source_witness_digest_coverage_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        for side in ("base", "oracle"):
+            witness = row.get(f"{side}_source_witness")
+            witness = witness if isinstance(witness, Mapping) else {}
+            counts[f"{side}:{source_witness_digest_coverage(witness)}"] += 1
+    return dict(sorted(counts.items()))
+
+
 def _blocking_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     from lawvm.core.compile_records import is_blocking_compile_record
 
@@ -2324,6 +2405,58 @@ def _source_state_fields(prefix: str, state: Any) -> dict[str, Any]:
             candidate.to_dict() for candidate in multiple_choice_candidates
         ]
     return fields
+
+
+def _source_witness_fields(
+    prefix: str,
+    *,
+    statute_id: str,
+    locator: str,
+    source_lane: str,
+    data: bytes | None,
+    source_status: str,
+) -> dict[str, Any]:
+    digest = None
+    preview_digest = None
+    preview = ""
+    if data:
+        digest = DigestWitness(
+            digest_algorithm="sha256",
+            digest=hashlib.sha256(data).hexdigest(),
+        )
+        preview = _bounded_source_preview(data)
+        if preview:
+            preview_digest = DigestWitness(
+                digest_algorithm="sha256",
+                digest=hashlib.sha256(preview.encode("utf-8")).hexdigest(),
+            )
+    witness = SourceWitness(
+        source_role=f"uk_broad_{prefix}_source",
+        artifact_id=statute_id,
+        source_unit_id=source_lane,
+        locator=locator,
+        digest=digest,
+        bounded_preview=preview,
+        preview_digest=preview_digest,
+        source_lane=source_lane,
+        metadata={
+            "source_status": source_status,
+            "source_size": len(data or b""),
+            "truth_claim": "source_footing_witness_not_replay_authorization",
+        },
+    ).to_dict()
+    return {
+        f"{prefix}_source_locator": locator,
+        f"{prefix}_source_witness": witness,
+        f"{prefix}_source_witness_digest_coverage": (
+            source_witness_digest_coverage(witness)
+        ),
+    }
+
+
+def _bounded_source_preview(data: bytes, *, limit: int = 500) -> str:
+    text = data[:4096].decode("utf-8", errors="replace")
+    return " ".join(text.split())[:limit]
 
 
 def _is_sampleable_uk_statute_id(statute_id: str) -> bool:
@@ -2783,6 +2916,22 @@ def run_driver(
             for reason, count in summary["source_frontier_reasons"].items()
         )
         print(f"  source_frontier_reasons: {reasons}")
+    if summary["source_frontier_source_witness_role_counts"]:
+        counts = ", ".join(
+            f"{role}={count}"
+            for role, count in summary[
+                "source_frontier_source_witness_role_counts"
+            ].items()
+        )
+        print(f"  source_frontier_source_witness_role_counts: {counts}")
+    if summary["source_frontier_source_witness_digest_coverage_counts"]:
+        counts = ", ".join(
+            f"{coverage}={count}"
+            for coverage, count in summary[
+                "source_frontier_source_witness_digest_coverage_counts"
+            ].items()
+        )
+        print(f"  source_frontier_source_witness_digest_coverage_counts: {counts}")
     if summary["source_chain_frontier_reasons"]:
         reasons = ", ".join(
             f"{reason}={count}"

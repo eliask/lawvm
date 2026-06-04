@@ -136,6 +136,20 @@ def test_score_one_reports_both_metadata_only_as_base_and_oracle_source_frontier
     assert row["source_frontier_reason"] == "base_and_oracle_metadata_only"
     assert row["base_source_status"] == "metadata_only"
     assert row["oracle_source_status"] == "metadata_only"
+    assert row["base_source_locator"].endswith("/ukpga/1824/74/enacted/data.xml")
+    assert row["oracle_source_locator"].endswith("/ukpga/1824/74/data.xml")
+    assert row["base_source_witness"]["source_role"] == "uk_broad_base_source"
+    assert row["oracle_source_witness"]["source_role"] == "uk_broad_oracle_source"
+    assert row["base_source_witness"]["source_lane"] == "enacted_xml"
+    assert row["oracle_source_witness"]["source_lane"] == "current_xml"
+    assert row["base_source_witness"]["source_status"] == "metadata_only"
+    assert row["oracle_source_witness"]["source_status"] == "metadata_only"
+    assert row["base_source_witness_digest_coverage"] == (
+        "artifact_and_preview_digest"
+    )
+    assert row["oracle_source_witness_digest_coverage"] == (
+        "artifact_and_preview_digest"
+    )
     assert "error" not in row
 
 
@@ -154,6 +168,10 @@ def test_score_one_reports_base_metadata_only_before_oracle_source_state(
     assert row["source_frontier_reason"] == "base_metadata_only"
     assert row["base_source_status"] == "metadata_only"
     assert row["oracle_source_status"] == "available"
+    assert row["base_source_witness"]["source_status"] == "metadata_only"
+    assert row["oracle_source_witness"]["source_status"] == "available"
+    assert row["base_source_witness"]["digest"]
+    assert row["oracle_source_witness"]["digest"]
     assert "error" not in row
 
 
@@ -201,6 +219,44 @@ def test_metadata_only_source_frontiers_are_pathology_not_non_manual_chain() -> 
     assert summary["source_or_oracle_pathology_frontier_reasons"] == {
         "base_and_oracle_metadata_only": 1,
         "base_metadata_only": 1,
+    }
+    assert summary["source_frontier_source_witness_role_counts"] == {
+        "base:__missing__": 2,
+        "oracle:__missing__": 2,
+    }
+    assert summary["source_frontier_source_witness_digest_coverage_counts"] == {
+        "base:missing_source_witness": 2,
+        "oracle:missing_source_witness": 2,
+    }
+
+
+def test_source_frontier_summary_counts_source_witness_coverage() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1824/74",
+                "score_status": "source_frontier",
+                "source_frontier_reason": "base_and_oracle_metadata_only",
+                "base_source_witness": {
+                    "source_role": "uk_broad_base_source",
+                    "digest": "base-digest",
+                    "preview_digest": "base-preview",
+                },
+                "oracle_source_witness": {
+                    "source_role": "uk_broad_oracle_source",
+                    "digest": "oracle-digest",
+                },
+            }
+        ]
+    )
+
+    assert summary["source_frontier_source_witness_role_counts"] == {
+        "base:uk_broad_base_source": 1,
+        "oracle:uk_broad_oracle_source": 1,
+    }
+    assert summary["source_frontier_source_witness_digest_coverage_counts"] == {
+        "base:artifact_and_preview_digest": 1,
+        "oracle:artifact_digest": 1,
     }
 
 
