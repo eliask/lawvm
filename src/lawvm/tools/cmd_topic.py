@@ -1,8 +1,8 @@
 """lawvm topic — topic / keyword search across sections and HE body atoms.
 
-Searches statute section text (sections.parquet replay_text column) and
-HE body atoms (fi_he_atoms.parquet text_content column) for a keyword or
-full-text query.
+Searches statute section text (fi_sections_text.parquet body_text column,
+sections.parquet replay_text column) and HE body atoms
+(fi_he_atoms.parquet text_content column) for a keyword or full-text query.
 
 Usage:
     lawvm topic --topic förvaltning
@@ -10,10 +10,17 @@ Usage:
     lawvm topic --topic 'ilmasto' --statute-filter '7*/20*'
     lawvm topic --topic 'ilmasto' --mode fts
     lawvm topic --topic 'ympäristö' --as-of 2024-01-01 -o json
+    lawvm topic --topic kadmium --source-filter statutes
+
+Source filter (--source-filter):
+    both     (default) — search enacted statute sections + HE atoms
+    statutes — search fi_sections_text.parquet body_text only
+    hes      — search fi_he_atoms.parquet text_content only
 
 Keyword mode (default):
     Case-insensitive substring search using DuckDB's ILIKE / regex operators
-    against sections.replay_text and fi_he_atoms.text_content.
+    against fi_sections_text.body_text, sections.replay_text, and
+    fi_he_atoms.text_content.
 
 FTS mode (--mode fts):
     DuckDB FTS extension search against pre-built FTS indexes.
@@ -53,6 +60,14 @@ _DEFAULT_DB_PATH = "data/fi/v1/lawvm.db"
 # Schema descriptors
 # ---------------------------------------------------------------------------
 
+_SECTIONS_TEXT_SCHEMA = [
+    ("statute_id", "VARCHAR", "Statute ID, e.g. '2003/434'"),
+    ("section_key", "VARCHAR", "Section address key, e.g. 'chapter:1/section:4'"),
+    ("body_text", "VARCHAR", "Full section body text (no AKN markup)"),
+    ("heading_text", "VARCHAR", "Section title if present"),
+    ("valid_at_start", "VARCHAR", "dateConsolidated from oracle FRBR"),
+]
+
 _SECTIONS_SCHEMA = [
     ("statute_id", "VARCHAR", "Statute ID, e.g. '711/2022'"),
     ("section_key", "VARCHAR", "Section address key, e.g. 'chapter:1/section:4'"),
@@ -71,7 +86,10 @@ _HE_ATOMS_SCHEMA = [
 
 def _print_schema() -> None:
     print("\n  topic search targets:")
-    print("  sections:")
+    print("  fi_sections_text (enacted statute oracle text):")
+    for col, typ, desc in _SECTIONS_TEXT_SCHEMA:
+        print(f"    {col:30s} {typ:12s} {desc}")
+    print("  sections (replay-scored):")
     for col, typ, desc in _SECTIONS_SCHEMA:
         print(f"    {col:30s} {typ:12s} {desc}")
     print("  fi_he_atoms:")
@@ -86,35 +104,60 @@ def _print_schema() -> None:
 
 def _build_keyword_query(
     *,
+    sections_text_path: Optional[Path],
     sections_path: Optional[Path],
     atoms_path: Optional[Path],
     topic: str,
     statute_filter: Optional[str] = None,
     as_of: Optional[str] = None,
     limit: Optional[int] = None,
+    source_filter_kind: str = "both",
 ) -> str:
     """Build UNION ALL DuckDB SQL for keyword mode search.
 
-    Searches sections.replay_text and fi_he_atoms.text_content for topic.
-    Returns rows with: source, source_id, section_ref, matched_text, match_kind.
+    Searches fi_sections_text.body_text, sections.replay_text, and
+    fi_he_atoms.text_content for topic.
+    Returns rows with: match_kind, source_id, section_ref, matched_text.
+
+    source_filter_kind:
+        'both'     — search enacted statute sections + HE atoms
+        'statutes' — search fi_sections_text only
+        'hes'      — search fi_he_atoms only
     """
     # Escape single-quotes in user-supplied topic for SQL safety
     safe_topic = topic.replace("'", "''")
     parts: List[str] = []
 
-    # ---- sections side ----
-    if sections_path is not None:
-        src = source_expr_for_path(sections_path)
-        conditions: List[str] = [
-            f"replay_text ILIKE '%{safe_topic}%'"
-        ]
+    include_statutes = source_filter_kind in ("both", "statutes")
+    include_hes = source_filter_kind in ("both", "hes")
+
+    # ---- fi_sections_text side (primary enacted-statute source) ----
+    if include_statutes and sections_text_path is not None:
+        src_st = source_expr_for_path(sections_text_path)
+        cond_st: List[str] = [f"body_text ILIKE '%{safe_topic}%'"]
         if statute_filter:
             safe_sf = statute_filter.replace("'", "''")
-            # LIKE-style glob (user may use * for wildcard)
+            sql_pattern = safe_sf.replace("*", "%")
+            cond_st.append(f"statute_id LIKE '{sql_pattern}'")
+        where_st = " AND ".join(cond_st)
+        parts.append(
+            f"SELECT 'enacted_statute_section' AS match_kind, "
+            f"statute_id AS source_id, "
+            f"section_key AS section_ref, "
+            f"LEFT(body_text, 200) AS matched_text "
+            f"FROM {src_st} "
+            f"WHERE {where_st}"
+        )
+
+    # ---- sections (replay-scored, fallback when fi_sections_text unavailable) ----
+    # Only add if fi_sections_text is NOT available and statutes are requested
+    if include_statutes and sections_text_path is None and sections_path is not None:
+        src = source_expr_for_path(sections_path)
+        conditions: List[str] = [f"replay_text ILIKE '%{safe_topic}%'"]
+        if statute_filter:
+            safe_sf = statute_filter.replace("'", "''")
             sql_pattern = safe_sf.replace("*", "%")
             conditions.append(f"statute_id LIKE '{sql_pattern}'")
-        # sections does not have a temporal column; --as-of is silently
-        # inapplicable to sections (the projection is current-state only).
         where = " AND ".join(conditions)
         parts.append(
             f"SELECT 'sections' AS match_kind, "
@@ -126,19 +169,14 @@ def _build_keyword_query(
         )
 
     # ---- fi_he_atoms side ----
-    if atoms_path is not None:
+    if include_hes and atoms_path is not None:
         src_a = source_expr_for_path(atoms_path)
-        cond_a: List[str] = [
-            f"text_content ILIKE '%{safe_topic}%'"
-        ]
+        cond_a: List[str] = [f"text_content ILIKE '%{safe_topic}%'"]
         if statute_filter:
-            # HE side: filter on he_id; e.g. statute_filter="7*/20*" not meaningful
-            # for HE ids, but support it anyway (user may pass he_year-like pattern)
             safe_sf = statute_filter.replace("'", "''")
             sql_pattern = safe_sf.replace("*", "%")
             cond_a.append(f"he_id LIKE '{sql_pattern}'")
         where_a = " AND ".join(cond_a)
-        # he_atoms columns: check if atom_id/section_ref exists; use atom_id
         parts.append(
             f"SELECT 'fi_he_atoms' AS match_kind, "
             f"he_id AS source_id, "
@@ -150,7 +188,10 @@ def _build_keyword_query(
 
     if not parts:
         # No sources available
-        return "SELECT 'no_source' AS match_kind, '' AS source_id, '' AS section_ref, '' AS matched_text WHERE 1=0"
+        return (
+            "SELECT 'no_source' AS match_kind, '' AS source_id, "
+            "'' AS section_ref, '' AS matched_text WHERE 1=0"
+        )
 
     union_sql = " UNION ALL ".join(parts)
     limit_clause = f" LIMIT {limit}" if limit else ""
@@ -172,6 +213,7 @@ def _run_fts_query(
     topic: str,
     statute_filter: Optional[str] = None,
     limit: Optional[int] = None,
+    source_filter_kind: str = "both",
 ) -> None:
     """Run FTS query against a pre-built DuckDB .db file.
 
@@ -194,26 +236,42 @@ def _run_fts_query(
     results: List[tuple] = []
     columns: List[str] = []
 
-    # Try sections FTS
-    sections_fts_sql = (
-        f"SELECT 'sections' AS match_kind, "
-        f"statute_id AS source_id, "
-        f"section_key AS section_ref, "
-        f"LEFT(replay_text, 200) AS matched_text "
-        f"FROM fts_main_sections.match_bm25('{safe_topic}') "
-        f"JOIN sections USING (rowid)"
-    )
-    atoms_fts_sql = (
-        f"SELECT 'fi_he_atoms' AS match_kind, "
-        f"he_id AS source_id, "
-        f"COALESCE(atom_id, '') AS section_ref, "
-        f"LEFT(text_content, 200) AS matched_text "
-        f"FROM fts_main_fi_he_atoms.match_bm25('{safe_topic}') "
-        f"JOIN fi_he_atoms USING (rowid)"
-    )
+    include_statutes = source_filter_kind in ("both", "statutes")
+    include_hes = source_filter_kind in ("both", "hes")
+
+    fts_queries = []
+    if include_statutes:
+        fts_queries.append((
+            f"SELECT 'enacted_statute_section' AS match_kind, "
+            f"statute_id AS source_id, "
+            f"section_key AS section_ref, "
+            f"LEFT(body_text, 200) AS matched_text "
+            f"FROM fts_main_fi_sections_text.match_bm25('{safe_topic}') "
+            f"JOIN fi_sections_text USING (rowid)",
+            "fi_sections_text",
+        ))
+        fts_queries.append((
+            f"SELECT 'sections' AS match_kind, "
+            f"statute_id AS source_id, "
+            f"section_key AS section_ref, "
+            f"LEFT(replay_text, 200) AS matched_text "
+            f"FROM fts_main_sections.match_bm25('{safe_topic}') "
+            f"JOIN sections USING (rowid)",
+            "sections",
+        ))
+    if include_hes:
+        fts_queries.append((
+            f"SELECT 'fi_he_atoms' AS match_kind, "
+            f"he_id AS source_id, "
+            f"COALESCE(atom_id, '') AS section_ref, "
+            f"LEFT(text_content, 200) AS matched_text "
+            f"FROM fts_main_fi_he_atoms.match_bm25('{safe_topic}') "
+            f"JOIN fi_he_atoms USING (rowid)",
+            "fi_he_atoms",
+        ))
 
     # Execute FTS queries, tolerating missing indexes gracefully (§1.8)
-    for fts_sql, label in [(sections_fts_sql, "sections"), (atoms_fts_sql, "fi_he_atoms")]:
+    for fts_sql, label in fts_queries:
         success = False
         try:
             r = con.execute(fts_sql)
@@ -271,6 +329,7 @@ def run_topic(
     db_path: str = _DEFAULT_DB_PATH,
     output_format: str = "table",
     jurisdiction: str = "fi",
+    source_filter_kind: str = "both",
 ) -> None:
     """Run the topic search command."""
     if jurisdiction != "fi":
@@ -291,31 +350,58 @@ def run_topic(
             topic=topic,
             statute_filter=statute_filter,
             limit=limit,
+            source_filter_kind=source_filter_kind,
         )
         return
 
-    # keyword mode
+    # keyword mode — discover available projections
+    sections_text_path = find_source_file(data_dir, "fi_sections_text")
     sections_path = find_source_file(data_dir, "sections")
     atoms_path = find_source_file(data_dir, "fi_he_atoms")
 
-    if sections_path is None and atoms_path is None:
+    include_statutes = source_filter_kind in ("both", "statutes")
+    include_hes = source_filter_kind in ("both", "hes")
+
+    no_statute_source = (
+        include_statutes
+        and sections_text_path is None
+        and sections_path is None
+    )
+    no_he_source = include_hes and atoms_path is None
+
+    if no_statute_source and no_he_source:
         print(
             f"Warning: no searchable projections found in {data_dir}/\n\n"
-            "Expected 'sections.parquet' and/or 'fi_he_atoms.parquet'.\n"
-            "Run 'lawvm export-projections' or 'lawvm sync-fi-proposals' first.\n"
+            "Expected 'fi_sections_text.parquet' and/or 'fi_he_atoms.parquet'.\n"
+            "Run 'lawvm export-projections --include-sections-text' first,\n"
+            "or 'lawvm sync-fi-proposals' for HE atoms.\n"
             "Or pass --data-dir to point to the projection directory.",
             file=sys.stderr,
         )
         _print_schema()
         sys.exit(1)
 
+    if include_statutes and sections_text_path is not None:
+        print(
+            f"  statute source: fi_sections_text (oracle text)",
+            file=sys.stderr,
+        )
+    elif include_statutes and sections_path is not None:
+        print(
+            "  statute source: sections (replay-scored; "
+            "run 'lawvm export-projections --include-sections-text' for oracle text)",
+            file=sys.stderr,
+        )
+
     query = _build_keyword_query(
+        sections_text_path=sections_text_path,
         sections_path=sections_path,
         atoms_path=atoms_path,
         topic=topic,
         statute_filter=statute_filter,
         as_of=as_of,
         limit=limit,
+        source_filter_kind=source_filter_kind,
     )
 
     duckdb = require_duckdb()
@@ -372,4 +458,5 @@ def main(args: Any) -> None:
         db_path=getattr(args, "db_path", _DEFAULT_DB_PATH),
         output_format=getattr(args, "output_format", "table"),
         jurisdiction=getattr(args, "jurisdiction", "fi"),
+        source_filter_kind=getattr(args, "source_filter_kind", "both"),
     )

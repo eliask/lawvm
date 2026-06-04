@@ -142,6 +142,12 @@ _FI_PROJECTIONS: tuple = (
         tier_2_deps=(),
         description="InlineCitation body-prose citations (court, EOA, OKa, statute, HE, VTV, EK)",
     ),
+    ProjectionSpec(
+        name="fi_sections_text",
+        tier_1_deps=("finlex.farchive",),
+        tier_2_deps=(),
+        description="Oracle section-text projection (current consolidated text per section)",
+    ),
 )
 
 _PROJECTIONS_BY_JURISDICTION: Dict[str, tuple] = {
@@ -329,6 +335,12 @@ def _dispatch_projection(
             out_dir=out_dir,
         )
 
+    if name == "fi_sections_text":
+        return _rebuild_fi_sections_text_projection(
+            data_dir=data_dir,
+            out_dir=out_dir,
+        )
+
     if name in ("statutes", "sections", "findings", "ops"):
         return _rebuild_core_projections(
             name=name,
@@ -426,6 +438,28 @@ def _rebuild_fi_inline_citations_projection(
         data_dir=str(out_dir),
         use_parquet=True,
         he_farchive_path=he_farchive_path,
+    )
+
+
+def _rebuild_fi_sections_text_projection(
+    *,
+    data_dir: str,
+    out_dir: Path,
+) -> int:
+    """Rebuild fi_sections_text from finlex.farchive oracle corpus."""
+    corpus = _load_default_fi_corpus(data_dir)
+    if not corpus:
+        print(
+            f"  SKIP fi_sections_text: no corpus found in {data_dir}",
+            file=sys.stderr,
+        )
+        return 0
+
+    from lawvm.tools.export_fi_sections_text import export_fi_sections_text
+    return export_fi_sections_text(
+        corpus,
+        data_dir=str(out_dir),
+        use_parquet=True,
     )
 
 
