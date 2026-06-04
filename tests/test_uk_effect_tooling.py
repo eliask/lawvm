@@ -648,6 +648,59 @@ def test_uk_frontier_work_item_defaults_cover_grounding_corpus_families(
     assert work_item.required_validator_checks
     assert work_item.executable is False
     assert work_item.replay_authorized is False
+    work_item_payload = work_item.to_dict()
+    assert work_item_payload["detail"]["execution_authorization"][
+        "authorization_status"
+    ] == "manual_claim_required"
+    assert work_item_payload["detail"]["packet_completeness"][
+        "ready_for_manual_claim_validation"
+    ] is True
+    assert work_item_payload["detail"]["packet_completeness"][
+        "non_executable_frontier_invariant"
+    ] is True
+
+
+def test_uk_frontier_work_item_preserves_execution_authorization_packet() -> None:
+    work_item = uk_frontier_work_item_from_manual_frontier_row(
+        {
+            "statute_id": "ukpga/2000/1",
+            "effect_id": "eff-packet",
+            "manual_compile_rule_id": "uk_manual_frontier_heading_facet_candidate",
+            "manual_compile_status": "manual_compile_candidate",
+            "owner_phase": "typed_elaboration",
+            "safe_default": "block_until_validated_claim_authorizes_replay",
+            "required_proofs": ["mutation_boundary_proof"],
+            "forbidden_shortcuts": ["unvalidated_manual_claim_execution"],
+            "replay_authorized": False,
+            "executable": False,
+            "source": {"text_preview": "source preview"},
+            "affected_provisions": "s. 1",
+            "execution_authorization": {
+                "executable": False,
+                "replay_authorized": False,
+                "authorization_status": "manual_claim_required",
+                "authorization_rule_id": (
+                    "uk_execution_authorization_manual_claim_required"
+                ),
+                "owner_phase": "typed_elaboration",
+                "strict_disposition": "record",
+                "quirks_disposition": "record",
+                "validator_status": "manual_frontier",
+                "required_proofs": ["mutation_boundary_proof"],
+                "safe_default": "block_until_validated_claim_authorizes_replay",
+                "forbidden_shortcuts": ["unvalidated_manual_claim_execution"],
+            },
+        }
+    ).to_dict()
+
+    authorization = work_item["detail"]["execution_authorization"]
+
+    assert authorization["authorization_rule_id"] == (
+        "uk_execution_authorization_manual_claim_required"
+    )
+    assert authorization["replay_authorized"] is False
+    assert work_item["detail"]["packet_completeness"]["has_authorization_rule_id"] is True
+    assert work_item["detail"]["packet_completeness"]["missing_fields"] == []
 
 
 @pytest.mark.parametrize("rule_id", sorted(UK_CLAIM_TEMPLATE_RULE_IDS))
@@ -2847,6 +2900,10 @@ def test_uk_effects_summary_counts_are_stable() -> None:
             "claim_blocks_replay_until_source_payload_is_available": 1,
             "official_source_witness_contains_payload_or_instruction": 1,
             "payload_or_instruction_witness_is_not_empty": 1,
+        },
+        "manual_frontier_work_item_packet_ready_counts": {"ready": 1},
+        "manual_frontier_work_item_packet_missing_field_counts": {
+            "source_digest_or_preview_digest": 1,
         },
         "manual_frontier_work_item_missing_candidate_operation_family_count": 0,
         "manual_frontier_work_item_missing_required_validator_checks_count": 0,
@@ -7250,6 +7307,10 @@ def test_uk_effects_summary_counts_templates_for_actionable_frontier_only() -> N
         "claim_text_preimage_matches_target_facet_surface": 1,
         "source_witness_names_amount_specified_target": 1,
         "source_witness_targets_heading_title_or_sidenote_facet": 1,
+    }
+    assert summary["manual_frontier_work_item_packet_ready_counts"] == {"ready": 4}
+    assert summary["manual_frontier_work_item_packet_missing_field_counts"] == {
+        "source_digest_or_preview_digest": 4,
     }
     assert summary["manual_frontier_work_item_missing_candidate_operation_family_count"] == 0
     assert summary["manual_frontier_work_item_missing_required_validator_checks_count"] == 0

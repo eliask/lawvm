@@ -742,6 +742,8 @@ def uk_effects_summary_counts(
     manual_frontier_work_item_authorization_status_counts: dict[str, int] = {}
     manual_frontier_work_item_candidate_operation_family_counts: dict[str, int] = {}
     manual_frontier_work_item_required_validator_check_counts: dict[str, int] = {}
+    manual_frontier_work_item_packet_ready_counts: dict[str, int] = {}
+    manual_frontier_work_item_packet_missing_field_counts: dict[str, int] = {}
     manual_frontier_work_item_missing_candidate_operation_family_count = 0
     manual_frontier_work_item_missing_required_validator_checks_count = 0
     suggested_claim_template_status_counts: dict[str, int] = {}
@@ -835,6 +837,36 @@ def uk_effects_summary_counts(
                         )
                 else:
                     manual_frontier_work_item_missing_required_validator_checks_count += 1
+                packet_completeness = _work_item_packet_completeness(work_item)
+                if packet_completeness:
+                    ready_key = (
+                        "ready"
+                        if packet_completeness.get(
+                            "ready_for_manual_claim_validation"
+                        )
+                        is True
+                        else "not_ready"
+                    )
+                    manual_frontier_work_item_packet_ready_counts[ready_key] = (
+                        manual_frontier_work_item_packet_ready_counts.get(
+                            ready_key,
+                            0,
+                        )
+                        + 1
+                    )
+                    missing_fields = tuple(
+                        str(field)
+                        for field in packet_completeness.get("missing_fields") or ()
+                        if str(field)
+                    )
+                    for field in missing_fields:
+                        manual_frontier_work_item_packet_missing_field_counts[field] = (
+                            manual_frontier_work_item_packet_missing_field_counts.get(
+                                field,
+                                0,
+                            )
+                            + 1
+                        )
         template_status = _actionable_claim_template_status(
             statute_id=statute_id,
             row=row,
@@ -964,6 +996,12 @@ def uk_effects_summary_counts(
         "manual_frontier_work_item_required_validator_check_counts": dict(
             sorted(manual_frontier_work_item_required_validator_check_counts.items())
         ),
+        "manual_frontier_work_item_packet_ready_counts": dict(
+            sorted(manual_frontier_work_item_packet_ready_counts.items())
+        ),
+        "manual_frontier_work_item_packet_missing_field_counts": dict(
+            sorted(manual_frontier_work_item_packet_missing_field_counts.items())
+        ),
         "manual_frontier_work_item_missing_candidate_operation_family_count": (
             manual_frontier_work_item_missing_candidate_operation_family_count
         ),
@@ -1030,6 +1068,16 @@ def _summary_frontier_work_item(
     payload = _effect_report_row_jsonable(row, statute_id=statute_id or "")
     work_item = payload.get("frontier_work_item")
     return work_item if isinstance(work_item, Mapping) else {}
+
+
+def _work_item_packet_completeness(
+    work_item: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    detail = work_item.get("detail")
+    if not isinstance(detail, Mapping):
+        return {}
+    packet = detail.get("packet_completeness")
+    return packet if isinstance(packet, Mapping) else {}
 
 
 def uk_effects_report_jsonable(

@@ -672,6 +672,61 @@ def uk_frontier_work_item_from_manual_frontier_row(
         ).to_dict()
     target_witness = _target_witness(row)
     compare_witness = _compare_witness(row, target_witness=target_witness)
+    execution_authorization = _execution_authorization_packet(row)
+    owner_phase = str(
+        row.get("current_owner_phase")
+        or row.get("owner_phase")
+        or row.get("manual_compile_owner_phase")
+        or execution_authorization.get("owner_phase")
+        or ""
+    )
+    required_validator_checks = _first_string_tuple(
+        template.get("required_validator_checks"),
+        row.get("required_validator_checks"),
+        family_defaults.get("required_validator_checks"),
+    )
+    required_proofs = _first_string_tuple(
+        row.get("required_proofs"),
+        execution_authorization.get("required_proofs"),
+    )
+    safe_default = str(
+        row.get("safe_default") or execution_authorization.get("safe_default") or ""
+    )
+    forbidden_shortcuts = _first_string_tuple(
+        row.get("forbidden_shortcuts"),
+        execution_authorization.get("forbidden_shortcuts"),
+    )
+    executable = _bool_flag(
+        row.get("executable", execution_authorization.get("executable"))
+    )
+    replay_authorized = _bool_flag(
+        row.get(
+            "replay_authorized",
+            execution_authorization.get("replay_authorized"),
+        )
+    )
+    authorization_status = str(
+        row.get("authorization_status")
+        or execution_authorization.get("authorization_status")
+        or ""
+    )
+    detail["execution_authorization"] = execution_authorization
+    detail["packet_completeness"] = _packet_completeness(
+        execution_authorization=execution_authorization,
+        source_witness=normalized_source_witness,
+        target_witness=target_witness,
+        compare_witness=compare_witness,
+        owner_phase=owner_phase,
+        frontier_family=frontier_family,
+        frontier_status=frontier_status,
+        required_validator_checks=required_validator_checks,
+        required_proofs=required_proofs,
+        safe_default=safe_default,
+        forbidden_shortcuts=forbidden_shortcuts,
+        executable=executable,
+        replay_authorized=replay_authorized,
+        authorization_status=authorization_status,
+    )
     return FrontierWorkItem(
         work_item_id=str(
             row.get("work_item_id") or f"uk-frontier-{source_artifact_id}-{source_unit_id}"
@@ -682,12 +737,7 @@ def uk_frontier_work_item_from_manual_frontier_row(
         source_witness=normalized_source_witness,
         target_witness=target_witness,
         compare_witness=compare_witness,
-        owner_phase=str(
-            row.get("current_owner_phase")
-            or row.get("owner_phase")
-            or row.get("manual_compile_owner_phase")
-            or ""
-        ),
+        owner_phase=owner_phase,
         frontier_family=frontier_family,
         frontier_status=frontier_status,
         candidate_operation_family=str(
@@ -699,17 +749,13 @@ def uk_frontier_work_item_from_manual_frontier_row(
         candidate_targets=_candidate_targets(row),
         guidance_refs=_string_tuple(template.get("guidance_refs")),
         required_claim_kind=str(row.get("claim_kind") or "semantic_compile"),
-        required_validator_checks=_first_string_tuple(
-            template.get("required_validator_checks"),
-            row.get("required_validator_checks"),
-            family_defaults.get("required_validator_checks"),
-        ),
-        required_proofs=_string_tuple(row.get("required_proofs")),
-        safe_default=str(row.get("safe_default") or ""),
-        forbidden_shortcuts=_string_tuple(row.get("forbidden_shortcuts")),
-        executable=_bool_flag(row.get("executable")),
-        replay_authorized=_bool_flag(row.get("replay_authorized")),
-        authorization_status=str(row.get("authorization_status") or ""),
+        required_validator_checks=required_validator_checks,
+        required_proofs=required_proofs,
+        safe_default=safe_default,
+        forbidden_shortcuts=forbidden_shortcuts,
+        executable=executable,
+        replay_authorized=replay_authorized,
+        authorization_status=authorization_status,
         detail=detail,
     )
 
@@ -753,6 +799,115 @@ def _nonnegative_int(value: Any) -> int:
     if isinstance(value, int) and value > 0:
         return value
     return 0
+
+
+def _execution_authorization_packet(row: Mapping[str, Any]) -> Mapping[str, Any]:
+    packet = _mapping(row.get("execution_authorization"))
+    if packet:
+        return _compact_witness(
+            {
+                "executable": _bool_flag(packet.get("executable")),
+                "replay_authorized": _bool_flag(packet.get("replay_authorized")),
+                "authorization_status": str(packet.get("authorization_status") or ""),
+                "authorization_rule_id": str(packet.get("authorization_rule_id") or ""),
+                "owner_phase": str(packet.get("owner_phase") or ""),
+                "strict_disposition": str(packet.get("strict_disposition") or ""),
+                "quirks_disposition": str(packet.get("quirks_disposition") or ""),
+                "validator_status": str(packet.get("validator_status") or ""),
+                "required_proofs": _string_tuple(packet.get("required_proofs")),
+                "safe_default": str(packet.get("safe_default") or ""),
+                "forbidden_shortcuts": _string_tuple(packet.get("forbidden_shortcuts")),
+                "detail": _mapping(packet.get("detail")),
+            }
+        )
+    return _compact_witness(
+        {
+            "executable": _bool_flag(row.get("executable")),
+            "replay_authorized": _bool_flag(row.get("replay_authorized")),
+            "authorization_status": str(row.get("authorization_status") or ""),
+            "authorization_rule_id": str(row.get("authorization_rule_id") or ""),
+            "owner_phase": str(
+                row.get("current_owner_phase")
+                or row.get("owner_phase")
+                or row.get("manual_compile_owner_phase")
+                or ""
+            ),
+            "strict_disposition": str(row.get("strict_disposition") or ""),
+            "quirks_disposition": str(row.get("quirks_disposition") or ""),
+            "validator_status": str(row.get("validator_status") or ""),
+            "required_proofs": _string_tuple(row.get("required_proofs")),
+            "safe_default": str(row.get("safe_default") or ""),
+            "forbidden_shortcuts": _string_tuple(row.get("forbidden_shortcuts")),
+        }
+    )
+
+
+def _packet_completeness(
+    *,
+    execution_authorization: Mapping[str, Any],
+    source_witness: Mapping[str, Any],
+    target_witness: Mapping[str, Any],
+    compare_witness: Mapping[str, Any],
+    owner_phase: str,
+    frontier_family: str,
+    frontier_status: str,
+    required_validator_checks: tuple[str, ...],
+    required_proofs: tuple[str, ...],
+    safe_default: str,
+    forbidden_shortcuts: tuple[str, ...],
+    executable: bool,
+    replay_authorized: bool,
+    authorization_status: str,
+) -> Mapping[str, Any]:
+    checks = {
+        "has_execution_authorization": bool(execution_authorization),
+        "has_authorization_status": bool(authorization_status),
+        "has_authorization_rule_id": bool(
+            execution_authorization.get("authorization_rule_id")
+        ),
+        "has_owner_phase": bool(owner_phase),
+        "has_frontier_family": bool(frontier_family),
+        "has_frontier_status": bool(frontier_status),
+        "has_source_witness": bool(source_witness),
+        "has_source_digest_or_preview_digest": bool(
+            source_witness.get("digest") or source_witness.get("preview_digest")
+        ),
+        "has_target_witness": bool(target_witness),
+        "has_compare_witness": bool(compare_witness),
+        "has_required_validator_checks": bool(required_validator_checks),
+        "has_required_proofs": bool(required_proofs),
+        "has_safe_default": bool(safe_default),
+        "has_forbidden_shortcuts": bool(forbidden_shortcuts),
+        "non_executable_frontier_invariant": (
+            executable is False and replay_authorized is False
+        ),
+    }
+    missing = tuple(
+        name.removeprefix("has_") for name, present in checks.items() if not present
+    )
+    ready = (
+        checks["has_execution_authorization"]
+        and checks["has_authorization_status"]
+        and checks["has_owner_phase"]
+        and checks["has_frontier_family"]
+        and checks["has_frontier_status"]
+        and checks["has_source_witness"]
+        and checks["has_target_witness"]
+        and checks["has_required_validator_checks"]
+        and checks["has_required_proofs"]
+        and checks["has_safe_default"]
+        and checks["has_forbidden_shortcuts"]
+        and checks["non_executable_frontier_invariant"]
+    )
+    return {
+        **checks,
+        "missing_fields": list(missing),
+        "ready_for_manual_claim_validation": ready,
+        "proof_boundary": (
+            "frontier_work_item_is_non_executable_until_execution_authorization_"
+            "is_replay_authorized"
+        ),
+    }
 
 
 def _source_witness_role(source_witness: Mapping[str, Any]) -> str:

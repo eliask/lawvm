@@ -442,6 +442,7 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
                     ],
                 },
                 "suggested_claim_template": suggested_claim_template,
+                "execution_authorization": execution_authorization,
                 "executable": execution_authorization["executable"],
                 "replay_authorized": execution_authorization["replay_authorized"],
                 "authorization_status": execution_authorization[
