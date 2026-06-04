@@ -55,6 +55,7 @@ Subcommands:
     sql                             Ad-hoc SQL over LawVM projections (DuckDB).
     refs                            Query ReferenceMention cross-statute citations from fi_refs.parquet.
     preparatory-refs                Query PreparatoryReference preparation chain citations.
+    inline-citations                Query InlineCitation body-prose citations from fi_inline_citations.parquet.
     pools                           Query PoolMention budget-line/quantity mentions from fi_pools.parquet.
     fi-proposals                    Query Finnish government proposals from fi_he_corpus.parquet.
     fi-proposal-show <HE_ID>        Per-HE structural overview (atoms, law_refs, signatures).
@@ -6671,6 +6672,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="also export fi_preparatory_refs.parquet (PreparatoryReference preparation chain citations)",
     )
     ep_p.add_argument(
+        "--include-inline-citations",
+        dest="include_inline_citations",
+        action="store_true",
+        help="also export fi_inline_citations.parquet (InlineCitation body-prose citations)",
+    )
+    ep_p.add_argument(
         "--he-farchive",
         dest="he_farchive",
         default=None,
@@ -7416,6 +7423,72 @@ def _build_parser() -> argparse.ArgumentParser:
         help="directory containing fi_preparatory_refs.parquet (default: .tmp/projections)",
     )
     prep_refs_p.add_argument(
+        "-o",
+        "--output-format",
+        dest="output_format",
+        default="table",
+        choices=["table", "json", "jsonl", "csv", "parquet"],
+        help="output format (default: table)",
+    )
+    # Note: -j/--jurisdiction is inherited from _P parent parser
+
+    # --- inline-citations ---
+    ic_p = sub.add_parser(
+        "inline-citations",
+        help="query InlineCitation body-prose citations from fi_inline_citations.parquet",
+        description=(
+            "Query the fi_inline_citations.parquet projection produced by "
+            "'lawvm export-projections --include-inline-citations' or 'lawvm rebuild-indexes'. "
+            "Without filters, shows the schema and row count."
+        ),
+        parents=_P,
+    )
+    ic_p.add_argument(
+        "--source-doc-id",
+        dest="source_doc_id",
+        metavar="ID",
+        help="filter to citations FROM this document (e.g. '711/2022' or '116/2024')",
+    )
+    ic_p.add_argument(
+        "--source-doc-kind",
+        dest="source_doc_kind",
+        metavar="KIND",
+        choices=["statute", "he"],
+        help="filter by document kind: statute | he",
+    )
+    ic_p.add_argument(
+        "--kind",
+        metavar="KIND",
+        help=(
+            "filter by citation kind: court_kko|court_kho|ombudsman_eoa|chancellor_oka|"
+            "statute_inline|he_inline|vtv_report|working_group_memo|parliament_kirjelma|"
+            "old_committee|unresolved"
+        ),
+    )
+    ic_p.add_argument(
+        "--context",
+        metavar="CONTEXT",
+        help=(
+            "filter by structural context: enacted_statute_body|he_rationale|"
+            "he_introduction|preliminary_work|other"
+        ),
+    )
+    ic_p.add_argument(
+        "--case-year",
+        dest="case_year",
+        type=int,
+        metavar="YEAR",
+        help="filter to citations with this year component (court/eoa/oka/vtv/he/ek)",
+    )
+    ic_p.add_argument("--as-of", metavar="DATE", help="(reserved; inline citations have no temporal interval)")
+    ic_p.add_argument("--limit", type=int, metavar="N", help="limit output rows")
+    ic_p.add_argument(
+        "--data-dir",
+        dest="data_dir",
+        default=".tmp/projections",
+        help="directory containing fi_inline_citations.parquet (default: .tmp/projections)",
+    )
+    ic_p.add_argument(
         "-o",
         "--output-format",
         dest="output_format",
@@ -9033,6 +9106,11 @@ def main() -> None:
         from lawvm.tools.preparatory_refs_query import main as prep_refs_main
 
         prep_refs_main(args)
+
+    elif args.command == "inline-citations":
+        from lawvm.tools.inline_citations_query import main as inline_citations_main
+
+        inline_citations_main(args)
 
     elif args.command == "actors":
         from lawvm.tools.actors_query import main as actors_main

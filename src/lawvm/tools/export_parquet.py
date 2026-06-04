@@ -410,6 +410,7 @@ def export_projections(
     include_pools: bool = False,
     include_he_corpus: bool = False,
     include_preparatory_refs: bool = False,
+    include_inline_citations: bool = False,
     he_farchive: Optional[str] = None,
     he_data_dir: Optional[str] = None,
 ) -> Dict[str, int]:
@@ -575,6 +576,20 @@ def export_projections(
         )
         counts["fi_preparatory_refs"] = prep_count
 
+    # --- fi_inline_citations.parquet: InlineCitation body-prose projection ---
+    if include_inline_citations:
+        print("\nExporting fi_inline_citations projection...")
+        from lawvm.tools.export_fi_inline_citations import export_fi_inline_citations
+        _he_farchive_path = he_farchive or "data/fi_government_proposal.farchive"
+        inline_count = export_fi_inline_citations(
+            corpus,
+            data_dir=data_dir,
+            use_parquet=use_parquet,
+            he_farchive_path=_he_farchive_path,
+            limit=limit,
+        )
+        counts["fi_inline_citations"] = inline_count
+
     print()
     for name, n in counts.items():
         print(f"  {name}: {n:,} rows")
@@ -599,6 +614,7 @@ def main(args: Any) -> None:
         include_pools=getattr(args, "include_pools", False),
         include_he_corpus=getattr(args, "include_he_corpus", False),
         include_preparatory_refs=getattr(args, "include_preparatory_refs", False),
+        include_inline_citations=getattr(args, "include_inline_citations", False),
         he_farchive=getattr(args, "he_farchive", None),
         he_data_dir=getattr(args, "he_data_dir", None),
     )

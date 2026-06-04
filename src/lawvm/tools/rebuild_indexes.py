@@ -136,6 +136,12 @@ _FI_PROJECTIONS: tuple = (
         tier_2_deps=(),
         description="PreparatoryReference legislative preparation chain refs",
     ),
+    ProjectionSpec(
+        name="fi_inline_citations",
+        tier_1_deps=("finlex.farchive", "fi_government_proposal.farchive"),
+        tier_2_deps=(),
+        description="InlineCitation body-prose citations (court, EOA, OKa, statute, HE, VTV, EK)",
+    ),
 )
 
 _PROJECTIONS_BY_JURISDICTION: Dict[str, tuple] = {
@@ -317,6 +323,12 @@ def _dispatch_projection(
             out_dir=out_dir,
         )
 
+    if name == "fi_inline_citations":
+        return _rebuild_fi_inline_citations_projection(
+            data_dir=data_dir,
+            out_dir=out_dir,
+        )
+
     if name in ("statutes", "sections", "findings", "ops"):
         return _rebuild_core_projections(
             name=name,
@@ -391,6 +403,30 @@ def _rebuild_fi_crosslink_projection(
         return export_fi_preparatory_refs(corpus, data_dir=str(out_dir), use_parquet=True)
 
     return 0
+
+
+def _rebuild_fi_inline_citations_projection(
+    *,
+    data_dir: str,
+    out_dir: Path,
+) -> int:
+    """Rebuild fi_inline_citations from finlex.farchive + fi_government_proposal.farchive."""
+    corpus = _load_default_fi_corpus(data_dir)
+    if not corpus:
+        print(
+            "  SKIP fi_inline_citations: no corpus CSV found in {data_dir}",
+            file=sys.stderr,
+        )
+        return 0
+
+    he_farchive_path = str(Path(data_dir) / "fi_government_proposal.farchive")
+    from lawvm.tools.export_fi_inline_citations import export_fi_inline_citations
+    return export_fi_inline_citations(
+        corpus,
+        data_dir=str(out_dir),
+        use_parquet=True,
+        he_farchive_path=he_farchive_path,
+    )
 
 
 def _rebuild_core_projections(
