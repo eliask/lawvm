@@ -708,13 +708,15 @@ def uk_frontier_work_item_from_manual_frontier_row(
         default_source_unit_id=source_unit_id,
     ).to_dict()
     source_fragment = _mapping(row.get("source"))
+    proof_source_witness = normalized_source_witness
     if source_fragment:
-        detail["source_fragment_witness"] = source_witness_from_mapping(
+        proof_source_witness = source_witness_from_mapping(
             source_fragment,
             default_role=_source_witness_role(source_fragment),
             default_artifact_id=source_artifact_id,
             default_source_unit_id=source_unit_id,
         ).to_dict()
+        detail["source_fragment_witness"] = proof_source_witness
     target_witness = _target_witness(row)
     compare_witness = _compare_witness(row, target_witness=target_witness)
     execution_authorization = _execution_authorization_packet(row)
@@ -776,7 +778,7 @@ def uk_frontier_work_item_from_manual_frontier_row(
         work_item_id=work_item_id,
         owner_phase=owner_phase,
         frontier_family=frontier_family,
-        source_witness=normalized_source_witness,
+        source_witness=proof_source_witness,
         target_witness=target_witness,
         candidate_targets=candidate_targets,
     )
@@ -786,7 +788,7 @@ def uk_frontier_work_item_from_manual_frontier_row(
         work_item_id=work_item_id,
         owner_phase=owner_phase,
         frontier_family=frontier_family,
-        source_witness=normalized_source_witness,
+        source_witness=proof_source_witness,
         target_witness=target_witness,
     )
     if exclusion_scope_certificate:
@@ -1184,7 +1186,14 @@ def _exclusion_scope_certificate(
         or source_witness.get("text_preview")
         or ""
     )
-    exclusion_surfaces = _scoped_occurrence_exclusion_surfaces(source_preview)
+    exclusion_scope_facts = _scoped_occurrence_exclusion_scope_facts(source_preview)
+    exclusion_surfaces = tuple(
+        str(fact.get("surface") or "") for fact in exclusion_scope_facts
+    )
+    exclusion_reference_kinds = tuple(
+        str(fact.get("reference_kind") or "unknown")
+        for fact in exclusion_scope_facts
+    )
     blockers: dict[str, int] = {}
     if not source_preview:
         blockers["source_preview_unavailable"] = 1
@@ -1212,7 +1221,7 @@ def _exclusion_scope_certificate(
         blocker_families=tuple(blockers),
         next_promotion_allowed=False,
         next_promotion_requires=(
-            "live_occurrence_selector",
+            "source_sibling_exclusion_resolution",
             "excluded_occurrence_preservation_proof",
             "canonical_operation_compilation",
             "mutation_boundary_proof",
@@ -1228,17 +1237,30 @@ def _exclusion_scope_certificate(
                 source_witness.get("preview_digest") or ""
             ),
             "target_witness_surface": str(target_witness.get("surface") or ""),
+            "exclusion_reference_kinds": exclusion_reference_kinds,
+            "source_sibling_exclusion_resolution_required": (
+                "source_sibling_reference" in exclusion_reference_kinds
+            ),
             "exclusion_scope_not_replay_authorization": True,
         },
     ).to_dict()
 
 
 def _scoped_occurrence_exclusion_surfaces(source_preview: str) -> tuple[str, ...]:
+    return tuple(
+        str(fact.get("surface") or "")
+        for fact in _scoped_occurrence_exclusion_scope_facts(source_preview)
+    )
+
+
+def _scoped_occurrence_exclusion_scope_facts(
+    source_preview: str,
+) -> tuple[Mapping[str, str], ...]:
     normalized = " ".join(str(source_preview or "").split())
     lowered = normalized.lower()
-    for marker in (
-        "except as otherwise provided by ",
-        "except as mentioned in ",
+    for marker, reference_kind in (
+        ("except as otherwise provided by ", "source_sibling_reference"),
+        ("except as mentioned in ", "source_sibling_reference"),
     ):
         start = lowered.find(marker)
         if start < 0:
@@ -1254,7 +1276,12 @@ def _scoped_occurrence_exclusion_surfaces(source_preview: str) -> tuple[str, ...
             clause = clause[: min(end_positions)]
         clause = clause.strip(" ,.;")
         if clause:
-            return (clause,)
+            return (
+                {
+                    "surface": clause,
+                    "reference_kind": reference_kind,
+                },
+            )
     return ()
 
 
@@ -1310,7 +1337,7 @@ def _proof_obligation_certificate(
         else:
             blockers["source_exclusion_scope"] = 1
         missing = (
-            "live_occurrence_selector",
+            "source_sibling_exclusion_resolution",
             "excluded_occurrence_preservation_proof",
             "canonical_operation_compilation",
             "mutation_boundary_proof",
@@ -1323,9 +1350,9 @@ def _proof_obligation_certificate(
             rule_id="uk_frontier_scoped_occurrence_proof_obligation_projection",
             reason=(
                 "source exclusion scope and target candidates can be proved "
-                "without authorizing replay; live occurrence selection, "
-                "excluded-occurrence preservation, canonical compilation, and "
-                "mutation-boundary proof still block promotion"
+                "without authorizing replay; source-sibling exclusion "
+                "resolution, excluded-occurrence preservation, canonical "
+                "compilation, and mutation-boundary proof still block promotion"
             ),
             proved_proofs=proved,
             missing_proofs=missing,

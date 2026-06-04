@@ -971,11 +971,13 @@ def test_uk_frontier_work_item_scoped_occurrence_records_exclusion_scope_certifi
     assert certificate["source_exclusion_status"] == "proved_in_bounded_source_preview"
     assert certificate["next_promotion_allowed"] is False
     assert certificate["next_promotion_requires"] == [
-        "live_occurrence_selector",
+        "source_sibling_exclusion_resolution",
         "excluded_occurrence_preservation_proof",
         "canonical_operation_compilation",
         "mutation_boundary_proof",
     ]
+    assert certificate["exclusion_reference_kinds"] == ["source_sibling_reference"]
+    assert certificate["source_sibling_exclusion_resolution_required"] is True
     assert certificate["exclusion_scope_not_replay_authorization"] is True
     proof_certificate = work_item["detail"]["proof_obligation_certificate"]
     assert proof_certificate["proof_status"] == "blocked"
@@ -984,13 +986,13 @@ def test_uk_frontier_work_item_scoped_occurrence_records_exclusion_scope_certifi
         "source_exclusion_scope",
     ]
     assert proof_certificate["missing_proofs"] == [
-        "live_occurrence_selector",
+        "source_sibling_exclusion_resolution",
         "excluded_occurrence_preservation_proof",
         "canonical_operation_compilation",
         "mutation_boundary_proof",
     ]
     assert proof_certificate["blocker_counts"] == {
-        "live_occurrence_selector": 1,
+        "source_sibling_exclusion_resolution": 1,
         "excluded_occurrence_preservation_proof": 1,
         "canonical_operation_compilation": 1,
         "mutation_boundary_proof": 1,
@@ -1040,6 +1042,57 @@ def test_uk_frontier_work_item_scoped_occurrence_keeps_unproved_exclusion_blocke
         "target_candidate_set_completeness"
     ]
     assert proof_certificate["blocker_counts"]["source_exclusion_scope"] == 1
+    assert work_item["replay_authorized"] is False
+
+
+def test_uk_frontier_work_item_scoped_occurrence_prefers_source_fragment_for_exclusion_proof() -> None:
+    work_item = uk_frontier_work_item_from_manual_frontier_row(
+        {
+            "statute_id": "ukpga/2002/30",
+            "effect_id": "key-scoped-fragment",
+            "affecting_act_id": "ukpga/2017/3",
+            "affecting_provisions": "Sch. 9 para. 22(2)",
+            "manual_compile_rule_id": (
+                "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate"
+            ),
+            "manual_compile_status": "deterministic_frontend_candidate",
+            "owner_phase": "source_pathology_manual_frontier",
+            "authorization_status": "deterministic_frontend_work_required",
+            "safe_default": "block_until_compiler_rule_is_owned",
+            "required_proofs": [
+                "canonical_operation_compilation",
+                "mutation_boundary_proof",
+            ],
+            "forbidden_shortcuts": ["oracle_backed_mutation", "target_guessing"],
+            "replay_authorized": False,
+            "executable": False,
+            "affecting_source_witness": {
+                "source_status": "available",
+                "source_sha256": "archive-digest",
+                "source_size": 123,
+            },
+            "source": {
+                "text_preview": (
+                    "2 For \u201cCommission\u201d, in each place except as mentioned in "
+                    "sub-paragraph (3), substitute \u201cDirector General\u201d."
+                ),
+                "text_preview_sha256": "fragment-digest",
+            },
+            "affected_provisions": "s. 16",
+        }
+    ).to_dict()
+
+    assert work_item["source_witness"]["digest"] == "archive-digest"
+    certificate = work_item["detail"]["exclusion_scope_certificate"]
+    assert certificate["completeness_status"] == "complete"
+    assert certificate["candidate_ids"] == ["sub-paragraph (3)"]
+    assert certificate["source_witness_role"] == "source_preview"
+    assert certificate["source_witness_preview_digest"] == "fragment-digest"
+    assert certificate["exclusion_reference_kinds"] == ["source_sibling_reference"]
+    assert certificate["source_sibling_exclusion_resolution_required"] is True
+    proof_certificate = work_item["detail"]["proof_obligation_certificate"]
+    assert "source_exclusion_scope" in proof_certificate["proved_proofs"]
+    assert "source_exclusion_scope" not in proof_certificate["blocker_counts"]
     assert work_item["replay_authorized"] is False
 
 
