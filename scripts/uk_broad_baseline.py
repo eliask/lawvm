@@ -2410,6 +2410,7 @@ def _hard_gate_exit_code(
     fail_on_deterministic_frontend_candidates: bool = False,
     fail_on_non_manual_source_chain_frontier: bool = False,
     fail_on_mutation_boundary_unexplained: bool = False,
+    fail_on_frontier_source_witness_gaps: bool = False,
 ) -> int:
     if (
         fail_on_active_unclassified_residuals
@@ -2441,7 +2442,27 @@ def _hard_gate_exit_code(
         or summary["mutation_boundary_unexplained_path_count"]
     ):
         return 1
+    if fail_on_frontier_source_witness_gaps and _frontier_source_witness_gap_count(
+        summary
+    ):
+        return 1
     return 0
+
+
+def _frontier_source_witness_gap_count(summary: Mapping[str, Any]) -> int:
+    role_counts = summary.get("manual_frontier_work_item_source_witness_role_counts")
+    digest_counts = summary.get(
+        "manual_frontier_work_item_source_witness_digest_coverage_counts"
+    )
+    role_counts = role_counts if isinstance(role_counts, Mapping) else {}
+    digest_counts = digest_counts if isinstance(digest_counts, Mapping) else {}
+    return (
+        int(role_counts.get("__missing__", 0) or 0)
+        + int(role_counts.get("__missing_work_item__", 0) or 0)
+        + int(digest_counts.get("missing_source_witness", 0) or 0)
+        + int(digest_counts.get("missing_work_item", 0) or 0)
+        + int(digest_counts.get("missing_digest", 0) or 0)
+    )
 
 
 def run_report_from_snapshot(
@@ -2454,6 +2475,7 @@ def run_report_from_snapshot(
     fail_on_deterministic_frontend_candidates: bool = False,
     fail_on_non_manual_source_chain_frontier: bool = False,
     fail_on_mutation_boundary_unexplained: bool = False,
+    fail_on_frontier_source_witness_gaps: bool = False,
 ) -> int:
     """Regenerate the typed report envelope from a saved raw snapshot.
 
@@ -2495,6 +2517,7 @@ def run_report_from_snapshot(
         fail_on_mutation_boundary_unexplained=(
             fail_on_mutation_boundary_unexplained
         ),
+        fail_on_frontier_source_witness_gaps=fail_on_frontier_source_witness_gaps,
     )
 
 
@@ -2510,6 +2533,7 @@ def run_driver(
     fail_on_deterministic_frontend_candidates: bool = False,
     fail_on_non_manual_source_chain_frontier: bool = False,
     fail_on_mutation_boundary_unexplained: bool = False,
+    fail_on_frontier_source_witness_gaps: bool = False,
 ) -> int:
     workers = max(1, int(parallel or 1))
     indexed_results: list[tuple[int, dict[str, Any]]] = []
@@ -3059,6 +3083,10 @@ def run_driver(
         or summary["mutation_boundary_unexplained_path_count"]
     ):
         return 1
+    if fail_on_frontier_source_witness_gaps and _frontier_source_witness_gap_count(
+        summary
+    ):
+        return 1
     return 0
 
 
@@ -3167,6 +3195,14 @@ def main(argv: list[str] | None = None) -> int:
             "unexplained reports or paths"
         ),
     )
+    ap.add_argument(
+        "--fail-on-frontier-source-witness-gaps",
+        action="store_true",
+        help=(
+            "Exit nonzero when manual-frontier work items lack source "
+            "witnesses or source/preview digest coverage"
+        ),
+    )
     args = ap.parse_args(argv)
     if args.parallel < 1:
         print("error: --parallel must be a positive integer", file=sys.stderr)
@@ -3202,6 +3238,9 @@ def main(argv: list[str] | None = None) -> int:
             fail_on_mutation_boundary_unexplained=(
                 args.fail_on_mutation_boundary_unexplained
             ),
+            fail_on_frontier_source_witness_gaps=(
+                args.fail_on_frontier_source_witness_gaps
+            ),
         )
 
     ids: list[str] = []
@@ -3229,6 +3268,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
         fail_on_mutation_boundary_unexplained=(
             args.fail_on_mutation_boundary_unexplained
+        ),
+        fail_on_frontier_source_witness_gaps=(
+            args.fail_on_frontier_source_witness_gaps
         ),
     )
 
