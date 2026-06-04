@@ -623,6 +623,14 @@ def uk_frontier_work_item_from_manual_frontier_row(
         default_artifact_id=source_artifact_id,
         default_source_unit_id=source_unit_id,
     ).to_dict()
+    source_fragment = _mapping(row.get("source"))
+    if source_fragment:
+        detail["source_fragment_witness"] = source_witness_from_mapping(
+            source_fragment,
+            default_role=_source_witness_role(source_fragment),
+            default_artifact_id=source_artifact_id,
+            default_source_unit_id=source_unit_id,
+        ).to_dict()
     target_witness = _target_witness(row)
     compare_witness = _compare_witness(row, target_witness=target_witness)
     return FrontierWorkItem(

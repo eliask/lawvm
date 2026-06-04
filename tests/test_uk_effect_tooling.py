@@ -3396,6 +3396,26 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
             source_extracted=True,
             source_extracted_tag="P1",
             source_extracted_text_preview='In the title, for "old" substitute "new".',
+            source_context={
+                "parent": {
+                    "depth": 1,
+                    "tag": "Pblock",
+                    "id": "section-2",
+                    "text_preview": (
+                        'In section 1, in the title, for "old" substitute "new".'
+                    ),
+                },
+                "ancestors": [
+                    {
+                        "depth": 1,
+                        "tag": "Pblock",
+                        "id": "section-2",
+                        "text_preview": (
+                            'In section 1, in the title, for "old" substitute "new".'
+                        ),
+                    }
+                ],
+            },
             affecting_source_status="available",
             affecting_source_size=17,
             affecting_source_sha256="affecting-sha",
@@ -3538,6 +3558,14 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
     assert payload["frontier_work_item"]["detail"]["blocking_lowering_rule_ids"] == [
         "uk_effect_heading_only_ref_rejected"
     ]
+    fragment_witness = payload["frontier_work_item"]["detail"][
+        "source_fragment_witness"
+    ]
+    assert fragment_witness["source_role"] == "source_preview"
+    assert fragment_witness["bounded_preview"] == (
+        'In the title, for "old" substitute "new".'
+    )
+    assert fragment_witness["context"]["parent"]["id"] == "section-2"
     assert payload["suggested_claim_template_status"] == "available"
     template = payload["suggested_claim_template"]
     assert template["schema"] == "lawvm.uk_semantic_compile_claim_template.v1"
