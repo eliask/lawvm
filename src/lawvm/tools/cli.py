@@ -218,6 +218,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- dump ---
     dump_p = sub.add_parser(
         "dump",
+        parents=_P,
         help="inspect pipeline state at a named stage",
         description=(
             "Show statute state at a pipeline stage. "
@@ -258,6 +259,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- source-dump ---
     source_dump_p = sub.add_parser(
         "source-dump",
+        parents=_P,
         help="inspect raw archived source XML with line numbers",
         description=(
             "Read source XML from the corpus archive and print the whole document "

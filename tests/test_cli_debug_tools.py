@@ -214,6 +214,39 @@ def test_cli_parser_accepts_new_debug_commands(cli_parser) -> None:
     assert args.statute_id == "1995/1552"
     assert args.address == "chapter:3/section:12"
 
+    args = cli_parser.parse_args(
+        [
+            "dump",
+            "ukpga/2002/30",
+            "--after",
+            "parse",
+            "-j",
+            "uk",
+            "--db",
+            "data/uk_legislation.farchive",
+        ]
+    )
+    assert args.command == "dump"
+    assert args.jurisdiction == "uk"
+    assert args.statute_id == "ukpga/2002/30"
+    assert args.after == "parse"
+    assert args.db == "data/uk_legislation.farchive"
+
+    args = cli_parser.parse_args(
+        [
+            "source-dump",
+            "ukpga/2002/30",
+            "-j",
+            "uk",
+            "--db",
+            "data/uk_legislation.farchive",
+        ]
+    )
+    assert args.command == "source-dump"
+    assert args.jurisdiction == "uk"
+    assert args.statute_id == "ukpga/2002/30"
+    assert args.db == "data/uk_legislation.farchive"
+
     args = cli_parser.parse_args(["bisect-section", "1995/1552", "--section", "4 §", "--verbose"])
     assert args.command == "bisect-section"
     assert args.verbose is True
