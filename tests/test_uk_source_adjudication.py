@@ -1633,7 +1633,7 @@ def test_classify_uk_manual_compile_frontier_marks_source_carried_multi_subunit_
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate"
@@ -2692,7 +2692,7 @@ def test_classify_uk_manual_compile_frontier_marks_mixed_body_heading_split() ->
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_mixed_body_heading_text_substitution_split"

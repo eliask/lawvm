@@ -264,9 +264,9 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "The extracted payload belongs to an application-modification formula; replay must not treat it as a direct amendment to current target text without a scoped temporal/application model.",
     ),
     "source_carried_multi_subunit_text_rewrite_unsupported": _ManualFrontierClassification(
-        "deterministic_frontend_candidate",
+        "manual_compile_candidate",
         "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
-        "The feed target is broader than the source-carried child targets; compile must split the text rewrite by the named child units rather than mutate the whole parent.",
+        "The feed target is broader than the source-carried child targets; a claim or future compiler must split the text rewrite by the named child units and prove each child boundary rather than mutate the whole parent.",
     ),
     "source_carried_child_tail_text_rewrite_unsupported": _ManualFrontierClassification(
         "manual_compile_candidate",
@@ -2838,9 +2838,9 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
 
     if "uk_effect_mixed_body_heading_text_substitution_rejected" in blocking_rules:
         return {
-            "status": "deterministic_frontend_candidate",
+            "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_mixed_body_heading_text_substitution_split",
-            "reason": "The source applies one quoted substitution to both body text and heading facets; a future compiler must split body and heading/facet operations instead of applying a broad section text patch.",
+            "reason": "The source applies one quoted substitution to both body text and heading facets; a claim or future compiler must split body and heading/facet operations and prove each mutation boundary instead of applying a broad section text patch.",
         }
 
     if "uk_effect_table_entry_placement_insert_rejected" in blocking_rules:

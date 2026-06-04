@@ -357,6 +357,27 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_declared_sentence_text_carriers",
         ),
     },
+    "uk_manual_frontier_mixed_body_heading_text_substitution_split": {
+        "candidate_operation_family": "mixed_body_heading_text_substitution_split",
+        "required_validator_checks": (
+            "source_witness_names_body_target_and_heading_facet",
+            "claim_splits_body_text_operation_from_heading_facet_operation",
+            "claim_identifies_exact_heading_or_italic_heading_carrier",
+            "claim_text_preimage_matches_each_claimed_surface",
+            "claim_preserves_unclaimed_body_text_heading_text_and_children",
+            "changed_paths_are_within_declared_body_and_facet_targets",
+        ),
+    },
+    "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate": {
+        "candidate_operation_family": "source_carried_multi_subunit_text_rewrite",
+        "required_validator_checks": (
+            "source_witness_names_each_child_unit_to_mutate",
+            "claim_splits_the_parent_formula_into_bounded_child_operations",
+            "claim_text_preimage_matches_each_declared_child_surface",
+            "claim_preserves_unclaimed_child_units_and_parent_text",
+            "changed_paths_are_within_declared_child_unit_boundaries",
+        ),
+    },
     "uk_manual_frontier_source_carried_structured_text_patch_candidate": {
         "candidate_operation_family": "source_carried_structured_text_patch",
         "required_validator_checks": (
