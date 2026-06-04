@@ -379,13 +379,11 @@ def _write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> int:
 def _attach_compile_metadata(table: Any, compile_metadata: Any) -> Any:
     """Attach CompileMetadata fields to a pyarrow Table's schema metadata."""
     if compile_metadata is None:
-        warnings.warn(
-            "Parquet emit without CompileMetadata is deprecated; "
-            "pass compile_metadata to ensure artifact reproducibility",
-            DeprecationWarning,
-            stacklevel=3,
+        raise ValueError(
+            "export_projections: CompileMetadata is required for v3 substrate-locked "
+            "persistence. Construct via build_default_compile_metadata() or "
+            "explicitly. See UNIFIED_PROVENANCE_GRAPH_DESIGN_v3.md §13 Step 5."
         )
-        return table
     existing = table.schema.metadata or {}
     meta = dict(existing)
     for k, v in compile_metadata.to_metadata_dict().items():
@@ -547,6 +545,7 @@ def export_projections(
             data_dir=data_dir,
             use_parquet=use_parquet,
             limit=limit,
+            compile_metadata=compile_metadata,
         )
         counts["fi_refs"] = refs_count
 
@@ -559,6 +558,7 @@ def export_projections(
             data_dir=data_dir,
             use_parquet=use_parquet,
             limit=limit,
+            compile_metadata=compile_metadata,
         )
         counts["fi_actors"] = actors_count
 
@@ -571,6 +571,7 @@ def export_projections(
             data_dir=data_dir,
             use_parquet=use_parquet,
             limit=limit,
+            compile_metadata=compile_metadata,
         )
         counts["fi_pools"] = pools_count
 
@@ -585,6 +586,7 @@ def export_projections(
             data_dir=_he_data_dir,
             use_parquet=use_parquet,
             limit=limit,
+            compile_metadata=compile_metadata,
         )
         counts.update(he_counts)
 

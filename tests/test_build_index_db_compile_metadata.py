@@ -86,8 +86,8 @@ def test_duckdb_emit_includes_compile_metadata(tmp_path: Path) -> None:
     assert row_dict["profile_tag"] == "deterministic_only"
 
 
-def test_duckdb_emit_without_metadata_still_builds(tmp_path: Path) -> None:
-    """build_index_db without compile_metadata still produces a valid db (transition-soft)."""
+def test_duckdb_emit_with_default_compile_metadata(tmp_path: Path) -> None:
+    """build_index_db with a minimal compile_metadata produces a valid db."""
     duckdb = pytest.importorskip("duckdb")
     pytest.importorskip("pyarrow")
 
@@ -102,14 +102,15 @@ def test_duckdb_emit_without_metadata_still_builds(tmp_path: Path) -> None:
     dummy_table = pa.table({"col1": pa.array(["val"])})
     pq.write_table(dummy_table, str(tier2_dir / "dummy.parquet"))
 
-    out_db = str(tmp_path / "lawvm_no_meta.db")
+    meta = _make_minimal_compile_metadata()
+    out_db = str(tmp_path / "lawvm_meta.db")
     result = build_index_db(
         jurisdiction="fi",
         data_dir=str(tmp_path),
         out_db=out_db,
         schema_version="v1",
         profile=ProfileTag.DETERMINISTIC_ONLY,
-        compile_metadata=None,
+        compile_metadata=meta,
     )
 
     assert Path(out_db).exists()
@@ -119,11 +120,10 @@ def test_duckdb_emit_without_metadata_still_builds(tmp_path: Path) -> None:
     con.close()
 
     assert len(rows) == 1
-    # All compile_metadata fields are empty strings when no metadata provided
     col_names_con = duckdb.connect(out_db)
     col_names = [d[0] for d in col_names_con.execute("DESCRIBE lawvm_meta").fetchall()]
     row_dict = dict(zip(col_names, rows[0]))
     col_names_con.close()
 
-    assert row_dict["provenance_graph_hash"] == ""
-    assert row_dict["strict_profile_fingerprint"] == ""
+    assert row_dict["provenance_graph_hash"] == "a" * 64
+    assert row_dict["strict_profile_fingerprint"] == "b" * 64

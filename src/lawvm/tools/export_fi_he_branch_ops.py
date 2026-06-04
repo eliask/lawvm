@@ -304,9 +304,15 @@ def _write_parquet(
     compile_metadata: Optional[Any] = None,
 ) -> None:
     """Write rows to fi_he_branch_ops.parquet under data_dir."""
-    import warnings  # noqa: PLC0415
     import pyarrow as pa
     import pyarrow.parquet as pq
+
+    if compile_metadata is None:
+        raise ValueError(
+            "export_fi_he_branch_ops: CompileMetadata is required for v3 substrate-locked "
+            "persistence. Construct via build_default_compile_metadata() or "
+            "explicitly. See UNIFIED_PROVENANCE_GRAPH_DESIGN_v3.md §13 Step 5."
+        )
 
     out_dir = Path(data_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -333,20 +339,11 @@ def _write_parquet(
     ])
 
     table = pa.Table.from_pylist(rows, schema=schema)
-
-    if compile_metadata is None:
-        warnings.warn(
-            "Parquet emit without CompileMetadata is deprecated; "
-            "pass compile_metadata to ensure artifact reproducibility",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-    else:
-        existing = table.schema.metadata or {}
-        meta = dict(existing)
-        for k, v in compile_metadata.to_metadata_dict().items():
-            meta[k.encode()] = v.encode()
-        table = table.replace_schema_metadata(meta)
+    existing = table.schema.metadata or {}
+    meta = dict(existing)
+    for k, v in compile_metadata.to_metadata_dict().items():
+        meta[k.encode()] = v.encode()
+    table = table.replace_schema_metadata(meta)
 
     pq.write_table(table, str(out_path), compression="zstd")
     print(f"  Written: {out_path} ({len(rows):,} rows)", file=sys.stderr)

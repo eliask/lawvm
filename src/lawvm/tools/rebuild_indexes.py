@@ -535,6 +535,7 @@ def rebuild_indexes(
     data_dir: str = "data",
     schema_version: str = DEFAULT_SCHEMA_VERSION,
     verbose: bool = False,
+    compile_metadata: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Regenerate Tier 2 Parquets from current Tier 1 farchive state.
 
@@ -566,6 +567,20 @@ def rebuild_indexes(
             "errors": [],
             "elapsed": 0.0,
         }
+
+    if compile_metadata is None:
+        from lawvm.core.compile_metadata_default import build_default_compile_metadata
+        source_bundle_hash = _primary_farchive_hash(
+            data_dir, _projections_for(jurisdiction)[0]
+        ) if _projections_for(jurisdiction) else "sha256:no-farchive"
+        if not source_bundle_hash:
+            source_bundle_hash = "sha256:no-farchive"
+        compile_metadata = build_default_compile_metadata(
+            jurisdiction=jurisdiction,
+            source_bundle_hash=f"sha256:{source_bundle_hash}",
+            build_id=f"cli.rebuild-indexes.{jurisdiction}",
+            graph_store_root=Path(data_dir) / jurisdiction,
+        )
 
     t_start = time.time()
     rebuilt: List[str] = []
@@ -601,6 +616,7 @@ def rebuild_indexes(
             data_dir=data_dir,
             current_hash=current_hash,
             verbose=verbose,
+            compile_metadata=compile_metadata,
         )
 
         if res["status"] == "ok":

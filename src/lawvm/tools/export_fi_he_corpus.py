@@ -711,15 +711,12 @@ _PARQUET_SCHEMAS = _build_parquet_schemas()
 
 def _attach_compile_metadata(table: Any, compile_metadata: Any) -> Any:
     """Attach CompileMetadata fields to a pyarrow Table's schema metadata."""
-    import warnings  # noqa: PLC0415
     if compile_metadata is None:
-        warnings.warn(
-            "Parquet emit without CompileMetadata is deprecated; "
-            "pass compile_metadata to ensure artifact reproducibility",
-            DeprecationWarning,
-            stacklevel=3,
+        raise ValueError(
+            "export_fi_he_corpus: CompileMetadata is required for v3 substrate-locked "
+            "persistence. Construct via build_default_compile_metadata() or "
+            "explicitly. See UNIFIED_PROVENANCE_GRAPH_DESIGN_v3.md §13 Step 5."
         )
-        return table
     existing = table.schema.metadata or {}
     meta = dict(existing)
     for k, v in compile_metadata.to_metadata_dict().items():
