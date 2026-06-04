@@ -8331,6 +8331,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--backend", choices=["mock", "qwen"], default="mock",
         help="LLM backend to use (default: mock)",
     )
+    propose_claims_p.add_argument(
+        "--claim-store-root", dest="claim_store_root", metavar="PATH", default=None,
+        help="write claims to this directory instead of data_dir/manual_claims (smoke-run isolation)",
+    )
 
     # validate-claims (Slice 4) — top-level command
     validate_claims_p = sub.add_parser(

@@ -381,6 +381,10 @@ def test_propose_from_frontier_skips_already_accepted_targets(tmp_path: Path):
 def test_propose_claims_respects_limit(tmp_path: Path, monkeypatch):
     """--limit 3 emits at most 3 proposals when multiple frontier rows exist."""
     from lawvm.tools.cmd_propose_claims import _scan_frontier_from_parquet
+    from lawvm.core.manual_claims.source_provider import MockSourceProvider, register_source_provider
+
+    # Register a mock provider so _fetch_source_for_frontier succeeds
+    register_source_provider("fi", MockSourceProvider())
 
     # Monkeypatch frontier scanner to return 10 synthetic rows
     def _fake_scan(data_dir, claim_kind):
