@@ -558,18 +558,24 @@ class UKReplayStateMixin:
     def _record_child_inserted(self, parent: UKMutableNode, node: UKMutableNode) -> None:
         idx = _identity_index(parent.children, node)
         self._add_eid_lookup_subtree(node, parent, idx)
+        created_path = (
+            self._tree_path_for_known_child(parent, node)
+            if self.mutation_events_out is not None
+            else None
+        )
         self._note_structure_mutation()
         self._record_insert_node_mutation_event(
-            created_path=self._tree_path_for_mutable_node(node),
+            created_path=created_path,
             helper="_record_child_inserted",
         )
 
     def _record_supplement_inserted(self, node: UKMutableNode) -> None:
         idx = _identity_index(self.statute.supplements, node)
         self._add_eid_lookup_subtree(node, None, idx)
+        created_path = ((_kind_str(node.kind), node.label or ""),)
         self._note_structure_mutation()
         self._record_insert_node_mutation_event(
-            created_path=self._tree_path_for_mutable_node(node),
+            created_path=created_path,
             helper="_record_supplement_inserted",
         )
 
@@ -727,6 +733,16 @@ class UKReplayStateMixin:
             if found is not None:
                 return found
         return None
+
+    def _tree_path_for_known_child(
+        self,
+        parent: UKMutableNode,
+        node: UKMutableNode,
+    ) -> TreePath | None:
+        parent_path = self._tree_path_for_mutable_node(parent)
+        if parent_path is None:
+            return None
+        return parent_path + ((_kind_str(node.kind), node.label or ""),)
 
     def _record_replace_node_mutation_event(
         self,
@@ -1015,7 +1031,12 @@ class UKReplayStateMixin:
         return False
 
     def _remove_node(self, node: UKMutableNode, parent: Optional[UKMutableNode], idx: Optional[int]) -> bool:
-        removed_path = self._tree_path_for_mutable_node(node) if self.mutation_events_out is not None else None
+        removed_path = None
+        if self.mutation_events_out is not None:
+            if parent is not None:
+                removed_path = self._tree_path_for_known_child(parent, node)
+            else:
+                removed_path = self._tree_path_for_mutable_node(node)
         if parent is not None and idx is not None:
             self._remove_eid_lookup_subtree(node)
             parent.children.pop(idx)

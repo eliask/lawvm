@@ -68955,6 +68955,95 @@ def test_executor_tree_path_for_mutable_node_uses_parent_index(
     )
 
 
+def test_executor_child_insert_mutation_event_uses_known_parent_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2000/22",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(),
+    )
+    mutation_events: list[Any] = []
+    executor: Any = UKReplayExecutor(
+        statute,
+        adjudications_out=[],
+        mutation_events_out=mutation_events,
+    )
+    op = LegalOperation(
+        op_id="uk_test_child_insert_known_parent_path",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "1"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="1", text=""),
+        source=OperationSource(statute_id="uk_test", title="Test Source"),
+    )
+    node = UKMutableNode(kind=IRNodeKind.SECTION, label="1", text="")
+    executor.statute.body.children.append(node)
+    executor._current_mutation_op = op
+
+    def fail_recursive_scan(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("known child insert path should not require recursive scan")
+
+    monkeypatch.setattr(executor, "_find_tree_path_to_node", fail_recursive_scan)
+
+    executor._record_child_inserted(executor.statute.body, node)
+
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    assert event.helper == "_record_child_inserted"
+    assert event.created_paths == ((("section", "1"),),)
+    assert event.parent_path == ()
+
+
+def test_executor_remove_mutation_event_uses_known_parent_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2000/22",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="1", text="", children=()),
+            ),
+        ),
+        supplements=(),
+    )
+    mutation_events: list[Any] = []
+    executor: Any = UKReplayExecutor(
+        statute,
+        adjudications_out=[],
+        mutation_events_out=mutation_events,
+    )
+    op = LegalOperation(
+        op_id="uk_test_remove_known_parent_path",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("section", "1"),)),
+        payload=None,
+        source=OperationSource(statute_id="uk_test", title="Test Source"),
+    )
+    node = executor.statute.body.children[0]
+    executor._current_mutation_op = op
+
+    def fail_recursive_scan(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("known child removal path should not require recursive scan")
+
+    monkeypatch.setattr(executor, "_find_tree_path_to_node", fail_recursive_scan)
+
+    assert executor._remove_node(node, executor.statute.body, 0) is True
+
+    assert executor.statute.body.children == []
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    assert event.helper == "_remove_node"
+    assert event.removed_paths == ((("section", "1"),),)
+    assert event.parent_path == ()
+
+
 def test_target_resolution_address_uses_indexed_path_resolver() -> None:
     statute = IRStatute(
         statute_id="ukpga/2000/22",
