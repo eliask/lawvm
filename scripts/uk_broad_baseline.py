@@ -572,6 +572,11 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 manual_frontier_records
             )
         )
+        result[
+            "manual_frontier_work_item_packet_target_resolution_certificate_counts"
+        ] = _manual_frontier_work_item_packet_target_resolution_certificate_counts(
+            manual_frontier_records
+        )
         result["manual_frontier_work_item_candidate_set_status_counts"] = (
             _manual_frontier_work_item_candidate_set_status_counts(
                 manual_frontier_records
@@ -886,12 +891,11 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             "manual_frontier_work_item_required_validator_check_counts",
         )
     )
-    manual_frontier_work_item_packet_ready_counts = _aggregate_row_count_maps(
-        results, "manual_frontier_work_item_packet_ready_counts"
-    )
-    manual_frontier_work_item_packet_missing_field_counts = _aggregate_row_count_maps(
-        results, "manual_frontier_work_item_packet_missing_field_counts"
-    )
+    (
+        manual_frontier_work_item_packet_ready_counts,
+        manual_frontier_work_item_packet_missing_field_counts,
+        manual_frontier_work_item_packet_target_resolution_certificate_counts,
+    ) = _aggregate_manual_frontier_work_item_packet_counts(results)
     manual_frontier_work_item_candidate_set_status_counts = _aggregate_row_count_maps(
         results, "manual_frontier_work_item_candidate_set_status_counts"
     )
@@ -1114,6 +1118,9 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "manual_frontier_work_item_packet_missing_field_counts": (
             manual_frontier_work_item_packet_missing_field_counts
+        ),
+        "manual_frontier_work_item_packet_target_resolution_certificate_counts": (
+            manual_frontier_work_item_packet_target_resolution_certificate_counts
         ),
         "manual_frontier_work_item_candidate_set_status_counts": (
             manual_frontier_work_item_candidate_set_status_counts
@@ -2232,6 +2239,98 @@ def _manual_frontier_work_item_packet_missing_field_counts(
     return dict(sorted(counts.items()))
 
 
+def _manual_frontier_work_item_packet_target_resolution_certificate_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        packet = _manual_frontier_work_item_packet_completeness(row)
+        if not packet:
+            counts["missing_packet_completeness"] += 1
+            continue
+        has_certificate = packet.get("has_target_resolution_certificate")
+        if has_certificate is True:
+            counts["present"] += 1
+        elif has_certificate is False:
+            counts["missing"] += 1
+        else:
+            counts["unproven"] += 1
+    return dict(sorted(counts.items()))
+
+
+def _aggregate_manual_frontier_work_item_packet_counts(
+    results: list[dict[str, Any]],
+) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
+    ready_counts: Counter[str] = Counter()
+    missing_field_counts: Counter[str] = Counter()
+    target_resolution_counts: Counter[str] = Counter()
+    for row in results:
+        row_ready_counts = Counter(
+            _count_mapping(
+                row.get("manual_frontier_work_item_packet_ready_counts"),
+            )
+        )
+        row_missing_field_counts = Counter(
+            _count_mapping(
+                row.get("manual_frontier_work_item_packet_missing_field_counts"),
+            )
+        )
+        row_target_resolution_counts = Counter(
+            _count_mapping(
+                row.get(
+                    "manual_frontier_work_item_packet_target_resolution_certificate_counts"
+                ),
+            )
+        )
+        if _row_has_unproven_target_resolution_packet_schema(
+            row_ready_counts,
+            row_target_resolution_counts,
+        ):
+            packet_count = int(row_ready_counts.get("ready", 0) or 0) + int(
+                row_ready_counts.get("not_ready", 0) or 0
+            )
+            ready_count = int(row_ready_counts.get("ready", 0) or 0)
+            if ready_count:
+                row_ready_counts["ready"] -= ready_count
+                if row_ready_counts["ready"] <= 0:
+                    del row_ready_counts["ready"]
+                row_ready_counts["not_ready"] += ready_count
+            row_missing_field_counts["target_resolution_certificate"] += packet_count
+            row_target_resolution_counts["unproven"] += packet_count
+        ready_counts.update(row_ready_counts)
+        missing_field_counts.update(row_missing_field_counts)
+        target_resolution_counts.update(row_target_resolution_counts)
+    return (
+        dict(sorted(ready_counts.items())),
+        dict(sorted(missing_field_counts.items())),
+        dict(sorted(target_resolution_counts.items())),
+    )
+
+
+def _count_mapping(value: Any) -> dict[str, int]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {
+        str(key): int(count or 0)
+        for key, count in value.items()
+        if str(key) and int(count or 0)
+    }
+
+
+def _row_has_unproven_target_resolution_packet_schema(
+    ready_counts: Mapping[str, int],
+    target_resolution_counts: Mapping[str, int],
+) -> bool:
+    packet_count = int(ready_counts.get("ready", 0) or 0) + int(
+        ready_counts.get("not_ready", 0) or 0
+    )
+    if packet_count <= 0:
+        return False
+    return not target_resolution_counts
+
+
 def _manual_frontier_work_item_candidate_set_status_counts(
     rows: list[dict[str, Any]],
 ) -> dict[str, int]:
@@ -3272,6 +3371,17 @@ def run_driver(
         )
         print(
             "  manual_frontier_work_item_packet_missing_field_counts: "
+            f"{counts}"
+        )
+    if summary["manual_frontier_work_item_packet_target_resolution_certificate_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary[
+                "manual_frontier_work_item_packet_target_resolution_certificate_counts"
+            ].items()
+        )
+        print(
+            "  manual_frontier_work_item_packet_target_resolution_certificate_counts: "
             f"{counts}"
         )
     if summary["manual_frontier_work_item_candidate_set_status_counts"]:
