@@ -617,6 +617,16 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 manual_frontier_records
             )
         )
+        result["manual_frontier_work_item_source_membership_status_counts"] = (
+            _manual_frontier_work_item_source_membership_status_counts(
+                manual_frontier_records
+            )
+        )
+        result["manual_frontier_work_item_source_membership_blocker_counts"] = (
+            _manual_frontier_work_item_source_membership_blocker_counts(
+                manual_frontier_records
+            )
+        )
         result["manual_frontier_work_item_source_witness_role_counts"] = (
             _manual_frontier_work_item_source_witness_role_counts(
                 manual_frontier_records
@@ -955,6 +965,16 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     manual_frontier_work_item_candidate_set_exempt_counts = _aggregate_row_count_maps(
         results, "manual_frontier_work_item_candidate_set_exempt_counts"
     )
+    manual_frontier_work_item_source_membership_status_counts = (
+        _aggregate_row_count_maps(
+            results, "manual_frontier_work_item_source_membership_status_counts"
+        )
+    )
+    manual_frontier_work_item_source_membership_blocker_counts = (
+        _aggregate_row_count_maps(
+            results, "manual_frontier_work_item_source_membership_blocker_counts"
+        )
+    )
     manual_frontier_work_item_source_witness_role_counts = _aggregate_row_count_maps(
         results, "manual_frontier_work_item_source_witness_role_counts"
     )
@@ -1201,6 +1221,12 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "manual_frontier_work_item_candidate_set_exempt_counts": (
             manual_frontier_work_item_candidate_set_exempt_counts
+        ),
+        "manual_frontier_work_item_source_membership_status_counts": (
+            manual_frontier_work_item_source_membership_status_counts
+        ),
+        "manual_frontier_work_item_source_membership_blocker_counts": (
+            manual_frontier_work_item_source_membership_blocker_counts
         ),
         "manual_frontier_work_item_source_witness_role_counts": (
             manual_frontier_work_item_source_witness_role_counts
@@ -2646,6 +2672,48 @@ def _candidate_set_status_for_work_item(work_item: Mapping[str, Any]) -> str:
     return str(certificate.get("completeness_status") or "unproven")
 
 
+def _manual_frontier_work_item_source_membership_status_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        certificate = _source_membership_certificate_for_row(row)
+        if not certificate:
+            continue
+        status = str(certificate.get("completeness_status") or "")
+        counts[status or "unproven"] += 1
+    return dict(sorted(counts.items()))
+
+
+def _manual_frontier_work_item_source_membership_blocker_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        certificate = _source_membership_certificate_for_row(row)
+        if not certificate:
+            continue
+        counts.update(_count_mapping(certificate.get("blocker_counts")))
+    return dict(sorted(counts.items()))
+
+
+def _source_membership_certificate_for_row(
+    row: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    work_item = row.get("frontier_work_item")
+    if not isinstance(work_item, Mapping):
+        return {}
+    detail = work_item.get("detail")
+    if not isinstance(detail, Mapping):
+        return {}
+    certificate = detail.get("source_membership_certificate")
+    return certificate if isinstance(certificate, Mapping) else {}
+
+
 def _manual_frontier_work_item_source_witness_role_counts(
     rows: list[dict[str, Any]],
 ) -> dict[str, int]:
@@ -3809,6 +3877,22 @@ def run_driver(
             ].items()
         )
         print(f"  manual_frontier_work_item_candidate_set_exempt_counts: {counts}")
+    if summary["manual_frontier_work_item_source_membership_status_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary[
+                "manual_frontier_work_item_source_membership_status_counts"
+            ].items()
+        )
+        print(f"  manual_frontier_work_item_source_membership_status_counts: {counts}")
+    if summary["manual_frontier_work_item_source_membership_blocker_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary[
+                "manual_frontier_work_item_source_membership_blocker_counts"
+            ].items()
+        )
+        print(f"  manual_frontier_work_item_source_membership_blocker_counts: {counts}")
     if summary["manual_frontier_work_item_source_witness_role_counts"]:
         counts = ", ".join(
             f"{role}={count}"

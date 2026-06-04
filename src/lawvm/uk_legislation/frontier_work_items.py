@@ -768,6 +768,16 @@ def uk_frontier_work_item_from_manual_frontier_row(
         frontier_family=frontier_family,
         target_witness=target_witness,
     )
+    source_membership_certificate = _source_membership_certificate(
+        work_item_id=work_item_id,
+        owner_phase=owner_phase,
+        frontier_family=frontier_family,
+        source_witness=normalized_source_witness,
+        target_witness=target_witness,
+        candidate_targets=candidate_targets,
+    )
+    if source_membership_certificate:
+        detail["source_membership_certificate"] = source_membership_certificate
     detail["target_resolution_certificate"] = _target_resolution_certificate(
         owner_phase=owner_phase,
         target_witness=target_witness,
@@ -1006,6 +1016,130 @@ def _candidate_target_set_certificate(
         },
     )
     return certificate.to_dict()
+
+
+def _source_membership_certificate(
+    *,
+    work_item_id: str,
+    owner_phase: str,
+    frontier_family: str,
+    source_witness: Mapping[str, Any],
+    target_witness: Mapping[str, Any],
+    candidate_targets: tuple[str, ...],
+) -> Mapping[str, Any]:
+    if (
+        frontier_family
+        != "uk_manual_frontier_multi_enactment_specified_provisions_text_patch"
+    ):
+        return {}
+    source_preview = str(
+        source_witness.get("extended_text_preview")
+        or source_witness.get("bounded_preview")
+        or source_witness.get("text_preview")
+        or ""
+    )
+    effect_targets = candidate_targets or _string_tuple(
+        target_witness.get("affected_provisions")
+    )
+    matched_targets = tuple(
+        target
+        for target in effect_targets
+        if _target_appears_in_specified_provisions_preview(
+            target=target,
+            source_preview=source_preview,
+        )
+    )
+    has_source = bool(source_preview)
+    has_target = bool(effect_targets)
+    membership_proved = bool(matched_targets)
+    blockers: dict[str, int] = {}
+    if not has_source:
+        blockers["source_preview_unavailable"] = 1
+    if not has_target:
+        blockers["effect_target_unavailable"] = 1
+    if has_source and has_target and not membership_proved:
+        blockers["source_list_membership_not_proved"] = len(effect_targets)
+    return CandidateSetCertificate(
+        scope_id=f"uk-frontier-work-item:{work_item_id}:source-membership",
+        candidate_set_kind="uk_multi_enactment_specified_provisions_membership",
+        phase=owner_phase or "unknown",
+        rule_id="uk_frontier_multi_enactment_source_membership_projection",
+        reason=(
+            "source-list membership is a witness proof for the deterministic "
+            "compiler frontier; it does not choose the text preimage or "
+            "authorize replay"
+        ),
+        completeness_status=(
+            CANDIDATE_SET_COMPLETE
+            if membership_proved
+            else CANDIDATE_SET_UNAVAILABLE
+        ),
+        candidate_count=len(matched_targets),
+        candidate_ids=matched_targets,
+        missing_candidate_count=0 if membership_proved else max(1, len(effect_targets)),
+        blocker_counts=blockers,
+        blocker_families=tuple(blockers),
+        next_promotion_allowed=False,
+        next_promotion_requires=(
+            "matching_alternate_preimage_selection",
+            "canonical_operation_compilation",
+            "mutation_boundary_proof",
+        ),
+        detail={
+            "effect_target_surfaces": effect_targets,
+            "source_membership_status": (
+                "proved_in_bounded_source_preview"
+                if membership_proved
+                else "unproved_from_bounded_source_preview"
+            ),
+            "source_witness_role": str(source_witness.get("source_role") or ""),
+            "source_witness_preview_digest": str(
+                source_witness.get("preview_digest") or ""
+            ),
+            "target_witness_surface": str(target_witness.get("surface") or ""),
+            "source_membership_not_replay_authorization": True,
+        },
+    ).to_dict()
+
+
+def _target_appears_in_specified_provisions_preview(
+    *,
+    target: str,
+    source_preview: str,
+) -> bool:
+    haystack = _normalize_citation_text(source_preview)
+    if not haystack:
+        return False
+    return any(
+        needle in haystack
+        for needle in _specified_provision_membership_needles(target)
+        if needle
+    )
+
+
+def _specified_provision_membership_needles(target: str) -> tuple[str, ...]:
+    normalized = _normalize_citation_text(target)
+    if not normalized:
+        return ()
+    needles = [normalized]
+    if normalized.startswith("s. "):
+        needles.append(f"section {normalized[3:].strip()}")
+    elif normalized.startswith("s "):
+        needles.append(f"section {normalized[2:].strip()}")
+    return tuple(dict.fromkeys(needles))
+
+
+def _normalize_citation_text(text: str) -> str:
+    cleaned = (
+        str(text or "")
+        .replace("\u2018", "'")
+        .replace("\u2019", "'")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
+        .replace("\u00a0", " ")
+        .lower()
+    )
+    return " ".join(cleaned.split())
 
 
 def _target_resolution_certificate(

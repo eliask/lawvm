@@ -790,6 +790,107 @@ def test_uk_frontier_work_item_marks_missing_target_candidates_unavailable() -> 
     ] is True
 
 
+def test_uk_frontier_work_item_multi_enactment_records_source_membership_certificate() -> None:
+    work_item = uk_frontier_work_item_from_manual_frontier_row(
+        {
+            "statute_id": "ukpga/2003/14",
+            "effect_id": "key-8f22e9e7fa33d99bd0f8509adde4444c",
+            "affecting_act_id": "ukpga/2024/3",
+            "manual_compile_rule_id": (
+                "uk_manual_frontier_multi_enactment_specified_provisions_text_patch"
+            ),
+            "manual_compile_status": "deterministic_frontend_candidate",
+            "owner_phase": "affecting_source_extraction",
+            "authorization_status": "deterministic_frontend_work_required",
+            "safe_default": "block_until_compiler_rule_is_owned",
+            "required_proofs": [
+                "canonical_operation_compilation",
+                "mutation_boundary_proof",
+            ],
+            "forbidden_shortcuts": ["oracle_backed_mutation", "target_guessing"],
+            "replay_authorized": False,
+            "executable": False,
+            "source": {
+                "text_preview": (
+                    "In the specified provisions of the following enactments, "
+                    'for "seven" (or "7") substitute "14" - TMA 1970 '
+                    "Section 106A(2)(b)."
+                ),
+                "extended_text_preview": (
+                    "In the specified provisions of the following enactments, "
+                    'for "seven" (or "7") substitute "14" - FA 2003 '
+                    "Section 95(2)(b)."
+                )
+            },
+            "affected_provisions": "s. 95(2)(b)",
+        }
+    ).to_dict()
+
+    certificate = work_item["detail"]["source_membership_certificate"]
+
+    assert certificate["candidate_set_kind"] == (
+        "uk_multi_enactment_specified_provisions_membership"
+    )
+    assert certificate["completeness_status"] == "complete"
+    assert certificate["candidate_ids"] == ["s. 95(2)(b)"]
+    assert certificate["source_membership_status"] == (
+        "proved_in_bounded_source_preview"
+    )
+    assert certificate["next_promotion_allowed"] is False
+    assert certificate["next_promotion_requires"] == [
+        "matching_alternate_preimage_selection",
+        "canonical_operation_compilation",
+        "mutation_boundary_proof",
+    ]
+    assert (
+        certificate["source_membership_not_replay_authorization"] is True
+    )
+    assert work_item["replay_authorized"] is False
+
+
+def test_uk_frontier_work_item_multi_enactment_keeps_unproved_membership_blocked() -> None:
+    work_item = uk_frontier_work_item_from_manual_frontier_row(
+        {
+            "statute_id": "ukpga/2003/14",
+            "effect_id": "eff-unlisted",
+            "affecting_act_id": "ukpga/2024/3",
+            "manual_compile_rule_id": (
+                "uk_manual_frontier_multi_enactment_specified_provisions_text_patch"
+            ),
+            "manual_compile_status": "deterministic_frontend_candidate",
+            "owner_phase": "affecting_source_extraction",
+            "authorization_status": "deterministic_frontend_work_required",
+            "safe_default": "block_until_compiler_rule_is_owned",
+            "required_proofs": [
+                "canonical_operation_compilation",
+                "mutation_boundary_proof",
+            ],
+            "forbidden_shortcuts": ["oracle_backed_mutation", "target_guessing"],
+            "replay_authorized": False,
+            "executable": False,
+            "source": {
+                "text_preview": (
+                    "In the specified provisions of the following enactments, "
+                    'for "seven" (or "7") substitute "14" - FA 2003 '
+                    "Section 90(1)."
+                )
+            },
+            "affected_provisions": "s. 95(2)(b)",
+        }
+    ).to_dict()
+
+    certificate = work_item["detail"]["source_membership_certificate"]
+
+    assert certificate["completeness_status"] == "unavailable"
+    assert certificate["candidate_ids"] == []
+    assert certificate["blocker_counts"] == {"source_list_membership_not_proved": 1}
+    assert certificate["source_membership_status"] == (
+        "unproved_from_bounded_source_preview"
+    )
+    assert certificate["next_promotion_allowed"] is False
+    assert work_item["replay_authorized"] is False
+
+
 @pytest.mark.parametrize("rule_id", sorted(UK_CLAIM_TEMPLATE_RULE_IDS))
 def test_uk_claim_template_rule_ids_all_render_nonempty_templates(rule_id: str) -> None:
     effect = UKEffectRecord(
@@ -1342,6 +1443,63 @@ def test_manual_frontier_diagnostic_uses_effect_feed_witness_when_source_missing
         "has_source_digest_or_preview_digest"
     ] is True
     assert work_item["detail"]["packet_completeness"]["missing_fields"] == []
+
+
+def test_manual_frontier_diagnostic_extends_multi_enactment_source_list_witness() -> None:
+    diagnostics: list[dict[str, object]] = []
+    extracted_text = (
+        'In the specified provisions of the following enactments, for "seven" '
+        '(or "7") substitute "14" - '
+        + " ".join(f"Section {index}(1)." for index in range(1, 80))
+        + " FA 2003 Section 95(2)(b)."
+    )
+    append_manual_compile_frontier_diagnostic(
+        diagnostics,
+        effect=UKEffectRecord(
+            effect_id="eff-multi-source-list",
+            effect_type="words substituted",
+            applied=True,
+            requires_applied=True,
+            modified="2024-01-01",
+            affected_uri="/id/ukpga/2003/14/section/95",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="2003",
+            affected_number="14",
+            affected_provisions="s. 95(2)(b)",
+            affecting_uri="/id/ukpga/2024/3",
+            affecting_class="UnitedKingdomPublicGeneralAct",
+            affecting_year="2024",
+            affecting_number="3",
+            affecting_provisions="s. 32(1)",
+            affecting_title="Test Act 2024",
+        ),
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P2",
+        extracted_text=extracted_text,
+        lowering_rejections_out=[
+            {
+                "rule_id": (
+                    "uk_effect_multi_enactment_specified_provisions_text_patch_rejected"
+                ),
+                "blocking": True,
+            }
+        ],
+        lowering_rejection_start_index=0,
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    source_witness = diagnostics[0]["source_witness"]
+    work_item = diagnostics[0]["frontier_work_item"]
+    certificate = work_item["detail"]["source_membership_certificate"]
+
+    assert source_witness["text_preview"] != source_witness["extended_text_preview"]
+    assert "FA 2003 Section 95(2)(b)" not in source_witness["text_preview"]
+    assert "FA 2003 Section 95(2)(b)" in source_witness["extended_text_preview"]
+    assert certificate["completeness_status"] == "complete"
+    assert certificate["candidate_ids"] == ["s. 95(2)(b)"]
+    assert work_item["replay_authorized"] is False
 
 
 def test_manual_frontier_out_of_scope_reclassifies_lowering_rejection() -> None:

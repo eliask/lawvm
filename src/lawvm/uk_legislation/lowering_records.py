@@ -608,8 +608,9 @@ def _manual_frontier_source_witness(
     extracted_text: str,
 ) -> dict[str, Any]:
     if extracted_text:
-        source_preview = " ".join(extracted_text.split())[:500]
-        return {
+        normalized_text = " ".join(extracted_text.split())
+        source_preview = normalized_text[:500]
+        witness = {
             "source_role": "affecting_source_fragment",
             "artifact_id": str(effect.affecting_act_id or ""),
             "source_unit_id": str(effect.effect_id or ""),
@@ -620,6 +621,9 @@ def _manual_frontier_source_witness(
                 "affecting_provisions": str(effect.affecting_provisions or ""),
             },
         }
+        if _needs_extended_source_list_preview(normalized_text):
+            witness["extended_text_preview"] = normalized_text[:4000]
+        return witness
     effect_preview = " | ".join(
         part
         for part in (
@@ -643,6 +647,14 @@ def _manual_frontier_source_witness(
             "affecting_provisions": str(effect.affecting_provisions or ""),
         },
     }
+
+
+def _needs_extended_source_list_preview(text: str) -> bool:
+    lowered = text.lower()
+    return (
+        "specified provisions of the following enactments" in lowered
+        and " substitute " in lowered
+    )
 
 
 def append_pit_date_filter_rejection(
