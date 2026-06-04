@@ -57,6 +57,7 @@ import Levenshtein
 
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir_helpers import is_zombie
 from lawvm.replay_adjudication import CompileAdjudication
@@ -4606,6 +4607,10 @@ def _bench_diagnostics_path(label: str) -> Path:
     return _BENCH_DIR / f"{label}.diagnostics.jsonl"
 
 
+def _bench_diagnostics_report_path(label: str) -> Path:
+    return _BENCH_DIR / f"{label}.diagnostics.report.json"
+
+
 def _score_witness_labels(comparison_scope: str) -> tuple[str, str]:
     if comparison_scope == "raw":
         return "enacted", "oracle"
@@ -4773,6 +4778,151 @@ def _save_bench_diagnostic_rows(results: list[_BenchResult], label: str) -> int:
             out_path.unlink()
         return 0
     return count
+
+
+def _counter_jsonable(counter: Mapping[str, int]) -> dict[str, int]:
+    return {str(key): int(value) for key, value in sorted(counter.items())}
+
+
+def _bench_diagnostics_report_jsonable(
+    acc: _BenchRunAccumulator,
+    *,
+    label: str,
+    diagnostic_count: int,
+    score_witness_count: int,
+    written_paths: Sequence[Path],
+) -> dict[str, Any]:
+    summary = {
+        "label": label,
+        "n_total": acc.total_count,
+        "n_ok": acc.ok_count,
+        "n_core_ok": acc.core_ok_count,
+        "row_status_counts": _counter_jsonable(acc.row_status_counts),
+        "comparison_class_counts": _counter_jsonable(acc.comparison_class_counts),
+        "enacted_source_status_counts": _counter_jsonable(acc.enacted_source_counts),
+        "oracle_source_status_counts": _counter_jsonable(acc.oracle_source_counts),
+        "score_mode": _primary_score_mode(acc) if acc.ok_count else "none",
+        "diagnostic_rows": diagnostic_count,
+        "score_witness_rows": score_witness_count,
+        "source_parse_observations": acc.source_parse_observations_total,
+        "source_parse_rejections": acc.source_parse_rejections_total,
+        "source_parse_observation_rule_counts": _counter_jsonable(
+            acc.source_parse_observation_rule_counts
+        ),
+        "source_parse_rejection_rule_counts": _counter_jsonable(
+            acc.source_parse_rejection_rule_counts
+        ),
+        "source_acquisition_observations": acc.source_acquisition_observation_total,
+        "source_acquisition_rejections": acc.source_acquisition_rejection_total,
+        "source_acquisition_observation_rule_counts": _counter_jsonable(
+            acc.source_acquisition_observation_rule_counts
+        ),
+        "source_acquisition_rejection_rule_counts": _counter_jsonable(
+            acc.source_acquisition_rejection_rule_counts
+        ),
+        "effect_feed_observations": acc.effect_feed_observations_total,
+        "effect_feed_rejections": acc.effect_feed_rejections_total,
+        "effect_feed_observation_rule_counts": _counter_jsonable(
+            acc.effect_feed_observation_rule_counts
+        ),
+        "effect_feed_rejection_rule_counts": _counter_jsonable(
+            acc.effect_feed_rejection_rule_counts
+        ),
+        "manual_compile_status_counts": _counter_jsonable(acc.manual_compile_status_counts),
+        "manual_compile_rule_counts": _counter_jsonable(acc.manual_compile_rule_counts),
+        "lowering_observations": acc.lowering_observation_total,
+        "lowering_rejections": acc.lowering_rejection_total,
+        "blocking_lowering_rejections": acc.blocking_lowering_rejection_total,
+        "lowering_observation_rule_counts": _counter_jsonable(
+            acc.lowering_observation_rule_counts
+        ),
+        "lowering_rejection_rule_counts": _counter_jsonable(
+            acc.lowering_rejection_rule_counts
+        ),
+        "blocking_lowering_rejection_rule_counts": _counter_jsonable(
+            acc.blocking_lowering_rejection_rule_counts
+        ),
+        "replay_adjudications": acc.replay_adjudication_total,
+        "replay_adjudication_kind_counts": _counter_jsonable(
+            acc.replay_adjudication_kind_counts
+        ),
+        "replay_adjudication_bucket_counts": _counter_jsonable(
+            acc.replay_adjudication_bucket_counts
+        ),
+        "uk_residual_claim_tier_counts": _counter_jsonable(
+            acc.residual_claim_tier_counts
+        ),
+        "uk_residual_claim_kind_counts": _counter_jsonable(
+            acc.residual_claim_kind_counts
+        ),
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction="uk",
+        report_kind="uk_bench_diagnostics_report",
+        schema="lawvm.uk_bench_diagnostics_report.v1",
+        truth_claim="uk_bench_diagnostics_and_scores_regression_evidence_not_source_truth",
+        replay_claims=bool(acc.replayed_count or acc.replay_adjudication_total),
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=True,
+        summary=summary,
+        filters={"label": label},
+        filtered_summary=summary,
+        rows=(),
+        rows_truncated=False,
+        evidence_jsonl={
+            "path": str(_bench_diagnostics_path(label)),
+            "schema": "uk_bench_diagnostic.v1",
+            "row_count": diagnostic_count,
+        },
+        written_paths=tuple(str(path) for path in written_paths),
+        detail={
+            "source_footing": "farchive_enacted_xml_plus_current_xml_oracle_eid_sets",
+            "agreement_surface": "bench_score_witnesses_and_diagnostic_sidecars",
+            "diagnostic_surface": "phase_owned_compile_replay_and_source_diagnostics",
+            "safe_default": "treat_scores_and_diagnostics_as_regression_evidence_until_source_proof",
+            "forbidden_shortcuts": (
+                "oracle_score_as_source_truth",
+                "diagnostic_row_as_execution_authorization",
+                "candidate_effect_as_replay_authority",
+                "manual_frontier_row_as_replay_permission",
+            ),
+        },
+    ).to_dict()
+
+
+def _write_bench_diagnostics_report(
+    acc: _BenchRunAccumulator,
+    *,
+    label: str,
+    diagnostic_count: int,
+    score_witness_count: int,
+) -> Path | None:
+    report_path = _bench_diagnostics_report_path(label)
+    if diagnostic_count == 0:
+        if report_path.exists():
+            report_path.unlink()
+        return None
+    written_paths = [
+        _BENCH_DIR / f"{label}.csv",
+        _bench_diagnostics_path(label),
+    ]
+    if score_witness_count:
+        written_paths.append(_score_witness_path(label))
+    written_paths.append(report_path)
+    report = _bench_diagnostics_report_jsonable(
+        acc,
+        label=label,
+        diagnostic_count=diagnostic_count,
+        score_witness_count=score_witness_count,
+        written_paths=written_paths,
+    )
+    report_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return report_path
 
 
 def _format_history_average(values: list[float]) -> str:
@@ -5890,6 +6040,27 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
             f"Bench diagnostics saved: {_bench_diagnostics_path(label)} "
             f"rows={diagnostic_count}"
         )
+        report_acc = _BenchRunAccumulator(
+            has_commencement=any(
+                r.commencement_score >= 0.0
+                for r in results
+                if r.status == "OK" and r.n_oracle_eids > 0
+            ),
+        )
+        for result in results:
+            report_acc.feed(result)
+        report_path = _write_bench_diagnostics_report(
+            report_acc,
+            label=label,
+            diagnostic_count=diagnostic_count,
+            score_witness_count=score_witness_count,
+        )
+        if report_path is not None:
+            print(f"Bench diagnostics report saved: {report_path}")
+    else:
+        report_path = _bench_diagnostics_report_path(label)
+        if report_path.exists():
+            report_path.unlink()
 
     _append_history(results, label, score_witness_count)
 
@@ -7667,8 +7838,19 @@ def main(args) -> None:  # noqa: ANN001
             diag_path = _bench_diagnostics_path(label)
             if diag_path.exists():
                 diag_path.unlink()
+            report_path = _bench_diagnostics_report_path(label)
+            if report_path.exists():
+                report_path.unlink()
         else:
             print(f"Bench diagnostics saved: {_bench_diagnostics_path(label)} rows={diagnostic_count}")
+            report_path = _write_bench_diagnostics_report(
+                acc,
+                label=label,
+                diagnostic_count=diagnostic_count,
+                score_witness_count=score_witness_count,
+            )
+            if report_path is not None:
+                print(f"Bench diagnostics report saved: {report_path}")
 
         print(f"Results saved: {_BENCH_DIR / f'{label}.csv'}")
 

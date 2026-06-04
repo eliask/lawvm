@@ -139,6 +139,59 @@ def test_uk_bench_parser_accepts_no_save_smoke_flag() -> None:
     assert args.limit == 1
 
 
+def test_uk_bench_diagnostics_report_envelopes_sidecar_claims(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(uk_bench, "_BENCH_DIR", tmp_path)
+    acc = uk_bench._BenchRunAccumulator(has_commencement=False)
+    acc.feed(
+        uk_bench._BenchResult(
+            statute_id="ukpga/2000/8",
+            act_type="ukpga",
+            year=2000,
+            n_effects=1,
+            n_enacted_eids=2,
+            n_oracle_eids=3,
+            n_common=1,
+            score=0.5,
+            status="OK",
+            comparison_class="commensurable",
+            source_parse_observation_count=1,
+            source_parse_observation_rule_counts={"uk_visible_inline_text_preserved": 1},
+            replay_adjudication_count=1,
+            replay_adjudication_kind_counts={"uk_replay_oracle_extra_eids": 1},
+            replay_adjudications=({"kind": "uk_replay_oracle_extra_eids"},),
+        )
+    )
+
+    report_path = uk_bench._write_bench_diagnostics_report(
+        acc,
+        label="unit",
+        diagnostic_count=2,
+        score_witness_count=1,
+    )
+
+    assert report_path == tmp_path / "unit.diagnostics.report.json"
+    assert report_path.exists()
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert payload["truth_claim"] == (
+        "uk_bench_diagnostics_and_scores_regression_evidence_not_source_truth"
+    )
+    assert payload["replay_claims"] is True
+    assert payload["agreement_claims"] is True
+    assert payload["canonical_effect_claims"] is False
+    assert payload["candidate_effect_claims"] is False
+    assert payload["dry_run_claims"] is False
+    assert payload["evidence_jsonl"] == {
+        "path": str(tmp_path / "unit.diagnostics.jsonl"),
+        "schema": "uk_bench_diagnostic.v1",
+        "row_count": 2,
+    }
+    assert payload["rows"] == []
+    assert payload["summary"]["source_parse_observation_rule_counts"] == {
+        "uk_visible_inline_text_preserved": 1
+    }
+    assert "diagnostic_row_as_execution_authorization" in payload["forbidden_shortcuts"]
+
+
 def test_uk_bench_parser_accepts_summary_only_flag() -> None:
     parser = cli._build_parser()
 
