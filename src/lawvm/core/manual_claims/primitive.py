@@ -1,5 +1,9 @@
 """Manual compilation claim — four-record primitive (v2.2 design memo §4).
 
+DEPRECATED: v2.2 four-record primitive.  v3 substrate is the ProvenanceGraph
+(see src/lawvm/core/provenance_graph.py + manual_claims/native.py).  These
+types are retained for one transition release as a compatibility shim.
+
 Four separate records per claim:
   ManualCompilationClaim    — immutable, content-addressed
   ClaimState                — mutable lifecycle state, one row per claim_id
@@ -8,6 +12,9 @@ Four separate records per claim:
 
 Enums follow § 4 exactly. ClaimKindSpec + the module-level registry live in
 kind_registry.py; this module has NO Finland-specific imports.
+
+ProfileTag is DELETED per v3 design (§10: use StrictProfile + fingerprint).
+It remains importable to produce a deprecation warning; remove by Step 3.
 
 Design discipline (AGENTS.md §1.9, feedback_frozen_for_fp_not_serialization,
 feedback_no_pydantic_until_serialization, feedback_no_phrase_registries):
@@ -19,6 +26,7 @@ feedback_no_pydantic_until_serialization, feedback_no_phrase_registries):
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
@@ -75,11 +83,28 @@ class ClaimConfidence(Enum):
     SPECULATIVE = "speculative"
 
 
-class ProfileTag(Enum):
+class _ProfileTagDeprecated(Enum):
+    """DEPRECATED. Use StrictProfile + profile fingerprint (v3 design §10).
+
+    ProfileTag is deleted from the v3 design.  This alias remains importable
+    to emit a deprecation warning during the transition release.  Remove by Step 3.
+    """
     DETERMINISTIC_ONLY = "deterministic_only"
     STRICT_WITH_ATTESTED_CLAIMS = "strict_with_attested_claims"
     NON_STRICT_WITH_CLAIMS = "non_strict_with_claims"
     EXPLORATORY = "exploratory"
+
+
+def __getattr__(name: str) -> object:
+    if name == "ProfileTag":
+        warnings.warn(
+            "ProfileTag is deprecated and will be removed in a future release. "
+            "Use StrictProfile + profile fingerprint instead (v3 design §10).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return _ProfileTagDeprecated
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # ---------------------------------------------------------------------------

@@ -91,6 +91,14 @@ class StrictProfile:
     # Whether source-corrective patches for malformed amendment/oracle artifacts
     # are allowed.
     allows_source_correction_rules: bool = False
+    # v3 provenance graph attestation channels (§3 of UNIFIED_PROVENANCE_GRAPH_DESIGN_v3.md)
+    allows_attested_reference_resolution: bool = False
+    allows_attested_surface_extraction: bool = False
+    allows_attested_source_correction: bool = False
+    allows_attested_target_selection: bool = False
+    allows_attested_semantic_compilation: bool = False
+    allows_attested_ambiguity_adjudication: bool = False
+    allows_attested_oracle_adjudication: bool = False
 
     def __post_init__(self):
         if not self.name:
@@ -120,6 +128,13 @@ class StrictProfile:
             "allows_source_correction_rules",
             self.allows_source_correction_rules,
         )
+        _require_bool_field("StrictProfile", "allows_attested_reference_resolution", self.allows_attested_reference_resolution)
+        _require_bool_field("StrictProfile", "allows_attested_surface_extraction", self.allows_attested_surface_extraction)
+        _require_bool_field("StrictProfile", "allows_attested_source_correction", self.allows_attested_source_correction)
+        _require_bool_field("StrictProfile", "allows_attested_target_selection", self.allows_attested_target_selection)
+        _require_bool_field("StrictProfile", "allows_attested_semantic_compilation", self.allows_attested_semantic_compilation)
+        _require_bool_field("StrictProfile", "allows_attested_ambiguity_adjudication", self.allows_attested_ambiguity_adjudication)
+        _require_bool_field("StrictProfile", "allows_attested_oracle_adjudication", self.allows_attested_oracle_adjudication)
 
 
 @dataclass(frozen=True)
@@ -1017,6 +1032,33 @@ _PROFILE_GATES: dict[str, tuple[str, bool]] = {
     "APPLY.SOURCE_CORRECTED_BY_PATCH": ("allows_source_correction_rules", True),
     "TIME.MISSING_EFFECTIVE_DATE": ("requires_explicit_effective_date", False),
     "TIME.ESTIMATED_EFFECTIVE_DATE": ("allows_estimated_dates", True),
+    # v3 attestation-resolution channels (§8.1 of UNIFIED_PROVENANCE_GRAPH_DESIGN_v3.md)
+    "ELAB.UNRESOLVED_INLINE_STATUTE_CITATION.RESOLVED_BY_ATTESTATION":
+        ("allows_attested_reference_resolution", True),
+    "ELAB.UNRESOLVED_EU_ACT_REFERENCE.RESOLVED_BY_ATTESTATION":
+        ("allows_attested_reference_resolution", True),
+    "ELAB.UNRESOLVED_COMMITTEE_REPORT_REFERENCE.RESOLVED_BY_ATTESTATION":
+        ("allows_attested_reference_resolution", True),
+    "ELAB.UNRESOLVED_POOL_ADDRESS.RESOLVED_BY_ATTESTATION":
+        ("allows_attested_reference_resolution", True),
+    "ELAB.UNCLASSIFIED_MODAL_SURFACE.RESOLVED_BY_ATTESTATION":
+        ("allows_attested_surface_extraction", True),
+    "ELAB.UNLOCATED_SOURCE_LABELED_PURPOSE.RESOLVED_BY_ATTESTATION":
+        ("allows_attested_surface_extraction", True),
+    "APPLY.REF_TARGET_CORRECTED_BY_ATTESTATION":
+        ("allows_attested_source_correction", True),
+    "APPLY.METADATA_ATTRIBUTION_CORRECTED_BY_ATTESTATION":
+        ("allows_attested_source_correction", True),
+    "ELAB.TARGET_SELECTION_REQUIRED.RESOLVED_BY_ATTESTATION":
+        ("allows_attested_target_selection", True),
+    "PARSE.JOHTOLAUSE_FAILED.RESOLVED_BY_ATTESTATION":
+        ("allows_attested_semantic_compilation", True),
+    "ELAB.TARGET_AMBIGUITY_UNCLASSIFIED.RESOLVED_BY_ATTESTATION":
+        ("allows_attested_ambiguity_adjudication", True),
+    "LINEAGE.UNCLASSIFIED_PROVISION_MIGRATION.RESOLVED_BY_ATTESTATION":
+        ("allows_attested_ambiguity_adjudication", True),
+    "COMPARE.UNADJUDICATED_ORACLE_DIVERGENCE.RESOLVED_BY_ATTESTATION":
+        ("allows_attested_oracle_adjudication", True),
 }
 
 
@@ -1036,6 +1078,13 @@ def _profile_allows(profile: StrictProfile, code: str) -> bool:
         "allows_source_correction_rules": profile.allows_source_correction_rules,
         "requires_explicit_effective_date": profile.requires_explicit_effective_date,
         "allows_estimated_dates": profile.allows_estimated_dates,
+        "allows_attested_reference_resolution": profile.allows_attested_reference_resolution,
+        "allows_attested_surface_extraction": profile.allows_attested_surface_extraction,
+        "allows_attested_source_correction": profile.allows_attested_source_correction,
+        "allows_attested_target_selection": profile.allows_attested_target_selection,
+        "allows_attested_semantic_compilation": profile.allows_attested_semantic_compilation,
+        "allows_attested_ambiguity_adjudication": profile.allows_attested_ambiguity_adjudication,
+        "allows_attested_oracle_adjudication": profile.allows_attested_oracle_adjudication,
     }
     val = profile_gates[attr]
     if is_allows:

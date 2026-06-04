@@ -19,6 +19,8 @@ data/**
 !data/fi/canonical_budget_lines/*.yaml
 !data/fi/v1/
 !data/fi/v1/claim_precedence.yaml
+!data/fi/v1/evidence_policy/
+!data/fi/v1/evidence_policy/*.json
 !data/finland/
 !data/finland/corrigendum_manual.yaml
 !data/finland/corrigendum_official_fi.jsonl

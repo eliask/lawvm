@@ -1,16 +1,13 @@
-"""Manual compilation claims — core typed primitives.
+"""Manual compilation claims.
 
-Four-record split (§4 of UNIFIED_MANUAL_CLAIMS_DESIGN.md v2.2):
-  ManualCompilationClaim    — immutable, content-addressed via SHA-256
-  ClaimState                — mutable lifecycle (one current row per claim_id)
-  ClaimStateEvent           — append-only audit log
-  ClaimCompositionDecision  — per-build authorization derived by composer
+v3 graph-native substrate: src/lawvm/core/manual_claims/native.py
+v2.2 compatibility shim: .primitive / .state / .storage / .composer (deprecated)
 
-Enums and supporting types live in .primitive.
-Content-addressing and hashing helpers live in .hashing.
-ClaimKind registry lives in .kind_registry.
-Storage (objects/sha256/, events.jsonl, states/current/) lives in .storage.
-Event-log → current-state projection lives in .state.
+The v2.2 four-record types (ManualCompilationClaim, ClaimState, ClaimStateEvent,
+ClaimCompositionDecision) are retained for one transition release.  New code
+should use the graph-native API in native.py.
+
+ProfileTag is DELETED per v3 design §10.  Importing it emits a DeprecationWarning.
 """
 from lawvm.core.manual_claims.primitive import (
     ClaimCompositionDecision,
@@ -24,7 +21,6 @@ from lawvm.core.manual_claims.primitive import (
     GapDiscoveryRow,
     ManualCompilationClaim,
     Producer,
-    ProfileTag,
     ReviewStatus,
     SourceLocator,
     SourceWitnessType,
@@ -47,7 +43,19 @@ from lawvm.core.manual_claims.precedence import (
     load_precedence_registry,
     resolve_precedence,
 )
+
+# Graph-native operations (v3)
+from lawvm.core.manual_claims.native import (
+    attest,
+    build_claim_subgraph,
+    query_retraction_taint,
+    query_state,
+    query_state_from_store,
+    submit_assertion,
+)
+
 __all__ = [
+    # v2.2 compat (deprecated)
     "ClaimCompositionDecision",
     "ClaimConfidence",
     "ClaimKindSpec",
@@ -60,7 +68,6 @@ __all__ = [
     "GapDiscoveryRow",
     "ManualCompilationClaim",
     "Producer",
-    "ProfileTag",
     "ReviewStatus",
     "SourceLocator",
     "SourceWitnessType",
@@ -75,4 +82,11 @@ __all__ = [
     "derive_composition_decision",
     "load_precedence_registry",
     "resolve_precedence",
+    # v3 graph-native
+    "attest",
+    "build_claim_subgraph",
+    "query_retraction_taint",
+    "query_state",
+    "query_state_from_store",
+    "submit_assertion",
 ]
