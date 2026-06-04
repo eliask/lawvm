@@ -397,6 +397,10 @@ def test_uk_manual_claim_template_status_only_labels_actionable_rows() -> None:
             "source_target_reconciliation",
         ),
         (
+            "uk_manual_frontier_amount_specified_source_target_mismatch",
+            "source_target_reconciliation",
+        ),
+        (
             "uk_manual_frontier_deictic_amendment_program_target_candidate",
             "amendment_program_target_mutation",
         ),

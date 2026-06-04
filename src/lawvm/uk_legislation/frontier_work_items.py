@@ -95,6 +95,15 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_claimed_table_surface",
         ),
     },
+    "uk_manual_frontier_amount_specified_source_target_mismatch": {
+        "candidate_operation_family": "source_target_reconciliation",
+        "required_validator_checks": (
+            "source_witness_names_amount_specified_target",
+            "claim_reconciles_source_amount_target_and_effect_feed_target",
+            "claim_preserves_unclaimed_parent_amounts",
+            "changed_paths_are_within_source_feed_reconciled_target",
+        ),
+    },
     "uk_manual_frontier_appropriate_place_candidate": {
         "candidate_operation_family": "appropriate_place_mutation",
         "required_validator_checks": (

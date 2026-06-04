@@ -2649,6 +2649,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source explicitly scopes a quoted word omission to a child provision that differs from the effect-feed target; replay needs a source-feed target adjudication before lowering.",
         }
 
+    if "uk_effect_amount_specified_source_target_mismatch_rejected" in blocking_rules:
+        return {
+            "status": "source_or_feed_target_conflict",
+            "rule_id": "uk_manual_frontier_amount_specified_source_target_mismatch",
+            "reason": "The source explicitly names an amount-bearing child target that differs from the effect-feed target; replay needs source-feed target reconciliation before lowering a unique amount substitution.",
+        }
+
     if (
         "uk_effect_overlap_substitution_unlowered" in blocking_rules
         and _looks_like_savings_qualified_text_omission(extracted_text_norm)

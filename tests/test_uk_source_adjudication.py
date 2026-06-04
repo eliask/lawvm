@@ -1542,6 +1542,33 @@ def test_classify_uk_manual_compile_frontier_prefers_deterministic_parser_work()
     assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_amount_target_mismatch() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text=(
+            "c the amount specified in section 45(3)(a) is replaced with "
+            "\u201c£8,275\u201d;"
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_amount_specified_source_target_mismatch_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "source_or_feed_target_conflict"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_amount_specified_source_target_mismatch"
+    )
+
+
 def test_classify_uk_manual_compile_frontier_marks_sentence_scoped_repeated_insert() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
