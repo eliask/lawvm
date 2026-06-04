@@ -1025,6 +1025,8 @@ def test_uk_bench_loads_custom_statute_id_corpus(monkeypatch, tmp_path) -> None:
             "statute_id": "ukpga/1990/42",
             "type": "ukpga",
             "year": 1990,
+            "source_locator_form": "numeric",
+            "metadata_statute_id": "",
             "has_enacted": True,
             "has_consolidated": True,
             "n_effects": 0,
@@ -1322,7 +1324,7 @@ def test_uk_bench_write_curated_corpus_uses_full_corpus_schema(tmp_path) -> None
 
     assert selected == rows
     text = output.read_text(encoding="utf-8")
-    assert text.startswith("statute_id,type,year,has_enacted,has_consolidated")
+    assert text.startswith(",".join(uk_bench._CORPUS_FIELDNAMES))
     assert "ukpga/1990/42" in text
 
 
@@ -5611,7 +5613,7 @@ def test_uk_bench_build_corpus_index_records_source_states() -> None:
     ]
 
 
-def test_uk_bench_build_corpus_index_includes_regnal_multiple_choice_leaf_sources() -> None:
+def test_uk_bench_build_corpus_index_suppresses_repaired_multiple_choice_aliases() -> None:
     regnal_enacted = b"""<?xml version="1.0"?>
 <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
              xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
@@ -5662,25 +5664,6 @@ def test_uk_bench_build_corpus_index_includes_regnal_multiple_choice_leaf_source
     rows = uk_bench._build_corpus_index(cast(Farchive, FakeArchive()))
 
     assert rows == [
-        {
-            "statute_id": "ukpga/1955/18",
-            "type": "ukpga",
-            "year": 1955,
-            "source_locator_form": "numeric",
-            "metadata_statute_id": "ukpga/1955/18",
-            "has_enacted": True,
-            "has_consolidated": True,
-            "n_effects": 1,
-            "n_effect_feed_pages": 1,
-            "enacted_url": "https://www.legislation.gov.uk/ukpga/1955/18/enacted/data.xml",
-            "current_url": "https://www.legislation.gov.uk/ukpga/1955/18/data.xml",
-            "enacted_source_status": "multiple_choices",
-            "oracle_source_status": "multiple_choices",
-            "enacted_source_size": len(b"HTTP 300 Multiple Choices"),
-            "oracle_source_size": len(b"HTTP 300 Multiple Choices"),
-            "enacted_source_sha256": hashlib.sha256(b"HTTP 300 Multiple Choices").hexdigest(),
-            "oracle_source_sha256": hashlib.sha256(b"HTTP 300 Multiple Choices").hexdigest(),
-        },
         {
             "statute_id": "ukpga/Eliz2/3-4/18",
             "type": "ukpga",

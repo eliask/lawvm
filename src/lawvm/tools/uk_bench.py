@@ -879,7 +879,26 @@ def _build_corpus_index(
             }
         )
 
-    return entries
+    regnal_leaf_metadata_ids = {
+        str(entry.get("metadata_statute_id") or "")
+        for entry in entries
+        if entry.get("source_locator_form") == "regnal"
+        and entry.get("metadata_statute_id")
+        and entry.get("enacted_source_status") == "available"
+        and entry.get("oracle_source_status") == "available"
+    }
+    return [
+        entry
+        for entry in entries
+        if not (
+            entry.get("source_locator_form") == "numeric"
+            and entry.get("statute_id") in regnal_leaf_metadata_ids
+            and (
+                entry.get("enacted_source_status") == "multiple_choices"
+                or entry.get("oracle_source_status") == "multiple_choices"
+            )
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------
