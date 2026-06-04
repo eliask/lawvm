@@ -40,6 +40,15 @@ class _AddressPart:
     label: str
 
 
+@dataclass(frozen=True)
+class _UKResolvedSource:
+    locator: str
+    xml_bytes: bytes
+    resolution: str
+    requested_locator: str
+    candidate_locators: tuple[str, ...] = ()
+
+
 def _parse_address(address: str | None) -> list[_AddressPart]:
     if not address:
         return []
@@ -235,7 +244,123 @@ def is_uk_statute_id(statute_id: str) -> bool:
 
 
 def _uk_enacted_locator(statute_id: str) -> str:
-    return f"{_LEG_BASE}/{statute_id}/enacted/data.xml"
+    from lawvm.tools.uk_replay import _archive_url_for_statute
+
+    return _archive_url_for_statute(statute_id, pit_date=None, enacted=True)
+
+
+def _uk_metadata_value(root: etree._Element, local_name: str) -> str:
+    node = root.find(f".//{{*}}{local_name}")
+    if node is None:
+        return ""
+    value = node.get("Value") or node.text or ""
+    return value.strip()
+
+
+def _uk_metadata_statute_id(xml_bytes: bytes, act_type: str) -> str:
+    root = etree.fromstring(xml_bytes)
+    year = _uk_metadata_value(root, "Year")
+    number = _uk_metadata_value(root, "Number")
+    if year.isdigit() and number.isdigit():
+        return f"{act_type}/{year}/{number}"
+    return ""
+
+
+def _uk_available_archive_xml(archive: Any, locator: str) -> bytes | None:
+    from lawvm.uk_legislation.source_state import UKSourceStatus, classify_uk_source_blob
+
+    blob = archive.get(locator)
+    if classify_uk_source_blob(blob).status is UKSourceStatus.AVAILABLE:
+        return blob
+    return None
+
+
+def _uk_candidate_enacted_locators_from_archive(
+    archive: Any,
+    *,
+    statute_id: str,
+    direct_blob: bytes | None,
+) -> tuple[str, ...]:
+    from lawvm.uk_legislation.source_state import (
+        UKSourceStatus,
+        classify_uk_source_blob,
+        uk_multiple_choice_candidate_data_urls,
+    )
+
+    direct_state = classify_uk_source_blob(direct_blob)
+    if direct_state.status is UKSourceStatus.MULTIPLE_CHOICES:
+        return uk_multiple_choice_candidate_data_urls(
+            direct_blob,
+            include_current=False,
+            include_enacted=True,
+        )
+
+    locators = getattr(archive, "locators", None)
+    if not callable(locators):
+        return ()
+    act_type = statute_id.split("/", 1)[0]
+    matches: list[str] = []
+    requested_locator = _uk_enacted_locator(statute_id)
+    for locator in sorted(locators("%/enacted/data.xml")):
+        if locator == requested_locator:
+            continue
+        xml_bytes = _uk_available_archive_xml(archive, locator)
+        if xml_bytes is None:
+            continue
+        if _uk_metadata_statute_id(xml_bytes, act_type) == statute_id:
+            matches.append(locator)
+    return tuple(matches)
+
+
+def _resolve_uk_enacted_source_from_archive(archive: Any, statute_id: str) -> _UKResolvedSource:
+    from lawvm.uk_legislation.source_state import UKSourceStatus, classify_uk_source_blob
+
+    requested_locator = _uk_enacted_locator(statute_id)
+    direct_blob = archive.get(requested_locator)
+    direct_state = classify_uk_source_blob(direct_blob)
+    if direct_state.status is UKSourceStatus.AVAILABLE and direct_blob is not None:
+        return _UKResolvedSource(
+            locator=requested_locator,
+            xml_bytes=direct_blob,
+            resolution="direct_enacted_locator",
+            requested_locator=requested_locator,
+        )
+
+    candidate_locators = _uk_candidate_enacted_locators_from_archive(
+        archive,
+        statute_id=statute_id,
+        direct_blob=direct_blob,
+    )
+    available_candidates: list[tuple[str, bytes]] = []
+    act_type = statute_id.split("/", 1)[0]
+    for locator in candidate_locators:
+        xml_bytes = _uk_available_archive_xml(archive, locator)
+        if xml_bytes is None:
+            continue
+        if _uk_metadata_statute_id(xml_bytes, act_type) == statute_id:
+            available_candidates.append((locator, xml_bytes))
+
+    if len(available_candidates) == 1:
+        locator, xml_bytes = available_candidates[0]
+        return _UKResolvedSource(
+            locator=locator,
+            xml_bytes=xml_bytes,
+            resolution="resolved_archived_enacted_candidate",
+            requested_locator=requested_locator,
+            candidate_locators=tuple(locator for locator, _xml in available_candidates),
+        )
+    if len(available_candidates) > 1:
+        candidates = "\n  ".join(locator for locator, _xml in available_candidates)
+        raise SystemExit(
+            "ambiguous UK enacted XML candidates in farchive for "
+            f"{statute_id}; refusing to choose by archive/list order:\n  {candidates}"
+        )
+
+    raise SystemExit(
+        "UK enacted XML not found in farchive for "
+        f"{statute_id}: {requested_locator} "
+        f"(source status: {direct_state.status.value})"
+    )
 
 
 def _uk_title(root: etree._Element) -> str:
@@ -305,16 +430,13 @@ def build_uk_source_dump(
 
     from farchive import Farchive
 
-    locator = _uk_enacted_locator(statute_id)
     archive = Farchive(archive_path)
     try:
-        xml_bytes = archive.get(locator)
+        resolved_source = _resolve_uk_enacted_source_from_archive(archive, statute_id)
     finally:
         archive.close()
-    if xml_bytes is None:
-        raise SystemExit(f"UK enacted XML not found in farchive for {statute_id}: {locator}")
 
-    root = etree.fromstring(xml_bytes)
+    root = etree.fromstring(resolved_source.xml_bytes)
     selected = _find_addressed_element(root, address)
     xml_text = etree.tostring(selected, encoding="unicode", pretty_print=True).strip()
     if not xml_text:
@@ -325,7 +447,10 @@ def build_uk_source_dump(
         "jurisdiction": "uk",
         "stage": "PARSE (UK enacted source XML from farchive, no replay)",
         "archive_path": str(archive_path),
-        "source_url": locator,
+        "source_url": resolved_source.locator,
+        "requested_source_url": resolved_source.requested_locator,
+        "source_resolution": resolved_source.resolution,
+        "candidate_source_urls": list(resolved_source.candidate_locators),
         "title": _uk_title(root),
         "address": address or "",
         "selected_kind": _tag(selected),
@@ -347,6 +472,13 @@ def _format_text(bundle: dict[str, Any]) -> str:
         header.append(f"Stage    : {bundle['stage']}")
     if bundle.get("source_url"):
         header.append(f"Source   : {bundle['source_url']}")
+    if bundle.get("source_resolution") and bundle["source_resolution"] != "direct_enacted_locator":
+        header.append(f"Resolve  : {bundle['source_resolution']}")
+    if (
+        bundle.get("requested_source_url")
+        and bundle.get("requested_source_url") != bundle.get("source_url")
+    ):
+        header.append(f"Requested: {bundle['requested_source_url']}")
     if bundle.get("archive_path"):
         header.append(f"Archive  : {bundle['archive_path']}")
     header.append("")

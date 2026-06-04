@@ -109,12 +109,17 @@ def _heading_text(el: etree._Element) -> str:
     return ""
 
 
-def dump_parse(sid: str, address: Optional[str] = None) -> None:
+def dump_parse(
+    sid: str,
+    address: Optional[str] = None,
+    *,
+    db_path: str | None = None,
+) -> None:
     """Show base statute structure (after XML parse, before any amendments)."""
     from lawvm.tools.source_dump import build_uk_source_dump, is_uk_statute_id, _format_text
 
     if is_uk_statute_id(sid):
-        bundle = build_uk_source_dump(sid, address)
+        bundle = build_uk_source_dump(sid, address, db_path=db_path)
         print(_format_text(bundle))
         return
 
