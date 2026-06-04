@@ -289,20 +289,24 @@ def _uk_candidate_enacted_locators_from_archive(
 
     direct_state = classify_uk_source_blob(direct_blob)
     if direct_state.status is UKSourceStatus.MULTIPLE_CHOICES:
-        return uk_multiple_choice_candidate_data_urls(
+        candidate_urls = uk_multiple_choice_candidate_data_urls(
             direct_blob,
             include_current=False,
             include_enacted=True,
         )
+        if candidate_urls:
+            return candidate_urls
 
     locators = getattr(archive, "locators", None)
     if not callable(locators):
         return ()
-    act_type = statute_id.split("/", 1)[0]
+    act_type, _year, number = statute_id.split("/", 2)
     matches: list[str] = []
     requested_locator = _uk_enacted_locator(statute_id)
     for locator in sorted(locators("%/enacted/data.xml")):
         if locator == requested_locator:
+            continue
+        if f"/{act_type}/" not in locator or not locator.endswith(f"/{number}/enacted/data.xml"):
             continue
         xml_bytes = _uk_available_archive_xml(archive, locator)
         if xml_bytes is None:
@@ -365,6 +369,7 @@ def _resolve_uk_enacted_source_from_archive(archive: Any, statute_id: str) -> _U
 
 def _uk_title(root: etree._Element) -> str:
     for query in (
+        ".//{http://purl.org/dc/elements/1.1/}title",
         ".//{*}docTitle",
         ".//{*}Title",
         ".//{*}LongTitle",

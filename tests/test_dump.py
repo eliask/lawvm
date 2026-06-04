@@ -182,7 +182,7 @@ def test_source_dump_uk_parse_finds_metadata_matched_archived_leaf_without_direc
     monkeypatch,
     tmp_path,
 ) -> None:
-    leaf_locator = "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/enacted/data.xml"
+    leaf_locator = "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/30/enacted/data.xml"
     leaf_xml = b"""<Legislation xmlns='http://www.legislation.gov.uk/namespaces/legislation'
     xmlns:ukm='http://www.legislation.gov.uk/namespaces/metadata'>
   <ukm:Year Value='2002'/>
@@ -216,6 +216,51 @@ def test_source_dump_uk_parse_finds_metadata_matched_archived_leaf_without_direc
     assert bundle["source_url"] == leaf_locator
     assert bundle["source_resolution"] == "resolved_archived_enacted_candidate"
     assert "Leaf-only source." in bundle["xml"]
+
+
+def test_source_dump_uk_parse_scans_archive_when_multiple_choice_has_no_links(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    requested_locator = "https://www.legislation.gov.uk/ukpga/1955/18/enacted/data.xml"
+    leaf_locator = "https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/enacted/data.xml"
+    leaf_xml = b"""<Legislation xmlns='http://www.legislation.gov.uk/namespaces/legislation'
+    xmlns:ukm='http://www.legislation.gov.uk/namespaces/metadata'>
+  <ukm:Year Value='1955'/>
+  <ukm:Number Value='18'/>
+  <Primary><Body><P1><Pnumber>1</Pnumber><P1para><Text>Bare 300 resolved by metadata.</Text></P1para></P1></Body></Primary>
+</Legislation>
+"""
+    db_path = tmp_path / "uk_legislation.farchive"
+    db_path.write_bytes(b"")
+
+    class DummyArchive:
+        def __init__(self, path):
+            self.path = path
+
+        def get(self, locator: str) -> bytes | None:
+            return {
+                requested_locator: b"HTTP 300 Multiple Choices",
+                leaf_locator: leaf_xml,
+            }.get(locator)
+
+        def locators(self, pattern: str) -> list[str]:
+            assert pattern == "%/enacted/data.xml"
+            return [requested_locator, leaf_locator]
+
+        def close(self) -> None:
+            return None
+
+    fake_farchive = types.ModuleType("farchive")
+    fake_farchive.Farchive = DummyArchive
+    monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
+
+    bundle = source_dump.build_uk_source_dump("ukpga/1955/18", db_path=db_path)
+
+    assert bundle["source_url"] == leaf_locator
+    assert bundle["requested_source_url"] == requested_locator
+    assert bundle["source_resolution"] == "resolved_archived_enacted_candidate"
+    assert "Bare 300 resolved by metadata." in bundle["xml"]
 
 
 def test_dump_uk_parse_resolves_archived_multiple_choice_leaf_source(
@@ -332,6 +377,54 @@ The link that you've followed could mean either of the following:
     assert leaf_b in message
 
 
+def test_source_dump_uk_parse_rejects_ambiguous_bare_multiple_choice_archive_row(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    requested_locator = "https://www.legislation.gov.uk/ukpga/1955/18/enacted/data.xml"
+    leaf_a = "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/enacted/data.xml"
+    leaf_b = "https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/enacted/data.xml"
+    leaf_xml = b"""<Legislation xmlns:ukm='http://www.legislation.gov.uk/namespaces/metadata'>
+  <ukm:Year Value='1955'/>
+  <ukm:Number Value='18'/>
+  <Primary><Body><P1><Pnumber>1</Pnumber><P1para><Text>Candidate.</Text></P1para></P1></Body></Primary>
+</Legislation>
+"""
+    db_path = tmp_path / "uk_legislation.farchive"
+    db_path.write_bytes(b"")
+
+    class DummyArchive:
+        def __init__(self, path):
+            self.path = path
+
+        def get(self, locator: str) -> bytes | None:
+            return {
+                requested_locator: b"HTTP 300 Multiple Choices",
+                leaf_a: leaf_xml,
+                leaf_b: leaf_xml,
+            }.get(locator)
+
+        def locators(self, pattern: str) -> list[str]:
+            assert pattern == "%/enacted/data.xml"
+            return [requested_locator, leaf_a, leaf_b]
+
+        def close(self) -> None:
+            return None
+
+    fake_farchive = types.ModuleType("farchive")
+    fake_farchive.Farchive = DummyArchive
+    monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
+
+    with pytest.raises(SystemExit) as exc_info:
+        source_dump.build_uk_source_dump("ukpga/1955/18", db_path=db_path)
+
+    message = str(exc_info.value)
+    assert "ambiguous UK enacted XML candidates in farchive" in message
+    assert "refusing to choose by archive/list order" in message
+    assert leaf_a in message
+    assert leaf_b in message
+
+
 def test_source_dump_main_routes_j_uk_to_farchive(monkeypatch, tmp_path, capsys) -> None:
     xml = b"""<Legislation xmlns='http://www.legislation.gov.uk/namespaces/legislation'>
   <Primary>
@@ -380,3 +473,49 @@ def test_source_dump_main_routes_j_uk_to_farchive(monkeypatch, tmp_path, capsys)
     assert "Stage    : PARSE (UK enacted source XML from farchive, no replay)" in out
     assert f"Archive  : {db_path}" in out
     assert "Main source dump reads farchive." in out
+
+
+def test_dump_uk_extract_error_routes_to_effect_tools(capsys) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        dump.main(
+            Namespace(
+                statute_id="ukpga/2002/30",
+                after="extract",
+                source="ukpga/2003/1",
+                address=None,
+                before="",
+                jurisdiction="fi",
+                db="does-not-matter.farchive",
+            )
+        )
+
+    assert exc_info.value.code == 2
+    err = capsys.readouterr().err
+    assert "archive-backed source parse" in err
+    assert "`--after extract`" in err
+    assert "uk-effects" in err
+    assert "uk-effect" in err
+    assert "zip" not in err.lower()
+
+
+def test_dump_uk_apply_error_routes_to_replay_or_parse(capsys) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        dump.main(
+            Namespace(
+                statute_id="ukpga/2002/30",
+                after="apply",
+                source=None,
+                address=None,
+                before="",
+                jurisdiction="fi",
+                db="does-not-matter.farchive",
+            )
+        )
+
+    assert exc_info.value.code == 2
+    err = capsys.readouterr().err
+    assert "archive-backed source parse" in err
+    assert "`--after apply`" in err
+    assert "uk-replay" in err
+    assert "--after parse" in err
+    assert "zip" not in err.lower()

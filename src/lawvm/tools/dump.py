@@ -387,6 +387,26 @@ def dump_apply(sid: str, address: Optional[str] = None, stop_before: str = "") -
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _print_unsupported_uk_dump_stage(stage: str) -> None:
+    if stage in {"extract", "normalize"}:
+        next_step = (
+            "use `lawvm uk-effects <statute_id>` to inspect UK effect-feed extraction, "
+            "or `lawvm uk-effect <statute_id> <effect-key>` for one effect row."
+        )
+    elif stage in {"resolve", "apply"}:
+        next_step = (
+            "use `lawvm uk-replay <statute_id>` for UK replay/materialization output, "
+            "or `lawvm dump <statute_id> --after parse --db <farchive>` for source XML."
+        )
+    else:
+        next_step = "use `lawvm dump <statute_id> --after parse --db <farchive>` for source XML."
+    print(
+        "ERROR: UK `lawvm dump` supports only archive-backed source parse "
+        f"(`--after parse`); requested `--after {stage}`. {next_step}",
+        file=sys.stderr,
+    )
+
+
 def main(args) -> None:
     after = getattr(args, "after", None)
     source = getattr(args, "source", None)
@@ -405,11 +425,7 @@ def main(args) -> None:
             dump_parse(sid, address)
     elif after in ("extract", "normalize"):
         if is_uk_dump:
-            print(
-                "ERROR: UK lawvm dump currently supports farchive-backed --after parse only; "
-                "use lawvm uk-effect/uk-effects for UK effect extraction tooling.",
-                file=sys.stderr,
-            )
+            _print_unsupported_uk_dump_stage(after)
             sys.exit(2)
         if not source:
             print("ERROR: --after extract/normalize requires --source <amendment_id>",
@@ -418,11 +434,7 @@ def main(args) -> None:
         dump_extract(sid, source, after_normalize=(after == "normalize"), address=address)
     else:
         if is_uk_dump:
-            print(
-                "ERROR: UK lawvm dump currently supports farchive-backed --after parse only; "
-                "use lawvm uk-replay for UK replay output.",
-                file=sys.stderr,
-            )
+            _print_unsupported_uk_dump_stage(after or "apply")
             sys.exit(2)
         # Default ("apply" or no --after): full replay
         stop_before = getattr(args, "before", "") or ""
