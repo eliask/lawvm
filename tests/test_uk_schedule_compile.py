@@ -55122,6 +55122,131 @@ def test_compile_source_parent_word_range_table_payload_does_not_use_parent_rule
     )
 
 
+def test_compile_source_parent_after_anchor_payload_lowers_text_patch() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="section-46-3">
+          <Pnumber>3</Pnumber>
+          <P2para>
+            <Text>In subsection (3)(b), for the words after
+            \u201cbut for a serious failure\u201d there is substituted</Text>
+            <BlockAmendment>
+              <Text>in\u2014 i the regulatory system established by Part 6 or by any
+              previous statutory provision concerned with the official listing
+              of securities; or ii the operation of that system.</Text>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_after_anchor_payload",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-06-07",
+        affected_uri="/id/ukpga/2000/8/section/14/subsection/3/paragraph/b",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="8",
+        affected_provisions="s. 14(3)(b)",
+        affecting_uri="/id/ukpga/2005/12",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2005",
+        affecting_number="12",
+        affecting_provisions="s. 46(3)",
+        affecting_title="Inquiries Act 2005",
+        in_force_dates=[{"date": "2005-06-07", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "14"), ("subsection", "3"), ("paragraph", "b"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_but for a serious failure_TO_END"
+    assert _required_text_patch_replacement(ops[0]).startswith("in\u2014 i the regulatory system")
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"]
+        == "uk_effect_source_parent_after_anchor_to_end_substitution_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["reason_code"] == (
+        "after_anchor_to_end_substitution_resolved_from_source_parent"
+    )
+    assert observations[0]["payload_shape"] == "plain_text"
+    assert observations[0]["source_parent_id"] == "section-46-3"
+    assert observations[0]["text_match"] == "TEXT_AFTER_but for a serious failure_TO_END"
+    assert observations[0]["blocking"] is False
+
+
+def test_compile_source_parent_after_anchor_payload_requires_matching_target_leaf() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="section-46-3">
+          <Pnumber>3</Pnumber>
+          <P2para>
+            <Text>In subsection (3)(b), for the words after
+            \u201cbut for a serious failure\u201d there is substituted</Text>
+            <BlockAmendment>
+              <Text>in\u2014 i the regulatory system; or ii the operation of that
+              system.</Text>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_after_anchor_payload_wrong_target",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-06-07",
+        affected_uri="/id/ukpga/2000/8/section/14/subsection/3/paragraph/c",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="8",
+        affected_provisions="s. 14(3)(c)",
+        affecting_uri="/id/ukpga/2005/12",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2005",
+        affecting_number="12",
+        affecting_provisions="s. 46(3)",
+        affecting_title="Inquiries Act 2005",
+        in_force_dates=[{"date": "2005-06-07", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert all(
+        record["rule_id"]
+        != "uk_effect_source_parent_after_anchor_to_end_substitution_text_patch"
+        for record in lowering_records
+    )
+
+
 def test_compile_source_parent_table_insert_at_end_text_payload_stays_blocked() -> None:
     source_root = ET.fromstring(
         f"""

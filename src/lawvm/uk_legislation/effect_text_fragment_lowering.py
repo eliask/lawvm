@@ -63,6 +63,7 @@ from lawvm.uk_legislation.source_fragment_context import (
     _fragment_substitution_grouped_after_insert_from_parent,
     _fragment_substitution_grouped_anchor_occurrence,
     _fragment_substitution_source_parent_at_end_text_insert,
+    _fragment_substitution_source_parent_after_anchor_to_end_substitution,
     _fragment_substitution_source_parent_following_provisions_substitution,
     _fragment_substitution_source_parent_prefix_substitute,
     _fragment_substitution_source_parent_tail_substitution,
@@ -956,6 +957,17 @@ def _extract_text_fragment_substitutions(
         )
         if source_parent_word_range_substitution is not None:
             subs = [source_parent_word_range_substitution]
+    if not subs:
+        source_parent_after_anchor_to_end_substitution = (
+            _fragment_substitution_source_parent_after_anchor_to_end_substitution(
+                extracted_el=extracted_el,
+                source_root=source_root,
+                extracted_text=extracted_text,
+                target=target,
+            )
+        )
+        if source_parent_after_anchor_to_end_substitution is not None:
+            subs = [source_parent_after_anchor_to_end_substitution]
     if not subs and source_carried_table_entry_paragraph_substitution is not None:
         subs = [
             {

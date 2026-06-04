@@ -6,6 +6,7 @@ from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
+from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
 from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
@@ -199,6 +200,9 @@ _SOURCE_PARENT_AT_END_QUOTED_LIST_TEXT_INSERT_RULE_ID = (
 _SOURCE_PARENT_WORD_RANGE_SUBSTITUTION_RULE_ID = (
     "uk_effect_source_parent_word_range_substitution_text_patch"
 )
+_SOURCE_PARENT_AFTER_ANCHOR_TO_END_SUBSTITUTION_RULE_ID = (
+    "uk_effect_source_parent_after_anchor_to_end_substitution_text_patch"
+)
 # (|the ) avoids nested (?:the\s+)?; BRANCH for optional
 # “there ... be”; bounded start/end anchors.
 _SOURCE_PARENT_WORD_RANGE_SUBSTITUTION_RE = re.compile(
@@ -206,6 +210,13 @@ _SOURCE_PARENT_WORD_RANGE_SUBSTITUTION_RE = re.compile(
     r"to [“\”’’](?P<end>[^”\”’’]{0,300})[“\”’’] "
     r"(|there (?:is|are|shall be) )substitut(?:ed|e) "
     r"(|(?:the )?words?) ?[—–-]? ?$",
+    flags=re.I,
+)
+_SOURCE_PARENT_AFTER_ANCHOR_TO_END_SUBSTITUTION_RE = re.compile(
+    r"\bfor (|the )words? (?:after|following) "
+    r"[“\"'‘](?P<anchor>[^“”\"'‘’]{0,300})[”\"'’] "
+    r"(?:there (?:is|are|shall be) substituted|substitute(?:d)?)"
+    r"(| (?:the )?words?) ?[—–-]? ?$",
     flags=re.I,
 )
 # lxml _Element objects do not support weak references; use plain dicts.
@@ -501,6 +512,41 @@ def append_source_fragment_context_observations(
                 "replacement": op_text_replacement,
             },
         )
+    for source_parent_after_anchor_fragment in fragment_subs or []:
+        if (
+            str(source_parent_after_anchor_fragment.get("rule_id") or "")
+            != _SOURCE_PARENT_AFTER_ANCHOR_TO_END_SUBSTITUTION_RULE_ID
+        ):
+            continue
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=_SOURCE_PARENT_AFTER_ANCHOR_TO_END_SUBSTITUTION_RULE_ID,
+            family="source_context_elaboration",
+            reason_code="after_anchor_to_end_substitution_resolved_from_source_parent",
+            reason=(
+                "UK source payload carries only the replacement text while "
+                "its local parent instruction explicitly substitutes the words "
+                "after a quoted anchor. Lowering combines those source-local "
+                "facts into a typed after-anchor text patch after proving the "
+                "parent instruction names the same target leaf."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "source_parent_id": str(
+                    source_parent_after_anchor_fragment.get("source_parent_id") or ""
+                ),
+                "source_parent_instruction": str(
+                    source_parent_after_anchor_fragment.get("source_parent_instruction") or ""
+                ),
+                "payload_shape": str(source_parent_after_anchor_fragment.get("payload_shape") or ""),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+            },
+        )
     for each_other_fragment in fragment_subs or []:
         each_other_rule_id = str(each_other_fragment.get("rule_id") or "")
         if each_other_rule_id not in {
@@ -790,6 +836,77 @@ def _source_parent_word_range_payload_shape(extracted_el: ET._Element) -> str:
     if any(not _is_flat_source_list_item_quote(row) for row in subordinate_rows):
         return ""
     return "flat_numbered_rows_text"
+
+
+def _target_label(target: LegalAddress, kind: str) -> str:
+    for path_kind, label in target.path:
+        if str(path_kind or "").lower() == kind:
+            return _clean_num(str(label or ""))
+    return ""
+
+
+def _source_parent_after_anchor_target_matches(instruction_text: str, target: LegalAddress) -> bool:
+    leaf_kind = _addr_leaf_kind(target)
+    leaf_label = _clean_num(_addr_leaf_label(target) or "")
+    if not leaf_kind or not leaf_label:
+        return False
+    compact_instruction = "".join(instruction_text.lower().split())
+    if leaf_kind == "subsection":
+        return f"insubsection({leaf_label.lower()})" in compact_instruction
+    if leaf_kind == "paragraph":
+        subsection_label = _target_label(target, "subsection")
+        if not subsection_label:
+            return False
+        return f"insubsection({subsection_label.lower()})({leaf_label.lower()})" in compact_instruction
+    return False
+
+
+def _fragment_substitution_source_parent_after_anchor_to_end_substitution(
+    *,
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Resolve payload-only text governed by a local after-anchor parent substitution."""
+    payload_text = " ".join((extracted_text or "").split()).strip()
+    if not payload_text or extracted_el is None or _tag(extracted_el) not in {
+        "BlockAmendment",
+        "InlineAmendment",
+    }:
+        return None
+    payload_shape = _source_parent_word_range_payload_shape(extracted_el)
+    if not payload_shape:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        instruction_text = _instruction_text_before_amendment_container(ancestor)
+        if not instruction_text:
+            instruction_text = _source_local_instruction_text_for_carried_payload(ancestor)
+        instruction_text = " ".join(instruction_text.split()).strip()
+        match = _SOURCE_PARENT_AFTER_ANCHOR_TO_END_SUBSTITUTION_RE.search(instruction_text)
+        if match is None:
+            continue
+        if not _source_parent_after_anchor_target_matches(instruction_text, target):
+            continue
+        anchor = " ".join(match.group("anchor").split()).strip()
+        if not anchor:
+            return None
+        source_parent_id = str(
+            ancestor.get("id")
+            or next((candidate.get("id") for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")), "")
+        )
+        return {
+            "original": f"TEXT_AFTER_{anchor}_TO_END",
+            "replacement": payload_text,
+            "source_parent_id": source_parent_id,
+            "source_parent_instruction": instruction_text,
+            "payload_shape": payload_shape,
+            "rule_id": _SOURCE_PARENT_AFTER_ANCHOR_TO_END_SUBSTITUTION_RULE_ID,
+        }
+    return None
 
 
 def _fragment_substitution_grouped_anchor_occurrence(
