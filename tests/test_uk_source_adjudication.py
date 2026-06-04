@@ -2177,6 +2177,38 @@ def test_classify_uk_manual_compile_frontier_marks_amendment_program_target() ->
     assert result["rule_id"] == "uk_manual_frontier_amendment_program_target_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_inserted_section_amendment_program_target() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="amendment_text_target_unsupported",
+        extracted_tag="P2",
+        extracted_text=(
+            "In paragraph 1, in the inserted section 136R, after subsection "
+            "(8) insert- 8A In the application of this Part to Northern Ireland."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": (
+                    "uk_effect_amendment_program_inserted_parent_structural_insert_rejected"
+                ),
+                "blocking": True,
+                "source_paragraph_label": "1",
+                "inserted_parent_kind": "section",
+                "inserted_parent_label": "136r",
+                "inserted_anchor_kind": "subsection",
+                "anchor_label": "8",
+                "inserted_label": "8a",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_amendment_program_target_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_deictic_amendment_program_anchor_manual() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
@@ -4196,6 +4228,25 @@ def test_classify_uk_effect_amendment_inserted_parent_structural_insert_target()
         lowering_rule_ids=(
             "uk_effect_amendment_program_inserted_parent_structural_insert_rejected",
         ),
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "amendment_text_target_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_amendment_inserted_section_structural_insert_target() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P2",
+        extracted_text=(
+            "In paragraph 1, in the inserted section 136R, after subsection "
+            "(8) insert- 8A In the application of this Part to Northern Ireland."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["schedule:2/paragraph:1"],
         effect_type="words inserted",
         is_structural=True,
     )

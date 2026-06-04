@@ -49,6 +49,15 @@ _SOURCE_AMENDMENT_INSERTED_PARENT_STRUCTURAL_INSERT_RE = re.compile(
     r"(?P<inserted_text>.+?)\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_AMENDMENT_INSERTED_SECTION_STRUCTURAL_INSERT_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"in\s+paragraph\s+(?P<paragraph>[0-9A-Za-z]+),?\s+"
+    r"in\s+the\s+inserted\s+section\s+(?P<inserted_parent>[0-9A-Za-z]+),?\s+"
+    r"(?P<direction>before|after)\s+subsection\s+\((?P<anchor>[0-9A-Za-z]+)\)\s+"
+    r"insert\s*[—–-]\s*(?P<inserted_label>[0-9A-Za-z]+)\s+"
+    r"(?P<inserted_text>.+?)\s*$",
+    flags=re.I | re.S,
+)
 _SOURCE_AMENDMENT_INSERTED_ANCHOR_STRUCTURAL_INSERT_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"(?P<direction>before|after)\s+"
@@ -184,6 +193,38 @@ def _amendment_program_inserted_parent_structural_insert(
         "source_subparagraph_label": source_subparagraph,
         "source_item_label": source_item,
         "inserted_parent_label": source_label(match.group("inserted_parent")),
+        "direction": str(match.group("direction") or "").lower(),
+        "anchor_label": source_label(match.group("anchor")),
+        "inserted_label": source_label(match.group("inserted_label")),
+        "inserted_text_preview": " ".join(str(match.group("inserted_text") or "").split())[:240],
+    }
+
+
+def _amendment_program_inserted_section_structural_insert(
+    *,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Identify structural inserts into a section carried by an amendment payload."""
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text or _addr_container(target) != "schedule":
+        return None
+    match = _SOURCE_AMENDMENT_INSERTED_SECTION_STRUCTURAL_INSERT_RE.match(text)
+    if match is None:
+        return None
+    target_levels = _schedule_target_levels(target)
+    source_paragraph = _clean_num(match.group("paragraph"))
+    if not source_paragraph or _clean_num(target_levels.paragraph or "") != source_paragraph:
+        return None
+
+    def source_label(value: object) -> str:
+        return str(value or "").strip().strip("()").lower().strip(".")
+
+    return {
+        "source_paragraph_label": source_paragraph,
+        "inserted_parent_kind": "section",
+        "inserted_parent_label": source_label(match.group("inserted_parent")),
+        "inserted_anchor_kind": "subsection",
         "direction": str(match.group("direction") or "").lower(),
         "anchor_label": source_label(match.group("anchor")),
         "inserted_label": source_label(match.group("inserted_label")),
@@ -484,6 +525,15 @@ def reject_amendment_program_inserted_parent_structural_insert(
         else None
     )
     if detail is None:
+        detail = (
+            _amendment_program_inserted_section_structural_insert(
+                extracted_text=extracted_text,
+                target=target,
+            )
+            if extracted_text and curr_action == "insert"
+            else None
+        )
+    if detail is None:
         inserted_anchor_detail = (
             _amendment_program_inserted_anchor_structural_insert(
                 extracted_text=extracted_text,
@@ -521,7 +571,7 @@ def reject_amendment_program_inserted_parent_structural_insert(
         family="amendment_program_lowering",
         reason_code="insert_targets_prior_amendment_inserted_parent",
         reason=(
-            "UK source text inserts a child into a paragraph inserted by "
+            "UK source text inserts a child into a parent inserted by "
             "a prior amendment instruction; this needs an amendment-"
             "program compiler and must not be replayed against an "
             "unrelated live base-law parent."

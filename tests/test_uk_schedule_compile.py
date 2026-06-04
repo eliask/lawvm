@@ -5576,6 +5576,79 @@ def test_compile_amendment_program_inserted_parent_child_insert_as_target_local_
     assert amended_text.index("ai a court") < amended_text.index("i\n\nthe offence")
 
 
+def test_compile_amendment_program_inserted_section_child_insert_is_frontier() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-14-paragraph-108-2">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>
+              In paragraph 1, in the inserted section 136R,
+              after subsection (8) insert—
+            </Text>
+            <BlockAmendment>
+              <P2>
+                <Pnumber>8A</Pnumber>
+                <P2para>
+                  <Text>
+                    In the application of this Part to Northern Ireland,
+                    references to the Secretary of State are to be read as
+                    references to the Department of Justice in Northern Ireland.
+                  </Text>
+                </P2para>
+              </P2>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-1bab44660839bedc6f78a9d503a1a3e8",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2010-04-12",
+        affected_uri="/id/ukpga/2009/26/schedule/2/paragraph/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2009",
+        affected_number="26",
+        affected_provisions="Sch. 2 para. 1",
+        affecting_uri="/id/uksi/2010/976",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2010",
+        affecting_number="976",
+        affecting_provisions="Sch. 14 para. 108(2)",
+        affecting_title="Test Order 2010",
+        in_force_dates=[{"date": "2010-04-12", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    rule_ids = {row["rule_id"] for row in lowering_records}
+    assert rule_ids == {
+        "uk_effect_amendment_program_inserted_parent_structural_insert_rejected",
+    }
+    rejection = lowering_records[0]
+    assert rejection["family"] == "amendment_program_lowering"
+    assert rejection["reason_code"] == "insert_targets_prior_amendment_inserted_parent"
+    assert rejection["target"] == "schedule:2/paragraph:1"
+    assert rejection["source_paragraph_label"] == "1"
+    assert rejection["inserted_parent_kind"] == "section"
+    assert rejection["inserted_parent_label"] == "136r"
+    assert rejection["inserted_anchor_kind"] == "subsection"
+    assert rejection["direction"] == "after"
+    assert rejection["anchor_label"] == "8"
+    assert rejection["inserted_label"] == "8a"
+    assert "Northern Ireland" in rejection["inserted_text_preview"]
+    assert rejection["blocking"] is True
+
+
 def test_compile_same_schedule_inserted_anchor_ground_insert_as_source_chain() -> None:
     extracted_el = ET.fromstring(
         f"""

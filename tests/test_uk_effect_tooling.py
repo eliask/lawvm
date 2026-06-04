@@ -408,6 +408,10 @@ def test_uk_manual_claim_template_status_only_labels_actionable_rows() -> None:
             "uk_manual_frontier_conditional_temporal_repeal_out_of_scope",
             "non_textual_or_out_of_scope",
         ),
+        (
+            "uk_manual_frontier_empty_type_whole_act_action_out_of_scope",
+            "non_textual_or_out_of_scope",
+        ),
         ("uk_manual_frontier_crossheading_candidate", "crossheading_text_rewrite"),
         (
             "uk_manual_frontier_definition_child_structural_insert_candidate",
@@ -6202,6 +6206,107 @@ def test_uk_manual_compile_evidence_jsonl_amendment_program_template_carries_ins
     assert template["anchor_label"] == "i"
     assert template["inserted_label"] == "ai"
     assert "community order" in template["inserted_text_preview"]
+    assert template["executable"] is False
+
+
+def test_uk_manual_compile_evidence_jsonl_amendment_program_template_carries_inserted_section_detail() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-amendment-program-inserted-section",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2010-04-12",
+        affected_uri="/id/ukpga/2009/26/schedule/2/paragraph/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2009",
+        affected_number="26",
+        affected_provisions="Sch. 2 para. 1",
+        affecting_uri="/id/uksi/2010/976",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2010",
+        affecting_number="976",
+        affecting_provisions="Sch. 14 para. 108(2)",
+        affecting_title="Test Order 2010",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="amendment_text_target_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_amendment_program_inserted_parent_structural_insert_rejected",
+                    "blocking": True,
+                    "target_ref": "Sch. 2 para. 1",
+                    "target": "schedule:2/paragraph:1",
+                    "source_paragraph_label": "1",
+                    "inserted_parent_kind": "section",
+                    "inserted_parent_label": "136r",
+                    "inserted_anchor_kind": "subsection",
+                    "direction": "after",
+                    "anchor_label": "8",
+                    "inserted_label": "8a",
+                    "inserted_text_preview": (
+                        "In the application of this Part to Northern Ireland"
+                    ),
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P2",
+            source_extracted_text_preview=(
+                "In paragraph 1, in the inserted section 136R, after "
+                "subsection (8) insert- 8A In the application of this Part "
+                "to Northern Ireland."
+            ),
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_amendment_program_target_candidate",
+            manual_compile_reason="Inserted section needs explicit amendment-program context.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_amendment_program_inserted_parent_structural_insert_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_amendment_program_inserted_parent_structural_insert_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2009/26",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2009/26",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "amendment_program_target_mutation"
+    assert template["source_target_address"] == "schedule:2/paragraph:1"
+    assert template["source_paragraph_label"] == "1"
+    assert template["inserted_parent_kind"] == "section"
+    assert template["inserted_parent_label"] == "136r"
+    assert template["inserted_anchor_kind"] == "subsection"
+    assert template["insert_direction"] == "after"
+    assert template["anchor_label"] == "8"
+    assert template["inserted_label"] == "8a"
+    assert "Northern Ireland" in template["inserted_text_preview"]
     assert template["executable"] is False
 
 

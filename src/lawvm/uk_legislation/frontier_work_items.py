@@ -130,6 +130,14 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_routes_effect_to_temporal_applicability_model",
         ),
     },
+    "uk_manual_frontier_empty_type_whole_act_action_out_of_scope": {
+        "candidate_operation_family": "non_textual_or_out_of_scope",
+        "required_validator_checks": (
+            "claim_identifies_empty_effect_type_or_whole_act_action_gap",
+            "claim_confirms_no_direct_text_or_tree_mutation",
+            "claim_preserves_affected_statute_text_state",
+        ),
+    },
     "uk_manual_frontier_external_act_target_out_of_scope": {
         "candidate_operation_family": "non_textual_or_out_of_scope",
         "required_validator_checks": (

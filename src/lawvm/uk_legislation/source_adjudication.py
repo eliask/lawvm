@@ -1584,7 +1584,10 @@ def _looks_like_deictic_definition_range_to_end_substitution(text: str) -> bool:
 def _looks_like_amendment_program_inserted_parent_instruction(text: str) -> bool:
     norm = _normalize_effect_text(text)
     return bool(
-        re.search(r"\bin\s+the\s+inserted\s+(?:paragraph|sub-?paragraph|subsection)\b", norm)
+        re.search(
+            r"\bin\s+the\s+inserted\s+(?:section|paragraph|sub-?paragraph|subsection)\b",
+            norm,
+        )
         and re.search(
             r"\b(?:after|before)\s+(?:paragraph|sub-?paragraph|subsection)\s*\([0-9A-Za-z]+\)\s+insert(?:\b|\s*[—-])",
             norm,
