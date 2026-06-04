@@ -3907,6 +3907,29 @@ def test_classify_uk_effect_reference_act_shall_apply_as_it_applies_source_patho
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_reference_act_shall_continue_to_apply_source_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P2",
+        extracted_text=(
+            "Section 5(1) to (3) and (5) of the Minister of Works Act 1942 "
+            "(as set out with adaptations in Schedule 2 to the Secretary of "
+            "State for the Environment Order 1970) shall continue to apply "
+            "to the Secretary of State for Foreign and Commonwealth Affairs "
+            "as Minister of Public Building and Works."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        lowering_rule_ids=["uk_effect_lowering_no_supported_action_rejected"],
+        target_paths=["s. 5(1)-(3)(5)"],
+        effect_type="",
+        is_structural=True,
+    )
+
+    assert pathology == "application_by_reference_effect_out_of_scope"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_reference_act_has_effect_as_if_source_pathology() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P1",

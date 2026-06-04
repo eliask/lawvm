@@ -1698,6 +1698,8 @@ def _looks_like_application_by_reference_effect_source(text: str) -> bool:
         return True
     if re.search(r"\bshall\s+apply\b.{0,220}\bas\s+if\b", norm):
         return True
+    if re.search(r"\bshall\s+continue\s+to\s+apply\b", norm):
+        return True
     if re.search(r"\bshall\s+apply\b.{0,260}\bas\s+it\s+applies?\b", norm):
         return True
     return bool(
