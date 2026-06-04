@@ -107,6 +107,7 @@ _ACTIVE_UNCLASSIFIED_RESIDUAL_BUCKETS = frozenset(
 )
 _MANUAL_SOURCE_CHAIN_FRONTIER_REASONS = frozenset(
     {
+        "manual_frontier_manual_compile_candidate",
         "manual_frontier_source_insufficient",
         "manual_frontier_source_chain_text_patch_gap",
     }
@@ -1170,6 +1171,8 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
         return "compile_rejection_dominated_residual"
     if _is_retained_eu_mixed_representation_residual(row):
         return "retained_eu_mixed_representation_residual"
+    if _is_retained_eu_schedule_oracle_granularity_residual(row):
+        return "retained_eu_schedule_oracle_granularity_residual"
     if _is_bounded_low_volume_residual(row):
         return "bounded_low_volume_residual"
     return "residual_after_grounding"
@@ -1246,6 +1249,7 @@ def _agreement_residual_family(bucket: str) -> str:
         return "oracle_editorial_pathology"
     if bucket in {
         "bounded_low_volume_residual",
+        "retained_eu_schedule_oracle_granularity_residual",
         "retained_eu_mixed_representation_residual",
         "structural_match_eid_scheme_residual",
     }:
@@ -1273,6 +1277,7 @@ def _agreement_residual_status(bucket: str, row: dict[str, Any]) -> str:
         "zero_oracle_retention",
         "base_metadata_only_frontier",
         "retained_repeal_oracle_branch",
+        "retained_eu_schedule_oracle_granularity_residual",
     }:
         return "frontier"
     aligned = float(
@@ -1297,6 +1302,7 @@ def _agreement_residual_owner_phase(bucket: str) -> str:
         "base_metadata_only_frontier",
         "zero_oracle_retention",
         "retained_repeal_oracle_branch",
+        "retained_eu_schedule_oracle_granularity_residual",
         "structural_match_eid_scheme_residual",
     }:
         return UK_PHASE_COMPARE_ORACLE_CLASSIFICATION
@@ -1359,6 +1365,7 @@ def _agreement_residual_missing_proofs(
         proofs.append("canonical_operation_compilation")
     if bucket in {
         "bounded_low_volume_residual",
+        "retained_eu_schedule_oracle_granularity_residual",
         "retained_eu_mixed_representation_residual",
         "structural_match_eid_scheme_residual",
     }:
@@ -1408,6 +1415,8 @@ def _source_chain_frontier_reasons_for_row(row: dict[str, Any]) -> tuple[str, ..
     elif bucket == "nonreplay_effect_frontier":
         if _has_replay_lens_or_source_insufficient_only_manual_frontier(row):
             reasons.append("effect_rows_not_admitted_by_replay_lens")
+        elif _has_manual_compile_candidate_record(row):
+            reasons.append("manual_frontier_manual_compile_candidate")
         elif _has_missing_structural_payload_record(row):
             reasons.append("effect_rows_missing_structural_payload")
         else:
@@ -1488,6 +1497,13 @@ def _has_manual_frontier_source_insufficient_record(row: dict[str, Any]) -> bool
     return int(counts.get("source_insufficient") or 0) > 0
 
 
+def _has_manual_compile_candidate_record(row: dict[str, Any]) -> bool:
+    counts = row.get("manual_frontier_status_counts") or {}
+    if not isinstance(counts, dict):
+        return False
+    return int(counts.get("manual_compile_candidate") or 0) > 0
+
+
 def _has_manual_frontier_source_chain_text_patch_gap(row: dict[str, Any]) -> bool:
     rule_counts = row.get("manual_frontier_rule_counts") or {}
     if isinstance(rule_counts, dict) and any(
@@ -1539,6 +1555,35 @@ def _is_retained_eu_mixed_representation_residual(row: dict[str, Any]) -> bool:
     n_only_in_oracle = int(row.get("n_only_in_oracle") or 0)
     n_only_in_replayed = int(row.get("n_only_in_replayed") or 0)
     return n_only_in_oracle > 0 and n_only_in_replayed > 0
+
+
+def _is_retained_eu_schedule_oracle_granularity_residual(row: dict[str, Any]) -> bool:
+    """Classify bounded retained-EU schedule oracle surplus without replay promotion."""
+    statute_id = str(row.get("statute_id") or "")
+    if not statute_id.startswith("eur/"):
+        return False
+    if not bool(row.get("base_source_has_schedules")):
+        return False
+    if not bool(row.get("oracle_source_has_schedules")):
+        return False
+    if bool(row.get("base_source_has_body")) or bool(row.get("oracle_source_has_body")):
+        return False
+    n_only_in_oracle = int(row.get("n_only_in_oracle") or 0)
+    n_only_in_replayed = int(row.get("n_only_in_replayed") or 0)
+    if n_only_in_oracle <= 0 or n_only_in_replayed > 0:
+        return False
+    if n_only_in_oracle > _LOW_VOLUME_RESIDUAL_MAX_MISSES:
+        return False
+    if int(row.get("n_blocking_compile_rejections") or 0) > 0:
+        return False
+    n_effects = int(row.get("n_effects") or 0)
+    n_ops = int(row.get("n_ops") or 0)
+    if n_effects <= 0 or n_ops <= 0:
+        return False
+    status_counts = row.get("manual_frontier_status_counts") or {}
+    if not isinstance(status_counts, dict):
+        return False
+    return int(status_counts.get("deterministic_frontend_supported") or 0) >= n_effects
 
 
 def _is_bounded_low_volume_residual(row: dict[str, Any]) -> bool:

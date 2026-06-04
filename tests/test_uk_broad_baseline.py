@@ -864,6 +864,43 @@ def test_summarize_results_counts_nonreplay_effect_frontier() -> None:
     }
 
 
+def test_summarize_results_routes_manual_compile_nonreplay_frontier() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1933/19",
+                "score_status": "scored",
+                "aligned": 76.47,
+                "aligned_excluding_grounding_collateral": 76.47,
+                "unaligned": 10.45,
+                "n_grounding_collateral": 0,
+                "n_replay": 26,
+                "n_oracle": 34,
+                "n_effects": 1,
+                "n_ops": 0,
+                "n_compile_rejections": 1,
+                "n_blocking_compile_rejections": 1,
+                "compile_rejection_rule_counts": {
+                    "uk_effect_repeal_table_quoted_words_text_repeal_unresolved": 1,
+                },
+                "manual_frontier_status_counts": {
+                    "manual_compile_candidate": 1,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"nonreplay_effect_frontier": 1}
+    assert summary["source_chain_frontier_reasons"] == {
+        "manual_frontier_manual_compile_candidate": 1
+    }
+    assert summary["source_chain_frontier_statutes"] == {
+        "manual_frontier_manual_compile_candidate": ["ukpga/1933/19"],
+    }
+    assert summary["non_manual_source_chain_frontier_count"] == 0
+    assert summary["non_manual_source_chain_frontier_statutes"] == []
+
+
 def test_summarize_results_splits_non_admitted_replay_lens_rows() -> None:
     summary = uk_broad_baseline.summarize_results(
         [
@@ -1069,6 +1106,44 @@ def test_summarize_results_counts_retained_eu_mixed_representation_residuals() -
     assert summary["triage_buckets"] == {
         "retained_eu_mixed_representation_residual": 1
     }
+
+
+def test_summarize_results_counts_retained_eu_schedule_oracle_granularity() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "eur/2020/1231",
+                "score_status": "scored",
+                "aligned": 82.83,
+                "aligned_excluding_grounding_collateral": 82.83,
+                "unaligned": 79.8,
+                "base_source_has_body": False,
+                "base_source_has_schedules": True,
+                "oracle_source_has_body": False,
+                "oracle_source_has_schedules": True,
+                "n_grounding_collateral": 0,
+                "n_replay": 82,
+                "n_oracle": 99,
+                "n_only_in_oracle": 17,
+                "n_only_in_replayed": 0,
+                "n_effects": 20,
+                "n_ops": 20,
+                "n_compile_rejections": 11,
+                "n_blocking_compile_rejections": 0,
+                "manual_frontier_status_counts": {
+                    "deterministic_frontend_supported": 20,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {
+        "retained_eu_schedule_oracle_granularity_residual": 1
+    }
+    assert summary["agreement_residual_family_counts"] == {
+        "topology_granularity_mismatch": 1,
+    }
+    assert summary["active_unclassified_residual_count"] == 0
 
 
 def test_summarize_results_counts_bounded_low_volume_residuals() -> None:
