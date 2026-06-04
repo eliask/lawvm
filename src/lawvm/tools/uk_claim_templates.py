@@ -674,6 +674,8 @@ def _required_operation_family_proof_semantics(
         return ("relative_occurrence_scope_claim",)
     if action_family == "whole_act_listed_enactments_text_patch":
         return ("whole_act_listed_enactments_scope_and_exclusions",)
+    if action_family == "whole_act_repeal_with_exceptions":
+        return ("whole_act_repeal_exception_set_and_boundary_claim",)
     if action_family == "savings_qualified_text_omission":
         return ("savings_qualified_omission_applicability_scope",)
     if action_family == "sentence_scoped_repeated_insert":
@@ -1574,6 +1576,30 @@ def manual_compile_suggested_claim_template(
             _whole_act_word_patch_parts(row.summary.source_extracted_text_preview or "")
         )
         return template
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_partial_whole_act_repeal_candidate"
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="whole_act_repeal_with_exceptions",
+            placement_family="whole_act_scope_with_named_exception_set",
+            required_ownership=[
+                "source_names_whole_act_repeal",
+                "source_names_exception_set",
+                "target_set_is_whole_act_minus_exceptions",
+                "temporal_extent_applicability",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_names_whole_act_repeal_and_exception_set",
+                "claim_enumerates_repealed_targets_excluding_named_exceptions",
+                "claim_preserves_named_exception_provisions",
+                "claim_proves_temporal_extent_applicability_for_broad_repeal",
+                "changed_paths_are_within_whole_act_minus_exception_boundary",
+            ],
+        )
     if (
         summary.manual_compile_rule_id
         == "uk_manual_frontier_savings_qualified_text_omission_candidate"

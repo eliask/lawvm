@@ -2798,6 +2798,158 @@ def test_validate_semantic_claim_rejects_whole_act_listed_enactments_proof_seman
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_accepts_whole_act_repeal_exception_family_proof_semantic() -> None:
+    target_text_hash = hashlib.sha256(b"whole act section text").hexdigest()
+    claim = _claim_row(
+        source_preview=(
+            "repeal the whole Act except sections 1 and 2, subject to savings"
+        ),
+    )
+    claim["action_family"] = "whole_act_repeal_with_exceptions"
+    claim["ownership_claims"] = [
+        {
+            "ownership_id": "source_names_exception_set",
+            "status": "claimed_not_proved",
+        },
+        {
+            "ownership_id": "mutation_boundary",
+            "status": "claimed_not_proved",
+        },
+    ]
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    operations = proposed_outcome["operations"]
+    assert isinstance(operations, list)
+    operation = operations[0]
+    assert isinstance(operation, dict)
+    operation["action"] = "REPEAL"
+    operation["target"] = "section:3"
+    operation["mutation_boundary"] = {
+        "changed_paths": ["section:3"],
+        "target_region": ["section:3"],
+    }
+    proposed_outcome["source_text_preconditions"] = [
+        {
+            "precondition_id": "source-names-whole-act-repeal",
+            "contains": "repeal the whole Act",
+        },
+        {
+            "precondition_id": "source-names-exceptions",
+            "contains": "except sections 1 and 2",
+        },
+    ]
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "precondition_id": "live-whole-act-minus-exceptions",
+            "path": "section:3",
+            "text_sha256": target_text_hash,
+        },
+    ]
+    proposed_outcome["operation_family_proofs"] = [
+        {
+            "proof_id": "proof-whole-act-repeal-exceptions",
+            "proof_semantic": "whole_act_repeal_exception_set_and_boundary_claim",
+            "operation_family": "whole_act_repeal_with_exceptions",
+            "operation_ids": ["manual-op-1"],
+            "validator_check_ids": ["claim_identifies_exact_table_carrier"],
+            "source_text_precondition_ids": [
+                "source-names-whole-act-repeal",
+                "source-names-exceptions",
+            ],
+            "exception_ownership_ids": ["source_names_exception_set"],
+            "live_target_precondition_ids": ["live-whole-act-minus-exceptions"],
+            "status": "claimed_not_proved",
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (claim,),
+        live_target_rows=(
+            _live_target_row(
+                target_paths=["section:3"],
+                target_fingerprints={
+                    "section:3": {
+                        "text_sha256": target_text_hash,
+                        "subtree_sha256": "f" * 64,
+                    },
+                },
+            ),
+        ),
+    )
+
+    row = rows[0]
+    assert (
+        row["validator_status"]
+        == "validated_provenance_source_text_live_targets_and_preconditions_only"
+    )
+    assert row["operation_family_proofs_checked"] is True
+    assert row["validation_issues"] == []
+    assert row["replay_authorized"] is False
+
+
+def test_validate_semantic_claim_rejects_whole_act_repeal_exception_proof_semantic_gap() -> None:
+    claim = _claim_row(source_preview="repeal the whole Act except section 1")
+    claim["action_family"] = "whole_act_repeal_with_exceptions"
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    operations = proposed_outcome["operations"]
+    assert isinstance(operations, list)
+    operation = operations[0]
+    assert isinstance(operation, dict)
+    operation["action"] = "INSERT"
+    operation["target"] = "section:99"
+    operation["mutation_boundary"] = {
+        "changed_paths": ["section:99"],
+        "target_region": ["section:99"],
+    }
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "precondition_id": "live-whole-act-minus-exceptions",
+            "path": "section:3",
+            "text_sha256": hashlib.sha256(b"whole act section text").hexdigest(),
+        },
+    ]
+    proposed_outcome["operation_family_proofs"] = [
+        {
+            "proof_id": "proof-whole-act-repeal-exceptions",
+            "proof_semantic": "whole_act_repeal_exception_set_and_boundary_claim",
+            "operation_family": "whole_act_listed_enactments_text_patch",
+            "operation_ids": ["manual-op-1"],
+            "validator_check_ids": ["claim_identifies_exact_table_carrier"],
+            "live_target_precondition_ids": ["live-whole-act-minus-exceptions"],
+            "status": "claimed_not_proved",
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_schema"
+    assert (
+        "operation_family_proofs[1].operation_family mismatch: "
+        "proof='whole_act_listed_enactments_text_patch' "
+        "claim='whole_act_repeal_with_exceptions'"
+    ) in row["validation_issues"]
+    assert (
+        "operation_family_proofs[1].whole_act_repeal_exception_set_and_boundary_claim "
+        "requires source_text_precondition_ids"
+    ) in row["validation_issues"]
+    assert (
+        "operation_family_proofs[1].whole_act_repeal_exception_set_and_boundary_claim "
+        "requires exception_ownership_ids to include 'source_names_exception_set'"
+    ) in row["validation_issues"]
+    assert (
+        "operation_family_proofs[1].whole_act_repeal_exception_set_and_boundary_claim "
+        "operation 'manual-op-1' must be a repeal/delete action"
+    ) in row["validation_issues"]
+    assert (
+        "operation_family_proofs[1].whole_act_repeal_exception_set_and_boundary_claim "
+        "operation 'manual-op-1' target 'section:99' is outside declared "
+        "whole-Act repeal boundary"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_accepts_appropriate_place_family_proof_semantic() -> None:
     parent_text_hash = hashlib.sha256(b"parent text").hexdigest()
     anchor_text_hash = hashlib.sha256(b"anchor text").hexdigest()

@@ -3171,6 +3171,12 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
         "surface": "replay_vs_current_oracle_target_presence",
         "compare_shape": "commensurable",
     }
+    assert payload["candidate_set_certificate"]["completeness_status"] == "complete"
+    assert payload["candidate_set_certificate"]["candidate_ids"] == ["s. 1"]
+    assert payload["candidate_set_certificate"]["next_promotion_allowed"] is False
+    assert payload["frontier_work_item"]["detail"]["candidate_set_certificate"] == (
+        payload["candidate_set_certificate"]
+    )
     assert payload["frontier_work_item"]["executable"] is False
     assert payload["frontier_work_item"]["replay_authorized"] is False
     assert payload["frontier_work_item"]["source_witness"]["source_sha256"] == (
@@ -3713,6 +3719,12 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
         "surface": "replay_vs_current_oracle_target_presence",
         "compare_shape": "commensurable",
     }
+    assert payload["candidate_set_certificate"]["completeness_status"] == "complete"
+    assert payload["candidate_set_certificate"]["candidate_ids"] == ["s. 1"]
+    assert payload["candidate_set_certificate"]["next_promotion_allowed"] is False
+    assert payload["frontier_work_item"]["detail"]["candidate_set_certificate"] == (
+        payload["candidate_set_certificate"]
+    )
     assert payload["frontier_work_item"]["executable"] is False
     assert payload["frontier_work_item"]["replay_authorized"] is False
     assert payload["frontier_work_item"]["detail"]["claim_status"] == (

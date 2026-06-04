@@ -97,6 +97,7 @@ UK_OPERATION_FAMILY_PROOF_SEMANTICS = frozenset(
         "table_surface_insert_anchor_and_live_carrier",
         "text_rewrite_source_preimage_and_live_target",
         "whole_act_listed_enactments_scope_and_exclusions",
+        "whole_act_repeal_exception_set_and_boundary_claim",
     }
 )
 _FAMILY_PROOF_DUPLICATE_SENSITIVE_FIELDS = (
@@ -941,6 +942,20 @@ def _validate_operation_family_proof_semantic(
         )
     if proof_semantic == "whole_act_listed_enactments_scope_and_exclusions":
         return _validate_whole_act_listed_enactments_family_proof_semantic(
+            claim=claim,
+            proof=proof,
+            proof_semantic=proof_semantic,
+            prefix=prefix,
+            proof_family=proof_family,
+            proof_operation_ids=proof_operation_ids,
+            proof_source_ids=proof_source_ids,
+            proof_live_ids=proof_live_ids,
+            proof_live_paths=proof_live_paths,
+            live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
+        )
+    if proof_semantic == "whole_act_repeal_exception_set_and_boundary_claim":
+        return _validate_whole_act_repeal_exception_family_proof_semantic(
             claim=claim,
             proof=proof,
             proof_semantic=proof_semantic,
@@ -1883,6 +1898,81 @@ def _validate_whole_act_listed_enactments_family_proof_semantic(
                 issues.append(
                     f"{prefix}.{proof_semantic} operation {op_id!r} target "
                     f"{target!r} is outside declared live text carriers"
+                )
+    return tuple(issues)
+
+
+def _validate_whole_act_repeal_exception_family_proof_semantic(
+    *,
+    claim: Mapping[str, Any],
+    proof: Mapping[str, Any],
+    proof_semantic: str,
+    prefix: str,
+    proof_family: str,
+    proof_operation_ids: set[str],
+    proof_source_ids: set[str],
+    proof_live_ids: set[str],
+    proof_live_paths: set[str],
+    live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
+) -> tuple[str, ...]:
+    issues: list[str] = []
+    if proof_family != "whole_act_repeal_with_exceptions":
+        issues.append(
+            f"{prefix}.proof_semantic {proof_semantic!r} requires "
+            "operation_family 'whole_act_repeal_with_exceptions'"
+        )
+    if not proof_source_ids:
+        issues.append(f"{prefix}.{proof_semantic} requires source_text_precondition_ids")
+    exception_ownership_ids = set(
+        _string_tuple_from_value(proof.get("exception_ownership_ids"))
+    )
+    if "source_names_exception_set" not in exception_ownership_ids:
+        issues.append(
+            f"{prefix}.{proof_semantic} requires exception_ownership_ids to "
+            "include 'source_names_exception_set'"
+        )
+    declared_ownership_ids = _claim_ownership_ids(claim)
+    for ownership_id in sorted(exception_ownership_ids - declared_ownership_ids):
+        issues.append(
+            f"{prefix}.{proof_semantic}.exception_ownership_ids references "
+            f"undeclared ownership {ownership_id!r}"
+        )
+    live_carrier_paths = _live_carrier_paths_for_proof(
+        proof_live_ids=proof_live_ids,
+        proof_live_paths=proof_live_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
+    )
+    if not live_carrier_paths:
+        issues.append(
+            f"{prefix}.{proof_semantic} requires live_target_precondition_ids "
+            "or live_target_precondition_paths"
+        )
+    allowed_actions = {
+        "REPEAL",
+        "repeal",
+        "TEXT_REPEAL",
+        "text_repeal",
+    }
+    operations = _operations_by_id(claim)
+    for op_id in sorted(proof_operation_ids):
+        operation = operations.get(op_id)
+        if operation is None:
+            continue
+        action = _non_empty_string(operation, "action")
+        if action not in allowed_actions:
+            issues.append(
+                f"{prefix}.{proof_semantic} operation {op_id!r} must be a "
+                "repeal/delete action"
+            )
+        for target in _path_strings_from_value(operation.get("target")):
+            if live_carrier_paths and not _path_within_any_region(
+                target,
+                tuple(live_carrier_paths),
+            ):
+                issues.append(
+                    f"{prefix}.{proof_semantic} operation {op_id!r} target "
+                    f"{target!r} is outside declared whole-Act repeal boundary"
                 )
     return tuple(issues)
 
