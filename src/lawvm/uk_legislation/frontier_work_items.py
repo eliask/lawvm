@@ -175,6 +175,16 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_declared_crossheading_target",
         ),
     },
+    "uk_manual_frontier_crossheading_source_target_mismatch": {
+        "candidate_operation_family": "source_target_reconciliation",
+        "required_validator_checks": (
+            "source_witness_names_crossheading_facet_target",
+            "claim_reconciles_source_crossheading_target_and_effect_feed_target",
+            "claim_identifies_whether_body_text_heading_facet_or_both_are_affected",
+            "claim_blocks_host_body_rewrite_until_facet_scope_is_proved",
+            "changed_paths_are_within_source_feed_reconciled_target",
+        ),
+    },
     "uk_manual_frontier_cross_container_renumber_candidate": {
         "candidate_operation_family": "cross_container_renumber",
         "required_validator_checks": (

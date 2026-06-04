@@ -1569,6 +1569,31 @@ def test_classify_uk_manual_compile_frontier_marks_amount_target_mismatch() -> N
     )
 
 
+def test_classify_uk_manual_compile_frontier_marks_crossheading_source_target_mismatch() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text=(
+            "b in paragraph 2 of Schedule 13 to that Act and the heading before "
+            "that paragraph, for \u201c2021\u201d (in each place) substitute \u201c2022\u201d,"
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_crossheading_source_target_mismatch_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "source_or_feed_target_conflict"
+    assert result["rule_id"] == "uk_manual_frontier_crossheading_source_target_mismatch"
+    assert "cross-heading facet" in result["reason"]
+
+
 def test_classify_uk_manual_compile_frontier_marks_sentence_scoped_repeated_insert() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
@@ -2028,6 +2053,33 @@ def test_classify_uk_manual_compile_frontier_marks_table_row_omission_manual() -
 
     assert result["status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_marks_table_entry_relating_parent_gap() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text=(
+            "20 In section 412 (interpretation), in the entry relating to the "
+            "meaning of references to a \u201cconstable\u201d, for \u201ca customs and "
+            "excise officer\u201d substitute \u201c an officer of Revenue and Customs \u201d."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_table_entry_relating_text_patch",
+                "blocking": True,
+                "reason_code": "table_marker_parent_missing",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
+    assert "table marker or cell boundary" in result["reason"]
 
 
 def test_classify_uk_manual_compile_frontier_marks_entry_beginning_substitution_manual() -> None:

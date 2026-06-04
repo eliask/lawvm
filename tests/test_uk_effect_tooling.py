@@ -416,6 +416,10 @@ def test_uk_manual_claim_template_status_only_labels_actionable_rows() -> None:
         ),
         ("uk_manual_frontier_crossheading_candidate", "crossheading_text_rewrite"),
         (
+            "uk_manual_frontier_crossheading_source_target_mismatch",
+            "source_target_reconciliation",
+        ),
+        (
             "uk_manual_frontier_definition_child_structural_insert_candidate",
             "definition_child_structural_insert",
         ),

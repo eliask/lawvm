@@ -2659,6 +2659,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source substitutes text from a quoted preimage to the end of a named child provision, but the effect-feed target is not the child carrier; a claim or future compiler must prove the exact child endpoint and mutation boundary before replay.",
         }
 
+    if "uk_effect_crossheading_source_target_mismatch_rejected" in blocking_rules:
+        return {
+            "status": "source_or_feed_target_conflict",
+            "rule_id": "uk_manual_frontier_crossheading_source_target_mismatch",
+            "reason": "The source explicitly names a cross-heading facet but the effect-feed target does not; replay needs source-feed target reconciliation before lowering a heading or host-body text patch.",
+        }
+
     if "uk_effect_amount_specified_source_target_mismatch_rejected" in blocking_rules:
         return {
             "status": "source_or_feed_target_conflict",
@@ -2709,6 +2716,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_table_entry_candidate",
             "reason": "The source substitutes words by reference to a corresponding table entry; a claim or future table compiler must prove the source table row/cell correspondence before replay.",
+        }
+
+    if "uk_effect_table_entry_relating_text_patch" in blocking_rules:
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_table_entry_candidate",
+            "reason": "The source targets a table entry by relating text, but lowering could not prove the containing table marker or cell boundary; a claim or future table compiler must identify the table carrier, row, and cell before replay.",
         }
 
     if "uk_effect_multi_enactment_specified_provisions_text_patch_rejected" in blocking_rules:
