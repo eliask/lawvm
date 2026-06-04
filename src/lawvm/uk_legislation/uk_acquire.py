@@ -26,6 +26,11 @@ from pathlib import Path
 from typing import Any
 
 from lawvm.core.http_identity import LAWVM_USER_AGENT
+from lawvm.uk_legislation.source_state import (
+    UKSourceStatus,
+    classify_uk_source_blob,
+    uk_multiple_choice_candidate_data_urls,
+)
 
 _LEG_BASE = "https://www.legislation.gov.uk"
 _USER_AGENT = LAWVM_USER_AGENT
@@ -98,6 +103,7 @@ class UKAcquireReport:
     affecting_cached: int = 0
     affecting_errors: int = 0
     affecting_events: list[dict[str, Any]] = field(default_factory=list)
+    multiple_choice_candidate_sources_fetched: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -111,6 +117,9 @@ class UKAcquireReport:
             "affecting_fetched": self.affecting_fetched,
             "affecting_cached": self.affecting_cached,
             "affecting_errors": self.affecting_errors,
+            "multiple_choice_candidate_sources_fetched": (
+                self.multiple_choice_candidate_sources_fetched
+            ),
         }
         if self.enacted_error:
             d["enacted_error"] = self.enacted_error
@@ -151,6 +160,11 @@ def _http_get(url: str, delay: float = _DEFAULT_DELAY, last_time: list[float] | 
                 last_time[:] = [time.monotonic()]
             return data, getattr(resp, "status", 200)
     except urllib.error.HTTPError as exc:
+        if exc.code == 300:
+            data = exc.read()
+            if last_time is not None:
+                last_time[:] = [time.monotonic()]
+            return data, exc.code
         if last_time is not None:
             last_time[:] = [time.monotonic()]
         return None, exc.code
@@ -193,6 +207,46 @@ def _parse_statute_id(statute_id: str) -> tuple[str, str, str]:
     return parts[0], parts[1], parts[2]
 
 
+def _source_fetch_error(data: bytes | None, status: int | None) -> str | None:
+    if not data:
+        return f"http_{status}" if status else "transport_error"
+    source_state = classify_uk_source_blob(data)
+    if source_state.status is UKSourceStatus.AVAILABLE:
+        return None
+    return source_state.status.value
+
+
+def _source_cached_available(archive: Any, url: str) -> bool:
+    if not archive.has(url):
+        return False
+    source_state = classify_uk_source_blob(archive.get(url))
+    return source_state.status is UKSourceStatus.AVAILABLE
+
+
+def _fetch_multiple_choice_candidate_sources(
+    archive: Any,
+    blob: bytes | None,
+    *,
+    include_current: bool,
+    include_enacted: bool,
+    delay: float,
+    timer: list[float],
+) -> int:
+    fetched = 0
+    for url in uk_multiple_choice_candidate_data_urls(
+        blob,
+        include_current=include_current,
+        include_enacted=include_enacted,
+    ):
+        if _source_cached_available(archive, url):
+            continue
+        data, status = _http_get(url, delay=delay, last_time=timer)
+        if data and _source_fetch_error(data, status) is None:
+            _store_if_new(archive, url, data, "xml")
+            fetched += 1
+    return fetched
+
+
 # ---------------------------------------------------------------------------
 # Per-statute acquisition logic
 # ---------------------------------------------------------------------------
@@ -209,7 +263,7 @@ def build_acquire_plan(statute_id: str, archive: Any) -> UKAcquirePlan:
     current_url = f"{base}/data.xml"
     effects_base_url = f"{_LEG_BASE}/changes/affected/{act_type}/{year}/{number}/data.feed?results-count=50&sort=modified"
 
-    enacted_cached = archive.has(enacted_url)
+    enacted_cached = _source_cached_available(archive, enacted_url)
     current_stale = _is_stale(archive, current_url, _TTL_CURRENT)
     effects_stale = _is_stale(archive, effects_base_url, _TTL_EFFECTS)
 
@@ -301,19 +355,34 @@ def acquire_statute(
     timer: list[float] = [0.0]
 
     # --- Enacted XML (immutable: store once) ---
-    if archive.has(enacted_url):
+    if _source_cached_available(archive, enacted_url):
         report.enacted_already_cached = True
         if verbose:
             print(f"  enacted: cached  {enacted_url}")
     else:
         data, status = _http_get(enacted_url, delay=delay, last_time=timer)
-        if data and len(data) > 50:
+        error = _source_fetch_error(data, status)
+        if data and error == UKSourceStatus.MULTIPLE_CHOICES.value:
+            report.multiple_choice_candidate_sources_fetched += (
+                _fetch_multiple_choice_candidate_sources(
+                    archive,
+                    data,
+                    include_current=not enacted_only,
+                    include_enacted=True,
+                    delay=delay,
+                    timer=timer,
+                )
+            )
+            report.enacted_error = error
+            if verbose:
+                print(f"  enacted: ERROR {report.enacted_error}  {enacted_url}")
+        elif data and error is None:
             archive.store(enacted_url, data, storage_class="xml")
             report.enacted_fetched = True
             if verbose:
                 print(f"  enacted: fetched  {len(data):,} bytes  {enacted_url}")
         else:
-            report.enacted_error = f"http_{status}" if status else "transport_error"
+            report.enacted_error = error
             if verbose:
                 print(f"  enacted: ERROR {report.enacted_error}  {enacted_url}")
 
@@ -321,19 +390,38 @@ def acquire_statute(
         return report
 
     # --- Current XML (slow-mutable: TTL-governed) ---
-    if not force_refresh and not _is_stale(archive, current_url, _TTL_CURRENT):
+    if (
+        not force_refresh
+        and _source_cached_available(archive, current_url)
+        and not _is_stale(archive, current_url, _TTL_CURRENT)
+    ):
         report.current_already_cached = True
         if verbose:
             print(f"  current: cached  {current_url}")
     else:
         data, status = _http_get(current_url, delay=delay, last_time=timer)
-        if data and len(data) > 50:
+        error = _source_fetch_error(data, status)
+        if data and error == UKSourceStatus.MULTIPLE_CHOICES.value:
+            report.multiple_choice_candidate_sources_fetched += (
+                _fetch_multiple_choice_candidate_sources(
+                    archive,
+                    data,
+                    include_current=True,
+                    include_enacted=True,
+                    delay=delay,
+                    timer=timer,
+                )
+            )
+            report.current_error = error
+            if verbose:
+                print(f"  current: ERROR {report.current_error}  {current_url}")
+        elif data and error is None:
             _store_if_new(archive, current_url, data, "xml")
             report.current_fetched = True
             if verbose:
                 print(f"  current: fetched  {len(data):,} bytes  {current_url}")
         else:
-            report.current_error = f"http_{status}" if status else "transport_error"
+            report.current_error = error
             if verbose:
                 print(f"  current: ERROR {report.current_error}  {current_url}")
 

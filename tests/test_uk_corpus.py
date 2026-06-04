@@ -33,6 +33,9 @@ class _FakeArchive:
     def locators(self, _pattern: str) -> list[str]:
         return sorted(self._data)
 
+    def stats(self) -> object:
+        return SimpleNamespace(locator_count=len(self._data))
+
     def store(self, locator: str, data: bytes, storage_class: str = "xml") -> None:
         self.store_calls.append((locator, data, storage_class))
         self._data[locator] = data
@@ -58,10 +61,10 @@ class _FakeHTTP:
         status = self._status_by_url[url]
         if status in (404, 410):
             return None, status
+        if url in self._data_by_url:
+            return self._data_by_url[url], status
         if status >= 200 and status < 300:
-            if url in self._data_by_url:
-                return self._data_by_url[url], status
-            return b"<xml>" + b"y" * 64 + b"</xml>", status
+            return b"<xml>" + b"y" * 128 + b"</xml>", status
         return None, status
 
 
@@ -211,6 +214,109 @@ def test_do_affecting_records_fetch_failure_diagnostic(monkeypatch) -> None:
             "quirks_disposition": "record",
         }
     ]
+
+
+def test_do_download_fetches_multiple_choices_leaf_candidates() -> None:
+    statute_id = "ukpga/1955/18"
+    base = f"{acquire_uk_corpus._LEG_BASE}/{statute_id}"
+    enacted_url = f"{base}/enacted/data.xml"
+    current_url = f"{base}/data.xml"
+    feed_url = (
+        f"{acquire_uk_corpus._LEG_BASE}/changes/affected/ukpga/1955/18/"
+        "data.feed?results-count=50&sort=modified"
+    )
+    ambiguity_blob = b"""<div id="content">
+    <h1>Multiple Choices</h1>
+    <p>The link that you've followed could mean either of the following:</p>
+    <a href="/ukpga/Eliz2/3-4/18/enacted">Army Act 1955 (repealed)</a>
+    <a href="/ukpga/Eliz2/4-5/18/enacted">Aliens' Employment Act 1955</a>
+    </div>"""
+    leaf_urls = [
+        "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/enacted/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/enacted/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/data.xml",
+    ]
+    leaf_xml = b"<Legislation>" + (b"leaf" * 40) + b"</Legislation>"
+    archive = _FakeArchive()
+    http = _FakeHTTP(
+        {
+            enacted_url: 300,
+            current_url: 300,
+            feed_url: 200,
+            **{url: 200 for url in leaf_urls},
+        },
+        data_by_url={
+            enacted_url: ambiguity_blob,
+            current_url: ambiguity_blob,
+            feed_url: b"<feed><title>effects</title></feed>",
+            **{url: leaf_xml for url in leaf_urls},
+        },
+    )
+
+    result = acquire_uk_corpus.do_download(
+        {"ukpga": [{"type": "ukpga", "year": "1955", "num": "18"}]},
+        cast(Any, archive),
+        cast(Any, http),
+    )
+
+    assert result == {
+        "enacted": 0,
+        "current": 0,
+        "effects": 1,
+        "multiple_choices": 2,
+        "candidate_sources": 4,
+    }
+    assert not archive.has(enacted_url)
+    assert not archive.has(current_url)
+    for url in leaf_urls:
+        assert archive.has(url)
+
+
+def test_do_download_refetches_cached_multiple_choices_marker_for_candidates() -> None:
+    statute_id = "ukpga/1955/18"
+    enacted_url = f"{acquire_uk_corpus._LEG_BASE}/{statute_id}/enacted/data.xml"
+    leaf_urls = [
+        "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/enacted/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/enacted/data.xml",
+    ]
+    ambiguity_blob = b"""<div id="content">
+    <h1>Multiple Choices</h1>
+    <p>The link that you've followed could mean either of the following:</p>
+    <a href="/ukpga/Eliz2/3-4/18/enacted">Army Act 1955 (repealed)</a>
+    <a href="/ukpga/Eliz2/4-5/18/enacted">Aliens' Employment Act 1955</a>
+    </div>"""
+    leaf_xml = b"<Legislation>" + (b"leaf" * 40) + b"</Legislation>"
+    archive = _FakeArchive()
+    archive.store(enacted_url, b"HTTP 300 Multiple Choices")
+    archive.store_calls.clear()
+    http = _FakeHTTP(
+        {
+            enacted_url: 300,
+            **{url: 200 for url in leaf_urls},
+        },
+        data_by_url={
+            enacted_url: ambiguity_blob,
+            **{url: leaf_xml for url in leaf_urls},
+        },
+    )
+
+    result = acquire_uk_corpus.do_download(
+        {"ukpga": [{"type": "ukpga", "year": "1955", "num": "18"}]},
+        cast(Any, archive),
+        cast(Any, http),
+        enacted_only=True,
+    )
+
+    assert result == {
+        "enacted": 0,
+        "current": 0,
+        "effects": 0,
+        "multiple_choices": 1,
+        "candidate_sources": 2,
+    }
+    assert http.calls == [enacted_url, *leaf_urls]
+    assert archive.store_calls == [(url, leaf_xml, "xml") for url in leaf_urls]
 
 
 def test_do_refresh_can_force_one_statute_current_and_effects() -> None:

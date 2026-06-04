@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from html.parser import HTMLParser
 from typing import Any
+from urllib.parse import urlsplit
 
 from lxml import etree as ET
 
@@ -16,6 +18,42 @@ from lawvm.core.target_resolution import (
 )
 
 MIN_UK_XML_SOURCE_BYTES = 100
+UK_LEGISLATION_BASE_URL = "https://www.legislation.gov.uk"
+UK_MULTIPLE_CHOICE_DOCUMENT_TYPES = frozenset(
+    {
+        "ukpga",
+        "ukla",
+        "ukppa",
+        "asp",
+        "asc",
+        "anaw",
+        "mwa",
+        "ukcm",
+        "nia",
+        "aosp",
+        "aep",
+        "aip",
+        "apgb",
+        "gbla",
+        "gbppa",
+        "nisi",
+        "mnia",
+        "apni",
+        "uksi",
+        "wsi",
+        "ssi",
+        "nisr",
+        "ukci",
+        "ukmd",
+        "ukmo",
+        "uksro",
+        "nisro",
+        "eur",
+        "eudn",
+        "eudr",
+        "eut",
+    }
+)
 UK_AFFECTING_ACT_XML_SOURCE_RULE_IDS = frozenset(
     {
         "uk_affecting_act_xml_missing_rejected",
@@ -43,12 +81,14 @@ UK_AFFECTING_ACT_XML_SOURCE_RULE_IDS = frozenset(
 class UKSourceStatus(StrEnum):
     ABSENT = "absent"
     TOO_SMALL = "too_small"
+    MULTIPLE_CHOICES = "multiple_choices"
     AVAILABLE = "available"
 
 
 class UKStatuteXmlContentStatus(StrEnum):
     ABSENT = "absent"
     TOO_SMALL = "too_small"
+    MULTIPLE_CHOICES = "multiple_choices"
     PARSE_ERROR = "parse_error"
     METADATA_ONLY = "metadata_only"
     AVAILABLE = "available"
@@ -72,6 +112,15 @@ class UKSourceState:
 
 
 @dataclass(frozen=True)
+class UKMultipleChoiceCandidate:
+    href: str
+    title: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {"href": self.href, "title": self.title}
+
+
+@dataclass(frozen=True)
 class UKStatuteXmlContentState:
     status: UKStatuteXmlContentStatus
     size: int
@@ -79,6 +128,7 @@ class UKStatuteXmlContentState:
     has_body: bool
     has_schedules: bool
     parse_error: str = ""
+    multiple_choice_candidates: tuple[UKMultipleChoiceCandidate, ...] = ()
 
     @property
     def usable_as_replay_base(self) -> bool:
@@ -95,6 +145,10 @@ class UKStatuteXmlContentState:
         }
         if self.parse_error:
             row["parse_error"] = self.parse_error
+        if self.multiple_choice_candidates:
+            row["multiple_choice_candidates"] = [
+                candidate.to_dict() for candidate in self.multiple_choice_candidates
+            ]
         return row
 
 
@@ -102,6 +156,8 @@ def classify_uk_source_blob(blob: bytes | None) -> UKSourceState:
     if blob is None:
         return UKSourceState(status=UKSourceStatus.ABSENT, size=0)
     size = len(blob)
+    if _is_uk_multiple_choices_blob(blob):
+        return UKSourceState(status=UKSourceStatus.MULTIPLE_CHOICES, size=size)
     if size < MIN_UK_XML_SOURCE_BYTES:
         return UKSourceState(status=UKSourceStatus.TOO_SMALL, size=size)
     return UKSourceState(status=UKSourceStatus.AVAILABLE, size=size)
@@ -140,6 +196,15 @@ def classify_uk_statute_xml_content(blob: bytes | None) -> UKStatuteXmlContentSt
             has_body=False,
             has_schedules=False,
         )
+    if source_state.status is UKSourceStatus.MULTIPLE_CHOICES:
+        return UKStatuteXmlContentState(
+            status=UKStatuteXmlContentStatus.MULTIPLE_CHOICES,
+            size=source_state.size,
+            number_of_provisions="",
+            has_body=False,
+            has_schedules=False,
+            multiple_choice_candidates=extract_uk_multiple_choice_candidates(blob),
+        )
     assert blob is not None
     try:
         root = ET.fromstring(blob)
@@ -176,6 +241,128 @@ def _uk_xml_has_local_name(root: ET._Element, local_name: str) -> bool:
         if isinstance(el.tag, str) and ET.QName(el).localname == local_name:
             return True
     return False
+
+
+def _is_uk_multiple_choices_blob(blob: bytes) -> bool:
+    preview = blob[:65536].decode("utf-8", errors="ignore").lower()
+    if preview.startswith("http 300 multiple choices"):
+        return True
+    return (
+        "multiple choices" in preview
+        and "the link that you've followed could mean either of the following" in preview
+    )
+
+
+class _UKMultipleChoiceHTMLParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._active_href = ""
+        self._active_text: list[str] = []
+        self.candidates: list[UKMultipleChoiceCandidate] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "a":
+            return
+        href = ""
+        for name, value in attrs:
+            if name.lower() == "href" and value:
+                href = value.strip()
+                break
+        if href.startswith("/") or href.startswith(UK_LEGISLATION_BASE_URL):
+            self._active_href = href
+            self._active_text = []
+
+    def handle_data(self, data: str) -> None:
+        if self._active_href:
+            self._active_text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() != "a" or not self._active_href:
+            return
+        title = " ".join("".join(self._active_text).split())
+        if title:
+            self.candidates.append(
+                UKMultipleChoiceCandidate(href=self._active_href, title=title)
+            )
+        self._active_href = ""
+        self._active_text = []
+
+
+def extract_uk_multiple_choice_candidates(
+    blob: bytes | None,
+) -> tuple[UKMultipleChoiceCandidate, ...]:
+    if not blob:
+        return ()
+    parser = _UKMultipleChoiceHTMLParser()
+    parser.feed(blob.decode("utf-8", errors="ignore"))
+    return tuple(parser.candidates)
+
+
+def uk_multiple_choice_candidate_data_urls(
+    blob: bytes | None,
+    *,
+    include_current: bool = True,
+    include_enacted: bool = True,
+) -> tuple[str, ...]:
+    """Return leaf ``data.xml`` URLs named by a UK Multiple Choices page.
+
+    The ambiguous URL is not canonicalized to one candidate.  Each leaf is
+    returned under its own legislation.gov.uk locator so acquisition can store
+    all source witnesses without promoting any one candidate for replay.
+    """
+    urls: list[str] = []
+    seen: set[str] = set()
+    for candidate in extract_uk_multiple_choice_candidates(blob):
+        base_url = _normalise_uk_multiple_choice_candidate_href(candidate.href)
+        if not base_url:
+            continue
+        for url in _candidate_base_data_urls(
+            base_url,
+            include_current=include_current,
+            include_enacted=include_enacted,
+        ):
+            if url not in seen:
+                urls.append(url)
+                seen.add(url)
+    return tuple(urls)
+
+
+def _normalise_uk_multiple_choice_candidate_href(href: str) -> str:
+    raw_href = href.strip()
+    if not raw_href:
+        return ""
+    split = urlsplit(raw_href)
+    if split.scheme and split.netloc != "www.legislation.gov.uk":
+        return ""
+    path = split.path if split.scheme else raw_href.split("?", 1)[0].split("#", 1)[0]
+    parts = [part for part in path.strip("/").split("/") if part]
+    if len(parts) < 3 or parts[0] not in UK_MULTIPLE_CHOICE_DOCUMENT_TYPES:
+        return ""
+    return f"{UK_LEGISLATION_BASE_URL}/{'/'.join(parts)}"
+
+
+def _candidate_base_data_urls(
+    base_url: str,
+    *,
+    include_current: bool,
+    include_enacted: bool,
+) -> tuple[str, ...]:
+    if base_url.endswith("/data.xml"):
+        return (base_url,)
+    if base_url.endswith("/enacted"):
+        urls: list[str] = []
+        current_base = base_url.removesuffix("/enacted")
+        if include_enacted:
+            urls.append(f"{base_url}/data.xml")
+        if include_current:
+            urls.append(f"{current_base}/data.xml")
+        return tuple(urls)
+    urls = []
+    if include_current:
+        urls.append(f"{base_url}/data.xml")
+    if include_enacted:
+        urls.append(f"{base_url}/enacted/data.xml")
+    return tuple(urls)
 
 
 def _uk_source_diagnostic(

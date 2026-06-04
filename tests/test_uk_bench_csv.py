@@ -5478,6 +5478,35 @@ def test_uk_bench_no_enacted_preserves_oracle_source_state(monkeypatch) -> None:
     assert result.comparison_class == "no_enacted_eids"
 
 
+def test_uk_bench_classifies_multiple_choices_enacted_source(monkeypatch) -> None:
+    class FakeArchive:
+        def get(self, url: str) -> bytes:
+            if url.endswith("/enacted/data.xml"):
+                return b"HTTP 300 Multiple Choices"
+            return b"<xml>" + (b"x" * 200)
+
+    monkeypatch.setattr(uk_bench, "_load_effect_row_counts", lambda _sid, _archive: (0, 0, {}, 0, {}, ()))
+
+    result = uk_bench._score_statute(
+        {
+            "statute_id": "ukpga/1955/18",
+            "type": "ukpga",
+            "year": 1955,
+            "n_effects": 0,
+            "n_effect_feed_pages": 0,
+            "enacted_url": "https://www.legislation.gov.uk/ukpga/1955/18/enacted/data.xml",
+            "current_url": "https://www.legislation.gov.uk/ukpga/1955/18/data.xml",
+        },
+        cast(Farchive, FakeArchive()),
+    )
+
+    assert result.status == "NO_ENACTED"
+    assert result.enacted_source_status == "multiple_choices"
+    assert result.enacted_source_size == len(b"HTTP 300 Multiple Choices")
+    assert result.oracle_source_status == "available"
+    assert result.comparison_class == "no_enacted_eids"
+
+
 def test_uk_bench_build_corpus_index_records_source_states() -> None:
     class SimpleRows:
         def __init__(self, rows: list[tuple[str]]) -> None:

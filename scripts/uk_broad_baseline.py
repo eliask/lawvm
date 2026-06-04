@@ -122,8 +122,10 @@ _OFFICIAL_EMPTY_EFFECT_FEED_FRONTIER_REASONS = frozenset(
 )
 _SOURCE_OR_ORACLE_PATHOLOGY_FRONTIER_REASONS = frozenset(
     {
+        "base_multiple_choices",
         "base_too_small",
         "oracle_metadata_only",
+        "oracle_multiple_choices",
     }
 )
 _SOURCE_CHAIN_COMPLETENESS_EXCLUDED_REASONS = (
@@ -306,13 +308,18 @@ def score_one(statute_id: str) -> dict[str, Any]:
         current_source = classify_uk_statute_xml_content(current)
         result.update(_source_state_fields("base", base_source))
         result.update(_source_state_fields("oracle", current_source))
-        if base_source.status.value in {"too_small", "parse_error"}:
+        if base_source.status.value in {"too_small", "multiple_choices", "parse_error"}:
             return {
                 **result,
                 "score_status": "source_frontier",
                 "source_frontier_reason": f"base_{base_source.status.value}",
             }
-        if current_source.status.value in {"too_small", "parse_error", "metadata_only"}:
+        if current_source.status.value in {
+            "too_small",
+            "multiple_choices",
+            "parse_error",
+            "metadata_only",
+        }:
             return {
                 **result,
                 "score_status": "source_frontier",
@@ -1726,6 +1733,11 @@ def _source_state_fields(prefix: str, state: Any) -> dict[str, Any]:
     }
     if state.parse_error:
         fields[f"{prefix}_source_parse_error"] = state.parse_error
+    multiple_choice_candidates = getattr(state, "multiple_choice_candidates", ())
+    if multiple_choice_candidates:
+        fields[f"{prefix}_source_multiple_choice_candidates"] = [
+            candidate.to_dict() for candidate in multiple_choice_candidates
+        ]
     return fields
 
 

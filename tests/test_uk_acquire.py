@@ -33,6 +33,10 @@ class _FakeArchive:
         history_map: dict[str, list[Any]] | None = None,
     ) -> None:
         self._existing: set[str] = set(existing or [])
+        self._data: dict[str, bytes] = {
+            locator: b"<Legislation>" + (b"x" * 100) + b"</Legislation>"
+            for locator in self._existing
+        }
         self._history: dict[str, list[Any]] = dict(history_map or {})
         self.store_calls: list[tuple[str, str]] = []
         self.observe_calls: list[tuple[str, str]] = []
@@ -40,12 +44,16 @@ class _FakeArchive:
     def has(self, locator: str) -> bool:
         return locator in self._existing
 
+    def get(self, locator: str) -> bytes | None:
+        return self._data.get(locator)
+
     def history(self, locator: str) -> list[Any]:
         return self._history.get(locator, [])
 
     def store(self, locator: str, data: bytes, storage_class: str = "xml") -> None:  # noqa: ARG002
         self.store_calls.append((locator, storage_class))
         self._existing.add(locator)
+        self._data[locator] = data
 
     def observe(self, locator: str, digest: str) -> None:
         self.observe_calls.append((locator, digest))
@@ -400,6 +408,57 @@ def test_acquire_statute_records_enacted_error(monkeypatch) -> None:
     assert report.enacted_error == "http_404"
     assert report.has_errors is True
     assert archive.store_calls == []
+
+
+def test_acquire_statute_rejects_multiple_choices_as_source_ambiguity(monkeypatch) -> None:
+    archive = _FakeArchive()
+
+    def fake_get(
+        url: str,
+        delay: float = 0.5,
+        last_time: list[float] | None = None,
+    ) -> tuple[bytes, int]:
+        return b"HTTP 300 Multiple Choices", 300
+
+    monkeypatch.setattr("lawvm.uk_legislation.uk_acquire._http_get", fake_get)
+
+    report = acquire_statute("ukpga/1955/18", archive, enacted_only=True)
+
+    assert report.enacted_fetched is False
+    assert report.enacted_error == "multiple_choices"
+    assert report.has_errors is True
+    assert archive.store_calls == []
+
+
+def test_acquire_statute_fetches_multiple_choices_leaf_candidates(monkeypatch) -> None:
+    archive = _FakeArchive()
+    ambiguity_blob = b"""<div id="content">
+    <h1>Multiple Choices</h1>
+    <p>The link that you've followed could mean either of the following:</p>
+    <a href="/ukpga/Eliz2/3-4/18/enacted">Army Act 1955 (repealed)</a>
+    <a href="/ukpga/Eliz2/4-5/18/enacted">Aliens' Employment Act 1955</a>
+    </div>"""
+    leaf_xml = b"<Legislation>" + (b"leaf" * 40) + b"</Legislation>"
+
+    def fake_get(
+        url: str,
+        delay: float = 0.5,
+        last_time: list[float] | None = None,
+    ) -> tuple[bytes, int]:
+        if url == "https://www.legislation.gov.uk/ukpga/1955/18/enacted/data.xml":
+            return ambiguity_blob, 300
+        return leaf_xml, 200
+
+    monkeypatch.setattr("lawvm.uk_legislation.uk_acquire._http_get", fake_get)
+
+    report = acquire_statute("ukpga/1955/18", archive, enacted_only=True)
+
+    assert report.enacted_error == "multiple_choices"
+    assert report.multiple_choice_candidate_sources_fetched == 2
+    assert archive.store_calls == [
+        ("https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/enacted/data.xml", "xml"),
+        ("https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/enacted/data.xml", "xml"),
+    ]
 
 
 def test_acquire_statute_full_fetches_all_three(monkeypatch) -> None:

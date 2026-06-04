@@ -43,7 +43,7 @@ def test_compile_diagnostic_frontier_work_item_uses_family_defaults() -> None:
     ]
 
 
-def test_score_one_reports_too_small_current_as_source_frontier(monkeypatch) -> None:
+def test_score_one_reports_multiple_choices_current_as_source_frontier(monkeypatch) -> None:
     class FakeFarchive:
         def __init__(self, _path):
             pass
@@ -71,9 +71,9 @@ def test_score_one_reports_too_small_current_as_source_frontier(monkeypatch) -> 
     row = uk_broad_baseline.score_one("ukpga/1945/9")
 
     assert row["score_status"] == "source_frontier"
-    assert row["source_frontier_reason"] == "oracle_too_small"
+    assert row["source_frontier_reason"] == "oracle_multiple_choices"
     assert row["base_source_status"] == "available"
-    assert row["oracle_source_status"] == "too_small"
+    assert row["oracle_source_status"] == "multiple_choices"
     assert "error" not in row
 
 

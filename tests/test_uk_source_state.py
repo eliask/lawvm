@@ -6,6 +6,7 @@ from lawvm.uk_legislation.source_state import (
     classify_uk_statute_xml_content,
     classify_uk_source_blob,
     classify_uk_source_blob_legacy,
+    uk_multiple_choice_candidate_data_urls,
     is_uk_affecting_act_xml_source_diagnostic,
     is_uk_affecting_act_xml_source_observation,
     uk_affecting_act_article_schedule_payload_source_extracted,
@@ -43,10 +44,76 @@ def test_uk_source_state_classifies_absent_too_small_and_available() -> None:
 def test_uk_source_state_legacy_tuple_preserves_cli_wire_values() -> None:
     assert uk_source_state_wire_tuple(None) == ("absent", 0)
     assert uk_source_state_wire_tuple(b"") == ("too_small", 0)
+    assert uk_source_state_wire_tuple(b"HTTP 300 Multiple Choices") == (
+        "multiple_choices",
+        25,
+    )
     assert uk_source_state_wire_tuple(b"x" * 100) == ("available", 100)
     assert classify_uk_source_blob_legacy(None) == ("absent", 0)
     assert classify_uk_source_blob_legacy(b"") == ("too_small", 0)
+    assert classify_uk_source_blob_legacy(b"HTTP 300 Multiple Choices") == (
+        "multiple_choices",
+        25,
+    )
     assert classify_uk_source_blob_legacy(b"x" * 100) == ("available", 100)
+
+
+def test_uk_statute_xml_content_classifies_multiple_choices_html() -> None:
+    blob = b"""<div xmlns="http://www.w3.org/1999/xhtml" id="layout2">
+  <div id="title"><h1 id="pageTitle">Multiple Choices</h1></div>
+  <div id="content">
+    <p>The link that you've followed could mean either of the following:</p>
+    <ul>
+      <li><a href="/ukpga/Eliz2/3-4/18/enacted">Army Act 1955 (repealed)</a></li>
+      <li><a href="/ukpga/Eliz2/4-5/18/enacted">Aliens' Employment Act 1955</a></li>
+    </ul>
+  </div>
+</div>"""
+
+    state = classify_uk_statute_xml_content(blob)
+
+    assert state.status is UKStatuteXmlContentStatus.MULTIPLE_CHOICES
+    assert state.usable_as_replay_base is False
+    assert state.to_dict()["multiple_choice_candidates"] == [
+        {
+            "href": "/ukpga/Eliz2/3-4/18/enacted",
+            "title": "Army Act 1955 (repealed)",
+        },
+        {
+            "href": "/ukpga/Eliz2/4-5/18/enacted",
+            "title": "Aliens' Employment Act 1955",
+        },
+    ]
+
+
+def test_uk_source_blob_classifies_multiple_choices_after_long_html_head() -> None:
+    blob = (
+        b"<!DOCTYPE html><html><head>"
+        + (b"<meta name='x' content='y'/>" * 400)
+        + b"</head><body><h1>Multiple Choices</h1>"
+        + b"<p>The link that you've followed could mean either of the following:</p>"
+        + b"<a href='/ukpga/Eliz2/3-4/18/enacted'>Army Act 1955</a>"
+        + b"</body></html>"
+    )
+
+    assert classify_uk_source_blob(blob).status is UKSourceStatus.MULTIPLE_CHOICES
+
+
+def test_uk_multiple_choice_candidate_data_urls_filters_non_candidate_links() -> None:
+    blob = b"""<div id="content">
+    <h1>Multiple Choices</h1>
+    <p>The link that you've followed could mean either of the following:</p>
+    <a href="/search">Advanced Search</a>
+    <a href="/ukpga/Eliz2/3-4/18/enacted">Army Act 1955 (repealed)</a>
+    <a href="https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/enacted">Aliens</a>
+    </div>"""
+
+    assert uk_multiple_choice_candidate_data_urls(blob) == (
+        "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/enacted/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/enacted/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/data.xml",
+    )
 
 
 def test_uk_statute_xml_content_classifies_metadata_only_enacted_envelope() -> None:

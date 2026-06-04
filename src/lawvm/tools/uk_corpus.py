@@ -42,6 +42,11 @@ from urllib.request import Request, urlopen
 from farchive import CompressionPolicy, Farchive
 
 from lawvm.core.http_identity import LAWVM_USER_AGENT
+from lawvm.uk_legislation.source_state import (
+    UKSourceStatus,
+    classify_uk_source_blob,
+    uk_multiple_choice_candidate_data_urls,
+)
 
 _LEG_BASE = "https://www.legislation.gov.uk"
 _USER_AGENT = LAWVM_USER_AGENT
@@ -156,6 +161,12 @@ class _HTTP:
                     self.bytes += len(data)
                     return data, resp.getcode()
             except HTTPError as e:
+                if e.code == 300:
+                    data = _decode_content_encoding(
+                        e.read(), e.headers.get("Content-Encoding")
+                    )
+                    self.bytes += len(data)
+                    return data, e.code
                 if e.code in (404, 410):
                     return None, e.code
                 if e.code in _RETRYABLE_STATUS:
@@ -239,6 +250,80 @@ def _store_if_new(archive: Farchive, url: str, data: bytes, sc: str = "xml") -> 
             return False
     archive.store(url, data, storage_class=sc)
     return True
+
+
+def _source_xml_status(data: bytes | None) -> UKSourceStatus:
+    return classify_uk_source_blob(data).status
+
+
+def _cached_source_xml_status(archive: Farchive, url: str) -> UKSourceStatus:
+    if not archive.has(url):
+        return UKSourceStatus.ABSENT
+    return _source_xml_status(archive.get(url))
+
+
+def _source_xml_fetch_error(data: bytes | None, status: int | None) -> str | None:
+    if not data:
+        return f"http_{status}" if status is not None else "transport_error"
+    source_status = _source_xml_status(data)
+    if source_status is UKSourceStatus.AVAILABLE:
+        return None
+    return source_status.value
+
+
+def _store_source_xml_if_available(
+    archive: Farchive,
+    url: str,
+    data: bytes,
+) -> bool:
+    source_error = _source_xml_fetch_error(data, 200)
+    if source_error is not None:
+        print(
+            f"  [source-frontier] refusing {source_error} source payload for {url}; "
+            "not stored as XML",
+            file=sys.stderr,
+        )
+        return False
+    return _store_if_new(archive, url, data, "xml")
+
+
+def _fetch_store_source_xml(
+    archive: Farchive,
+    http: _HTTP,
+    url: str,
+) -> tuple[bool, str]:
+    data, status = http.get_with_status(url)
+    source_error = _source_xml_fetch_error(data, status)
+    if not data or source_error is not None:
+        return False, source_error or "transport_error"
+    return _store_source_xml_if_available(archive, url, data), "available"
+
+
+def _fetch_multiple_choice_candidate_sources(
+    archive: Farchive,
+    http: _HTTP,
+    blob: bytes | None,
+    *,
+    include_current: bool,
+    include_enacted: bool,
+) -> int:
+    fetched = 0
+    for url in uk_multiple_choice_candidate_data_urls(
+        blob,
+        include_current=include_current,
+        include_enacted=include_enacted,
+    ):
+        if _cached_source_xml_status(archive, url) is UKSourceStatus.AVAILABLE:
+            continue
+        stored, status = _fetch_store_source_xml(archive, http, url)
+        if stored:
+            fetched += 1
+        elif status == UKSourceStatus.MULTIPLE_CHOICES.value:
+            print(
+                f"  [source-frontier] nested Multiple Choices candidate {url}; not stored",
+                file=sys.stderr,
+            )
+    return fetched
 
 
 def _fetch_effects_pages(
@@ -326,21 +411,53 @@ def do_download(
 ) -> dict:
     all_acts = [(t, a) for t, acts in manifest.items() for a in acts]
     total = len(all_acts)
-    n_enacted = n_current = n_effects = 0
+    n_enacted = n_current = n_effects = n_multiple_choices = n_candidate_sources = 0
     for i, (_, act) in enumerate(all_acts, 1):
         t, y, n = act["type"], act["year"], act["num"]
         base = f"{_LEG_BASE}/{t}/{y}/{n}"
         enacted_url = f"{base}/enacted/data.xml"
-        if not archive.has(enacted_url):
-            data = http.get(enacted_url)
-            if data and len(data) > 50 and _store_if_new(archive, enacted_url, data, "xml"):
+        enacted_cached_status = _cached_source_xml_status(archive, enacted_url)
+        if enacted_cached_status in {UKSourceStatus.ABSENT, UKSourceStatus.MULTIPLE_CHOICES}:
+            data, status = http.get_with_status(enacted_url)
+            source_error = _source_xml_fetch_error(data, status)
+            if data and source_error == UKSourceStatus.MULTIPLE_CHOICES.value:
+                n_multiple_choices += 1
+                n_candidate_sources += _fetch_multiple_choice_candidate_sources(
+                    archive,
+                    http,
+                    data,
+                    include_current=not enacted_only,
+                    include_enacted=True,
+                )
+            elif data and source_error is None and _store_source_xml_if_available(
+                archive,
+                enacted_url,
+                data,
+            ):
                 n_enacted += 1
         if not enacted_only:
             current_url = f"{base}/data.xml"
-            if _is_stale(archive, current_url, _TTL_CURRENT):
-                data = http.get(current_url)
-                if data and len(data) > 50:
-                    _store_if_new(archive, current_url, data, "xml")
+            current_cached_status = _cached_source_xml_status(archive, current_url)
+            if (
+                current_cached_status is UKSourceStatus.MULTIPLE_CHOICES
+                or _is_stale(archive, current_url, _TTL_CURRENT)
+            ):
+                data, status = http.get_with_status(current_url)
+                source_error = _source_xml_fetch_error(data, status)
+                if data and source_error == UKSourceStatus.MULTIPLE_CHOICES.value:
+                    n_multiple_choices += 1
+                    n_candidate_sources += _fetch_multiple_choice_candidate_sources(
+                        archive,
+                        http,
+                        data,
+                        include_current=True,
+                        include_enacted=True,
+                    )
+                elif data and source_error is None and _store_source_xml_if_available(
+                    archive,
+                    current_url,
+                    data,
+                ):
                     n_current += 1
             if _fetch_effects_pages(t, y, n, archive, http) > 0:
                 n_effects += 1
@@ -348,9 +465,17 @@ def do_download(
             st = archive.stats()
             print(
                 f"  [{i:,}/{total:,}]  enacted+{n_enacted:,}  current+{n_current:,}  "
-                f"effects+{n_effects:,}  archive={st.locator_count:,} locators  last={t}/{y}/{n}"
+                f"effects+{n_effects:,}  multi={n_multiple_choices:,}  "
+                f"candidate_sources+{n_candidate_sources:,}  "
+                f"archive={st.locator_count:,} locators  last={t}/{y}/{n}"
             )
-    return {"enacted": n_enacted, "current": n_current, "effects": n_effects}
+    return {
+        "enacted": n_enacted,
+        "current": n_current,
+        "effects": n_effects,
+        "multiple_choices": n_multiple_choices,
+        "candidate_sources": n_candidate_sources,
+    }
 
 
 def do_affecting(
@@ -362,7 +487,10 @@ def do_affecting(
         affecting = {a for a in affecting if a.split("/")[0] in types}
     to_fetch = [
         a for a in sorted(affecting)
-        if (not archive.has(f"{_LEG_BASE}/{a}/enacted/data.xml"))
+        if (
+            _cached_source_xml_status(archive, f"{_LEG_BASE}/{a}/enacted/data.xml")
+            is not UKSourceStatus.AVAILABLE
+        )
         and (not archive.has(_missing_enacted_locator(a)))
     ]
     print(f"  {len(affecting) - len(to_fetch):,} cached, {len(to_fetch):,} to fetch")
@@ -370,8 +498,22 @@ def do_affecting(
     for i, aid in enumerate(to_fetch, 1):
         url = f"{_LEG_BASE}/{aid}/enacted/data.xml"
         data, status = http.get_with_status(url)
-        if data and len(data) > 50 and _is_storable_xml(data):
-            archive.store(url, data, storage_class="xml")
+        source_error = _source_xml_fetch_error(data, status)
+        if data and source_error == UKSourceStatus.MULTIPLE_CHOICES.value:
+            _fetch_multiple_choice_candidate_sources(
+                archive,
+                http,
+                data,
+                include_current=False,
+                include_enacted=True,
+            )
+            n_fail += 1
+            if diagnostics_out is not None:
+                diagnostics_out.append(_affecting_acquisition_event(
+                    affecting_act_id=aid, url=url, status="ambiguous",
+                    rule_id="uk_acquire_affecting_enacted_multiple_choices",
+                    reason="multiple_choices", blocking=True))
+        elif data and source_error is None and _store_source_xml_if_available(archive, url, data):
             n_ok += 1
         elif status in {404, 410}:
             archive.store(_missing_enacted_locator(aid), b"404", storage_class="text")
@@ -387,7 +529,9 @@ def do_affecting(
                 diagnostics_out.append(_affecting_acquisition_event(
                     affecting_act_id=aid, url=url, status="error",
                     rule_id="uk_acquire_affecting_enacted_fetch_failed",
-                    reason=f"http_{status}" if status is not None else "transport_error",
+                    reason=source_error or (
+                        f"http_{status}" if status is not None else "transport_error"
+                    ),
                     blocking=True))
         if i % 1000 == 0 or i == len(to_fetch):
             print(f"  [{i:,}/{len(to_fetch):,}]  ok={n_ok:,}  fail={n_fail:,}  404={n_404:,}  last={aid}")
@@ -402,9 +546,27 @@ def do_refresh(
         for sid in sorted(statute_ids):
             act_type, year, number = _split_statute_id(sid)
             current_url = f"{_LEG_BASE}/{act_type}/{year}/{number}/data.xml"
-            if force or _is_stale(archive, current_url, _TTL_CURRENT):
-                data = http.get(current_url)
-                if data and len(data) > 50 and _store_if_new(archive, current_url, data, "xml"):
+            cached_status = _cached_source_xml_status(archive, current_url)
+            if force or cached_status is UKSourceStatus.MULTIPLE_CHOICES or _is_stale(
+                archive,
+                current_url,
+                _TTL_CURRENT,
+            ):
+                data, status = http.get_with_status(current_url)
+                source_error = _source_xml_fetch_error(data, status)
+                if data and source_error == UKSourceStatus.MULTIPLE_CHOICES.value:
+                    _fetch_multiple_choice_candidate_sources(
+                        archive,
+                        http,
+                        data,
+                        include_current=True,
+                        include_enacted=True,
+                    )
+                elif data and source_error is None and _store_source_xml_if_available(
+                    archive,
+                    current_url,
+                    data,
+                ):
                     n_current += 1
             if _fetch_effects_pages(act_type, year, number, archive, http, force=force) > 0:
                 n_effects += 1
@@ -412,10 +574,20 @@ def do_refresh(
     for loc in archive.locators("%/data.xml"):
         if "/enacted/" in loc:
             continue
-        if _is_stale(archive, loc, _TTL_CURRENT):
-            data = http.get(loc)
-            if data and len(data) > 50:
-                _store_if_new(archive, loc, data, "xml")
+        cached_status = _cached_source_xml_status(archive, loc)
+        if cached_status is UKSourceStatus.MULTIPLE_CHOICES or _is_stale(archive, loc, _TTL_CURRENT):
+            data, status = http.get_with_status(loc)
+            source_error = _source_xml_fetch_error(data, status)
+            if data and source_error == UKSourceStatus.MULTIPLE_CHOICES.value:
+                _fetch_multiple_choice_candidate_sources(
+                    archive,
+                    http,
+                    data,
+                    include_current=True,
+                    include_enacted=True,
+                )
+            elif data and source_error is None:
+                _store_source_xml_if_available(archive, loc, data)
                 n_current += 1
     for loc in archive.locators("%/data.feed%"):
         if _is_stale(archive, loc, _TTL_EFFECTS):
@@ -481,7 +653,11 @@ def run_acquire(archive: Farchive, http: _HTTP, *, types: list[str], enacted_onl
     manifest = _manifest(types, http)
     print(f"\n[download] enacted={'only' if enacted_only else '+current+effects'}")
     r = do_download(manifest, archive, http, enacted_only=enacted_only)
-    print(f"  enacted+{r['enacted']:,}  current+{r['current']:,}  effects+{r['effects']:,}")
+    print(
+        f"  enacted+{r['enacted']:,}  current+{r['current']:,}  "
+        f"effects+{r['effects']:,}  multiple_choices={r['multiple_choices']:,}  "
+        f"candidate_sources+{r['candidate_sources']:,}"
+    )
 
 
 def run_affecting(
