@@ -39,6 +39,15 @@ _REF_PATTERN = re.compile(
     r'(?:[^#]*#([a-z0-9_/~.-]+))?'  # optional: #provision-path (e.g. #sec_12)
 )
 
+# Match /akn/fi/doc/government-proposal/YEAR/NUMBER — Finlex typed HE backlinks
+# used in <hcontainer name="preliminaryWork"> ("Esityöt") sections of
+# consolidated statutes. Captures the statute→HE lineage edge:
+# "this consolidated act came from HE N/Y." Target statute_id is formed as
+# "he/YEAR/NUMBER" to distinguish from /akn/fi/act/statute targets.
+_HE_REF_PATTERN = re.compile(
+    r'/akn/fi/doc/government-proposal/(\d{4})/(\d+(?:-\d+)?)'
+)
+
 # ---------------------------------------------------------------------------
 # Output type
 # ---------------------------------------------------------------------------
@@ -121,11 +130,21 @@ def _make_statute_id(year: str, num_raw: str) -> str:
 
 
 def _parse_ref_href(href: str) -> Optional[tuple]:
-    """Parse an AKN ref href → (statute_id, provision_path) or None."""
+    """Parse an AKN ref href → (statute_id, provision_path) or None.
+
+    Handles two AKN URI families:
+    - /akn/fi/act/statute[-consolidated]/YEAR/NUMBER — enacted statute targets
+    - /akn/fi/doc/government-proposal/YEAR/NUMBER — HE backlinks in
+      Finlex preliminaryWork ("Esityöt") sections; target_statute_id
+      is namespaced as "he/YEAR/NUMBER" to distinguish from enacted refs.
+    """
     m = _REF_PATTERN.match(href)
-    if not m:
-        return None
-    return (_make_statute_id(m.group(1), m.group(2)), m.group(3) or "")
+    if m:
+        return (_make_statute_id(m.group(1), m.group(2)), m.group(3) or "")
+    m = _HE_REF_PATTERN.match(href)
+    if m:
+        return (f"he/{m.group(1)}/{int(m.group(2))}", "")
+    return None
 
 
 def _find_section_ancestor(elem: ET.Element, parent_map: dict) -> str:
