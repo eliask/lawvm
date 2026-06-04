@@ -108,10 +108,31 @@ def _build_user_message(
     )
 
 
+# Module-scope compiled pattern: finds {...} JSON object candidates in longer text.
+# Used when the model embeds the answer inside a reasoning trace.
+# Bounded: {0,8000} is generous for a single legal JSON object.
+_JSON_OBJ_RE = re.compile(r'\{[^{}]{0,8000}\}', re.DOTALL)
+
+
+def _extract_json_candidate(raw: str) -> str:
+    """Extract the last {...} JSON object candidate from *raw*.
+
+    When `raw` is a reasoning trace (reasoning_content fallback), the answer
+    JSON is typically the last JSON-looking block in the output.
+    Returns *raw* unchanged if no {...} block is found (let json.loads fail).
+    """
+    matches = _JSON_OBJ_RE.findall(raw)
+    return matches[-1] if matches else raw
+
+
 def _parse_chat_response(raw: str, schema: ClaimSchema) -> Tuple[Optional[dict], Optional[str]]:
     """Parse structured JSON from chat completion response.
 
     Returns (parsed_dict, error_str). If error_str is non-None, parsing failed.
+
+    AGENTS.md §1.10: single bounded try/except at the JSON parse boundary only.
+    When content is a reasoning trace (Qwen3 thinking fallback), the JSON may
+    be embedded inside a longer text — _extract_json_candidate finds it.
     """
     raw = raw.strip()
     # Strip markdown code fences if present
@@ -120,7 +141,16 @@ def _parse_chat_response(raw: str, schema: ClaimSchema) -> Tuple[Optional[dict],
         raw = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
         raw = raw.strip()
 
-    parsed = json.loads(raw)
+    # If raw doesn't look like bare JSON, try to extract a {...} block
+    # (handles reasoning_content fallback where answer is embedded in prose).
+    if not raw.startswith("{"):
+        raw = _extract_json_candidate(raw)
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return None, f"JSON parse error: {exc}"
+
     if not isinstance(parsed, dict):
         return None, f"expected JSON object, got {type(parsed).__name__}"
 
@@ -170,12 +200,18 @@ class QwenLocalBackend:
 
     If the server is unreachable: raises RuntimeError with diagnostic message.
     Tests that require the live server are marked @pytest.mark.requires_local_llm.
+
+    disable_thinking: send 'thinking: {type: disabled}' to suppress chain-of-thought
+    output. Required for Qwen3 thinking models (e.g. Qwen3.6-27B) where reasoning
+    tokens consume the max_tokens budget before any content is emitted. When True,
+    max_tokens applies only to the answer, not the reasoning trace.
     """
 
     base_url: str = _BASE_URL
     model_name: str = "qwen3.6-27b"
-    max_tokens: int = 256
+    max_tokens: int = 2048
     temperature: float = 0.0
+    disable_thinking: bool = True
 
     def propose(
         self,
@@ -197,6 +233,12 @@ class QwenLocalBackend:
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
         }
+
+        # Disable chain-of-thought for Qwen3 thinking models: without this,
+        # reasoning tokens exhaust max_tokens before any content is emitted,
+        # producing an empty response.
+        if self.disable_thinking:
+            request_body["thinking"] = {"type": "disabled"}
 
         # Attempt json_schema structured output
         if schema.json_schema_dict is not None:
@@ -253,11 +295,16 @@ class QwenLocalBackend:
                 f"Start the server before running this command. Reason: {exc.reason}"
             ) from exc
 
-        # Extract content from response
+        # Extract content from response.
+        # Qwen3 thinking models (Qwen3.6-27B etc.) may put the entire chain-of-thought
+        # in reasoning_content and leave content empty when the generation is cut off
+        # before the answer phase. Fall back to reasoning_content so we can still
+        # attempt JSON extraction from the reasoning trace.
         if endpoint_used == "chat" and response_data:
             choices = response_data.get("choices", [])
             if choices:
-                raw_response = choices[0].get("message", {}).get("content", "")
+                msg = choices[0].get("message", {})
+                raw_response = msg.get("content", "") or msg.get("reasoning_content", "")
                 model_id = response_data.get("model", self.model_name)
         elif endpoint_used == "completion" and response_data:
             raw_response = response_data.get("content", "")
