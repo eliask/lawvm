@@ -878,3 +878,107 @@ class TestPoolsIntegration:
         )
         out = capsys.readouterr().out
         assert "(0 rows)" in out
+
+
+# ---------------------------------------------------------------------------
+# Item 1: Default data-dir tests
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultDataDir:
+    """Verify that all query commands default to data/fi/v1 not .tmp/projections."""
+
+    def _get_default(self, command: str, flag: str = "--data-dir") -> str:
+        from lawvm.tools import cli
+        parser = cli._build_parser()
+        # Parse with only required args (e.g. --statute / --provision / etc.)
+        # Each command's required args are set below.
+        required_extra: list[str] = []
+        if command in ("fi-proposal-history", "fi-proposals-competing"):
+            required_extra = ["--statute", "x"]
+        elif command in ("follow-refs",):
+            required_extra = ["--start", "x"]
+        elif command in ("pit-timeline",):
+            required_extra = ["--provision", "x"]
+        elif command in ("pit-diff",):
+            required_extra = ["--provision", "x", "--t1", "2020-01-01", "--t2", "2024-01-01"]
+
+        args = parser.parse_args([command] + required_extra)
+        return getattr(args, "data_dir", None)
+
+    def test_refs_default_data_dir(self):
+        assert self._get_default("refs") == "data/fi/v1"
+
+    def test_actors_default_data_dir(self):
+        assert self._get_default("actors") == "data/fi/v1"
+
+    def test_pools_default_data_dir(self):
+        assert self._get_default("pools") == "data/fi/v1"
+
+    def test_preparatory_refs_default_data_dir(self):
+        assert self._get_default("preparatory-refs") == "data/fi/v1"
+
+    def test_inline_citations_default_data_dir(self):
+        assert self._get_default("inline-citations") == "data/fi/v1"
+
+    def test_topic_default_data_dir(self):
+        from lawvm.tools import cli
+        parser = cli._build_parser()
+        args = parser.parse_args(["topic", "--topic", "ympäristö"])
+        assert args.data_dir == "data/fi/v1"
+
+    def test_follow_refs_default_data_dir(self):
+        assert self._get_default("follow-refs") == "data/fi/v1"
+
+    def test_pit_timeline_default_data_dir(self):
+        assert self._get_default("pit-timeline") == "data/fi/v1"
+
+    def test_pit_diff_default_data_dir(self):
+        assert self._get_default("pit-diff") == "data/fi/v1"
+
+    def test_telos_default_data_dir(self):
+        assert self._get_default("telos") == "data/fi/v1"
+
+    def test_fi_proposal_history_default_data_dir(self):
+        assert self._get_default("fi-proposal-history") == "data/fi/v1"
+
+    def test_fi_proposals_competing_default_data_dir(self):
+        assert self._get_default("fi-proposals-competing") == "data/fi/v1"
+
+    def test_fi_proposal_bundle_projections_data_dir_default(self):
+        """fi-proposal-bundle --projections-data-dir should default to data/fi/v1."""
+        from lawvm.tools import cli
+        parser = cli._build_parser()
+        args = parser.parse_args(["fi-proposal-bundle", "--he", "HE 184/2024"])
+        assert args.projections_data_dir == "data/fi/v1"
+
+    def test_explicit_data_dir_overrides_default(self):
+        """Passing --data-dir overrides the default."""
+        from lawvm.tools import cli
+        parser = cli._build_parser()
+        args = parser.parse_args(["refs", "--data-dir", "/custom/path"])
+        assert args.data_dir == "/custom/path"
+
+    @duckdb_required
+    def test_refs_stderr_message_shows_data_dir(self, tmp_proj_dir, capsys):
+        """run_refs prints the data-dir to stderr so users see what is being read."""
+        from lawvm.tools.refs_query import run_refs
+        run_refs(
+            from_ref="711/2022",
+            data_dir=str(tmp_proj_dir),
+            output_format="json",
+        )
+        err = capsys.readouterr().err
+        assert "Using projections from" in err
+        assert str(tmp_proj_dir) in err
+
+    @duckdb_required
+    def test_actors_stderr_message_shows_data_dir(self, tmp_proj_dir, capsys):
+        from lawvm.tools.actors_query import run_actors
+        run_actors(
+            statute="711/2022",
+            data_dir=str(tmp_proj_dir),
+            output_format="json",
+        )
+        err = capsys.readouterr().err
+        assert "Using projections from" in err

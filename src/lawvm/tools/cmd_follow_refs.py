@@ -41,7 +41,7 @@ from lawvm.tools._cli_duckdb import (
 from lawvm.tools._cli_output import emit_rows, format_table, json_safe
 
 
-_DEFAULT_DATA_DIR = ".tmp/projections"
+_DEFAULT_DATA_DIR = "data/fi/v1"
 
 # Columns in the edge-list output
 _EDGE_COLUMNS = [
@@ -249,6 +249,8 @@ def run_follow_refs(
             file=sys.stderr,
         )
         sys.exit(1)
+
+    print(f"Using projections from {data_dir}/ (override with --data-dir)", file=sys.stderr)
 
     if depth < 1:
         print("error: --depth must be at least 1", file=sys.stderr)

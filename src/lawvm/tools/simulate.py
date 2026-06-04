@@ -113,9 +113,13 @@ class SimulationReport:
     simulation_warnings: List[str]
     ops_applied: int
     ops_skipped: int
+    parse_failure_reason: Optional[str] = None
+    """Human-readable reason when parse_status is 'failed' or 'partial' with zero ops."""
+    parse_findings_detail: Optional[List[Dict[str, Any]]] = None
+    """Full parse_findings list when --debug-parse is set; None otherwise."""
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d: Dict[str, Any] = {
             "branch_id": self.branch_id,
             "simulated_at": self.simulated_at,
             "diff_from": self.diff_from,
@@ -127,6 +131,11 @@ class SimulationReport:
             "ops_applied": self.ops_applied,
             "ops_skipped": self.ops_skipped,
         }
+        if self.parse_failure_reason is not None:
+            d["parse_failure_reason"] = self.parse_failure_reason
+        if self.parse_findings_detail is not None:
+            d["parse_findings_detail"] = self.parse_findings_detail
+        return d
 
 
 # ---------------------------------------------------------------------------
@@ -432,6 +441,82 @@ def _detect_actor_changes(
 # ---------------------------------------------------------------------------
 
 
+def _build_parse_failure_reason(branch: "HEParsedBranch") -> str:
+    """Build a human-readable parse failure reason from an HEParsedBranch.
+
+    Called when parse_status is FAILED or PARTIAL with zero ops.
+    Surfaces BranchParseRecovery details from parse_findings.
+    """
+    from lawvm.finland.he_branch_parser import BranchParseRecovery
+
+    parts: list[str] = []
+
+    # Summary line based on what the parser found
+    if branch.enactment_sections_found == 0:
+        parts.append("no enactment-text hcontainer found in HE body")
+    elif branch.clauses_attempted == 0:
+        parts.append("enactment-text section found but no amendment clauses extracted")
+    elif branch.clauses_succeeded == 0:
+        parts.append(
+            f"found {branch.enactment_sections_found} enactment section(s), "
+            f"{branch.clauses_attempted} clause(s) attempted, 0 succeeded"
+        )
+    else:
+        parts.append(
+            f"partial parse: {branch.clauses_succeeded}/{branch.clauses_attempted} "
+            f"clauses succeeded, 0 ops produced"
+        )
+
+    # Append per-finding details (BranchParseRecovery)
+    finding_details: list[str] = []
+    for f in branch.parse_findings:
+        if isinstance(f, BranchParseRecovery):
+            finding_details.append(
+                f"[{f.rule_id}] op_index={f.op_index}: {f.reason} — {f.detail[:150]}"
+            )
+    if finding_details:
+        parts.append("findings: " + "; ".join(finding_details[:5]))
+
+    parts.append(
+        "note: the HE-source parser handles ~30-70% of modern HEs; "
+        "for unsupported HEs, use 'lawvm sql' to query fi_he_law_refs directly"
+    )
+    return " | ".join(parts)
+
+
+def _findings_to_dicts(branch: "HEParsedBranch") -> List[Dict[str, Any]]:
+    """Serialize parse_findings to a list of dicts for --debug-parse output."""
+    from lawvm.finland.he_branch_parser import BranchParseRecovery, BranchTargetResolutionFinding
+
+    result: List[Dict[str, Any]] = []
+    for f in branch.parse_findings:
+        if isinstance(f, BranchParseRecovery):
+            result.append({
+                "kind": "BranchParseRecovery",
+                "rule_id": f.rule_id,
+                "op_index": f.op_index,
+                "clause_text": f.clause_text[:300],
+                "reason": f.reason,
+                "detail": f.detail,
+                "phase": f.phase,
+                "strict_disposition": f.strict_disposition,
+            })
+        elif isinstance(f, BranchTargetResolutionFinding):
+            result.append({
+                "kind": "BranchTargetResolutionFinding",
+                "rule_id": f.rule_id,
+                "op_index": f.op_index,
+                "target_provision_ref": f.target_provision_ref,
+                "target_statute_id": f.target_statute_id,
+                "reason": f.reason,
+                "is_proposal_relative": f.is_proposal_relative,
+                "strict_disposition": f.strict_disposition,
+            })
+        else:
+            result.append({"kind": type(f).__name__, "detail": str(f)[:300]})
+    return result
+
+
 def simulate_branch(
     branch_id: str,
     *,
@@ -441,6 +526,7 @@ def simulate_branch(
     detect_actor_changes: bool = False,
     scope: Optional[str] = None,
     strict: bool = False,
+    debug_parse: bool = False,
     farchive_path: Optional[str] = None,
     refs_parquet_path: Optional[str] = None,
     actors_parquet_path: Optional[str] = None,
@@ -594,6 +680,18 @@ def simulate_branch(
     if detect_actor_changes:
         actor_changes = _detect_actor_changes(deduped, actors_parquet_path=actors_parquet_path)
 
+    # Build parse_failure_reason when no ops were produced
+    failure_reason: Optional[str] = None
+    if ops_applied == 0 and branch.parse_status in (
+        HEParseStatus.FAILED, HEParseStatus.PARTIAL
+    ):
+        failure_reason = _build_parse_failure_reason(branch)
+
+    # Build parse_findings_detail for --debug-parse
+    findings_detail: Optional[List[Dict[str, Any]]] = None
+    if debug_parse:
+        findings_detail = _findings_to_dicts(branch)
+
     return SimulationReport(
         branch_id=branch_id,
         simulated_at=simulated_at,
@@ -629,6 +727,8 @@ def simulate_branch(
         simulation_warnings=warnings_list,
         ops_applied=ops_applied,
         ops_skipped=ops_skipped,
+        parse_failure_reason=failure_reason,
+        parse_findings_detail=findings_detail,
     )
 
 
@@ -650,6 +750,7 @@ def main(args: object) -> None:
     detect_actor_changes: bool = bool(getattr(args, "detect_actor_changes", False))
     scope: Optional[str] = getattr(args, "scope", None) or None
     strict: bool = bool(getattr(args, "strict", False))
+    debug_parse: bool = bool(getattr(args, "debug_parse", False))
     output_format: str = getattr(args, "output_format", "json") or "json"
 
     # Resolve paths
@@ -671,6 +772,7 @@ def main(args: object) -> None:
         detect_actor_changes=detect_actor_changes,
         scope=scope,
         strict=strict,
+        debug_parse=debug_parse,
         farchive_path=farchive_path,
         refs_parquet_path=refs_parquet,
         actors_parquet_path=actors_parquet,

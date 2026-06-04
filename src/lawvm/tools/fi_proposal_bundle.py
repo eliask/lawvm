@@ -563,7 +563,7 @@ def assemble_bundle(
         Directory containing fi_he_*.parquet (default: data/fi/v1).
     projections_data_dir:
         Directory containing fi_actors.parquet, fi_pools.parquet,
-        sections.parquet, statutes.parquet (default: .tmp/projections).
+        sections.parquet, statutes.parquet (default: data/fi/v1).
     """
     duckdb = require_duckdb()
 
@@ -811,6 +811,11 @@ def run_fi_proposal_bundle(
         )
         sys.exit(1)
 
+    print(
+        f"Using projections from {projections_data_dir}/ (override with --projections-data-dir)",
+        file=sys.stderr,
+    )
+
     raw_id = he_id or branch_id
     if not raw_id:
         print(
@@ -886,7 +891,7 @@ def main(args: Any) -> None:
         include_all=getattr(args, "include_all", False),
         limit=getattr(args, "limit", None),
         he_data_dir=getattr(args, "he_data_dir", "data/fi/v1"),
-        projections_data_dir=getattr(args, "projections_data_dir", ".tmp/projections"),
+        projections_data_dir=getattr(args, "projections_data_dir", "data/fi/v1"),
         output_format=getattr(args, "output_format", "json"),
         jurisdiction=getattr(args, "jurisdiction", "fi"),
     )
