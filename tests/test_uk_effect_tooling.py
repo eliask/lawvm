@@ -2933,6 +2933,26 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
             source_extracted=True,
             source_extracted_tag="P1",
             source_extracted_text_preview='In the title, for "old" substitute "new".',
+            source_context={
+                "parent": {
+                    "depth": 1,
+                    "tag": "Pblock",
+                    "id": "section-2",
+                    "text_preview": (
+                        'In section 1, in the title, for "old" substitute "new".'
+                    ),
+                },
+                "ancestors": [
+                    {
+                        "depth": 1,
+                        "tag": "Pblock",
+                        "id": "section-2",
+                        "text_preview": (
+                            'In section 1, in the title, for "old" substitute "new".'
+                        ),
+                    }
+                ],
+            },
             affecting_source_status="available",
             affecting_source_size=17,
             affecting_source_sha256="affecting-sha",
@@ -3006,6 +3026,26 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
         "extracted": True,
         "tag": "P1",
         "text_preview": 'In the title, for "old" substitute "new".',
+        "context": {
+            "parent": {
+                "depth": 1,
+                "tag": "Pblock",
+                "id": "section-2",
+                "text_preview": (
+                    'In section 1, in the title, for "old" substitute "new".'
+                ),
+            },
+            "ancestors": [
+                {
+                    "depth": 1,
+                    "tag": "Pblock",
+                    "id": "section-2",
+                    "text_preview": (
+                        'In section 1, in the title, for "old" substitute "new".'
+                    ),
+                }
+            ],
+        },
     }
 
 
@@ -8982,7 +9022,16 @@ def test_uk_effect_report_jsonable_records_single_effect_evidence() -> None:
         affecting_title="Test Act",
         in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
     )
-    extracted = ET.fromstring("<BlockAmendment eId='ukpga-2025-1-section-3'>Inserted text</BlockAmendment>")
+    source_root = ET.fromstring(
+        """
+        <P1 id="section-3">
+          <Text>After section 1 insert-</Text>
+          <BlockAmendment eId="ukpga-2025-1-section-3">Inserted text</BlockAmendment>
+        </P1>
+        """
+    )
+    extracted = source_root.find("BlockAmendment")
+    assert extracted is not None
 
     report = uk_effect_report_jsonable(
         statute_id="ukpga/2000/1",
@@ -9057,6 +9106,22 @@ def test_uk_effect_report_jsonable_records_single_effect_evidence() -> None:
         "tag": "BlockAmendment",
         "id": "ukpga-2025-1-section-3",
         "text": "Inserted text",
+        "context": {
+            "parent": {
+                "depth": 1,
+                "tag": "P1",
+                "id": "section-3",
+                "text_preview": "After section 1 insert- Inserted text",
+            },
+            "ancestors": [
+                {
+                    "depth": 1,
+                    "tag": "P1",
+                    "id": "section-3",
+                    "text_preview": "After section 1 insert- Inserted text",
+                }
+            ],
+        },
     }
     assert report["lowering"]["compiled_op_count"] == 1
     assert report["lowering"]["observation_count"] == 1

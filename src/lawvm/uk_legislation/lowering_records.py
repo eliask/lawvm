@@ -477,6 +477,8 @@ def mark_manual_frontier_nonreplay_lowering_rejections_nonblocking(
     for rejection in lowering_rejections[start_index:]:
         if not is_blocking_compile_record(rejection):
             continue
+        if rejection.get("nonstructural_replay_candidate_family"):
+            continue
         rejection["blocking"] = False
         rejection["strict_disposition"] = "record"
         rejection["nonblocking_reclassification_rule_id"] = (

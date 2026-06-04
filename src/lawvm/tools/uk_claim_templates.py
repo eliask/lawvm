@@ -690,6 +690,8 @@ def _required_operation_family_proof_semantics(
         return ("source_carried_structured_tail_boundary_claim",)
     if action_family == "metadata_carried_text_patch":
         return ("effect_metadata_source_fragment_text_patch_boundary_claim",)
+    if action_family == "source_target_reconciliation":
+        return ("source_feed_target_reconciliation_claim",)
     if action_family == "range_to_container_substitution":
         return ("range_to_container_source_range_payload_and_lineage",)
     if action_family == "definition_entry_insert":

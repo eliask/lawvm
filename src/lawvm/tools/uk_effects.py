@@ -135,6 +135,7 @@ class _EffectSummary:
     source_extracted: bool = False
     source_extracted_tag: str = ""
     source_extracted_text_preview: str = ""
+    source_context: Mapping[str, Any] = field(default_factory=dict)
     affecting_source_status: str = "absent"
     affecting_source_size: int = 0
     affecting_source_sha256: str = ""
@@ -342,6 +343,7 @@ def summarize_uk_effect(
         _resolve_descendant_presence,
         _resolve_parent_presence,
         _resolve_target_presence,
+        _source_context_jsonable,
         affecting_act_xml_missing_rejection,
         affecting_act_xml_parse_rejection,
         affecting_act_xml_too_small_rejection,
@@ -652,6 +654,7 @@ def summarize_uk_effect(
         source_extracted=extracted is not None,
         source_extracted_tag=extracted_tag or "",
         source_extracted_text_preview=extracted_text_preview,
+        source_context=_source_context_jsonable(extracted),
         affecting_source_status=affecting_source_status,
         affecting_source_size=affecting_source_size,
         affecting_source_sha256=affecting_source_sha256,
@@ -1309,6 +1312,13 @@ def _effect_report_row_jsonable(
         statute_id=statute_id,
         row=row,
     )
+    source_payload: dict[str, Any] = {
+        "extracted": summary.source_extracted,
+        "tag": summary.source_extracted_tag,
+        "text_preview": summary.source_extracted_text_preview,
+    }
+    if summary.source_context:
+        source_payload["context"] = dict(summary.source_context)
     payload = {
         "statute_id": statute_id,
         "effect_id": effect.effect_id,
@@ -1325,11 +1335,7 @@ def _effect_report_row_jsonable(
         "structural_for_replay": summary.structural_for_replay,
         "applicability_mode": summary.applicability_mode,
         "source_pathology": summary.source_pathology or "",
-        "source": {
-            "extracted": summary.source_extracted,
-            "tag": summary.source_extracted_tag,
-            "text_preview": summary.source_extracted_text_preview,
-        },
+        "source": source_payload,
         "affecting_source_witness": {
             "affecting_act_id": effect.affecting_act_id,
             "affecting_provisions": effect.affecting_provisions,

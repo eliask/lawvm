@@ -75,6 +75,37 @@ def _element_id(el: Optional[ET._Element]) -> str:
     return el.get("id") or el.get("eId") or ""
 
 
+def _source_context_jsonable(
+    el: Optional[ET._Element],
+    *,
+    limit: int = 300,
+    max_ancestors: int = 4,
+) -> dict[str, Any]:
+    """Return source-parent context for UK frontier diagnosis."""
+    if el is None:
+        return {}
+    ancestors: list[dict[str, Any]] = []
+    parent = el.getparent()
+    depth = 1
+    while parent is not None and len(ancestors) < max_ancestors:
+        ancestors.append(
+            {
+                "depth": depth,
+                "tag": _tag(parent),
+                "id": _element_id(parent),
+                "text_preview": _text_snippet(parent, limit=limit),
+            }
+        )
+        parent = parent.getparent()
+        depth += 1
+    if not ancestors:
+        return {}
+    return {
+        "parent": ancestors[0],
+        "ancestors": ancestors,
+    }
+
+
 def _fmt_target(target) -> str:  # noqa: ANN001
     addr = "/".join(f"{kind}:{label}" for kind, label in target.path) or str(target)
     special = target.special
@@ -283,6 +314,19 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
     parse_rejection_rows = _blocking_rows(parse_observation_rows)
     source_parse_observation_rows = tuple(dict(item) for item in source_parse_observations)
     source_parse_rejection_rows = _blocking_rows(source_parse_observation_rows)
+    source_context = _source_context_jsonable(
+        extracted,
+        limit=100000 if show_text else 300,
+    )
+    source_payload: dict[str, Any] = {
+        "pathology": source_pathology or "",
+        "extracted": extracted is not None,
+        "tag": _tag(extracted) if extracted is not None else "",
+        "id": _element_id(extracted),
+        "text": _text_snippet(extracted, limit=100000 if show_text else 300),
+    }
+    if source_context:
+        source_payload["context"] = source_context
     manual_frontier = classify_uk_manual_compile_frontier(
         effect_type=effect.effect_type or "",
         source_pathology=source_pathology,
@@ -430,13 +474,7 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
             "structural": effect.is_structural,
             "structural_for_replay": effect.is_structural_for_replay(applicability_mode=applicability_mode),
         },
-        "source": {
-            "pathology": source_pathology or "",
-            "extracted": extracted is not None,
-            "tag": _tag(extracted) if extracted is not None else "",
-            "id": _element_id(extracted),
-            "text": _text_snippet(extracted, limit=100000 if show_text else 300),
-        },
+        "source": source_payload,
         "manual_compile_frontier": manual_frontier,
         "execution_authorization": execution_authorization,
         "frontier_work_item": frontier_work_item,

@@ -1182,6 +1182,100 @@ def test_validate_semantic_claim_accepts_operation_family_proof_refs() -> None:
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_accepts_source_target_reconciliation_proof() -> None:
+    source_preview = 'In section 2, for "old" substitute "new"'
+    carrier_hash = hashlib.sha256(b"section text").hexdigest()
+    claim = _claim_row(source_preview=source_preview)
+    claim["action_family"] = "source_target_reconciliation"
+    claim["manual_compile_rule_id"] = (
+        "uk_manual_frontier_amount_specified_source_target_mismatch"
+    )
+    ownership_claims = claim["ownership_claims"]
+    assert isinstance(ownership_claims, list)
+    ownership_claims.append(
+        {
+            "ownership_id": "source_feed_target_reconciliation",
+            "status": "claimed_not_proved",
+        }
+    )
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    operations = proposed_outcome["operations"]
+    assert isinstance(operations, list)
+    operation = operations[0]
+    assert isinstance(operation, dict)
+    operation["action"] = "TEXT_REPLACE"
+    operation["target"] = "section:1"
+    validator_checks = proposed_outcome["validator_checks"]
+    assert isinstance(validator_checks, list)
+    validator_checks.append(
+        {
+            "check_id": "claim_reconciles_source_amount_target_and_effect_feed_target",
+            "status": "claimed_not_proved",
+        }
+    )
+    proposed_outcome["source_text_preconditions"] = [
+        {
+            "precondition_id": "source-target",
+            "contains": "section 2",
+        }
+    ]
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "precondition_id": "live-carrier",
+            "path": "section:1",
+            "text_sha256": carrier_hash,
+        }
+    ]
+    proposed_outcome["operation_family_proofs"] = [
+        {
+            "proof_id": "proof-source-target-reconciliation",
+            "proof_semantic": "source_feed_target_reconciliation_claim",
+            "operation_family": "source_target_reconciliation",
+            "operation_ids": ["manual-op-1"],
+            "validator_check_ids": [
+                "claim_reconciles_source_amount_target_and_effect_feed_target",
+            ],
+            "source_text_precondition_ids": ["source-target"],
+            "source_target_precondition_ids": ["source-target"],
+            "target_reconciliation_ownership_ids": [
+                "source_feed_target_reconciliation",
+            ],
+            "live_target_precondition_ids": ["live-carrier"],
+            "status": "claimed_not_proved",
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (claim,),
+        live_target_rows=(
+            _live_target_row(
+                target_fingerprints={
+                    "section:1": {
+                        "text_sha256": carrier_hash,
+                        "subtree_sha256": "f" * 64,
+                    },
+                },
+            ),
+        ),
+    )
+
+    row = rows[0]
+    assert (
+        row["validator_status"]
+        == "validated_provenance_source_text_live_targets_and_preconditions_only"
+    )
+    assert row["operation_family_proofs_checked"] is True
+    assert row["operation_family_proof_semantics"] == [
+        "source_feed_target_reconciliation_claim",
+    ]
+    assert row["operation_family_proof_families"] == [
+        "source_target_reconciliation",
+    ]
+    assert row["validation_issues"] == []
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_rejects_malformed_operation_family_proof_refs() -> None:
     claim = _claim_row(source_preview="after the entry relating to X insert the row")
     proposed_outcome = claim["proposed_outcome"]

@@ -86,6 +86,7 @@ UK_OPERATION_FAMILY_PROOF_SEMANTICS = frozenset(
         "savings_qualified_omission_applicability_scope",
         "schedule_list_entry_anchor_boundary_claim",
         "sentence_scoped_text_insert_boundary_claim",
+        "source_feed_target_reconciliation_claim",
         "source_carried_child_tail_boundary_claim",
         "source_carried_multi_subunit_boundary_claim",
         "source_carried_structured_payload_boundary_claim",
@@ -1006,6 +1007,19 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
+        )
+    if proof_semantic == "source_feed_target_reconciliation_claim":
+        return _validate_source_feed_target_reconciliation_family_proof_semantic(
+            claim=claim,
+            proof=proof,
+            proof_semantic=proof_semantic,
+            prefix=prefix,
+            proof_family=proof_family,
+            proof_operation_ids=proof_operation_ids,
+            proof_source_ids=proof_source_ids,
+            proof_live_ids=proof_live_ids,
+            proof_live_paths=proof_live_paths,
             live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "amendment_program_target_source_payload_and_boundary":
@@ -2428,6 +2442,97 @@ def _validate_cross_container_renumber_family_proof_semantic(
                     f"{prefix}.{proof_semantic} operation {op_id!r} destination "
                     f"{destination!r} is outside declared destination live "
                     "preconditions"
+                )
+    return tuple(issues)
+
+
+def _validate_source_feed_target_reconciliation_family_proof_semantic(
+    *,
+    claim: Mapping[str, Any],
+    proof: Mapping[str, Any],
+    proof_semantic: str,
+    prefix: str,
+    proof_family: str,
+    proof_operation_ids: set[str],
+    proof_source_ids: set[str],
+    proof_live_ids: set[str],
+    proof_live_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
+) -> tuple[str, ...]:
+    issues: list[str] = []
+    if proof_family != "source_target_reconciliation":
+        issues.append(
+            f"{prefix}.proof_semantic {proof_semantic!r} requires "
+            "operation_family 'source_target_reconciliation'"
+        )
+    if not proof_source_ids:
+        issues.append(f"{prefix}.{proof_semantic} requires source_text_precondition_ids")
+    source_target_ids = set(
+        _string_tuple_from_value(proof.get("source_target_precondition_ids"))
+    )
+    if not source_target_ids:
+        issues.append(
+            f"{prefix}.{proof_semantic} requires source_target_precondition_ids"
+        )
+    issues.extend(
+        _source_precondition_subset_issues(
+            prefix=f"{prefix}.{proof_semantic}.source_target_precondition_ids",
+            ids=source_target_ids,
+            proof_source_ids=proof_source_ids,
+        )
+    )
+    reconciliation_ids = set(
+        _string_tuple_from_value(proof.get("target_reconciliation_ownership_ids"))
+    )
+    if "source_feed_target_reconciliation" not in reconciliation_ids:
+        issues.append(
+            f"{prefix}.{proof_semantic} requires "
+            "target_reconciliation_ownership_ids to include "
+            "'source_feed_target_reconciliation'"
+        )
+    declared_ownership_ids = _claim_ownership_ids(claim)
+    for ownership_id in sorted(reconciliation_ids - declared_ownership_ids):
+        issues.append(
+            f"{prefix}.{proof_semantic}.target_reconciliation_ownership_ids "
+            f"references undeclared ownership {ownership_id!r}"
+        )
+    live_carrier_paths = _live_carrier_paths_for_proof(
+        proof_live_ids=proof_live_ids,
+        proof_live_paths=proof_live_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
+    )
+    if not live_carrier_paths:
+        issues.append(
+            f"{prefix}.{proof_semantic} requires live_target_precondition_ids "
+            "or live_target_precondition_paths"
+        )
+    allowed_actions = {
+        "TEXT_REPLACE",
+        "text_replace",
+        "TEXT_REPEAL",
+        "text_repeal",
+        "HEADING_REPLACE",
+        "heading_replace",
+    }
+    operations = _operations_by_id(claim)
+    for op_id in sorted(proof_operation_ids):
+        operation = operations.get(op_id)
+        if operation is None:
+            continue
+        action = _non_empty_string(operation, "action")
+        if action not in allowed_actions:
+            issues.append(
+                f"{prefix}.{proof_semantic} operation {op_id!r} must be a "
+                "text or heading rewrite action"
+            )
+        for target in _path_strings_from_value(operation.get("target")):
+            if live_carrier_paths and not _path_within_any_region(
+                target,
+                tuple(live_carrier_paths),
+            ):
+                issues.append(
+                    f"{prefix}.{proof_semantic} operation {op_id!r} target "
+                    f"{target!r} is outside declared live target preconditions"
                 )
     return tuple(issues)
 
