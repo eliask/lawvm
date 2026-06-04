@@ -1242,6 +1242,10 @@ def _broad_baseline_summary_payload(summary: dict[str, Any]) -> dict[str, Any]:
     payload["scored_count"] = len(summary.get("scored") or ())
     payload["errored_count"] = len(summary.get("errored") or ())
     payload["source_frontier_count"] = len(summary.get("source_frontier") or ())
+    payload["completion_gate_failure_counts"] = _completion_gate_failure_counts(
+        summary
+    )
+    payload["completion_gate_clean"] = not payload["completion_gate_failure_counts"]
     return payload
 
 
@@ -2404,6 +2408,7 @@ def _load_snapshot_results(snapshot_path: Path) -> list[dict[str, Any]]:
 def _hard_gate_exit_code(
     summary: dict[str, Any],
     *,
+    fail_on_completion_gaps: bool = False,
     fail_on_active_unclassified_residuals: bool = False,
     fail_on_manual_frontier_template_gaps: bool = False,
     fail_on_frontier_work_item_gaps: bool = False,
@@ -2414,6 +2419,8 @@ def _hard_gate_exit_code(
     fail_on_frontier_candidate_set_gaps: bool = False,
     fail_on_frontier_source_witness_gaps: bool = False,
 ) -> int:
+    if fail_on_completion_gaps and _completion_gate_failure_counts(summary):
+        return 1
     if (
         fail_on_active_unclassified_residuals
         and summary["active_unclassified_residual_count"]
@@ -2457,6 +2464,54 @@ def _hard_gate_exit_code(
     ):
         return 1
     return 0
+
+
+def _completion_gate_failure_counts(summary: Mapping[str, Any]) -> dict[str, int]:
+    counts = {
+        "errors": len(summary.get("errored") or ()),
+        "active_unclassified_residuals": int(
+            summary.get("active_unclassified_residual_count") or 0
+        ),
+        "manual_frontier_template_gaps": _count_mapping_values(
+            summary.get("manual_frontier_template_gap_rule_counts")
+        ),
+        "frontier_work_item_missing_candidate_operation_family": int(
+            summary.get(
+                "manual_frontier_work_item_missing_candidate_operation_family_count"
+            )
+            or 0
+        ),
+        "frontier_work_item_missing_required_validator_checks": int(
+            summary.get(
+                "manual_frontier_work_item_missing_required_validator_checks_count"
+            )
+            or 0
+        ),
+        "deterministic_frontend_candidates": int(
+            summary.get("deterministic_frontend_candidate_count") or 0
+        ),
+        "non_manual_source_chain_frontier": int(
+            summary.get("non_manual_source_chain_frontier_count") or 0
+        ),
+        "mutation_boundary_unexplained_reports": int(
+            summary.get("mutation_boundary_unexplained_report_count") or 0
+        ),
+        "mutation_boundary_unexplained_paths": int(
+            summary.get("mutation_boundary_unexplained_path_count") or 0
+        ),
+        "frontier_work_item_packet_gaps": _frontier_work_item_packet_gap_count(
+            summary
+        ),
+        "frontier_candidate_set_gaps": _frontier_candidate_set_gap_count(summary),
+        "frontier_source_witness_gaps": _frontier_source_witness_gap_count(summary),
+    }
+    return {key: count for key, count in counts.items() if count}
+
+
+def _count_mapping_values(value: Any) -> int:
+    if not isinstance(value, Mapping):
+        return 0
+    return sum(int(count or 0) for count in value.values())
 
 
 def _frontier_work_item_packet_gap_count(summary: Mapping[str, Any]) -> int:
@@ -2503,6 +2558,7 @@ def run_report_from_snapshot(
     snapshot_path: Path,
     out_report: Path,
     *,
+    fail_on_completion_gaps: bool = False,
     fail_on_active_unclassified_residuals: bool = False,
     fail_on_manual_frontier_template_gaps: bool = False,
     fail_on_frontier_work_item_gaps: bool = False,
@@ -2541,6 +2597,7 @@ def run_report_from_snapshot(
     )
     return _hard_gate_exit_code(
         summary,
+        fail_on_completion_gaps=fail_on_completion_gaps,
         fail_on_active_unclassified_residuals=fail_on_active_unclassified_residuals,
         fail_on_manual_frontier_template_gaps=fail_on_manual_frontier_template_gaps,
         fail_on_frontier_work_item_gaps=fail_on_frontier_work_item_gaps,
@@ -2567,6 +2624,7 @@ def run_driver(
     out_report: Optional[Path] = None,
     *,
     parallel: int = 1,
+    fail_on_completion_gaps: bool = False,
     fail_on_active_unclassified_residuals: bool = False,
     fail_on_manual_frontier_template_gaps: bool = False,
     fail_on_frontier_work_item_gaps: bool = False,
@@ -2661,6 +2719,7 @@ def run_driver(
         print(f"Wrote broad-baseline evidence report -> {out_report}")
 
     summary = summarize_results(results)
+    completion_gate_failure_counts = _completion_gate_failure_counts(summary)
     scored = summary["scored"]
     errored = summary["errored"]
     source_frontier = summary["source_frontier"]
@@ -3079,6 +3138,13 @@ def run_driver(
         print(f"  manual_frontier_template_gaps: {counts}")
     else:
         print("  manual_frontier_template_gaps=0")
+    if completion_gate_failure_counts:
+        counts = ", ".join(
+            f"{gate}={count}" for gate, count in completion_gate_failure_counts.items()
+        )
+        print(f"  completion_gate_failures: {counts}")
+    else:
+        print("  completion_gate_failures=0")
     if summary["active_unclassified_residual_count"]:
         print(
             "  active_unclassified_residuals="
@@ -3095,6 +3161,8 @@ def run_driver(
         )
     else:
         print("  deterministic_frontend_candidates=0")
+    if fail_on_completion_gaps and completion_gate_failure_counts:
+        return 1
     if (
         fail_on_active_unclassified_residuals
         and summary["active_unclassified_residual_count"]
@@ -3206,6 +3274,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Exit nonzero when scored rows still sit in active unclassified residual buckets",
     )
     ap.add_argument(
+        "--fail-on-completion-gaps",
+        action="store_true",
+        help=(
+            "Exit nonzero when any current UK broad-baseline completion gate "
+            "counter is nonzero"
+        ),
+    )
+    ap.add_argument(
         "--fail-on-manual-frontier-template-gaps",
         action="store_true",
         help=(
@@ -3288,6 +3364,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_report_from_snapshot(
             args.report_from_snapshot,
             args.out_report,
+            fail_on_completion_gaps=args.fail_on_completion_gaps,
             fail_on_active_unclassified_residuals=(
                 args.fail_on_active_unclassified_residuals
             ),
@@ -3327,6 +3404,7 @@ def main(argv: list[str] | None = None) -> int:
         args.out,
         args.out_report,
         parallel=args.parallel,
+        fail_on_completion_gaps=args.fail_on_completion_gaps,
         fail_on_active_unclassified_residuals=args.fail_on_active_unclassified_residuals,
         fail_on_manual_frontier_template_gaps=(
             args.fail_on_manual_frontier_template_gaps

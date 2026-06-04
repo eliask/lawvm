@@ -2220,6 +2220,58 @@ def test_report_from_snapshot_can_fail_on_frontier_candidate_set_gaps(
     ] == {"partial": 1}
 
 
+def test_report_from_snapshot_exposes_completion_gate_failures(
+    tmp_path,
+) -> None:
+    snapshot_path = tmp_path / "snapshot.json"
+    report_path = tmp_path / "report.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "ukpga/2008/17": {
+                    "statute_id": "ukpga/2008/17",
+                    "score_status": "scored",
+                    "aligned": 86.0,
+                    "aligned_excluding_grounding_collateral": 86.0,
+                    "unaligned": 86.0,
+                    "n_replay": 100,
+                    "n_oracle": 110,
+                    "manual_frontier_template_gap_rule_counts": {
+                        "uk_manual_frontier_parser_or_extraction_candidate": 1,
+                    },
+                    "manual_frontier_work_item_packet_ready_counts": {
+                        "not_ready": 1,
+                    },
+                    "manual_frontier_work_item_candidate_set_status_counts": {
+                        "partial": 1,
+                    },
+                    "manual_frontier_work_item_source_witness_digest_coverage_counts": {
+                        "missing_digest": 1,
+                    },
+                }
+            }
+        )
+    )
+
+    assert (
+        uk_broad_baseline.run_report_from_snapshot(
+            snapshot_path,
+            report_path,
+            fail_on_completion_gaps=True,
+        )
+        == 1
+    )
+
+    summary = json.loads(report_path.read_text())["summary"]
+    assert summary["completion_gate_clean"] is False
+    assert summary["completion_gate_failure_counts"] == {
+        "frontier_candidate_set_gaps": 1,
+        "frontier_source_witness_gaps": 1,
+        "frontier_work_item_packet_gaps": 1,
+        "manual_frontier_template_gaps": 1,
+    }
+
+
 def test_report_from_snapshot_can_fail_on_frontier_source_witness_gaps(
     tmp_path,
 ) -> None:
@@ -2573,6 +2625,39 @@ def test_run_driver_can_fail_on_frontier_candidate_set_gaps(
     )
     out = capsys.readouterr().out
     assert "manual_frontier_work_item_candidate_set_status_counts: partial=1" in out
+
+
+def test_run_driver_can_fail_on_completion_gaps(
+    monkeypatch,
+    capsys,
+) -> None:
+    def fake_run(*_args, **_kwargs):
+        row = {
+            "statute_id": "ukpga/2008/17",
+            "score_status": "scored",
+            "aligned": 86.0,
+            "aligned_excluding_grounding_collateral": 86.0,
+            "unaligned": 86.0,
+            "n_replay": 100,
+            "n_oracle": 110,
+            "manual_frontier_work_item_candidate_set_status_counts": {
+                "partial": 1,
+            },
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["ukpga/2008/17"],
+            None,
+            fail_on_completion_gaps=True,
+        )
+        == 1
+    )
+    out = capsys.readouterr().out
+    assert "completion_gate_failures: frontier_candidate_set_gaps=1" in out
 
 
 def test_run_driver_can_fail_on_frontier_source_witness_gaps(
