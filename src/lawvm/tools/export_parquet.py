@@ -409,6 +409,7 @@ def export_projections(
     include_actors: bool = False,
     include_pools: bool = False,
     include_he_corpus: bool = False,
+    include_preparatory_refs: bool = False,
     he_farchive: Optional[str] = None,
     he_data_dir: Optional[str] = None,
 ) -> Dict[str, int]:
@@ -562,6 +563,18 @@ def export_projections(
         )
         counts.update(he_counts)
 
+    # --- fi_preparatory_refs.parquet: PreparatoryReference projection ---
+    if include_preparatory_refs:
+        print("\nExporting fi_preparatory_refs projection...")
+        from lawvm.tools.export_fi_preparatory_refs import export_fi_preparatory_refs
+        prep_count = export_fi_preparatory_refs(
+            corpus,
+            data_dir=data_dir,
+            use_parquet=use_parquet,
+            limit=limit,
+        )
+        counts["fi_preparatory_refs"] = prep_count
+
     print()
     for name, n in counts.items():
         print(f"  {name}: {n:,} rows")
@@ -585,6 +598,7 @@ def main(args: Any) -> None:
         include_actors=getattr(args, "include_actors", False),
         include_pools=getattr(args, "include_pools", False),
         include_he_corpus=getattr(args, "include_he_corpus", False),
+        include_preparatory_refs=getattr(args, "include_preparatory_refs", False),
         he_farchive=getattr(args, "he_farchive", None),
         he_data_dir=getattr(args, "he_data_dir", None),
     )
