@@ -18,6 +18,10 @@ from lawvm.core.candidate_set_certificate import (
 )
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
+from lawvm.core.frontier_work_item import FrontierWorkItem
+from lawvm.uk_legislation.execution_authorization import (
+    uk_execution_authorization_from_replay_adjudication,
+)
 from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_diagnostic
 
 if TYPE_CHECKING:
@@ -1032,6 +1036,28 @@ def _replay_adjudication_work_item_id(
     return f"uk-replay-adjudication-{digest}"
 
 
+def _replay_adjudication_source_witness(record: Mapping[str, Any]) -> dict[str, Any]:
+    detail = record.get("detail")
+    detail_payload = dict(detail) if isinstance(detail, Mapping) else {}
+    digest_payload = {
+        "kind": str(record.get("kind") or ""),
+        "source_statute": str(record.get("source_statute") or ""),
+        "op_id": str(record.get("op_id") or ""),
+        "message": str(record.get("message") or ""),
+        "detail": detail_payload,
+    }
+    digest = hashlib.sha256(
+        json.dumps(digest_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    return {
+        "source_role": "uk_replay_adjudication_record",
+        "digest": digest,
+        "adjudication_kind": str(record.get("kind") or ""),
+        "source_statute": str(record.get("source_statute") or ""),
+        "op_id": str(record.get("op_id") or ""),
+    }
+
+
 def _replay_adjudication_evidence_row_jsonable(
     result,  # noqa: ANN001
     *,
@@ -1050,37 +1076,102 @@ def _replay_adjudication_evidence_row_jsonable(
     owner_phase_record: dict[str, Any] = dict(detail_payload)
     owner_phase_record.setdefault("rule_id", kind)
     owner_phase_record.setdefault("phase", "replay")
+    owner_phase = uk_phase_owner_for_diagnostic(owner_phase_record)
     diagnostic = adjudication_record_diagnostic_detail(record)
+    bucket = classify_uk_replay_adjudication_bucket(kind)
+    authorization = uk_execution_authorization_from_replay_adjudication(
+        adjudication=record,
+        owner_phase=owner_phase,
+        bucket=bucket,
+    ).to_dict()
+    work_item_id = _replay_adjudication_work_item_id(
+        label=label,
+        statute_id=str(result.statute_id),
+        record=record,
+    )
+    source_witness = _replay_adjudication_source_witness(record)
+    frontier_score = _primary_frontier_score(result, score_mode=score_mode)
+    comparison_class = _effective_comparison_class(result)
+    target_witness = {
+        key: str(detail_payload.get(key) or "")
+        for key in ("target", "path", "root")
+        if str(detail_payload.get(key) or "")
+    }
+    path = str(target_witness.get("path") or "")
+    if "root" not in target_witness and (path == "body" or path.startswith("body/")):
+        target_witness["root"] = "body"
+    frontier_work_item = FrontierWorkItem(
+        work_item_id=work_item_id,
+        jurisdiction="uk",
+        source_artifact_id=str(result.statute_id),
+        source_unit_id=(
+            f"{kind}:{record.get('source_statute') or result.statute_id}:"
+            f"{record.get('op_id') or 'record'}"
+        ),
+        source_witness=source_witness,
+        target_witness=target_witness,
+        compare_witness={
+            "comparison_class": comparison_class,
+            "score_mode": score_mode,
+            "frontier_score": frontier_score,
+            "adjudication_bucket": bucket,
+        },
+        owner_phase=owner_phase,
+        frontier_family=f"uk_replay_adjudication_{bucket}",
+        frontier_status=authorization["authorization_status"],
+        candidate_operation_family=f"uk_replay_adjudication_{bucket}_resolution",
+        candidate_targets=tuple(target_witness.values()),
+        required_claim_kind="replay_adjudication_resolution",
+        required_validator_checks=(
+            "classify_replay_adjudication_bucket",
+            "prove_residual_not_replay_authority",
+            "prove_mutation_boundary_before_replay",
+        ),
+        required_proofs=tuple(authorization["required_proofs"]),
+        safe_default=str(authorization["safe_default"]),
+        forbidden_shortcuts=tuple(authorization["forbidden_shortcuts"]),
+        executable=bool(authorization["executable"]),
+        replay_authorized=bool(authorization["replay_authorized"]),
+        authorization_status=str(authorization["authorization_status"]),
+        detail={
+            "execution_authorization": authorization,
+            "adjudication_kind": kind,
+            "adjudication_bucket": bucket,
+            "claim_status": "unresolved_work_item",
+            "validator_status": "not_validated",
+        },
+    ).to_dict()
     return {
         "schema": "lawvm.uk_replay_adjudication_frontier.v1",
         "rule_id": "uk_replay_adjudication_frontier_workqueue",
         "family": "replay_adjudication_frontier",
         "phase": "replay_adjudication",
-        "owner_phase": uk_phase_owner_for_diagnostic(owner_phase_record),
+        "owner_phase": owner_phase,
         "jurisdiction": "uk",
         "work_item_kind": "replay_adjudication_review",
         "claim_kind": "replay_adjudication",
         "claim_status": "unresolved_work_item",
         "validator_status": "not_validated",
-        "work_item_id": _replay_adjudication_work_item_id(
-            label=label,
-            statute_id=str(result.statute_id),
-            record=record,
-        ),
+        "work_item_id": work_item_id,
+        "execution_authorization": authorization,
+        "frontier_work_item": frontier_work_item,
+        "executable": bool(authorization["executable"]),
+        "replay_authorized": bool(authorization["replay_authorized"]),
+        "authorization_status": str(authorization["authorization_status"]),
         "bench_label": label,
         "statute_id": str(result.statute_id),
         "score_mode": score_mode,
-        "frontier_score": _primary_frontier_score(result, score_mode=score_mode),
+        "frontier_score": frontier_score,
         "raw_score": float(getattr(result, "score", -1.0)),
         "replay_score": float(getattr(result, "replay_score", -1.0)),
         "commencement_score": float(getattr(result, "commencement_score", -1.0)),
         "replay_commencement_score": float(
             getattr(result, "replay_commencement_score", -1.0)
         ),
-        "comparison_class": _effective_comparison_class(result),
+        "comparison_class": comparison_class,
         "core_benchmark": _effective_core_benchmark(result),
         "adjudication_kind": kind,
-        "adjudication_bucket": classify_uk_replay_adjudication_bucket(kind),
+        "adjudication_bucket": bucket,
         "message": _short_replay_adjudication_sample_value(record.get("message"), limit=500),
         "source_statute": str(record.get("source_statute") or ""),
         "op_id": str(record.get("op_id") or ""),

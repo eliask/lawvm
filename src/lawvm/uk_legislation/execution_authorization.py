@@ -199,8 +199,13 @@ def uk_execution_authorization_from_replay_adjudication(
     bucket: str,
 ) -> ExecutionAuthorization:
     """Build authorization facts for UK replay adjudication residual rows."""
-    kind = str(getattr(adjudication, "kind", "") or "")
-    detail = dict(getattr(adjudication, "detail", {}) or {})
+    if isinstance(adjudication, Mapping):
+        kind = str(adjudication.get("kind") or "")
+        detail_obj = adjudication.get("detail")
+    else:
+        kind = str(getattr(adjudication, "kind", "") or "")
+        detail_obj = getattr(adjudication, "detail", {})
+    detail = dict(detail_obj) if isinstance(detail_obj, Mapping) else {}
     blocking = bool(detail.get("blocking", bucket not in {"nonblocking_observation"}))
     strict_disposition = str(
         detail.get("strict_disposition") or ("block" if blocking else "record")

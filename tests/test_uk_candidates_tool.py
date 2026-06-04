@@ -4805,6 +4805,54 @@ def test_uk_candidates_fast_json_exports_replay_adjudication_evidence_jsonl(
     assert evidence_rows[0]["claim_status"] == "unresolved_work_item"
     assert evidence_rows[0]["validator_status"] == "not_validated"
     assert evidence_rows[0]["work_item_id"].startswith("uk-replay-adjudication-")
+    assert evidence_rows[0]["executable"] is False
+    assert evidence_rows[0]["replay_authorized"] is False
+    assert evidence_rows[0]["authorization_status"] == (
+        "replay_adjudication_nonblocking_observation"
+    )
+    assert evidence_rows[0]["execution_authorization"] == {
+        "authorization_rule_id": (
+            "uk_execution_authorization_replay_adjudication_nonblocking_observation"
+        ),
+        "authorization_status": "replay_adjudication_nonblocking_observation",
+        "detail": {
+            "adjudication_kind": "text_duplication_warning",
+            "bucket": "nonblocking_observation",
+            "record_rule_id": "text_duplication_warning",
+        },
+        "executable": False,
+        "forbidden_shortcuts": [
+            "adjudication_as_replay_authority",
+            "oracle_backed_mutation",
+            "target_guessing",
+            "residual_over_promotion",
+        ],
+        "owner_phase": "replay_invariants",
+        "quirks_disposition": "record",
+        "replay_authorized": False,
+        "required_proofs": ["replay_authority_not_claimed"],
+        "safe_default": "treat_adjudication_as_residual_not_replay_authority",
+        "strict_disposition": "record",
+        "validator_status": "replay_adjudication_residual",
+    }
+    work_item = evidence_rows[0]["frontier_work_item"]
+    assert work_item["work_item_id"] == evidence_rows[0]["work_item_id"]
+    assert work_item["frontier_family"] == (
+        "uk_replay_adjudication_nonblocking_observation"
+    )
+    assert work_item["frontier_status"] == (
+        "replay_adjudication_nonblocking_observation"
+    )
+    assert work_item["owner_phase"] == "replay_invariants"
+    assert work_item["executable"] is False
+    assert work_item["replay_authorized"] is False
+    assert work_item["source_witness"]["source_role"] == (
+        "uk_replay_adjudication_record"
+    )
+    assert work_item["source_witness"]["digest"]
+    assert work_item["target_witness"] == {"path": "body/section:1", "root": "body"}
+    assert work_item["required_proofs"] == ["replay_authority_not_claimed"]
+    assert "adjudication_as_replay_authority" in work_item["forbidden_shortcuts"]
     assert evidence_rows[0]["bench_label"] == "demo"
     assert evidence_rows[0]["statute_id"] == "ukpga/2000/1"
     assert evidence_rows[0]["adjudication_kind"] == "text_duplication_warning"
