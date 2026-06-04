@@ -5055,6 +5055,24 @@ def test_uk_candidates_fast_json_exports_residual_claim_evidence_jsonl(
     assert evidence_rows[0]["candidate_set_certificate"][
         "next_promotion_allowed"
     ] is False
+    agreement_residual = evidence_rows[0]["agreement_residual"]
+    assert agreement_residual["residual_id"] == evidence_rows[0]["work_item_id"]
+    assert agreement_residual["agreement_surface"] == (
+        "candidate_residual_claim_vs_current_oracle"
+    )
+    assert agreement_residual["family"] == "target_recovery_mismatch"
+    assert agreement_residual["status"] == "frontier"
+    assert agreement_residual["owner_phase"] == "compare_oracle_classification"
+    assert agreement_residual["replay_count"] == 53
+    assert agreement_residual["oracle_count"] == 1
+    assert agreement_residual["missing_proofs"] == (
+        evidence_rows[0]["execution_authorization"]["required_proofs"]
+    )
+    assert agreement_residual["safe_default"] == (
+        "classify_residual_claim_without_mutating_replay"
+    )
+    assert "oracle_backed_mutation" in agreement_residual["forbidden_shortcuts"]
+    assert "residual_over_promotion" in agreement_residual["forbidden_shortcuts"]
     work_item = evidence_rows[0]["frontier_work_item"]
     assert work_item["work_item_id"] == evidence_rows[0]["work_item_id"]
     assert work_item["frontier_status"] == "residual_claim_unresolved"
@@ -5063,6 +5081,9 @@ def test_uk_candidates_fast_json_exports_residual_claim_evidence_jsonl(
     assert work_item["source_witness"]["digest"]
     assert work_item["detail"]["candidate_set_certificate"] == (
         evidence_rows[0]["candidate_set_certificate"]
+    )
+    assert work_item["detail"]["agreement_residual"] == (
+        evidence_rows[0]["agreement_residual"]
     )
     assert work_item["executable"] is False
     assert work_item["replay_authorized"] is False
@@ -5194,6 +5215,19 @@ def test_uk_residual_claim_evidence_rows_preserve_analyzed_root_samples() -> Non
     ]
     assert rows[0]["frontier_work_item"]["detail"]["candidate_set_certificate"] == (
         rows[0]["candidate_set_certificate"]
+    )
+    assert rows[0]["agreement_residual"]["family"] == (
+        "accepted_non_executable_frontier"
+    )
+    assert rows[0]["agreement_residual"]["status"] == "frontier"
+    assert rows[0]["agreement_residual"]["missing_proofs"] == (
+        rows[0]["execution_authorization"]["required_proofs"]
+    )
+    assert rows[0]["agreement_residual"]["detail"][
+        "candidate_set_completeness_status"
+    ] == "truncated"
+    assert rows[0]["frontier_work_item"]["detail"]["agreement_residual"] == (
+        rows[0]["agreement_residual"]
     )
     assert rows[0]["residual_evidence"] == {
         "backed_residual_roots": ["part-1"],

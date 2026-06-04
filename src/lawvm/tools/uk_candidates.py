@@ -11,6 +11,7 @@ from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Mapping, NamedTuple, Sequence, cast
 
+from lawvm.core.agreement_residual import AgreementResidual
 from lawvm.core.candidate_set_certificate import (
     CANDIDATE_SET_COMPLETE,
     CANDIDATE_SET_TRUNCATED,
@@ -358,6 +359,139 @@ def _residual_claim_candidate_set_certificate(
     ).to_dict()
 
 
+def _residual_claim_agreement_residual(
+    row: Mapping[str, Any],
+    claim: Mapping[str, object],
+    *,
+    work_item_id: str,
+    owner_phase: str,
+    authorization: Mapping[str, Any],
+    candidate_set_certificate: Mapping[str, Any],
+) -> dict[str, Any]:
+    family = _residual_claim_agreement_residual_family(
+        row,
+        claim,
+        candidate_set_certificate=candidate_set_certificate,
+    )
+    return AgreementResidual(
+        residual_id=work_item_id,
+        jurisdiction="uk",
+        agreement_surface="candidate_residual_claim_vs_current_oracle",
+        family=family,
+        status=_residual_claim_agreement_residual_status(
+            family,
+            candidate_set_certificate=candidate_set_certificate,
+        ),
+        owner_phase=owner_phase,
+        rule_id=f"uk_residual_claim_{family}",
+        source_artifact_id=str(row.get("statute_id") or ""),
+        replay_count=_int_claim_field(claim, "only_in_replayed_count"),
+        oracle_count=_int_claim_field(claim, "only_in_oracle_count"),
+        missing_proofs=tuple(
+            str(proof) for proof in authorization.get("required_proofs") or ()
+        ),
+        safe_default="classify_residual_claim_without_mutating_replay",
+        forbidden_shortcuts=_residual_claim_agreement_forbidden_shortcuts(
+            authorization
+        ),
+        detail={
+            "selected_tier": str(claim.get("selected_tier") or "UNRESOLVED"),
+            "selected_kind": str(claim.get("selected_kind") or "unknown"),
+            "comparison_class": str(
+                claim.get("comparison_class") or row.get("comparison_class") or ""
+            ),
+            "core_comparison": bool(claim.get("core_comparison")),
+            "section_claim_count": _int_claim_field(claim, "section_claim_count"),
+            "section_claim_emitted": _bool_bench_field(
+                claim.get("section_claim_emitted"),
+                default=False,
+            ),
+            "candidate_set_completeness_status": str(
+                candidate_set_certificate.get("completeness_status") or ""
+            ),
+            "candidate_count": int(
+                candidate_set_certificate.get("candidate_count") or 0
+            ),
+            "residual_status": str(row.get("status") or ""),
+            "triage_rule_id": str(row.get("triage_rule_id") or ""),
+        },
+    ).to_dict()
+
+
+def _residual_claim_agreement_residual_family(
+    row: Mapping[str, Any],
+    claim: Mapping[str, object],
+    *,
+    candidate_set_certificate: Mapping[str, Any],
+) -> str:
+    comparison_class = str(
+        claim.get("comparison_class") or row.get("comparison_class") or ""
+    )
+    if comparison_class and comparison_class != "commensurable":
+        return "non_commensurable_surface"
+    kind = str(claim.get("selected_kind") or "")
+    if "repealed_target_gap" in kind or "source_footing" in kind:
+        return "source_footing_gap"
+    if "renumber" in kind or "target" in kind:
+        return "target_recovery_mismatch"
+    if "oracle_branch" in kind or "branch" in kind:
+        return "extent_branch_mismatch"
+    if "text_match" in kind or "already_rewritten" in kind:
+        return "oracle_editorial_pathology"
+    if str(candidate_set_certificate.get("completeness_status") or "") != (
+        CANDIDATE_SET_COMPLETE
+    ):
+        return "accepted_non_executable_frontier"
+    only_in_replayed = _int_claim_field(claim, "only_in_replayed_count")
+    only_in_oracle = _int_claim_field(claim, "only_in_oracle_count")
+    if only_in_replayed > 0 and only_in_oracle > 0:
+        return "topology_granularity_mismatch"
+    if only_in_oracle > 0:
+        return "source_footing_gap"
+    if only_in_replayed > 0:
+        return "oracle_editorial_pathology"
+    if _int_claim_field(claim, "section_claim_count") > 0 or _bool_bench_field(
+        claim.get("section_claim_emitted"),
+        default=False,
+    ):
+        return "accepted_non_executable_frontier"
+    return "unknown"
+
+
+def _residual_claim_agreement_residual_status(
+    family: str,
+    *,
+    candidate_set_certificate: Mapping[str, Any],
+) -> str:
+    if family == "agreement":
+        return "agrees"
+    if str(candidate_set_certificate.get("completeness_status") or "") != (
+        CANDIDATE_SET_COMPLETE
+    ):
+        return "frontier"
+    if family == "accepted_non_executable_frontier":
+        return "frontier"
+    return "residual"
+
+
+def _residual_claim_agreement_forbidden_shortcuts(
+    authorization: Mapping[str, Any],
+) -> tuple[str, ...]:
+    shortcuts = [
+        str(shortcut)
+        for shortcut in authorization.get("forbidden_shortcuts") or ()
+        if str(shortcut)
+    ]
+    for shortcut in (
+        "oracle_backed_mutation",
+        "residual_over_promotion",
+        "agreement_as_execution_authorization",
+    ):
+        if shortcut not in shortcuts:
+            shortcuts.append(shortcut)
+    return tuple(shortcuts)
+
+
 def _uk_residual_claim_evidence_row_from_candidate_row(
     row: Mapping[str, Any],
     *,
@@ -395,6 +529,14 @@ def _uk_residual_claim_evidence_row_from_candidate_row(
         row,
         work_item_id=work_item_id,
         owner_phase=owner_phase,
+    )
+    agreement_residual = _residual_claim_agreement_residual(
+        row,
+        claim,
+        work_item_id=work_item_id,
+        owner_phase=owner_phase,
+        authorization=authorization,
+        candidate_set_certificate=candidate_set_certificate,
     )
     source_witness = _residual_claim_source_witness(row, claim)
     residual_roots = tuple(str(root) for root in row.get("residual_roots") or ())
@@ -442,6 +584,7 @@ def _uk_residual_claim_evidence_row_from_candidate_row(
         detail={
             "execution_authorization": authorization,
             "candidate_set_certificate": candidate_set_certificate,
+            "agreement_residual": agreement_residual,
             "claim_status": str(claim.get("selected_tier") or "UNRESOLVED"),
             "validator_status": "not_validated",
         },
@@ -461,6 +604,7 @@ def _uk_residual_claim_evidence_row_from_candidate_row(
         "execution_authorization": authorization,
         "frontier_work_item": frontier_work_item,
         "candidate_set_certificate": candidate_set_certificate,
+        "agreement_residual": agreement_residual,
         "executable": bool(authorization["executable"]),
         "replay_authorized": bool(authorization["replay_authorized"]),
         "authorization_status": str(authorization["authorization_status"]),
