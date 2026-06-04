@@ -55,6 +55,12 @@ _COMPOUND_REFERENCE_LEADING_BODY_RE = re.compile(
     r"\b(?:s|section|art|article|rule|reg|regulation)\.?\s*[0-9A-Za-z]+",
     re.I,
 )
+_SAME_SCHEDULE_COMPOUND_PARAGRAPH_RE = re.compile(
+    r"^\s*(?P<schedule>.{0,120}?\bSch(?:edule)?\.?\s+\S+\s+)"
+    r"(?P<first>para(?:graph)?\.?\s+.{1,120}?)"
+    r"\s*(?P<second>para(?:graph)?\.?\s+.{1,120})\s*$",
+    flags=re.I,
+)
 _PARENT_TABLE_COLUMN_OMISSION_RE = re.compile(
     r"\bomit\s+from\s+(?:the\s+)?"
     r"(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)"
@@ -600,6 +606,16 @@ def _same_level_parenthetical_source_component(
 
 
 def _compound_reference_parts(provision_ref: str) -> tuple[str, str] | None:
+    same_schedule_paragraphs = _SAME_SCHEDULE_COMPOUND_PARAGRAPH_RE.fullmatch(
+        provision_ref
+    )
+    if same_schedule_paragraphs is not None:
+        schedule = " ".join(same_schedule_paragraphs.group("schedule").split()).strip()
+        first = " ".join(same_schedule_paragraphs.group("first").split()).strip()
+        second = " ".join(same_schedule_paragraphs.group("second").split()).strip()
+        if schedule and first and second:
+            return f"{schedule} {first}", f"{schedule} {second}"
+
     matches = list(_COMPOUND_REFERENCE_KEYWORD_RE.finditer(provision_ref))
     if not matches:
         return None

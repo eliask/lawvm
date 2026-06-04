@@ -65233,6 +65233,103 @@ def test_schedule_part_source_ref_does_not_split_to_standalone_main_part() -> No
     )
 
 
+def test_same_schedule_compound_paragraph_source_ref_selects_operating_component() -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_same_schedule_compound_paragraph",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2003-12-29",
+        affected_uri="/id/ukpga/1990/8/section/260",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="s. 260",
+        affecting_uri="/id/ukpga/2003/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="21",
+        affecting_provisions="Sch. 17 para. 103(1)(d)para. 103(2)(e)",
+        affecting_title="Communications Act 2003",
+    )
+    xml_bytes = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Schedules>
+        <Schedule id="schedule-17">
+          <Number>Schedule 17</Number>
+          <ScheduleBody>
+            <P1 id="schedule-17-paragraph-103">
+              <Pnumber>103</Pnumber>
+              <P1para>
+                <P2 id="schedule-17-paragraph-103-1">
+                  <Pnumber>1</Pnumber>
+                  <P2para>
+                    <Text>This paragraph applies to the following provisions of that Act—</Text>
+                    <P3 id="schedule-17-paragraph-103-1-d">
+                      <Pnumber>d</Pnumber>
+                      <P3para><Text>section 260 (orders by other authorities affecting telecommunication apparatus);</Text></P3para>
+                    </P3>
+                  </P2para>
+                </P2>
+                <P2 id="schedule-17-paragraph-103-2">
+                  <Pnumber>2</Pnumber>
+                  <P2para>
+                    <Text>In each of the provisions to which this paragraph applies—</Text>
+                    <P3 id="schedule-17-paragraph-103-2-e">
+                      <Pnumber>e</Pnumber>
+                      <P3para><Text>for “system”, wherever occurring, there shall be substituted “network”.</Text></P3para>
+                    </P3>
+                  </P2para>
+                </P2>
+              </P1para>
+            </P1>
+          </ScheduleBody>
+        </Schedule>
+      </Schedules>
+    </Legislation>
+    """.encode("utf-8")
+    calls: list[str] = []
+
+    def fake_extractor(_xml_bytes, provision_ref, **kwargs):
+        calls.append(provision_ref)
+        root = kwargs["root"]
+
+        def by_id(value: str) -> ET._Element:
+            matches = root.xpath(f'.//*[@id="{value}"]')
+            assert matches
+            return matches[0]
+
+        return {
+            "Sch. 17 para. 103(1)(d)": by_id("schedule-17-paragraph-103-1-d"),
+            "Sch. 17 para. 103(2)(e)": by_id("schedule-17-paragraph-103-2-e"),
+        }.get(provision_ref)
+
+    context, parse_error = uk_replay_mod._build_affecting_source_context(
+        xml_bytes=xml_bytes,
+        locator="https://www.legislation.gov.uk/ukpga/2003/21/data.xml",
+        authority_layer="AFFECTING_ACT_TEXT",
+        provision_extractor=fake_extractor,
+    )
+    assert parse_error is None
+
+    extracted, observations = uk_replay_mod._extract_from_affecting_source_context_with_observations(
+        context,
+        effect,
+    )
+
+    assert calls == [
+        "Sch. 17 para. 103(1)(d)para. 103(2)(e)",
+        "Sch. 17 para. 103(1)(d)",
+        "Sch. 17 para. 103(2)(e)",
+    ]
+    assert extracted is not None
+    assert extracted.get("id") == "schedule-17-paragraph-103-2-e"
+    assert observations[0]["rule_id"] == "uk_affecting_act_compound_reference_split_fallback"
+    assert observations[0]["split_first_part"] == "Sch. 17 para. 103(1)(d)"
+    assert observations[0]["split_second_part"] == "Sch. 17 para. 103(2)(e)"
+    assert observations[0]["split_selected_part"] == "second"
+
+
 def test_regulation_schedule_compound_source_ref_selects_schedule_child_instruction() -> None:
     effect = UKEffectRecord(
         effect_id="uk_test_regulation_schedule_compound",
