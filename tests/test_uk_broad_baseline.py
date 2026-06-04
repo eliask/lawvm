@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from types import SimpleNamespace
 
 from lawvm.core.ir import LegalAddress, LegalOperation
@@ -1650,6 +1651,45 @@ def test_run_driver_writes_broad_baseline_report(
     assert report["summary"]["scored_count"] == 1
     assert report["rows"][0]["triage_bucket"] == "high_fidelity_after_grounding"
     assert "Wrote broad-baseline evidence report" in capsys.readouterr().out
+
+
+def test_run_driver_parallel_preserves_report_input_order(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    def fake_run(args, **_kwargs):
+        statute_id = args[-1]
+        if statute_id == "ukpga/2000/1":
+            time.sleep(0.02)
+        row = {
+            "statute_id": statute_id,
+            "score_status": "scored",
+            "aligned": 100.0,
+            "aligned_excluding_grounding_collateral": 100.0,
+            "unaligned": 100.0,
+            "n_replay": 10,
+            "n_oracle": 10,
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+    report_path = tmp_path / "report.json"
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["ukpga/2000/1", "ukpga/2000/2"],
+            None,
+            report_path,
+            parallel=2,
+        )
+        == 0
+    )
+
+    report = json.loads(report_path.read_text())
+    assert [row["statute_id"] for row in report["rows"]] == [
+        "ukpga/2000/1",
+        "ukpga/2000/2",
+    ]
 
 
 def test_run_driver_fail_flag_accepts_manual_frontier_residuals(monkeypatch, capsys) -> None:

@@ -15,8 +15,8 @@ Two scoring lanes per statute:
                     removal while the unaligned score does not.
 
 Each statute is scored in its OWN subprocess (``--one ID``) so peak RSS stays
-bounded under WSL2 (per the source-root-lifecycle note); the driver forks one
-child per statute and aggregates a JSON snapshot.
+bounded under WSL2 (per the source-root-lifecycle note); the driver runs one or
+more child subprocesses and aggregates a JSON snapshot.
 
 Usage:
   # score an explicit list, write a snapshot
@@ -27,6 +27,10 @@ Usage:
   uv run python scripts/uk_broad_baseline.py --sample 150 --seed 7 \
       --out .tmp/uk_baseline.json
 
+  # run the same isolated per-statute scorer with bounded parent-side parallelism
+  uv run python scripts/uk_broad_baseline.py --sample 150 --seed 7 \
+      --parallel 8 --out .tmp/uk_baseline.json
+
   # score one statute (subprocess unit; prints one JSON line)
   uv run python scripts/uk_broad_baseline.py --one ukpga/1978/30
 
@@ -36,6 +40,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import Counter
 import json
 import random
@@ -1981,16 +1986,19 @@ def run_driver(
     out: Optional[Path],
     out_report: Optional[Path] = None,
     *,
+    parallel: int = 1,
     fail_on_active_unclassified_residuals: bool = False,
     fail_on_manual_frontier_template_gaps: bool = False,
     fail_on_frontier_work_item_gaps: bool = False,
     fail_on_deterministic_frontend_candidates: bool = False,
     fail_on_non_manual_source_chain_frontier: bool = False,
 ) -> int:
-    results: list[dict[str, Any]] = []
-    for i, sid in enumerate(ids, 1):
+    workers = max(1, int(parallel or 1))
+    indexed_results: list[tuple[int, dict[str, Any]]] = []
+
+    def score_child(index: int, statute_id: str) -> tuple[int, str, dict[str, Any]]:
         proc = subprocess.run(
-            [sys.executable, __file__, "--one", sid],
+            [sys.executable, __file__, "--one", statute_id],
             capture_output=True,
             text=True,
             cwd=str(REPO_ROOT),
@@ -2000,26 +2008,32 @@ def run_driver(
         try:
             row = json.loads(line)
         except (json.JSONDecodeError, IndexError):
-            row = {"statute_id": sid, "error": f"subprocess_exit_{proc.returncode}"}
+            row = {
+                "statute_id": statute_id,
+                "error": f"subprocess_exit_{proc.returncode}",
+            }
             if proc.stderr.strip():
                 row["stderr_tail"] = proc.stderr.strip().splitlines()[-1][:200]
         _annotate_row_work_selection(row)
-        results.append(row)
+        return index, statute_id, row
+
+    def print_row(done: int, total: int, statute_id: str, row: dict[str, Any]) -> None:
         if "error" in row:
-            print(f"[{i}/{len(ids)}] {sid:24s} ERROR {row['error']}", flush=True)
+            print(f"[{done}/{total}] {statute_id:24s} ERROR {row['error']}", flush=True)
         elif row.get("score_status") == "source_frontier":
             reason = str(row.get("source_frontier_reason") or "unknown")
-            print(f"[{i}/{len(ids)}] {sid:24s} SOURCE-FRONTIER {reason}", flush=True)
+            print(f"[{done}/{total}] {statute_id:24s} SOURCE-FRONTIER {reason}", flush=True)
         else:
             base_status = str(row.get("base_source_status") or "unknown")
             base_suffix = "" if base_status == "available" else f" base={base_status}"
             zero_oracle_suffix = (
                 " zero_oracle_retention"
-                if int(row.get("n_oracle") or 0) == 0 and int(row.get("n_replay") or 0) > 0
+                if int(row.get("n_oracle") or 0) == 0
+                and int(row.get("n_replay") or 0) > 0
                 else ""
             )
             print(
-                f"[{i}/{len(ids)}] {sid:24s} aligned={row['aligned']:5.1f}% "
+                f"[{done}/{total}] {statute_id:24s} aligned={row['aligned']:5.1f}% "
                 f"aligned_no_gc={row.get('aligned_excluding_grounding_collateral', row['aligned']):5.1f}% "
                 f"unaligned={row['unaligned']:5.1f}% "
                 f"gc={row.get('n_grounding_collateral', 0)} "
@@ -2027,6 +2041,25 @@ def run_driver(
                 f"{base_suffix}{zero_oracle_suffix}",
                 flush=True,
             )
+
+    if workers == 1:
+        for i, sid in enumerate(ids, 1):
+            index, statute_id, row = score_child(i - 1, sid)
+            indexed_results.append((index, row))
+            print_row(i, len(ids), statute_id, row)
+    else:
+        print(f"Scoring {len(ids)} statutes with parallel={workers}", flush=True)
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [
+                executor.submit(score_child, i, sid)
+                for i, sid in enumerate(ids)
+            ]
+            for done, future in enumerate(as_completed(futures), 1):
+                index, statute_id, row = future.result()
+                indexed_results.append((index, row))
+                print_row(done, len(ids), statute_id, row)
+
+    results = [row for _, row in sorted(indexed_results, key=lambda item: item[0])]
 
     snapshot = {r["statute_id"]: r for r in results}
     if out:
@@ -2465,6 +2498,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--sample", type=int, help="Sample N statutes with both enacted+current in the archive")
     ap.add_argument("--seed", type=int, default=0, help="Sample RNG seed (default 0)")
     ap.add_argument("--classes", nargs="+", help="Restrict sample to these act-type classes (e.g. ukpga uksi)")
+    ap.add_argument(
+        "--parallel",
+        type=int,
+        default=1,
+        help=(
+            "Number of isolated --one subprocesses to run concurrently "
+            "(default 1)"
+        ),
+    )
     ap.add_argument("--out", type=Path, help="Write JSON snapshot here")
     ap.add_argument(
         "--out-report",
@@ -2513,6 +2555,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     args = ap.parse_args(argv)
+    if args.parallel < 1:
+        print("error: --parallel must be a positive integer", file=sys.stderr)
+        return 2
 
     if args.one:
         row = score_one(args.one)
@@ -2533,6 +2578,7 @@ def main(argv: list[str] | None = None) -> int:
         ids,
         args.out,
         args.out_report,
+        parallel=args.parallel,
         fail_on_active_unclassified_residuals=args.fail_on_active_unclassified_residuals,
         fail_on_manual_frontier_template_gaps=(
             args.fail_on_manual_frontier_template_gaps
