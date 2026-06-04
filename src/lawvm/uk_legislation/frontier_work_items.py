@@ -261,6 +261,14 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_blocks_replay_until_source_payload_is_available",
         ),
     },
+    "uk_manual_frontier_unquoted_preimage_substitution_source_insufficient": {
+        "candidate_operation_family": "source_acquisition_or_payload_extraction",
+        "required_validator_checks": (
+            "source_witness_contains_unquoted_substitution_instruction",
+            "explicit_text_preimage_source_or_claim_is_available",
+            "claim_blocks_replay_until_text_preimage_is_proved",
+        ),
+    },
     "uk_manual_frontier_non_substantive_payload_source_insufficient": {
         "candidate_operation_family": "source_acquisition_or_payload_extraction",
         "required_validator_checks": (

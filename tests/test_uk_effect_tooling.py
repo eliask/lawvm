@@ -598,6 +598,10 @@ def test_uk_manual_compile_evidence_jsonl_templates_source_target_reconciliation
             "source_acquisition_or_payload_extraction",
         ),
         (
+            "uk_manual_frontier_unquoted_preimage_substitution_source_insufficient",
+            "source_acquisition_or_payload_extraction",
+        ),
+        (
             "uk_manual_frontier_table_appropriate_place_candidate",
             "table_surface_mutation",
         ),
