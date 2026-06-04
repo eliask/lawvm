@@ -104,6 +104,7 @@ def test_uk_multiple_choice_candidate_data_urls_filters_non_candidate_links() ->
     <h1>Multiple Choices</h1>
     <p>The link that you've followed could mean either of the following:</p>
     <a href="/search">Advanced Search</a>
+    <a href="/ukpga/2025-03-20T17:32:43Z/1851-08-01T00:00:00Z">Bad timestamp link</a>
     <a href="/ukpga/Eliz2/3-4/18/enacted">Army Act 1955 (repealed)</a>
     <a href="https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/enacted">Aliens</a>
     </div>"""

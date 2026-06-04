@@ -1028,6 +1028,32 @@ def test_uk_live_target_index_parser_defaults() -> None:
     assert args.json is True
 
 
+def test_uk_corpus_repair_multiple_choices_parser_defaults() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(
+        [
+            "uk-corpus",
+            "repair-multiple-choices",
+            "--db",
+            ".tmp/uk.farchive",
+            "--statute",
+            "ukpga/1955/18",
+            "--limit",
+            "5",
+            "--delay",
+            "0",
+        ]
+    )
+
+    assert args.command == "uk-corpus"
+    assert args.uk_corpus_command == "repair-multiple-choices"
+    assert args.db == ".tmp/uk.farchive"
+    assert args.statute == ["ukpga/1955/18"]
+    assert args.limit == 5
+    assert args.delay == 0
+
+
 def test_uk_replay_payload_preserves_effect_source_diagnostic_lanes() -> None:
     payload = build_uk_replay_payload(
         statute_id="ukpga/2000/1",

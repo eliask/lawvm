@@ -338,7 +338,13 @@ def _normalise_uk_multiple_choice_candidate_href(href: str) -> str:
     parts = [part for part in path.strip("/").split("/") if part]
     if len(parts) < 3 or parts[0] not in UK_MULTIPLE_CHOICE_DOCUMENT_TYPES:
         return ""
+    if any(_is_timestamp_like_path_segment(part) for part in parts[1:3]):
+        return ""
     return f"{UK_LEGISLATION_BASE_URL}/{'/'.join(parts)}"
+
+
+def _is_timestamp_like_path_segment(part: str) -> bool:
+    return ":" in part or "T" in part or part.endswith("Z")
 
 
 def _candidate_base_data_urls(

@@ -430,6 +430,25 @@ def test_acquire_statute_rejects_multiple_choices_as_source_ambiguity(monkeypatc
     assert archive.store_calls == []
 
 
+def test_acquire_statute_rejects_html_as_non_xml_source(monkeypatch) -> None:
+    archive = _FakeArchive()
+
+    def fake_get(
+        url: str,
+        delay: float = 0.5,
+        last_time: list[float] | None = None,
+    ) -> tuple[bytes, int]:
+        return b"<!DOCTYPE html><html><body>" + (b"not legislation XML " * 10) + b"</body></html>", 200
+
+    monkeypatch.setattr("lawvm.uk_legislation.uk_acquire._http_get", fake_get)
+
+    report = acquire_statute("ukpga/1955/18", archive, enacted_only=True)
+
+    assert report.enacted_fetched is False
+    assert report.enacted_error == "non_xml"
+    assert archive.store_calls == []
+
+
 def test_acquire_statute_fetches_multiple_choices_leaf_candidates(monkeypatch) -> None:
     archive = _FakeArchive()
     ambiguity_blob = b"""<div id="content">

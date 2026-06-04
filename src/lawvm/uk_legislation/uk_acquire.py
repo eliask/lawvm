@@ -207,13 +207,23 @@ def _parse_statute_id(statute_id: str) -> tuple[str, str, str]:
     return parts[0], parts[1], parts[2]
 
 
+def _is_storable_xml_source_blob(data: bytes) -> bool:
+    head = data.lstrip(b"\xef\xbb\xbf \t\r\n")
+    lower_head = head[:64].lower()
+    if lower_head.startswith((b"<!doctype html", b"<html")):
+        return False
+    return head[:1] == b"<"
+
+
 def _source_fetch_error(data: bytes | None, status: int | None) -> str | None:
     if not data:
         return f"http_{status}" if status else "transport_error"
     source_state = classify_uk_source_blob(data)
-    if source_state.status is UKSourceStatus.AVAILABLE:
-        return None
-    return source_state.status.value
+    if source_state.status is not UKSourceStatus.AVAILABLE:
+        return source_state.status.value
+    if not _is_storable_xml_source_blob(data):
+        return "non_xml"
+    return None
 
 
 def _source_cached_available(archive: Any, url: str) -> bool:

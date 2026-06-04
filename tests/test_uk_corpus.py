@@ -319,6 +319,82 @@ def test_do_download_refetches_cached_multiple_choices_marker_for_candidates() -
     assert archive.store_calls == [(url, leaf_xml, "xml") for url in leaf_urls]
 
 
+def test_do_repair_multiple_choices_scans_cached_markers_for_leaf_candidates() -> None:
+    statute_id = "ukpga/1955/18"
+    enacted_url = f"{acquire_uk_corpus._LEG_BASE}/{statute_id}/enacted/data.xml"
+    other_url = f"{acquire_uk_corpus._LEG_BASE}/ukpga/1852/1/data.xml"
+    leaf_urls = [
+        "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/enacted/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/enacted/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/data.xml",
+    ]
+    ambiguity_blob = b"""<div id="content">
+    <h1>Multiple Choices</h1>
+    <p>The link that you've followed could mean either of the following:</p>
+    <a href="/ukpga/Eliz2/3-4/18/enacted">Army Act 1955 (repealed)</a>
+    <a href="/ukpga/Eliz2/4-5/18/enacted">Aliens' Employment Act 1955</a>
+    </div>"""
+    leaf_xml = b"<Legislation>" + (b"leaf" * 40) + b"</Legislation>"
+    archive = _FakeArchive()
+    archive.store(enacted_url, b"HTTP 300 Multiple Choices")
+    archive.store(other_url, b"HTTP 300 Multiple Choices")
+    archive.store_calls.clear()
+    http = _FakeHTTP(
+        {
+            enacted_url: 300,
+            **{url: 200 for url in leaf_urls},
+        },
+        data_by_url={
+            enacted_url: ambiguity_blob,
+            **{url: leaf_xml for url in leaf_urls},
+        },
+    )
+
+    result = acquire_uk_corpus.do_repair_multiple_choices(
+        cast(Any, archive),
+        cast(Any, http),
+        statute_ids={statute_id},
+    )
+
+    assert result == {
+        "ambiguous_locators": 1,
+        "repaired_locators": 1,
+        "candidate_sources": 4,
+        "no_candidates": 0,
+        "failed": 0,
+    }
+    assert http.calls == [enacted_url, *leaf_urls]
+    assert archive.store_calls == [(url, leaf_xml, "xml") for url in leaf_urls]
+
+
+def test_do_repair_multiple_choices_reports_no_candidate_pages() -> None:
+    url = f"{acquire_uk_corpus._LEG_BASE}/ukpga/1955/18/data.xml"
+    ambiguity_blob = b"""<div id="content">
+    <h1>Multiple Choices</h1>
+    <p>The link that you've followed could mean either of the following:</p>
+    <a href="/search">Advanced Search</a>
+    </div>"""
+    archive = _FakeArchive()
+    archive.store(url, b"HTTP 300 Multiple Choices")
+    archive.store_calls.clear()
+    http = _FakeHTTP({url: 300}, data_by_url={url: ambiguity_blob})
+
+    result = acquire_uk_corpus.do_repair_multiple_choices(
+        cast(Any, archive),
+        cast(Any, http),
+    )
+
+    assert result == {
+        "ambiguous_locators": 1,
+        "repaired_locators": 0,
+        "candidate_sources": 0,
+        "no_candidates": 1,
+        "failed": 0,
+    }
+    assert archive.store_calls == []
+
+
 def test_do_refresh_can_force_one_statute_current_and_effects() -> None:
     sid = "ukpga/2020/17"
     current_url = f"{acquire_uk_corpus._LEG_BASE}/{sid}/data.xml"
@@ -446,6 +522,8 @@ def test_is_storable_xml_accepts_xml_rejects_gzip() -> None:
     assert acquire_uk_corpus._is_storable_xml(b"<?xml version='1.0'?><x/>")
     assert not acquire_uk_corpus._is_storable_xml(b"\x1f\x8b\x08\x00rest")  # gzip magic
     assert not acquire_uk_corpus._is_storable_xml(b"\x78\x9crest")  # zlib magic
+    assert not acquire_uk_corpus._is_storable_xml(b"<!DOCTYPE html><html></html>")
+    assert not acquire_uk_corpus._is_storable_xml(b"  <html><body>error</body></html>")
     assert not acquire_uk_corpus._is_storable_xml(b"<!doctype html>error".replace(b"<!d", b"err"))
 
 

@@ -9,6 +9,8 @@ Subcommands (``lawvm uk-corpus <sub>``):
   acquire    enumerate primary acts via CSV and download enacted/current/effects
   affecting  fetch enacted XML for affecting acts discovered in effects feeds
   refresh    re-fetch mutable resources (current XML + effects feeds) if stale
+  repair-multiple-choices
+             resolve cached Multiple Choices markers into leaf source locators
   stats      archive summary
   train-dict / repack   compression maintenance
   all        acquire + affecting + refresh
@@ -126,6 +128,9 @@ def _is_storable_xml(data: bytes) -> bool:
     (``1f 8b``) and zlib (``78 xx``) bodies do not.
     """
     head = data.lstrip(b"\xef\xbb\xbf \t\r\n")
+    lower_head = head[:64].lower()
+    if lower_head.startswith((b"<!doctype html", b"<html")):
+        return False
     return head[:1] == b"<"
 
 
@@ -598,6 +603,74 @@ def do_refresh(
     return {"current": n_current, "effects": n_effects}
 
 
+def _locator_matches_statute_ids(locator: str, statute_ids: set[str] | None) -> bool:
+    if not statute_ids:
+        return True
+    return any(f"/{sid.strip('/')}/" in locator for sid in statute_ids)
+
+
+def do_repair_multiple_choices(
+    archive: Farchive,
+    http: _HTTP,
+    *,
+    statute_ids: Optional[set[str]] = None,
+    limit: int = 0,
+) -> dict[str, int]:
+    """Fetch candidate leaf XML for cached UK Multiple Choices source locators.
+
+    Older corpus fetches stored short ``HTTP 300 Multiple Choices`` bodies under
+    XML locators.  This repair keeps those ambiguous locators non-authoritative:
+    it refetches the ambiguity page only to discover candidate leaf URLs, then
+    stores the leaf XML under each candidate's actual legislation.gov.uk URL.
+    """
+    candidates = [
+        loc
+        for loc in archive.locators("%/data.xml")
+        if _locator_matches_statute_ids(loc, statute_ids)
+        and _cached_source_xml_status(archive, loc) is UKSourceStatus.MULTIPLE_CHOICES
+    ]
+    if limit > 0:
+        candidates = candidates[:limit]
+    print(f"  found {len(candidates):,} cached Multiple Choices locator(s)", flush=True)
+    n_repaired = n_candidate_sources = n_no_candidates = n_failed = 0
+    for i, loc in enumerate(candidates, 1):
+        data, status = http.get_with_status(loc)
+        source_error = _source_xml_fetch_error(data, status)
+        if not data or source_error != UKSourceStatus.MULTIPLE_CHOICES.value:
+            n_failed += 1
+        else:
+            candidate_urls = uk_multiple_choice_candidate_data_urls(
+                data,
+                include_current=True,
+                include_enacted=True,
+            )
+            if not candidate_urls:
+                n_no_candidates += 1
+            else:
+                n_candidate_sources += _fetch_multiple_choice_candidate_sources(
+                    archive,
+                    http,
+                    data,
+                    include_current=True,
+                    include_enacted=True,
+                )
+                n_repaired += 1
+        if i % 10 == 0 or i == len(candidates):
+            print(
+                f"  [{i:,}/{len(candidates):,}]  repaired={n_repaired:,}  "
+                f"candidate_sources+{n_candidate_sources:,}  "
+                f"no_candidates={n_no_candidates:,}  failed={n_failed:,}  last={loc}",
+                flush=True,
+            )
+    return {
+        "ambiguous_locators": len(candidates),
+        "repaired_locators": n_repaired,
+        "candidate_sources": n_candidate_sources,
+        "no_candidates": n_no_candidates,
+        "failed": n_failed,
+    }
+
+
 def do_stats(archive: Farchive) -> None:
     st = archive.stats()
     print(f"\n{'=' * 60}\nArchive: {st.db_path}\n{'=' * 60}")
@@ -620,6 +693,14 @@ def do_stats(archive: Farchive) -> None:
             cats["other"] += 1
     for k, v in sorted(cats.items()):
         print(f"    {k:10s}: {v:,}")
+    source_states: Counter = Counter()
+    for loc in archive.locators("%/data.xml"):
+        source_states[_cached_source_xml_status(archive, loc).value] += 1
+    if source_states:
+        print(
+            "  Source states: "
+            + ", ".join(f"{k}={v:,}" for k, v in sorted(source_states.items()))
+        )
     affecting = _scan_affecting_acts(archive)
     missing = sum(
         1 for a in affecting
@@ -689,6 +770,28 @@ def run_refresh(
     print(f"  current+{r['current']:,}  effects+{r['effects']:,}")
 
 
+def run_repair_multiple_choices(
+    archive: Farchive,
+    http: _HTTP,
+    *,
+    statutes: list[str],
+    limit: int,
+) -> None:
+    print("\n[repair-multiple-choices] cached ambiguity locators")
+    r = do_repair_multiple_choices(
+        archive,
+        http,
+        statute_ids=set(statutes) if statutes else None,
+        limit=limit,
+    )
+    print(
+        f"  ambiguous={r['ambiguous_locators']:,}  "
+        f"repaired={r['repaired_locators']:,}  "
+        f"candidate_sources+{r['candidate_sources']:,}  "
+        f"no_candidates={r['no_candidates']:,}  failed={r['failed']:,}"
+    )
+
+
 def main(args: Any) -> None:
     command = getattr(args, "uk_corpus_command", None) or "stats"
     db_path = Path(getattr(args, "db", _DEFAULT_ARCHIVE))
@@ -725,7 +828,14 @@ def main(args: Any) -> None:
                 statutes=getattr(args, "statute", None) or [],
                 force=bool(getattr(args, "force_refresh", False)),
             )
-        if command not in ("acquire", "affecting", "refresh", "all"):
+        if command == "repair-multiple-choices":
+            run_repair_multiple_choices(
+                archive,
+                http,
+                statutes=getattr(args, "statute", None) or [],
+                limit=int(getattr(args, "limit", 0) or 0),
+            )
+        if command not in ("acquire", "affecting", "refresh", "repair-multiple-choices", "all"):
             raise SystemExit(f"Unknown uk-corpus subcommand: {command}")
         st = archive.stats()
         print(f"\nDone. {st.locator_count:,} locators, {st.total_stored_bytes / 1e6:.1f} MB stored")
@@ -739,6 +849,7 @@ __all__ = [
     "do_affecting",
     "do_download",
     "do_enumerate",
+    "do_repair_multiple_choices",
     "do_refresh",
     "do_stats",
     "main",
