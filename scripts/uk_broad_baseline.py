@@ -45,6 +45,7 @@ from collections.abc import Mapping
 from collections import Counter
 import json
 import random
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -1181,6 +1182,8 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
         return "retained_eu_schedule_oracle_granularity_residual"
     if _is_body_nested_list_oracle_granularity_residual(row):
         return "body_nested_list_oracle_granularity_residual"
+    if _is_body_oracle_collapsed_range_granularity_residual(row):
+        return "body_oracle_collapsed_range_granularity_residual"
     if _is_bounded_low_volume_residual(row):
         return "bounded_low_volume_residual"
     return "residual_after_grounding"
@@ -1259,6 +1262,7 @@ def _agreement_residual_family(bucket: str) -> str:
         return "oracle_editorial_pathology"
     if bucket in {
         "bounded_low_volume_residual",
+        "body_oracle_collapsed_range_granularity_residual",
         "body_nested_list_oracle_granularity_residual",
         "retained_eu_schedule_oracle_granularity_residual",
         "retained_eu_mixed_representation_residual",
@@ -1287,6 +1291,7 @@ def _agreement_residual_status(bucket: str, row: dict[str, Any]) -> str:
         "oracle_expansion_without_effects",
         "zero_oracle_retention",
         "base_metadata_only_frontier",
+        "body_oracle_collapsed_range_granularity_residual",
         "body_nested_list_oracle_granularity_residual",
         "retained_repeal_oracle_branch",
         "retained_eu_schedule_oracle_granularity_residual",
@@ -1312,6 +1317,7 @@ def _agreement_residual_owner_phase(bucket: str) -> str:
         return UK_PHASE_AFFECTING_SOURCE_EXTRACTION
     if bucket in {
         "base_metadata_only_frontier",
+        "body_oracle_collapsed_range_granularity_residual",
         "body_nested_list_oracle_granularity_residual",
         "zero_oracle_retention",
         "retained_repeal_oracle_branch",
@@ -1378,6 +1384,7 @@ def _agreement_residual_missing_proofs(
         proofs.append("canonical_operation_compilation")
     if bucket in {
         "bounded_low_volume_residual",
+        "body_oracle_collapsed_range_granularity_residual",
         "body_nested_list_oracle_granularity_residual",
         "retained_eu_schedule_oracle_granularity_residual",
         "retained_eu_mixed_representation_residual",
@@ -1634,6 +1641,37 @@ def _looks_like_nested_body_list_eid(eid: str) -> bool:
     child = parts[-1]
     roman = {"i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"}
     return len(parent) == 1 and parent.isalpha() and (child.isdigit() or child in roman)
+
+
+def _is_body_oracle_collapsed_range_granularity_residual(row: dict[str, Any]) -> bool:
+    """Classify current-oracle range nodes such as section-1320 without replay promotion."""
+    if not bool(row.get("base_source_has_body")):
+        return False
+    if not bool(row.get("oracle_source_has_body")):
+        return False
+    n_only_in_oracle = int(row.get("n_only_in_oracle") or 0)
+    n_only_in_replayed = int(row.get("n_only_in_replayed") or 0)
+    if n_only_in_oracle <= 0 or n_only_in_replayed > 0:
+        return False
+    if int(row.get("n_blocking_compile_rejections") or 0) > 0:
+        return False
+    samples = row.get("oracle_only_eid_samples") or ()
+    if not isinstance(samples, list | tuple):
+        return False
+    return any(_looks_like_collapsed_section_range_eid(str(eid)) for eid in samples)
+
+
+def _looks_like_collapsed_section_range_eid(eid: str) -> bool:
+    match = re.fullmatch(r"section-(?P<label>\d{4,})\.?", eid.strip().lower())
+    if match is None:
+        return False
+    label = match.group("label").rstrip(".")
+    if len(label) % 2 != 0:
+        return False
+    midpoint = len(label) // 2
+    start = int(label[:midpoint])
+    end = int(label[midpoint:])
+    return start > 0 and end > start
 
 
 def _is_bounded_low_volume_residual(row: dict[str, Any]) -> bool:

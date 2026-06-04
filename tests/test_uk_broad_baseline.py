@@ -1244,6 +1244,83 @@ def test_body_nested_list_oracle_granularity_requires_eid_samples() -> None:
     assert summary["triage_buckets"] == {"bounded_low_volume_residual": 1}
 
 
+def test_summarize_results_routes_body_oracle_collapsed_range_granularity() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1933/19",
+                "score_status": "scored",
+                "aligned": 76.47,
+                "aligned_excluding_grounding_collateral": 76.47,
+                "unaligned": 10.45,
+                "base_source_has_body": True,
+                "base_source_has_schedules": True,
+                "oracle_source_has_body": True,
+                "oracle_source_has_schedules": True,
+                "n_grounding_collateral": 0,
+                "n_replay": 26,
+                "n_oracle": 34,
+                "n_only_in_oracle": 8,
+                "n_only_in_replayed": 0,
+                "n_effects": 1,
+                "n_ops": 1,
+                "n_compile_rejections": 1,
+                "n_blocking_compile_rejections": 0,
+                "oracle_only_eid_samples": [
+                    "part-1",
+                    "schedule-6",
+                    "schedule-6-part-i",
+                    "schedule-6-part-ii",
+                    "section-1320",
+                    "section-2224",
+                    "section-2734",
+                    "section-58",
+                ],
+                "manual_frontier_status_counts": {
+                    "deterministic_frontend_supported": 1,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {
+        "body_oracle_collapsed_range_granularity_residual": 1
+    }
+    assert summary["agreement_residual_family_counts"] == {
+        "topology_granularity_mismatch": 1,
+    }
+    assert summary["agreement_residual_owner_phase_counts"] == {
+        "compare_oracle_classification": 1,
+    }
+    assert summary["active_unclassified_residual_count"] == 0
+
+
+def test_body_oracle_collapsed_range_granularity_requires_unambiguous_range_sample() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1933/19",
+                "score_status": "scored",
+                "aligned": 91.0,
+                "aligned_excluding_grounding_collateral": 91.0,
+                "unaligned": 91.0,
+                "base_source_has_body": True,
+                "oracle_source_has_body": True,
+                "n_grounding_collateral": 0,
+                "n_replay": 91,
+                "n_oracle": 99,
+                "n_only_in_oracle": 1,
+                "n_only_in_replayed": 0,
+                "n_compile_rejections": 1,
+                "n_blocking_compile_rejections": 0,
+                "oracle_only_eid_samples": ["section-58"],
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"bounded_low_volume_residual": 1}
+
+
 def test_summarize_results_routes_low_volume_manual_frontier_residuals() -> None:
     summary = uk_broad_baseline.summarize_results(
         [
