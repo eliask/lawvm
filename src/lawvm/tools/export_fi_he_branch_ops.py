@@ -96,6 +96,7 @@ def project_he_branch_ops(
     strict: bool = False,
     verbose: bool = False,
     dry_run: bool = False,
+    compile_metadata: Optional[Any] = None,
 ) -> HEBranchProjectionRun:
     """Build fi_he_branch_ops.parquet from fi_government_proposal.farchive.
 
@@ -291,13 +292,19 @@ def project_he_branch_ops(
     run.elapsed_sec = time.monotonic() - t0
 
     if not dry_run and all_rows:
-        _write_parquet(all_rows, data_dir=data_dir)
+        _write_parquet(all_rows, data_dir=data_dir, compile_metadata=compile_metadata)
 
     return run
 
 
-def _write_parquet(rows: list[dict[str, Any]], *, data_dir: str) -> None:
+def _write_parquet(
+    rows: list[dict[str, Any]],
+    *,
+    data_dir: str,
+    compile_metadata: Optional[Any] = None,
+) -> None:
     """Write rows to fi_he_branch_ops.parquet under data_dir."""
+    import warnings  # noqa: PLC0415
     import pyarrow as pa
     import pyarrow.parquet as pq
 
@@ -326,6 +333,21 @@ def _write_parquet(rows: list[dict[str, Any]], *, data_dir: str) -> None:
     ])
 
     table = pa.Table.from_pylist(rows, schema=schema)
+
+    if compile_metadata is None:
+        warnings.warn(
+            "Parquet emit without CompileMetadata is deprecated; "
+            "pass compile_metadata to ensure artifact reproducibility",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    else:
+        existing = table.schema.metadata or {}
+        meta = dict(existing)
+        for k, v in compile_metadata.to_metadata_dict().items():
+            meta[k.encode()] = v.encode()
+        table = table.replace_schema_metadata(meta)
+
     pq.write_table(table, str(out_path), compression="zstd")
     print(f"  Written: {out_path} ({len(rows):,} rows)", file=sys.stderr)
 

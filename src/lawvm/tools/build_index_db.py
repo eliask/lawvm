@@ -162,6 +162,7 @@ def build_index_db(
     schema_version: str = DEFAULT_SCHEMA_VERSION,
     verbose: bool = False,
     profile: Optional[ProfileTag] = None,
+    compile_metadata: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Compose Tier 2 Parquets into a single DuckDB .db file.
 
@@ -281,11 +282,40 @@ def build_index_db(
     from datetime import datetime, timezone
     build_ts = datetime.now(tz=timezone.utc).isoformat()
     try:
-        con.execute("CREATE TABLE IF NOT EXISTS lawvm_meta (profile_tag VARCHAR, build_timestamp VARCHAR)")
         con.execute(
-            "INSERT INTO lawvm_meta VALUES (?, ?)",
-            [profile.value, build_ts],
+            "CREATE TABLE IF NOT EXISTS lawvm_meta ("
+            "profile_tag VARCHAR, "
+            "build_timestamp VARCHAR, "
+            "provenance_graph_hash VARCHAR, "
+            "strict_profile_fingerprint VARCHAR, "
+            "evidence_policy_fingerprint VARCHAR, "
+            "source_bundle_hash VARCHAR, "
+            "attestation_kind_registry_hash VARCHAR, "
+            "interpretation_policy_fingerprint VARCHAR, "
+            "build_id VARCHAR"
+            ")"
         )
+        if compile_metadata is not None:
+            meta_d = compile_metadata.to_metadata_dict()
+            con.execute(
+                "INSERT INTO lawvm_meta VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    profile.value,
+                    build_ts,
+                    meta_d.get("lawvm.provenance_graph_hash", ""),
+                    meta_d.get("lawvm.strict_profile_fingerprint", ""),
+                    meta_d.get("lawvm.evidence_policy_fingerprint", ""),
+                    meta_d.get("lawvm.source_bundle_hash", ""),
+                    meta_d.get("lawvm.attestation_kind_registry_hash", ""),
+                    meta_d.get("lawvm.interpretation_policy_fingerprint", "") or "",
+                    meta_d.get("lawvm.build_id", "") or "",
+                ],
+            )
+        else:
+            con.execute(
+                "INSERT INTO lawvm_meta VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [profile.value, build_ts, "", "", "", "", "", "", ""],
+            )
     except Exception as e:
         print(f"  warning: could not write lawvm_meta table: {e}", file=sys.stderr)
 

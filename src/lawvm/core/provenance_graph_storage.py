@@ -408,6 +408,11 @@ class GraphStore:
         }
         self._write_json(snapshot_path, snapshot_data)
 
+    def snapshot_exists(self, snapshot_hash: str) -> bool:
+        """Return True if a snapshot with the given hash exists in the store."""
+        snapshot_path = self._snapshots_dir() / f"{snapshot_hash}.json"
+        return snapshot_path.exists()
+
     def read_graph(self, snapshot_hash: str) -> ProvenanceGraph:
         """Read a ProvenanceGraph by snapshot_hash.  Hard-fails on hash mismatch."""
         snapshot_path = self._snapshots_dir() / f"{snapshot_hash}.json"

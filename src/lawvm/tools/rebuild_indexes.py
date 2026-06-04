@@ -245,6 +245,7 @@ def _rebuild_projection(
     data_dir: str,
     current_hash: str,
     verbose: bool = False,
+    compile_metadata: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Rebuild one projection and write its state file.
 
@@ -275,6 +276,7 @@ def _rebuild_projection(
             out_dir=out_dir,
             parquet_out=parquet_out,
             verbose=verbose,
+            compile_metadata=compile_metadata,
         )
         result["row_count"] = row_count
 
@@ -306,6 +308,7 @@ def _dispatch_projection(
     out_dir: Path,
     parquet_out: Path,
     verbose: bool,
+    compile_metadata: Optional[Any] = None,
 ) -> int:
     """Route each projection name to its existing emitter.
 
@@ -320,6 +323,7 @@ def _dispatch_projection(
             data_dir=data_dir,
             out_dir=out_dir,
             verbose=verbose,
+            compile_metadata=compile_metadata,
         )
 
     if name in ("fi_refs", "fi_actors", "fi_pools", "fi_preparatory_refs"):
@@ -327,6 +331,7 @@ def _dispatch_projection(
             name=name,
             data_dir=data_dir,
             out_dir=out_dir,
+            compile_metadata=compile_metadata,
         )
 
     if name == "fi_inline_citations":
@@ -360,6 +365,7 @@ def _rebuild_he_corpus_projections(
     data_dir: str,
     out_dir: Path,
     verbose: bool,
+    compile_metadata: Optional[Any] = None,
 ) -> int:
     """Rebuild fi_he_* projections from fi_government_proposal.farchive."""
     from lawvm.tools.export_fi_he_corpus import project_he_corpus
@@ -377,6 +383,7 @@ def _rebuild_he_corpus_projections(
         data_dir=str(out_dir),
         use_parquet=True,
         verbose=verbose,
+        compile_metadata=compile_metadata,
     )
     # Return the count for the specific projection being rebuilt
     return counts.get(spec.name, 0)
@@ -387,6 +394,7 @@ def _rebuild_fi_crosslink_projection(
     name: str,
     data_dir: str,
     out_dir: Path,
+    compile_metadata: Optional[Any] = None,
 ) -> int:
     """Rebuild fi_refs / fi_actors / fi_pools from finlex.farchive corpus."""
     # These emitters take a corpus list. Load from bench_core.csv if available.
@@ -400,15 +408,15 @@ def _rebuild_fi_crosslink_projection(
 
     if name == "fi_refs":
         from lawvm.tools.export_fi_refs import export_fi_refs
-        return export_fi_refs(corpus, data_dir=str(out_dir), use_parquet=True)
+        return export_fi_refs(corpus, data_dir=str(out_dir), use_parquet=True, compile_metadata=compile_metadata)
 
     if name == "fi_actors":
         from lawvm.tools.export_fi_actors import export_fi_actors
-        return export_fi_actors(corpus, data_dir=str(out_dir), use_parquet=True)
+        return export_fi_actors(corpus, data_dir=str(out_dir), use_parquet=True, compile_metadata=compile_metadata)
 
     if name == "fi_pools":
         from lawvm.tools.export_fi_pools import export_fi_pools
-        return export_fi_pools(corpus, data_dir=str(out_dir), use_parquet=True)
+        return export_fi_pools(corpus, data_dir=str(out_dir), use_parquet=True, compile_metadata=compile_metadata)
 
     if name == "fi_preparatory_refs":
         from lawvm.tools.export_fi_preparatory_refs import export_fi_preparatory_refs

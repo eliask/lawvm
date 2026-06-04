@@ -288,6 +288,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_provenance_graph.py",
         "test_provenance_graph_facade.py",
         "test_provenance_graph_storage.py",
+        # Step 5: compile metadata + reproducibility fingerprints
+        "test_compile_metadata.py",
+        "test_compile_metadata_verify.py",
+        "test_compile_facade_v3.py",
+        "test_export_emitters_compile_metadata.py",
+        "test_build_index_db_compile_metadata.py",
     ),
     "core_materialization_invariants": (
         "test_materialization_invariants.py",
