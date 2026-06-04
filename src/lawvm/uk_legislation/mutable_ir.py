@@ -46,6 +46,7 @@ class UKMutableNode:
 
     def __post_init__(self) -> None:
         self.kind = uk_ir_node_kind(self.kind)
+        self.children = list(self.children)
 
     def to_dict(self) -> dict[str, Any]:
         return {

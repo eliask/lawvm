@@ -372,6 +372,26 @@ def test_uk_mutable_sorted_insert_refuses_same_label_replacement() -> None:
     assert [child.text for child in parent.children] == ["Existing text."]
 
 
+def test_uk_mutable_node_normalizes_replaced_tuple_children_for_insert() -> None:
+    parent = UKMutableNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=(
+            UKMutableNode(kind=IRNodeKind.SUBSECTION, label="1", text="Existing text."),
+        ),
+    )
+    new_node = UKMutableNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="2",
+        text="Inserted text.",
+    )
+
+    inserted = uk_insert_child_sorted(parent, new_node)
+
+    assert inserted is True
+    assert [child.label for child in parent.children] == ["1", "2"]
+
+
 def test_uk_mutable_index_insert_refuses_same_label_replacement() -> None:
     children = [
         UKMutableNode(kind=IRNodeKind.SUBSECTION, label="1", text="Existing text."),
