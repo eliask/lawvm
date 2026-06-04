@@ -508,6 +508,49 @@ def _write_rejection(
     )
 
 
+def _normalize_fi_statute_resolution(
+    proposed: ProposedClaim,
+    *,
+    verbose: bool = False,
+) -> ProposedClaim:
+    """Canonicalize resolved_statute_id in a fi.v1.INLINE_STATUTE_RESOLUTION proposal.
+
+    Pre-1980 Finnish statutes used 2-digit years (e.g. '361/72'). The LLM
+    correctly extracts these but the validator requires canonical 4-digit form.
+    This function expands them before the claim is built and validated, so
+    the stored claim always carries '361/1972', not '361/72'.
+    """
+    from lawvm.finland.claim_kinds.inline_statute_resolution import (
+        _canonicalize_finnish_statute_id,
+    )
+
+    value_dict = dict(proposed.value)
+    raw_id = value_dict.get("resolved_statute_id", "")
+    canonical = _canonicalize_finnish_statute_id(raw_id)
+
+    if canonical is None or canonical == raw_id:
+        return proposed
+
+    if verbose:
+        print(f"  canonicalized {raw_id} → {canonical}")
+
+    new_value = tuple(
+        (k, canonical if k == "resolved_statute_id" else v)
+        for k, v in proposed.value
+    )
+    return ProposedClaim(
+        claim_kind=proposed.claim_kind,
+        target=proposed.target,
+        value=new_value,
+        cited_source_span=proposed.cited_source_span,
+        cited_source_hash=proposed.cited_source_hash,
+        rationale=proposed.rationale,
+        producer_model_id=proposed.producer_model_id,
+        raw_response=proposed.raw_response,
+        parse_error=proposed.parse_error,
+    )
+
+
 def _process_one_frontier(
     frontier_row: object,
     store: ClaimStore,
@@ -555,6 +598,9 @@ def _process_one_frontier(
     )
 
     proposed: ProposedClaim = backend.propose(frontier_row, schema, quoted_source)  # type: ignore[attr-defined]
+
+    if claim_kind == "fi.v1.INLINE_STATUTE_RESOLUTION":
+        proposed = _normalize_fi_statute_resolution(proposed, verbose=verbose)
 
     claim = _build_claim_from_proposed(proposed, frontier_row, quoted_source, producer)
 
