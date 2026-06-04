@@ -280,19 +280,31 @@ def _detect_broken_refs(
 ) -> List[BrokenRefInSimulation]:
     """Detect refs in other statutes that would fail to resolve after simulation.
 
-    Composes fi_refs.parquet (#1) if available; otherwise returns empty list
-    with a TODO note.
+    Composes fi_refs.parquet (#1). Queries for refs whose target_provision_ref_str
+    (column from feature #1) or whose target_statute_id matches a provision
+    changed by the branch op, then flags them as potentially broken.
 
-    Per feature brief: this queries fi_refs.parquet for refs whose target lives
-    in the affected provisions, then flags those that no longer resolve.
+    "Potentially broken" rather than "definitely broken": LawVM doesn't have
+    semantic-equivalence checking between the before- and after-text, so any
+    repeal/replace/text_replace of a referenced provision is reported. The
+    consumer interprets whether the change is semantically backwards-compatible.
+
+    Returns empty list when fi_refs.parquet is not available.
     """
     if refs_parquet_path is None or not Path(refs_parquet_path).exists():
-        # TODO: implement when fi_refs.parquet is available (#1)
         return []
 
-    changed_refs = {cp.provision_ref for cp in changed_provisions
-                   if cp.operation_kind in ("repeal", "replace", "text_replace")}
-    if not changed_refs:
+    # Build the change-set: provision-level refs + statute-level refs.
+    changed_provision_refs: set[str] = set()
+    changed_statute_ids: set[str] = set()
+    for cp in changed_provisions:
+        if cp.operation_kind not in ("repeal", "replace", "text_replace"):
+            continue
+        if cp.provision_ref:
+            changed_provision_refs.add(cp.provision_ref)
+        if cp.target_statute_id:
+            changed_statute_ids.add(cp.target_statute_id)
+    if not changed_provision_refs and not changed_statute_ids:
         return []
 
     try:
@@ -300,25 +312,43 @@ def _detect_broken_refs(
     except ImportError:
         return []
 
+    table = pq.read_table(refs_parquet_path)
+    schema_names = set(table.schema.names)
+    # Feature #1 emits these columns (per REFERENCE_MENTION_EXTRACTION.md).
+    tgt_col = "target_provision_ref_str" if "target_provision_ref_str" in schema_names else None
+    src_col = "source_provision_ref_str" if "source_provision_ref_str" in schema_names else None
+    tgt_stat_col = "target_statute_id" if "target_statute_id" in schema_names else None
+    src_stat_col = "source_statute_id" if "source_statute_id" in schema_names else None
+    if tgt_col is None or src_col is None:
+        return []
+
     broken: list[BrokenRefInSimulation] = []
-    try:
-        table = pq.read_table(refs_parquet_path)
-        for batch in table.to_batches():
-            tgt_refs = batch.column("target_provision_ref") if "target_provision_ref" in table.schema.names else None
-            src_refs = batch.column("source_provision_ref") if "source_provision_ref" in table.schema.names else None
-            if tgt_refs is None or src_refs is None:
-                break
-            for i in range(len(batch)):
-                tgt = str(tgt_refs[i])
-                src = str(src_refs[i])
-                if tgt in changed_refs:
-                    broken.append(BrokenRefInSimulation(
-                        source_provision_ref=src,
-                        target_provision_ref=tgt,
-                        reason="target provision changed or repealed in simulated state",
-                    ))
-    except Exception:
-        pass
+    for batch in table.to_batches():
+        tgt_refs = batch.column(tgt_col)
+        src_refs = batch.column(src_col)
+        tgt_stats = batch.column(tgt_stat_col) if tgt_stat_col else None
+        src_stats = batch.column(src_stat_col) if src_stat_col else None
+        for i in range(len(batch)):
+            tgt = str(tgt_refs[i])
+            src = str(src_refs[i])
+            tgt_stat = str(tgt_stats[i]) if tgt_stats is not None else ""
+            src_stat = str(src_stats[i]) if src_stats is not None else ""
+            # Skip self-refs (source statute citing its own changed provisions
+            # is expected, not "broken in another statute").
+            if src_stat and src_stat in changed_statute_ids:
+                continue
+            if tgt in changed_provision_refs:
+                broken.append(BrokenRefInSimulation(
+                    source_provision_ref=src,
+                    target_provision_ref=tgt,
+                    reason="target provision changed or repealed in simulated state",
+                ))
+            elif tgt_stat and tgt_stat in changed_statute_ids:
+                broken.append(BrokenRefInSimulation(
+                    source_provision_ref=src,
+                    target_provision_ref=tgt,
+                    reason="target statute has provisions changed in simulated state",
+                ))
 
     return broken
 
@@ -328,12 +358,69 @@ def _detect_actor_changes(
     *,
     actors_parquet_path: Optional[str] = None,
 ) -> List[ActorSlotChange]:
-    """Detect actor mentions added or removed by branch ops.
+    """Report actor mentions currently in the changed provisions.
 
-    Composes fi_actors.parquet (#2) if available; otherwise returns empty list.
+    The simulate path uses a simple dict state model rather than full PIT
+    replay (per #8 brief). It cannot re-extract actor mentions from the
+    simulated text, so this function cannot compute strict added/removed
+    deltas. Instead it reports actor mentions that the pre-simulation state
+    has in each changed provision, tagged change_kind="present_pre_change",
+    so the consumer knows which actor slots will need re-verification once
+    the branch ops apply.
+
+    A future iteration composed with full PIT replay can produce true
+    added/removed deltas; the consumer-facing shape (ActorSlotChange) is
+    stable.
+
+    Returns empty list when fi_actors.parquet is not available.
     """
-    # TODO: implement when fi_actors.parquet is available (#2)
-    return []
+    if actors_parquet_path is None or not Path(actors_parquet_path).exists():
+        return []
+
+    changed_provision_refs = {cp.provision_ref for cp in changed_provisions if cp.provision_ref}
+    if not changed_provision_refs:
+        return []
+
+    try:
+        import pyarrow.parquet as pq  # type: ignore[import]
+    except ImportError:
+        return []
+
+    table = pq.read_table(actors_parquet_path)
+    schema_names = set(table.schema.names)
+    # Feature #2 emits these columns (per ACTOR_MENTION_EXTRACTION.md).
+    prov_col = "source_provision_ref_str" if "source_provision_ref_str" in schema_names else None
+    aid_col = "actor_canonical_id" if "actor_canonical_id" in schema_names else None
+    aname_col = "actor_canonical_show_as" if "actor_canonical_show_as" in schema_names else "actor_phrase"
+    if prov_col is None or aid_col is None:
+        return []
+
+    changes: list[ActorSlotChange] = []
+    seen: set[tuple[str, str]] = set()  # dedup (provision, actor)
+    for batch in table.to_batches():
+        provs = batch.column(prov_col)
+        aids = batch.column(aid_col)
+        anames = batch.column(aname_col) if aname_col in schema_names else None
+        for i in range(len(batch)):
+            prov = str(provs[i])
+            if prov not in changed_provision_refs:
+                continue
+            aid = str(aids[i])
+            if not aid or aid == "None":
+                continue
+            key = (prov, aid)
+            if key in seen:
+                continue
+            seen.add(key)
+            aname = str(anames[i]) if anames is not None else aid
+            changes.append(ActorSlotChange(
+                provision_ref=prov,
+                change_kind="present_pre_change",
+                actor_canonical_id=aid,
+                actor_show_as=aname,
+            ))
+
+    return changes
 
 
 # ---------------------------------------------------------------------------

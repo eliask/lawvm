@@ -413,19 +413,16 @@ def _rebuild_core_projections(
 
 
 def _load_default_fi_corpus(data_dir: str) -> list:
-    """Try to load the Finland benchmark corpus CSV from data_dir."""
-    from lawvm.tools.export_parquet import _load_corpus
+    """Load the full Finnish farchive statute ID list for projection.
 
-    candidates = [
-        Path(data_dir) / "finland" / "bench_core.csv",
-        Path(data_dir) / "finland" / "bench_corpus.csv",
-    ]
-    for path in candidates:
-        if path.exists():
-            corpus = _load_corpus(str(path))
-            if corpus:
-                return corpus
-    return []
+    Projection emitters need full corpus coverage (the curated
+    bench_core.csv subset is for replay-benchmark scoring, not graph
+    projections). Defaults to ``corpus="all"`` which enumerates
+    ``store.list_statute_ids()``. The unused ``data_dir`` arg is
+    retained for back-compat with callers.
+    """
+    from lawvm.tools.export_parquet import _load_corpus
+    return _load_corpus("all")
 
 
 # ---------------------------------------------------------------------------
