@@ -35,6 +35,10 @@ def _el_to_text(el: Any) -> str:
     return re.sub(r"\s+", " ", raw).strip()
 
 
+def _normalize_section_label(label: str) -> str:
+    return re.sub(r"[\s§.*]", "", label).lower()
+
+
 def _find_section_el(oracle_root: Any, section_filter: str) -> Any | None:
     """Find a section element by address or Finnish num label.
 
@@ -59,10 +63,13 @@ def _find_section_el(oracle_root: Any, section_filter: str) -> Any | None:
         num_text = section_filter.split(":", 1)[1].strip()
     if "§" not in num_text:
         num_text = num_text + " §"
+    wanted_label = _normalize_section_label(num_text)
 
     for sec in oracle_root.findall(".//{*}section"):
-        num_el = sec.find(".//{*}num")
-        if num_el is not None and num_el.text and num_text.split()[0] in num_el.text:
+        num_el = sec.find("{*}num")
+        if num_el is None:
+            num_el = sec.find("num")
+        if num_el is not None and num_el.text and _normalize_section_label(num_el.text) == wanted_label:
             return sec
 
     return None
