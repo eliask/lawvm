@@ -1580,6 +1580,82 @@ def test_body_oracle_collapsed_range_granularity_requires_unambiguous_range_samp
     assert summary["triage_buckets"] == {"bounded_low_volume_residual": 1}
 
 
+def test_summarize_results_routes_body_oracle_first_paragraph_sectionization() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1842/97",
+                "score_status": "scored",
+                "aligned": 80.0,
+                "aligned_excluding_grounding_collateral": 80.0,
+                "unaligned": 0.0,
+                "base_source_has_body": True,
+                "base_source_has_schedules": False,
+                "base_source_number_of_provisions": "5",
+                "oracle_source_has_body": True,
+                "oracle_source_has_schedules": False,
+                "oracle_source_number_of_provisions": "6",
+                "n_grounding_collateral": 0,
+                "n_replay": 4,
+                "n_oracle": 5,
+                "n_only_in_oracle": 1,
+                "n_only_in_replayed": 0,
+                "n_effects": 1,
+                "n_ops": 1,
+                "n_compile_rejections": 1,
+                "n_blocking_compile_rejections": 0,
+                "oracle_only_eid_samples": ["section-1."],
+                "manual_frontier_status_counts": {
+                    "deterministic_frontend_supported": 1,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {
+        "body_oracle_first_paragraph_sectionization_residual": 1
+    }
+    assert summary["agreement_residual_family_counts"] == {
+        "topology_granularity_mismatch": 1,
+    }
+    assert summary["agreement_residual_status_counts"] == {"frontier": 1}
+    assert summary["agreement_residual_owner_phase_counts"] == {
+        "compare_oracle_classification": 1,
+    }
+    assert summary["active_unclassified_residual_count"] == 0
+
+
+def test_body_oracle_first_paragraph_sectionization_requires_exact_first_section_sample() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1842/97",
+                "score_status": "scored",
+                "aligned": 80.0,
+                "aligned_excluding_grounding_collateral": 80.0,
+                "unaligned": 0.0,
+                "base_source_has_body": True,
+                "base_source_has_schedules": False,
+                "base_source_number_of_provisions": 5,
+                "oracle_source_has_body": True,
+                "oracle_source_has_schedules": False,
+                "oracle_source_number_of_provisions": 6,
+                "n_grounding_collateral": 0,
+                "n_replay": 4,
+                "n_oracle": 5,
+                "n_only_in_oracle": 1,
+                "n_only_in_replayed": 0,
+                "n_compile_rejections": 1,
+                "n_blocking_compile_rejections": 0,
+                "oracle_only_eid_samples": ["section-1"],
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"residual_after_grounding": 1}
+    assert summary["active_unclassified_residual_count"] == 1
+
+
 def test_summarize_results_routes_low_volume_manual_frontier_residuals() -> None:
     summary = uk_broad_baseline.summarize_results(
         [

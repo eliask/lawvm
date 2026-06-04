@@ -125,6 +125,7 @@ _NON_CORE_COMPARISON_TRIAGE_BUCKETS = frozenset(
     {
         "base_metadata_only_frontier",
         "body_oracle_collapsed_range_granularity_residual",
+        "body_oracle_first_paragraph_sectionization_residual",
         "body_nested_list_oracle_granularity_residual",
         "effect_feed_absent_frontier",
         "error",
@@ -1659,6 +1660,8 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
         return "body_nested_list_oracle_granularity_residual"
     if _is_body_oracle_collapsed_range_granularity_residual(row):
         return "body_oracle_collapsed_range_granularity_residual"
+    if _is_body_oracle_first_paragraph_sectionization_residual(row):
+        return "body_oracle_first_paragraph_sectionization_residual"
     if _is_bounded_low_volume_residual(row):
         return "bounded_low_volume_residual"
     return "residual_after_grounding"
@@ -1765,6 +1768,7 @@ def _agreement_residual_family(bucket: str) -> str:
     if bucket in {
         "bounded_low_volume_residual",
         "body_oracle_collapsed_range_granularity_residual",
+        "body_oracle_first_paragraph_sectionization_residual",
         "body_nested_list_oracle_granularity_residual",
         "retained_eu_schedule_oracle_granularity_residual",
         "retained_eu_mixed_representation_residual",
@@ -1794,6 +1798,7 @@ def _agreement_residual_status(bucket: str, row: dict[str, Any]) -> str:
         "zero_oracle_retention",
         "base_metadata_only_frontier",
         "body_oracle_collapsed_range_granularity_residual",
+        "body_oracle_first_paragraph_sectionization_residual",
         "body_nested_list_oracle_granularity_residual",
         "retained_repeal_oracle_branch",
         "retained_eu_schedule_oracle_granularity_residual",
@@ -1820,6 +1825,7 @@ def _agreement_residual_owner_phase(bucket: str) -> str:
     if bucket in {
         "base_metadata_only_frontier",
         "body_oracle_collapsed_range_granularity_residual",
+        "body_oracle_first_paragraph_sectionization_residual",
         "body_nested_list_oracle_granularity_residual",
         "zero_oracle_retention",
         "retained_repeal_oracle_branch",
@@ -1887,6 +1893,7 @@ def _agreement_residual_missing_proofs(
     if bucket in {
         "bounded_low_volume_residual",
         "body_oracle_collapsed_range_granularity_residual",
+        "body_oracle_first_paragraph_sectionization_residual",
         "body_nested_list_oracle_granularity_residual",
         "retained_eu_schedule_oracle_granularity_residual",
         "retained_eu_mixed_representation_residual",
@@ -2186,6 +2193,44 @@ def _is_body_oracle_collapsed_range_granularity_residual(row: dict[str, Any]) ->
     if not isinstance(samples, list | tuple):
         return False
     return any(_looks_like_collapsed_section_range_eid(str(eid)) for eid in samples)
+
+
+def _is_body_oracle_first_paragraph_sectionization_residual(row: dict[str, Any]) -> bool:
+    """Classify oracle reification of an enacted unnumbered first body paragraph."""
+    if not bool(row.get("base_source_has_body")):
+        return False
+    if not bool(row.get("oracle_source_has_body")):
+        return False
+    if bool(row.get("base_source_has_schedules")):
+        return False
+    if bool(row.get("oracle_source_has_schedules")):
+        return False
+    if _nonnegative_int(row.get("n_only_in_oracle")) != 1:
+        return False
+    if _nonnegative_int(row.get("n_only_in_replayed")) != 0:
+        return False
+    if _nonnegative_int(row.get("n_blocking_compile_rejections")) > 0:
+        return False
+    base_provisions = _positive_int_field(row.get("base_source_number_of_provisions"))
+    oracle_provisions = _positive_int_field(row.get("oracle_source_number_of_provisions"))
+    if base_provisions <= 0 or oracle_provisions != base_provisions + 1:
+        return False
+    samples = row.get("oracle_only_eid_samples") or ()
+    if not isinstance(samples, list | tuple):
+        return False
+    normalized_samples = {str(eid).strip().lower() for eid in samples}
+    return normalized_samples == {"section-1."}
+
+
+def _positive_int_field(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str) and value.isdecimal():
+        parsed = int(value)
+        return parsed if parsed > 0 else 0
+    return 0
 
 
 def _looks_like_collapsed_section_range_eid(eid: str) -> bool:
