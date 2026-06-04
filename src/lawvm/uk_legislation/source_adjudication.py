@@ -2365,6 +2365,38 @@ def _has_source_parent_grouped_repeal_context(
         )
         if "following are repealed" in parent_preview:
             return True
+        if (
+            "following provisions" in parent_preview
+            and "are also repealed" in parent_preview
+        ):
+            return True
+    return False
+
+
+def _has_source_parent_grouped_substitution_context(
+    lowering_rows: Iterable[dict[str, Any]],
+) -> bool:
+    for row in lowering_rows:
+        if (
+            str(row.get("rule_id") or "")
+            != "uk_effect_source_payload_without_instruction_context_rejected"
+        ):
+            continue
+        parent_preview = " ".join(
+            str(row.get("source_parent_context_preview") or "").lower().split()
+        )
+        if " substitute" not in parent_preview:
+            continue
+        if "for " not in parent_preview:
+            continue
+        if (
+            "definition of" not in parent_preview
+            and "in subsection" not in parent_preview
+        ):
+            continue
+        if "“" not in parent_preview and '"' not in parent_preview:
+            continue
+        return True
     return False
 
 
@@ -2532,7 +2564,8 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
         }
 
     if (
-        source_pathology_norm == "fragment_context_missing"
+        source_pathology_norm
+        in {"fragment_context_missing", "unhandled_instruction_text"}
         and "repeal" in effect_type_norm
         and _has_source_parent_grouped_repeal_context(lowering_rows)
     ):
@@ -2544,6 +2577,24 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
                 "fragment, but the source parent supplies the repeal action; a "
                 "claim or future parser must prove the exact child target and "
                 "repeal boundary before replay."
+            ),
+        }
+
+    if (
+        source_pathology_norm
+        in {"fragment_context_missing", "unhandled_instruction_text"}
+        and "substitut" in effect_type_norm
+        and _has_source_parent_grouped_substitution_context(lowering_rows)
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_parser_or_extraction_candidate",
+            "reason": (
+                "The extracted child source is only a grouped-substitution "
+                "payload fragment, but the source parent supplies the target "
+                "list and substitution action; a claim or future parser must "
+                "prove the exact child target, quoted preimage, replacement "
+                "payload, and mutation boundary before replay."
             ),
         }
 

@@ -1327,6 +1327,41 @@ def test_classify_uk_manual_compile_frontier_uses_parent_grouped_repeal_context(
     assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_uses_parent_consequential_repeal_context() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words repealed",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text=(
+            "a in section 8 (interpretation), the following definitions- "
+            "\"relevant British fishery limits\"; \"the Scottish zone\"; "
+            "\"sea fish\"; \"wholly British-owned\";"
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": (
+                    "uk_effect_source_payload_without_instruction_context_rejected"
+                ),
+                "blocking": True,
+                "source_parent_id": "schedule-4-paragraph-3-2",
+                "source_parent_context_preview": (
+                    "In consequence of the repeal made by sub-paragraph (1), "
+                    "the following provisions of the Fishery Limits Act 1976 "
+                    "are also repealed- a in section 8 (interpretation), the "
+                    "following definitions- \"relevant British fishery limits\"; "
+                    "\"the Scottish zone\"; \"sea fish\"; \"wholly British-owned\";"
+                ),
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_does_not_infer_grouped_repeal_without_parent_repeal_context() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words repealed",
@@ -1353,6 +1388,65 @@ def test_classify_uk_manual_compile_frontier_does_not_infer_grouped_repeal_witho
 
     assert result["status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
+
+
+def test_classify_uk_manual_compile_frontier_uses_parent_grouped_substitution_context() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text="a in subsection (1), and",
+        lowering_rejections=(
+            {
+                "rule_id": (
+                    "uk_effect_source_payload_without_instruction_context_rejected"
+                ),
+                "blocking": True,
+                "source_parent_id": "schedule-1-paragraph-46-3",
+                "source_parent_context_preview": (
+                    "In section 100 (land held by public bodies: "
+                    "interpretation), in the definition of \"wholly-owned "
+                    "subsidiary\"- a in subsection (1), and b in subsection "
+                    "(1A), for \"section 736 of the Companies Act 1985\" "
+                    "substitute"
+                ),
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_does_not_infer_grouped_substitution_without_parent_action() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text="a in subsection (1), and",
+        lowering_rejections=(
+            {
+                "rule_id": (
+                    "uk_effect_source_payload_without_instruction_context_rejected"
+                ),
+                "blocking": True,
+                "source_parent_id": "schedule-1-paragraph-46-3",
+                "source_parent_context_preview": (
+                    "In section 100, in the definition of \"wholly-owned "
+                    "subsidiary\"- a in subsection (1), and b in subsection (1A)"
+                ),
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "source_insufficient"
+    assert result["rule_id"] == "uk_manual_frontier_source_payload_without_instruction_context"
 
 
 def test_classify_uk_manual_compile_frontier_marks_broad_schedule_flat_payload_source_insufficient() -> None:
