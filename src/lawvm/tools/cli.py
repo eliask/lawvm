@@ -8210,6 +8210,10 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help="base data directory (default: data/fi/v1); manual_claims/ is appended",
     )
+    claim_p.add_argument(
+        "--graph-store-root", dest="graph_store_root", metavar="PATH", default=None,
+        help="path to provenance graph store (default: data/fi/v1/provenance_graph/)",
+    )
     claim_sub = claim_p.add_subparsers(dest="claim_subcommand", metavar="<subcommand>")
 
     # propose
@@ -8344,8 +8348,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="LLM backend to use (default: mock)",
     )
     propose_claims_p.add_argument(
-        "--claim-store-root", dest="claim_store_root", metavar="PATH", default=None,
-        help="write claims to this directory instead of data_dir/manual_claims (smoke-run isolation)",
+        "--graph-store-root", dest="graph_store_root", metavar="PATH", default=None,
+        help="path to provenance graph store (default: data/fi/v1/provenance_graph/); smoke-run isolation",
+    )
+    propose_claims_p.add_argument(
+        "--claim-store-root", dest="graph_store_root", metavar="PATH",
+        help=argparse.SUPPRESS,
     )
 
     # validate-claims (Slice 4) — top-level command
@@ -8372,6 +8380,10 @@ def _build_parser() -> argparse.ArgumentParser:
     validate_claims_p.add_argument(
         "--status", metavar="STATUS", default=None,
         help="filter by lifecycle status (with --all)",
+    )
+    validate_claims_p.add_argument(
+        "--graph-store-root", dest="graph_store_root", metavar="PATH", default=None,
+        help="path to provenance graph store (default: data/fi/v1/provenance_graph/)",
     )
 
     return parser
