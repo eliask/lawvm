@@ -130,6 +130,12 @@ _FI_PROJECTIONS: tuple = (
         tier_2_deps=(),
         description="Compiled operation rows",
     ),
+    ProjectionSpec(
+        name="fi_preparatory_refs",
+        tier_1_deps=("finlex.farchive",),
+        tier_2_deps=(),
+        description="PreparatoryReference legislative preparation chain refs",
+    ),
 )
 
 _PROJECTIONS_BY_JURISDICTION: Dict[str, tuple] = {
@@ -304,7 +310,7 @@ def _dispatch_projection(
             verbose=verbose,
         )
 
-    if name in ("fi_refs", "fi_actors", "fi_pools"):
+    if name in ("fi_refs", "fi_actors", "fi_pools", "fi_preparatory_refs"):
         return _rebuild_fi_crosslink_projection(
             name=name,
             data_dir=data_dir,
@@ -379,6 +385,10 @@ def _rebuild_fi_crosslink_projection(
     if name == "fi_pools":
         from lawvm.tools.export_fi_pools import export_fi_pools
         return export_fi_pools(corpus, data_dir=str(out_dir), use_parquet=True)
+
+    if name == "fi_preparatory_refs":
+        from lawvm.tools.export_fi_preparatory_refs import export_fi_preparatory_refs
+        return export_fi_preparatory_refs(corpus, data_dir=str(out_dir), use_parquet=True)
 
     return 0
 
