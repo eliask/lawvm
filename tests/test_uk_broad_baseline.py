@@ -1229,6 +1229,97 @@ def test_source_chain_frontier_marks_source_insufficient_manual_rows() -> None:
     }
 
 
+def test_source_chain_frontier_marks_text_patch_chain_gap_manual_rows() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1954/21",
+                "score_status": "scored",
+                "aligned": 70.0,
+                "aligned_excluding_grounding_collateral": 70.0,
+                "unaligned": 70.0,
+                "n_grounding_collateral": 0,
+                "n_replay": 28,
+                "n_oracle": 40,
+                "n_only_in_oracle": 12,
+                "n_only_in_replayed": 0,
+                "n_effects": 18,
+                "n_ops": 8,
+                "manual_frontier_status_counts": {
+                    "deterministic_frontend_supported": 3,
+                    "non_textual_or_out_of_scope": 10,
+                },
+                "manual_frontier_rule_counts": {
+                    "uk_manual_frontier_text_patch_preimage_chain_gap": 1,
+                    "uk_manual_frontier_text_patch_postimage_chain_gap": 2,
+                    "uk_manual_frontier_text_patch_target_source_chain_gap": 1,
+                },
+                "manual_frontier_work_item_candidate_operation_family_counts": {
+                    "source_chain_text_patch": 4,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"manual_compile_frontier_residual": 1}
+    assert summary["active_unclassified_residual_count"] == 0
+    assert summary["source_chain_frontier_reasons"] == {
+        "effect_rows_not_admitted_by_replay_lens": 1,
+        "manual_frontier_source_chain_text_patch_gap": 1,
+    }
+    assert summary["source_chain_frontier_statutes"] == {
+        "effect_rows_not_admitted_by_replay_lens": ["ukpga/1954/21"],
+        "manual_frontier_source_chain_text_patch_gap": ["ukpga/1954/21"],
+    }
+    assert summary["non_manual_source_chain_frontier_count"] == 0
+    assert summary["non_manual_source_chain_frontier_statutes"] == []
+
+
+def test_replay_lens_residual_allows_replay_authorized_rows() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1954/21",
+                "score_status": "scored",
+                "aligned": 70.0,
+                "aligned_excluding_grounding_collateral": 70.0,
+                "unaligned": 70.0,
+                "n_grounding_collateral": 0,
+                "n_replay": 28,
+                "n_oracle": 40,
+                "n_only_in_oracle": 12,
+                "n_only_in_replayed": 0,
+                "n_effects": 17,
+                "n_ops": 4,
+                "manual_frontier_status_counts": {
+                    "deterministic_frontend_supported": 4,
+                    "non_textual_or_out_of_scope": 13,
+                },
+                "manual_frontier_rule_counts": {
+                    "uk_manual_frontier_deterministic_supported": 4,
+                    "uk_manual_frontier_external_act_target_out_of_scope": 1,
+                    "uk_manual_frontier_non_textual_or_out_of_scope": 12,
+                },
+                "manual_frontier_work_item_candidate_operation_family_counts": {
+                    "non_textual_or_out_of_scope": 13,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"manual_compile_frontier_residual": 1}
+    assert summary["active_unclassified_residual_count"] == 0
+    assert summary["source_chain_frontier_reasons"] == {
+        "effect_rows_not_admitted_by_replay_lens": 1
+    }
+    assert summary["source_chain_frontier_statutes"] == {
+        "effect_rows_not_admitted_by_replay_lens": ["ukpga/1954/21"],
+    }
+    assert summary["replay_lens_frontier_count"] == 1
+    assert summary["replay_lens_frontier_statutes"] == ["ukpga/1954/21"]
+    assert summary["non_manual_source_chain_frontier_count"] == 0
+
+
 def test_source_chain_frontier_row_preserves_multiple_reasons(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         uk_broad_baseline,
@@ -1601,4 +1692,48 @@ def test_run_driver_non_manual_source_chain_flag_allows_manual_source_insufficie
     )
     out = capsys.readouterr().out
     assert "source_chain_frontier[manual_frontier_source_insufficient]: ukpga/1990/8" in out
+    assert "non_manual_source_chain_frontier=0" in out
+
+
+def test_run_driver_non_manual_source_chain_flag_allows_text_patch_chain_gap(
+    monkeypatch,
+    capsys,
+) -> None:
+    def fake_run(*_args, **_kwargs):
+        row = {
+            "statute_id": "ukpga/1954/21",
+            "score_status": "scored",
+            "aligned": 70.0,
+            "aligned_excluding_grounding_collateral": 70.0,
+            "unaligned": 70.0,
+            "n_replay": 28,
+            "n_oracle": 40,
+            "n_only_in_oracle": 12,
+            "n_only_in_replayed": 0,
+            "manual_frontier_rule_counts": {
+                "uk_manual_frontier_text_patch_preimage_chain_gap": 1,
+            },
+            "manual_frontier_work_item_candidate_operation_family_counts": {
+                "source_chain_text_patch": 1,
+            },
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["ukpga/1954/21"],
+            None,
+            fail_on_active_unclassified_residuals=True,
+            fail_on_non_manual_source_chain_frontier=True,
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert (
+        "source_chain_frontier[manual_frontier_source_chain_text_patch_gap]: "
+        "ukpga/1954/21"
+    ) in out
+    assert "active_unclassified_residuals=0" in out
     assert "non_manual_source_chain_frontier=0" in out

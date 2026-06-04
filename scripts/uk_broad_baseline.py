@@ -108,8 +108,17 @@ _ACTIVE_UNCLASSIFIED_RESIDUAL_BUCKETS = frozenset(
 _MANUAL_SOURCE_CHAIN_FRONTIER_REASONS = frozenset(
     {
         "manual_frontier_source_insufficient",
+        "manual_frontier_source_chain_text_patch_gap",
     }
 )
+_MANUAL_FRONTIER_SOURCE_CHAIN_TEXT_PATCH_RULES = frozenset(
+    {
+        "uk_manual_frontier_text_patch_preimage_chain_gap",
+        "uk_manual_frontier_text_patch_target_source_chain_gap",
+        "uk_manual_frontier_text_patch_postimage_chain_gap",
+    }
+)
+_MANUAL_FRONTIER_SOURCE_CHAIN_TEXT_PATCH_OPERATION_FAMILY = "source_chain_text_patch"
 _REPLAY_LENS_FRONTIER_REASONS = frozenset(
     {
         "effect_rows_not_admitted_by_replay_lens",
@@ -1347,8 +1356,12 @@ def _source_chain_frontier_reasons_for_row(row: dict[str, Any]) -> tuple[str, ..
             reasons.append("effect_rows_missing_structural_payload")
         else:
             reasons.append("effect_rows_nonreplayable")
+    if _has_replay_lens_or_source_insufficient_only_manual_frontier(row):
+        reasons.append("effect_rows_not_admitted_by_replay_lens")
     if _has_manual_frontier_source_insufficient_record(row):
         reasons.append("manual_frontier_source_insufficient")
+    if _has_manual_frontier_source_chain_text_patch_gap(row):
+        reasons.append("manual_frontier_source_chain_text_patch_gap")
     return tuple(dict.fromkeys(reasons))
 
 
@@ -1390,6 +1403,29 @@ def _has_manual_frontier_source_insufficient_record(row: dict[str, Any]) -> bool
     return int(counts.get("source_insufficient") or 0) > 0
 
 
+def _has_manual_frontier_source_chain_text_patch_gap(row: dict[str, Any]) -> bool:
+    rule_counts = row.get("manual_frontier_rule_counts") or {}
+    if isinstance(rule_counts, dict) and any(
+        int(rule_counts.get(rule_id) or 0) > 0
+        for rule_id in _MANUAL_FRONTIER_SOURCE_CHAIN_TEXT_PATCH_RULES
+    ):
+        return True
+    family_counts = (
+        row.get("manual_frontier_work_item_candidate_operation_family_counts") or {}
+    )
+    if not isinstance(family_counts, dict):
+        return False
+    return (
+        int(
+            family_counts.get(
+                _MANUAL_FRONTIER_SOURCE_CHAIN_TEXT_PATCH_OPERATION_FAMILY
+            )
+            or 0
+        )
+        > 0
+    )
+
+
 def _has_replay_lens_or_source_insufficient_only_manual_frontier(
     row: dict[str, Any],
 ) -> bool:
@@ -1401,9 +1437,10 @@ def _has_replay_lens_or_source_insufficient_only_manual_frontier(
         return False
     replay_lens_count = int(counts.get("non_textual_or_out_of_scope") or 0)
     source_insufficient_count = int(counts.get("source_insufficient") or 0)
+    replay_authorized_count = int(counts.get("deterministic_frontend_supported") or 0)
     if replay_lens_count == 0:
         return False
-    return replay_lens_count + source_insufficient_count == total
+    return replay_lens_count + source_insufficient_count + replay_authorized_count == total
 
 
 def _is_retained_eu_mixed_representation_residual(row: dict[str, Any]) -> bool:
@@ -1434,16 +1471,31 @@ def _is_bounded_low_volume_residual(row: dict[str, Any]) -> bool:
 def _is_manual_compile_frontier_residual(row: dict[str, Any]) -> bool:
     """Classify residuals with explicit manual/source-frontier workqueue evidence."""
     aligned = float(row.get("aligned_excluding_grounding_collateral") or row.get("aligned") or 0.0)
+    has_manual_source_chain_frontier = (
+        _has_manual_frontier_source_insufficient_record(row)
+        or _has_manual_frontier_source_chain_text_patch_gap(row)
+    )
+    has_replay_lens_frontier = (
+        _has_replay_lens_or_source_insufficient_only_manual_frontier(row)
+    )
     if aligned < _LOW_VOLUME_RESIDUAL_MIN_SCORE:
         status_counts = row.get("manual_frontier_status_counts") or {}
-        if not _has_actionable_manual_frontier_status(status_counts):
+        if (
+            not _has_actionable_manual_frontier_status(status_counts)
+            and not has_manual_source_chain_frontier
+            and not has_replay_lens_frontier
+        ):
             return False
     n_only_in_oracle = int(row.get("n_only_in_oracle") or 0)
     n_only_in_replayed = int(row.get("n_only_in_replayed") or 0)
     if n_only_in_oracle < max(1, n_only_in_replayed):
         return False
     status_counts = row.get("manual_frontier_status_counts") or {}
-    if _has_actionable_manual_frontier_status(status_counts):
+    if (
+        _has_actionable_manual_frontier_status(status_counts)
+        or has_manual_source_chain_frontier
+        or has_replay_lens_frontier
+    ):
         return True
     blocking_counts = row.get("blocking_compile_rejection_rule_counts") or {}
     if not isinstance(blocking_counts, dict):
