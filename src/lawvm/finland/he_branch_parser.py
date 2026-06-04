@@ -228,13 +228,29 @@ class HEParsedBranch:
 # Grammar: EnactmentSectionRecognizer (AGENTS.md §1.13)
 #
 # Finnish HE bodies contain rationale sections and enactment-text sections.
-# We identify enactment-text sections by:
-#   1. hcontainer[@name='enactment-text'] — explicit name attribute
-#   2. hcontainer[@name='proposal'] — named proposal section
-#   3. hcontainer[@name='lainSisalto'] or similar explicit HE structures
-#   4. Text content begins with an "Ehdotetaan" trigger pattern
+# Modern Finnish HEs (2020+) use the 'bills'/'bill'/'enactingClause' structure:
+#   mainBody
+#     hcontainer[name='bills']
+#       hcontainer[name='bill']
+#         hcontainer[name='enactingClause']   ← amendment directive (johtolause)
+#         hcontainer[name='statuteProvisionsWrapper']
+#           section  ← payload content (replacement text, NOT a directive)
 #
-# This is a single-pass structural recognizer, not a pile of regexes.
+# Legacy / synthetic HEs may use:
+#   hcontainer[@name='enactment-text'] with <section> children containing
+#   "Ehdotetaan, että ..." text.
+#
+# EnactingClauseRecognizer (primary, modern HE structure):
+#   Extracts hcontainer[name='enactingClause'] text verbatim.
+#   Each enactingClause is exactly one amendment directive.
+#
+# IMPORTANT: The previous extractor incorrectly treated <section> elements
+# inside 'statuteProvisionsWrapper' as clauses.  Those sections contain
+# the replacement statute text (payload), not johtolause directives.
+# The fix: enumerate enactingClause elements first; fall back to the
+# legacy section-based path only when none are found.
+#
+# Per AGENTS.md §1.13: single-pass structural recognizer, not N regex passes.
 # ---------------------------------------------------------------------------
 
 # Module-scope compiled patterns (AGENTS.md §1.11)
@@ -264,6 +280,24 @@ _RATIONALE_CONTAINER_NAMES = frozenset({
     "preface",
     "conclusions",
     "contentAbsent",
+})
+
+# The name attribute marking amendment directives in modern Finnish HEs (2020+).
+# Each hcontainer[name='enactingClause'] holds exactly one johtolause directive,
+# e.g. "Eduskunnan päätöksen mukaisesti muutetaan lannoitelain (711/2022) 7 §...".
+# This is the PRIMARY extraction target.
+#
+# Source: finlex.fi AKN XML corpus, 2020–2025 HEs, all examined examples.
+_ENACTING_CLAUSE_NAME = "enactingClause"
+
+# Container names holding section PAYLOAD content (replacement statute text),
+# not amendment directives.  Section elements inside these containers must NOT
+# be passed to parse_clause() — they are the "what the statute will say", not
+# "what the amendment directive says to change".
+_PAYLOAD_CONTAINER_NAMES = frozenset({
+    "statuteProvisionsWrapper",
+    "bill",
+    "bills",
 })
 
 
@@ -626,24 +660,61 @@ def _parse_one_clause(
 
 
 # ---------------------------------------------------------------------------
-# Enactment section extractor
+# EnactingClauseRecognizer — primary extractor for modern Finnish HEs
 # ---------------------------------------------------------------------------
 
 
-def _extract_enactment_clauses(
-    root: etree._Element,
+def _extract_enacting_clauses_modern(
+    main_body: etree._Element,
 ) -> list[tuple[str, str]]:
-    """Extract (clause_text, section_context) pairs from HE body enactment sections.
+    """Extract amendment directives from modern Finnish HE structure.
 
-    Per EnactmentSectionRecognizer grammar: walks mainBody looking for
-    sections holding amendment clauses.
+    Modern HEs (2020+) use:
+      mainBody
+        hcontainer[name='bills']
+          hcontainer[name='bill']
+            hcontainer[name='enactingClause']  ← one amendment directive
+
+    Each enactingClause holds exactly one johtolause (amendment verb phrase),
+    e.g. "Eduskunnan päätöksen mukaisesti muutetaan lannoitelain (711/2022)
+    7 §:n 3 momentti, ...".
+
+    Returns list of (clause_text, context) tuples.
+    Per AGENTS.md §1.13: single-pass, structured, not N regex passes.
+    """
+    clauses: list[tuple[str, str]] = []
+    for el in main_body.iter():
+        name_attr = el.attrib.get("name", "")
+        if name_attr == _ENACTING_CLAUSE_NAME:
+            text = _element_text(el)
+            if text:
+                # Context: try to find bill index for traceability
+                parent = el.getparent()
+                parent_eid = parent.attrib.get("eId", "") if parent is not None else ""
+                context = f"enactingClause:{parent_eid or 'unknown'}"
+                clauses.append((text, context))
+    return clauses
+
+
+# ---------------------------------------------------------------------------
+# Enactment section extractor (legacy path)
+# ---------------------------------------------------------------------------
+
+
+def _extract_enactment_clauses_legacy(
+    main_body: etree._Element,
+) -> list[tuple[str, str]]:
+    """Legacy extractor: used when no enactingClause elements are found.
+
+    Walks mainBody looking for hcontainer[name='enactment-text'] or similar
+    containers, then extracts <section> children as clauses.
+
+    This path handles:
+    - Synthetic test fixtures using hcontainer[name='enactment-text']
+    - Older HE formats that don't use the bills/bill/enactingClause structure
 
     Returns list of (clause_text, section_name) tuples.
     """
-    main_body = root.find(f".//{{{_AKN_NS}}}mainBody")
-    if main_body is None:
-        return []
-
     clauses: list[tuple[str, str]] = []
 
     def _walk_body(node: etree._Element) -> None:
@@ -651,14 +722,21 @@ def _extract_enactment_clauses(
         name_attr = node.attrib.get("name", "")
 
         if lname == "section":
-            # A section element may hold one or more amendment clauses
-            # Each <p> or <content> child can be a clause
+            # A section element holds one amendment clause in legacy format.
+            # NOTE: In modern HEs, section elements inside statuteProvisionsWrapper
+            # are PAYLOAD content (replacement statute text), not directives.
+            # The modern path (enactingClause) avoids this entirely.
             text = _element_text(node)
             if text:
                 clauses.append((text, f"section:{name_attr or 'unnamed'}"))
             return
 
         if lname in ("hcontainer", "div", "blockContainer"):
+            # Skip payload containers that hold statute text, not directives.
+            # These appear in modern HEs inside bill elements.
+            if name_attr in _PAYLOAD_CONTAINER_NAMES:
+                return
+
             text_sample = ""
             # Build text sample from first 300 chars for recognizer
             for subnode in node.iter():
@@ -687,6 +765,40 @@ def _extract_enactment_clauses(
 
     _walk_body(main_body)
     return clauses
+
+
+def _extract_enactment_clauses(
+    root: etree._Element,
+) -> list[tuple[str, str]]:
+    """Extract (clause_text, section_context) pairs from HE body enactment sections.
+
+    Resolution order per EnactingClauseRecognizer grammar (AGENTS.md §1.13):
+
+    1. Primary (modern Finnish HE structure, 2020+):
+       Find all hcontainer[name='enactingClause'] elements.  These are the
+       amendment directives (johtolause) in modern HEs.  Each holds exactly
+       one verb phrase targeting one statute.
+
+    2. Fallback (legacy / synthetic test format):
+       Walk hcontainer[name='enactment-text'] and extract <section> children.
+       Used for pre-modern HEs and synthetic test fixtures.
+
+    The primary path is tried first.  The fallback is used only when no
+    enactingClause elements are found.
+
+    Returns list of (clause_text, context_label) tuples.
+    """
+    main_body = root.find(f".//{{{_AKN_NS}}}mainBody")
+    if main_body is None:
+        return []
+
+    # Primary: modern enactingClause structure
+    clauses = _extract_enacting_clauses_modern(main_body)
+    if clauses:
+        return clauses
+
+    # Fallback: legacy section-based extraction
+    return _extract_enactment_clauses_legacy(main_body)
 
 
 # ---------------------------------------------------------------------------

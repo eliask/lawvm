@@ -1717,6 +1717,116 @@ CURATED_CASES = [
             "heading_skip",
         },
     },
+    # ------------------------------------------------------------------
+    # HE enactingClause preamble forms
+    #
+    # Finnish HEs (2020+) wrap johtolause directives in hcontainer elements
+    # named 'enactingClause'.  The text starts with "Eduskunnan päätöksen
+    # mukaisesti" (or "Eduskunnan päätöksen mukaisesti annetun lain mukaan"),
+    # followed by the standard amendment verb phrase.
+    #
+    # The johtolause parser handles these natively — the preamble is noise
+    # filtered by the lexer before the grammar sees the verb.
+    #
+    # Source: real-corpus HE enactingClause elements:
+    #   HE 2025/195 bill_1 (ympäristönsuojelulaki + rikoslaki)
+    #   HE 2022/10 bill_1 (sosiaali- ja terveydenhuolto + pelastustoimi)
+    #   HE 2024/50 bill_1 (arvonlisäverolaki)
+    #   HE 2023/100 bill_1 (saamelaiskäräjälaki)
+    # ------------------------------------------------------------------
+    {
+        "name": "he_enacting_clause_preamble_muutetaan_section_momentti (HE 2025/195 bill_1)",
+        # Real HE 2025/195 enactingClause for ympäristönsuojelulaki:
+        # Eduskunnan päätöksen mukaisesti muutetaan ympäristönsuojelulain (527/2014)
+        # 225 §:n 1 momentin 7 ja 8 kohta, sekä lisätään 225 §:n 1 momenttiin uusi
+        # 10–12 kohta sekä 225 §:ään uusi 2 momentti, jolloin nykyinen 2–4 momentti
+        # siirtyvät 3–5 momentiksi, seuraavasti:
+        "text": (
+            "Eduskunnan päätöksen mukaisesti muutetaan ympäristönsuojelulain (527/2014) "
+            "225 §:n 1 momentin 7 ja 8 kohta, sellaisina kuin ne ovat laissa 715/2021, "
+            "sekä lisätään 225 §:n 1 momenttiin, sellaisena kuin se on laissa 715/2021, "
+            "uusi 10–12 kohta sekä 225 §:ään, sellaisena kuin se on laeissa 1166/2018 ja "
+            "715/2021, uusi 2 momentti, jolloin nykyinen 2–4 momentti siirtyvät "
+            "3–5 momentiksi, seuraavasti:"
+        ),
+        "expected": [
+            "S P 225 2",
+            "S P 225 3",
+            "S P 225 4",
+            "M P 225 1 7",
+            "M P 225 1 8",
+            "L P 225 1 10",
+            "L P 225 1 11",
+            "L P 225 1 12",
+            "L P 225 2",
+        ],
+        "features": {
+            "verb_muuttaa",
+            "verb_lisata",
+            "section_ref",
+            "sub_ref_momentti",
+            "sub_ref_kohta",
+            "conj_target_list",
+            "range_expansion",
+            "provenance_skip",
+            "multi_verb_group",
+            "he_enacting_preamble",
+            "jolloin_move",
+        },
+    },
+    {
+        "name": "he_enacting_clause_preamble_kumotaan_muutetaan_lisataan (HE 2023/100 bill_1 saamelaiskäräjät)",
+        # Real HE 2023/100 enactingClause for saamelaiskäräjälaki (trimmed).
+        # Per AGENTS.md §15: real-corpus regression pinned to this HE.
+        "text": (
+            "Eduskunnan päätöksen mukaisesti kumotaan saamelaiskäräjistä annetun lain "
+            "(974/1995) 18 e–18 i, 23 a ja 26 b §, muutetaan 1 ja 2 §, lisätään lakiin "
+            "uusi 9 a § seuraavasti:"
+        ),
+        "expected": [
+            "K P 18e",
+            "K P 18f",
+            "K P 18g",
+            "K P 18h",
+            "K P 18i",
+            "K P 23a",
+            "K P 26b",
+            "M P 1",
+            "M P 2",
+            "L P 9a",
+        ],
+        "features": {
+            "verb_kumota",
+            "verb_muuttaa",
+            "verb_lisata",
+            "section_ref",
+            "letter_suffix",
+            "range_expansion",
+            "conj_target_list",
+            "multi_verb_group",
+            "insertion_law_level",
+            "he_enacting_preamble",
+        },
+    },
+    {
+        "name": "he_enacting_clause_preamble_simple_replace (HE 2022/10 bill_2)",
+        # Real HE 2022/10 enactingClause — simple single-section replace.
+        "text": (
+            "Eduskunnan päätöksen mukaisesti muutetaan hyvinvointialueesta annetun lain "
+            "(611/2021) 13 §:n 3 ja 4 momentti seuraavasti:"
+        ),
+        "expected": [
+            "M P 13 3",
+            "M P 13 4",
+        ],
+        "features": {
+            "verb_muuttaa",
+            "section_ref",
+            "sub_ref_momentti",
+            "conj_target_list",
+            "he_enacting_preamble",
+        },
+    },
 ]
 
 

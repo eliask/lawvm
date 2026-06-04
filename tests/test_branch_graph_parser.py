@@ -37,6 +37,10 @@ from lawvm.finland.he_branch_parser import (
     BranchTargetResolutionFinding,
     HEParsedBranch,
     HEParseStatus,
+    _ENACTING_CLAUSE_NAME,
+    _PAYLOAD_CONTAINER_NAMES,
+    _extract_enacting_clauses_modern,
+    _extract_enactment_clauses,
     _extract_proposed_voimaantulo,
     _extract_statute_citation,
     _is_enactment_section,
@@ -261,6 +265,102 @@ PARTIAL_HE_XML = _he_doc(
 )
 
 
+# ---------------------------------------------------------------------------
+# Fixture 7: Modern HE with bills/bill/enactingClause structure (real corpus
+# format as of 2020+).
+#
+# Modeled on the actual Finlex AKN XML structure observed in HE 2025/195 and
+# HE 2022/10.  The enactingClause holds the amendment directive; the
+# statuteProvisionsWrapper holds the replacement statute text (payload).
+#
+# The previous extractor incorrectly extracted section elements inside
+# statuteProvisionsWrapper as clauses.  This fixture verifies that the
+# EnactingClauseRecognizer correctly extracts only the enactingClause text.
+# ---------------------------------------------------------------------------
+
+_MODERN_BILLS_BODY = (
+    b"<hcontainer name='introduction'>"
+    b"<heading>ESITYKSEN P\xc3\x84\xc3\x84ASIALLINEN SIS\xc3\x84LT\xc3\x96</heading>"
+    b"<content><p>Esityksess\xc3\xa4 ehdotetaan muutettavaksi lannoitelakia.</p></content>"
+    b"</hcontainer>"
+    b"<hcontainer name='rationale'>"
+    b"<heading>PERUSTELUT</heading>"
+    b"<content><p>Nykyinen 7 \xc2\xa7 on puutteellinen.</p></content>"
+    b"</hcontainer>"
+    b"<hcontainer name='bills' eId='bills'>"
+    b"  <hcontainer name='bill' eId='bill_1'>"
+    b"    <hcontainer name='enactingClause' eId='bill_1__enactingClause'>"
+    b"      <content><p>Eduskunnan p\xc3\xa4\xc3\xa4t\xc3\xb6ksen mukaisesti muutetaan lannoitelain (711/2022) 7 \xc2\xa7:n 3 momentti seuraavasti:</p></content>"
+    b"    </hcontainer>"
+    b"    <hcontainer name='statuteProvisionsWrapper'>"
+    b"      <section eId='bill_1__sec_7'>"
+    b"        <num>7 \xc2\xa7</num>"
+    b"        <heading>Lannoitevalmisteen vaatimukset</heading>"
+    b"        <subsection>"
+    b"          <content><p>Joka tahallaan tai huolimattomuudesta laiminly\xc3\xb6 lannoitevalmisteen vaatimukset on tuomittava lannoitelain rikkomisesta sakkoon.</p></content>"
+    b"        </subsection>"
+    b"      </section>"
+    b"    </hcontainer>"
+    b"    <hcontainer name='entryIntoForce' eId='bill_1__entryIntoForce'>"
+    b"      <content><p>T\xc3\xa4m\xc3\xa4 laki on tarkoitettu tulemaan voimaan 1 p\xc3\xa4iv\xc3\xa4n\xc3\xa4 tammikuuta 2025.</p></content>"
+    b"    </hcontainer>"
+    b"  </hcontainer>"
+    b"</hcontainer>"
+    b"<hcontainer name='conclusions'>"
+    b"<heading>Helsingiss\xc3\xa4 18 p\xc3\xa4iv\xc3\xa4n\xc3\xa4 joulukuuta 2024</heading>"
+    b"</hcontainer>"
+)
+
+MODERN_BILLS_HE_XML = _he_doc(
+    year=2024,
+    number=991,
+    lang="fin",
+    title="Hallituksen esitys lannoitelain muuttamisesta",
+    body_xml=_MODERN_BILLS_BODY,
+)
+
+# ---------------------------------------------------------------------------
+# Fixture 8: Modern HE with two bills/enactingClause pairs (multi-statute).
+# Verifies that the extractor finds both enactingClause elements and not the
+# section payload content.
+# ---------------------------------------------------------------------------
+
+_MODERN_MULTI_BILL_BODY = (
+    b"<hcontainer name='bills' eId='bills'>"
+    b"  <hcontainer name='bill' eId='bill_1'>"
+    b"    <hcontainer name='enactingClause' eId='bill_1__enactingClause'>"
+    b"      <content><p>Eduskunnan p\xc3\xa4\xc3\xa4t\xc3\xb6ksen mukaisesti muutetaan lannoitelain (711/2022) 7 \xc2\xa7 seuraavasti:</p></content>"
+    b"    </hcontainer>"
+    b"    <hcontainer name='statuteProvisionsWrapper'>"
+    b"      <section eId='bill_1__sec_7'>"
+    b"        <num>7 \xc2\xa7</num>"
+    b"        <content><p>Joka laiminly\xc3\xb6 7 \xc2\xa7:n vaatimukset on tuomittava.</p></content>"
+    b"      </section>"
+    b"    </hcontainer>"
+    b"  </hcontainer>"
+    b"  <hcontainer name='bill' eId='bill_2'>"
+    b"    <hcontainer name='enactingClause' eId='bill_2__enactingClause'>"
+    b"      <content><p>Eduskunnan p\xc3\xa4\xc3\xa4t\xc3\xb6ksen mukaisesti kumotaan ymp\xc3\xa4rist\xc3\xb6nsuojelulain (527/2014) 5 \xc2\xa7 seuraavasti:</p></content>"
+    b"    </hcontainer>"
+    b"    <hcontainer name='statuteProvisionsWrapper'>"
+    b"      <section eId='bill_2__sec_5'>"
+    b"        <num>5 \xc2\xa7</num>"
+    b"        <content><p>[Kumottu pyk\xc3\xa4l\xc3\xa4 teksti]</p></content>"
+    b"      </section>"
+    b"    </hcontainer>"
+    b"  </hcontainer>"
+    b"</hcontainer>"
+)
+
+MODERN_MULTI_BILL_HE_XML = _he_doc(
+    year=2024,
+    number=992,
+    lang="fin",
+    title="Hallituksen esitys kahdesta laista (moderni rakenne)",
+    body_xml=_MODERN_MULTI_BILL_BODY,
+)
+
+
 # ===========================================================================
 # Unit tests for recognizer grammar productions
 # ===========================================================================
@@ -344,6 +444,227 @@ class TestEnactmentSectionRecognizer:
         el = etree.fromstring(b"<hcontainer><content/></hcontainer>")
         sample = "Nykytila on sellainen, että..."
         assert _is_enactment_section(el, sample) is False
+
+
+# ===========================================================================
+# EnactingClauseRecognizer tests (modern HE structure — primary extraction path)
+# ===========================================================================
+#
+# These tests verify the primary extraction path introduced to fix the dominant
+# real-corpus failure mode: the legacy extractor incorrectly treated <section>
+# elements inside 'statuteProvisionsWrapper' as amendment directives.  Those
+# sections hold the replacement statute text (payload), not johtolause directives.
+#
+# Fix: _extract_enacting_clauses_modern() walks for hcontainer[name='enactingClause']
+# elements, which hold exactly one amendment directive each.  The legacy path is
+# a fallback for test fixtures and pre-modern HEs using enactment-text containers.
+#
+# Corpus witness: HE 2025/195, HE 2022/10, HE 2024/50, HE 2023/100 (100% parse
+# success on enactingClause vs 0% on section elements inside statuteProvisionsWrapper).
+
+
+class TestEnactingClauseRecognizer:
+    """Tests for the EnactingClauseRecognizer (primary, modern HE path).
+
+    Per AGENTS.md §15: synthetic + corpus + finding + negative + strict + no-leak tests.
+    """
+
+    def test_modern_bills_he_finds_enacting_clause(self) -> None:
+        """Modern HE with bills/bill/enactingClause structure parses cleanly."""
+        branch = parse_he_branch(
+            MODERN_BILLS_HE_XML,
+            he_year=2024,
+            he_number=991,
+            he_id="HE 991/2024 vp",
+        )
+        # Should find the enactingClause, not the section payload
+        assert branch.parse_status != HEParseStatus.NOT_APPLICABLE, (
+            f"Expected enactment clause to be found, got NOT_APPLICABLE. "
+            f"enactment_sections_found={branch.enactment_sections_found}"
+        )
+        assert branch.enactment_sections_found >= 1
+
+    def test_modern_bills_he_produces_ops(self) -> None:
+        """Modern HE: enactingClause directive produces BranchProposedOp records."""
+        branch = parse_he_branch(
+            MODERN_BILLS_HE_XML,
+            he_year=2024,
+            he_number=991,
+            he_id="HE 991/2024 vp",
+        )
+        # The enactingClause "muutetaan lannoitelain (711/2022) 7 §:n 3 momentti"
+        # should produce at least one replace op
+        assert len(branch.proposed_ops) >= 1
+        op = branch.proposed_ops[0]
+        assert op.operation_kind == "replace"
+        assert op.target_statute_id == "711/2022"
+
+    def test_modern_bills_he_targets_correct_statute(self) -> None:
+        """Modern HE: statute ID extracted from enactingClause citation."""
+        branch = parse_he_branch(
+            MODERN_BILLS_HE_XML,
+            he_year=2024,
+            he_number=991,
+            he_id="HE 991/2024 vp",
+        )
+        statute_ids = {op.target_statute_id for op in branch.proposed_ops}
+        assert "711/2022" in statute_ids
+
+    def test_modern_bills_he_does_not_parse_section_payload(self) -> None:
+        """Negative: section elements inside statuteProvisionsWrapper are NOT parsed.
+
+        The section inside the fixture contains bare statute body text:
+        '7 § Lannoitevalmisteen vaatimukset Joka tahallaan...'
+        This is payload content, not an amendment directive.  The extractor must
+        not pass it to parse_clause() — it cannot be parsed as a johtolause.
+        """
+        branch = parse_he_branch(
+            MODERN_BILLS_HE_XML,
+            he_year=2024,
+            he_number=991,
+            he_id="HE 991/2024 vp",
+        )
+        # The bare section body text "Joka tahallaan..." should not appear
+        # as a failed parse finding — it should never have been attempted.
+        failed_clause_texts = [
+            f.clause_text
+            for f in branch.parse_findings
+            if isinstance(f, BranchParseRecovery)
+        ]
+        # None of the failed texts should be the section body content
+        for text in failed_clause_texts:
+            assert "Joka tahallaan" not in text, (
+                f"Section payload content was incorrectly attempted as a clause: {text[:100]}"
+            )
+
+    def test_modern_multi_bill_extracts_both_enacting_clauses(self) -> None:
+        """Multi-statute modern HE: both enactingClause elements are extracted."""
+        branch = parse_he_branch(
+            MODERN_MULTI_BILL_HE_XML,
+            he_year=2024,
+            he_number=992,
+            he_id="HE 992/2024 vp",
+        )
+        # Should find 2 enactingClause elements (one per bill)
+        assert branch.enactment_sections_found == 2, (
+            f"Expected 2 enactingClause elements, got {branch.enactment_sections_found}"
+        )
+
+    def test_modern_multi_bill_targets_two_statutes(self) -> None:
+        """Multi-statute modern HE: both statute IDs extracted from directives."""
+        branch = parse_he_branch(
+            MODERN_MULTI_BILL_HE_XML,
+            he_year=2024,
+            he_number=992,
+            he_id="HE 992/2024 vp",
+        )
+        statute_ids = {op.target_statute_id for op in branch.proposed_ops}
+        assert "711/2022" in statute_ids, f"Expected 711/2022 in {statute_ids}"
+        assert "527/2014" in statute_ids, f"Expected 527/2014 in {statute_ids}"
+
+    def test_extract_enacting_clauses_modern_directly(self) -> None:
+        """Unit test: _extract_enacting_clauses_modern() finds enactingClause elements."""
+        from lxml import etree
+
+        # body_xml IS the mainBody element (passed directly to _extract_enacting_clauses_modern)
+        body_xml = (
+            b"<mainBody xmlns='http://docs.oasis-open.org/legaldocml/ns/akn/3.0'>"
+            b"  <hcontainer name='bills'>"
+            b"    <hcontainer name='bill' eId='bill_1'>"
+            b"      <hcontainer name='enactingClause' eId='bill_1__enactingClause'>"
+            b"        <content><p>Eduskunnan p\xc3\xa4\xc3\xa4t\xc3\xb6ksen mukaisesti muutetaan lannoitelain (711/2022) 7 \xc2\xa7 seuraavasti:</p></content>"
+            b"      </hcontainer>"
+            b"      <hcontainer name='statuteProvisionsWrapper'>"
+            b"        <section><content><p>7 \xc2\xa7 Joka laiminly\xc3\xb6 vaatimuksen.</p></content></section>"
+            b"      </hcontainer>"
+            b"    </hcontainer>"
+            b"  </hcontainer>"
+            b"</mainBody>"
+        )
+        # Parse the mainBody element directly (it is what _extract_enacting_clauses_modern expects)
+        main_body = etree.fromstring(body_xml)
+        clauses = _extract_enacting_clauses_modern(main_body)
+        # Should extract exactly one clause (the enactingClause)
+        assert len(clauses) == 1
+        clause_text, context = clauses[0]
+        # Text should be the directive, not the section payload
+        assert "muutetaan" in clause_text.lower()
+        assert "Joka" not in clause_text
+        assert "enactingClause" in context
+
+    def test_extract_enactment_clauses_prefers_enacting_clause(self) -> None:
+        """Integration: _extract_enactment_clauses() prefers enactingClause over sections."""
+        from lxml import etree
+
+        # Build a minimal AKN doc with BOTH an enactingClause AND a legacy
+        # enactment-text section.  The extractor should prefer the enactingClause.
+        doc_xml = (
+            b"<akomaNtoso xmlns='http://docs.oasis-open.org/legaldocml/ns/akn/3.0'>"
+            b"<doc>"
+            b"<mainBody>"
+            b"  <hcontainer name='bills'>"
+            b"    <hcontainer name='bill' eId='bill_1'>"
+            b"      <hcontainer name='enactingClause' eId='bill_1__enactingClause'>"
+            b"        <content><p>Eduskunnan p\xc3\xa4\xc3\xa4t\xc3\xb6ksen mukaisesti muutetaan lannoitelain (711/2022) 7 \xc2\xa7.</p></content>"
+            b"      </hcontainer>"
+            b"    </hcontainer>"
+            b"  </hcontainer>"
+            b"  <hcontainer name='enactment-text'>"
+            b"    <section><content><p>Ehdotetaan, ett\xc3\xa4 rikoslain (39/1889) 5 \xc2\xa7 kumotaan.</p></content></section>"
+            b"  </hcontainer>"
+            b"</mainBody>"
+            b"</doc>"
+            b"</akomaNtoso>"
+        )
+        root = etree.fromstring(doc_xml)
+        clauses = _extract_enactment_clauses(root)
+        # Primary path (enactingClause) should win; only 1 clause returned
+        assert len(clauses) == 1
+        clause_text, _ctx = clauses[0]
+        assert "lannoitelain" in clause_text
+        assert "rikoslain" not in clause_text  # legacy section not returned
+
+    def test_legacy_path_fallback_when_no_enacting_clause(self) -> None:
+        """Negative: legacy section-based path is used when no enactingClause found."""
+        # SINGLE_STATUTE_HE_XML uses hcontainer[name='enactment-text'] + section
+        # (no enactingClause) — should fall through to legacy path.
+        branch = parse_he_branch(
+            SINGLE_STATUTE_HE_XML,
+            he_year=2024,
+            he_number=184,
+            he_id="HE 184/2024 vp",
+        )
+        # Legacy path should find the enactment-text section
+        # (parse_status will be FAILED because the section text is unparseable
+        # by parse_clause — the fixture text "lannoitelain (711/2022) 7 §:n 3
+        # momenttia muutetaan" is a valid clause, so it may succeed)
+        # The key assertion: NOT NOT_APPLICABLE (the fallback did find a clause)
+        assert branch.parse_status != HEParseStatus.NOT_APPLICABLE, (
+            "Legacy fallback should find the enactment-text section, "
+            f"got NOT_APPLICABLE. sections_found={branch.enactment_sections_found}"
+        )
+
+    def test_payload_container_names_constant(self) -> None:
+        """Constant: _PAYLOAD_CONTAINER_NAMES contains the expected names."""
+        assert "statuteProvisionsWrapper" in _PAYLOAD_CONTAINER_NAMES
+        assert "bill" in _PAYLOAD_CONTAINER_NAMES
+        assert "bills" in _PAYLOAD_CONTAINER_NAMES
+
+    def test_enacting_clause_name_constant(self) -> None:
+        """Constant: _ENACTING_CLAUSE_NAME is 'enactingClause'."""
+        assert _ENACTING_CLAUSE_NAME == "enactingClause"
+
+    def test_voimaantulo_extracted_from_modern_he(self) -> None:
+        """Modern HE: voimaantulo date extracted from entryIntoForce section."""
+        branch = parse_he_branch(
+            MODERN_BILLS_HE_XML,
+            he_year=2024,
+            he_number=991,
+            he_id="HE 991/2024 vp",
+        )
+        from datetime import date
+
+        assert branch.proposed_voimaantulo == date(2025, 1, 1)
 
 
 # ===========================================================================
