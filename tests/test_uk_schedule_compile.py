@@ -68955,6 +68955,46 @@ def test_executor_tree_path_for_mutable_node_uses_parent_index(
     )
 
 
+def test_target_resolution_address_uses_indexed_path_resolver() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2000/22",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="",
+                            attrs={"eId": "section-1-subsection-1"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute, adjudications_out=[])
+    node = executor.statute.body.children[0].children[0]
+
+    assert (
+        replay_target_lookup_mod._target_resolution_address_for_node(
+            executor.statute,
+            node,
+            path_resolver=executor._tree_path_for_mutable_node,
+        )
+        == "section:1/subsection:1"
+    )
+
+
 def test_executor_scopes_schedule_descendant_invariant_scan_to_parent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
