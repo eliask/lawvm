@@ -131,6 +131,7 @@ def test_score_one_reports_both_metadata_only_as_base_and_oracle_source_frontier
     )
 
     row = uk_broad_baseline.score_one("ukpga/1824/74")
+    annotated = uk_broad_baseline._annotate_row_work_selection(dict(row))
 
     assert row["score_status"] == "source_frontier"
     assert row["source_frontier_reason"] == "base_and_oracle_metadata_only"
@@ -149,6 +150,23 @@ def test_score_one_reports_both_metadata_only_as_base_and_oracle_source_frontier
     )
     assert row["oracle_source_witness_digest_coverage"] == (
         "artifact_and_preview_digest"
+    )
+    work_item = annotated["source_frontier_work_item"]
+    assert work_item["frontier_family"] == (
+        "uk_source_frontier_base_and_oracle_metadata_only"
+    )
+    assert work_item["frontier_status"] == "source_footing_gap"
+    assert work_item["authorization_status"] == "source_footing_gap"
+    assert work_item["executable"] is False
+    assert work_item["replay_authorized"] is False
+    assert work_item["source_witness"]["source_role"] == "uk_broad_base_source"
+    assert work_item["required_proofs"] == [
+        "source_identity",
+        "official_source_body_or_accepted_source_pathology",
+    ]
+    assert "metadata_only_xml_as_executable_text" in work_item["forbidden_shortcuts"]
+    assert work_item["detail"]["truth_claim"] == (
+        "source_frontier_work_item_not_replay_authorization"
     )
     assert "error" not in row
 
@@ -228,27 +246,35 @@ def test_metadata_only_source_frontiers_are_pathology_not_non_manual_chain() -> 
         "base:missing_source_witness": 2,
         "oracle:missing_source_witness": 2,
     }
+    assert summary["source_frontier_work_item_family_counts"] == {
+        "__missing_work_item__": 2,
+    }
+    assert summary["source_frontier_work_item_authorization_status_counts"] == {
+        "__missing_work_item__": 2,
+    }
+    assert summary["source_frontier_work_item_missing_proof_counts"] == {
+        "__missing_work_item__": 2,
+    }
 
 
 def test_source_frontier_summary_counts_source_witness_coverage() -> None:
-    summary = uk_broad_baseline.summarize_results(
-        [
-            {
-                "statute_id": "ukpga/1824/74",
-                "score_status": "source_frontier",
-                "source_frontier_reason": "base_and_oracle_metadata_only",
-                "base_source_witness": {
-                    "source_role": "uk_broad_base_source",
-                    "digest": "base-digest",
-                    "preview_digest": "base-preview",
-                },
-                "oracle_source_witness": {
-                    "source_role": "uk_broad_oracle_source",
-                    "digest": "oracle-digest",
-                },
-            }
-        ]
+    row = uk_broad_baseline._annotate_row_work_selection(
+        {
+            "statute_id": "ukpga/1824/74",
+            "score_status": "source_frontier",
+            "source_frontier_reason": "base_and_oracle_metadata_only",
+            "base_source_witness": {
+                "source_role": "uk_broad_base_source",
+                "digest": "base-digest",
+                "preview_digest": "base-preview",
+            },
+            "oracle_source_witness": {
+                "source_role": "uk_broad_oracle_source",
+                "digest": "oracle-digest",
+            },
+        }
     )
+    summary = uk_broad_baseline.summarize_results([row])
 
     assert summary["source_frontier_source_witness_role_counts"] == {
         "base:uk_broad_base_source": 1,
@@ -257,6 +283,16 @@ def test_source_frontier_summary_counts_source_witness_coverage() -> None:
     assert summary["source_frontier_source_witness_digest_coverage_counts"] == {
         "base:artifact_and_preview_digest": 1,
         "oracle:artifact_digest": 1,
+    }
+    assert summary["source_frontier_work_item_family_counts"] == {
+        "uk_source_frontier_base_and_oracle_metadata_only": 1,
+    }
+    assert summary["source_frontier_work_item_authorization_status_counts"] == {
+        "source_footing_gap": 1,
+    }
+    assert summary["source_frontier_work_item_missing_proof_counts"] == {
+        "official_source_body_or_accepted_source_pathology": 1,
+        "source_identity": 1,
     }
 
 

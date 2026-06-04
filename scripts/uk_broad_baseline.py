@@ -54,6 +54,7 @@ from typing import Any, Optional
 
 from lawvm.core.agreement_residual import AgreementResidual
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
+from lawvm.core.frontier_work_item import FrontierWorkItem
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.core.source_witness import (
     DigestWitness,
@@ -739,6 +740,18 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     source_frontier_source_witness_digest_coverage_counts = (
         _source_frontier_source_witness_digest_coverage_counts(source_frontier)
     )
+    source_frontier_work_item_family_counts = (
+        _source_frontier_work_item_field_counts(source_frontier, "frontier_family")
+    )
+    source_frontier_work_item_authorization_status_counts = (
+        _source_frontier_work_item_field_counts(source_frontier, "authorization_status")
+    )
+    source_frontier_work_item_missing_proof_counts = (
+        _source_frontier_work_item_sequence_field_counts(
+            source_frontier,
+            "required_proofs",
+        )
+    )
     source_chain_frontier_reasons = Counter(
         reason
         for r in results
@@ -1020,6 +1033,15 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "source_frontier_source_witness_digest_coverage_counts": (
             source_frontier_source_witness_digest_coverage_counts
+        ),
+        "source_frontier_work_item_family_counts": (
+            source_frontier_work_item_family_counts
+        ),
+        "source_frontier_work_item_authorization_status_counts": (
+            source_frontier_work_item_authorization_status_counts
+        ),
+        "source_frontier_work_item_missing_proof_counts": (
+            source_frontier_work_item_missing_proof_counts
         ),
         "source_chain_frontier_reasons": dict(
             sorted(source_chain_frontier_reasons.items())
@@ -1335,12 +1357,80 @@ def _annotate_row_work_selection(row: dict[str, Any]) -> dict[str, Any]:
     )
     row["zero_oracle_retention_reasons"] = list(zero_oracle_reasons)
     row["agreement_residual"] = _agreement_residual_for_row(row).to_dict()
+    if row.get("score_status") == "source_frontier":
+        row["source_frontier_work_item"] = _source_frontier_work_item(row).to_dict()
     return row
 
 
 def _row_with_agreement_residual(row: dict[str, Any]) -> dict[str, Any]:
     payload = dict(row)
     return _annotate_row_work_selection(payload)
+
+
+def _source_frontier_work_item(row: Mapping[str, Any]) -> FrontierWorkItem:
+    statute_id = str(row.get("statute_id") or "")
+    reason = str(row.get("source_frontier_reason") or "unknown")
+    primary_side = _source_frontier_primary_side(row)
+    primary_witness = row.get(f"{primary_side}_source_witness")
+    primary_witness = primary_witness if isinstance(primary_witness, Mapping) else {}
+    source_unit_id = f"{primary_side}:{reason}"
+    return FrontierWorkItem(
+        work_item_id=f"uk-source-frontier-{statute_id}-{reason}",
+        jurisdiction="uk",
+        source_artifact_id=statute_id,
+        source_unit_id=source_unit_id,
+        source_witness=primary_witness,
+        compare_witness={
+            "base_source_status": str(row.get("base_source_status") or ""),
+            "oracle_source_status": str(row.get("oracle_source_status") or ""),
+            "source_frontier_reason": reason,
+            "triage_bucket": str(row.get("triage_bucket") or ""),
+        },
+        owner_phase=UK_PHASE_AFFECTING_SOURCE_EXTRACTION,
+        frontier_family=f"uk_source_frontier_{reason}",
+        frontier_status="source_footing_gap",
+        candidate_operation_family="source_footing_resolution",
+        required_claim_kind="source_footing_resolution",
+        required_validator_checks=(
+            "locate_authoritative_base_oracle_xml_source",
+            "classify_source_pathology_without_replay_promotion",
+        ),
+        required_proofs=(
+            "source_identity",
+            "official_source_body_or_accepted_source_pathology",
+        ),
+        safe_default="classify_source_frontier_without_replay",
+        forbidden_shortcuts=(
+            "metadata_only_xml_as_executable_text",
+            "oracle_metadata_as_source_truth",
+            "source_frontier_as_replay_authorization",
+        ),
+        executable=False,
+        replay_authorized=False,
+        authorization_status="source_footing_gap",
+        detail={
+            "statute_id": statute_id,
+            "source_frontier_reason": reason,
+            "base_source_witness": row.get("base_source_witness") or {},
+            "oracle_source_witness": row.get("oracle_source_witness") or {},
+            "base_source_witness_digest_coverage": str(
+                row.get("base_source_witness_digest_coverage") or ""
+            ),
+            "oracle_source_witness_digest_coverage": str(
+                row.get("oracle_source_witness_digest_coverage") or ""
+            ),
+            "truth_claim": "source_frontier_work_item_not_replay_authorization",
+        },
+    )
+
+
+def _source_frontier_primary_side(row: Mapping[str, Any]) -> str:
+    reason = str(row.get("source_frontier_reason") or "")
+    if reason.startswith("oracle_"):
+        return "oracle"
+    if reason == "base_and_oracle_metadata_only":
+        return "base"
+    return "base"
 
 
 def _triage_bucket_for_row(row: dict[str, Any]) -> str:
@@ -2361,6 +2451,39 @@ def _source_frontier_source_witness_digest_coverage_counts(
     return dict(sorted(counts.items()))
 
 
+def _source_frontier_work_item_field_counts(
+    rows: list[dict[str, Any]],
+    field: str,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        work_item = row.get("source_frontier_work_item")
+        if not isinstance(work_item, Mapping):
+            counts["__missing_work_item__"] += 1
+            continue
+        value = str(work_item.get(field) or "")
+        counts[value if value else f"__missing_{field}__"] += 1
+    return dict(sorted(counts.items()))
+
+
+def _source_frontier_work_item_sequence_field_counts(
+    rows: list[dict[str, Any]],
+    field: str,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        work_item = row.get("source_frontier_work_item")
+        if not isinstance(work_item, Mapping):
+            counts["__missing_work_item__"] += 1
+            continue
+        values = work_item.get(field) or ()
+        if not isinstance(values, list | tuple):
+            counts[f"invalid_{field}_shape"] += 1
+            continue
+        counts.update(str(value) for value in values if str(value))
+    return dict(sorted(counts.items()))
+
+
 def _blocking_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     from lawvm.core.compile_records import is_blocking_compile_record
 
@@ -2932,6 +3055,30 @@ def run_driver(
             ].items()
         )
         print(f"  source_frontier_source_witness_digest_coverage_counts: {counts}")
+    if summary["source_frontier_work_item_family_counts"]:
+        counts = ", ".join(
+            f"{family}={count}"
+            for family, count in summary[
+                "source_frontier_work_item_family_counts"
+            ].items()
+        )
+        print(f"  source_frontier_work_item_family_counts: {counts}")
+    if summary["source_frontier_work_item_authorization_status_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary[
+                "source_frontier_work_item_authorization_status_counts"
+            ].items()
+        )
+        print(f"  source_frontier_work_item_authorization_status_counts: {counts}")
+    if summary["source_frontier_work_item_missing_proof_counts"]:
+        counts = ", ".join(
+            f"{proof}={count}"
+            for proof, count in summary[
+                "source_frontier_work_item_missing_proof_counts"
+            ].items()
+        )
+        print(f"  source_frontier_work_item_missing_proof_counts: {counts}")
     if summary["source_chain_frontier_reasons"]:
         reasons = ", ".join(
             f"{reason}={count}"
