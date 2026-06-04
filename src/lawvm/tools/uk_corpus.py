@@ -867,7 +867,7 @@ def main(args: Any) -> None:
                 statutes=getattr(args, "statute", None) or [],
                 force=bool(getattr(args, "force_refresh", False)),
             )
-        if command == "repair-multiple-choices":
+        if command in ("repair-multiple-choices", "all"):
             run_repair_multiple_choices(
                 archive,
                 http,

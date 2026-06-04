@@ -77,6 +77,52 @@ def test_score_one_reports_multiple_choices_current_as_source_frontier(monkeypat
     assert "error" not in row
 
 
+def test_sample_statutes_excludes_multiple_choices_and_includes_regnal_leaves(
+    monkeypatch,
+) -> None:
+    xml = b"""<?xml version="1.0"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    NumberOfProvisions="1">
+  <Body><P1 id="section-1"><Pnumber>1</Pnumber><P1para>Text.</P1para></P1></Body>
+</Legislation>"""
+    marker = b"HTTP 300 Multiple Choices"
+    data = {
+        "https://www.legislation.gov.uk/ukpga/1955/18/enacted/data.xml": marker,
+        "https://www.legislation.gov.uk/ukpga/1955/18/data.xml": marker,
+        "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/enacted/data.xml": xml,
+        "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/data.xml": xml,
+        "https://www.legislation.gov.uk/ukpga/2000/1/enacted/data.xml": xml,
+        "https://www.legislation.gov.uk/ukpga/2000/1/data.xml": xml,
+        "https://www.legislation.gov.uk/ukpga/2000/1/2020-01-01/data.xml": xml,
+    }
+
+    class FakeFarchive:
+        def __init__(self, _path):
+            pass
+
+        def locators(self, pattern: str) -> list[str]:
+            if pattern.endswith("/enacted/data.xml"):
+                return [loc for loc in data if loc.endswith("/enacted/data.xml")]
+            return [loc for loc in data if loc.endswith("/data.xml")]
+
+        def get(self, locator: str) -> bytes | None:
+            return data.get(locator)
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setitem(
+        sys.modules,
+        "farchive",
+        SimpleNamespace(Farchive=FakeFarchive),
+    )
+
+    sample = set(uk_broad_baseline.sample_statutes(10, 1, classes=["ukpga"]))
+
+    assert "ukpga/1955/18" not in sample
+    assert sample == {"ukpga/2000/1", "ukpga/Eliz2/3-4/18"}
+
+
 def test_normalized_compare_eids_uses_uk_misses_compare_lens() -> None:
     replay, oracle = uk_broad_baseline._normalized_compare_eids(
         {"section-1", "p00090"},

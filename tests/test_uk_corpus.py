@@ -34,11 +34,14 @@ class _FakeArchive:
         return sorted(self._data)
 
     def stats(self) -> object:
-        return SimpleNamespace(locator_count=len(self._data))
+        return SimpleNamespace(locator_count=len(self._data), total_stored_bytes=0)
 
     def store(self, locator: str, data: bytes, storage_class: str = "xml") -> None:
         self.store_calls.append((locator, data, storage_class))
         self._data[locator] = data
+
+    def close(self) -> None:
+        return None
 
 
 class _FakeHTTP:
@@ -426,6 +429,50 @@ def test_do_repair_multiple_choices_stores_direct_xml_when_marker_goes_stale() -
         "failed": 0,
     }
     assert archive.store_calls == [(url, direct_xml, "xml")]
+
+
+def test_uk_corpus_all_runs_multiple_choices_repair(monkeypatch) -> None:
+    archive = _FakeArchive()
+    calls: list[str] = []
+
+    monkeypatch.setattr(acquire_uk_corpus, "_open_archive", lambda _path: archive)
+    monkeypatch.setattr(
+        acquire_uk_corpus,
+        "run_acquire",
+        lambda *_args, **_kwargs: calls.append("acquire"),
+    )
+    monkeypatch.setattr(
+        acquire_uk_corpus,
+        "run_affecting",
+        lambda *_args, **_kwargs: calls.append("affecting"),
+    )
+    monkeypatch.setattr(
+        acquire_uk_corpus,
+        "run_refresh",
+        lambda *_args, **_kwargs: calls.append("refresh"),
+    )
+    monkeypatch.setattr(
+        acquire_uk_corpus,
+        "run_repair_multiple_choices",
+        lambda *_args, **_kwargs: calls.append("repair-multiple-choices"),
+    )
+
+    acquire_uk_corpus.main(
+        SimpleNamespace(
+            uk_corpus_command="all",
+            db=".tmp/uk.farchive",
+            types=["ukpga"],
+            enacted_only=False,
+            delay=0,
+            affecting_types=None,
+            events_jsonl=None,
+            statute=[],
+            force_refresh=False,
+            limit=0,
+        )
+    )
+
+    assert calls == ["acquire", "affecting", "refresh", "repair-multiple-choices"]
 
 
 def test_do_refresh_can_force_one_statute_current_and_effects() -> None:

@@ -3832,7 +3832,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     uk_corpus_repair_mc_p.add_argument("--delay", type=float, default=0.3, metavar="SECS")
 
-    uk_corpus_all_p = uk_corpus_sub.add_parser("all", help="acquire + affecting + refresh")
+    uk_corpus_all_p = uk_corpus_sub.add_parser(
+        "all",
+        help="acquire + affecting + refresh + repair Multiple Choices",
+    )
     _uk_corpus_db(uk_corpus_all_p)
     uk_corpus_all_p.add_argument("--types", nargs="+", default=None, metavar="TYPE")
     uk_corpus_all_p.add_argument("--enacted-only", dest="enacted_only", action="store_true")

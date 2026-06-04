@@ -1816,9 +1816,22 @@ def _source_state_fields(prefix: str, state: Any) -> dict[str, Any]:
     return fields
 
 
+def _is_sampleable_uk_statute_id(statute_id: str) -> bool:
+    parts = statute_id.split("/")
+    if len(parts) == 3:
+        return parts[1].isdigit()
+    if len(parts) == 4:
+        return not parts[1].isdigit() and ":" not in parts[1] and ":" not in parts[2]
+    return False
+
+
 def sample_statutes(n: int, seed: int, classes: Optional[list[str]]) -> list[str]:
     """Sample n statute IDs that have BOTH enacted and current XML in the archive."""
     from farchive import Farchive
+    from lawvm.uk_legislation.source_state import (
+        UKSourceStatus,
+        classify_uk_source_blob,
+    )
 
     archive = Farchive(DB_PATH)
     try:
@@ -1828,13 +1841,22 @@ def sample_statutes(n: int, seed: int, classes: Optional[list[str]]) -> list[str
         suffix_current = "/data.xml"
         for loc in archive.locators(f"{_LEG_BASE}/%/enacted/data.xml"):
             sid = loc[len(_LEG_BASE) + 1 : -len(suffix_enacted)]
-            enacted.add(sid)
+            if _is_sampleable_uk_statute_id(sid) and (
+                classify_uk_source_blob(archive.get(loc)).status
+                is UKSourceStatus.AVAILABLE
+            ):
+                enacted.add(sid)
         for loc in archive.locators(f"{_LEG_BASE}/%/data.xml"):
             if loc.endswith(suffix_enacted):
                 continue
             sid = loc[len(_LEG_BASE) + 1 : -len(suffix_current)]
-            # only act-level ids (act_type/year/number), not affecting/changes URLs
-            if sid.count("/") == 2 and "/changes/" not in loc and "/affecting/" not in loc:
+            if (
+                _is_sampleable_uk_statute_id(sid)
+                and "/changes/" not in loc
+                and "/affecting/" not in loc
+                and classify_uk_source_blob(archive.get(loc)).status
+                is UKSourceStatus.AVAILABLE
+            ):
                 current.add(sid)
     finally:
         archive.close()
