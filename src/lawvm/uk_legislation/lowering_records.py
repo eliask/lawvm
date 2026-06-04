@@ -567,6 +567,11 @@ def append_manual_compile_frontier_diagnostic(
         replay_applicable=replay_applicable,
         compiled_op_count=compiled_op_count,
     )
+    record["source_witness"] = _manual_frontier_source_witness(
+        effect=effect,
+        extracted_tag=extracted_tag,
+        extracted_text=extracted_text,
+    )
     template_status = uk_manual_claim_template_status(
         manual_compile_status=record["manual_compile_status"],
         manual_compile_rule_id=record["manual_compile_rule_id"],
@@ -594,6 +599,50 @@ def append_manual_compile_frontier_diagnostic(
             uk_frontier_work_item_from_manual_frontier_row(record).to_dict()
         )
     diagnostics_out.append(record)
+
+
+def _manual_frontier_source_witness(
+    *,
+    effect: UKEffectRecord,
+    extracted_tag: str,
+    extracted_text: str,
+) -> dict[str, Any]:
+    if extracted_text:
+        source_preview = " ".join(extracted_text.split())[:500]
+        return {
+            "source_role": "affecting_source_fragment",
+            "artifact_id": str(effect.affecting_act_id or ""),
+            "source_unit_id": str(effect.effect_id or ""),
+            "text_preview": source_preview,
+            "source_lane": "extracted_affecting_source",
+            "metadata": {
+                "extracted_tag": extracted_tag or "",
+                "affecting_provisions": str(effect.affecting_provisions or ""),
+            },
+        }
+    effect_preview = " | ".join(
+        part
+        for part in (
+            f"effect_id={effect.effect_id or ''}",
+            f"effect_type={effect.effect_type or ''}",
+            f"affected={effect.affected_provisions or ''}",
+            f"affecting={effect.affecting_act_id or ''} {effect.affecting_provisions or ''}".strip(),
+            f"modified={effect.modified or ''}",
+            f"effective_date={effect.effective_date or ''}",
+        )
+        if part and not part.endswith("=")
+    )
+    return {
+        "source_role": "effect_feed_row",
+        "artifact_id": str(effect.affecting_act_id or ""),
+        "source_unit_id": str(effect.effect_id or ""),
+        "text_preview": effect_preview[:500],
+        "source_lane": "legislation_effect_feed",
+        "metadata": {
+            "affected_provisions": str(effect.affected_provisions or ""),
+            "affecting_provisions": str(effect.affecting_provisions or ""),
+        },
+    }
 
 
 def append_pit_date_filter_rejection(

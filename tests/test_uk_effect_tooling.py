@@ -1087,6 +1087,66 @@ def test_manual_frontier_diagnostic_records_claim_template_status() -> None:
     assert diagnostics[0]["safe_default"] == (
         "block_until_validated_claim_authorizes_replay"
     )
+    assert diagnostics[0]["source_witness"]["source_role"] == (
+        "affecting_source_fragment"
+    )
+    assert diagnostics[0]["source_witness"]["text_preview"] == (
+        'In the title to section 10, for "old" substitute "new".'
+    )
+    work_item = diagnostics[0]["frontier_work_item"]
+    assert work_item["source_witness"]["source_role"] == "affecting_source_fragment"
+    assert work_item["source_witness"]["preview_digest"]
+    assert work_item["detail"]["packet_completeness"][
+        "has_source_digest_or_preview_digest"
+    ] is True
+    assert work_item["detail"]["packet_completeness"]["missing_fields"] == []
+
+
+def test_manual_frontier_diagnostic_uses_effect_feed_witness_when_source_missing() -> None:
+    diagnostics: list[dict[str, object]] = []
+    append_manual_compile_frontier_diagnostic(
+        diagnostics,
+        effect=UKEffectRecord(
+            effect_id="effect-source-missing",
+            effect_type="",
+            applied=True,
+            requires_applied=True,
+            modified="2024-01-01",
+            affected_uri="/id/ukpga/2000/1/section/10",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="2000",
+            affected_number="1",
+            affected_provisions="s. 10",
+            affecting_uri="/id/ukpga/2024/1",
+            affecting_class="UnitedKingdomPublicGeneralAct",
+            affecting_year="2024",
+            affecting_number="1",
+            affecting_provisions="s. 2",
+            affecting_title="Test Act 2024",
+        ),
+        source_pathology="missing_extracted_source",
+        extracted_tag="",
+        extracted_text="",
+        lowering_rejections_out=[],
+        lowering_rejection_start_index=0,
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert diagnostics[0]["manual_compile_status"] == "source_insufficient"
+    assert "official_source_witness" in diagnostics[0]["required_proofs"]
+    assert diagnostics[0]["source_witness"]["source_role"] == "effect_feed_row"
+    assert diagnostics[0]["source_witness"]["source_lane"] == (
+        "legislation_effect_feed"
+    )
+    work_item = diagnostics[0]["frontier_work_item"]
+    assert work_item["source_witness"]["source_role"] == "effect_feed_row"
+    assert work_item["source_witness"]["preview_digest"]
+    assert work_item["detail"]["packet_completeness"][
+        "has_source_digest_or_preview_digest"
+    ] is True
+    assert work_item["detail"]["packet_completeness"]["missing_fields"] == []
 
 
 def test_manual_frontier_out_of_scope_reclassifies_lowering_rejection() -> None:
