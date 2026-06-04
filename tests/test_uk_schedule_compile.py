@@ -39255,6 +39255,168 @@ def test_compile_multi_enactment_specified_provision_with_listed_target_lowers_a
     )
 
 
+def test_compile_multi_enactment_grouped_section_target_lowers_alternate_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>1</Pnumber>
+          <P2para>
+            <Text>1 In the specified provisions of the following enactments, for
+            “seven” (or “7”) substitute “14” — VATA 1994 Section 72(1)(b),
+            (3)(ii) and (8)(b).</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_multi_enactment_grouped_section_target_text_patch",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/1994/9/section/72/subsection/3/subparagraph/ii",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1994",
+        affected_number="9",
+        affected_provisions="s. 72(3)(ii)",
+        affecting_uri="/id/uksi/2025/1",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="art. 2",
+        affecting_title="Test Amendment Order",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action == StructuralAction.TEXT_REPLACE
+    assert str(ops[0].target) == "section:72/subsection:3/paragraph:ii"
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == f"TEXT_ALTERNATE_UNIQUE{US}seven{US}7"
+    assert ops[0].text_patch.replacement == "14"
+    assert not any(
+        record.get("rule_id")
+        == "uk_effect_multi_enactment_specified_provisions_text_patch_rejected"
+        for record in lowering_records
+    )
+
+
+def test_compile_multi_enactment_grouped_schedule_target_lowers_alternate_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>1</Pnumber>
+          <P2para>
+            <Text>1 In the specified provisions of the following enactments, for
+            “seven” (or “7”) substitute “14” — FA 1994 Paragraph 10(1)(b),
+            (3)(b) and (5)(b) of Schedule 7.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_multi_enactment_grouped_schedule_target_text_patch",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/1994/23/schedule/7/paragraph/10/subparagraph/3/paragraph/b",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1994",
+        affected_number="23",
+        affected_provisions="Sch. 7 para. 10(3)(b)",
+        affecting_uri="/id/uksi/2025/1",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="art. 2",
+        affecting_title="Test Amendment Order",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action == StructuralAction.TEXT_REPLACE
+    assert str(ops[0].target) == "schedule:7/paragraph:10/subparagraph:3/item:b"
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == f"TEXT_ALTERNATE_UNIQUE{US}seven{US}7"
+    assert ops[0].text_patch.replacement == "14"
+    assert not any(
+        record.get("rule_id")
+        == "uk_effect_multi_enactment_specified_provisions_text_patch_rejected"
+        for record in lowering_records
+    )
+
+
+def test_compile_multi_enactment_plural_schedule_target_lowers_alternate_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>1</Pnumber>
+          <P2para>
+            <Text>1 In the specified provisions of the following enactments, for
+            “seven” (or “7”) substitute “14” — FA 2000 Paragraphs 92(3)(b),
+            93(3)(b) and 94(3)(b) of Schedule 6.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_multi_enactment_plural_schedule_target_text_patch",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2000/17/schedule/6/paragraph/94/subparagraph/3/paragraph/b",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 6 para. 94(3)(b)",
+        affecting_uri="/id/uksi/2025/1",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="art. 2",
+        affecting_title="Test Amendment Order",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action == StructuralAction.TEXT_REPLACE
+    assert str(ops[0].target) == "schedule:6/paragraph:94/subparagraph:3/item:b"
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == f"TEXT_ALTERNATE_UNIQUE{US}seven{US}7"
+    assert ops[0].text_patch.replacement == "14"
+    assert not any(
+        record.get("rule_id")
+        == "uk_effect_multi_enactment_specified_provisions_text_patch_rejected"
+        for record in lowering_records
+    )
+
+
 def test_compile_inserted_subsection_child_range_substitution_lowers_replace_and_repeal() -> None:
     extracted_el = ET.fromstring(
         f"""

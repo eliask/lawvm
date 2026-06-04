@@ -29,6 +29,9 @@ from lawvm.core.target_resolution import (
 from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_manual_frontier,
 )
+from lawvm.uk_legislation.specified_provisions import (
+    target_appears_in_specified_provisions_preview,
+)
 
 
 _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
@@ -1186,7 +1189,7 @@ def _source_membership_certificate(
     matched_targets = tuple(
         target
         for target in effect_targets
-        if _target_appears_in_specified_provisions_preview(
+        if target_appears_in_specified_provisions_preview(
             target=target,
             source_preview=source_preview,
         )
@@ -1242,47 +1245,6 @@ def _source_membership_certificate(
             "source_membership_not_replay_authorization": True,
         },
     ).to_dict()
-
-
-def _target_appears_in_specified_provisions_preview(
-    *,
-    target: str,
-    source_preview: str,
-) -> bool:
-    haystack = _normalize_citation_text(source_preview)
-    if not haystack:
-        return False
-    return any(
-        needle in haystack
-        for needle in _specified_provision_membership_needles(target)
-        if needle
-    )
-
-
-def _specified_provision_membership_needles(target: str) -> tuple[str, ...]:
-    normalized = _normalize_citation_text(target)
-    if not normalized:
-        return ()
-    needles = [normalized]
-    if normalized.startswith("s. "):
-        needles.append(f"section {normalized[3:].strip()}")
-    elif normalized.startswith("s "):
-        needles.append(f"section {normalized[2:].strip()}")
-    return tuple(dict.fromkeys(needles))
-
-
-def _normalize_citation_text(text: str) -> str:
-    cleaned = (
-        str(text or "")
-        .replace("\u2018", "'")
-        .replace("\u2019", "'")
-        .replace("\u201c", '"')
-        .replace("\u201d", '"')
-        .replace("\u00a0", " ")
-        .lower()
-    )
-    return " ".join(cleaned.split())
-
 
 def _exclusion_scope_certificate(
     *,

@@ -914,6 +914,179 @@ def test_uk_frontier_work_item_multi_enactment_records_source_membership_certifi
     assert work_item["replay_authorized"] is False
 
 
+def test_uk_frontier_work_item_multi_enactment_proves_grouped_section_membership() -> None:
+    work_item = uk_frontier_work_item_from_manual_frontier_row(
+        {
+            "statute_id": "ukpga/1994/9",
+            "effect_id": "eff-grouped-section",
+            "affecting_act_id": "ukpga/2024/3",
+            "manual_compile_rule_id": (
+                "uk_manual_frontier_multi_enactment_specified_provisions_text_patch"
+            ),
+            "manual_compile_status": "deterministic_frontend_candidate",
+            "owner_phase": "affecting_source_extraction",
+            "authorization_status": "deterministic_frontend_work_required",
+            "safe_default": "block_until_compiler_rule_is_owned",
+            "required_proofs": [
+                "canonical_operation_compilation",
+                "mutation_boundary_proof",
+            ],
+            "forbidden_shortcuts": ["oracle_backed_mutation", "target_guessing"],
+            "replay_authorized": False,
+            "executable": False,
+            "source": {
+                "extended_text_preview": (
+                    "In the specified provisions of the following enactments, "
+                    'for "seven" (or "7") substitute "14" - VATA 1994 '
+                    "Section 72(1)(b), (3)(ii) and (8)(b)."
+                )
+            },
+            "affected_provisions": "s. 72(3)(ii)",
+        }
+    ).to_dict()
+
+    certificate = work_item["detail"]["source_membership_certificate"]
+
+    assert certificate["completeness_status"] == "complete"
+    assert certificate["candidate_ids"] == ["s. 72(3)(ii)"]
+    assert certificate["source_membership_status"] == (
+        "proved_in_bounded_source_preview"
+    )
+    assert certificate["next_promotion_allowed"] is False
+    assert (
+        certificate["source_membership_not_replay_authorization"] is True
+    )
+    assert work_item["replay_authorized"] is False
+
+
+def test_uk_frontier_work_item_multi_enactment_proves_grouped_schedule_membership() -> None:
+    work_item = uk_frontier_work_item_from_manual_frontier_row(
+        {
+            "statute_id": "ukpga/1994/23",
+            "effect_id": "eff-grouped-schedule",
+            "affecting_act_id": "ukpga/2024/3",
+            "manual_compile_rule_id": (
+                "uk_manual_frontier_multi_enactment_specified_provisions_text_patch"
+            ),
+            "manual_compile_status": "deterministic_frontend_candidate",
+            "owner_phase": "affecting_source_extraction",
+            "authorization_status": "deterministic_frontend_work_required",
+            "safe_default": "block_until_compiler_rule_is_owned",
+            "required_proofs": [
+                "canonical_operation_compilation",
+                "mutation_boundary_proof",
+            ],
+            "forbidden_shortcuts": ["oracle_backed_mutation", "target_guessing"],
+            "replay_authorized": False,
+            "executable": False,
+            "source": {
+                "extended_text_preview": (
+                    "In the specified provisions of the following enactments, "
+                    'for "seven" (or "7") substitute "14" - FA 1994 '
+                    "Paragraph 10(1)(b), (3)(b) and (5)(b) of Schedule 7."
+                )
+            },
+            "affected_provisions": "Sch. 7 para. 10(3)(b)",
+        }
+    ).to_dict()
+
+    certificate = work_item["detail"]["source_membership_certificate"]
+
+    assert certificate["completeness_status"] == "complete"
+    assert certificate["candidate_ids"] == ["Sch. 7 para. 10(3)(b)"]
+    assert certificate["source_membership_status"] == (
+        "proved_in_bounded_source_preview"
+    )
+    assert certificate["next_promotion_allowed"] is False
+    assert (
+        certificate["source_membership_not_replay_authorization"] is True
+    )
+    assert work_item["replay_authorized"] is False
+
+
+def test_uk_frontier_work_item_multi_enactment_proves_plural_schedule_membership() -> None:
+    work_item = uk_frontier_work_item_from_manual_frontier_row(
+        {
+            "statute_id": "ukpga/2000/17",
+            "effect_id": "eff-plural-schedule",
+            "affecting_act_id": "ukpga/2024/3",
+            "manual_compile_rule_id": (
+                "uk_manual_frontier_multi_enactment_specified_provisions_text_patch"
+            ),
+            "manual_compile_status": "deterministic_frontend_candidate",
+            "owner_phase": "affecting_source_extraction",
+            "authorization_status": "deterministic_frontend_work_required",
+            "safe_default": "block_until_compiler_rule_is_owned",
+            "required_proofs": [
+                "canonical_operation_compilation",
+                "mutation_boundary_proof",
+            ],
+            "forbidden_shortcuts": ["oracle_backed_mutation", "target_guessing"],
+            "replay_authorized": False,
+            "executable": False,
+            "source": {
+                "extended_text_preview": (
+                    "In the specified provisions of the following enactments, "
+                    'for "seven" (or "7") substitute "14" - FA 2000 '
+                    "Paragraphs 92(3)(b), 93(3)(b) and 94(3)(b) of Schedule 6."
+                )
+            },
+            "affected_provisions": "Sch. 6 para. 94(3)(b)",
+        }
+    ).to_dict()
+
+    certificate = work_item["detail"]["source_membership_certificate"]
+
+    assert certificate["completeness_status"] == "complete"
+    assert certificate["candidate_ids"] == ["Sch. 6 para. 94(3)(b)"]
+    assert certificate["source_membership_status"] == (
+        "proved_in_bounded_source_preview"
+    )
+    assert work_item["replay_authorized"] is False
+
+
+def test_uk_frontier_work_item_multi_enactment_keeps_source_feed_target_reconciliation_blocked() -> None:
+    work_item = uk_frontier_work_item_from_manual_frontier_row(
+        {
+            "statute_id": "ukpga/1994/23",
+            "effect_id": "eff-source-feed-target-reconciliation",
+            "affecting_act_id": "ukpga/2024/3",
+            "manual_compile_rule_id": (
+                "uk_manual_frontier_multi_enactment_specified_provisions_text_patch"
+            ),
+            "manual_compile_status": "deterministic_frontend_candidate",
+            "owner_phase": "affecting_source_extraction",
+            "authorization_status": "deterministic_frontend_work_required",
+            "safe_default": "block_until_compiler_rule_is_owned",
+            "required_proofs": [
+                "canonical_operation_compilation",
+                "mutation_boundary_proof",
+            ],
+            "forbidden_shortcuts": ["oracle_backed_mutation", "target_guessing"],
+            "replay_authorized": False,
+            "executable": False,
+            "source": {
+                "extended_text_preview": (
+                    "In the specified provisions of the following enactments, "
+                    'for "seven" (or "7") substitute "14" - VATA 1994 '
+                    "Section 72(1)(b), (3)(ii) and (8)(b)."
+                )
+            },
+            "affected_provisions": "s. 72(3)(b)(ii)",
+        }
+    ).to_dict()
+
+    certificate = work_item["detail"]["source_membership_certificate"]
+
+    assert certificate["completeness_status"] == "unavailable"
+    assert certificate["candidate_ids"] == []
+    assert certificate["blocker_counts"] == {"source_list_membership_not_proved": 1}
+    assert certificate["source_membership_status"] == (
+        "unproved_from_bounded_source_preview"
+    )
+    assert work_item["replay_authorized"] is False
+
+
 def test_uk_frontier_work_item_multi_enactment_keeps_unproved_membership_blocked() -> None:
     work_item = uk_frontier_work_item_from_manual_frontier_row(
         {

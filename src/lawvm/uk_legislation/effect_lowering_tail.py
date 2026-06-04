@@ -31,6 +31,9 @@ from lawvm.uk_legislation.source_definition_fragments import (
 from lawvm.uk_legislation.source_payload_elaboration import (
     _extract_crossheading_payload_from_extracted,
 )
+from lawvm.uk_legislation.specified_provisions import (
+    target_appears_in_specified_provisions_preview,
+)
 from lawvm.uk_legislation.target_parser import _parse_affected_target
 from lawvm.uk_legislation.target_anchors import (
     _source_after_insertion_anchor,
@@ -101,40 +104,16 @@ def _multi_enactment_specified_target_membership_proved(
     extracted_text: Optional[str],
     original_targets_str: list[str],
 ) -> bool:
-    source_preview = _normalize_citation_text(str(extracted_text or ""))
+    source_preview = str(extracted_text or "")
     if not source_preview:
         return False
     return any(
-        needle in source_preview
+        target_appears_in_specified_provisions_preview(
+            target=target,
+            source_preview=source_preview,
+        )
         for target in original_targets_str
-        for needle in _specified_provision_membership_needles(target)
-        if needle
     )
-
-
-def _specified_provision_membership_needles(target: str) -> tuple[str, ...]:
-    normalized = _normalize_citation_text(target)
-    if not normalized:
-        return ()
-    needles = [normalized]
-    if normalized.startswith("s. "):
-        needles.append(f"section {normalized[3:].strip()}")
-    elif normalized.startswith("s "):
-        needles.append(f"section {normalized[2:].strip()}")
-    return tuple(dict.fromkeys(needles))
-
-
-def _normalize_citation_text(text: str) -> str:
-    cleaned = (
-        str(text or "")
-        .replace("\u2018", "'")
-        .replace("\u2019", "'")
-        .replace("\u201c", '"')
-        .replace("\u201d", '"')
-        .replace("\u00a0", " ")
-        .lower()
-    )
-    return " ".join(cleaned.split())
 
 
 def _looks_like_appropriate_place_insert_text(text: str) -> bool:
