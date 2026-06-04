@@ -46,6 +46,25 @@ def test_parse_fragment_substitution_accepts_dash_variants_outside_quotes() -> N
     ]
 
 
+def test_parse_fragment_substitution_handles_at_end_subsection_of_section_unquoted_dash_insert() -> None:
+    subs = parse_fragment_substitution(
+        "9 At the end of subsection (2) of section 100 (penalties), insert\u2014 "
+        ", and issuers who have requested or approved the admission of financial "
+        "instruments to trading on a regulated market. ."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": (
+                ", and issuers who have requested or approved the admission of "
+                "financial instruments to trading on a regulated market."
+            ),
+            "rule_id": "uk_effect_at_end_unquoted_text_insertion_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_sentence_bounded_at_end_insert() -> None:
     subs = parse_fragment_substitution(
         "3 At the end of subsection (3) insert before the end of the period of "

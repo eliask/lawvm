@@ -8349,6 +8349,73 @@ def test_schedule_qualified_at_end_insert_fragment_parses_as_append() -> None:
     ]
 
 
+def test_compile_at_end_subsection_of_section_unquoted_dash_insert_to_text_append() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-9">
+          <Pnumber>9</Pnumber>
+          <Text>
+            9 At the end of subsection (2) of section 100 (penalties), insert\u2014
+            , and issuers who have requested or approved the admission of
+            financial instruments to trading on a regulated market. .
+          </Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-f2cbff419450a2d6f34fd9d1e2eb67eb",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-07-01",
+        affected_uri="/id/ukpga/2000/8/section/100/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="8",
+        affected_provisions="s. 100(2)",
+        affecting_uri="/id/uksi/2005/381",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2005",
+        affecting_number="381",
+        affecting_provisions="Sch. 1 para. 9",
+        affecting_title=(
+            "Financial Services and Markets Act 2000 (Markets in Financial "
+            "Instruments) Regulations 2005"
+        ),
+        in_force_dates=[{"date": "2005-07-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "100"), ("subsection", "2"))
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.APPEND
+    assert op.text_patch.selector.match_text == "TEXT_END"
+    assert _required_text_patch_replacement(op) == (
+        ", and issuers who have requested or approved the admission of "
+        "financial instruments to trading on a regulated market."
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_at_end_unquoted_text_insertion_patch"
+        in op.provenance_tags
+    )
+    assert [
+        record
+        for record in lowering_records
+        if record.get("rule_id") == "uk_effect_at_end_unquoted_text_insertion_patch"
+        and record.get("canonical_text_match") == "TEXT_END"
+    ]
+
+
 def test_at_end_dangling_insert_quote_fragment_parses_as_append() -> None:
     fragments = parse_fragment_substitution(
         "4 In subsection (3) (person liable for tax is person to whom income "
@@ -41252,16 +41319,24 @@ def test_compile_source_parent_column_at_end_flattened_list_blocks() -> None:
         affecting_title="Test Amendment Act",
         in_force_dates=[{"date": "2005-04-06", "prospective": "false"}],
     )
+    lowering_records: list[dict[str, Any]] = []
 
     ops = compile_effect_to_ir_ops(
         effect,
         extracted_el,
         sequence=0,
-        lowering_rejections_out=[],
+        lowering_rejections_out=lowering_records,
         source_root=source_root,
     )
 
     assert ops == []
+    assert [
+        record
+        for record in lowering_records
+        if record.get("rule_id")
+        == "uk_effect_table_column_parent_at_end_insert_blocks_generic_text_append"
+        and record.get("reason_code") == "table_column_parent_requires_table_surface_claim"
+    ]
 
 
 def test_compile_table_entry_label_row_insert_preserves_source_table_row() -> None:

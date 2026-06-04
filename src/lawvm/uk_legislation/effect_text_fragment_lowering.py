@@ -110,7 +110,10 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     UK_SOURCE_PARENT_CARRIED_AFTER_WORD_ORDINAL_INSERT_RULE_ID,
     UK_TARGET_SCOPED_EACH_CHILD_AFTER_WORD_INSERT_RULE_ID,
 )
-from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
+from lawvm.uk_legislation.lowering_records import (
+    _append_uk_effect_lowering_observation,
+    _append_uk_effect_lowering_rejection,
+)
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
@@ -119,6 +122,19 @@ _UK_EFFECT_WORD_SUBSTITUTION_ESCALATED_TO_STRUCTURAL_REPLACE_RULE_ID = (
 )
 _UK_EFFECT_FLAT_TARGET_PARAGRAPH_SUBSTITUTION_RULE_ID = (
     "uk_effect_flat_target_paragraph_substitution_text_payload"
+)
+_UK_TABLE_COLUMN_PARENT_AT_END_INSERT_BLOCKED_RULE_ID = (
+    "uk_effect_table_column_parent_at_end_insert_blocks_generic_text_append"
+)
+_UK_BARE_AT_END_INSERT_RE = re.compile(
+    r"^\s*(?:[0-9A-Za-z]+\s+)?at\s+the\s+end\s+insert\s*[—-]",
+    re.I,
+)
+_UK_TABLE_COLUMN_PARENT_CONTEXT_RE = re.compile(
+    r"\bin\s+(?:the\s+)?"
+    r"(?:(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
+    r"column\s+\d+)\s+of\s+(?:the\s+)?Table\b",
+    re.I,
 )
 _SOURCE_CHILD_WHERE_ORDINAL_INSERT_RE = re.compile(
     rf"\bwhere it (?P<ordinal>{'|'.join(re.escape(key) for key in _ORDINAL_OCCURRENCES)}) "
@@ -408,6 +424,7 @@ def lower_uk_text_fragment_rewrite(
         extracted_el=extracted_el,
         source_root=source_root,
         extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
         allow_heading_source_parent_full_replacement=not is_word_level,
         allow_source_parent_at_end_text_insert=(
             word_level_text_patch_required and curr_action == "insert"
@@ -605,6 +622,71 @@ def lower_uk_text_fragment_rewrite(
     )
 
 
+def _direct_parent_text_before_child(parent_el: ET._Element, child_el: ET._Element) -> str:
+    parts: list[str] = []
+    for child in parent_el:
+        if child is child_el:
+            break
+        if child.tag.rsplit("}", 1)[-1] == "Text":
+            parts.append(" ".join(" ".join(child.itertext()).split()).strip())
+    return " ".join(part for part in parts if part).strip()
+
+
+def _table_column_parent_blocks_generic_at_end_insert(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    target_ref: str,
+    extracted_el: Optional[ET._Element],
+    extracted_text: str,
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> bool:
+    if extracted_el is None or "table" not in str(target_ref or "").lower():
+        return False
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if _UK_BARE_AT_END_INSERT_RE.search(text) is None:
+        return False
+    child_el = extracted_el
+    parent_el = extracted_el.getparent()
+    for _ in range(4):
+        if parent_el is None:
+            return False
+        parent_instruction = _direct_parent_text_before_child(parent_el, child_el)
+        if _UK_TABLE_COLUMN_PARENT_CONTEXT_RE.search(parent_instruction) is not None:
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id=_UK_TABLE_COLUMN_PARENT_AT_END_INSERT_BLOCKED_RULE_ID,
+                family="table_surface_boundary",
+                reason_code="table_column_parent_requires_table_surface_claim",
+                reason=(
+                    "UK source row says `at the end insert` under a parent "
+                    "instruction that scopes the amendment to a table column. "
+                    "Generic target text append is blocked until a table "
+                    "surface claim proves the exact row, column, and payload "
+                    "boundary."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "source_parent_instruction": parent_instruction[:500],
+                    "strict_disposition": "block",
+                    "quirks_disposition": "block",
+                    "required_proofs": (
+                        "table_surface_identity",
+                        "row_or_column_boundary",
+                        "payload_boundary_identity",
+                    ),
+                },
+            )
+            return True
+        child_el = parent_el
+        parent_el = parent_el.getparent()
+    return False
+
+
 def _extract_text_fragment_substitutions(
     *,
     effect: UKEffectRecord,
@@ -618,6 +700,7 @@ def _extract_text_fragment_substitutions(
     extracted_el: Optional[ET._Element],
     source_root: Optional[ET._Element],
     extracted_text: str,
+    lowering_rejections_out: Optional[list[dict[str, Any]]] = None,
     allow_heading_source_parent_full_replacement: bool = True,
     allow_source_parent_at_end_text_insert: bool = False,
     allow_source_parent_word_range_substitution: bool = False,
@@ -639,6 +722,16 @@ def _extract_text_fragment_substitutions(
         if heading_facet_target and allow_heading_source_parent_full_replacement
         else None
     )
+    table_column_parent_blocks_generic_at_end_insert = (
+        _table_column_parent_blocks_generic_at_end_insert(
+            effect=effect,
+            target=target,
+            target_ref=target_ref,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+    )
     subs = (
         fragment_subs
         if table_substitution_recognized
@@ -652,6 +745,8 @@ def _extract_text_fragment_substitutions(
         if heading_full_replacement is not None
         else [heading_source_parent_full_replacement]
         if heading_source_parent_full_replacement is not None
+        else []
+        if table_column_parent_blocks_generic_at_end_insert
         else parse_fragment_substitution(extracted_text)
     )
     if not subs:

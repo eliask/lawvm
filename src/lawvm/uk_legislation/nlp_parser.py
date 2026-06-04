@@ -237,9 +237,11 @@ _UK_AT_END_TARGET_QUALIFIER_RE = (
     r"(?: of (?:(?:that|the) )?"
     rf"{_UK_TEXT_BOUNDARY_UNIT_RE}"
     rf"{_UK_TEXT_BOUNDARY_SUFFIX_RE}"
-    r"(?:\s+of\s+(?:(?:that|the)\s+Schedule|Schedule\s+[0-9A-Za-z]+"
+    r"(?:\s+of\s+(?:"
+    rf"(?:(?:that|the)\s+)?{_UK_TEXT_BOUNDARY_UNIT_RE}{_UK_TEXT_BOUNDARY_SUFFIX_RE}|"
+    r"(?:(?:that|the)\s+Schedule|Schedule\s+[0-9A-Za-z]+"
     r"(?:\s+to\s+(?:(?:the\s+)?[A-Z][^,;“”]{0,160}?\bAct(?:\s+\d{4})?|"
-    r"the\s+\d{4}\s+Act))?))?"
+    r"the\s+\d{4}\s+Act))?)))?"
     r")?"
 )
 _UK_CARRIED_ENACTMENT_CONTEXT_RE = (
