@@ -3822,6 +3822,35 @@ def test_classify_uk_manual_compile_frontier_marks_scoped_occurrence_exclusion_p
     assert "exclusion proof" in result["reason"]
 
 
+def test_classify_uk_manual_compile_frontier_marks_scoped_occurrence_program_exclusion_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="scoped_occurrence_program_exclusion_unsupported",
+        extracted_tag="P2",
+        extracted_text=(
+            "2 For \u201cCommission\u201d, in each place except as otherwise provided by "
+            "subsection (5) (including in the heading and in provisions inserted "
+            "by amendments made by this Act), substitute \u201cDirector General\u201d."
+        ),
+        lowering_rejections=[
+            {
+                "rule_id": "uk_effect_mixed_body_heading_text_substitution_rejected",
+                "blocking": True,
+            }
+        ],
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_scoped_occurrence_program_exclusion_candidate"
+    )
+    assert "sibling amendment program" in result["reason"]
+
+
 def test_classify_uk_manual_compile_frontier_marks_definition_anchor_tail_insert() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
@@ -4553,6 +4582,25 @@ def test_classify_uk_effect_scoped_occurrence_text_patch_with_exclusions() -> No
     )
 
     assert pathology == "scoped_occurrence_text_patch_with_exclusions_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_scoped_occurrence_program_exclusion() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P2",
+        extracted_text=(
+            "2 For \u201cCommission\u201d, in each place except as otherwise provided by "
+            "subsection (5) (including in the heading and in provisions inserted "
+            "by amendments made by this Act), substitute \u201cDirector General\u201d."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == "scoped_occurrence_program_exclusion_unsupported"
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 

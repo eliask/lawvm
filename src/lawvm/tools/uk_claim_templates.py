@@ -1885,6 +1885,34 @@ def manual_compile_suggested_claim_template(
         )
     if (
         summary.manual_compile_rule_id
+        == "uk_manual_frontier_scoped_occurrence_program_exclusion_candidate"
+    ):
+        detail = _first_blocking_lowering_rejection_detail(row=row)
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="amendment_program_target_mutation",
+            placement_family=str(
+                detail.get("reason_code")
+                or "scoped_occurrence_program_exclusion_requires_program_split"
+            ),
+            required_ownership=[
+                "source_instruction_program_boundary",
+                "quoted_text_preimage_and_replacement_payload",
+                "body_heading_and_inserted_provision_scope_split",
+                "named_program_exclusion_scope",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_contains_scoped_occurrence_formula_with_program_exclusion",
+                "claim_identifies_each_sibling_amendment_instruction_in_the_program",
+                "claim_splits_body_heading_and_inserted_provision_scopes",
+                "claim_preserves_occurrences_inside_program_exclusions",
+                "changed_paths_are_within_declared_program_scoped_text_boundaries",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
         == "uk_manual_frontier_multi_enactment_specified_provisions_text_patch"
     ):
         detail = _first_blocking_lowering_rejection_detail(row=row)

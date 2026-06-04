@@ -30,6 +30,7 @@ from lawvm.uk_legislation.nlp_parser import (
     parse_fragment_substitution,
 )
 from lawvm.uk_legislation.replay_text import _multi_fragment_text_selector
+from lawvm.uk_legislation.source_context import _source_ancestor_chain
 from lawvm.uk_legislation.source_amendment_program_fragments import (
     UK_AMENDMENT_PROGRAM_INSERTED_ANCHOR_STRUCTURAL_INSERT_RULE_ID,
     _fragment_substitution_amendment_program_inserted_parent_child_insert,
@@ -110,11 +111,17 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     UK_SOURCE_PARENT_CARRIED_AFTER_WORD_ORDINAL_INSERT_RULE_ID,
     UK_TARGET_SCOPED_EACH_CHILD_AFTER_WORD_INSERT_RULE_ID,
 )
+from lawvm.uk_legislation.text_selectors import (
+    ExceptSourceSiblingOccurrenceSelector,
+    UKTextRewriteFragment,
+    fragment_to_legacy_dict,
+)
 from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
     _append_uk_effect_lowering_rejection,
 )
 from lawvm.uk_legislation.uk_grafter import _clean_num
+from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _text_content
 
 
 _UK_EFFECT_WORD_SUBSTITUTION_ESCALATED_TO_STRUCTURAL_REPLACE_RULE_ID = (
@@ -139,6 +146,22 @@ _UK_TABLE_COLUMN_PARENT_CONTEXT_RE = re.compile(
 _SOURCE_CHILD_WHERE_ORDINAL_INSERT_RE = re.compile(
     rf"\bwhere it (?P<ordinal>{'|'.join(re.escape(key) for key in _ORDINAL_OCCURRENCES)}) "
     r"occurs?,? insert [“\"'‘](?P<inserted>[^”\"'’]{1,1000})[”\"'’]",
+    flags=re.I,
+)
+UK_SOURCE_SIBLING_EXCEPT_OCCURRENCE_SUBSTITUTION_RULE_ID = (
+    "uk_effect_source_sibling_except_occurrence_substitution_text_patch"
+)
+_SOURCE_SIBLING_EXCEPT_AS_MENTIONED_SUBSTITUTION_RE = re.compile(
+    r"\bfor\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>[^”\"'’]{1,500})[”\"'’],?\s+"
+    r"in\s+each\s+place\s+except\s+as\s+mentioned\s+in\s+"
+    r"(?P<source_sibling_kind>sub-?paragraph|paragraph|subsection)\s+"
+    r"\((?P<source_sibling_label>[0-9A-Za-z]+)\),?\s+"
+    r"substitute\s+[“\"'‘](?P<replacement>[^”\"'’]{1,500})[”\"'’]",
+    flags=re.I,
+)
+_SOURCE_SIBLING_CHILD_TARGET_RE = re.compile(
+    r"\bin\s+(?P<child_kind>subsection|paragraph|sub-?paragraph|subparagraph)\s+"
+    r"\((?P<child_label>[0-9A-Za-z]+)\)",
     flags=re.I,
 )
 _AMOUNT_SPECIFIED_SECTION_TARGET_RE = re.compile(
@@ -196,6 +219,73 @@ def _amount_specified_source_target_matches(
         target_suffix = tuple(part for part in target.path if part[0] != "section")
         return target_suffix == source_path
     return tuple(target.path) == source_path
+
+
+def _normalized_source_child_kind(kind: str) -> str:
+    normalized = kind.strip().lower().replace("-", "")
+    if normalized == "subparagraph":
+        return "subparagraph"
+    return normalized
+
+
+def _fragment_substitution_source_sibling_except_occurrence(
+    *,
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    text = " ".join((extracted_text or "").split())
+    match = _SOURCE_SIBLING_EXCEPT_AS_MENTIONED_SUBSTITUTION_RE.search(text)
+    if match is None or extracted_el is None:
+        return None
+    source_sibling_kind = _normalized_source_child_kind(match.group("source_sibling_kind"))
+    source_sibling_label = _clean_num(match.group("source_sibling_label"))
+    if source_sibling_kind != "subparagraph" or not source_sibling_label:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        return None
+    parent = ancestors[0]
+    for child in parent:
+        if child is extracted_el or child.get("id") == extracted_el.get("id"):
+            continue
+        if _clean_num(_direct_structural_num(child)) != source_sibling_label:
+            continue
+        sibling_text = " ".join(_text_content(child).split())
+        target_match = _SOURCE_SIBLING_CHILD_TARGET_RE.search(sibling_text)
+        if target_match is None:
+            return None
+        sibling_fragments = parse_fragment_substitution(sibling_text)
+        if len(sibling_fragments) != 1:
+            return None
+        sibling_fragment = sibling_fragments[0]
+        excluded_original = " ".join(
+            str(sibling_fragment.get("original") or "").split()
+        ).strip()
+        excluded_occurrence = str(sibling_fragment.get("occurrence") or "").strip()
+        if not excluded_original or not excluded_occurrence.isdigit():
+            return None
+        child_kind = _normalized_source_child_kind(target_match.group("child_kind"))
+        child_label = _clean_num(target_match.group("child_label"))
+        if not child_kind or not child_label:
+            return None
+        return fragment_to_legacy_dict(
+            UKTextRewriteFragment(
+                selector=ExceptSourceSiblingOccurrenceSelector(
+                    original=match.group("original").strip(),
+                    child_kind=child_kind,
+                    child_label=child_label,
+                    excluded_original=excluded_original,
+                    excluded_occurrence=excluded_occurrence,
+                    source_sibling_kind=source_sibling_kind,
+                    source_sibling_label=source_sibling_label,
+                ),
+                replacement=match.group("replacement").strip(),
+                rule_id=UK_SOURCE_SIBLING_EXCEPT_OCCURRENCE_SUBSTITUTION_RULE_ID,
+                occurrence="0",
+            )
+        )
+    return None
 
 
 @dataclass(frozen=True)
@@ -732,6 +822,13 @@ def _extract_text_fragment_substitutions(
             lowering_rejections_out=lowering_rejections_out,
         )
     )
+    source_sibling_except_occurrence = (
+        _fragment_substitution_source_sibling_except_occurrence(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+        )
+    )
     subs = (
         fragment_subs
         if table_substitution_recognized
@@ -745,6 +842,8 @@ def _extract_text_fragment_substitutions(
         if heading_full_replacement is not None
         else [heading_source_parent_full_replacement]
         if heading_source_parent_full_replacement is not None
+        else [source_sibling_except_occurrence]
+        if source_sibling_except_occurrence is not None
         else []
         if table_column_parent_blocks_generic_at_end_insert
         else parse_fragment_substitution(extracted_text)
@@ -1511,6 +1610,38 @@ def _promote_text_fragment_substitutions(
         extracted_text=extracted_text,
         lowering_rejections_out=lowering_rejections_out,
     )
+    if (
+        primary.get("rule_id")
+        == UK_SOURCE_SIBLING_EXCEPT_OCCURRENCE_SUBSTITUTION_RULE_ID
+    ):
+        selector_parts = str(op_text_match or "").split(US, 7)
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_SOURCE_SIBLING_EXCEPT_OCCURRENCE_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="source_sibling_excluded_occurrence_text_patch",
+            reason=(
+                "UK source substitutes a quoted expression in each place except "
+                "an occurrence owned by a source sibling; lowering preserves the "
+                "source-sibling exclusion, target child, excluded preimage, and "
+                "excluded occurrence in the text selector."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match or "",
+                "replacement": op_text_replacement or "",
+                "excluded_child_kind": selector_parts[2] if len(selector_parts) == 8 else "",
+                "excluded_child_label": selector_parts[3] if len(selector_parts) == 8 else "",
+                "excluded_original": selector_parts[4] if len(selector_parts) == 8 else "",
+                "excluded_occurrence": selector_parts[5] if len(selector_parts) == 8 else "",
+                "source_sibling_kind": selector_parts[6] if len(selector_parts) == 8 else "",
+                "source_sibling_label": selector_parts[7] if len(selector_parts) == 8 else "",
+            },
+        )
     return UKTextFragmentLowering(
         target=target,
         curr_action=curr_action,

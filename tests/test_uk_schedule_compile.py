@@ -31653,6 +31653,7 @@ def test_compile_except_phrase_substitution_preserves_excluded_phrase_selector()
             "rule_id": "uk_effect_except_phrase_substitution_text_patch",
             "family": "text_rewrite_lowering",
             "phase": "lowering",
+            "owner_phase": "canonical_op_compilation",
             "effect_id": "key-7efb8ec0f6cd16551adf5e4621031887",
             "affecting_act_id": "uksi/2003/2155",
             "affected_provisions": "Sch. 4 para. 88",
@@ -31876,6 +31877,153 @@ def test_replay_except_child_substitution_does_not_mutate_excluded_child() -> No
     assert section.text == "The relevant authority may act."
     assert section.children[0].text == "The relevant authority must consult."
     assert section.children[1].text == "The Secretary of State remains named here."
+
+
+def test_compile_source_sibling_excluded_occurrence_substitution() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-9-paragraph-22">
+          <Pnumber>22</Pnumber>
+          <P1para>
+            <P2 id="schedule-9-paragraph-22-2">
+              <Pnumber>2</Pnumber>
+              <Text>2 For “Commission”, in each place except as mentioned in sub-paragraph (3), substitute “Director General”.</Text>
+            </P2>
+            <P2 id="schedule-9-paragraph-22-3">
+              <Pnumber>3</Pnumber>
+              <Text>3 In subsection (4), for “the Commission”, in the second place where it occurs, substitute “Office”.</Text>
+            </P2>
+          </P1para>
+        </P1>
+        """
+    )
+    extracted_el = next(
+        el for el in source_root.iter() if el.get("id") == "schedule-9-paragraph-22-2"
+    )
+    effect = UKEffectRecord(
+        effect_id="key-f1e42f82e35eab5132920867fa277e3c",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2017-01-31",
+        affected_uri="/id/ukpga/2002/30/section/16",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2002",
+        affected_number="30",
+        affected_provisions="s. 16",
+        affecting_uri="/id/ukpga/2017/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2017",
+        affecting_number="3",
+        affecting_provisions="Sch. 9 para. 22(2)",
+        affecting_title="Policing and Crime Act 2017",
+        in_force_dates=[{"date": "2017-01-31", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        source_root=source_root,
+        lowering_rejections_out=lowering_records,
+    )
+
+    selector = (
+        f"TEXT_EXCEPT_SOURCE_SIBLING_OCCURRENCE{US}"
+        f"Commission{US}subsection{US}4{US}the Commission{US}2{US}subparagraph{US}3"
+    )
+    assert len(ops) == 1
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == selector
+    assert ops[0].text_patch.replacement == "Director General"
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"]
+        == "uk_effect_source_sibling_except_occurrence_substitution_text_patch"
+    ] == ["uk_effect_source_sibling_except_occurrence_substitution_text_patch"]
+
+
+def test_compile_source_sibling_exclusion_blocks_without_source_root() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-9-paragraph-22-2">
+          <Pnumber>2</Pnumber>
+          <Text>2 For “Commission”, in each place except as mentioned in sub-paragraph (3), substitute “Director General”.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-source-sibling-no-root",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2017-01-31",
+        affected_uri="/id/ukpga/2002/30/section/16",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2002",
+        affected_number="30",
+        affected_provisions="s. 16",
+        affecting_uri="/id/ukpga/2017/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2017",
+        affecting_number="3",
+        affecting_provisions="Sch. 9 para. 22(2)",
+        affecting_title="Policing and Crime Act 2017",
+        in_force_dates=[{"date": "2017-01-31", "prospective": "false"}],
+    )
+
+    assert compile_effect_to_ir_ops(effect, extracted_el, sequence=0) == []
+
+
+def test_replay_source_sibling_excluded_occurrence_preserves_only_owned_occurrence() -> None:
+    selector = (
+        f"TEXT_EXCEPT_SOURCE_SIBLING_OCCURRENCE{US}"
+        f"Commission{US}subsection{US}4{US}the Commission{US}2{US}subparagraph{US}3"
+    )
+    op = LegalOperation(
+        op_id="uk_test_source_sibling_except_occurrence_replay",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "16"),)),
+        text_patch=_replace_patch(selector, "Director General"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2002/30",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="16",
+                    attrs={"eId": "section-16"},
+                    text="The Commission may pay.",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="4",
+                            attrs={"eId": "section-16-4"},
+                            text=(
+                                "The Commission may act. The Commission must approve. "
+                                "Commission reports follow."
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+    section = replayed.body.children[0]
+
+    assert section.text == "The Director General may pay."
+    assert section.children[0].text == (
+        "The Director General may act. The Commission must approve. "
+        "Director General reports follow."
+    )
 
 
 def test_compile_passive_quoted_substitution_text_patch() -> None:

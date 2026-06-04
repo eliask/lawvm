@@ -50,6 +50,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "referent_qualified_text_substitution_unsupported",
         "sentence_scoped_repeated_insert_unsupported",
         "scoped_occurrence_text_patch_with_exclusions_unsupported",
+        "scoped_occurrence_program_exclusion_unsupported",
         "instruction_text_reused_as_payload",
         "broad_source_reused_as_payload",
         "appropriate_place_definition_entry_insert_unsupported",
@@ -292,6 +293,11 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "deterministic_frontend_candidate",
         "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate",
         "The source applies a quoted text patch only to each occurrence outside named exclusions; compile needs an owned occurrence selector with exclusion proof instead of all-occurrences replay.",
+    ),
+    "scoped_occurrence_program_exclusion_unsupported": _ManualFrontierClassification(
+        "manual_compile_candidate",
+        "uk_manual_frontier_scoped_occurrence_program_exclusion_candidate",
+        "The source applies a quoted text patch except as otherwise provided by a sibling amendment program, including heading or inserted-provision scope; a claim or future compiler must split the source program and prove each non-excluded text boundary before replay.",
     ),
     "structural_sibling_insert_unsupported": _ManualFrontierClassification(
         "manual_compile_candidate",
@@ -1843,6 +1849,17 @@ def _looks_like_scoped_occurrence_text_patch_with_exclusions(text: str) -> bool:
     return bool(_SCOPED_OCCURRENCE_TEXT_PATCH_WITH_EXCLUSIONS_RE.search(norm))
 
 
+def _looks_like_scoped_occurrence_program_exclusion(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if not _looks_like_scoped_occurrence_text_patch_with_exclusions(norm):
+        return False
+    return (
+        "except as otherwise provided by" in norm
+        or "including in the heading" in norm
+        or "provisions inserted by amendments made by this act" in norm
+    )
+
+
 # Compiled at module scope per §1.11.  Bounded quantifiers prevent
 # catastrophic backtracking from the three unanchored .+ quantifiers that
 # previously cost ~1.18 s/call (104.74 s total on ukpga/1970/9, 51.4 % of
@@ -1997,6 +2014,8 @@ def classify_uk_effect_source_pathology(
             return "referent_qualified_text_substitution_unsupported"
         if _looks_like_sentence_scoped_repeated_insert_instruction(norm_text):
             return "sentence_scoped_repeated_insert_unsupported"
+        if _looks_like_scoped_occurrence_program_exclusion(norm_text):
+            return "scoped_occurrence_program_exclusion_unsupported"
         if _looks_like_scoped_occurrence_text_patch_with_exclusions(norm_text):
             return "scoped_occurrence_text_patch_with_exclusions_unsupported"
         if _looks_like_savings_qualified_text_omission(norm_text):

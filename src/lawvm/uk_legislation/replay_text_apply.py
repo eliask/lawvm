@@ -42,6 +42,9 @@ TextNodeRegexMatchesByPath: TypeAlias = dict[
 
 _EXCEPT_PHRASE_SELECTOR_PREFIX = f"TEXT_EXCEPT_PHRASE{US}"
 _EXCEPT_CHILD_SELECTOR_PREFIX = f"TEXT_EXCEPT_CHILD{US}"
+_EXCEPT_SOURCE_SIBLING_OCCURRENCE_SELECTOR_PREFIX = (
+    f"TEXT_EXCEPT_SOURCE_SIBLING_OCCURRENCE{US}"
+)
 _ALTERNATE_UNIQUE_SELECTOR_PREFIX = f"TEXT_ALTERNATE_UNIQUE{US}"
 
 
@@ -631,6 +634,32 @@ def _find_descendant_path_by_kind_label(
             return path
         for index in range(len(current.children) - 1, -1, -1):
             stack.append((path + (index,), current.children[index]))
+    return None
+
+
+def _excluded_occurrence_span_in_child(
+    node: UKMutableNode,
+    *,
+    child_path: TextNodePath,
+    excluded_original: str,
+    excluded_occurrence: int,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[TextNodePath, int, int] | None:
+    if excluded_occurrence <= 0:
+        return None
+    child = _node_at_path(node, child_path)
+    pattern = _text_patch_pattern(
+        excluded_original,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    seen = 0
+    for relative_path, text_node in _text_nodes_in_document_order(child):
+        for match in re.finditer(pattern, text_node.text or "", flags=re.I):
+            seen += 1
+            if seen == excluded_occurrence:
+                return child_path + relative_path, match.start(), match.end()
     return None
 
 
@@ -2398,6 +2427,88 @@ class UKReplayTextApplyMixin:
             if made_any:
                 self._replace_node_in_statute(node, rebuilt)
             return rebuilt, made_any
+
+        if match.startswith(_EXCEPT_SOURCE_SIBLING_OCCURRENCE_SELECTOR_PREFIX):
+            parts = match.split(US, 7)
+            if len(parts) != 8:
+                return node, False
+            (
+                _prefix,
+                original,
+                child_kind,
+                child_label,
+                excluded_original,
+                excluded_occurrence_text,
+                _source_sibling_kind,
+                _source_sibling_label,
+            ) = parts
+            if not excluded_occurrence_text.isdigit():
+                return node, False
+            excluded_path = _find_descendant_path_by_kind_label(
+                node,
+                kind=child_kind,
+                label=child_label,
+            )
+            if excluded_path is None:
+                return node, False
+            excluded_span = _excluded_occurrence_span_in_child(
+                node,
+                child_path=excluded_path,
+                excluded_original=excluded_original,
+                excluded_occurrence=int(excluded_occurrence_text),
+                allow_punctuation_spacing=allow_punctuation_spacing,
+                allow_word_punctuation_elision=allow_word_punctuation_elision,
+            )
+            if excluded_span is None:
+                return node, False
+            pattern = _text_patch_pattern(
+                original,
+                allow_punctuation_spacing=allow_punctuation_spacing,
+                allow_word_punctuation_elision=allow_word_punctuation_elision,
+            )
+            candidates: list[TextNodeRegexMatch] = []
+            excluded_text_path, excluded_start, excluded_end = excluded_span
+            for path, text_node in text_nodes:
+                for candidate_match in re.finditer(pattern, text_node.text or "", flags=re.I):
+                    if path == excluded_text_path and not (
+                        candidate_match.end() <= excluded_start
+                        or candidate_match.start() >= excluded_end
+                    ):
+                        continue
+                    candidates.append((path, text_node, candidate_match))
+            if occurrence > 0:
+                if occurrence > len(candidates):
+                    return node, False
+                candidates = [candidates[occurrence - 1]]
+            elif occurrence == -1:
+                if not candidates:
+                    return node, False
+                candidates = [candidates[-1]]
+            if not candidates:
+                return node, False
+            rebuilt = node
+            by_path: dict[TextNodePath, tuple[UKMutableNode, list[re.Match[str]]]] = {}
+            for path, text_node, candidate_match in candidates:
+                by_path.setdefault(path, (text_node, []))[1].append(candidate_match)
+            for path in sorted(by_path, reverse=True):
+                text_node, matches = by_path[path]
+                new_text = text_node.text or ""
+                for candidate_match in reversed(matches):
+                    new_text = (
+                        new_text[: candidate_match.start()]
+                        + replacement
+                        + new_text[candidate_match.end() :]
+                    )
+                if not path:
+                    rebuilt = dc_replace(rebuilt, text=new_text)
+                else:
+                    rebuilt = self._replace_descendant_at_path(
+                        rebuilt,
+                        path,
+                        dc_replace(text_node, text=new_text),
+                    )
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
 
         if match.startswith(_EXCEPT_CHILD_SELECTOR_PREFIX):
             parts = match.split(US, 3)

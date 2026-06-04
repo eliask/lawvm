@@ -18,6 +18,7 @@ from lawvm.uk_legislation.text_selectors import (
     BeginningSelector,
     DefinitionAnchorSelector,
     EndSelector,
+    ExceptSourceSiblingOccurrenceSelector,
     FromChildEndSelector,
     LiteralSelector,
     OpeningWordsAfterAnchorSelector,
@@ -388,6 +389,27 @@ class TestFragmentRoundTrip:
         # The reversed-substitution fallback emits no rule_id; an empty rule_id
         # must serialize back to an absent key, not "rule_id": "".
         legacy = {"original": "the words", "replacement": "new"}
+        assert fragment_to_legacy_dict(fragment_from_legacy_dict(legacy)) == legacy
+
+    def test_source_sibling_occurrence_selector_round_trips(self) -> None:
+        selector = ExceptSourceSiblingOccurrenceSelector(
+            original="Commission",
+            child_kind="subsection",
+            child_label="4",
+            excluded_original="the Commission",
+            excluded_occurrence="2",
+            source_sibling_kind="subparagraph",
+            source_sibling_label="3",
+        )
+        legacy = fragment_to_legacy_dict(
+            UKTextRewriteFragment(
+                selector=selector,
+                replacement="Director General",
+                rule_id="uk_effect_source_sibling_except_occurrence_substitution_text_patch",
+                occurrence="0",
+            )
+        )
+        assert fragment_from_legacy_dict(legacy).selector == selector
         assert fragment_to_legacy_dict(fragment_from_legacy_dict(legacy)) == legacy
 
 

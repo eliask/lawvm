@@ -329,6 +329,16 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_declared_non_excluded_occurrence_boundaries",
         ),
     },
+    "uk_manual_frontier_scoped_occurrence_program_exclusion_candidate": {
+        "candidate_operation_family": "amendment_program_target_mutation",
+        "required_validator_checks": (
+            "source_witness_contains_scoped_occurrence_formula_with_program_exclusion",
+            "claim_identifies_each_sibling_amendment_instruction_in_the_program",
+            "claim_splits_body_heading_and_inserted_provision_scopes",
+            "claim_preserves_occurrences_inside_program_exclusions",
+            "changed_paths_are_within_declared_program_scoped_text_boundaries",
+        ),
+    },
     "uk_manual_frontier_multi_enactment_specified_provisions_text_patch": {
         "candidate_operation_family": "parser_or_extraction_gap",
         "required_validator_checks": (

@@ -166,6 +166,19 @@ class ExceptChildSelector:
 
 
 @dataclass(frozen=True, slots=True)
+class ExceptSourceSiblingOccurrenceSelector:
+    """All occurrences of ``original`` except one source-sibling-owned occurrence."""
+
+    original: str
+    child_kind: str
+    child_label: str
+    excluded_original: str
+    excluded_occurrence: str
+    source_sibling_kind: str
+    source_sibling_label: str
+
+
+@dataclass(frozen=True, slots=True)
 class RawSelector:
     """A not-yet-migrated ``TEXT_*`` sentinel string carried verbatim.
 
@@ -197,6 +210,7 @@ UKTextSelector = (
     | FromChildEndSelector
     | ExceptPhraseSelector
     | ExceptChildSelector
+    | ExceptSourceSiblingOccurrenceSelector
     | RawSelector
 )
 
@@ -269,6 +283,17 @@ def selector_to_legacy_original(selector: UKTextSelector) -> str:
         return f"TEXT_EXCEPT_PHRASE{US}{selector.original}{US}{selector.excluded_phrase}"
     if isinstance(selector, ExceptChildSelector):
         return f"TEXT_EXCEPT_CHILD{US}{selector.original}{US}{selector.child_kind}{US}{selector.child_label}"
+    if isinstance(selector, ExceptSourceSiblingOccurrenceSelector):
+        return (
+            f"TEXT_EXCEPT_SOURCE_SIBLING_OCCURRENCE{US}"
+            f"{selector.original}{US}"
+            f"{selector.child_kind}{US}"
+            f"{selector.child_label}{US}"
+            f"{selector.excluded_original}{US}"
+            f"{selector.excluded_occurrence}{US}"
+            f"{selector.source_sibling_kind}{US}"
+            f"{selector.source_sibling_label}"
+        )
     if isinstance(selector, RawSelector):
         return selector.original
     raise TypeError(f"unknown selector: {selector!r}")
@@ -308,6 +333,19 @@ def selector_from_legacy_original(original: str) -> UKTextSelector:
         parts = original.split(US, 3)
         if len(parts) == 4:
             return FromChildEndSelector(parts[1], parts[2], parts[3])
+        return RawSelector(original)
+    if original.startswith(f"TEXT_EXCEPT_SOURCE_SIBLING_OCCURRENCE{US}"):
+        parts = original.split(US, 7)
+        if len(parts) == 8:
+            return ExceptSourceSiblingOccurrenceSelector(
+                original=parts[1],
+                child_kind=parts[2],
+                child_label=parts[3],
+                excluded_original=parts[4],
+                excluded_occurrence=parts[5],
+                source_sibling_kind=parts[6],
+                source_sibling_label=parts[7],
+            )
         return RawSelector(original)
     if original.startswith(f"TEXT_EXCEPT_PHRASE{US}"):
         parts = original.split(US, 2)
