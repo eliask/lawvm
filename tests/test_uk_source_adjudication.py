@@ -2129,6 +2129,27 @@ def test_classify_uk_manual_compile_frontier_marks_whole_act_text_patch_candidat
     assert result["rule_id"] == "uk_manual_frontier_whole_act_word_level_text_patch_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_partial_whole_act_repeal_candidate() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="repealed in part",
+        source_pathology="",
+        extracted_tag="P1",
+        extracted_text="42 The whole Act (other than sections 13 and 16) is repealed.",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_partial_whole_act_repeal_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_partial_whole_act_repeal_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_appropriate_place_manual() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",

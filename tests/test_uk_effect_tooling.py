@@ -99,6 +99,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_labeled_child_end_range_candidate",
         "uk_manual_frontier_mixed_body_heading_text_substitution_split",
         "uk_manual_frontier_parser_or_extraction_candidate",
+        "uk_manual_frontier_partial_whole_act_repeal_candidate",
         "uk_manual_frontier_range_to_container_candidate",
         "uk_manual_frontier_relative_other_place_occurrence_candidate",
         "uk_manual_frontier_referent_qualified_text_substitution_candidate",
@@ -600,6 +601,10 @@ def test_uk_manual_compile_evidence_jsonl_templates_source_target_reconciliation
         (
             "uk_manual_frontier_unquoted_preimage_substitution_source_insufficient",
             "source_acquisition_or_payload_extraction",
+        ),
+        (
+            "uk_manual_frontier_partial_whole_act_repeal_candidate",
+            "whole_act_repeal_with_exceptions",
         ),
         (
             "uk_manual_frontier_table_appropriate_place_candidate",

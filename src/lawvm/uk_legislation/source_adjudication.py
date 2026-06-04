@@ -323,6 +323,11 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "uk_manual_frontier_whole_act_word_level_text_patch_candidate",
         "The source/effect row claims a non-simple word-level text rewrite across the whole Act; a claim or future compiler must own document-wide scope, exclusions, and title/short-title boundaries instead of sending it to ordinary replay.",
     ),
+    "partial_whole_act_repeal_unsupported": _ManualFrontierClassification(
+        "manual_compile_candidate",
+        "uk_manual_frontier_partial_whole_act_repeal_candidate",
+        "The source repeals the whole Act except named provisions; a claim or future compiler must prove the exception set, target enumeration, applicability, and mutation boundary before replay can apply the broad negative scope.",
+    ),
     "savings_qualified_text_omission_unsupported": _ManualFrontierClassification(
         "manual_compile_candidate",
         "uk_manual_frontier_savings_qualified_text_omission_candidate",
@@ -3164,6 +3169,18 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
                 "The effect row names the whole Act but has no effect type; replay "
                 "must not infer a destructive whole-Act text/tree action from "
                 "incidental source wording."
+            ),
+        }
+
+    if "uk_effect_partial_whole_act_repeal_rejected" in blocking_rules:
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_partial_whole_act_repeal_candidate",
+            "reason": (
+                "The source repeals the whole Act except named provisions; "
+                "replay cannot safely expand that broad negative scope until "
+                "a claim or future compiler proves the exception set, target "
+                "enumeration, applicability, and mutation boundary."
             ),
         }
 

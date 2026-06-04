@@ -149,6 +149,16 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_preserves_affected_statute_text_state",
         ),
     },
+    "uk_manual_frontier_partial_whole_act_repeal_candidate": {
+        "candidate_operation_family": "whole_act_repeal_with_exceptions",
+        "required_validator_checks": (
+            "source_witness_names_whole_act_repeal_and_exception_set",
+            "claim_enumerates_repealed_targets_excluding_named_exceptions",
+            "claim_preserves_named_exception_provisions",
+            "claim_proves_temporal_extent_applicability_for_broad_repeal",
+            "changed_paths_are_within_whole_act_minus_exception_boundary",
+        ),
+    },
     "uk_manual_frontier_external_act_target_out_of_scope": {
         "candidate_operation_family": "non_textual_or_out_of_scope",
         "required_validator_checks": (
