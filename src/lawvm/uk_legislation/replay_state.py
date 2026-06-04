@@ -46,6 +46,7 @@ class VersionedNodeLookup(NamedTuple):
 TargetLookupKey: TypeAlias = tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]
 # Key: (id(root_node), kind, label) → (serial, tuple-of-matches capped at 2)
 _RecursiveMatchAllKey: TypeAlias = tuple[int, str, str]
+_NodeTreePathIndex: TypeAlias = dict[int, tuple[UKMutableNode, TreePath]]
 _NodeStructuralShape: TypeAlias = tuple[
     object,
     Optional[str],
@@ -112,6 +113,7 @@ class UKReplayStateMixin:
     _target_lookup_cache: dict[TargetLookupKey, VersionedNodeLookup]
     _recursive_match_cache: dict[tuple[int, str, str], VersionedNodeLookup]
     _recursive_match_all_cache: dict[_RecursiveMatchAllKey, tuple[int, tuple[UKCanonicalNodeMatch, ...]]]
+    _node_tree_path_index: Optional[_NodeTreePathIndex]
 
     def _note_structure_mutation(self) -> None:
         self._structure_mutation_serial += 1
@@ -140,6 +142,7 @@ class UKReplayStateMixin:
         self._eid_suffix_lookup_index = None
         self._eid_suffix_lookup_ambiguous = set()
         self._eid_search_cache.clear()
+        self._node_tree_path_index = None
 
     def _cached_eid_search_lookup(
         self,
@@ -202,6 +205,83 @@ class UKReplayStateMixin:
             parent,
             idx,
         )
+
+    def _index_node_tree_path_subtree(
+        self,
+        node: UKMutableNode,
+        path: TreePath,
+        index: _NodeTreePathIndex,
+    ) -> None:
+        index[id(node)] = (node, path)
+        for child in node.children:
+            child_path = path + ((_kind_str(child.kind), child.label or ""),)
+            self._index_node_tree_path_subtree(child, child_path, index)
+
+    def _ensure_node_tree_path_index(self) -> _NodeTreePathIndex:
+        if self._node_tree_path_index is not None:
+            return self._node_tree_path_index
+        index: _NodeTreePathIndex = {}
+        self._index_node_tree_path_subtree(self.statute.body, (), index)
+        for supplement in self.statute.supplements:
+            supplement_path = ((_kind_str(supplement.kind), supplement.label or ""),)
+            self._index_node_tree_path_subtree(supplement, supplement_path, index)
+        self._node_tree_path_index = index
+        return index
+
+    def _cached_node_tree_path(self, node: UKMutableNode) -> TreePath | None:
+        entry = self._ensure_node_tree_path_index().get(id(node))
+        if entry is None:
+            return None
+        cached_node, path = entry
+        if cached_node is node:
+            return path
+        self._ensure_node_tree_path_index().pop(id(node), None)
+        return None
+
+    def _cached_node_tree_path_if_indexed(self, node: UKMutableNode) -> TreePath | None:
+        if self._node_tree_path_index is None:
+            return None
+        entry = self._node_tree_path_index.get(id(node))
+        if entry is None:
+            return None
+        cached_node, path = entry
+        if cached_node is node:
+            return path
+        self._node_tree_path_index.pop(id(node), None)
+        return None
+
+    def _remove_node_tree_path_subtree(self, node: UKMutableNode) -> None:
+        if self._node_tree_path_index is None:
+            return
+        stack = [node]
+        while stack:
+            current = stack.pop()
+            entry = self._node_tree_path_index.get(id(current))
+            if entry is not None and entry[0] is current:
+                self._node_tree_path_index.pop(id(current), None)
+            stack.extend(current.children)
+
+    def _add_node_tree_path_subtree(
+        self,
+        node: UKMutableNode,
+        parent: Optional[UKMutableNode],
+    ) -> None:
+        if self._node_tree_path_index is None:
+            return
+        if node is self.statute.body:
+            path: TreePath = ()
+        elif parent is not None:
+            parent_path = self._cached_node_tree_path_if_indexed(parent)
+            if parent_path is None:
+                self._node_tree_path_index = None
+                return
+            path = parent_path + ((_kind_str(node.kind), node.label or ""),)
+        elif any(supplement is node for supplement in self.statute.supplements):
+            path = ((_kind_str(node.kind), node.label or ""),)
+        else:
+            self._node_tree_path_index = None
+            return
+        self._index_node_tree_path_subtree(node, path, self._node_tree_path_index)
 
     def _node_contains_node(self, root: UKMutableNode, target: UKMutableNode) -> bool:
         if root is target:
@@ -519,6 +599,7 @@ class UKReplayStateMixin:
         return _MISSING_NODE_LOOKUP
 
     def _remove_eid_lookup_subtree(self, node: UKMutableNode) -> None:
+        self._remove_node_tree_path_subtree(node)
         if self._eid_lookup_index is None:
             return
         stack = [node]
@@ -541,6 +622,7 @@ class UKReplayStateMixin:
         parent: Optional[UKMutableNode],
         idx: Optional[int],
     ) -> None:
+        self._add_node_tree_path_subtree(node, parent)
         if self._eid_lookup_index is None:
             return
         if self._eid_suffix_lookup_index is None:
@@ -721,9 +803,15 @@ class UKReplayStateMixin:
     def _tree_path_for_mutable_node(self, node: UKMutableNode) -> TreePath | None:
         if self.statute.body is node:
             return ()
+        cached_path = self._cached_node_tree_path_if_indexed(node)
+        if cached_path is not None:
+            return cached_path
         indexed_path = self._tree_path_for_mutable_node_from_parent_index(node)
         if indexed_path is not None:
             return indexed_path
+        cached_path = self._cached_node_tree_path(node)
+        if cached_path is not None:
+            return cached_path
         found = self._find_tree_path_to_node(self.statute.body, node)
         if found is not None:
             return found

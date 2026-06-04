@@ -81,6 +81,7 @@ class UKReplayExecutor(
         self._target_lookup_cache = {}
         self._recursive_match_cache = {}
         self._recursive_match_all_cache = {}
+        self._node_tree_path_index = None
 
     def _log(self, message: str) -> None:
         if self.verbose:

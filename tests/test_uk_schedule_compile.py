@@ -69044,6 +69044,90 @@ def test_executor_remove_mutation_event_uses_known_parent_path(
     assert event.parent_path == ()
 
 
+def test_executor_tree_path_index_updates_after_child_insert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2000/22",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="1", text="", children=()),
+            ),
+        ),
+        supplements=(),
+    )
+    mutation_events: list[Any] = []
+    executor: Any = UKReplayExecutor(
+        statute,
+        adjudications_out=[],
+        mutation_events_out=mutation_events,
+    )
+    parent = executor.statute.body.children[0]
+    assert executor._tree_path_for_mutable_node(parent) == (("section", "1"),)
+    node = UKMutableNode(kind=IRNodeKind.SUBSECTION, label="1", text="")
+    parent.children.append(node)
+    executor._current_mutation_op = LegalOperation(
+        op_id="uk_test_tree_path_index_insert",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "1"), ("subsection", "1"))),
+        payload=IRNode(kind=IRNodeKind.SUBSECTION, label="1", text=""),
+        source=OperationSource(statute_id="uk_test", title="Test Source"),
+    )
+    executor._record_child_inserted(parent, node)
+
+    def fail_recursive_scan(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("updated path index should avoid recursive scan")
+
+    monkeypatch.setattr(executor, "_find_tree_path_to_node", fail_recursive_scan)
+
+    assert executor._tree_path_for_mutable_node(node) == (
+        ("section", "1"),
+        ("subsection", "1"),
+    )
+
+
+def test_executor_tree_path_index_removes_deleted_subtree() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2000/22",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="1", text="", children=()),
+            ),
+        ),
+        supplements=(),
+    )
+    mutation_events: list[Any] = []
+    executor: Any = UKReplayExecutor(
+        statute,
+        adjudications_out=[],
+        mutation_events_out=mutation_events,
+    )
+    node = executor.statute.body.children[0]
+    assert executor._tree_path_for_mutable_node(node) == (("section", "1"),)
+    executor._current_mutation_op = LegalOperation(
+        op_id="uk_test_tree_path_index_remove",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("section", "1"),)),
+        payload=None,
+        source=OperationSource(statute_id="uk_test", title="Test Source"),
+    )
+
+    assert executor._remove_node(node, executor.statute.body, 0) is True
+
+    assert executor._cached_node_tree_path_if_indexed(node) is None
+    assert executor.statute.body.children == []
+
+
 def test_target_resolution_address_uses_indexed_path_resolver() -> None:
     statute = IRStatute(
         statute_id="ukpga/2000/22",
