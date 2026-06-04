@@ -736,6 +736,24 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         for r in scored
         if int(r.get("n_oracle") or 0) == 0 and int(r.get("n_replay") or 0) > 0
     ]
+    zero_oracle_retention_reasons = Counter(
+        reason
+        for row in zero_oracle_retention
+        for reason in _zero_oracle_retention_reasons_for_row(row)
+    )
+    zero_oracle_retention_reason_statutes: dict[str, list[str]] = {}
+    for row in zero_oracle_retention:
+        statute_id = str(row.get("statute_id") or "")
+        if not statute_id:
+            continue
+        for reason in _zero_oracle_retention_reasons_for_row(row):
+            zero_oracle_retention_reason_statutes.setdefault(reason, []).append(
+                statute_id
+            )
+    zero_oracle_retention_reason_statutes = {
+        reason: sorted(statute_ids)
+        for reason, statute_ids in sorted(zero_oracle_retention_reason_statutes.items())
+    }
     triage_buckets = Counter(_triage_bucket_for_row(r) for r in results)
     triage_bucket_statutes = _triage_bucket_statutes(results)
     manual_frontier_status_counts = _aggregate_row_count_maps(
@@ -1098,6 +1116,12 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             int(r.get("n_zero_oracle_retention_eids") or r.get("n_replay") or 0)
             for r in zero_oracle_retention
         ),
+        "zero_oracle_retention_reasons": dict(
+            sorted(zero_oracle_retention_reasons.items())
+        ),
+        "zero_oracle_retention_reason_statutes": (
+            zero_oracle_retention_reason_statutes
+        ),
     }
 
 
@@ -1184,6 +1208,11 @@ def _annotate_row_work_selection(row: dict[str, Any]) -> dict[str, Any]:
         source_chain_reasons[0] if source_chain_reasons else ""
     )
     row["source_chain_frontier_reasons"] = list(source_chain_reasons)
+    zero_oracle_reasons = _zero_oracle_retention_reasons_for_row(row)
+    row["zero_oracle_retention_reason"] = (
+        zero_oracle_reasons[0] if zero_oracle_reasons else ""
+    )
+    row["zero_oracle_retention_reasons"] = list(zero_oracle_reasons)
     row["agreement_residual"] = _agreement_residual_for_row(row).to_dict()
     return row
 
@@ -1529,12 +1558,37 @@ def _source_chain_frontier_reasons_for_row(row: dict[str, Any]) -> tuple[str, ..
             reasons.append("effect_rows_missing_structural_payload")
         else:
             reasons.append("effect_rows_nonreplayable")
+    if _has_effect_feed_absent_record(row):
+        reasons.append("effect_feed_pages_absent")
+    if _has_empty_effect_feed_record(row):
+        reasons.append("effect_feed_empty")
     if _has_replay_lens_or_source_insufficient_only_manual_frontier(row):
         reasons.append("effect_rows_not_admitted_by_replay_lens")
     if _has_manual_frontier_source_insufficient_record(row):
         reasons.append("manual_frontier_source_insufficient")
     if _has_manual_frontier_source_chain_text_patch_gap(row):
         reasons.append("manual_frontier_source_chain_text_patch_gap")
+    return tuple(dict.fromkeys(reasons))
+
+
+def _zero_oracle_retention_reasons_for_row(row: dict[str, Any]) -> tuple[str, ...]:
+    """Explain zero-oracle rows without treating the oracle as replay authority."""
+    if int(row.get("n_oracle") or 0) != 0 or int(row.get("n_replay") or 0) <= 0:
+        return ()
+    reasons: list[str] = []
+    if _has_effect_feed_absent_record(row):
+        reasons.append("effect_feed_pages_absent")
+    if _has_empty_effect_feed_record(row):
+        reasons.append("effect_feed_empty")
+    oracle_status = str(row.get("oracle_source_status") or "")
+    if oracle_status and oracle_status != "available":
+        reasons.append(f"oracle_{oracle_status}")
+    elif bool(row.get("oracle_source_has_body")) or bool(
+        row.get("oracle_source_has_schedules")
+    ):
+        reasons.append("oracle_current_projection_no_live_eids")
+    else:
+        reasons.append("oracle_current_projection_no_structural_eids")
     return tuple(dict.fromkeys(reasons))
 
 
@@ -2404,6 +2458,14 @@ def run_driver(
                 f"{summary['zero_oracle_retention_count']} rows / "
                 f"{summary['zero_oracle_retention_eids']} replay eIds"
             )
+            if summary["zero_oracle_retention_reasons"]:
+                reasons = ", ".join(
+                    f"{reason}={count}"
+                    for reason, count in summary[
+                        "zero_oracle_retention_reasons"
+                    ].items()
+                )
+                print(f"  zero_oracle_retention_reasons: {reasons}")
     else:
         print(
             f"\nScored 0 / {len(results)}  source_frontier={len(source_frontier)}  "

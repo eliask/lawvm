@@ -462,6 +462,12 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
     assert summary["zero_oracle_retention_count"] == 1
     assert summary["zero_oracle_retention_statutes"] == ["ukpga/1938/22"]
     assert summary["zero_oracle_retention_eids"] == 420
+    assert summary["zero_oracle_retention_reasons"] == {
+        "oracle_current_projection_no_structural_eids": 1
+    }
+    assert summary["zero_oracle_retention_reason_statutes"] == {
+        "oracle_current_projection_no_structural_eids": ["ukpga/1938/22"]
+    }
     assert summary["comparison_core_count"] == 2
     assert summary["comparison_core_statutes"] == [
         "ukpga/1986/61",
@@ -1615,6 +1621,56 @@ def test_summarize_results_aggregates_manual_frontier_authorization() -> None:
     }
     assert summary["manual_frontier_work_item_missing_candidate_operation_family_count"] == 4
     assert summary["manual_frontier_work_item_missing_required_validator_checks_count"] == 5
+
+
+def test_zero_oracle_retention_reasons_surface_effect_feed_gaps() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1979/6",
+                "score_status": "scored",
+                "aligned": 0.0,
+                "n_replay": 72,
+                "n_oracle": 0,
+                "n_zero_oracle_retention_eids": 72,
+                "oracle_source_status": "available",
+                "oracle_source_has_body": True,
+                "compile_rejection_rule_counts": {
+                    "uk_effect_feed_empty_recorded": 1,
+                },
+            },
+            {
+                "statute_id": "uksi/2006/3221",
+                "score_status": "scored",
+                "aligned": 0.0,
+                "n_replay": 280,
+                "n_oracle": 0,
+                "n_zero_oracle_retention_eids": 280,
+                "oracle_source_status": "available",
+                "compile_rejection_rule_counts": {
+                    "uk_effect_feed_pages_absent_recorded": 1,
+                },
+            },
+        ]
+    )
+
+    assert summary["zero_oracle_retention_reasons"] == {
+        "effect_feed_empty": 1,
+        "effect_feed_pages_absent": 1,
+        "oracle_current_projection_no_live_eids": 1,
+        "oracle_current_projection_no_structural_eids": 1,
+    }
+    assert summary["zero_oracle_retention_reason_statutes"] == {
+        "effect_feed_empty": ["ukpga/1979/6"],
+        "effect_feed_pages_absent": ["uksi/2006/3221"],
+        "oracle_current_projection_no_live_eids": ["ukpga/1979/6"],
+        "oracle_current_projection_no_structural_eids": ["uksi/2006/3221"],
+    }
+    assert summary["source_chain_frontier_reasons"] == {
+        "effect_feed_empty": 1,
+        "effect_feed_pages_absent": 1,
+    }
+    assert summary["non_manual_source_chain_frontier_count"] == 0
 
 
 def test_compile_rejection_bucket_ignores_nonblocking_observations() -> None:
