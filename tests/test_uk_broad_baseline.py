@@ -2099,6 +2099,43 @@ def test_report_from_snapshot_fail_flags_use_recomputed_summary(tmp_path) -> Non
     assert report["summary"]["active_unclassified_residual_count"] == 1
 
 
+def test_report_from_snapshot_can_fail_on_mutation_boundary_unexplained(
+    tmp_path,
+) -> None:
+    snapshot_path = tmp_path / "snapshot.json"
+    report_path = tmp_path / "report.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "ukpga/2000/8": {
+                    "statute_id": "ukpga/2000/8",
+                    "score_status": "scored",
+                    "aligned": 99.0,
+                    "aligned_excluding_grounding_collateral": 99.0,
+                    "unaligned": 99.0,
+                    "n_replay": 100,
+                    "n_oracle": 100,
+                    "n_mutation_boundary_unexplained_reports": 1,
+                    "n_mutation_boundary_unexplained_paths": 2,
+                }
+            }
+        )
+    )
+
+    assert (
+        uk_broad_baseline.run_report_from_snapshot(
+            snapshot_path,
+            report_path,
+            fail_on_mutation_boundary_unexplained=True,
+        )
+        == 1
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["summary"]["mutation_boundary_unexplained_report_count"] == 1
+    assert report["summary"]["mutation_boundary_unexplained_path_count"] == 2
+
+
 def test_main_report_from_snapshot_requires_out_report(tmp_path, capsys) -> None:
     snapshot_path = tmp_path / "snapshot.json"
     snapshot_path.write_text("{}")
@@ -2220,6 +2257,41 @@ def test_run_driver_can_fail_on_deterministic_frontend_candidates(
         "deterministic_frontend_candidate_rule_counts: "
         "uk_manual_frontier_table_entry_candidate=1"
     ) in out
+
+
+def test_run_driver_can_fail_on_mutation_boundary_unexplained(
+    monkeypatch,
+    capsys,
+) -> None:
+    def fake_run(*_args, **_kwargs):
+        row = {
+            "statute_id": "ukpga/2000/8",
+            "score_status": "scored",
+            "aligned": 99.0,
+            "aligned_excluding_grounding_collateral": 99.0,
+            "unaligned": 99.0,
+            "n_replay": 100,
+            "n_oracle": 100,
+            "n_mutation_events": 3,
+            "n_mutation_boundary_reports": 3,
+            "n_mutation_boundary_unexplained_reports": 1,
+            "n_mutation_boundary_unexplained_paths": 2,
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["ukpga/2000/8"],
+            None,
+            fail_on_mutation_boundary_unexplained=True,
+        )
+        == 1
+    )
+    out = capsys.readouterr().out
+    assert "mutation_boundary: events=3 reports=3 unexplained_reports=1" in out
+    assert "unexplained_paths=2" in out
 
 
 def test_run_driver_can_fail_on_manual_frontier_template_gaps(monkeypatch, capsys) -> None:

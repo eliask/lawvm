@@ -2409,6 +2409,7 @@ def _hard_gate_exit_code(
     fail_on_frontier_work_item_gaps: bool = False,
     fail_on_deterministic_frontend_candidates: bool = False,
     fail_on_non_manual_source_chain_frontier: bool = False,
+    fail_on_mutation_boundary_unexplained: bool = False,
 ) -> int:
     if (
         fail_on_active_unclassified_residuals
@@ -2435,6 +2436,11 @@ def _hard_gate_exit_code(
         and summary["non_manual_source_chain_frontier_count"]
     ):
         return 1
+    if fail_on_mutation_boundary_unexplained and (
+        summary["mutation_boundary_unexplained_report_count"]
+        or summary["mutation_boundary_unexplained_path_count"]
+    ):
+        return 1
     return 0
 
 
@@ -2447,6 +2453,7 @@ def run_report_from_snapshot(
     fail_on_frontier_work_item_gaps: bool = False,
     fail_on_deterministic_frontend_candidates: bool = False,
     fail_on_non_manual_source_chain_frontier: bool = False,
+    fail_on_mutation_boundary_unexplained: bool = False,
 ) -> int:
     """Regenerate the typed report envelope from a saved raw snapshot.
 
@@ -2485,6 +2492,9 @@ def run_report_from_snapshot(
         fail_on_non_manual_source_chain_frontier=(
             fail_on_non_manual_source_chain_frontier
         ),
+        fail_on_mutation_boundary_unexplained=(
+            fail_on_mutation_boundary_unexplained
+        ),
     )
 
 
@@ -2499,6 +2509,7 @@ def run_driver(
     fail_on_frontier_work_item_gaps: bool = False,
     fail_on_deterministic_frontend_candidates: bool = False,
     fail_on_non_manual_source_chain_frontier: bool = False,
+    fail_on_mutation_boundary_unexplained: bool = False,
 ) -> int:
     workers = max(1, int(parallel or 1))
     indexed_results: list[tuple[int, dict[str, Any]]] = []
@@ -3043,6 +3054,11 @@ def run_driver(
         and summary["non_manual_source_chain_frontier_count"]
     ):
         return 1
+    if fail_on_mutation_boundary_unexplained and (
+        summary["mutation_boundary_unexplained_report_count"]
+        or summary["mutation_boundary_unexplained_path_count"]
+    ):
+        return 1
     return 0
 
 
@@ -3143,6 +3159,14 @@ def main(argv: list[str] | None = None) -> int:
             "manual-frontier source-insufficient work"
         ),
     )
+    ap.add_argument(
+        "--fail-on-mutation-boundary-unexplained",
+        action="store_true",
+        help=(
+            "Exit nonzero when mutation-boundary accounting reports "
+            "unexplained reports or paths"
+        ),
+    )
     args = ap.parse_args(argv)
     if args.parallel < 1:
         print("error: --parallel must be a positive integer", file=sys.stderr)
@@ -3175,6 +3199,9 @@ def main(argv: list[str] | None = None) -> int:
             fail_on_non_manual_source_chain_frontier=(
                 args.fail_on_non_manual_source_chain_frontier
             ),
+            fail_on_mutation_boundary_unexplained=(
+                args.fail_on_mutation_boundary_unexplained
+            ),
         )
 
     ids: list[str] = []
@@ -3199,6 +3226,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
         fail_on_non_manual_source_chain_frontier=(
             args.fail_on_non_manual_source_chain_frontier
+        ),
+        fail_on_mutation_boundary_unexplained=(
+            args.fail_on_mutation_boundary_unexplained
         ),
     )
 
