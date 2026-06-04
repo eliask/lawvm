@@ -2674,6 +2674,7 @@ def _hard_gate_exit_code(
     fail_on_frontier_work_item_packet_gaps: bool = False,
     fail_on_frontier_candidate_set_gaps: bool = False,
     fail_on_frontier_source_witness_gaps: bool = False,
+    fail_on_source_frontier_work_item_gaps: bool = False,
 ) -> int:
     if fail_on_completion_gaps and _completion_gate_failure_counts(summary):
         return 1
@@ -2719,6 +2720,11 @@ def _hard_gate_exit_code(
         summary
     ):
         return 1
+    if (
+        fail_on_source_frontier_work_item_gaps
+        and _source_frontier_work_item_gap_count(summary)
+    ):
+        return 1
     return 0
 
 
@@ -2760,6 +2766,9 @@ def _completion_gate_failure_counts(summary: Mapping[str, Any]) -> dict[str, int
         ),
         "frontier_candidate_set_gaps": _frontier_candidate_set_gap_count(summary),
         "frontier_source_witness_gaps": _frontier_source_witness_gap_count(summary),
+        "source_frontier_work_item_gaps": _source_frontier_work_item_gap_count(
+            summary
+        ),
     }
     return {key: count for key, count in counts.items() if count}
 
@@ -2810,6 +2819,30 @@ def _frontier_source_witness_gap_count(summary: Mapping[str, Any]) -> int:
     )
 
 
+def _source_frontier_work_item_gap_count(summary: Mapping[str, Any]) -> int:
+    family_counts = summary.get("source_frontier_work_item_family_counts")
+    status_counts = summary.get("source_frontier_work_item_authorization_status_counts")
+    proof_counts = summary.get("source_frontier_work_item_missing_proof_counts")
+    digest_counts = summary.get(
+        "source_frontier_source_witness_digest_coverage_counts"
+    )
+    family_counts = family_counts if isinstance(family_counts, Mapping) else {}
+    status_counts = status_counts if isinstance(status_counts, Mapping) else {}
+    proof_counts = proof_counts if isinstance(proof_counts, Mapping) else {}
+    digest_counts = digest_counts if isinstance(digest_counts, Mapping) else {}
+    return (
+        int(family_counts.get("__missing_work_item__", 0) or 0)
+        + int(status_counts.get("__missing_work_item__", 0) or 0)
+        + int(proof_counts.get("__missing_work_item__", 0) or 0)
+        + sum(
+            int(count or 0)
+            for coverage, count in digest_counts.items()
+            if str(coverage).endswith(":missing_source_witness")
+            or str(coverage).endswith(":missing_digest")
+        )
+    )
+
+
 def run_report_from_snapshot(
     snapshot_path: Path,
     out_report: Path,
@@ -2824,6 +2857,7 @@ def run_report_from_snapshot(
     fail_on_frontier_work_item_packet_gaps: bool = False,
     fail_on_frontier_candidate_set_gaps: bool = False,
     fail_on_frontier_source_witness_gaps: bool = False,
+    fail_on_source_frontier_work_item_gaps: bool = False,
 ) -> int:
     """Regenerate the typed report envelope from a saved raw snapshot.
 
@@ -2871,6 +2905,9 @@ def run_report_from_snapshot(
         ),
         fail_on_frontier_candidate_set_gaps=fail_on_frontier_candidate_set_gaps,
         fail_on_frontier_source_witness_gaps=fail_on_frontier_source_witness_gaps,
+        fail_on_source_frontier_work_item_gaps=(
+            fail_on_source_frontier_work_item_gaps
+        ),
     )
 
 
@@ -2890,6 +2927,7 @@ def run_driver(
     fail_on_frontier_work_item_packet_gaps: bool = False,
     fail_on_frontier_candidate_set_gaps: bool = False,
     fail_on_frontier_source_witness_gaps: bool = False,
+    fail_on_source_frontier_work_item_gaps: bool = False,
 ) -> int:
     workers = max(1, int(parallel or 1))
     indexed_results: list[tuple[int, dict[str, Any]]] = []
@@ -3501,6 +3539,11 @@ def run_driver(
         summary
     ):
         return 1
+    if (
+        fail_on_source_frontier_work_item_gaps
+        and _source_frontier_work_item_gap_count(summary)
+    ):
+        return 1
     return 0
 
 
@@ -3641,6 +3684,14 @@ def main(argv: list[str] | None = None) -> int:
             "witnesses or source/preview digest coverage"
         ),
     )
+    ap.add_argument(
+        "--fail-on-source-frontier-work-item-gaps",
+        action="store_true",
+        help=(
+            "Exit nonzero when source-frontier rows lack non-executable "
+            "work-item packets or digest-backed source witnesses"
+        ),
+    )
     args = ap.parse_args(argv)
     if args.parallel < 1:
         print("error: --parallel must be a positive integer", file=sys.stderr)
@@ -3686,6 +3737,9 @@ def main(argv: list[str] | None = None) -> int:
             fail_on_frontier_source_witness_gaps=(
                 args.fail_on_frontier_source_witness_gaps
             ),
+            fail_on_source_frontier_work_item_gaps=(
+                args.fail_on_source_frontier_work_item_gaps
+            ),
         )
 
     ids: list[str] = []
@@ -3723,6 +3777,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
         fail_on_frontier_source_witness_gaps=(
             args.fail_on_frontier_source_witness_gaps
+        ),
+        fail_on_source_frontier_work_item_gaps=(
+            args.fail_on_source_frontier_work_item_gaps
         ),
     )
 

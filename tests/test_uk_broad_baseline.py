@@ -2409,6 +2409,101 @@ def test_report_from_snapshot_can_fail_on_frontier_source_witness_gaps(
     ] == {"missing_digest": 1}
 
 
+def test_report_from_snapshot_can_fail_on_source_frontier_work_item_gaps(
+    tmp_path,
+) -> None:
+    snapshot_path = tmp_path / "snapshot.json"
+    report_path = tmp_path / "report.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "ukpga/1850/102": {
+                    "statute_id": "ukpga/1850/102",
+                    "score_status": "source_frontier",
+                    "source_frontier_reason": "base_and_oracle_metadata_only",
+                    "base_source_status": "metadata_only",
+                    "oracle_source_status": "metadata_only",
+                }
+            }
+        )
+    )
+
+    assert (
+        uk_broad_baseline.run_report_from_snapshot(
+            snapshot_path,
+            report_path,
+            fail_on_source_frontier_work_item_gaps=True,
+        )
+        == 1
+    )
+
+    summary = json.loads(report_path.read_text())["summary"]
+    assert summary["source_frontier_work_item_family_counts"] == {
+        "uk_source_frontier_base_and_oracle_metadata_only": 1,
+    }
+    assert summary["source_frontier_work_item_authorization_status_counts"] == {
+        "source_footing_gap": 1,
+    }
+    assert summary["source_frontier_source_witness_digest_coverage_counts"] == {
+        "base:missing_source_witness": 1,
+        "oracle:missing_source_witness": 1,
+    }
+    assert summary["completion_gate_failure_counts"] == {
+        "source_frontier_work_item_gaps": 2,
+    }
+
+
+def test_report_from_snapshot_allows_digest_backed_source_frontier_work_item(
+    tmp_path,
+) -> None:
+    snapshot_path = tmp_path / "snapshot.json"
+    report_path = tmp_path / "report.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "ukpga/1850/102": {
+                    "statute_id": "ukpga/1850/102",
+                    "score_status": "source_frontier",
+                    "source_frontier_reason": "base_and_oracle_metadata_only",
+                    "base_source_status": "metadata_only",
+                    "oracle_source_status": "metadata_only",
+                    "base_source_witness": {
+                        "source_role": "uk_broad_base_source",
+                        "digest": "base-digest",
+                        "preview_digest": "base-preview-digest",
+                    },
+                    "oracle_source_witness": {
+                        "source_role": "uk_broad_oracle_source",
+                        "digest": "oracle-digest",
+                        "preview_digest": "oracle-preview-digest",
+                    },
+                }
+            }
+        )
+    )
+
+    assert (
+        uk_broad_baseline.run_report_from_snapshot(
+            snapshot_path,
+            report_path,
+            fail_on_completion_gaps=True,
+            fail_on_source_frontier_work_item_gaps=True,
+        )
+        == 0
+    )
+
+    summary = json.loads(report_path.read_text())["summary"]
+    assert summary["source_frontier_work_item_family_counts"] == {
+        "uk_source_frontier_base_and_oracle_metadata_only": 1,
+    }
+    assert summary["source_frontier_source_witness_digest_coverage_counts"] == {
+        "base:artifact_and_preview_digest": 1,
+        "oracle:artifact_and_preview_digest": 1,
+    }
+    assert summary["completion_gate_clean"] is True
+    assert summary["completion_gate_failure_counts"] == {}
+
+
 def test_main_report_from_snapshot_requires_out_report(tmp_path, capsys) -> None:
     snapshot_path = tmp_path / "snapshot.json"
     snapshot_path.write_text("{}")
@@ -2789,6 +2884,41 @@ def test_run_driver_can_fail_on_frontier_source_witness_gaps(
     assert (
         "manual_frontier_work_item_source_witness_digest_coverage_counts: "
         "missing_digest=1"
+    ) in out
+
+
+def test_run_driver_can_fail_on_source_frontier_work_item_gaps(
+    monkeypatch,
+    capsys,
+) -> None:
+    def fake_run(*_args, **_kwargs):
+        row = {
+            "statute_id": "ukpga/1850/102",
+            "score_status": "source_frontier",
+            "source_frontier_reason": "base_and_oracle_metadata_only",
+            "base_source_status": "metadata_only",
+            "oracle_source_status": "metadata_only",
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["ukpga/1850/102"],
+            None,
+            fail_on_source_frontier_work_item_gaps=True,
+        )
+        == 1
+    )
+    out = capsys.readouterr().out
+    assert (
+        "source_frontier_work_item_family_counts: "
+        "uk_source_frontier_base_and_oracle_metadata_only=1"
+    ) in out
+    assert (
+        "source_frontier_source_witness_digest_coverage_counts: "
+        "base:missing_source_witness=1, oracle:missing_source_witness=1"
     ) in out
 
 
