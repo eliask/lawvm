@@ -77,6 +77,61 @@ def _normalize_label(value: str) -> str:
     return " ".join(value.replace("§", "").split()).strip()
 
 
+def _label_match_key(value: str) -> str:
+    normalized = _normalize_label(value).strip().strip(".").lower()
+    if normalized.isdecimal():
+        return str(int(normalized))
+    roman = _roman_to_int(normalized)
+    if roman is not None:
+        return str(roman)
+    return normalized
+
+
+def _labels_match(source_label: str, requested_label: str) -> bool:
+    if _normalize_label(source_label) == _normalize_label(requested_label):
+        return True
+    return _label_match_key(source_label) == _label_match_key(requested_label)
+
+
+def _roman_to_int(value: str) -> int | None:
+    if not value or any(ch not in _ROMAN_VALUES for ch in value.upper()):
+        return None
+    total = 0
+    previous = 0
+    for ch in reversed(value.upper()):
+        current = _ROMAN_VALUES[ch]
+        if current < previous:
+            total -= current
+        else:
+            total += current
+            previous = current
+    if total <= 0 or total > 50 or _int_to_roman(total).lower() != value.lower():
+        return None
+    return total
+
+
+def _int_to_roman(value: int) -> str:
+    pairs = (
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    )
+    remaining = value
+    out: list[str] = []
+    for amount, token in pairs:
+        while remaining >= amount:
+            out.append(token)
+            remaining -= amount
+    return "".join(out)
+
+
+_ROMAN_VALUES = {"I": 1, "V": 5, "X": 10, "L": 50}
+
+
 def _nearest_ancestor(node: etree._Element, kind: str) -> Optional[etree._Element]:
     current = node.getparent()
     while current is not None:
@@ -107,18 +162,18 @@ def _matches_address(node: etree._Element, parts: list[_AddressPart]) -> bool:
         return False
     if (
         not _address_kind_matches(node, "section")
-        or _normalize_label(_num_text(node)) != _normalize_label(section_part.label)
+        or not _labels_match(_num_text(node), section_part.label)
     ):
         return False
     chapter_part = next((part for part in parts if part.kind == "chapter"), None)
     if chapter_part is not None:
         chapter = _nearest_ancestor(node, "chapter")
-        if chapter is None or _normalize_label(_num_text(chapter)) != _normalize_label(chapter_part.label):
+        if chapter is None or not _labels_match(_num_text(chapter), chapter_part.label):
             return False
     part_part = next((part for part in parts if part.kind == "part"), None)
     if part_part is not None:
         part = _nearest_ancestor(node, "part")
-        if part is None or _normalize_label(_num_text(part)) != _normalize_label(part_part.label):
+        if part is None or not _labels_match(_num_text(part), part_part.label):
             return False
     return True
 
@@ -156,12 +211,12 @@ def _find_addressed_element(root: etree._Element, address: str | None) -> etree.
     else:
         nodes = root.findall(f".//{{*}}{terminal.kind}")
     for node in nodes:
-        if _normalize_label(_label_for_kind(node)) == _normalize_label(terminal.label):
+        if _labels_match(_label_for_kind(node), terminal.label):
             if terminal.kind == "chapter":
                 part_part = next((part for part in parts if part.kind == "part"), None)
                 if part_part is not None:
                     part = _nearest_ancestor(node, "part")
-                    if part is None or _normalize_label(_num_text(part)) != _normalize_label(part_part.label):
+                    if part is None or not _labels_match(_num_text(part), part_part.label):
                         continue
             return node
 

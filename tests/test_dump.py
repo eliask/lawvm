@@ -144,7 +144,7 @@ def test_dump_default_routes_uk_statute_id_to_farchive(monkeypatch, tmp_path, ca
 
 def test_source_dump_parse_routes_j_uk_to_farchive(monkeypatch, tmp_path) -> None:
     xml = b"""<Legislation xmlns='http://www.legislation.gov.uk/namespaces/legislation'>
-  <Primary><Body><P1><Pnumber>10</Pnumber><P1para><Text>Native source.</Text></P1para></P1></Body></Primary>
+  <Primary><Body><P1><Pnumber>II</Pnumber><P1para><Text>Native source.</Text></P1para></P1></Body></Primary>
 </Legislation>
 """
     db_path = tmp_path / "uk_legislation.farchive"
@@ -166,11 +166,11 @@ def test_source_dump_parse_routes_j_uk_to_farchive(monkeypatch, tmp_path) -> Non
 
     bundle = source_dump.build_uk_source_dump(
         "ukpga/2002/30",
-        "section:10",
+        "section:2",
         db_path=db_path,
     )
 
     assert bundle["jurisdiction"] == "uk"
     assert bundle["selected_kind"] == "P1"
-    assert bundle["selected_label"] == "10"
+    assert bundle["selected_label"] == "II"
     assert "Native source." in bundle["xml"]
