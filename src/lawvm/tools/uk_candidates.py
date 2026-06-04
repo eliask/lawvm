@@ -3182,22 +3182,47 @@ def _write_jsonl_rows(path: Path, rows: Sequence[Mapping[str, Any]]) -> int:
     return len(rows)
 
 
+def _attach_evidence_jsonl_report(
+    report: dict[str, Any],
+    key: str,
+    evidence_report: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if evidence_report is None:
+        return report
+    payload = dict(evidence_report)
+    report[key] = payload
+    evidence_jsonl = dict(report.get("evidence_jsonl") or {})
+    evidence_jsonl[key] = payload
+    report["evidence_jsonl"] = evidence_jsonl
+    path = str(payload.get("path") or "")
+    if path:
+        written_paths = list(report.get("written_paths") or ())
+        if path not in written_paths:
+            written_paths.append(path)
+        report["written_paths"] = written_paths
+    return report
+
+
 def _attach_replay_adjudication_evidence_report(
     report: dict[str, Any],
     evidence_report: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    if evidence_report is not None:
-        report["replay_adjudication_evidence_jsonl"] = dict(evidence_report)
-    return report
+    return _attach_evidence_jsonl_report(
+        report,
+        "replay_adjudication_evidence_jsonl",
+        evidence_report,
+    )
 
 
 def _attach_residual_claim_evidence_report(
     report: dict[str, Any],
     evidence_report: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    if evidence_report is not None:
-        report["residual_claim_evidence_jsonl"] = dict(evidence_report)
-    return report
+    return _attach_evidence_jsonl_report(
+        report,
+        "residual_claim_evidence_jsonl",
+        evidence_report,
+    )
 
 
 def _format_replay_adjudication_evidence_report(

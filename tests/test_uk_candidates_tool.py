@@ -4798,6 +4798,10 @@ def test_uk_candidates_fast_json_exports_replay_adjudication_evidence_jsonl(
         "rows": 1,
         "kinds": ["text_duplication_warning"],
     }
+    assert payload["evidence_jsonl"]["replay_adjudication_evidence_jsonl"] == (
+        payload["replay_adjudication_evidence_jsonl"]
+    )
+    assert str(out_path) in payload["written_paths"]
     assert evidence_rows[0]["schema"] == "lawvm.uk_replay_adjudication_frontier.v1"
     assert evidence_rows[0]["rule_id"] == "uk_replay_adjudication_frontier_workqueue"
     assert evidence_rows[0]["owner_phase"] == "replay_invariants"
@@ -4983,6 +4987,10 @@ def test_uk_candidates_fast_json_exports_residual_claim_evidence_jsonl(
         "path": str(out_path),
         "rows": 1,
     }
+    assert payload["evidence_jsonl"]["residual_claim_evidence_jsonl"] == (
+        payload["residual_claim_evidence_jsonl"]
+    )
+    assert str(out_path) in payload["written_paths"]
     assert evidence_rows[0]["schema"] == "lawvm.uk_residual_claim_frontier.v1"
     assert evidence_rows[0]["rule_id"] == "uk_residual_claim_frontier_workqueue"
     assert evidence_rows[0]["work_item_kind"] == "residual_claim_review"
