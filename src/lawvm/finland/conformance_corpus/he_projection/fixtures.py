@@ -126,7 +126,16 @@ def _he_doc(
 
     conclusions_part = b""
     if signatures_xml:
-        conclusions_part = b"<conclusions>" + signatures_xml + b"</conclusions>"
+        # Use the real Finlex HE structure: <hcontainer name="conclusions"> inside mainBody,
+        # NOT a bare <conclusions> AKN element.  The bare element never appears in real
+        # Finlex XML (verified across all 8438 HEs in corpus 2026-06-04).
+        # This fixture must match the real structure so tests catch regressions
+        # in the _extract_signatures_from_conclusions lookup path.
+        conclusions_part = (
+            b"<hcontainer name='conclusions'>"
+            + signatures_xml
+            + b"</hcontainer>"
+        )
 
     doc_inner = (
         b"<doc FRBRsubtype='government-proposal'>"

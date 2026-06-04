@@ -581,7 +581,19 @@ def project_he_from_xml(
     result.observations.extend(rejected)
 
     # --- Signature extraction ---
-    conclusions_el = root.find(f".//{{{_AKN_NS}}}conclusions")
+    # Real Finlex HE XML uses <hcontainer name="conclusions"> inside <mainBody>,
+    # NOT a bare <conclusions> AKN element.  The latter only appears in synthetic
+    # fixtures built against the AKN 3.0 spec template.  Search both forms so
+    # that both the conformance fixtures and the real corpus work correctly.
+    #
+    # Precedence: prefer the hcontainer form (real corpus) if both happen to
+    # exist (they don't in practice).
+    conclusions_el = root.find(
+        f".//{{{_AKN_NS}}}hcontainer[@name='conclusions']"
+    )
+    if conclusions_el is None:
+        # Fallback: bare <conclusions> element (synthetic fixtures / future format)
+        conclusions_el = root.find(f".//{{{_AKN_NS}}}conclusions")
     if conclusions_el is not None:
         sig_rows = _extract_signatures_from_conclusions(
             conclusions_el,

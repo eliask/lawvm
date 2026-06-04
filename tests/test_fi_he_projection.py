@@ -710,3 +710,103 @@ class TestRealCorpusProjection:
             use_parquet=False,
         )
         assert counts.get("fi_he_corpus", 0) > 0
+
+
+# ---------------------------------------------------------------------------
+# Farchive-based real-corpus regression (REAL_CORPUS_REGRESSION_FOR_PROJECTION_EMITTERS_001)
+# ---------------------------------------------------------------------------
+#
+# Per process rule REAL_CORPUS_REGRESSION_FOR_PROJECTION_EMITTERS_001:
+# Every projection emitter requires an end-to-end test that goes through the
+# real farchive path and asserts non-zero rows for known-cited HEs.
+#
+# Synthetic conformance fixtures bypass _extract_signatures_from_conclusions's
+# real lookup path (conclusions element search), which is exactly how the
+# fi_he_signatures 0-row bug went undetected.  This test class directly
+# exercises the farchive path for signature extraction.
+
+_FI_HE_FARCHIVE = Path("data/fi_government_proposal.farchive")
+_SKIP_FARCHIVE = not _FI_HE_FARCHIVE.exists()
+_SKIP_FARCHIVE_REASON = "data/fi_government_proposal.farchive not available"
+
+
+@pytest.mark.skipif(_SKIP_FARCHIVE, reason=_SKIP_FARCHIVE_REASON)
+class TestFarchiveSignatureRegression:
+    """Real-corpus regression via farchive path for fi_he_signatures.
+
+    REAL_CORPUS_REGRESSION_FOR_PROJECTION_EMITTERS_001:
+    Exercises the actual lookup path that produced 0 rows (hcontainer[@name='conclusions']
+    vs bare <conclusions>) to prevent silent regression.
+    """
+
+    def _project_from_farchive(self, year: int, number: int) -> "HEProjectionResult":
+        from farchive import Farchive
+        from lawvm.tools.export_fi_he_corpus import project_he_from_xml
+
+        fa = Farchive(str(_FI_HE_FARCHIVE))
+        locator = f"akn/fi/doc/government-proposal/{year}/{number}/fin@/main.xml"
+        xml_bytes = fa.get(locator)
+        span = fa.resolve(locator)
+        meta = span.last_metadata if span is not None else {}
+        fa.close()
+        assert xml_bytes is not None, f"No XML bytes for {locator}"
+        return project_he_from_xml(
+            xml_bytes,
+            he_year=year,
+            he_number=number,
+            lang="fin",
+            source_file=locator,
+            source_zip_sha256=str(meta.get("source_zip_sha256", "")),
+        )
+
+    def test_he_2024_100_has_signatures_via_farchive(self) -> None:
+        """HE 100/2024 from farchive must produce >=2 signature rows.
+
+        Root cause regression: code searched for <conclusions> (AKN element)
+        but real Finlex HE XML uses <hcontainer name="conclusions"> inside
+        <mainBody>.  This test fails before the fix, passes after.
+        """
+        result = self._project_from_farchive(2024, 100)
+        assert result.signature_rows, (
+            "HE 100/2024 via farchive must produce signature rows -- "
+            "0 rows means the hcontainer[@name='conclusions'] lookup is broken. "
+            "Root cause: lookup used <conclusions> element (never present in real HE XML) "
+            "instead of <hcontainer name='conclusions'>."
+        )
+        assert len(result.signature_rows) >= 2, (
+            f"Expected >=2 signatures in HE 100/2024; got {len(result.signature_rows)}"
+        )
+        roles = {r["role"] for r in result.signature_rows}
+        # Modern HE: Pääministeri and at least one minister
+        assert any("ministeri" in (r or "").lower() for r in roles), (
+            f"Expected a minister role in HE 100/2024 signatures; got {roles}"
+        )
+
+    def test_he_1992_1_has_signatures_via_farchive(self) -> None:
+        """Oldest corpus HE (1992/1) from farchive must also produce signature rows."""
+        result = self._project_from_farchive(1992, 1)
+        assert result.signature_rows, (
+            "HE 1/1992 via farchive must produce signature rows (oldest corpus HE)"
+        )
+
+    def test_project_he_corpus_signatures_nonzero(self, tmp_path: Path) -> None:
+        """Full batch projection through project_he_corpus() must yield non-zero signatures.
+
+        This is the end-to-end regression: same path as rebuild-indexes calls.
+        Uses a small limit=10 slice from the real farchive.
+        """
+        from lawvm.tools.export_fi_he_corpus import project_he_corpus
+
+        counts = project_he_corpus(
+            farchive_path=str(_FI_HE_FARCHIVE),
+            data_dir=str(tmp_path / "v1"),
+            lang="fin",
+            limit=10,
+            use_parquet=False,
+        )
+        assert counts.get("fi_he_signatures", 0) > 0, (
+            f"project_he_corpus() with limit=10 from real farchive must yield >0 "
+            f"signature rows; got {counts.get('fi_he_signatures', 0)}. "
+            "Root cause: lookup used <conclusions> (AKN element, never in real XML) "
+            "instead of <hcontainer name='conclusions'>."
+        )
