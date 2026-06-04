@@ -709,12 +709,31 @@ def _build_parquet_schemas() -> Dict[str, Any]:
 _PARQUET_SCHEMAS = _build_parquet_schemas()
 
 
+def _attach_compile_metadata(table: Any, compile_metadata: Any) -> Any:
+    """Attach CompileMetadata fields to a pyarrow Table's schema metadata."""
+    import warnings  # noqa: PLC0415
+    if compile_metadata is None:
+        warnings.warn(
+            "Parquet emit without CompileMetadata is deprecated; "
+            "pass compile_metadata to ensure artifact reproducibility",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return table
+    existing = table.schema.metadata or {}
+    meta = dict(existing)
+    for k, v in compile_metadata.to_metadata_dict().items():
+        meta[k.encode()] = v.encode()
+    return table.replace_schema_metadata(meta)
+
+
 def _try_write_parquet(
     path: Path,
     rows: List[Dict[str, Any]],
     schema: Any = None,
+    compile_metadata: Any = None,
 ) -> bool:
-    """Try to write rows as Parquet+zstd. Returns True if successful."""
+    """Try to write rows as Parquet+zstd with optional compile metadata. Returns True if ok."""
     try:
         import pyarrow as pa  # ty: ignore[unresolved-import]
         import pyarrow.parquet as pq  # ty: ignore[unresolved-import]
@@ -737,6 +756,7 @@ def _try_write_parquet(
         else:
             table = pa.Table.from_pylist(rows)
 
+    table = _attach_compile_metadata(table, compile_metadata)
     pq.write_table(table, str(path), compression="zstd")
     return True
 
@@ -755,6 +775,7 @@ def project_he_corpus(
     use_parquet: bool = True,
     strict: bool = False,
     verbose: bool = False,
+    compile_metadata: Optional[Any] = None,
 ) -> Dict[str, int]:
     """Project fi_he_corpus, fi_he_atoms, fi_he_law_refs, fi_he_signatures.
 
@@ -910,7 +931,7 @@ def project_he_corpus(
         counts[name] = len(rows)
         if use_parquet:
             schema = _PARQUET_SCHEMAS.get(name)
-            ok = _try_write_parquet(out / f"{name}.parquet", rows, schema=schema)
+            ok = _try_write_parquet(out / f"{name}.parquet", rows, schema=schema, compile_metadata=compile_metadata)
             label = "Parquet+JSONL" if ok else "JSONL"
             print(f"  {name}: {len(rows):,} rows ({label})", file=sys.stderr)
         else:

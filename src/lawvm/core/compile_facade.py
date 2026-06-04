@@ -38,6 +38,7 @@ module over ``compile_result`` for top-level compile products.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Literal, Optional, Tuple
 
@@ -50,8 +51,11 @@ from lawvm.core.phase_result import Finding, PhaseResult
 
 if TYPE_CHECKING:
     from lawvm.core.authority import BranchContext
-    from lawvm.core.compile_result import CompileVerdict
+    from lawvm.core.compile_metadata import CompileMetadata
+    from lawvm.core.compile_result import CompileVerdict, StrictProfile
+    from lawvm.core.evidence_policy import EvidencePolicyRegistry
     from lawvm.core.ir import IRStatute, ProvisionTimeline, ProvisionVersion, LegalAddress
+    from lawvm.core.provenance_graph import ProvenanceGraph
     from lawvm.core.timeline_results import MaterializationResult, TimelineCompilationResult
 
 
@@ -115,6 +119,7 @@ class CompileFacade:
     replay_mode: str
     verdict: Optional["CompileVerdict"] = None
     strict_profile_name: Optional[str] = None
+    compile_metadata: Optional["CompileMetadata"] = None
 
     def __post_init__(self) -> None:
         if not self.replay_mode:
@@ -465,4 +470,46 @@ class CompileFacade:
             verdict=verdict,
             replay_mode=replay_mode,
             strict_profile_name=strict_profile_name,
+        )
+
+    @classmethod
+    def with_metadata(
+        cls,
+        *,
+        bundle: CanonicalBundle,
+        finding_ledger: Tuple[Finding, ...],
+        replay_mode: str,
+        verdict: Optional["CompileVerdict"] = None,
+        strict_profile_name: Optional[str] = None,
+        graph: "ProvenanceGraph",
+        strict_profile: "StrictProfile",
+        evidence_policy: "EvidencePolicyRegistry",
+        source_bundle_hash: str,
+        build_id: str = "",
+        build_timestamp: "Optional[__import__('datetime').datetime]" = None,
+    ) -> "CompileFacade":
+        """Build a CompileFacade with CompileMetadata derived from graph + profile + policy.
+
+        Timestamps are caller-provided per the reproducibility contract: do NOT
+        pass datetime.now() from inside an emitter — the timestamp must come from
+        the build invocation context so the same inputs always produce the same
+        fingerprints.
+        """
+        from lawvm.core.compile_metadata import build_compile_metadata  # noqa: PLC0415
+
+        meta = build_compile_metadata(
+            graph=graph,
+            profile=strict_profile,
+            evidence_policy=evidence_policy,
+            source_bundle_hash=source_bundle_hash,
+            build_id=build_id,
+            build_timestamp=build_timestamp,
+        )
+        return cls(
+            bundle=bundle,
+            finding_ledger=finding_ledger,
+            replay_mode=replay_mode,
+            verdict=verdict,
+            strict_profile_name=strict_profile_name,
+            compile_metadata=meta,
         )

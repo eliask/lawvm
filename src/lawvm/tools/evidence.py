@@ -3338,6 +3338,7 @@ def build_evidence_bundle(
     mode: str = "legal_pit",
     include_bisect: bool = False,
     include_version_drift: bool = False,
+    compile_metadata: Optional[Any] = None,
 ) -> Dict:
     # Build shared context once — all sub-tools use this instead of
     # independently calling replay_xml / get_ground_truth_tree / _audit_html_one.
@@ -3824,11 +3825,21 @@ def build_evidence_bundle(
             _evidence_context_degradation("body_pairing", exc)
         )
 
+    import warnings as _warnings  # noqa: PLC0415
+    if compile_metadata is None:
+        _warnings.warn(
+            "build_evidence_bundle called without compile_metadata; "
+            "evidence bundle will lack lawvm_metadata reproducibility key",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
     return {
         "statute_id": statute_id,
         "title": str(oracle_result.title or ""),
         "mode": mode,
         "proof_contract": _proof_contract(),
+        **({"lawvm_metadata": compile_metadata.to_metadata_dict()} if compile_metadata is not None else {}),
         "oracle_version_amendment_id": str(ctx.oracle_version_amendment_id or ""),
         "oracle_suspect_detail": _typed_oracle_suspect or str(oracle_suspect_detail or ""),
         "oracle_suspect_pending": str(oracle_suspect_pending or ""),
