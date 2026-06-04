@@ -53,7 +53,21 @@ def _default_corpus_path() -> str:
 
 
 def _load_corpus(corpus_path: str) -> List[Tuple[int, str]]:
-    """Load corpus CSV. Format: N,YEAR/NUM (N = amendment count)."""
+    """Load corpus CSV. Format: N,YEAR/NUM (N = amendment count).
+
+    Special value ``corpus_path == "all"`` bypasses the CSV file and
+    enumerates the full farchive via ``store.list_statute_ids()``.
+    Use this for crosslink / structural projections that need full
+    corpus coverage (the ``bench_core.csv`` curated subset is for
+    replay-benchmark scoring, not graph projections).
+    """
+    if corpus_path == "all":
+        from lawvm.finland.corpus import get_corpus_store
+        store = get_corpus_store()
+        ids = list(store.list_statute_ids())
+        # Amendment count not needed downstream for projection paths that
+        # only care about the statute id; fill with 0 sentinel.
+        return [(0, sid) for sid in ids]
     with open(corpus_path, newline="") as f:
         rows = list(csv.reader(f))
     result = []
@@ -403,7 +417,7 @@ def export_projections(
     Returns dict of table name to row count.
     """
     if corpus_path is None:
-        corpus_path = _default_corpus_path()
+        corpus_path = "all"  # full farchive; was bench_core.csv (curated bench subset)
 
     corpus = _load_corpus(corpus_path)
     if not corpus:

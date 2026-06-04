@@ -6591,7 +6591,16 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
         parents=_P,
     )
-    ep_p.add_argument("--corpus", metavar="PATH", help="path to corpus CSV (default: bench_core.csv)")
+    ep_p.add_argument(
+    "--corpus",
+    metavar="PATH",
+    help=(
+        "path to corpus CSV (rarely needed; default: 'all' = full farchive). "
+        "Use a CSV file only when explicitly scoping a projection run to a "
+        "curated subset (e.g. for replay-benchmark scoring); for query / "
+        "crosslink / structural projections, leave this unset."
+    ),
+)
     ep_p.add_argument(
         "--data-dir",
         dest="data_dir",
