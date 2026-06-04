@@ -1,182 +1,283 @@
-"""lawvm validate-claims — re-run validators on filed claims (Slice 4).
+"""lawvm validate-claims — re-run validators on graph assertions (v3 graph-native).
 
 Subcommands:
-  --claim-id CLAIM_ID         re-run all validators on one claim
-  --all [--kind ...] [--status proposed]  re-run on multiple claims
+  --assertion-id ID         re-run validators on one assertion
+  --all [--kind ...] [--missing-attestation-kind ...]  bulk re-validate
 
-Writes validator events to the event log for each run.
-Exit code 0 if all validated claims pass; 1 if any fail.
+Emits new validator attestations on success or failure.
+Does NOT mutate the assertion itself (immutable per spec §12.1).
 
 AGENTS.md §1.10: no broad try/except in non-test code.
 """
 from __future__ import annotations
 
+import json
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-from lawvm.core.manual_claims.primitive import (
-    ClaimState,
-    ClaimStateEvent,
-    ClaimStatus,
+from lawvm.core.manual_claims.native import attest
+from lawvm.core.provenance_graph import (
+    ArtifactRef,
+    GraphBuilder,
     Producer,
-    ValidatorStatus,
+    ProvenanceAssertion,
+    attestation_kind_registry_hash,
 )
-from lawvm.core.manual_claims.state import project_state
-from lawvm.core.manual_claims.storage import ClaimStore
+from lawvm.core.provenance_graph_storage import (
+    GraphStore,
+    _deserialize_assertion,
+    _deserialize_attestation,
+)
 
-_DEFAULT_DATA_DIR = "data/fi/v1"
-_MANUAL_CLAIMS_SUBDIR = "manual_claims"
+_DEFAULT_GRAPH_ROOT = "data/fi/v1/provenance_graph"
 
 
-def _get_store(data_dir: str) -> ClaimStore:
-    return ClaimStore(Path(data_dir) / _MANUAL_CLAIMS_SUBDIR)
+def _get_store(graph_store_root: str) -> GraphStore:
+    return GraphStore(Path(graph_store_root))
 
 
 def _tool_producer() -> Producer:
     return Producer(
+        producer_id="lawvm.validate-claims.tool",
+        producer_kind="script",
+        public_key=None,
+        metadata={"environment": "lawvm-validate-claims"},
+    )
+
+
+def _write_live_snapshot(store: GraphStore) -> str:
+    reg_hash = attestation_kind_registry_hash()
+    builder = GraphBuilder(attestation_kind_registry_hash_val=reg_hash)
+    objects_dir = store._objects_dir()
+    if objects_dir.exists():
+        for f in sorted(objects_dir.glob("*.json")):
+            d = json.loads(f.read_text(encoding="utf-8"))
+            if "assertion_id" in d and "kind" in d:
+                a = _deserialize_assertion(d)
+                builder.add_assertion(a)
+            elif "attestation_id" in d and "attestation_kind" in d:
+                a = _deserialize_attestation(d)
+                builder.add_attestation(a)
+    graph = builder.finalize()
+    store.write_graph(graph)
+    return graph.snapshot_hash
+
+
+def _load_all_assertions(store: GraphStore) -> list:
+    objects_dir = store._objects_dir()
+    if not objects_dir.exists():
+        return []
+    result = []
+    for f in sorted(objects_dir.glob("*.json")):
+        d = json.loads(f.read_text(encoding="utf-8"))
+        if "assertion_id" in d and "kind" in d:
+            result.append(_deserialize_assertion(d))
+    return result
+
+
+def _attestation_kinds_for(store: GraphStore, assertion_id: str) -> set:
+    """Return set of attestation kinds already present for this assertion."""
+    objects_dir = store._objects_dir()
+    if not objects_dir.exists():
+        return set()
+    kinds = set()
+    for f in objects_dir.glob("*.json"):
+        d = json.loads(f.read_text(encoding="utf-8"))
+        if (
+            "attestation_id" in d
+            and "attestation_kind" in d
+            and d.get("subject", {}).get("artifact_id") == assertion_id
+        ):
+            kinds.add(d["attestation_kind"])
+    return kinds
+
+
+def _build_compat_claim(assertion: ProvenanceAssertion):
+    """Build a v2.2-compatible ManualCompilationClaim for validator use."""
+    from lawvm.core.manual_claims.primitive import (
+        ClaimLayer, ClaimScope, ClaimStatus, ProfileTag,
+        ReviewStatus, SourceLocator, SourceWitnessType,
+        ValidatorStatus, Producer as V2Producer,
+    )
+    from lawvm.core.manual_claims.hashing import compute_claim_id
+    from lawvm.core.manual_claims.primitive import ManualCompilationClaim
+
+    scope_obj = ClaimScope(
+        statute_id=str(assertion.scope.get("statute_id", "")),
+        provision_ref=str(assertion.scope.get("provision_ref", "")) or None,
+        valid_at_start=assertion.valid_at.start,
+        valid_at_end=assertion.valid_at.end,
+    )
+    v2_producer = V2Producer(
         producer_kind="tool",
         handle=None,
         model_id=None,
         timestamp=datetime.now(tz=timezone.utc),
-        environment="lawvm-validate-claims",
+        environment="validate-claims",
+    )
+    byte_range = assertion.source_refs[0].byte_range if assertion.source_refs else (0, 0)
+    artifact_digest = assertion.source_refs[0].artifact_digest if assertion.source_refs else "unknown"
+
+    partial = ManualCompilationClaim(
+        claim_id="placeholder",
+        schema_version="v1",
+        jurisdiction="fi",
+        claim_kind=assertion.kind,
+        claim_layer=ClaimLayer.EXTRACTION,
+        claim_scope=scope_obj,
+        target=tuple(dict(assertion.target).items()),
+        value=tuple(dict(assertion.value).items()),
+        source_witness_type=SourceWitnessType.LLM_PROPOSAL,
+        producer=v2_producer,
+        cited_source_locator=SourceLocator(
+            artifact_kind="finlex_akn",
+            statute_id=str(assertion.scope.get("statute_id", "")),
+            he_id=None,
+            version_id=None,
+        ),
+        cited_source_span=list(byte_range),
+        cited_source_hash=artifact_digest,
+        dependency_fingerprint=(),
+        valid_at=(assertion.valid_at.start, assertion.valid_at.end),
+        supersedes=(),
+        supersession_delta_reason=None,
+        disputes=(),
+        requested_profiles=(ProfileTag.NON_STRICT_WITH_CLAIMS,),
+        rationale=assertion.rationale,
+    )
+    claim_id = compute_claim_id(partial)
+    return ManualCompilationClaim(
+        claim_id=claim_id,
+        schema_version=partial.schema_version,
+        jurisdiction=partial.jurisdiction,
+        claim_kind=partial.claim_kind,
+        claim_layer=partial.claim_layer,
+        claim_scope=partial.claim_scope,
+        target=partial.target,
+        value=partial.value,
+        source_witness_type=partial.source_witness_type,
+        producer=partial.producer,
+        cited_source_locator=partial.cited_source_locator,
+        cited_source_span=partial.cited_source_span,
+        cited_source_hash=partial.cited_source_hash,
+        dependency_fingerprint=partial.dependency_fingerprint,
+        valid_at=partial.valid_at,
+        supersedes=partial.supersedes,
+        supersession_delta_reason=partial.supersession_delta_reason,
+        disputes=partial.disputes,
+        requested_profiles=partial.requested_profiles,
+        rationale=partial.rationale,
     )
 
 
-def _validate_one_claim(
-    claim_id: str,
-    store: ClaimStore,
+def _validate_one_assertion(
+    assertion: ProvenanceAssertion,
+    store: GraphStore,
     source_bytes: bytes = b"",
     *,
     verbose: bool = True,
 ) -> bool:
-    """Run span + entailment validators on one claim. Returns True if all pass."""
-    import lawvm.finland.claim_kinds  # noqa: F401 — ensure kinds are registered
+    """Re-run validators; emit new attestations. Assertion is NOT mutated."""
+    import lawvm.finland.claim_kinds  # noqa: F401
     from lawvm.core.manual_claims.kind_registry import get_claim_kind_spec
 
-    if not store.claim_exists(claim_id):
-        if verbose:
-            print(f"error: claim not found: {claim_id}", file=sys.stderr)
-        return False
-
-    claim = store.read_claim(claim_id)
-    spec = get_claim_kind_spec(claim.claim_kind)
+    spec = get_claim_kind_spec(assertion.kind)
     if spec is None:
         if verbose:
-            print(f"  warning: unknown claim kind {claim.claim_kind!r} — no validators", file=sys.stderr)
+            print(f"  warning: unknown kind {assertion.kind!r} — no validators", file=sys.stderr)
         return True
 
-    now = datetime.now(tz=timezone.utc)
+    compat_claim = _build_compat_claim(assertion)
     producer = _tool_producer()
     all_passed = True
-    final_validator_status = ValidatorStatus.UNVALIDATED
 
     if spec.span_validator:
-        result = spec.span_validator(claim, source_bytes)
+        result = spec.span_validator(compat_claim, source_bytes)
         status_str = "PASSED" if result.passed else "FAILED"
         if verbose:
             print(f"  span_verified: {status_str} — {result.reason}")
-        if result.passed:
-            final_validator_status = ValidatorStatus.SPAN_VERIFIED
-            event = ClaimStateEvent(
-                claim_id=claim_id,
-                event_kind="span_verified",
-                timestamp=now,
-                producer=producer,
-                old_status=None,
-                new_status=None,
-                reason=result.reason,
-            )
-            store.append_event(event)
-        else:
+        attest(store, assertion.assertion_id, "span_verified",
+               {"passed": result.passed, "reason": result.reason}, producer)
+        if not result.passed:
             all_passed = False
 
     if spec.entailment_validator:
-        result = spec.entailment_validator(claim, source_bytes)
+        result = spec.entailment_validator(compat_claim, source_bytes)
         status_str = "PASSED" if result.passed else "FAILED"
         if verbose:
             print(f"  entailment_verified: {status_str} — {result.reason}")
-        if result.passed:
-            final_validator_status = ValidatorStatus.ENTAILMENT_VERIFIED
-            event = ClaimStateEvent(
-                claim_id=claim_id,
-                event_kind="entailment_verified",
-                timestamp=now,
-                producer=producer,
-                old_status=None,
-                new_status=None,
-                reason=result.reason,
-            )
-            store.append_event(event)
-        else:
+        attest(store, assertion.assertion_id, "entailment_verified",
+               {"passed": result.passed, "reason": result.reason}, producer)
+        if not result.passed:
             all_passed = False
-
-    # Update current state to reflect new validator_status
-    current_state = store.read_state(claim_id)
-    if current_state is not None and final_validator_status != ValidatorStatus.UNVALIDATED:
-        events = list(store.read_events(claim_id))
-        projected = project_state(claim_id, events)
-        if projected is not None:
-            store.write_state(projected)
 
     return all_passed
 
 
 def cmd_validate_one(args: object) -> int:
-    """--claim-id CLAIM_ID handler."""
-    claim_id: str = args.claim_id  # type: ignore[attr-defined]
-    data_dir: str = getattr(args, "data_dir", _DEFAULT_DATA_DIR)
-    store = _get_store(data_dir)
+    assertion_id: str = args.assertion_id  # type: ignore[attr-defined]
+    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    store = _get_store(graph_store_root)
 
-    passed = _validate_one_claim(claim_id, store, b"", verbose=True)
+    obj_path = store._objects_dir() / f"{assertion_id}.json"
+    if not obj_path.exists():
+        print(f"error: assertion not found: {assertion_id}", file=sys.stderr)
+        return 1
+
+    d = json.loads(obj_path.read_text(encoding="utf-8"))
+    assertion = _deserialize_assertion(d)
+
+    passed = _validate_one_assertion(assertion, store, b"", verbose=True)
+    _write_live_snapshot(store)
     return 0 if passed else 1
 
 
 def cmd_validate_all(args: object) -> int:
-    """--all handler."""
-    data_dir: str = getattr(args, "data_dir", _DEFAULT_DATA_DIR)
+    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
     kind_filter: Optional[str] = getattr(args, "kind", None)
-    status_filter: Optional[str] = getattr(args, "status", None)
+    missing_kind: Optional[str] = getattr(args, "missing_attestation_kind", None)
 
-    store = _get_store(data_dir)
+    store = _get_store(graph_store_root)
+    assertions = _load_all_assertions(store)
 
-    claim_ids = store.list_all_claim_ids()
-    if not claim_ids:
-        print("no claims filed")
+    if not assertions:
+        print("no assertions in graph store")
         return 0
 
     all_ok = True
     validated = 0
-    for claim_id in sorted(claim_ids):
-        claim = store.read_claim(claim_id)
-        state = store.read_state(claim_id)
 
-        if kind_filter and claim.claim_kind != kind_filter:
+    for assertion in assertions:
+        if kind_filter and assertion.kind != kind_filter:
             continue
-        if status_filter and state and state.status.value != status_filter:
-            continue
+        if missing_kind:
+            existing_kinds = _attestation_kinds_for(store, assertion.assertion_id)
+            if missing_kind in existing_kinds:
+                continue
 
-        print(f"\nvalidating {claim_id[:32]}... ({claim.claim_kind})")
-        passed = _validate_one_claim(claim_id, store, b"", verbose=True)
+        print(f"\nvalidating {assertion.assertion_id[:32]}... ({assertion.kind})")
+        passed = _validate_one_assertion(assertion, store, b"", verbose=True)
         if not passed:
             all_ok = False
         validated += 1
 
-    print(f"\nvalidated {validated} claim(s)")
+    _write_live_snapshot(store)
+    print(f"\nvalidated {validated} assertion(s)")
     return 0 if all_ok else 1
 
 
 def main(args: object) -> None:
-    claim_id: Optional[str] = getattr(args, "claim_id", None)
+    assertion_id: Optional[str] = getattr(args, "assertion_id", None)
     all_flag: bool = getattr(args, "all", False)
 
-    if claim_id:
+    if assertion_id:
         rc = cmd_validate_one(args)
     elif all_flag:
         rc = cmd_validate_all(args)
     else:
-        print("error: one of --claim-id or --all required", file=sys.stderr)
+        print("error: one of --assertion-id or --all required", file=sys.stderr)
         rc = 1
 
     if rc:

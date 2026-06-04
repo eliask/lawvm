@@ -1,23 +1,19 @@
-"""lawvm claim — operator CLI for manual compilation claims.
+"""lawvm claim — operator CLI for manual compilation claims (v3 graph-native).
 
-Subcommands (Slices 1-5):
-  propose         --claim-file FILE.json [--validator span|entailment|all]
-  accept          CLAIM_ID
-  reject          CLAIM_ID --reason "..."
-  retract         CLAIM_ID --reason "..."  (Slice 5: emits taint report)
-  list            [--kind ...] [--layer ...] [--review-status ...] [--status ...]
-  show            CLAIM_ID
-  validate        CLAIM_ID [--validator ...]
-  taint-report    CLAIM_ID | --list | --build BUILD_ID
+Subcommands:
+  propose         --claim-file FILE.json
+  accept          ASSERTION_ID
+  reject          ASSERTION_ID --reason "..."
+  retract         ASSERTION_ID --reason "..."
+  supersede       OLD_ID --with NEW_FILE.json --delta-reason "..."
+  show            ASSERTION_ID [--profile PROFILE_NAME]
+  list            [--kind ...] [--layer ...] [--has-attestation-kind ...]
+  history         --target PROVISION_REF
+  disputes        --statute STATUTE_ID
+  taint-report    ASSERTION_ID | --list
 
-Design:
-  - NO projection mutation here (Slice 3 concern).
-  - State transitions write ClaimStateEvents to events.jsonl.
-  - Current state is materialized in states/current/.
-  - 'retract' now emits ClaimRetractionTaintReport (Slice 5).
-  - Self-authorization is impossible: the CLI is the only path to state
-    transitions; claim files asserting review_status=human_reviewed cannot
-    self-promote (test_self_authorization_impossible).
+All state is computed at query time from the attestation graph (§9).
+No stored status fields on assertions.
 
 AGENTS.md §1.10: no broad try/except in non-test code.
 """
@@ -29,40 +25,231 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from lawvm.core.manual_claims.hashing import compute_claim_id, verify_claim_id
-from lawvm.core.manual_claims.primitive import (
-    ClaimState,
-    ClaimStateEvent,
-    ClaimStatus,
-    Producer,
-    ReviewStatus,
-    ValidatorStatus,
+from lawvm.core.manual_claims.native import (
+    attest,
+    build_claim_subgraph,
+    query_retraction_taint,
+    query_state_from_store,
+    submit_assertion,
 )
-from lawvm.core.manual_claims.state import project_state
-from lawvm.core.manual_claims.storage import ClaimStore, _dict_to_claim
+from lawvm.core.provenance_graph import (
+    GraphBuilder,
+    Interval,
+    Producer,
+    ProvenanceAssertion,
+    SourceRef,
+    ArtifactRef,
+    assertion_canonical_payload,
+    attestation_kind_registry_hash,
+    _sha256,
+)
+from lawvm.core.provenance_graph_storage import (
+    GraphStore,
+    _deserialize_assertion,
+    _deserialize_attestation,
+)
+
+_DEFAULT_GRAPH_ROOT = "data/fi/v1/provenance_graph"
 
 
-_DEFAULT_DATA_DIR = "data/fi/v1"
-_MANUAL_CLAIMS_SUBDIR = "manual_claims"
-
-
-def _get_store(data_dir: str) -> ClaimStore:
-    base = Path(data_dir) / _MANUAL_CLAIMS_SUBDIR
-    return ClaimStore(base)
+def _get_store(graph_store_root: str) -> GraphStore:
+    return GraphStore(Path(graph_store_root))
 
 
 def _cli_producer() -> Producer:
     return Producer(
-        producer_kind="operator",
-        handle=None,
-        model_id=None,
-        timestamp=datetime.now(tz=timezone.utc),
-        environment="lawvm-cli",
+        producer_id="lawvm.cli.operator",
+        producer_kind="human",
+        public_key=None,
+        metadata={"environment": "lawvm-claim-cli"},
     )
 
 
-def _now() -> datetime:
-    return datetime.now(tz=timezone.utc)
+def _load_assertion_from_file(path: Path) -> ProvenanceAssertion:
+    """Load a ProvenanceAssertion from a JSON file, computing assertion_id."""
+    d = json.loads(path.read_text(encoding="utf-8"))
+    return _assertion_from_dict(d)
+
+
+def _assertion_from_dict(d: dict) -> ProvenanceAssertion:
+    """Build ProvenanceAssertion from JSON dict, recomputing assertion_id."""
+    from datetime import date
+
+    valid_at_d = d.get("valid_at", {})
+    if isinstance(valid_at_d, dict):
+        start_str = valid_at_d.get("start", "2000-01-01")
+        end_str = valid_at_d.get("end")
+    elif isinstance(valid_at_d, (list, tuple)) and len(valid_at_d) >= 1:
+        start_str = str(valid_at_d[0]) if valid_at_d[0] else "2000-01-01"
+        end_str = str(valid_at_d[1]) if len(valid_at_d) > 1 and valid_at_d[1] else None
+    else:
+        start_str = "2000-01-01"
+        end_str = None
+
+    valid_at = Interval(
+        start=date.fromisoformat(start_str),
+        end=date.fromisoformat(end_str) if end_str else None,
+    )
+
+    source_refs_raw = d.get("source_refs", [])
+    source_refs = tuple(
+        SourceRef(
+            artifact_digest=r["artifact_digest"],
+            structural_locator=r["structural_locator"],
+            bounded_quote_hash=r["bounded_quote_hash"],
+            normalization_policy_id=r["normalization_policy_id"],
+            byte_range=(r["byte_range"][0], r["byte_range"][1]),
+        )
+        for r in source_refs_raw
+    )
+
+    dependency_refs_raw = d.get("dependency_refs", [])
+    dependency_refs = tuple(
+        ArtifactRef(
+            artifact_type=r["artifact_type"],
+            artifact_id=r["artifact_id"],
+            content_hash=r["content_hash"],
+        )
+        for r in dependency_refs_raw
+    )
+
+    supersedes = tuple(str(x) for x in d.get("supersedes", []))
+    disputes = tuple(str(x) for x in d.get("disputes", []))
+
+    temp = ProvenanceAssertion(
+        assertion_id="__placeholder__",
+        schema_version=str(d.get("schema_version", "v1")),
+        jurisdiction=str(d.get("jurisdiction", "fi")),
+        kind=str(d["kind"]),
+        layer=str(d.get("layer", "extraction")),
+        scope=d.get("scope", {}),
+        target=d.get("target", {}),
+        value=d.get("value", {}),
+        source_refs=source_refs,
+        dependency_refs=dependency_refs,
+        valid_at=valid_at,
+        supersedes=supersedes,
+        disputes=disputes,
+        rationale=str(d.get("rationale", "")),
+    )
+    canonical = assertion_canonical_payload(temp)
+    assertion_id = _sha256(canonical)
+
+    return ProvenanceAssertion(
+        assertion_id=assertion_id,
+        schema_version=temp.schema_version,
+        jurisdiction=temp.jurisdiction,
+        kind=temp.kind,
+        layer=temp.layer,
+        scope=temp.scope,
+        target=temp.target,
+        value=temp.value,
+        source_refs=temp.source_refs,
+        dependency_refs=temp.dependency_refs,
+        valid_at=temp.valid_at,
+        supersedes=temp.supersedes,
+        disputes=temp.disputes,
+        rationale=temp.rationale,
+    )
+
+
+def _build_live_snapshot(store: GraphStore):
+    """Build a ProvenanceGraph from all objects on disk."""
+    reg_hash = attestation_kind_registry_hash()
+    builder = GraphBuilder(attestation_kind_registry_hash_val=reg_hash)
+    objects_dir = store._objects_dir()
+    if not objects_dir.exists():
+        return builder.finalize()
+    for f in sorted(objects_dir.glob("*.json")):
+        d = json.loads(f.read_text(encoding="utf-8"))
+        if "assertion_id" in d and "kind" in d:
+            a = _deserialize_assertion(d)
+            builder.add_assertion(a)
+        elif "attestation_id" in d and "attestation_kind" in d:
+            a = _deserialize_attestation(d)
+            builder.add_attestation(a)
+    return builder.finalize()
+
+
+def _write_live_snapshot(store: GraphStore) -> str:
+    """Rebuild graph snapshot from all objects and write it. Returns snapshot_hash."""
+    graph = _build_live_snapshot(store)
+    store.write_graph(graph)
+    return graph.snapshot_hash
+
+
+def _read_assertion_from_store(store: GraphStore, assertion_id: str) -> Optional[ProvenanceAssertion]:
+    obj_path = store._objects_dir() / f"{assertion_id}.json"
+    if not obj_path.exists():
+        return None
+    d = json.loads(obj_path.read_text(encoding="utf-8"))
+    if "assertion_id" not in d:
+        return None
+    return _deserialize_assertion(d)
+
+
+def _read_all_attestations_for(store: GraphStore, assertion_id: str) -> list:
+    objects_dir = store._objects_dir()
+    if not objects_dir.exists():
+        return []
+    result = []
+    for f in sorted(objects_dir.glob("*.json")):
+        d = json.loads(f.read_text(encoding="utf-8"))
+        if "attestation_id" in d and "attestation_kind" in d:
+            if d.get("subject", {}).get("artifact_id") == assertion_id:
+                result.append(_deserialize_attestation(d))
+    result.sort(key=lambda a: a.produced_at)
+    return result
+
+
+def _load_all_assertions(store: GraphStore) -> list:
+    objects_dir = store._objects_dir()
+    if not objects_dir.exists():
+        return []
+    result = []
+    for f in sorted(objects_dir.glob("*.json")):
+        d = json.loads(f.read_text(encoding="utf-8"))
+        if "assertion_id" in d and "kind" in d:
+            result.append(_deserialize_assertion(d))
+    return result
+
+
+def _load_all_attestations(store: GraphStore) -> dict:
+    """Returns dict: attestation_id -> ProvenanceAttestation."""
+    objects_dir = store._objects_dir()
+    if not objects_dir.exists():
+        return {}
+    result = {}
+    for f in sorted(objects_dir.glob("*.json")):
+        d = json.loads(f.read_text(encoding="utf-8"))
+        if "attestation_id" in d and "attestation_kind" in d:
+            a = _deserialize_attestation(d)
+            result[a.attestation_id] = a
+    return result
+
+
+def _default_policy(claim_kind: str):
+    from lawvm.core.evidence_policy import registry_from_dict
+    policy_path = Path("data/fi/v1/evidence_policy/lawvm.fi.v1.evidence_policy.v0.json")
+    if policy_path.exists():
+        reg = registry_from_dict(json.loads(policy_path.read_text(encoding="utf-8")))
+        pred = reg.get_predicate_for_claim_kind(claim_kind)
+        if pred is not None:
+            return pred
+    from lawvm.core.evidence_policy import EvidenceGraphPredicate, exists
+    return EvidenceGraphPredicate(
+        predicate_id=f"default.{claim_kind}",
+        claim_kind=claim_kind,
+        required=(exists("claim_submitted"),),
+    )
+
+
+def _default_profile(allows_attested_reference_resolution: bool = True):
+    from lawvm.core.compile_result import StrictProfile
+    return StrictProfile(
+        name="fi_strict_with_attested_reference_resolution",
+        allows_attested_reference_resolution=allows_attested_reference_resolution,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -71,102 +258,22 @@ def _now() -> datetime:
 
 
 def cmd_propose(args: object) -> int:
-    """Load and file a proposed claim from a JSON file.
-
-    1. Parse JSON.
-    2. Build ManualCompilationClaim (from content; NOT trusting stored claim_id).
-    3. Recompute claim_id from canonical payload.
-    4. Verify the stored claim_id matches (hard fail on mismatch).
-    5. Run requested validators.
-    6. Write claim + initial event + initial state.
-    """
-    import json as _json
-
+    """Load assertion from JSON; submit to graph store; emit claim_submitted attestation."""
     claim_file = Path(args.claim_file)  # type: ignore[attr-defined]
     if not claim_file.exists():
         print(f"error: claim file not found: {claim_file}", file=sys.stderr)
         return 1
 
-    raw = _json.loads(claim_file.read_text(encoding="utf-8"))
+    assertion = _load_assertion_from_file(claim_file)
+    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    store = _get_store(graph_store_root)
+    store._objects_dir().mkdir(parents=True, exist_ok=True)
 
-    # Build claim from the payload — this will catch bad enum values etc.
-    claim = _dict_to_claim(raw)
-
-    # Load-time hash check: stored claim_id must match recomputed value.
-    verify_claim_id(claim)
-
-    store = _get_store(getattr(args, "data_dir", _DEFAULT_DATA_DIR))
-    store.ensure_dirs()
-
-    if store.claim_exists(claim.claim_id):
-        print(f"claim already filed: {claim.claim_id}")
-        return 0
-
-    # Determine validator to run
-    validator_arg = getattr(args, "validator", None)
-    validator_status = ValidatorStatus.UNVALIDATED
-
-    if validator_arg in ("span", "all"):
-        spec = _get_kind_spec(claim.claim_kind)
-        if spec and spec.span_validator:
-            result = spec.span_validator(claim, b"")
-            if result.passed:
-                validator_status = ValidatorStatus.SPAN_VERIFIED
-                print(f"span validator: PASSED")
-            else:
-                print(f"span validator: FAILED — {result.reason}", file=sys.stderr)
-                if validator_arg == "span":
-                    return 1
-
-    if validator_arg in ("entailment", "all"):
-        spec = _get_kind_spec(claim.claim_kind)
-        if spec and spec.entailment_validator:
-            result = spec.entailment_validator(claim, b"")
-            if result.passed:
-                validator_status = ValidatorStatus.ENTAILMENT_VERIFIED
-                print(f"entailment validator: PASSED")
-            else:
-                print(f"entailment validator: FAILED — {result.reason}", file=sys.stderr)
-                if validator_arg == "entailment":
-                    return 1
-
-    # Write claim to objects/sha256/ and by-kind/
-    store.write_claim(claim)
-    store.write_by_kind(claim)
-
-    # Initial event
     producer = _cli_producer()
-    now = _now()
-    event = ClaimStateEvent(
-        claim_id=claim.claim_id,
-        event_kind="proposed",
-        timestamp=now,
-        producer=producer,
-        old_status=None,
-        new_status="proposed",
-        reason="filed via lawvm claim propose",
-    )
-    store.append_event(event)
-
-    # Initial state
-    from lawvm.core.manual_claims.primitive import ClaimConfidence
-    state = ClaimState(
-        claim_id=claim.claim_id,
-        status=ClaimStatus.PROPOSED,
-        review_status=ReviewStatus.PROPOSED,
-        validator_status=validator_status,
-        confidence=ClaimConfidence.MEDIUM,
-        last_updated=now,
-    )
-    store.write_state(state)
-
-    print(f"proposed: {claim.claim_id}")
+    assertion_id = submit_assertion(store, assertion, producer)
+    _write_live_snapshot(store)
+    print(f"proposed: {assertion_id}")
     return 0
-
-
-def _get_kind_spec(claim_kind: str):
-    from lawvm.core.manual_claims.kind_registry import get_claim_kind_spec
-    return get_claim_kind_spec(claim_kind)
 
 
 # ---------------------------------------------------------------------------
@@ -175,52 +282,19 @@ def _get_kind_spec(claim_kind: str):
 
 
 def cmd_accept(args: object) -> int:
-    """Accept a proposed claim (human review decision)."""
-    claim_id: str = args.claim_id  # type: ignore[attr-defined]
-    store = _get_store(getattr(args, "data_dir", _DEFAULT_DATA_DIR))
+    """Emit reviewed attestation with accepted=True."""
+    assertion_id: str = args.assertion_id  # type: ignore[attr-defined]
+    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    store = _get_store(graph_store_root)
 
-    if not store.claim_exists(claim_id):
-        print(f"error: claim not found: {claim_id}", file=sys.stderr)
+    if _read_assertion_from_store(store, assertion_id) is None:
+        print(f"error: assertion not found: {assertion_id}", file=sys.stderr)
         return 1
 
-    current_state = store.read_state(claim_id)
-    if current_state is None:
-        print(f"error: no state for claim {claim_id} — was it proposed?", file=sys.stderr)
-        return 1
-
-    if current_state.status != ClaimStatus.PROPOSED:
-        print(
-            f"error: claim {claim_id} is in status {current_state.status.value!r}, "
-            "expected 'proposed'",
-            file=sys.stderr,
-        )
-        return 1
-
-    now = _now()
     producer = _cli_producer()
-
-    event = ClaimStateEvent(
-        claim_id=claim_id,
-        event_kind="accepted",
-        timestamp=now,
-        producer=producer,
-        old_status="proposed",
-        new_status="accepted",
-        reason="accepted by operator via lawvm claim accept",
-    )
-    store.append_event(event)
-
-    new_state = ClaimState(
-        claim_id=claim_id,
-        status=ClaimStatus.ACCEPTED,
-        review_status=ReviewStatus.HUMAN_REVIEWED,
-        validator_status=current_state.validator_status,
-        confidence=current_state.confidence,
-        last_updated=now,
-    )
-    store.write_state(new_state)
-
-    print(f"accepted: {claim_id}")
+    attest_id = attest(store, assertion_id, "reviewed", {"accepted": True}, producer)
+    _write_live_snapshot(store)
+    print(f"accepted: {attest_id}")
     return 0
 
 
@@ -230,344 +304,97 @@ def cmd_accept(args: object) -> int:
 
 
 def cmd_reject(args: object) -> int:
-    """Reject a proposed claim."""
-    claim_id: str = args.claim_id  # type: ignore[attr-defined]
+    """Emit reviewed attestation with accepted=False."""
+    assertion_id: str = args.assertion_id  # type: ignore[attr-defined]
     reason: str = args.reason  # type: ignore[attr-defined]
-    store = _get_store(getattr(args, "data_dir", _DEFAULT_DATA_DIR))
+    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    store = _get_store(graph_store_root)
 
-    if not store.claim_exists(claim_id):
-        print(f"error: claim not found: {claim_id}", file=sys.stderr)
+    if _read_assertion_from_store(store, assertion_id) is None:
+        print(f"error: assertion not found: {assertion_id}", file=sys.stderr)
         return 1
 
-    current_state = store.read_state(claim_id)
-    if current_state is None:
-        print(f"error: no state for claim {claim_id}", file=sys.stderr)
-        return 1
-
-    if current_state.status != ClaimStatus.PROPOSED:
-        print(
-            f"error: claim {claim_id} is in status {current_state.status.value!r}, "
-            "expected 'proposed'",
-            file=sys.stderr,
-        )
-        return 1
-
-    now = _now()
     producer = _cli_producer()
-
-    event = ClaimStateEvent(
-        claim_id=claim_id,
-        event_kind="rejected",
-        timestamp=now,
-        producer=producer,
-        old_status="proposed",
-        new_status="rejected",
-        reason=reason,
-    )
-    store.append_event(event)
-
-    new_state = ClaimState(
-        claim_id=claim_id,
-        status=ClaimStatus.REJECTED,
-        review_status=current_state.review_status,
-        validator_status=current_state.validator_status,
-        confidence=current_state.confidence,
-        last_updated=now,
-    )
-    store.write_state(new_state)
-
-    print(f"rejected: {claim_id}")
+    attest_id = attest(store, assertion_id, "reviewed", {"accepted": False, "reason": reason}, producer)
+    _write_live_snapshot(store)
+    print(f"rejected: {attest_id}")
     return 0
 
 
 # ---------------------------------------------------------------------------
-# retract (Slice 5 — emits taint report)
+# retract
 # ---------------------------------------------------------------------------
-
-
-def _build_taint_report(
-    claim_id: str,
-    retraction_event: ClaimStateEvent,
-    store: ClaimStore,
-    claim: object,
-) -> object:
-    """Build ClaimRetractionTaintReport from consumed events for this claim."""
-    from lawvm.core.manual_claims.taint_report import (
-        AffectedBuild,
-        ClaimRetractionTaintReport,
-        InvalidatedPITInterval,
-    )
-    from datetime import date
-
-    retraction_ts = retraction_event.timestamp
-    retraction_event_id = f"{claim_id}:{retraction_ts.isoformat()}"
-
-    # Scan event log for consumed events with this claim_id
-    affected_builds = []
-    seen_build_ids: set = set()
-
-    for event in store.read_events(claim_id):
-        if event.event_kind != "consumed":
-            continue
-        payload = {}
-        try:
-            payload = json.loads(event.reason)
-        except (json.JSONDecodeError, TypeError):
-            continue
-
-        build_id = payload.get("build_id", "")
-        if not build_id or build_id in seen_build_ids:
-            continue
-        seen_build_ids.add(build_id)
-
-        profile = payload.get("profile", "")
-        projection_path = payload.get("projection_artifact_path", "")
-        row_hashes = tuple(payload.get("row_hashes", []))
-
-        # Derive invalidated PIT intervals from claim's valid_at
-        valid_at = getattr(claim, "valid_at", None)
-        pit_intervals = ()
-        if valid_at is not None:
-            interval_start = valid_at[0]
-            interval_end = valid_at[1]
-            target_locator = getattr(claim, "claim_scope", None)
-            statute_id_str = getattr(target_locator, "statute_id", "") if target_locator else ""
-            provision_ref_str = getattr(target_locator, "provision_ref", "") if target_locator else ""
-            locator = provision_ref_str or statute_id_str or "unknown"
-            pit_intervals = (
-                InvalidatedPITInterval(
-                    target_locator=locator,
-                    interval_start=interval_start,
-                    interval_end=interval_end,
-                ),
-            )
-
-        dependent_artifacts = tuple(payload.get("dependent_downstream_artifacts", []))
-
-        affected_builds.append(AffectedBuild(
-            build_id=build_id,
-            profile=profile,
-            projection_artifact_path=projection_path,
-            affected_projection_row_hashes=row_hashes,
-            invalidated_PIT_intervals=pit_intervals,
-            dependent_downstream_artifacts=dependent_artifacts,
-        ))
-
-    return ClaimRetractionTaintReport(
-        retracted_claim_id=claim_id,
-        retraction_event_id=retraction_event_id,
-        retraction_timestamp=retraction_ts,
-        retraction_reason=retraction_event.reason,
-        affected_builds=tuple(affected_builds),
-    )
 
 
 def cmd_retract(args: object) -> int:
-    """Retract an accepted claim. Emits taint report for affected builds (Slice 5)."""
-    claim_id: str = args.claim_id  # type: ignore[attr-defined]
+    """Emit retracted attestation; render retraction taint report."""
+    assertion_id: str = args.assertion_id  # type: ignore[attr-defined]
     reason: str = args.reason  # type: ignore[attr-defined]
-    data_dir: str = getattr(args, "data_dir", _DEFAULT_DATA_DIR)
-    store = _get_store(data_dir)
+    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    store = _get_store(graph_store_root)
 
-    if not store.claim_exists(claim_id):
-        print(f"error: claim not found: {claim_id}", file=sys.stderr)
+    if _read_assertion_from_store(store, assertion_id) is None:
+        print(f"error: assertion not found: {assertion_id}", file=sys.stderr)
         return 1
 
-    current_state = store.read_state(claim_id)
-    if current_state is None:
-        print(f"error: no state for claim {claim_id}", file=sys.stderr)
-        return 1
-
-    if current_state.status != ClaimStatus.ACCEPTED:
-        print(
-            f"error: claim {claim_id} is in status {current_state.status.value!r}, "
-            "expected 'accepted'",
-            file=sys.stderr,
-        )
-        return 1
-
-    now = _now()
     producer = _cli_producer()
+    attest_id = attest(store, assertion_id, "retracted", {"reason": reason}, producer)
+    snapshot_hash = _write_live_snapshot(store)
+    print(f"retracted: {attest_id}")
 
-    event = ClaimStateEvent(
-        claim_id=claim_id,
-        event_kind="retracted",
-        timestamp=now,
-        producer=producer,
-        old_status="accepted",
-        new_status="retracted",
-        reason=reason,
-    )
-    store.append_event(event)
+    graph = store.read_graph(snapshot_hash)
+    attestation_index = _load_all_attestations(store)
+    findings = query_retraction_taint(graph, (assertion_id,), attestation_index)
 
-    new_state = ClaimState(
-        claim_id=claim_id,
-        status=ClaimStatus.RETRACTED,
-        review_status=current_state.review_status,
-        validator_status=current_state.validator_status,
-        confidence=current_state.confidence,
-        last_updated=now,
-    )
-    store.write_state(new_state)
-
-    print(f"retracted: {claim_id}")
-
-    # Slice 5: build + write taint report
-    claim = store.read_claim(claim_id)
-    report = _build_taint_report(claim_id, event, store, claim)
-
-    taint_reports_dir = store._base / "claim_taint_reports"
-    from lawvm.core.manual_claims.taint_report import write_taint_report, report_to_dict
-    write_taint_report(report, taint_reports_dir)  # type: ignore[arg-type]
-
-    # Emit taint_report_emitted event
-    report_path_str = str(taint_reports_dir)
-    taint_event = ClaimStateEvent(
-        claim_id=claim_id,
-        event_kind="taint_report_emitted",
-        timestamp=now,
-        producer=producer,
-        old_status=None,
-        new_status=None,
-        reason=json.dumps({
-            "retraction_event_id": f"{claim_id}:{now.isoformat()}",
-            "taint_reports_dir": report_path_str,
-            "affected_builds": len(report.affected_builds),  # type: ignore[attr-defined]
-        }),
-    )
-    store.append_event(taint_event)
-
-    # Print the taint report
-    affected = getattr(report, "affected_builds", ())
-    if affected:
-        print(f"\ntaint report: {len(affected)} affected build(s)")
-        for ab in affected:
-            print(f"  build: {ab.build_id}")
-            print(f"  profile: {ab.profile}")
-            print(f"  projection: {ab.projection_artifact_path}")
-            print(f"  row hashes: {len(ab.affected_projection_row_hashes)}")
-            for iv in ab.invalidated_PIT_intervals:
-                end_str = iv.interval_end.isoformat() if iv.interval_end else "open"
-                print(f"    PIT interval [{iv.interval_start} .. {end_str}] for {iv.target_locator}")
+    if findings:
+        print(f"\ntaint report: {len(findings)} tainted build(s)")
+        for f in findings:
+            print(f"  build: {f.build_id}")
+            print(f"  retracted assertion: {f.retracted_assertion_id[:32]}...")
+            print(f"  retraction attestation: {f.retraction_attestation_id[:32]}...")
     else:
-        print("taint report: no consumed builds found (claim was not used in any build)")
-
+        print("taint report: no builds tainted (assertion not consumed by any build)")
     return 0
 
 
 # ---------------------------------------------------------------------------
-# taint-report
+# supersede
 # ---------------------------------------------------------------------------
 
 
-def cmd_taint_report(args: object) -> int:
-    """Show taint reports: for a specific claim, list all, or by build."""
-    data_dir: str = getattr(args, "data_dir", _DEFAULT_DATA_DIR)
-    claim_id: Optional[str] = getattr(args, "claim_id", None)
-    list_all: bool = getattr(args, "list", False)
-    build_id: Optional[str] = getattr(args, "build", None)
+def cmd_supersede(args: object) -> int:
+    """Submit new assertion superseding old; emit superseded attestation."""
+    old_id: str = args.old_assertion_id  # type: ignore[attr-defined]
+    new_file = Path(args.with_file)  # type: ignore[attr-defined]
+    delta_reason: str = getattr(args, "delta_reason", "") or ""
+    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    store = _get_store(graph_store_root)
 
-    taint_reports_dir = Path(data_dir) / _MANUAL_CLAIMS_SUBDIR / "claim_taint_reports"
+    if _read_assertion_from_store(store, old_id) is None:
+        print(f"error: assertion not found: {old_id}", file=sys.stderr)
+        return 1
 
-    from lawvm.core.manual_claims.taint_report import (
-        find_taint_reports_for_claim,
-        find_taint_reports_for_build,
-        list_all_taint_reports,
-        read_taint_report,
-        report_to_dict,
+    if not new_file.exists():
+        print(f"error: new assertion file not found: {new_file}", file=sys.stderr)
+        return 1
+
+    raw = json.loads(new_file.read_text(encoding="utf-8"))
+    raw_supersedes = list(raw.get("supersedes", []))
+    if old_id not in raw_supersedes:
+        raw_supersedes.append(old_id)
+    raw["supersedes"] = raw_supersedes
+
+    new_assertion = _assertion_from_dict(raw)
+    producer = _cli_producer()
+    new_id = submit_assertion(store, new_assertion, producer)
+    attest_id = attest(
+        store, old_id, "superseded",
+        {"superseding_assertion_id": new_id, "delta_reason": delta_reason},
+        producer,
     )
-
-    if claim_id and not list_all and not build_id:
-        paths = find_taint_reports_for_claim(taint_reports_dir, claim_id)
-        if not paths:
-            print(f"no taint reports found for claim {claim_id}")
-            return 0
-        for p in paths:
-            report = read_taint_report(p)
-            print(json.dumps(report_to_dict(report), indent=2, sort_keys=True))
-        return 0
-
-    if list_all:
-        paths = list_all_taint_reports(taint_reports_dir)
-        if not paths:
-            print("no taint reports found")
-            return 0
-        print(f"{len(paths)} taint report(s):")
-        for p in paths:
-            report = read_taint_report(p)
-            ab_count = len(report.affected_builds)
-            print(f"  {report.retracted_claim_id[:32]}... — {ab_count} affected build(s) — {p.name}")
-        return 0
-
-    if build_id:
-        paths = find_taint_reports_for_build(taint_reports_dir, build_id)
-        if not paths:
-            print(f"no taint reports found for build {build_id}")
-            return 0
-        print(f"{len(paths)} taint report(s) for build {build_id}:")
-        for p in paths:
-            report = read_taint_report(p)
-            print(json.dumps(report_to_dict(report), indent=2, sort_keys=True))
-        return 0
-
-    print("error: one of CLAIM_ID, --list, or --build BUILD_ID required", file=sys.stderr)
-    return 1
-
-
-# ---------------------------------------------------------------------------
-# list
-# ---------------------------------------------------------------------------
-
-
-def cmd_list(args: object) -> int:
-    """List claims with optional filters."""
-    kind_filter: Optional[str] = getattr(args, "kind", None)
-    layer_filter: Optional[str] = getattr(args, "layer", None)
-    review_status_filter: Optional[str] = getattr(args, "review_status", None)
-    status_filter: Optional[str] = getattr(args, "status", None)
-    store = _get_store(getattr(args, "data_dir", _DEFAULT_DATA_DIR))
-
-    claim_ids = store.list_all_claim_ids()
-    if not claim_ids:
-        print("no claims filed")
-        return 0
-
-    rows = []
-    for claim_id in sorted(claim_ids):
-        claim = store.read_claim(claim_id)
-        state = store.read_state(claim_id)
-
-        if kind_filter and claim.claim_kind != kind_filter:
-            continue
-        if layer_filter and claim.claim_layer.value != layer_filter:
-            continue
-        if state and review_status_filter and state.review_status.value != review_status_filter:
-            continue
-        if state and status_filter and state.status.value != status_filter:
-            continue
-
-        rows.append({
-            "claim_id": claim.claim_id[:16] + "...",
-            "kind": claim.claim_kind,
-            "layer": claim.claim_layer.value,
-            "status": state.status.value if state else "?",
-            "review": state.review_status.value if state else "?",
-            "validator": state.validator_status.value if state else "?",
-        })
-
-    if not rows:
-        print("no claims match filters")
-        return 0
-
-    # Simple table output
-    headers = ["claim_id", "kind", "layer", "status", "review", "validator"]
-    widths = {h: max(len(h), max(len(str(r[h])) for r in rows)) for h in headers}
-    fmt = "  ".join(f"{{:<{widths[h]}}}" for h in headers)
-    print(fmt.format(*headers))
-    print(fmt.format(*("-" * widths[h] for h in headers)))
-    for row in rows:
-        print(fmt.format(*[row[h] for h in headers]))
-
+    _write_live_snapshot(store)
+    print(f"superseded: old={old_id[:32]}... new={new_id[:32]}...")
+    print(f"superseded attestation: {attest_id}")
     return 0
 
 
@@ -577,133 +404,254 @@ def cmd_list(args: object) -> int:
 
 
 def cmd_show(args: object) -> int:
-    """Show all four records for a claim: payload + state + events + composition."""
-    claim_id: str = args.claim_id  # type: ignore[attr-defined]
-    store = _get_store(getattr(args, "data_dir", _DEFAULT_DATA_DIR))
+    """Render assertion + attestations + authorization result."""
+    assertion_id: str = args.assertion_id  # type: ignore[attr-defined]
+    profile_name: Optional[str] = getattr(args, "profile", None)
+    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    store = _get_store(graph_store_root)
 
-    if not store.claim_exists(claim_id):
-        print(f"error: claim not found: {claim_id}", file=sys.stderr)
+    assertion = _read_assertion_from_store(store, assertion_id)
+    if assertion is None:
+        print(f"error: assertion not found: {assertion_id}", file=sys.stderr)
         return 1
 
-    claim = store.read_claim(claim_id)
-    state = store.read_state(claim_id)
-    events = list(store.read_events(claim_id))
+    attestations = _read_all_attestations_for(store, assertion_id)
 
     print("=" * 72)
-    print(f"CLAIM PAYLOAD  ({claim.claim_id[:32]}...)")
+    print(f"ASSERTION PAYLOAD  ({assertion_id[:32]}...)")
     print("=" * 72)
-    print(f"  claim_kind:         {claim.claim_kind}")
-    print(f"  claim_layer:        {claim.claim_layer.value}")
-    print(f"  jurisdiction:       {claim.jurisdiction}")
-    print(f"  schema_version:     {claim.schema_version}")
-    print(f"  source_witness_type:{claim.source_witness_type.value}")
-    print(f"  statute_id:         {claim.claim_scope.statute_id}")
-    print(f"  provision_ref:      {claim.claim_scope.provision_ref}")
-    print(f"  cited_source_hash:  {claim.cited_source_hash[:16]}...")
-    print(f"  cited_source_span:  {claim.cited_source_span}")
-    print(f"  target:             {dict(claim.target)}")
-    print(f"  value:              {dict(claim.value)}")
-    print(f"  rationale:          {claim.rationale[:80]}")
-    print(f"  supersedes:         {claim.supersedes}")
-    print(f"  disputes:           {claim.disputes}")
+    print(f"  kind:           {assertion.kind}")
+    print(f"  layer:          {assertion.layer}")
+    print(f"  jurisdiction:   {assertion.jurisdiction}")
+    print(f"  schema_version: {assertion.schema_version}")
+    print(f"  scope:          {dict(assertion.scope)}")
+    print(f"  target:         {dict(assertion.target)}")
+    print(f"  value:          {dict(assertion.value)}")
+    print(f"  valid_at:       [{assertion.valid_at.start} .. {assertion.valid_at.end or 'open'}]")
+    print(f"  supersedes:     {assertion.supersedes}")
+    print(f"  disputes:       {assertion.disputes}")
+    print(f"  rationale:      {assertion.rationale[:80]}")
+    print(f"  source_refs:    {len(assertion.source_refs)} ref(s)")
 
     print()
     print("=" * 72)
-    print("CURRENT STATE")
+    print(f"ATTESTATIONS  ({len(attestations)} total, chronological)")
     print("=" * 72)
-    if state:
-        print(f"  status:           {state.status.value}")
-        print(f"  review_status:    {state.review_status.value}")
-        print(f"  validator_status: {state.validator_status.value}")
-        print(f"  confidence:       {state.confidence.value}")
-        print(f"  last_updated:     {state.last_updated.isoformat()}")
-    else:
-        print("  (no state materialized)")
-
-    print()
-    print("=" * 72)
-    print(f"EVENT HISTORY  ({len(events)} events)")
-    print("=" * 72)
-    for evt in events:
+    for attest_obj in attestations:
         print(
-            f"  [{evt.timestamp.isoformat()[:19]}] "
-            f"{evt.event_kind:<20} "
-            f"{evt.old_status or '?'} → {evt.new_status or '?'}  "
-            f"reason: {evt.reason[:60]}"
+            f"  [{attest_obj.produced_at.isoformat()[:19]}] "
+            f"{attest_obj.attestation_kind:<28} "
+            f"id={attest_obj.attestation_id[:16]}..."
         )
+        for k, v in attest_obj.payload.items():
+            print(f"    {k}: {v}")
 
     print()
     print("=" * 72)
-    print("COMPOSITION DECISIONS  (Slice 3 concern — none in Slice 1+2)")
+    print("AUTHORIZATION RESULT")
     print("=" * 72)
-    print("  (empty — composition decisions are derived by composer at build time)")
+    snapshot_files = list((store._root / "snapshots").glob("*.json")) if (store._root / "snapshots").exists() else []
+    if not snapshot_files:
+        print("  (no snapshot; run 'claim propose' to create one)")
+    else:
+        latest_snap = max(snapshot_files, key=lambda p: p.stat().st_mtime)
+        snap_hash = latest_snap.stem
+        policy = _default_policy(assertion.kind)
+        profile = _default_profile()
+        result = query_state_from_store(
+            store, snap_hash, assertion_id,
+            policy=policy, profile=profile,
+            at=datetime.now(tz=timezone.utc),
+        )
+        print(f"  authorized:           {result.authorized}")
+        print(f"  policy_id:            {result.policy_id}")
+        print(f"  profile_name:         {result.profile_name}")
+        print(f"  satisfied_clauses:    {result.satisfied_clauses}")
+        print(f"  unsatisfied_clauses:  {result.unsatisfied_clauses}")
+        print(f"  forbidden_present:    {result.forbidden_present}")
+        print(f"  evidence_bundle_hash: {result.evidence_bundle_hash[:32]}...")
+
+    print()
+    print("=" * 72)
+    print("SOURCE PROVENANCE")
+    print("=" * 72)
+    for i, ref in enumerate(assertion.source_refs):
+        print(f"  source_ref[{i}]:")
+        print(f"    artifact_digest:        {ref.artifact_digest[:32]}...")
+        print(f"    structural_locator:     {ref.structural_locator}")
+        print(f"    normalization_policy:   {ref.normalization_policy_id}")
+        print(f"    byte_range:             {ref.byte_range}")
 
     return 0
 
 
 # ---------------------------------------------------------------------------
-# validate (standalone, re-run validators on an already-filed claim)
+# list
 # ---------------------------------------------------------------------------
 
 
-def cmd_validate(args: object) -> int:
-    """Re-run validators on an already-filed claim."""
-    claim_id: str = args.claim_id  # type: ignore[attr-defined]
-    validator_arg: str = getattr(args, "validator", "all")
-    store = _get_store(getattr(args, "data_dir", _DEFAULT_DATA_DIR))
+def cmd_list(args: object) -> int:
+    """List assertions with optional filters."""
+    kind_filter: Optional[str] = getattr(args, "kind", None)
+    layer_filter: Optional[str] = getattr(args, "layer", None)
+    has_attestation_kind: Optional[str] = getattr(args, "has_attestation_kind", None)
+    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    store = _get_store(graph_store_root)
 
-    if not store.claim_exists(claim_id):
-        print(f"error: claim not found: {claim_id}", file=sys.stderr)
-        return 1
-
-    claim = store.read_claim(claim_id)
-    spec = _get_kind_spec(claim.claim_kind)
-
-    if spec is None:
-        print(f"warning: unknown claim kind {claim.claim_kind!r} — no validators available")
+    assertions = _load_all_assertions(store)
+    if not assertions:
+        print("no assertions in graph store")
         return 0
 
-    now = _now()
-    producer = _cli_producer()
-    rc = 0
+    if has_attestation_kind:
+        attestations_by_subject: dict[str, list[str]] = {}
+        for attest_obj in _load_all_attestations(store).values():
+            subj = attest_obj.subject.artifact_id
+            attestations_by_subject.setdefault(subj, []).append(attest_obj.attestation_kind)
 
-    if validator_arg in ("span", "all") and spec.span_validator:
-        result = spec.span_validator(claim, b"")
-        status = "PASSED" if result.passed else "FAILED"
-        print(f"span_verified: {status} — {result.reason}")
-        if result.passed:
-            event = ClaimStateEvent(
-                claim_id=claim_id,
-                event_kind="span_verified",
-                timestamp=now,
-                producer=producer,
-                old_status=None,
-                new_status=None,
-                reason=result.reason,
-            )
-            store.append_event(event)
-        else:
-            rc = 1
+    rows = []
+    for assertion in assertions:
+        if kind_filter and assertion.kind != kind_filter:
+            continue
+        if layer_filter and assertion.layer != layer_filter:
+            continue
+        if has_attestation_kind:
+            kinds = attestations_by_subject.get(assertion.assertion_id, [])
+            if has_attestation_kind not in kinds:
+                continue
+        rows.append({
+            "assertion_id": assertion.assertion_id[:16] + "...",
+            "kind": assertion.kind,
+            "layer": assertion.layer,
+            "jurisdiction": assertion.jurisdiction,
+            "valid_from": str(assertion.valid_at.start),
+        })
 
-    if validator_arg in ("entailment", "all") and spec.entailment_validator:
-        result = spec.entailment_validator(claim, b"")
-        status = "PASSED" if result.passed else "FAILED"
-        print(f"entailment_verified: {status} — {result.reason}")
-        if result.passed:
-            event = ClaimStateEvent(
-                claim_id=claim_id,
-                event_kind="entailment_verified",
-                timestamp=now,
-                producer=producer,
-                old_status=None,
-                new_status=None,
-                reason=result.reason,
-            )
-            store.append_event(event)
-        else:
-            rc = 1
+    if not rows:
+        print("no assertions match filters")
+        return 0
 
-    return rc
+    headers = ["assertion_id", "kind", "layer", "jurisdiction", "valid_from"]
+    widths = {h: max(len(h), max(len(str(r[h])) for r in rows)) for h in headers}
+    fmt = "  ".join(f"{{:<{widths[h]}}}" for h in headers)
+    print(fmt.format(*headers))
+    print(fmt.format(*("-" * widths[h] for h in headers)))
+    for row in rows:
+        print(fmt.format(*[row[h] for h in headers]))
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# history
+# ---------------------------------------------------------------------------
+
+
+def cmd_history(args: object) -> int:
+    """Show all assertions targeting a provision_ref over time, chronologically."""
+    target_ref: str = args.target  # type: ignore[attr-defined]
+    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    store = _get_store(graph_store_root)
+
+    assertions = _load_all_assertions(store)
+    matched = [
+        a for a in assertions
+        if a.scope.get("provision_ref") == target_ref
+        or dict(a.target).get("provision_ref") == target_ref
+    ]
+    matched.sort(key=lambda a: a.valid_at.start)
+
+    if not matched:
+        print(f"no assertions found targeting provision_ref={target_ref!r}")
+        return 0
+
+    print(f"history for provision_ref={target_ref!r}  ({len(matched)} assertions)")
+    for a in matched:
+        print(f"  [{a.valid_at.start}] {a.assertion_id[:32]}...  kind={a.kind}  layer={a.layer}")
+        print(f"    value: {dict(a.value)}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# disputes
+# ---------------------------------------------------------------------------
+
+
+def cmd_disputes(args: object) -> int:
+    """Show conflicting assertion pairs for a statute."""
+    statute_id: str = args.statute  # type: ignore[attr-defined]
+    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    store = _get_store(graph_store_root)
+
+    assertions = [
+        a for a in _load_all_assertions(store)
+        if a.scope.get("statute_id") == statute_id
+    ]
+
+    pairs = []
+    seen: set = set()
+    for a in assertions:
+        for disputed_id in a.disputes:
+            key = tuple(sorted([a.assertion_id, disputed_id]))
+            if key not in seen:
+                seen.add(key)
+                pairs.append((a.assertion_id, disputed_id))
+
+    if not pairs:
+        print(f"no dispute pairs found for statute {statute_id!r}")
+        return 0
+
+    print(f"disputes for statute {statute_id!r}  ({len(pairs)} pair(s))")
+    for a_id, b_id in pairs:
+        print(f"  {a_id[:32]}...  disputes  {b_id[:32]}...")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# taint-report
+# ---------------------------------------------------------------------------
+
+
+def cmd_taint_report(args: object) -> int:
+    """Compute retraction taint at query time (not from stored taint)."""
+    assertion_id: Optional[str] = getattr(args, "assertion_id", None)
+    list_all: bool = getattr(args, "list", False)
+    graph_store_root = getattr(args, "graph_store_root", None) or _DEFAULT_GRAPH_ROOT
+    store = _get_store(graph_store_root)
+
+    graph = _build_live_snapshot(store)
+    attestation_index = _load_all_attestations(store)
+
+    if list_all:
+        retracted_ids = [
+            a.subject.artifact_id
+            for a in attestation_index.values()
+            if a.attestation_kind == "retracted"
+        ]
+        if not retracted_ids:
+            print("no retracted assertions found")
+            return 0
+        print(f"{len(retracted_ids)} retracted assertion(s):")
+        for rid in sorted(set(retracted_ids)):
+            findings = query_retraction_taint(graph, (rid,), attestation_index)
+            taint_count = len(findings)
+            print(f"  {rid[:32]}...  taint_count={taint_count}")
+        return 0
+
+    if assertion_id is None:
+        print("error: provide ASSERTION_ID or --list", file=sys.stderr)
+        return 1
+
+    findings = query_retraction_taint(graph, (assertion_id,), attestation_index)
+    if not findings:
+        print(f"taint report for {assertion_id[:32]}...: no builds tainted")
+        return 0
+
+    print(f"taint report for {assertion_id[:32]}...  ({len(findings)} finding(s))")
+    for f in findings:
+        print(f"  build: {f.build_id}")
+        print(f"  retracted_assertion: {f.retracted_assertion_id[:32]}...")
+        print(f"  retraction_attestation: {f.retraction_attestation_id[:32]}...")
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -718,9 +666,11 @@ def main(args: object) -> None:
         "accept": cmd_accept,
         "reject": cmd_reject,
         "retract": cmd_retract,
-        "list": cmd_list,
+        "supersede": cmd_supersede,
         "show": cmd_show,
-        "validate": cmd_validate,
+        "list": cmd_list,
+        "history": cmd_history,
+        "disputes": cmd_disputes,
         "taint-report": cmd_taint_report,
     }
     fn = dispatch.get(subcmd)
