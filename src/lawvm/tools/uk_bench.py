@@ -118,6 +118,8 @@ _CORPUS_FIELDNAMES = [
     "statute_id",
     "type",
     "year",
+    "source_locator_form",
+    "metadata_statute_id",
     "has_enacted",
     "has_consolidated",
     "n_effects",
@@ -240,6 +242,11 @@ def _configure_uk_bench_worker(
 
 
 _LEG_BASE = "https://www.legislation.gov.uk"
+_UK_NUMERIC_SOURCE_ID_RE = re.compile(r"[a-z]+/\d{4}/\d+")
+_UK_REGNAL_SOURCE_ID_RE = re.compile(r"[a-z]+/[A-Za-z][A-Za-z0-9]*/[0-9]+-[0-9]+/\d+")
+_UK_METADATA_VALUE_RE = re.compile(
+    rb"<(?:[A-Za-z_][\w.-]*:)?(?P<name>Year|Number)\b[^>]{0,500}?\bValue=[\"'](?P<value>[^\"']{1,40})[\"']"
+)
 
 # Primary act types to include by default
 _DEFAULT_TYPES = frozenset(["ukpga", "asp", "asc", "nia"])
@@ -712,8 +719,23 @@ def _text_similarity_score(
 # ---------------------------------------------------------------------------
 
 
-def _extract_sid_from_url(url: str, suffix: str) -> Optional[str]:
-    """Extract 'type/year/num' from a legislation.gov.uk URL with a given suffix."""
+@dataclass(frozen=True)
+class _UKCorpusSourceId:
+    statute_id: str
+    act_type: str
+    year: int
+    source_locator_form: str
+
+
+def _extract_corpus_source_id_from_url(url: str, suffix: str) -> Optional[_UKCorpusSourceId]:
+    """Extract a UK statute source id from a legislation.gov.uk XML URL.
+
+    Most archive locators use ``type/YYYY/number``.  Multiple Choices repairs
+    also store leaf sources under regnal locators such as
+    ``ukpga/Eliz2/3-4/18``.  Those leaves are real source witnesses and belong
+    in the corpus index, but they must remain distinct from the ambiguous
+    short-form numeric locator that produced the Multiple Choices page.
+    """
     prefix = f"{_LEG_BASE}/"
     if not url.startswith(prefix):
         return None
@@ -721,10 +743,49 @@ def _extract_sid_from_url(url: str, suffix: str) -> Optional[str]:
     if not path.endswith(suffix):
         return None
     sid = path[: -len(suffix)]
-    # Must match type/year/num pattern
-    if re.fullmatch(r"[a-z]+/\d{4}/\d+", sid):
-        return sid
+    if _UK_NUMERIC_SOURCE_ID_RE.fullmatch(sid):
+        act_type, year, _number = sid.split("/")
+        return _UKCorpusSourceId(
+            statute_id=sid,
+            act_type=act_type,
+            year=int(year),
+            source_locator_form="numeric",
+        )
+    if _UK_REGNAL_SOURCE_ID_RE.fullmatch(sid):
+        act_type = sid.split("/", 1)[0]
+        return _UKCorpusSourceId(
+            statute_id=sid,
+            act_type=act_type,
+            year=0,
+            source_locator_form="regnal",
+        )
     return None
+
+
+def _uk_source_metadata_statute_id(
+    statute_id: str,
+    act_type: str,
+    source_bytes: bytes | None,
+) -> str:
+    """Return best-effort metadata ``type/year/number`` without authorizing it.
+
+    This is report evidence for regnal leaf rows.  It is intentionally not used
+    to merge rows, find effect feeds, or choose a canonical source.
+    """
+    if not source_bytes:
+        return ""
+    metadata: dict[str, str] = {}
+    for match in _UK_METADATA_VALUE_RE.finditer(source_bytes[:65536]):
+        name = match.group("name").decode("ascii", errors="ignore")
+        value = match.group("value").decode("ascii", errors="ignore")
+        metadata.setdefault(name, value)
+    year = metadata.get("Year", "")
+    number = metadata.get("Number", "")
+    if year.isdigit() and number.isdigit():
+        return f"{act_type}/{year}/{number}"
+    if _UK_NUMERIC_SOURCE_ID_RE.fullmatch(statute_id):
+        return statute_id
+    return ""
 
 
 def _build_corpus_index(
@@ -743,13 +804,11 @@ def _build_corpus_index(
         "SELECT DISTINCT locator FROM locator_span WHERE locator LIKE '%/enacted/data.xml'"
     ).fetchall()
 
-    enacted_sids: dict[str, str] = {}  # sid -> url
+    enacted_sids: dict[str, tuple[_UKCorpusSourceId, str]] = {}  # sid -> (source id, url)
     for (url,) in enacted_rows:
-        sid = _extract_sid_from_url(url, "/enacted/data.xml")
-        if sid:
-            act_type = sid.split("/")[0]
-            if types is None or act_type in types:
-                enacted_sids[sid] = url
+        source_id = _extract_corpus_source_id_from_url(url, "/enacted/data.xml")
+        if source_id and (types is None or source_id.act_type in types):
+            enacted_sids[source_id.statute_id] = (source_id, url)
 
     # Find all current (consolidated) XML URLs — not /enacted/ and not /changes/
     current_rows = conn.execute(
@@ -759,13 +818,11 @@ def _build_corpus_index(
         "  AND locator NOT LIKE '%/changes/%'"
     ).fetchall()
 
-    current_sids: dict[str, str] = {}  # sid -> url
+    current_sids: dict[str, tuple[_UKCorpusSourceId, str]] = {}  # sid -> (source id, url)
     for (url,) in current_rows:
-        sid = _extract_sid_from_url(url, "/data.xml")
-        if sid:
-            act_type = sid.split("/")[0]
-            if types is None or act_type in types:
-                current_sids[sid] = url
+        source_id = _extract_corpus_source_id_from_url(url, "/data.xml")
+        if source_id and (types is None or source_id.act_type in types):
+            current_sids[source_id.statute_id] = (source_id, url)
 
     # Find statutes with effects feeds (any page)
     effects_rows = conn.execute(
@@ -784,25 +841,35 @@ def _build_corpus_index(
     both = set(enacted_sids) & set(current_sids)
     entries = []
     for sid in sorted(both):
-        parts = sid.split("/")
-        act_type, year = parts[0], parts[1]
-        enacted_bytes = archive.get(enacted_sids[sid])
-        oracle_bytes = archive.get(current_sids[sid])
+        source_id, enacted_url = enacted_sids[sid]
+        _current_source_id, current_url = current_sids[sid]
+        enacted_bytes = archive.get(enacted_url)
+        oracle_bytes = archive.get(current_url)
         enacted_source_status, enacted_source_size = _source_state(enacted_bytes)
         oracle_source_status, oracle_source_size = _source_state(oracle_bytes)
+        metadata_statute_id = _uk_source_metadata_statute_id(
+            sid,
+            source_id.act_type,
+            enacted_bytes or oracle_bytes,
+        )
+        metadata_parts = metadata_statute_id.split("/")
+        metadata_year = int(metadata_parts[1]) if len(metadata_parts) == 3 and metadata_parts[1].isdigit() else 0
+        year = source_id.year or metadata_year
         entries.append(
             {
                 "statute_id": sid,
-                "type": act_type,
+                "type": source_id.act_type,
                 "year": int(year),
+                "source_locator_form": source_id.source_locator_form,
+                "metadata_statute_id": metadata_statute_id,
                 "has_enacted": True,
                 "has_consolidated": True,
                 # Historical compatibility: n_effects currently means archived
                 # effect-feed pages, not parsed effect rows.
                 "n_effects": effect_feed_page_counts.get(sid, 0),
                 "n_effect_feed_pages": effect_feed_page_counts.get(sid, 0),
-                "enacted_url": enacted_sids[sid],
-                "current_url": current_sids[sid],
+                "enacted_url": enacted_url,
+                "current_url": current_url,
                 "enacted_source_status": enacted_source_status,
                 "oracle_source_status": oracle_source_status,
                 "enacted_source_size": enacted_source_size,
@@ -6738,6 +6805,8 @@ def _build_corpus_csv(archive: Farchive, types: Optional[frozenset[str]] = None)
                     "statute_id": e["statute_id"],
                     "type": e["type"],
                     "year": e["year"],
+                    "source_locator_form": e.get("source_locator_form", ""),
+                    "metadata_statute_id": e.get("metadata_statute_id", ""),
                     "has_enacted": str(e["has_enacted"]),
                     "has_consolidated": str(e["has_consolidated"]),
                     "n_effects": e["n_effects"],
@@ -6761,9 +6830,9 @@ def _build_corpus_csv(archive: Farchive, types: Optional[frozenset[str]] = None)
 
 def _parse_uk_statute_id(statute_id: str) -> tuple[str, int]:
     parts = statute_id.split("/")
-    if len(parts) < 3 or not parts[1].isdigit():
+    if len(parts) < 3 or not parts[0]:
         raise ValueError(f"invalid UK statute id in corpus CSV: {statute_id!r}")
-    return parts[0], int(parts[1])
+    return parts[0], int(parts[1]) if parts[1].isdigit() else 0
 
 
 def _bool_cell(value: object, *, default: bool) -> bool:
@@ -6787,10 +6856,15 @@ def _uk_corpus_entry_from_row(row: dict[str, object]) -> dict[str, object]:
     year = _int_cell(row.get("year"), default=year)
     n_effects = _int_cell(row.get("n_effects"), default=0)
     n_effect_feed_pages = _int_cell(row.get("n_effect_feed_pages"), default=n_effects)
+    source_locator_form = str(row.get("source_locator_form") or "").strip()
+    if not source_locator_form:
+        source_locator_form = "numeric" if _UK_NUMERIC_SOURCE_ID_RE.fullmatch(statute_id) else "regnal"
     return {
         "statute_id": statute_id,
         "type": act_type,
         "year": year,
+        "source_locator_form": source_locator_form,
+        "metadata_statute_id": row.get("metadata_statute_id") or "",
         "has_enacted": _bool_cell(row.get("has_enacted"), default=True),
         "has_consolidated": _bool_cell(row.get("has_consolidated"), default=True),
         "n_effects": n_effects,

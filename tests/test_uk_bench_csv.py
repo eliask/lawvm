@@ -2745,6 +2745,8 @@ def test_uk_bench_corpus_csv_load_preserves_source_state(monkeypatch, tmp_path) 
             "statute_id": "ukpga/2000/1",
             "type": "ukpga",
             "year": 2000,
+            "source_locator_form": "numeric",
+            "metadata_statute_id": "",
             "has_enacted": True,
             "has_consolidated": True,
             "n_effects": 3,
@@ -2759,6 +2761,28 @@ def test_uk_bench_corpus_csv_load_preserves_source_state(monkeypatch, tmp_path) 
             "oracle_source_sha256": "oracle-sha",
         }
     ]
+
+
+def test_uk_bench_corpus_row_accepts_regnal_leaf_source_id() -> None:
+    entry = uk_bench._uk_corpus_entry_from_row(
+        {
+            "statute_id": "ukpga/Eliz2/3-4/18",
+            "type": "ukpga",
+            "year": "1955",
+            "metadata_statute_id": "ukpga/1955/18",
+            "enacted_source_status": "available",
+            "oracle_source_status": "available",
+        }
+    )
+
+    assert entry["statute_id"] == "ukpga/Eliz2/3-4/18"
+    assert entry["year"] == 1955
+    assert entry["source_locator_form"] == "regnal"
+    assert entry["metadata_statute_id"] == "ukpga/1955/18"
+    assert entry["enacted_url"] == (
+        "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/enacted/data.xml"
+    )
+    assert entry["current_url"] == "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/data.xml"
 
 
 def test_uk_bench_build_corpus_csv_writes_source_urls(monkeypatch, tmp_path, capsys) -> None:
@@ -5550,6 +5574,8 @@ def test_uk_bench_build_corpus_index_records_source_states() -> None:
             "statute_id": "ukpga/2000/1",
             "type": "ukpga",
             "year": 2000,
+            "source_locator_form": "numeric",
+            "metadata_statute_id": "ukpga/2000/1",
             "has_enacted": True,
             "has_consolidated": True,
             "n_effects": 1,
@@ -5567,6 +5593,8 @@ def test_uk_bench_build_corpus_index_records_source_states() -> None:
             "statute_id": "ukpga/2000/2",
             "type": "ukpga",
             "year": 2000,
+            "source_locator_form": "numeric",
+            "metadata_statute_id": "ukpga/2000/2",
             "has_enacted": True,
             "has_consolidated": True,
             "n_effects": 0,
@@ -5579,6 +5607,98 @@ def test_uk_bench_build_corpus_index_records_source_states() -> None:
             "oracle_source_size": 100,
             "enacted_source_sha256": "",
             "oracle_source_sha256": hashlib.sha256(b"x" * 100).hexdigest(),
+        },
+    ]
+
+
+def test_uk_bench_build_corpus_index_includes_regnal_multiple_choice_leaf_sources() -> None:
+    regnal_enacted = b"""<?xml version="1.0"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+             xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+             NumberOfProvisions="1">
+  <ukm:Metadata>
+    <ukm:Year Value="1955"/>
+    <ukm:Number Value="18"/>
+  </ukm:Metadata>
+  <Body><P1 id="p1"><Pnumber>1</Pnumber><P1para><Text>leaf enacted</Text></P1para></P1></Body>
+</Legislation>"""
+    regnal_current = regnal_enacted.replace(b"leaf enacted", b"leaf current")
+
+    class SimpleRows:
+        def __init__(self, rows: list[tuple[str]]) -> None:
+            self._rows = rows
+
+        def fetchall(self) -> list[tuple[str]]:
+            return self._rows
+
+    class FakeConnection:
+        def execute(self, query: str):
+            if "%/enacted/data.xml" in query:
+                return SimpleRows([
+                    ("https://www.legislation.gov.uk/ukpga/1955/18/enacted/data.xml",),
+                    ("https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/enacted/data.xml",),
+                ])
+            if "%/data.feed%" in query:
+                return SimpleRows([
+                    ("https://www.legislation.gov.uk/changes/affected/ukpga/1955/18/data.feed",),
+                ])
+            return SimpleRows([
+                ("https://www.legislation.gov.uk/ukpga/1955/18/data.xml",),
+                ("https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/data.xml",),
+            ])
+
+    class FakeArchive:
+        _conn = FakeConnection()
+
+        def get(self, url: str) -> bytes | None:
+            if "/ukpga/1955/18/" in url:
+                return b"HTTP 300 Multiple Choices"
+            if url.endswith("/ukpga/Eliz2/3-4/18/enacted/data.xml"):
+                return regnal_enacted
+            if url.endswith("/ukpga/Eliz2/3-4/18/data.xml"):
+                return regnal_current
+            return None
+
+    rows = uk_bench._build_corpus_index(cast(Farchive, FakeArchive()))
+
+    assert rows == [
+        {
+            "statute_id": "ukpga/1955/18",
+            "type": "ukpga",
+            "year": 1955,
+            "source_locator_form": "numeric",
+            "metadata_statute_id": "ukpga/1955/18",
+            "has_enacted": True,
+            "has_consolidated": True,
+            "n_effects": 1,
+            "n_effect_feed_pages": 1,
+            "enacted_url": "https://www.legislation.gov.uk/ukpga/1955/18/enacted/data.xml",
+            "current_url": "https://www.legislation.gov.uk/ukpga/1955/18/data.xml",
+            "enacted_source_status": "multiple_choices",
+            "oracle_source_status": "multiple_choices",
+            "enacted_source_size": len(b"HTTP 300 Multiple Choices"),
+            "oracle_source_size": len(b"HTTP 300 Multiple Choices"),
+            "enacted_source_sha256": hashlib.sha256(b"HTTP 300 Multiple Choices").hexdigest(),
+            "oracle_source_sha256": hashlib.sha256(b"HTTP 300 Multiple Choices").hexdigest(),
+        },
+        {
+            "statute_id": "ukpga/Eliz2/3-4/18",
+            "type": "ukpga",
+            "year": 1955,
+            "source_locator_form": "regnal",
+            "metadata_statute_id": "ukpga/1955/18",
+            "has_enacted": True,
+            "has_consolidated": True,
+            "n_effects": 0,
+            "n_effect_feed_pages": 0,
+            "enacted_url": "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/enacted/data.xml",
+            "current_url": "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/data.xml",
+            "enacted_source_status": "available",
+            "oracle_source_status": "available",
+            "enacted_source_size": len(regnal_enacted),
+            "oracle_source_size": len(regnal_current),
+            "enacted_source_sha256": hashlib.sha256(regnal_enacted).hexdigest(),
+            "oracle_source_sha256": hashlib.sha256(regnal_current).hexdigest(),
         },
     ]
 
