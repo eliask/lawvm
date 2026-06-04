@@ -5738,6 +5738,7 @@ def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeyp
             lowering_rejections_out: list[dict[str, object]],
             effect_diagnostics_out: list[dict[str, object]] | None = None,
             compile_phase_timings_out: dict[str, float] | None = None,
+            diagnostic_replay_filter_mode: object | None = None,
         ) -> list[object]:
             compile_seen["statute_id"] = statute_id
             compile_seen["archive"] = archive
@@ -5745,6 +5746,7 @@ def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeyp
             compile_seen["allow_metadata_only_effects"] = allow_metadata_only_effects
             compile_seen["applicability_mode"] = applicability_mode
             compile_seen["authority_mode"] = authority_mode
+            compile_seen["diagnostic_replay_filter_mode"] = diagnostic_replay_filter_mode
             authority_rejections_out.append({"rule_id": "uk_authority_source_text_only_missing"})
             lowering_rejections_out.append({"rule_id": "uk_effect_lowering_no_ops_rejected", "blocking": True})
             lowering_rejections_out.append({"rule_id": "uk_effect_legacy_unmarked_rejected"})
@@ -6031,6 +6033,7 @@ def test_uk_bench_score_statute_preserves_compile_diagnostics_on_replay_exceptio
             lowering_rejections_out: list[dict[str, object]],
             effect_diagnostics_out: list[dict[str, object]] | None = None,
             compile_phase_timings_out: dict[str, float] | None = None,
+            diagnostic_replay_filter_mode: object | None = None,
         ) -> list[object]:
             assert archive is not None
             assert allow_metadata_backfill is True

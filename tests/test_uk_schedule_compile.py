@@ -99,6 +99,7 @@ from lawvm.uk_legislation.table_selectors import (
 )
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKEffectRecord,
+    UKDiagnosticReplayFilterMode,
     UKReplayPipeline,
     UKReplayExecutor,
     _order_uk_effects_for_replay,
@@ -60831,6 +60832,7 @@ def test_pipeline_compile_ops_skips_instruction_text_reused_as_payload_rows(monk
             "strict_disposition": "block",
             "quirks_disposition": "record",
             "source_pathology": "instruction_text_reused_as_payload",
+            "owner_phase": "affecting_source_extraction",
         }
     ]
     manual_rows = [
@@ -60838,33 +60840,53 @@ def test_pipeline_compile_ops_skips_instruction_text_reused_as_payload_rows(monk
         for row in diagnostics
         if row["rule_id"] == "uk_manual_compile_frontier_classified"
     ]
-    assert manual_rows == [
-        {
-            "rule_id": "uk_manual_compile_frontier_classified",
-            "family": "manual_compile_frontier",
-            "phase": "lowering",
-            "effect_id": "uk_test_instruction_payload_skip",
-            "affecting_act_id": "uksi/2001/4022",
-            "affected_provisions": "s. 7 8 9",
-            "affecting_provisions": "reg. 20",
-            "effect_type": "substituted",
-            "manual_compile_status": "source_insufficient",
-            "manual_compile_rule_id": "uk_manual_frontier_source_pathology_insufficient",
-            "manual_compile_reason": (
-                "The blocking row is dominated by source-shape pathology rather than "
-                "an unambiguous manual compilation opportunity."
-            ),
-            "lowering_rule_ids": ("uk_effect_instruction_text_payload_rejected",),
-            "blocking_lowering_rule_ids": ("uk_effect_instruction_text_payload_rejected",),
-            "source_pathology": "instruction_text_reused_as_payload",
-            "structural_for_replay": True,
-            "replay_applicable": True,
-            "compiled_op_count": 2,
-            "blocking": False,
-            "strict_disposition": "record",
-            "quirks_disposition": "record",
-        }
-    ]
+    assert len(manual_rows) == 1
+    manual_row = manual_rows[0]
+    expected_manual_fields = {
+        "rule_id": "uk_manual_compile_frontier_classified",
+        "family": "manual_compile_frontier",
+        "phase": "lowering",
+        "effect_id": "uk_test_instruction_payload_skip",
+        "affecting_act_id": "uksi/2001/4022",
+        "affected_provisions": "s. 7 8 9",
+        "affecting_provisions": "reg. 20",
+        "effect_type": "substituted",
+        "manual_compile_status": "source_insufficient",
+        "manual_compile_rule_id": "uk_manual_frontier_source_pathology_insufficient",
+        "manual_compile_reason": (
+            "The blocking row is dominated by source-shape pathology rather than "
+            "an unambiguous manual compilation opportunity."
+        ),
+        "lowering_rule_ids": ("uk_effect_instruction_text_payload_rejected",),
+        "blocking_lowering_rule_ids": ("uk_effect_instruction_text_payload_rejected",),
+        "source_pathology": "instruction_text_reused_as_payload",
+        "structural_for_replay": True,
+        "replay_applicable": True,
+        "compiled_op_count": 2,
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+        "owner_phase": "affecting_source_extraction",
+    }
+    assert {key: manual_row[key] for key in expected_manual_fields} == expected_manual_fields
+    assert manual_row["execution_authorization"]["authorization_status"] == "source_insufficient"
+    assert manual_row["frontier_work_item"]["frontier_status"] == "source_insufficient"
+
+    observe_lowering_rejections: list[dict[str, Any]] = []
+    observe_diagnostics: list[dict[str, Any]] = []
+    assert pipeline.compile_ops_for_statute(
+        "ukpga/2001/11",
+        archive=object(),
+        lowering_rejections_out=observe_lowering_rejections,
+        effect_diagnostics_out=observe_diagnostics,
+        diagnostic_replay_filter_mode=UKDiagnosticReplayFilterMode.OBSERVE_ONLY,
+    ) == compiled
+    assert observe_lowering_rejections == lowering_rejections
+    assert [
+        row
+        for row in observe_diagnostics
+        if row["rule_id"] == "uk_manual_compile_frontier_classified"
+    ][0]["manual_compile_status"] == "source_insufficient"
 
 
 def test_source_pathology_classifies_becomes_instruction_text_payload() -> None:

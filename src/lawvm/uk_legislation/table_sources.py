@@ -1,6 +1,7 @@
 """UK source-table elaboration helpers."""
 from __future__ import annotations
 
+import functools
 import re
 from lxml import etree as ET
 from dataclasses import dataclass
@@ -251,6 +252,7 @@ class _UKRepealTableQuotedWordsSelector(NamedTuple):
 # lxml _Element objects do not support weak references; use a plain dict.
 # Eviction is handled by explicit evict_source_root_caches() calls.
 _REPEAL_EXTENT_TABLE_CACHE: dict[ET._Element, tuple[_UKRepealExtentSourceTable, ...]] = {}
+_UK_TABLE_ROWSPAN_ROWS_CACHE: dict[ET._Element, tuple[tuple[str, ...], ...]] = {}
 
 
 def _strip_outer_uk_quotes(text: str) -> str:
@@ -2607,12 +2609,25 @@ def _uk_table_cell_mentions_target(
     affected_year: str,
 ) -> bool:
     """Conservatively match an effect target against a source-table provision cell."""
+    return _uk_table_cell_mentions_target_cached(
+        cell_text,
+        tuple(target.path),
+        affected_year,
+    )
+
+
+@functools.lru_cache(maxsize=262_144)
+def _uk_table_cell_mentions_target_cached(
+    cell_text: str,
+    target_path: tuple[tuple[str, str], ...],
+    affected_year: str,
+) -> bool:
     text = " ".join(cell_text.split()).lower()
     if not text:
         return False
     text = _uk_table_cell_target_scope_text(text)
     scope_text = re.sub(r"[“\"'‘].*?[”\"'’]", "", text)
-    labels = {kind: label for kind, label in target.path}
+    labels = {kind: label for kind, label in target_path}
     section = labels.get("section", "")
     schedule = labels.get("schedule", "")
     paragraph = labels.get("paragraph", "")
@@ -2866,6 +2881,9 @@ def _uk_table_is_column_1_2_source_table(table: ET._Element) -> bool:
 
 
 def _uk_table_rows_with_rowspans(table: ET._Element) -> list[list[str]]:
+    cached = _UK_TABLE_ROWSPAN_ROWS_CACHE.get(table)
+    if cached is not None:
+        return [list(row) for row in cached]
     rows: list[list[str]] = []
     rowspans: dict[int, tuple[int, str]] = {}
     for row in table.iter():
@@ -2904,6 +2922,7 @@ def _uk_table_rows_with_rowspans(table: ET._Element) -> list[list[str]]:
             col_idx += 1
         if any(cells):
             rows.append(cells)
+    _UK_TABLE_ROWSPAN_ROWS_CACHE[table] = tuple(tuple(row) for row in rows)
     return rows
 
 

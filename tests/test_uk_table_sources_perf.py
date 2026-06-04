@@ -30,6 +30,9 @@ from lawvm.uk_legislation.table_sources import (
     _uk_table_driven_fee_target_refinements,
     _uk_table_rows_with_rowspans,
 )
+from lawvm.uk_legislation.effect_table_lowering import (
+    _is_repeal_table_effect_type_candidate,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +99,33 @@ def _make_fee_effect(
 
 def _target_section_8_1() -> LegalAddress:
     return LegalAddress(path=(("section", "8"), ("subsection", "1")))
+
+
+def test_repeal_table_effect_type_prefilter_admits_only_repeal_lane() -> None:
+    admitted = [
+        "",
+        None,
+        "repealed",
+        "words repealed",
+        "entry repealed",
+        "omitted",
+        "words omitted",
+        "deleted",
+        "revoked",
+        "ceases to have effect",
+        "unmapped source action",
+    ]
+    blocked = [
+        "inserted",
+        "words inserted",
+        "substituted",
+        "words substituted",
+        "added",
+        "modified",
+    ]
+
+    assert all(_is_repeal_table_effect_type_candidate(value) for value in admitted)
+    assert not any(_is_repeal_table_effect_type_candidate(value) for value in blocked)
 
 
 # ---------------------------------------------------------------------------

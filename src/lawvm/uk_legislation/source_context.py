@@ -55,6 +55,12 @@ _COMPOUND_REFERENCE_LEADING_BODY_RE = re.compile(
     r"\b(?:s|section|art|article|rule|reg|regulation)\.?\s*[0-9A-Za-z]+",
     re.I,
 )
+_PARENT_TABLE_COLUMN_OMISSION_RE = re.compile(
+    r"\bomit\s+from\s+(?:the\s+)?"
+    r"(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)"
+    r"\s+column\s+of\s+(?:the\s+)?table\s+(?:the\s+)?entries\s+relating\s+to\b",
+    re.I,
+)
 _SAME_LEVEL_SECTION_PARENTHESES_RE = re.compile(
     r"^\s*(?:s|section)\.?\s*(?P<section>[0-9]+[A-Za-z]?)"
     r"\s*\(\s*(?P<first>[0-9]+[A-Za-z]?)\s*\)"
@@ -152,6 +158,8 @@ _source_parent_map_cache: dict[ET._Element, dict[ET._Element, ET._Element]] = {}
 _source_ancestor_chain_cache: dict[ET._Element, dict[int, tuple[ET._Element, ...]]] = {}
 
 _unique_unnumbered_root_schedule_cache: dict[ET._Element, Optional[ET._Element]] = {}
+_source_parent_table_column_omission_cache: dict[ET._Element, bool] = {}
+_source_broad_repeal_extent_part_cache: dict[ET._Element, bool] = {}
 
 
 def evict_source_root_caches(root: Optional[ET._Element]) -> None:
@@ -165,8 +173,10 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
       - _source_ancestor_chain_cache: inner tuples contain root as terminal ancestor
       - _EXTRACTION_CONTEXT_CACHE: UKExtractionContext.parent_map contains root
       - _unique_unnumbered_root_schedule_cache: values may be root descendants
+      - source-lane predicate caches: keys are root descendant elements
       - source_fragment_context caches: keys are root descendant elements
-      - table_sources caches: fee-table index and repeal-extent table hold root
+      - table_sources caches: fee-table index, rowspan rows, and repeal-extent
+        table hold root
       - table_selectors caches: keys are root descendant elements
     Explicit removal breaks these cycles immediately, making root eligible for
     reference-count GC.
@@ -177,6 +187,13 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
     _source_ancestor_chain_cache.pop(root, None)
     _EXTRACTION_CONTEXT_CACHE.pop(root, None)
     _unique_unnumbered_root_schedule_cache.pop(root, None)
+    for cache in (
+        _source_parent_table_column_omission_cache,
+        _source_broad_repeal_extent_part_cache,
+    ):
+        for el in tuple(cache):
+            if el is root or el.getroottree().getroot() is root:
+                cache.pop(el, None)
     from lawvm.uk_legislation.source_fragment_context import (  # noqa: PLC0415
         evict_source_fragment_context_caches,
     )
@@ -185,10 +202,14 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
     # does not import source_context, so this is safe.
     from lawvm.uk_legislation.table_sources import (  # noqa: PLC0415
         _REPEAL_EXTENT_TABLE_CACHE,
+        _UK_TABLE_ROWSPAN_ROWS_CACHE,
         _UK_FEE_TABLE_INDEX_CACHE,
     )
     _REPEAL_EXTENT_TABLE_CACHE.pop(root, None)
     _UK_FEE_TABLE_INDEX_CACHE.pop(root, None)
+    for table in tuple(_UK_TABLE_ROWSPAN_ROWS_CACHE):
+        if table is root or table.getroottree().getroot() is root:
+            _UK_TABLE_ROWSPAN_ROWS_CACHE.pop(table, None)
     from lawvm.uk_legislation.table_selectors import (  # noqa: PLC0415
         evict_table_selector_caches,
     )
@@ -666,24 +687,29 @@ def _source_child_has_parent_table_column_omission(
     context: UKAffectingSourceContext,
     el: ET._Element,
 ) -> bool:
+    cached = _source_parent_table_column_omission_cache.get(el)
+    if cached is not None:
+        return cached
     for ancestor in _source_ancestor_chain(context.root, el)[:3]:
         text = " ".join(_text_content(ancestor).split())
-        if re.search(
-            r"\bomit\s+from\s+(?:the\s+)?"
-            r"(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)"
-            r"\s+column\s+of\s+(?:the\s+)?table\s+(?:the\s+)?entries\s+relating\s+to\b",
-            text,
-            flags=re.I,
-        ):
+        if _PARENT_TABLE_COLUMN_OMISSION_RE.search(text):
+            _source_parent_table_column_omission_cache[el] = True
             return True
+    _source_parent_table_column_omission_cache[el] = False
     return False
 
 
 def _source_is_broad_repeal_extent_part(el: ET._Element) -> bool:
+    cached = _source_broad_repeal_extent_part_cache.get(el)
+    if cached is not None:
+        return cached
     if _tag(el) not in {"Part", "Schedule"}:
+        _source_broad_repeal_extent_part_cache[el] = False
         return False
     text = " ".join(_text_content(el).split()).lower()
-    return "extent of repeal" in text[:500] or "repeals and revocations" in text[:500]
+    result = "extent of repeal" in text[:500] or "repeals and revocations" in text[:500]
+    _source_broad_repeal_extent_part_cache[el] = result
+    return result
 
 
 def _compound_first_instruction_overrides_broad_repeal_part(

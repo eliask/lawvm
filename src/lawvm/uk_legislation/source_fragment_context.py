@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import re
 from lxml import etree as ET
 from typing import Any, Optional
@@ -139,6 +140,7 @@ _SOURCE_CHILD_FOR_QUOTED_IN_TARGET_RE = re.compile(
 )
 
 
+@functools.lru_cache(maxsize=8192)
 def _source_parent_opens_target_list(lead_text: str) -> bool:
     normalized = " ".join((lead_text or "").split()).strip()
     if not normalized.endswith(("—", "-")):

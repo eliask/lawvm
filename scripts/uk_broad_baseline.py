@@ -290,7 +290,10 @@ def score_one(statute_id: str) -> dict[str, Any]:
     from farchive import Farchive
     from lawvm.uk_legislation.effects import load_effects_for_statute_from_archive
     from lawvm.uk_legislation.source_state import classify_uk_statute_xml_content
-    from lawvm.uk_legislation.uk_amendment_replay import UKReplayPipeline
+    from lawvm.uk_legislation.uk_amendment_replay import (
+        UKDiagnosticReplayFilterMode,
+        UKReplayPipeline,
+    )
     from lawvm.uk_legislation.uk_grafter import extract_eid_map_bytes, parse_uk_statute_ir_bytes
 
     result: dict[str, Any] = {"statute_id": statute_id}
@@ -350,24 +353,20 @@ def score_one(statute_id: str) -> dict[str, Any]:
         pipeline = UKReplayPipeline(REPO_ROOT)
         effect_rows = load_effects_for_statute_from_archive(statute_id, archive)
         result["n_effects"] = len(effect_rows)
-        ops = pipeline.compile_ops_for_statute(statute_id, archive=archive)
-        result["n_ops"] = len(ops)
-
-        # The UK compiler still has a few list-present-sensitive diagnostic paths.
-        # Keep scoring on the historical no-output compile, then run a separate
-        # diagnostic compile so evidence collection cannot perturb replay.
         effect_feed_parse_rejections: list[dict[str, Any]] = []
         lowering_rejections: list[dict[str, Any]] = []
         authority_rejections: list[dict[str, Any]] = []
         effect_diagnostics: list[dict[str, Any]] = []
-        pipeline.compile_ops_for_statute(
+        ops = pipeline.compile_ops_for_statute(
             statute_id,
             archive=archive,
             effect_feed_parse_rejections_out=effect_feed_parse_rejections,
             lowering_rejections_out=lowering_rejections,
             authority_rejections_out=authority_rejections,
             effect_diagnostics_out=effect_diagnostics,
+            diagnostic_replay_filter_mode=UKDiagnosticReplayFilterMode.OBSERVE_ONLY,
         )
+        result["n_ops"] = len(ops)
         compile_rejections = [
             *_compile_authorization_rows(
                 effect_feed_parse_rejections,

@@ -23,6 +23,7 @@ Current status:
 
 from __future__ import annotations
 
+from enum import Enum
 import json as json  # noqa: F401
 import time
 from lxml import etree as ET  # noqa: F401
@@ -160,6 +161,13 @@ from lawvm.uk_legislation.xml_helpers import (  # noqa: F401
 # ---------------------------------------------------------------------------
 
 
+class UKDiagnosticReplayFilterMode(Enum):
+    """How compile diagnostics interact with replay op filtering."""
+
+    ENFORCE = "enforce"
+    OBSERVE_ONLY = "observe_only"
+
+
 def _classify_compiled_effect_source_pathology(
     *,
     effect: UKEffectRecord,
@@ -208,6 +216,9 @@ class UKReplayPipeline:
         effect_feed_parse_rejections_out: Optional[list[dict[str, Any]]] = None,
         effect_diagnostics_out: Optional[list[dict[str, Any]]] = None,
         compile_phase_timings_out: Optional[dict[str, float]] = None,
+        diagnostic_replay_filter_mode: UKDiagnosticReplayFilterMode = (
+            UKDiagnosticReplayFilterMode.ENFORCE
+        ),
     ) -> list[LegalOperation]:
         """Compile IR ops for *affected_act_id*.
 
@@ -472,6 +483,11 @@ class UKReplayPipeline:
                     compiled_ops=compiled,
                     lowering_rejections_out=lowering_rejections_out,
                 )
+                if (
+                    diagnostic_replay_filter_mode
+                    is UKDiagnosticReplayFilterMode.OBSERVE_ONLY
+                ):
+                    source_pathology_filter_rejected = False
                 append_manual_compile_frontier_diagnostic(
                     effect_diagnostics_out,
                     effect=e,

@@ -85,6 +85,47 @@ from lawvm.uk_legislation.witnesses import (
 from lawvm.uk_legislation.xml_helpers import _tag
 
 
+_REPEAL_TABLE_EFFECT_TYPE_MARKERS = (
+    "repeal",
+    "revok",
+    "omit",
+    "omitted",
+    "delete",
+    "deleted",
+    "cease",
+)
+_NON_REPEAL_TABLE_EFFECT_TYPE_MARKERS = (
+    "insert",
+    "substitut",
+    "add",
+    "modif",
+    "appl",
+    "extend",
+    "restrict",
+    "exclud",
+)
+
+
+def _is_repeal_table_effect_type_candidate(effect_type: str | None) -> bool:
+    """Return whether repeal-table lowering is semantically eligible.
+
+    Repeal-table lowering is a source-table elaboration lane for repeal,
+    omission, deletion, revocation, and cease-to-have-effect instructions.
+    Blank or unknown feed types remain admissible because UK source tables can
+    carry the operative repeal semantics when metadata is under-specific. Known
+    insert/substitute/add/modify/apply families are excluded so this lane cannot
+    become a fallback target finder for non-repeal effects.
+    """
+    normalized = str(effect_type or "").strip().lower()
+    if not normalized:
+        return True
+    if any(marker in normalized for marker in _REPEAL_TABLE_EFFECT_TYPE_MARKERS):
+        return True
+    if any(marker in normalized for marker in _NON_REPEAL_TABLE_EFFECT_TYPE_MARKERS):
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class UKTableLoweringResult:
     handled: bool
@@ -804,6 +845,8 @@ def try_lower_repeal_table_effect(
     original_targets_str: list[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKTableBatchLoweringResult:
+    if not _is_repeal_table_effect_type_candidate(effect.effect_type):
+        return UKTableBatchLoweringResult(handled=False)
     pseudo_definition_parent_target = _uk_definition_pseudo_parent_target(target)
     if pseudo_definition_parent_target is not None:
         pseudo_definition_text_repeal = _uk_table_driven_repeal_table_quoted_words_text_repeal(

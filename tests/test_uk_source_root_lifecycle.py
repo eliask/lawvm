@@ -39,8 +39,12 @@ from typing import Optional
 
 from lawvm.uk_legislation.source_context import (
     UKAffectingSourceContext,
+    _source_broad_repeal_extent_part_cache,
+    _source_child_has_parent_table_column_omission,
     _source_ancestor_chain,
     _source_ancestor_chain_cache,
+    _source_is_broad_repeal_extent_part,
+    _source_parent_table_column_omission_cache,
     _source_parent_map,
     _source_parent_map_cache,
     _unique_unnumbered_root_schedule,
@@ -50,6 +54,10 @@ from lawvm.uk_legislation.source_context import (
 from lawvm.uk_legislation.table_selectors import (
     _NORMALIZED_ELEMENT_TEXT_CACHE,
     _normalized_element_text,
+)
+from lawvm.uk_legislation.table_sources import (
+    _UK_TABLE_ROWSPAN_ROWS_CACHE,
+    _uk_table_rows_with_rowspans,
 )
 
 
@@ -104,6 +112,34 @@ _MULTIPLE_UNNUMBERED_SCHEDULE_XML = """\
   <Schedule>
     <Text>Second schedule.</Text>
   </Schedule>
+</Legislation>
+"""
+
+_TABLE_XML = """\
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation">
+  <Schedule>
+    <table>
+      <tr><th>Column A</th><th>Column B</th></tr>
+      <tr><td rowspan="2">A1</td><td>B1</td></tr>
+      <tr><td>B2</td></tr>
+    </table>
+  </Schedule>
+</Legislation>
+"""
+
+_SOURCE_LANE_PREDICATE_XML = """\
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation">
+  <Part id="part-1">
+    <Text>Extent of repeal</Text>
+    <P1 id="p1-1">
+      <Pnumber>1</Pnumber>
+      <Text>Omit from the first column of the table the entries relating to taxes.</Text>
+      <P2 id="p2-1">
+        <Pnumber>(1)</Pnumber>
+        <Text>Child row.</Text>
+      </P2>
+    </P1>
+  </Part>
 </Legislation>
 """
 
@@ -254,6 +290,63 @@ def test_table_selector_normalized_text_cache_evicts_with_source_root() -> None:
 
     evict_source_root_caches(other_root)
     assert other_child not in _NORMALIZED_ELEMENT_TEXT_CACHE
+
+
+def test_table_rowspan_rows_cache_evicts_with_source_root() -> None:
+    root = _make_root(_TABLE_XML)
+    other_root = _make_root(_TABLE_XML)
+    table = next(el for el in root.iter() if el.tag.rsplit("}", 1)[-1] == "table")
+    other_table = next(
+        el for el in other_root.iter() if el.tag.rsplit("}", 1)[-1] == "table"
+    )
+
+    assert _uk_table_rows_with_rowspans(table) == [
+        ["Column A", "Column B"],
+        ["A1", "B1"],
+        ["A1", "B2"],
+    ]
+    assert _uk_table_rows_with_rowspans(other_table)
+    assert table in _UK_TABLE_ROWSPAN_ROWS_CACHE
+    assert other_table in _UK_TABLE_ROWSPAN_ROWS_CACHE
+
+    evict_source_root_caches(root)
+
+    assert table not in _UK_TABLE_ROWSPAN_ROWS_CACHE
+    assert other_table in _UK_TABLE_ROWSPAN_ROWS_CACHE
+
+    evict_source_root_caches(other_root)
+    assert other_table not in _UK_TABLE_ROWSPAN_ROWS_CACHE
+
+
+def test_source_lane_predicate_caches_evict_with_source_root() -> None:
+    root = _make_root(_SOURCE_LANE_PREDICATE_XML)
+    other_root = _make_root(_SOURCE_LANE_PREDICATE_XML)
+    context = _context_for_root(root)
+    other_context = _context_for_root(other_root)
+    part = next(el for el in root.iter() if el.get("id") == "part-1")
+    child = next(el for el in root.iter() if el.get("id") == "p2-1")
+    other_part = next(el for el in other_root.iter() if el.get("id") == "part-1")
+    other_child = next(el for el in other_root.iter() if el.get("id") == "p2-1")
+
+    assert _source_is_broad_repeal_extent_part(part)
+    assert _source_child_has_parent_table_column_omission(context, child)
+    assert _source_is_broad_repeal_extent_part(other_part)
+    assert _source_child_has_parent_table_column_omission(other_context, other_child)
+    assert part in _source_broad_repeal_extent_part_cache
+    assert child in _source_parent_table_column_omission_cache
+    assert other_part in _source_broad_repeal_extent_part_cache
+    assert other_child in _source_parent_table_column_omission_cache
+
+    evict_source_root_caches(root)
+
+    assert part not in _source_broad_repeal_extent_part_cache
+    assert child not in _source_parent_table_column_omission_cache
+    assert other_part in _source_broad_repeal_extent_part_cache
+    assert other_child in _source_parent_table_column_omission_cache
+
+    evict_source_root_caches(other_root)
+    assert other_part not in _source_broad_repeal_extent_part_cache
+    assert other_child not in _source_parent_table_column_omission_cache
 
 
 # ---------------------------------------------------------------------------
