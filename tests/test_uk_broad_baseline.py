@@ -2732,6 +2732,60 @@ def test_report_from_snapshot_allows_digest_backed_source_frontier_work_item(
     assert summary["completion_gate_failure_counts"] == {}
 
 
+def test_report_from_snapshot_accepts_evidence_surface_report_rows(
+    tmp_path,
+) -> None:
+    report_input_path = tmp_path / "input.report.json"
+    report_path = tmp_path / "report.json"
+    row = {
+        "statute_id": "ukpga/1850/102",
+        "score_status": "source_frontier",
+        "source_frontier_reason": "base_and_oracle_metadata_only",
+        "base_source_status": "metadata_only",
+        "oracle_source_status": "metadata_only",
+        "base_source_witness": {
+            "source_role": "uk_broad_base_source",
+            "digest": "base-digest",
+            "preview_digest": "base-preview-digest",
+        },
+        "oracle_source_witness": {
+            "source_role": "uk_broad_oracle_source",
+            "digest": "oracle-digest",
+            "preview_digest": "oracle-preview-digest",
+        },
+    }
+    report_input_path.write_text(
+        json.dumps(
+            {
+                "schema": "lawvm.evidence_surface_report.v1",
+                "jurisdiction": "uk",
+                "report_kind": "uk_broad_baseline",
+                "summary": {},
+                "rows": [row],
+                "rows_truncated": False,
+            }
+        )
+    )
+
+    assert (
+        uk_broad_baseline.run_report_from_snapshot(
+            report_input_path,
+            report_path,
+            fail_on_completion_gaps=True,
+            fail_on_source_frontier_work_item_gaps=True,
+        )
+        == 0
+    )
+
+    summary = json.loads(report_path.read_text())["summary"]
+    assert summary["source_frontier_source_witness_digest_coverage_counts"] == {
+        "base:artifact_and_preview_digest": 1,
+        "oracle:artifact_and_preview_digest": 1,
+    }
+    assert summary["completion_gate_clean"] is True
+    assert summary["completion_gate_failure_counts"] == {}
+
+
 def test_main_report_from_snapshot_requires_out_report(tmp_path, capsys) -> None:
     snapshot_path = tmp_path / "snapshot.json"
     snapshot_path.write_text("{}")

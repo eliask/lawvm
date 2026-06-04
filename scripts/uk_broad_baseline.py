@@ -2808,6 +2808,9 @@ def sample_statutes(n: int, seed: int, classes: Optional[list[str]]) -> list[str
 def _load_snapshot_results(snapshot_path: Path) -> list[dict[str, Any]]:
     raw = json.loads(snapshot_path.read_text())
     if isinstance(raw, Mapping):
+        report_rows = raw.get("rows")
+        if isinstance(report_rows, list):
+            return _load_snapshot_row_list(report_rows)
         results: list[dict[str, Any]] = []
         for statute_id, row in raw.items():
             if not isinstance(row, Mapping):
@@ -2819,16 +2822,20 @@ def _load_snapshot_results(snapshot_path: Path) -> list[dict[str, Any]]:
             results.append(payload)
         return results
     if isinstance(raw, list):
-        results = []
-        for index, row in enumerate(raw):
-            if not isinstance(row, Mapping):
-                raise ValueError(f"snapshot row {index} must be an object")
-            payload = dict(row)
-            if not payload.get("statute_id"):
-                raise ValueError(f"snapshot row {index} is missing statute_id")
-            results.append(payload)
-        return results
+        return _load_snapshot_row_list(raw)
     raise ValueError("snapshot must be a statute-id object map or row list")
+
+
+def _load_snapshot_row_list(rows: list[Any]) -> list[dict[str, Any]]:
+    results = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, Mapping):
+            raise ValueError(f"snapshot row {index} must be an object")
+        payload = dict(row)
+        if not payload.get("statute_id"):
+            raise ValueError(f"snapshot row {index} is missing statute_id")
+        results.append(payload)
+    return results
 
 
 def _hard_gate_exit_code(
