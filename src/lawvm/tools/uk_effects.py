@@ -1227,6 +1227,7 @@ def _actionable_claim_template_status(
     if summary.manual_compile_status not in {
         "deterministic_frontend_candidate",
         "manual_compile_candidate",
+        "source_or_feed_target_conflict",
     } or not summary.manual_compile_rule_id:
         return "__not_actionable__"
     suggested_claim_template = _manual_compile_suggested_claim_template(

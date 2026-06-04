@@ -167,16 +167,19 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
                 "manual_frontier_status_counts": {
                     "deterministic_frontend_candidate": 2,
                     "manual_compile_candidate": 3,
+                    "source_or_feed_target_conflict": 1,
                 },
                 "manual_frontier_rule_counts": {
+                    "uk_manual_frontier_amount_specified_source_target_mismatch": 1,
                     "uk_manual_frontier_parser_or_extraction_candidate": 2,
                     "uk_manual_frontier_repeal_table_candidate": 3,
                 },
                 "manual_frontier_owner_phase_counts": {
-                    "affecting_source_extraction": 2,
+                    "affecting_source_extraction": 3,
                     "typed_elaboration": 3,
                 },
                 "manual_frontier_rule_owner_phase_counts": {
+                    "affecting_source_extraction:uk_manual_frontier_amount_specified_source_target_mismatch": 1,
                     "affecting_source_extraction:uk_manual_frontier_parser_or_extraction_candidate": 2,
                     "typed_elaboration:uk_manual_frontier_repeal_table_candidate": 3,
                 },
@@ -221,7 +224,7 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
                     "affecting_source_extraction:uk_manual_frontier_parser_or_extraction_candidate": 2,
                 },
                 "manual_frontier_template_status_counts": {
-                    "available": 3,
+                    "available": 4,
                     "not_available": 2,
                 },
                 "manual_frontier_template_gap_status_counts": {
@@ -415,16 +418,19 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
     assert summary["manual_frontier_status_counts"] == {
         "deterministic_frontend_candidate": 2,
         "manual_compile_candidate": 3,
+        "source_or_feed_target_conflict": 1,
     }
     assert summary["manual_frontier_rule_counts"] == {
+        "uk_manual_frontier_amount_specified_source_target_mismatch": 1,
         "uk_manual_frontier_parser_or_extraction_candidate": 2,
         "uk_manual_frontier_repeal_table_candidate": 3,
     }
     assert summary["manual_frontier_owner_phase_counts"] == {
-        "affecting_source_extraction": 2,
+        "affecting_source_extraction": 3,
         "typed_elaboration": 3,
     }
     assert summary["manual_frontier_rule_owner_phase_counts"] == {
+        "affecting_source_extraction:uk_manual_frontier_amount_specified_source_target_mismatch": 1,
         "affecting_source_extraction:uk_manual_frontier_parser_or_extraction_candidate": 2,
         "typed_elaboration:uk_manual_frontier_repeal_table_candidate": 3,
     }
@@ -473,7 +479,7 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
         "affecting_source_extraction:uk_manual_frontier_parser_or_extraction_candidate": 2,
     }
     assert summary["manual_frontier_template_status_counts"] == {
-        "available": 3,
+        "available": 4,
         "not_available": 2,
     }
     assert summary["manual_frontier_template_gap_status_counts"] == {

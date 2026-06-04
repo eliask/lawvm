@@ -53,6 +53,7 @@ _ACTIONABLE_MANUAL_COMPILE_STATUSES = frozenset(
     {
         "manual_compile_candidate",
         "deterministic_frontend_candidate",
+        "source_or_feed_target_conflict",
     }
 )
 

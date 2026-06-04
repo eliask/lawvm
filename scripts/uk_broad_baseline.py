@@ -101,6 +101,7 @@ _MANUAL_FRONTIER_TEMPLATE_ACTIONABLE_STATUSES = frozenset(
     {
         "manual_compile_candidate",
         "deterministic_frontend_candidate",
+        "source_or_feed_target_conflict",
     }
 )
 _ACTIVE_UNCLASSIFIED_RESIDUAL_BUCKETS = frozenset(

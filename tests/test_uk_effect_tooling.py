@@ -367,6 +367,15 @@ def test_uk_manual_claim_template_status_only_labels_actionable_rows() -> None:
         )
         == ""
     )
+    assert (
+        uk_manual_claim_template_status(
+            manual_compile_status="source_or_feed_target_conflict",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_amount_specified_source_target_mismatch"
+            ),
+        )
+        == "available"
+    )
 
 
 @pytest.mark.parametrize(
@@ -7117,12 +7126,20 @@ def test_uk_effects_summary_counts_templates_for_actionable_frontier_only() -> N
             ),
             source_text="The Act applies as if modified.",
         ),
+        _row(
+            effect_id="source-target-conflict",
+            manual_compile_status="source_or_feed_target_conflict",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_amount_specified_source_target_mismatch"
+            ),
+            source_text='the amount specified in section 45(3)(a) is replaced with "GBP8,275"',
+        ),
     )
 
     summary = uk_effects_summary_counts(rows, statute_id="ukpga/2000/1")
 
     assert summary["suggested_claim_template_status_counts"] == {
-        "available": 1,
+        "available": 2,
         "not_available": 1,
     }
     assert summary["manual_compile_candidate_rule_counts"] == {
@@ -7132,23 +7149,29 @@ def test_uk_effects_summary_counts_templates_for_actionable_frontier_only() -> N
     assert summary["manual_frontier_work_item_authorization_status_counts"] == {
         "manual_claim_required": 2,
         "out_of_scope": 1,
+        "source_target_conflict": 1,
     }
     assert summary["manual_frontier_work_item_candidate_operation_family_counts"] == {
         "facet_text_rewrite": 1,
         "non_textual_or_out_of_scope": 1,
+        "source_target_reconciliation": 1,
         "unclassified_manual_frontier": 1,
     }
     assert summary["manual_frontier_work_item_required_validator_check_counts"] == {
         "changed_paths_are_within_declared_facet_target": 1,
+        "changed_paths_are_within_source_feed_reconciled_target": 1,
         "claim_blocks_replay_until_authorization_family_is_named": 1,
         "claim_classifies_frontier_family_before_replay": 1,
         "claim_confirms_no_direct_text_or_tree_mutation": 1,
         "claim_identifies_as_if_application_modification_semantics": 1,
         "claim_identifies_exact_target_facet_not_host_body": 1,
         "claim_identifies_source_target_payload_and_temporal_dimensions": 1,
+        "claim_preserves_unclaimed_parent_amounts": 1,
         "claim_preserves_affected_statute_text_state": 1,
         "claim_preserves_host_body_text_and_children": 1,
+        "claim_reconciles_source_amount_target_and_effect_feed_target": 1,
         "claim_text_preimage_matches_target_facet_surface": 1,
+        "source_witness_names_amount_specified_target": 1,
         "source_witness_targets_heading_title_or_sidenote_facet": 1,
     }
     assert summary["manual_frontier_work_item_missing_candidate_operation_family_count"] == 0
@@ -8506,6 +8529,12 @@ def test_uk_effect_row_matches_claim_template_status_filter() -> None:
         source_text="The Act applies as if modified.",
         status="non_textual_or_out_of_scope",
     )
+    source_target_conflict_row = _row(
+        effect_id="source-target-conflict",
+        rule_id="uk_manual_frontier_amount_specified_source_target_mismatch",
+        source_text='the amount specified in section 45(3)(a) is replaced with "GBP8,275"',
+        status="source_or_feed_target_conflict",
+    )
 
     assert _effect_row_matches_filters(
         available_row,
@@ -8526,6 +8555,11 @@ def test_uk_effect_row_matches_claim_template_status_filter() -> None:
         out_of_scope_row,
         statute_id="ukpga/2000/1",
         claim_template_status="not_available",
+    )
+    assert _effect_row_matches_filters(
+        source_target_conflict_row,
+        statute_id="ukpga/2000/1",
+        claim_template_status="available",
     )
 
 
