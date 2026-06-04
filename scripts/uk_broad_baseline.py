@@ -1779,6 +1779,7 @@ def run_driver(
     *,
     fail_on_active_unclassified_residuals: bool = False,
     fail_on_manual_frontier_template_gaps: bool = False,
+    fail_on_frontier_work_item_gaps: bool = False,
     fail_on_deterministic_frontend_candidates: bool = False,
     fail_on_non_manual_source_chain_frontier: bool = False,
 ) -> int:
@@ -2196,6 +2197,11 @@ def run_driver(
         and summary["manual_frontier_template_gap_rule_counts"]
     ):
         return 1
+    if fail_on_frontier_work_item_gaps and (
+        summary["manual_frontier_work_item_missing_candidate_operation_family_count"]
+        or summary["manual_frontier_work_item_missing_required_validator_checks_count"]
+    ):
+        return 1
     if (
         fail_on_deterministic_frontend_candidates
         and summary["deterministic_frontend_candidate_count"]
@@ -2264,6 +2270,14 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     ap.add_argument(
+        "--fail-on-frontier-work-item-gaps",
+        action="store_true",
+        help=(
+            "Exit nonzero when manual-frontier work items lack a candidate "
+            "operation family or required validator checks"
+        ),
+    )
+    ap.add_argument(
         "--fail-on-deterministic-frontend-candidates",
         action="store_true",
         help=(
@@ -2304,6 +2318,7 @@ def main(argv: list[str] | None = None) -> int:
         fail_on_manual_frontier_template_gaps=(
             args.fail_on_manual_frontier_template_gaps
         ),
+        fail_on_frontier_work_item_gaps=args.fail_on_frontier_work_item_gaps,
         fail_on_deterministic_frontend_candidates=(
             args.fail_on_deterministic_frontend_candidates
         ),

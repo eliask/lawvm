@@ -1441,6 +1441,37 @@ def test_run_driver_can_fail_on_manual_frontier_template_gaps(monkeypatch, capsy
     assert "uk_manual_frontier_parser_or_extraction_candidate=2" in out
 
 
+def test_run_driver_can_fail_on_frontier_work_item_gaps(monkeypatch, capsys) -> None:
+    def fake_run(*_args, **_kwargs):
+        row = {
+            "statute_id": "ukpga/2008/17",
+            "score_status": "scored",
+            "aligned": 86.0,
+            "aligned_excluding_grounding_collateral": 86.0,
+            "unaligned": 86.0,
+            "n_replay": 100,
+            "n_oracle": 110,
+            "manual_frontier_work_item_missing_candidate_operation_family_count": 2,
+            "manual_frontier_work_item_missing_required_validator_checks_count": 3,
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["ukpga/2008/17"],
+            None,
+            fail_on_frontier_work_item_gaps=True,
+        )
+        == 1
+    )
+    out = capsys.readouterr().out
+    assert "manual_frontier_work_item_missing_completeness_counts: " in out
+    assert "candidate_operation_family=2" in out
+    assert "required_validator_checks=3" in out
+
+
 def test_run_driver_can_fail_on_non_manual_source_chain_frontier(
     monkeypatch,
     capsys,
