@@ -506,6 +506,86 @@ def _table_crossheading_claim_template(
     return template
 
 
+def _source_target_reconciliation_claim_template(
+    *,
+    statute_id: str,
+    row: Any,
+) -> dict[str, Any]:
+    summary = row.summary
+    effect = row.effect
+    rule_id = summary.manual_compile_rule_id
+    detail = _first_blocking_lowering_rejection_detail(row=row)
+    placement_family_by_rule = {
+        "uk_manual_frontier_amount_specified_source_target_mismatch": (
+            "amount_specified_source_feed_target_conflict"
+        ),
+        "uk_manual_frontier_child_qualified_word_omission_target_mismatch": (
+            "child_qualified_omission_source_feed_target_conflict"
+        ),
+        "uk_manual_frontier_crossheading_source_target_mismatch": (
+            "crossheading_facet_source_feed_target_conflict"
+        ),
+    }
+    required_checks_by_rule = {
+        "uk_manual_frontier_amount_specified_source_target_mismatch": [
+            "source_witness_names_amount_specified_target",
+            "claim_reconciles_source_amount_target_and_effect_feed_target",
+            "claim_preserves_unclaimed_parent_amounts",
+            "changed_paths_are_within_source_feed_reconciled_target",
+        ],
+        "uk_manual_frontier_child_qualified_word_omission_target_mismatch": [
+            "source_witness_names_child_qualified_omission_target",
+            "claim_reconciles_source_child_target_and_effect_feed_target",
+            "claim_blocks_replay_until_target_identity_is_proved",
+        ],
+        "uk_manual_frontier_crossheading_source_target_mismatch": [
+            "source_witness_names_crossheading_facet_target",
+            "claim_reconciles_source_crossheading_target_and_effect_feed_target",
+            "claim_identifies_whether_body_text_heading_facet_or_both_are_affected",
+            "claim_blocks_host_body_rewrite_until_facet_scope_is_proved",
+            "changed_paths_are_within_source_feed_reconciled_target",
+        ],
+    }
+    template = _bounded_mutation_claim_template(
+        statute_id=statute_id,
+        row=row,
+        action_family="source_target_reconciliation",
+        placement_family=placement_family_by_rule.get(
+            rule_id,
+            "source_feed_target_conflict",
+        ),
+        required_ownership=[
+            "official_source_named_target",
+            "effect_feed_target_surface",
+            "authority_surface_selection",
+            "source_feed_target_reconciliation",
+            "mutation_boundary_if_claim_becomes_executable",
+        ],
+        required_validator_checks=required_checks_by_rule.get(
+            rule_id,
+            [
+                "source_witness_names_target_surface",
+                "claim_reconciles_source_target_and_effect_feed_target",
+                "changed_paths_are_within_source_feed_reconciled_target",
+            ],
+        ),
+    )
+    template.update(
+        {
+            "source_target_surface": detail.get(
+                "target_ref",
+                effect.affected_provisions,
+            ),
+            "source_target_address": detail.get("target", ""),
+            "effect_feed_target_surface": effect.affected_provisions,
+            "lowering_rule_id": detail.get("rule_id", ""),
+            "lowering_reason_code": detail.get("reason_code", ""),
+            "target_conflict_family": rule_id,
+        }
+    )
+    return template
+
+
 def _bounded_mutation_claim_template(
     *,
     statute_id: str,
@@ -736,6 +816,15 @@ def manual_compile_suggested_claim_template(
         )
     if summary.manual_compile_rule_id == "uk_manual_frontier_table_crossheading_candidate":
         return _table_crossheading_claim_template(statute_id=statute_id, row=row)
+    if summary.manual_compile_rule_id in {
+        "uk_manual_frontier_amount_specified_source_target_mismatch",
+        "uk_manual_frontier_child_qualified_word_omission_target_mismatch",
+        "uk_manual_frontier_crossheading_source_target_mismatch",
+    }:
+        return _source_target_reconciliation_claim_template(
+            statute_id=statute_id,
+            row=row,
+        )
     if (
         summary.manual_compile_rule_id
         == "uk_manual_frontier_definition_child_and_tail_substitution_candidate"

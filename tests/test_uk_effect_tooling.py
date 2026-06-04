@@ -82,8 +82,11 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_appropriate_place_definition_entry_candidate",
         "uk_manual_frontier_appropriate_place_index_entry_candidate",
         "uk_manual_frontier_amendment_program_target_candidate",
+        "uk_manual_frontier_amount_specified_source_target_mismatch",
+        "uk_manual_frontier_child_qualified_word_omission_target_mismatch",
         "uk_manual_frontier_cross_container_renumber_candidate",
         "uk_manual_frontier_crossheading_candidate",
+        "uk_manual_frontier_crossheading_source_target_mismatch",
         "uk_manual_frontier_deictic_amendment_program_target_candidate",
         "uk_manual_frontier_deictic_structural_sibling_insert_candidate",
         "uk_manual_frontier_definition_child_and_tail_substitution_candidate",
@@ -364,6 +367,130 @@ def test_uk_manual_claim_template_status_only_labels_actionable_rows() -> None:
         )
         == ""
     )
+
+
+@pytest.mark.parametrize(
+    (
+        "rule_id",
+        "lowering_rule_id",
+        "reason_code",
+        "source_text",
+        "affected_provisions",
+        "expected_placement_family",
+        "expected_validator_check",
+    ),
+    [
+        (
+            "uk_manual_frontier_amount_specified_source_target_mismatch",
+            "uk_effect_amount_specified_source_target_mismatch_rejected",
+            "amount_specified_source_target_mismatch",
+            (
+                "c the amount specified in section 45(3)(a) is replaced "
+                "with \"GBP8,275\";"
+            ),
+            "s. 45(3)",
+            "amount_specified_source_feed_target_conflict",
+            "claim_reconciles_source_amount_target_and_effect_feed_target",
+        ),
+        (
+            "uk_manual_frontier_crossheading_source_target_mismatch",
+            "uk_effect_crossheading_source_target_mismatch_rejected",
+            "crossheading_source_requires_crossheading_target",
+            (
+                "b in paragraph 2 of Schedule 13 to that Act and the heading "
+                "before that paragraph, for \"2021\" substitute \"2022\","
+            ),
+            "Sch. 13 para. 2",
+            "crossheading_facet_source_feed_target_conflict",
+            "claim_reconciles_source_crossheading_target_and_effect_feed_target",
+        ),
+    ],
+)
+def test_uk_manual_compile_evidence_jsonl_templates_source_target_reconciliation(
+    *,
+    rule_id: str,
+    lowering_rule_id: str,
+    reason_code: str,
+    source_text: str,
+    affected_provisions: str,
+    expected_placement_family: str,
+    expected_validator_check: str,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-source-target-conflict",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/1/section/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions=affected_provisions,
+        affecting_uri="/id/ukpga/2024/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="s. 2",
+        affecting_title="Test Act 2024",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="unhandled_instruction_text",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": lowering_rule_id,
+                    "reason_code": reason_code,
+                    "target_ref": affected_provisions,
+                    "blocking": True,
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P3",
+            source_extracted_text_preview=source_text,
+            manual_compile_status="source_or_feed_target_conflict",
+            manual_compile_rule_id=rule_id,
+            manual_compile_reason="Source and effect-feed targets conflict.",
+            manual_compile_lowering_rule_ids=(lowering_rule_id,),
+            manual_compile_blocking_lowering_rule_ids=(lowering_rule_id,),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert payload["suggested_claim_template_status"] == "available"
+    assert template["action_family"] == "source_target_reconciliation"
+    assert template["placement_family"] == expected_placement_family
+    assert template["source_target_surface"] == affected_provisions
+    assert template["effect_feed_target_surface"] == affected_provisions
+    assert template["lowering_rule_id"] == lowering_rule_id
+    assert template["lowering_reason_code"] == reason_code
+    assert expected_validator_check in template["required_validator_checks"]
+    assert template["executable"] is False
 
 
 @pytest.mark.parametrize(

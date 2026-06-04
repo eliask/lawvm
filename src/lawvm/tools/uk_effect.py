@@ -212,6 +212,7 @@ def _manual_compile_claim_template_for_effect_report(
     if status not in {
         "deterministic_frontend_candidate",
         "manual_compile_candidate",
+        "source_or_feed_target_conflict",
         "source_insufficient",
     } or not rule_id:
         return {}
