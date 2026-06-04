@@ -83,6 +83,7 @@ UK_OPERATION_FAMILY_PROOF_SEMANTICS = frozenset(
         "referent_qualified_occurrence_scope_claim",
         "savings_qualified_omission_applicability_scope",
         "schedule_list_entry_anchor_boundary_claim",
+        "sentence_scoped_text_insert_boundary_claim",
         "source_carried_child_tail_boundary_claim",
         "source_carried_multi_subunit_boundary_claim",
         "source_carried_structured_payload_boundary_claim",
@@ -921,6 +922,20 @@ def _validate_operation_family_proof_semantic(
             live_precondition_paths=live_precondition_paths,
             live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
+    if proof_semantic == "sentence_scoped_text_insert_boundary_claim":
+        return _validate_sentence_scoped_text_insert_family_proof_semantic(
+            claim=claim,
+            proof=proof,
+            proof_semantic=proof_semantic,
+            prefix=prefix,
+            proof_family=proof_family,
+            proof_operation_ids=proof_operation_ids,
+            proof_source_ids=proof_source_ids,
+            proof_live_ids=proof_live_ids,
+            proof_live_paths=proof_live_paths,
+            live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
+        )
     if proof_semantic == "whole_act_listed_enactments_scope_and_exclusions":
         return _validate_whole_act_listed_enactments_family_proof_semantic(
             claim=claim,
@@ -1681,6 +1696,66 @@ def _has_savings_scope_qualification(operation: Mapping[str, Any]) -> bool:
         if isinstance(value, str) and value:
             return True
     return False
+
+
+def _validate_sentence_scoped_text_insert_family_proof_semantic(
+    *,
+    claim: Mapping[str, Any],
+    proof: Mapping[str, Any],
+    proof_semantic: str,
+    prefix: str,
+    proof_family: str,
+    proof_operation_ids: set[str],
+    proof_source_ids: set[str],
+    proof_live_ids: set[str],
+    proof_live_paths: set[str],
+    live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
+) -> tuple[str, ...]:
+    issues: list[str] = []
+    if proof_family != "sentence_scoped_repeated_insert":
+        issues.append(
+            f"{prefix}.proof_semantic {proof_semantic!r} requires "
+            "operation_family 'sentence_scoped_repeated_insert'"
+        )
+    if not proof_source_ids:
+        issues.append(f"{prefix}.{proof_semantic} requires source_text_precondition_ids")
+    boundary_ids = _string_tuple_from_value(proof.get("sentence_boundary_ownership_ids"))
+    if not boundary_ids:
+        boundary_ids = _string_tuple_from_value(proof.get("boundary_ownership_ids"))
+    if not boundary_ids:
+        issues.append(
+            f"{prefix}.{proof_semantic} requires sentence_boundary_ownership_ids "
+            "or boundary_ownership_ids"
+        )
+    live_carrier_paths = _live_carrier_paths_for_proof(
+        proof_live_ids=proof_live_ids,
+        proof_live_paths=proof_live_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
+    )
+    if not live_carrier_paths:
+        issues.append(
+            f"{prefix}.{proof_semantic} requires live_target_precondition_ids "
+            "or live_target_precondition_paths"
+        )
+    operations = _operations_by_id(claim)
+    for op_id in sorted(proof_operation_ids):
+        operation = operations.get(op_id)
+        if operation is None:
+            continue
+        action = _non_empty_string(operation, "action")
+        if action not in {"insert", "replace", "text_replace"}:
+            issues.append(
+                f"{prefix}.{proof_semantic} operation {op_id!r} must be an "
+                "insert or text-rewrite action"
+            )
+        for target in _path_strings_from_value(operation.get("target")):
+            if live_carrier_paths and target not in live_carrier_paths:
+                issues.append(
+                    f"{prefix}.{proof_semantic} operation {op_id!r} target "
+                    f"{target!r} is outside declared live target preconditions"
+                )
+    return tuple(issues)
 
 
 def _validate_whole_act_listed_enactments_family_proof_semantic(

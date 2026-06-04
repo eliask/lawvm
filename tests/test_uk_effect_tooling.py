@@ -100,6 +100,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_repeal_table_candidate",
         "uk_manual_frontier_schedule_list_entry_candidate",
         "uk_manual_frontier_schedule_note_candidate",
+        "uk_manual_frontier_sentence_scoped_repeated_insert_candidate",
         "uk_manual_frontier_savings_qualified_text_omission_candidate",
         "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate",
         "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
@@ -371,15 +372,43 @@ def test_uk_manual_claim_template_status_only_labels_actionable_rows() -> None:
             "non_textual_or_out_of_scope",
         ),
         (
+            "uk_manual_frontier_amendment_program_target_candidate",
+            "amendment_program_target_mutation",
+        ),
+        (
             "uk_manual_frontier_amendment_table_payload_without_row_context",
             "table_surface_mutation",
+        ),
+        (
+            "uk_manual_frontier_application_modification_payload_out_of_scope",
+            "non_textual_or_out_of_scope",
+        ),
+        (
+            "uk_manual_frontier_as_if_application_modification_out_of_scope",
+            "non_textual_or_out_of_scope",
+        ),
+        (
+            "uk_manual_frontier_appropriate_place_index_entry_candidate",
+            "index_entry_insert",
         ),
         ("uk_manual_frontier_appropriate_place_candidate", "appropriate_place_mutation"),
         (
             "uk_manual_frontier_child_qualified_word_omission_target_mismatch",
             "source_target_reconciliation",
         ),
+        (
+            "uk_manual_frontier_deictic_amendment_program_target_candidate",
+            "amendment_program_target_mutation",
+        ),
+        (
+            "uk_manual_frontier_conditional_temporal_repeal_out_of_scope",
+            "non_textual_or_out_of_scope",
+        ),
         ("uk_manual_frontier_crossheading_candidate", "crossheading_text_rewrite"),
+        (
+            "uk_manual_frontier_external_act_target_out_of_scope",
+            "non_textual_or_out_of_scope",
+        ),
         ("uk_manual_frontier_heading_facet_candidate", "facet_text_rewrite"),
         (
             "uk_manual_frontier_instruction_header_source_insufficient",
@@ -390,10 +419,18 @@ def test_uk_manual_claim_template_status_only_labels_actionable_rows() -> None:
             "source_acquisition_or_payload_extraction",
         ),
         (
+            "uk_manual_frontier_schedule_list_entry_candidate",
+            "schedule_list_entry_mutation",
+        ),
+        (
             "uk_manual_frontier_savings_qualified_text_omission_candidate",
             "savings_qualified_text_omission",
         ),
         ("uk_manual_frontier_schedule_note_candidate", "schedule_note_text_rewrite"),
+        (
+            "uk_manual_frontier_sentence_scoped_repeated_insert_candidate",
+            "sentence_scoped_repeated_insert",
+        ),
         (
             "uk_manual_frontier_source_carried_structured_text_patch_candidate",
             "source_carried_structured_text_patch",
@@ -407,6 +444,7 @@ def test_uk_manual_claim_template_status_only_labels_actionable_rows() -> None:
             "table_surface_mutation",
         ),
         ("uk_manual_frontier_table_entry_placement_insert", "table_surface_mutation"),
+        ("uk_manual_frontier_unclassified", "unclassified_manual_frontier"),
         (
             "uk_manual_frontier_whole_act_word_level_text_patch_candidate",
             "whole_act_listed_enactments_text_patch",
@@ -6717,16 +6755,24 @@ def test_uk_effects_summary_counts_templates_for_actionable_frontier_only() -> N
     }
     assert summary["manual_frontier_work_item_candidate_operation_family_counts"] == {
         "facet_text_rewrite": 1,
+        "non_textual_or_out_of_scope": 1,
+        "unclassified_manual_frontier": 1,
     }
     assert summary["manual_frontier_work_item_required_validator_check_counts"] == {
         "changed_paths_are_within_declared_facet_target": 1,
+        "claim_blocks_replay_until_authorization_family_is_named": 1,
+        "claim_classifies_frontier_family_before_replay": 1,
+        "claim_confirms_no_direct_text_or_tree_mutation": 1,
+        "claim_identifies_as_if_application_modification_semantics": 1,
         "claim_identifies_exact_target_facet_not_host_body": 1,
+        "claim_identifies_source_target_payload_and_temporal_dimensions": 1,
+        "claim_preserves_affected_statute_text_state": 1,
         "claim_preserves_host_body_text_and_children": 1,
         "claim_text_preimage_matches_target_facet_surface": 1,
         "source_witness_targets_heading_title_or_sidenote_facet": 1,
     }
-    assert summary["manual_frontier_work_item_missing_candidate_operation_family_count"] == 2
-    assert summary["manual_frontier_work_item_missing_required_validator_checks_count"] == 2
+    assert summary["manual_frontier_work_item_missing_candidate_operation_family_count"] == 0
+    assert summary["manual_frontier_work_item_missing_required_validator_checks_count"] == 0
 
 
 def test_uk_effects_summary_counts_preserve_pre_limit_match_count() -> None:

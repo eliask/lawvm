@@ -594,6 +594,8 @@ def _required_operation_family_proof_semantics(
         return ("whole_act_listed_enactments_scope_and_exclusions",)
     if action_family == "savings_qualified_text_omission":
         return ("savings_qualified_omission_applicability_scope",)
+    if action_family == "sentence_scoped_repeated_insert":
+        return ("sentence_scoped_text_insert_boundary_claim",)
     if action_family == "source_carried_multi_subunit_text_rewrite":
         return ("source_carried_multi_subunit_boundary_claim",)
     if action_family == "source_carried_child_tail_text_rewrite":
@@ -1189,6 +1191,30 @@ def manual_compile_suggested_claim_template(
                 "claim_identifies_replacement_payload_as_text_or_child_units",
                 "claim_preserves_unclaimed_siblings_and_parent_text",
                 "changed_paths_are_within_claimed_child_range_boundary",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_sentence_scoped_repeated_insert_candidate"
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="sentence_scoped_repeated_insert",
+            placement_family="bounded_sentence_end_selector_required",
+            required_ownership=[
+                "source_named_sentence_scope",
+                "inserted_text_payload",
+                "sentence_segmentation_boundary",
+                "unselected_sentence_text_preservation",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_names_sentence_scope_and_inserted_text",
+                "claim_identifies_each_sentence_boundary_in_effective_preimage",
+                "claim_preserves_unselected_sentences_and_surrounding_text",
+                "claim_inserts_only_at_declared_sentence_end_boundaries",
+                "changed_paths_are_within_declared_sentence_text_carriers",
             ],
         )
     if summary.manual_compile_rule_id in {

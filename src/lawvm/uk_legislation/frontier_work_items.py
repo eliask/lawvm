@@ -21,12 +21,60 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_remain_inside_claimed_interpretation_target",
         ),
     },
+    "uk_manual_frontier_appropriate_place_index_entry_candidate": {
+        "candidate_operation_family": "index_entry_insert",
+        "required_validator_checks": (
+            "source_witness_uses_appropriate_place_formula",
+            "payload_is_complete_index_entry",
+            "claim_supplies_exact_index_entry_anchor_or_ordering_rule",
+            "claim_identifies_target_index_or_list_surface",
+            "claim_preserves_unclaimed_index_entries",
+            "changed_paths_are_within_claimed_insertion_boundary",
+        ),
+    },
     "uk_manual_frontier_application_by_reference_out_of_scope": {
         "candidate_operation_family": "non_textual_or_out_of_scope",
         "required_validator_checks": (
             "claim_identifies_application_by_reference_semantics",
             "claim_confirms_no_direct_text_or_tree_mutation",
             "claim_preserves_affected_statute_text_state",
+        ),
+    },
+    "uk_manual_frontier_application_modification_payload_out_of_scope": {
+        "candidate_operation_family": "non_textual_or_out_of_scope",
+        "required_validator_checks": (
+            "claim_identifies_application_modification_semantics",
+            "claim_confirms_no_direct_text_or_tree_mutation",
+            "claim_routes_effect_to_temporal_applicability_model",
+        ),
+    },
+    "uk_manual_frontier_as_if_application_modification_out_of_scope": {
+        "candidate_operation_family": "non_textual_or_out_of_scope",
+        "required_validator_checks": (
+            "claim_identifies_as_if_application_modification_semantics",
+            "claim_confirms_no_direct_text_or_tree_mutation",
+            "claim_preserves_affected_statute_text_state",
+        ),
+    },
+    "uk_manual_frontier_amendment_program_target_candidate": {
+        "candidate_operation_family": "amendment_program_target_mutation",
+        "required_validator_checks": (
+            "source_witness_targets_text_inserted_by_same_amending_program",
+            "claim_identifies_the_parent_instruction_that_created_the_target",
+            "claim_identifies_exact_inserted_parent_or_child_boundary",
+            "claim_preserves_unclaimed_inserted_payload_and_live_target_text",
+            "changed_paths_are_within_declared_amendment_program_target",
+        ),
+    },
+    "uk_manual_frontier_deictic_amendment_program_target_candidate": {
+        "candidate_operation_family": "amendment_program_target_mutation",
+        "required_validator_checks": (
+            "source_witness_targets_text_inserted_by_same_amending_program",
+            "claim_identifies_the_parent_instruction_that_created_the_target",
+            "claim_proves_as_inserted_anchor_from_source_context",
+            "claim_identifies_exact_inserted_parent_or_child_boundary",
+            "claim_preserves_unclaimed_inserted_payload_and_live_target_text",
+            "changed_paths_are_within_declared_amendment_program_target",
         ),
     },
     "uk_effect_temporal_ceases_to_have_effect_replay_excluded": {
@@ -63,6 +111,22 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_identifies_commencement_or_temporal_semantics",
             "claim_confirms_no_direct_text_or_tree_mutation",
             "claim_routes_effect_to_temporal_applicability_model",
+        ),
+    },
+    "uk_manual_frontier_conditional_temporal_repeal_out_of_scope": {
+        "candidate_operation_family": "non_textual_or_out_of_scope",
+        "required_validator_checks": (
+            "claim_identifies_conditional_temporal_repeal_semantics",
+            "claim_confirms_no_unconditional_current_text_repeal",
+            "claim_routes_effect_to_temporal_applicability_model",
+        ),
+    },
+    "uk_manual_frontier_external_act_target_out_of_scope": {
+        "candidate_operation_family": "non_textual_or_out_of_scope",
+        "required_validator_checks": (
+            "claim_identifies_external_act_target_named_by_source",
+            "claim_confirms_no_direct_text_or_tree_mutation",
+            "claim_preserves_affected_statute_text_state",
         ),
     },
     "uk_manual_frontier_child_qualified_word_omission_target_mismatch": {
@@ -173,6 +237,26 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_declared_schedule_note_target",
         ),
     },
+    "uk_manual_frontier_schedule_list_entry_candidate": {
+        "candidate_operation_family": "schedule_list_entry_mutation",
+        "required_validator_checks": (
+            "source_witness_targets_schedule_or_list_entry_surface",
+            "claim_identifies_exact_schedule_or_list_entry_carrier",
+            "claim_supplies_exact_entry_anchor_or_ordering_rule",
+            "claim_preserves_unclaimed_schedule_or_list_entries",
+            "changed_paths_are_within_claimed_schedule_list_entry_boundary",
+        ),
+    },
+    "uk_manual_frontier_sentence_scoped_repeated_insert_candidate": {
+        "candidate_operation_family": "sentence_scoped_repeated_insert",
+        "required_validator_checks": (
+            "source_witness_names_sentence_scope_and_inserted_text",
+            "claim_identifies_each_sentence_boundary_in_effective_preimage",
+            "claim_preserves_unselected_sentences_and_surrounding_text",
+            "claim_inserts_only_at_declared_sentence_end_boundaries",
+            "changed_paths_are_within_declared_sentence_text_carriers",
+        ),
+    },
     "uk_manual_frontier_source_carried_structured_text_patch_candidate": {
         "candidate_operation_family": "source_carried_structured_text_patch",
         "required_validator_checks": (
@@ -256,6 +340,14 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_identifies_unsupported_effect_family",
             "claim_confirms_no_direct_text_or_tree_mutation",
             "claim_preserves_affected_statute_text_state",
+        ),
+    },
+    "uk_manual_frontier_unclassified": {
+        "candidate_operation_family": "unclassified_manual_frontier",
+        "required_validator_checks": (
+            "claim_classifies_frontier_family_before_replay",
+            "claim_identifies_source_target_payload_and_temporal_dimensions",
+            "claim_blocks_replay_until_authorization_family_is_named",
         ),
     },
     "uk_manual_frontier_text_patch_preimage_chain_gap": {

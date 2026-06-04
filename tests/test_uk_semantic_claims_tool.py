@@ -1782,6 +1782,141 @@ def test_validate_semantic_claim_rejects_text_rewrite_family_proof_semantic_gap(
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_accepts_sentence_scoped_insert_family_proof_semantic() -> None:
+    claim = _claim_row(source_preview="at the end of each of the final two sentences insert words")
+    claim["action_family"] = "sentence_scoped_repeated_insert"
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    operations = proposed_outcome["operations"]
+    assert isinstance(operations, list)
+    operation = operations[0]
+    assert isinstance(operation, dict)
+    operation["action"] = "insert"
+    operation["target"] = "section:1"
+    operation["mutation_boundary"] = {
+        "changed_paths": ["section:1"],
+        "target_region": ["section:1"],
+    }
+    proposed_outcome["source_text_preconditions"] = [
+        {
+            "precondition_id": "source-names-sentence-scope",
+            "contains": "final two sentences",
+        },
+    ]
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "precondition_id": "live-section-target",
+            "path": "section:1",
+            "text_sha256": hashlib.sha256(b"First. Second.").hexdigest(),
+        },
+    ]
+    proposed_outcome["validator_checks"] = [
+        {
+            "check_id": "claim_identifies_each_sentence_boundary",
+            "status": "claimed_not_proved",
+        },
+    ]
+    proposed_outcome["operation_family_proofs"] = [
+        {
+            "proof_id": "proof-sentence-insert",
+            "proof_semantic": "sentence_scoped_text_insert_boundary_claim",
+            "operation_family": "sentence_scoped_repeated_insert",
+            "operation_ids": ["manual-op-1"],
+            "validator_check_ids": ["claim_identifies_each_sentence_boundary"],
+            "source_text_precondition_ids": ["source-names-sentence-scope"],
+            "live_target_precondition_ids": ["live-section-target"],
+            "sentence_boundary_ownership_ids": ["final-two-sentence-boundaries"],
+            "status": "claimed_not_proved",
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (claim,),
+        live_target_rows=(
+            _live_target_row(
+                target_fingerprints={
+                    "section:1": {
+                        "text_sha256": hashlib.sha256(b"First. Second.").hexdigest(),
+                        "subtree_sha256": "b" * 64,
+                    },
+                },
+            ),
+        ),
+    )
+
+    row = rows[0]
+    assert (
+        row["validator_status"]
+        == "validated_provenance_source_text_live_targets_and_preconditions_only"
+    )
+    assert row["operation_family_proofs_checked"] is True
+    assert row["validation_issues"] == []
+    assert row["replay_authorized"] is False
+
+
+def test_validate_semantic_claim_rejects_sentence_scoped_insert_family_proof_semantic_gap() -> None:
+    claim = _claim_row(source_preview="at the end of each sentence insert words")
+    claim["action_family"] = "sentence_scoped_repeated_insert"
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    operations = proposed_outcome["operations"]
+    assert isinstance(operations, list)
+    operation = operations[0]
+    assert isinstance(operation, dict)
+    operation["action"] = "delete"
+    operation["target"] = "section:2"
+    operation["mutation_boundary"] = {
+        "changed_paths": ["section:2"],
+        "target_region": ["section:2"],
+    }
+    proposed_outcome["source_text_preconditions"] = [
+        {
+            "precondition_id": "source-names-sentence-scope",
+            "contains": "each sentence",
+        },
+    ]
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "precondition_id": "live-section-target",
+            "path": "section:1",
+            "text_sha256": hashlib.sha256(b"First. Second.").hexdigest(),
+        },
+    ]
+    proposed_outcome["operation_family_proofs"] = [
+        {
+            "proof_id": "proof-sentence-insert",
+            "proof_semantic": "sentence_scoped_text_insert_boundary_claim",
+            "operation_family": "sentence_scoped_repeated_insert",
+            "operation_ids": ["manual-op-1"],
+            "source_text_precondition_ids": ["source-names-sentence-scope"],
+            "live_target_precondition_ids": ["live-section-target"],
+            "status": "claimed_not_proved",
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_schema"
+    assert (
+        "canonical_operations[1].action is not a canonical StructuralAction"
+    ) in row["validation_issues"]
+    assert (
+        "operation_family_proofs[1].sentence_scoped_text_insert_boundary_claim "
+        "requires sentence_boundary_ownership_ids or boundary_ownership_ids"
+    ) in row["validation_issues"]
+    assert (
+        "operation_family_proofs[1].sentence_scoped_text_insert_boundary_claim "
+        "operation 'manual-op-1' must be an insert or text-rewrite action"
+    ) in row["validation_issues"]
+    assert (
+        "operation_family_proofs[1].sentence_scoped_text_insert_boundary_claim "
+        "operation 'manual-op-1' target 'section:2' is outside declared live "
+        "target preconditions"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_accepts_structural_insert_family_proof_semantic() -> None:
     parent_text_hash = hashlib.sha256(b"parent text").hexdigest()
     claim = _claim_row(source_preview="before subsection 2 insert subsection 1A")
