@@ -1,8 +1,8 @@
-"""PrecedenceRegistry — typed loader for data/fi/v1/claim_precedence.yaml.
+"""PrecedenceRegistry — typed loader for claim precedence config.
 
-The YAML file is operator-authored config (the legitimate YAML boundary per
-feedback_no_pydantic_until_serialization). Python-internal models remain plain
-dataclasses; Pydantic is NOT used here.
+DEPRECATED: claim_precedence.yaml is superseded by EvidencePolicyRegistry
+(v3 design §4, data/fi/v1/evidence_policy/*.json).  This module is retained
+for one transition release.  New code should use evidence_policy.py directly.
 
 Per §5 of UNIFIED_MANUAL_CLAIMS_DESIGN.md v2.2:
   Precedence is by claim layer + validator status + source-witness type.
