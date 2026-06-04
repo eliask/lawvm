@@ -1828,6 +1828,30 @@ def test_classify_uk_manual_compile_frontier_marks_crossheading_source_target_mi
     assert "cross-heading facet" in result["reason"]
 
 
+def test_classify_uk_manual_compile_frontier_crossheading_mismatch_preempts_scoped_occurrence_pathology() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words repealed",
+        source_pathology="scoped_occurrence_text_patch_with_exclusions_unsupported",
+        extracted_tag="P1group",
+        extracted_text=(
+            "Part 1 Great Britain Social Security Contributions and Benefits Act 1992 "
+            "is amended as follows."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_crossheading_source_target_mismatch_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "source_or_feed_target_conflict"
+    assert result["rule_id"] == "uk_manual_frontier_crossheading_source_target_mismatch"
+
+
 def test_classify_uk_manual_compile_frontier_marks_sentence_scoped_repeated_insert() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",

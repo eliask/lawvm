@@ -2669,6 +2669,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The blocking row is dominated by source-shape pathology rather than an unambiguous manual compilation opportunity.",
         }
 
+    if "uk_effect_crossheading_source_target_mismatch_rejected" in blocking_rules:
+        return {
+            "status": "source_or_feed_target_conflict",
+            "rule_id": "uk_manual_frontier_crossheading_source_target_mismatch",
+            "reason": "The source explicitly names a cross-heading facet but the effect-feed target does not; replay needs source-feed target reconciliation before lowering a heading or host-body text patch.",
+        }
+
     main_source_pathology_result = _uk_manual_frontier_classification(
         _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS,
         source_pathology_norm,
