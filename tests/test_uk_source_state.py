@@ -86,6 +86,28 @@ def test_uk_statute_xml_content_classifies_multiple_choices_html() -> None:
     ]
 
 
+def test_uk_statute_xml_content_classifies_multiple_choices_any_variant() -> None:
+    blob = b"""<html><body>
+    <h1>Multiple Choices</h1>
+    <p>The link that you've followed could mean any of the following:</p>
+    <a href="/ukpga/Geo5/12-13/3">Consolidated Fund (No. 2) Act 1922</a>
+    <a href="/ukpga/Geo5/13/3">Appropriation Act 1922</a>
+    <a href="/ukpga/Geo5Sess2/13/3">Appropriation (Session 2) Act 1922</a>
+    </body></html>"""
+
+    state = classify_uk_statute_xml_content(blob)
+
+    assert state.status is UKStatuteXmlContentStatus.MULTIPLE_CHOICES
+    assert uk_multiple_choice_candidate_data_urls(blob) == (
+        "https://www.legislation.gov.uk/ukpga/Geo5/12-13/3/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Geo5/12-13/3/enacted/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Geo5/13/3/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Geo5/13/3/enacted/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Geo5Sess2/13/3/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Geo5Sess2/13/3/enacted/data.xml",
+    )
+
+
 def test_uk_source_blob_classifies_multiple_choices_after_long_html_head() -> None:
     blob = (
         b"<!DOCTYPE html><html><head>"

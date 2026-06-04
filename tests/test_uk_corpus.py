@@ -321,6 +321,7 @@ def test_do_download_refetches_cached_multiple_choices_marker_for_candidates() -
 
 def test_do_repair_multiple_choices_scans_cached_markers_for_leaf_candidates() -> None:
     statute_id = "ukpga/1955/18"
+    current_url = f"{acquire_uk_corpus._LEG_BASE}/{statute_id}/data.xml"
     enacted_url = f"{acquire_uk_corpus._LEG_BASE}/{statute_id}/enacted/data.xml"
     other_url = f"{acquire_uk_corpus._LEG_BASE}/ukpga/1852/1/data.xml"
     leaf_urls = [
@@ -337,15 +338,18 @@ def test_do_repair_multiple_choices_scans_cached_markers_for_leaf_candidates() -
     </div>"""
     leaf_xml = b"<Legislation>" + (b"leaf" * 40) + b"</Legislation>"
     archive = _FakeArchive()
+    archive.store(current_url, b"HTTP 300 Multiple Choices")
     archive.store(enacted_url, b"HTTP 300 Multiple Choices")
     archive.store(other_url, b"HTTP 300 Multiple Choices")
     archive.store_calls.clear()
     http = _FakeHTTP(
         {
+            current_url: 300,
             enacted_url: 300,
             **{url: 200 for url in leaf_urls},
         },
         data_by_url={
+            current_url: ambiguity_blob,
             enacted_url: ambiguity_blob,
             **{url: leaf_xml for url in leaf_urls},
         },
@@ -358,13 +362,15 @@ def test_do_repair_multiple_choices_scans_cached_markers_for_leaf_candidates() -
     )
 
     assert result == {
-        "ambiguous_locators": 1,
+        "ambiguous_locators": 2,
+        "ambiguous_groups": 1,
         "repaired_locators": 1,
         "candidate_sources": 4,
+        "direct_sources": 0,
         "no_candidates": 0,
         "failed": 0,
     }
-    assert http.calls == [enacted_url, *leaf_urls]
+    assert http.calls == [current_url, *leaf_urls]
     assert archive.store_calls == [(url, leaf_xml, "xml") for url in leaf_urls]
 
 
@@ -387,12 +393,39 @@ def test_do_repair_multiple_choices_reports_no_candidate_pages() -> None:
 
     assert result == {
         "ambiguous_locators": 1,
+        "ambiguous_groups": 1,
         "repaired_locators": 0,
         "candidate_sources": 0,
+        "direct_sources": 0,
         "no_candidates": 1,
         "failed": 0,
     }
     assert archive.store_calls == []
+
+
+def test_do_repair_multiple_choices_stores_direct_xml_when_marker_goes_stale() -> None:
+    url = f"{acquire_uk_corpus._LEG_BASE}/ukpga/1859/27/enacted/data.xml"
+    direct_xml = b"<Legislation>" + (b"direct" * 40) + b"</Legislation>"
+    archive = _FakeArchive()
+    archive.store(url, b"HTTP 300 Multiple Choices")
+    archive.store_calls.clear()
+    http = _FakeHTTP({url: 200}, data_by_url={url: direct_xml})
+
+    result = acquire_uk_corpus.do_repair_multiple_choices(
+        cast(Any, archive),
+        cast(Any, http),
+    )
+
+    assert result == {
+        "ambiguous_locators": 1,
+        "ambiguous_groups": 1,
+        "repaired_locators": 1,
+        "candidate_sources": 0,
+        "direct_sources": 1,
+        "no_candidates": 0,
+        "failed": 0,
+    }
+    assert archive.store_calls == [(url, direct_xml, "xml")]
 
 
 def test_do_refresh_can_force_one_statute_current_and_effects() -> None:

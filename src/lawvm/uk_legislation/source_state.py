@@ -249,7 +249,10 @@ def _is_uk_multiple_choices_blob(blob: bytes) -> bool:
         return True
     return (
         "multiple choices" in preview
-        and "the link that you've followed could mean either of the following" in preview
+        and (
+            "the link that you've followed could mean either of the following" in preview
+            or "the link that you've followed could mean any of the following" in preview
+        )
     )
 
 

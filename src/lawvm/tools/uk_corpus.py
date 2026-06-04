@@ -271,9 +271,11 @@ def _source_xml_fetch_error(data: bytes | None, status: int | None) -> str | Non
     if not data:
         return f"http_{status}" if status is not None else "transport_error"
     source_status = _source_xml_status(data)
-    if source_status is UKSourceStatus.AVAILABLE:
-        return None
-    return source_status.value
+    if source_status is not UKSourceStatus.AVAILABLE:
+        return source_status.value
+    if not _is_storable_xml(data):
+        return "non_xml"
+    return None
 
 
 def _store_source_xml_if_available(
@@ -609,6 +611,12 @@ def _locator_matches_statute_ids(locator: str, statute_ids: set[str] | None) -> 
     return any(f"/{sid.strip('/')}/" in locator for sid in statute_ids)
 
 
+def _multiple_choice_base_locator(locator: str) -> str:
+    if locator.endswith("/enacted/data.xml"):
+        return locator.removesuffix("/enacted/data.xml")
+    return locator.removesuffix("/data.xml")
+
+
 def do_repair_multiple_choices(
     archive: Farchive,
     http: _HTTP,
@@ -623,49 +631,78 @@ def do_repair_multiple_choices(
     it refetches the ambiguity page only to discover candidate leaf URLs, then
     stores the leaf XML under each candidate's actual legislation.gov.uk URL.
     """
-    candidates = [
+    candidate_locators = [
         loc
         for loc in archive.locators("%/data.xml")
         if _locator_matches_statute_ids(loc, statute_ids)
         and _cached_source_xml_status(archive, loc) is UKSourceStatus.MULTIPLE_CHOICES
     ]
     if limit > 0:
-        candidates = candidates[:limit]
-    print(f"  found {len(candidates):,} cached Multiple Choices locator(s)", flush=True)
-    n_repaired = n_candidate_sources = n_no_candidates = n_failed = 0
-    for i, loc in enumerate(candidates, 1):
-        data, status = http.get_with_status(loc)
-        source_error = _source_xml_fetch_error(data, status)
-        if not data or source_error != UKSourceStatus.MULTIPLE_CHOICES.value:
-            n_failed += 1
-        else:
+        candidate_locators = candidate_locators[:limit]
+    grouped: dict[str, list[str]] = {}
+    for loc in candidate_locators:
+        grouped.setdefault(_multiple_choice_base_locator(loc), []).append(loc)
+    groups = [(base, sorted(locs)) for base, locs in sorted(grouped.items())]
+    print(
+        f"  found {len(candidate_locators):,} cached Multiple Choices locator(s) "
+        f"across {len(groups):,} ambiguous base(s)",
+        flush=True,
+    )
+    n_repaired = n_candidate_sources = n_direct_sources = n_no_candidates = n_failed = 0
+    for i, (_base, locs) in enumerate(groups, 1):
+        last_loc = locs[-1]
+        group_failed = True
+        group_no_candidates = False
+        group_repaired = False
+        for loc in locs:
+            last_loc = loc
+            data, status = http.get_with_status(loc)
+            source_error = _source_xml_fetch_error(data, status)
+            if data and source_error is None:
+                if _store_source_xml_if_available(archive, loc, data):
+                    n_direct_sources += 1
+                group_repaired = True
+                group_failed = False
+                continue
+            if not data or source_error != UKSourceStatus.MULTIPLE_CHOICES.value:
+                continue
+            group_failed = False
             candidate_urls = uk_multiple_choice_candidate_data_urls(
                 data,
                 include_current=True,
                 include_enacted=True,
             )
             if not candidate_urls:
-                n_no_candidates += 1
-            else:
-                n_candidate_sources += _fetch_multiple_choice_candidate_sources(
-                    archive,
-                    http,
-                    data,
-                    include_current=True,
-                    include_enacted=True,
-                )
-                n_repaired += 1
-        if i % 10 == 0 or i == len(candidates):
+                group_no_candidates = True
+                continue
+            n_candidate_sources += _fetch_multiple_choice_candidate_sources(
+                archive,
+                http,
+                data,
+                include_current=True,
+                include_enacted=True,
+            )
+            group_repaired = True
+            break
+        if group_failed:
+            n_failed += 1
+        elif group_repaired:
+            n_repaired += 1
+        elif group_no_candidates:
+            n_no_candidates += 1
+        if i % 10 == 0 or i == len(groups):
             print(
-                f"  [{i:,}/{len(candidates):,}]  repaired={n_repaired:,}  "
-                f"candidate_sources+{n_candidate_sources:,}  "
-                f"no_candidates={n_no_candidates:,}  failed={n_failed:,}  last={loc}",
+                f"  [{i:,}/{len(groups):,}]  repaired={n_repaired:,}  "
+                f"candidate_sources+{n_candidate_sources:,}  direct_sources+{n_direct_sources:,}  "
+                f"no_candidates={n_no_candidates:,}  failed={n_failed:,}  last={last_loc}",
                 flush=True,
             )
     return {
-        "ambiguous_locators": len(candidates),
+        "ambiguous_locators": len(candidate_locators),
+        "ambiguous_groups": len(groups),
         "repaired_locators": n_repaired,
         "candidate_sources": n_candidate_sources,
+        "direct_sources": n_direct_sources,
         "no_candidates": n_no_candidates,
         "failed": n_failed,
     }
@@ -786,8 +823,10 @@ def run_repair_multiple_choices(
     )
     print(
         f"  ambiguous={r['ambiguous_locators']:,}  "
+        f"groups={r['ambiguous_groups']:,}  "
         f"repaired={r['repaired_locators']:,}  "
         f"candidate_sources+{r['candidate_sources']:,}  "
+        f"direct_sources+{r['direct_sources']:,}  "
         f"no_candidates={r['no_candidates']:,}  failed={r['failed']:,}"
     )
 
