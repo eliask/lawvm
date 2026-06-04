@@ -1744,6 +1744,20 @@ def _manual_compile_evidence_row_jsonable(
         )
     else:
         payload["frontier_work_item"] = {}
+    work_item = payload["frontier_work_item"]
+    work_item_detail = (
+        work_item.get("detail") if isinstance(work_item, Mapping) else {}
+    )
+    candidate_set_certificate = (
+        work_item_detail.get("candidate_set_certificate")
+        if isinstance(work_item_detail, Mapping)
+        else {}
+    )
+    payload["candidate_set_certificate"] = (
+        dict(candidate_set_certificate)
+        if isinstance(candidate_set_certificate, Mapping)
+        else {}
+    )
     return payload
 
 

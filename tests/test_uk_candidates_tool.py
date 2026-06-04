@@ -3219,6 +3219,12 @@ def test_uk_candidates_full_mode_exports_manual_compile_evidence_jsonl(
     assert rows[0]["claim_status"] == "unresolved_work_item"
     assert rows[0]["validator_status"] == "not_validated"
     assert rows[0]["work_item_id"].startswith("uk-manual-frontier-")
+    assert rows[0]["candidate_set_certificate"]["completeness_status"] == "complete"
+    assert rows[0]["candidate_set_certificate"]["candidate_ids"] == ["s. 1"]
+    assert rows[0]["candidate_set_certificate"]["next_promotion_allowed"] is False
+    assert rows[0]["frontier_work_item"]["detail"]["candidate_set_certificate"] == (
+        rows[0]["candidate_set_certificate"]
+    )
     assert rows[0]["affected_uri"] == "/id/ukpga/2000/1"
     assert rows[0]["affecting_uri"] == "/id/ukpga/2025/1"
     assert rows[0]["affecting_source_witness"] == {
@@ -3435,6 +3441,10 @@ def test_uk_candidates_manual_compile_evidence_jsonl_can_export_frontend_candida
     assert rows[0]["manual_compile_status"] == "deterministic_frontend_candidate"
     assert rows[0]["manual_compile_rule_id"] == (
         "uk_manual_frontier_structural_sibling_insert_candidate"
+    )
+    assert rows[0]["candidate_set_certificate"]["completeness_status"] == "complete"
+    assert rows[0]["frontier_work_item"]["detail"]["candidate_set_certificate"] == (
+        rows[0]["candidate_set_certificate"]
     )
     assert rows[0]["source_pathology"] == "structural_sibling_insert_unsupported"
     assert rows[0]["lowering_rejections"] == [
