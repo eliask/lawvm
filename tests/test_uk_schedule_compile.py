@@ -12008,7 +12008,7 @@ def test_compile_range_insert_substitution_requires_substitution_metadata() -> N
     }
 
 
-def test_compile_at_end_add_insert_does_not_swallow_definition_target() -> None:
+def test_compile_at_end_add_insert_scopes_definition_target() -> None:
     extracted_el = ET.fromstring(
         f"""
         <P3 xmlns="{_LEG_NS}" id="test-at-end-add-definition-negative">
@@ -12044,10 +12044,30 @@ def test_compile_at_end_add_insert_does_not_swallow_definition_target() -> None:
         lowering_rejections_out=lowering_rejections,
     )
 
-    assert ops == []
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "176"), ("subsection", "1"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == (
+        f"TEXT_IN_DEFINITION_protected rights{US}AT_END"
+    )
+    assert (
+        op.text_patch.replacement
+        == ", as it had effect immediately prior to the abolition date"
+    )
     assert "uk_effect_metadata_carried_at_end_add_insert_text_patch" not in {
         row["rule_id"] for row in lowering_rejections
     }
+    assert [
+        row["rule_id"]
+        for row in lowering_rejections
+        if row["rule_id"] == UK_IN_DEFINITION_AT_END_TARGET_CONTEXT_INSERT_RULE_ID
+    ] == [UK_IN_DEFINITION_AT_END_TARGET_CONTEXT_INSERT_RULE_ID]
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}{UK_IN_DEFINITION_AT_END_TARGET_CONTEXT_INSERT_RULE_ID}"
+        in op.provenance_tags
+    )
 
 
 def test_compile_source_parent_carried_after_word_ordinal_insert() -> None:

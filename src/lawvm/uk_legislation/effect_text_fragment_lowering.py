@@ -25,6 +25,7 @@ from lawvm.uk_legislation.heading_facets import (
 from lawvm.uk_legislation.nlp_parser import (
     _ORDINAL_OCCURRENCES,
     _ORDINAL_OCCURRENCE_WORDS,
+    UK_IN_DEFINITION_AT_END_TARGET_CONTEXT_INSERT_RULE_ID,
     US,
     is_whole_node_replacement,
     parse_fragment_substitution,
@@ -996,6 +997,16 @@ def _extract_text_fragment_substitutions(
         )
         if metadata_carried_at_end_substitute_insert is not None:
             subs = [metadata_carried_at_end_substitute_insert]
+    if not subs:
+        metadata_carried_definition_at_end_add_insert = (
+            _effect_metadata_carried_definition_at_end_add_insert_fragment(
+                effect=effect,
+                target=target,
+                extracted_text=extracted_text,
+            )
+        )
+        if metadata_carried_definition_at_end_add_insert is not None:
+            subs = [metadata_carried_definition_at_end_add_insert]
     if not subs:
         metadata_carried_at_end_add_insert = _effect_metadata_carried_at_end_add_insert_fragment(
             effect=effect,
@@ -2320,6 +2331,71 @@ def _parse_at_end_substitute_insert(text: str) -> Optional[tuple[str, str, str, 
     if inserted is None:
         return None
     return parent_label, kind, label, inserted[0].strip()
+
+
+def _effect_metadata_carried_definition_at_end_add_insert_fragment(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect.effect_type or "").lower().split())
+    if norm_effect_type not in {"word inserted", "words inserted"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if not text:
+        return None
+    parsed = _parse_definition_at_end_add_insert(text)
+    if parsed is None:
+        return None
+    target_context_label, term, inserted = parsed
+    if target_context_label:
+        target_labels = {_clean_num(label) for _, label in target.path}
+        if _clean_num(target_context_label) not in target_labels:
+            return None
+    if not term or not inserted:
+        return None
+    return {
+        "original": f"TEXT_IN_DEFINITION_{term}{US}AT_END",
+        "replacement": inserted,
+        "rule_id": UK_IN_DEFINITION_AT_END_TARGET_CONTEXT_INSERT_RULE_ID,
+    }
+
+
+def _parse_definition_at_end_add_insert(text: str) -> Optional[tuple[str, str, str]]:
+    lower = text.lower()
+    definition_phrase = "in the definition of "
+    definition_idx = lower.find(definition_phrase)
+    if definition_idx < 0:
+        return None
+    target_context_label = _source_in_unit_label_before(lower[:definition_idx])
+    term_start = definition_idx + len(definition_phrase)
+    term = _read_quoted(text, term_start)
+    if term is None:
+        return None
+    cursor = _skip_spaces(text, term[1])
+    if not lower.startswith("at the end", cursor):
+        return None
+    cursor = _skip_at_end_add_separator(text, cursor + len("at the end"))
+    if not lower.startswith("add ", cursor):
+        return None
+    inserted = _read_quoted(text, cursor + len("add "))
+    if inserted is None:
+        return None
+    return target_context_label, term[0].strip(), inserted[0].strip()
+
+
+def _source_in_unit_label_before(prefix: str) -> str:
+    for unit in ("subsection", "paragraph", "sub-paragraph", "section"):
+        needle = f"in {unit} ("
+        idx = prefix.rfind(needle)
+        if idx < 0:
+            continue
+        start = idx + len(needle)
+        end = prefix.find(")", start)
+        if end >= 0:
+            return prefix[start:end]
+    return ""
 
 
 def _effect_metadata_carried_at_end_add_insert_fragment(
