@@ -161,6 +161,13 @@ _BEFORE_NESTED_QUOTED_ANCHOR_INSERT_RE = re.compile(
     rf"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>{_NON_QUOTE}{{1,500}})[”\"'’]",
     re.I,
 )
+_BEFORE_DANGLING_NESTED_QUOTED_ANCHOR_INSERT_RE = re.compile(
+    rf"before\s+[“\"'‘]\s*(?P<original>[“\"'‘]{_NON_QUOTE}{{1,500}}[”\"'’])\s+"
+    r"(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)"
+    rf"(?:\s+(?:the\s+)?words?)?\s+(?P<inserted>[“\"'‘]{_NON_QUOTE}{{1,500}}[”\"'’])"
+    r"(?P<trailing_comma>,)?[”\"'’]?",
+    re.I,
+)
 _BEFORE_QUOTED_ANCHOR_INSERT_PREFIX_RE = re.compile(
     rf"before\s+[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]"
     r",?\s+(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)"
@@ -262,6 +269,9 @@ UK_PASSIVE_BEFORE_QUOTED_ANCHOR_INSERT_RULE_ID = (
 )
 UK_BEFORE_NESTED_QUOTED_ANCHOR_INSERT_RULE_ID = (
     "uk_effect_before_nested_quoted_anchor_insert_text_patch"
+)
+UK_BEFORE_DANGLING_NESTED_QUOTED_ANCHOR_INSERT_RULE_ID = (
+    "uk_effect_before_dangling_nested_quoted_anchor_insert_text_patch"
 )
 UK_BEFORE_QUOTED_ANCHOR_NESTED_PAYLOAD_INSERT_RULE_ID = (
     "uk_effect_before_quoted_anchor_nested_payload_insert_text_patch"
@@ -3952,6 +3962,20 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
                 "original": original,
                 "replacement": f"{inserted}{joiner}{original}",
                 "rule_id": "uk_effect_before_nested_quoted_anchor_block_insert_text_patch",
+            }
+        )
+
+    for m in _BEFORE_DANGLING_NESTED_QUOTED_ANCHOR_INSERT_RE.finditer(text):
+        original = m.group("original").strip()
+        inserted = m.group("inserted").strip()
+        if m.group("trailing_comma"):
+            inserted = f"{inserted},"
+        joiner = _before_anchor_insert_joiner(inserted, original)
+        subs.append(
+            {
+                "original": original,
+                "replacement": f"{inserted}{joiner}{original}",
+                "rule_id": UK_BEFORE_DANGLING_NESTED_QUOTED_ANCHOR_INSERT_RULE_ID,
             }
         )
 

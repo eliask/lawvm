@@ -1879,6 +1879,21 @@ def test_parse_fragment_substitution_handles_before_anchor_ordinal_insert() -> N
     ]
 
 
+def test_parse_fragment_substitution_handles_dangling_nested_quote_before_anchor_insert() -> None:
+    subs = parse_fragment_substitution(
+        "a before \u201c\u201cEEA authorisation\u201d insert "
+        "\u201clife assurance consolidation directive\u201d,\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "\u201cEEA authorisation\u201d",
+            "replacement": "\u201clife assurance consolidation directive\u201d, \u201cEEA authorisation\u201d",
+            "rule_id": "uk_effect_before_dangling_nested_quoted_anchor_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_parenthesized_before_anchor_all_occurrences_insert() -> None:
     subs = parse_fragment_substitution(
         "2 Before  \u201cpassenger transport area\u201d\n"
