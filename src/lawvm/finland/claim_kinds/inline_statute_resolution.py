@@ -13,10 +13,17 @@ Two deterministic validators:
   2. entailment_verified — resolved_statute_id is entailed by citation_form
      within cited span. Concrete checks:
        a. citation_form substring appears in cited_source_span content.
-       b. resolved_statute_id matches YYYY/NNNN shape.
+       b. resolved_statute_id matches NNNN/YYYY shape (after canonicalization).
        c. citation_form parses to a compatible year/number reference via
           known Finnish citation patterns.
      If citation form is structurally unresolvable → UNVALIDATED + reason.
+
+Canonicalization (pre-1980 legacy form):
+  Finnish statutes use NNNN/YYYY (number/year). Pre-1980 statutes were
+  frequently cited with 2-digit years: NNN/YY → canonical NNN/1YYY.
+  2-digit years always expand to 19YY (post-2000 statutes always use 4-digit years).
+  _canonicalize_finnish_statute_id() handles this expansion. Callers (propose-claims)
+  normalize before validation so stored claims always carry canonical form.
 
 Design discipline (AGENTS.md §1.11, §1.13):
   - All patterns compiled at module scope.
@@ -42,59 +49,98 @@ from lawvm.core.manual_claims.kind_registry import (
 
 # Finnish statute IDs are NNNN/YYYY (statute_number/year).
 # e.g. 1234/2020 = statute 1234 of year 2020.
-# The canonical form has YEAR on the right side.
+# The canonical form has YEAR on the right side as 4 digits.
 
 # Matches canonical Finnish statute ID: NNNN/YYYY → group1=number, group2=year
 _STATUTE_ID_RE = re.compile(r"^(\d{1,4})/(\d{4})$")
 
+# Matches legacy 2-digit-year form: NNN/YY → group1=number, group2=2-digit-year
+# Only matches when year is exactly 2 digits (not 3 or 4).
+_LEGACY_STATUTE_ID_RE = re.compile(r"^(\d{1,4})/(\d{2})$")
+
 # Finnish citation patterns (bounded quantifiers, no adjacent unbounded repeats)
 # All patterns return (year, statute_number) after normalization.
 
-# Pattern 1: (1234/2020) → number=1234, year=2020
-_CITE_PAREN_RE = re.compile(r"\((\d{1,4})/(\d{4})\)")
+# Pattern 1: (1234/2020) or (71/23) → number=group1, year=group2 (4-digit or 2-digit)
+_CITE_PAREN_RE = re.compile(r"\((\d{1,4})/(\d{2,4})\)")
 
-# Pattern 2: lain 1234/2020 → number=1234, year=2020
-_CITE_BARE_RE = re.compile(r"\blain\s+(\d{1,4})/(\d{4})\b")
+# Pattern 2: lain 1234/2020 or lain 71/23 → number=group1, year=group2
+_CITE_BARE_RE = re.compile(r"\blain\s+(\d{1,4})/(\d{2,4})\b")
 
 # Pattern 3: "vuoden YYYY lain N:o NNNN" → group1=year, group2=number
 _CITE_VUODEN_RE = re.compile(
     r"\bvuoden\s+(\d{4})\s+la(?:in|kia)\s+N:o\s+(\d{1,4})\b"
 )
 
-# Pattern 4: bare NNNN/YYYY in text → number=group1, year=group2
-_CITE_SLASHONLY_RE = re.compile(r"\b(\d{1,4})/(\d{4})\b")
+# Pattern 4: bare NNNN/YYYY or NNN/YY in text → number=group1, year=group2
+_CITE_SLASHONLY_RE = re.compile(r"\b(\d{1,4})/(\d{2,4})\b")
+
+
+def _expand_year(raw_year: int) -> int:
+    """Expand a 2-digit year to 4 digits using the 19xx convention.
+
+    Pre-1980 Finnish statutes used 2-digit years. Post-2000 statutes always
+    use 4-digit years, so there is no ambiguity: 2-digit always means 19YY.
+    """
+    if raw_year < 100:
+        return 1900 + raw_year
+    return raw_year
+
+
+def _canonicalize_finnish_statute_id(raw: str) -> Optional[str]:
+    """Expand a legacy 2-digit-year Finnish statute ID to canonical form.
+
+    Accepted input forms:
+      NNNN/YYYY  — already canonical; returned unchanged.
+      NNN/YY     — legacy pre-1980 form; returns NNN/19YY.
+      NN/YY      — ditto.
+
+    Returns None if the input does not parse as any Finnish statute citation.
+    """
+    m = _STATUTE_ID_RE.match(raw)
+    if m:
+        return raw  # already canonical
+
+    m = _LEGACY_STATUTE_ID_RE.match(raw)
+    if m:
+        number = m.group(1)
+        year_4 = 1900 + int(m.group(2))
+        return f"{number}/{year_4}"
+
+    return None
 
 
 def _extract_year_number(citation_form: str) -> Optional[Tuple[int, int]]:
     """Try to extract (year, statute_number) from a citation form string.
 
     Finnish statute IDs are NNNN/YYYY (e.g. '1234/2020' = statute 1234 of 2020).
+    Also handles legacy 2-digit-year citations (e.g. '(71/23)' = statute 71 of 1923).
     Returns (year, statute_number) or None if no known pattern matches.
     Tries patterns in specificity order; returns first match.
     """
-    # Substring guard: must contain a 4-digit sequence
-    if not re.search(r"\d{4}", citation_form):
+    # Substring guard: must contain a digit sequence of length 2+
+    if not re.search(r"\d{2}", citation_form):
         return None
 
-    # vuoden YYYY lain N:o NNNN → group1=year, group2=number
+    # vuoden YYYY lain N:o NNNN → group1=year (4-digit), group2=number
     m = _CITE_VUODEN_RE.search(citation_form)
     if m:
         return int(m.group(1)), int(m.group(2))
 
-    # (NNNN/YYYY) → group1=number, group2=year
+    # (NNNN/YYYY) or (NNN/YY) → group1=number, group2=year
     m = _CITE_PAREN_RE.search(citation_form)
     if m:
-        return int(m.group(2)), int(m.group(1))
+        return _expand_year(int(m.group(2))), int(m.group(1))
 
-    # lain NNNN/YYYY → group1=number, group2=year
+    # lain NNNN/YYYY or lain NNN/YY → group1=number, group2=year
     m = _CITE_BARE_RE.search(citation_form)
     if m:
-        return int(m.group(2)), int(m.group(1))
+        return _expand_year(int(m.group(2))), int(m.group(1))
 
-    # bare NNNN/YYYY → group1=number, group2=year
+    # bare NNNN/YYYY or NNN/YY → group1=number, group2=year
     m = _CITE_SLASHONLY_RE.search(citation_form)
     if m:
-        return int(m.group(2)), int(m.group(1))
+        return _expand_year(int(m.group(2))), int(m.group(1))
 
     return None
 
@@ -251,6 +297,12 @@ def validate_entailment(claim: object, source_bytes: bytes) -> ValidationResult:
 
     claim: ManualCompilationClaim (typed as object to avoid circular import).
     source_bytes: bytes of the cited source artifact (for span text extraction).
+
+    Canonicalizes resolved_statute_id before the shape check so that legacy
+    2-digit-year forms (e.g. '361/72') are accepted and compared correctly.
+    The canonical form is used for entailment checking; callers that need the
+    canonical form stored in the claim should normalize before calling
+    (see cmd_propose_claims.py normalize_fi_statute_resolution_value).
     """
     cited_span = claim.cited_source_span  # type: ignore[attr-defined]
     start, end = cited_span
@@ -267,11 +319,28 @@ def validate_entailment(claim: object, source_bytes: bytes) -> ValidationResult:
 
     # Extract value fields from frozen tuple-of-pairs representation
     value_dict = dict(claim.value)  # type: ignore[attr-defined]
-    resolved_statute_id = value_dict.get("resolved_statute_id", "")
+    raw_statute_id = value_dict.get("resolved_statute_id", "")
     citation_form = value_dict.get("citation_form", "")
 
+    canonical = _canonicalize_finnish_statute_id(raw_statute_id)
+    if canonical is None:
+        return ValidationResult(
+            passed=False,
+            validator_name="entailment_verified",
+            reason=(
+                f"resolved_statute_id {raw_statute_id!r} does not parse as "
+                "Finnish statute citation"
+            ),
+            details=None,
+        )
+    if canonical != raw_statute_id:
+        import logging
+        logging.getLogger(__name__).debug(
+            "canonicalized %s → %s", raw_statute_id, canonical
+        )
+
     return _validate_entailment(
-        resolved_statute_id=resolved_statute_id,
+        resolved_statute_id=canonical,
         citation_form=citation_form,
         span_text=span_text,
     )
