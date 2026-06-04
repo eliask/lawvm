@@ -180,10 +180,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_manual_claims_primitive.py",
         "test_manual_claims_storage.py",
         "test_manual_claims_slice3.py",
-        # v3 graph-native claims (Step 2)
+        # v3 graph-native claims (Step 2 + Step 3 CLI migration)
         "test_strict_profile_v3.py",
         "test_manual_claims_native.py",
         "test_cmd_migrate_manual_claims.py",
+        "test_cmd_claim_v3.py",
     ),
     "evidence_claims": (
         "test_evidence.py",

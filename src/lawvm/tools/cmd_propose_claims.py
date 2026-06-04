@@ -1,30 +1,22 @@
-"""lawvm propose-claims — LLM-aided claim proposal pipeline (Slice 4).
+"""lawvm propose-claims — LLM-aided claim proposal pipeline (v3 graph-native).
 
 Subcommands:
   --from-frontier [--kind ...] [--limit N] [--backend mock|qwen]
   --gap-discovery --he HE_ID [--kind ...] [--backend ...]
   --he HE_ID --kind fi.v1.INLINE_STATUTE_RESOLUTION [--backend ...]
 
-§4.2 + §9 of UNIFIED_MANUAL_CLAIMS_DESIGN.md v2.2.
+Quota rules:
+  - Default limit: 100 proposals per invocation. --max-claims-no-cap removes it.
+  - Skip if (claim_kind, target) already has a reviewed+accepted assertion.
+  - One active proposed assertion per (claim_kind, target, value) triple.
 
-Quota rules (adversary #2 — claim flooding):
-  - Default limit: 100 proposals per invocation. No-cap requires --max-claims-no-cap.
-  - Skip if (claim_kind, target) already has an accepted claim (gap is closed).
-  - One active proposed claim per (claim_kind, target, value) triple — duplicate
-    proposals update the existing claim's producer field (not a new claim_id).
-
-Validation pipeline (per §9 step 6):
-  1. schema validation (shape correct; parse_error is None)
+Validation pipeline per proposal:
+  1. schema validation (parse_error is None)
   2. span_existence_validator
   3. per-ClaimKind entailment_validator
-  If all pass: write to proposed/ with validator_status=entailment_verified.
-  If any fail: write rejection record with reason.
-
-Source bytes (Piece 3):
-  Each frontier row fetches real source bytes via the SourceBytesProvider
-  registry (lawvm.core.manual_claims.source_provider). The 'fi' provider is
-  registered at CLI startup via register_fi_source_provider(). Rows whose
-  provider returns None are skipped and logged as frontier_skipped_no_source.
+  If all pass: submit_assertion + span_verified + entailment_verified attestations.
+  If any fail: submit_assertion + schema_validated(success=False) only
+               (rejected proposal stored for audit).
 
 AGENTS.md §1.10: no broad try/except in non-test code.
 """
@@ -39,23 +31,17 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
 
-from lawvm.core.manual_claims.hashing import compute_claim_id
+from lawvm.core.manual_claims.native import (
+    attest,
+    submit_assertion,
+)
 from lawvm.core.manual_claims.primitive import (
-    ClaimConfidence,
-    ClaimLayer,
     ClaimScope,
-    ClaimState,
-    ClaimStateEvent,
-    ClaimStatus,
     ExtractionFrontierRow,
     GapDiscoveryRow,
-    ManualCompilationClaim,
-    Producer,
     ProfileTag,
-    ReviewStatus,
     SourceLocator,
     SourceWitnessType,
-    ValidatorStatus,
 )
 from lawvm.core.manual_claims.proposal_backend import (
     ClaimSchema,
@@ -69,40 +55,58 @@ from lawvm.core.manual_claims.source_provider import (
     get_source_provider,
     register_source_provider,
 )
-from lawvm.core.manual_claims.state import project_state
-from lawvm.core.manual_claims.storage import ClaimStore
+from lawvm.core.provenance_graph import (
+    ArtifactRef,
+    GraphBuilder,
+    Interval,
+    Producer,
+    ProvenanceAssertion,
+    SourceRef,
+    assertion_canonical_payload,
+    attestation_kind_registry_hash,
+    _sha256,
+)
+from lawvm.core.provenance_graph_storage import (
+    GraphStore,
+    _deserialize_assertion,
+    _deserialize_attestation,
+)
 
-_DEFAULT_DATA_DIR = "data/fi/v1"
-_MANUAL_CLAIMS_SUBDIR = "manual_claims"
+_DEFAULT_GRAPH_ROOT = "data/fi/v1/provenance_graph"
+
+_PLAIN_STATUTE_RE = re.compile(r"\b(\d{1,4})/(\d{4})\b")
 
 
 # ---------------------------------------------------------------------------
-# Source provider registration helper
+# Source provider registration
 # ---------------------------------------------------------------------------
 
 
 def register_fi_source_provider(corpus_root=None) -> None:
-    """Register the Finland FinlexSectionSourceProvider for jurisdiction 'fi'.
-
-    Called at CLI startup (propose-claims and validate-claims handlers in cli.py).
-    corpus_root: optional Path override for the finlex.farchive location.
-    """
     from lawvm.finland.source_providers.finlex_section import FinlexSectionSourceProvider
-    from pathlib import Path
     provider = FinlexSectionSourceProvider(
         corpus_root=Path(corpus_root) if corpus_root is not None else None
     )
     register_source_provider("fi", provider)
 
-# Inline statute citation patterns reused from inline_statute_resolution.py
-# (module-scope compile per AGENTS.md §1.11)
-_PLAIN_STATUTE_RE = re.compile(r"\b(\d{1,4})/(\d{4})\b")
-"""Plain NNNN/YYYY pattern for gap discovery — finds citations the <ref> extractor missed."""
-
 
 # ---------------------------------------------------------------------------
-# Backend factory
+# Store + producer helpers
 # ---------------------------------------------------------------------------
+
+
+def _get_store(graph_store_root: Optional[str]) -> GraphStore:
+    root = graph_store_root or _DEFAULT_GRAPH_ROOT
+    return GraphStore(Path(root))
+
+
+def _cli_producer(model_id: Optional[str] = None) -> Producer:
+    return Producer(
+        producer_id=model_id or "lawvm.propose-claims.tool",
+        producer_kind="llm" if model_id else "script",
+        public_key=None,
+        metadata={"environment": "lawvm-propose-claims"},
+    )
 
 
 def _make_backend(backend_name: str) -> object:
@@ -114,22 +118,15 @@ def _make_backend(backend_name: str) -> object:
     raise ValueError(f"Unknown backend: {backend_name!r}. Choose 'mock' or 'qwen'.")
 
 
-def _get_store(data_dir: str, *, claim_store_root: Optional[str] = None) -> ClaimStore:
-    if claim_store_root is not None:
-        return ClaimStore(Path(claim_store_root))
-    return ClaimStore(Path(data_dir) / _MANUAL_CLAIMS_SUBDIR)
+# ---------------------------------------------------------------------------
+# Source fetch
+# ---------------------------------------------------------------------------
 
 
 def _fetch_source_for_frontier(
     frontier_row: object,
     jurisdiction: str = "fi",
 ) -> Optional[Tuple[bytes, str]]:
-    """Fetch (source_bytes, cited_span_hash) for a frontier row via registered provider.
-
-    Returns None if no provider is registered or the provider returns None for
-    this row (e.g. statute not in corpus, section not found). Callers should
-    log a frontier_skipped_no_source event and continue to the next row.
-    """
     statute_id = getattr(frontier_row, "statute_id", "")
     provision_ref = getattr(frontier_row, "provision_ref", None)
     scope = ClaimScope(
@@ -145,367 +142,262 @@ def _fetch_source_for_frontier(
     return fetched.bytes_, fetched.sha256_hex
 
 
-def _cli_producer(model_id: Optional[str] = None) -> Producer:
-    return Producer(
-        producer_kind="llm" if model_id else "tool",
-        handle=None,
-        model_id=model_id,
-        timestamp=datetime.now(tz=timezone.utc),
-        environment="lawvm-propose-claims",
-    )
-
-
 # ---------------------------------------------------------------------------
-# Frontier row producer: scan deterministic parquet for NULL target_statute_id
+# Dedup helpers (graph-native)
 # ---------------------------------------------------------------------------
 
 
-def _scan_frontier_from_parquet(
-    data_dir: str,
-    claim_kind: str,
-) -> List[ExtractionFrontierRow]:
-    """Scan fi_refs__deterministic_only.parquet for NULL target_statute_id_str rows.
-
-    Returns ExtractionFrontierRow records for rows that need claim proposals.
-    Falls back to JSONL if parquet not available.
-    """
-    import importlib.util
-
-    frontier_rows: List[ExtractionFrontierRow] = []
-    base = Path(data_dir)
-
-    # Try parquet first
-    parquet_path = base / "fi_refs__deterministic_only.parquet"
-    jsonl_path = base / "fi_refs__deterministic_only.jsonl"
-
-    def _process_row(row_dict: Dict) -> Optional[ExtractionFrontierRow]:
-        target_id = row_dict.get("target_statute_id") or row_dict.get("target_statute_id_str")
-        if target_id:
-            return None  # gap is filled by deterministic extractor
-
-        statute_id = row_dict.get("source_statute_id", "")
-        if not statute_id:
-            return None
-
-        provision_ref = row_dict.get("source_provision_ref_str") or None
-        span_offset = row_dict.get("source_span_byte_offset", 0) or 0
-        span_len = row_dict.get("source_span_len", 0) or 0
-        slot = "target_statute_id"
-
-        frontier_id_src = f"{claim_kind}:{statute_id}:{provision_ref or ''}:{span_offset}:{span_len}"
-        frontier_id = hashlib.sha256(frontier_id_src.encode()).hexdigest()
-
-        return ExtractionFrontierRow(
-            frontier_id=frontier_id,
-            claim_kind=claim_kind,
-            statute_id=statute_id,
-            provision_ref=provision_ref,
-            slot=slot,
-            severity="medium",
-            detected_at=datetime.now(tz=timezone.utc),
-            pipeline_run_id="scan",
-        )
-
-    has_pyarrow = importlib.util.find_spec("pyarrow") is not None
-
-    if has_pyarrow and parquet_path.exists():
-        import pyarrow.parquet as pq
-        table = pq.read_table(str(parquet_path))
-        for batch in table.to_batches():
-            for i in range(batch.num_rows):
-                row_dict = {col: batch.column(col)[i].as_py() for col in batch.schema.names}
-                fr = _process_row(row_dict)
-                if fr is not None:
-                    frontier_rows.append(fr)
-    elif jsonl_path.exists():
-        with open(jsonl_path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                row_dict = json.loads(line)
-                fr = _process_row(row_dict)
-                if fr is not None:
-                    frontier_rows.append(fr)
-    else:
-        print(
-            f"  warning: no deterministic refs output found at {parquet_path} or {jsonl_path}. "
-            "Run export-fi-refs first to generate the deterministic projection.",
-            file=sys.stderr,
-        )
-
-    return frontier_rows
+def _load_all_objects(store: GraphStore):
+    """Yield all assertions and attestations from the objects dir."""
+    objects_dir = store._objects_dir()
+    if not objects_dir.exists():
+        return
+    for f in objects_dir.glob("*.json"):
+        d = json.loads(f.read_text(encoding="utf-8"))
+        yield d
 
 
-# ---------------------------------------------------------------------------
-# Gap discovery: regex scan of HE XML for plain-text citations
-# ---------------------------------------------------------------------------
-
-
-def _discover_gaps_from_he(
-    he_id: str,
-    data_dir: str,
-    claim_kind: str,
-) -> List[GapDiscoveryRow]:
-    """Scan an HE's body for plain-text statute citations the deterministic extractor missed.
-
-    Returns GapDiscoveryRow records for each citation pattern found in prose
-    that has no corresponding accepted claim of claim_kind targeting that statute.
-    """
-    gap_rows: List[GapDiscoveryRow] = []
-
-    # Try to load the HE XML from corpus store
-    he_xml: Optional[bytes] = None
-    try:
-        from lawvm.finland.corpus import get_corpus_store
-        store = get_corpus_store()
-        he_xml = store.read_oracle(he_id)
-    except Exception:
-        pass
-
-    if he_xml is None:
-        print(f"  warning: HE {he_id!r} not found in corpus store — cannot run gap discovery", file=sys.stderr)
-        return gap_rows
-
-    # Decode and scan for plain statute citations
-    text = he_xml.decode("utf-8", errors="replace")
-    found_ids: set = set()
-
-    for m in _PLAIN_STATUTE_RE.finditer(text):
-        stat_num = m.group(1)
-        stat_year = m.group(2)
-        statute_id = f"{stat_num}/{stat_year}"
-        if statute_id in found_ids:
-            continue
-        found_ids.add(statute_id)
-
-        gap_id_src = f"{claim_kind}:{he_id}:{statute_id}"
-        gap_id = hashlib.sha256(gap_id_src.encode()).hexdigest()
-
-        gap_rows.append(GapDiscoveryRow(
-            gap_id=gap_id,
-            claim_kind=claim_kind,
-            statute_id=he_id,
-            expected_target_key=f"resolved_statute_id={statute_id}",
-            severity="low",
-            detected_at=datetime.now(tz=timezone.utc),
-            pipeline_run_id="gap-discovery",
-        ))
-
-    return gap_rows
-
-
-# ---------------------------------------------------------------------------
-# Core proposal logic
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True, slots=True)
-class _ClaimKey:
-    claim_kind: str
-    target_json: str
-    value_json: str
-
-
-def _make_claim_key(claim: ManualCompilationClaim) -> _ClaimKey:
-    return _ClaimKey(
-        claim_kind=claim.claim_kind,
-        target_json=json.dumps(dict(claim.target), sort_keys=True),
-        value_json=json.dumps(dict(claim.value), sort_keys=True),
-    )
-
-
-def _find_existing_claim_for_target(
-    store: ClaimStore,
+def _accepted_target_exists(
+    store: GraphStore,
     claim_kind: str,
     target_json: str,
-) -> Optional[str]:
-    """Return claim_id if any accepted claim for this (kind, target) exists.
+) -> bool:
+    """Return True if an assertion of claim_kind + target has a reviewed(accepted=True) attestation."""
+    assertions_by_id: dict[str, dict] = {}
+    attestations_for: dict[str, list[dict]] = {}
 
-    Returns None if the gap is still open.
-    """
-    for claim_id in store.list_all_claim_ids():
-        claim = store.read_claim(claim_id)
-        if claim.claim_kind != claim_kind:
+    for d in _load_all_objects(store):
+        if "assertion_id" in d and "kind" in d:
+            if d.get("kind") == claim_kind:
+                assertions_by_id[d["assertion_id"]] = d
+        elif "attestation_id" in d and "attestation_kind" in d:
+            subj_id = d.get("subject", {}).get("artifact_id", "")
+            if subj_id:
+                attestations_for.setdefault(subj_id, []).append(d)
+
+    for aid, ad in assertions_by_id.items():
+        actual_target = json.dumps(dict(ad.get("target", {})), sort_keys=True)
+        if actual_target != target_json:
             continue
-        state = store.read_state(claim_id)
-        if state is None:
+        for atd in attestations_for.get(aid, []):
+            if (
+                atd.get("attestation_kind") == "reviewed"
+                and atd.get("payload", {}).get("accepted") is True
+            ):
+                return True
+    return False
+
+
+def _proposed_triple_exists(
+    store: GraphStore,
+    claim_kind: str,
+    target_json: str,
+    value_json: str,
+) -> Optional[str]:
+    """Return assertion_id if a proposed (not reviewed) triple exists."""
+    assertions_by_id: dict[str, dict] = {}
+    reviewed_ids: set[str] = set()
+
+    for d in _load_all_objects(store):
+        if "assertion_id" in d and "kind" in d:
+            if d.get("kind") == claim_kind:
+                assertions_by_id[d["assertion_id"]] = d
+        elif "attestation_id" in d and "attestation_kind" in d:
+            if d.get("attestation_kind") == "reviewed":
+                subj_id = d.get("subject", {}).get("artifact_id", "")
+                if subj_id:
+                    reviewed_ids.add(subj_id)
+
+    for aid, ad in assertions_by_id.items():
+        if aid in reviewed_ids:
             continue
-        if state.status == ClaimStatus.ACCEPTED:
-            existing_target = json.dumps(dict(claim.target), sort_keys=True)
-            if existing_target == target_json:
-                return claim_id
+        actual_target = json.dumps(dict(ad.get("target", {})), sort_keys=True)
+        actual_value = json.dumps(dict(ad.get("value", {})), sort_keys=True)
+        if actual_target == target_json and actual_value == value_json:
+            return aid
     return None
 
 
-def _find_existing_proposed_claim(
-    store: ClaimStore,
-    key: _ClaimKey,
-) -> Optional[str]:
-    """Return claim_id if an active proposed claim with same (kind, target, value) exists."""
-    for claim_id in store.list_all_claim_ids():
-        claim = store.read_claim(claim_id)
-        if claim.claim_kind != key.claim_kind:
-            continue
-        if json.dumps(dict(claim.target), sort_keys=True) != key.target_json:
-            continue
-        if json.dumps(dict(claim.value), sort_keys=True) != key.value_json:
-            continue
-        state = store.read_state(claim_id)
-        if state is None:
-            continue
-        if state.status == ClaimStatus.PROPOSED:
-            return claim_id
-    return None
+# ---------------------------------------------------------------------------
+# Build ProvenanceAssertion from ProposedClaim + frontier row
+# ---------------------------------------------------------------------------
 
 
-def _build_claim_from_proposed(
+def _build_assertion_from_proposed(
     proposed: ProposedClaim,
     frontier_row: object,
     quoted_source: QuotedSource,
     producer: Producer,
-) -> ManualCompilationClaim:
+    supersedes: tuple[str, ...] = (),
+) -> ProvenanceAssertion:
     statute_id = getattr(frontier_row, "statute_id", "unknown/0000")
     provision_ref = getattr(frontier_row, "provision_ref", None)
-    now = datetime.now(tz=timezone.utc)
 
-    # Build a placeholder to compute the content-addressed ID
-    partial = ManualCompilationClaim(
-        claim_id="placeholder",
+    target_dict = dict(proposed.target) if proposed.target else {}
+    value_dict = dict(proposed.value) if proposed.value else {}
+
+    source_ref = SourceRef(
+        artifact_digest=proposed.cited_source_hash or "unknown",
+        structural_locator=provision_ref or statute_id,
+        bounded_quote_hash=proposed.cited_source_hash or "unknown",
+        normalization_policy_id="fi.v1.propose-claims",
+        byte_range=(
+            (proposed.cited_source_span[0], proposed.cited_source_span[1])
+            if proposed.cited_source_span and len(proposed.cited_source_span) == 2
+            else (0, 0)
+        ),
+    )
+
+    temp = ProvenanceAssertion(
+        assertion_id="__placeholder__",
         schema_version="v1",
         jurisdiction="fi",
-        claim_kind=proposed.claim_kind,
-        claim_layer=ClaimLayer.EXTRACTION,
-        claim_scope=ClaimScope(
-            statute_id=statute_id,
-            provision_ref=provision_ref,
-            valid_at_start=date.today(),
-            valid_at_end=None,
-        ),
-        target=proposed.target,
-        value=proposed.value,
-        source_witness_type=SourceWitnessType.LLM_PROPOSAL,
-        producer=producer,
-        cited_source_locator=SourceLocator(
-            artifact_kind=quoted_source.artifact_kind,
-            statute_id=quoted_source.statute_id,
-            he_id=quoted_source.he_id,
-            version_id=None,
-        ),
-        cited_source_span=proposed.cited_source_span,
-        cited_source_hash=proposed.cited_source_hash,
-        dependency_fingerprint=(
-            ("statute_id", statute_id),
-            ("provision_ref", provision_ref or ""),
-        ),
-        valid_at=(date.today(), None),
-        supersedes=(),
-        supersession_delta_reason=None,
+        kind=proposed.claim_kind,
+        layer="extraction",
+        scope={"statute_id": statute_id, "provision_ref": provision_ref or ""},
+        target=target_dict,
+        value=value_dict,
+        source_refs=(source_ref,),
+        dependency_refs=(),
+        valid_at=Interval(start=date.today()),
+        supersedes=supersedes,
         disputes=(),
-        requested_profiles=(ProfileTag.NON_STRICT_WITH_CLAIMS,),
-        rationale=proposed.rationale,
+        rationale=proposed.rationale or "",
     )
-    claim_id = compute_claim_id(partial)
+    canonical = assertion_canonical_payload(temp)
+    assertion_id = _sha256(canonical)
 
-    return ManualCompilationClaim(
-        claim_id=claim_id,
+    return ProvenanceAssertion(
+        assertion_id=assertion_id,
         schema_version="v1",
         jurisdiction="fi",
-        claim_kind=proposed.claim_kind,
-        claim_layer=ClaimLayer.EXTRACTION,
-        claim_scope=ClaimScope(
-            statute_id=statute_id,
-            provision_ref=provision_ref,
-            valid_at_start=date.today(),
-            valid_at_end=None,
-        ),
-        target=proposed.target,
-        value=proposed.value,
-        source_witness_type=SourceWitnessType.LLM_PROPOSAL,
-        producer=producer,
-        cited_source_locator=SourceLocator(
-            artifact_kind=quoted_source.artifact_kind,
-            statute_id=quoted_source.statute_id,
-            he_id=quoted_source.he_id,
-            version_id=None,
-        ),
-        cited_source_span=proposed.cited_source_span,
-        cited_source_hash=proposed.cited_source_hash,
-        dependency_fingerprint=(
-            ("statute_id", statute_id),
-            ("provision_ref", provision_ref or ""),
-        ),
-        valid_at=(date.today(), None),
-        supersedes=(),
-        supersession_delta_reason=None,
+        kind=proposed.claim_kind,
+        layer="extraction",
+        scope={"statute_id": statute_id, "provision_ref": provision_ref or ""},
+        target=target_dict,
+        value=value_dict,
+        source_refs=(source_ref,),
+        dependency_refs=(),
+        valid_at=Interval(start=date.today()),
+        supersedes=supersedes,
         disputes=(),
-        requested_profiles=(ProfileTag.NON_STRICT_WITH_CLAIMS,),
-        rationale=proposed.rationale,
+        rationale=proposed.rationale or "",
     )
+
+
+# ---------------------------------------------------------------------------
+# Validator runner
+# ---------------------------------------------------------------------------
 
 
 def _run_validators(
     proposed: ProposedClaim,
-    claim: ManualCompilationClaim,
+    assertion: ProvenanceAssertion,
     source_bytes: bytes,
-) -> Tuple[bool, ValidatorStatus, str]:
-    """Run schema + span + entailment validators.
+) -> Tuple[bool, bool, bool, str]:
+    """Run schema + span + entailment.
 
-    Returns (all_passed, validator_status, reason).
+    Returns (schema_ok, span_ok, entailment_ok, reason).
     """
-    # 1. Schema validation: parse_error must be None
     if proposed.parse_error is not None:
-        return False, ValidatorStatus.UNVALIDATED, f"schema: {proposed.parse_error}"
+        return False, False, False, f"schema: {proposed.parse_error}"
 
-    # 2. Span existence validator
     from lawvm.core.manual_claims.kind_registry import get_claim_kind_spec
-    spec = get_claim_kind_spec(claim.claim_kind)
+    from lawvm.core.manual_claims.primitive import ManualCompilationClaim
+
+    spec = get_claim_kind_spec(proposed.claim_kind)
     if spec is None:
-        return False, ValidatorStatus.UNVALIDATED, f"unknown claim kind: {claim.claim_kind!r}"
+        return True, True, True, "no validator for kind"
 
     if spec.span_validator:
-        span_result = spec.span_validator(claim, source_bytes)
+        from lawvm.core.manual_claims.primitive import (
+            ClaimLayer, ClaimScope, ClaimStatus, ProfileTag,
+            ReviewStatus, SourceWitnessType, SourceLocator,
+            ValidatorStatus,
+        )
+        from lawvm.core.manual_claims.hashing import compute_claim_id
+
+        scope_obj = ClaimScope(
+            statute_id=str(assertion.scope.get("statute_id", "")),
+            provision_ref=str(assertion.scope.get("provision_ref", "")) or None,
+            valid_at_start=assertion.valid_at.start,
+            valid_at_end=assertion.valid_at.end,
+        )
+        partial = ManualCompilationClaim(
+            claim_id="placeholder",
+            schema_version="v1",
+            jurisdiction="fi",
+            claim_kind=assertion.kind,
+            claim_layer=ClaimLayer.EXTRACTION,
+            claim_scope=scope_obj,
+            target=tuple(dict(assertion.target).items()),
+            value=tuple(dict(assertion.value).items()),
+            source_witness_type=SourceWitnessType.LLM_PROPOSAL,
+            producer=_prim_module.Producer(
+                producer_kind="llm",
+                handle=None,
+                model_id=None,
+                timestamp=datetime.now(tz=timezone.utc),
+                environment="propose-claims",
+            ),
+            cited_source_locator=SourceLocator(
+                artifact_kind="finlex_akn",
+                statute_id=str(assertion.scope.get("statute_id", "")),
+                he_id=None,
+                version_id=None,
+            ),
+            cited_source_span=list(assertion.source_refs[0].byte_range) if assertion.source_refs else [0, 0],
+            cited_source_hash=assertion.source_refs[0].artifact_digest if assertion.source_refs else "unknown",
+            dependency_fingerprint=(),
+            valid_at=(assertion.valid_at.start, assertion.valid_at.end),
+            supersedes=(),
+            supersession_delta_reason=None,
+            disputes=(),
+            requested_profiles=(ProfileTag.NON_STRICT_WITH_CLAIMS,),
+            rationale=assertion.rationale,
+        )
+        claim_id = compute_claim_id(partial)
+        compat_claim = ManualCompilationClaim(
+            claim_id=claim_id,
+            schema_version=partial.schema_version,
+            jurisdiction=partial.jurisdiction,
+            claim_kind=partial.claim_kind,
+            claim_layer=partial.claim_layer,
+            claim_scope=partial.claim_scope,
+            target=partial.target,
+            value=partial.value,
+            source_witness_type=partial.source_witness_type,
+            producer=partial.producer,
+            cited_source_locator=partial.cited_source_locator,
+            cited_source_span=partial.cited_source_span,
+            cited_source_hash=partial.cited_source_hash,
+            dependency_fingerprint=partial.dependency_fingerprint,
+            valid_at=partial.valid_at,
+            supersedes=partial.supersedes,
+            supersession_delta_reason=partial.supersession_delta_reason,
+            disputes=partial.disputes,
+            requested_profiles=partial.requested_profiles,
+            rationale=partial.rationale,
+        )
+
+        span_result = spec.span_validator(compat_claim, source_bytes)
         if not span_result.passed:
-            return False, ValidatorStatus.UNVALIDATED, f"span: {span_result.reason}"
+            return True, False, False, f"span: {span_result.reason}"
 
-    # 3. Entailment validator
-    if spec.entailment_validator:
-        ent_result = spec.entailment_validator(claim, source_bytes)
-        if not ent_result.passed:
-            return False, ValidatorStatus.SPAN_VERIFIED, f"entailment: {ent_result.reason}"
+        if spec.entailment_validator:
+            ent_result = spec.entailment_validator(compat_claim, source_bytes)
+            if not ent_result.passed:
+                return True, True, False, f"entailment: {ent_result.reason}"
 
-    return True, ValidatorStatus.ENTAILMENT_VERIFIED, "ok"
+    return True, True, True, "ok"
 
 
-def _write_rejection(
-    store: ClaimStore,
-    proposed: ProposedClaim,
-    frontier_row: object,
-    reason: str,
-    producer: Producer,
-) -> None:
-    """Write a rejection record to the event log (no persistent claim object)."""
-    # For rejected proposals we log the event without a full ManualCompilationClaim
-    # (the proposed claim may be malformed). We record it in a rejection sidecar.
-    rejection_dir = store._base / "proposal_rejections"
-    rejection_dir.mkdir(parents=True, exist_ok=True)
-    now = datetime.now(tz=timezone.utc)
-    rejection_id = hashlib.sha256(
-        f"{proposed.claim_kind}:{getattr(frontier_row, 'frontier_id', 'gap')}:{now.isoformat()}".encode()
-    ).hexdigest()[:32]
-    rec = {
-        "rejection_id": rejection_id,
-        "claim_kind": proposed.claim_kind,
-        "frontier_id": getattr(frontier_row, "frontier_id", getattr(frontier_row, "gap_id", "")),
-        "statute_id": getattr(frontier_row, "statute_id", ""),
-        "reason": reason,
-        "raw_response": proposed.raw_response[:500],
-        "timestamp": now.isoformat(),
-        "producer_model_id": proposed.producer_model_id,
-    }
-    (rejection_dir / f"{rejection_id}.json").write_text(
-        json.dumps(rec, indent=2), encoding="utf-8"
-    )
+import lawvm.core.manual_claims.primitive as _prim_module
+
+
+# ---------------------------------------------------------------------------
+# Normalization
+# ---------------------------------------------------------------------------
 
 
 def _normalize_fi_statute_resolution(
@@ -513,13 +405,6 @@ def _normalize_fi_statute_resolution(
     *,
     verbose: bool = False,
 ) -> ProposedClaim:
-    """Canonicalize resolved_statute_id in a fi.v1.INLINE_STATUTE_RESOLUTION proposal.
-
-    Pre-1980 Finnish statutes used 2-digit years (e.g. '361/72'). The LLM
-    correctly extracts these but the validator requires canonical 4-digit form.
-    This function expands them before the claim is built and validated, so
-    the stored claim always carries '361/1972', not '361/72'.
-    """
     from lawvm.finland.claim_kinds.inline_statute_resolution import (
         _canonicalize_finnish_statute_id,
     )
@@ -551,9 +436,37 @@ def _normalize_fi_statute_resolution(
     )
 
 
+# ---------------------------------------------------------------------------
+# Write live snapshot helper
+# ---------------------------------------------------------------------------
+
+
+def _write_live_snapshot(store: GraphStore) -> str:
+    reg_hash = attestation_kind_registry_hash()
+    builder = GraphBuilder(attestation_kind_registry_hash_val=reg_hash)
+    objects_dir = store._objects_dir()
+    if objects_dir.exists():
+        for f in sorted(objects_dir.glob("*.json")):
+            d = json.loads(f.read_text(encoding="utf-8"))
+            if "assertion_id" in d and "kind" in d:
+                a = _deserialize_assertion(d)
+                builder.add_assertion(a)
+            elif "attestation_id" in d and "attestation_kind" in d:
+                a = _deserialize_attestation(d)
+                builder.add_attestation(a)
+    graph = builder.finalize()
+    store.write_graph(graph)
+    return graph.snapshot_hash
+
+
+# ---------------------------------------------------------------------------
+# Core: process one frontier row
+# ---------------------------------------------------------------------------
+
+
 def _process_one_frontier(
     frontier_row: object,
-    store: ClaimStore,
+    store: GraphStore,
     backend: object,
     claim_kind: str,
     source_bytes: bytes,
@@ -564,8 +477,6 @@ def _process_one_frontier(
     *,
     verbose: bool = False,
 ) -> Optional[str]:
-    """Propose a claim for one frontier row. Returns claim_id if proposed, else None."""
-
     schema = ClaimSchema(
         claim_kind=claim_kind,
         required_value_fields=("resolved_statute_id", "citation_form"),
@@ -602,87 +513,168 @@ def _process_one_frontier(
     if claim_kind == "fi.v1.INLINE_STATUTE_RESOLUTION":
         proposed = _normalize_fi_statute_resolution(proposed, verbose=verbose)
 
-    claim = _build_claim_from_proposed(proposed, frontier_row, quoted_source, producer)
+    assertion = _build_assertion_from_proposed(proposed, frontier_row, quoted_source, producer)
 
-    # Check (claim_kind, target) for existing accepted claim
-    target_json = json.dumps(dict(claim.target), sort_keys=True)
-    existing_accepted = _find_existing_claim_for_target(store, claim_kind, target_json)
-    if existing_accepted is not None:
+    target_json = json.dumps(dict(assertion.target), sort_keys=True)
+    value_json = json.dumps(dict(assertion.value), sort_keys=True)
+
+    if _accepted_target_exists(store, claim_kind, target_json):
         if verbose:
-            print(f"  skip: gap already closed by accepted claim {existing_accepted[:16]}...")
+            print(f"  skip: gap already closed by accepted assertion")
         return None
 
-    # Check (claim_kind, target, value) for duplicate proposal
-    key = _make_claim_key(claim)
-    existing_proposed = _find_existing_proposed_claim(store, key)
-    if existing_proposed is not None:
-        # Idempotent: update producer field by appending an event, keep same claim_id
-        now = datetime.now(tz=timezone.utc)
-        event = ClaimStateEvent(
-            claim_id=existing_proposed,
-            event_kind="re_proposed",
-            timestamp=now,
-            producer=producer,
-            old_status="proposed",
-            new_status=None,
-            reason=f"duplicate proposal — producer updated to {producer.model_id or 'tool'}",
-        )
-        store.append_event(event)
+    existing_id = _proposed_triple_exists(store, claim_kind, target_json, value_json)
+    if existing_id is not None:
         if verbose:
-            print(f"  idempotent: existing proposal {existing_proposed[:16]}... updated")
-        return existing_proposed
+            print(f"  idempotent: existing proposal {existing_id[:16]}...")
+        return existing_id
 
-    # Run validators against source bytes
-    all_passed, validator_status, reason = _run_validators(proposed, claim, source_bytes)
+    schema_ok, span_ok, entailment_ok, reason = _run_validators(proposed, assertion, source_bytes)
 
-    if not all_passed:
-        _write_rejection(store, proposed, frontier_row, reason, producer)
+    assertion_id = submit_assertion(store, assertion, producer)
+
+    if not schema_ok:
+        attest(store, assertion_id, "schema_validated", {"success": False, "reason": reason}, producer)
         if verbose:
-            print(f"  rejected: {reason}")
+            print(f"  rejected (stored for audit): {reason}")
         return None
 
-    # Write claim to storage
-    store.write_claim(claim)
-    store.write_by_kind(claim)
+    attest(store, assertion_id, "schema_validated", {"success": True}, producer)
 
-    now = datetime.now(tz=timezone.utc)
-    state = ClaimState(
-        claim_id=claim.claim_id,
-        status=ClaimStatus.PROPOSED,
-        review_status=ReviewStatus.PROPOSED,
-        validator_status=validator_status,
-        confidence=ClaimConfidence.MEDIUM,
-        last_updated=now,
-    )
-    store.write_state(state)
+    if not span_ok:
+        attest(store, assertion_id, "span_verified", {"passed": False, "reason": reason}, producer)
+        if verbose:
+            print(f"  rejected (stored for audit): {reason}")
+        return None
 
-    event = ClaimStateEvent(
-        claim_id=claim.claim_id,
-        event_kind="proposed",
-        timestamp=now,
-        producer=producer,
-        old_status=None,
-        new_status="proposed",
-        reason=f"proposed by {producer.model_id or 'tool'} via propose-claims",
-    )
-    store.append_event(event)
+    attest(store, assertion_id, "span_verified", {"passed": True}, producer)
 
-    if validator_status == ValidatorStatus.ENTAILMENT_VERIFIED:
-        ev2 = ClaimStateEvent(
-            claim_id=claim.claim_id,
-            event_kind="entailment_verified",
-            timestamp=now,
-            producer=producer,
-            old_status="proposed",
-            new_status=None,
-            reason="entailment validator passed",
-        )
-        store.append_event(ev2)
+    if not entailment_ok:
+        attest(store, assertion_id, "entailment_verified", {"passed": False, "reason": reason}, producer)
+        if verbose:
+            print(f"  rejected (stored for audit): {reason}")
+        return None
+
+    attest(store, assertion_id, "entailment_verified", {"passed": True}, producer)
 
     if verbose:
-        print(f"  proposed: {claim.claim_id[:32]}... ({validator_status.value})")
+        print(f"  proposed: {assertion_id[:32]}... (entailment_verified)")
 
-    return claim.claim_id
+    return assertion_id
+
+
+# ---------------------------------------------------------------------------
+# Frontier scan helpers (preserved from v2.2)
+# ---------------------------------------------------------------------------
+
+
+def _scan_frontier_from_parquet(
+    data_dir: str,
+    claim_kind: str,
+) -> List[ExtractionFrontierRow]:
+    import importlib.util
+
+    frontier_rows: List[ExtractionFrontierRow] = []
+    base = Path(data_dir)
+
+    parquet_path = base / "fi_refs__deterministic_only.parquet"
+    jsonl_path = base / "fi_refs__deterministic_only.jsonl"
+
+    def _process_row(row_dict: Dict) -> Optional[ExtractionFrontierRow]:
+        target_id = row_dict.get("target_statute_id") or row_dict.get("target_statute_id_str")
+        if target_id:
+            return None
+        statute_id = row_dict.get("source_statute_id", "")
+        if not statute_id:
+            return None
+        provision_ref = row_dict.get("source_provision_ref_str") or None
+        span_offset = row_dict.get("source_span_byte_offset", 0) or 0
+        span_len = row_dict.get("source_span_len", 0) or 0
+        slot = "target_statute_id"
+        frontier_id_src = f"{claim_kind}:{statute_id}:{provision_ref or ''}:{span_offset}:{span_len}"
+        frontier_id = hashlib.sha256(frontier_id_src.encode()).hexdigest()
+        return ExtractionFrontierRow(
+            frontier_id=frontier_id,
+            claim_kind=claim_kind,
+            statute_id=statute_id,
+            provision_ref=provision_ref,
+            slot=slot,
+            severity="medium",
+            detected_at=datetime.now(tz=timezone.utc),
+            pipeline_run_id="scan",
+        )
+
+    has_pyarrow = importlib.util.find_spec("pyarrow") is not None
+
+    if has_pyarrow and parquet_path.exists():
+        import pyarrow.parquet as pq
+        table = pq.read_table(str(parquet_path))
+        for batch in table.to_batches():
+            for i in range(batch.num_rows):
+                row_dict = {col: batch.column(col)[i].as_py() for col in batch.schema.names}
+                fr = _process_row(row_dict)
+                if fr is not None:
+                    frontier_rows.append(fr)
+    elif jsonl_path.exists():
+        with open(jsonl_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                row_dict = json.loads(line)
+                fr = _process_row(row_dict)
+                if fr is not None:
+                    frontier_rows.append(fr)
+    else:
+        print(
+            f"  warning: no deterministic refs output found at {parquet_path} or {jsonl_path}.",
+            file=sys.stderr,
+        )
+
+    return frontier_rows
+
+
+def _discover_gaps_from_he(
+    he_id: str,
+    data_dir: str,
+    claim_kind: str,
+) -> List[GapDiscoveryRow]:
+    gap_rows: List[GapDiscoveryRow] = []
+    he_xml: Optional[bytes] = None
+    try:
+        from lawvm.finland.corpus import get_corpus_store
+        store = get_corpus_store()
+        he_xml = store.read_oracle(he_id)
+    except Exception:
+        pass
+
+    if he_xml is None:
+        print(f"  warning: HE {he_id!r} not found in corpus store", file=sys.stderr)
+        return gap_rows
+
+    text = he_xml.decode("utf-8", errors="replace")
+    found_ids: set = set()
+
+    for m in _PLAIN_STATUTE_RE.finditer(text):
+        stat_num = m.group(1)
+        stat_year = m.group(2)
+        statute_id = f"{stat_num}/{stat_year}"
+        if statute_id in found_ids:
+            continue
+        found_ids.add(statute_id)
+        gap_id_src = f"{claim_kind}:{he_id}:{statute_id}"
+        gap_id = hashlib.sha256(gap_id_src.encode()).hexdigest()
+        gap_rows.append(GapDiscoveryRow(
+            gap_id=gap_id,
+            claim_kind=claim_kind,
+            statute_id=he_id,
+            expected_target_key=f"resolved_statute_id={statute_id}",
+            severity="low",
+            detected_at=datetime.now(tz=timezone.utc),
+            pipeline_run_id="gap-discovery",
+        ))
+
+    return gap_rows
 
 
 # ---------------------------------------------------------------------------
@@ -691,21 +683,20 @@ def _process_one_frontier(
 
 
 def cmd_propose_from_frontier(args: object) -> int:
-    """--from-frontier handler."""
-    data_dir: str = getattr(args, "data_dir", _DEFAULT_DATA_DIR)
-    claim_store_root: Optional[str] = getattr(args, "claim_store_root", None)
+    data_dir: str = getattr(args, "data_dir", "data/fi/v1")
+    graph_store_root: Optional[str] = getattr(args, "graph_store_root", None)
     kind: str = getattr(args, "kind", "fi.v1.INLINE_STATUTE_RESOLUTION") or "fi.v1.INLINE_STATUTE_RESOLUTION"
     limit: int = getattr(args, "limit", 100) or 100
     no_cap: bool = getattr(args, "max_claims_no_cap", False)
     backend_name: str = getattr(args, "backend", "mock") or "mock"
 
     backend = _make_backend(backend_name)
-    store = _get_store(data_dir, claim_store_root=claim_store_root)
-    store.ensure_dirs()
+    store = _get_store(graph_store_root)
+    store._objects_dir().mkdir(parents=True, exist_ok=True)
 
     frontier_rows = _scan_frontier_from_parquet(data_dir, kind)
     if not frontier_rows:
-        print("no frontier rows found (run export-fi-refs first to generate deterministic projection)")
+        print("no frontier rows found")
         return 0
 
     effective_limit = len(frontier_rows) if no_cap else min(limit, len(frontier_rows))
@@ -718,15 +709,10 @@ def cmd_propose_from_frontier(args: object) -> int:
     for fr in frontier_rows[:effective_limit]:
         fetched = _fetch_source_for_frontier(fr)
         if fetched is None:
-            print(
-                f"  frontier_skipped_no_source: {fr.statute_id!r} "
-                f"provision={fr.provision_ref!r}",
-                file=sys.stderr,
-            )
+            print(f"  frontier_skipped_no_source: {fr.statute_id!r}", file=sys.stderr)
             skipped_count += 1
             continue
         source_bytes, cited_span_hash = fetched
-
         producer = _cli_producer(model_id=getattr(backend, "model_name", None))
 
         result = _process_one_frontier(
@@ -746,25 +732,25 @@ def cmd_propose_from_frontier(args: object) -> int:
         else:
             skipped_count += 1
 
+    _write_live_snapshot(store)
     print(f"\npropose-claims: {proposed_count} proposed, {skipped_count} skipped/rejected")
     return 0
 
 
 def cmd_propose_gap_discovery(args: object) -> int:
-    """--gap-discovery handler."""
     he_id: str = getattr(args, "he", None)
     if not he_id:
         print("error: --gap-discovery requires --he HE_ID", file=sys.stderr)
         return 1
 
-    data_dir: str = getattr(args, "data_dir", _DEFAULT_DATA_DIR)
-    claim_store_root: Optional[str] = getattr(args, "claim_store_root", None)
+    data_dir: str = getattr(args, "data_dir", "data/fi/v1")
+    graph_store_root: Optional[str] = getattr(args, "graph_store_root", None)
     kind: str = getattr(args, "kind", "fi.v1.INLINE_STATUTE_RESOLUTION") or "fi.v1.INLINE_STATUTE_RESOLUTION"
     backend_name: str = getattr(args, "backend", "mock") or "mock"
 
     backend = _make_backend(backend_name)
-    store = _get_store(data_dir, claim_store_root=claim_store_root)
-    store.ensure_dirs()
+    store = _get_store(graph_store_root)
+    store._objects_dir().mkdir(parents=True, exist_ok=True)
 
     gap_rows = _discover_gaps_from_he(he_id, data_dir, kind)
     if not gap_rows:
@@ -778,11 +764,7 @@ def cmd_propose_gap_discovery(args: object) -> int:
     for gr in gap_rows:
         fetched = _fetch_source_for_frontier(gr)
         if fetched is None:
-            print(
-                f"  frontier_skipped_no_source: {gr.statute_id!r} "
-                f"provision={getattr(gr, 'provision_ref', None)!r}",
-                file=sys.stderr,
-            )
+            print(f"  frontier_skipped_no_source: {gr.statute_id!r}", file=sys.stderr)
             skipped_count += 1
             continue
         source_bytes, cited_span_hash = fetched
@@ -803,16 +785,16 @@ def cmd_propose_gap_discovery(args: object) -> int:
         if result is not None:
             proposed_count += 1
 
+    _write_live_snapshot(store)
     print(f"\ngap-discovery: {proposed_count} proposed, {skipped_count} skipped")
     return 0
 
 
 def cmd_propose_specific(args: object) -> int:
-    """--he HE_ID --kind KIND handler."""
     he_id: str = getattr(args, "he", None)
     kind: str = getattr(args, "kind", "fi.v1.INLINE_STATUTE_RESOLUTION")
-    data_dir: str = getattr(args, "data_dir", _DEFAULT_DATA_DIR)
-    claim_store_root: Optional[str] = getattr(args, "claim_store_root", None)
+    data_dir: str = getattr(args, "data_dir", "data/fi/v1")
+    graph_store_root: Optional[str] = getattr(args, "graph_store_root", None)
     backend_name: str = getattr(args, "backend", "mock") or "mock"
 
     if not he_id:
@@ -820,8 +802,8 @@ def cmd_propose_specific(args: object) -> int:
         return 1
 
     backend = _make_backend(backend_name)
-    store = _get_store(data_dir, claim_store_root=claim_store_root)
-    store.ensure_dirs()
+    store = _get_store(graph_store_root)
+    store._objects_dir().mkdir(parents=True, exist_ok=True)
 
     gap_id_src = f"{kind}:{he_id}:specific"
     gap_id = hashlib.sha256(gap_id_src.encode()).hexdigest()
@@ -838,10 +820,7 @@ def cmd_propose_specific(args: object) -> int:
 
     fetched = _fetch_source_for_frontier(frontier_row)
     if fetched is None:
-        print(
-            f"  frontier_skipped_no_source: {he_id!r} (no oracle in corpus)",
-            file=sys.stderr,
-        )
+        print(f"  frontier_skipped_no_source: {he_id!r}", file=sys.stderr)
         return 1
     source_bytes, cited_span_hash = fetched
     producer = _cli_producer(model_id=getattr(backend, "model_name", None))
@@ -858,15 +837,12 @@ def cmd_propose_specific(args: object) -> int:
         producer=producer,
         verbose=True,
     )
+    _write_live_snapshot(store)
     return 0 if result is not None else 1
 
 
 def main(args: object) -> None:
-    # Activate Finland claim kinds
     import lawvm.finland.claim_kinds  # noqa: F401
-
-    # Register the Finland source provider for jurisdiction 'fi'.
-    # Uses the default corpus store path unless overridden by env var.
     register_fi_source_provider()
 
     from_frontier: bool = getattr(args, "from_frontier", False)
