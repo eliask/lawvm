@@ -368,6 +368,8 @@ def test_do_repair_multiple_choices_scans_cached_markers_for_leaf_candidates() -
         "ambiguous_locators": 2,
         "ambiguous_groups": 1,
         "repaired_locators": 1,
+        "candidate_source_urls": 4,
+        "candidate_sources_available": 4,
         "candidate_sources": 4,
         "direct_sources": 0,
         "no_candidates": 0,
@@ -375,6 +377,50 @@ def test_do_repair_multiple_choices_scans_cached_markers_for_leaf_candidates() -
     }
     assert http.calls == [current_url, *leaf_urls]
     assert archive.store_calls == [(url, leaf_xml, "xml") for url in leaf_urls]
+
+
+def test_do_repair_multiple_choices_reports_already_available_leaf_candidates() -> None:
+    statute_id = "ukpga/1955/18"
+    current_url = f"{acquire_uk_corpus._LEG_BASE}/{statute_id}/data.xml"
+    leaf_urls = [
+        "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/enacted/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/enacted/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/data.xml",
+    ]
+    ambiguity_blob = b"""<div id="content">
+    <h1>Multiple Choices</h1>
+    <p>The link that you've followed could mean either of the following:</p>
+    <a href="/ukpga/Eliz2/3-4/18/enacted">Army Act 1955 (repealed)</a>
+    <a href="/ukpga/Eliz2/4-5/18/enacted">Aliens' Employment Act 1955</a>
+    </div>"""
+    leaf_xml = b"<Legislation>" + (b"cached-leaf" * 40) + b"</Legislation>"
+    archive = _FakeArchive()
+    archive.store(current_url, b"HTTP 300 Multiple Choices")
+    for url in leaf_urls:
+        archive.store(url, leaf_xml)
+    archive.store_calls.clear()
+    http = _FakeHTTP({current_url: 300}, data_by_url={current_url: ambiguity_blob})
+
+    result = acquire_uk_corpus.do_repair_multiple_choices(
+        cast(Any, archive),
+        cast(Any, http),
+        statute_ids={statute_id},
+    )
+
+    assert result == {
+        "ambiguous_locators": 1,
+        "ambiguous_groups": 1,
+        "repaired_locators": 1,
+        "candidate_source_urls": 4,
+        "candidate_sources_available": 4,
+        "candidate_sources": 0,
+        "direct_sources": 0,
+        "no_candidates": 0,
+        "failed": 0,
+    }
+    assert http.calls == [current_url]
+    assert archive.store_calls == []
 
 
 def test_do_repair_multiple_choices_reports_no_candidate_pages() -> None:
@@ -398,6 +444,8 @@ def test_do_repair_multiple_choices_reports_no_candidate_pages() -> None:
         "ambiguous_locators": 1,
         "ambiguous_groups": 1,
         "repaired_locators": 0,
+        "candidate_source_urls": 0,
+        "candidate_sources_available": 0,
         "candidate_sources": 0,
         "direct_sources": 0,
         "no_candidates": 1,
@@ -423,6 +471,8 @@ def test_do_repair_multiple_choices_stores_direct_xml_when_marker_goes_stale() -
         "ambiguous_locators": 1,
         "ambiguous_groups": 1,
         "repaired_locators": 1,
+        "candidate_source_urls": 0,
+        "candidate_sources_available": 0,
         "candidate_sources": 0,
         "direct_sources": 1,
         "no_candidates": 0,

@@ -333,6 +333,17 @@ def _fetch_multiple_choice_candidate_sources(
     return fetched
 
 
+def _available_candidate_source_count(
+    archive: Farchive,
+    candidate_urls: tuple[str, ...],
+) -> int:
+    return sum(
+        1
+        for url in candidate_urls
+        if _cached_source_xml_status(archive, url) is UKSourceStatus.AVAILABLE
+    )
+
+
 def _fetch_effects_pages(
     act_type: str, year: str, number: str, archive: Farchive, http: _HTTP, *, force: bool = False
 ) -> int:
@@ -649,6 +660,7 @@ def do_repair_multiple_choices(
         flush=True,
     )
     n_repaired = n_candidate_sources = n_direct_sources = n_no_candidates = n_failed = 0
+    n_candidate_source_urls = n_candidate_sources_available = 0
     for i, (_base, locs) in enumerate(groups, 1):
         last_loc = locs[-1]
         group_failed = True
@@ -675,12 +687,17 @@ def do_repair_multiple_choices(
             if not candidate_urls:
                 group_no_candidates = True
                 continue
+            n_candidate_source_urls += len(candidate_urls)
             n_candidate_sources += _fetch_multiple_choice_candidate_sources(
                 archive,
                 http,
                 data,
                 include_current=True,
                 include_enacted=True,
+            )
+            n_candidate_sources_available += _available_candidate_source_count(
+                archive,
+                candidate_urls,
             )
             group_repaired = True
             break
@@ -693,6 +710,8 @@ def do_repair_multiple_choices(
         if i % 10 == 0 or i == len(groups):
             print(
                 f"  [{i:,}/{len(groups):,}]  repaired={n_repaired:,}  "
+                f"candidate_urls={n_candidate_source_urls:,}  "
+                f"candidate_sources_available={n_candidate_sources_available:,}  "
                 f"candidate_sources+{n_candidate_sources:,}  direct_sources+{n_direct_sources:,}  "
                 f"no_candidates={n_no_candidates:,}  failed={n_failed:,}  last={last_loc}",
                 flush=True,
@@ -701,6 +720,8 @@ def do_repair_multiple_choices(
         "ambiguous_locators": len(candidate_locators),
         "ambiguous_groups": len(groups),
         "repaired_locators": n_repaired,
+        "candidate_source_urls": n_candidate_source_urls,
+        "candidate_sources_available": n_candidate_sources_available,
         "candidate_sources": n_candidate_sources,
         "direct_sources": n_direct_sources,
         "no_candidates": n_no_candidates,
@@ -825,6 +846,8 @@ def run_repair_multiple_choices(
         f"  ambiguous={r['ambiguous_locators']:,}  "
         f"groups={r['ambiguous_groups']:,}  "
         f"repaired={r['repaired_locators']:,}  "
+        f"candidate_urls={r['candidate_source_urls']:,}  "
+        f"candidate_sources_available={r['candidate_sources_available']:,}  "
         f"candidate_sources+{r['candidate_sources']:,}  "
         f"direct_sources+{r['direct_sources']:,}  "
         f"no_candidates={r['no_candidates']:,}  failed={r['failed']:,}"
