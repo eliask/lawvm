@@ -277,6 +277,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_pipeline_capture.py",
         "test_projection_completeness.py",
         "test_verify_chain.py",
+        # Step 1: provenance graph substrate
+        "test_provenance_graph.py",
+        "test_provenance_graph_facade.py",
+        "test_provenance_graph_storage.py",
     ),
     "core_materialization_invariants": (
         "test_materialization_invariants.py",
