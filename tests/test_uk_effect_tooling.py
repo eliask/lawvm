@@ -59,6 +59,9 @@ from lawvm.tools.uk_effects import (
 from lawvm.uk_legislation.lowering_records import (
     append_manual_compile_frontier_diagnostic,
 )
+from lawvm.uk_legislation.frontier_work_items import (
+    uk_frontier_work_item_from_manual_frontier_row,
+)
 from lawvm.uk_legislation.compiled_effect_facts import uk_compiled_effect_facts
 from lawvm.uk_legislation.manual_claim_templates import (
     UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS,
@@ -358,6 +361,84 @@ def test_uk_manual_claim_template_status_only_labels_actionable_rows() -> None:
         )
         == ""
     )
+
+
+@pytest.mark.parametrize(
+    "rule_id, operation_family",
+    [
+        (
+            "uk_effect_temporal_ceases_to_have_effect_replay_excluded",
+            "non_textual_or_out_of_scope",
+        ),
+        (
+            "uk_manual_frontier_amendment_table_payload_without_row_context",
+            "table_surface_mutation",
+        ),
+        ("uk_manual_frontier_appropriate_place_candidate", "appropriate_place_mutation"),
+        (
+            "uk_manual_frontier_child_qualified_word_omission_target_mismatch",
+            "source_target_reconciliation",
+        ),
+        ("uk_manual_frontier_crossheading_candidate", "crossheading_text_rewrite"),
+        ("uk_manual_frontier_heading_facet_candidate", "facet_text_rewrite"),
+        (
+            "uk_manual_frontier_instruction_header_source_insufficient",
+            "source_acquisition_or_payload_extraction",
+        ),
+        (
+            "uk_manual_frontier_non_substantive_payload_source_insufficient",
+            "source_acquisition_or_payload_extraction",
+        ),
+        (
+            "uk_manual_frontier_savings_qualified_text_omission_candidate",
+            "savings_qualified_text_omission",
+        ),
+        ("uk_manual_frontier_schedule_note_candidate", "schedule_note_text_rewrite"),
+        (
+            "uk_manual_frontier_source_carried_structured_text_patch_candidate",
+            "source_carried_structured_text_patch",
+        ),
+        (
+            "uk_manual_frontier_source_payload_without_instruction_context",
+            "source_acquisition_or_payload_extraction",
+        ),
+        (
+            "uk_manual_frontier_table_appropriate_place_candidate",
+            "table_surface_mutation",
+        ),
+        ("uk_manual_frontier_table_entry_placement_insert", "table_surface_mutation"),
+        (
+            "uk_manual_frontier_whole_act_word_level_text_patch_candidate",
+            "whole_act_listed_enactments_text_patch",
+        ),
+    ],
+)
+def test_uk_frontier_work_item_defaults_cover_grounding_corpus_families(
+    rule_id: str,
+    operation_family: str,
+) -> None:
+    work_item = uk_frontier_work_item_from_manual_frontier_row(
+        {
+            "statute_id": "ukpga/2000/1",
+            "effect_id": f"eff-{rule_id}",
+            "manual_compile_rule_id": rule_id,
+            "manual_compile_status": "manual_compile_candidate",
+            "authorization_status": "manual_claim_required",
+            "owner_phase": "typed_elaboration",
+            "safe_default": "classify_without_replay",
+            "required_proofs": ["mutation_boundary_proof"],
+            "forbidden_shortcuts": ["agreement_as_execution_authorization"],
+            "replay_authorized": False,
+            "executable": False,
+            "source": {"text_preview": "source preview"},
+            "affected_provisions": "s. 1",
+        }
+    )
+
+    assert work_item.candidate_operation_family == operation_family
+    assert work_item.required_validator_checks
+    assert work_item.executable is False
+    assert work_item.replay_authorized is False
 
 
 @pytest.mark.parametrize("rule_id", sorted(UK_CLAIM_TEMPLATE_RULE_IDS))

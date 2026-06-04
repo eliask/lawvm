@@ -29,12 +29,76 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_preserves_affected_statute_text_state",
         ),
     },
+    "uk_effect_temporal_ceases_to_have_effect_replay_excluded": {
+        "candidate_operation_family": "non_textual_or_out_of_scope",
+        "required_validator_checks": (
+            "claim_identifies_temporal_ceases_to_have_effect_semantics",
+            "claim_confirms_no_direct_current_text_replay_mutation",
+            "claim_routes_effect_to_temporal_applicability_model",
+        ),
+    },
+    "uk_manual_frontier_amendment_table_payload_without_row_context": {
+        "candidate_operation_family": "table_surface_mutation",
+        "required_validator_checks": (
+            "source_witness_contains_amendment_table_payload",
+            "claim_identifies_source_table_row_context",
+            "claim_identifies_exact_table_carrier",
+            "claim_blocks_replay_until_row_context_is_proved",
+            "changed_paths_are_within_claimed_table_surface",
+        ),
+    },
+    "uk_manual_frontier_appropriate_place_candidate": {
+        "candidate_operation_family": "appropriate_place_mutation",
+        "required_validator_checks": (
+            "source_witness_uses_appropriate_place_formula",
+            "claim_supplies_exact_anchor_or_ordering_rule",
+            "claim_identifies_target_container_surface",
+            "claim_identifies_payload_units_owned_by_source",
+            "changed_paths_are_within_claimed_insertion_boundary",
+        ),
+    },
     "uk_manual_frontier_commencement_effect_out_of_scope": {
         "candidate_operation_family": "non_textual_or_out_of_scope",
         "required_validator_checks": (
             "claim_identifies_commencement_or_temporal_semantics",
             "claim_confirms_no_direct_text_or_tree_mutation",
             "claim_routes_effect_to_temporal_applicability_model",
+        ),
+    },
+    "uk_manual_frontier_child_qualified_word_omission_target_mismatch": {
+        "candidate_operation_family": "source_target_reconciliation",
+        "required_validator_checks": (
+            "source_witness_names_child_qualified_omission_target",
+            "claim_reconciles_source_child_target_and_effect_feed_target",
+            "claim_blocks_replay_until_target_identity_is_proved",
+        ),
+    },
+    "uk_manual_frontier_crossheading_candidate": {
+        "candidate_operation_family": "crossheading_text_rewrite",
+        "required_validator_checks": (
+            "source_witness_targets_crossheading_surface",
+            "claim_identifies_exact_crossheading_carrier",
+            "claim_preserves_neighbouring_sections_and_body_text",
+            "claim_text_preimage_matches_crossheading_surface",
+            "changed_paths_are_within_declared_crossheading_target",
+        ),
+    },
+    "uk_manual_frontier_heading_facet_candidate": {
+        "candidate_operation_family": "facet_text_rewrite",
+        "required_validator_checks": (
+            "source_witness_targets_heading_title_or_sidenote_facet",
+            "claim_identifies_exact_target_facet_not_host_body",
+            "claim_preserves_host_body_text_and_children",
+            "claim_text_preimage_matches_target_facet_surface",
+            "changed_paths_are_within_declared_facet_target",
+        ),
+    },
+    "uk_manual_frontier_instruction_header_source_insufficient": {
+        "candidate_operation_family": "source_acquisition_or_payload_extraction",
+        "required_validator_checks": (
+            "source_witness_contains_header_only_instruction_context",
+            "complete_child_instruction_or_payload_witness_is_available",
+            "claim_blocks_replay_until_complete_instruction_is_proved",
         ),
     },
     "uk_manual_frontier_misselected_target_context_source_insufficient": {
@@ -51,6 +115,14 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "official_source_witness_contains_payload_or_instruction",
             "payload_or_instruction_witness_is_not_empty",
             "claim_blocks_replay_until_source_payload_is_available",
+        ),
+    },
+    "uk_manual_frontier_non_substantive_payload_source_insufficient": {
+        "candidate_operation_family": "source_acquisition_or_payload_extraction",
+        "required_validator_checks": (
+            "source_witness_contains_only_non_substantive_payload",
+            "complete_operative_instruction_or_payload_witness_is_available",
+            "claim_blocks_replay_until_substantive_payload_is_proved",
         ),
     },
     "uk_manual_frontier_nested_definition_child_structural_substitution_candidate": {
@@ -81,6 +153,36 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_declared_table_repeal_boundary",
         ),
     },
+    "uk_manual_frontier_savings_qualified_text_omission_candidate": {
+        "candidate_operation_family": "savings_qualified_text_omission",
+        "required_validator_checks": (
+            "source_witness_contains_savings_qualified_omission",
+            "claim_identifies_exact_reference_text_preimage",
+            "claim_represents_savings_condition_as_applicability_not_unconditional_deletion",
+            "claim_preserves_occurrences_outside_the_savings_qualified_scope",
+            "changed_paths_are_within_declared_text_carriers_and_applicability_scope",
+        ),
+    },
+    "uk_manual_frontier_schedule_note_candidate": {
+        "candidate_operation_family": "schedule_note_text_rewrite",
+        "required_validator_checks": (
+            "source_witness_targets_schedule_note_surface",
+            "claim_identifies_exact_schedule_note_carrier",
+            "claim_preserves_schedule_paragraph_body_structure",
+            "claim_text_preimage_matches_schedule_note_surface",
+            "changed_paths_are_within_declared_schedule_note_target",
+        ),
+    },
+    "uk_manual_frontier_source_carried_structured_text_patch_candidate": {
+        "candidate_operation_family": "source_carried_structured_text_patch",
+        "required_validator_checks": (
+            "source_witness_contains_parent_formula_and_structured_payload",
+            "claim_binds_payload_units_to_named_child_targets",
+            "claim_preserves_unclaimed_parent_and_sibling_text",
+            "claim_rejects_flattening_structured_payload_into_host_text",
+            "changed_paths_are_within_claimed_child_target_boundaries",
+        ),
+    },
     "uk_manual_frontier_source_carried_structured_tail_substitution_candidate": {
         "candidate_operation_family": "source_carried_structured_tail_substitution",
         "required_validator_checks": (
@@ -97,6 +199,14 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "official_source_witness_resolves_source_pathology",
             "payload_or_instruction_witness_is_complete",
             "claim_blocks_replay_until_source_pathology_is_resolved",
+        ),
+    },
+    "uk_manual_frontier_source_payload_without_instruction_context": {
+        "candidate_operation_family": "source_acquisition_or_payload_extraction",
+        "required_validator_checks": (
+            "source_witness_contains_payload_fragment_without_instruction_context",
+            "complete_parent_instruction_context_witness_is_available",
+            "claim_blocks_replay_until_instruction_context_is_proved",
         ),
     },
     "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate": {
@@ -116,6 +226,26 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "source_witness_targets_table_entry_or_column_surface",
             "claim_identifies_exact_table_carrier",
             "claim_identifies_row_or_column_boundary",
+            "claim_preserves_unclaimed_rows_columns_and_cells",
+            "changed_paths_are_within_claimed_table_surface",
+        ),
+    },
+    "uk_manual_frontier_table_appropriate_place_candidate": {
+        "candidate_operation_family": "table_surface_mutation",
+        "required_validator_checks": (
+            "source_witness_targets_table_entry_or_column_surface",
+            "claim_identifies_exact_table_carrier",
+            "claim_identifies_table_ordering_rule_or_anchor",
+            "claim_preserves_unclaimed_rows_columns_and_cells",
+            "changed_paths_are_within_claimed_table_surface",
+        ),
+    },
+    "uk_manual_frontier_table_entry_placement_insert": {
+        "candidate_operation_family": "table_surface_mutation",
+        "required_validator_checks": (
+            "source_witness_targets_table_entry_or_column_surface",
+            "claim_identifies_exact_table_carrier",
+            "claim_identifies_exact_insert_position_within_table_or_list",
             "claim_preserves_unclaimed_rows_columns_and_cells",
             "changed_paths_are_within_claimed_table_surface",
         ),
@@ -156,6 +286,17 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_links_current_postimage_to_source_instruction",
             "claim_preserves_effect_feed_target_identity",
             "changed_paths_are_within_text_patch_target",
+        ),
+    },
+    "uk_manual_frontier_whole_act_word_level_text_patch_candidate": {
+        "candidate_operation_family": "whole_act_listed_enactments_text_patch",
+        "required_validator_checks": (
+            "source_witness_lists_the_affected_act_or_short_citation",
+            "claim_uses_longest_preimage_first_for_overlapping_phrases",
+            "claim_excludes_title_and_short_title_surfaces",
+            "claim_excludes_words_amended_by_named_same_schedule_paragraphs",
+            "claim_excludes_words_inserted_by_same_act_unless_otherwise_provided",
+            "changed_paths_are_within_declared_whole_act_text_carriers",
         ),
     },
 }
