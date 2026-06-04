@@ -323,6 +323,12 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
         "ukpga/1945/10",
         "ukpga/1945/9",
     ]
+    assert summary["source_or_oracle_pathology_frontier_reasons"] == {
+        "base_too_small": 2
+    }
+    assert summary["source_or_oracle_pathology_frontier_reason_statutes"] == {
+        "base_too_small": ["ukpga/1945/10", "ukpga/1945/9"]
+    }
     assert summary["zero_oracle_retention_count"] == 1
     assert summary["zero_oracle_retention_statutes"] == ["ukpga/1938/22"]
     assert summary["zero_oracle_retention_eids"] == 420
@@ -1807,6 +1813,8 @@ def test_run_driver_non_manual_source_chain_flag_allows_source_or_oracle_patholo
     assert "source_chain_frontier[base_too_small]: ukpga/1945/9" in out
     assert "non_manual_source_chain_frontier=0" in out
     assert "source_or_oracle_pathology_frontier=1: ukpga/1945/9" in out
+    assert "source_or_oracle_pathology_frontier_reasons: base_too_small=1" in out
+    assert "source_or_oracle_pathology_frontier[base_too_small]: ukpga/1945/9" in out
 
 
 def test_run_driver_non_manual_source_chain_flag_allows_manual_source_insufficient(

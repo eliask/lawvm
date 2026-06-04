@@ -676,6 +676,16 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             )
         }
     )
+    source_or_oracle_pathology_frontier_reasons = {
+        reason: count
+        for reason, count in source_chain_frontier_reasons.items()
+        if reason in _SOURCE_OR_ORACLE_PATHOLOGY_FRONTIER_REASONS
+    }
+    source_or_oracle_pathology_frontier_reason_statutes = {
+        reason: statute_ids
+        for reason, statute_ids in source_chain_frontier_statutes.items()
+        if reason in _SOURCE_OR_ORACLE_PATHOLOGY_FRONTIER_REASONS
+    }
     zero_oracle_retention = [
         r
         for r in scored
@@ -863,6 +873,12 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "source_or_oracle_pathology_frontier_statutes": (
             source_or_oracle_pathology_frontier_statutes
+        ),
+        "source_or_oracle_pathology_frontier_reasons": (
+            source_or_oracle_pathology_frontier_reasons
+        ),
+        "source_or_oracle_pathology_frontier_reason_statutes": (
+            source_or_oracle_pathology_frontier_reason_statutes
         ),
         "triage_buckets": dict(sorted(triage_buckets.items())),
         "triage_bucket_statutes": triage_bucket_statutes,
@@ -2055,6 +2071,21 @@ def run_driver(
             f"{summary['source_or_oracle_pathology_frontier_count']}: "
             f"{', '.join(summary['source_or_oracle_pathology_frontier_statutes'])}"
         )
+        if summary["source_or_oracle_pathology_frontier_reasons"]:
+            reasons = ", ".join(
+                f"{reason}={count}"
+                for reason, count in summary[
+                    "source_or_oracle_pathology_frontier_reasons"
+                ].items()
+            )
+            print(f"  source_or_oracle_pathology_frontier_reasons: {reasons}")
+        for reason, statute_ids in summary[
+            "source_or_oracle_pathology_frontier_reason_statutes"
+        ].items():
+            print(
+                "  source_or_oracle_pathology_frontier"
+                f"[{reason}]: {', '.join(statute_ids)}"
+            )
     if summary["triage_buckets"]:
         buckets = ", ".join(
             f"{bucket}={count}"
