@@ -577,6 +577,11 @@ def score_one(statute_id: str) -> dict[str, Any]:
         ] = _manual_frontier_work_item_packet_target_resolution_certificate_counts(
             manual_frontier_records
         )
+        result["manual_frontier_work_item_target_resolution_status_counts"] = (
+            _manual_frontier_work_item_target_resolution_status_counts(
+                manual_frontier_records
+            )
+        )
         result["manual_frontier_work_item_candidate_set_status_counts"] = (
             _manual_frontier_work_item_candidate_set_status_counts(
                 manual_frontier_records
@@ -896,6 +901,9 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         manual_frontier_work_item_packet_missing_field_counts,
         manual_frontier_work_item_packet_target_resolution_certificate_counts,
     ) = _aggregate_manual_frontier_work_item_packet_counts(results)
+    manual_frontier_work_item_target_resolution_status_counts = (
+        _aggregate_manual_frontier_work_item_target_resolution_status_counts(results)
+    )
     manual_frontier_work_item_candidate_set_status_counts = _aggregate_row_count_maps(
         results, "manual_frontier_work_item_candidate_set_status_counts"
     )
@@ -1121,6 +1129,9 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "manual_frontier_work_item_packet_target_resolution_certificate_counts": (
             manual_frontier_work_item_packet_target_resolution_certificate_counts
+        ),
+        "manual_frontier_work_item_target_resolution_status_counts": (
+            manual_frontier_work_item_target_resolution_status_counts
         ),
         "manual_frontier_work_item_candidate_set_status_counts": (
             manual_frontier_work_item_candidate_set_status_counts
@@ -2260,6 +2271,30 @@ def _manual_frontier_work_item_packet_target_resolution_certificate_counts(
     return dict(sorted(counts.items()))
 
 
+def _manual_frontier_work_item_target_resolution_status_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        work_item = row.get("frontier_work_item")
+        if not isinstance(work_item, dict):
+            counts["missing_work_item"] += 1
+            continue
+        detail = work_item.get("detail")
+        if not isinstance(detail, dict):
+            counts["missing_detail"] += 1
+            continue
+        certificate = detail.get("target_resolution_certificate")
+        if not isinstance(certificate, dict):
+            counts["missing_certificate"] += 1
+            continue
+        status = str(certificate.get("target_resolution_status") or "")
+        counts[status or "unproven"] += 1
+    return dict(sorted(counts.items()))
+
+
 def _aggregate_manual_frontier_work_item_packet_counts(
     results: list[dict[str, Any]],
 ) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
@@ -2306,6 +2341,42 @@ def _aggregate_manual_frontier_work_item_packet_counts(
         dict(sorted(ready_counts.items())),
         dict(sorted(missing_field_counts.items())),
         dict(sorted(target_resolution_counts.items())),
+    )
+
+
+def _aggregate_manual_frontier_work_item_target_resolution_status_counts(
+    results: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in results:
+        row_status_counts = Counter(
+            _count_mapping(
+                row.get("manual_frontier_work_item_target_resolution_status_counts"),
+            )
+        )
+        if not row_status_counts:
+            row_status_counts["unproven"] += (
+                _target_resolution_packet_count_without_status(row)
+            )
+        counts.update(row_status_counts)
+    return dict(sorted(counts.items()))
+
+
+def _target_resolution_packet_count_without_status(row: Mapping[str, Any]) -> int:
+    certificate_counts = _count_mapping(
+        row.get("manual_frontier_work_item_packet_target_resolution_certificate_counts")
+    )
+    if certificate_counts:
+        return sum(
+            int(count or 0)
+            for status, count in certificate_counts.items()
+            if status != "missing_packet_completeness"
+        )
+    ready_counts = _count_mapping(
+        row.get("manual_frontier_work_item_packet_ready_counts")
+    )
+    return int(ready_counts.get("ready", 0) or 0) + int(
+        ready_counts.get("not_ready", 0) or 0
     )
 
 
@@ -2772,6 +2843,7 @@ def _hard_gate_exit_code(
     fail_on_mutation_boundary_unexplained: bool = False,
     fail_on_frontier_work_item_packet_gaps: bool = False,
     fail_on_frontier_candidate_set_gaps: bool = False,
+    fail_on_frontier_target_resolution_gaps: bool = False,
     fail_on_frontier_source_witness_gaps: bool = False,
     fail_on_source_frontier_work_item_gaps: bool = False,
 ) -> int:
@@ -2813,6 +2885,11 @@ def _hard_gate_exit_code(
         return 1
     if fail_on_frontier_candidate_set_gaps and _frontier_candidate_set_gap_count(
         summary
+    ):
+        return 1
+    if (
+        fail_on_frontier_target_resolution_gaps
+        and _frontier_target_resolution_gap_count(summary)
     ):
         return 1
     if fail_on_frontier_source_witness_gaps and _frontier_source_witness_gap_count(
@@ -2864,6 +2941,9 @@ def _completion_gate_failure_counts(summary: Mapping[str, Any]) -> dict[str, int
             summary
         ),
         "frontier_candidate_set_gaps": _frontier_candidate_set_gap_count(summary),
+        "frontier_target_resolution_gaps": _frontier_target_resolution_gap_count(
+            summary
+        ),
         "frontier_source_witness_gaps": _frontier_source_witness_gap_count(summary),
         "source_frontier_work_item_gaps": _source_frontier_work_item_gap_count(
             summary
@@ -2899,6 +2979,19 @@ def _frontier_candidate_set_gap_count(summary: Mapping[str, Any]) -> int:
         int(count or 0)
         for status, count in status_counts.items()
         if str(status) != "complete"
+    )
+
+
+def _frontier_target_resolution_gap_count(summary: Mapping[str, Any]) -> int:
+    status_counts = summary.get(
+        "manual_frontier_work_item_target_resolution_status_counts"
+    )
+    status_counts = status_counts if isinstance(status_counts, Mapping) else {}
+    accepted = {"resolved", "ambiguous"}
+    return sum(
+        int(count or 0)
+        for status, count in status_counts.items()
+        if str(status) not in accepted
     )
 
 
@@ -2955,6 +3048,7 @@ def run_report_from_snapshot(
     fail_on_mutation_boundary_unexplained: bool = False,
     fail_on_frontier_work_item_packet_gaps: bool = False,
     fail_on_frontier_candidate_set_gaps: bool = False,
+    fail_on_frontier_target_resolution_gaps: bool = False,
     fail_on_frontier_source_witness_gaps: bool = False,
     fail_on_source_frontier_work_item_gaps: bool = False,
 ) -> int:
@@ -3003,6 +3097,9 @@ def run_report_from_snapshot(
             fail_on_frontier_work_item_packet_gaps
         ),
         fail_on_frontier_candidate_set_gaps=fail_on_frontier_candidate_set_gaps,
+        fail_on_frontier_target_resolution_gaps=(
+            fail_on_frontier_target_resolution_gaps
+        ),
         fail_on_frontier_source_witness_gaps=fail_on_frontier_source_witness_gaps,
         fail_on_source_frontier_work_item_gaps=(
             fail_on_source_frontier_work_item_gaps
@@ -3025,6 +3122,7 @@ def run_driver(
     fail_on_mutation_boundary_unexplained: bool = False,
     fail_on_frontier_work_item_packet_gaps: bool = False,
     fail_on_frontier_candidate_set_gaps: bool = False,
+    fail_on_frontier_target_resolution_gaps: bool = False,
     fail_on_frontier_source_witness_gaps: bool = False,
     fail_on_source_frontier_work_item_gaps: bool = False,
 ) -> int:
@@ -3384,6 +3482,14 @@ def run_driver(
             "  manual_frontier_work_item_packet_target_resolution_certificate_counts: "
             f"{counts}"
         )
+    if summary["manual_frontier_work_item_target_resolution_status_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary[
+                "manual_frontier_work_item_target_resolution_status_counts"
+            ].items()
+        )
+        print(f"  manual_frontier_work_item_target_resolution_status_counts: {counts}")
     if summary["manual_frontier_work_item_candidate_set_status_counts"]:
         counts = ", ".join(
             f"{status}={count}"
@@ -3645,6 +3751,11 @@ def run_driver(
         summary
     ):
         return 1
+    if (
+        fail_on_frontier_target_resolution_gaps
+        and _frontier_target_resolution_gap_count(summary)
+    ):
+        return 1
     if fail_on_frontier_source_witness_gaps and _frontier_source_witness_gap_count(
         summary
     ):
@@ -3787,6 +3898,14 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     ap.add_argument(
+        "--fail-on-frontier-target-resolution-gaps",
+        action="store_true",
+        help=(
+            "Exit nonzero when manual-frontier TargetResolutionCertificate "
+            "status counters contain unresolved, missing, or unproven status"
+        ),
+    )
+    ap.add_argument(
         "--fail-on-frontier-source-witness-gaps",
         action="store_true",
         help=(
@@ -3844,6 +3963,9 @@ def main(argv: list[str] | None = None) -> int:
             fail_on_frontier_candidate_set_gaps=(
                 args.fail_on_frontier_candidate_set_gaps
             ),
+            fail_on_frontier_target_resolution_gaps=(
+                args.fail_on_frontier_target_resolution_gaps
+            ),
             fail_on_frontier_source_witness_gaps=(
                 args.fail_on_frontier_source_witness_gaps
             ),
@@ -3884,6 +4006,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
         fail_on_frontier_candidate_set_gaps=(
             args.fail_on_frontier_candidate_set_gaps
+        ),
+        fail_on_frontier_target_resolution_gaps=(
+            args.fail_on_frontier_target_resolution_gaps
         ),
         fail_on_frontier_source_witness_gaps=(
             args.fail_on_frontier_source_witness_gaps

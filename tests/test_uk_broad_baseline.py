@@ -2422,6 +2422,123 @@ def test_report_from_snapshot_can_fail_on_frontier_candidate_set_gaps(
     ] == {"partial": 1}
 
 
+def test_report_from_snapshot_can_fail_on_frontier_target_resolution_gaps(
+    tmp_path,
+) -> None:
+    snapshot_path = tmp_path / "snapshot.json"
+    report_path = tmp_path / "report.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "ukpga/2008/17": {
+                    "statute_id": "ukpga/2008/17",
+                    "score_status": "scored",
+                    "aligned": 86.0,
+                    "aligned_excluding_grounding_collateral": 86.0,
+                    "unaligned": 86.0,
+                    "n_replay": 100,
+                    "n_oracle": 110,
+                    "manual_frontier_work_item_target_resolution_status_counts": {
+                        "unresolved": 1,
+                    },
+                }
+            }
+        )
+    )
+
+    assert (
+        uk_broad_baseline.run_report_from_snapshot(
+            snapshot_path,
+            report_path,
+            fail_on_frontier_target_resolution_gaps=True,
+        )
+        == 1
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["summary"][
+        "manual_frontier_work_item_target_resolution_status_counts"
+    ] == {"unresolved": 1}
+
+
+def test_report_from_snapshot_allows_ambiguous_frontier_target_resolution(
+    tmp_path,
+) -> None:
+    snapshot_path = tmp_path / "snapshot.json"
+    report_path = tmp_path / "report.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "ukpga/2008/17": {
+                    "statute_id": "ukpga/2008/17",
+                    "score_status": "scored",
+                    "aligned": 86.0,
+                    "aligned_excluding_grounding_collateral": 86.0,
+                    "unaligned": 86.0,
+                    "n_replay": 100,
+                    "n_oracle": 110,
+                    "manual_frontier_work_item_target_resolution_status_counts": {
+                        "ambiguous": 1,
+                    },
+                }
+            }
+        )
+    )
+
+    assert (
+        uk_broad_baseline.run_report_from_snapshot(
+            snapshot_path,
+            report_path,
+            fail_on_frontier_target_resolution_gaps=True,
+        )
+        == 0
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["summary"][
+        "manual_frontier_work_item_target_resolution_status_counts"
+    ] == {"ambiguous": 1}
+
+
+def test_report_from_snapshot_fails_closed_on_unproved_target_resolution_status(
+    tmp_path,
+) -> None:
+    snapshot_path = tmp_path / "snapshot.json"
+    report_path = tmp_path / "report.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "ukpga/2008/17": {
+                    "statute_id": "ukpga/2008/17",
+                    "score_status": "scored",
+                    "aligned": 86.0,
+                    "aligned_excluding_grounding_collateral": 86.0,
+                    "unaligned": 86.0,
+                    "n_replay": 100,
+                    "n_oracle": 110,
+                    "manual_frontier_work_item_packet_target_resolution_certificate_counts": {
+                        "present": 1,
+                    },
+                }
+            }
+        )
+    )
+
+    assert (
+        uk_broad_baseline.run_report_from_snapshot(
+            snapshot_path,
+            report_path,
+            fail_on_frontier_target_resolution_gaps=True,
+        )
+        == 1
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["summary"][
+        "manual_frontier_work_item_target_resolution_status_counts"
+    ] == {"unproven": 1}
+
+
 def test_report_from_snapshot_exposes_completion_gate_failures(
     tmp_path,
 ) -> None:
@@ -2469,6 +2586,7 @@ def test_report_from_snapshot_exposes_completion_gate_failures(
     assert summary["completion_gate_failure_counts"] == {
         "frontier_candidate_set_gaps": 1,
         "frontier_source_witness_gaps": 1,
+        "frontier_target_resolution_gaps": 1,
         "frontier_work_item_packet_gaps": 2,
         "manual_frontier_template_gaps": 1,
     }
