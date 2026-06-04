@@ -1431,11 +1431,11 @@ def _source_frontier_work_item(row: Mapping[str, Any]) -> FrontierWorkItem:
             "source_frontier_reason": reason,
             "base_source_witness": row.get("base_source_witness") or {},
             "oracle_source_witness": row.get("oracle_source_witness") or {},
-            "base_source_witness_digest_coverage": str(
-                row.get("base_source_witness_digest_coverage") or ""
+            "base_source_witness_digest_coverage": (
+                _source_frontier_source_witness_digest_coverage(row, "base")
             ),
-            "oracle_source_witness_digest_coverage": str(
-                row.get("oracle_source_witness_digest_coverage") or ""
+            "oracle_source_witness_digest_coverage": (
+                _source_frontier_source_witness_digest_coverage(row, "oracle")
             ),
             "truth_claim": "source_frontier_work_item_not_replay_authorization",
         },
@@ -2615,10 +2615,23 @@ def _source_frontier_source_witness_digest_coverage_counts(
     counts: Counter[str] = Counter()
     for row in rows:
         for side in ("base", "oracle"):
-            witness = row.get(f"{side}_source_witness")
-            witness = witness if isinstance(witness, Mapping) else {}
-            counts[f"{side}:{source_witness_digest_coverage(witness)}"] += 1
+            coverage = _source_frontier_source_witness_digest_coverage(row, side)
+            counts[f"{side}:{coverage}"] += 1
     return dict(sorted(counts.items()))
+
+
+def _source_frontier_source_witness_digest_coverage(
+    row: Mapping[str, Any],
+    side: str,
+) -> str:
+    witness = row.get(f"{side}_source_witness")
+    witness = witness if isinstance(witness, Mapping) else {}
+    coverage = source_witness_digest_coverage(witness)
+    if coverage != "missing_source_witness":
+        return coverage
+    if f"{side}_source_status" in row or f"{side}_source_size" in row:
+        return "stale_snapshot_missing_source_witness"
+    return coverage
 
 
 def _source_frontier_work_item_field_counts(
@@ -3037,6 +3050,7 @@ def _source_frontier_work_item_gap_count(summary: Mapping[str, Any]) -> int:
             int(count or 0)
             for coverage, count in digest_counts.items()
             if str(coverage).endswith(":missing_source_witness")
+            or str(coverage).endswith(":stale_snapshot_missing_source_witness")
             or str(coverage).endswith(":missing_digest")
         )
     )

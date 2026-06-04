@@ -2702,8 +2702,8 @@ def test_report_from_snapshot_can_fail_on_source_frontier_work_item_gaps(
         "source_footing_gap": 1,
     }
     assert summary["source_frontier_source_witness_digest_coverage_counts"] == {
-        "base:missing_source_witness": 1,
-        "oracle:missing_source_witness": 1,
+        "base:stale_snapshot_missing_source_witness": 1,
+        "oracle:stale_snapshot_missing_source_witness": 1,
     }
     assert summary["completion_gate_failure_counts"] == {
         "source_frontier_work_item_gaps": 2,
@@ -3265,7 +3265,8 @@ def test_run_driver_can_fail_on_source_frontier_work_item_gaps(
     ) in out
     assert (
         "source_frontier_source_witness_digest_coverage_counts: "
-        "base:missing_source_witness=1, oracle:missing_source_witness=1"
+        "base:stale_snapshot_missing_source_witness=1, "
+        "oracle:stale_snapshot_missing_source_witness=1"
     ) in out
 
 
