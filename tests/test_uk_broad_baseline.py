@@ -2461,6 +2461,60 @@ def test_report_from_snapshot_can_fail_on_frontier_target_resolution_gaps(
     ] == {"unresolved": 1}
 
 
+def test_report_from_snapshot_allows_non_textual_target_resolution_exemptions(
+    tmp_path,
+) -> None:
+    snapshot_path = tmp_path / "snapshot.json"
+    report_path = tmp_path / "report.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "ukpga/2008/17": {
+                    "statute_id": "ukpga/2008/17",
+                    "score_status": "scored",
+                    "aligned": 86.0,
+                    "aligned_excluding_grounding_collateral": 86.0,
+                    "unaligned": 86.0,
+                    "n_replay": 100,
+                    "n_oracle": 110,
+                    "manual_frontier_work_item_candidate_set_status_counts": {
+                        "unavailable": 1,
+                    },
+                    "manual_frontier_work_item_candidate_set_gap_counts": {},
+                    "manual_frontier_work_item_candidate_set_exempt_counts": {
+                        "unavailable:uk_manual_frontier_non_textual_or_out_of_scope": 1,
+                    },
+                    "manual_frontier_work_item_target_resolution_status_counts": {
+                        "unresolved": 1,
+                    },
+                    "manual_frontier_work_item_target_resolution_gap_counts": {},
+                    "manual_frontier_work_item_target_resolution_exempt_counts": {
+                        "unresolved:uk_manual_frontier_non_textual_or_out_of_scope": 1,
+                    },
+                }
+            }
+        )
+    )
+
+    assert (
+        uk_broad_baseline.run_report_from_snapshot(
+            snapshot_path,
+            report_path,
+            fail_on_frontier_candidate_set_gaps=True,
+            fail_on_frontier_target_resolution_gaps=True,
+        )
+        == 0
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["summary"][
+        "manual_frontier_work_item_candidate_set_exempt_counts"
+    ] == {"unavailable:uk_manual_frontier_non_textual_or_out_of_scope": 1}
+    assert report["summary"][
+        "manual_frontier_work_item_target_resolution_exempt_counts"
+    ] == {"unresolved:uk_manual_frontier_non_textual_or_out_of_scope": 1}
+
+
 def test_report_from_snapshot_allows_ambiguous_frontier_target_resolution(
     tmp_path,
 ) -> None:

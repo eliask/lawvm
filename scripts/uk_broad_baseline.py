@@ -582,8 +582,26 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 manual_frontier_records
             )
         )
+        result["manual_frontier_work_item_target_resolution_gap_counts"] = (
+            _manual_frontier_work_item_target_resolution_gap_counts(
+                manual_frontier_records
+            )
+        )
+        result["manual_frontier_work_item_target_resolution_exempt_counts"] = (
+            _manual_frontier_work_item_target_resolution_exempt_counts(
+                manual_frontier_records
+            )
+        )
         result["manual_frontier_work_item_candidate_set_status_counts"] = (
             _manual_frontier_work_item_candidate_set_status_counts(
+                manual_frontier_records
+            )
+        )
+        result["manual_frontier_work_item_candidate_set_gap_counts"] = (
+            _manual_frontier_work_item_candidate_set_gap_counts(manual_frontier_records)
+        )
+        result["manual_frontier_work_item_candidate_set_exempt_counts"] = (
+            _manual_frontier_work_item_candidate_set_exempt_counts(
                 manual_frontier_records
             )
         )
@@ -904,8 +922,24 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     manual_frontier_work_item_target_resolution_status_counts = (
         _aggregate_manual_frontier_work_item_target_resolution_status_counts(results)
     )
+    manual_frontier_work_item_target_resolution_gap_counts = _aggregate_row_count_maps(
+        results,
+        "manual_frontier_work_item_target_resolution_gap_counts",
+    )
+    manual_frontier_work_item_target_resolution_exempt_counts = (
+        _aggregate_row_count_maps(
+            results,
+            "manual_frontier_work_item_target_resolution_exempt_counts",
+        )
+    )
     manual_frontier_work_item_candidate_set_status_counts = _aggregate_row_count_maps(
         results, "manual_frontier_work_item_candidate_set_status_counts"
+    )
+    manual_frontier_work_item_candidate_set_gap_counts = _aggregate_row_count_maps(
+        results, "manual_frontier_work_item_candidate_set_gap_counts"
+    )
+    manual_frontier_work_item_candidate_set_exempt_counts = _aggregate_row_count_maps(
+        results, "manual_frontier_work_item_candidate_set_exempt_counts"
     )
     manual_frontier_work_item_source_witness_role_counts = _aggregate_row_count_maps(
         results, "manual_frontier_work_item_source_witness_role_counts"
@@ -1133,8 +1167,20 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "manual_frontier_work_item_target_resolution_status_counts": (
             manual_frontier_work_item_target_resolution_status_counts
         ),
+        "manual_frontier_work_item_target_resolution_gap_counts": (
+            manual_frontier_work_item_target_resolution_gap_counts
+        ),
+        "manual_frontier_work_item_target_resolution_exempt_counts": (
+            manual_frontier_work_item_target_resolution_exempt_counts
+        ),
         "manual_frontier_work_item_candidate_set_status_counts": (
             manual_frontier_work_item_candidate_set_status_counts
+        ),
+        "manual_frontier_work_item_candidate_set_gap_counts": (
+            manual_frontier_work_item_candidate_set_gap_counts
+        ),
+        "manual_frontier_work_item_candidate_set_exempt_counts": (
+            manual_frontier_work_item_candidate_set_exempt_counts
         ),
         "manual_frontier_work_item_source_witness_role_counts": (
             manual_frontier_work_item_source_witness_role_counts
@@ -2295,6 +2341,71 @@ def _manual_frontier_work_item_target_resolution_status_counts(
     return dict(sorted(counts.items()))
 
 
+def _manual_frontier_work_item_target_resolution_gap_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        work_item = row.get("frontier_work_item")
+        if not isinstance(work_item, dict):
+            counts["missing_work_item"] += 1
+            continue
+        status = _target_resolution_status_for_work_item(work_item)
+        if status in {"resolved", "ambiguous"}:
+            continue
+        if _target_resolution_gap_exempt(work_item):
+            continue
+        counts[status] += 1
+    return dict(sorted(counts.items()))
+
+
+def _manual_frontier_work_item_target_resolution_exempt_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        work_item = row.get("frontier_work_item")
+        if not isinstance(work_item, dict):
+            continue
+        status = _target_resolution_status_for_work_item(work_item)
+        if status in {"resolved", "ambiguous"}:
+            continue
+        if _target_resolution_gap_exempt(work_item):
+            counts[_target_resolution_exempt_key(work_item, status)] += 1
+    return dict(sorted(counts.items()))
+
+
+def _target_resolution_status_for_work_item(work_item: Mapping[str, Any]) -> str:
+    detail = work_item.get("detail")
+    if not isinstance(detail, Mapping):
+        return "missing_detail"
+    certificate = detail.get("target_resolution_certificate")
+    if not isinstance(certificate, Mapping):
+        return "missing_certificate"
+    return str(certificate.get("target_resolution_status") or "unproven")
+
+
+def _target_resolution_gap_exempt(work_item: Mapping[str, Any]) -> bool:
+    return (
+        str(work_item.get("authorization_status") or "") == "out_of_scope"
+        and str(work_item.get("candidate_operation_family") or "")
+        == "non_textual_or_out_of_scope"
+        and work_item.get("replay_authorized") is False
+    )
+
+
+def _target_resolution_exempt_key(
+    work_item: Mapping[str, Any],
+    status: str,
+) -> str:
+    family = str(work_item.get("frontier_family") or "unknown")
+    return f"{status}:{family}"
+
+
 def _aggregate_manual_frontier_work_item_packet_counts(
     results: list[dict[str, Any]],
 ) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
@@ -2422,6 +2533,54 @@ def _manual_frontier_work_item_candidate_set_status_counts(
         if status:
             counts[status] += 1
     return dict(sorted(counts.items()))
+
+
+def _manual_frontier_work_item_candidate_set_gap_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        work_item = row.get("frontier_work_item")
+        if not isinstance(work_item, dict):
+            counts["missing_work_item"] += 1
+            continue
+        status = _candidate_set_status_for_work_item(work_item)
+        if status == "complete":
+            continue
+        if _target_resolution_gap_exempt(work_item):
+            continue
+        counts[status] += 1
+    return dict(sorted(counts.items()))
+
+
+def _manual_frontier_work_item_candidate_set_exempt_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        work_item = row.get("frontier_work_item")
+        if not isinstance(work_item, dict):
+            continue
+        status = _candidate_set_status_for_work_item(work_item)
+        if status == "complete":
+            continue
+        if _target_resolution_gap_exempt(work_item):
+            counts[_target_resolution_exempt_key(work_item, status)] += 1
+    return dict(sorted(counts.items()))
+
+
+def _candidate_set_status_for_work_item(work_item: Mapping[str, Any]) -> str:
+    detail = work_item.get("detail")
+    if not isinstance(detail, Mapping):
+        return "missing_detail"
+    certificate = detail.get("candidate_set_certificate")
+    if not isinstance(certificate, Mapping):
+        return "missing_certificate"
+    return str(certificate.get("completeness_status") or "unproven")
 
 
 def _manual_frontier_work_item_source_witness_role_counts(
@@ -2993,6 +3152,10 @@ def _frontier_work_item_packet_gap_count(summary: Mapping[str, Any]) -> int:
 
 
 def _frontier_candidate_set_gap_count(summary: Mapping[str, Any]) -> int:
+    gap_counts = summary.get("manual_frontier_work_item_candidate_set_gap_counts")
+    exempt_counts = summary.get("manual_frontier_work_item_candidate_set_exempt_counts")
+    if isinstance(gap_counts, Mapping) and (gap_counts or exempt_counts):
+        return sum(int(count or 0) for count in gap_counts.values())
     status_counts = summary.get("manual_frontier_work_item_candidate_set_status_counts")
     status_counts = status_counts if isinstance(status_counts, Mapping) else {}
     return sum(
@@ -3003,6 +3166,12 @@ def _frontier_candidate_set_gap_count(summary: Mapping[str, Any]) -> int:
 
 
 def _frontier_target_resolution_gap_count(summary: Mapping[str, Any]) -> int:
+    gap_counts = summary.get("manual_frontier_work_item_target_resolution_gap_counts")
+    exempt_counts = summary.get(
+        "manual_frontier_work_item_target_resolution_exempt_counts"
+    )
+    if isinstance(gap_counts, Mapping) and (gap_counts or exempt_counts):
+        return sum(int(count or 0) for count in gap_counts.values())
     status_counts = summary.get(
         "manual_frontier_work_item_target_resolution_status_counts"
     )
@@ -3511,6 +3680,22 @@ def run_driver(
             ].items()
         )
         print(f"  manual_frontier_work_item_target_resolution_status_counts: {counts}")
+    if summary["manual_frontier_work_item_target_resolution_gap_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary[
+                "manual_frontier_work_item_target_resolution_gap_counts"
+            ].items()
+        )
+        print(f"  manual_frontier_work_item_target_resolution_gap_counts: {counts}")
+    if summary["manual_frontier_work_item_target_resolution_exempt_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary[
+                "manual_frontier_work_item_target_resolution_exempt_counts"
+            ].items()
+        )
+        print(f"  manual_frontier_work_item_target_resolution_exempt_counts: {counts}")
     if summary["manual_frontier_work_item_candidate_set_status_counts"]:
         counts = ", ".join(
             f"{status}={count}"
@@ -3519,6 +3704,22 @@ def run_driver(
             ].items()
         )
         print(f"  manual_frontier_work_item_candidate_set_status_counts: {counts}")
+    if summary["manual_frontier_work_item_candidate_set_gap_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary[
+                "manual_frontier_work_item_candidate_set_gap_counts"
+            ].items()
+        )
+        print(f"  manual_frontier_work_item_candidate_set_gap_counts: {counts}")
+    if summary["manual_frontier_work_item_candidate_set_exempt_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary[
+                "manual_frontier_work_item_candidate_set_exempt_counts"
+            ].items()
+        )
+        print(f"  manual_frontier_work_item_candidate_set_exempt_counts: {counts}")
     if summary["manual_frontier_work_item_source_witness_role_counts"]:
         counts = ", ".join(
             f"{role}={count}"
