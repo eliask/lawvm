@@ -1857,6 +1857,62 @@ def manual_compile_suggested_claim_template(
         )
     if (
         summary.manual_compile_rule_id
+        == "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate"
+    ):
+        detail = _first_blocking_lowering_rejection_detail(row=row)
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="parser_or_extraction_gap",
+            placement_family=str(
+                detail.get("reason_code")
+                or "scoped_occurrence_text_patch_with_exclusions_requires_selector"
+            ),
+            required_ownership=[
+                "source_instruction_grammar_production",
+                "quoted_text_preimage_and_replacement_payload",
+                "non_excluded_occurrence_selector",
+                "named_exclusion_scope",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_contains_scoped_occurrence_formula_with_exclusions",
+                "compiler_or_claim_identifies_exact_text_preimage_and_replacement",
+                "compiler_or_claim_identifies_each_excluded_occurrence_scope",
+                "claim_preserves_occurrences_inside_named_exclusions",
+                "changed_paths_are_within_declared_non_excluded_occurrence_boundaries",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_multi_enactment_specified_provisions_text_patch"
+    ):
+        detail = _first_blocking_lowering_rejection_detail(row=row)
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="parser_or_extraction_gap",
+            placement_family=str(
+                detail.get("reason_code")
+                or "multi_enactment_specified_provisions_requires_listed_target_claim"
+            ),
+            required_ownership=[
+                "source_instruction_grammar_production",
+                "specified_enactment_and_provision_list",
+                "effect_target_membership_in_source_list",
+                "matching_text_preimage_variant",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_contains_multi_enactment_specified_provisions_table",
+                "compiler_or_claim_proves_effect_target_is_in_specified_provisions",
+                "compiler_or_claim_selects_matching_alternate_preimage",
+                "compiler_or_claim_identifies_exact_replacement_payload",
+                "changed_paths_are_within_declared_listed_provision_text_boundary",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
         == "uk_manual_frontier_effect_metadata_carried_text_patch_candidate"
     ):
         detail = _first_blocking_lowering_rejection_detail(row=row)

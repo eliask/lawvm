@@ -311,6 +311,26 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_declared_target_and_payload_boundaries",
         ),
     },
+    "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate": {
+        "candidate_operation_family": "parser_or_extraction_gap",
+        "required_validator_checks": (
+            "source_witness_contains_scoped_occurrence_formula_with_exclusions",
+            "compiler_or_claim_identifies_exact_text_preimage_and_replacement",
+            "compiler_or_claim_identifies_each_excluded_occurrence_scope",
+            "claim_preserves_occurrences_inside_named_exclusions",
+            "changed_paths_are_within_declared_non_excluded_occurrence_boundaries",
+        ),
+    },
+    "uk_manual_frontier_multi_enactment_specified_provisions_text_patch": {
+        "candidate_operation_family": "parser_or_extraction_gap",
+        "required_validator_checks": (
+            "source_witness_contains_multi_enactment_specified_provisions_table",
+            "compiler_or_claim_proves_effect_target_is_in_specified_provisions",
+            "compiler_or_claim_selects_matching_alternate_preimage",
+            "compiler_or_claim_identifies_exact_replacement_payload",
+            "changed_paths_are_within_declared_listed_provision_text_boundary",
+        ),
+    },
     "uk_manual_frontier_relative_other_place_occurrence_candidate": {
         "candidate_operation_family": "relative_occurrence_text_patch",
         "required_validator_checks": (

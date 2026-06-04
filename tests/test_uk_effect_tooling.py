@@ -98,6 +98,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_heading_facet_candidate",
         "uk_manual_frontier_labeled_child_end_range_candidate",
         "uk_manual_frontier_mixed_body_heading_text_substitution_split",
+        "uk_manual_frontier_multi_enactment_specified_provisions_text_patch",
         "uk_manual_frontier_parser_or_extraction_candidate",
         "uk_manual_frontier_partial_whole_act_repeal_candidate",
         "uk_manual_frontier_range_to_container_candidate",
@@ -108,6 +109,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_schedule_note_candidate",
         "uk_manual_frontier_sentence_scoped_repeated_insert_candidate",
         "uk_manual_frontier_savings_qualified_text_omission_candidate",
+        "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate",
         "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate",
         "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
         "uk_manual_frontier_source_carried_structured_text_patch_candidate",
@@ -1097,6 +1099,114 @@ def test_uk_manual_compile_evidence_jsonl_templates_parser_or_extraction_gap() -
     assert "target_scope_is_the_effect_target_or_source_named_descendant_only" in (
         template["required_validator_checks"]
     )
+
+
+@pytest.mark.parametrize(
+    (
+        "rule_id",
+        "lowering_rule_id",
+        "source_preview",
+        "expected_check",
+    ),
+    [
+        (
+            "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate",
+            "uk_effect_overlap_substitution_unlowered",
+            (
+                'For "Commission", in each place except as mentioned in '
+                'sub-paragraph (3), substitute "Director General".'
+            ),
+            "compiler_or_claim_identifies_each_excluded_occurrence_scope",
+        ),
+        (
+            "uk_manual_frontier_multi_enactment_specified_provisions_text_patch",
+            "uk_effect_multi_enactment_specified_provisions_text_patch_rejected",
+            (
+                'In the specified provisions of the following enactments, for '
+                '"seven" (or "7") substitute "14" - TMA 1970 Section 106A(2)(b).'
+            ),
+            "compiler_or_claim_proves_effect_target_is_in_specified_provisions",
+        ),
+    ],
+)
+def test_uk_manual_compile_evidence_templates_widened_parser_frontiers(
+    rule_id: str,
+    lowering_rule_id: str,
+    source_preview: str,
+    expected_check: str,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id=f"eff-{rule_id}",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/1/section/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 10",
+        affecting_uri="/id/ukpga/2024/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="s. 2",
+        affecting_title="Test Act 2024",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="unhandled_instruction_text",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=("section-10",),
+            lowering_rejections=(
+                {
+                    "rule_id": lowering_rule_id,
+                    "reason_code": "synthetic_widened_frontier",
+                    "blocking": True,
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P2",
+            source_extracted_text_preview=source_preview,
+            manual_compile_status="deterministic_frontend_candidate",
+            manual_compile_rule_id=rule_id,
+            manual_compile_reason="Parser work requires an explicit compiler or claim.",
+            manual_compile_lowering_rule_ids=(lowering_rule_id,),
+            manual_compile_blocking_lowering_rule_ids=(lowering_rule_id,),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    assert payload["suggested_claim_template_status"] == "available"
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "parser_or_extraction_gap"
+    assert expected_check in template["required_validator_checks"]
+    work_item = payload["frontier_work_item"]
+    assert work_item["candidate_operation_family"] == "parser_or_extraction_gap"
+    assert expected_check in work_item["required_validator_checks"]
+    assert work_item["replay_authorized"] is False
 
 
 def test_manual_frontier_diagnostic_records_claim_template_status() -> None:
