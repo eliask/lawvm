@@ -11537,6 +11537,38 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "uk_effect_metadata_carried_at_end_substitute_insert_text_patch",
         ),
         (
+            "c at the end, add “ , subject to subsection (5) of this section ” .",
+            "words inserted",
+            "s. 2(3)",
+            "TEXT_END",
+            ", subject to subsection (5) of this section",
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_metadata_carried_at_end_add_insert_text_patch",
+        ),
+        (
+            "7 In section 45(2) of that Act, at the end of paragraph (fa) "
+            "add “ or under section 18 of the Justice Act (Northern Ireland) 2011 ” .",
+            "words inserted",
+            "s. 45(2)(fa)",
+            "TEXT_END",
+            "or under section 18 of the Justice Act (Northern Ireland) 2011",
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_metadata_carried_at_end_add_insert_text_patch",
+        ),
+        (
+            "9 In paragraph 13(4) at the end add "
+            "“or section 5(6AA) to (6AD) of the Broadcasting Act 1990”.",
+            "words inserted",
+            "Sch. 14 para. 13(4)",
+            "TEXT_END",
+            "or section 5(6AA) to (6AD) of the Broadcasting Act 1990",
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_metadata_carried_at_end_add_insert_text_patch",
+        ),
+        (
             "4 At the end of regulation 7(5)(b)(ii) (assessment of charges) "
             "insert “or where no such fee is imposed by virtue of the operation "
             "of regulation 6(5) and (6)” .",
@@ -11907,6 +11939,7 @@ def test_compile_additional_frontier_text_patch_idioms(
         "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
         "uk_effect_anchor_to_end_block_substitution_text_patch",
         "uk_effect_after_anchor_substitute_tail_substitution_text_patch",
+        "uk_effect_metadata_carried_at_end_add_insert_text_patch",
         "uk_effect_metadata_carried_at_end_substitute_insert_text_patch",
         "uk_effect_metadata_carried_after_substitute_insert_text_patch",
         "uk_effect_metadata_carried_range_insert_substitution_text_patch",
@@ -11971,6 +12004,48 @@ def test_compile_range_insert_substitution_requires_substitution_metadata() -> N
 
     assert ops == []
     assert "uk_effect_metadata_carried_range_insert_substitution_text_patch" not in {
+        row["rule_id"] for row in lowering_rejections
+    }
+
+
+def test_compile_at_end_add_insert_does_not_swallow_definition_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="test-at-end-add-definition-negative">
+          <Text>a in subsection (1) in the definition of “protected rights” at the end add “, as it had effect immediately prior to the abolition date”;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_at_end_add_definition_negative",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-10-04",
+        affected_uri="/id/ukpga/1993/49",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1993",
+        affected_number="49",
+        affected_provisions="s. 176(1)",
+        affecting_uri="/id/nisr/2012/124",
+        affecting_class="NorthernIrelandStatutoryRule",
+        affecting_year="2012",
+        affecting_number="124",
+        affecting_provisions="art. 4(24)(a)",
+        affecting_title="Test Rule",
+        in_force_dates=[{"date": "2025-10-04", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert ops == []
+    assert "uk_effect_metadata_carried_at_end_add_insert_text_patch" not in {
         row["rule_id"] for row in lowering_rejections
     }
 

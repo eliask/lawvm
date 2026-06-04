@@ -105,6 +105,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID,
     UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID,
     UK_AFTER_ANCHOR_SUBSTITUTE_TAIL_SUBSTITUTION_RULE_ID,
+    UK_METADATA_CARRIED_AT_END_ADD_INSERT_RULE_ID,
     UK_METADATA_CARRIED_AT_END_SUBSTITUTE_INSERT_RULE_ID,
     UK_METADATA_CARRIED_RANGE_INSERT_SUBSTITUTION_RULE_ID,
     UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
@@ -995,6 +996,14 @@ def _extract_text_fragment_substitutions(
         )
         if metadata_carried_at_end_substitute_insert is not None:
             subs = [metadata_carried_at_end_substitute_insert]
+    if not subs:
+        metadata_carried_at_end_add_insert = _effect_metadata_carried_at_end_add_insert_fragment(
+            effect=effect,
+            target=target,
+            extracted_text=extracted_text,
+        )
+        if metadata_carried_at_end_add_insert is not None:
+            subs = [metadata_carried_at_end_add_insert]
     if not subs:
         metadata_carried_range_insert_substitution = (
             _effect_metadata_carried_range_insert_substitution_fragment(
@@ -2311,6 +2320,128 @@ def _parse_at_end_substitute_insert(text: str) -> Optional[tuple[str, str, str, 
     if inserted is None:
         return None
     return parent_label, kind, label, inserted[0].strip()
+
+
+def _effect_metadata_carried_at_end_add_insert_fragment(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect.effect_type or "").lower().split())
+    if norm_effect_type not in {"word inserted", "words inserted"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if not text:
+        return None
+    parsed = _parse_at_end_add_insert(text)
+    if parsed is None:
+        return None
+    parent_label, source_kind, source_label, inserted = parsed
+    if "definition of" in text.lower():
+        return None
+    if source_kind:
+        normalized_source_kind = source_kind.replace("-", "").lower()
+        normalized_source_kind = (
+            "subparagraph" if normalized_source_kind == "subparagraph" else normalized_source_kind
+        )
+        if _addr_leaf_kind(target) != normalized_source_kind:
+            return None
+        if _clean_num(_addr_leaf_label(target) or "") != _clean_num(source_label):
+            return None
+    parent_label = _clean_num(parent_label)
+    if parent_label:
+        target_labels = {_clean_num(label) for _, label in target.path}
+        required_parent_labels = _source_label_parts(parent_label)
+        if not required_parent_labels.issubset(target_labels):
+            return None
+    inserted = inserted.strip()
+    if not inserted:
+        return None
+    return {
+        "original": "TEXT_END",
+        "replacement": inserted,
+        "rule_id": UK_METADATA_CARRIED_AT_END_ADD_INSERT_RULE_ID,
+    }
+
+
+def _parse_at_end_add_insert(text: str) -> Optional[tuple[str, str, str, str]]:
+    lower = text.lower()
+    at_end_idx = lower.find("at the end")
+    if at_end_idx < 0:
+        return None
+    source_kind = ""
+    source_label = ""
+    cursor = at_end_idx + len("at the end")
+    if lower.startswith(" of ", cursor):
+        cursor += len(" of ")
+        for candidate in ("sub-paragraph", "paragraph", "subsection", "section"):
+            label_prefix = f"{candidate} ("
+            if lower.startswith(label_prefix, cursor):
+                source_kind = candidate
+                cursor += len(label_prefix)
+                label_end = text.find(")", cursor)
+                if label_end < 0:
+                    return None
+                source_label = text[cursor:label_end]
+                cursor = label_end + 1
+                break
+        if not source_kind:
+            return None
+    cursor = _skip_at_end_add_separator(text, cursor)
+    if not lower.startswith("add ", cursor):
+        return None
+    inserted = _read_quoted(text, cursor + len("add "))
+    if inserted is None:
+        return None
+    parent_label = _source_parent_label_before_at_end(lower[:at_end_idx])
+    return parent_label, source_kind, source_label, inserted[0].strip()
+
+
+def _skip_at_end_add_separator(text: str, cursor: int) -> int:
+    cursor = _skip_spaces(text, cursor)
+    if cursor < len(text) and text[cursor] in ",;":
+        cursor = _skip_spaces(text, cursor + 1)
+    return cursor
+
+
+def _source_parent_label_before_at_end(prefix: str) -> str:
+    prefix = prefix.strip(" ,;")
+    in_paragraph = prefix.rfind("in paragraph ")
+    if in_paragraph < 0:
+        return ""
+    cursor = in_paragraph + len("in paragraph ")
+    if cursor >= len(prefix):
+        return ""
+    if prefix[cursor] == "(":
+        end = prefix.find(")", cursor + 1)
+        if end < 0:
+            return ""
+        return prefix[cursor + 1 : end]
+    end = cursor
+    while end < len(prefix) and (prefix[end].isalnum() or prefix[end] in "()"):
+        end += 1
+    return prefix[cursor:end].strip("()")
+
+
+def _source_label_parts(source_label: str) -> set[str]:
+    cleaned = _clean_num(source_label)
+    if not cleaned:
+        return set()
+    if "(" not in cleaned:
+        return {cleaned}
+    parts: set[str] = set()
+    current = ""
+    for char in cleaned:
+        if char in "()":
+            if current:
+                parts.add(_clean_num(current))
+                current = ""
+            continue
+        current += char
+    if current:
+        parts.add(_clean_num(current))
+    return {part for part in parts if part}
 
 
 def _text_patch_join(anchor: str, inserted: str) -> str:

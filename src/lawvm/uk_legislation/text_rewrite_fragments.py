@@ -104,6 +104,9 @@ UK_AFTER_ANCHOR_SUBSTITUTE_TAIL_SUBSTITUTION_RULE_ID = (
 UK_METADATA_CARRIED_AT_END_SUBSTITUTE_INSERT_RULE_ID = (
     "uk_effect_metadata_carried_at_end_substitute_insert_text_patch"
 )
+UK_METADATA_CARRIED_AT_END_ADD_INSERT_RULE_ID = (
+    "uk_effect_metadata_carried_at_end_add_insert_text_patch"
+)
 UK_METADATA_CARRIED_RANGE_INSERT_SUBSTITUTION_RULE_ID = (
     "uk_effect_metadata_carried_range_insert_substitution_text_patch"
 )
@@ -611,6 +614,36 @@ def append_basic_text_rewrite_observations(
                     "the source phrase says at the end of the target substitute "
                     "quoted words; lowering preserves this as an owned TEXT_END "
                     "insert rather than silently changing the action family."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": "TEXT_END",
+                    "canonical_text_match": "TEXT_END",
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "occurrence": 0,
+                },
+            )
+    if UK_METADATA_CARRIED_AT_END_ADD_INSERT_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if (
+                str(fragment.get("rule_id") or "")
+                != UK_METADATA_CARRIED_AT_END_ADD_INSERT_RULE_ID
+            ):
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_METADATA_CARRIED_AT_END_ADD_INSERT_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="effect_metadata_insert_at_end_add_source",
+                reason=(
+                    "UK effect metadata classifies the row as inserted words and "
+                    "the source phrase gives an explicit at-end add boundary; "
+                    "lowering preserves this as an owned TEXT_END insert scoped "
+                    "to the affected target."
                 ),
                 effect=effect,
                 extracted_el=extracted_el,
