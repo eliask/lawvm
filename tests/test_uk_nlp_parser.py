@@ -2612,6 +2612,21 @@ def test_parse_fragment_substitution_handles_wherever_it_appears() -> None:
     ]
 
 
+def test_parse_fragment_substitution_handles_each_time_it_appears() -> None:
+    subs = parse_fragment_substitution(
+        "a in subsections (1) to (4), for \u201clisting rules\u201d each time it appears "
+        "substitute \u201cPart 6 rules\u201d;"
+    )
+
+    assert subs == [
+        {
+            "original": "listing rules",
+            "replacement": "Part 6 rules",
+            "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_tolerates_extra_quote_after_in_both_places() -> None:
     subs = parse_fragment_substitution(
         "i for \u201cPart 8\u201d in both places where it occurs\u201d substitute \u201cPart 5A\u201d ;"

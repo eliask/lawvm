@@ -55247,6 +55247,70 @@ def test_compile_source_parent_after_anchor_payload_requires_matching_target_lea
     )
 
 
+def test_compile_each_time_it_appears_range_substitution_lowers_each_target() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-1-paragraph-10-a">
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>in subsections (1) to (4), for \u201clisting rules\u201d each time
+            it appears substitute \u201cPart 6 rules\u201d;</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_each_time_it_appears_range_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-07-01",
+        affected_uri="/id/ukpga/2000/8/section/101/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="8",
+        affected_provisions="s. 101(1)-(4)",
+        affecting_uri="/id/uksi/2005/381",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2005",
+        affecting_number="381",
+        affecting_provisions="Sch. 1 para. 10(a)",
+        affecting_title="Prospectus Regulations 2005",
+        in_force_dates=[{"date": "2005-07-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        source_root,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 4
+    assert [op.target.path for op in ops] == [
+        (("section", "101"), ("subsection", "1")),
+        (("section", "101"), ("subsection", "2")),
+        (("section", "101"), ("subsection", "3")),
+        (("section", "101"), ("subsection", "4")),
+    ]
+    assert all(op.action is StructuralAction.TEXT_REPLACE for op in ops)
+    assert all(op.text_patch is not None for op in ops)
+    assert all(op.text_patch.selector.match_text == "listing rules" for op in ops if op.text_patch is not None)
+    assert all(_required_text_patch_replacement(op) == "Part 6 rules" for op in ops)
+    assert all(
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_all_occurrences_substitution_text_patch"
+        in op.provenance_tags
+        for op in ops
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_all_occurrences_substitution_text_patch"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_source_parent_table_insert_at_end_text_payload_stays_blocked() -> None:
     source_root = ET.fromstring(
         f"""

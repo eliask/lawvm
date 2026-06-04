@@ -190,6 +190,13 @@ _WHEREVER_EXCEPT_CHILD_SUBSTITUTED_RE = re.compile(
     rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
     re.I,
 )
+_EACH_TIME_IT_APPEARS_SUBSTITUTION_RE = re.compile(
+    rf"for\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’],?\s+"
+    r"each\s+time\s+(?:it|they|that\s+word|those\s+words?)\s+"
+    r"(?:appears?|occurs?),?\s+substitute\s+"
+    rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+    re.I,
+)
 _PASSIVE_QUOTED_SUBSTITUTED_RE = re.compile(
     rf"for\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’],?\s+"
     r"there\s+(?:is|are|shall\s+be)\s+substituted\s+"
@@ -1139,6 +1146,15 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
                     occurrence="0",
                 )
             )
+        )
+
+    for m in _EACH_TIME_IT_APPEARS_SUBSTITUTION_RE.finditer(text):
+        subs.append(
+            {
+                "original": m.group("original").strip(),
+                "replacement": m.group("replacement").strip(),
+                "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+            }
         )
 
     for m in _PASSIVE_QUOTED_SUBSTITUTED_RE.finditer(text):
