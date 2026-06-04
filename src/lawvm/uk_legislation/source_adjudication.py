@@ -2351,6 +2351,23 @@ def _has_source_parent_heading_substitution_context(
     return False
 
 
+def _has_source_parent_grouped_repeal_context(
+    lowering_rows: Iterable[dict[str, Any]],
+) -> bool:
+    for row in lowering_rows:
+        if (
+            str(row.get("rule_id") or "")
+            != "uk_effect_source_payload_without_instruction_context_rejected"
+        ):
+            continue
+        parent_preview = " ".join(
+            str(row.get("source_parent_context_preview") or "").lower().split()
+        )
+        if "following are repealed" in parent_preview:
+            return True
+    return False
+
+
 def classify_uk_manual_compile_frontier(  # noqa: PLR0913
     *,
     effect_type: str,
@@ -2511,6 +2528,22 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
                 "source parent supplies a complete substitution instruction for "
                 "the headings referred to; a heading-facet claim or compiler must "
                 "prove the exact facet carrier before replay."
+            ),
+        }
+
+    if (
+        source_pathology_norm == "fragment_context_missing"
+        and "repeal" in effect_type_norm
+        and _has_source_parent_grouped_repeal_context(lowering_rows)
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_parser_or_extraction_candidate",
+            "reason": (
+                "The extracted child source is only a grouped-repeal payload "
+                "fragment, but the source parent supplies the repeal action; a "
+                "claim or future parser must prove the exact child target and "
+                "repeal boundary before replay."
             ),
         }
 

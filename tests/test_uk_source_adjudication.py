@@ -1298,6 +1298,63 @@ def test_classify_uk_manual_compile_frontier_does_not_infer_heading_without_pare
     assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
 
 
+def test_classify_uk_manual_compile_frontier_uses_parent_grouped_repeal_context() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words repealed",
+        source_pathology="fragment_context_missing",
+        extracted_tag="P3",
+        extracted_text=(
+            "j in Part 2 of Schedule 3 to the Local Government Act 1966, "
+            "paragraphs 1 and 4, and, in the second column, the reference to "
+            "the Treasury;"
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": (
+                    "uk_effect_source_payload_without_instruction_context_rejected"
+                ),
+                "blocking": True,
+                "source_parent_id": "schedule-paragraph-1",
+                "source_parent_context_preview": "The following are repealed-",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_does_not_infer_grouped_repeal_without_parent_repeal_context() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words repealed",
+        source_pathology="fragment_context_missing",
+        extracted_tag="P3",
+        extracted_text=(
+            "j in Part 2 of Schedule 3 to the Local Government Act 1966, "
+            "paragraphs 1 and 4;"
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": (
+                    "uk_effect_source_payload_without_instruction_context_rejected"
+                ),
+                "blocking": True,
+                "source_parent_id": "schedule-paragraph-1",
+                "source_parent_context_preview": "The following enactments are amended-",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "source_insufficient"
+    assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
+
+
 def test_classify_uk_manual_compile_frontier_marks_broad_schedule_flat_payload_source_insufficient() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="substituted",
