@@ -179,21 +179,25 @@ def _resolve_branch(
                 return None
             fa = Farchive(str(fa_path))
             loc = f"akn/fi/doc/government-proposal/{he_year}/{he_number}/fin@/main.xml"
-            try:
-                span = fa.resolve(loc)
-                if span is not None:
-                    blob = fa.read(span)
-                    meta = fa.meta(span) or {}
-                    he_id = meta.get("he_id", f"HE {he_number}/{he_year}")
-                    fa.close()
-                    return parse_he_branch(
-                        blob,
-                        he_year=he_year,
-                        he_number=he_number,
-                        he_id=he_id,
-                    )
-            except Exception:
-                pass
+            blob = fa.get(loc)
+            if blob is None:
+                fa.close()
+                return None
+            # Read acquisition metadata (he_id is in last_metadata on the
+            # StateSpan record). Fall back to constructed he_id if missing.
+            span = fa.resolve(loc)
+            he_id = ""
+            if span is not None and span.last_metadata:
+                he_id = span.last_metadata.get("he_id", "")
+            if not he_id:
+                he_id = f"HE {he_number}/{he_year}"
+            fa.close()
+            return parse_he_branch(
+                blob,
+                he_year=he_year,
+                he_number=he_number,
+                he_id=he_id,
+            )
             fa.close()
 
     return None
