@@ -174,11 +174,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_sections_text.py",
         "test_inline_citation.py",
         "test_preparatory_reference.py",
-        # manual claims slices 1+2
+        # manual claims slices 1+2+3
         "test_cmd_claim.py",
         "test_inline_statute_resolution.py",
         "test_manual_claims_primitive.py",
         "test_manual_claims_storage.py",
+        "test_manual_claims_slice3.py",
     ),
     "evidence_claims": (
         "test_evidence.py",

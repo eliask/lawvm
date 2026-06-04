@@ -38,6 +38,11 @@ class ClaimKindSpec:
     entailment_validator: Optional[Callable[[object, object], "ValidationResult"]]
     """Deterministic entailment validator. None if not implemented yet."""
 
+    is_semantic_compilation_claim: bool = False
+    """True for kinds that imply replay/projection mutation (BRANCH_OP_SET,
+    TARGET_SELECTION, substrate body atoms). These require replay_authorized=True
+    per §6 of UNIFIED_MANUAL_CLAIMS_DESIGN.md. INLINE_STATUTE_RESOLUTION is False."""
+
 
 @dataclass(frozen=True, slots=True)
 class ValidationResult:

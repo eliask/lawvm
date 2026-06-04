@@ -1,0 +1,29 @@
+# claim_precedence.yaml — operator-authored precedence rules for claim composition.
+#
+# Per UNIFIED_MANUAL_CLAIMS_DESIGN.md §5:
+#   Precedence is by claim layer + validator status + source-witness type.
+#   NOT by "human is more authoritative than source law".
+#
+# Each rule has:
+#   layer:     substrate | extraction | correction | adjudication
+#   rule:      human-readable ordering rule
+#   rationale: why this ordering makes sense
+#
+# This file is loaded by precedence.py at composition time.
+# Hard fail if absent or malformed.
+
+- layer: substrate
+  rule: "FINLEX_CORRIGENDUM > FINLEX_AKN > EXTERNAL_ARCHIVAL > OPERATOR_FILING > LLM_PROPOSAL"
+  rationale: "published corrections are authoritative source artifacts"
+
+- layer: extraction
+  rule: "validator_status=entailment_verified > span_verified > migration_revalidated > unvalidated"
+  rationale: "validation rigor, not who produced the claim"
+
+- layer: correction
+  rule: "(validator_status=entailment_verified AND review_status=human_reviewed) only"
+  rationale: "overriding deterministic source requires both validation AND review"
+
+- layer: adjudication
+  rule: "first accepted classification stands; subsequent attempts are dispute claims"
+  rationale: "classification records the disagreement; auto-resolution forbidden"

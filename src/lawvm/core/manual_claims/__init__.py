@@ -38,6 +38,15 @@ from lawvm.core.manual_claims.kind_registry import (
     register_claim_kind,
 )
 
+
+from lawvm.core.manual_claims.composer import derive_composition_decision
+from lawvm.core.manual_claims.precedence import (
+    AmbiguousClaimSet,
+    LayerPrecedenceRule,
+    PrecedenceRegistry,
+    load_precedence_registry,
+    resolve_precedence,
+)
 __all__ = [
     "ClaimCompositionDecision",
     "ClaimConfidence",
@@ -60,4 +69,10 @@ __all__ = [
     "get_claim_kind_spec",
     "list_registered_kinds",
     "register_claim_kind",
+    "AmbiguousClaimSet",
+    "LayerPrecedenceRule",
+    "PrecedenceRegistry",
+    "derive_composition_decision",
+    "load_precedence_registry",
+    "resolve_precedence",
 ]

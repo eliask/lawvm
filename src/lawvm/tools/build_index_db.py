@@ -21,6 +21,7 @@ from lawvm.tools.tier2_state import (
     DEFAULT_SCHEMA_VERSION,
     tier2_dir,
 )
+from lawvm.core.manual_claims.primitive import ProfileTag
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +109,45 @@ def _build_fts_index(con: Any, table_name: str, text_column: str) -> bool:
         return False
 
 
+
+# ---------------------------------------------------------------------------
+# Cross-profile join detection
+# ---------------------------------------------------------------------------
+
+
+def _detect_cross_profile_joins(parquets: List[Path]) -> Optional[str]:
+    """Return a warning message if parquets with different profiles are attached.
+
+    Scans parquet metadata for lawvm.claim_profile. Returns None if all profiles
+    match or no profiles are set. Returns a warning string if profiles differ.
+    """
+    try:
+        import pyarrow.parquet as pq  # ty: ignore[unresolved-import]
+    except ImportError:
+        return None
+
+    profiles: Dict[str, str] = {}
+    for p in parquets:
+        try:
+            meta = pq.read_metadata(str(p))
+            schema_meta = meta.metadata or {}
+            profile_bytes = schema_meta.get(b"lawvm.claim_profile")
+            if profile_bytes is not None:
+                profiles[p.name] = profile_bytes.decode()
+        except Exception:
+            continue
+
+    unique_profiles = set(profiles.values())
+    if len(unique_profiles) <= 1:
+        return None
+
+    detail = ", ".join(f"{name}={prof}" for name, prof in sorted(profiles.items()))
+    return (
+        f"WARNING: cross-profile JOIN detected — files have different claim_profiles. "
+        f"Results may mix deterministic and claim-derived rows. Profiles: {detail}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Main build logic
 # ---------------------------------------------------------------------------
@@ -121,6 +161,7 @@ def build_index_db(
     build_fts: bool = False,
     schema_version: str = DEFAULT_SCHEMA_VERSION,
     verbose: bool = False,
+    profile: Optional[ProfileTag] = None,
 ) -> Dict[str, Any]:
     """Compose Tier 2 Parquets into a single DuckDB .db file.
 
@@ -135,11 +176,24 @@ def build_index_db(
         build_fts:      If True, build DuckDB FTS indexes on text columns.
         schema_version: Parquet namespace version.
         verbose:        Print per-table progress.
+        profile:        REQUIRED. ProfileTag for the build. Refuses to emit
+                        without a profile tag (§14 adversary defense).
 
     Returns:
         Summary dict: {out_db, views_created, fts_indexed, elapsed}.
     """
     duckdb = _require_duckdb()
+
+    # §14 adversary defense: REFUSE to build without profile metadata
+    if profile is None:
+        print(
+            "error: --profile is required for build-index-db.\n"
+            "Specify one of: deterministic_only, strict_with_attested_claims, "
+            "non_strict_with_claims\n"
+            "Example: lawvm build-index-db --profile deterministic_only",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     t2_dir = tier2_dir(
         data_dir=data_dir,
@@ -223,12 +277,29 @@ def build_index_db(
                         "(column absent or extension unavailable)"
                     )
 
+    # Write lawvm_meta single-row table (profile sticky, §14)
+    from datetime import datetime, timezone
+    build_ts = datetime.now(tz=timezone.utc).isoformat()
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS lawvm_meta (profile_tag VARCHAR, build_timestamp VARCHAR)")
+        con.execute(
+            "INSERT INTO lawvm_meta VALUES (?, ?)",
+            [profile.value, build_ts],
+        )
+    except Exception as e:
+        print(f"  warning: could not write lawvm_meta table: {e}", file=sys.stderr)
+
+    # Cross-profile join detection (§14)
+    cross_warn = _detect_cross_profile_joins(parquets)
+    if cross_warn:
+        print(cross_warn, file=sys.stderr)
+
     con.close()
     elapsed = time.time() - t_start
 
     print(
         f"\nDone: {len(views_created)} views, {len(fts_indexed)} FTS indexes "
-        f"in {elapsed:.1f}s -> {out_path}"
+        f"in {elapsed:.1f}s -> {out_path} (profile={profile.value})"
     )
 
     return {
@@ -236,6 +307,7 @@ def build_index_db(
         "views_created": views_created,
         "fts_indexed": fts_indexed,
         "elapsed": elapsed,
+        "profile": profile.value,
     }
 
 
@@ -252,6 +324,23 @@ def main(args: Any) -> None:
     build_fts = getattr(args, "fts", False)
     schema_version = getattr(args, "schema_version", None) or DEFAULT_SCHEMA_VERSION
     verbose = getattr(args, "verbose", False)
+    profile_str = getattr(args, "profile", None)
+
+    profile: Optional[ProfileTag]
+    if profile_str:
+        try:
+            profile = ProfileTag(profile_str)
+        except ValueError:
+            valid = [t.value for t in ProfileTag]
+            print(
+                f"error: invalid --profile value {profile_str!r}. "
+                f"Valid values: {valid}",
+                file=sys.stderr,
+            )
+            import sys as _sys
+            _sys.exit(1)
+    else:
+        profile = None  # will be caught inside build_index_db
 
     build_index_db(
         jurisdiction=jurisdiction,
@@ -260,4 +349,5 @@ def main(args: Any) -> None:
         build_fts=build_fts,
         schema_version=schema_version,
         verbose=verbose,
+        profile=profile,
     )
