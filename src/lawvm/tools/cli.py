@@ -8335,6 +8335,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "--claim-store-root", dest="claim_store_root", metavar="PATH", default=None,
         help="write claims to this directory instead of data_dir/manual_claims (smoke-run isolation)",
     )
+    propose_claims_p.add_argument(
+        "--frontier-source",
+        dest="frontier_source",
+        choices=["inline_citations", "fi_refs"],
+        default="inline_citations",
+        help=(
+            "which parquet to scan for unresolved rows (default: inline_citations). "
+            "inline_citations: fi_inline_citations.parquet NULL canonical_id rows. "
+            "fi_refs: fi_refs.parquet NULL target_statute_id rows (legacy; returns 0 rows on real corpus)."
+        ),
+    )
 
     # validate-claims (Slice 4) — top-level command
     validate_claims_p = sub.add_parser(

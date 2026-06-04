@@ -180,6 +180,22 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_manual_claims_primitive.py",
         "test_manual_claims_storage.py",
         "test_manual_claims_slice3.py",
+        # manual claims slice 4 + source provider + frontier scan + corpus check
+        "test_corpus_existence_check.py",
+        "test_frontier_scan_inline_citations.py",
+        "test_inline_statute_resolution_canonicalization.py",
+        "test_proposal_backend.py",
+        "test_propose_claims_cli.py",
+        "test_provision_ref_locator.py",
+        "test_qwen_local_backend.py",
+        "test_retraction_lifecycle.py",
+        "test_source_provider.py",
+        "test_taint_report.py",
+        "test_validate_claims_cli.py",
+        # locator + section resolver
+        "test_core_locator.py",
+        "test_finland_section_resolver.py",
+        "test_oracle_text.py",
     ),
     "evidence_claims": (
         "test_evidence.py",

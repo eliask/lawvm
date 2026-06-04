@@ -15,9 +15,14 @@ import lawvm.finland.claim_kinds  # noqa: F401 — activate claim kind registry
 
 from lawvm.finland.claim_kinds.inline_statute_resolution import (
     _canonicalize_finnish_statute_id,
+    _make_entailment_validator,
     _validate_entailment,
     validate_entailment,
 )
+
+# Validator without corpus check for canonicalization unit tests.
+# These tests exercise citation-pattern parsing and year expansion, not corpus lookup.
+_validate_entailment_no_corpus = _make_entailment_validator(check_corpus_existence=False)
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +93,8 @@ class _FakeClaim:
 
 def test_entailment_validator_accepts_canonicalized_legacy_form():
     """Span contains '(361/72)', LLM proposes resolved_statute_id='361/72'.
-    validate_entailment canonicalizes and accepts; canonical form is used for check.
+    Validator canonicalizes and accepts; citation-pattern check uses canonical form.
+    Uses no-corpus-check variant because this test exercises canonicalization only.
     """
     span_text = b"Luonnonsuojelulain (361/72) mukaisesti..."
     claim = _FakeClaim(
@@ -96,14 +102,14 @@ def test_entailment_validator_accepts_canonicalized_legacy_form():
         citation_form="(361/72)",
         span_bytes=span_text,
     )
-    result = validate_entailment(claim, span_text)
+    result = _validate_entailment_no_corpus(claim, span_text)
     assert result.passed, f"Expected pass but got: {result.reason}"
     assert result.validator_name == "entailment_verified"
 
 
 def test_entailment_validator_accepts_already_canonical():
     """Span contains '(587/2011)', LLM proposes resolved_statute_id='587/2011'.
-    Validator accepts unchanged.
+    Validator accepts unchanged. Uses no-corpus-check variant (citation-pattern test only).
     """
     span_text = b"Viitaten lakiin (587/2011) pykala 3..."
     claim = _FakeClaim(
@@ -111,7 +117,7 @@ def test_entailment_validator_accepts_already_canonical():
         citation_form="(587/2011)",
         span_bytes=span_text,
     )
-    result = validate_entailment(claim, span_text)
+    result = _validate_entailment_no_corpus(claim, span_text)
     assert result.passed, f"Expected pass but got: {result.reason}"
 
 

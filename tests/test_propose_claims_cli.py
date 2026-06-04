@@ -387,7 +387,7 @@ def test_propose_claims_respects_limit(tmp_path: Path, monkeypatch):
     register_source_provider("fi", MockSourceProvider())
 
     # Monkeypatch frontier scanner to return 10 synthetic rows
-    def _fake_scan(data_dir, claim_kind):
+    def _fake_scan(data_dir, claim_kind, *, frontier_source=None):
         return [_make_frontier_row(f"{i}/2022") for i in range(1000, 1010)]
 
     monkeypatch.setattr(
