@@ -3125,6 +3125,42 @@ def test_run_driver_can_fail_on_frontier_candidate_set_gaps(
     assert "manual_frontier_work_item_candidate_set_status_counts: partial=1" in out
 
 
+def test_run_driver_can_fail_on_frontier_target_resolution_gaps(
+    monkeypatch,
+    capsys,
+) -> None:
+    def fake_run(*_args, **_kwargs):
+        row = {
+            "statute_id": "ukpga/2008/17",
+            "score_status": "scored",
+            "aligned": 86.0,
+            "aligned_excluding_grounding_collateral": 86.0,
+            "unaligned": 86.0,
+            "n_replay": 100,
+            "n_oracle": 110,
+            "manual_frontier_work_item_target_resolution_status_counts": {
+                "unresolved": 1,
+            },
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["ukpga/2008/17"],
+            None,
+            fail_on_frontier_target_resolution_gaps=True,
+        )
+        == 1
+    )
+    out = capsys.readouterr().out
+    assert (
+        "manual_frontier_work_item_target_resolution_status_counts: unresolved=1"
+        in out
+    )
+
+
 def test_run_driver_can_fail_on_completion_gaps(
     monkeypatch,
     capsys,
