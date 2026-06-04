@@ -127,6 +127,7 @@ _REPLAY_LENS_FRONTIER_REASONS = frozenset(
 _OFFICIAL_EMPTY_EFFECT_FEED_FRONTIER_REASONS = frozenset(
     {
         "effect_feed_empty",
+        "effect_feed_pages_absent",
     }
 )
 _SOURCE_OR_ORACLE_PATHOLOGY_FRONTIER_REASONS = frozenset(
@@ -1116,6 +1117,8 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
         return "grounding_dominated_residual"
     if _is_manual_compile_frontier_residual(row):
         return "manual_compile_frontier_residual"
+    if _is_temporal_commencement_frontier(row):
+        return "temporal_commencement_frontier"
     if int(row.get("n_retained_repeal_oracle_targets") or 0) > 0:
         return "retained_repeal_oracle_branch"
     if _is_compile_rejection_dominated_residual(row):
@@ -1188,6 +1191,7 @@ def _agreement_residual_family(bucket: str) -> str:
         "no_compiled_ops_frontier",
         "no_effect_rows_frontier",
         "nonreplay_effect_frontier",
+        "temporal_commencement_frontier",
     }:
         return "source_footing_gap"
     if bucket == "manual_compile_frontier_residual":
@@ -1253,6 +1257,7 @@ def _agreement_residual_owner_phase(bucket: str) -> str:
         "effect_feed_absent_frontier",
         "no_effect_rows_frontier",
         "nonreplay_effect_frontier",
+        "temporal_commencement_frontier",
     }:
         return UK_PHASE_EFFECT_METADATA_FRONTEND
     if bucket == "manual_compile_frontier_residual":
@@ -1283,6 +1288,8 @@ def _agreement_residual_missing_proofs(
         "no_compiled_ops_frontier",
     }:
         proofs.append("source_identity")
+    if bucket == "temporal_commencement_frontier":
+        proofs.append("temporal_extent_applicability")
     if bucket in {
         "base_metadata_only_frontier",
         "zero_oracle_retention",
@@ -1387,6 +1394,22 @@ def _has_empty_effect_feed_record(row: dict[str, Any]) -> bool:
     if not isinstance(counts, dict):
         return False
     return int(counts.get("uk_effect_feed_empty_recorded") or 0) > 0
+
+
+def _is_temporal_commencement_frontier(row: dict[str, Any]) -> bool:
+    counts = row.get("compile_rejection_rule_counts") or {}
+    if not isinstance(counts, dict):
+        return False
+    temporal_count = int(counts.get("uk_effect_undated_applied_si_commencement_date") or 0)
+    if temporal_count <= 0:
+        return False
+    other_counts = {
+        str(rule_id): int(count or 0)
+        for rule_id, count in counts.items()
+        if str(rule_id) != "uk_effect_undated_applied_si_commencement_date"
+        and int(count or 0) > 0
+    }
+    return not other_counts
 
 
 def _has_missing_structural_payload_record(row: dict[str, Any]) -> bool:

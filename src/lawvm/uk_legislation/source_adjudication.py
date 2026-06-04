@@ -263,14 +263,14 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "The feed target is broader than the source-carried child targets; compile must split the text rewrite by the named child units rather than mutate the whole parent.",
     ),
     "source_carried_child_tail_text_rewrite_unsupported": _ManualFrontierClassification(
-        "deterministic_frontend_candidate",
+        "manual_compile_candidate",
         "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate",
-        "The source targets the text tail following a named child; compile must own a bounded child-tail selector rather than delete from the whole parent text.",
+        "The source targets the text tail following a named child; a claim or future compiler must own a bounded child-tail selector rather than delete from the whole parent text.",
     ),
     "source_carried_structured_tail_substitution_unsupported": _ManualFrontierClassification(
-        "deterministic_frontend_candidate",
+        "manual_compile_candidate",
         "uk_manual_frontier_source_carried_structured_tail_substitution_candidate",
-        "The source substitutes a tail range with visibly structured child material; compile must preserve the carried child structure instead of flattening it into host text.",
+        "The source substitutes a tail range with visibly structured child material; a claim or future compiler must preserve the carried child structure instead of flattening it into host text.",
     ),
     "relative_other_place_occurrence_unsupported": _ManualFrontierClassification(
         "deterministic_frontend_candidate",
@@ -2804,9 +2804,9 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
         and _looks_like_structural_child_range_substitution_instruction(extracted_text_norm)
     ):
         return {
-            "status": "deterministic_frontend_candidate",
+            "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_structural_child_range_substitution_candidate",
-            "reason": "The source substitutes a structural child range such as paragraphs (a) and (b); a future compiler must own the removed children, replacement payload shape, and any connector/tail semantics instead of lowering it as a word-level text patch.",
+            "reason": "The source substitutes a structural child range such as paragraphs (a) and (b); a claim or future compiler must own the removed children, replacement payload shape, and any connector/tail semantics instead of lowering it as a word-level text patch.",
         }
 
     if (
@@ -2896,9 +2896,9 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
         )
     ):
         return {
-            "status": "deterministic_frontend_candidate",
+            "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_parser_or_extraction_candidate",
-            "reason": "The source still contains explicit instruction text; prefer deterministic parser or extraction work before manual claims.",
+            "reason": "The source still contains explicit instruction text; a semantic compile claim or future parser must identify the exact preimage, payload, target scope, and mutation boundary before replay.",
         }
 
     if (

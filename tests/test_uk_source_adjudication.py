@@ -1423,7 +1423,7 @@ def test_classify_uk_manual_compile_frontier_marks_source_carried_child_tail_tex
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate"
@@ -1447,7 +1447,7 @@ def test_classify_uk_manual_compile_frontier_marks_structured_tail_substitution(
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_source_carried_structured_tail_substitution_candidate"
@@ -1521,7 +1521,7 @@ def test_classify_uk_manual_compile_frontier_marks_missing_payload_source_insuff
     assert result["rule_id"] == "uk_manual_frontier_missing_payload_source_insufficient"
 
 
-def test_classify_uk_manual_compile_frontier_prefers_deterministic_parser_work() -> None:
+def test_classify_uk_manual_compile_frontier_marks_parser_gap_manual() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",
         source_pathology="unhandled_instruction_text",
@@ -1538,7 +1538,7 @@ def test_classify_uk_manual_compile_frontier_prefers_deterministic_parser_work()
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
 
 
@@ -1818,7 +1818,7 @@ def test_classify_uk_manual_compile_frontier_keeps_action_fragment_with_parser_w
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
 
 
@@ -2945,7 +2945,7 @@ def test_classify_uk_manual_compile_frontier_marks_structural_child_range_substi
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_structural_child_range_substitution_candidate"
 
 
@@ -2966,7 +2966,7 @@ def test_classify_uk_manual_compile_frontier_marks_active_structural_child_range
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_structural_child_range_substitution_candidate"
 
 
@@ -2990,7 +2990,7 @@ def test_classify_uk_manual_compile_frontier_marks_to_range_definition_child_sub
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_structural_child_range_substitution_candidate"
 
 

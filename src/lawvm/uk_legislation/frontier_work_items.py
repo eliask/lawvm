@@ -156,6 +156,38 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_declared_crossheading_target",
         ),
     },
+    "uk_manual_frontier_cross_container_renumber_candidate": {
+        "candidate_operation_family": "cross_container_renumber",
+        "required_validator_checks": (
+            "source_witness_names_original_and_new_container_context",
+            "claim_identifies_each_renumbered_or_migrated_unit",
+            "claim_preserves_unclaimed_container_children",
+            "claim_emits_lineage_for_changed_identities",
+            "changed_paths_are_within_declared_cross_container_boundary",
+        ),
+    },
+    "uk_manual_frontier_definition_child_structural_substitution_candidate": {
+        "candidate_operation_family": "definition_child_structural_substitution",
+        "required_validator_checks": (
+            "source_witness_names_definition_child_and_replacement_payload",
+            "claim_identifies_exact_definition_child_node",
+            "claim_materializes_replacement_payload_as_child_units_not_flat_text",
+            "claim_preserves_unclaimed_definition_children_and_tail_text",
+            "changed_paths_are_within_claimed_definition_child_boundary",
+        ),
+    },
+    "uk_manual_frontier_definition_child_structural_insert_candidate": {
+        "candidate_operation_family": "definition_child_structural_insert",
+        "required_validator_checks": (
+            "source_witness_names_definition_child_anchor_and_insert_payload",
+            "claim_identifies_definition_term_scope",
+            "claim_identifies_anchor_definition_child_identity",
+            "claim_materializes_inserted_payload_as_structural_child_units",
+            "claim_identifies_existing_tail_connector_surface",
+            "claim_owns_connector_migration_or_preservation_rule",
+            "changed_paths_are_within_claimed_definition_child_insert_boundary",
+        ),
+    },
     "uk_manual_frontier_heading_facet_candidate": {
         "candidate_operation_family": "facet_text_rewrite",
         "required_validator_checks": (
@@ -196,6 +228,16 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "source_witness_contains_only_non_substantive_payload",
             "complete_operative_instruction_or_payload_witness_is_available",
             "claim_blocks_replay_until_substantive_payload_is_proved",
+        ),
+    },
+    "uk_manual_frontier_parser_or_extraction_candidate": {
+        "candidate_operation_family": "parser_or_extraction_gap",
+        "required_validator_checks": (
+            "source_witness_contains_complete_operative_instruction",
+            "compiler_or_claim_identifies_exact_text_or_structural_preimage",
+            "compiler_or_claim_identifies_exact_replacement_or_inserted_payload",
+            "target_scope_is_the_effect_target_or_source_named_descendant_only",
+            "changed_paths_are_within_declared_target_and_payload_boundaries",
         ),
     },
     "uk_manual_frontier_nested_definition_child_structural_substitution_candidate": {
@@ -276,6 +318,16 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_claimed_child_target_boundaries",
         ),
     },
+    "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate": {
+        "candidate_operation_family": "source_carried_child_tail_text_rewrite",
+        "required_validator_checks": (
+            "source_witness_names_the_child_anchor_and_tail_scope",
+            "claim_targets_only_the_tail_text_following_that_child",
+            "claim_text_preimage_matches_the_declared_tail_surface",
+            "claim_preserves_child_body_and_unclaimed_parent_text",
+            "changed_paths_are_within_declared_child_tail_boundary",
+        ),
+    },
     "uk_manual_frontier_source_carried_structured_tail_substitution_candidate": {
         "candidate_operation_family": "source_carried_structured_tail_substitution",
         "required_validator_checks": (
@@ -302,6 +354,16 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_blocks_replay_until_instruction_context_is_proved",
         ),
     },
+    "uk_manual_frontier_structural_child_range_substitution_candidate": {
+        "candidate_operation_family": "structural_child_range_substitution",
+        "required_validator_checks": (
+            "source_witness_names_child_range_and_replacement_payload",
+            "claim_identifies_each_removed_child_unit",
+            "claim_materializes_replacement_payload_as_child_units_not_flat_text",
+            "claim_preserves_unclaimed_child_units_and_parent_text",
+            "changed_paths_are_within_claimed_child_range_boundary",
+        ),
+    },
     "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate": {
         "candidate_operation_family": "definition_entry_insert",
         "required_validator_checks": (
@@ -311,6 +373,15 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "target_subtree_contains_definition_list_surface",
             "inserted_term_is_not_already_present_in_target_at_effective_preimage",
             "changed_paths_remain_inside_claimed_interpretation_target",
+        ),
+    },
+    "uk_manual_frontier_structural_pseudo_definition_source_insufficient": {
+        "candidate_operation_family": "source_acquisition_or_payload_extraction",
+        "required_validator_checks": (
+            "effect_metadata_names_pseudo_definition_target",
+            "official_source_witness_contains_definition_payload_or_instruction",
+            "claim_blocks_replay_until_source_payload_is_available",
+            "claim_blocks_replay_until_target_identity_is_proved",
         ),
     },
     "uk_manual_frontier_table_entry_candidate": {

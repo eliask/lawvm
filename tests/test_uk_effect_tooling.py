@@ -410,6 +410,10 @@ def test_uk_manual_claim_template_status_only_labels_actionable_rows() -> None:
         ),
         ("uk_manual_frontier_crossheading_candidate", "crossheading_text_rewrite"),
         (
+            "uk_manual_frontier_definition_child_structural_insert_candidate",
+            "definition_child_structural_insert",
+        ),
+        (
             "uk_manual_frontier_external_act_target_out_of_scope",
             "non_textual_or_out_of_scope",
         ),
@@ -777,9 +781,9 @@ def test_uk_manual_compile_evidence_jsonl_templates_parser_or_extraction_gap() -
                 "for paragraph (b) (Regulator's consent) substitute— "
                 "b Notification of regulator ;"
             ),
-            manual_compile_status="deterministic_frontend_candidate",
+            manual_compile_status="manual_compile_candidate",
             manual_compile_rule_id="uk_manual_frontier_parser_or_extraction_candidate",
-            manual_compile_reason="Deterministic parser or extraction work remains.",
+            manual_compile_reason="Parser or extraction work requires an explicit claim or compiler.",
             manual_compile_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
             manual_compile_blocking_lowering_rule_ids=(
                 "uk_effect_overlap_substitution_unlowered",
@@ -5516,7 +5520,7 @@ def test_uk_manual_compile_evidence_jsonl_templates_structural_child_range_subst
             affecting_source_status="available",
             affecting_source_size=123,
             affecting_source_sha256="affecting-sha",
-            manual_compile_status="deterministic_frontend_candidate",
+            manual_compile_status="manual_compile_candidate",
             manual_compile_rule_id=(
                 "uk_manual_frontier_structural_child_range_substitution_candidate"
             ),
@@ -6063,7 +6067,7 @@ def test_uk_manual_compile_evidence_jsonl_templates_source_carried_frontier_clai
             affecting_source_status="available",
             affecting_source_size=123,
             affecting_source_sha256="affecting-sha",
-            manual_compile_status="deterministic_frontend_candidate",
+            manual_compile_status="manual_compile_candidate",
             manual_compile_rule_id=rule_id,
             manual_compile_reason="Source-carried target requires bounded claim.",
             manual_compile_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
@@ -6156,7 +6160,7 @@ def test_uk_manual_compile_evidence_jsonl_amendment_program_template_carries_ins
             affecting_source_status="available",
             affecting_source_size=123,
             affecting_source_sha256="affecting-sha",
-            manual_compile_status="deterministic_frontend_candidate",
+            manual_compile_status="manual_compile_candidate",
             manual_compile_rule_id="uk_manual_frontier_amendment_program_target_candidate",
             manual_compile_reason="Inserted parent needs explicit amendment-program context.",
             manual_compile_lowering_rule_ids=(
@@ -6254,7 +6258,7 @@ def test_uk_manual_compile_evidence_jsonl_amendment_program_template_carries_ins
             affecting_source_status="available",
             affecting_source_size=123,
             affecting_source_sha256="affecting-sha",
-            manual_compile_status="deterministic_frontend_candidate",
+            manual_compile_status="manual_compile_candidate",
             manual_compile_rule_id="uk_manual_frontier_amendment_program_target_candidate",
             manual_compile_reason="Inserted anchor needs explicit amendment-program context.",
             manual_compile_lowering_rule_ids=(
@@ -8005,7 +8009,7 @@ def test_uk_effect_summary_matches_post_summary_filters() -> None:
         source_acquisition_rejections=(
             {"rule_id": "uk_affecting_act_xml_missing_rejected"},
         ),
-        manual_compile_status="deterministic_frontend_candidate",
+        manual_compile_status="manual_compile_candidate",
         manual_compile_rule_id="uk_manual_frontier_parser_or_extraction_candidate",
     )
 
@@ -8028,7 +8032,7 @@ def test_uk_effect_summary_matches_post_summary_filters() -> None:
     )
     assert _effect_summary_matches_filters(
         summary,
-        manual_compile_status="deterministic_frontend_candidate",
+        manual_compile_status="manual_compile_candidate",
     )
     assert _effect_summary_matches_filters(
         summary,
@@ -8059,7 +8063,7 @@ def test_uk_effect_summary_matches_post_summary_filters() -> None:
     )
     assert not _effect_summary_matches_filters(
         summary,
-        manual_compile_status="manual_compile_candidate",
+        manual_compile_status="deterministic_frontend_candidate",
     )
     assert not _effect_summary_matches_filters(
         summary,

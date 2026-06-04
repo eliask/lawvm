@@ -614,6 +614,8 @@ def test_summarize_results_counts_effect_feed_absent_frontier() -> None:
     assert summary["source_chain_frontier_statutes"] == {
         "effect_feed_pages_absent": ["uksi/2000/1043"],
     }
+    assert summary["non_manual_source_chain_frontier_count"] == 0
+    assert summary["non_manual_source_chain_frontier_statutes"] == []
 
 
 def test_summarize_results_counts_no_effect_rows_frontier() -> None:
@@ -643,6 +645,40 @@ def test_summarize_results_counts_no_effect_rows_frontier() -> None:
     assert summary["source_chain_frontier_statutes"] == {
         "effect_rows_absent_or_unpublished": ["ukpga/1976/83"],
     }
+
+
+def test_summarize_results_classifies_temporal_commencement_frontier() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1978/9",
+                "score_status": "scored",
+                "aligned": 82.57,
+                "aligned_excluding_grounding_collateral": 82.57,
+                "unaligned": 80.73,
+                "n_grounding_collateral": 0,
+                "n_replay": 90,
+                "n_oracle": 109,
+                "n_only_in_oracle": 19,
+                "n_only_in_replayed": 0,
+                "n_effects": 1,
+                "n_ops": 1,
+                "compile_rejection_rule_counts": {
+                    "uk_effect_undated_applied_si_commencement_date": 1,
+                },
+                "manual_frontier_status_counts": {
+                    "deterministic_frontend_supported": 1,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"temporal_commencement_frontier": 1}
+    assert summary["agreement_residual_family_counts"] == {"source_footing_gap": 1}
+    assert summary["agreement_residual_owner_phase_counts"] == {
+        "effect_metadata_frontend": 1
+    }
+    assert summary["active_unclassified_residual_count"] == 0
 
 
 def test_summarize_results_counts_empty_effect_feed_frontier() -> None:
