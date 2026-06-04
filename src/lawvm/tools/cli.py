@@ -72,6 +72,7 @@ Subcommands:
     pit-timeline --provision REF    Provision amendment history (index-backed).
     pit-diff --provision REF        Provision diff between two PIT dates (index-backed).
     telos [--statute STATUTE_ID]    Query telos/purpose sections (feature #5).
+    claim propose|accept|reject|retract|list|show  Manual compilation claims (Slices 1+2).
 
 Usage:
     lawvm bisect 2006/1299
@@ -8180,6 +8181,101 @@ def _build_parser() -> argparse.ArgumentParser:
     efbo_p.add_argument("--dry-run", dest="dry_run", action="store_true",
                         help="parse but do not write Parquet output")
 
+    # --- claim --- (manual compilation claims, Slices 1+2)
+    claim_p = sub.add_parser(
+        "claim",
+        help="operator CLI for manual compilation claims (Slices 1+2)",
+        description=(
+            "Manage manual compilation claims: propose, accept, reject, retract, "
+            "list, and show claims. State transitions are recorded in events.jsonl. "
+            "Storage: data/fi/v1/manual_claims/ by default."
+        ),
+    )
+    claim_p.add_argument(
+        "--data-dir",
+        dest="data_dir",
+        default="data/fi/v1",
+        metavar="DIR",
+        help="base data directory (default: data/fi/v1); manual_claims/ is appended",
+    )
+    claim_sub = claim_p.add_subparsers(dest="claim_subcommand", metavar="<subcommand>")
+
+    # propose
+    claim_propose_p = claim_sub.add_parser(
+        "propose",
+        help="file a new claim from a JSON file",
+    )
+    claim_propose_p.add_argument(
+        "--claim-file", dest="claim_file", required=True, metavar="FILE",
+        help="path to claim JSON file",
+    )
+    claim_propose_p.add_argument(
+        "--validator",
+        choices=["span", "entailment", "all"],
+        default=None,
+        help="run validator(s) as part of proposal (default: none)",
+    )
+
+    # accept
+    claim_accept_p = claim_sub.add_parser(
+        "accept",
+        help="accept a proposed claim (marks review_status=human_reviewed)",
+    )
+    claim_accept_p.add_argument("claim_id", help="claim ID (full SHA-256 hex)")
+
+    # reject
+    claim_reject_p = claim_sub.add_parser(
+        "reject",
+        help="reject a proposed claim",
+    )
+    claim_reject_p.add_argument("claim_id", help="claim ID (full SHA-256 hex)")
+    claim_reject_p.add_argument("--reason", required=True, help="reason for rejection")
+
+    # retract
+    claim_retract_p = claim_sub.add_parser(
+        "retract",
+        help="retract an accepted claim (taint report is Slice 5)",
+    )
+    claim_retract_p.add_argument("claim_id", help="claim ID (full SHA-256 hex)")
+    claim_retract_p.add_argument("--reason", required=True, help="reason for retraction")
+
+    # list
+    claim_list_p = claim_sub.add_parser(
+        "list",
+        help="list claims with optional filters",
+    )
+    claim_list_p.add_argument("--kind", metavar="CLAIM_KIND",
+                               help="filter by claim kind, e.g. fi.v1.INLINE_STATUTE_RESOLUTION")
+    claim_list_p.add_argument("--layer", choices=["substrate", "extraction", "correction", "adjudication"],
+                               help="filter by claim layer")
+    claim_list_p.add_argument("--review-status", dest="review_status",
+                               choices=["proposed", "second_pass_correlated", "human_reviewed"],
+                               help="filter by review status")
+    claim_list_p.add_argument("--status",
+                               choices=["proposed", "accepted", "rejected", "retracted",
+                                        "superseded", "orphaned", "needs_revalidation"],
+                               help="filter by lifecycle status")
+
+    # show
+    claim_show_p = claim_sub.add_parser(
+        "show",
+        help="show all four records for a claim (payload, state, events, composition decisions)",
+    )
+    claim_show_p.add_argument("claim_id", help="claim ID (full SHA-256 hex)")
+
+    # validate (standalone validator re-run)
+    claim_validate_p = claim_sub.add_parser(
+        "validate",
+        help="re-run validators on an already-filed claim",
+    )
+    claim_validate_p.add_argument("claim_id", help="claim ID (full SHA-256 hex)")
+    claim_validate_p.add_argument(
+        "--validator",
+        choices=["span", "entailment", "all"],
+        default="all",
+        help="which validator(s) to run (default: all)",
+    )
+
     return parser
 
 
@@ -9356,6 +9452,13 @@ def main() -> None:
         from lawvm.tools.export_fi_he_branch_ops import main as efbo_main
 
         efbo_main(args)
+
+    elif args.command == "claim":
+        # Activate Finland claim kinds (registers fi.v1.* into core registry)
+        import lawvm.finland.claim_kinds  # noqa: F401
+        from lawvm.tools.cmd_claim import main as claim_main
+
+        claim_main(args)
 
     elif args.command is None:
         parser.print_help()
