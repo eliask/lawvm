@@ -2053,17 +2053,25 @@ def _build_live_review_bundle_one(
                 corpus_store_mode=corpus_store_mode,
                 cache_only=cache_only,
             ):
+                from lawvm.core.compile_metadata_default import build_default_compile_metadata as _build_meta
+                _live_meta = _build_meta(
+                    jurisdiction="fi",
+                    source_bundle_hash="sha256:live-review",
+                    build_id="cli.evidence.fi",
+                )
                 if oracle_only:
                     bundle = build_oracle_proof_bundle(
                         statute_id,
                         mode=mode,
                         include_bisect=include_bisect,
+                        compile_metadata=_live_meta,
                     )
                 else:
                     bundle = build_evidence_bundle(
                         statute_id,
                         mode=mode,
                         include_bisect=include_bisect,
+                        compile_metadata=_live_meta,
                     )
         if cache_path is not None:
             _write_cached_bundle(cache_path, bundle)
@@ -3340,6 +3348,13 @@ def build_evidence_bundle(
     include_version_drift: bool = False,
     compile_metadata: Optional[Any] = None,
 ) -> Dict:
+    if compile_metadata is None:
+        raise ValueError(
+            "build_evidence_bundle: CompileMetadata is required for v3 substrate-locked "
+            "persistence. Construct via build_default_compile_metadata() or "
+            "explicitly. See UNIFIED_PROVENANCE_GRAPH_DESIGN_v3.md §13 Step 5."
+        )
+
     # Build shared context once — all sub-tools use this instead of
     # independently calling replay_xml / get_ground_truth_tree / _audit_html_one.
     from lawvm.tools.evidence_context import EvidenceContext
@@ -3823,15 +3838,6 @@ def build_evidence_bundle(
     except Exception as exc:
         _evidence_context_diagnostics.append(
             _evidence_context_degradation("body_pairing", exc)
-        )
-
-    import warnings as _warnings  # noqa: PLC0415
-    if compile_metadata is None:
-        _warnings.warn(
-            "build_evidence_bundle called without compile_metadata; "
-            "evidence bundle will lack lawvm_metadata reproducibility key",
-            DeprecationWarning,
-            stacklevel=2,
         )
 
     return {
@@ -5030,8 +5036,16 @@ def build_oracle_proof_bundle(
     *,
     mode: str = "legal_pit",
     include_bisect: bool = False,
+    compile_metadata: Optional[Any] = None,
 ) -> Dict:
-    bundle = build_evidence_bundle(statute_id, mode=mode, include_bisect=include_bisect)
+    if compile_metadata is None:
+        from lawvm.core.compile_metadata_default import build_default_compile_metadata as _build_meta
+        compile_metadata = _build_meta(
+            jurisdiction="fi",
+            source_bundle_hash="sha256:live-review",
+            build_id="cli.evidence.fi",
+        )
+    bundle = build_evidence_bundle(statute_id, mode=mode, include_bisect=include_bisect, compile_metadata=compile_metadata)
     if bundle.get("error"):
         return bundle
     oracle_claims = [
@@ -5504,6 +5518,13 @@ def main(args) -> None:
         print("ERROR: provide at least one statute_id", file=sys.stderr)
         sys.exit(1)
 
+    from lawvm.core.compile_metadata_default import build_default_compile_metadata as _build_cli_meta
+    _cli_evidence_meta = _build_cli_meta(
+        jurisdiction="fi",
+        source_bundle_hash="sha256:live-review",
+        build_id="cli.evidence.fi",
+    )
+
     bundles: List[Dict] = []
     for statute_id in statute_ids:
         if command == "evidence":
@@ -5519,9 +5540,9 @@ def main(args) -> None:
                     allow_metadata_only_effects=uk_allow_metadata_only_effects,
                 )
             elif include_bisect:
-                bundle = build_evidence_bundle(statute_id, mode=mode, include_bisect=True)
+                bundle = build_evidence_bundle(statute_id, mode=mode, include_bisect=True, compile_metadata=_cli_evidence_meta)
             else:
-                bundle = build_evidence_bundle(statute_id, mode=mode)
+                bundle = build_evidence_bundle(statute_id, mode=mode, compile_metadata=_cli_evidence_meta)
         elif command == "prove-oracle":
             if jurisdiction == "uk":
                 bundle = build_uk_evidence_bundle(

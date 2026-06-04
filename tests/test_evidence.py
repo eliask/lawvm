@@ -37,6 +37,20 @@ from lawvm.tools.evidence_claims import build_section_claims_typed
 from lawvm.tools.evidence_statute_rules import build_proof_claims_typed
 
 
+def _fixture_compile_metadata():
+    from lawvm.core.compile_metadata import CompileMetadata
+    from lawvm.core.provenance_graph import attestation_kind_registry_hash
+    return CompileMetadata(
+        provenance_graph_hash="sha256:" + "0" * 60,
+        strict_profile_fingerprint="sha256:test-strict",
+        evidence_policy_fingerprint="sha256:test-policy",
+        source_bundle_hash="sha256:test-source",
+        attestation_kind_registry_hash=attestation_kind_registry_hash(),
+        build_id="test.fixture",
+        build_timestamp=None,
+    )
+
+
 def _ground_truth_tree(statute_id: str):
     root = get_ground_truth_tree(statute_id)
     assert root is not None
@@ -2853,7 +2867,7 @@ def test_corrigendum_support_for_amendments_summarizes_official_verified_and_man
 def test_build_oracle_proof_bundle_filters_to_oracle_claims(monkeypatch) -> None:
     monkeypatch.setattr(
         "lawvm.tools.evidence.build_evidence_bundle",
-        lambda statute_id, mode="legal_pit", include_bisect=False: {
+        lambda statute_id, mode="legal_pit", include_bisect=False, **_kw: {
             "statute_id": statute_id,
             "title": "Test",
             "mode": mode,
@@ -2886,7 +2900,7 @@ def test_build_oracle_proof_bundle_filters_to_oracle_claims(monkeypatch) -> None
 def test_evidence_main_json_output_is_clean(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         "lawvm.tools.evidence.build_evidence_bundle",
-        lambda statute_id, mode="legal_pit": {
+        lambda statute_id, mode="legal_pit", **_kw: {
             "statute_id": statute_id,
             "title": "Test",
             "mode": mode,
@@ -2906,7 +2920,7 @@ def test_evidence_main_json_output_is_clean(monkeypatch, capsys) -> None:
 def test_evidence_main_forwards_with_bisect(monkeypatch, capsys) -> None:
     seen: dict[str, object] = {}
 
-    def _fake_build(statute_id, mode="legal_pit", include_bisect=False):
+    def _fake_build(statute_id, mode="legal_pit", include_bisect=False, **_kw):
         seen["include_bisect"] = include_bisect
         return {
             "statute_id": statute_id,
@@ -3008,7 +3022,7 @@ def test_build_evidence_bundle_auto_includes_bisect_for_replay_residue(monkeypat
 
     monkeypatch.setattr("lawvm.tools.evidence._section_bisect_support", _fake_section_bisect)
 
-    bundle = build_evidence_bundle("1991/827", mode="legal_pit")
+    bundle = build_evidence_bundle("1991/827", mode="legal_pit", compile_metadata=_fixture_compile_metadata())
 
     assert seen["called"] is True
     assert bundle["section_bisect"][0]["section"] == "section:27"
@@ -3207,7 +3221,7 @@ def test_build_evidence_bundle_summarizes_compiler_observations(monkeypatch) -> 
         ],
     )
 
-    bundle = build_evidence_bundle("1990/1295", mode="legal_pit")
+    bundle = build_evidence_bundle("1990/1295", mode="legal_pit", compile_metadata=_fixture_compile_metadata())
 
     observations = bundle["compiler_observations"]
     assert "adjudication_kinds" not in bundle
@@ -3389,7 +3403,7 @@ def test_build_evidence_bundle_records_context_degradation(monkeypatch) -> None:
         _raise_chain_completeness,
     )
 
-    bundle = build_evidence_bundle("1990/1295", mode="legal_pit", include_bisect=True)
+    bundle = build_evidence_bundle("1990/1295", mode="legal_pit", include_bisect=True, compile_metadata=_fixture_compile_metadata())
 
     diagnostics = bundle["evidence_context_diagnostics"]
     assert {

@@ -116,6 +116,25 @@ def sync_fi_proposals(
     # --- Step 2: Project ---
     if not dry_run:
         from lawvm.tools.export_fi_he_corpus import project_he_corpus
+        from lawvm.core.compile_metadata_default import build_default_compile_metadata
+        from pathlib import Path as _Path
+        import hashlib as _hashlib
+
+        _farchive_p = _Path(_farchive_path)
+        if _farchive_p.exists():
+            _stat = _farchive_p.stat()
+            _src_hash = _hashlib.sha256(
+                f"{_stat.st_size}:{_stat.st_mtime_ns}".encode()
+            ).hexdigest()
+            _source_bundle_hash = f"sha256:{_src_hash}"
+        else:
+            _source_bundle_hash = "sha256:no-farchive"
+
+        _compile_metadata = build_default_compile_metadata(
+            jurisdiction="fi",
+            source_bundle_hash=_source_bundle_hash,
+            build_id="cli.sync-fi-proposals.fi",
+        )
 
         print("Step 2: Projecting HE corpus to Parquet ...", file=sys.stderr)
         counts = project_he_corpus(
@@ -126,6 +145,7 @@ def sync_fi_proposals(
             use_parquet=not no_parquet,
             strict=strict,
             verbose=verbose,
+            compile_metadata=_compile_metadata,
         )
         result["projection_counts"] = counts
 

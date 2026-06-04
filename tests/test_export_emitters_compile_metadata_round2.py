@@ -8,7 +8,6 @@ Covers the 4 emitters deferred from Step 5:
 """
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
 
 import pytest
@@ -67,21 +66,15 @@ def test_export_fi_preparatory_refs_includes_compile_metadata(tmp_path: Path) ->
     assert schema_meta[b"lawvm.provenance_graph_hash"] == b"a" * 64
 
 
-def test_export_fi_preparatory_refs_warns_when_absent(tmp_path: Path) -> None:
+def test_export_fi_preparatory_refs_raises_when_absent(tmp_path: Path) -> None:
     pytest.importorskip("pyarrow")
 
     from lawvm.tools.export_fi_preparatory_refs import _try_write_parquet
 
     out_path = tmp_path / "fi_preparatory_refs.parquet"
 
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        ok = _try_write_parquet(out_path, [], None)
-        assert ok
-        assert any(issubclass(warning.category, DeprecationWarning) for warning in w), (
-            f"Expected DeprecationWarning, got: {[str(x.category) for x in w]}"
-        )
-    assert out_path.exists()
+    with pytest.raises(ValueError, match="CompileMetadata is required"):
+        _try_write_parquet(out_path, [], None)
 
 
 # ---------------------------------------------------------------------------
@@ -106,21 +99,15 @@ def test_export_fi_inline_citations_includes_compile_metadata(tmp_path: Path) ->
     assert schema_meta[b"lawvm.provenance_graph_hash"] == b"a" * 64
 
 
-def test_export_fi_inline_citations_warns_when_absent(tmp_path: Path) -> None:
+def test_export_fi_inline_citations_raises_when_absent(tmp_path: Path) -> None:
     pytest.importorskip("pyarrow")
 
     from lawvm.tools.export_fi_inline_citations import _try_write_parquet
 
     out_path = tmp_path / "fi_inline_citations.parquet"
 
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        ok = _try_write_parquet(out_path, [], None)
-        assert ok
-        assert any(issubclass(warning.category, DeprecationWarning) for warning in w), (
-            f"Expected DeprecationWarning, got: {[str(x.category) for x in w]}"
-        )
-    assert out_path.exists()
+    with pytest.raises(ValueError, match="CompileMetadata is required"):
+        _try_write_parquet(out_path, [], None)
 
 
 # ---------------------------------------------------------------------------
@@ -145,21 +132,15 @@ def test_export_fi_sections_text_includes_compile_metadata(tmp_path: Path) -> No
     assert schema_meta[b"lawvm.provenance_graph_hash"] == b"a" * 64
 
 
-def test_export_fi_sections_text_warns_when_absent(tmp_path: Path) -> None:
+def test_export_fi_sections_text_raises_when_absent(tmp_path: Path) -> None:
     pytest.importorskip("pyarrow")
 
     from lawvm.tools.export_fi_sections_text import _try_write_parquet
 
     out_path = tmp_path / "fi_sections_text.parquet"
 
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        ok = _try_write_parquet(out_path, [], None)
-        assert ok
-        assert any(issubclass(warning.category, DeprecationWarning) for warning in w), (
-            f"Expected DeprecationWarning, got: {[str(x.category) for x in w]}"
-        )
-    assert out_path.exists()
+    with pytest.raises(ValueError, match="CompileMetadata is required"):
+        _try_write_parquet(out_path, [], None)
 
 
 # ---------------------------------------------------------------------------
@@ -283,18 +264,12 @@ def test_export_parquet_ops_includes_compile_metadata(tmp_path: Path) -> None:
     _assert_all_lawvm_keys_present(schema_meta)
 
 
-def test_export_parquet_warns_when_absent(tmp_path: Path) -> None:
+def test_export_parquet_raises_when_absent(tmp_path: Path) -> None:
     pytest.importorskip("pyarrow")
 
     from lawvm.tools.export_parquet import _try_write_parquet
 
     out_path = tmp_path / "statutes.parquet"
 
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        ok = _try_write_parquet(out_path, [_sample_statute_row()], None)
-        assert ok
-        assert any(issubclass(warning.category, DeprecationWarning) for warning in w), (
-            f"Expected DeprecationWarning, got: {[str(x.category) for x in w]}"
-        )
-    assert out_path.exists()
+    with pytest.raises(ValueError, match="CompileMetadata is required"):
+        _try_write_parquet(out_path, [_sample_statute_row()], None)

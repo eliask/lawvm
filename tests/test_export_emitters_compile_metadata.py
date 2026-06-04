@@ -12,7 +12,6 @@ from __future__ import annotations
 import subprocess
 import sys
 import tempfile
-import warnings
 from pathlib import Path
 
 import pytest
@@ -85,7 +84,7 @@ def test_parquet_emit_includes_compile_metadata_when_provided(tmp_path: Path) ->
     assert schema_meta[b"lawvm.provenance_graph_hash"] == b"a" * 64
 
 
-def test_parquet_emit_warns_when_compile_metadata_absent(tmp_path: Path) -> None:
+def test_parquet_emit_raises_when_compile_metadata_absent(tmp_path: Path) -> None:
     pytest.importorskip("pyarrow")
 
     from lawvm.tools.export_fi_refs import _try_write_parquet
@@ -93,14 +92,8 @@ def test_parquet_emit_warns_when_compile_metadata_absent(tmp_path: Path) -> None
 
     out_path = tmp_path / "fi_refs__deterministic_only.parquet"
 
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        ok = _try_write_parquet(out_path, [], ProfileTag.DETERMINISTIC_ONLY, None)
-        assert ok
-        assert any(issubclass(warning.category, DeprecationWarning) for warning in w), \
-            f"Expected DeprecationWarning, got: {[str(x.category) for x in w]}"
-    # Parquet was still written despite the warning
-    assert out_path.exists()
+    with pytest.raises(ValueError, match="CompileMetadata is required"):
+        _try_write_parquet(out_path, [], ProfileTag.DETERMINISTIC_ONLY, None)
 
 
 def test_fi_actors_parquet_includes_compile_metadata(tmp_path: Path) -> None:
@@ -118,18 +111,14 @@ def test_fi_actors_parquet_includes_compile_metadata(tmp_path: Path) -> None:
     assert b"lawvm.provenance_graph_hash" in schema_meta
 
 
-def test_fi_actors_parquet_warns_without_metadata(tmp_path: Path) -> None:
+def test_fi_actors_parquet_raises_without_metadata(tmp_path: Path) -> None:
     pytest.importorskip("pyarrow")
 
     from lawvm.tools.export_fi_actors import _try_write_parquet
 
     out_path = tmp_path / "fi_actors.parquet"
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        ok = _try_write_parquet(out_path, [], None)
-        assert ok
-        assert any(issubclass(x.category, DeprecationWarning) for x in w)
-    assert out_path.exists()
+    with pytest.raises(ValueError, match="CompileMetadata is required"):
+        _try_write_parquet(out_path, [], None)
 
 
 def test_fi_pools_parquet_includes_compile_metadata(tmp_path: Path) -> None:
