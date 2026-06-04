@@ -10,7 +10,8 @@ from lawvm.core.candidate_set_certificate import (
     CANDIDATE_SET_UNAVAILABLE,
     CandidateSetCertificate,
 )
-from lawvm.core.frontier_work_item import FrontierWorkItem
+from lawvm.core.execution_authorization import validate_execution_authorization
+from lawvm.core.frontier_work_item import FrontierWorkItem, validate_frontier_work_item
 from lawvm.core.source_witness import source_witness_from_mapping
 from lawvm.core.target_resolution import (
     SCOPE_CONFIDENCE_EXPLICIT_SOURCE,
@@ -20,6 +21,9 @@ from lawvm.core.target_resolution import (
     TARGET_UNRESOLVED,
     TargetResolutionCandidate,
     TargetResolutionCertificate,
+)
+from lawvm.uk_legislation.execution_authorization import (
+    uk_execution_authorization_from_manual_frontier,
 )
 
 
@@ -734,6 +738,14 @@ def uk_frontier_work_item_from_manual_frontier_row(
         row.get("forbidden_shortcuts"),
         execution_authorization.get("forbidden_shortcuts"),
     )
+    candidate_operation_family = str(
+        template.get("action_family")
+        or row.get("work_item_kind")
+        or family_defaults.get("candidate_operation_family")
+        or ""
+    )
+    guidance_refs = _string_tuple(template.get("guidance_refs"))
+    required_claim_kind = str(row.get("claim_kind") or "semantic_compile")
     executable = _bool_flag(
         row.get("executable", execution_authorization.get("executable"))
     )
@@ -761,8 +773,38 @@ def uk_frontier_work_item_from_manual_frontier_row(
         target_witness=target_witness,
         candidate_targets=candidate_targets,
     )
+    provisional_work_item_row = {
+        "work_item_id": work_item_id,
+        "jurisdiction": "uk",
+        "source_artifact_id": source_artifact_id,
+        "source_unit_id": source_unit_id,
+        "source_witness": normalized_source_witness,
+        "target_witness": target_witness,
+        "compare_witness": compare_witness,
+        "owner_phase": owner_phase,
+        "frontier_family": frontier_family,
+        "frontier_status": frontier_status,
+        "candidate_operation_family": candidate_operation_family,
+        "candidate_targets": candidate_targets,
+        "guidance_refs": guidance_refs,
+        "required_claim_kind": required_claim_kind,
+        "required_validator_checks": required_validator_checks,
+        "required_proofs": required_proofs,
+        "safe_default": safe_default,
+        "forbidden_shortcuts": forbidden_shortcuts,
+        "executable": executable,
+        "replay_authorized": replay_authorized,
+        "authorization_status": authorization_status,
+        "detail": detail,
+    }
     detail["packet_completeness"] = _packet_completeness(
         execution_authorization=execution_authorization,
+        execution_authorization_validation_issues=validate_execution_authorization(
+            execution_authorization
+        ),
+        frontier_work_item_validation_issues=validate_frontier_work_item(
+            provisional_work_item_row
+        ),
         source_witness=normalized_source_witness,
         target_witness=target_witness,
         compare_witness=compare_witness,
@@ -771,6 +813,8 @@ def uk_frontier_work_item_from_manual_frontier_row(
         owner_phase=owner_phase,
         frontier_family=frontier_family,
         frontier_status=frontier_status,
+        candidate_operation_family=candidate_operation_family,
+        required_claim_kind=required_claim_kind,
         required_validator_checks=required_validator_checks,
         required_proofs=required_proofs,
         safe_default=safe_default,
@@ -790,15 +834,10 @@ def uk_frontier_work_item_from_manual_frontier_row(
         owner_phase=owner_phase,
         frontier_family=frontier_family,
         frontier_status=frontier_status,
-        candidate_operation_family=str(
-            template.get("action_family")
-            or row.get("work_item_kind")
-            or family_defaults.get("candidate_operation_family")
-            or ""
-        ),
+        candidate_operation_family=candidate_operation_family,
         candidate_targets=candidate_targets,
-        guidance_refs=_string_tuple(template.get("guidance_refs")),
-        required_claim_kind=str(row.get("claim_kind") or "semantic_compile"),
+        guidance_refs=guidance_refs,
+        required_claim_kind=required_claim_kind,
         required_validator_checks=required_validator_checks,
         required_proofs=required_proofs,
         safe_default=safe_default,
@@ -852,9 +891,10 @@ def _nonnegative_int(value: Any) -> int:
 
 
 def _execution_authorization_packet(row: Mapping[str, Any]) -> Mapping[str, Any]:
+    default_packet = _default_execution_authorization_packet(row)
     packet = _mapping(row.get("execution_authorization"))
     if packet:
-        return _compact_witness(
+        compact_packet = _compact_witness(
             {
                 "executable": _bool_flag(packet.get("executable")),
                 "replay_authorized": _bool_flag(packet.get("replay_authorized")),
@@ -870,7 +910,8 @@ def _execution_authorization_packet(row: Mapping[str, Any]) -> Mapping[str, Any]
                 "detail": _mapping(packet.get("detail")),
             }
         )
-    return _compact_witness(
+        return _compact_witness({**default_packet, **compact_packet})
+    compact_row = _compact_witness(
         {
             "executable": _bool_flag(row.get("executable")),
             "replay_authorized": _bool_flag(row.get("replay_authorized")),
@@ -890,6 +931,39 @@ def _execution_authorization_packet(row: Mapping[str, Any]) -> Mapping[str, Any]
             "forbidden_shortcuts": _string_tuple(row.get("forbidden_shortcuts")),
         }
     )
+    return _compact_witness({**default_packet, **compact_row})
+
+
+def _default_execution_authorization_packet(row: Mapping[str, Any]) -> Mapping[str, Any]:
+    manual_frontier = _mapping(row.get("manual_compile_frontier"))
+    status = str(
+        row.get("current_manual_compile_status")
+        or row.get("manual_compile_status")
+        or manual_frontier.get("status")
+        or ""
+    )
+    rule_id = str(
+        row.get("current_manual_compile_rule_id")
+        or row.get("manual_compile_rule_id")
+        or manual_frontier.get("rule_id")
+        or ""
+    )
+    if not status:
+        return {}
+    authorization = uk_execution_authorization_from_manual_frontier(
+        manual_compile_status=status,
+        manual_compile_rule_id=rule_id,
+        owner_phase=str(
+            row.get("current_owner_phase")
+            or row.get("owner_phase")
+            or row.get("manual_compile_owner_phase")
+            or "unknown"
+        ),
+        strict_disposition=str(row.get("strict_disposition") or "record"),
+        quirks_disposition=str(row.get("quirks_disposition") or "record"),
+        validator_status=str(row.get("validator_status") or ""),
+    )
+    return authorization.to_dict()
 
 
 def _candidate_target_set_certificate(
@@ -997,6 +1071,8 @@ def _target_resolution_certificate(
 def _packet_completeness(
     *,
     execution_authorization: Mapping[str, Any],
+    execution_authorization_validation_issues: tuple[str, ...],
+    frontier_work_item_validation_issues: tuple[str, ...],
     source_witness: Mapping[str, Any],
     target_witness: Mapping[str, Any],
     compare_witness: Mapping[str, Any],
@@ -1005,6 +1081,8 @@ def _packet_completeness(
     owner_phase: str,
     frontier_family: str,
     frontier_status: str,
+    candidate_operation_family: str,
+    required_claim_kind: str,
     required_validator_checks: tuple[str, ...],
     required_proofs: tuple[str, ...],
     safe_default: str,
@@ -1030,12 +1108,20 @@ def _packet_completeness(
         "has_target_resolution_certificate": bool(target_resolution_certificate),
         "has_compare_witness": bool(compare_witness),
         "has_candidate_set_certificate": bool(candidate_set_certificate),
+        "has_candidate_operation_family": bool(candidate_operation_family),
+        "has_required_claim_kind": bool(required_claim_kind),
         "has_required_validator_checks": bool(required_validator_checks),
         "has_required_proofs": bool(required_proofs),
         "has_safe_default": bool(safe_default),
         "has_forbidden_shortcuts": bool(forbidden_shortcuts),
         "non_executable_frontier_invariant": (
             executable is False and replay_authorized is False
+        ),
+        "valid_execution_authorization_contract": (
+            not execution_authorization_validation_issues
+        ),
+        "valid_frontier_work_item_contract": (
+            not frontier_work_item_validation_issues
         ),
     }
     missing = tuple(
@@ -1051,15 +1137,25 @@ def _packet_completeness(
         and checks["has_target_witness"]
         and checks["has_target_resolution_certificate"]
         and checks["has_candidate_set_certificate"]
+        and checks["has_candidate_operation_family"]
+        and checks["has_required_claim_kind"]
         and checks["has_required_validator_checks"]
         and checks["has_required_proofs"]
         and checks["has_safe_default"]
         and checks["has_forbidden_shortcuts"]
         and checks["non_executable_frontier_invariant"]
+        and checks["valid_execution_authorization_contract"]
+        and checks["valid_frontier_work_item_contract"]
     )
     return {
         **checks,
         "missing_fields": list(missing),
+        "execution_authorization_validation_issues": list(
+            execution_authorization_validation_issues
+        ),
+        "frontier_work_item_validation_issues": list(
+            frontier_work_item_validation_issues
+        ),
         "ready_for_manual_claim_validation": ready,
         "proof_boundary": (
             "frontier_work_item_is_non_executable_until_execution_authorization_"

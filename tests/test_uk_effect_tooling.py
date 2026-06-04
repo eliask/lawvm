@@ -654,9 +654,24 @@ def test_uk_frontier_work_item_defaults_cover_grounding_corpus_families(
     assert work_item_payload["detail"]["execution_authorization"][
         "authorization_status"
     ] == "manual_claim_required"
+    assert work_item_payload["detail"]["execution_authorization"][
+        "authorization_rule_id"
+    ] == "uk_execution_authorization_manual_claim_required"
     assert work_item_payload["detail"]["packet_completeness"][
         "ready_for_manual_claim_validation"
     ] is True
+    assert work_item_payload["detail"]["packet_completeness"][
+        "valid_execution_authorization_contract"
+    ] is True
+    assert work_item_payload["detail"]["packet_completeness"][
+        "valid_frontier_work_item_contract"
+    ] is True
+    assert work_item_payload["detail"]["packet_completeness"][
+        "execution_authorization_validation_issues"
+    ] == []
+    assert work_item_payload["detail"]["packet_completeness"][
+        "frontier_work_item_validation_issues"
+    ] == []
     assert work_item_payload["detail"]["packet_completeness"][
         "non_executable_frontier_invariant"
     ] is True
@@ -731,6 +746,12 @@ def test_uk_frontier_work_item_preserves_execution_authorization_packet() -> Non
     )
     assert authorization["replay_authorized"] is False
     assert work_item["detail"]["packet_completeness"]["has_authorization_rule_id"] is True
+    assert work_item["detail"]["packet_completeness"][
+        "valid_execution_authorization_contract"
+    ] is True
+    assert work_item["detail"]["packet_completeness"][
+        "valid_frontier_work_item_contract"
+    ] is True
     assert work_item["detail"]["packet_completeness"]["missing_fields"] == []
 
 

@@ -573,6 +573,18 @@ def score_one(statute_id: str) -> dict[str, Any]:
             )
         )
         result[
+            "manual_frontier_work_item_packet_execution_authorization_validation_issue_counts"
+        ] = _manual_frontier_work_item_packet_validation_issue_counts(
+            manual_frontier_records,
+            "execution_authorization_validation_issues",
+        )
+        result[
+            "manual_frontier_work_item_packet_frontier_work_item_validation_issue_counts"
+        ] = _manual_frontier_work_item_packet_validation_issue_counts(
+            manual_frontier_records,
+            "frontier_work_item_validation_issues",
+        )
+        result[
             "manual_frontier_work_item_packet_target_resolution_certificate_counts"
         ] = _manual_frontier_work_item_packet_target_resolution_certificate_counts(
             manual_frontier_records
@@ -918,6 +930,8 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         manual_frontier_work_item_packet_ready_counts,
         manual_frontier_work_item_packet_missing_field_counts,
         manual_frontier_work_item_packet_target_resolution_certificate_counts,
+        manual_frontier_work_item_packet_execution_authorization_validation_issue_counts,
+        manual_frontier_work_item_packet_frontier_work_item_validation_issue_counts,
     ) = _aggregate_manual_frontier_work_item_packet_counts(results)
     manual_frontier_work_item_target_resolution_status_counts = (
         _aggregate_manual_frontier_work_item_target_resolution_status_counts(results)
@@ -1160,6 +1174,12 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "manual_frontier_work_item_packet_missing_field_counts": (
             manual_frontier_work_item_packet_missing_field_counts
+        ),
+        "manual_frontier_work_item_packet_execution_authorization_validation_issue_counts": (
+            manual_frontier_work_item_packet_execution_authorization_validation_issue_counts
+        ),
+        "manual_frontier_work_item_packet_frontier_work_item_validation_issue_counts": (
+            manual_frontier_work_item_packet_frontier_work_item_validation_issue_counts
         ),
         "manual_frontier_work_item_packet_target_resolution_certificate_counts": (
             manual_frontier_work_item_packet_target_resolution_certificate_counts
@@ -2296,6 +2316,25 @@ def _manual_frontier_work_item_packet_missing_field_counts(
     return dict(sorted(counts.items()))
 
 
+def _manual_frontier_work_item_packet_validation_issue_counts(
+    rows: list[dict[str, Any]],
+    field: str,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        packet = _manual_frontier_work_item_packet_completeness(row)
+        if not packet:
+            continue
+        issues = packet.get(field) or ()
+        if not isinstance(issues, list | tuple):
+            counts[f"invalid_{field}_shape"] += 1
+            continue
+        counts.update(str(issue) for issue in issues if str(issue))
+    return dict(sorted(counts.items()))
+
+
 def _manual_frontier_work_item_packet_target_resolution_certificate_counts(
     rows: list[dict[str, Any]],
 ) -> dict[str, int]:
@@ -2408,10 +2447,12 @@ def _target_resolution_exempt_key(
 
 def _aggregate_manual_frontier_work_item_packet_counts(
     results: list[dict[str, Any]],
-) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
+) -> tuple[dict[str, int], dict[str, int], dict[str, int], dict[str, int], dict[str, int]]:
     ready_counts: Counter[str] = Counter()
     missing_field_counts: Counter[str] = Counter()
     target_resolution_counts: Counter[str] = Counter()
+    execution_authorization_validation_issue_counts: Counter[str] = Counter()
+    frontier_work_item_validation_issue_counts: Counter[str] = Counter()
     for row in results:
         row_ready_counts = Counter(
             _count_mapping(
@@ -2427,6 +2468,20 @@ def _aggregate_manual_frontier_work_item_packet_counts(
             _count_mapping(
                 row.get(
                     "manual_frontier_work_item_packet_target_resolution_certificate_counts"
+                ),
+            )
+        )
+        row_execution_authorization_validation_issue_counts = Counter(
+            _count_mapping(
+                row.get(
+                    "manual_frontier_work_item_packet_execution_authorization_validation_issue_counts"
+                ),
+            )
+        )
+        row_frontier_work_item_validation_issue_counts = Counter(
+            _count_mapping(
+                row.get(
+                    "manual_frontier_work_item_packet_frontier_work_item_validation_issue_counts"
                 ),
             )
         )
@@ -2448,10 +2503,18 @@ def _aggregate_manual_frontier_work_item_packet_counts(
         ready_counts.update(row_ready_counts)
         missing_field_counts.update(row_missing_field_counts)
         target_resolution_counts.update(row_target_resolution_counts)
+        execution_authorization_validation_issue_counts.update(
+            row_execution_authorization_validation_issue_counts
+        )
+        frontier_work_item_validation_issue_counts.update(
+            row_frontier_work_item_validation_issue_counts
+        )
     return (
         dict(sorted(ready_counts.items())),
         dict(sorted(missing_field_counts.items())),
         dict(sorted(target_resolution_counts.items())),
+        dict(sorted(execution_authorization_validation_issue_counts.items())),
+        dict(sorted(frontier_work_item_validation_issue_counts.items())),
     )
 
 
@@ -3659,6 +3722,32 @@ def run_driver(
         )
         print(
             "  manual_frontier_work_item_packet_missing_field_counts: "
+            f"{counts}"
+        )
+    if summary[
+        "manual_frontier_work_item_packet_execution_authorization_validation_issue_counts"
+    ]:
+        counts = ", ".join(
+            f"{issue}={count}"
+            for issue, count in summary[
+                "manual_frontier_work_item_packet_execution_authorization_validation_issue_counts"
+            ].items()
+        )
+        print(
+            "  manual_frontier_work_item_packet_execution_authorization_validation_issue_counts: "
+            f"{counts}"
+        )
+    if summary[
+        "manual_frontier_work_item_packet_frontier_work_item_validation_issue_counts"
+    ]:
+        counts = ", ".join(
+            f"{issue}={count}"
+            for issue, count in summary[
+                "manual_frontier_work_item_packet_frontier_work_item_validation_issue_counts"
+            ].items()
+        )
+        print(
+            "  manual_frontier_work_item_packet_frontier_work_item_validation_issue_counts: "
             f"{counts}"
         )
     if summary["manual_frontier_work_item_packet_target_resolution_certificate_counts"]:
