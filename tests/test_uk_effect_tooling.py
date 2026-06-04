@@ -86,6 +86,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_definition_child_and_tail_substitution_candidate",
         "uk_manual_frontier_definition_child_structural_insert_candidate",
         "uk_manual_frontier_definition_child_structural_substitution_candidate",
+        "uk_manual_frontier_nested_definition_child_structural_substitution_candidate",
         "uk_manual_frontier_definition_list_end_insert_candidate",
         "uk_manual_frontier_effect_metadata_carried_text_patch_candidate",
         "uk_manual_frontier_heading_facet_candidate",
@@ -3796,6 +3797,109 @@ def test_uk_manual_compile_evidence_jsonl_templates_definition_child_structural_
     assert "claim_identifies_replacement_payload_child_units" in (
         template["required_validator_checks"]
     )
+    assert template["executable"] is False
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_nested_definition_child_structural_substitution() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-nested-definition-child-structural",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/1988/52/section/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1988",
+        affected_number="52",
+        affected_provisions="s. 1",
+        affecting_uri="/id/uksi/2024/1",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="reg. 2(a)",
+        affecting_title="Synthetic Regulations 2024",
+    )
+    source_preview = (
+        "a in paragraph (a) of the definition of \u201cappropriate type-approval "
+        "certificate\u201d, for sub-paragraph (ii) substitute\u2014 ii issued under "
+        "the equivalent EU Regulation; ;"
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology=(
+                "nested_definition_child_structural_substitution_unsupported"
+            ),
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_overlap_substitution_unlowered", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P3",
+            source_extracted_text_preview=source_preview,
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_nested_definition_child_structural_substitution_candidate"
+            ),
+            manual_compile_reason=(
+                "Nested definition child structural substitution needs a validated boundary."
+            ),
+            manual_compile_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+            manual_compile_blocking_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/1988/52",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/1988/52",
+        row=report_row,
+        context=context,
+    )
+
+    assert payload["suggested_claim_template_status"] == "available"
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == (
+        "nested_definition_child_structural_substitution"
+    )
+    assert template["placement_family"] == (
+        "nested_definition_child_structural_payload_boundary_required"
+    )
+    assert template["definition_term"] == "appropriate type-approval certificate"
+    assert template["outer_definition_child_label"] == "a"
+    assert template["nested_definition_child_label"] == "ii"
+    assert "equivalent EU Regulation" in template["replacement_preview"]
+    assert "nested_child_tail_or_separator_boundary" in template["required_ownership"]
+    assert "claim_identifies_exact_outer_definition_child_node" in (
+        template["required_validator_checks"]
+    )
+    assert "claim_identifies_exact_nested_definition_child_node" in (
+        template["required_validator_checks"]
+    )
+    assert "claim_materializes_replacement_payload_as_structural_child_units" in (
+        template["required_validator_checks"]
+    )
+    assert template["required_operation_family_proof_semantics"] == [
+        "definition_child_structural_payload_boundary_claim"
+    ]
     assert template["executable"] is False
 
 

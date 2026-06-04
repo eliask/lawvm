@@ -208,6 +208,34 @@ def _definition_child_structural_substitution_parts(source_preview: str) -> dict
     }
 
 
+def _nested_definition_child_structural_substitution_parts(
+    source_preview: str,
+) -> dict[str, str]:
+    source_norm = " ".join(source_preview.split())
+    match = re.search(
+        r"\bin\s+paragraph\s+\((?P<outer_label>[0-9A-Za-z]+)\)\s+"
+        r"of\s+the\s+definition\s+of\s+[\"“](?P<term>[^\"”]{1,240})[\"”]\s*,?\s+"
+        r"for\s+sub-?paragraph\s+\((?P<nested_label>[0-9A-Za-zivxlcdm]+)\)\s+"
+        r"substitute\s*[—–-]\s*"
+        r"(?P<replacement>.+?)\s*\.?\s*$",
+        source_norm,
+        flags=re.I | re.S,
+    )
+    if match is None:
+        return {
+            "definition_term": "",
+            "outer_definition_child_label": "",
+            "nested_definition_child_label": "",
+            "replacement_preview": source_norm[:500],
+        }
+    return {
+        "definition_term": " ".join(match.group("term").split()),
+        "outer_definition_child_label": " ".join(match.group("outer_label").split()),
+        "nested_definition_child_label": " ".join(match.group("nested_label").split()),
+        "replacement_preview": " ".join(match.group("replacement").split())[:500],
+    }
+
+
 def _definition_child_structural_insert_parts(source_preview: str) -> dict[str, str]:
     source_norm = " ".join(source_preview.split())
     match = re.search(
@@ -590,6 +618,8 @@ def _required_operation_family_proof_semantics(
         return ("definition_child_text_tail_boundary_claim",)
     if action_family == "definition_child_structural_substitution":
         return ("definition_child_structural_payload_boundary_claim",)
+    if action_family == "nested_definition_child_structural_substitution":
+        return ("definition_child_structural_payload_boundary_claim",)
     if action_family == "definition_child_structural_insert":
         return ("definition_child_structural_insert_boundary_claim",)
     return ()
@@ -781,6 +811,54 @@ def manual_compile_suggested_claim_template(
                 "claim_preserves_unclaimed_definition_children",
                 "changed_paths_are_within_declared_definition_child_boundary",
             ],
+            "executable": False,
+        })
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_nested_definition_child_structural_substitution_candidate"
+    ):
+        source_preview = " ".join((summary.source_extracted_text_preview or "").split())
+        parts = _nested_definition_child_structural_substitution_parts(source_preview)
+        return _with_required_operation_family_proof_semantics({
+            "schema": "lawvm.uk_semantic_compile_claim_template.v1",
+            "claim_kind": "semantic_compile",
+            "claim_status": "template_only_not_validated",
+            "action_family": "nested_definition_child_structural_substitution",
+            "placement_family": "nested_definition_child_structural_payload_boundary_required",
+            "jurisdiction": "uk",
+            "statute_id": statute_id,
+            "effect_id": effect.effect_id,
+            "affected_provisions": effect.affected_provisions,
+            "affecting_act_id": effect.affecting_act_id,
+            "affecting_provisions": effect.affecting_provisions,
+            "source_pathology": summary.source_pathology or "",
+            "candidate_target_surface": effect.affected_provisions,
+            "candidate_source_preview": source_preview[:500],
+            "definition_term": parts["definition_term"],
+            "outer_definition_child_label": parts["outer_definition_child_label"],
+            "nested_definition_child_label": parts["nested_definition_child_label"],
+            "replacement_preview": parts["replacement_preview"],
+            "required_ownership": [
+                "outer_definition_child_identity",
+                "nested_definition_child_identity",
+                "replacement_child_payload_shape",
+                "nested_child_tail_or_separator_boundary",
+                "mutation_boundary",
+            ],
+            "required_validator_checks": [
+                "source_witness_names_outer_definition_child_and_nested_child",
+                "claim_identifies_exact_outer_definition_child_node",
+                "claim_identifies_exact_nested_definition_child_node",
+                "claim_identifies_replacement_payload_child_units",
+                "claim_preserves_unclaimed_definition_children",
+                "claim_materializes_replacement_payload_as_structural_child_units",
+                "changed_paths_are_within_claimed_nested_definition_boundary",
+            ],
+            "proof_semantic_note": (
+                "This nested family reuses the structural definition-child proof "
+                "semantic as a template obligation only; replay remains blocked "
+                "until a validated claim or compiler owns the nested boundary."
+            ),
             "executable": False,
         })
     if (
