@@ -34,7 +34,9 @@ from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.source_witness import (
     DigestWitness,
     SourceWitness,
+    source_witness_digest_coverage,
     source_witness_from_mapping,
+    source_witness_role_key,
 )
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
 from lawvm.core.replay_contracts import ReplayAmendmentStep, ReplayCheckpoint, ReplaySummary, ReplayTextView
@@ -300,6 +302,38 @@ def test_source_witness_computes_preview_digest() -> None:
     assert data["bounded_preview"] == "source fragment"
     assert data["preview_digest_algorithm"] == "sha256"
     assert data["preview_digest"]
+
+
+def test_source_witness_reporting_keys_classify_role_and_digest_coverage() -> None:
+    artifact = source_witness_from_mapping(
+        {"source_role": "affecting_source", "source_sha256": "abc123"},
+        default_role="source_preview",
+    ).to_dict()
+    preview = source_witness_from_mapping(
+        {"source_role": "effect_feed_row", "text_preview": "row text"},
+        default_role="source_preview",
+    ).to_dict()
+    both = source_witness_from_mapping(
+        {
+            "source_role": "affecting_source_fragment",
+            "source_sha256": "abc123",
+            "text_preview": "row text",
+        },
+        default_role="source_preview",
+    ).to_dict()
+
+    assert source_witness_role_key(artifact) == "affecting_source"
+    assert source_witness_role_key({}) == "__missing__"
+    assert source_witness_digest_coverage(artifact) == "artifact_digest"
+    assert source_witness_digest_coverage({"source_sha256": "abc123"}) == (
+        "artifact_digest"
+    )
+    assert source_witness_digest_coverage(preview) == "preview_digest"
+    assert source_witness_digest_coverage(both) == "artifact_and_preview_digest"
+    assert source_witness_digest_coverage({"source_role": "effect_feed_row"}) == (
+        "missing_digest"
+    )
+    assert source_witness_digest_coverage({}) == "missing_source_witness"
 
 
 def test_source_witness_requires_role_and_digest_witness_requires_digest() -> None:

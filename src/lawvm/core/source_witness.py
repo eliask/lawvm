@@ -128,6 +128,36 @@ def source_witness_from_mapping(
     )
 
 
+def source_witness_role_key(row: Mapping[str, Any]) -> str:
+    """Return a stable reporting key for a source witness role."""
+
+    if not row:
+        return "__missing__"
+    return str(row.get("source_role") or "unknown")
+
+
+def source_witness_digest_coverage(row: Mapping[str, Any]) -> str:
+    """Classify whether a source witness carries artifact and/or preview identity."""
+
+    if not row:
+        return "missing_source_witness"
+    has_digest = bool(_mapping_digest(row, ("digest", "source_sha256"), "digest_witness"))
+    has_preview_digest = bool(
+        _mapping_digest(
+            row,
+            ("preview_digest", "text_preview_sha256"),
+            "preview_digest_witness",
+        )
+    )
+    if has_digest and has_preview_digest:
+        return "artifact_and_preview_digest"
+    if has_digest:
+        return "artifact_digest"
+    if has_preview_digest:
+        return "preview_digest"
+    return "missing_digest"
+
+
 def _digest_witness(row: Mapping[str, Any]) -> DigestWitness | None:
     digest = str(row.get("digest") or row.get("source_sha256") or "")
     if not digest:
@@ -148,6 +178,21 @@ def _preview_digest_witness(
         return None
     algorithm = str(row.get("preview_digest_algorithm") or "sha256")
     return DigestWitness(digest_algorithm=algorithm, digest=digest)
+
+
+def _mapping_digest(
+    row: Mapping[str, Any],
+    flat_fields: tuple[str, ...],
+    witness_field: str,
+) -> str:
+    for flat_field in flat_fields:
+        digest = str(row.get(flat_field) or "")
+        if digest:
+            return digest
+    witness = row.get(witness_field)
+    if isinstance(witness, Mapping):
+        return str(witness.get("digest") or "")
+    return ""
 
 
 def _plain_jsonable(value: Any) -> Any:

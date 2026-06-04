@@ -54,6 +54,10 @@ from typing import Any, Optional
 from lawvm.core.agreement_residual import AgreementResidual
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
+from lawvm.core.source_witness import (
+    source_witness_digest_coverage,
+    source_witness_role_key,
+)
 from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_compile_record,
 )
@@ -527,6 +531,16 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 manual_frontier_records
             )
         )
+        result["manual_frontier_work_item_source_witness_role_counts"] = (
+            _manual_frontier_work_item_source_witness_role_counts(
+                manual_frontier_records
+            )
+        )
+        result[
+            "manual_frontier_work_item_source_witness_digest_coverage_counts"
+        ] = _manual_frontier_work_item_source_witness_digest_coverage_counts(
+            manual_frontier_records
+        )
         result[
             "manual_frontier_work_item_missing_candidate_operation_family_count"
         ] = _manual_frontier_work_item_missing_field_count(
@@ -817,6 +831,15 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     manual_frontier_work_item_candidate_set_status_counts = _aggregate_row_count_maps(
         results, "manual_frontier_work_item_candidate_set_status_counts"
     )
+    manual_frontier_work_item_source_witness_role_counts = _aggregate_row_count_maps(
+        results, "manual_frontier_work_item_source_witness_role_counts"
+    )
+    manual_frontier_work_item_source_witness_digest_coverage_counts = (
+        _aggregate_row_count_maps(
+            results,
+            "manual_frontier_work_item_source_witness_digest_coverage_counts",
+        )
+    )
     manual_frontier_work_item_missing_candidate_operation_family_count = sum(
         int(
             row.get(
@@ -1015,6 +1038,12 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "manual_frontier_work_item_candidate_set_status_counts": (
             manual_frontier_work_item_candidate_set_status_counts
+        ),
+        "manual_frontier_work_item_source_witness_role_counts": (
+            manual_frontier_work_item_source_witness_role_counts
+        ),
+        "manual_frontier_work_item_source_witness_digest_coverage_counts": (
+            manual_frontier_work_item_source_witness_digest_coverage_counts
         ),
         "manual_frontier_work_item_missing_candidate_operation_family_count": (
             manual_frontier_work_item_missing_candidate_operation_family_count
@@ -2074,6 +2103,42 @@ def _manual_frontier_work_item_candidate_set_status_counts(
     return dict(sorted(counts.items()))
 
 
+def _manual_frontier_work_item_source_witness_role_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        work_item = row.get("frontier_work_item")
+        if not isinstance(work_item, dict):
+            counts["__missing_work_item__"] += 1
+            continue
+        source_witness = work_item.get("source_witness")
+        if not isinstance(source_witness, dict):
+            source_witness = {}
+        counts[source_witness_role_key(source_witness)] += 1
+    return dict(sorted(counts.items()))
+
+
+def _manual_frontier_work_item_source_witness_digest_coverage_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        work_item = row.get("frontier_work_item")
+        if not isinstance(work_item, dict):
+            counts["missing_work_item"] += 1
+            continue
+        source_witness = work_item.get("source_witness")
+        if not isinstance(source_witness, dict):
+            source_witness = {}
+        counts[source_witness_digest_coverage(source_witness)] += 1
+    return dict(sorted(counts.items()))
+
+
 def _manual_frontier_work_item_packet_completeness(
     row: dict[str, Any],
 ) -> Mapping[str, Any]:
@@ -2747,6 +2812,25 @@ def run_driver(
             ].items()
         )
         print(f"  manual_frontier_work_item_candidate_set_status_counts: {counts}")
+    if summary["manual_frontier_work_item_source_witness_role_counts"]:
+        counts = ", ".join(
+            f"{role}={count}"
+            for role, count in summary[
+                "manual_frontier_work_item_source_witness_role_counts"
+            ].items()
+        )
+        print(f"  manual_frontier_work_item_source_witness_role_counts: {counts}")
+    if summary["manual_frontier_work_item_source_witness_digest_coverage_counts"]:
+        counts = ", ".join(
+            f"{coverage}={count}"
+            for coverage, count in summary[
+                "manual_frontier_work_item_source_witness_digest_coverage_counts"
+            ].items()
+        )
+        print(
+            "  manual_frontier_work_item_source_witness_digest_coverage_counts: "
+            f"{counts}"
+        )
     missing_family_count = int(
         summary.get("manual_frontier_work_item_missing_candidate_operation_family_count")
         or 0

@@ -3002,6 +3002,12 @@ def test_uk_effects_summary_counts_are_stable() -> None:
             "source_digest_or_preview_digest": 1,
         },
         "manual_frontier_work_item_candidate_set_status_counts": {"complete": 1},
+        "manual_frontier_work_item_source_witness_role_counts": {
+            "affecting_source": 1,
+        },
+        "manual_frontier_work_item_source_witness_digest_coverage_counts": {
+            "missing_digest": 1,
+        },
         "manual_frontier_work_item_missing_candidate_operation_family_count": 0,
         "manual_frontier_work_item_missing_required_validator_checks_count": 0,
         "suggested_claim_template_status_counts": {},
@@ -7411,6 +7417,12 @@ def test_uk_effects_summary_counts_templates_for_actionable_frontier_only() -> N
     }
     assert summary["manual_frontier_work_item_candidate_set_status_counts"] == {
         "complete": 4,
+    }
+    assert summary["manual_frontier_work_item_source_witness_role_counts"] == {
+        "affecting_source": 4,
+    }
+    assert summary["manual_frontier_work_item_source_witness_digest_coverage_counts"] == {
+        "missing_digest": 4,
     }
     assert summary["manual_frontier_work_item_missing_candidate_operation_family_count"] == 0
     assert summary["manual_frontier_work_item_missing_required_validator_checks_count"] == 0

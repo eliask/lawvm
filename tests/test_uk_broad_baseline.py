@@ -1584,6 +1584,14 @@ def test_summarize_results_aggregates_manual_frontier_authorization() -> None:
                     "changed_paths_are_within_text_patch_target": 1,
                     "claim_preserves_effect_feed_target_identity": 1,
                 },
+                "manual_frontier_work_item_source_witness_role_counts": {
+                    "affecting_source_fragment": 2,
+                    "effect_feed_row": 1,
+                },
+                "manual_frontier_work_item_source_witness_digest_coverage_counts": {
+                    "artifact_and_preview_digest": 1,
+                    "preview_digest": 2,
+                },
                 "manual_frontier_work_item_missing_candidate_operation_family_count": 4,
                 "manual_frontier_work_item_missing_required_validator_checks_count": 5,
             },
@@ -1618,6 +1626,14 @@ def test_summarize_results_aggregates_manual_frontier_authorization() -> None:
         "changed_paths_are_within_declared_facet_target": 2,
         "changed_paths_are_within_text_patch_target": 1,
         "claim_preserves_effect_feed_target_identity": 1,
+    }
+    assert summary["manual_frontier_work_item_source_witness_role_counts"] == {
+        "affecting_source_fragment": 2,
+        "effect_feed_row": 1,
+    }
+    assert summary["manual_frontier_work_item_source_witness_digest_coverage_counts"] == {
+        "artifact_and_preview_digest": 1,
+        "preview_digest": 2,
     }
     assert summary["manual_frontier_work_item_missing_candidate_operation_family_count"] == 4
     assert summary["manual_frontier_work_item_missing_required_validator_checks_count"] == 5
@@ -2255,6 +2271,12 @@ def test_run_driver_can_fail_on_frontier_work_item_gaps(monkeypatch, capsys) -> 
             "n_oracle": 110,
             "manual_frontier_work_item_missing_candidate_operation_family_count": 2,
             "manual_frontier_work_item_missing_required_validator_checks_count": 3,
+            "manual_frontier_work_item_source_witness_role_counts": {
+                "effect_feed_row": 2,
+            },
+            "manual_frontier_work_item_source_witness_digest_coverage_counts": {
+                "preview_digest": 2,
+            },
         }
         return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
 
@@ -2272,6 +2294,11 @@ def test_run_driver_can_fail_on_frontier_work_item_gaps(monkeypatch, capsys) -> 
     assert "manual_frontier_work_item_missing_completeness_counts: " in out
     assert "candidate_operation_family=2" in out
     assert "required_validator_checks=3" in out
+    assert "manual_frontier_work_item_source_witness_role_counts: effect_feed_row=2" in out
+    assert (
+        "manual_frontier_work_item_source_witness_digest_coverage_counts: "
+        "preview_digest=2"
+    ) in out
 
 
 def test_run_driver_can_fail_on_non_manual_source_chain_frontier(

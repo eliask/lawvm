@@ -10,6 +10,10 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, NamedTuple, Optional
 
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
+from lawvm.core.source_witness import (
+    source_witness_digest_coverage,
+    source_witness_role_key,
+)
 from lawvm.tools.uk_claim_templates import (
     UK_CLAIM_TEMPLATE_RULE_IDS as _UK_CLAIM_TEMPLATE_RULE_IDS,
     manual_compile_suggested_claim_template as _manual_compile_suggested_claim_template,
@@ -745,6 +749,8 @@ def uk_effects_summary_counts(
     manual_frontier_work_item_packet_ready_counts: dict[str, int] = {}
     manual_frontier_work_item_packet_missing_field_counts: dict[str, int] = {}
     manual_frontier_work_item_candidate_set_status_counts: dict[str, int] = {}
+    manual_frontier_work_item_source_witness_role_counts: dict[str, int] = {}
+    manual_frontier_work_item_source_witness_digest_coverage_counts: dict[str, int] = {}
     manual_frontier_work_item_missing_candidate_operation_family_count = 0
     manual_frontier_work_item_missing_required_validator_checks_count = 0
     suggested_claim_template_status_counts: dict[str, int] = {}
@@ -805,6 +811,27 @@ def uk_effects_summary_counts(
                     + 1
                 )
                 work_item = _summary_frontier_work_item(row, statute_id=statute_id)
+                source_witness = work_item.get("source_witness")
+                if not isinstance(source_witness, Mapping):
+                    source_witness = {}
+                witness_role = source_witness_role_key(source_witness)
+                manual_frontier_work_item_source_witness_role_counts[witness_role] = (
+                    manual_frontier_work_item_source_witness_role_counts.get(
+                        witness_role,
+                        0,
+                    )
+                    + 1
+                )
+                digest_coverage = source_witness_digest_coverage(source_witness)
+                manual_frontier_work_item_source_witness_digest_coverage_counts[
+                    digest_coverage
+                ] = (
+                    manual_frontier_work_item_source_witness_digest_coverage_counts.get(
+                        digest_coverage,
+                        0,
+                    )
+                    + 1
+                )
                 operation_family = str(
                     work_item.get("candidate_operation_family") or ""
                 )
@@ -1016,6 +1043,14 @@ def uk_effects_summary_counts(
         ),
         "manual_frontier_work_item_candidate_set_status_counts": dict(
             sorted(manual_frontier_work_item_candidate_set_status_counts.items())
+        ),
+        "manual_frontier_work_item_source_witness_role_counts": dict(
+            sorted(manual_frontier_work_item_source_witness_role_counts.items())
+        ),
+        "manual_frontier_work_item_source_witness_digest_coverage_counts": dict(
+            sorted(
+                manual_frontier_work_item_source_witness_digest_coverage_counts.items()
+            )
         ),
         "manual_frontier_work_item_missing_candidate_operation_family_count": (
             manual_frontier_work_item_missing_candidate_operation_family_count
