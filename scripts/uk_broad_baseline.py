@@ -52,6 +52,8 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
+from lxml import etree as ET
+
 from lawvm.core.agreement_residual import AgreementResidual
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frontier_work_item import FrontierWorkItem
@@ -133,6 +135,7 @@ _NON_CORE_COMPARISON_TRIAGE_BUCKETS = frozenset(
         "no_compiled_ops_frontier",
         "no_effect_rows_frontier",
         "nonreplay_effect_frontier",
+        "oracle_addition_source_chain_frontier",
         "oracle_expansion_without_effects",
         "retained_eu_mixed_representation_residual",
         "retained_eu_schedule_oracle_granularity_residual",
@@ -166,6 +169,7 @@ _OFFICIAL_EMPTY_EFFECT_FEED_FRONTIER_REASONS = frozenset(
     {
         "effect_feed_empty",
         "effect_feed_pages_absent",
+        "oracle_addition_changeid_source_chain_gap",
     }
 )
 _SOURCE_OR_ORACLE_PATHOLOGY_FRONTIER_REASONS = frozenset(
@@ -223,9 +227,127 @@ def _normalized_compare_eids(
     )
 
 
+def _oracle_only_addition_change_id_evidence(
+    *,
+    current_xml: bytes,
+    oracle_only_eids: set[str],
+    oracle_physical_eid_aliases: dict[str, str],
+    oracle_visible_number_eid_aliases: dict[str, str],
+    compiled_change_ids: set[str],
+) -> dict[str, Any]:
+    """Report oracle-only current XML additions not backed by compiled effects."""
+    if not oracle_only_eids:
+        return {}
+    from lawvm.uk_legislation.source_adjudication import _normalize_uk_source_container_eid
+
+    alias_norm: dict[str, str] = {}
+    for aliases in (oracle_physical_eid_aliases, oracle_visible_number_eid_aliases):
+        for original, replacement in aliases.items():
+            normalized_original = _normalize_uk_source_container_eid(original)
+            normalized_replacement = _normalize_uk_source_container_eid(replacement)
+            if normalized_original and normalized_replacement:
+                alias_norm[normalized_original] = normalized_replacement
+
+    root = ET.fromstring(current_xml)
+    change_ids_by_eid: dict[str, tuple[str, ...]] = {}
+    for element in root.iter():
+        if not isinstance(element.tag, str):
+            continue
+        raw_eid = str(element.get("id") or element.get("eId") or "")
+        normalized = _normalize_uk_source_container_eid(raw_eid)
+        if not normalized:
+            continue
+        compare_eid = alias_norm.get(normalized, normalized)
+        if compare_eid not in oracle_only_eids:
+            continue
+        change_ids = _element_addition_change_ids(element)
+        if change_ids:
+            change_ids_by_eid[compare_eid] = change_ids
+
+    uncompiled_eids = sorted(
+        eid
+        for eid, change_ids in change_ids_by_eid.items()
+        if any(change_id not in compiled_change_ids for change_id in change_ids)
+    )
+    all_change_ids = sorted(
+        {change_id for change_ids in change_ids_by_eid.values() for change_id in change_ids}
+    )
+    uncompiled_change_ids = sorted(
+        change_id
+        for change_id in all_change_ids
+        if change_id not in compiled_change_ids
+    )
+    return {
+        "n_oracle_only_addition_eids": len(change_ids_by_eid),
+        "oracle_only_addition_eid_samples": sorted(change_ids_by_eid)[:20],
+        "oracle_only_addition_change_ids": all_change_ids[:20],
+        "n_oracle_only_uncompiled_addition_eids": len(uncompiled_eids),
+        "oracle_only_uncompiled_addition_eid_samples": uncompiled_eids[:20],
+        "oracle_only_uncompiled_addition_change_ids": uncompiled_change_ids[:20],
+    }
+
+
+def _element_addition_change_ids(element: ET._Element) -> tuple[str, ...]:
+    change_ids: set[str] = set()
+    for candidate in element.iter():
+        if not isinstance(candidate.tag, str):
+            continue
+        if ET.QName(candidate).localname != "Addition":
+            continue
+        change_id = str(candidate.get("ChangeId") or "").strip()
+        if change_id:
+            change_ids.add(change_id)
+    return tuple(sorted(change_ids))
+
+
+def _compiled_source_chain_ids(
+    ops: list[Any],
+    effect_rows: list[Any],
+) -> set[str]:
+    """Collect source/effect ids already represented by compiled replay inputs."""
+    compiled_ids: set[str] = set()
+    for effect in effect_rows:
+        effect_id = str(getattr(effect, "effect_id", "") or "").strip()
+        if effect_id:
+            compiled_ids.add(effect_id)
+    for op in ops:
+        op_id = str(getattr(op, "op_id", "") or "").strip()
+        if not op_id:
+            continue
+        compiled_ids.add(op_id)
+        compiled_ids.add(_base_effect_id_from_op_id(op_id))
+    return {identifier for identifier in compiled_ids if identifier}
+
+
+def _base_effect_id_from_op_id(op_id: str) -> str:
+    """Remove LawVM lowering suffixes from operation ids where possible."""
+    if not op_id.startswith("key-"):
+        return op_id
+    for suffix in (
+        "_structured_tail_",
+        "_definition_child_",
+        "_inserted_subsection_child_range_",
+        "_parent_child_substitution",
+        "_definition_child_structural_substitution",
+        "_definition_child_tail_connector",
+        "_definition_child_insert_",
+        "_crossheading",
+        "_anchor_tail",
+        "_semicolon",
+        "_insert_",
+        "_repeal_",
+        "_insert",
+    ):
+        if suffix in op_id:
+            return op_id.split(suffix, 1)[0]
+    return op_id
+
+
 def _retained_repeal_oracle_targets(
     ops: list[Any],
     oracle_only_eids: set[str],
+    *,
+    statute_id: str,
 ) -> list[str]:
     """Find source-backed repeal roots still exposed by the current oracle."""
     from lawvm.core.semantic_types import StructuralAction
@@ -240,9 +362,47 @@ def _retained_repeal_oracle_targets(
                 targets.add("/whole_act")
             continue
         target_eid = _fallback_target_eid(op.target)
-        if target_eid in oracle_only_eids:
-            targets.add(target_eid)
+        candidate_eids = {target_eid}
+        if statute_id.startswith("eur/"):
+            candidate_eids.update(_retained_eu_oracle_eid_aliases(target_eid))
+        matched_eids = candidate_eids & oracle_only_eids
+        targets.update(sorted(matched_eids))
     return sorted(targets)
+
+
+def _retained_eu_oracle_eid_aliases(target_eid: str) -> set[str]:
+    """Map LawVM section/schedule target ids to retained-EU oracle article ids."""
+    aliases: set[str] = set()
+    if target_eid.startswith("section-"):
+        aliases.add(f"article-{target_eid.removeprefix('section-')}")
+    if target_eid.startswith("schedule-"):
+        schedule_label = target_eid.removeprefix("schedule-")
+        roman = _positive_int_to_roman(schedule_label)
+        if roman:
+            aliases.add(f"annex-{roman.lower()}")
+    return aliases
+
+
+def _positive_int_to_roman(value: str) -> str:
+    if not value.isdecimal():
+        return ""
+    number = int(value)
+    if number <= 0 or number > 20:
+        return ""
+    pairs = (
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    )
+    out: list[str] = []
+    remainder = number
+    for integer, roman in pairs:
+        while remainder >= integer:
+            out.append(roman)
+            remainder -= integer
+    return "".join(out)
 
 
 def _op_targets_schedule_surface(op: Any) -> bool:
@@ -476,6 +636,8 @@ def score_one(statute_id: str) -> dict[str, Any]:
             diagnostic_replay_filter_mode=UKDiagnosticReplayFilterMode.OBSERVE_ONLY,
         )
         result["n_ops"] = len(ops)
+        compiled_source_chain_ids = _compiled_source_chain_ids(ops, effect_rows)
+        result["n_compiled_source_chain_ids"] = len(compiled_source_chain_ids)
         compile_rejections = [
             *_compile_authorization_rows(
                 effect_feed_parse_rejections,
@@ -754,6 +916,7 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 retained_repeal_targets = _retained_repeal_oracle_targets(
                     ops,
                     oracle_only_eids,
+                    statute_id=statute_id,
                 )
                 oracle_only_schedule_eids = _oracle_only_schedule_eids(
                     oracle_only_eids
@@ -764,6 +927,17 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 result["n_only_in_replayed"] = len(replay_only_eids)
                 result["oracle_only_eid_samples"] = sorted(oracle_only_eids)[:20]
                 result["replay_only_eid_samples"] = sorted(replay_only_eids)[:20]
+                result.update(
+                    _oracle_only_addition_change_id_evidence(
+                        current_xml=current,
+                        oracle_only_eids=oracle_only_eids,
+                        oracle_physical_eid_aliases=oracle_physical_eid_aliases,
+                        oracle_visible_number_eid_aliases=(
+                            oracle_visible_number_eid_aliases
+                        ),
+                        compiled_change_ids=compiled_source_chain_ids,
+                    )
+                )
                 result["n_replay"] = len(replay_compare_eids)
                 result["n_oracle"] = len(oracle_compare_eids)
                 result["retained_repeal_oracle_targets"] = retained_repeal_targets
@@ -1664,6 +1838,8 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
         return "body_oracle_first_paragraph_sectionization_residual"
     if _is_bounded_low_volume_residual(row):
         return "bounded_low_volume_residual"
+    if _is_oracle_addition_source_chain_frontier(row):
+        return "oracle_addition_source_chain_frontier"
     return "residual_after_grounding"
 
 
@@ -1757,6 +1933,7 @@ def _agreement_residual_family(bucket: str) -> str:
         "no_compiled_ops_frontier",
         "no_effect_rows_frontier",
         "nonreplay_effect_frontier",
+        "oracle_addition_source_chain_frontier",
         "oracle_expansion_without_effects",
         "temporal_commencement_frontier",
     }:
@@ -1837,6 +2014,7 @@ def _agreement_residual_owner_phase(bucket: str) -> str:
         "effect_feed_absent_frontier",
         "no_effect_rows_frontier",
         "nonreplay_effect_frontier",
+        "oracle_addition_source_chain_frontier",
         "oracle_expansion_without_effects",
         "temporal_commencement_frontier",
     }:
@@ -1867,9 +2045,12 @@ def _agreement_residual_missing_proofs(
         "no_effect_rows_frontier",
         "nonreplay_effect_frontier",
         "no_compiled_ops_frontier",
+        "oracle_addition_source_chain_frontier",
         "oracle_expansion_without_effects",
     }:
         proofs.append("source_identity")
+    if bucket == "oracle_addition_source_chain_frontier":
+        proofs.append("source_chain_completeness")
     if bucket == "temporal_commencement_frontier":
         proofs.append("temporal_extent_applicability")
     if bucket in {
@@ -1937,6 +2118,8 @@ def _source_chain_frontier_reasons_for_row(row: dict[str, Any]) -> tuple[str, ..
         reasons.append(bucket.removeprefix("source_frontier:"))
     elif bucket == "effect_feed_absent_frontier":
         reasons.append("effect_feed_pages_absent")
+    elif bucket == "oracle_addition_source_chain_frontier":
+        reasons.append("oracle_addition_changeid_source_chain_gap")
     elif bucket == "no_effect_rows_frontier":
         if _has_empty_effect_feed_record(row):
             reasons.append("effect_feed_empty")
@@ -2036,6 +2219,30 @@ def _is_oracle_expansion_without_effects(row: dict[str, Any]) -> bool:
     if bool(row.get("has_schedule_targeting_ops")):
         return False
     return n_oracle_only_schedule_eids * 2 >= n_only_in_oracle
+
+
+def _is_oracle_addition_source_chain_frontier(row: dict[str, Any]) -> bool:
+    """Classify oracle-only additions whose source-chain ids are not compiled."""
+    if not bool(row.get("oracle_source_has_body")) and not bool(
+        row.get("oracle_source_has_schedules")
+    ):
+        return False
+    n_only_in_oracle = int(row.get("n_only_in_oracle") or 0)
+    if n_only_in_oracle <= 0:
+        return False
+    if int(row.get("n_only_in_replayed") or 0) > 0:
+        return False
+    if int(row.get("n_blocking_compile_rejections") or 0) > 0:
+        return False
+    n_uncompiled_additions = int(
+        row.get("n_oracle_only_uncompiled_addition_eids") or 0
+    )
+    if n_uncompiled_additions != n_only_in_oracle:
+        return False
+    uncompiled_change_ids = row.get("oracle_only_uncompiled_addition_change_ids")
+    return isinstance(uncompiled_change_ids, list | tuple) and bool(
+        uncompiled_change_ids
+    )
 
 
 def _has_missing_structural_payload_record(row: dict[str, Any]) -> bool:

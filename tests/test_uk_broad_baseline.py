@@ -363,6 +363,43 @@ def test_normalized_compare_eids_uses_uk_misses_compare_lens() -> None:
     assert oracle == {"section-1"}
 
 
+def test_oracle_only_addition_change_id_evidence_uses_compare_aliases() -> None:
+    current_xml = b"""<?xml version="1.0"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    NumberOfProvisions="1">
+  <Body>
+    <P1 id="section-1">
+      <Pnumber>1</Pnumber>
+      <P1para>
+        <P2 id="section-1-2-a-i">
+          <Pnumber>(i)</Pnumber>
+          <P2para><Addition ChangeId="d30p77">Inserted text.</Addition></P2para>
+        </P2>
+      </P1para>
+    </P1>
+  </Body>
+</Legislation>"""
+
+    evidence = uk_broad_baseline._oracle_only_addition_change_id_evidence(
+        current_xml=current_xml,
+        oracle_only_eids={"section-1-2-a-1"},
+        oracle_physical_eid_aliases={},
+        oracle_visible_number_eid_aliases={
+            "section-1-2-a-i": "section-1-2-a-1",
+        },
+        compiled_change_ids={"key-effect"},
+    )
+
+    assert evidence == {
+        "n_oracle_only_addition_eids": 1,
+        "oracle_only_addition_eid_samples": ["section-1-2-a-1"],
+        "oracle_only_addition_change_ids": ["d30p77"],
+        "n_oracle_only_uncompiled_addition_eids": 1,
+        "oracle_only_uncompiled_addition_eid_samples": ["section-1-2-a-1"],
+        "oracle_only_uncompiled_addition_change_ids": ["d30p77"],
+    }
+
+
 def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
     summary = uk_broad_baseline.summarize_results(
         [
@@ -879,6 +916,31 @@ def test_mutation_boundary_diagnostics_reports_unexplained_paths() -> None:
     ]
 
 
+def test_retained_repeal_oracle_targets_maps_retained_eu_article_aliases() -> None:
+    ops = [
+        LegalOperation(
+            op_id="key-article",
+            sequence=1,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "1"),)),
+        ),
+        LegalOperation(
+            op_id="key-annex",
+            sequence=2,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("schedule", "2"),)),
+        ),
+    ]
+
+    targets = uk_broad_baseline._retained_repeal_oracle_targets(
+        ops,
+        {"article-1", "annex-ii"},
+        statute_id="eur/2020/2220",
+    )
+
+    assert targets == ["annex-ii", "article-1"]
+
+
 def test_summarize_results_counts_grounding_dominated_residuals() -> None:
     summary = uk_broad_baseline.summarize_results(
         [
@@ -1026,6 +1088,138 @@ def test_summarize_results_classifies_oracle_expansion_without_effects() -> None
     assert summary["agreement_residual_owner_phase_counts"] == {
         "effect_metadata_frontend": 1,
     }
+    assert summary["active_unclassified_residual_count"] == 0
+
+
+def test_summarize_results_classifies_oracle_addition_source_chain_frontier() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1934/41",
+                "score_status": "scored",
+                "aligned": 73.91,
+                "aligned_excluding_grounding_collateral": 73.91,
+                "unaligned": 73.91,
+                "base_source_has_body": True,
+                "oracle_source_has_body": True,
+                "n_replay": 17,
+                "n_oracle": 23,
+                "n_only_in_oracle": 6,
+                "n_only_in_replayed": 0,
+                "n_effects": 2,
+                "n_ops": 2,
+                "n_compile_rejections": 2,
+                "n_blocking_compile_rejections": 0,
+                "n_oracle_only_uncompiled_addition_eids": 6,
+                "oracle_only_uncompiled_addition_change_ids": [
+                    "d30p157",
+                    "d30p193",
+                    "d30p61",
+                    "d30p77",
+                ],
+                "manual_frontier_status_counts": {
+                    "deterministic_frontend_supported": 2,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {
+        "oracle_addition_source_chain_frontier": 1,
+    }
+    assert summary["source_chain_frontier_reasons"] == {
+        "oracle_addition_changeid_source_chain_gap": 1,
+    }
+    assert summary["empty_effect_feed_frontier_count"] == 1
+    assert summary["non_manual_source_chain_frontier_count"] == 0
+    assert summary["comparison_non_core_bucket_counts"] == {
+        "oracle_addition_source_chain_frontier": 1,
+    }
+    assert summary["agreement_residual_family_counts"] == {
+        "source_footing_gap": 1,
+    }
+    assert summary["agreement_residual_status_counts"] == {"frontier": 1}
+    assert summary["agreement_residual_owner_phase_counts"] == {
+        "effect_metadata_frontend": 1,
+    }
+    assert summary["active_unclassified_residual_count"] == 0
+
+
+def test_oracle_addition_source_chain_frontier_requires_full_miss_coverage() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1934/41",
+                "score_status": "scored",
+                "aligned": 73.91,
+                "aligned_excluding_grounding_collateral": 73.91,
+                "unaligned": 73.91,
+                "base_source_has_body": True,
+                "oracle_source_has_body": True,
+                "n_replay": 17,
+                "n_oracle": 23,
+                "n_only_in_oracle": 6,
+                "n_only_in_replayed": 0,
+                "n_effects": 2,
+                "n_ops": 2,
+                "n_compile_rejections": 2,
+                "n_blocking_compile_rejections": 0,
+                "n_oracle_only_uncompiled_addition_eids": 5,
+                "oracle_only_uncompiled_addition_change_ids": ["d30p77"],
+                "manual_frontier_status_counts": {
+                    "deterministic_frontend_supported": 2,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"residual_after_grounding": 1}
+    assert summary["active_unclassified_residual_count"] == 1
+
+
+def test_oracle_addition_source_chain_frontier_does_not_preempt_specific_buckets() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1849/67",
+                "score_status": "scored",
+                "aligned": 66.67,
+                "aligned_excluding_grounding_collateral": 66.67,
+                "base_source_has_body": True,
+                "oracle_source_has_body": True,
+                "base_source_number_of_provisions": 2,
+                "oracle_source_number_of_provisions": 3,
+                "n_replay": 2,
+                "n_oracle": 3,
+                "n_only_in_oracle": 1,
+                "n_only_in_replayed": 0,
+                "n_blocking_compile_rejections": 0,
+                "oracle_only_eid_samples": ["section-1"],
+                "n_oracle_only_uncompiled_addition_eids": 1,
+                "oracle_only_uncompiled_addition_change_ids": ["d1"],
+            },
+            {
+                "statute_id": "ukpga/1956/70",
+                "score_status": "scored",
+                "aligned": 88.89,
+                "aligned_excluding_grounding_collateral": 88.89,
+                "oracle_source_has_body": True,
+                "n_replay": 24,
+                "n_oracle": 27,
+                "n_only_in_oracle": 3,
+                "n_only_in_replayed": 0,
+                "n_blocking_compile_rejections": 0,
+                "n_oracle_only_uncompiled_addition_eids": 3,
+                "oracle_only_uncompiled_addition_change_ids": ["d2"],
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {
+        "body_oracle_first_paragraph_sectionization_residual": 1,
+        "bounded_low_volume_residual": 1,
+    }
+    assert summary["source_chain_frontier_reasons"] == {}
     assert summary["active_unclassified_residual_count"] == 0
 
 
@@ -1308,6 +1502,7 @@ def test_retained_repeal_oracle_targets_include_whole_act_repeal() -> None:
     targets = uk_broad_baseline._retained_repeal_oracle_targets(
         [op],
         {"section-1", "section-2"},
+        statute_id="ukpga/1997/4",
     )
 
     assert targets == ["/whole_act"]
