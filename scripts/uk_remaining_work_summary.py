@@ -420,7 +420,7 @@ def load_remaining_work(
         "lanes": [asdict(lane) for lane in lanes],
     }
     if include_items:
-        payload["items"] = [
+        items = [
             asdict(item)
             for item in _remaining_work_items(
                 lane_rows,
@@ -429,8 +429,10 @@ def load_remaining_work(
                 limit_per_lane=item_limit_per_lane,
             )
         ]
-        payload["summary"]["item_count"] = len(payload["items"])
+        payload["items"] = items
+        payload["summary"].update(_item_export_summary(items, lane_rows))
         payload["summary"]["item_lane_filter"] = sorted(item_lane_ids)
+        payload["summary"]["item_count"] = len(items)
         payload["summary"]["item_limit_per_lane"] = item_limit_per_lane
     return payload
 
@@ -565,6 +567,44 @@ def _remaining_work_items(
             if limit > 0 and len(items) >= limit:
                 return items
     return items
+
+
+def _item_export_summary(
+    items: Sequence[Mapping[str, Any]],
+    lane_rows: Mapping[str, Sequence[Mapping[str, Any]]],
+) -> dict[str, Any]:
+    exported_lane_counts = _counter_dict(str(item.get("lane_id") or "") for item in items)
+    lane_ids = set(lane_rows)
+    exported_lane_ids = set(exported_lane_counts)
+    safety_gap_counts = {
+        key: count
+        for key, count in {
+            "executable_items": sum(1 for item in items if item.get("executable") is True),
+            "replay_authorized_items": sum(
+                1 for item in items if item.get("replay_authorized") is True
+            ),
+            "missing_execution_authorization": sum(
+                1 for item in items if not item.get("execution_authorization")
+            ),
+            "missing_frontier_work_item": sum(
+                1 for item in items if not item.get("frontier_work_item")
+            ),
+            "missing_candidate_set_certificate": sum(
+                1 for item in items if not item.get("candidate_set_certificate")
+            ),
+        }.items()
+        if count
+    }
+    return {
+        "item_exported_lane_counts": exported_lane_counts,
+        "item_exported_lane_count": len(exported_lane_ids),
+        "item_unexported_lane_ids": sorted(lane_ids - exported_lane_ids),
+        "item_authorization_status_counts": _counter_dict(
+            str(item.get("execution_authorization", {}).get("authorization_status") or "")
+            for item in items
+        ),
+        "item_safety_gap_counts": safety_gap_counts,
+    }
 
 
 def _remaining_work_item(
@@ -1369,6 +1409,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             "remaining-work lane"
         ),
     )
+    parser.add_argument(
+        "--fail-on-item-safety-gaps",
+        action="store_true",
+        help=(
+            "with --include-items, exit nonzero if any exported item is "
+            "executable, replay-authorized, or missing shared packet fields"
+        ),
+    )
     args = parser.parse_args(argv)
 
     payload = load_remaining_work(
@@ -1386,6 +1434,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(_emit_tsv(payload))
     else:
         print(_emit_text(payload))
+    if args.fail_on_item_safety_gaps and payload["summary"].get(
+        "item_safety_gap_counts"
+    ):
+        return 1
     return 0
 
 

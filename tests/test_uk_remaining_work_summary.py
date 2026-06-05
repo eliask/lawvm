@@ -416,6 +416,17 @@ def test_item_export_can_limit_rows_per_lane(tmp_path) -> None:
 
     assert payload["summary"]["item_count"] == 3
     assert payload["summary"]["item_limit_per_lane"] == 1
+    assert payload["summary"]["item_exported_lane_counts"] == {
+        "effect_source_footing_gap": 1,
+        "manual_compilation_frontier": 1,
+        "oracle_suspect_review": 1,
+    }
+    assert payload["summary"]["item_exported_lane_count"] == 3
+    assert payload["summary"]["item_unexported_lane_ids"] == []
+    assert payload["summary"]["item_authorization_status_counts"] == {
+        "non_executable_work_item": 3,
+    }
+    assert payload["summary"]["item_safety_gap_counts"] == {}
     assert [item["lane_id"] for item in payload["items"]] == [
         "manual_compilation_frontier",
         "effect_source_footing_gap",
@@ -450,7 +461,80 @@ def test_item_export_global_limit_still_caps_per_lane_sampling(tmp_path) -> None
     )
 
     assert payload["summary"]["item_count"] == 1
+    assert payload["summary"]["item_unexported_lane_ids"] == [
+        "effect_source_footing_gap"
+    ]
     assert payload["items"][0]["lane_id"] == "manual_compilation_frontier"
+
+
+def test_item_export_summary_counts_safety_gaps() -> None:
+    summary = remaining._item_export_summary(
+        [
+            {
+                "lane_id": "manual_compilation_frontier",
+                "executable": True,
+                "replay_authorized": False,
+                "execution_authorization": {},
+                "frontier_work_item": {},
+                "candidate_set_certificate": {},
+            },
+            {
+                "lane_id": "effect_source_footing_gap",
+                "executable": False,
+                "replay_authorized": True,
+                "execution_authorization": {
+                    "authorization_status": "unexpected_authorized"
+                },
+                "frontier_work_item": {"work_item_id": "x"},
+                "candidate_set_certificate": {"scope_id": "x"},
+            },
+        ],
+        {
+            "manual_compilation_frontier": ({},),
+            "effect_source_footing_gap": ({},),
+        },
+    )
+
+    assert summary["item_safety_gap_counts"] == {
+        "executable_items": 1,
+        "missing_candidate_set_certificate": 1,
+        "missing_execution_authorization": 1,
+        "missing_frontier_work_item": 1,
+        "replay_authorized_items": 1,
+    }
+    assert summary["item_authorization_status_counts"] == {
+        "": 1,
+        "unexpected_authorized": 1,
+    }
+
+
+def test_item_safety_gap_cli_gate_passes_for_non_executable_items(
+    tmp_path,
+    capsys,
+) -> None:
+    report = _write_report(
+        tmp_path,
+        [
+            {
+                "statute_id": "ukpga/2000/1",
+                "score_status": "scored",
+                "triage_bucket": "manual_compile_frontier_residual",
+                "aligned": 70.0,
+            },
+        ],
+    )
+
+    assert remaining.main(
+        [
+            str(report),
+            "--include-items",
+            "--fail-on-item-safety-gaps",
+            "--format",
+            "json",
+        ]
+    ) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["summary"]["item_safety_gap_counts"] == {}
 
 
 def test_pure_non_textual_effect_rows_get_distinct_non_replay_lane(tmp_path) -> None:
