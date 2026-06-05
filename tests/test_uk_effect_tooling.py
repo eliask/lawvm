@@ -5964,17 +5964,18 @@ def test_uk_manual_compile_evidence_jsonl_templates_table_crossheading_becomes_c
 
 
 def test_uk_manual_compile_evidence_jsonl_templates_schedule_note_claim() -> None:
+    modeled_target = "schedule:9/chapter:group 6/p1group:notes/subparagraph:3"
     effect = UKEffectRecord(
         effect_id="eff-schedule-note",
         effect_type="words substituted",
         applied=True,
         requires_applied=True,
         modified="2024-01-01",
-        affected_uri="/id/ukpga/2000/1/schedule/1/note/1",
+        affected_uri="/id/ukpga/2000/1/schedule/9/group/6/note/3",
         affected_class="UnitedKingdomPublicGeneralAct",
         affected_year="2000",
         affected_number="1",
-        affected_provisions="Sch. 1 note",
+        affected_provisions="Sch. 9 Group 6 Note 3",
         affecting_uri="/id/ukpga/2024/1",
         affecting_class="UnitedKingdomPublicGeneralAct",
         affecting_year="2024",
@@ -5991,7 +5992,14 @@ def test_uk_manual_compile_evidence_jsonl_templates_schedule_note_claim() -> Non
             candidate=False,
             resolver_eids=(),
             lowering_rejections=(
-                {"rule_id": "uk_effect_schedule_note_target_rejected", "blocking": True},
+                {
+                    "rule_id": "uk_effect_schedule_note_target_rejected",
+                    "blocking": True,
+                    "schedule_note_target_model_status": (
+                        "modeled_group_note_non_executable"
+                    ),
+                    "modeled_target": modeled_target,
+                },
             ),
             replay_applicable=True,
             structural_for_replay=True,
@@ -6033,7 +6041,8 @@ def test_uk_manual_compile_evidence_jsonl_templates_schedule_note_claim() -> Non
     assert template["action_family"] == "schedule_note_text_rewrite"
     assert template["facet_family"] == "schedule_note"
     assert template["placement_family"] == "explicit_schedule_note_carrier_required"
-    assert template["candidate_target_surface"] == "Sch. 1 note"
+    assert template["candidate_target_surface"] == "Sch. 9 Group 6 Note 3"
+    assert template["modeled_targets"] == [modeled_target]
     assert template["text_match"] == "old note"
     assert template["replacement"] == "new note"
     assert "exact_schedule_note_carrier" in template["required_ownership"]
@@ -6045,6 +6054,32 @@ def test_uk_manual_compile_evidence_jsonl_templates_schedule_note_claim() -> Non
         template["required_validator_checks"]
     )
     assert template["executable"] is False
+    assert payload["frontier_work_item"]["candidate_targets"] == [
+        "Sch. 9 Group 6 Note 3"
+    ]
+    assert payload["frontier_work_item"]["target_witness"]["modeled_targets"] == [
+        modeled_target
+    ]
+    assert payload["frontier_work_item"]["target_witness"][
+        "target_model_statuses"
+    ] == ["modeled_group_note_non_executable"]
+    assert (
+        payload["frontier_work_item"]["target_witness"][
+            "modeled_targets_not_replay_authorization"
+        ]
+        is True
+    )
+    assert payload["frontier_work_item"]["detail"]["modeled_targets"] == [
+        modeled_target
+    ]
+    assert payload["candidate_set_certificate"]["modeled_targets"] == [modeled_target]
+    target_resolution = payload["frontier_work_item"]["detail"][
+        "target_resolution_certificate"
+    ]
+    assert target_resolution["modeled_targets"] == [modeled_target]
+    assert target_resolution["target_resolution_not_replay_authorization"] is True
+    assert payload["frontier_work_item"]["executable"] is False
+    assert payload["frontier_work_item"]["replay_authorized"] is False
 
 
 def test_uk_manual_compile_evidence_jsonl_templates_schedule_list_entry_claim() -> None:

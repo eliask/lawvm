@@ -819,7 +819,9 @@ def uk_frontier_work_item_from_manual_frontier_row(
             _mapping(row.get("blocking_lowering_rejection_rule_counts")).keys(),
         ),
         "compiled_op_count": _nonnegative_int(row.get("compiled_op_count")),
-        "compare_shape": str(row.get("compare_shape") or target_context.get("compare_shape") or ""),
+        "compare_shape": str(
+            row.get("compare_shape") or target_context.get("compare_shape") or ""
+        ),
     }
     normalized_source_witness = source_witness_from_mapping(
         source_witness,
@@ -838,6 +840,12 @@ def uk_frontier_work_item_from_manual_frontier_row(
         ).to_dict()
         detail["source_fragment_witness"] = proof_source_witness
     target_witness = _target_witness(row)
+    modeled_targets = _string_tuple(target_witness.get("modeled_targets"))
+    target_model_statuses = _string_tuple(target_witness.get("target_model_statuses"))
+    if modeled_targets:
+        detail["modeled_targets"] = modeled_targets
+        detail["target_model_statuses"] = target_model_statuses
+        detail["modeled_targets_not_replay_authorization"] = True
     compare_witness = _compare_witness(row, target_witness=target_witness)
     execution_authorization = _execution_authorization_packet(row)
     candidate_targets = _candidate_targets(row)
@@ -1015,6 +1023,12 @@ def _first_mapping(*values: Any) -> Mapping[str, Any]:
     return {}
 
 
+def _mapping_tuple(value: Any) -> tuple[Mapping[str, Any], ...]:
+    if isinstance(value, list | tuple):
+        return tuple(item for item in value if isinstance(item, Mapping))
+    return ()
+
+
 def _string_tuple(value: Any) -> tuple[str, ...]:
     if isinstance(value, str):
         return (value,) if value else ()
@@ -1131,6 +1145,21 @@ def _candidate_target_set_certificate(
 ) -> Mapping[str, Any]:
     has_candidates = bool(candidate_targets)
     blockers = {} if has_candidates else {"candidate_targets_unavailable": 1}
+    modeled_targets = _string_tuple(target_witness.get("modeled_targets"))
+    target_model_statuses = _string_tuple(target_witness.get("target_model_statuses"))
+    detail = {
+        "frontier_family_for_projection": frontier_family,
+        "target_witness_surface": str(target_witness.get("surface") or ""),
+        "target_witness_has_resolver_eids": bool(target_witness.get("resolver_eids")),
+    }
+    if modeled_targets:
+        detail.update(
+            {
+                "modeled_targets": modeled_targets,
+                "target_model_statuses": target_model_statuses,
+                "modeled_targets_not_replay_authorization": True,
+            }
+        )
     certificate = CandidateSetCertificate(
         scope_id=f"uk-frontier-work-item:{work_item_id}",
         candidate_set_kind="uk_frontier_work_item_candidate_targets",
@@ -1154,11 +1183,7 @@ def _candidate_target_set_certificate(
             "execution_authorization",
             "mutation_boundary_proof",
         ),
-        detail={
-            "frontier_family_for_projection": frontier_family,
-            "target_witness_surface": str(target_witness.get("surface") or ""),
-            "target_witness_has_resolver_eids": bool(target_witness.get("resolver_eids")),
-        },
+        detail=detail,
     )
     return certificate.to_dict()
 
@@ -1504,6 +1529,8 @@ def _target_resolution_certificate(
         for target in candidate_targets
     )
     resolver_eids = _string_tuple(target_witness.get("resolver_eids"))
+    modeled_targets = _string_tuple(target_witness.get("modeled_targets"))
+    target_model_statuses = _string_tuple(target_witness.get("target_model_statuses"))
     candidate_count = len(candidate_targets)
     selected_target = candidate_targets[0] if candidate_count == 1 else ""
     if candidate_count == 0:
@@ -1512,6 +1539,20 @@ def _target_resolution_certificate(
         status = TARGET_RESOLVED
     else:
         status = TARGET_AMBIGUOUS
+    detail = {
+        "target_witness_surface": str(target_witness.get("surface") or ""),
+        "affected_provisions": str(target_witness.get("affected_provisions") or ""),
+        "resolver_eids": resolver_eids,
+        "target_resolution_not_replay_authorization": True,
+    }
+    if modeled_targets:
+        detail.update(
+            {
+                "modeled_targets": modeled_targets,
+                "target_model_statuses": target_model_statuses,
+                "modeled_targets_not_replay_authorization": True,
+            }
+        )
     return TargetResolutionCertificate(
         rule_id="uk_frontier_work_item_target_resolution_projection",
         phase=owner_phase or "unknown",
@@ -1532,12 +1573,7 @@ def _target_resolution_certificate(
         blocking=False,
         strict_disposition="record",
         quirks_disposition="record",
-        detail={
-            "target_witness_surface": str(target_witness.get("surface") or ""),
-            "affected_provisions": str(target_witness.get("affected_provisions") or ""),
-            "resolver_eids": resolver_eids,
-            "target_resolution_not_replay_authorization": True,
-        },
+        detail=detail,
     ).to_diagnostic_detail()
 
 
@@ -1657,8 +1693,32 @@ def _candidate_targets(row: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(targets))
 
 
+def _modeled_target_evidence_from_lowering_rejections(
+    row: Mapping[str, Any],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    modeled_targets: list[str] = []
+    model_statuses: list[str] = []
+    for rejection in _mapping_tuple(row.get("lowering_rejections")):
+        if (
+            str(rejection.get("rule_id") or "")
+            != "uk_effect_schedule_note_target_rejected"
+        ):
+            continue
+        model_status = str(rejection.get("schedule_note_target_model_status") or "")
+        if not model_status:
+            continue
+        model_statuses.append(model_status)
+        modeled_target = str(rejection.get("modeled_target") or "")
+        if modeled_target:
+            modeled_targets.append(modeled_target)
+    return tuple(dict.fromkeys(modeled_targets)), tuple(dict.fromkeys(model_statuses))
+
+
 def _target_witness(row: Mapping[str, Any]) -> Mapping[str, Any]:
     target_context = _mapping(row.get("target_context"))
+    modeled_targets, target_model_statuses = (
+        _modeled_target_evidence_from_lowering_rejections(row)
+    )
     witness = {
         "surface": str(
             target_context.get("surface")
@@ -1675,7 +1735,11 @@ def _target_witness(row: Mapping[str, Any]) -> Mapping[str, Any]:
             target_context.get("resolver_eids"),
             row.get("resolver_eids"),
         ),
+        "modeled_targets": modeled_targets,
+        "target_model_statuses": target_model_statuses,
     }
+    if modeled_targets:
+        witness["modeled_targets_not_replay_authorization"] = True
     return _compact_witness(witness)
 
 

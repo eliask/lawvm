@@ -141,6 +141,27 @@ def _first_blocking_lowering_rejection_detail(*, row: Any) -> dict[str, Any]:
     return first_rejection
 
 
+def _modeled_schedule_note_targets(*, row: Any) -> tuple[str, ...]:
+    modeled: list[str] = []
+    for rejection in row.summary.lowering_rejections:
+        if not isinstance(rejection, dict):
+            continue
+        if (
+            str(rejection.get("rule_id") or "")
+            != "uk_effect_schedule_note_target_rejected"
+        ):
+            continue
+        if (
+            str(rejection.get("schedule_note_target_model_status") or "")
+            != "modeled_group_note_non_executable"
+        ):
+            continue
+        target = str(rejection.get("modeled_target") or "")
+        if target:
+            modeled.append(target)
+    return tuple(dict.fromkeys(modeled))
+
+
 def _source_payload_instruction_context_detail(*, row: Any) -> dict[str, Any]:
     """Return parent instruction evidence for payload-fragment manual rows."""
     for rejection in row.summary.lowering_rejections:
@@ -470,6 +491,9 @@ def _surface_text_rewrite_claim_template(
                 "source_context_used_for_text_pair": context_used_for_text_pair,
             }
         )
+    modeled_targets = _modeled_schedule_note_targets(row=row)
+    if modeled_targets:
+        template["modeled_targets"] = list(modeled_targets)
     return _with_required_operation_family_proof_semantics(template)
 
 
