@@ -2426,6 +2426,28 @@ def _has_effect_metadata_unsupported_renumber(
     )
 
 
+def _has_overlap_substitution_arity_unsupported(
+    lowering_rows: tuple[dict[str, Any], ...],
+) -> bool:
+    for row in lowering_rows:
+        if (
+            str(row.get("rule_id") or "") != "uk_effect_overlap_substitution_unlowered"
+            or not is_blocking_compile_record(row)
+            or str(row.get("reason_code") or "") != "overlap_substitution_arity_unsupported"
+        ):
+            continue
+        target_count = row.get("target_candidate_count")
+        if isinstance(target_count, int) and not isinstance(target_count, bool):
+            if target_count > 1:
+                return True
+        target_candidates = row.get("unlowered_target_candidates") or row.get(
+            "original_target_candidates"
+        )
+        if isinstance(target_candidates, (tuple, list)) and len(target_candidates) > 1:
+            return True
+    return False
+
+
 # Compiled at module scope per §1.11.  Site #3 (census): greedy .+ between
 # two anchors inside classify_uk_manual_compile_frontier — bound to .{0,600}?
 # (lazy).  Fast-guard: "period specified" is a literal substring of the first
@@ -2793,6 +2815,23 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_source_carried_structured_text_patch_candidate",
             "reason": "The extracted payload is a source-carried structured replacement/insert fragment; a future compiler or manual claim must combine the parent formula anchor with the payload structure instead of flattening it into host text.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and extracted_tag_norm == "BlockAmendment"
+        and _has_overlap_substitution_arity_unsupported(lowering_rows)
+        and _looks_like_source_carried_structured_text_patch_payload(extracted_text_norm)
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_source_carried_structured_text_patch_candidate",
+            "reason": (
+                "The effect metadata expands an overlap substitution into multiple "
+                "child target candidates while the source carries a structured "
+                "BlockAmendment payload; a claim or future compiler must bind the "
+                "parent formula, payload children, and mutation boundary before replay."
+            ),
         }
 
     if (

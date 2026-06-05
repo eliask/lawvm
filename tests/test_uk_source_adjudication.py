@@ -1617,6 +1617,43 @@ def test_classify_uk_manual_compile_frontier_marks_structured_payload_fragment_m
     )
 
 
+def test_classify_uk_manual_compile_frontier_marks_overlap_arity_structured_payload_manual_candidate() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="substituted for words",
+        source_pathology="",
+        extracted_tag="BlockAmendment",
+        extracted_text=(
+            "improvement- a there shall be taken into account any benefit which "
+            "the landlord has agreed in writing to give the tenant; and b where "
+            "a grant has been or will be made to the tenant in respect of the "
+            "improvement, subject to the conditions of the grant- i if either "
+            "the landlord or tenant has not made a contribution"
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+                "reason_code": "overlap_substitution_arity_unsupported",
+                "target_candidate_count": 2,
+                "unlowered_target_candidates": (
+                    "section:36/subsection:3/paragraph:a",
+                    "section:36/subsection:3/paragraph:b",
+                ),
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_source_carried_structured_text_patch_candidate"
+    )
+    assert "mutation boundary before replay" in result["reason"]
+
+
 def test_classify_uk_manual_compile_frontier_does_not_promote_unstructured_payload_fragment() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",
