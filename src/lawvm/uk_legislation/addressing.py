@@ -16,6 +16,9 @@ from lawvm.uk_legislation.canonicalize import uk_addr_container
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
+_LOWER_ALPHA_RE = re.compile(r"[a-z]+")
+
+
 @lru_cache(maxsize=128)
 def _uk_kind_value(kind: IRNodeKind | str) -> str:
     if isinstance(kind, IRNodeKind):
@@ -153,7 +156,7 @@ def _canonicalize_eid_tail_label(label: Optional[str]) -> str:
     if not raw:
         return ""
     stripped = raw.strip("().").lower()
-    if re.fullmatch(r"[a-z]+", stripped):
+    if _LOWER_ALPHA_RE.fullmatch(stripped):
         return stripped
     return _clean_num(raw)
 

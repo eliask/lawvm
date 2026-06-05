@@ -45,6 +45,47 @@ _SCHEDULE_GROUP_NOTE_TARGET_RE = re.compile(
     re.I,
 )
 _PAREN_LABEL_RE = re.compile(r"\(([^)]+)\)")
+_CROSS_HEADING_SUFFIX_RE = re.compile(r"\s+and\s+cross[-\s]?headings?\b.*$", re.I)
+_SPACE_LIST_ABBR_RE = re.compile(
+    r"^(s\.|ss\.|para\.|art\.|ch\.)\s+([0-9A-Z]+)(\s+[0-9A-Z]+)+$",
+    re.I,
+)
+_SPACE_LIST_FULL_RE = re.compile(
+    r"^(.*?\b(?:para\.|paragraph|s\.|ss\.|section|art\.|article|ch\.|chapter)\s+)"
+    r"([0-9A-Z]+)(\s+[0-9A-Z]+)+$",
+    re.I,
+)
+_TARGET_ALNUM_TOKEN_RE = re.compile(r"[0-9A-Z]+", re.I)
+_REPEATED_ANCHOR_RE = re.compile(
+    r"^(.*?\b(?:para\.|paragraph|s\.|ss\.|section|art\.|article)\s+)"
+    r"(\d+(?:\([0-9A-Z]+\))+)\s+and\s+(\d+(?:\([0-9A-Z]+\))+)$",
+    re.I,
+)
+_RANGE_PLUS_WS_GROUP_RE = re.compile(
+    r"^(.*?)\(([0-9A-Z]+)\)-\(([0-9A-Z]+)\)((?:\s+\([0-9A-Z]+\))+)$",
+    re.I,
+)
+_TARGET_PAREN_GROUP_RE = re.compile(r"\(([0-9A-Z]+)\)", re.I)
+_ADJACENT_GROUP_RE = re.compile(r"^(.*?)((?:\([0-9A-Z]+\)){2,})$", re.I)
+_WS_GROUP_RE = re.compile(
+    r"^(.*?)(\(([0-9A-Z]+)\))((?:\s+\([0-9A-Z]+\))+)$",
+    re.I,
+)
+_WS_GROUP_RANGE_RE = re.compile(
+    r"^(.*?\(([0-9]+[A-Z]*)\))\s+\(([0-9]+[A-Z]*)\)-\(([0-9]+[A-Z]*)\)$",
+    re.I,
+)
+_TRAILING_NUMERIC_GROUP_RE = re.compile(r"\([0-9]+[A-Z]*\)$", re.I)
+_PAREN_RANGE_RE = re.compile(r"^(.*?)\(([0-9A-Z]+)\)-\(([0-9A-Z]+)\)$", re.I)
+_SIMPLE_TARGET_RANGE_RE = re.compile(
+    r"^(.*?)\s?([0-9A-Z]+)\s*[-–—]\s*([0-9A-Z]+)$",
+    re.I,
+)
+_NUMERIC_SUFFIX_RE = re.compile(r"^(\d+)([A-Z]*)$", re.I)
+_ACTIVE_PREFIX_RE = re.compile(
+    r"^(?:s\.|ss\.|section|sch\.?|schedule|art\.|article)(?:\s|\(|$)",
+    re.I,
+)
 
 
 def _schedule_part_context_removed_target(target: LegalAddress) -> Optional[LegalAddress]:
@@ -418,25 +459,21 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
         if _is_heading_only_ref(p):
             expanded_parts.append(p)
             continue
-        p_for_space_list = re.sub(r"\s+and\s+cross[-\s]?headings?\b.*$", "", p, flags=re.I).strip()
-        m = re.match(r"^(s\.|ss\.|para\.|art\.|ch\.)\s+([0-9A-Z]+)(\s+[0-9A-Z]+)+$", p_for_space_list, re.I)
+        p_for_space_list = _CROSS_HEADING_SUFFIX_RE.sub("", p).strip()
+        m = _SPACE_LIST_ABBR_RE.match(p_for_space_list)
         if m:
             kind_abbr = m.group(1)
-            nums = re.findall(r"[0-9A-Z]+", p_for_space_list[len(kind_abbr) :], re.I)
+            nums = _TARGET_ALNUM_TOKEN_RE.findall(p_for_space_list[len(kind_abbr) :])
             if any(num.lower() == "table" for num in nums):
                 expanded_parts.append(p)
                 continue
             for n in nums:
                 expanded_parts.append(f"{kind_abbr} {n}")
             continue
-        m = re.match(
-            r"^(.*?\b(?:para\.|paragraph|s\.|ss\.|section|art\.|article|ch\.|chapter)\s+)([0-9A-Z]+)(\s+[0-9A-Z]+)+$",
-            p_for_space_list,
-            re.I,
-        )
+        m = _SPACE_LIST_FULL_RE.match(p_for_space_list)
         if m:
             prefix = m.group(1)
-            nums = re.findall(r"[0-9A-Z]+", p_for_space_list[len(prefix) :], re.I)
+            nums = _TARGET_ALNUM_TOKEN_RE.findall(p_for_space_list[len(prefix) :])
             if any(num.lower() == "table" for num in nums):
                 expanded_parts.append(p)
                 continue
@@ -451,22 +488,14 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
     # "cross-heading" must not be expanded.
     all_parts = []
     for p in parts:
-        repeated_anchor_m = re.match(
-            r"^(.*?\b(?:para\.|paragraph|s\.|ss\.|section|art\.|article)\s+)(\d+(?:\([0-9A-Z]+\))+)\s+and\s+(\d+(?:\([0-9A-Z]+\))+)$",
-            p,
-            re.I,
-        )
+        repeated_anchor_m = _REPEATED_ANCHOR_RE.match(p)
         if repeated_anchor_m:
             prefix = repeated_anchor_m.group(1)
             all_parts.append(f"{prefix}{repeated_anchor_m.group(2)}")
             all_parts.append(f"{prefix}{repeated_anchor_m.group(3)}")
             continue
 
-        range_plus_ws_group_m = re.match(
-            r"^(.*?)\(([0-9A-Z]+)\)-\(([0-9A-Z]+)\)((?:\s+\([0-9A-Z]+\))+)$",
-            p,
-            re.I,
-        )
+        range_plus_ws_group_m = _RANGE_PLUS_WS_GROUP_RE.match(p)
         if range_plus_ws_group_m:
             prefix = range_plus_ws_group_m.group(1).rstrip()
             expanded_range = _expand_parenthesized_range(
@@ -474,21 +503,17 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
                 range_plus_ws_group_m.group(2),
                 range_plus_ws_group_m.group(3),
             )
-            trailing_raw = re.findall(r"\(([0-9A-Z]+)\)", range_plus_ws_group_m.group(4), re.I)
+            trailing_raw = _TARGET_PAREN_GROUP_RE.findall(range_plus_ws_group_m.group(4))
             if expanded_range and trailing_raw:
                 all_parts.extend(expanded_range)
                 for group in trailing_raw:
                     all_parts.append(f"{prefix}({group})")
                 continue
 
-        adjacent_group_m = re.match(
-            r"^(.*?)((?:\([0-9A-Z]+\)){2,})$",
-            p,
-            re.I,
-        )
+        adjacent_group_m = _ADJACENT_GROUP_RE.match(p)
         if adjacent_group_m:
             prefix = adjacent_group_m.group(1)
-            all_groups = re.findall(r"\(([0-9A-Z]+)\)", adjacent_group_m.group(2), re.I)
+            all_groups = _TARGET_PAREN_GROUP_RE.findall(adjacent_group_m.group(2))
             if len(all_groups) >= 2:
                 if _is_sibling_group_family(all_groups) and not (
                     len(all_groups) == 2
@@ -530,15 +555,11 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
 
         # Whitespace-compressed sibling refs: "s. 62(7) (8)" means sibling
         # subsections (7) and (8), not a nested paragraph 8 under subsection 7.
-        ws_group_m = re.match(
-            r"^(.*?)(\(([0-9A-Z]+)\))((?:\s+\([0-9A-Z]+\))+)$",
-            p,
-            re.I,
-        )
+        ws_group_m = _WS_GROUP_RE.match(p)
         if ws_group_m:
             prefix = ws_group_m.group(1)
             first_raw = ws_group_m.group(3)
-            trailing_raw = re.findall(r"\(([0-9A-Z]+)\)", ws_group_m.group(4), re.I)
+            trailing_raw = _TARGET_PAREN_GROUP_RE.findall(ws_group_m.group(4))
             if trailing_raw:
                 all_groups = [first_raw, *trailing_raw]
                 if _is_sibling_group_family(all_groups):
@@ -552,14 +573,10 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
         # (1A). Keep this narrower than general nested parenthesized ranges:
         # only a single numeric/alphanumeric carried group may introduce the
         # sibling range.
-        ws_group_range_m = re.match(
-            r"^(.*?\(([0-9]+[A-Z]*)\))\s+\(([0-9]+[A-Z]*)\)-\(([0-9]+[A-Z]*)\)$",
-            p,
-            re.I,
-        )
+        ws_group_range_m = _WS_GROUP_RANGE_RE.match(p)
         if ws_group_range_m:
             base_ref = ws_group_range_m.group(1)
-            base_prefix = re.sub(r"\([0-9]+[A-Z]*\)$", "", base_ref, flags=re.I).rstrip()
+            base_prefix = _TRAILING_NUMERIC_GROUP_RE.sub("", base_ref).rstrip()
             expanded_range = _expand_parenthesized_range(
                 base_prefix,
                 ws_group_range_m.group(3),
@@ -567,7 +584,7 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
             )
             if (
                 expanded_range
-                and len(re.findall(r"\(([0-9A-Z]+)\)", base_ref, re.I)) == 1
+                and len(_TARGET_PAREN_GROUP_RE.findall(base_ref)) == 1
                 and _is_sibling_group_family(
                     [
                         ws_group_range_m.group(2),
@@ -583,10 +600,10 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
         # Strip "and cross-heading(s)" / "and cross heading(s)" qualifier
         # suffix so ranges like "s. 9-12 and cross-heading" and
         # "Sch. 6 para. 45-48 and cross-headings" expand correctly.
-        p_for_range = re.sub(r"\s+and\s+cross[-\s]?headings?\b.*$", "", p, flags=re.I).strip()
+        p_for_range = _CROSS_HEADING_SUFFIX_RE.sub("", p).strip()
 
         # Parenthesized subsection range: "s. 18(7A)-(7D)" -> "s. 18(7A)", ...
-        paren_range_m = re.match(r"^(.*?)\(([0-9A-Z]+)\)-\(([0-9A-Z]+)\)$", p_for_range, re.I)
+        paren_range_m = _PAREN_RANGE_RE.match(p_for_range)
         if paren_range_m:
             prefix = paren_range_m.group(1).rstrip()
             expanded_range = _expand_parenthesized_range(
@@ -598,11 +615,7 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
                 all_parts.extend(expanded_range)
                 continue
 
-        range_m = re.search(
-            r"^(.*?)\s?([0-9A-Z]+)\s*[-–—]\s*([0-9A-Z]+)$",
-            p_for_range,
-            re.I,
-        )
+        range_m = _SIMPLE_TARGET_RANGE_RE.search(p_for_range)
         if range_m:
             prefix = range_m.group(1).strip()
             start_str = range_m.group(2)
@@ -619,8 +632,8 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
                         all_parts.append(f"{prefix} {n}".strip())
                     continue
 
-            m_start = re.match(r"^(\d+)([A-Z]*)$", start_str, re.I)
-            m_end = re.match(r"^(\d+)([A-Z]*)$", end_str, re.I)
+            m_start = _NUMERIC_SUFFIX_RE.match(start_str)
+            m_end = _NUMERIC_SUFFIX_RE.match(end_str)
             if m_start and m_end and m_start.group(1) == m_end.group(1):
                 base = m_start.group(1)
                 s_let = m_start.group(2).upper()
@@ -672,13 +685,13 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
             carried_parts.append(part)
             continue
 
-        groups = re.findall(r"\(([0-9A-Z]+)\)", part, re.I)
+        groups = _TARGET_PAREN_GROUP_RE.findall(part)
         if active_prefix and groups and _SUBORDINATE_TARGET_PREFIX_RE.match(part):
             carried_parts.append(f"{active_prefix}{''.join(f'({group})' for group in groups)}")
             continue
 
         carried_parts.append(part)
-        if re.match(r"^(?:s\.|ss\.|section|sch\.?|schedule|art\.|article)(?:\s|\(|$)", part, re.I):
+        if _ACTIVE_PREFIX_RE.match(part):
             active_prefix = part.rstrip(" ,;")
 
     return carried_parts

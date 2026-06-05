@@ -26,6 +26,13 @@ _CLEAN_NUM_PREFIX_RE = re.compile(
 _CLEAN_NUM_TRAILING_PUNCT_RE = re.compile(r"[().]+$")
 _DOT_OR_SPACE_ONLY_RE = re.compile(r"^[.\s]+$")
 _GROUNDING_NON_WORD_SPACE_RE = re.compile(r"[^\w\s]")
+_EID_SPLIT_RE = re.compile(r"[-_]+")
+_LEADING_DIGITS_RE = re.compile(r"([0-9]+)")
+_SECTION_OR_ARTICLE_ROOT_RE = re.compile(r"^(section|article|rule|regulation)-([^-]+)")
+_SLUGIFY_NON_ALNUM_RE = re.compile(r"[^a-zA-Z0-9]+")
+_SEMANTIC_HASH_NOISE_RE = re.compile(
+    r"\b(the|a|an|of|and|or|to|in|by|from|with|as|for|is|it|at|on|this|that|be|been|being)\b"
+)
 
 # Editorial element types added by legislation.gov.uk editors — NOT part of the
 # enacted statute text.  Excluded from EID scoring so that their presence in the
@@ -792,24 +799,24 @@ def _physical_eid_from_semantic_path(path_key: str) -> str:
 
 
 def _eid_leaf_label(eid: str) -> str:
-    parts = [part for part in re.split(r"[-_]+", str(eid or "").lower()) if part]
+    parts = [part for part in _EID_SPLIT_RE.split(str(eid or "").lower()) if part]
     return parts[-1] if parts else ""
 
 
 def _eid_with_leaf_label(eid: str, label: str) -> str:
-    parts = [part for part in re.split(r"[-_]+", str(eid or "").lower()) if part]
+    parts = [part for part in _EID_SPLIT_RE.split(str(eid or "").lower()) if part]
     if not parts or not label:
         return ""
     return "-".join([*parts[:-1], label.lower()])
 
 
 def _leading_digits(label: str) -> str:
-    match = re.match(r"([0-9]+)", str(label or "").lower())
+    match = _LEADING_DIGITS_RE.match(str(label or "").lower())
     return match.group(1) if match is not None else ""
 
 
 def _section_or_article_root(eid: str) -> str:
-    match = re.match(r"^(section|article|rule|regulation)-([^-]+)", str(eid or "").lower())
+    match = _SECTION_OR_ARTICLE_ROOT_RE.match(str(eid or "").lower())
     if match is None:
         return ""
     return f"{match.group(1)}-{match.group(2)}"
@@ -1544,7 +1551,7 @@ def parse_uk_statute_ir_bytes(
 def _slugify(text: str) -> str:
     if not text:
         return ""
-    return re.sub(r"[^a-zA-Z0-9]+", "-", text.lower()).strip("-")
+    return _SLUGIFY_NON_ALNUM_RE.sub("-", text.lower()).strip("-")
 
 
 def _normalize_text_for_grounding(text: str) -> str:
@@ -1553,9 +1560,8 @@ def _normalize_text_for_grounding(text: str) -> str:
 
 
 def _semantic_hash(text: str) -> str:
-    noise = r"\b(the|a|an|of|and|or|to|in|by|from|with|as|for|is|it|at|on|this|that|be|been|being)\b"
     s = _normalize_text_for_grounding(text)
-    s = re.sub(noise, "", s)
+    s = _SEMANTIC_HASH_NOISE_RE.sub("", s)
     return "".join(s.split())
 
 

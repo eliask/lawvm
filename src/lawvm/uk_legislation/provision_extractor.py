@@ -92,6 +92,30 @@ def _norm_prov_ref(ref: str) -> str:
 
 _NUM_ALPHA_RE = re.compile(r"(\d+)([a-z]+)", flags=re.I)
 _REF_SPLIT_RE = re.compile(r"[\s.()]+")
+_REF_ABBREVIATION_DOT_RE = re.compile(
+    r"\b(Sch|paras?|ss?|s|Pt|Ch|arts?|regs?)\.(?=[0-9A-Za-z])",
+    flags=re.I,
+)
+_REF_NORMALIZATION_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bSch\.", re.I), "schedule"),
+    (re.compile(r"\bSch\b", re.I), "schedule"),
+    (re.compile(r"\bpara\.", re.I), "paragraph"),
+    (re.compile(r"\bparas\.", re.I), "paragraph"),
+    (re.compile(r"\bparas?\b", re.I), "paragraph"),
+    (re.compile(r"\bs\.", re.I), "section"),
+    (re.compile(r"\bss\.", re.I), "section"),
+    (re.compile(r"\bPt\.", re.I), "part"),
+    (re.compile(r"\bPt\b", re.I), "part"),
+    (re.compile(r"\bCh\.", re.I), "chapter"),
+    (re.compile(r"\barts\.", re.I), "article"),
+    (re.compile(r"\bart\.", re.I), "article"),
+    (re.compile(r"\bregs\.", re.I), "regulation"),
+    (re.compile(r"\breg\.", re.I), "regulation"),
+    (re.compile(r"\bannex\b", re.I), "schedule"),
+    (re.compile(r"\bpoints?\b", re.I), "paragraph"),
+    (re.compile(r"\bArticle\b", re.I), "article"),
+    (re.compile(r"\bRule\b", re.I), "rule"),
+)
 _SEQUENCE_KIND_TOKENS = {
     "schedule",
     "part",
@@ -202,32 +226,9 @@ def _build_extraction_context(
 @lru_cache(maxsize=65536)
 def _parse_ref(ref: str) -> tuple[tuple[Optional[str], str], ...]:
     """Parse 'Sch. 2 para. 2(2)' into [('schedule', '2'), ('paragraph', '2'), (None, '2')]."""
-    r = ref
-    r = re.sub(
-        r"\b(Sch|paras?|ss?|s|Pt|Ch|arts?|regs?)\.(?=[0-9A-Za-z])",
-        r"\1. ",
-        r,
-        flags=re.I,
-    )
-    r = re.sub(r"\bSch\.", "schedule", r, flags=re.I)
-    r = re.sub(r"\bSch\b", "schedule", r, flags=re.I)
-    r = re.sub(r"\bpara\.", "paragraph", r, flags=re.I)
-    r = re.sub(r"\bparas\.", "paragraph", r, flags=re.I)
-    r = re.sub(r"\bparas?\b", "paragraph", r, flags=re.I)
-    r = re.sub(r"\bs\.", "section", r, flags=re.I)
-    r = re.sub(r"\bss\.", "section", r, flags=re.I)
-    r = re.sub(r"\bPt\.", "part", r, flags=re.I)
-    r = re.sub(r"\bPt\b", "part", r, flags=re.I)
-    r = re.sub(r"\bCh\.", "chapter", r, flags=re.I)
-    r = re.sub(r"\barts\.", "article", r, flags=re.I)
-    r = re.sub(r"\bart\.", "article", r, flags=re.I)
-    r = re.sub(r"\bregs\.", "regulation", r, flags=re.I)
-    r = re.sub(r"\breg\.", "regulation", r, flags=re.I)
-    r = re.sub(r"\bannex\b", "schedule", r, flags=re.I)
-    r = re.sub(r"\bpoints?\b", "paragraph", r, flags=re.I)
-
-    r = re.sub(r"\bArticle\b", "article", r, flags=re.I)
-    r = re.sub(r"\bRule\b", "rule", r, flags=re.I)
+    r = _REF_ABBREVIATION_DOT_RE.sub(r"\1. ", ref)
+    for pattern, replacement in _REF_NORMALIZATION_REPLACEMENTS:
+        r = pattern.sub(replacement, r)
 
     raw_tokens = _REF_SPLIT_RE.split(r)
     raw_tokens = [t.lower() for t in raw_tokens if t]

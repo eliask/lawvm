@@ -65,6 +65,38 @@ _UK_TABLE_TARGET_REFERENCE_TAIL_RE = re.compile(
     r"\bthe\s+references?\s+to\s+.+$",
     flags=re.I,
 )
+_UK_REPEAL_TABLE_TEXT_REWRITE_TERM_RE = re.compile(
+    r"\b(?:word|words|definition|entry|entries)\b"
+)
+_UK_REPEAL_TABLE_DEFINITION_ENTRY_TERM_RE = re.compile(
+    r"\b(?:definition|entry|entries)\b",
+    flags=re.I,
+)
+_UK_REPEAL_TABLE_STRUCTURAL_TERM_RE = re.compile(
+    r"\b(?:part|parts|chapter|chapters|section|sections|schedule|schedules|paragraph|paragraphs|"
+    r"subsection|subsections|sub-?paragraph|sub-?paragraphs)\b"
+)
+_UK_SCHEDULE_WORD_RE = re.compile(r"\b(?:schedule|schedules|sch|schs)\b\.?")
+_UK_SCHEDULE_SEGMENT_BOUNDARY_RE = re.compile(
+    r"\b(?:part|pt|section|sections|s|paragraph|paragraphs|para|paras)\b\.?|;"
+)
+_UK_SECTION_LABEL_CLEAN_RE = re.compile(r"[^0-9a-z]")
+_UK_SECTION_SIMPLE_RANGE_RE = re.compile(
+    r"\bsections?\s+(?P<start>\d+[a-z]?)\s*(?:to|-|–|—)\s*(?P<end>\d+[a-z]?)\b",
+    flags=re.I,
+)
+_UK_SECTION_SIMPLE_LABEL_RE = re.compile(r"(?P<num>\d+)(?P<suffix>[a-z]?)")
+_UK_DIGITS_RE = re.compile(r"\d+")
+_UK_SECTION_SIMPLE_LIST_RE = re.compile(
+    r"\bsections?\s+(?P<body>[0-9,\sand]+)(?:\.|;|$)",
+    flags=re.I,
+)
+_UK_SHORT_ASP_CITATION_RE = re.compile(r"\basp\s*\d+\b")
+_UK_SHORT_UKPGA_CITATION_RE = re.compile(r"\bc\.?\s*\d+\b")
+_UK_SHORT_UKSI_CITATION_RE = re.compile(
+    r"\b(?:s\.?\s*i\.?|si|uksi)\s*\d{4}\s*/\s*\d+\b"
+)
+_UK_SECTIONS_WORD_RE = re.compile(r"\bsections\b")
 _UK_REPEAL_TABLE_COLUMN_ENTRY_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_column_entry_text_repeal"
 )
@@ -336,21 +368,21 @@ def _uk_repeal_table_enactment_match_basis(cell_text: str, effect: UKEffectRecor
         return ""
     num_pat = re.escape(number.lower())
     if slug == "asp":
-        if re.search(r"\basp\s*\d+\b", text):
+        if _UK_SHORT_ASP_CITATION_RE.search(text):
             return (
                 "explicit_short_citation"
                 if re.search(rf"\basp\s*{num_pat}\b", text) is not None
                 else ""
             )
     if slug == "ukpga":
-        if re.search(r"\bc\.?\s*\d+\b", text):
+        if _UK_SHORT_UKPGA_CITATION_RE.search(text):
             return (
                 "explicit_short_citation"
                 if re.search(rf"\bc\.?\s*{num_pat}\b", text) is not None
                 else ""
             )
     if slug == "uksi":
-        if re.search(r"\b(?:s\.?\s*i\.?|si|uksi)\s*\d{4}\s*/\s*\d+\b", text):
+        if _UK_SHORT_UKSI_CITATION_RE.search(text):
             return (
                 "explicit_short_citation"
                 if re.search(
@@ -674,7 +706,7 @@ def _uk_flat_repeal_schedule_structural_repeal(
                 )
             else:
                 reason_code = "flat_mixed_structural_and_word_repeal_split_structural_target"
-        if re.search(r"\b(?:definition|entry|entries)\b", clause, flags=re.I) and (
+        if _UK_REPEAL_TABLE_DEFINITION_ENTRY_TERM_RE.search(clause) and (
             reason_code != "flat_mixed_structural_and_definition_repeal_split_structural_target"
         ):
             continue
@@ -1433,15 +1465,9 @@ def _uk_repeal_table_clause_is_structural_repeal(extent_clause: str) -> bool:
     if _UK_REPEAL_TABLE_QUOTED_CLAUSE_RE.search(text):
         return False
     norm = text.lower()
-    if re.search(r"\b(?:word|words|definition|entry|entries)\b", norm):
+    if _UK_REPEAL_TABLE_TEXT_REWRITE_TERM_RE.search(norm):
         return False
-    return bool(
-        re.search(
-            r"\b(?:part|parts|chapter|chapters|section|sections|schedule|schedules|paragraph|paragraphs|"
-            r"subsection|subsections|sub-?paragraph|sub-?paragraphs)\b",
-            norm,
-        )
-    )
+    return bool(_UK_REPEAL_TABLE_STRUCTURAL_TERM_RE.search(norm))
 
 
 def _uk_repeal_table_mixed_clause_explicitly_names_structural_target(
@@ -2341,11 +2367,10 @@ def _uk_schedule_in_cell_text(text: str, schedule_pat: str) -> bool:
     is_numeric = schedule_pat.isdigit()
     wanted_num = int(schedule_pat) if is_numeric else None
 
-    for m in re.finditer(r"\b(?:schedule|schedules|sch|schs)\b\.?", text):
+    for m in _UK_SCHEDULE_WORD_RE.finditer(text):
         start_idx = m.end()
         next_boundary = len(text)
-        boundary_pat = r"\b(?:part|pt|section|sections|s|paragraph|paragraphs|para|paras)\b\.?|;"
-        bm = re.search(boundary_pat, text[start_idx:])
+        bm = _UK_SCHEDULE_SEGMENT_BOUNDARY_RE.search(text[start_idx:])
         if bm:
             next_boundary = start_idx + bm.start()
 
@@ -2669,7 +2694,7 @@ def _uk_table_cell_mentions_target_cached(
         section_range_match = _uk_section_label_in_simple_range(scope_text, section)
         section_list_match = _uk_section_label_in_simple_list(scope_text, section)
         listed_section_match = (
-            re.search(r"\bsections\b", scope_text) is not None
+            _UK_SECTIONS_WORD_RE.search(scope_text) is not None
             and re.search(rf"\b{section_pat}\s*\(", scope_text) is not None
         )
         if (
@@ -2799,20 +2824,16 @@ def _uk_container_label_body_mentions_label(body: str, wanted: str) -> bool:
 def _uk_section_label_in_simple_range(text: str, label: str) -> bool:
     """Return true when a section label is owned by a simple source range."""
 
-    wanted_label = re.sub(r"[^0-9a-z]", "", (label or "").lower())
+    wanted_label = _UK_SECTION_LABEL_CLEAN_RE.sub("", (label or "").lower())
     if not wanted_label:
         return False
-    for match in re.finditer(
-        r"\bsections?\s+(?P<start>\d+[a-z]?)\s*(?:to|-|–|—)\s*(?P<end>\d+[a-z]?)\b",
-        text or "",
-        flags=re.I,
-    ):
+    for match in _UK_SECTION_SIMPLE_RANGE_RE.finditer(text or ""):
         start_label = match.group("start").lower()
         end_label = match.group("end").lower()
         if wanted_label in {start_label, end_label}:
             return True
-        start_match = re.fullmatch(r"(?P<num>\d+)(?P<suffix>[a-z]?)", start_label)
-        end_match = re.fullmatch(r"(?P<num>\d+)(?P<suffix>[a-z]?)", end_label)
+        start_match = _UK_SECTION_SIMPLE_LABEL_RE.fullmatch(start_label)
+        end_match = _UK_SECTION_SIMPLE_LABEL_RE.fullmatch(end_label)
         if wanted_label.isdigit() and start_match is not None and end_match is not None:
             wanted = int(wanted_label)
             start = int(start_match.group("num"))
@@ -2837,15 +2858,11 @@ def _uk_section_label_in_simple_range(text: str, label: str) -> bool:
 def _uk_section_label_in_simple_list(text: str, label: str) -> bool:
     """Return true when a numeric section label is listed in `sections 153 and 154`."""
 
-    if not re.fullmatch(r"\d+", label or ""):
+    if not _UK_DIGITS_RE.fullmatch(label or ""):
         return False
     wanted = label.strip()
-    for match in re.finditer(
-        r"\bsections?\s+(?P<body>[0-9,\sand]+)(?:\.|;|$)",
-        text or "",
-        flags=re.I,
-    ):
-        labels = re.findall(r"\b\d+\b", match.group("body"))
+    for match in _UK_SECTION_SIMPLE_LIST_RE.finditer(text or ""):
+        labels = _UK_DIGITS_RE.findall(match.group("body"))
         if wanted in labels:
             return True
     return False

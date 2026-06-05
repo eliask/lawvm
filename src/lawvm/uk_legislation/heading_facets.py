@@ -54,6 +54,19 @@ _HEADING_FACET_INSERT_RE = re.compile(
     r"(?P<replacement>[“\"'‘].{0,1000}?[”\"'’]|[^.;]{0,1000})",
     flags=re.I | re.S,
 )
+_HEADING_FACET_SECTION_RANGE_REF_RE = re.compile(
+    r"(?P<prefix>s\.|ss\.|section|sections)\s+"
+    r"(?P<start>\d+[A-Z]?)\s*(?:-|to)\s*(?P<end>\d+[A-Z]?)\s+"
+    r"(?P<facet>heading|headings|title|titles|sidenote|sidenotes)",
+    flags=re.I,
+)
+_HEADING_FACET_SECTION_LABEL_RE = re.compile(r"(\d+)([A-Z]?)", flags=re.I)
+_DIRECT_SECTION_PARAGRAPH_REF_RE = re.compile(
+    r"\b(?:s|section)\.?\s+\d+[a-z]?\s*\(\s*[a-z]\s*\)"
+)
+_SCHEDULE_PART_ABBREVIATION_REF_RE = re.compile(
+    r"\bsch(?:edule)?\.?\s+[0-9a-z]+\s+pt\s+[0-9ivxlcdm]+[a-z]?\b"
+)
 
 
 def _is_heading_only_ref(ref: str) -> bool:
@@ -113,19 +126,13 @@ def _expand_heading_facet_section_range_ref(ref: str) -> list[str]:
         return []
     if "cross-heading" in ref_clean.lower() or "cross heading" in ref_clean.lower():
         return []
-    match = re.fullmatch(
-        r"(?P<prefix>s\.|ss\.|section|sections)\s+"
-        r"(?P<start>\d+[A-Z]?)\s*(?:-|to)\s*(?P<end>\d+[A-Z]?)\s+"
-        r"(?P<facet>heading|headings|title|titles|sidenote|sidenotes)",
-        ref_clean,
-        flags=re.I,
-    )
+    match = _HEADING_FACET_SECTION_RANGE_REF_RE.fullmatch(ref_clean)
     if match is None:
         return []
     start_label = match.group("start")
     end_label = match.group("end")
-    start_num_match = re.fullmatch(r"(\d+)([A-Z]?)", start_label, flags=re.I)
-    end_num_match = re.fullmatch(r"(\d+)([A-Z]?)", end_label, flags=re.I)
+    start_num_match = _HEADING_FACET_SECTION_LABEL_RE.fullmatch(start_label)
+    end_num_match = _HEADING_FACET_SECTION_LABEL_RE.fullmatch(end_label)
     if start_num_match is None or end_num_match is None:
         return []
     start_num = int(start_num_match.group(1))
@@ -376,12 +383,12 @@ def _is_heading_facet_word_patch_supported(
 
 def _is_direct_section_paragraph_ref(ref: str) -> bool:
     ref_clean = " ".join(str(ref or "").strip().lower().split())
-    return bool(re.search(r"\b(?:s|section)\.?\s+\d+[a-z]?\s*\(\s*[a-z]\s*\)", ref_clean))
+    return bool(_DIRECT_SECTION_PARAGRAPH_REF_RE.search(ref_clean))
 
 
 def _is_schedule_part_abbreviation_ref(ref: str) -> bool:
     ref_clean = " ".join(str(ref or "").strip().lower().split())
-    return bool(re.search(r"\bsch(?:edule)?\.?\s+[0-9a-z]+\s+pt\s+[0-9ivxlcdm]+[a-z]?\b", ref_clean))
+    return bool(_SCHEDULE_PART_ABBREVIATION_REF_RE.search(ref_clean))
 
 
 def _is_crossheading_ref(ref: str) -> bool:
