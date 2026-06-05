@@ -2399,6 +2399,158 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_end_insert_manual() 
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_schedule_there_is_inserted_at_end_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text=(
+            "28 In Schedule 5 to the Judicial Pensions and Retirement Act 1993, "
+            "there is inserted at the end- \"Adjudicator to Her Majesty's Land Registry\""
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_marks_schedule_after_entry_insert_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P2",
+        extracted_text=(
+            "1 In Part II of Schedule 1 to the Judicial Pensions and Retirement "
+            "Act 1993, after the entry \"President of the Competition Commission "
+            "Appeal Tribunals\", insert- President of the Competition Appeal Tribunal."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_marks_schedule_entries_substitute_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text=(
+            "229 In Schedule 1 (offices which may be qualifying judicial offices) "
+            "in Part 1 (judges) for the entries \"President of the Family Division\" "
+            "and \"Vice-Chancellor\" substitute- \"President of the Queen's Bench "
+            "Division President of the Family Division Chancellor of the High Court\"."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_marks_schedule_end_of_list_insert_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text=(
+            "2 In Part 2 of Schedule 1 to the Judicial Pensions and Retirement "
+            "Act 1993 (offices which may be qualifying judicial offices), at "
+            "the end of the list under the heading \"Members of tribunals\" "
+            "insert- Asylum Support Adjudicator President of the Charity Tribunal."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_marks_schedule_end_of_part_insert_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text=(
+            "5 In Part 2 of Schedule 1 (offices which may be qualifying judicial "
+            "offices for purposes of the pensions provisions), at the end of "
+            "the part dealing with the members of tribunals insert- \"Judge or "
+            "other member of the First-tier Tribunal\"."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_marks_schedule_at_end_there_is_inserted_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text=(
+            "4 In Schedule 5 (relevant offices in relation to retirement "
+            "provisions), at the end there is inserted- \"Ordinary or legal "
+            "member of either or both of the Scottish Tribunals\"."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_schedule_table_end_rows_missing_payload_source_insufficient() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",

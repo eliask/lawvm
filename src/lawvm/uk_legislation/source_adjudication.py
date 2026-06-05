@@ -1338,19 +1338,41 @@ def _looks_like_schedule_list_entry_instruction(text: str) -> bool:
             r"\b(?:before|after|for)\s+(?:the\s+)?entry\s+(?:(?:relating|relation)\s+to|for)\b",
             norm,
         )
+        or re.search(r"\b(?:before|after)\s+(?:the\s+)?entry\b", norm)
         or re.search(r"\bfor\s+(?:the\s+)?entry\s+(?:beginning|that\s+begins?)\b", norm)
+        or re.search(r"\bfor\s+(?:the\s+)?entries?\b.{0,240}\bsubstitute\b", norm)
         or re.search(r"\bomit\s+(?:the\s+)?entry\s+for\b", norm)
         or re.search(r"\bomit\s+the\s+following\s+entries\b", norm)
         or re.search(
             r"\bschedule\s+[0-9A-Za-z]+\b.{0,160}\b"
-            r"(?:insert|inserting|insertion)\s+at\s+the\s+end\b",
+            r"(?:insert|inserted|inserting|insertion)\s+at\s+the\s+end\b",
+            norm,
+        )
+        or re.search(
+            r"\bschedule\s+[0-9A-Za-z]+\b.{0,200}\b"
+            r"at\s+the\s+end\s+of\s+the\s+list\b.{0,160}\binsert\b",
+            norm,
+        )
+        or re.search(
+            r"\bschedule\s+[0-9A-Za-z]+\b.{0,200}\b"
+            r"at\s+the\s+end\s+of\s+the\s+part\b.{0,160}\binsert\b",
+            norm,
+        )
+        or re.search(
+            r"\bschedule\s+[0-9A-Za-z]+\b.{0,200}\b"
+            r"at\s+the\s+end\s+(?:there\s+is\s+)?inserted\b",
             norm,
         )
     ):
         return False
     if re.search(r"\b(?:table|column|row)\b", norm):
         return False
-    return bool(re.search(r"\b(?:insert|inserting|insertion|substitute|omit|repeal)\b", norm))
+    return bool(
+        re.search(
+            r"\b(?:insert|inserted|inserting|insertion|substitute|substituted|omit|repeal)\b",
+            norm,
+        )
+    )
 
 
 def _looks_like_table_entry_instruction(text: str, *, target_paths: Iterable[str] = ()) -> bool:
