@@ -258,7 +258,10 @@ def _review_family(candidate: Mapping[str, Any]) -> str:
         return "current_page_retains_apparently_repealed_or_omitted_provision"
     if family == "oracle_addition_without_compiled_source_chain":
         return "current_page_contains_addition_requiring_source_chain_review"
-    if family == "oracle_extra_state_without_replay_residual":
+    if family in {
+        "oracle_extra_state_without_replay_residual",
+        "oracle_extra_state_source_chain_lead",
+    }:
         return "current_page_contains_oracle_extra_state_requiring_source_review"
     return "current_page_divergence_review_lead"
 

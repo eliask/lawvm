@@ -304,9 +304,9 @@ def _candidate_from_row(row: Mapping[str, Any]) -> tuple[UKOracleSuspectCandidat
         return (
             UKOracleSuspectCandidate(
                 statute_id=statute_id,
-                candidate_family="oracle_extra_state_without_replay_residual",
-                confidence=_MEDIUM_CONFIDENCE,
-                rank=60,
+                candidate_family="oracle_extra_state_source_chain_lead",
+                confidence=_SOURCE_CHAIN_LEAD,
+                rank=35,
                 triage_bucket=triage_bucket,
                 owner_phase=owner_phase,
                 aligned=aligned,
@@ -325,13 +325,15 @@ def _candidate_from_row(row: Mapping[str, Any]) -> tuple[UKOracleSuspectCandidat
                 retained_repeal_targets=retained_targets,
                 source_witnesses=source_witnesses,
                 execution_witness=execution_witness,
-                missing_proofs=missing_proofs,
+                missing_proofs=missing_proofs
+                or ("source_instruction_witness", "canonical_operation_lowering"),
                 forbidden_shortcuts=forbidden_shortcuts,
                 safe_default=safe_default,
                 reason=(
                     "The current oracle has extra EIDs, while the report has no "
                     "blocking compile rejection or unexplained mutation boundary; "
-                    "confirm source-chain completeness before escalation."
+                    "confirm source-chain completeness before treating this as "
+                    "an oracle-suspect lead."
                 ),
             ),
         )
