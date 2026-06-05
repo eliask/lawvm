@@ -329,7 +329,13 @@ def _load_rows(path: Path) -> list[Mapping[str, Any]]:
 
 
 def _target_tuple(row: Mapping[str, Any]) -> tuple[str, ...]:
-    for key in ("oracle_only_samples", "retained_repeal_targets", "replay_only_samples"):
+    for key in (
+        "oracle_only_samples",
+        "oracle_only_eid_samples",
+        "retained_repeal_targets",
+        "replay_only_samples",
+        "replay_only_eid_samples",
+    ):
         values = row.get(key)
         if isinstance(values, list):
             return tuple(str(value) for value in values if str(value))
@@ -373,7 +379,10 @@ def _base_text_witness_present(root: ET._Element | None, text_preview: str) -> b
     if not needle:
         return False
     haystack = _normalize_materialization_witness(" ".join(root.itertext()))
-    return needle in haystack
+    if needle in haystack:
+        return True
+    heading_needle = _materialization_heading_needle(text_preview)
+    return bool(heading_needle and heading_needle in haystack)
 
 
 def _materialization_witness_needle(text_preview: str) -> str:
@@ -384,6 +393,13 @@ def _materialization_witness_needle(text_preview: str) -> str:
     if len(tokens) < 2:
         return ""
     return " ".join(tokens[:12])
+
+
+def _materialization_heading_needle(text_preview: str) -> str:
+    tokens = _normalize_materialization_witness(text_preview).split()
+    if len(tokens) < 5:
+        return ""
+    return " ".join(tokens[:5])
 
 
 def _normalize_materialization_witness(text: str) -> str:

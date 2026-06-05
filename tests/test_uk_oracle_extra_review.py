@@ -117,6 +117,33 @@ def test_base_text_materialization_gap_is_compare_projection_artifact() -> None:
     assert row.agreement_residual["detail"]["base_text_witness_present"] is True
 
 
+def test_heading_materialization_gap_can_use_short_heading_witness() -> None:
+    row = review.review_target(
+        statute_id="ukpga/1967/45",
+        target="schedule-1-part-3",
+        base_xml=_xml(
+            """
+            <Chapter id="schedule-1-chapter-III">
+              <Number>CHAPTER III</Number>
+              <Title>OBLIGATIONS OF THE SELLER</Title>
+              <P><Text>Section I Delivery of the Goods.</Text></P>
+            </Chapter>
+            """
+        ),
+        oracle_xml=_xml(
+            """
+            <Part id="schedule-1-part-3">
+              <Number>Chapter III.—Obligations of the seller</Number>
+              <Chapter id="schedule-1-part-3-chapter-1"><Number>Article 18</Number></Chapter>
+            </Part>
+            """
+        ),
+    )
+
+    assert row.review_status == "likely_base_text_materialization_gap"
+    assert row.base_text_witness_present is True
+
+
 def test_short_id_targets_are_reviewed_as_target_elements() -> None:
     row = review.review_target(
         statute_id="ukpga/1967/45",
@@ -134,6 +161,15 @@ def test_short_id_targets_are_reviewed_as_target_elements() -> None:
 
     assert row.oracle_target_present is True
     assert row.review_status == "manual_review_candidate"
+
+
+def test_target_tuple_accepts_broad_report_sample_field_names() -> None:
+    assert review._target_tuple({"oracle_only_eid_samples": ["section-1"]}) == (
+        "section-1",
+    )
+    assert review._target_tuple({"replay_only_eid_samples": ["section-2"]}) == (
+        "section-2",
+    )
 
 
 def test_repeal_commentary_is_display_convention() -> None:
