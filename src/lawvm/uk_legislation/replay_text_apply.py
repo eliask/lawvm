@@ -21,6 +21,7 @@ from lawvm.uk_legislation.text_selectors import (
     AfterAnchorBeforeFinalWordSelector,
     AfterAnchorToEndSelector,
     FromChildEndSelector,
+    NegativeLeftContextExceptChildrenSelector,
     OpeningWordsAfterAnchorSelector,
     RangeFromToSelector,
     RangeToEndSelector,
@@ -193,6 +194,53 @@ def _rewrite_referent_qualified_substitution(
         allow_punctuation_spacing=allow_punctuation_spacing,
         allow_word_punctuation_elision=allow_word_punctuation_elision,
     )
+
+
+def _previous_word(text: str, start: int) -> str:
+    cursor = start
+    while cursor > 0 and text[cursor - 1].isspace():
+        cursor -= 1
+    end = cursor
+    while cursor > 0 and text[cursor - 1].isalnum():
+        cursor -= 1
+    return text[cursor:end]
+
+
+def _rewrite_without_left_context_substitution(
+    text: str,
+    *,
+    original: str,
+    negative_left_context: str,
+    replacement: str,
+    occurrence: int,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> ExceptPhraseTextRewrite:
+    if not original or not negative_left_context:
+        return ExceptPhraseTextRewrite(text, False)
+    pattern = _text_patch_pattern(
+        original,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    blocked_context = _normalize_text(negative_left_context)
+    matches = tuple(
+        match
+        for match in re.finditer(pattern, text, flags=re.I)
+        if _normalize_text(_previous_word(text, match.start())) != blocked_context
+    )
+    if not matches:
+        return ExceptPhraseTextRewrite(text, False)
+    if occurrence > 0:
+        if occurrence > len(matches):
+            return ExceptPhraseTextRewrite(text, False)
+        matches = (matches[occurrence - 1],)
+    elif occurrence == -1:
+        matches = (matches[-1],)
+    new_text = text
+    for match in reversed(matches):
+        new_text = new_text[: match.start()] + replacement + new_text[match.end() :]
+    return ExceptPhraseTextRewrite(new_text, new_text != text)
 
 
 def _rewrite_opening_words_after_anchor(
@@ -710,6 +758,27 @@ def _collect_descendant_paths_by_label_and_kinds(
         for index in range(len(current.children) - 1, -1, -1):
             stack.append((path + (index,), current.children[index]))
     return matches
+
+
+def _collect_descendant_paths_by_kind_label_chain(
+    node: UKMutableNode,
+    chain: tuple[tuple[str, str], ...],
+) -> list[TextNodePath]:
+    paths: list[TextNodePath] = [()]
+    for kind, label in chain:
+        next_paths: list[TextNodePath] = []
+        for base_path in paths:
+            base_node = _node_at_path(node, base_path)
+            for relative_path in _collect_descendant_paths_by_label_and_kinds(
+                base_node,
+                label=label,
+                allowed_kinds={kind},
+            ):
+                next_paths.append(base_path + relative_path)
+        paths = next_paths
+        if not paths:
+            return []
+    return paths
 
 
 def _definition_child_nodes(
@@ -2500,6 +2569,42 @@ class UKReplayTextApplyMixin:
                     text_node.text or "",
                     original=original,
                     referent=referent,
+                    replacement=replacement,
+                    occurrence=occurrence,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                if not result.applied:
+                    continue
+                rebuilt = self._replace_descendant_at_path(
+                    rebuilt,
+                    path,
+                    dc_replace(text_node, text=result.text),
+                )
+                made_any = True
+            if made_any:
+                self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, made_any
+
+        if isinstance(selector, NegativeLeftContextExceptChildrenSelector):
+            excluded_paths: list[TextNodePath] = []
+            for child_chain in selector.excluded_child_paths:
+                matching_paths = _collect_descendant_paths_by_kind_label_chain(
+                    node,
+                    child_chain,
+                )
+                if len(matching_paths) != 1:
+                    return node, False
+                excluded_paths.append(matching_paths[0])
+            made_any = False
+            rebuilt = node
+            for path, text_node in text_nodes:
+                if any(path[: len(excluded_path)] == excluded_path for excluded_path in excluded_paths):
+                    continue
+                result = _rewrite_without_left_context_substitution(
+                    text_node.text or "",
+                    original=selector.original,
+                    negative_left_context=selector.negative_left_context,
                     replacement=replacement,
                     occurrence=occurrence,
                     allow_punctuation_spacing=allow_punctuation_spacing,

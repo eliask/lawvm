@@ -21,6 +21,7 @@ from lawvm.uk_legislation.text_selectors import (
     ExceptSourceSiblingOccurrenceSelector,
     FromChildEndSelector,
     LiteralSelector,
+    NegativeLeftContextExceptChildrenSelector,
     OpeningWordsAfterAnchorSelector,
     OpeningWordsSelector,
     RangeFromToSelector,
@@ -353,6 +354,14 @@ class TestSelectorFromLegacyOriginal:
             DefinitionAnchorSelector("X", "after"),
             FromChildEndSelector("paragraph", "(a)", "the start words"),
             FromChildEndSelector("subsection", "(3)", " leading space kept "),
+            NegativeLeftContextExceptChildrenSelector(
+                original="exit charge payment plan",
+                negative_left_context="an",
+                excluded_child_paths=(
+                    (("paragraph", "10"), ("subparagraph", "2a")),
+                    (("paragraph", "11"), ("subparagraph", "1")),
+                ),
+            ),
             RawSelector("TEXT_IN_DEFINITION_widget_AT_END"),
             RawSelector("TEXT_WORD_x_IMMEDIATELY_FOLLOWING_paragraph_2"),
         ],

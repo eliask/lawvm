@@ -113,6 +113,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID,
     UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID,
     UK_AFTER_ANCHOR_SUBSTITUTE_TAIL_SUBSTITUTION_RULE_ID,
+    UK_NEGATIVE_LEFT_CONTEXT_EXCLUDED_CHILDREN_SUBSTITUTION_RULE_ID,
     UK_METADATA_CARRIED_AT_END_ADD_INSERT_RULE_ID,
     UK_METADATA_CARRIED_AT_END_SUBSTITUTE_INSERT_RULE_ID,
     UK_METADATA_CARRIED_RANGE_INSERT_SUBSTITUTION_RULE_ID,
@@ -123,6 +124,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
 from lawvm.uk_legislation.text_selectors import (
     ExceptChildSelector,
     ExceptSourceSiblingOccurrenceSelector,
+    NegativeLeftContextExceptChildrenSelector,
     UKTextRewriteFragment,
     fragment_to_legacy_dict,
 )
@@ -172,6 +174,18 @@ _SOURCE_SIBLING_EXCEPT_AS_MENTIONED_SUBSTITUTION_RE = re.compile(
 _SOURCE_SIBLING_CHILD_TARGET_RE = re.compile(
     r"\bin\s+(?P<child_kind>subsection|paragraph|sub-?paragraph|subparagraph)\s+"
     r"\((?P<child_label>[0-9A-Za-z]+)\)",
+    flags=re.I,
+)
+_NEGATIVE_LEFT_CONTEXT_EXCLUDED_CHILDREN_SUBSTITUTION_RE = re.compile(
+    r"\bfor\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>[^”\"'’]{1,500})[”\"'’],?\s+"
+    r"in\s+each\s+case\s+where\s+it\s+occurs\s+without\s+"
+    r"[“\"'‘](?P<left_context>[^”\"'’]{1,80})[”\"'’]\s+before\s+it,?\s+"
+    r"substitute\s+[“\"'‘](?P<replacement>[^”\"'’]{1,500})[”\"'’]\s*"
+    r"\(\s*but\s+this\s+does\s+not\s+apply\s+to\s+paragraph\s+"
+    r"(?P<first_paragraph>[0-9A-Za-z]+)\s*\(\s*(?P<first_child>[0-9A-Za-z]+)\s*\)\s+"
+    r"or\s+(?:paragraph\s+)?"
+    r"(?P<second_paragraph>[0-9A-Za-z]+)\s*\(\s*(?P<second_child>[0-9A-Za-z]+)\s*\)\s+"
+    r"of\s+Schedule\s+(?P<schedule>[0-9A-Za-z]+)\b[^)]{0,500}\)",
     flags=re.I,
 )
 _AFTER_ANCHOR_EACH_PLACE_EXCEPT_CHILD_INSERT_RE = re.compile(
@@ -372,6 +386,56 @@ def _effect_after_anchor_except_child_insert_fragment(
             selector=ExceptChildSelector(anchor, child_kind, child_label),
             replacement=replacement,
             rule_id=UK_AFTER_QUOTED_ANCHOR_EXCEPT_CHILD_INSERT_RULE_ID,
+            occurrence="0",
+        )
+    )
+
+
+def _effect_negative_left_context_excluded_children_fragment(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect.effect_type or "").lower().split())
+    if norm_effect_type not in {"word substituted", "words substituted"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    match = _NEGATIVE_LEFT_CONTEXT_EXCLUDED_CHILDREN_SUBSTITUTION_RE.search(text)
+    if match is None:
+        return None
+    if _addr_leaf_kind(target) != "schedule":
+        return None
+    source_schedule = _clean_num(match.group("schedule"))
+    target_schedule = _clean_num(_addr_leaf_label(target) or "")
+    if not source_schedule or source_schedule != target_schedule:
+        return None
+    original = " ".join(match.group("original").split()).strip()
+    left_context = " ".join(match.group("left_context").split()).strip()
+    replacement = " ".join(match.group("replacement").split()).strip()
+    if not original or not left_context or not replacement:
+        return None
+    excluded_paths = (
+        (
+            ("paragraph", _clean_num(match.group("first_paragraph"))),
+            ("subparagraph", _clean_num(match.group("first_child"))),
+        ),
+        (
+            ("paragraph", _clean_num(match.group("second_paragraph"))),
+            ("subparagraph", _clean_num(match.group("second_child"))),
+        ),
+    )
+    if any(not label for path in excluded_paths for _kind, label in path):
+        return None
+    return fragment_to_legacy_dict(
+        UKTextRewriteFragment(
+            selector=NegativeLeftContextExceptChildrenSelector(
+                original=original,
+                negative_left_context=left_context,
+                excluded_child_paths=excluded_paths,
+            ),
+            replacement=replacement,
+            rule_id=UK_NEGATIVE_LEFT_CONTEXT_EXCLUDED_CHILDREN_SUBSTITUTION_RULE_ID,
             occurrence="0",
         )
     )
@@ -960,6 +1024,15 @@ def _extract_text_fragment_substitutions(
     )
     if target_scoped_except_child_insert is not None:
         subs = [target_scoped_except_child_insert]
+    target_scoped_negative_context_exclusions = (
+        _effect_negative_left_context_excluded_children_fragment(
+            effect=effect,
+            target=target,
+            extracted_text=extracted_text,
+        )
+    )
+    if target_scoped_negative_context_exclusions is not None:
+        subs = [target_scoped_negative_context_exclusions]
     mixed_structural_text_rewrite_text_half = (
         _effect_mixed_structural_text_rewrite_text_half_repeal_fragment(
             effect_type=effect.effect_type,

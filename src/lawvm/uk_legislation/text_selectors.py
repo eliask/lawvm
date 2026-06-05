@@ -187,6 +187,15 @@ class ReferentQualifiedSelector:
 
 
 @dataclass(frozen=True, slots=True)
+class NegativeLeftContextExceptChildrenSelector:
+    """Occurrences of ``original`` not preceded by a word, excluding child paths."""
+
+    original: str
+    negative_left_context: str
+    excluded_child_paths: tuple[tuple[tuple[str, str], ...], ...]
+
+
+@dataclass(frozen=True, slots=True)
 class RawSelector:
     """A not-yet-migrated ``TEXT_*`` sentinel string carried verbatim.
 
@@ -220,6 +229,7 @@ UKTextSelector = (
     | ExceptChildSelector
     | ExceptSourceSiblingOccurrenceSelector
     | ReferentQualifiedSelector
+    | NegativeLeftContextExceptChildrenSelector
     | RawSelector
 )
 
@@ -305,6 +315,13 @@ def selector_to_legacy_original(selector: UKTextSelector) -> str:
         )
     if isinstance(selector, ReferentQualifiedSelector):
         return f"TEXT_REFERENT_QUALIFIED{US}{selector.original}{US}{selector.referent}"
+    if isinstance(selector, NegativeLeftContextExceptChildrenSelector):
+        return (
+            f"TEXT_WITHOUT_LEFT_CONTEXT_EXCEPT_CHILDREN{US}"
+            f"{selector.original}{US}"
+            f"{selector.negative_left_context}{US}"
+            f"{_serialize_child_paths(selector.excluded_child_paths)}"
+        )
     if isinstance(selector, RawSelector):
         return selector.original
     raise TypeError(f"unknown selector: {selector!r}")
@@ -373,6 +390,17 @@ def selector_from_legacy_original(original: str) -> UKTextSelector:
         if len(parts) == 3:
             return ReferentQualifiedSelector(parts[1], parts[2])
         return RawSelector(original)
+    if original.startswith(f"TEXT_WITHOUT_LEFT_CONTEXT_EXCEPT_CHILDREN{US}"):
+        parts = original.split(US, 3)
+        if len(parts) == 4:
+            parsed_paths = _parse_child_paths(parts[3])
+            if parsed_paths:
+                return NegativeLeftContextExceptChildrenSelector(
+                    parts[1],
+                    parts[2],
+                    parsed_paths,
+                )
+        return RawSelector(original)
     if original.startswith(f"TEXT_AFTER_ANCHOR_BEFORE_FINAL_WORD{US}"):
         parts = original.split(US, 2)
         if len(parts) == 3:
@@ -390,6 +418,28 @@ def selector_from_legacy_original(original: str) -> UKTextSelector:
     if original.startswith("TEXT_"):
         return RawSelector(original)
     return LiteralSelector(original)
+
+
+def _serialize_child_paths(paths: tuple[tuple[tuple[str, str], ...], ...]) -> str:
+    return "|".join(
+        "/".join(f"{kind}:{label}" for kind, label in path)
+        for path in paths
+    )
+
+
+def _parse_child_paths(raw: str) -> tuple[tuple[tuple[str, str], ...], ...]:
+    parsed_paths: list[tuple[tuple[str, str], ...]] = []
+    for raw_path in raw.split("|"):
+        if not raw_path:
+            return ()
+        parts: list[tuple[str, str]] = []
+        for raw_part in raw_path.split("/"):
+            kind, sep, label = raw_part.partition(":")
+            if sep != ":" or not kind or not label:
+                return ()
+            parts.append((kind, label))
+        parsed_paths.append(tuple(parts))
+    return tuple(parsed_paths)
 
 
 def fragment_to_legacy_dict(fragment: UKTextRewriteFragment) -> dict[str, str]:

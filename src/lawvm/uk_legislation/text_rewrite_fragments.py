@@ -112,6 +112,9 @@ UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID = (
 UK_AFTER_ANCHOR_SUBSTITUTE_TAIL_SUBSTITUTION_RULE_ID = (
     "uk_effect_after_anchor_substitute_tail_substitution_text_patch"
 )
+UK_NEGATIVE_LEFT_CONTEXT_EXCLUDED_CHILDREN_SUBSTITUTION_RULE_ID = (
+    "uk_effect_negative_left_context_excluded_children_substitution_text_patch"
+)
 UK_METADATA_CARRIED_AT_END_SUBSTITUTE_INSERT_RULE_ID = (
     "uk_effect_metadata_carried_at_end_substitute_insert_text_patch"
 )
@@ -616,6 +619,41 @@ def append_basic_text_rewrite_observations(
                     "text_match": selector,
                     "replacement": str(fragment.get("replacement") or ""),
                     "referent": referent,
+                    "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
+                },
+            )
+    if UK_NEGATIVE_LEFT_CONTEXT_EXCLUDED_CHILDREN_SUBSTITUTION_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if (
+                str(fragment.get("rule_id") or "")
+                != UK_NEGATIVE_LEFT_CONTEXT_EXCLUDED_CHILDREN_SUBSTITUTION_RULE_ID
+            ):
+                continue
+            selector = str(fragment.get("original") or "")
+            parts = selector.split(US, 3)
+            negative_left_context = parts[2] if len(parts) == 4 else ""
+            excluded_child_paths = parts[3] if len(parts) == 4 else ""
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_NEGATIVE_LEFT_CONTEXT_EXCLUDED_CHILDREN_SUBSTITUTION_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="explicit_negative_left_context_excluded_children_text_patch",
+                reason=(
+                    "UK effect source explicitly substitutes a quoted expression "
+                    "only where a named word does not precede it, and excludes "
+                    "named child provisions; lowering preserves both constraints "
+                    "as part of the text selector."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": selector,
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "negative_left_context": negative_left_context,
+                    "excluded_child_paths": excluded_child_paths,
                     "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
                 },
             )

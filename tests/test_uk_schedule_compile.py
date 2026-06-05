@@ -100,6 +100,9 @@ from lawvm.uk_legislation.table_selectors import (
     _source_or_parent_names_containing_target_for_table_cell,
     _source_text_names_section_label,
 )
+from lawvm.uk_legislation.text_rewrite_fragments import (
+    UK_NEGATIVE_LEFT_CONTEXT_EXCLUDED_CHILDREN_SUBSTITUTION_RULE_ID,
+)
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKEffectRecord,
     UKDiagnosticReplayFilterMode,
@@ -32819,6 +32822,228 @@ def test_replay_referent_qualified_substitution_rewrites_only_referent_surfaces(
         "The Rail Regulator shall exercise its regulatory functions."
     )
     assert section.children[1].text == "A person may exercise his rights independently."
+
+
+def test_compile_negative_left_context_excluded_children_substitution() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-7-paragraph-6-1-b">
+          <Pnumber>b</Pnumber>
+          <Text>b for “exit charge payment plan”, in each case where it occurs without “an” before it, substitute “ CT exit charge payment plan ” (but this does not apply to paragraph 10(2A) or 11(1) of Schedule 3ZB to TMA 1970 as respectively inserted and substituted by Schedule 8 to this Act), and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-2d4bd7fd7e22b1e13f5f0250fdcca1f4",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2020-01-01",
+        affected_uri="/id/ukpga/1970/9/schedule/3ZB",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="Sch. 3ZB",
+        affecting_uri="/id/ukpga/2019/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2019",
+        affecting_number="1",
+        affecting_provisions="Sch. 7 para. 6(1)(b)",
+        affecting_title="Finance Act 2019",
+        in_force_dates=[{"date": "2020-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    selector = (
+        f"TEXT_WITHOUT_LEFT_CONTEXT_EXCEPT_CHILDREN{US}"
+        f"exit charge payment plan{US}an{US}"
+        f"paragraph:10/subparagraph:2a|paragraph:11/subparagraph:1"
+    )
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("schedule", "3zb"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == selector
+    assert ops[0].text_patch.selector.occurrence == 0
+    assert ops[0].text_patch.replacement == "CT exit charge payment plan"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}{UK_NEGATIVE_LEFT_CONTEXT_EXCLUDED_CHILDREN_SUBSTITUTION_RULE_ID}"
+        in ops[0].provenance_tags
+    )
+    assert [
+        record["reason_code"]
+        for record in lowering_records
+        if record["rule_id"]
+        == UK_NEGATIVE_LEFT_CONTEXT_EXCLUDED_CHILDREN_SUBSTITUTION_RULE_ID
+    ] == ["explicit_negative_left_context_excluded_children_text_patch"]
+
+
+def test_replay_negative_left_context_excluded_children_substitution() -> None:
+    selector = (
+        f"TEXT_WITHOUT_LEFT_CONTEXT_EXCEPT_CHILDREN{US}"
+        f"exit charge payment plan{US}an{US}"
+        f"paragraph:10/subparagraph:2a|paragraph:11/subparagraph:1"
+    )
+    op = LegalOperation(
+        op_id="uk_test_negative_left_context_excluded_children",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("schedule", "3zb"),)),
+        text_patch=_replace_patch(selector, "CT exit charge payment plan"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="3zb",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="9",
+                        text=(
+                            "An exit charge payment plan is ignored, but the "
+                            "exit charge payment plan is renamed."
+                        ),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="10",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBPARAGRAPH,
+                                label="2A",
+                                text="The exit charge payment plan stays unchanged.",
+                            ),
+                            IRNode(
+                                kind=IRNodeKind.SUBPARAGRAPH,
+                                label="3",
+                                text="Another exit charge payment plan changes.",
+                            ),
+                        ),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="11",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBPARAGRAPH,
+                                label="1",
+                                text="This exit charge payment plan is excluded.",
+                            ),
+                            IRNode(
+                                kind=IRNodeKind.SUBPARAGRAPH,
+                                label="2",
+                                text="This exit charge payment plan is included.",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+    schedule = replayed.supplements[0]
+
+    assert schedule.children[0].text == (
+        "An exit charge payment plan is ignored, but the "
+        "CT exit charge payment plan is renamed."
+    )
+    assert schedule.children[1].children[0].text == (
+        "The exit charge payment plan stays unchanged."
+    )
+    assert schedule.children[1].children[1].text == (
+        "Another CT exit charge payment plan changes."
+    )
+    assert schedule.children[2].children[0].text == (
+        "This exit charge payment plan is excluded."
+    )
+    assert schedule.children[2].children[1].text == (
+        "This CT exit charge payment plan is included."
+    )
+
+
+def test_replay_negative_left_context_exclusion_blocks_duplicate_child_chain() -> None:
+    selector = (
+        f"TEXT_WITHOUT_LEFT_CONTEXT_EXCEPT_CHILDREN{US}"
+        f"exit charge payment plan{US}an{US}"
+        f"paragraph:10/subparagraph:2a|paragraph:11/subparagraph:1"
+    )
+    op = LegalOperation(
+        op_id="uk_test_duplicate_negative_left_context_exclusion",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("schedule", "3zb"),)),
+        text_patch=_replace_patch(selector, "CT exit charge payment plan"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="3zb",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="9",
+                        text="The exit charge payment plan would change if authorized.",
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="10",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBPARAGRAPH,
+                                label="2A",
+                                text="First excluded exit charge payment plan.",
+                            ),
+                            IRNode(
+                                kind=IRNodeKind.SUBPARAGRAPH,
+                                label="2A",
+                                text="Duplicate excluded exit charge payment plan.",
+                            ),
+                        ),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="11",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBPARAGRAPH,
+                                label="1",
+                                text="Second excluded exit charge payment plan.",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+    schedule = replayed.supplements[0]
+
+    assert schedule.children[0].text == (
+        "The exit charge payment plan would change if authorized."
+    )
+    assert schedule.children[1].children[0].text == (
+        "First excluded exit charge payment plan."
+    )
+    assert schedule.children[1].children[1].text == (
+        "Duplicate excluded exit charge payment plan."
+    )
 
 
 def test_compile_source_sibling_excluded_occurrence_substitution() -> None:
