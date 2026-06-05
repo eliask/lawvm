@@ -1,0 +1,153 @@
+from __future__ import annotations
+
+import json
+
+from scripts import uk_oracle_extra_review as review
+
+
+_NS = "http://www.legislation.gov.uk/namespaces/legislation"
+
+
+def _xml(body: str, commentaries: str = "") -> bytes:
+    return f"""\
+<Legislation xmlns="{_NS}">
+  <Body>{body}</Body>
+  <Commentaries>{commentaries}</Commentaries>
+</Legislation>
+""".encode()
+
+
+def test_addition_with_commentary_is_source_chain_gap() -> None:
+    row = review.review_target(
+        statute_id="ukpga/1980/60",
+        target="section-6-1A",
+        base_xml=_xml('<P1 id="section-6"><Pnumber>6</Pnumber></P1>'),
+        oracle_xml=_xml(
+            """
+            <P2 id="section-6-1A">
+              <Pnumber><Addition ChangeId="d30p378" CommentaryRef="c739958">1A</Addition></Pnumber>
+              <P2para><Text><Addition ChangeId="d30p378" CommentaryRef="c739958">Inserted text.</Addition></Text></P2para>
+            </P2>
+            """,
+            '<Commentary id="c739958"><Para><Text>S. 6(1A) inserted by S.I. 1988/1984.</Text></Para></Commentary>',
+        ),
+    )
+
+    assert row.review_status == "likely_source_chain_or_lowering_gap"
+    assert row.oracle_markup_kinds == ("Addition",)
+    assert row.oracle_commentaries == ("S. 6(1A) inserted by S.I. 1988/1984.",)
+    assert row.agreement_residual["family"] == "source_footing_gap"
+
+
+def test_wrapper_target_is_topology_residual() -> None:
+    row = review.review_target(
+        statute_id="asp/2020/2",
+        target="schedule-7-paragraph-wrapper1n1",
+        base_xml=_xml(""),
+        oracle_xml=_xml(
+            '<P1 id="schedule-7-paragraph-wrapper1n1"><Pnumber>1</Pnumber></P1>'
+        ),
+    )
+
+    assert row.review_status == "likely_topology_wrapper_residual"
+    assert row.agreement_residual["family"] == "topology_granularity_mismatch"
+    assert row.agreement_residual["missing_proofs"] == ["topology_granularity_review"]
+
+
+def test_annotation_target_is_compare_projection_artifact() -> None:
+    row = review.review_target(
+        statute_id="eur/2020/1231",
+        target="annex-i-part-ii-division-1-division-1.2-annotation-6",
+        base_xml=_xml(""),
+        oracle_xml=_xml(
+            '<P1 id="annex-i-part-ii-division-1-division-1.2-annotation-6">'
+            "<Text>1. Open air.</Text>"
+            "</P1>"
+        ),
+    )
+
+    assert row.review_status == "likely_annotation_projection_residual"
+    assert row.agreement_residual["family"] == "non_commensurable_surface"
+    assert row.agreement_residual["missing_proofs"] == ["compare_projection_review"]
+
+
+def test_compacted_range_target_is_compare_projection_artifact() -> None:
+    row = review.review_target(
+        statute_id="ukpga/1958/55",
+        target="section-4753",
+        base_xml=_xml(""),
+        oracle_xml=_xml('<P1 id="section-4753"><Pnumber>47–53</Pnumber></P1>'),
+    )
+
+    assert row.review_status == "likely_range_or_legacy_label_residual"
+    assert row.agreement_residual["family"] == "non_commensurable_surface"
+
+
+def test_number_only_section_target_is_legacy_label_residual() -> None:
+    row = review.review_target(
+        statute_id="ukpga/1860/124",
+        target="section-42",
+        base_xml=_xml('<P1 id="section-XLII"><Pnumber>XLII</Pnumber></P1>'),
+        oracle_xml=_xml('<P1 id="section-42"><Pnumber>42</Pnumber><P1para><Text/></P1para></P1>'),
+    )
+
+    assert row.review_status == "likely_range_or_legacy_label_residual"
+    assert row.agreement_residual["family"] == "non_commensurable_surface"
+
+
+def test_base_text_materialization_gap_is_compare_projection_artifact() -> None:
+    row = review.review_target(
+        statute_id="ukpga/1983/23",
+        target="section-11-4-d",
+        base_xml=_xml(
+            """
+            <P2 id="section-11-4">
+              <P2para><P3 id="section-11-4-c"><P3para><Text>this section; (d) Schedule 2;</Text></P3para></P3></P2para>
+            </P2>
+            """
+        ),
+        oracle_xml=_xml(
+            '<P3 id="section-11-4-d"><Pnumber>d</Pnumber><P3para><Text>Schedule 2;</Text></P3para></P3>'
+        ),
+    )
+
+    assert row.review_status == "likely_base_text_materialization_gap"
+    assert row.base_text_witness_present is True
+    assert row.agreement_residual["family"] == "non_commensurable_surface"
+    assert row.agreement_residual["detail"]["base_text_witness_present"] is True
+
+
+def test_repeal_commentary_is_display_convention() -> None:
+    row = review.review_target(
+        statute_id="ukpga/1986/2",
+        target="section-4",
+        base_xml=_xml('<P1 id="section-4"><Pnumber>4</Pnumber></P1>'),
+        oracle_xml=_xml(
+            '<P1 id="section-4"><Pnumber><CommentaryRef Ref="c1"/>4</Pnumber></P1>',
+            '<Commentary id="c1"><Para><Text>S. 4 repealed by 1995 c. 21.</Text></Para></Commentary>',
+        ),
+    )
+
+    assert row.review_status == "likely_repeal_display_convention"
+    assert row.agreement_residual["family"] == "oracle_editorial_pathology"
+
+
+def test_unmarked_oracle_extra_survives_manual_review() -> None:
+    rows = [
+        review.review_target(
+            statute_id="ukpga/1900/1",
+            target="section-9",
+            base_xml=_xml('<P1 id="section-1"><Pnumber>1</Pnumber></P1>'),
+            oracle_xml=_xml(
+                '<P1 id="section-9"><Pnumber>9</Pnumber><P1para><Text>Unmarked text.</Text></P1para></P1>'
+            ),
+        )
+    ]
+    payload = json.loads(review._emit_json(rows))
+
+    assert rows[0].review_status == "manual_review_candidate"
+    assert rows[0].agreement_residual["status"] == "residual"
+    assert payload["report_kind"] == "uk_oracle_extra_review"
+    assert payload["summary"]["manual_review_candidate_count"] == 1
+    assert payload["agreement_claims"] is True
+    assert payload["replay_claims"] is False
