@@ -1702,6 +1702,61 @@ def test_classify_uk_manual_compile_frontier_marks_source_carried_multi_subunit_
     )
 
 
+def test_classify_uk_manual_compile_frontier_marks_for_words_in_subsections_rewrite() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P2",
+        extracted_text=(
+            "2 For “appropriate minister” in subsections (5) and (6) "
+            "substitute “appropriate person”."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "reason_code": "overlap_substitution_arity_unsupported",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate"
+    )
+
+
+def test_classify_uk_manual_compile_frontier_does_not_mark_single_subsection_rewrite_as_multi_subunit() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P2",
+        extracted_text=(
+            "2 For “appropriate minister” in subsection (5) substitute "
+            "“appropriate person”."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "reason_code": "overlap_substitution_parse_failed",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert (
+        result["rule_id"]
+        != "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate"
+    )
+
+
 def test_classify_uk_manual_compile_frontier_marks_source_carried_child_tail_text_rewrite() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words repealed",
@@ -5059,6 +5114,41 @@ def test_classify_uk_effect_source_carried_multi_subunit_text_rewrite() -> None:
 
     assert pathology == "source_carried_multi_subunit_text_rewrite_unsupported"
     assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_source_carried_multi_subunit_for_words_in_subsections() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P2",
+        extracted_text=(
+            "2 For “appropriate minister” in subsections (5) and (6) "
+            "substitute “appropriate person”."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == "source_carried_multi_subunit_text_rewrite_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_does_not_mark_single_subsection_rewrite_as_multi_subunit() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P2",
+        extracted_text=(
+            "2 For “appropriate minister” in subsection (5) substitute "
+            "“appropriate person”."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology != "source_carried_multi_subunit_text_rewrite_unsupported"
 
 
 def test_classify_uk_effect_relative_other_place_occurrence() -> None:

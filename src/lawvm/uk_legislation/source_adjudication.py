@@ -27,6 +27,7 @@ from collections import Counter
 from typing import Any, Iterable, NamedTuple
 
 from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.replay_adjudication import SourceAdjudication
 from lawvm.uk_legislation.effects import uk_nonstructural_replay_candidate_family_for_effect_type
 from lawvm.uk_legislation.effect_temporal_cessation import (
@@ -1984,6 +1985,52 @@ def _looks_like_referent_qualified_text_substitution(text: str) -> bool:
     return bool(_REFERENT_QUALIFIED_SUBSTITUTION_RE.search(norm))
 
 
+_MULTI_SUBUNIT_REFERENCE_RE = compile_classifier_regex(
+    r"\b(?:subsections?|paragraphs?|sub-?paragraphs?)\b",
+    classifier_id="uk_source_adjudication.multi_subunit_reference",
+)
+_MULTI_SUBUNIT_WHERE_RE = compile_classifier_regex(
+    r"\bwhere\s+(?:it|they|those words?)\s+"
+    r"(?:occurs?|appear)s?\s+in\s+"
+    r"(?:subsections?|paragraphs?|sub-?paragraphs?)\b",
+    classifier_id="uk_source_adjudication.multi_subunit_where_rewrite",
+)
+_FOR_QUOTED_TEXT_IN_RE = compile_classifier_regex(
+    r"\bfor\s+[\"“][^\"”]{1,240}[\"”]\s+in\s+"
+    r"(?:subsections?|paragraphs?|sub-?paragraphs?)\s+",
+    classifier_id="uk_source_adjudication.for_quoted_text_in_subunit",
+)
+_MULTI_SUBUNIT_PAIR_RE = compile_classifier_regex(
+    r"(?:subsections?|paragraphs?|sub-?paragraphs?)\s+"
+    r"\([^)]{1,40}\),?\s+(?:and|or)\s+\([^)]{1,40}\)",
+    classifier_id="uk_source_adjudication.multi_subunit_pair",
+)
+_SUBSTITUTE_QUOTED_TEXT_RE = compile_classifier_regex(
+    r"\bsubstitute\s+[\"“][^\"”]{1,240}[\"”]",
+    classifier_id="uk_source_adjudication.substitute_quoted_text",
+)
+
+
+def _looks_like_source_carried_multi_subunit_text_rewrite(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if not norm:
+        return False
+    if "substitute" not in norm and "repeal" not in norm and "omit" not in norm:
+        return False
+    if not _MULTI_SUBUNIT_REFERENCE_RE.search(norm):
+        return False
+    if _MULTI_SUBUNIT_WHERE_RE.search(norm):
+        return True
+    for_match = _FOR_QUOTED_TEXT_IN_RE.search(norm)
+    if not for_match:
+        return False
+    pair_match = _MULTI_SUBUNIT_PAIR_RE.search(norm, for_match.start())
+    if not pair_match:
+        return False
+    substitute_match = _SUBSTITUTE_QUOTED_TEXT_RE.search(norm, pair_match.end())
+    return bool(substitute_match and substitute_match.start() - pair_match.end() <= 240)
+
+
 def _target_depth(target_path: str) -> int:
     return sum(1 for part in target_path.split("/") if ":" in part)
 
@@ -2189,12 +2236,7 @@ def classify_uk_effect_source_pathology(
             )
         ):
             return "payload_fragment_without_action_formula"
-        if re.search(
-            r"\bwhere\s+(?:it|they|those words?)\s+"
-            r"(?:occurs?|appear)s?\s+in\s+"
-            r"(?:subsections?|paragraphs?|sub-paragraphs?)\b",
-            norm_text,
-        ):
+        if _looks_like_source_carried_multi_subunit_text_rewrite(norm_text):
             return "source_carried_multi_subunit_text_rewrite_unsupported"
         if re.search(
             r"\b(?:word|words)\s+following\s+(?:paragraph|sub-paragraph|subsection)\s+\([^)]+\)\s+"
@@ -3379,6 +3421,16 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_sentence_scoped_repeated_insert_candidate",
             "reason": "The source inserts text at the end of each of a bounded sentence set; a claim or future sentence-boundary compiler must prove sentence segmentation and insert before the selected sentence terminators before replay.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and _looks_like_source_carried_multi_subunit_text_rewrite(extracted_text_norm)
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
+            "reason": "The source carries one text rewrite across multiple named child units; a claim or future compiler must split the instruction by child unit and prove each text preimage and mutation boundary before replay.",
         }
 
     if (
