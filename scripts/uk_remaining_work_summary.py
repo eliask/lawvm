@@ -14,6 +14,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+from lawvm.core.frontier_work_item import FrontierWorkItem
+
 
 _DEFAULT_REFERENCE_BUCKET = "high_fidelity_after_grounding"
 _DEFAULT_CORE_POLISH_THRESHOLD = 99.5
@@ -70,6 +72,7 @@ class UKRemainingWorkItem:
     next_action: str
     safe_default: str
     forbidden_shortcuts: tuple[str, ...]
+    frontier_work_item: Mapping[str, Any]
 
 
 @dataclass(frozen=True)
@@ -491,8 +494,15 @@ def _remaining_work_item(
     statute_id = str(row.get("statute_id") or "")
     residual = _mapping(row.get("agreement_residual"))
     owner_phase = str(residual.get("owner_phase") or spec.owner_phase)
+    missing_proofs = _missing_proofs_for_row(row)
+    work_item_id = f"uk-remaining:{spec.lane_id}:{statute_id}"
+    source_chain_frontier_reasons = _string_tuple(
+        row.get("source_chain_frontier_reasons")
+    )
+    replay_only_eid_samples = _string_tuple(row.get("replay_only_eid_samples"))
+    oracle_only_eid_samples = _string_tuple(row.get("oracle_only_eid_samples"))
     return UKRemainingWorkItem(
-        work_item_id=f"uk-remaining:{spec.lane_id}:{statute_id}",
+        work_item_id=work_item_id,
         statute_id=statute_id,
         lane_id=spec.lane_id,
         priority_rank=spec.priority_rank,
@@ -508,20 +518,100 @@ def _remaining_work_item(
         n_oracle=_int(row.get("n_oracle")),
         n_only_in_replayed=_int(row.get("n_only_in_replayed")),
         n_only_in_oracle=_int(row.get("n_only_in_oracle")),
-        source_chain_frontier_reasons=_string_tuple(
-            row.get("source_chain_frontier_reasons")
-        ),
-        missing_proofs=_missing_proofs_for_row(row),
+        source_chain_frontier_reasons=source_chain_frontier_reasons,
+        missing_proofs=missing_proofs,
         base_source_status=str(row.get("base_source_status") or ""),
         base_source_locator=str(row.get("base_source_locator") or ""),
         oracle_source_status=str(row.get("oracle_source_status") or ""),
         oracle_source_locator=str(row.get("oracle_source_locator") or ""),
-        replay_only_eid_samples=_string_tuple(row.get("replay_only_eid_samples")),
-        oracle_only_eid_samples=_string_tuple(row.get("oracle_only_eid_samples")),
+        replay_only_eid_samples=replay_only_eid_samples,
+        oracle_only_eid_samples=oracle_only_eid_samples,
         next_action=spec.next_action,
         safe_default="classify_or_queue_without_replay_promotion",
         forbidden_shortcuts=spec.forbidden_shortcuts,
+        frontier_work_item=_frontier_work_item(
+            spec=spec,
+            row=row,
+            statute_id=statute_id,
+            work_item_id=work_item_id,
+            owner_phase=owner_phase,
+            missing_proofs=missing_proofs,
+            source_chain_frontier_reasons=source_chain_frontier_reasons,
+            replay_only_eid_samples=replay_only_eid_samples,
+            oracle_only_eid_samples=oracle_only_eid_samples,
+        ).to_dict(),
     )
+
+
+def _frontier_work_item(
+    *,
+    spec: _LaneSpec,
+    row: Mapping[str, Any],
+    statute_id: str,
+    work_item_id: str,
+    owner_phase: str,
+    missing_proofs: tuple[str, ...],
+    source_chain_frontier_reasons: tuple[str, ...],
+    replay_only_eid_samples: tuple[str, ...],
+    oracle_only_eid_samples: tuple[str, ...],
+) -> FrontierWorkItem:
+    triage_bucket = str(row.get("triage_bucket") or "")
+    return FrontierWorkItem(
+        work_item_id=work_item_id,
+        jurisdiction="uk",
+        source_artifact_id=statute_id,
+        source_unit_id=triage_bucket or spec.lane_id,
+        source_witness={
+            "base": _source_witness_for_row(row, role="base"),
+            "oracle": _source_witness_for_row(row, role="oracle"),
+            "source_chain_frontier_reasons": list(source_chain_frontier_reasons),
+        },
+        target_witness={
+            "replay_only_eid_samples": list(replay_only_eid_samples),
+            "oracle_only_eid_samples": list(oracle_only_eid_samples),
+        },
+        compare_witness={
+            "score_status": str(row.get("score_status") or ""),
+            "aligned": _float_or_none(row.get("aligned")),
+            "n_replay": _int(row.get("n_replay")),
+            "n_oracle": _int(row.get("n_oracle")),
+            "n_only_in_replayed": _int(row.get("n_only_in_replayed")),
+            "n_only_in_oracle": _int(row.get("n_only_in_oracle")),
+        },
+        owner_phase=owner_phase,
+        frontier_family=spec.lane_id,
+        frontier_status=triage_bucket or "remaining_work_frontier",
+        candidate_operation_family=triage_bucket,
+        candidate_targets=tuple(
+            dict.fromkeys((*oracle_only_eid_samples[:10], *replay_only_eid_samples[:10]))
+        ),
+        guidance_refs=("notes_internal/UK_LAWVM_ROADMAP.md",),
+        required_claim_kind=spec.work_kind,
+        required_validator_checks=missing_proofs or ("frontier_review",),
+        required_proofs=missing_proofs or ("frontier_review",),
+        safe_default="classify_or_queue_without_replay_promotion",
+        forbidden_shortcuts=spec.forbidden_shortcuts,
+        executable=False,
+        replay_authorized=False,
+        authorization_status="non_executable_work_item",
+        detail={
+            "lane_id": spec.lane_id,
+            "priority_rank": spec.priority_rank,
+            "next_action": spec.next_action,
+            "source_frontier_reason": str(row.get("source_chain_frontier_reason") or ""),
+        },
+    )
+
+
+def _source_witness_for_row(row: Mapping[str, Any], *, role: str) -> dict[str, Any]:
+    witness = _mapping(row.get(f"{role}_source_witness"))
+    if witness:
+        return dict(witness)
+    return {
+        "source_status": str(row.get(f"{role}_source_status") or ""),
+        "locator": str(row.get(f"{role}_source_locator") or ""),
+        "source_role": f"uk_remaining_work_{role}_source",
+    }
 
 
 def _summary(

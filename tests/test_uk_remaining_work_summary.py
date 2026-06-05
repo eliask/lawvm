@@ -192,6 +192,22 @@ def test_lane_filtered_items_are_non_executable_work_queue_rows(tmp_path) -> Non
     assert item["oracle_only_eid_samples"] == ("regulation-10",)
     assert item["base_source_status"] == "available"
     assert "effect_absence_as_replay_permission" in item["forbidden_shortcuts"]
+    frontier = item["frontier_work_item"]
+    assert frontier["work_item_id"] == item["work_item_id"]
+    assert frontier["jurisdiction"] == "uk"
+    assert frontier["frontier_family"] == "effect_source_footing_gap"
+    assert frontier["frontier_status"] == "effect_feed_absent_frontier"
+    assert frontier["executable"] is False
+    assert frontier["replay_authorized"] is False
+    assert frontier["authorization_status"] == "non_executable_work_item"
+    assert frontier["required_proofs"] == ["source_identity"]
+    assert frontier["source_witness"]["base"]["source_status"] == "available"
+    assert (
+        frontier["source_witness"]["base"]["locator"]
+        == "https://www.legislation.gov.uk/uksi/2009/41/enacted/data.xml"
+    )
+    assert frontier["target_witness"]["oracle_only_eid_samples"] == ["regulation-10"]
+    assert frontier["compare_witness"]["n_only_in_oracle"] == 8
 
 
 def test_item_export_rejects_unknown_lane(tmp_path) -> None:
