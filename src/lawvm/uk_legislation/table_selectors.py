@@ -77,6 +77,21 @@ _UK_COLUMN_TOKEN_PATTERN = (
 )
 _UK_QUOTED_PAYLOAD_RE = re.compile(r"[“\"'‘].*?[”\"'’]")
 _UK_NAMED_QUOTED_PAYLOAD_PATTERN = r"[“\"'‘](?P<{name}>.*?)[”\"'’]"
+_UK_THAT_ACT_SCHEDULE_COLUMN_RE = re.compile(
+    r"\bthat\s+(?:act|schedule|column)\b",
+    re.I,
+)
+_UK_ENTRIES_RE = re.compile(r"\bentries\b", re.I)
+_UK_ENTRY_OR_ENTRIES_RE = re.compile(r"\b(?:entry|entries)\b", re.I)
+_UK_TABLE_TEXT_MUTATION_VERB_RE = re.compile(
+    r"\b(?:omit|omitted|repeal|repealed|insert|substitut)\b",
+    re.I,
+)
+_UK_OMIT_REPEAL_VERB_RE = re.compile(r"\b(?:omit|omitted|repeal|repealed)\b", re.I)
+_UK_OMISSION_SUFFIX_RE = re.compile(
+    r"\bshall\s+be\s+omitted\b|\bare\s+omitted\b|\bis\s+omitted\b",
+    re.I,
+)
 _UK_TABLE_COLUMN_REFERENCES_SUBSTITUTION_RE = re.compile(
     r"\bfor\s+(?:the\s+)?references?\s+to\s+(?P<original>.+?)\s+"
     r"substitute[ds]?\s+"
@@ -943,11 +958,11 @@ def _uk_table_column_entry_omission_text_patch_claim(
             source_names_containing_target=source_names_containing_target,
             source_parent_id=source_parent_id,
         )
-    if re.search(r"\bthat\s+(?:act|schedule|column)\b", text, flags=re.I):
+    if _UK_THAT_ACT_SCHEDULE_COLUMN_RE.search(text):
         return None
-    if re.search(r"\bentries\b", text, flags=re.I):
+    if _UK_ENTRIES_RE.search(text):
         return None
-    if not re.search(r"\b(?:omit|omitted|repeal|repealed)\b", text, flags=re.I):
+    if not _UK_OMIT_REPEAL_VERB_RE.search(text):
         return None
     column_token = match.group("column_ordinal") or match.group("column_number")
     column_index = _uk_ordinal_to_int(column_token or "")
@@ -961,7 +976,7 @@ def _uk_table_column_entry_omission_text_patch_claim(
         column_index is None
         or column_index < 1
         or not entry_text
-        or re.search(r"\bthat\s+(?:act|schedule|column)\b", entry_text, flags=re.I)
+        or _UK_THAT_ACT_SCHEDULE_COLUMN_RE.search(entry_text)
     ):
         return None
     return {
@@ -1007,7 +1022,7 @@ def _uk_source_previous_table_column_entry_omission_text_patch_claim(
     entry_text = " ".join((match.group("entry") or "").split()).strip(" ,;.")
     if (
         not entry_text
-        or re.search(r"\bthat\s+(?:act|schedule|column)\b", entry_text, flags=re.I)
+        or _UK_THAT_ACT_SCHEDULE_COLUMN_RE.search(entry_text)
     ):
         return None
     column_context = _source_previous_table_column_context(
@@ -1091,13 +1106,13 @@ def _uk_source_parent_table_column_entry_omission_text_patch_claim(
     source_parent_id: str,
 ) -> dict[str, Any] | None:
     """Extract one child row from a parent `omit the entries relating to-` group."""
-    if extracted_el is None or re.search(r"\bthat\s+(?:act|schedule|column)\b", extracted_text, flags=re.I):
+    if extracted_el is None or _UK_THAT_ACT_SCHEDULE_COLUMN_RE.search(extracted_text):
         return None
     entry_text = _strip_source_row_leading_label(extracted_text, extracted_el).strip(" ,;.")
     if (
         not entry_text
-        or re.search(r"\b(?:omit|omitted|repeal|repealed|insert|substitut)\b", entry_text, flags=re.I)
-        or re.search(r"\bthat\s+(?:act|schedule|column)\b", entry_text, flags=re.I)
+        or _UK_TABLE_TEXT_MUTATION_VERB_RE.search(entry_text)
+        or _UK_THAT_ACT_SCHEDULE_COLUMN_RE.search(entry_text)
     ):
         return None
     for ancestor in _source_ancestor_chain(source_root, extracted_el):
@@ -1173,13 +1188,13 @@ def _uk_source_parent_table_column_entry_omitted_child_fragment_claim(
     source_parent_id: str,
 ) -> dict[str, Any] | None:
     """Extract child fragments governed by a parent `shall be omitted` sentence."""
-    if extracted_el is None or re.search(r"\bthat\s+(?:act|schedule|column)\b", extracted_text, flags=re.I):
+    if extracted_el is None or _UK_THAT_ACT_SCHEDULE_COLUMN_RE.search(extracted_text):
         return None
     child_text = _strip_source_row_leading_label(extracted_text, extracted_el).strip(" ,;.")
     if (
         not child_text
-        or re.search(r"\b(?:omit|omitted|repeal|repealed|insert|substitut)\b", child_text, flags=re.I)
-        or re.search(r"\bthat\s+(?:act|schedule|column)\b", child_text, flags=re.I)
+        or _UK_TABLE_TEXT_MUTATION_VERB_RE.search(child_text)
+        or _UK_THAT_ACT_SCHEDULE_COLUMN_RE.search(child_text)
     ):
         return None
     column = (
@@ -1207,7 +1222,7 @@ def _uk_source_parent_table_column_entry_omitted_child_fragment_claim(
         column_index is None
         or column_index < 1
         or not entry_text
-        or re.search(r"\bthat\s+(?:act|schedule|column)\b", entry_text, flags=re.I)
+        or _UK_THAT_ACT_SCHEDULE_COLUMN_RE.search(entry_text)
     ):
         return None
     for ancestor in _source_ancestor_chain(source_root, extracted_el):
@@ -1219,7 +1234,7 @@ def _uk_source_parent_table_column_entry_omitted_child_fragment_claim(
         if child_index < 0:
             continue
         suffix = parent_text[child_index : child_index + 1000]
-        if re.search(r"\bshall\s+be\s+omitted\b|\bare\s+omitted\b|\bis\s+omitted\b", suffix, re.I) is None:
+        if _UK_OMISSION_SUFFIX_RE.search(suffix) is None:
             continue
         resolved_parent_id = str(ancestor.get("id") or ancestor.get("eId") or source_parent_id)
         return {
@@ -1344,7 +1359,7 @@ def _uk_table_target_column_text_patch_claim(
         or column_only_metadata_target
     ):
         return None
-    if re.search(r"\b(?:entry|entries)\b", text, re.I):
+    if _UK_ENTRY_OR_ENTRIES_RE.search(text):
         return None
     column_match = re.search(
         r"\bin\s+(?:the\s+)?"
@@ -2278,7 +2293,7 @@ def _uk_table_column_text_patch_selector(
         return None
     if "table" in " ".join((target_ref, str(target))).lower():
         return None
-    if re.search(r"\b(?:entry|entries)\b", text, flags=re.I):
+    if _UK_ENTRY_OR_ENTRIES_RE.search(text):
         return None
     target_kind = target.path[-1][0] if target.path else ""
     if target_kind not in {"schedule", "part"}:

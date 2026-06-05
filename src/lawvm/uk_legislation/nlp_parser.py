@@ -108,6 +108,20 @@ _ORDINAL_OCCURRENCE_WORDS = (
 )
 
 _QUOTE_CHARS = "\"'\u201c\u201d\u2018\u2019"
+_QUOTED_TERM_RE = re.compile(r"“([^”]*)”|\"([^\"]*)\"|‘([^’]*)’|'([^']*)'")
+_RESPECTIVELY_ALL_OCCURRENCES_SIGNAL_RE = re.compile(
+    r"\bwherever\b|\bin\s+(?:each|both)\s+places?\b",
+    re.I,
+)
+_DEFINITION_ENTRY_PAYLOAD_RE = re.compile(
+    r"[“\"'‘].+?[”\"'’](?:\s*\([^;]*?\))*[^;]{0,240}?"
+    r"\b(?:means|includes|has\s+the\s+(?:same\s+)?meaning|is\s+to\s+be\s+construed|shall\s+be\s+construed)\b",
+    re.I | re.S,
+)
+_COMPOUND_LETTERED_TEXT_PATCH_SOURCE_RE = re.compile(
+    r"[—-]\s*[a-z]\s+(?:\bfor\b|\bafter\b).+?\band\s+[a-z]\s+\bafter\b",
+    re.I,
+)
 # Character class for "any char except a quote", used to bound the
 # `.*?` captures inside quote pairs in the substitution patterns. Without this
 # bound a long input with many quotes but no terminal "substitute" anchor
@@ -707,7 +721,7 @@ def _strip_leading_source_payload_label(replacement: str, *, target_label: str) 
 
 def _quoted_terms(text: str) -> list[str]:
     terms: list[str] = []
-    for m in re.finditer(r"“([^”]*)”|\"([^\"]*)\"|‘([^’]*)’|'([^']*)'", text):
+    for m in _QUOTED_TERM_RE.finditer(text):
         term = next((group for group in m.groups() if group is not None), "")
         if term.strip():
             terms.append(term.strip())
@@ -823,13 +837,7 @@ def _span_overlaps(span: tuple[int, int], blocked_spans: list[tuple[int, int]]) 
 
 
 def _has_respectively_all_occurrences_signal(text: str) -> bool:
-    return bool(
-        re.search(
-            r"\bwherever\b|\bin\s+(?:each|both)\s+places?\b",
-            text,
-            re.I,
-        )
-    )
+    return bool(_RESPECTIVELY_ALL_OCCURRENCES_SIGNAL_RE.search(text))
 
 
 def _is_non_occurrence_scope_note(text: str) -> bool:
@@ -838,14 +846,7 @@ def _is_non_occurrence_scope_note(text: str) -> bool:
 
 
 def _looks_like_definition_entry_payload(text: str) -> bool:
-    return bool(
-        re.search(
-            r"[“\"'‘].+?[”\"'’](?:\s*\([^;]*?\))*[^;]{0,240}?"
-            r"\b(?:means|includes|has\s+the\s+(?:same\s+)?meaning|is\s+to\s+be\s+construed|shall\s+be\s+construed)\b",
-            text,
-            re.I | re.S,
-        )
-    )
+    return bool(_DEFINITION_ENTRY_PAYLOAD_RE.search(text))
 
 
 def _strip_optional_child_label(text: str, label: str) -> str:
@@ -897,13 +898,7 @@ def _deduplicate_fragment_substitutions(subs: list[Dict[str, str]]) -> list[Dict
 
 def _compound_lettered_text_patch_source(text: str) -> bool:
     """Return True for one paragraph carrying lettered sibling text patches."""
-    return bool(
-        re.search(
-            r"[—-]\s*[a-z]\s+(?:\bfor\b|\bafter\b).+?\band\s+[a-z]\s+\bafter\b",
-            text,
-            re.I,
-        )
-    )
+    return bool(_COMPOUND_LETTERED_TEXT_PATCH_SOURCE_RE.search(text))
 
 
 def _mark_compound_lettered_text_patches(

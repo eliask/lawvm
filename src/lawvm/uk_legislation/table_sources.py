@@ -68,10 +68,25 @@ _UK_TABLE_TARGET_REFERENCE_TAIL_RE = re.compile(
 _UK_REPEAL_TABLE_TEXT_REWRITE_TERM_RE = re.compile(
     r"\b(?:word|words|definition|entry|entries)\b"
 )
+_UK_WORD_OR_WORDS_RE = re.compile(r"\b(?:word|words)\b", re.I)
 _UK_REPEAL_TABLE_DEFINITION_ENTRY_TERM_RE = re.compile(
     r"\b(?:definition|entry|entries)\b",
     flags=re.I,
 )
+_UK_THAT_ACT_SCHEDULE_COLUMN_RE = re.compile(
+    r"\bthat\s+(?:act|schedule|column)\b",
+    re.I,
+)
+_UK_ENTRIES_RE = re.compile(r"\bentries\b", re.I)
+_UK_ENTRY_FOR_OR_RELATING_TO_RE = re.compile(
+    r"\bentry\s+(?:for|relating\s+to)\b",
+    re.I,
+)
+_UK_PARAGRAPH_SCOPE_RE = re.compile(
+    r"\b(?:paragraphs?|paras?\.?|sub-?paragraphs?|subsections?)\b",
+    re.I,
+)
+_UK_QUOTED_TEXT_STRIP_RE = re.compile(r"[“\"'‘].*?[”\"'’]")
 _UK_REPEAL_TABLE_STRUCTURAL_TERM_RE = re.compile(
     r"\b(?:part|parts|chapter|chapters|section|sections|schedule|schedules|paragraph|paragraphs|"
     r"subsection|subsections|sub-?paragraph|sub-?paragraphs)\b"
@@ -117,6 +132,41 @@ _UK_REPEAL_TABLE_DEFINITION_OR_ENTRY_CLAUSE_RE = compile_classifier_regex(
     flags=re.I,
     classifier_id="uk_repeal_table_definition_or_entry_clause",
 )
+
+
+@functools.lru_cache(maxsize=4096)
+def _uk_short_asp_citation_number_re(number: str) -> re.Pattern[str]:
+    return re.compile(rf"\basp\s*{re.escape(number)}\b")
+
+
+@functools.lru_cache(maxsize=4096)
+def _uk_short_ukpga_citation_number_re(number: str) -> re.Pattern[str]:
+    return re.compile(rf"\bc\.?\s*{re.escape(number)}\b")
+
+
+@functools.lru_cache(maxsize=4096)
+def _uk_short_uksi_citation_number_re(year: str, number: str) -> re.Pattern[str]:
+    return re.compile(
+        rf"\b(?:s\.?\s*i\.?|si|uksi)\s*{re.escape(year)}\s*/\s*{re.escape(number)}\b"
+    )
+
+
+@functools.lru_cache(maxsize=4096)
+def _uk_short_generic_citation_re(slug: str, number: str) -> re.Pattern[str]:
+    return re.compile(rf"\b{re.escape(slug)}\s*{re.escape(number)}\b")
+
+
+@functools.lru_cache(maxsize=4096)
+def _uk_short_generic_citation_any_number_re(slug: str) -> re.Pattern[str]:
+    return re.compile(rf"\b{re.escape(slug)}\s*\d+\b")
+
+
+@functools.lru_cache(maxsize=4096)
+def _uk_schedule_label_re(schedule_label: str) -> re.Pattern[str]:
+    return re.compile(rf"\b{re.escape(schedule_label)}\b")
+
+
+_UK_ORDINAL_SUFFIX_RE = re.compile(r"\b(?P<ordinal>[a-z]+(?:-[a-z]+)?)\s+$")
 
 
 def _uk_quoted_capture(name: str) -> str:
@@ -366,37 +416,36 @@ def _uk_repeal_table_enactment_match_basis(cell_text: str, effect: UKEffectRecor
     slug = _uk_effect_act_slug(effect)
     if not year or not number or year not in text:
         return ""
-    num_pat = re.escape(number.lower())
     if slug == "asp":
         if _UK_SHORT_ASP_CITATION_RE.search(text):
             return (
                 "explicit_short_citation"
-                if re.search(rf"\basp\s*{num_pat}\b", text) is not None
+                if _uk_short_asp_citation_number_re(number.lower()).search(text)
+                is not None
                 else ""
             )
     if slug == "ukpga":
         if _UK_SHORT_UKPGA_CITATION_RE.search(text):
             return (
                 "explicit_short_citation"
-                if re.search(rf"\bc\.?\s*{num_pat}\b", text) is not None
+                if _uk_short_ukpga_citation_number_re(number.lower()).search(text)
+                is not None
                 else ""
             )
     if slug == "uksi":
         if _UK_SHORT_UKSI_CITATION_RE.search(text):
             return (
                 "explicit_short_citation"
-                if re.search(
-                    rf"\b(?:s\.?\s*i\.?|si|uksi)\s*{re.escape(year)}\s*/\s*{num_pat}\b",
-                    text,
-                )
+                if _uk_short_uksi_citation_number_re(year, number.lower()).search(text)
                 is not None
                 else ""
             )
     else:
-        if re.search(rf"\b{re.escape(slug)}\s*\d+\b", text):
+        if _uk_short_generic_citation_any_number_re(slug).search(text):
             return (
                 "explicit_short_citation"
-                if re.search(rf"\b{re.escape(slug)}\s*{num_pat}\b", text) is not None
+                if _uk_short_generic_citation_re(slug, number.lower()).search(text)
+                is not None
                 else ""
             )
 
@@ -761,11 +810,11 @@ def _uk_flat_repeal_schedule_structural_repeal(
 def _uk_repeal_table_column_entry_text_selector(extent_cell: str) -> Optional[dict[str, Any]]:
     """Extract a singular repeal-table table-column entry without deleting its row."""
     text = " ".join((extent_cell or "").split()).strip()
-    if not text or re.search(r"\bthat\s+(?:act|schedule|column)\b", text, flags=re.I):
+    if not text or _UK_THAT_ACT_SCHEDULE_COLUMN_RE.search(text):
         return None
-    if re.search(r"\bentries\b", text, flags=re.I):
+    if _UK_ENTRIES_RE.search(text):
         return None
-    if len(re.findall(r"\bentry\s+(?:for|relating\s+to)\b", text, flags=re.I)) != 1:
+    if len(_UK_ENTRY_FOR_OR_RELATING_TO_RE.findall(text)) != 1:
         return None
     match = re.search(
         r"\bin\s+(?:the\s+)?"
@@ -785,7 +834,7 @@ def _uk_repeal_table_column_entry_text_selector(extent_cell: str) -> Optional[di
         column_index is None
         or column_index < 1
         or not entry_text
-        or re.search(r"\bthat\s+(?:act|schedule|column)\b", entry_text, flags=re.I)
+        or _UK_THAT_ACT_SCHEDULE_COLUMN_RE.search(entry_text)
     ):
         return None
     return {
@@ -841,7 +890,7 @@ def _uk_repeal_table_grouped_column_entry_text_selector(
     if source_index >= len(entries):
         return None
     entry_text = entries[source_index]
-    if re.search(r"\bthat\s+(?:act|schedule|column)\b", entry_text, flags=re.I):
+    if _UK_THAT_ACT_SCHEDULE_COLUMN_RE.search(entry_text):
         return None
     return {
         "rule_id": _UK_REPEAL_TABLE_COLUMN_ENTRY_TEXT_REPEAL_RULE_ID,
@@ -2108,10 +2157,8 @@ def _uk_table_driven_repeal_table_structural_repeal(
                         container_except_reason_code = (
                             "container_except_extent_row_feed_descendant_repeal"
                         )
-                if not source_mentions_target and re.search(
-                    r"\b(?:word|words)\b",
-                    " ".join(extent_clause.split()),
-                    flags=re.I,
+                if not source_mentions_target and _UK_WORD_OR_WORDS_RE.search(
+                    " ".join(extent_clause.split())
                 ):
                     source_mentions_target = (
                         _uk_repeal_table_mixed_clause_explicitly_names_target_with_parent(
@@ -2147,7 +2194,7 @@ def _uk_table_driven_repeal_table_structural_repeal(
                     ):
                         continue
                     norm_clause = " ".join(extent_clause.split()).lower()
-                    if re.search(r"\b(?:word|words)\b", norm_clause) and re.search(
+                    if _UK_WORD_OR_WORDS_RE.search(norm_clause) and re.search(
                         r"\b(?:section|sections|schedule|schedules|paragraph|paragraphs|"
                         r"subsection|subsections|sub-?paragraph|sub-?paragraphs)\b",
                         norm_clause,
@@ -2375,10 +2422,10 @@ def _uk_schedule_in_cell_text(text: str, schedule_pat: str) -> bool:
             next_boundary = start_idx + bm.start()
 
         segment = text[start_idx:next_boundary]
-        if re.search(rf"\b{schedule_pat}\b", segment):
+        if _uk_schedule_label_re(schedule_pat).search(segment):
             return True
         before = text[max(0, m.start() - 48) : m.start()]
-        ordinal_match = re.search(r"\b(?P<ordinal>[a-z]+(?:-[a-z]+)?)\s+$", before)
+        ordinal_match = _UK_ORDINAL_SUFFIX_RE.search(before)
         if (
             is_numeric
             and ordinal_match is not None
@@ -2408,7 +2455,7 @@ def _uk_cell_has_section_descendant_scope(
 ) -> bool:
     """Return true when descendant labels belong to the requested section."""
     scope_text = " ".join(text.split()).lower()
-    scope_text = re.sub(r"[“\"'‘].*?[”\"'’]", "", scope_text)
+    scope_text = _UK_QUOTED_TEXT_STRIP_RE.sub("", scope_text)
     section_pat = re.escape(section.lower())
     wanted = [label.lower() for label in descendant_labels if label]
     if not wanted:
@@ -2555,8 +2602,11 @@ def _uk_table_cell_mentions_target_ancestor_container(
     if not ancestor_candidates:
         return ""
 
-    scope_text = re.sub(r"[“\"'‘].*?[”\"'’]", "", " ".join(cell_text.split()).lower())
-    if re.search(r"\b(?:paragraphs?|paras?\.?|sub-?paragraphs?|subsections?)\b", scope_text):
+    scope_text = _UK_QUOTED_TEXT_STRIP_RE.sub(
+        "",
+        " ".join(cell_text.split()).lower(),
+    )
+    if _UK_PARAGRAPH_SCOPE_RE.search(scope_text):
         return ""
     for ancestor in ancestor_candidates:
         if _uk_table_cell_mentions_target(
