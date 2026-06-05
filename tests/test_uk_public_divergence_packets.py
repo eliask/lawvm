@@ -179,6 +179,30 @@ def test_si_paragraph_and_schedule_source_urls_are_exposed() -> None:
     )
 
 
+def test_oracle_only_samples_seed_public_page_targets_for_review() -> None:
+    row = packets._packet_from_candidate(
+        {
+            "statute_id": "eur/2020/532",
+            "candidate_family": "oracle_extra_state_without_replay_residual",
+            "confidence": "medium",
+            "oracle_only_samples": ["article-4a"],
+        },
+        {},
+        fetch_public_snapshots=False,
+        fetch_current_timeline_xml=False,
+        snapshot_dir=None,
+        fetcher=None,
+    )
+
+    assert row.review_family == (
+        "current_page_contains_oracle_extra_state_requiring_source_review"
+    )
+    assert row.current_targets == ("article-4a",)
+    assert row.current_page_urls == (
+        "https://www.legislation.gov.uk/eur/2020/532/article/4a",
+    )
+
+
 def test_fetch_public_snapshots_writes_digest_backed_bytes(tmp_path) -> None:
     candidates_path = _write_json(
         tmp_path / "candidates.json",

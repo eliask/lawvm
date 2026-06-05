@@ -167,9 +167,7 @@ def _packet_from_candidate(
     fetcher: Callable[[str], tuple[str, int, str, bytes]] | None,
 ) -> PublicDivergencePacket:
     statute_id = str(candidate.get("statute_id") or supplement.get("statute_id") or "")
-    current_targets = _string_tuple(
-        supplement.get("retained_targets") or candidate.get("retained_repeal_targets")
-    )
+    current_targets = _current_targets(candidate, supplement)
     current_page_urls = _string_tuple(supplement.get("current_urls")) or tuple(
         _current_url_for_target(statute_id, target) for target in current_targets
     )
@@ -260,7 +258,21 @@ def _review_family(candidate: Mapping[str, Any]) -> str:
         return "current_page_retains_apparently_repealed_or_omitted_provision"
     if family == "oracle_addition_without_compiled_source_chain":
         return "current_page_contains_addition_requiring_source_chain_review"
+    if family == "oracle_extra_state_without_replay_residual":
+        return "current_page_contains_oracle_extra_state_requiring_source_review"
     return "current_page_divergence_review_lead"
+
+
+def _current_targets(
+    candidate: Mapping[str, Any],
+    supplement: Mapping[str, Any],
+) -> tuple[str, ...]:
+    return _string_tuple(
+        supplement.get("retained_targets")
+        or candidate.get("retained_repeal_targets")
+        or candidate.get("oracle_only_samples")
+        or candidate.get("replay_only_samples")
+    )
 
 
 def _operation_evidence_tuple(
@@ -317,7 +329,7 @@ def _numbers_after_token(text: str, token: str) -> tuple[str, ...]:
 
 
 def _current_url_for_target(statute_id: str, target: str) -> str:
-    if match := re.match(r"^article-(\d+)", target):
+    if match := re.match(r"^article-(\d+[a-z]?)$", target, flags=re.IGNORECASE):
         return f"{_LEG_BASE}/{statute_id}/article/{match.group(1)}"
     if match := re.match(r"^section-(\d+)", target):
         return f"{_LEG_BASE}/{statute_id}/section/{match.group(1)}"
