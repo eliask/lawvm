@@ -193,11 +193,13 @@ def _review_effect(
         effect_diagnostics_out=[],
     )
     tag_text = extracted_tag_and_text(selection.extracted_el)
-    source_preview = _squash(tag_text.text)[:900]
+    source_text = _squash(tag_text.text)
+    source_preview = source_text[:900]
     if not source_preview:
         return None
+    expected_source_text = _expected_phrase_source_text(source_text, effect)
     expected_phrase, expected_phrase_role = _expected_phrase(
-        source_preview,
+        expected_source_text,
         effect_type=effect.effect_type,
     )
     if not expected_phrase:
@@ -344,6 +346,16 @@ def _is_current_or_past_iso_date(value: str, *, today: date) -> bool:
     if _ISO_DATE_RE.fullmatch(value) is None:
         return False
     return date.fromisoformat(value) <= today
+
+
+def _expected_phrase_source_text(source_text: str, effect: UKEffectRecord) -> str:
+    affected_title = _squash(effect.affected_title or "")
+    if len(affected_title) < 8:
+        return source_text
+    index = source_text.casefold().find(affected_title.casefold())
+    if index < 0:
+        return source_text
+    return source_text[index : index + 1200]
 
 
 @dataclass(frozen=True)

@@ -293,6 +293,52 @@ def test_removed_phrase_extraction_drops_unreviewable_label_contexts() -> None:
     ) == ("", "")
 
 
+def test_removed_phrase_source_text_scopes_to_affected_title() -> None:
+    effect = _effect(effect_type="repealed")
+    effect = UKEffectRecord(
+        **{
+            **effect.__dict__,
+            "affected_title": "Backing of Warrants (Republic of Ireland) Act 1965",
+        }
+    )
+    source = (
+        "Bankers' Books Evidence Act 1879 In section 4, the paragraph beginning "
+        "“Where the proceedings”. "
+        "Backing of Warrants (Republic of Ireland) Act 1965 In the Schedule, "
+        "in paragraph 4, the words “and section 2 of the Poor Prisoners Defence Act 1930”."
+    )
+
+    scoped = review._expected_phrase_source_text(source, effect)
+
+    assert "Bankers' Books" not in scoped
+    assert review._expected_phrase(scoped, effect_type="repealed") == (
+        "and section 2 of the Poor Prisoners Defence Act 1930",
+        "removed_preimage",
+    )
+
+
+def test_removed_phrase_source_text_keeps_matching_first_repeal_table_row() -> None:
+    effect = _effect(effect_type="repealed")
+    effect = UKEffectRecord(
+        **{
+            **effect.__dict__,
+            "affected_title": "Bankers' Books Evidence Act 1879",
+        }
+    )
+    source = (
+        "Bankers' Books Evidence Act 1879 In section 4, the paragraph beginning "
+        "“Where the proceedings”. "
+        "Explosive Substances Act 1883 Section 6(3)."
+    )
+
+    scoped = review._expected_phrase_source_text(source, effect)
+
+    assert review._expected_phrase(scoped, effect_type="repealed") == (
+        "Where the proceedings",
+        "removed_preimage",
+    )
+
+
 def test_current_surface_combines_named_sibling_subunits(monkeypatch) -> None:
     effect = _effect(effect_type="substituted for words")
     effect = UKEffectRecord(
