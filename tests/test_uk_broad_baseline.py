@@ -1123,7 +1123,7 @@ def test_summarize_results_classifies_temporal_commencement_frontier() -> None:
                 "n_effects": 1,
                 "n_ops": 1,
                 "compile_rejection_rule_counts": {
-                    "uk_effect_undated_applied_si_commencement_date": 1,
+                    "uk_effect_undated_applied_si_commencement_unresolved": 1,
                 },
                 "manual_frontier_status_counts": {
                     "deterministic_frontend_supported": 1,
@@ -1138,6 +1138,47 @@ def test_summarize_results_classifies_temporal_commencement_frontier() -> None:
         "effect_metadata_frontend": 1
     }
     assert summary["active_unclassified_residual_count"] == 0
+
+
+def test_summarize_results_does_not_frontier_source_backed_commencement_date() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1978/9",
+                "score_status": "scored",
+                "aligned": 82.57,
+                "aligned_excluding_grounding_collateral": 82.57,
+                "unaligned": 80.73,
+                "n_grounding_collateral": 0,
+                "n_replay": 90,
+                "n_oracle": 109,
+                "n_only_in_oracle": 19,
+                "n_only_in_replayed": 0,
+                "n_effects": 1,
+                "n_ops": 1,
+                "n_compile_rejections": 1,
+                "n_blocking_compile_rejections": 0,
+                "compile_rejection_rule_counts": {
+                    "uk_effect_undated_applied_si_commencement_date": 1,
+                },
+                "manual_frontier_status_counts": {
+                    "deterministic_frontend_supported": 1,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {
+        "source_backed_temporal_recovery_oracle_residual": 1
+    }
+    assert summary["active_unclassified_residual_count"] == 0
+    assert summary["agreement_residual_family_counts"] == {
+        "temporal_mismatch": 1
+    }
+    assert summary["agreement_residual_owner_phase_counts"] == {
+        "compare_oracle_classification": 1
+    }
+    assert "agreement_residual_missing_proof_counts" not in summary
 
 
 def test_summarize_results_classifies_oracle_expansion_without_effects() -> None:

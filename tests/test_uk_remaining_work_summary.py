@@ -328,7 +328,7 @@ def test_temporal_commencement_rows_get_distinct_temporal_lane(tmp_path) -> None
                     "deterministic_frontend_supported": 1
                 },
                 "compile_rejection_rule_counts": {
-                    "uk_effect_undated_applied_si_commencement_date": 1
+                    "uk_effect_undated_applied_si_commencement_unresolved": 1
                 },
                 "agreement_residual": {
                     "owner_phase": "effect_metadata_frontend",

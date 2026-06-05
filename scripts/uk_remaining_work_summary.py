@@ -298,6 +298,9 @@ _TRIAGE_LANES = {
     "oracle_expansion_without_effects": "effect_source_footing_gap",
     "oracle_addition_source_chain_frontier": "effect_source_footing_gap",
     "retained_repeal_oracle_branch": "oracle_suspect_review",
+    "source_backed_temporal_recovery_oracle_residual": (
+        "effective_oracle_review_frontier"
+    ),
     "nonreplay_effect_frontier": "canonical_or_temporal_frontier",
     "no_compiled_ops_frontier": "canonical_or_temporal_frontier",
     "temporal_commencement_frontier": "temporal_commencement_frontier",

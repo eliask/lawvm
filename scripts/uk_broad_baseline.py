@@ -146,6 +146,7 @@ _NON_CORE_COMPARISON_TRIAGE_BUCKETS = frozenset(
         "retained_eu_mixed_representation_residual",
         "retained_eu_schedule_oracle_granularity_residual",
         "retained_repeal_oracle_branch",
+        "source_backed_temporal_recovery_oracle_residual",
         "structural_match_eid_scheme_residual",
         "temporal_commencement_frontier",
         "zero_oracle_retention",
@@ -1822,6 +1823,8 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
         return "oracle_expansion_without_effects"
     if _is_temporal_commencement_frontier(row):
         return "temporal_commencement_frontier"
+    if _is_source_backed_temporal_recovery_oracle_residual(row):
+        return "source_backed_temporal_recovery_oracle_residual"
     if int(row.get("n_retained_repeal_oracle_targets") or 0) > 0:
         return "retained_repeal_oracle_branch"
     if _is_compile_rejection_dominated_residual(row):
@@ -1942,6 +1945,8 @@ def _agreement_residual_family(bucket: str) -> str:
         return "accepted_non_executable_frontier"
     if bucket == "retained_repeal_oracle_branch":
         return "oracle_editorial_pathology"
+    if bucket == "source_backed_temporal_recovery_oracle_residual":
+        return "temporal_mismatch"
     if bucket in {
         "bounded_low_volume_residual",
         "body_oracle_collapsed_range_granularity_residual",
@@ -2007,6 +2012,7 @@ def _agreement_residual_owner_phase(bucket: str) -> str:
         "zero_oracle_retention",
         "retained_repeal_oracle_branch",
         "retained_eu_schedule_oracle_granularity_residual",
+        "source_backed_temporal_recovery_oracle_residual",
         "structural_match_eid_scheme_residual",
     }:
         return UK_PHASE_COMPARE_ORACLE_CLASSIFICATION
@@ -2053,6 +2059,8 @@ def _agreement_residual_missing_proofs(
         proofs.append("source_chain_completeness")
     if bucket == "temporal_commencement_frontier":
         proofs.append("temporal_extent_applicability")
+    if bucket == "source_backed_temporal_recovery_oracle_residual":
+        proofs.append("oracle_temporal_commensurability")
     if bucket in {
         "base_metadata_only_frontier",
         "zero_oracle_retention",
@@ -2196,16 +2204,35 @@ def _is_temporal_commencement_frontier(row: dict[str, Any]) -> bool:
     counts = row.get("compile_rejection_rule_counts") or {}
     if not isinstance(counts, dict):
         return False
-    temporal_count = int(counts.get("uk_effect_undated_applied_si_commencement_date") or 0)
+    temporal_count = int(
+        counts.get("uk_effect_undated_applied_si_commencement_unresolved") or 0
+    )
     if temporal_count <= 0:
         return False
     other_counts = {
         str(rule_id): int(count or 0)
         for rule_id, count in counts.items()
-        if str(rule_id) != "uk_effect_undated_applied_si_commencement_date"
+        if str(rule_id) != "uk_effect_undated_applied_si_commencement_unresolved"
         and int(count or 0) > 0
     }
     return not other_counts
+
+
+def _is_source_backed_temporal_recovery_oracle_residual(row: dict[str, Any]) -> bool:
+    counts = row.get("compile_rejection_rule_counts") or {}
+    if not isinstance(counts, dict):
+        return False
+    if int(counts.get("uk_effect_undated_applied_si_commencement_date") or 0) <= 0:
+        return False
+    if int(counts.get("uk_effect_undated_applied_si_commencement_unresolved") or 0) > 0:
+        return False
+    if int(row.get("n_blocking_compile_rejections") or 0) > 0:
+        return False
+    if int(row.get("n_ops") or 0) <= 0:
+        return False
+    return (
+        int(row.get("n_only_in_oracle") or 0) + int(row.get("n_only_in_replayed") or 0)
+    ) > 0
 
 
 def _is_oracle_expansion_without_effects(row: dict[str, Any]) -> bool:
