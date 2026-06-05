@@ -77,6 +77,7 @@ UK_OPERATION_FAMILY_PROOF_SEMANTICS = frozenset(
         "definition_child_structural_payload_boundary_claim",
         "definition_child_text_tail_boundary_claim",
         "definition_entry_insert_term_boundary_claim",
+        "effect_metadata_renumber_source_destination_and_lineage",
         "effect_metadata_source_fragment_text_patch_boundary_claim",
         "labeled_child_end_range_boundary_claim",
         "mixed_body_heading_split_boundary_claim",
@@ -1051,6 +1052,26 @@ def _validate_operation_family_proof_semantic(
                 "lineage_or_migration_events",
                 "destination_schedule_part_identity",
                 "unclaimed_schedule_child_preservation",
+            ),
+        )
+    if proof_semantic == "effect_metadata_renumber_source_destination_and_lineage":
+        return _validate_cross_container_renumber_family_proof_semantic(
+            claim=claim,
+            proof=proof,
+            proof_semantic=proof_semantic,
+            prefix=prefix,
+            proof_family=proof_family,
+            proof_operation_ids=proof_operation_ids,
+            proof_source_ids=proof_source_ids,
+            proof_live_ids=proof_live_ids,
+            proof_live_paths=proof_live_paths,
+            live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
+            expected_operation_family="effect_metadata_renumber_migration",
+            required_migration_ownership_ids=(
+                "lineage_or_migration_events",
+                "destination_provision_identity",
+                "unclaimed_sibling_preservation",
             ),
         )
     if proof_semantic == "source_feed_target_reconciliation_claim":

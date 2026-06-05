@@ -585,6 +585,10 @@ def test_uk_manual_compile_evidence_jsonl_templates_source_target_reconciliation
             "schedule_paragraph_range_to_part_renumber_migration",
         ),
         (
+            "uk_manual_frontier_effect_metadata_unsupported_renumber_candidate",
+            "effect_metadata_renumber_migration",
+        ),
+        (
             "uk_manual_frontier_external_act_target_out_of_scope",
             "non_textual_or_out_of_scope",
         ),
@@ -8174,6 +8178,105 @@ def test_uk_manual_compile_evidence_jsonl_templates_schedule_range_to_part_renum
     )
     assert template["required_operation_family_proof_semantics"] == [
         "schedule_paragraph_range_to_part_source_destination_and_lineage"
+    ]
+    assert template["executable"] is False
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_generic_metadata_renumber() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-generic-renumber",
+        effect_type="s. 1(1)(a)(b) renumbered as s. 1(1)(i)(ii)",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/1992/19/section/1/subsection/1/paragraph/i",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1992",
+        affected_number="19",
+        affected_provisions="s. 1(1)(i)(ii)",
+        affecting_uri="/id/ukpga/1994/23",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1994",
+        affecting_number="23",
+        affecting_provisions="Sch. 4",
+        affecting_title="Test Act 1994",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="unhandled_instruction_text",
+            compare_shape="metadata_renumber_unsupported",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_metadata_unsupported_renumber_rejected",
+                    "blocking": True,
+                    "source_target": "section:1/subsection:1/paragraph:a/subparagraph:b",
+                    "destination": "section:1/subsection:1/paragraph:i/subparagraph:ii",
+                    "effect_type_normalized": (
+                        "s. 1(1)(a)(b) renumbered as s. 1(1)(i)(ii)"
+                    ),
+                    "reason_code": "explicit_effect_metadata_unsupported_renumber_shape",
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=False,
+            source_extracted=False,
+            source_extracted_tag="",
+            source_extracted_text_preview="",
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_effect_metadata_unsupported_renumber_candidate"
+            ),
+            manual_compile_reason="Unsupported metadata renumber requires lineage.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_metadata_unsupported_renumber_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_metadata_unsupported_renumber_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/1992/19",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/1992/19",
+        row=report_row,
+        context=context,
+    )
+
+    assert payload["suggested_claim_template_status"] == "available"
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "effect_metadata_renumber_migration"
+    assert (
+        template["source_target_address"]
+        == "section:1/subsection:1/paragraph:a/subparagraph:b"
+    )
+    assert (
+        template["destination_address"]
+        == "section:1/subsection:1/paragraph:i/subparagraph:ii"
+    )
+    assert "claim_emits_lineage_for_renumbered_identity" in (
+        template["required_validator_checks"]
+    )
+    assert template["required_operation_family_proof_semantics"] == [
+        "effect_metadata_renumber_source_destination_and_lineage"
     ]
     assert template["executable"] is False
 

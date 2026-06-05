@@ -2377,6 +2377,31 @@ def _has_schedule_table_end_rows_missing_table_payload(
     return False
 
 
+def _has_broad_schedule_flat_payload_rejected(
+    lowering_rows: tuple[dict[str, Any], ...],
+) -> bool:
+    return any(
+        str(row.get("rule_id") or "") == "uk_effect_broad_schedule_flat_payload_rejected"
+        and is_blocking_compile_record(row)
+        and str(row.get("reason_code") or "")
+        == "broad_schedule_or_part_replace_payload_undercovered"
+        for row in lowering_rows
+    )
+
+
+def _has_effect_metadata_unsupported_renumber(
+    lowering_rows: tuple[dict[str, Any], ...],
+) -> bool:
+    return any(
+        str(row.get("rule_id") or "")
+        == "uk_effect_metadata_unsupported_renumber_rejected"
+        and is_blocking_compile_record(row)
+        and str(row.get("reason_code") or "")
+        == "explicit_effect_metadata_unsupported_renumber_shape"
+        for row in lowering_rows
+    )
+
+
 # Compiled at module scope per §1.11.  Site #3 (census): greedy .+ between
 # two anchors inside classify_uk_manual_compile_frontier — bound to .{0,600}?
 # (lazy).  Fast-guard: "period specified" is a literal substring of the first
@@ -2692,6 +2717,30 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
                 "the extracted source is a flat text fragment rather than an "
                 "owned table/list payload; acquire or prove the payload shape "
                 "before replay can append schedule entries."
+            ),
+        }
+
+    if _has_broad_schedule_flat_payload_rejected(lowering_rows):
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_source_pathology_insufficient",
+            "reason": (
+                "The source/lowering evidence exposes a broad schedule or Part "
+                "replacement whose flat payload does not prove the complete "
+                "owned schedule payload shape; replay must block until the "
+                "source pathology is resolved."
+            ),
+        }
+
+    if _has_effect_metadata_unsupported_renumber(lowering_rows):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_effect_metadata_unsupported_renumber_candidate",
+            "reason": (
+                "The effect metadata explicitly describes a renumbering shape "
+                "outside currently owned replay semantics; a claim or future "
+                "metadata compiler must prove source identity, destination "
+                "identity, lineage, and mutation boundary before replay."
             ),
         }
 

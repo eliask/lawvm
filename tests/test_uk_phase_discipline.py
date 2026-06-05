@@ -58,6 +58,15 @@ def test_manual_frontier_phase_owner_classifies_phase_boundaries() -> None:
     )
     assert (
         uk_phase_owner_for_manual_frontier(
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_effect_metadata_unsupported_renumber_candidate"
+            ),
+        )
+        == UK_PHASE_EFFECT_METADATA_FRONTEND
+    )
+    assert (
+        uk_phase_owner_for_manual_frontier(
             manual_compile_status="unclassified",
             manual_compile_rule_id="",
         )

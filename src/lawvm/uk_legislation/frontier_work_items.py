@@ -242,6 +242,18 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_declared_schedule_part_migration_boundary",
         ),
     },
+    "uk_manual_frontier_effect_metadata_unsupported_renumber_candidate": {
+        "candidate_operation_family": "effect_metadata_renumber_migration",
+        "required_validator_checks": (
+            "effect_metadata_names_source_and_destination_provisions",
+            "source_witness_or_claim_confirms_renumber_instruction",
+            "claim_identifies_exact_source_provision_before_renumbering",
+            "claim_identifies_exact_destination_provision_after_renumbering",
+            "claim_emits_lineage_for_renumbered_identity",
+            "claim_preserves_unclaimed_siblings",
+            "changed_paths_are_within_declared_renumber_or_migration_boundary",
+        ),
+    },
     "uk_manual_frontier_definition_child_structural_substitution_candidate": {
         "candidate_operation_family": "definition_child_structural_substitution",
         "required_validator_checks": (

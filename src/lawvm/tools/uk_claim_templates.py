@@ -696,6 +696,8 @@ def _required_operation_family_proof_semantics(
         return ("cross_container_renumber_source_destination_and_lineage",)
     if action_family == "schedule_paragraph_range_to_part_renumber_migration":
         return ("schedule_paragraph_range_to_part_source_destination_and_lineage",)
+    if action_family == "effect_metadata_renumber_migration":
+        return ("effect_metadata_renumber_source_destination_and_lineage",)
     if action_family == "table_repeal_or_omission":
         return ("table_repeal_or_omission_boundary_preservation",)
     if action_family == "referent_qualified_text_substitution":
@@ -1483,6 +1485,46 @@ def manual_compile_suggested_claim_template(
                 "claim_emits_lineage_for_range_wrapping_or_identity_changes",
                 "claim_preserves_unclaimed_schedule_children",
                 "changed_paths_are_within_declared_schedule_part_migration_boundary",
+            ],
+        )
+        template.update(
+            {
+                "source_target_address": detail.get("source_target", ""),
+                "destination_address": detail.get("destination", ""),
+                "effect_type_normalized": detail.get("effect_type_normalized", ""),
+                "lowering_rule_id": detail.get("rule_id", ""),
+                "lowering_reason_code": detail.get("reason_code", ""),
+            }
+        )
+        return template
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_effect_metadata_unsupported_renumber_candidate"
+    ):
+        detail = _first_lowering_rejection_detail(
+            row=row,
+            rule_id="uk_effect_metadata_unsupported_renumber_rejected",
+        )
+        template = _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="effect_metadata_renumber_migration",
+            placement_family="explicit_effect_metadata_renumber_destination_required",
+            required_ownership=[
+                "source_provision_identity",
+                "destination_provision_identity",
+                "lineage_or_migration_events",
+                "unclaimed_sibling_preservation",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "effect_metadata_names_source_and_destination_provisions",
+                "source_witness_or_claim_confirms_renumber_instruction",
+                "claim_identifies_exact_source_provision_before_renumbering",
+                "claim_identifies_exact_destination_provision_after_renumbering",
+                "claim_emits_lineage_for_renumbered_identity",
+                "claim_preserves_unclaimed_siblings",
+                "changed_paths_are_within_declared_renumber_or_migration_boundary",
             ],
         )
         template.update(

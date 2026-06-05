@@ -33,6 +33,7 @@ _EFFECT_METADATA_RULE_TOKENS = (
     "commencement",
     "conditional_temporal",
     "empty_type",
+    "effect_metadata",
     "non_textual",
     "out_of_scope",
     "pit_prospective",

@@ -1474,6 +1474,30 @@ def test_classify_uk_manual_compile_frontier_marks_broad_schedule_flat_payload_s
     assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
 
 
+def test_classify_uk_manual_compile_frontier_marks_broad_schedule_flat_payload_from_lowering_when_pathology_blank() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="",
+        source_pathology="",
+        extracted_tag="",
+        extracted_text="",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_broad_schedule_flat_payload_rejected",
+                "blocking": True,
+                "reason_code": "broad_schedule_or_part_replace_payload_undercovered",
+                "target": "schedule:1",
+            },
+        ),
+        compiled_op_count=1,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "source_insufficient"
+    assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
+    assert "broad schedule" in result["reason"]
+
+
 def test_classify_uk_manual_compile_frontier_marks_temporary_as_if_word_omission_out_of_scope() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="",
@@ -3879,7 +3903,7 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_paragraph_range_to_p
     assert "lineage" in result["reason"]
 
 
-def test_classify_uk_manual_compile_frontier_does_not_widen_other_unsupported_metadata_renumber() -> None:
+def test_classify_uk_manual_compile_frontier_marks_other_unsupported_metadata_renumber_as_generic_frontier() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="Sch. 11 para. 13 renumbered as Sch. 11 para. 14",
         source_pathology="unhandled_instruction_text",
@@ -3899,8 +3923,11 @@ def test_classify_uk_manual_compile_frontier_does_not_widen_other_unsupported_me
         structural_for_replay=True,
     )
 
-    assert result["status"] == "unclassified_frontier"
-    assert result["rule_id"] == "uk_manual_frontier_unclassified"
+    assert result["status"] == "manual_compile_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_effect_metadata_unsupported_renumber_candidate"
+    )
 
 
 def test_classify_uk_manual_compile_frontier_marks_relative_occurrence_pathology() -> None:
