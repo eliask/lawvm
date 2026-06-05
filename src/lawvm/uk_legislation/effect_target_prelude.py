@@ -56,7 +56,11 @@ from lawvm.uk_legislation.substitution_metadata import (
     _source_text_schedule_paragraph_target_override,
 )
 from lawvm.uk_legislation.target_anchors import _fallback_target_eid
-from lawvm.uk_legislation.target_parser import _parse_affected_target, _schedule_part_context_removed_target
+from lawvm.uk_legislation.target_parser import (
+    _parse_affected_target,
+    _parse_schedule_group_note_target,
+    _schedule_part_context_removed_target,
+)
 from lawvm.uk_legislation.whole_act_text_patch import (
     UK_SIMPLE_WHOLE_ACT_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID,
     simple_whole_act_all_occurrences_substitution,
@@ -306,6 +310,18 @@ def reject_unsupported_target_facet(
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
     if _is_schedule_note_ref(t_str):
+        modeled_target = _parse_schedule_group_note_target(t_str)
+        detail: dict[str, Any] = {
+            "target_ref": t_str,
+            "target_candidate_count": target_candidate_count,
+            "schedule_note_target_model_status": (
+                "modeled_group_note_non_executable"
+                if modeled_target is not None
+                else "unmodeled_note_surface"
+            ),
+        }
+        if modeled_target is not None:
+            detail["modeled_target"] = str(modeled_target)
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
             rule_id="uk_effect_schedule_note_target_rejected",
@@ -318,7 +334,7 @@ def reject_unsupported_target_facet(
             effect=effect,
             extracted_el=extracted_el,
             extracted_text=extracted_text,
-            detail={"target_ref": t_str, "target_candidate_count": target_candidate_count},
+            detail=detail,
         )
         return True
 

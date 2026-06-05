@@ -100,6 +100,8 @@ from lawvm.uk_legislation.table_selectors import (
     _source_or_parent_names_containing_target_for_table_cell,
     _source_text_names_section_label,
 )
+from lawvm.uk_legislation.target_anchors import uk_match_kind_label
+from lawvm.uk_legislation.target_parser import _parse_schedule_group_note_target
 from lawvm.uk_legislation.text_rewrite_fragments import (
     UK_NEGATIVE_LEFT_CONTEXT_EXCLUDED_CHILDREN_SUBSTITUTION_RULE_ID,
 )
@@ -48582,6 +48584,8 @@ def test_compile_schedule_note_target_rejects_paragraph_coercion() -> None:
     assert rejection["reason_code"] == "schedule_note_target_unsupported"
     assert rejection["affected_provisions"] == "Sch. 8 Note 1"
     assert rejection["target_ref"] == "Sch. 8 Note 1"
+    assert rejection["schedule_note_target_model_status"] == "unmodeled_note_surface"
+    assert "modeled_target" not in rejection
     assert rejection["blocking"] is True
     assert rejection["strict_disposition"] == "block"
 
@@ -48635,6 +48639,100 @@ def test_compile_schedule_paragraph_note_target_rejects_before_sibling_expansion
     assert rejection["reason_code"] == "schedule_note_target_unsupported"
     assert rejection["target_ref"] == target_ref
     assert rejection["target_candidate_count"] == 1
+    assert rejection["schedule_note_target_model_status"] == "unmodeled_note_surface"
+    assert "modeled_target" not in rejection
+
+
+def test_parse_schedule_group_note_target_preserves_note_carrier() -> None:
+    target = _parse_schedule_group_note_target("Sch. 9 Group 6 Note 3")
+
+    assert target is not None
+    assert target.path == (
+        ("schedule", "9"),
+        ("chapter", "group 6"),
+        ("p1group", "notes"),
+        ("subparagraph", "3"),
+    )
+
+
+def test_parse_schedule_group_note_child_target_preserves_item_carrier() -> None:
+    target = _parse_schedule_group_note_target("Sch. 8 Pt. 2 Group 12 Note 6(b)")
+
+    assert target is not None
+    assert target.path == (
+        ("schedule", "8"),
+        ("part", "2"),
+        ("chapter", "group 12"),
+        ("p1group", "notes"),
+        ("subparagraph", "6"),
+        ("item", "b"),
+    )
+
+
+def test_parse_schedule_group_note_target_rejects_multi_child_surface() -> None:
+    assert _parse_schedule_group_note_target("Sch. 8 Pt. 2 Group 15 Note (1D)(e)(f)") is None
+
+
+def test_match_schedule_group_note_carriers_without_fake_paragraphs() -> None:
+    group = UKMutableNode(kind=IRNodeKind.CHAPTER, label="Group 6— Education")
+    different_group = UKMutableNode(kind=IRNodeKind.CHAPTER, label="Group 60— Health")
+    notes = UKMutableNode(kind="p1group", text="Notes:")
+
+    assert uk_match_kind_label(group, "chapter", "group 6")
+    assert not uk_match_kind_label(different_group, "chapter", "group 6")
+    assert uk_match_kind_label(notes, "p1group", "notes")
+
+
+def test_compile_schedule_group_note_target_rejection_carries_modeled_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <BlockAmendment xmlns="{_LEG_NS}">
+          <P3>
+            <Pnumber>3</Pnumber>
+            <Text>“Vocational training” means training for a profession.</Text>
+          </P3>
+        </BlockAmendment>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_group_note_target",
+        effect_type="substituted",
+        applied=True,
+        requires_applied=False,
+        modified="1994-12-01",
+        affected_uri="/id/ukpga/1994/23",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1994",
+        affected_number="23",
+        affected_provisions="Sch. 9 Group 6 Note 3",
+        affecting_uri="/id/uksi/1994/2969",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="1994",
+        affecting_number="2969",
+        affecting_provisions="art. 6",
+        affecting_title="Test Amendment Regulations",
+        in_force_dates=[{"date": "1994-12-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_schedule_note_target_rejected"
+    assert rejection["schedule_note_target_model_status"] == "modeled_group_note_non_executable"
+    assert (
+        rejection["modeled_target"]
+        == "schedule:9/chapter:group 6/p1group:notes/subparagraph:3"
+    )
+    assert rejection["blocking"] is True
 
 
 def test_compile_first_second_occurrence_substitution_preserves_bounded_occurrences() -> None:

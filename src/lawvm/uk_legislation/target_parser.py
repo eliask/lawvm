@@ -33,6 +33,18 @@ _SUBORDINATE_TARGET_PREFIX_RE = re.compile(
     r"^(?:para(?:graph)?|sub-?paragraph|item|point)\b",
     re.I,
 )
+_SCHEDULE_GROUP_NOTE_TARGET_RE = re.compile(
+    r"^sch(?:edule)?\.?\s+"
+    r"(?P<schedule>[0-9A-Za-z]+)"
+    r"(?:\s+pt\.?\s+(?P<part>[0-9A-Za-z]+))?"
+    r"\s+group\s+(?P<group>[0-9A-Za-z]+)"
+    r"\s+note\s+(?P<note>\([^)]+\)|[0-9A-Za-z]+)"
+    r"(?P<suffixes>(?:\([^)]+\))*)"
+    r"(?:\s+para(?:graph)?\.?\s*(?P<paragraph>\([^)]+\)|[0-9A-Za-z]+))?"
+    r"\s*$",
+    re.I,
+)
+_PAREN_LABEL_RE = re.compile(r"\(([^)]+)\)")
 
 
 def _schedule_part_context_removed_target(target: LegalAddress) -> Optional[LegalAddress]:
@@ -61,6 +73,54 @@ def _normalize_affected_target_ref(ref: str) -> str:
     )
 
 
+def _strip_schedule_note_label(label: str) -> str:
+    return str(label or "").strip().strip("()").lower()
+
+
+@lru_cache(maxsize=32768)
+def _parse_schedule_group_note_target(ref: str) -> Optional[LegalAddress]:
+    """Parse deterministic UK schedule Group note targets without fake paragraphs.
+
+    This intentionally covers only explicit ``Schedule + Group + Note`` carriers.
+    Schedule-level notes and paragraph-attached notes remain unsupported because
+    they need a separate proof of the note carrier and mutation boundary.
+    """
+
+    match = _SCHEDULE_GROUP_NOTE_TARGET_RE.fullmatch(str(ref or "").strip())
+    if match is None:
+        return None
+    note_label = _strip_schedule_note_label(match.group("note"))
+    if not note_label:
+        return None
+    child_labels = [
+        _strip_schedule_note_label(value)
+        for value in _PAREN_LABEL_RE.findall(match.group("suffixes") or "")
+    ]
+    paragraph = match.group("paragraph")
+    if paragraph:
+        child_labels.append(_strip_schedule_note_label(paragraph))
+    child_labels = [label for label in child_labels if label]
+    if len(child_labels) > 1:
+        return None
+
+    path: list[TreePathStep] = [
+        ("schedule", _strip_schedule_note_label(match.group("schedule"))),
+    ]
+    part = _strip_schedule_note_label(match.group("part") or "")
+    if part:
+        path.append(("part", part))
+    path.extend(
+        (
+            ("chapter", f"group {_strip_schedule_note_label(match.group('group'))}"),
+            ("p1group", "notes"),
+            ("subparagraph", note_label),
+        )
+    )
+    if child_labels:
+        path.append(("item", child_labels[0]))
+    return LegalAddress(path=tuple(path))
+
+
 @lru_cache(maxsize=131072)
 def _parse_affected_target(ref: str) -> LegalAddress:
     """Parse 'Sch. 1 Pt. I Ch. 1 para. 1' into a LegalAddress."""
@@ -69,6 +129,9 @@ def _parse_affected_target(ref: str) -> LegalAddress:
         return _make_address(container="section", special=FacetKind.WHOLE_ACT)
     if re.fullmatch(r"sch(?:edule)?\.?", ref.strip(), re.I):
         return canonicalize_uk_address(LegalAddress(path=(("schedule", ""),)))
+    schedule_group_note_target = _parse_schedule_group_note_target(ref)
+    if schedule_group_note_target is not None:
+        return schedule_group_note_target
 
     path = _parse_ref(ref)
     schedule_idx = next((i for i, (kind, _num) in enumerate(path) if kind == "schedule"), None)

@@ -193,11 +193,23 @@ def _uk_match_kind_label_cached(
         else:
             schedule_labels.add(f"schedule {want_label}")
         return node_label in schedule_labels
+    if tk == "chapter" and want_label.startswith("group "):
+        if node_label.startswith(want_label):
+            tail = node_label[len(want_label) :]
+            if tail == "" or (tail and not tail[0].isalnum()):
+                return True
     return node_label == want_label
 
 
 def uk_match_kind_label(node: Any, kind: str, label: Optional[str]) -> bool:
     """Return whether a UK IR-like node matches a target kind/label pair."""
+    if str(kind or "").lower() == "p1group" and _clean_num(str(label or "")) == "notes":
+        node_kind = _uk_kind_value(node.kind)
+        if str(node_kind or "").lower() == "p1group":
+            node_label = _clean_num(str(node.label or "")).strip(":")
+            node_text = _clean_num(str(node.text or "")).strip(":")
+            if node_label == "notes" or node_text == "notes":
+                return True
     return _uk_match_kind_label_cached(
         _uk_kind_value(node.kind),
         str(node.label or ""),
