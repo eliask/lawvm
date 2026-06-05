@@ -223,6 +223,48 @@ def _candidate_from_row(row: Mapping[str, Any]) -> tuple[UKOracleSuspectCandidat
             ),
         )
 
+    if (
+        _has_clean_boundary(row)
+        and only_in_oracle > 0
+        and only_in_replayed == 0
+        and oracle_only_uncompiled_addition_change_ids
+    ):
+        return (
+            UKOracleSuspectCandidate(
+                statute_id=statute_id,
+                candidate_family="oracle_uncompiled_addition_source_chain_lead",
+                confidence=_SOURCE_CHAIN_LEAD,
+                rank=40,
+                triage_bucket=triage_bucket,
+                owner_phase=owner_phase,
+                aligned=aligned,
+                replay_eids=replay_eids,
+                oracle_eids=oracle_eids,
+                only_in_replayed=only_in_replayed,
+                only_in_oracle=only_in_oracle,
+                replay_only_samples=replay_only_samples,
+                oracle_only_samples=oracle_only_samples,
+                oracle_only_uncompiled_addition_samples=(
+                    oracle_only_uncompiled_addition_samples
+                ),
+                oracle_only_uncompiled_addition_change_ids=(
+                    oracle_only_uncompiled_addition_change_ids
+                ),
+                retained_repeal_targets=retained_targets,
+                source_witnesses=source_witnesses,
+                execution_witness=execution_witness,
+                missing_proofs=missing_proofs
+                or ("source_instruction_witness", "canonical_operation_lowering"),
+                forbidden_shortcuts=forbidden_shortcuts,
+                safe_default=safe_default,
+                reason=(
+                    "The current oracle has ChangeId-backed addition EIDs that "
+                    "were not compiled into replay; inspect source-chain and "
+                    "lowering before treating this as an oracle-suspect lead."
+                ),
+            ),
+        )
+
     if _has_clean_boundary(row) and only_in_replayed > 0 and only_in_oracle == 0:
         return (
             UKOracleSuspectCandidate(

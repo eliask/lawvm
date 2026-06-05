@@ -156,6 +156,51 @@ def test_oracle_expansion_without_effects_is_source_chain_lead(tmp_path) -> None
     assert rows[0].missing_proofs == ("source_identity",)
 
 
+def test_uncompiled_oracle_addition_is_source_chain_lead_not_medium_suspect(
+    tmp_path,
+) -> None:
+    report = _write_report(
+        tmp_path,
+        [
+            {
+                "statute_id": "ukpga/1980/60",
+                "triage_bucket": "high_fidelity_after_grounding",
+                "aligned": 99.25,
+                "n_replay": 132,
+                "n_oracle": 133,
+                "n_only_in_replayed": 0,
+                "n_only_in_oracle": 1,
+                "n_blocking_compile_rejections": 0,
+                "n_mutation_boundary_unexplained_reports": 0,
+                "n_mutation_boundary_unexplained_paths": 0,
+                "source_chain_frontier_reasons": [],
+                "oracle_only_eid_samples": ["section-6-1a"],
+                "oracle_only_uncompiled_addition_eid_samples": ["section-6-1a"],
+                "oracle_only_uncompiled_addition_change_ids": ["d30p378"],
+                "agreement_residual": {
+                    "owner_phase": "compare_oracle_classification",
+                    "missing_proofs": [],
+                    "forbidden_shortcuts": ["oracle_score_as_source_truth"],
+                    "safe_default": "classify_residual_without_replay_promotion",
+                },
+            }
+        ],
+    )
+
+    rows = candidates.load_candidates(report)
+
+    assert len(rows) == 1
+    assert rows[0].candidate_family == "oracle_uncompiled_addition_source_chain_lead"
+    assert rows[0].confidence == "source_chain_lead"
+    assert rows[0].oracle_only_uncompiled_addition_samples == ("section-6-1a",)
+    assert rows[0].oracle_only_uncompiled_addition_change_ids == ("d30p378",)
+    assert rows[0].missing_proofs == (
+        "source_instruction_witness",
+        "canonical_operation_lowering",
+    )
+    assert candidates.load_candidates(report, min_confidence="medium") == []
+
+
 def test_manual_and_source_frontier_rows_are_not_oracle_suspect_candidates(tmp_path) -> None:
     report = _write_report(
         tmp_path,
