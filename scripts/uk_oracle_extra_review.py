@@ -163,6 +163,11 @@ def _status(
             "likely_repeal_display_convention",
             "The oracle target carries repeal or omission commentary.",
         )
+    if base_present and _is_number_only_section_placeholder(target, text_preview):
+        return (
+            "likely_number_only_placeholder_residual",
+            "The target exists in enacted XML but current oracle text is only the section number.",
+        )
     if markup_kinds and commentaries:
         return (
             "likely_source_chain_or_lowering_gap",
@@ -228,6 +233,7 @@ def _residual_family(review_status: str) -> str:
         "likely_annotation_projection_residual",
         "likely_range_or_legacy_label_residual",
         "likely_base_text_materialization_gap",
+        "likely_number_only_placeholder_residual",
     }:
         return "non_commensurable_surface"
     if review_status in {
@@ -257,6 +263,7 @@ def _missing_proofs(review_status: str) -> tuple[str, ...]:
         "likely_annotation_projection_residual",
         "likely_range_or_legacy_label_residual",
         "likely_base_text_materialization_gap",
+        "likely_number_only_placeholder_residual",
     }:
         return ("compare_projection_review",)
     if review_status in {
@@ -487,6 +494,13 @@ def _is_compacted_range_or_legacy_label(target: str, text_preview: str) -> bool:
     if target.endswith("."):
         return True
     return len(leaf) >= 3
+
+
+def _is_number_only_section_placeholder(target: str, text_preview: str) -> bool:
+    if not target.startswith("section-"):
+        return False
+    leaf = target.rsplit("-", 1)[-1].rstrip(".")
+    return bool(leaf.isdigit() and _normalize_materialization_witness(text_preview) == leaf)
 
 
 def _markup_kinds(el: ET._Element | None) -> tuple[str, ...]:

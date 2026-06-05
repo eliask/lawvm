@@ -120,6 +120,22 @@ def test_number_only_section_target_is_legacy_label_residual() -> None:
     assert row.agreement_residual["family"] == "non_commensurable_surface"
 
 
+def test_existing_section_with_number_only_current_text_is_projection_residual() -> None:
+    row = review.review_target(
+        statute_id="ukpga/1920/50",
+        target="section-1",
+        base_xml=_xml(
+            '<P1 id="section-1"><Pnumber>1</Pnumber><P1para><Text>Substantive enacted text.</Text></P1para></P1>'
+        ),
+        oracle_xml=_xml('<P1 id="section-1"><Pnumber>1</Pnumber><P1para><Text/></P1para></P1>'),
+    )
+
+    assert row.review_status == "likely_number_only_placeholder_residual"
+    assert row.base_target_present is True
+    assert row.agreement_residual["family"] == "non_commensurable_surface"
+    assert row.agreement_residual["missing_proofs"] == ["compare_projection_review"]
+
+
 def test_base_text_materialization_gap_is_compare_projection_artifact() -> None:
     row = review.review_target(
         statute_id="ukpga/1983/23",
