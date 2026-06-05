@@ -492,6 +492,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_in_definition_after_anchor_text_rewrite_applied",
         "uk_replay_in_definition_after_each_text_rewrite_applied",
         "uk_replay_in_definition_at_end_text_rewrite_applied",
+        "uk_replay_in_definition_final_punctuation_text_rewrite_applied",
         "uk_replay_in_definition_quoted_word_delete_applied",
         "uk_replay_in_definition_range_text_rewrite_applied",
         "uk_replay_in_definition_range_to_end_text_rewrite_applied",

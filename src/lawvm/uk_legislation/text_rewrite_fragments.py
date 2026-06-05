@@ -201,6 +201,12 @@ UK_METADATA_CARRIED_DEFINITION_ENTRY_REPEAL_RULE_ID = (
 UK_METADATA_CARRIED_DEFINITION_QUOTED_WORD_REPEAL_RULE_ID = (
     "uk_effect_metadata_carried_definition_quoted_word_repeal_text_patch"
 )
+UK_DEFINITION_ANCHOR_FINAL_PUNCTUATION_SUBSTITUTION_RULE_ID = (
+    "uk_effect_definition_anchor_final_punctuation_substitution_text_patch"
+)
+UK_DEFINITION_ANCHOR_TAIL_INSERT_RULE_ID = (
+    "uk_effect_definition_anchor_tail_insert_text_patch"
+)
 UK_COMPOUND_LETTERED_TEXT_PATCH_RULE_ID = _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID
 
 UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
@@ -435,6 +441,37 @@ def append_basic_text_rewrite_observations(
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
     rule_ids = _fragment_rule_ids(fragment_subs)
+    definition_anchor_tail_rules = {
+        UK_DEFINITION_ANCHOR_FINAL_PUNCTUATION_SUBSTITUTION_RULE_ID,
+        UK_DEFINITION_ANCHOR_TAIL_INSERT_RULE_ID,
+    }
+    if any(rule_id in definition_anchor_tail_rules for rule_id in rule_ids):
+        for fragment in fragment_subs or []:
+            rule_id = str(fragment.get("rule_id") or "")
+            if rule_id not in definition_anchor_tail_rules:
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=rule_id,
+                family="text_rewrite_lowering",
+                reason_code="definition_anchor_tail_text_patch",
+                reason=(
+                    "UK source explicitly couples a definition-ending punctuation "
+                    "rewrite with a tail insertion after that definition; lowering "
+                    "preserves the definition anchor and emits only the current "
+                    "effect-feed lane."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": str(fragment.get("original") or ""),
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
+                },
+            )
     if UK_UNQUOTED_ANCHOR_QUOTED_SUBSTITUTION_RULE_ID in rule_ids:
         for fragment in fragment_subs or []:
             if (

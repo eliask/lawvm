@@ -318,6 +318,15 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         family="target_resolution_recovery",
         strict_disposition="record",
     ),
+    "uk_replay_in_definition_final_punctuation_text_rewrite_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay rewrote the final punctuation of the source-named "
+            "definition entry before a source-coupled tail insertion."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="in_definition_final_punctuation_selector",
+    ),
     "uk_replay_definition_child_structured_text_rewrite_applied": UKReplayRecoveryObservation(
         message=(
             "UK replay applied a definition-child text rewrite against "

@@ -14213,6 +14213,144 @@ def test_compile_definition_anchor_comma_entry_insert_and_substitution() -> None
     )
 
 
+def test_compile_definition_anchor_tail_insert_lowers_two_narrow_text_patches() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-paragraph-12">
+          <Pnumber>12</Pnumber>
+          <Text>12 In section 105 of the Utilities Act 2000 (general restrictions on disclosure of information), in subsection (10), for the full stop at the end of the definition of “REMIT requirement” substitute a semicolon and after that definition insert— and the reference to the Bank of England does not include the Bank acting in its capacity as the Prudential Regulation Authority. .</Text>
+        </P2>
+        """
+    )
+    substitute_effect = UKEffectRecord(
+        effect_id="uk_test_definition_anchor_tail_punctuation",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2017-02-01",
+        affected_uri="/id/ukpga/2000/27/section/105/subsection/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="27",
+        affected_provisions="s. 105(10)",
+        affecting_uri="/id/uksi/2017/80",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2017",
+        affecting_number="80",
+        affecting_provisions="Sch. para. 12",
+        affecting_title="Test Regulations 2017",
+        in_force_dates=[{"date": "2017-02-01", "prospective": "false"}],
+    )
+    insert_effect = UKEffectRecord(
+        effect_id="uk_test_definition_anchor_tail_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2017-02-01",
+        affected_uri="/id/ukpga/2000/27/section/105/subsection/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="27",
+        affected_provisions="s. 105(10)",
+        affecting_uri="/id/uksi/2017/80",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2017",
+        affecting_number="80",
+        affecting_provisions="Sch. para. 12",
+        affecting_title="Test Regulations 2017",
+        in_force_dates=[{"date": "2017-02-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    substitute_ops = compile_effect_to_ir_ops(
+        substitute_effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+    insert_ops = compile_effect_to_ir_ops(
+        insert_effect,
+        extracted_el,
+        sequence=1,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(substitute_ops) == 1
+    assert substitute_ops[0].action is StructuralAction.TEXT_REPLACE
+    assert substitute_ops[0].text_patch is not None
+    assert substitute_ops[0].text_patch.selector.match_text == (
+        f"TEXT_IN_DEFINITION_REMIT requirement{US}FINAL_PUNCT{US}."
+    )
+    assert substitute_ops[0].text_patch.replacement == ";"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}"
+        "uk_effect_definition_anchor_final_punctuation_substitution_text_patch"
+        in substitute_ops[0].provenance_tags
+    )
+
+    assert len(insert_ops) == 1
+    assert insert_ops[0].action is StructuralAction.TEXT_REPLACE
+    assert insert_ops[0].text_patch is not None
+    assert insert_ops[0].text_patch.selector.match_text == "TEXT_AFTER_DEFINITION_REMIT requirement"
+    assert insert_ops[0].text_patch.replacement == (
+        "and the reference to the Bank of England does not include "
+        "the Bank acting in its capacity as the Prudential Regulation Authority."
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_definition_anchor_tail_insert_text_patch"
+        in insert_ops[0].provenance_tags
+    )
+
+    rule_ids = [row["rule_id"] for row in lowering_records]
+    assert "uk_effect_definition_anchor_final_punctuation_substitution_text_patch" in rule_ids
+    assert "uk_effect_definition_anchor_tail_insert_text_patch" in rule_ids
+
+
+def test_compile_definition_anchor_tail_insert_requires_metadata_scope_match() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-paragraph-12">
+          <Pnumber>12</Pnumber>
+          <Text>12 In section 105, in subsection (10), for the full stop at the end of the definition of “REMIT requirement” substitute a semicolon and after that definition insert— and the reference to the Bank of England does not include the Bank acting in its capacity as the Prudential Regulation Authority.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_definition_anchor_tail_scope_mismatch",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2017-02-01",
+        affected_uri="/id/ukpga/2000/27/section/105/subsection/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="27",
+        affected_provisions="s. 105(9)",
+        affecting_uri="/id/uksi/2017/80",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2017",
+        affecting_number="80",
+        affecting_provisions="Sch. para. 12",
+        affecting_title="Test Regulations 2017",
+        in_force_dates=[{"date": "2017-02-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert all(
+        row["rule_id"]
+        != "uk_effect_definition_anchor_final_punctuation_substitution_text_patch"
+        for row in lowering_records
+    )
+
+
 def test_compile_source_carried_definition_entry_insert_from_parent_context() -> None:
     source_root = ET.fromstring(
         f"""

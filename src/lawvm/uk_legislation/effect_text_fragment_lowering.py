@@ -99,6 +99,8 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     append_source_carried_tail_rewrite_observations,
     lower_labeled_child_end_range_selector,
     UK_CHILD_QUALIFIED_RANGE_SUBSTITUTION_RULE_ID,
+    UK_DEFINITION_ANCHOR_FINAL_PUNCTUATION_SUBSTITUTION_RULE_ID,
+    UK_DEFINITION_ANCHOR_TAIL_INSERT_RULE_ID,
     UK_INTERPRETATION_ENTRIES_RELATING_REPEAL_RULE_ID,
     UK_AMOUNT_SPECIFIED_SUBSTITUTION_RULE_ID,
     UK_METADATA_CARRIED_DEFINITION_ENTRY_REPEAL_RULE_ID,
@@ -1097,6 +1099,14 @@ def _extract_text_fragment_substitutions(
         )
         if metadata_carried_definition_quoted_word_repeal is not None:
             subs = [metadata_carried_definition_quoted_word_repeal]
+    if not subs:
+        definition_anchor_tail = _effect_definition_anchor_tail_fragment(
+            effect=effect,
+            target=target,
+            extracted_text=extracted_text,
+        )
+        if definition_anchor_tail is not None:
+            subs = [definition_anchor_tail]
     if not subs:
         interpretation_entry_repeals = _effect_interpretation_entries_relating_repeal_fragments(
             effect=effect,
@@ -3006,3 +3016,60 @@ def _effect_metadata_carried_definition_quoted_word_repeal_fragment(
         "replacement": "",
         "rule_id": UK_METADATA_CARRIED_DEFINITION_QUOTED_WORD_REPEAL_RULE_ID,
     }
+
+
+def _effect_definition_anchor_tail_fragment(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect.effect_type or "").lower().split())
+    if norm_effect_type not in {"word substituted", "words inserted", "word inserted"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if not text or "after that definition" not in text.lower():
+        return None
+    if not _metadata_carried_quote_scope_matches_target(text, target):
+        return None
+    parsed = _parse_definition_anchor_tail_instruction(text)
+    if parsed is None:
+        return None
+    term, tail = parsed
+    if norm_effect_type == "word substituted":
+        return {
+            "original": f"TEXT_IN_DEFINITION_{term}{US}FINAL_PUNCT{US}.",
+            "replacement": ";",
+            "rule_id": UK_DEFINITION_ANCHOR_FINAL_PUNCTUATION_SUBSTITUTION_RULE_ID,
+        }
+    if tail:
+        return {
+            "original": f"TEXT_AFTER_DEFINITION_{term}",
+            "replacement": tail,
+            "rule_id": UK_DEFINITION_ANCHOR_TAIL_INSERT_RULE_ID,
+        }
+    return None
+
+
+def _parse_definition_anchor_tail_instruction(text: str) -> Optional[tuple[str, str]]:
+    lower = text.lower()
+    marker = "for the full stop at the end of the definition of "
+    marker_index = lower.find(marker)
+    if marker_index < 0:
+        return None
+    quoted_term = _read_quoted(text, marker_index + len(marker))
+    if quoted_term is None:
+        return None
+    term, after_term = quoted_term
+    after_term_text = lower[after_term:]
+    substitute_phrase = " substitute a semicolon and after that definition insert"
+    substitute_index = after_term_text.find(substitute_phrase)
+    if substitute_index < 0:
+        return None
+    tail_start = after_term + substitute_index + len(substitute_phrase)
+    tail = text[tail_start:].strip(" \u2014-")
+    while tail.endswith(" ."):
+        tail = tail[:-2].rstrip()
+    if not term.strip() or not tail:
+        return None
+    return term.strip(), tail

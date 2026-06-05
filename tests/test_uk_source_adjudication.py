@@ -206,6 +206,7 @@ def test_classify_uk_replay_adjudication_bucket() -> None:
         "uk_replay_definition_entry_orphan_separator_normalized": "nonblocking_observation",
         "uk_replay_definition_entry_qualifier_phrase_normalized": "nonblocking_observation",
         "uk_replay_definition_predicate_shall_construed_normalized": "nonblocking_observation",
+        "uk_replay_in_definition_final_punctuation_text_rewrite_applied": "nonblocking_observation",
         "uk_replay_direct_section_paragraph_child_text_recovered": "nonblocking_observation",
         "uk_replay_empty_descendant_parent_text_recovered": "nonblocking_observation",
         "uk_replay_implicit_first_subparagraph_parent_text_recovered": "nonblocking_observation",

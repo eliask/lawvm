@@ -8870,6 +8870,65 @@ def test_executor_applies_before_definition_insert_at_explicit_definition_anchor
     assert adjudications[0].detail["source_shape"] == "flat_definition_text_selector"
 
 
+def test_executor_applies_definition_final_punctuation_rewrite_at_named_anchor() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/27",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="105",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="10",
+                            text=(
+                                "\u201cREMIT requirement\u201d has the same meaning as "
+                                "in the REMIT Regulations. "
+                                "\u201cexisting\u201d means existing text;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    op = LegalOperation(
+        op_id="uk_test_definition_final_punctuation",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "105"), ("subsection", "10"))),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(
+                match_text=f"TEXT_IN_DEFINITION_REMIT requirement{US}FINAL_PUNCT{US}.",
+                occurrence=0,
+            ),
+            replacement=";",
+        ),
+    )
+
+    replayed = replay_uk_ops(statute, [op], adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert subsection.text == (
+        "\u201cREMIT requirement\u201d has the same meaning as in the REMIT Regulations; "
+        "\u201cexisting\u201d means existing text;"
+    )
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_in_definition_final_punctuation_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["source_shape"] == (
+        "in_definition_final_punctuation_selector"
+    )
+
+
 def test_executor_applies_before_definition_insert_when_term_has_comma_qualifier() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

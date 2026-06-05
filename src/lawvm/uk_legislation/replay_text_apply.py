@@ -252,6 +252,7 @@ _UK_AMENDMENT_PROGRAM_INSERTED_PARENT_PATTERN = re.compile(
     r"TEXT_AMENDMENT_PROGRAM_INSERTED_PARENT_([0-9A-Za-z]+)_(BEFORE|AFTER)_([0-9A-Za-z]+)"
 )
 _UK_BRACKETED_TEXT_PATTERN = re.compile(r"\([^()]*\)")
+_UK_TERMINAL_PUNCTUATION_PATTERN = re.compile(r"(?P<punct>[;\.,])\s*$")
 
 
 def _uk_amendment_program_line_label_matches(text: str, label: str) -> list[re.Match[str]]:
@@ -1089,6 +1090,44 @@ def _insert_at_end_of_definition_text(
         else " "
     )
     new_text = f"{text[:insert_at]}{joiner}{replacement}{text[insert_at:]}"
+    return " ".join(new_text.split()).strip(), True
+
+
+def _replace_definition_final_punctuation_text(
+    text: str,
+    *,
+    term: str,
+    original_punctuation: str,
+    replacement: str,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[str, bool]:
+    if original_punctuation not in {";", ".", ","} or replacement not in {";", ".", ","}:
+        return text, False
+    definition_start_pattern = _compile_definition_entry_start_pattern(
+        term,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+        prefix_pattern=r"(?:^|[;\.,\u2014\u2013-]\s*)",
+    )
+    definition_starts = list(definition_start_pattern.finditer(text))
+    if len(definition_starts) != 1:
+        return text, False
+    definition_start = definition_starts[0]
+    next_definition = _UK_NEXT_DEFINITION_PATTERN.search(text, definition_start.end())
+    if next_definition is not None:
+        punctuation_index = next_definition.start()
+    else:
+        terminal = _UK_TERMINAL_PUNCTUATION_PATTERN.search(text)
+        if terminal is None:
+            return text, False
+        punctuation_index = terminal.start("punct")
+    if text[punctuation_index] != original_punctuation:
+        return text, False
+    new_text = (
+        f"{text[:punctuation_index]}{replacement}"
+        f"{text[punctuation_index + 1:]}"
+    )
     return " ".join(new_text.split()).strip(), True
 
 
@@ -3370,6 +3409,32 @@ class UKReplayTextApplyMixin:
                     return node, False
                 if recovery_rule_ids_out is not None:
                     recovery_rule_ids_out.append("uk_replay_in_definition_at_end_text_rewrite_applied")
+                return rebuilt, True
+
+            if len(parts) == 3 and parts[1] == "FINAL_PUNCT":
+                term = parts[0].strip()
+                original_punctuation = parts[2].strip()
+                if not term or not original_punctuation:
+                    return node, False
+
+                rebuilt, applied = self._apply_unique_text_node_rewrite(
+                    node,
+                    text_nodes,
+                    lambda text: _replace_definition_final_punctuation_text(
+                        text,
+                        term=term,
+                        original_punctuation=original_punctuation,
+                        replacement=replacement,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    ),
+                )
+                if not applied:
+                    return node, False
+                if recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_in_definition_final_punctuation_text_rewrite_applied"
+                    )
                 return rebuilt, True
 
             if len(parts) == 3 and parts[1] == "DELETE":
