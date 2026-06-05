@@ -192,6 +192,19 @@ def test_lane_filtered_items_are_non_executable_work_queue_rows(tmp_path) -> Non
     assert item["oracle_only_eid_samples"] == ("regulation-10",)
     assert item["base_source_status"] == "available"
     assert "effect_absence_as_replay_permission" in item["forbidden_shortcuts"]
+    authorization = item["execution_authorization"]
+    assert authorization["executable"] is False
+    assert authorization["replay_authorized"] is False
+    assert authorization["authorization_status"] == "non_executable_work_item"
+    assert (
+        authorization["authorization_rule_id"]
+        == "uk_remaining_work_effect_source_footing_gap_non_executable"
+    )
+    assert authorization["required_proofs"] == ["source_identity"]
+    assert (
+        authorization["safe_default"]
+        == "classify_or_queue_without_replay_promotion"
+    )
     frontier = item["frontier_work_item"]
     assert frontier["work_item_id"] == item["work_item_id"]
     assert frontier["jurisdiction"] == "uk"

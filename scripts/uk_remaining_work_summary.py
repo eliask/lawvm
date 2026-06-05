@@ -14,6 +14,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frontier_work_item import FrontierWorkItem
 
 
@@ -72,6 +73,7 @@ class UKRemainingWorkItem:
     next_action: str
     safe_default: str
     forbidden_shortcuts: tuple[str, ...]
+    execution_authorization: Mapping[str, Any]
     frontier_work_item: Mapping[str, Any]
 
 
@@ -529,6 +531,12 @@ def _remaining_work_item(
         next_action=spec.next_action,
         safe_default="classify_or_queue_without_replay_promotion",
         forbidden_shortcuts=spec.forbidden_shortcuts,
+        execution_authorization=_execution_authorization(
+            spec=spec,
+            owner_phase=owner_phase,
+            missing_proofs=missing_proofs,
+            triage_bucket=str(row.get("triage_bucket") or ""),
+        ).to_dict(),
         frontier_work_item=_frontier_work_item(
             spec=spec,
             row=row,
@@ -540,6 +548,33 @@ def _remaining_work_item(
             replay_only_eid_samples=replay_only_eid_samples,
             oracle_only_eid_samples=oracle_only_eid_samples,
         ).to_dict(),
+    )
+
+
+def _execution_authorization(
+    *,
+    spec: _LaneSpec,
+    owner_phase: str,
+    missing_proofs: tuple[str, ...],
+    triage_bucket: str,
+) -> ExecutionAuthorization:
+    return ExecutionAuthorization(
+        executable=False,
+        replay_authorized=False,
+        authorization_status="non_executable_work_item",
+        authorization_rule_id=f"uk_remaining_work_{spec.lane_id}_non_executable",
+        owner_phase=owner_phase,
+        strict_disposition="record",
+        quirks_disposition="record",
+        validator_status="remaining_work_summary_projection",
+        required_proofs=missing_proofs or ("frontier_review",),
+        safe_default="classify_or_queue_without_replay_promotion",
+        forbidden_shortcuts=spec.forbidden_shortcuts,
+        detail={
+            "lane_id": spec.lane_id,
+            "triage_bucket": triage_bucket,
+            "work_kind": spec.work_kind,
+        },
     )
 
 
