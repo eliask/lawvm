@@ -43,6 +43,7 @@ class UKRemainingWorkLane:
     mean_aligned: float | None
     loss_points_vs_reference: float | None
     triage_bucket_counts: dict[str, int]
+    source_status_pair_counts: dict[str, int]
     missing_proof_counts: dict[str, int]
     sample_statutes: tuple[str, ...]
     next_action: str
@@ -151,6 +152,22 @@ _LANE_SPECS = {
         forbidden_shortcuts=(
             "metadata_only_xml_as_executable_text",
             "source_frontier_as_replay_authorization",
+        ),
+    ),
+    "metadata_only_source_pathology_frontier": _LaneSpec(
+        lane_id="metadata_only_source_pathology_frontier",
+        priority_rank=35,
+        owner_phase="affecting_source_extraction",
+        work_kind="official_metadata_only_source_pathology",
+        next_action=(
+            "Record as a digest-backed official source pathology unless a "
+            "body-bearing authoritative source or an explicit PDF/manual-import "
+            "policy is introduced."
+        ),
+        forbidden_shortcuts=(
+            "metadata_only_xml_as_executable_text",
+            "metadata_only_source_as_no_law",
+            "pdf_or_oracle_text_as_source_without_claim",
         ),
     ),
     "oracle_suspect_review": _LaneSpec(
@@ -432,6 +449,8 @@ def _lane_for_row(
     if score_status == "source_frontier" or triage_bucket.startswith(
         "source_frontier:"
     ):
+        if _is_metadata_only_source_frontier(row):
+            return "metadata_only_source_pathology_frontier"
         return "source_footing_gap"
     if (
         triage_bucket in {"nonreplay_effect_frontier", "no_compiled_ops_frontier"}
@@ -495,6 +514,9 @@ def _summarize_lane(
         loss_points_vs_reference=loss_points,
         triage_bucket_counts=_counter_dict(
             str(row.get("triage_bucket") or "unknown") for row in rows
+        ),
+        source_status_pair_counts=_counter_dict(
+            pair for row in rows for pair in [_source_status_pair(row)] if pair
         ),
         missing_proof_counts=_missing_proof_counts(rows),
         sample_statutes=_sample_statutes(rows),
@@ -829,6 +851,11 @@ def _dominant_owner_phase(rows: Sequence[Mapping[str, Any]]) -> str | None:
 def _missing_proof_counts(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
     counts: Counter[str] = Counter()
     for row in rows:
+        source_frontier_proofs = _source_frontier_required_proofs(row)
+        if source_frontier_proofs:
+            for proof in source_frontier_proofs:
+                counts[proof] += 1
+            continue
         residual = _primary_agreement_residual(row)
         for proof in _string_tuple(residual.get("missing_proofs")):
             counts[proof] += 1
@@ -845,6 +872,9 @@ def _missing_proof_counts(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
 
 
 def _missing_proofs_for_row(row: Mapping[str, Any]) -> tuple[str, ...]:
+    source_frontier_proofs = _source_frontier_required_proofs(row)
+    if source_frontier_proofs:
+        return tuple(dict.fromkeys(source_frontier_proofs))
     proofs: list[str] = []
     residual = _primary_agreement_residual(row)
     proofs.extend(_string_tuple(residual.get("missing_proofs")))
@@ -887,6 +917,30 @@ def _has_effect_source_footing_gap(row: Mapping[str, Any]) -> bool:
     if _int(counts.get("source_insufficient")) > 0:
         return True
     return set(_missing_proofs_for_row(row)) <= {"source_identity"}
+
+
+def _is_metadata_only_source_frontier(row: Mapping[str, Any]) -> bool:
+    if str(row.get("score_status") or "") != "source_frontier":
+        triage_bucket = str(row.get("triage_bucket") or "")
+        if not triage_bucket.startswith("source_frontier:"):
+            return False
+    return "metadata_only" in {
+        str(row.get("base_source_status") or ""),
+        str(row.get("oracle_source_status") or ""),
+    }
+
+
+def _source_status_pair(row: Mapping[str, Any]) -> str:
+    if "base_source_status" not in row and "oracle_source_status" not in row:
+        return ""
+    base = str(row.get("base_source_status") or "unknown")
+    oracle = str(row.get("oracle_source_status") or "unknown")
+    return f"base:{base}|oracle:{oracle}"
+
+
+def _source_frontier_required_proofs(row: Mapping[str, Any]) -> tuple[str, ...]:
+    work_item = _mapping(row.get("source_frontier_work_item"))
+    return _string_tuple(work_item.get("required_proofs"))
 
 
 def _load_effective_oracle_reviews(
@@ -1059,6 +1113,7 @@ def _emit_tsv(payload: Mapping[str, Any]) -> str:
         "mean_aligned",
         "loss_points_vs_reference",
         "top_triage_buckets",
+        "source_status_pairs",
         "top_missing_proofs",
         "sample_statutes",
     )
@@ -1080,6 +1135,7 @@ def _emit_tsv(payload: Mapping[str, Any]) -> str:
                         digits=4,
                     ),
                     _format_counter(lane["triage_bucket_counts"]),
+                    _format_counter(lane["source_status_pair_counts"]),
                     _format_counter(lane["missing_proof_counts"]),
                     ",".join(lane["sample_statutes"]),
                 )
@@ -1131,6 +1187,11 @@ def _emit_text(payload: Mapping[str, Any]) -> str:
         )
         if lane["sample_statutes"]:
             lines.append(f"      samples={','.join(lane['sample_statutes'][:5])}")
+        if lane["source_status_pair_counts"]:
+            lines.append(
+                "      source_statuses="
+                f"{_format_counter(lane['source_status_pair_counts'], limit=5)}"
+            )
         if lane["missing_proof_counts"]:
             lines.append(
                 f"      proofs={_format_counter(lane['missing_proof_counts'], limit=5)}"

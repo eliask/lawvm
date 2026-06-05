@@ -562,6 +562,68 @@ def test_effective_oracle_review_overlay_splits_refuted_retained_repeals(
     assert "refuted_by_dated_current_xml=1" in remaining._emit_text(payload)
 
 
+def test_metadata_only_source_frontiers_get_source_pathology_lane(tmp_path) -> None:
+    report = _write_report(
+        tmp_path,
+        [
+            {
+                "statute_id": "ukpga/1868/91",
+                "score_status": "source_frontier",
+                "triage_bucket": "source_frontier:base_and_oracle_metadata_only",
+                "source_frontier_reason": "base_and_oracle_metadata_only",
+                "base_source_status": "metadata_only",
+                "oracle_source_status": "metadata_only",
+                "source_frontier_work_item": {
+                    "required_proofs": [
+                        "source_identity",
+                        "official_source_body_or_accepted_source_pathology",
+                    ]
+                },
+                "agreement_residual": {
+                    "owner_phase": "affecting_source_extraction",
+                    "missing_proofs": ["source_identity"],
+                },
+            },
+            {
+                "statute_id": "ukpga/2000/1",
+                "score_status": "source_frontier",
+                "triage_bucket": "source_frontier:base_absent",
+                "source_frontier_reason": "base_absent",
+                "base_source_status": "absent",
+                "oracle_source_status": "available",
+                "agreement_residual": {
+                    "owner_phase": "affecting_source_extraction",
+                    "missing_proofs": ["source_identity"],
+                },
+            },
+        ],
+    )
+
+    payload = remaining.load_remaining_work(report)
+
+    lane_by_id = {lane["lane_id"]: lane for lane in payload["lanes"]}
+    assert lane_by_id["metadata_only_source_pathology_frontier"]["row_count"] == 1
+    assert lane_by_id["metadata_only_source_pathology_frontier"][
+        "priority_rank"
+    ] == 35
+    assert lane_by_id["metadata_only_source_pathology_frontier"][
+        "source_status_pair_counts"
+    ] == {"base:metadata_only|oracle:metadata_only": 1}
+    assert lane_by_id["metadata_only_source_pathology_frontier"][
+        "missing_proof_counts"
+    ] == {
+        "official_source_body_or_accepted_source_pathology": 1,
+        "source_identity": 1,
+    }
+    assert lane_by_id["source_footing_gap"]["row_count"] == 1
+    text = remaining._emit_text(payload)
+    assert "metadata_only_source_pathology_frontier: n=1" in text
+    assert "source_statuses=base:metadata_only|oracle:metadata_only=1" in text
+    assert "metadata_only_xml_as_executable_text" in lane_by_id[
+        "metadata_only_source_pathology_frontier"
+    ]["forbidden_shortcuts"]
+
+
 def test_unknown_scored_bucket_is_high_priority_gate_work(tmp_path) -> None:
     report = _write_report(
         tmp_path,
