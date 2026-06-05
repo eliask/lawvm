@@ -142,6 +142,33 @@ def test_base_text_materialization_gap_is_compare_projection_artifact() -> None:
     assert row.agreement_residual["detail"]["base_text_witness_present"] is True
 
 
+def test_arabic_current_section_can_use_roman_enacted_id_witness() -> None:
+    row = review.review_target(
+        statute_id="ukpga/1825/120",
+        target="section-44",
+        base_xml=_xml(
+            """
+            <P1 id="section-XLIV">
+              <Pnumber>XLIV</Pnumber>
+              <P1para><Text>That when any Judgment shall be pronounced by an Inferior Court.</Text></P1para>
+            </P1>
+            """
+        ),
+        oracle_xml=_xml(
+            """
+            <P1 id="section-44">
+              <Pnumber>44</Pnumber>
+              <P1para><Text>When any judgment shall be pronounced by an inferior court.</Text></P1para>
+            </P1>
+            """
+        ),
+    )
+
+    assert row.review_status == "likely_base_text_materialization_gap"
+    assert row.base_text_witness_present is True
+    assert row.agreement_residual["family"] == "non_commensurable_surface"
+
+
 def test_heading_materialization_gap_can_use_short_heading_witness() -> None:
     row = review.review_target(
         statute_id="ukpga/1967/45",

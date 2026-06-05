@@ -65,6 +65,7 @@ from lawvm.core.source_witness import (
     source_witness_digest_coverage,
     source_witness_role_key,
 )
+from lawvm.roman import arabic_to_roman
 from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_compile_record,
 )
@@ -394,20 +395,7 @@ def _positive_int_to_roman(value: str) -> str:
     number = int(value)
     if number <= 0 or number > 20:
         return ""
-    pairs = (
-        (10, "X"),
-        (9, "IX"),
-        (5, "V"),
-        (4, "IV"),
-        (1, "I"),
-    )
-    out: list[str] = []
-    remainder = number
-    for integer, roman in pairs:
-        while remainder >= integer:
-            out.append(roman)
-            remainder -= integer
-    return "".join(out)
+    return arabic_to_roman(number)
 
 
 def _op_targets_schedule_surface(op: Any) -> bool:

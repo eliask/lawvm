@@ -16,6 +16,7 @@ from lxml import etree as ET
 
 from lawvm.core.agreement_residual import AgreementResidual
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
+from lawvm.roman import arabic_to_roman
 
 
 _LEG_BASE = "https://www.legislation.gov.uk"
@@ -87,7 +88,9 @@ def review_target(
     markup_kinds = _markup_kinds(oracle_el)
     commentaries = _commentaries(oracle_root, oracle_el)
     text_preview = _text_preview(oracle_el)
-    base_text_witness_present = _base_text_witness_present(base_root, text_preview)
+    base_text_witness_present = _base_text_witness_present(
+        base_root, target=target, text_preview=text_preview
+    )
     status, reason = _status(
         target=target,
         base_present=base_el is not None,
@@ -401,9 +404,13 @@ def _find_id(root: ET._Element | None, target: str) -> ET._Element | None:
     return found[0] if found else None
 
 
-def _base_text_witness_present(root: ET._Element | None, text_preview: str) -> bool:
+def _base_text_witness_present(
+    root: ET._Element | None, *, target: str, text_preview: str
+) -> bool:
     if root is None:
         return False
+    if _roman_section_id_witness_present(root, target):
+        return True
     needle = _materialization_witness_needle(text_preview)
     if not needle:
         return False
@@ -429,6 +436,19 @@ def _materialization_heading_needle(text_preview: str) -> str:
     if len(tokens) < 5:
         return ""
     return " ".join(tokens[:5])
+
+
+def _roman_section_id_witness_present(root: ET._Element, target: str) -> bool:
+    if not target.startswith("section-"):
+        return False
+    leaf = target.rsplit("-", 1)[-1].rstrip(".")
+    if not leaf.isdigit():
+        return False
+    number = int(leaf)
+    if number <= 0 or number > 3999:
+        return False
+    roman_id = f"section-{arabic_to_roman(number)}"
+    return _find_id(root, roman_id) is not None
 
 
 def _normalize_materialization_witness(text: str) -> str:
