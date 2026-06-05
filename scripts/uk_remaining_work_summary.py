@@ -404,6 +404,11 @@ def _lane_for_row(
         and _only_non_textual_or_out_of_scope_effects(row)
     ):
         return "non_textual_or_out_of_scope_effect_frontier"
+    if triage_bucket in {"nonreplay_effect_frontier", "no_compiled_ops_frontier"}:
+        if _has_manual_compile_frontier(row):
+            return "manual_compilation_frontier"
+        if _has_effect_source_footing_gap(row):
+            return "effect_source_footing_gap"
     if triage_bucket in _TRIAGE_LANES:
         return _TRIAGE_LANES[triage_bucket]
     if triage_bucket == _DEFAULT_REFERENCE_BUCKET:
@@ -628,6 +633,28 @@ def _only_non_textual_or_out_of_scope_effects(row: Mapping[str, Any]) -> bool:
     counts = _mapping(row.get("manual_frontier_status_counts"))
     total = sum(_int(value) for value in counts.values())
     return total > 0 and set(counts) == {"non_textual_or_out_of_scope"}
+
+
+def _has_manual_compile_frontier(row: Mapping[str, Any]) -> bool:
+    reasons = set(_string_tuple(row.get("source_chain_frontier_reasons")))
+    counts = _mapping(row.get("manual_frontier_status_counts"))
+    return (
+        "manual_frontier_manual_compile_candidate" in reasons
+        or _int(counts.get("manual_compile_candidate")) > 0
+    )
+
+
+def _has_effect_source_footing_gap(row: Mapping[str, Any]) -> bool:
+    reasons = set(_string_tuple(row.get("source_chain_frontier_reasons")))
+    if reasons & {
+        "effect_rows_not_admitted_by_replay_lens",
+        "manual_frontier_source_insufficient",
+    }:
+        return True
+    counts = _mapping(row.get("manual_frontier_status_counts"))
+    if _int(counts.get("source_insufficient")) > 0:
+        return True
+    return set(_missing_proofs_for_row(row)) <= {"source_identity"}
 
 
 def _sample_statutes(

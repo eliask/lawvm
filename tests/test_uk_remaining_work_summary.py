@@ -242,7 +242,7 @@ def test_pure_non_textual_effect_rows_get_distinct_non_replay_lane(tmp_path) -> 
     payload = remaining.load_remaining_work(report)
     lane_by_id = {lane["lane_id"]: lane for lane in payload["lanes"]}
 
-    assert lane_by_id["canonical_or_temporal_frontier"]["row_count"] == 1
+    assert lane_by_id["manual_compilation_frontier"]["row_count"] == 1
     assert lane_by_id["non_textual_or_out_of_scope_effect_frontier"][
         "row_count"
     ] == 1
@@ -284,6 +284,16 @@ def test_temporal_commencement_rows_get_distinct_temporal_lane(tmp_path) -> None
                     "missing_proofs": ["source_identity"],
                 },
             },
+            {
+                "statute_id": "ukpga/2000/99",
+                "score_status": "scored",
+                "triage_bucket": "no_compiled_ops_frontier",
+                "aligned": 88.0,
+                "agreement_residual": {
+                    "owner_phase": "canonical_op_compilation",
+                    "missing_proofs": ["canonical_operation_compilation"],
+                },
+            },
         ],
     )
 
@@ -300,7 +310,60 @@ def test_temporal_commencement_rows_get_distinct_temporal_lane(tmp_path) -> None
     assert "undated_commencement_as_commenced_state" in lane_by_id[
         "temporal_commencement_frontier"
     ]["forbidden_shortcuts"]
+    assert lane_by_id["effect_source_footing_gap"]["row_count"] == 1
     assert lane_by_id["canonical_or_temporal_frontier"]["row_count"] == 1
+
+
+def test_nonreplay_rows_route_to_manual_or_source_footing_when_proofs_say_so(
+    tmp_path,
+) -> None:
+    report = _write_report(
+        tmp_path,
+        [
+            {
+                "statute_id": "nia/2001/11",
+                "score_status": "scored",
+                "triage_bucket": "nonreplay_effect_frontier",
+                "aligned": 25.25,
+                "source_chain_frontier_reasons": [
+                    "manual_frontier_manual_compile_candidate"
+                ],
+                "manual_frontier_status_counts": {
+                    "manual_compile_candidate": 1,
+                    "non_textual_or_out_of_scope": 8,
+                },
+                "agreement_residual": {
+                    "owner_phase": "effect_metadata_frontend",
+                    "missing_proofs": ["source_identity"],
+                },
+            },
+            {
+                "statute_id": "ukpga/2009/9",
+                "score_status": "scored",
+                "triage_bucket": "nonreplay_effect_frontier",
+                "aligned": 56.39,
+                "source_chain_frontier_reasons": [
+                    "effect_rows_not_admitted_by_replay_lens",
+                    "manual_frontier_source_insufficient",
+                ],
+                "manual_frontier_status_counts": {
+                    "source_insufficient": 1,
+                    "non_textual_or_out_of_scope": 1,
+                },
+                "agreement_residual": {
+                    "owner_phase": "effect_metadata_frontend",
+                    "missing_proofs": ["source_identity"],
+                },
+            },
+        ],
+    )
+
+    payload = remaining.load_remaining_work(report)
+    lane_by_id = {lane["lane_id"]: lane for lane in payload["lanes"]}
+
+    assert lane_by_id["manual_compilation_frontier"]["row_count"] == 1
+    assert lane_by_id["effect_source_footing_gap"]["row_count"] == 1
+    assert "canonical_or_temporal_frontier" not in lane_by_id
 
 
 def test_oracle_suspect_and_zero_oracle_get_distinct_lanes(tmp_path) -> None:

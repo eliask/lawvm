@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import json
 import re
 import urllib.request
@@ -42,6 +43,18 @@ class PublicSnapshot:
 
 
 @dataclass(frozen=True)
+class PublicPageStatusWitness:
+    current_page_url: str
+    snapshot_sha256: str
+    status_warning_class: str
+    status_text: str
+    no_known_outstanding_effects: bool
+    timeline_version_dates: tuple[str, ...]
+    current_timeline_date: str
+    current_timeline_source_xml_url: str
+
+
+@dataclass(frozen=True)
 class PublicOperationEvidence:
     action: str
     affected_provision: str
@@ -66,6 +79,7 @@ class PublicDivergencePacket:
     amending_source_urls: tuple[str, ...]
     operation_evidence: tuple[PublicOperationEvidence, ...]
     public_snapshots: tuple[PublicSnapshot, ...]
+    current_page_status_witnesses: tuple[PublicPageStatusWitness, ...]
     missing_standalone_evidence: tuple[str, ...]
     verification_question: str
     caveats_to_check: tuple[str, ...]
@@ -164,6 +178,7 @@ def _packet_from_candidate(
         if fetch_public_snapshots
         else ()
     )
+    current_page_status_witnesses = _current_page_status_witnesses(public_snapshots)
     missing = _missing_standalone_evidence(
         operation_evidence=operation_evidence,
         public_snapshots=public_snapshots,
@@ -180,6 +195,7 @@ def _packet_from_candidate(
         amending_source_urls=amending_source_urls,
         operation_evidence=operation_evidence,
         public_snapshots=public_snapshots,
+        current_page_status_witnesses=current_page_status_witnesses,
         missing_standalone_evidence=missing,
         verification_question=(
             "Does the current page still expose the listed provision while the "
@@ -331,6 +347,87 @@ def _fetch_public_snapshots(
             )
         )
     return tuple(snapshots)
+
+
+def _current_page_status_witnesses(
+    snapshots: Sequence[PublicSnapshot],
+) -> tuple[PublicPageStatusWitness, ...]:
+    witnesses: list[PublicPageStatusWitness] = []
+    for snapshot in snapshots:
+        if snapshot.role != "current_page" or not snapshot.storage_path:
+            continue
+        path = Path(snapshot.storage_path)
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        status_text = _status_warning_text(text)
+        current_timeline_date = _current_timeline_date(text)
+        witnesses.append(
+            PublicPageStatusWitness(
+                current_page_url=snapshot.final_url or snapshot.requested_url,
+                snapshot_sha256=snapshot.sha256,
+                status_warning_class=_status_warning_class(text),
+                status_text=status_text,
+                no_known_outstanding_effects=(
+                    "no known outstanding effects" in status_text.lower()
+                ),
+                timeline_version_dates=_timeline_version_dates(text),
+                current_timeline_date=current_timeline_date,
+                current_timeline_source_xml_url=_current_timeline_source_xml_url(
+                    snapshot.final_url or snapshot.requested_url,
+                    current_timeline_date,
+                ),
+            )
+        )
+    return tuple(witnesses)
+
+
+def _status_warning_class(text: str) -> str:
+    match = re.search(r'<div\s+id="statusWarning"\s+class="([^"]*)"', text)
+    return match.group(1) if match else ""
+
+
+def _status_warning_text(text: str) -> str:
+    match = re.search(
+        r'<div\s+id="statusWarning"[^>]*>.*?<p\s+class="intro">(.*?)</p>',
+        text,
+        flags=re.DOTALL,
+    )
+    if not match:
+        return ""
+    return _html_text(match.group(1))
+
+
+def _timeline_version_dates(text: str) -> tuple[str, ...]:
+    timeline_match = re.search(
+        r'<div\s+id="timelineData"[^>]*>(.*?)</div>\s*</div>',
+        text,
+        flags=re.DOTALL,
+    )
+    if not timeline_match:
+        return ()
+    return _unique(re.findall(r"/(\d{4}-\d{2}-\d{2})(?:[/?#\"])", timeline_match.group(1)))
+
+
+def _current_timeline_date(text: str) -> str:
+    match = re.search(
+        r'class="currentVersion[^"]*".*?/(\d{4}-\d{2}-\d{2})(?:[/?#\"])',
+        text,
+        flags=re.DOTALL,
+    )
+    return match.group(1) if match else ""
+
+
+def _current_timeline_source_xml_url(current_page_url: str, current_date: str) -> str:
+    if not current_page_url or not current_date:
+        return ""
+    base = current_page_url.split("?", 1)[0].rstrip("/")
+    return f"{base}/{current_date}/data.xml"
+
+
+def _html_text(fragment: str) -> str:
+    without_tags = re.sub(r"<[^>]+>", " ", fragment)
+    return _squash(html.unescape(without_tags))
 
 
 def _fetch_url(url: str) -> tuple[str, int, str, bytes]:

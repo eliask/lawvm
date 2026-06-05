@@ -220,3 +220,58 @@ def test_fetch_public_snapshots_writes_digest_backed_bytes(tmp_path) -> None:
         body = bodies[snapshot.requested_url]
         assert snapshot.sha256 == hashlib.sha256(body).hexdigest()
         assert Path(snapshot.storage_path).read_bytes() == body
+
+
+def test_current_page_status_witness_extracts_no_outstanding_effects(tmp_path) -> None:
+    candidates_path = _write_json(
+        tmp_path / "candidates.json",
+        {
+            "rows": [
+                {
+                    "statute_id": "ukpga/2011/22",
+                    "candidate_family": "oracle_retains_source_repealed_state",
+                    "confidence": "high",
+                    "retained_repeal_targets": ["section-4"],
+                }
+            ]
+        },
+    )
+    html = b"""
+      <div id="timelineData">
+        <ul>
+          <li><a href="/ukpga/2011/22/section/4/2012-02-14">old</a></li>
+          <li class="currentVersion"><a href="/ukpga/2011/22/section/4/2012-09-14">current</a></li>
+        </ul>
+      </div></div>
+      <div id="statusWarning" class="uptoDate">
+        <p class="intro">There are currently no known outstanding effects for
+        the London Olympic Games and Paralympic Games (Amendment) Act 2011,
+        Section 4.<a href="#help">Help</a></p>
+      </div>
+    """
+    bodies = {
+        "https://www.legislation.gov.uk/ukpga/2011/22/section/4": html,
+        "https://www.legislation.gov.uk/ukpga/2011/22/enacted/data.xml": b"<xml>enacted</xml>",
+        "https://www.legislation.gov.uk/ukpga/2011/22/data.xml": b"<xml>current</xml>",
+    }
+
+    def fetcher(url: str):
+        return url, 200, "text/html", bodies[url]
+
+    row = packets.load_packets(
+        candidates_path,
+        fetch_public_snapshots=True,
+        snapshot_dir=tmp_path / "snapshots",
+        fetcher=fetcher,
+    )[0]
+
+    assert len(row.current_page_status_witnesses) == 1
+    witness = row.current_page_status_witnesses[0]
+    assert witness.status_warning_class == "uptoDate"
+    assert witness.no_known_outstanding_effects is True
+    assert witness.timeline_version_dates == ("2012-02-14", "2012-09-14")
+    assert witness.current_timeline_date == "2012-09-14"
+    assert witness.current_timeline_source_xml_url == (
+        "https://www.legislation.gov.uk/ukpga/2011/22/section/4/2012-09-14/data.xml"
+    )
+    assert witness.snapshot_sha256 == hashlib.sha256(html).hexdigest()
