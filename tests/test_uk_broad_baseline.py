@@ -1626,6 +1626,39 @@ def test_summarize_results_routes_body_oracle_first_paragraph_sectionization() -
 
 
 def test_body_oracle_first_paragraph_sectionization_requires_exact_first_section_sample() -> None:
+    for oracle_only_sample in ("section-1", "section-1."):
+        summary = uk_broad_baseline.summarize_results(
+            [
+                {
+                    "statute_id": "ukpga/1842/97",
+                    "score_status": "scored",
+                    "aligned": 80.0,
+                    "aligned_excluding_grounding_collateral": 80.0,
+                    "unaligned": 0.0,
+                    "base_source_has_body": True,
+                    "base_source_has_schedules": False,
+                    "base_source_number_of_provisions": 5,
+                    "oracle_source_has_body": True,
+                    "oracle_source_has_schedules": False,
+                    "oracle_source_number_of_provisions": 6,
+                    "n_grounding_collateral": 0,
+                    "n_replay": 4,
+                    "n_oracle": 5,
+                    "n_only_in_oracle": 1,
+                    "n_only_in_replayed": 0,
+                    "n_compile_rejections": 1,
+                    "n_blocking_compile_rejections": 0,
+                    "oracle_only_eid_samples": [oracle_only_sample],
+                },
+            ]
+        )
+
+        assert summary["triage_buckets"] == {
+            "body_oracle_first_paragraph_sectionization_residual": 1
+        }
+
+
+def test_body_oracle_first_paragraph_sectionization_rejects_later_section_sample() -> None:
     summary = uk_broad_baseline.summarize_results(
         [
             {
@@ -1647,7 +1680,7 @@ def test_body_oracle_first_paragraph_sectionization_requires_exact_first_section
                 "n_only_in_replayed": 0,
                 "n_compile_rejections": 1,
                 "n_blocking_compile_rejections": 0,
-                "oracle_only_eid_samples": ["section-1"],
+                "oracle_only_eid_samples": ["section-2"],
             },
         ]
     )

@@ -19439,6 +19439,97 @@ def test_compile_source_carried_structured_tail_substitution_with_section_contex
     assert lowering_records[0]["blocking"] is False
 
 
+def test_compile_long_source_carried_structured_tail_substitution_to_child_replaces() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-1-paragraph-53-2">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>2 In subsection (3), for the words from “and the provisions”
+            to the end substitute— but sections 3, 29 to 31A and 33 of that Act
+            are to apply as if— a references in those sections to a marriage
+            schedule, except the reference in subsection (1) of section 29 of
+            that Act and the first reference in each of subsections (2) and (4)
+            of that section, were references to an approved certificate, b the
+            first reference to a marriage schedule in section 29(2) of that Act
+            were a reference to an approved certificate in respect of a person
+            named in the caveat, c the reference to the relevant superintendent
+            registrar in section 29(2) of that Act were a reference to the
+            superintendent registrar to whom notice is given under this section,
+            d subsection (2A) of section 29 of that Act were omitted, e in
+            section 30(1) of that Act, for the words from “is required” to
+            “marriage”, where it first occurs, there were substituted “would be
+            required under section 3 in respect of a marriage if that marriage
+            were”, f the reference in section 31(2) of that Act to the
+            superintendent registrar for the registration district in which a
+            marriage is to be solemnized were a reference to the superintendent
+            registrar to whom notice is given under this section, g in section
+            31 of that Act, subsections (3)(b) and (c), (3A), (4) and (5) were
+            omitted, h the reference in section 31(3)(a) of that Act to each
+            notice of marriage were a reference to the notice given under this
+            section, i the reference in section 33(2)(a) of that Act to notices
+            of marriage were a reference to the notice given under this section,
+            and j in section 33 of that Act, subsections (3)(a) and (4) were
+            omitted.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-06bb570b7ed277ebdaeb2166360fd172",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-05-04",
+        affected_uri="/id/ukpga/1956/70/section/1/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1956",
+        affected_number="70",
+        affected_provisions="s. 1(3)",
+        affecting_uri="/id/uksi/2021/411",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2021",
+        affecting_number="411",
+        affecting_provisions="Sch. 1 para. 53(2)",
+        affecting_title="Civil Partnership (Opposite-sex Couples) Regulations 2019",
+        in_force_dates=[{"date": "2022-05-04", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 10
+    assert [op.action for op in ops] == [StructuralAction.REPLACE] * 10
+    assert [op.target.path[-1] for op in ops] == [
+        ("paragraph", label) for label in "abcdefghij"
+    ]
+    assert all(op.target.path[:-1] == (("section", "1"), ("subsection", "3")) for op in ops)
+    assert [op.payload.kind for op in ops if op.payload is not None] == [
+        IRNodeKind.PARAGRAPH
+    ] * 10
+    assert ops[0].payload is not None
+    assert ops[0].payload.text.startswith(
+        "references in those sections to a marriage schedule"
+    )
+    assert ops[-1].payload is not None
+    assert ops[-1].payload.text == (
+        "in section 33 of that Act, subsections (3)(a) and (4) were omitted"
+    )
+    assert {op.witness_rule_id for op in ops} == {
+        "uk_effect_source_carried_structured_tail_substitution_lowered"
+    }
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_structured_tail_substitution_lowered"
+    ]
+    assert lowering_records[0]["trim_selector"] == "TEXT_FROM_and the provisions_TO_END"
+    assert lowering_records[0]["blocking"] is False
+
+
 def test_compile_source_carried_parent_quoted_child_substitution_to_parent_patch() -> None:
     extracted_el = ET.fromstring(
         f"""

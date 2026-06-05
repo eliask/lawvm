@@ -315,7 +315,7 @@ def _source_previous_that_entry_insert_context(
 # - anchor: .*? → [^“”‘’”’]{0,300} (non-quote, bounded)
 # - “to the end (of subsection)” optional → (| of the subsection) BRANCH
 # - “there substituted/substitute” → BRANCH alternation, no nested \s+
-# - payload end: [“\"'‘]?...[”\"'’]?\s*\.?\s*$ → .{0,1000}$ (caller strips/normalises)
+# - payload end: [“\"'‘]?...[”\"'’]?\s*\.?\s*$ → bounded tail (caller strips/normalises)
 _UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RE = re.compile(
     r"^\s*(?:|(?:[0-9A-Za-z]+|[ivxlcdm]+) |(?:[0-9A-Za-z]+|[ivxlcdm]+) (?:[0-9A-Za-z]+|[ivxlcdm]+) )"
     r"(?:in\s+section\s+[0-9A-Za-z]+[^,]{0,200}, |)"
@@ -325,7 +325,7 @@ _UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RE = re.compile(
     r"for\s+the\s+words\s+from\s+[“\"'‘](?P<anchor>[^“”\"'‘’]{0,300})[”\"'’] "
     r"(?:to the end(| of the subsection)|onwards) "
     r"(?:there (?:shall be|is|are) substituted|substitute[d]?)"
-    r"(?P<payload>.{0,1000})$",
+    r"(?P<payload>.{0,4000})$",
     flags=re.I | re.S,
 )
 # Same fix strategy as CARRIED_TAIL above.

@@ -2219,7 +2219,7 @@ def _is_body_oracle_first_paragraph_sectionization_residual(row: dict[str, Any])
     if not isinstance(samples, list | tuple):
         return False
     normalized_samples = {str(eid).strip().lower() for eid in samples}
-    return normalized_samples == {"section-1."}
+    return normalized_samples in ({"section-1"}, {"section-1."})
 
 
 def _positive_int_field(value: Any) -> int:
