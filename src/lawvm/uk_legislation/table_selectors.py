@@ -101,6 +101,23 @@ _UK_TABLE_CHILD_ANCHOR_INSERT_RE = re.compile(
     r"\((?P<anchor>[0-9A-Za-z]+)\)\s+insert(?:\b|\s*[—-])",
     re.I,
 )
+_UK_TABLE_OR_COLUMN_TOKEN_RE = re.compile(r"\b(?:table|column|columns)\b")
+_UK_TABLE_ENTRY_TOKEN_RE = re.compile(r"\b(?:entry|entries)\b")
+_UK_TABLE_AFTER_ENTRY_LABEL_RE = re.compile(
+    r"\bafter\s+(?:that\s+)?entry\s+[0-9A-Za-z]+\b"
+)
+_UK_TABLE_AFTER_THAT_ENTRY_RE = re.compile(r"\bafter\s+that\s+entry\b")
+_UK_TABLE_AFTER_RELATING_ENTRY_RE = re.compile(
+    r"\bafter\s+the\s+entry\s+in\s+the\s+table\s+relating\s+to\b"
+)
+_UK_TABLE_APPROPRIATE_PLACE_RE = re.compile(r"\bat\s+the\s+appropriate\s+place\b")
+_UK_TABLE_ENTRY_OR_COLUMN_TOKEN_RE = re.compile(
+    r"\b(?:table|column|columns|entry|entries)\b"
+)
+_UK_TABLE_STRUCTURAL_SUBSTITUTION_RE = re.compile(
+    r"\bfor\s+(?P<kind>paragraph|subsection)\s+\(?[0-9A-Za-z]+\)?\s+"
+    r"(?:there\s+is\s+)?substitut(?:e|ed)\b"
+)
 
 # lxml _Element objects do not support weak references; use a plain dict.
 # Eviction is handled by explicit evict_source_root_caches() calls.
@@ -2310,19 +2327,19 @@ def _uk_broad_table_entry_instruction(
     norm = _source_instruction_surface(text).lower()
     if "corresponding entry" in norm:
         return None
-    if not target_names_table and not re.search(r"\b(?:table|column|columns)\b", norm):
+    if not target_names_table and not _UK_TABLE_OR_COLUMN_TOKEN_RE.search(norm):
         return None
     has_entry_text = (
-        re.search(r"\b(?:entry|entries)\b", norm) is not None
-        or (target_names_table and re.search(r"\bafter\s+(?:that\s+)?entry\s+[0-9A-Za-z]+\b", norm) is not None)
-        or (target_names_table and re.search(r"\bafter\s+that\s+entry\b", norm) is not None)
+        _UK_TABLE_ENTRY_TOKEN_RE.search(norm) is not None
+        or (target_names_table and _UK_TABLE_AFTER_ENTRY_LABEL_RE.search(norm) is not None)
+        or (target_names_table and _UK_TABLE_AFTER_THAT_ENTRY_RE.search(norm) is not None)
         or (
             target_names_table
-            and re.search(r"\bafter\s+the\s+entry\s+in\s+the\s+table\s+relating\s+to\b", norm) is not None
+            and _UK_TABLE_AFTER_RELATING_ENTRY_RE.search(norm) is not None
         )
         or (
             target_names_table
-            and re.search(r"\bat\s+the\s+appropriate\s+place\b", norm) is not None
+            and _UK_TABLE_APPROPRIATE_PLACE_RE.search(norm) is not None
         )
     )
     has_column_instruction = (
@@ -2446,13 +2463,9 @@ def _uk_embedded_table_payload_structural_substitution(
     if target_kind not in {"paragraph", "subsection"}:
         return None
     norm = text.lower()
-    if not re.search(r"\b(?:table|column|columns|entry|entries)\b", norm):
+    if not _UK_TABLE_ENTRY_OR_COLUMN_TOKEN_RE.search(norm):
         return None
-    structural_match = re.search(
-        r"\bfor\s+(?P<kind>paragraph|subsection)\s+\(?[0-9A-Za-z]+\)?\s+"
-        r"(?:there\s+is\s+)?substitut(?:e|ed)\b",
-        norm,
-    )
+    structural_match = _UK_TABLE_STRUCTURAL_SUBSTITUTION_RE.search(norm)
     if structural_match is None:
         return None
     if structural_match.group("kind") != target_kind:

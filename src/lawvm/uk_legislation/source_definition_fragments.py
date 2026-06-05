@@ -71,6 +71,12 @@ _UK_DEFINITION_CHILD_RANGE_PAYLOAD_ITEM_RE = re.compile(
     r"(?:^|;\s*)(?P<label>[a-z])\s+(?P<text>.*?)(?=(?:;\s*[a-z]\s+)|$)",
     flags=re.I | re.S,
 )
+_UK_DEFINITION_CHILD_TEXT_OMISSION_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"in\s+paragraph\s+\((?P<label>[0-9A-Za-z]+)\),?\s+"
+    r"omit\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’]\s*,?\.?\s*$",
+    flags=re.I | re.S,
+)
 
 
 def _has_following_words_repeal_instruction(
@@ -1517,13 +1523,7 @@ def _fragment_substitution_source_carried_definition_child_text_omission(
     text = " ".join((extracted_text or "").split()).strip()
     if not text:
         return None
-    match = re.match(
-        r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
-        r"in\s+paragraph\s+\((?P<label>[0-9A-Za-z]+)\),?\s+"
-        r"omit\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’]\s*,?\.?\s*$",
-        text,
-        flags=re.I | re.S,
-    )
+    match = _UK_DEFINITION_CHILD_TEXT_OMISSION_RE.match(text)
     if match is None:
         return None
     label = _clean_num(match.group("label"))

@@ -87,6 +87,17 @@ _COMPACT_SAME_KIND_COMPOUND_REF_RE = re.compile(
     r"\s*$",
     flags=re.I,
 )
+_PARENTHESIZED_RANGE_SOURCE_REF_RE = re.compile(
+    r"^(?P<parent>.+?)\((?P<start>[0-9A-Za-zivxlcdm]+)\)\s*-\s*"
+    r"\((?P<end>[0-9A-Za-zivxlcdm]+)\)$",
+    flags=re.I,
+)
+_NON_SUBSTANTIVE_SHELL_LABEL_RE = re.compile(
+    r"^[0-9A-Za-z]+(?:\([0-9A-Za-z]+\))?\s+"
+)
+_ASCII_LETTER_RE = re.compile(r"[A-Za-z]")
+
+
 @dataclass(frozen=True)
 class UKAffectingSourceContext:
     xml_bytes: Optional[bytes]
@@ -1221,10 +1232,8 @@ def _has_matching_part_ancestor(
 
 
 def _parenthesized_range_source_ref(provision_ref: str) -> tuple[str, str, str] | None:
-    match = re.match(
-        r"^(?P<parent>.+?)\((?P<start>[0-9A-Za-zivxlcdm]+)\)\s*-\s*\((?P<end>[0-9A-Za-zivxlcdm]+)\)$",
-        " ".join((provision_ref or "").split()).strip(),
-        flags=re.I,
+    match = _PARENTHESIZED_RANGE_SOURCE_REF_RE.match(
+        " ".join((provision_ref or "").split()).strip()
     )
     if match is None:
         return None
@@ -1767,8 +1776,8 @@ def _looks_like_non_substantive_shell_text(text: str) -> bool:
     normalized = " ".join((text or "").split()).strip()
     if not normalized:
         return False
-    normalized = re.sub(r"^[0-9A-Za-z]+(?:\([0-9A-Za-z]+\))?\s+", "", normalized)
-    if re.search(r"[A-Za-z]", normalized):
+    normalized = _NON_SUBSTANTIVE_SHELL_LABEL_RE.sub("", normalized)
+    if _ASCII_LETTER_RE.search(normalized):
         return False
     return normalized.count(".") >= 4
 

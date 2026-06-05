@@ -141,6 +141,34 @@ class UKReplayResidualClassification(NamedTuple):
 _HAS_EFFECT_FOR_PURPOSE_RE = re.compile(
     r"\bhas\s+effect\b.{0,220}\bfor\s+the\s+purpose\s+of\b"
 )
+_NON_SUBSTANTIVE_SHELL_LABEL_RE = re.compile(
+    r"^[0-9A-Za-z]+(?:\([0-9A-Za-z]+\))?\s+"
+)
+_ASCII_LETTER_RE = re.compile(r"[A-Za-z]")
+_QUOTE_CHAR_RE = re.compile(r"[\"“”'‘’]")
+_REFERENCE_ONLY_SOURCE_PREFIX_RE = re.compile(
+    r"^(?:section|sections|subsection|subsections|paragraph|paragraphs|"
+    r"sub-?paragraph|sub-?paragraphs|schedule|part|chapter|article)\b",
+    re.I,
+)
+_WORDS_TREATED_AS_SUBSTITUTED_CONTEXT_RE = re.compile(
+    r"\bof\s+the\s+words\s+treated\s+as\s+substituted\b"
+)
+_SOURCE_REWRITE_ACTION_RE = re.compile(
+    r"\b(?:for|after|before|omit|insert|substitute)\b"
+)
+_REQUIRED_SUBPARAGRAPH_DEPTH_RE = re.compile(
+    r"^(?:[0-9a-z]+\s+)?(?:in|for)\s+sub-?paragraphs?\b"
+)
+_REQUIRED_PARAGRAPH_DEPTH_RE = re.compile(
+    r"^(?:[0-9a-z]+\s+)?(?:in|for)\s+paragraphs?\b"
+)
+_REQUIRED_SUBSECTION_DEPTH_RE = re.compile(
+    r"^(?:[0-9a-z]+\s+)?(?:in|for)\s+subsections?\b"
+)
+_REQUIRED_SECTION_DEPTH_RE = re.compile(
+    r"^(?:[0-9a-z]+\s+)?(?:in|for)\s+sections?\b"
+)
 
 
 _UK_MANUAL_FRONTIER_RANGE_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClassification] = {
@@ -1655,8 +1683,8 @@ def _looks_like_non_substantive_shell(text: str) -> bool:
         return False
     # UK extracted source often preserves a list label like "b" or "i" ahead
     # of dotted shell placeholders.
-    norm = re.sub(r"^[0-9A-Za-z]+(?:\([0-9A-Za-z]+\))?\s+", "", norm)
-    if re.search(r"[A-Za-z]", norm):
+    norm = _NON_SUBSTANTIVE_SHELL_LABEL_RE.sub("", norm)
+    if _ASCII_LETTER_RE.search(norm):
         return False
     return norm.count(".") >= 4
 
@@ -1665,16 +1693,12 @@ def _looks_like_reference_only_source(text: str) -> bool:
     norm = " ".join((text or "").split()).strip()
     if not norm:
         return False
-    norm = re.sub(r"^[0-9A-Za-z]+(?:\([0-9A-Za-z]+\))?\s+", "", norm)
-    if re.search(r"[\"“”'‘’]", norm):
+    norm = _NON_SUBSTANTIVE_SHELL_LABEL_RE.sub("", norm)
+    if _QUOTE_CHAR_RE.search(norm):
         return False
     if _looks_like_instruction_text(norm):
         return False
-    if re.match(
-        r"^(?:section|sections|subsection|subsections|paragraph|paragraphs|sub-?paragraph|sub-?paragraphs|schedule|part|chapter|article)\b",
-        norm,
-        re.I,
-    ):
+    if _REFERENCE_ONLY_SOURCE_PREFIX_RE.match(norm):
         return True
     if re.match(r"^[A-Z][A-Za-z'(),.& -]+ Act \d{4}[,.;]?$", norm):
         return True
@@ -1813,8 +1837,8 @@ def _looks_like_words_treated_as_substituted_context(text: str) -> bool:
     if not norm:
         return False
     return bool(
-        re.search(r"\bof\s+the\s+words\s+treated\s+as\s+substituted\b", norm)
-        and re.search(r"\b(?:for|after|before|omit|insert|substitute)\b", norm)
+        _WORDS_TREATED_AS_SUBSTITUTED_CONTEXT_RE.search(norm)
+        and _SOURCE_REWRITE_ACTION_RE.search(norm)
     )
 
 
@@ -1904,13 +1928,13 @@ def _target_kinds(target_path: str) -> tuple[str, ...]:
 
 def _required_instruction_depth(text: str) -> int:
     norm = _normalize_effect_text(text)
-    if re.match(r"^(?:[0-9a-z]+\s+)?(?:in|for)\s+sub-?paragraphs?\b", norm):
+    if _REQUIRED_SUBPARAGRAPH_DEPTH_RE.match(norm):
         return 3
-    if re.match(r"^(?:[0-9a-z]+\s+)?(?:in|for)\s+paragraphs?\b", norm):
+    if _REQUIRED_PARAGRAPH_DEPTH_RE.match(norm):
         return 3
-    if re.match(r"^(?:[0-9a-z]+\s+)?(?:in|for)\s+subsections?\b", norm):
+    if _REQUIRED_SUBSECTION_DEPTH_RE.match(norm):
         return 2
-    if re.match(r"^(?:[0-9a-z]+\s+)?(?:in|for)\s+sections?\b", norm):
+    if _REQUIRED_SECTION_DEPTH_RE.match(norm):
         return 1
     return 0
 
