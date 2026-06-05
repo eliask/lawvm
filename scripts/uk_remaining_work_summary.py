@@ -42,6 +42,37 @@ class UKRemainingWorkLane:
 
 
 @dataclass(frozen=True)
+class UKRemainingWorkItem:
+    work_item_id: str
+    statute_id: str
+    lane_id: str
+    priority_rank: int
+    owner_phase: str
+    work_kind: str
+    status: str
+    executable: bool
+    replay_authorized: bool
+    triage_bucket: str
+    score_status: str
+    aligned: float | None
+    n_replay: int
+    n_oracle: int
+    n_only_in_replayed: int
+    n_only_in_oracle: int
+    source_chain_frontier_reasons: tuple[str, ...]
+    missing_proofs: tuple[str, ...]
+    base_source_status: str
+    base_source_locator: str
+    oracle_source_status: str
+    oracle_source_locator: str
+    replay_only_eid_samples: tuple[str, ...]
+    oracle_only_eid_samples: tuple[str, ...]
+    next_action: str
+    safe_default: str
+    forbidden_shortcuts: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class _LaneSpec:
     lane_id: str
     priority_rank: int
@@ -215,8 +246,15 @@ def load_remaining_work(
     *,
     reference_bucket: str = _DEFAULT_REFERENCE_BUCKET,
     core_polish_threshold: float = _DEFAULT_CORE_POLISH_THRESHOLD,
+    include_items: bool = False,
+    item_lane_ids: frozenset[str] = frozenset(),
+    item_limit: int = 0,
 ) -> dict[str, Any]:
     """Load a UK broad-baseline report and return remaining-work lanes."""
+
+    unknown_lane_ids = item_lane_ids - frozenset(_LANE_SPECS)
+    if unknown_lane_ids:
+        raise ValueError(f"unknown lane id(s): {', '.join(sorted(unknown_lane_ids))}")
 
     report = json.loads(report_path.read_text())
     _validate_input_report(report, report_path)
@@ -271,7 +309,7 @@ def load_remaining_work(
         reference_score=reference_score,
         unknown_buckets=unknown_buckets,
     )
-    return {
+    payload: dict[str, Any] = {
         "report_kind": "uk_remaining_work_summary.v1",
         "truth_claim": "uk_remaining_work_summary_report_not_source_truth",
         "safe_default": "use_for_work_selection_not_replay_authorization",
@@ -284,6 +322,18 @@ def load_remaining_work(
         "summary": summary,
         "lanes": [asdict(lane) for lane in lanes],
     }
+    if include_items:
+        payload["items"] = [
+            asdict(item)
+            for item in _remaining_work_items(
+                lane_rows,
+                lane_ids=item_lane_ids,
+                limit=item_limit,
+            )
+        ]
+        payload["summary"]["item_count"] = len(payload["items"])
+        payload["summary"]["item_lane_filter"] = sorted(item_lane_ids)
+    return payload
 
 
 def _validate_input_report(report: Mapping[str, Any], report_path: Path) -> None:
@@ -366,6 +416,66 @@ def _summarize_lane(
         ),
         missing_proof_counts=_missing_proof_counts(rows),
         sample_statutes=_sample_statutes(rows),
+        next_action=spec.next_action,
+        safe_default="classify_or_queue_without_replay_promotion",
+        forbidden_shortcuts=spec.forbidden_shortcuts,
+    )
+
+
+def _remaining_work_items(
+    lane_rows: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    lane_ids: frozenset[str],
+    limit: int,
+) -> list[UKRemainingWorkItem]:
+    selected_lane_ids = lane_ids or frozenset(lane_rows)
+    items: list[UKRemainingWorkItem] = []
+    for lane_id in sorted(
+        selected_lane_ids & frozenset(lane_rows),
+        key=lambda item: (-_LANE_SPECS[item].priority_rank, item),
+    ):
+        spec = _LANE_SPECS[lane_id]
+        for row in sorted(lane_rows[lane_id], key=_sample_sort_key):
+            items.append(_remaining_work_item(spec, row))
+            if limit > 0 and len(items) >= limit:
+                return items
+    return items
+
+
+def _remaining_work_item(
+    spec: _LaneSpec,
+    row: Mapping[str, Any],
+) -> UKRemainingWorkItem:
+    statute_id = str(row.get("statute_id") or "")
+    residual = _mapping(row.get("agreement_residual"))
+    owner_phase = str(residual.get("owner_phase") or spec.owner_phase)
+    return UKRemainingWorkItem(
+        work_item_id=f"uk-remaining:{spec.lane_id}:{statute_id}",
+        statute_id=statute_id,
+        lane_id=spec.lane_id,
+        priority_rank=spec.priority_rank,
+        owner_phase=owner_phase,
+        work_kind=spec.work_kind,
+        status="non_executable_work_item",
+        executable=False,
+        replay_authorized=False,
+        triage_bucket=str(row.get("triage_bucket") or ""),
+        score_status=str(row.get("score_status") or ""),
+        aligned=_float_or_none(row.get("aligned")),
+        n_replay=_int(row.get("n_replay")),
+        n_oracle=_int(row.get("n_oracle")),
+        n_only_in_replayed=_int(row.get("n_only_in_replayed")),
+        n_only_in_oracle=_int(row.get("n_only_in_oracle")),
+        source_chain_frontier_reasons=_string_tuple(
+            row.get("source_chain_frontier_reasons")
+        ),
+        missing_proofs=_missing_proofs_for_row(row),
+        base_source_status=str(row.get("base_source_status") or ""),
+        base_source_locator=str(row.get("base_source_locator") or ""),
+        oracle_source_status=str(row.get("oracle_source_status") or ""),
+        oracle_source_locator=str(row.get("oracle_source_locator") or ""),
+        replay_only_eid_samples=_string_tuple(row.get("replay_only_eid_samples")),
+        oracle_only_eid_samples=_string_tuple(row.get("oracle_only_eid_samples")),
         next_action=spec.next_action,
         safe_default="classify_or_queue_without_replay_promotion",
         forbidden_shortcuts=spec.forbidden_shortcuts,
@@ -460,6 +570,21 @@ def _missing_proof_counts(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
             for proof, count in _mapping(row.get(field)).items():
                 counts[str(proof)] += _int(count)
     return dict(sorted(counts.items()))
+
+
+def _missing_proofs_for_row(row: Mapping[str, Any]) -> tuple[str, ...]:
+    proofs: list[str] = []
+    residual = _mapping(row.get("agreement_residual"))
+    proofs.extend(_string_tuple(residual.get("missing_proofs")))
+    for field in (
+        "manual_frontier_missing_proof_counts",
+        "compile_rejection_missing_proof_counts",
+        "blocking_compile_rejection_missing_proof_counts",
+    ):
+        for proof, count in _mapping(row.get(field)).items():
+            if _int(count) > 0:
+                proofs.append(str(proof))
+    return tuple(dict.fromkeys(proofs))
 
 
 def _sample_statutes(
@@ -667,11 +792,31 @@ def main(argv: Sequence[str] | None = None) -> int:
             "low-priority core polish (default: 99.5)"
         ),
     )
+    parser.add_argument(
+        "--include-items",
+        action="store_true",
+        help="include row-level non-executable work items in JSON output",
+    )
+    parser.add_argument(
+        "--lane",
+        action="append",
+        default=[],
+        help="with --include-items, restrict item export to this lane id; repeatable",
+    )
+    parser.add_argument(
+        "--item-limit",
+        type=int,
+        default=0,
+        help="with --include-items, maximum row-level items to emit",
+    )
     args = parser.parse_args(argv)
 
     payload = load_remaining_work(
         args.report,
         core_polish_threshold=args.core_polish_threshold,
+        include_items=args.include_items,
+        item_lane_ids=frozenset(args.lane),
+        item_limit=args.item_limit,
     )
     if args.format == "json":
         print(_emit_json(payload))

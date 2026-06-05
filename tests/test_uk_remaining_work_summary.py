@@ -135,6 +135,76 @@ def test_remaining_work_groups_rows_by_proof_boundary(tmp_path) -> None:
     assert "work_lane_as_replay_authorization" in payload["forbidden_shortcuts"]
 
 
+def test_lane_filtered_items_are_non_executable_work_queue_rows(tmp_path) -> None:
+    report = _write_report(
+        tmp_path,
+        [
+            {
+                "statute_id": "uksi/2009/41",
+                "score_status": "scored",
+                "triage_bucket": "effect_feed_absent_frontier",
+                "aligned": 60.0,
+                "n_replay": 12,
+                "n_oracle": 20,
+                "n_only_in_oracle": 8,
+                "source_chain_frontier_reasons": ["effect_feed_pages_absent"],
+                "oracle_only_eid_samples": ["regulation-10"],
+                "base_source_status": "available",
+                "base_source_locator": "https://www.legislation.gov.uk/uksi/2009/41/enacted/data.xml",
+                "oracle_source_status": "available",
+                "oracle_source_locator": "https://www.legislation.gov.uk/uksi/2009/41/data.xml",
+                "agreement_residual": {
+                    "owner_phase": "effect_metadata_frontend",
+                    "missing_proofs": ["source_identity"],
+                },
+            },
+            {
+                "statute_id": "ukpga/2000/2",
+                "score_status": "scored",
+                "triage_bucket": "manual_compile_frontier_residual",
+                "aligned": 75.0,
+                "n_only_in_oracle": 10,
+                "agreement_residual": {
+                    "owner_phase": "typed_elaboration",
+                    "missing_proofs": ["target_identity"],
+                },
+            },
+        ],
+    )
+
+    payload = remaining.load_remaining_work(
+        report,
+        include_items=True,
+        item_lane_ids=frozenset({"effect_source_footing_gap"}),
+    )
+
+    assert payload["summary"]["item_count"] == 1
+    assert payload["summary"]["item_lane_filter"] == ["effect_source_footing_gap"]
+    item = payload["items"][0]
+    assert item["work_item_id"] == "uk-remaining:effect_source_footing_gap:uksi/2009/41"
+    assert item["status"] == "non_executable_work_item"
+    assert item["executable"] is False
+    assert item["replay_authorized"] is False
+    assert item["lane_id"] == "effect_source_footing_gap"
+    assert item["owner_phase"] == "effect_metadata_frontend"
+    assert item["source_chain_frontier_reasons"] == ("effect_feed_pages_absent",)
+    assert item["missing_proofs"] == ("source_identity",)
+    assert item["oracle_only_eid_samples"] == ("regulation-10",)
+    assert item["base_source_status"] == "available"
+    assert "effect_absence_as_replay_permission" in item["forbidden_shortcuts"]
+
+
+def test_item_export_rejects_unknown_lane(tmp_path) -> None:
+    report = _write_report(tmp_path, [])
+
+    with pytest.raises(ValueError, match="unknown lane id"):
+        remaining.load_remaining_work(
+            report,
+            include_items=True,
+            item_lane_ids=frozenset({"not_a_lane"}),
+        )
+
+
 def test_oracle_suspect_and_zero_oracle_get_distinct_lanes(tmp_path) -> None:
     report = _write_report(
         tmp_path,
