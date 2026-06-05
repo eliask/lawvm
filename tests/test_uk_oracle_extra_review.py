@@ -35,6 +35,8 @@ def test_addition_with_commentary_is_source_chain_gap() -> None:
 
     assert row.review_status == "likely_source_chain_or_lowering_gap"
     assert row.oracle_markup_kinds == ("Addition",)
+    assert row.oracle_change_ids == ("d30p378",)
+    assert row.oracle_commentary_refs == ("c739958", "d30p378")
     assert row.oracle_commentaries == ("S. 6(1A) inserted by S.I. 1988/1984.",)
     assert row.agreement_residual["family"] == "source_footing_gap"
 

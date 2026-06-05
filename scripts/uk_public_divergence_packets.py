@@ -27,6 +27,21 @@ _FORBIDDEN_SHORTCUTS = (
     "amending_fragment_without_commencement_extent_or_savings_review",
     "review_lead_as_automatic_consolidation_change",
 )
+_SI_SOURCE_RE = re.compile(r"\bS\.I\.\s+(\d{4})/(\d+)\b", re.IGNORECASE)
+_EUR_SOURCE_RE = re.compile(
+    r"\b(?:Regulation|Implementing Regulation)\s+\(EU\)\s+(\d{4})/(\d+)\b",
+    re.IGNORECASE,
+)
+_UKPGA_SOURCE_RE = re.compile(
+    r"\b([A-Z][A-Za-z0-9\u2019'(),:;.\-\s]{0,220}?\bAct\s+(\d{4}))\s+"
+    r"\((?:c\.|chapter)\s*\.?\s*(\d+)",
+    re.IGNORECASE,
+)
+_CITATION_TAIL_RE = re.compile(
+    r"\b(?:s|ss|art|arts|reg|regs|sch|schs|para|paras)\.?\s+"
+    r"[A-Za-z0-9(),.\-/\u2013\s]{0,180}",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -78,10 +93,15 @@ class PublicOperationEvidence:
     affected_provision: str
     affecting_source_id: str
     affecting_provisions: str
+    effect_id: str
+    oracle_change_ids: tuple[str, ...]
+    oracle_commentaries: tuple[str, ...]
     effect_type: str
     effective_date: str
     source_preview: str
     affecting_source_sha256: str
+    source_fragment_role: str
+    proof_boundary: str
     public_source_urls: tuple[str, ...]
 
 
@@ -154,7 +174,36 @@ def _load_rows(path: Path) -> list[Mapping[str, Any]]:
 
 def _load_supplements(path: Path) -> dict[str, Mapping[str, Any]]:
     rows = _load_rows(path)
-    return {str(row.get("statute_id") or ""): row for row in rows}
+    supplements: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        statute_id = str(row.get("statute_id") or "")
+        if not statute_id:
+            continue
+        if statute_id in supplements:
+            existing = supplements[statute_id]
+            existing.setdefault("matched_ops", [])
+            existing["matched_ops"].extend(_matched_ops_tuple(row))
+            existing.setdefault("retained_targets", [])
+            existing["retained_targets"].extend(_target_tuple(row))
+            existing.setdefault("current_urls", [])
+            existing["current_urls"].extend(
+                _current_url_for_target(statute_id, target)
+                for target in _target_tuple(row)
+            )
+        else:
+            existing = supplements.setdefault(statute_id, dict(row))
+        generated_ops = _operation_leads_from_oracle_extra_review(row)
+        if generated_ops:
+            existing.setdefault("matched_ops", [])
+            existing["matched_ops"].extend(generated_ops)
+            existing.setdefault("retained_targets", [])
+            existing["retained_targets"].extend(_target_tuple(row))
+            existing.setdefault("current_urls", [])
+            existing["current_urls"].extend(
+                _current_url_for_target(statute_id, target)
+                for target in _target_tuple(row)
+            )
+    return supplements
 
 
 def _packet_from_candidate(
@@ -281,13 +330,9 @@ def _current_targets(
 def _operation_evidence_tuple(
     supplement: Mapping[str, Any],
 ) -> tuple[PublicOperationEvidence, ...]:
-    operations = supplement.get("matched_ops")
-    if not isinstance(operations, Iterable) or isinstance(operations, str):
-        return ()
+    operations = _matched_ops_tuple(supplement)
     out: list[PublicOperationEvidence] = []
     for op in operations:
-        if not isinstance(op, Mapping):
-            continue
         source_id = str(op.get("source_statute") or op.get("affecting_act_id") or "")
         affecting_provisions = str(op.get("affecting_provisions") or "")
         public_urls = _public_source_urls(source_id, affecting_provisions)
@@ -297,14 +342,112 @@ def _operation_evidence_tuple(
                 affected_provision=str(op.get("affected") or ""),
                 affecting_source_id=source_id,
                 affecting_provisions=affecting_provisions,
+                effect_id=str(op.get("effect_id") or ""),
+                oracle_change_ids=_string_tuple(op.get("oracle_change_ids")),
+                oracle_commentaries=_string_tuple(op.get("oracle_commentaries")),
                 effect_type=str(op.get("effect_type") or ""),
                 effective_date=str(op.get("effective_date") or op.get("source_effective") or ""),
                 source_preview=_squash(str(op.get("source_preview") or "")),
                 affecting_source_sha256=str(op.get("affecting_source_sha256") or ""),
+                source_fragment_role=str(op.get("source_fragment_role") or ""),
+                proof_boundary=str(op.get("proof_boundary") or ""),
                 public_source_urls=public_urls,
             )
         )
     return tuple(out)
+
+
+def _matched_ops_tuple(supplement: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    operations = supplement.get("matched_ops")
+    if not isinstance(operations, Iterable) or isinstance(operations, str):
+        return ()
+    return tuple(op for op in operations if isinstance(op, Mapping))
+
+
+def _operation_leads_from_oracle_extra_review(
+    row: Mapping[str, Any],
+) -> tuple[Mapping[str, Any], ...]:
+    markups = _string_tuple(row.get("oracle_markup_kinds"))
+    commentaries = _string_tuple(row.get("oracle_commentaries"))
+    if not markups or not commentaries:
+        return ()
+    target = str(row.get("target") or "")
+    out: list[Mapping[str, Any]] = []
+    for commentary in commentaries:
+        source = _source_from_commentary(commentary)
+        if source is None:
+            continue
+        source_id, affecting_provisions = source
+        action = _action_from_markup(markups, commentary)
+        out.append(
+            {
+                "action": action,
+                "affected": _affected_from_commentary(commentary, target),
+                "source_statute": source_id,
+                "affecting_provisions": affecting_provisions,
+                "effect_type": action,
+                "effective_date": _date_from_commentary(commentary),
+                "source_preview": commentary,
+                "evidence_status": "oracle_commentary_source_chain_lead_not_replay_authority",
+                "source_fragment_role": "oracle_commentary_source_chain_lead",
+                "proof_boundary": (
+                    "oracle_commentary_lead_only_not_affecting_source_fragment"
+                ),
+            }
+        )
+    return tuple(out)
+
+
+def _source_from_commentary(commentary: str) -> tuple[str, str] | None:
+    matches: list[tuple[int, int, str]] = []
+    for pattern, source_kind in (
+        (_SI_SOURCE_RE, "uksi"),
+        (_EUR_SOURCE_RE, "eur"),
+        (_UKPGA_SOURCE_RE, "ukpga"),
+    ):
+        for match in pattern.finditer(commentary):
+            if source_kind == "ukpga":
+                source_id = f"ukpga/{match.group(2)}/{match.group(3)}"
+            else:
+                source_id = f"{source_kind}/{match.group(1)}/{match.group(2)}"
+            matches.append((match.start(), match.end(), source_id))
+    if not matches:
+        return None
+    _, end, source_id = sorted(matches, key=lambda item: item[0])[-1]
+    return source_id, _affecting_provisions_from_tail(commentary[end:])
+
+
+def _affecting_provisions_from_tail(tail: str) -> str:
+    citations: list[str] = []
+    for match in _CITATION_TAIL_RE.finditer(tail):
+        citation = _squash(match.group(0).strip(" ,.;"))
+        if citation and citation not in citations:
+            citations.append(citation)
+    return "; ".join(citations)
+
+
+def _affected_from_commentary(commentary: str, target: str) -> str:
+    before_by = commentary.split(" by ", 1)[0]
+    return _squash(before_by.strip(" ,.;")) or target
+
+
+def _date_from_commentary(commentary: str) -> str:
+    match = re.search(r"\((\d{1,2})\.(\d{1,2})\.(\d{4})\)", commentary)
+    if not match:
+        return ""
+    day, month, year = match.groups()
+    return f"{year}-{int(month):02d}-{int(day):02d}"
+
+
+def _action_from_markup(markups: Sequence[str], commentary: str) -> str:
+    lower = commentary.lower()
+    if "repeal" in lower or "omitted" in lower or "omit" in lower:
+        return "repeal_or_omit"
+    if "Substitution" in markups or "substituted" in lower:
+        return "substitute"
+    if "Addition" in markups or "inserted" in lower or "added" in lower:
+        return "insert"
+    return "oracle_commentary_amendment"
 
 
 def _public_source_urls(source_id: str, affecting_provisions: str) -> tuple[str, ...]:
@@ -312,23 +455,52 @@ def _public_source_urls(source_id: str, affecting_provisions: str) -> tuple[str,
         return ()
     urls: list[str] = [f"{_LEG_BASE}/{source_id}"]
     lower = affecting_provisions.lower()
-    for kind, path in (
-        ("art", "article"),
-        ("reg", "regulation"),
-        ("s", "section"),
-        ("sch", "schedule"),
+    for kind, path, plural in (
+        ("art", "article", "arts"),
+        ("reg", "regulation", "regs"),
+        ("s", "section", "ss"),
+        ("sch", "schedule", "schs"),
     ):
-        for number in _numbers_after_token(lower, kind):
+        for number in _numbers_after_token(lower, kind, plural):
             urls.append(f"{_LEG_BASE}/{source_id}/{path}/{number}")
     if source_id.startswith(("uksi/", "ssi/", "wsi/", "nisr/")):
-        for number in _numbers_after_token(lower, "para"):
+        for number in _numbers_after_token(lower, "para", "paras"):
             urls.append(f"{_LEG_BASE}/{source_id}/article/{number}")
     return _unique(urls)
 
 
-def _numbers_after_token(text: str, token: str) -> tuple[str, ...]:
-    pattern = rf"\b{re.escape(token)}\.?\s+(\d+)"
-    return tuple(match.group(1) for match in re.finditer(pattern, text))
+def _numbers_after_token(text: str, token: str, plural: str = "") -> tuple[str, ...]:
+    variants = f"{re.escape(token)}|{re.escape(plural)}" if plural else re.escape(token)
+    pattern = rf"\b(?:{variants})\.?\s+([0-9][0-9(),.\-/\u2013\s]{{0,80}})"
+    values: list[str] = []
+    for match in re.finditer(pattern, text):
+        for chunk in re.split(r"\s*,\s*", match.group(1)):
+            number_match = re.match(r"\s*(\d+)", chunk)
+            if number_match is None:
+                continue
+            number = number_match.group(1)
+            if number not in values:
+                values.append(number)
+    return tuple(values)
+
+
+def _target_tuple(row: Mapping[str, Any]) -> tuple[str, ...]:
+    for key in (
+        "target",
+        "retained_targets",
+        "current_targets",
+        "retained_repeal_targets",
+        "oracle_only_samples",
+        "oracle_only_eid_samples",
+        "replay_only_samples",
+        "replay_only_eid_samples",
+    ):
+        value = row.get(key)
+        if isinstance(value, str):
+            return (value,) if value else ()
+        if isinstance(value, Iterable):
+            return tuple(str(item) for item in value if str(item))
+    return ()
 
 
 def _current_url_for_target(statute_id: str, target: str) -> str:
@@ -621,7 +793,9 @@ def _missing_standalone_evidence(
     fetch_public_snapshots: bool,
 ) -> tuple[str, ...]:
     missing: list[str] = []
-    if not operation_evidence:
+    if not operation_evidence or not any(
+        _has_standalone_operation_fragment(op) for op in operation_evidence
+    ):
         missing.append("amending_source_operation_fragment")
     if fetch_public_snapshots:
         roles = {snapshot.role for snapshot in public_snapshots}
@@ -631,6 +805,18 @@ def _missing_standalone_evidence(
     else:
         missing.append("public_response_snapshots")
     return tuple(missing)
+
+
+def _has_standalone_operation_fragment(op: PublicOperationEvidence) -> bool:
+    if not op.affecting_source_id:
+        return False
+    if not op.source_preview:
+        return False
+    if not (op.affecting_provisions or op.effect_id):
+        return False
+    if op.source_fragment_role == "oracle_commentary_source_chain_lead":
+        return False
+    return True
 
 
 def _preview(body: bytes, limit: int = 500) -> str:

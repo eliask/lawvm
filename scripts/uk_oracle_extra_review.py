@@ -38,6 +38,8 @@ class UKOracleExtraReviewRow:
     base_text_witness_present: bool
     oracle_target_present: bool
     oracle_markup_kinds: tuple[str, ...]
+    oracle_change_ids: tuple[str, ...]
+    oracle_commentary_refs: tuple[str, ...]
     oracle_commentaries: tuple[str, ...]
     oracle_text_preview: str
     agreement_residual: Mapping[str, Any]
@@ -86,7 +88,9 @@ def review_target(
     base_el = _find_id(base_root, target) if base_root is not None else None
     oracle_el = _find_id(oracle_root, target)
     markup_kinds = _markup_kinds(oracle_el)
-    commentaries = _commentaries(oracle_root, oracle_el)
+    change_ids = _change_ids(oracle_el)
+    commentary_refs = _commentary_refs(oracle_el)
+    commentaries = _commentaries_for_refs(oracle_root, commentary_refs)
     text_preview = _text_preview(oracle_el)
     base_text_witness_present = _base_text_witness_present(
         base_root, target=target, text_preview=text_preview
@@ -119,6 +123,8 @@ def review_target(
         base_text_witness_present=base_text_witness_present,
         oracle_target_present=oracle_el is not None,
         oracle_markup_kinds=markup_kinds,
+        oracle_change_ids=change_ids,
+        oracle_commentary_refs=commentary_refs,
         oracle_commentaries=commentaries,
         oracle_text_preview=text_preview,
         agreement_residual=residual.to_dict(),
@@ -533,15 +539,33 @@ def _markup_kinds(el: ET._Element | None) -> tuple[str, ...]:
     return tuple(sorted(kinds))
 
 
-def _commentaries(root: ET._Element, el: ET._Element | None) -> tuple[str, ...]:
+def _change_ids(el: ET._Element | None) -> tuple[str, ...]:
+    if el is None:
+        return ()
+    out: list[str] = []
+    for value in el.xpath(".//@ChangeId"):
+        text = str(value)
+        if text and text not in out:
+            out.append(text)
+    return tuple(out)
+
+
+def _commentary_refs(el: ET._Element | None) -> tuple[str, ...]:
     if el is None:
         return ()
     refs: list[str] = []
-    for value in el.xpath(
-        './/*[local-name()="CommentaryRef"]/@Ref | .//@CommentaryRef | .//@ChangeId'
+    for query in (
+        './/*[local-name()="CommentaryRef"]/@Ref | .//@CommentaryRef',
+        ".//@ChangeId",
     ):
-        if value not in refs:
-            refs.append(str(value))
+        for value in el.xpath(query):
+            text = str(value)
+            if text and text not in refs:
+                refs.append(text)
+    return tuple(refs)
+
+
+def _commentaries_for_refs(root: ET._Element, refs: Sequence[str]) -> tuple[str, ...]:
     out: list[str] = []
     for ref in refs:
         for comment in root.xpath('//*[local-name()="Commentary" and @id=$ref]', ref=ref):

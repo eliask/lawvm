@@ -179,6 +179,145 @@ def test_si_paragraph_and_schedule_source_urls_are_exposed() -> None:
     )
 
 
+def test_source_urls_extract_plural_citation_lists() -> None:
+    urls = packets._public_source_urls("ukpga/2021/22", "ss. 36, 49(1)(b)")
+
+    assert urls == (
+        "https://www.legislation.gov.uk/ukpga/2021/22",
+        "https://www.legislation.gov.uk/ukpga/2021/22/section/36",
+        "https://www.legislation.gov.uk/ukpga/2021/22/section/49",
+    )
+
+
+def test_oracle_extra_review_supplement_generates_commentary_operation_lead(
+    tmp_path,
+) -> None:
+    candidates_path = _write_json(
+        tmp_path / "candidates.json",
+        {
+            "rows": [
+                {
+                    "statute_id": "ukpga/2017/2",
+                    "candidate_family": "oracle_extra_state_source_chain_lead",
+                    "confidence": "source_chain_lead",
+                    "oracle_only_samples": [
+                        "schedule-2-part-3-crossheading-successor-accounts-for-certain-helptosave-accounts"
+                    ],
+                }
+            ]
+        },
+    )
+    review_path = _write_json(
+        tmp_path / "oracle_extra_review.json",
+        {
+            "rows": [
+                {
+                    "statute_id": "ukpga/2017/2",
+                    "target": (
+                        "schedule-2-part-3-crossheading-successor-accounts-for-certain-helptosave-accounts"
+                    ),
+                    "oracle_markup_kinds": ["Addition"],
+                    "oracle_commentaries": [
+                        (
+                            "Sch. 2 para. 13A inserted (29.4.2021) by "
+                            "Financial Services Act 2021 (c. 22) , ss. 36 , 49(1)(b)"
+                        )
+                    ],
+                }
+            ]
+        },
+    )
+
+    row = packets.load_packets(candidates_path, supplement_path=review_path)[0]
+    payload = json.loads(packets._emit_json([row]))
+    emitted = payload["rows"][0]["operation_evidence"][0]
+
+    assert emitted["action"] == "insert"
+    assert emitted["affected_provision"] == "Sch. 2 para. 13A inserted (29.4.2021)"
+    assert emitted["affecting_source_id"] == "ukpga/2021/22"
+    assert emitted["affecting_provisions"] == "ss. 36 , 49(1)(b)"
+    assert emitted["effective_date"] == "2021-04-29"
+    assert emitted["source_fragment_role"] == "oracle_commentary_source_chain_lead"
+    assert emitted["proof_boundary"] == (
+        "oracle_commentary_lead_only_not_affecting_source_fragment"
+    )
+    assert emitted["public_source_urls"] == [
+        "https://www.legislation.gov.uk/ukpga/2021/22",
+        "https://www.legislation.gov.uk/ukpga/2021/22/section/36",
+        "https://www.legislation.gov.uk/ukpga/2021/22/section/49",
+    ]
+    assert "evidence_status" not in emitted
+    assert payload["source_truth_claims"] is False
+    assert row.missing_standalone_evidence == (
+        "amending_source_operation_fragment",
+        "public_response_snapshots",
+    )
+
+
+def test_packet_preserves_source_fragment_boundary_metadata(tmp_path) -> None:
+    candidates_path = _write_json(
+        tmp_path / "candidates.json",
+        {
+            "rows": [
+                {
+                    "statute_id": "ukpga/1980/60",
+                    "candidate_family": "oracle_extra_state_source_chain_lead",
+                    "confidence": "source_chain_lead",
+                    "oracle_only_samples": ["section-6-1a"],
+                }
+            ]
+        },
+    )
+    supplement_path = _write_json(
+        tmp_path / "supplement.json",
+        {
+            "rows": [
+                {
+                    "statute_id": "ukpga/1980/60",
+                    "retained_targets": ["section-6-1a"],
+                    "matched_ops": [
+                        {
+                            "action": "effect_feed:inserted",
+                            "affected": "s. 6(1A)",
+                            "source_statute": "uksi/1988/1984",
+                            "affecting_provisions": "art. 3(3)",
+                            "effect_id": "d30p378",
+                            "oracle_change_ids": ["d30p378"],
+                            "oracle_commentaries": ["S. 6(1A) inserted."],
+                            "effect_type": "inserted",
+                            "effective_date": "1988-09-01",
+                            "source_preview": "In section 6 insert subsection (1A).",
+                            "affecting_source_sha256": "abc123",
+                            "source_fragment_role": (
+                                "oracle_changeid_effect_feed_affecting_source_fragment"
+                            ),
+                            "proof_boundary": (
+                                "source_chain_review_fragment_not_replay_authorization"
+                            ),
+                            "auth": "replay_authorized",
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    row = packets.load_packets(candidates_path, supplement_path=supplement_path)[0]
+    emitted = json.loads(packets._emit_json([row]))["rows"][0]["operation_evidence"][0]
+
+    assert emitted["effect_id"] == "d30p378"
+    assert emitted["oracle_change_ids"] == ["d30p378"]
+    assert emitted["oracle_commentaries"] == ["S. 6(1A) inserted."]
+    assert emitted["source_fragment_role"] == (
+        "oracle_changeid_effect_feed_affecting_source_fragment"
+    )
+    assert emitted["proof_boundary"] == (
+        "source_chain_review_fragment_not_replay_authorization"
+    )
+    assert "auth" not in emitted
+    assert row.missing_standalone_evidence == ("public_response_snapshots",)
+
+
 def test_oracle_only_samples_seed_public_page_targets_for_review() -> None:
     row = packets._packet_from_candidate(
         {
