@@ -24,6 +24,11 @@ _DEFAULT_CORE_POLISH_THRESHOLD = 99.5
 _EXPECTED_JURISDICTION = "uk"
 _EXPECTED_INPUT_REPORT_KIND = "uk_broad_baseline_agreement_report"
 _EXPECTED_INPUT_SCHEMA = "lawvm.uk_broad_baseline_agreement_report.v1"
+_EXPECTED_EFFECTIVE_ORACLE_REPORT_KIND = "uk_effective_oracle_review"
+_EXPECTED_EFFECTIVE_ORACLE_SCHEMA = "lawvm.uk_effective_oracle_review.v1"
+_PLAUSIBLE_EFFECTIVE_ORACLE_STATUSES = frozenset(
+    {"plausible_true_divergence", "partially_plausible_true_divergence"}
+)
 
 
 @dataclass(frozen=True)
@@ -162,6 +167,22 @@ _LANE_SPECS = {
             "oracle_error_candidate_as_replay_authorization",
         ),
     ),
+    "effective_oracle_review_frontier": _LaneSpec(
+        lane_id="effective_oracle_review_frontier",
+        priority_rank=55,
+        owner_phase="compare_oracle_classification",
+        work_kind="effective_oracle_surface_review",
+        next_action=(
+            "Keep page-declared-current refutations out of external "
+            "consolidation-error packets; fetch missing dated current XML for "
+            "insufficient witnesses."
+        ),
+        forbidden_shortcuts=(
+            "effective_oracle_witness_as_replay_authority",
+            "current_page_xml_as_source_truth",
+            "refuted_oracle_suspect_as_external_error_packet",
+        ),
+    ),
     "canonical_or_temporal_frontier": _LaneSpec(
         lane_id="canonical_or_temporal_frontier",
         priority_rank=50,
@@ -285,6 +306,7 @@ def load_remaining_work(
     *,
     reference_bucket: str = _DEFAULT_REFERENCE_BUCKET,
     core_polish_threshold: float = _DEFAULT_CORE_POLISH_THRESHOLD,
+    effective_oracle_review_path: Path | None = None,
     include_items: bool = False,
     item_lane_ids: frozenset[str] = frozenset(),
     item_limit: int = 0,
@@ -301,7 +323,12 @@ def load_remaining_work(
     if not isinstance(rows, list):
         raise ValueError(f"{report_path} does not contain a broad-baseline row list")
 
-    typed_rows = [row for row in rows if isinstance(row, Mapping)]
+    effective_reviews = _load_effective_oracle_reviews(effective_oracle_review_path)
+    typed_rows = [
+        _with_effective_oracle_review(row, effective_reviews)
+        for row in rows
+        if isinstance(row, Mapping)
+    ]
     scored_rows = [
         row
         for row in typed_rows
@@ -416,6 +443,12 @@ def _lane_for_row(
             return "manual_compilation_frontier"
         if _has_effect_source_footing_gap(row):
             return "effect_source_footing_gap"
+    if (
+        triage_bucket == "retained_repeal_oracle_branch"
+        and _effective_oracle_status(row)
+        and _effective_oracle_status(row) not in _PLAUSIBLE_EFFECTIVE_ORACLE_STATUSES
+    ):
+        return "effective_oracle_review_frontier"
     if triage_bucket in _TRIAGE_LANES:
         return _TRIAGE_LANES[triage_bucket]
     if triage_bucket == _DEFAULT_REFERENCE_BUCKET:
@@ -496,7 +529,7 @@ def _remaining_work_item(
     row: Mapping[str, Any],
 ) -> UKRemainingWorkItem:
     statute_id = str(row.get("statute_id") or "")
-    residual = _mapping(row.get("agreement_residual"))
+    residual = _primary_agreement_residual(row)
     owner_phase = str(residual.get("owner_phase") or spec.owner_phase)
     missing_proofs = _missing_proofs_for_row(row)
     work_item_id = f"uk-remaining:{spec.lane_id}:{statute_id}"
@@ -644,6 +677,13 @@ def _frontier_work_item(
             "priority_rank": spec.priority_rank,
             "next_action": spec.next_action,
             "source_frontier_reason": str(row.get("source_chain_frontier_reason") or ""),
+            "effective_oracle_review_status": _effective_oracle_status(row),
+            "effective_oracle_refutation_reason": str(
+                row.get("effective_oracle_refutation_reason") or ""
+            ),
+            "effective_oracle_remaining_question": str(
+                row.get("effective_oracle_remaining_question") or ""
+            ),
         },
     )
 
@@ -750,6 +790,9 @@ def _summary(
         ),
         "unknown_scored_triage_buckets": sorted(unknown_buckets),
         "lane_counts": {lane.lane_id: lane.row_count for lane in lanes},
+        "effective_oracle_review_status_counts": _counter_dict(
+            status for row in rows for status in [_effective_oracle_status(row)] if status
+        ),
         "forbidden_shortcuts": [
             "work_lane_as_replay_authorization",
             "oracle_score_as_source_truth",
@@ -774,7 +817,7 @@ def _reference_score(
 def _dominant_owner_phase(rows: Sequence[Mapping[str, Any]]) -> str | None:
     counts: Counter[str] = Counter()
     for row in rows:
-        residual = _mapping(row.get("agreement_residual"))
+        residual = _primary_agreement_residual(row)
         owner_phase = str(residual.get("owner_phase") or "")
         if owner_phase:
             counts[owner_phase] += 1
@@ -786,9 +829,11 @@ def _dominant_owner_phase(rows: Sequence[Mapping[str, Any]]) -> str | None:
 def _missing_proof_counts(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
     counts: Counter[str] = Counter()
     for row in rows:
-        residual = _mapping(row.get("agreement_residual"))
+        residual = _primary_agreement_residual(row)
         for proof in _string_tuple(residual.get("missing_proofs")):
             counts[proof] += 1
+        if _has_effective_oracle_residual(row):
+            continue
         for field in (
             "manual_frontier_missing_proof_counts",
             "compile_rejection_missing_proof_counts",
@@ -801,8 +846,10 @@ def _missing_proof_counts(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
 
 def _missing_proofs_for_row(row: Mapping[str, Any]) -> tuple[str, ...]:
     proofs: list[str] = []
-    residual = _mapping(row.get("agreement_residual"))
+    residual = _primary_agreement_residual(row)
     proofs.extend(_string_tuple(residual.get("missing_proofs")))
+    if _has_effective_oracle_residual(row):
+        return tuple(dict.fromkeys(proofs))
     for field in (
         "manual_frontier_missing_proof_counts",
         "compile_rejection_missing_proof_counts",
@@ -840,6 +887,80 @@ def _has_effect_source_footing_gap(row: Mapping[str, Any]) -> bool:
     if _int(counts.get("source_insufficient")) > 0:
         return True
     return set(_missing_proofs_for_row(row)) <= {"source_identity"}
+
+
+def _load_effective_oracle_reviews(
+    review_path: Path | None,
+) -> Mapping[str, Mapping[str, Any]]:
+    if review_path is None:
+        return {}
+    report = json.loads(review_path.read_text())
+    if report.get("jurisdiction") != _EXPECTED_JURISDICTION:
+        raise ValueError(
+            f"{review_path} is not a UK effective-oracle review report: "
+            f"jurisdiction={report.get('jurisdiction')!r}"
+        )
+    if report.get("report_kind") != _EXPECTED_EFFECTIVE_ORACLE_REPORT_KIND:
+        raise ValueError(
+            f"{review_path} is not an effective-oracle review report: "
+            f"report_kind={report.get('report_kind')!r}"
+        )
+    if report.get("schema") != _EXPECTED_EFFECTIVE_ORACLE_SCHEMA:
+        raise ValueError(
+            f"{review_path} has unsupported effective-oracle schema: "
+            f"{report.get('schema')!r}"
+        )
+    rows = report.get("rows")
+    if not isinstance(rows, list):
+        raise ValueError(f"{review_path} does not contain effective-oracle rows")
+    reviews: dict[str, Mapping[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        statute_id = str(row.get("statute_id") or "")
+        if not statute_id:
+            continue
+        reviews[statute_id] = row
+    return reviews
+
+
+def _with_effective_oracle_review(
+    row: Mapping[str, Any],
+    reviews: Mapping[str, Mapping[str, Any]],
+) -> Mapping[str, Any]:
+    if not reviews:
+        return row
+    statute_id = str(row.get("statute_id") or "")
+    review = reviews.get(statute_id)
+    if not review:
+        return row
+    updated = dict(row)
+    updated["effective_oracle_review_status"] = str(review.get("review_status") or "")
+    updated["effective_oracle_refutation_reason"] = str(
+        review.get("refutation_reason") or ""
+    )
+    updated["effective_oracle_remaining_question"] = str(
+        review.get("remaining_question") or ""
+    )
+    review_residual = _mapping(review.get("agreement_residual"))
+    if review_residual:
+        updated["effective_oracle_agreement_residual"] = dict(review_residual)
+    return updated
+
+
+def _effective_oracle_status(row: Mapping[str, Any]) -> str:
+    return str(row.get("effective_oracle_review_status") or "")
+
+
+def _primary_agreement_residual(row: Mapping[str, Any]) -> Mapping[str, Any]:
+    effective_residual = _mapping(row.get("effective_oracle_agreement_residual"))
+    if effective_residual:
+        return effective_residual
+    return _mapping(row.get("agreement_residual"))
+
+
+def _has_effective_oracle_residual(row: Mapping[str, Any]) -> bool:
+    return bool(_mapping(row.get("effective_oracle_agreement_residual")))
 
 
 def _sample_statutes(
@@ -989,6 +1110,12 @@ def _emit_text(payload: Mapping[str, Any]) -> str:
         ),
         "  lanes:",
     ]
+    if summary["effective_oracle_review_status_counts"]:
+        lines.insert(
+            -1,
+            "  effective_oracle_review="
+            f"{_format_counter(summary['effective_oracle_review_status_counts'], limit=6)}",
+        )
     for lane in payload["lanes"]:
         mean = _format_optional_float(lane["mean_aligned"], digits=2, empty="n/a")
         loss = _format_optional_float(
@@ -1048,6 +1175,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--effective-oracle-review",
+        type=Path,
+        help=(
+            "Optional uk_effective_oracle_review JSON overlay used to move "
+            "reviewed retained-repeal rows out of live oracle-suspect work."
+        ),
+    )
+    parser.add_argument(
         "--include-items",
         action="store_true",
         help="include row-level non-executable work items in JSON output",
@@ -1069,6 +1204,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     payload = load_remaining_work(
         args.report,
         core_polish_threshold=args.core_polish_threshold,
+        effective_oracle_review_path=args.effective_oracle_review,
         include_items=args.include_items,
         item_lane_ids=frozenset(args.lane),
         item_limit=args.item_limit,

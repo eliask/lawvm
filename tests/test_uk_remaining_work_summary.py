@@ -23,6 +23,22 @@ def _write_report(tmp_path, rows, summary=None):
     return path
 
 
+def _write_effective_oracle_review(tmp_path, rows):
+    path = tmp_path / "uk_effective_oracle_review.json"
+    path.write_text(
+        json.dumps(
+            {
+                "jurisdiction": "uk",
+                "report_kind": "uk_effective_oracle_review",
+                "schema": "lawvm.uk_effective_oracle_review.v1",
+                "summary": {},
+                "rows": rows,
+            }
+        )
+    )
+    return path
+
+
 def test_rejects_non_broad_baseline_report(tmp_path) -> None:
     path = tmp_path / "other.report.json"
     path.write_text(
@@ -449,6 +465,101 @@ def test_oracle_suspect_and_zero_oracle_get_distinct_lanes(tmp_path) -> None:
     assert lane_by_id["non_commensurable_oracle_surface"][
         "missing_proof_counts"
     ] == {"commensurable_oracle_surface": 1}
+
+
+def test_effective_oracle_review_overlay_splits_refuted_retained_repeals(
+    tmp_path,
+) -> None:
+    report = _write_report(
+        tmp_path,
+        [
+            {
+                "statute_id": "ukpga/1920/50",
+                "score_status": "scored",
+                "triage_bucket": "retained_repeal_oracle_branch",
+                "aligned": 0.0,
+                "n_only_in_oracle": 29,
+                "agreement_residual": {
+                    "owner_phase": "compare_oracle_classification",
+                    "missing_proofs": [],
+                },
+            },
+            {
+                "statute_id": "eur/2020/2220",
+                "score_status": "scored",
+                "triage_bucket": "retained_repeal_oracle_branch",
+                "aligned": 50.0,
+                "n_only_in_oracle": 10,
+                "agreement_residual": {
+                    "owner_phase": "compare_oracle_classification",
+                    "missing_proofs": ["editorial_policy_review"],
+                },
+            },
+        ],
+    )
+    effective_review = _write_effective_oracle_review(
+        tmp_path,
+        [
+            {
+                "statute_id": "ukpga/1920/50",
+                "review_status": "refuted_by_dated_current_xml",
+                "refutation_reason": "Dated current XML already dots the text.",
+                "remaining_question": "Treat as whole-act current XML projection.",
+                "agreement_residual": {
+                    "owner_phase": "compare_oracle_classification",
+                    "missing_proofs": [],
+                },
+            },
+            {
+                "statute_id": "eur/2020/2220",
+                "review_status": "plausible_true_divergence",
+                "refutation_reason": "No marker in dated current XML.",
+                "remaining_question": "Check savings, extent, or revival.",
+                "agreement_residual": {
+                    "owner_phase": "compare_oracle_classification",
+                    "missing_proofs": [
+                        "savings_extent_or_revival_review",
+                        "editorial_policy_review",
+                    ],
+                },
+            },
+        ],
+    )
+
+    payload = remaining.load_remaining_work(
+        report,
+        effective_oracle_review_path=effective_review,
+        include_items=True,
+        item_lane_ids=frozenset({"effective_oracle_review_frontier"}),
+    )
+
+    lane_by_id = {lane["lane_id"]: lane for lane in payload["lanes"]}
+    assert lane_by_id["oracle_suspect_review"]["row_count"] == 1
+    assert lane_by_id["oracle_suspect_review"]["missing_proof_counts"] == {
+        "editorial_policy_review": 1,
+        "savings_extent_or_revival_review": 1,
+    }
+    assert lane_by_id["effective_oracle_review_frontier"]["row_count"] == 1
+    assert lane_by_id["effective_oracle_review_frontier"][
+        "missing_proof_counts"
+    ] == {}
+    assert lane_by_id["effective_oracle_review_frontier"][
+        "priority_rank"
+    ] == 55
+    assert "effective_oracle_witness_as_replay_authority" in lane_by_id[
+        "effective_oracle_review_frontier"
+    ]["forbidden_shortcuts"]
+    assert payload["summary"]["effective_oracle_review_status_counts"] == {
+        "plausible_true_divergence": 1,
+        "refuted_by_dated_current_xml": 1,
+    }
+    assert payload["summary"]["item_count"] == 1
+    detail = payload["items"][0]["frontier_work_item"]["detail"]
+    assert detail["effective_oracle_review_status"] == "refuted_by_dated_current_xml"
+    assert detail["effective_oracle_refutation_reason"] == (
+        "Dated current XML already dots the text."
+    )
+    assert "refuted_by_dated_current_xml=1" in remaining._emit_text(payload)
 
 
 def test_unknown_scored_bucket_is_high_priority_gate_work(tmp_path) -> None:
