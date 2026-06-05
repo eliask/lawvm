@@ -78,6 +78,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "misselected_target_context",
         "nonstructural_root_gap",
         "non_substantive_shell_payload",
+        "partial_whole_act_repeal_unsupported",
         "range_to_container_target_unsupported",
         "temporary_as_if_word_omission_unsupported",
         "savings_qualified_text_omission_unsupported",
@@ -2331,6 +2332,51 @@ def _has_deictic_amendment_program_inserted_anchor(
     return False
 
 
+def _has_effect_metadata_schedule_paragraph_range_to_part_renumber(
+    lowering_rows: tuple[dict[str, Any], ...],
+) -> bool:
+    for row in lowering_rows:
+        if (
+            str(row.get("rule_id") or "")
+            != "uk_effect_metadata_unsupported_renumber_rejected"
+            or not is_blocking_compile_record(row)
+            or str(row.get("reason_code") or "")
+            != "explicit_effect_metadata_unsupported_renumber_shape"
+        ):
+            continue
+        source_target = str(row.get("source_target") or "").strip().lower()
+        destination = str(row.get("destination") or "").strip().lower()
+        source_match = re.fullmatch(
+            r"schedule:(?P<schedule>[^/]+)/paragraph:[^/]+-[^/]+",
+            source_target,
+        )
+        destination_match = re.fullmatch(
+            r"schedule:(?P<schedule>[^/]+)/part:[^/]+",
+            destination,
+        )
+        if (
+            source_match is not None
+            and destination_match is not None
+            and source_match.group("schedule") == destination_match.group("schedule")
+        ):
+            return True
+    return False
+
+
+def _has_schedule_table_end_rows_missing_table_payload(
+    lowering_rows: tuple[dict[str, Any], ...],
+) -> bool:
+    for row in lowering_rows:
+        if (
+            str(row.get("rule_id") or "") == "uk_effect_schedule_table_end_rows_lowered"
+            and is_blocking_compile_record(row)
+            and str(row.get("reason_code") or "")
+            == "explicit_schedule_end_insert_without_table_payload"
+        ):
+            return True
+    return False
+
+
 # Compiled at module scope per §1.11.  Site #3 (census): greedy .+ between
 # two anchors inside classify_uk_manual_compile_frontier — bound to .{0,600}?
 # (lazy).  Fast-guard: "period specified" is a literal substring of the first
@@ -2621,6 +2667,31 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
                 "list and substitution action; a claim or future parser must "
                 "prove the exact child target, quoted preimage, replacement "
                 "payload, and mutation boundary before replay."
+            ),
+        }
+
+    if _has_effect_metadata_schedule_paragraph_range_to_part_renumber(lowering_rows):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_effect_metadata_schedule_paragraph_range_to_part_renumber_candidate",
+            "reason": (
+                "The effect metadata and source witness indicate a schedule "
+                "paragraph range becoming a Part of the same Schedule; replay "
+                "must block until a claim or future migration compiler owns "
+                "the paragraph range, destination Part, title payload, lineage, "
+                "and mutation boundary."
+            ),
+        }
+
+    if _has_schedule_table_end_rows_missing_table_payload(lowering_rows):
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_schedule_table_end_rows_payload_source_insufficient",
+            "reason": (
+                "The source explicitly inserts at the end of a schedule, but "
+                "the extracted source is a flat text fragment rather than an "
+                "owned table/list payload; acquire or prove the payload shape "
+                "before replay can append schedule entries."
             ),
         }
 

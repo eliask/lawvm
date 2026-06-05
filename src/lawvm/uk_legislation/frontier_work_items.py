@@ -230,6 +230,18 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_declared_cross_container_boundary",
         ),
     },
+    "uk_manual_frontier_effect_metadata_schedule_paragraph_range_to_part_renumber_candidate": {
+        "candidate_operation_family": "schedule_paragraph_range_to_part_renumber_migration",
+        "required_validator_checks": (
+            "effect_metadata_names_schedule_paragraph_range_and_destination_part",
+            "source_witness_contains_corresponding_schedule_part_table_or_instruction",
+            "claim_identifies_each_paragraph_in_the_renumbered_range",
+            "claim_identifies_destination_part_title_and_container_boundary",
+            "claim_emits_lineage_for_range_wrapping_or_identity_changes",
+            "claim_preserves_unclaimed_schedule_children",
+            "changed_paths_are_within_declared_schedule_part_migration_boundary",
+        ),
+    },
     "uk_manual_frontier_definition_child_structural_substitution_candidate": {
         "candidate_operation_family": "definition_child_structural_substitution",
         "required_validator_checks": (
@@ -464,6 +476,16 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_supplies_exact_entry_anchor_or_ordering_rule",
             "claim_preserves_unclaimed_schedule_or_list_entries",
             "changed_paths_are_within_claimed_schedule_list_entry_boundary",
+        ),
+    },
+    "uk_manual_frontier_schedule_table_end_rows_payload_source_insufficient": {
+        "candidate_operation_family": "source_acquisition_or_payload_extraction",
+        "required_validator_checks": (
+            "source_witness_names_schedule_end_insert_instruction",
+            "official_source_witness_contains_structural_table_or_list_payload",
+            "claim_identifies_target_schedule_table_or_list_carrier",
+            "claim_blocks_replay_until_payload_shape_is_proved",
+            "claim_preserves_unclaimed_schedule_entries",
         ),
     },
     "uk_manual_frontier_sentence_scoped_repeated_insert_candidate": {

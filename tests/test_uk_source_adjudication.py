@@ -2338,6 +2338,60 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_end_insert_manual() 
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_schedule_table_end_rows_missing_payload_source_insufficient() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text=(
+            "4 At the end of Schedule 5 to the Judicial Pensions and Retirement "
+            "Act 1993, insert- Asylum Support Adjudicator."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_schedule_table_end_rows_lowered",
+                "blocking": True,
+                "reason_code": "explicit_schedule_end_insert_without_table_payload",
+                "target": "schedule:5",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "source_insufficient"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_schedule_table_end_rows_payload_source_insufficient"
+    )
+    assert "payload shape" in result["reason"]
+
+
+def test_classify_uk_manual_compile_frontier_does_not_block_supported_schedule_table_end_rows_payload() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="",
+        extracted_tag="BlockAmendment",
+        extracted_text="Asylum Support Adjudicator",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_schedule_table_end_rows_lowered",
+                "blocking": False,
+                "reason_code": "explicit_schedule_end_insert_with_table_payload",
+                "target": "schedule:5",
+            },
+        ),
+        compiled_op_count=1,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["rule_id"] != (
+        "uk_manual_frontier_schedule_table_end_rows_payload_source_insufficient"
+    )
+
+
 def test_classify_uk_manual_compile_frontier_marks_table_row_omission_manual() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words omitted",
@@ -3791,6 +3845,62 @@ def test_classify_uk_manual_compile_frontier_preserves_unclassified_rows() -> No
     assert result["status"] == "unclassified_frontier"
     assert result["rule_id"] == "uk_manual_frontier_unclassified"
     assert "inspect the source and lowering evidence" in result["reason"]
+
+
+def test_classify_uk_manual_compile_frontier_marks_schedule_paragraph_range_to_part_metadata_renumber() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="Sch. 11 para. 13-18 renumbered as Sch. 11 Pt. 4",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text=(
+            "The entries in the first column of the following table set out "
+            "certain provisions of Schedule 11. The provisions set out in such "
+            "an entry become the Part of Schedule 11 set out in the "
+            "corresponding entry in the second column."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_metadata_unsupported_renumber_rejected",
+                "blocking": True,
+                "reason_code": "explicit_effect_metadata_unsupported_renumber_shape",
+                "source_target": "schedule:11/paragraph:13-18",
+                "destination": "schedule:11/part:4",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == (
+        "uk_manual_frontier_effect_metadata_schedule_paragraph_range_to_part_renumber_candidate"
+    )
+    assert "lineage" in result["reason"]
+
+
+def test_classify_uk_manual_compile_frontier_does_not_widen_other_unsupported_metadata_renumber() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="Sch. 11 para. 13 renumbered as Sch. 11 para. 14",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text="Paragraph 13 becomes paragraph 14.",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_metadata_unsupported_renumber_rejected",
+                "blocking": True,
+                "reason_code": "explicit_effect_metadata_unsupported_renumber_shape",
+                "source_target": "schedule:11/paragraph:13",
+                "destination": "schedule:11/paragraph:14",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "unclassified_frontier"
+    assert result["rule_id"] == "uk_manual_frontier_unclassified"
 
 
 def test_classify_uk_manual_compile_frontier_marks_relative_occurrence_pathology() -> None:

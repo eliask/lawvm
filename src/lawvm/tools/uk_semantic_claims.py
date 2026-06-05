@@ -86,6 +86,7 @@ UK_OPERATION_FAMILY_PROOF_SEMANTICS = frozenset(
         "referent_qualified_occurrence_scope_claim",
         "relative_occurrence_scope_claim",
         "savings_qualified_omission_applicability_scope",
+        "schedule_paragraph_range_to_part_source_destination_and_lineage",
         "schedule_list_entry_anchor_boundary_claim",
         "scoped_occurrence_exclusion_boundary_claim",
         "sentence_scoped_text_insert_boundary_claim",
@@ -1026,6 +1027,31 @@ def _validate_operation_family_proof_semantic(
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
             live_precondition_paths_by_id=live_precondition_paths_by_id,
+        )
+    if (
+        proof_semantic
+        == "schedule_paragraph_range_to_part_source_destination_and_lineage"
+    ):
+        return _validate_cross_container_renumber_family_proof_semantic(
+            claim=claim,
+            proof=proof,
+            proof_semantic=proof_semantic,
+            prefix=prefix,
+            proof_family=proof_family,
+            proof_operation_ids=proof_operation_ids,
+            proof_source_ids=proof_source_ids,
+            proof_live_ids=proof_live_ids,
+            proof_live_paths=proof_live_paths,
+            live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
+            expected_operation_family=(
+                "schedule_paragraph_range_to_part_renumber_migration"
+            ),
+            required_migration_ownership_ids=(
+                "lineage_or_migration_events",
+                "destination_schedule_part_identity",
+                "unclaimed_schedule_child_preservation",
+            ),
         )
     if proof_semantic == "source_feed_target_reconciliation_claim":
         return _validate_source_feed_target_reconciliation_family_proof_semantic(
@@ -2368,12 +2394,17 @@ def _validate_cross_container_renumber_family_proof_semantic(
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
     live_precondition_paths_by_id: Mapping[str, set[str]],
+    expected_operation_family: str = "cross_container_renumber_migration",
+    required_migration_ownership_ids: tuple[str, ...] = (
+        "lineage_or_migration_events",
+        "cross_container_destination_boundary",
+    ),
 ) -> tuple[str, ...]:
     issues: list[str] = []
-    if proof_family != "cross_container_renumber_migration":
+    if proof_family != expected_operation_family:
         issues.append(
             f"{prefix}.proof_semantic {proof_semantic!r} requires "
-            "operation_family 'cross_container_renumber_migration'"
+            f"operation_family {expected_operation_family!r}"
         )
     if not proof_source_ids:
         issues.append(f"{prefix}.{proof_semantic} requires source_text_precondition_ids")
@@ -2409,10 +2440,7 @@ def _validate_cross_container_renumber_family_proof_semantic(
     migration_ownership_ids = set(
         _string_tuple_from_value(proof.get("migration_ownership_ids"))
     )
-    for required_id in (
-        "lineage_or_migration_events",
-        "cross_container_destination_boundary",
-    ):
+    for required_id in required_migration_ownership_ids:
         if required_id not in migration_ownership_ids:
             issues.append(
                 f"{prefix}.{proof_semantic} requires migration_ownership_ids to "

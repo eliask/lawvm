@@ -581,6 +581,10 @@ def test_uk_manual_compile_evidence_jsonl_templates_source_target_reconciliation
             "metadata_carried_text_patch",
         ),
         (
+            "uk_manual_frontier_effect_metadata_schedule_paragraph_range_to_part_renumber_candidate",
+            "schedule_paragraph_range_to_part_renumber_migration",
+        ),
+        (
             "uk_manual_frontier_external_act_target_out_of_scope",
             "non_textual_or_out_of_scope",
         ),
@@ -600,6 +604,10 @@ def test_uk_manual_compile_evidence_jsonl_templates_source_target_reconciliation
         (
             "uk_manual_frontier_schedule_list_entry_candidate",
             "schedule_list_entry_mutation",
+        ),
+        (
+            "uk_manual_frontier_schedule_table_end_rows_payload_source_insufficient",
+            "source_acquisition_or_payload_extraction",
         ),
         (
             "uk_manual_frontier_savings_qualified_text_omission_candidate",
@@ -8068,6 +8076,105 @@ def test_uk_manual_compile_evidence_jsonl_templates_range_to_container_claim() -
     assert "claim_emits_lineage_or_migration_events_for_displaced_units" in (
         template["required_validator_checks"]
     )
+    assert template["executable"] is False
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_schedule_range_to_part_renumber() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-schedule-range-renumber",
+        effect_type="Sch. 11 para. 1-7A renumbered as Sch. 11 Pt. 2",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/1988/41/schedule/11/paragraph/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1988",
+        affected_number="41",
+        affected_provisions="Sch. 11 para. 1-7A",
+        affecting_uri="/id/ukpga/2007/28",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="28",
+        affecting_provisions="Sch. 15 para. 3",
+        affecting_title="Legal Services Act 2007",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="metadata_renumber_requires_migration_claim",
+            compare_shape="schedule_paragraph_range_to_part_destination",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_metadata_unsupported_renumber_rejected",
+                    "blocking": True,
+                    "source_target": "schedule:11/paragraph:1-7a",
+                    "destination": "schedule:11/part:2",
+                    "effect_type_normalized": (
+                        "sch. 11 para. 1-7a renumbered as sch. 11 pt. 2"
+                    ),
+                    "reason_code": "explicit_effect_metadata_unsupported_renumber_shape",
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=False,
+            source_extracted=True,
+            source_extracted_tag="Tabular",
+            source_extracted_text_preview=(
+                "1-7A | 11 | Part 2 | Other licensed bodies"
+            ),
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_effect_metadata_schedule_paragraph_range_to_part_renumber_candidate"
+            ),
+            manual_compile_reason="Schedule paragraph range to Part renumber needs lineage.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_metadata_unsupported_renumber_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_metadata_unsupported_renumber_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/1988/41",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/1988/41",
+        row=report_row,
+        context=context,
+    )
+
+    assert payload["suggested_claim_template_status"] == "available"
+    template = payload["suggested_claim_template"]
+    assert (
+        template["action_family"]
+        == "schedule_paragraph_range_to_part_renumber_migration"
+    )
+    assert template["source_target_address"] == "schedule:11/paragraph:1-7a"
+    assert template["destination_address"] == "schedule:11/part:2"
+    assert "lineage_or_migration_events" in template["required_ownership"]
+    assert "claim_preserves_unclaimed_schedule_children" in (
+        template["required_validator_checks"]
+    )
+    assert template["required_operation_family_proof_semantics"] == [
+        "schedule_paragraph_range_to_part_source_destination_and_lineage"
+    ]
     assert template["executable"] is False
 
 
