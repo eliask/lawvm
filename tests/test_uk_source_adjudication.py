@@ -2833,6 +2833,34 @@ def test_classify_uk_manual_compile_frontier_marks_unresolved_repeal_table_lower
     assert result["rule_id"] == "uk_manual_frontier_repeal_table_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_flat_repeal_schedule_structural_gap() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="repealed",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="Part",
+        extracted_text=(
+            "PART 1 Repeals and amendments Year and chapter Short title "
+            "Extent of amendment or repeal School Standards and Framework Act 1998 "
+            "Omit sections 79 and 79A."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_flat_repeal_schedule_structural_repeal_unresolved",
+                "reason_code": "no_unique_matching_flat_repeal_schedule_structural_clause",
+                "family": "source_repeal_table_elaboration",
+                "blocking": True,
+                "match_count": 2,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_repeal_table_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_mixed_body_heading_split() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",
@@ -5087,6 +5115,33 @@ def test_classify_uk_manual_frontier_deictic_table_entry_candidate() -> None:
 
     assert result["status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_table_entry_deictic_candidate"
+
+
+def test_classify_uk_manual_frontier_table_entry_instruction_rejection_without_pathology() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="inserted",
+        source_pathology="",
+        extracted_tag="P2",
+        extracted_text=(
+            "After paragraph (1) insert- 1A A ballot paper must not be delivered "
+            "unless the voter produces a specified document."
+        ),
+        lowering_rejections=[
+            {
+                "rule_id": "uk_effect_table_entry_instruction_rejected",
+                "reason_code": "table_entry_instruction_without_cell_target",
+                "family": "source_table_elaboration",
+                "blocking": True,
+                "entry_shape": "column_instruction",
+            }
+        ],
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
 
 
 def test_classify_uk_manual_frontier_deictic_table_row_insert_payload_gap() -> None:

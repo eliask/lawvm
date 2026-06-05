@@ -2912,7 +2912,10 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The extracted source is an amendment table payload without the specific row for the affected target; acquisition or extraction must recover row-level context before lowering.",
         }
 
-    if source_pathology_norm == "table_entry_target_unsupported":
+    if (
+        source_pathology_norm == "table_entry_target_unsupported"
+        or "uk_effect_table_entry_instruction_rejected" in blocking_rules
+    ):
         entry_shapes = {
             str(rejection.get("entry_shape") or "")
             for rejection in lowering_rows
@@ -2984,6 +2987,7 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
         }
 
     if blocking_rules & {
+        "uk_effect_flat_repeal_schedule_structural_repeal_unresolved",
         "uk_effect_repeal_table_quoted_words_text_repeal_unresolved",
         "uk_effect_repeal_table_structural_repeal_unresolved",
     }:
