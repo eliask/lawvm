@@ -95,6 +95,36 @@ def test_parse_fragment_substitution_returns_fresh_fragment_dicts() -> None:
     assert second == [{"original": "old words", "replacement": "new words"}]
 
 
+def test_parse_fragment_substitution_handles_imperative_replace_without_for() -> None:
+    subs = parse_fragment_substitution(
+        "b in subsection (3) replace “on it” with “on them”;"
+    )
+
+    assert subs == [
+        {
+            "original": "on it",
+            "replacement": "on them",
+            "rule_id": "uk_effect_imperative_replace_with_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_imperative_replace_reference_without_for() -> None:
+    subs = parse_fragment_substitution(
+        "c in subsection (3) replace the first reference to “National Assembly” "
+        "with “Welsh Ministers”; and"
+    )
+
+    assert subs == [
+        {
+            "original": "National Assembly",
+            "replacement": "Welsh Ministers",
+            "occurrence": "1",
+            "rule_id": "uk_effect_imperative_replace_reference_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_bare_quoted_substitution_after_target_context() -> None:
     subs = parse_fragment_substitution(
         "5 In paragraph 8(8), “the same meaning as in section 197 of the "

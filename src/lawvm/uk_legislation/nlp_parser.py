@@ -5279,13 +5279,15 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[UKTextRewriteFragmen
 
     text = normalize_uk_parser_text(text)
     normalized_lower_text = text.lower()
-    if "for " in normalized_lower_text:
+    if "for " in normalized_lower_text or (
+        "replace" in normalized_lower_text and " with " in normalized_lower_text
+    ):
         _parse_leading_substitutions(text, subs)
 
     if any(
         cue in normalized_lower_text
         for cue in ("for ", "after ", "from ", "definition")
-        + ("substitute", "replaced with")
+        + ("at the end", "before ", "substitute", "replaced with")
     ):
         _parse_respectively_and_anchored_inserts(text, subs)
 

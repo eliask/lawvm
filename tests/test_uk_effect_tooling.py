@@ -93,9 +93,12 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_definition_child_and_tail_substitution_candidate",
         "uk_manual_frontier_definition_child_structural_insert_candidate",
         "uk_manual_frontier_definition_child_structural_substitution_candidate",
+        "uk_manual_frontier_definition_entry_substitution_candidate",
         "uk_manual_frontier_nested_definition_child_structural_substitution_candidate",
         "uk_manual_frontier_definition_list_end_insert_candidate",
         "uk_manual_frontier_effect_metadata_carried_text_patch_candidate",
+        "uk_manual_frontier_effect_metadata_schedule_paragraph_range_to_part_renumber_candidate",
+        "uk_manual_frontier_effect_metadata_unsupported_renumber_candidate",
         "uk_manual_frontier_heading_facet_candidate",
         "uk_manual_frontier_labeled_child_end_range_candidate",
         "uk_manual_frontier_mixed_structural_definition_repeal_split",
@@ -1171,12 +1174,23 @@ def test_uk_frontier_work_item_multi_enactment_keeps_source_feed_target_reconcil
 
     certificate = work_item["detail"]["source_membership_certificate"]
 
-    assert certificate["completeness_status"] == "unavailable"
-    assert certificate["candidate_ids"] == []
-    assert certificate["blocker_counts"] == {"source_list_membership_not_proved": 1}
+    assert certificate["completeness_status"] == "complete"
+    assert certificate["candidate_ids"] == ["s. 72(3)(b)(ii)"]
     assert certificate["source_membership_status"] == (
-        "unproved_from_bounded_source_preview"
+        "proved_in_bounded_source_preview"
     )
+    proof_obligations = work_item["detail"]["proof_obligation_certificate"]
+    assert proof_obligations["proof_status"] == "blocked"
+    assert proof_obligations["blocker_counts"] == {
+        "canonical_operation_compilation": 1,
+        "live_target_preimage_proof": 1,
+        "matching_alternate_preimage_selection": 1,
+        "mutation_boundary_proof": 1,
+    }
+    assert proof_obligations["proved_proofs"] == [
+        "target_candidate_set_completeness",
+        "source_list_membership",
+    ]
     assert work_item["replay_authorized"] is False
 
 
