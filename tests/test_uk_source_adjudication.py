@@ -3599,6 +3599,88 @@ def test_classify_uk_manual_compile_frontier_marks_definition_child_structural_s
     assert result["rule_id"] == "uk_manual_frontier_definition_child_structural_substitution_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_definition_entry_substitution_payload() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="BlockAmendment",
+        extracted_text=(
+            "“the employee”s share' of minimum contributions is the amount "
+            "that would be the minimum contributions if, for the reference "
+            "in section 45(1) of the Pension Schemes Act 1993 to the "
+            "appropriate age-related percentage, there were substituted a "
+            "reference to the percentage mentioned in section 41(1A)(a) of that Act"
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "reason_code": "overlap_substitution_parse_failed",
+                "blocking": True,
+                "extracted_tag": "BlockAmendment",
+                "target_candidate_count": 1,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_definition_entry_substitution_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_does_not_treat_ordinary_quote_as_definition_entry_substitution() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="BlockAmendment",
+        extracted_text="“the new words are inserted into this sentence”",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "reason_code": "overlap_substitution_parse_failed",
+                "blocking": True,
+                "extracted_tag": "BlockAmendment",
+                "target_candidate_count": 1,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["rule_id"] != "uk_manual_frontier_definition_entry_substitution_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_marks_labelled_purpose_payload_fragment_source_insufficient() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="BlockAmendment",
+        extracted_text=(
+            "5 For the purposes of this paragraph a company is a relevant "
+            "qualifying subsidiary of another company at any time when it "
+            "would be a qualifying subsidiary of that company if “90” were "
+            "substituted for “75” in every place where “75” occurs."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "reason_code": "overlap_substitution_parse_failed",
+                "blocking": True,
+                "extracted_tag": "BlockAmendment",
+                "target_candidate_count": 1,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "source_insufficient"
+    assert result["rule_id"] == "uk_manual_frontier_source_payload_without_instruction_context"
+
+
 def test_classify_uk_manual_compile_frontier_marks_nested_definition_child_structural_substitution() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",

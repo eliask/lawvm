@@ -738,6 +738,8 @@ def _required_operation_family_proof_semantics(
         }:
             semantics.append("appropriate_place_anchor_or_ordering_claim")
         return tuple(semantics)
+    if action_family == "definition_entry_substitution":
+        return ("definition_entry_replacement_boundary_claim",)
     if action_family == "definition_child_and_tail_substitution":
         return ("definition_child_text_tail_boundary_claim",)
     if action_family == "definition_anchor_tail_insert":
@@ -1791,6 +1793,31 @@ def manual_compile_suggested_claim_template(
                 "claim_text_preimage_matches_the_declared_tail_surface",
                 "claim_preserves_child_body_and_unclaimed_parent_text",
                 "changed_paths_are_within_declared_child_tail_boundary",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_definition_entry_substitution_candidate"
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="definition_entry_substitution",
+            placement_family="whole_definition_entry_replacement_boundary_required",
+            required_ownership=[
+                "source_named_definition_entry",
+                "replacement_definition_entry_payload",
+                "definition_entry_target_boundary",
+                "unclaimed_definition_entry_preservation",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_names_definition_entry_and_replacement_payload",
+                "payload_is_complete_definition_entry",
+                "claim_identifies_exact_definition_entry_target",
+                "claim_materializes_replacement_payload_as_definition_entry",
+                "claim_preserves_unclaimed_definition_entries_and_parent_text",
+                "changed_paths_are_within_claimed_definition_entry_boundary",
             ],
         )
     if (

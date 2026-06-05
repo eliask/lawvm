@@ -57,6 +57,17 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "changed_paths_are_within_claimed_insertion_boundary",
         ),
     },
+    "uk_manual_frontier_definition_entry_substitution_candidate": {
+        "candidate_operation_family": "definition_entry_substitution",
+        "required_validator_checks": (
+            "source_witness_names_definition_entry_and_replacement_payload",
+            "payload_is_complete_definition_entry",
+            "claim_identifies_exact_definition_entry_target",
+            "claim_materializes_replacement_payload_as_definition_entry",
+            "claim_preserves_unclaimed_definition_entries_and_parent_text",
+            "changed_paths_are_within_claimed_definition_entry_boundary",
+        ),
+    },
     "uk_manual_frontier_application_by_reference_out_of_scope": {
         "candidate_operation_family": "non_textual_or_out_of_scope",
         "required_validator_checks": (

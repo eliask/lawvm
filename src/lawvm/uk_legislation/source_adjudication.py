@@ -1239,6 +1239,33 @@ def _looks_like_definition_entry_payload(text: str) -> bool:
     )
 
 
+def _looks_like_definition_entry_substitution_payload(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if not norm or not re.search(r"^[\"“][^\"”]{1,200}[\"”]", norm):
+        return False
+    return bool(
+        _looks_like_definition_entry_payload(norm)
+        or re.search(
+            r"^[\"“][^\"”]{1,200}[\"”](?:s|’s|'s)?\s+"
+            r"[^.;]{0,200}?"
+            r"(?:is|are)\s+(?:the\s+)?(?:amount|person|body|scheme|right|duty|power|period|rate)\b",
+            norm,
+        )
+    )
+
+
+def _looks_like_labelled_purpose_payload_fragment(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    return bool(
+        re.search(
+            r"^(?:[0-9]+[A-Za-z]?|[A-Za-z])\s+"
+            r"for\s+the\s+purposes?\s+of\s+this\s+"
+            r"(?:paragraph|sub-?paragraph|section|subsection|schedule)\b",
+            norm,
+        )
+    )
+
+
 _DEFINITION_LIST_END_INSERT_RE = re.compile(
     r"\bat\s+the\s+end\s+insert(?:ed)?\s*[—-]?\s+"
     r"(?:definitions?\s+relating\s+to\b.{0,240}?)?"
@@ -3004,6 +3031,19 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The extracted source is a payload fragment without the owning operative instruction; replay requires exact source-context recovery before lowering.",
         }
 
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and source_pathology_norm == "unhandled_instruction_text"
+        and extracted_tag_norm == "BlockAmendment"
+        and "substitut" in effect_type_norm
+        and _looks_like_labelled_purpose_payload_fragment(extracted_text_norm)
+    ):
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_source_payload_without_instruction_context",
+            "reason": "The extracted BlockAmendment is a labelled provision payload while the effect row describes a word substitution; replay requires the owning parent instruction and payload split before lowering.",
+        }
+
     if "uk_effect_child_qualified_word_omission_target_mismatch_rejected" in blocking_rules:
         return {
             "status": "source_or_feed_target_conflict",
@@ -3210,6 +3250,19 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_definition_child_structural_substitution_candidate",
             "reason": "The source substitutes a paragraph inside a definition and may carry connector/tail semantics; a claim or future compiler must identify the definition child, replacement structure, and tail ownership before replay.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and source_pathology_norm == "unhandled_instruction_text"
+        and extracted_tag_norm == "BlockAmendment"
+        and "substitut" in effect_type_norm
+        and _looks_like_definition_entry_substitution_payload(extracted_text_norm)
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_definition_entry_substitution_candidate",
+            "reason": "The effect metadata and source payload indicate a whole definition-entry substitution, but lowering could not prove the definition entry target and replacement boundary; a claim or future definition compiler must own that boundary before replay.",
         }
 
     if (
