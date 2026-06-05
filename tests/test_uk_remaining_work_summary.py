@@ -422,6 +422,10 @@ def test_item_export_can_limit_rows_per_lane(tmp_path) -> None:
         "oracle_suspect_review": 1,
     }
     assert payload["summary"]["item_exported_lane_count"] == 3
+    assert payload["summary"]["item_expected_row_count"] == 6
+    assert payload["summary"]["item_exported_row_count"] == 3
+    assert payload["summary"]["item_unexported_row_count"] == 3
+    assert payload["summary"]["item_fully_exported"] is False
     assert payload["summary"]["item_unexported_lane_ids"] == []
     assert payload["summary"]["item_authorization_status_counts"] == {
         "non_executable_work_item": 3,
@@ -461,6 +465,10 @@ def test_item_export_global_limit_still_caps_per_lane_sampling(tmp_path) -> None
     )
 
     assert payload["summary"]["item_count"] == 1
+    assert payload["summary"]["item_expected_row_count"] == 2
+    assert payload["summary"]["item_exported_row_count"] == 1
+    assert payload["summary"]["item_unexported_row_count"] == 1
+    assert payload["summary"]["item_fully_exported"] is False
     assert payload["summary"]["item_unexported_lane_ids"] == [
         "effect_source_footing_gap"
     ]
@@ -493,6 +501,7 @@ def test_item_export_summary_counts_safety_gaps() -> None:
             "manual_compilation_frontier": ({},),
             "effect_source_footing_gap": ({},),
         },
+        lane_ids=frozenset(),
     )
 
     assert summary["item_safety_gap_counts"] == {
@@ -506,6 +515,35 @@ def test_item_export_summary_counts_safety_gaps() -> None:
         "": 1,
         "unexpected_authorized": 1,
     }
+    assert summary["item_fully_exported"] is True
+
+
+def test_item_export_summary_honors_lane_filter_for_coverage() -> None:
+    summary = remaining._item_export_summary(
+        [
+            {
+                "lane_id": "effect_source_footing_gap",
+                "executable": False,
+                "replay_authorized": False,
+                "execution_authorization": {
+                    "authorization_status": "non_executable_work_item"
+                },
+                "frontier_work_item": {"work_item_id": "x"},
+                "candidate_set_certificate": {"scope_id": "x"},
+            },
+        ],
+        {
+            "manual_compilation_frontier": ({},),
+            "effect_source_footing_gap": ({},),
+        },
+        lane_ids=frozenset({"effect_source_footing_gap"}),
+    )
+
+    assert summary["item_expected_row_count"] == 1
+    assert summary["item_exported_row_count"] == 1
+    assert summary["item_unexported_row_count"] == 0
+    assert summary["item_unexported_lane_ids"] == []
+    assert summary["item_fully_exported"] is True
 
 
 def test_item_safety_gap_cli_gate_passes_for_non_executable_items(
@@ -535,6 +573,72 @@ def test_item_safety_gap_cli_gate_passes_for_non_executable_items(
     ) == 0
     output = json.loads(capsys.readouterr().out)
     assert output["summary"]["item_safety_gap_counts"] == {}
+
+
+def test_item_coverage_gap_cli_gate_passes_for_full_export(
+    tmp_path,
+    capsys,
+) -> None:
+    report = _write_report(
+        tmp_path,
+        [
+            {
+                "statute_id": "ukpga/2000/1",
+                "score_status": "scored",
+                "triage_bucket": "manual_compile_frontier_residual",
+                "aligned": 70.0,
+            },
+        ],
+    )
+
+    assert remaining.main(
+        [
+            str(report),
+            "--include-items",
+            "--fail-on-item-coverage-gaps",
+            "--format",
+            "json",
+        ]
+    ) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["summary"]["item_fully_exported"] is True
+
+
+def test_item_coverage_gap_cli_gate_fails_for_limited_export(
+    tmp_path,
+    capsys,
+) -> None:
+    report = _write_report(
+        tmp_path,
+        [
+            {
+                "statute_id": "ukpga/2000/1",
+                "score_status": "scored",
+                "triage_bucket": "manual_compile_frontier_residual",
+                "aligned": 70.0,
+            },
+            {
+                "statute_id": "ukpga/2000/2",
+                "score_status": "scored",
+                "triage_bucket": "manual_compile_frontier_residual",
+                "aligned": 71.0,
+            },
+        ],
+    )
+
+    assert remaining.main(
+        [
+            str(report),
+            "--include-items",
+            "--item-limit",
+            "1",
+            "--fail-on-item-coverage-gaps",
+            "--format",
+            "json",
+        ]
+    ) == 1
+    output = json.loads(capsys.readouterr().out)
+    assert output["summary"]["item_fully_exported"] is False
 
 
 def test_pure_non_textual_effect_rows_get_distinct_non_replay_lane(tmp_path) -> None:
