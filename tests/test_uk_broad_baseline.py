@@ -220,6 +220,91 @@ def test_score_one_reports_oracle_metadata_only_when_base_is_available(
     assert "error" not in row
 
 
+def test_score_one_reports_compile_phase_timings(monkeypatch) -> None:
+    xml = _uk_available_statute_xml()
+    _install_score_one_archive(monkeypatch, enacted_xml=xml, current_xml=xml)
+
+    class FakeNode:
+        def __init__(self, eid: str) -> None:
+            self.attrs = {"eId": eid}
+            self.children = []
+            self.text = "Text."
+
+    class FakePipeline:
+        def __init__(self, _repo_root) -> None:
+            pass
+
+        def compile_ops_for_statute(
+            self,
+            _statute_id,
+            *,
+            compile_phase_timings_out=None,
+            **_kwargs,
+        ):
+            assert compile_phase_timings_out is not None
+            compile_phase_timings_out["compile_load_effects"] = 0.125
+            compile_phase_timings_out["compile_lower_effect"] = 0.25
+            return []
+
+        def apply_ops(self, base_ir, _ops, **_kwargs):
+            return base_ir
+
+    fake_ir = SimpleNamespace(body=FakeNode("section-1"), supplements=[])
+    monkeypatch.setitem(
+        sys.modules,
+        "lawvm.uk_legislation.effects",
+        SimpleNamespace(
+            load_effects_for_statute_from_archive=lambda *_args: [],
+            uk_nonstructural_replay_candidate_family_for_effect_type=(
+                lambda _effect_type: None
+            ),
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "lawvm.uk_legislation.uk_amendment_replay",
+        SimpleNamespace(
+            UKDiagnosticReplayFilterMode=SimpleNamespace(OBSERVE_ONLY="observe_only"),
+            UKReplayPipeline=FakePipeline,
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "lawvm.uk_legislation.uk_grafter",
+        SimpleNamespace(
+            extract_eid_map_bytes=lambda *_args: {
+                "eid_map": {"section-1": "section-1"},
+                "text_map": {},
+                "physical_eid_aliases": {},
+                "visible_number_eid_aliases": {},
+            },
+            parse_uk_statute_ir_bytes=lambda *_args, **_kwargs: fake_ir,
+            _clean_num=lambda value: str(value).strip("()"),
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "lawvm.uk_legislation.source_adjudication",
+        SimpleNamespace(
+            normalize_uk_replay_compare_eids=lambda replay, oracle, **_kwargs: (
+                set(replay),
+                set(oracle),
+            ),
+            _normalize_uk_source_container_eid=lambda eid: eid,
+        ),
+    )
+
+    row = uk_broad_baseline.score_one("ukpga/2000/1")
+
+    assert row["score_status"] == "scored"
+    assert row["compile_wall_seconds"] >= 0
+    assert row["compile_phase_timings"] == {
+        "compile_load_effects": 0.125,
+        "compile_lower_effect": 0.25,
+    }
+    assert "error" not in row
+
+
 def test_metadata_only_source_frontiers_are_pathology_not_non_manual_chain() -> None:
     summary = uk_broad_baseline.summarize_results(
         [

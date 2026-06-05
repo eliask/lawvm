@@ -49,6 +49,7 @@ import random
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -88,6 +89,10 @@ _REGRESSION_TOL = 0.1
 _HIGH_FIDELITY_AFTER_GROUNDING_THRESHOLD = 95.0
 _GROUNDING_DOMINATED_DELTA_THRESHOLD = 20.0
 _STRUCTURAL_MATCH_THRESHOLD = 99.5
+
+
+def _rounded_phase_timings(timings: Mapping[str, float]) -> dict[str, float]:
+    return {key: round(value, 6) for key, value in sorted(timings.items())}
 _COMPILE_REJECTION_DOMINATED_MIN_REJECTIONS = 25
 _LOW_VOLUME_RESIDUAL_MAX_MISSES = 25
 _LOW_VOLUME_RESIDUAL_MIN_SCORE = 85.0
@@ -626,6 +631,8 @@ def score_one(statute_id: str) -> dict[str, Any]:
         lowering_rejections: list[dict[str, Any]] = []
         authority_rejections: list[dict[str, Any]] = []
         effect_diagnostics: list[dict[str, Any]] = []
+        compile_phase_timings: dict[str, float] = {}
+        compile_wall_t0 = time.perf_counter()
         ops = pipeline.compile_ops_for_statute(
             statute_id,
             archive=archive,
@@ -633,7 +640,12 @@ def score_one(statute_id: str) -> dict[str, Any]:
             lowering_rejections_out=lowering_rejections,
             authority_rejections_out=authority_rejections,
             effect_diagnostics_out=effect_diagnostics,
+            compile_phase_timings_out=compile_phase_timings,
             diagnostic_replay_filter_mode=UKDiagnosticReplayFilterMode.OBSERVE_ONLY,
+        )
+        result["compile_wall_seconds"] = round(time.perf_counter() - compile_wall_t0, 6)
+        result["compile_phase_timings"] = _rounded_phase_timings(
+            compile_phase_timings
         )
         result["n_ops"] = len(ops)
         compiled_source_chain_ids = _compiled_source_chain_ids(ops, effect_rows)
