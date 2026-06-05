@@ -67,12 +67,39 @@ def _grouped_section_target_appears(*, target: str, haystack: str) -> bool:
     if parsed is None:
         return False
     section, suffix = parsed
-    return _suffix_appears_after_anchor(
+    if _suffix_appears_after_anchor(
         haystack=haystack,
         anchor=f"section {section}",
         suffix=suffix,
         window=260,
+    ):
+        return True
+    return _grouped_section_target_appears_with_inherited_middle_suffix(
+        haystack=haystack,
+        section=section,
+        suffix=suffix,
     )
+
+
+def _grouped_section_target_appears_with_inherited_middle_suffix(
+    *,
+    haystack: str,
+    section: str,
+    suffix: str,
+) -> bool:
+    components = _parenthesized_components(suffix)
+    if len(components) != 3:
+        return False
+    shorthand = f"({components[0]})({components[2]})"
+    inherited = f"({components[1]})"
+    for start in _anchor_positions(haystack, f"section {section}"):
+        segment = haystack[start : start + 260]
+        shorthand_index = segment.find(shorthand)
+        if shorthand_index < 0:
+            continue
+        if inherited in segment[:shorthand_index]:
+            return True
+    return False
 
 
 def _grouped_schedule_paragraph_target_appears(*, target: str, haystack: str) -> bool:
@@ -155,6 +182,27 @@ def _split_number_suffix(text: str) -> tuple[str, str] | None:
     if not number or not suffix.startswith("(") or ")" not in suffix:
         return None
     return number, suffix
+
+
+def _parenthesized_components(suffix: str) -> tuple[str, ...]:
+    value = suffix.strip()
+    components: list[str] = []
+    index = 0
+    while index < len(value):
+        if value[index].isspace():
+            index += 1
+            continue
+        if value[index] != "(":
+            return ()
+        end = value.find(")", index + 1)
+        if end < 0:
+            return ()
+        component = value[index + 1 : end].strip()
+        if not component:
+            return ()
+        components.append(component)
+        index = end + 1
+    return tuple(components)
 
 
 def _suffix_appears_after_anchor(

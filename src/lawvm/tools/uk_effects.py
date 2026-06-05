@@ -442,6 +442,13 @@ def summarize_uk_effect(
         *source_extraction_observations,
         *source_lane_observations,
     )
+    affecting_source_status = source_context.source_status
+    affecting_source_size = source_context.source_size
+    affecting_source_sha256 = (
+        hashlib.sha256(source_context.xml_bytes).hexdigest()
+        if source_context.xml_bytes
+        else ""
+    )
     affecting_root = source_context.root
     lowering_rejections: list[dict[str, Any]] = []
     lowering_rejection_count_before = len(lowering_rejections)

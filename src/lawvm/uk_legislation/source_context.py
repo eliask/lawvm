@@ -30,6 +30,7 @@ from lawvm.uk_legislation.source_state import (
     uk_affecting_act_block_amendment_payload_descendant_ref_rejection,
     uk_affecting_act_compound_payload_only_block_amendment_selected,
     uk_affecting_act_compound_reference_split_fallback,
+    uk_affecting_act_current_editorial_gap_enacted_source_selected,
     uk_affecting_act_current_shell_enacted_source_selected,
     uk_affecting_act_enacted_schedule_table_row_source_extracted,
     uk_affecting_act_implicit_first_subparagraph_context_ignored,
@@ -1777,6 +1778,30 @@ def _looks_like_non_substantive_shell_element(el: Optional[ET._Element]) -> bool
     return _looks_like_non_substantive_shell_text(_extracted_element_text(el))
 
 
+def _looks_like_specified_provisions_editorial_gap_text(text: str) -> bool:
+    normalized = " ".join((text or "").split()).lower()
+    return (
+        "specified provisions of the following enactments" in normalized
+        and "substitute" in normalized
+        and ". . . ." in normalized
+    )
+
+
+def _specified_provisions_editorial_gap_is_filled_by_enacted(
+    *,
+    current_el: Optional[ET._Element],
+    enacted_el: Optional[ET._Element],
+) -> bool:
+    if current_el is None or enacted_el is None:
+        return False
+    if not _looks_like_specified_provisions_editorial_gap_text(
+        _extracted_element_text(current_el),
+    ):
+        return False
+    enacted_text = " ".join(_extracted_element_text(enacted_el).split())
+    return bool(enacted_text) and ". . . ." not in enacted_text
+
+
 def _select_enacted_source_for_current_shell(
     *,
     effect: UKEffectRecord,
@@ -1788,7 +1813,10 @@ def _select_enacted_source_for_current_shell(
 ) -> UKSelectedAffectingSource:
     current_missing = current_el is None
     current_shell = _looks_like_non_substantive_shell_element(current_el)
-    if not current_missing and not current_shell:
+    current_editorial_gap_candidate = _looks_like_specified_provisions_editorial_gap_text(
+        _extracted_element_text(current_el),
+    )
+    if not current_missing and not current_shell and not current_editorial_gap_candidate:
         return UKSelectedAffectingSource(current_context, current_el, ())
 
     act_id = str(effect.affecting_act_id or "")
@@ -1861,6 +1889,17 @@ def _select_enacted_source_for_current_shell(
     if enacted_el is None or _looks_like_non_substantive_shell_element(enacted_el):
         return UKSelectedAffectingSource(current_context, current_el, ())
 
+    current_editorial_gap = _specified_provisions_editorial_gap_is_filled_by_enacted(
+        current_el=current_el,
+        enacted_el=enacted_el,
+    )
+    if (
+        current_editorial_gap_candidate
+        and not current_editorial_gap
+        and not current_missing
+        and not current_shell
+    ):
+        return UKSelectedAffectingSource(current_context, current_el, ())
     if current_missing:
         observation = uk_affecting_act_missing_current_enacted_source_selected(
             effect_id=str(effect.effect_id or ""),
@@ -1870,6 +1909,19 @@ def _select_enacted_source_for_current_shell(
             enacted_locator=enacted_context.locator,
             current_source_size=current_context.source_size,
             enacted_source_size=enacted_context.source_size,
+            enacted_text_preview=_preview_source_text(enacted_text),
+        )
+    elif current_editorial_gap:
+        current_text = _extracted_element_text(current_el)
+        observation = uk_affecting_act_current_editorial_gap_enacted_source_selected(
+            effect_id=str(effect.effect_id or ""),
+            affecting_act_id=act_id,
+            affecting_provisions=str(effect.affecting_provisions or ""),
+            current_locator=current_context.locator,
+            enacted_locator=enacted_context.locator,
+            current_source_size=current_context.source_size,
+            enacted_source_size=enacted_context.source_size,
+            current_text_preview=_preview_source_text(current_text),
             enacted_text_preview=_preview_source_text(enacted_text),
         )
     else:

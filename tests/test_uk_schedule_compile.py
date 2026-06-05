@@ -65324,6 +65324,135 @@ def test_pipeline_compile_ops_selects_enacted_source_when_current_source_is_shel
     )
 
 
+def test_pipeline_compile_ops_selects_enacted_source_for_specified_provisions_editorial_gap(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_enacted_source_specified_provisions_editorial_gap",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-02-22",
+        affected_uri="/id/ukpga/1981/63/schedule/3/paragraph/16/subparagraph/1/paragraph/b",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1981",
+        affected_number="63",
+        affected_provisions="Sch. 3 para. 16(1)(b)",
+        affecting_uri="/id/ukpga/2024/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="3",
+        affecting_provisions="s. 32(1)",
+        affecting_title="Finance Act 2024",
+        in_force_dates=[{"date": "2024-02-22", "prospective": "false"}],
+    )
+    current_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="section-32">
+          <Pnumber>32</Pnumber>
+          <P2 id="section-32-1">
+            <Pnumber>1</Pnumber>
+            <Text>1 In the specified provisions of the following enactments,
+            for “ seven ” (or “7”) substitute “14” —
+            TMA 1970 Section 106A(2)(b) . . . . . .
+            FA 1993 Section 31(2)(b).</Text>
+          </P2>
+        </P1>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    enacted_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="section-32">
+          <Pnumber>32</Pnumber>
+          <P2 id="section-32-1">
+            <Pnumber>1</Pnumber>
+            <Text>1 In the specified provisions of the following enactments,
+            for “ seven ” (or “7”) substitute “14” —
+            TMA 1970 Section 106A(2)(b)
+            BGDA 1981 Paragraph 16(1)(b) of Schedule 3
+            FA 1993 Section 31(2)(b).</Text>
+          </P2>
+        </P1>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    compile_calls: list[dict[str, str]] = []
+
+    def fake_compile(effect_arg, extracted_el, sequence=0, **kwargs):
+        compile_calls.append(
+            {
+                "text": " ".join(" ".join(extracted_el.itertext()).split())
+                if extracted_el is not None
+                else "",
+                "authority": kwargs.get("source_authority_layer", ""),
+            }
+        )
+        return [
+            LegalOperation(
+                op_id=effect_arg.effect_id,
+                sequence=sequence,
+                action=StructuralAction.TEXT_REPLACE,
+                target=LegalAddress(
+                    path=(
+                        ("schedule", "3"),
+                        ("paragraph", "16"),
+                        ("subparagraph", "1"),
+                        ("item", "b"),
+                    )
+                ),
+                source=OperationSource(statute_id=effect_arg.affecting_act_id),
+            )
+        ]
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: current_xml,
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_enacted_xml_from_archive",
+        lambda _aid, _archive: enacted_xml,
+    )
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", fake_compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    compiled = UKReplayPipeline(Path(".")).compile_ops_for_statute(
+        "ukpga/1981/63",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    )
+
+    assert len(compiled) == 1
+    assert compile_calls == [
+        {
+            "text": (
+                "1 1 In the specified provisions of the following enactments, "
+                "for “ seven ” (or “7”) substitute “14” — TMA 1970 Section "
+                "106A(2)(b) BGDA 1981 Paragraph 16(1)(b) of Schedule 3 FA 1993 "
+                "Section 31(2)(b)."
+            ),
+            "authority": "AFFECTING_ACT_ENACTED_TEXT",
+        }
+    ]
+    assert any(
+        row.get("rule_id")
+        == "uk_affecting_act_current_editorial_gap_enacted_source_selected"
+        and row.get("current_text_preview")
+        and ". . . ." in str(row.get("current_text_preview"))
+        and "BGDA 1981" in str(row.get("enacted_text_preview", ""))
+        for row in diagnostics
+    )
+
+
 def test_pipeline_compile_ops_selects_enacted_source_when_current_extract_missing(
     monkeypatch,
 ) -> None:
