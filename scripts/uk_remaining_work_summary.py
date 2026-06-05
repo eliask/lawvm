@@ -170,6 +170,22 @@ _LANE_SPECS = {
             "candidate_as_replay_authorization",
         ),
     ),
+    "temporal_commencement_frontier": _LaneSpec(
+        lane_id="temporal_commencement_frontier",
+        priority_rank=48,
+        owner_phase="effect_metadata_frontend",
+        work_kind="temporal_commencement_materialization_proof_gap",
+        next_action=(
+            "Prove commencement date, extent, and applicability before any "
+            "commenced-state materialization; otherwise keep the row as a "
+            "temporal frontier."
+        ),
+        forbidden_shortcuts=(
+            "undated_commencement_as_commenced_state",
+            "deterministic_effect_support_as_temporal_materialization",
+            "current_oracle_shape_as_commencement_proof",
+        ),
+    ),
     "non_textual_or_out_of_scope_effect_frontier": _LaneSpec(
         lane_id="non_textual_or_out_of_scope_effect_frontier",
         priority_rank=45,
@@ -239,7 +255,7 @@ _TRIAGE_LANES = {
     "retained_repeal_oracle_branch": "oracle_suspect_review",
     "nonreplay_effect_frontier": "canonical_or_temporal_frontier",
     "no_compiled_ops_frontier": "canonical_or_temporal_frontier",
-    "temporal_commencement_frontier": "canonical_or_temporal_frontier",
+    "temporal_commencement_frontier": "temporal_commencement_frontier",
     "bounded_low_volume_residual": "oracle_topology_granularity_residual",
     "body_oracle_first_paragraph_sectionization_residual": (
         "oracle_topology_granularity_residual"

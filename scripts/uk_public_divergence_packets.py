@@ -79,6 +79,7 @@ def load_packets(
     supplement_path: Path | None = None,
     fetch_public_snapshots: bool = False,
     snapshot_dir: Path | None = None,
+    require_standalone_evidence: bool = False,
     limit: int = 0,
     statute_ids: frozenset[str] = frozenset(),
     fetcher: Callable[[str], tuple[str, int, str, bytes]] | None = None,
@@ -91,15 +92,18 @@ def load_packets(
         if not statute_id or statute_ids and statute_id not in statute_ids:
             continue
         supplement = supplements.get(statute_id, {})
-        packets.append(
-            _packet_from_candidate(
-                candidate,
-                supplement,
-                fetch_public_snapshots=fetch_public_snapshots,
-                snapshot_dir=snapshot_dir,
-                fetcher=fetcher,
-            )
+        if require_standalone_evidence and not _operation_evidence_tuple(supplement):
+            continue
+        packet = _packet_from_candidate(
+            candidate,
+            supplement,
+            fetch_public_snapshots=fetch_public_snapshots,
+            snapshot_dir=snapshot_dir,
+            fetcher=fetcher,
         )
+        if require_standalone_evidence and packet.missing_standalone_evidence:
+            continue
+        packets.append(packet)
         if limit > 0 and len(packets) >= limit:
             break
     return packets
@@ -432,6 +436,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Fetch public URLs and write exact response bytes to --snapshot-dir",
     )
     parser.add_argument(
+        "--require-standalone-evidence",
+        action="store_true",
+        help=(
+            "Only emit packets whose operation evidence and fetched public "
+            "snapshots are complete; --limit is applied after this filter."
+        ),
+    )
+    parser.add_argument(
         "--snapshot-dir",
         type=Path,
         help="Directory for fetched public response bytes",
@@ -443,6 +455,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         supplement_path=args.supplement,
         fetch_public_snapshots=args.fetch_public_snapshots,
         snapshot_dir=args.snapshot_dir,
+        require_standalone_evidence=args.require_standalone_evidence,
         limit=args.limit,
         statute_ids=frozenset(args.statute_id),
     )

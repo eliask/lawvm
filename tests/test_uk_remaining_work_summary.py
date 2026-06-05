@@ -254,6 +254,55 @@ def test_pure_non_textual_effect_rows_get_distinct_non_replay_lane(tmp_path) -> 
     ]["forbidden_shortcuts"]
 
 
+def test_temporal_commencement_rows_get_distinct_temporal_lane(tmp_path) -> None:
+    report = _write_report(
+        tmp_path,
+        [
+            {
+                "statute_id": "ukpga/1978/9",
+                "score_status": "scored",
+                "triage_bucket": "temporal_commencement_frontier",
+                "aligned": 82.57,
+                "manual_frontier_status_counts": {
+                    "deterministic_frontend_supported": 1
+                },
+                "compile_rejection_rule_counts": {
+                    "uk_effect_undated_applied_si_commencement_date": 1
+                },
+                "agreement_residual": {
+                    "owner_phase": "effect_metadata_frontend",
+                    "missing_proofs": ["temporal_extent_applicability"],
+                },
+            },
+            {
+                "statute_id": "ukpga/1862/19",
+                "score_status": "scored",
+                "triage_bucket": "no_compiled_ops_frontier",
+                "aligned": 87.3,
+                "agreement_residual": {
+                    "owner_phase": "canonical_op_compilation",
+                    "missing_proofs": ["source_identity"],
+                },
+            },
+        ],
+    )
+
+    payload = remaining.load_remaining_work(report)
+    lane_by_id = {lane["lane_id"]: lane for lane in payload["lanes"]}
+
+    assert lane_by_id["temporal_commencement_frontier"]["row_count"] == 1
+    assert lane_by_id["temporal_commencement_frontier"][
+        "work_kind"
+    ] == "temporal_commencement_materialization_proof_gap"
+    assert lane_by_id["temporal_commencement_frontier"][
+        "missing_proof_counts"
+    ] == {"temporal_extent_applicability": 1}
+    assert "undated_commencement_as_commenced_state" in lane_by_id[
+        "temporal_commencement_frontier"
+    ]["forbidden_shortcuts"]
+    assert lane_by_id["canonical_or_temporal_frontier"]["row_count"] == 1
+
+
 def test_oracle_suspect_and_zero_oracle_get_distinct_lanes(tmp_path) -> None:
     report = _write_report(
         tmp_path,

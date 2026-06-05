@@ -25,7 +25,65 @@ def test_retained_repeal_oracle_branch_is_high_confidence(tmp_path) -> None:
                 "n_only_in_oracle": 2,
                 "replay_only_eid_samples": [],
                 "oracle_only_eid_samples": ["section-6", "section-7"],
+                "oracle_only_uncompiled_addition_eid_samples": ["section-7"],
+                "oracle_only_uncompiled_addition_change_ids": ["d7p1"],
                 "retained_repeal_oracle_targets": ["section-6", "section-7"],
+                "base_source_status": "available",
+                "base_source_locator": "https://www.legislation.gov.uk/ukpga/1992/20/enacted/data.xml",
+                "base_source_size": 1234,
+                "base_source_number_of_provisions": "42",
+                "base_source_has_body": True,
+                "base_source_has_schedules": False,
+                "base_source_witness_digest_coverage": "artifact_and_preview_digest",
+                "base_source_witness": {
+                    "source_role": "uk_broad_base_source",
+                    "source_status": "available",
+                    "locator": "https://www.legislation.gov.uk/ukpga/1992/20/enacted/data.xml",
+                    "digest": "base-digest",
+                    "preview_digest": "base-preview-digest",
+                    "source_lane": "enacted_xml",
+                    "bounded_preview": "<Legislation>base</Legislation>",
+                },
+                "oracle_source_status": "available",
+                "oracle_source_locator": "https://www.legislation.gov.uk/ukpga/1992/20/data.xml",
+                "oracle_source_size": 567,
+                "oracle_source_number_of_provisions": "40",
+                "oracle_source_has_body": True,
+                "oracle_source_has_schedules": False,
+                "oracle_source_witness_digest_coverage": "artifact_and_preview_digest",
+                "oracle_source_witness": {
+                    "source_role": "uk_broad_oracle_source",
+                    "source_status": "available",
+                    "locator": "https://www.legislation.gov.uk/ukpga/1992/20/data.xml",
+                    "digest": "oracle-digest",
+                    "preview_digest": "oracle-preview-digest",
+                    "source_lane": "current_xml",
+                    "bounded_preview": "<Legislation>oracle</Legislation>",
+                },
+                "n_effects": 1,
+                "n_ops": 1,
+                "n_compiled_source_chain_ids": 1,
+                "n_manual_frontier_records": 1,
+                "n_compile_rejections": 0,
+                "n_blocking_compile_rejections": 0,
+                "n_mutation_boundary_reports": 1,
+                "n_mutation_boundary_unexplained_reports": 0,
+                "n_mutation_boundary_unexplained_paths": 0,
+                "source_chain_frontier": False,
+                "source_chain_frontier_reasons": [],
+                "manual_frontier_status_counts": {
+                    "deterministic_frontend_supported": 1
+                },
+                "manual_frontier_authorization_status_counts": {
+                    "replay_authorized": 1
+                },
+                "manual_frontier_rule_counts": {
+                    "uk_manual_frontier_deterministic_supported": 1
+                },
+                "mutation_boundary_proof_rule_counts": {
+                    "mutation_boundary_path_set_proved": 1
+                },
+                "mutation_boundary_proof_status_counts": {"proved": 1},
                 "agreement_residual": {
                     "owner_phase": "compare_oracle_classification",
                     "missing_proofs": [],
@@ -44,6 +102,23 @@ def test_retained_repeal_oracle_branch_is_high_confidence(tmp_path) -> None:
     assert rows[0].confidence == "high"
     assert rows[0].rank == 100
     assert rows[0].retained_repeal_targets == ("section-6", "section-7")
+    assert rows[0].oracle_only_uncompiled_addition_samples == ("section-7",)
+    assert rows[0].oracle_only_uncompiled_addition_change_ids == ("d7p1",)
+    assert len(rows[0].source_witnesses) == 2
+    assert rows[0].source_witnesses[0].source_role == "uk_broad_base_source"
+    assert rows[0].source_witnesses[0].digest == "base-digest"
+    assert rows[0].source_witnesses[0].digest_coverage == (
+        "artifact_and_preview_digest"
+    )
+    assert rows[0].source_witnesses[1].source_lane == "current_xml"
+    assert rows[0].execution_witness.n_effects == 1
+    assert rows[0].execution_witness.n_ops == 1
+    assert rows[0].execution_witness.manual_frontier_authorization_status_counts == {
+        "replay_authorized": 1
+    }
+    assert rows[0].execution_witness.mutation_boundary_proof_rule_counts == {
+        "mutation_boundary_path_set_proved": 1
+    }
     assert rows[0].missing_proofs == ()
 
 

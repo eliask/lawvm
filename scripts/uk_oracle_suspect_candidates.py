@@ -39,6 +39,44 @@ _CONFIDENCE_ORDER = {
 
 
 @dataclass(frozen=True)
+class UKOracleSuspectSourceWitness:
+    source_role: str
+    source_status: str
+    locator: str
+    digest: str
+    preview_digest: str
+    digest_coverage: str
+    source_lane: str
+    byte_count: int
+    number_of_provisions: str
+    has_body: bool
+    has_schedules: bool
+    bounded_preview: str
+
+
+@dataclass(frozen=True)
+class UKOracleSuspectExecutionWitness:
+    n_effects: int
+    n_ops: int
+    n_compiled_source_chain_ids: int
+    n_manual_frontier_records: int
+    n_compile_rejections: int
+    n_blocking_compile_rejections: int
+    n_mutation_boundary_reports: int
+    n_mutation_boundary_unexplained_reports: int
+    n_mutation_boundary_unexplained_paths: int
+    source_chain_frontier: bool
+    source_chain_frontier_reasons: tuple[str, ...]
+    manual_frontier_status_counts: dict[str, int]
+    manual_frontier_authorization_status_counts: dict[str, int]
+    manual_frontier_rule_counts: dict[str, int]
+    compile_rejection_rule_counts: dict[str, int]
+    blocking_compile_rejection_rule_counts: dict[str, int]
+    mutation_boundary_proof_rule_counts: dict[str, int]
+    mutation_boundary_proof_status_counts: dict[str, int]
+
+
+@dataclass(frozen=True)
 class UKOracleSuspectCandidate:
     statute_id: str
     candidate_family: str
@@ -53,7 +91,11 @@ class UKOracleSuspectCandidate:
     only_in_oracle: int
     replay_only_samples: tuple[str, ...]
     oracle_only_samples: tuple[str, ...]
+    oracle_only_uncompiled_addition_samples: tuple[str, ...]
+    oracle_only_uncompiled_addition_change_ids: tuple[str, ...]
     retained_repeal_targets: tuple[str, ...]
+    source_witnesses: tuple[UKOracleSuspectSourceWitness, ...]
+    execution_witness: UKOracleSuspectExecutionWitness
     missing_proofs: tuple[str, ...]
     forbidden_shortcuts: tuple[str, ...]
     safe_default: str
@@ -100,7 +142,15 @@ def _candidate_from_row(row: Mapping[str, Any]) -> tuple[UKOracleSuspectCandidat
     only_in_oracle = _int(row.get("n_only_in_oracle"))
     replay_only_samples = _string_tuple(row.get("replay_only_eid_samples"))
     oracle_only_samples = _string_tuple(row.get("oracle_only_eid_samples"))
+    oracle_only_uncompiled_addition_samples = _string_tuple(
+        row.get("oracle_only_uncompiled_addition_eid_samples")
+    )
+    oracle_only_uncompiled_addition_change_ids = _string_tuple(
+        row.get("oracle_only_uncompiled_addition_change_ids")
+    )
     retained_targets = _string_tuple(row.get("retained_repeal_oracle_targets"))
+    source_witnesses = _source_witnesses_from_row(row)
+    execution_witness = _execution_witness_from_row(row)
 
     if triage_bucket == "retained_repeal_oracle_branch" and retained_targets:
         return (
@@ -118,7 +168,15 @@ def _candidate_from_row(row: Mapping[str, Any]) -> tuple[UKOracleSuspectCandidat
                 only_in_oracle=only_in_oracle,
                 replay_only_samples=replay_only_samples,
                 oracle_only_samples=oracle_only_samples,
+                oracle_only_uncompiled_addition_samples=(
+                    oracle_only_uncompiled_addition_samples
+                ),
+                oracle_only_uncompiled_addition_change_ids=(
+                    oracle_only_uncompiled_addition_change_ids
+                ),
                 retained_repeal_targets=retained_targets,
+                source_witnesses=source_witnesses,
+                execution_witness=execution_witness,
                 missing_proofs=missing_proofs,
                 forbidden_shortcuts=forbidden_shortcuts,
                 safe_default=safe_default,
@@ -145,7 +203,15 @@ def _candidate_from_row(row: Mapping[str, Any]) -> tuple[UKOracleSuspectCandidat
                 only_in_oracle=only_in_oracle,
                 replay_only_samples=replay_only_samples,
                 oracle_only_samples=oracle_only_samples,
+                oracle_only_uncompiled_addition_samples=(
+                    oracle_only_uncompiled_addition_samples
+                ),
+                oracle_only_uncompiled_addition_change_ids=(
+                    oracle_only_uncompiled_addition_change_ids
+                ),
                 retained_repeal_targets=retained_targets,
+                source_witnesses=source_witnesses,
+                execution_witness=execution_witness,
                 missing_proofs=missing_proofs,
                 forbidden_shortcuts=forbidden_shortcuts,
                 safe_default=safe_default,
@@ -173,7 +239,15 @@ def _candidate_from_row(row: Mapping[str, Any]) -> tuple[UKOracleSuspectCandidat
                 only_in_oracle=only_in_oracle,
                 replay_only_samples=replay_only_samples,
                 oracle_only_samples=oracle_only_samples,
+                oracle_only_uncompiled_addition_samples=(
+                    oracle_only_uncompiled_addition_samples
+                ),
+                oracle_only_uncompiled_addition_change_ids=(
+                    oracle_only_uncompiled_addition_change_ids
+                ),
                 retained_repeal_targets=retained_targets,
+                source_witnesses=source_witnesses,
+                execution_witness=execution_witness,
                 missing_proofs=missing_proofs,
                 forbidden_shortcuts=forbidden_shortcuts,
                 safe_default=safe_default,
@@ -200,7 +274,15 @@ def _candidate_from_row(row: Mapping[str, Any]) -> tuple[UKOracleSuspectCandidat
                 only_in_oracle=only_in_oracle,
                 replay_only_samples=replay_only_samples,
                 oracle_only_samples=oracle_only_samples,
+                oracle_only_uncompiled_addition_samples=(
+                    oracle_only_uncompiled_addition_samples
+                ),
+                oracle_only_uncompiled_addition_change_ids=(
+                    oracle_only_uncompiled_addition_change_ids
+                ),
                 retained_repeal_targets=retained_targets,
+                source_witnesses=source_witnesses,
+                execution_witness=execution_witness,
                 missing_proofs=missing_proofs,
                 forbidden_shortcuts=forbidden_shortcuts,
                 safe_default=safe_default,
@@ -232,10 +314,95 @@ def _has_clean_boundary(row: Mapping[str, Any]) -> bool:
     )
 
 
+def _source_witnesses_from_row(
+    row: Mapping[str, Any],
+) -> tuple[UKOracleSuspectSourceWitness, ...]:
+    witnesses: list[UKOracleSuspectSourceWitness] = []
+    for side, default_role in (
+        ("base", "uk_broad_base_source"),
+        ("oracle", "uk_broad_oracle_source"),
+    ):
+        witness = _mapping(row.get(f"{side}_source_witness"))
+        locator = str(witness.get("locator") or row.get(f"{side}_source_locator") or "")
+        status = str(
+            witness.get("source_status") or row.get(f"{side}_source_status") or ""
+        )
+        if not locator and not status and not witness:
+            continue
+        witnesses.append(
+            UKOracleSuspectSourceWitness(
+                source_role=str(witness.get("source_role") or default_role),
+                source_status=status,
+                locator=locator,
+                digest=str(witness.get("digest") or ""),
+                preview_digest=str(witness.get("preview_digest") or ""),
+                digest_coverage=str(
+                    row.get(f"{side}_source_witness_digest_coverage") or ""
+                ),
+                source_lane=str(witness.get("source_lane") or ""),
+                byte_count=_int(row.get(f"{side}_source_size")),
+                number_of_provisions=str(
+                    row.get(f"{side}_source_number_of_provisions") or ""
+                ),
+                has_body=bool(row.get(f"{side}_source_has_body")),
+                has_schedules=bool(row.get(f"{side}_source_has_schedules")),
+                bounded_preview=str(witness.get("bounded_preview") or ""),
+            )
+        )
+    return tuple(witnesses)
+
+
+def _execution_witness_from_row(row: Mapping[str, Any]) -> UKOracleSuspectExecutionWitness:
+    return UKOracleSuspectExecutionWitness(
+        n_effects=_int(row.get("n_effects")),
+        n_ops=_int(row.get("n_ops")),
+        n_compiled_source_chain_ids=_int(row.get("n_compiled_source_chain_ids")),
+        n_manual_frontier_records=_int(row.get("n_manual_frontier_records")),
+        n_compile_rejections=_int(row.get("n_compile_rejections")),
+        n_blocking_compile_rejections=_int(row.get("n_blocking_compile_rejections")),
+        n_mutation_boundary_reports=_int(row.get("n_mutation_boundary_reports")),
+        n_mutation_boundary_unexplained_reports=_int(
+            row.get("n_mutation_boundary_unexplained_reports")
+        ),
+        n_mutation_boundary_unexplained_paths=_int(
+            row.get("n_mutation_boundary_unexplained_paths")
+        ),
+        source_chain_frontier=bool(row.get("source_chain_frontier")),
+        source_chain_frontier_reasons=_string_tuple(
+            row.get("source_chain_frontier_reasons")
+        ),
+        manual_frontier_status_counts=_int_mapping(
+            row.get("manual_frontier_status_counts")
+        ),
+        manual_frontier_authorization_status_counts=_int_mapping(
+            row.get("manual_frontier_authorization_status_counts")
+        ),
+        manual_frontier_rule_counts=_int_mapping(row.get("manual_frontier_rule_counts")),
+        compile_rejection_rule_counts=_int_mapping(row.get("compile_rejection_rule_counts")),
+        blocking_compile_rejection_rule_counts=_int_mapping(
+            row.get("blocking_compile_rejection_rule_counts")
+        ),
+        mutation_boundary_proof_rule_counts=_int_mapping(
+            row.get("mutation_boundary_proof_rule_counts")
+        ),
+        mutation_boundary_proof_status_counts=_int_mapping(
+            row.get("mutation_boundary_proof_status_counts")
+        ),
+    )
+
+
 def _mapping(value: Any) -> Mapping[str, Any]:
     if isinstance(value, Mapping):
         return value
     return {}
+
+
+def _int_mapping(value: Any) -> dict[str, int]:
+    return {
+        str(key): _int(count)
+        for key, count in _mapping(value).items()
+        if _int(count) != 0
+    }
 
 
 def _string_tuple(value: Any) -> tuple[str, ...]:

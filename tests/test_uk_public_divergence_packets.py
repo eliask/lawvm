@@ -106,6 +106,67 @@ def test_packet_without_supplement_marks_missing_operation_fragment(tmp_path) ->
     )
 
 
+def test_require_standalone_evidence_filters_before_limit(tmp_path) -> None:
+    candidates_path = _write_json(
+        tmp_path / "candidates.json",
+        {
+            "rows": [
+                {
+                    "statute_id": "ukpga/1920/50",
+                    "candidate_family": "oracle_retains_source_repealed_state",
+                    "confidence": "high",
+                    "retained_repeal_targets": ["/whole_act"],
+                },
+                {
+                    "statute_id": "ukpga/2010/37",
+                    "candidate_family": "oracle_retains_source_repealed_state",
+                    "confidence": "high",
+                    "retained_repeal_targets": ["section-3"],
+                },
+            ]
+        },
+    )
+    supplement_path = _write_json(
+        tmp_path / "supplement.json",
+        [
+            {
+                "statute_id": "ukpga/2010/37",
+                "retained_targets": ["section-3"],
+                "current_urls": [
+                    "https://www.legislation.gov.uk/ukpga/2010/37/section/3"
+                ],
+                "matched_ops": [
+                    {
+                        "action": "repeal",
+                        "affected": "s. 3",
+                        "source_statute": "uksi/2010/2996",
+                        "affecting_provisions": "art. 2",
+                        "effect_type": "repealed",
+                        "source_preview": "section 3 is repealed",
+                    }
+                ],
+            }
+        ],
+    )
+
+    def fetcher(url: str):
+        return url, 200, "text/xml", f"<body>{url}</body>".encode()
+
+    rows = packets.load_packets(
+        candidates_path,
+        supplement_path=supplement_path,
+        fetch_public_snapshots=True,
+        snapshot_dir=tmp_path / "snapshots",
+        require_standalone_evidence=True,
+        limit=1,
+        fetcher=fetcher,
+    )
+
+    assert len(rows) == 1
+    assert rows[0].statute_id == "ukpga/2010/37"
+    assert rows[0].missing_standalone_evidence == ()
+
+
 def test_si_paragraph_and_schedule_source_urls_are_exposed() -> None:
     urls = packets._public_source_urls("uksi/1994/1443", "para. 3(2) Sch. 4")
 
