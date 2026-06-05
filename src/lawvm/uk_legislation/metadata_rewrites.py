@@ -25,6 +25,13 @@ from lawvm.uk_legislation.uk_grafter import _LEG_NS, _clean_num, _extract_num
 from lawvm.uk_legislation.xml_helpers import _tag
 
 
+_UK_METADATA_RENUMBER_RE = re.compile(
+    r"(?P<source>.+?)\s+renumbered\s+as\s+(?P<dest>.+)",
+    flags=re.I,
+)
+_UK_METADATA_WORDS_IN_RE = re.compile(r"words?\s+in\s+(?P<target>.+)", flags=re.I)
+
+
 @dataclass(frozen=True)
 class UKMetadataRenumberTargets:
     source_target: LegalAddress
@@ -95,11 +102,11 @@ def _uk_metadata_renumber_targets(effect: UKEffectRecord) -> Optional[UKMetadata
     """
 
     effect_type = " ".join(str(effect.effect_type or "").replace("\u00a0", " ").split())
-    match = re.fullmatch(r"(?P<source>.+?)\s+renumbered\s+as\s+(?P<dest>.+)", effect_type, flags=re.I)
+    match = _UK_METADATA_RENUMBER_RE.fullmatch(effect_type)
     if match is None:
         return None
     source_ref = " ".join(match.group("source").split())
-    words_in_match = re.fullmatch(r"words?\s+in\s+(?P<target>.+)", source_ref, flags=re.I)
+    words_in_match = _UK_METADATA_WORDS_IN_RE.fullmatch(source_ref)
     if words_in_match is not None:
         source_ref = words_in_match.group("target")
     source_target = canonicalize_uk_address(_parse_affected_target(source_ref))
@@ -156,11 +163,11 @@ def _uk_unsupported_metadata_renumber_rejection(
     if _uk_metadata_renumber_targets(effect) is not None:
         return None
     effect_type = " ".join(str(effect.effect_type or "").replace("\u00a0", " ").split())
-    match = re.fullmatch(r"(?P<source>.+?)\s+renumbered\s+as\s+(?P<dest>.+)", effect_type, flags=re.I)
+    match = _UK_METADATA_RENUMBER_RE.fullmatch(effect_type)
     if match is None:
         return None
     source_ref = " ".join(match.group("source").split())
-    words_in_match = re.fullmatch(r"words?\s+in\s+(?P<target>.+)", source_ref, flags=re.I)
+    words_in_match = _UK_METADATA_WORDS_IN_RE.fullmatch(source_ref)
     if words_in_match is not None:
         source_ref = words_in_match.group("target")
     source_target = canonicalize_uk_address(_parse_affected_target(source_ref))

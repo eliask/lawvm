@@ -16,6 +16,16 @@ from lawvm.uk_legislation.mutable_ir import UKMutableNode
 _LEG_NS = "http://www.legislation.gov.uk/namespaces/legislation"
 _USER_AGENT = "LawVM-Replayer/1.0"
 _LEG_BASE = "http://www.legislation.gov.uk"
+_ROMAN_IVX_RE = re.compile(r"^[ivx]+$", re.IGNORECASE)
+_ROMAN_FULL_RE = re.compile(r"^[IVXLCDM]+$", re.IGNORECASE)
+_CLEAN_NUM_PREFIX_RE = re.compile(
+    r"^(Part|Section|Schedule|Chapter|Paragraph|Article|Rule|Regulation|Annex)"
+    r"(?=\s+|[0-9IVXLCDM]+[A-Za-z]?\b)\s*",
+    re.IGNORECASE,
+)
+_CLEAN_NUM_TRAILING_PUNCT_RE = re.compile(r"[().]+$")
+_DOT_OR_SPACE_ONLY_RE = re.compile(r"^[.\s]+$")
+_GROUNDING_NON_WORD_SPACE_RE = re.compile(r"[^\w\s]")
 
 # Editorial element types added by legislation.gov.uk editors — NOT part of the
 # enacted statute text.  Excluded from EID scoring so that their presence in the
@@ -187,7 +197,7 @@ def _roman_to_int(s: str) -> str:
     round-trip canonicalization.  The previous implementation only
     handled I..X.
     """
-    if not re.match(r"^[ivx]+$", s, re.IGNORECASE):
+    if not _ROMAN_IVX_RE.match(s):
         return s
     value = _shared_roman_to_arabic(s)
     return s if value is None else str(value)
@@ -199,15 +209,9 @@ def _clean_num_cached(raw: str) -> str:
     if raw == "":
         return ""
     s = str(raw).strip()
-    s = re.sub(
-        r"^(Part|Section|Schedule|Chapter|Paragraph|Article|Rule|Regulation|Annex)"
-        r"(?=\s+|[0-9IVXLCDM]+[A-Za-z]?\b)\s*",
-        "",
-        s,
-        flags=re.IGNORECASE,
-    )
-    s = re.sub(r"[().]+$", "", s).strip()
-    if re.match(r"^[IVXLCDM]+$", s, re.IGNORECASE):
+    s = _CLEAN_NUM_PREFIX_RE.sub("", s)
+    s = _CLEAN_NUM_TRAILING_PUNCT_RE.sub("", s).strip()
+    if _ROMAN_FULL_RE.match(s):
         s = _roman_to_int(s)
     return s.lower().strip(".")
 
@@ -949,7 +953,7 @@ def _is_zombie(el: ET._Element, force_active: bool = False, pit_date: Optional[s
         return txt
 
     content_str = "".join(_collect_local(el)).strip()
-    if content_str and re.match(r"^[.\s]+$", content_str):
+    if content_str and _DOT_OR_SPACE_ONLY_RE.match(content_str):
         has_active = False
         for child in el:
             if _tag(child).lower() in structural:
@@ -1544,7 +1548,7 @@ def _slugify(text: str) -> str:
 
 
 def _normalize_text_for_grounding(text: str) -> str:
-    text = re.sub(r"[^\w\s]", "", text.lower())
+    text = _GROUNDING_NON_WORD_SPACE_RE.sub("", text.lower())
     return " ".join(text.split())
 
 
@@ -1666,7 +1670,7 @@ def _visit_eid(
             observations=oracle_identity_observations,
         )
         text = _text_content(el)
-        if text and not re.match(r"^[.\s]+$", text):
+        if text and not _DOT_OR_SPACE_ONLY_RE.match(text):
             norm = _normalize_text_for_grounding(text)
             text_map[eid] = norm
             h = _semantic_hash(text)

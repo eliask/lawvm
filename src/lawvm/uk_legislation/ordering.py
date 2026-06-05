@@ -18,6 +18,8 @@ _UK_SOURCE_PROVISION_ORDER_TOKEN_RE = re.compile(
     r"schedules?|schs?|sch|paragraphs?|paras?|para)\.?\s*(?P<label>[0-9]+[A-Za-z]*)"
     r"|\((?P<paren>[0-9A-Za-z]+)\)"
 )
+_UK_SOURCE_PROVISION_LABEL_ALNUM_RE = re.compile(r"[^0-9A-Za-z]+")
+_UK_SOURCE_PROVISION_NUMERIC_SUFFIX_RE = re.compile(r"(\d+)([a-z]*)")
 
 
 def _uk_ordering_diagnostic(
@@ -64,10 +66,10 @@ def _uk_source_provision_label_sort_key(label: str, *, previous_alpha: bool = Fa
     This is intentionally separate from ``_clean_num`` because parenthesized
     labels such as ``(d)`` are alphabetic legal labels, not Roman numerals.
     """
-    token = re.sub(r"[^0-9A-Za-z]+", "", str(label or "")).lower()
+    token = _UK_SOURCE_PROVISION_LABEL_ALNUM_RE.sub("", str(label or "")).lower()
     if not token:
         return (9, "")
-    match = re.fullmatch(r"(\d+)([a-z]*)", token)
+    match = _UK_SOURCE_PROVISION_NUMERIC_SUFFIX_RE.fullmatch(token)
     if match is not None:
         suffix = match.group(2)
         suffix_key = tuple(ord(ch) - ord("a") + 1 for ch in suffix)

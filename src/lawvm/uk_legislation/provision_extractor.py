@@ -17,6 +17,7 @@ _NON_ALNUM_RE = re.compile(r"[^0-9a-zA-Z]")
 _FOR_SUBSTITUTE_INSTRUCTION_RE = re.compile(r"\bfor\b.+\bsubstitute\b")
 _TRAILING_INSERT_OR_SUBSTITUTE_RE = re.compile(r"\b(?:insert|substitute)\s*[—-]?\s*$")
 _INSERT_BEFORE_AFTER_QUOTE_RE = re.compile(r"\binsert\s+(?:before|after)\s+[“\"']", re.I)
+_LEADING_ZERO_LABEL_RE = re.compile(r"0+([0-9]+)([a-z]*)", re.I)
 _APPROPRIATE_PLACE_ALPHA_ORDER_RE = re.compile(
     r"\bat\s+the\s+appropriate\s+place,?\s+in\s+alphabetical\s+order",
     re.I,
@@ -249,7 +250,7 @@ def _parse_ref(ref: str) -> tuple[tuple[Optional[str], str], ...]:
     i = 0
 
     def _normalize_label_token(token: str) -> str:
-        match = re.fullmatch(r"0+([0-9]+)([a-z]*)", token, flags=re.I)
+        match = _LEADING_ZERO_LABEL_RE.fullmatch(token)
         if match is None:
             return token
         return f"{int(match.group(1))}{match.group(2).lower()}"

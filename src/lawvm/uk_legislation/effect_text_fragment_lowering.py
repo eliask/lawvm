@@ -1754,6 +1754,18 @@ def _promote_text_fragment_substitutions(
             skip_effect=True,
         )
 
+    if table_cell_selector is not None:
+        selector_match = " ".join(
+            str(table_cell_selector.get("match_text") or "").split()
+        ).strip()
+        if selector_match:
+            primary = {
+                **primary,
+                "original": selector_match,
+                "rule_id": str(table_cell_selector.get("rule_id") or selector_rule_id),
+            }
+            subs = [primary]
+
     op_text_match = primary["original"]
     op_text_replacement = primary["replacement"]
     op_text_occurrence = int(primary.get("occurrence", "0") or "0")

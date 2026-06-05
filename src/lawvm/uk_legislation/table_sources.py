@@ -38,6 +38,33 @@ _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID = (
 _UK_REPEAL_TABLE_DEFINITION_CHILD_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_definition_child_text_repeal"
 )
+_UK_QUOTED_TEXT_RE = re.compile(r"[“\"'‘].*?[”\"'’]")
+_UK_SHORT_TITLE_YEAR_RE = re.compile(r"\b(?:1[6-9]|20)\d{2}\b")
+_UK_FLAT_REPEAL_SCHEDULE_CITATION_RE = re.compile(
+    r"\b(?:1[6-9]|20)\d{2}\s*\(\s*(?:c\.?|asp|s\.?\s*i\.?|si|uksi)\s*[^)]*\)",
+    flags=re.I,
+)
+_UK_REPEAL_TABLE_SECTION_DASH_RE = re.compile(
+    r"^(?P<context>In\s+section\s+[0-9A-Za-z]+)\s*(?:--|[-\u2013\u2014])\s*(?P<body>.+)$",
+    flags=re.I,
+)
+_UK_REPEAL_TABLE_SECTION_CONTEXT_RE = re.compile(
+    r"^(?P<context>In\s+section\s+[0-9A-Za-z]+)\s*,\s*(?P<body>.+)$",
+    flags=re.I,
+)
+_UK_REPEAL_TABLE_EXTENT_SPLIT_RE = re.compile(
+    r"(?<=\.)\s+(?=(?:In\s+)?(?:part|parts|chapter|chapters|section|sections|schedule|paragraph)\b)",
+    flags=re.I,
+)
+_UK_REPEAL_TABLE_QUOTED_CLAUSE_RE = re.compile(r'(?:["“][^"”]*["”]|‘[^’]*’)')
+_UK_TABLE_TARGET_CONTEXT_PAREN_RE = re.compile(
+    r"\((?=[^)]*\s)[^)]*\b(?:act|article|effect|instrument|order|regulations?|section|virtue)\b[^)]*\)",
+    flags=re.I,
+)
+_UK_TABLE_TARGET_REFERENCE_TAIL_RE = re.compile(
+    r"\bthe\s+references?\s+to\s+.+$",
+    flags=re.I,
+)
 _UK_REPEAL_TABLE_COLUMN_ENTRY_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_column_entry_text_repeal"
 )
@@ -360,13 +387,7 @@ def _uk_flat_repeal_schedule_enactment_context(
 ) -> tuple[str, str]:
     """Return nearby affected-enactment context for flattened repeal schedules."""
     context = text[:clause_start]
-    citation_matches = tuple(
-        re.finditer(
-            r"\b(?:1[6-9]|20)\d{2}\s*\(\s*(?:c\.?|asp|s\.?\s*i\.?|si|uksi)\s*[^)]*\)",
-            context,
-            flags=re.I,
-        )
-    )
+    citation_matches = tuple(_UK_FLAT_REPEAL_SCHEDULE_CITATION_RE.finditer(context))
     current_enactment_context = (
         context[citation_matches[-1].start() :]
         if citation_matches
@@ -995,21 +1016,13 @@ def _uk_repeal_table_extent_clauses(extent_cell: str) -> list[str]:
     text = " ".join(extent_cell.split()).strip()
     if not text:
         return []
-    clauses = re.split(
-        r"(?<=\.)\s+(?=(?:In\s+)?(?:part|parts|chapter|chapters|section|sections|schedule|paragraph)\b)",
-        text,
-        flags=re.I,
-    )
+    clauses = _UK_REPEAL_TABLE_EXTENT_SPLIT_RE.split(text)
     expanded: list[str] = []
     for clause in clauses:
         stripped = clause.strip()
         if not stripped:
             continue
-        section_dash = re.match(
-            r"^(?P<context>In\s+section\s+[0-9A-Za-z]+)\s*(?:--|[-\u2013\u2014])\s*(?P<body>.+)$",
-            stripped,
-            re.I,
-        )
+        section_dash = _UK_REPEAL_TABLE_SECTION_DASH_RE.match(stripped)
         if section_dash is not None:
             context = section_dash.group("context")
             for part in re.split(r";\s*", section_dash.group("body")):
@@ -1017,11 +1030,7 @@ def _uk_repeal_table_extent_clauses(extent_cell: str) -> list[str]:
                 if part_text:
                     expanded.append(f"{context}, {part_text}.")
             continue
-        section_context = re.match(
-            r"^(?P<context>In\s+section\s+[0-9A-Za-z]+)\s*,\s*(?P<body>.+)$",
-            stripped,
-            re.I,
-        )
+        section_context = _UK_REPEAL_TABLE_SECTION_CONTEXT_RE.match(stripped)
         if section_context is None:
             expanded.append(stripped)
             continue
@@ -1046,11 +1055,7 @@ def _uk_repeal_table_parent_child_scope_clauses(extent_clause: str) -> tuple[str
     text = " ".join((extent_clause or "").split()).strip()
     if not text:
         return ()
-    section_dash = re.match(
-        r"^(?P<context>In\s+section\s+[0-9A-Za-z]+)\s*(?:--|[-\u2013\u2014])\s*(?P<body>.+)$",
-        text,
-        re.I,
-    )
+    section_dash = _UK_REPEAL_TABLE_SECTION_DASH_RE.match(text)
     if section_dash is None:
         return (text,)
     context = section_dash.group("context")
@@ -1425,7 +1430,7 @@ def _uk_repeal_table_clause_is_structural_repeal(extent_clause: str) -> bool:
     text = " ".join((extent_clause or "").split()).strip()
     if not text:
         return False
-    if re.search(r'(?:["“][^"”]*["”]|‘[^’]*’)', text):
+    if _UK_REPEAL_TABLE_QUOTED_CLAUSE_RE.search(text):
         return False
     norm = text.lower()
     if re.search(r"\b(?:word|words|definition|entry|entries)\b", norm):
@@ -2590,8 +2595,8 @@ def _uk_schedule_paragraph_exception_body(
     paragraph = labels.get("paragraph", "")
     if not schedule or not paragraph:
         return ""
-    scope_text = re.sub(r"[“\"'‘].*?[”\"'’]", "", " ".join(cell_text.split()).lower())
-    years = set(re.findall(r"\b(?:1[6-9]|20)\d{2}\b", scope_text))
+    scope_text = _UK_QUOTED_TEXT_RE.sub("", " ".join(cell_text.split()).lower())
+    years = set(_UK_SHORT_TITLE_YEAR_RE.findall(scope_text))
     if years and affected_year and affected_year not in years:
         return ""
     if not _uk_schedule_in_cell_text(scope_text, re.escape(schedule.lower())):
@@ -2628,7 +2633,7 @@ def _uk_table_cell_mentions_target_cached(
     if not text:
         return False
     text = _uk_table_cell_target_scope_text(text)
-    scope_text = re.sub(r"[“\"'‘].*?[”\"'’]", "", text)
+    scope_text = _UK_QUOTED_TEXT_RE.sub("", text)
     labels = {kind: label for kind, label in target_path}
     section = labels.get("section", "")
     schedule = labels.get("schedule", "")
@@ -2637,7 +2642,7 @@ def _uk_table_cell_mentions_target_cached(
     subparagraph = labels.get("subparagraph", "")
     part = labels.get("part", "")
     chapter = labels.get("chapter", "")
-    years = set(re.findall(r"\b(?:1[6-9]|20)\d{2}\b", scope_text))
+    years = set(_UK_SHORT_TITLE_YEAR_RE.findall(scope_text))
     if years and affected_year and affected_year not in years:
         return False
 
@@ -2729,17 +2734,10 @@ def _uk_table_cell_target_scope_text(text: str) -> str:
     parentheticals like `(7)(a)`. Singular reference selectors after the target
     are likewise payload/preimage text, not target scope.
     """
-    text = re.sub(
-        r"\((?=[^)]*\s)[^)]*\b(?:act|article|effect|instrument|order|regulations?|section|virtue)\b[^)]*\)",
-        "",
-        text,
-        flags=re.I,
-    )
-    return re.sub(
-        r"\bthe\s+references?\s+to\s+.+$",
+    text = _UK_TABLE_TARGET_CONTEXT_PAREN_RE.sub("", text)
+    return _UK_TABLE_TARGET_REFERENCE_TAIL_RE.sub(
         "the reference to",
         text,
-        flags=re.I,
     )
 
 

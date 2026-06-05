@@ -22,6 +22,40 @@ from lawvm.uk_legislation.source_context import (
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
+_HEADING_FACET_TERMS = ("heading", "title", "sidenote")
+_HEADING_FACET_FULL_REPLACEMENT_ACTION_TERMS = ("becomes", "substitute", "insert")
+_HEADING_FACET_PARENTHETICAL_BECOMES_RE = re.compile(
+    r"\b(?:heading|title|sidenote)\s+to\s+which\s+becomes\s+"
+    r"(?:[“\"'‘](?P<quoted>.{0,1000}?)[”\"'’]|(?P<bare>[^).;]{0,1000}))",
+    flags=re.I | re.S,
+)
+_HEADING_FACET_BECOMES_RE = re.compile(
+    r"\b(?:the\s+)?(?:italic\s+)?(?:section\s+)?(?:heading|title|sidenote)"
+    r"(?:\s+before\s+(?:(?:paragraph|section|article)\s+[0-9A-Za-z().]+|that\s+paragraph))?"
+    r"(?:\s+(?:to\s+the\s+section|of\s+(?:the\s+)?(?:section|part|chapter|schedule|article|rule|regulation)\s+[0-9A-Za-z]+"
+    r"(?:\s+of\s+(?:the\s+)?(?:[0-9]{4}\s+)?Act)?))?"
+    r"(?:\s+to\s+which)?"
+    r"(?:\s+accordingly)?\s+becomes\s+(?P<replacement>.{0,2000})$",
+    flags=re.I | re.S,
+)
+_HEADING_FACET_SUBSTITUTE_RE = re.compile(
+    r"\bfor\s+the\s+(?:(?:section|part|chapter|schedule|article|rule|regulation)\s+)?"
+    r"(?:heading|title|sidenote)"
+    r"(?:\s+of\s+(?:the\s+)?(?:section|part|chapter|schedule|article|rule|regulation)"
+    r"\s+[0-9A-Za-z]+)?"
+    r"(?:\s+to\s+(?:the|that)\s+section)?"
+    r"\s+substitute\s*[—–-]?\s*(?P<replacement>.{0,2000})$",
+    flags=re.I | re.S,
+)
+_HEADING_FACET_INSERT_RE = re.compile(
+    r"\b(?:before|after)\s+"
+    r"(?:(?:section|paragraph|article|rule|regulation)\s+[0-9A-Za-z().]+|that\s+paragraph)\s+"
+    r"insert\s+(?:the\s+)?(?:italic\s+)?(?:heading|title|sidenote)\s+"
+    r"(?P<replacement>[“\"'‘].{0,1000}?[”\"'’]|[^.;]{0,1000})",
+    flags=re.I | re.S,
+)
+
+
 def _is_heading_only_ref(ref: str) -> bool:
     ref_clean = ref.strip().lower()
     if "cross-heading" in ref_clean or "cross heading" in ref_clean or "crossheading" in ref_clean:
@@ -247,12 +281,12 @@ def _heading_facet_full_replacement_fragment(extracted_text: Optional[str]) -> O
     text = " ".join((extracted_text or "").split()).strip()
     if not text:
         return None
-    parenthetical_match = re.search(
-        r"\b(?:heading|title|sidenote)\s+to\s+which\s+becomes\s+"
-        r"(?:[“\"'‘](?P<quoted>.*?)[”\"'’]|(?P<bare>[^).;]+))",
-        text,
-        flags=re.I | re.S,
-    )
+    text_lower = text.casefold()
+    if not any(term in text_lower for term in _HEADING_FACET_TERMS):
+        return None
+    if not any(term in text_lower for term in _HEADING_FACET_FULL_REPLACEMENT_ACTION_TERMS):
+        return None
+    parenthetical_match = _HEADING_FACET_PARENTHETICAL_BECOMES_RE.search(text)
     if parenthetical_match is not None:
         replacement = (
             parenthetical_match.group("quoted")
@@ -266,36 +300,11 @@ def _heading_facet_full_replacement_fragment(extracted_text: Optional[str]) -> O
                 "replacement": replacement,
                 "rule_id": "uk_effect_heading_facet_full_replacement_text_patch",
             }
-    match = re.search(
-        r"\b(?:the\s+)?(?:italic\s+)?(?:section\s+)?(?:heading|title|sidenote)"
-        r"(?:\s+before\s+(?:(?:paragraph|section|article)\s+[0-9A-Za-z().]+|that\s+paragraph))?"
-        r"(?:\s+(?:to\s+the\s+section|of\s+(?:the\s+)?(?:section|part|chapter|schedule|article|rule|regulation)\s+[0-9A-Za-z]+"
-        r"(?:\s+of\s+(?:the\s+)?(?:[0-9]{4}\s+)?Act)?))?"
-        r"(?:\s+to\s+which)?"
-        r"(?:\s+accordingly)?\s+becomes\s+(?P<replacement>.+)$",
-        text,
-        flags=re.I | re.S,
-    )
+    match = _HEADING_FACET_BECOMES_RE.search(text)
     if match is None:
-        match = re.search(
-            r"\bfor\s+the\s+(?:(?:section|part|chapter|schedule|article|rule|regulation)\s+)?"
-            r"(?:heading|title|sidenote)"
-            r"(?:\s+of\s+(?:the\s+)?(?:section|part|chapter|schedule|article|rule|regulation)"
-            r"\s+[0-9A-Za-z]+)?"
-            r"(?:\s+to\s+(?:the|that)\s+section)?"
-            r"\s+substitute\s*[—–-]?\s*(?P<replacement>.+)$",
-            text,
-            flags=re.I | re.S,
-        )
+        match = _HEADING_FACET_SUBSTITUTE_RE.search(text)
     if match is None:
-        match = re.search(
-            r"\b(?:before|after)\s+"
-            r"(?:(?:section|paragraph|article|rule|regulation)\s+[0-9A-Za-z().]+|that\s+paragraph)\s+"
-            r"insert\s+(?:the\s+)?(?:italic\s+)?(?:heading|title|sidenote)\s+"
-            r"(?P<replacement>[“\"'‘].*?[”\"'’]|[^.;]+)",
-            text,
-            flags=re.I | re.S,
-        )
+        match = _HEADING_FACET_INSERT_RE.search(text)
     if match is None:
         return None
     replacement = match.group("replacement").strip()

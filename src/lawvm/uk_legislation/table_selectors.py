@@ -76,6 +76,13 @@ _UK_COLUMN_TOKEN_PATTERN = (
     r"\s+column|column\s+\d+)"
 )
 _UK_QUOTED_PAYLOAD_RE = re.compile(r"[“\"'‘].*?[”\"'’]")
+_UK_NAMED_QUOTED_PAYLOAD_PATTERN = r"[“\"'‘](?P<{name}>.*?)[”\"'’]"
+_UK_TABLE_COLUMN_REFERENCES_SUBSTITUTION_RE = re.compile(
+    r"\bfor\s+(?:the\s+)?references?\s+to\s+(?P<original>.+?)\s+"
+    r"substitute[ds]?\s+"
+    + _UK_NAMED_QUOTED_PAYLOAD_PATTERN.format(name="replacement"),
+    re.I,
+)
 _UK_EXPLICIT_ENTRY_LABEL_COLUMN_CLAIM_RE = re.compile(
     rf"\bin\s+entr(?:y|ies)\s+[0-9A-Z]+(?:\s*(?:,|and)\s*[0-9A-Z]+)*,?\s+"
     rf"in\s+{_UK_COLUMN_TOKEN_PATTERN}\b",
@@ -1335,9 +1342,14 @@ def _uk_table_target_column_text_patch_claim(
     column_index = _uk_ordinal_to_int(column_token or "")
     if column_index is None or column_index < 1:
         return None
-    fragments = parse_fragment_substitution(text)
-    original = str(fragments[0].get("original") or "").strip() if len(fragments) == 1 else ""
-    replacement = str(fragments[0].get("replacement") or "").strip() if len(fragments) == 1 else ""
+    references_match = _UK_TABLE_COLUMN_REFERENCES_SUBSTITUTION_RE.search(text)
+    if references_match is not None:
+        original = " ".join(references_match.group("original").split()).strip(" ,;.")
+        replacement = " ".join(references_match.group("replacement").split()).strip()
+    else:
+        fragments = parse_fragment_substitution(text)
+        original = str(fragments[0].get("original") or "").strip() if len(fragments) == 1 else ""
+        replacement = str(fragments[0].get("replacement") or "").strip() if len(fragments) == 1 else ""
     table_column_text_action = (
         "delete_text"
         if original
@@ -1346,7 +1358,7 @@ def _uk_table_target_column_text_patch_claim(
         else "replace_text"
     )
     if not original:
-        quoted = r"[“\"'‘](?P<{name}>.*?)[”\"'’]"
+        quoted = _UK_NAMED_QUOTED_PAYLOAD_PATTERN
         words_before_column_match = re.search(
             r"\bfor\s+(?:the\s+)?words?\s+"
             + quoted.format(name="original")
@@ -1359,18 +1371,6 @@ def _uk_table_target_column_text_patch_claim(
         if words_before_column_match is not None:
             original = " ".join(words_before_column_match.group("original").split()).strip()
             replacement = " ".join(words_before_column_match.group("replacement").split()).strip()
-    if not original:
-        quoted = r"[“\"'‘](?P<{name}>.*?)[”\"'’]"
-        references_match = re.search(
-            r"\bfor\s+(?:the\s+)?references?\s+to\s+(?P<original>.+?)\s+"
-            r"substitute[ds]?\s+"
-            + quoted.format(name="replacement"),
-            text,
-            re.I,
-        )
-        if references_match is not None:
-            original = " ".join(references_match.group("original").split()).strip(" ,;.")
-            replacement = " ".join(references_match.group("replacement").split()).strip()
     if not original:
         quoted_omission_match = re.search(
             r"\b(?:omit|delete)\s+[“\"'‘](?P<original>.*?)[”\"'’]",

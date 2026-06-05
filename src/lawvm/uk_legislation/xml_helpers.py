@@ -9,6 +9,10 @@ from lawvm.core.ir import IRNode
 from lawvm.uk_legislation.uk_grafter import _LEG_NS
 
 
+_TEXT_CONTENT_CACHE: dict[ET._Element, str] = {}
+_DIRECT_STRUCTURAL_NUM_CACHE: dict[ET._Element, str] = {}
+
+
 @lru_cache(maxsize=4096)
 def _local_tag_name(tag: str) -> str:
     return tag.split("}", 1)[1] if "}" in tag else tag
@@ -23,6 +27,9 @@ def _tag(el: ET._Element) -> str:
 
 def _text_content(el: ET._Element) -> str:
     """Recursively collect normalised text."""
+    cached = _TEXT_CONTENT_CACHE.get(el)
+    if cached is not None:
+        return cached
     parts: list[str] = []
     def collect(node: ET._Element, *, include_tail: bool) -> None:
         if node.text:
@@ -33,19 +40,35 @@ def _text_content(el: ET._Element) -> str:
             parts.append(node.tail)
 
     collect(el, include_tail=False)
-    return " ".join(" ".join(parts).split())
+    text = " ".join(" ".join(parts).split())
+    _TEXT_CONTENT_CACHE[el] = text
+    return text
 
 
 def _direct_structural_num(el: ET._Element) -> str:
     """Return the node's own structural number, not a descendant's number."""
+    cached = _DIRECT_STRUCTURAL_NUM_CACHE.get(el)
+    if cached is not None:
+        return cached
     num_el = el.find(f"./{{{_LEG_NS}}}Pnumber")
     if num_el is None:
         num_el = el.find(f"./{{{_LEG_NS}}}Number")
     if num_el is None and _tag(el) == "Schedule":
         num_el = el.find(f".//{{{_LEG_NS}}}Number")
     if num_el is None:
+        _DIRECT_STRUCTURAL_NUM_CACHE[el] = ""
         return ""
-    return _text_content(num_el)
+    num = _text_content(num_el)
+    _DIRECT_STRUCTURAL_NUM_CACHE[el] = num
+    return num
+
+
+def evict_xml_helper_caches(root: ET._Element) -> None:
+    """Evict source-root scoped text/number caches for an archived XML root."""
+    for cache in (_TEXT_CONTENT_CACHE, _DIRECT_STRUCTURAL_NUM_CACHE):
+        for el in tuple(cache):
+            if el is root or el.getroottree().getroot() is root:
+                cache.pop(el, None)
 
 
 def _structural_children(el: ET._Element) -> tuple[ET._Element, ...]:

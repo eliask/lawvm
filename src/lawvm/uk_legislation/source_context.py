@@ -49,7 +49,12 @@ from lawvm.uk_legislation.source_state import (
     uk_source_state_wire_tuple,
 )
 from lawvm.uk_legislation.uk_grafter import _LEG_NS, _clean_num
-from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag, _text_content
+from lawvm.uk_legislation.xml_helpers import (
+    _direct_structural_num,
+    _tag,
+    _text_content,
+    evict_xml_helper_caches,
+)
 
 _COMPOUND_REFERENCE_KEYWORD_RE = re.compile(r"\b(?:Sch(?:edule)?|Part|Pt)\b", re.I)
 _COMPOUND_REFERENCE_LEADING_BODY_RE = re.compile(
@@ -193,6 +198,7 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
       - table_sources caches: fee-table index, rowspan rows, and repeal-extent
         table hold root
       - table_selectors caches: keys are root descendant elements
+      - xml_helpers caches: keys are root descendant elements
     Explicit removal breaks these cycles immediately, making root eligible for
     reference-count GC.
     """
@@ -229,6 +235,7 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
         evict_table_selector_caches,
     )
     evict_table_selector_caches(root)
+    evict_xml_helper_caches(root)
 
 
 def _source_parent_map(

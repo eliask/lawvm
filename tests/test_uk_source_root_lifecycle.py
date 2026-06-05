@@ -59,6 +59,12 @@ from lawvm.uk_legislation.table_sources import (
     _UK_TABLE_ROWSPAN_ROWS_CACHE,
     _uk_table_rows_with_rowspans,
 )
+from lawvm.uk_legislation.xml_helpers import (
+    _DIRECT_STRUCTURAL_NUM_CACHE,
+    _TEXT_CONTENT_CACHE,
+    _direct_structural_num,
+    _text_content,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -316,6 +322,33 @@ def test_table_rowspan_rows_cache_evicts_with_source_root() -> None:
 
     evict_source_root_caches(other_root)
     assert other_table not in _UK_TABLE_ROWSPAN_ROWS_CACHE
+
+
+def test_xml_helper_caches_evict_with_source_root() -> None:
+    root = _make_root()
+    other_root = _make_root(_ANOTHER_XML)
+    root_section = next(el for el in root.iter() if el.get("id") == "section-1")
+    other_section = next(el for el in other_root.iter() if el.get("id") == "section-10")
+
+    assert _text_content(root_section)
+    assert _direct_structural_num(root_section) == ""
+    assert _text_content(other_section)
+    assert _direct_structural_num(other_section) == ""
+    assert root_section in _TEXT_CONTENT_CACHE
+    assert root_section in _DIRECT_STRUCTURAL_NUM_CACHE
+    assert other_section in _TEXT_CONTENT_CACHE
+    assert other_section in _DIRECT_STRUCTURAL_NUM_CACHE
+
+    evict_source_root_caches(root)
+
+    assert root_section not in _TEXT_CONTENT_CACHE
+    assert root_section not in _DIRECT_STRUCTURAL_NUM_CACHE
+    assert other_section in _TEXT_CONTENT_CACHE
+    assert other_section in _DIRECT_STRUCTURAL_NUM_CACHE
+
+    evict_source_root_caches(other_root)
+    assert other_section not in _TEXT_CONTENT_CACHE
+    assert other_section not in _DIRECT_STRUCTURAL_NUM_CACHE
 
 
 def test_source_lane_predicate_caches_evict_with_source_root() -> None:
