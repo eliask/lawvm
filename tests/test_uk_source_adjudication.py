@@ -1418,8 +1418,8 @@ def test_classify_uk_manual_compile_frontier_uses_parent_grouped_substitution_co
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
-    assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
+    assert result["status"] == "source_insufficient"
+    assert result["rule_id"] == "uk_manual_frontier_source_payload_without_instruction_context"
 
 
 def test_classify_uk_manual_compile_frontier_does_not_infer_grouped_substitution_without_parent_action() -> None:

@@ -2757,14 +2757,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
         and _has_source_parent_grouped_substitution_context(lowering_rows)
     ):
         return {
-            "status": "manual_compile_candidate",
-            "rule_id": "uk_manual_frontier_parser_or_extraction_candidate",
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_source_payload_without_instruction_context",
             "reason": (
                 "The extracted child source is only a grouped-substitution "
                 "payload fragment, but the source parent supplies the target "
-                "list and substitution action; a claim or future parser must "
-                "prove the exact child target, quoted preimage, replacement "
-                "payload, and mutation boundary before replay."
+                "list and substitution action; replay requires the complete "
+                "parent instruction and payload split before lowering."
             ),
         }
 
