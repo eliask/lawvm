@@ -16772,6 +16772,46 @@ def test_compile_definition_child_substitution_uses_bounded_definition_child_sel
         in ops[0].provenance_tags
     )
 
+    base = IRStatute(
+        statute_id="ukpga/2022/32",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="36",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "“review partner” means a local authority; "
+                                "a clinical commissioning group; "
+                                "a Health Authority; a person; "
+                                "“other” means another value;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    assert replayed.body.children[0].children[0].text == (
+        "“review partner” means a local authority; "
+        "a clinical commissioning group; an integrated care board, or; "
+        "a person; “other” means another value;"
+    )
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_definition_child_flat_ordinal_text_rewrite_applied"
+    ]
+
 
 def test_compile_definition_child_range_substitution_lowers_same_label_children() -> None:
     extracted_el = ET.fromstring(
@@ -17893,20 +17933,22 @@ def test_compile_words_inserted_after_definition_child_with_block_payload() -> N
         lowering_rejections_out=lowering_rejections,
     )
 
-    assert lowering_rejections == []
+    assert [
+        record["rule_id"]
+        for record in lowering_rejections
+        if record["rule_id"] == "uk_effect_definition_child_structural_sibling_insert_lowered"
+    ] == ["uk_effect_definition_child_structural_sibling_insert_lowered"]
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
-    assert ops[0].target.path == (("section", "47"), ("subsection", "6"))
-    assert ops[0].text_patch is not None
-    assert (
-        ops[0].text_patch.selector.match_text
-        == "TEXT_AFTER_DEFINITION_PARAGRAPH_local authority_AFTER_a"
-    )
-    assert ops[0].text_patch.replacement == "a corporate joint committee;"
-    assert (
-        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_after_definition_child_text_insertion_patch"
-        in ops[0].provenance_tags
-    )
+    assert ops[0].action is StructuralAction.INSERT
+    assert str(ops[0].target) == "section:47/subsection:6/item:aa"
+    assert ops[0].witness_rule_id == "uk_effect_definition_child_structural_sibling_insert_lowered"
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.ITEM
+    assert ops[0].payload.label == "aa"
+    assert ops[0].payload.text == "a corporate joint committee;"
+    assert ops[0].payload.attrs["definition_term"] == "local authority"
+    assert ops[0].payload.attrs["definition_child_label"] == "aa"
+    assert ops[0].payload.attrs["source_anchor_child_label"] == "a"
 
     base = IRStatute(
         statute_id="asc/2021/1",
@@ -17927,6 +17969,26 @@ def test_compile_words_inserted_after_definition_child_with_block_payload() -> N
                                 "In this section- “local authority” means- "
                                 "a principal council; a community council;"
                             ),
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    text="a principal council;",
+                                    attrs={
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                        "definition_term": "local authority",
+                                        "definition_child_label": "a",
+                                    },
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    text="a community council;",
+                                    attrs={
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                        "definition_term": "local authority",
+                                        "definition_child_label": "b",
+                                    },
+                                ),
+                            ),
                         ),
                     ),
                 ),
@@ -17935,12 +17997,17 @@ def test_compile_words_inserted_after_definition_child_with_block_payload() -> N
         supplements=(),
     )
 
-    replayed = replay_uk_ops(base, ops)
-    replayed_text = replayed.body.children[0].children[0].text
-    assert replayed_text == (
-        "In this section- “local authority” means- "
-        "a principal council; a corporate joint committee; a community council;"
-    )
+    adjudications: list[CompileAdjudication] = []
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+    subsection = replayed.body.children[0].children[0]
+    assert [
+        child.attrs.get("definition_child_label")
+        for child in subsection.children
+        if child.attrs.get("definition_term") == "local authority"
+    ] == ["a", "aa", "b"]
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_definition_child_structural_sibling_insert_applied"
+    ]
 
 
 def test_compile_source_carried_definition_child_insert_from_parent_context() -> None:
@@ -54548,7 +54615,7 @@ def test_source_pathology_filter_observes_out_of_scope_compiled_ops() -> None:
             "blocking": False,
             "strict_disposition": "record",
             "quirks_disposition": "record",
-            "owner_phase": "source_pathology_manual_frontier",
+            "owner_phase": "effect_metadata_frontend",
             "source_pathology": "as_if_application_modification_unsupported",
             "compiled_op_count": 1,
         }
@@ -65343,7 +65410,7 @@ def test_source_pathology_out_of_scope_reclassifies_no_supported_action_nonblock
             "nonblocking_reclassification_rule_id": "uk_effect_nonreplay_lowering_observed",
             "replay_relevance": "source_pathology_out_of_scope",
             "source_pathology": "as_if_application_modification_unsupported",
-            "owner_phase": "source_pathology_manual_frontier",
+            "owner_phase": "effect_metadata_frontend",
             "reclassification_reason": (
                 "Source-pathology classification proves this row is outside direct "
                 "UK text/tree replay; the lowering diagnostic is evidence, not a "

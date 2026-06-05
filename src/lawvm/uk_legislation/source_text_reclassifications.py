@@ -58,6 +58,7 @@ UK_EFFECT_WORD_SUBSTITUTION_STRUCTURAL_CHILD_REPLACEMENT_RULE_ID = (
 UK_EFFECT_WORD_SUBSTITUTION_PARENT_CHILD_REPLACEMENT_RULE_ID = (
     "uk_effect_word_substitution_parent_child_replacement_reclassified"
 )
+_DEFINITION_CONTEXT_RE = re.compile(r"\bin\s+the\s+definition\s+of\b", flags=re.I)
 
 
 def _word_level_structural_subsection_omission(
@@ -174,6 +175,8 @@ def _word_level_structural_child_substitution(
         return None
     text = " ".join((extracted_text or "").split()).strip()
     if not text:
+        return None
+    if _DEFINITION_CONTEXT_RE.search(text) is not None:
         return None
     match = _WORD_LEVEL_STRUCTURAL_CHILD_SUBSTITUTION_RE.search(text)
     if match is None:
