@@ -313,6 +313,14 @@ def _effect_can_emit_requested_statuses(
     if requested_statuses == {"needs_public_review_removed_phrase_still_present"}:
         if not removal_effect:
             return False
+        affected = effect.affected_provisions.lower().strip()
+        if "heading" in affected:
+            return False
+        if current_surface.surface == "whole_current_xml" and affected not in {
+            "act",
+            "whole act",
+        }:
+            return False
         if effect.effect_id and effect.effect_id in current_surface.xml_or_text:
             return False
         return re.search(r"<Repeal\b", current_surface.xml_or_text) is None

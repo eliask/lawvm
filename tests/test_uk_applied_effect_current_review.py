@@ -454,6 +454,74 @@ def test_removed_phrase_status_prefilter_skips_non_removal_source_extraction(
     assert rows == []
 
 
+def test_removed_phrase_status_prefilter_skips_heading_targets(monkeypatch) -> None:
+    effect = _effect(effect_type="words omitted")
+    effect = UKEffectRecord(
+        **{
+            **effect.__dict__,
+            "affected_provisions": "Sch. 7 para. 22 heading",
+        }
+    )
+    monkeypatch.setattr(
+        review,
+        "load_effects_for_statute_from_archive",
+        lambda statute_id, archive: [effect],
+    )
+
+    def _unexpected_source_selection(**kwargs):
+        raise AssertionError("heading facet should be prefiltered")
+
+    monkeypatch.setattr(review, "select_source_for_effect", _unexpected_source_selection)
+
+    rows = review.build_review_rows(
+        ["ukpga/2020/1"],
+        archive=_Archive(
+            b"<Legislation><P1 eId=\"section-1\">removed phrase in body</P1>"
+            + (b" current context" * 20)
+            + b"</Legislation>"
+        ),
+        include_statuses=["needs_public_review_removed_phrase_still_present"],
+        today=date(2026, 6, 5),
+    )
+
+    assert rows == []
+
+
+def test_removed_phrase_status_prefilter_skips_non_act_whole_xml_fallback(
+    monkeypatch,
+) -> None:
+    effect = _effect(effect_type="words omitted")
+    effect = UKEffectRecord(
+        **{
+            **effect.__dict__,
+            "affected_provisions": "Annex 5 Pt. C Final Table",
+        }
+    )
+    monkeypatch.setattr(
+        review,
+        "load_effects_for_statute_from_archive",
+        lambda statute_id, archive: [effect],
+    )
+
+    def _unexpected_source_selection(**kwargs):
+        raise AssertionError("unresolved non-Act target should be prefiltered")
+
+    monkeypatch.setattr(review, "select_source_for_effect", _unexpected_source_selection)
+
+    rows = review.build_review_rows(
+        ["ukpga/2020/1"],
+        archive=_Archive(
+            b"<Legislation><P1 eId=\"section-9\">removed phrase elsewhere</P1>"
+            + (b" current context" * 20)
+            + b"</Legislation>"
+        ),
+        include_statuses=["needs_public_review_removed_phrase_still_present"],
+        today=date(2026, 6, 5),
+    )
+
+    assert rows == []
+
+
 def test_target_url_parser_preserves_alphanumeric_labels_and_ranges() -> None:
     assert review._affected_provision_eid_candidates("Art. 2A-2C") == (
         "article-2A",
