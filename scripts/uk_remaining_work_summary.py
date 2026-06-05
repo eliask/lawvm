@@ -14,6 +14,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+from lawvm.core.candidate_set_certificate import CandidateSetCertificate
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frontier_work_item import FrontierWorkItem
 
@@ -75,6 +76,7 @@ class UKRemainingWorkItem:
     forbidden_shortcuts: tuple[str, ...]
     execution_authorization: Mapping[str, Any]
     frontier_work_item: Mapping[str, Any]
+    candidate_set_certificate: Mapping[str, Any]
 
 
 @dataclass(frozen=True)
@@ -548,6 +550,14 @@ def _remaining_work_item(
             replay_only_eid_samples=replay_only_eid_samples,
             oracle_only_eid_samples=oracle_only_eid_samples,
         ).to_dict(),
+        candidate_set_certificate=_candidate_set_certificate(
+            spec=spec,
+            row=row,
+            statute_id=statute_id,
+            missing_proofs=missing_proofs,
+            replay_only_eid_samples=replay_only_eid_samples,
+            oracle_only_eid_samples=oracle_only_eid_samples,
+        ).to_dict(),
     )
 
 
@@ -634,6 +644,56 @@ def _frontier_work_item(
             "priority_rank": spec.priority_rank,
             "next_action": spec.next_action,
             "source_frontier_reason": str(row.get("source_chain_frontier_reason") or ""),
+        },
+    )
+
+
+def _candidate_set_certificate(
+    *,
+    spec: _LaneSpec,
+    row: Mapping[str, Any],
+    statute_id: str,
+    missing_proofs: tuple[str, ...],
+    replay_only_eid_samples: tuple[str, ...],
+    oracle_only_eid_samples: tuple[str, ...],
+) -> CandidateSetCertificate:
+    candidate_ids = tuple(
+        dict.fromkeys((*oracle_only_eid_samples, *replay_only_eid_samples))
+    )
+    declared_count = max(
+        len(candidate_ids),
+        _int(row.get("n_only_in_oracle")) + _int(row.get("n_only_in_replayed")),
+    )
+    missing_count = max(0, declared_count - len(candidate_ids))
+    if declared_count == 0:
+        completeness_status = "unavailable"
+    elif missing_count:
+        completeness_status = "partial"
+    else:
+        completeness_status = "complete"
+    return CandidateSetCertificate(
+        scope_id=f"uk-remaining:{spec.lane_id}:{statute_id}",
+        candidate_set_kind="remaining_work_residual_eid_samples",
+        phase=spec.owner_phase,
+        rule_id=f"uk_remaining_work_{spec.lane_id}_residual_sample_certificate",
+        reason=(
+            "Residual EID samples bound review scope only; they do not prove "
+            "candidate completeness or authorize replay."
+        ),
+        completeness_status=completeness_status,
+        candidate_count=declared_count,
+        candidate_ids=candidate_ids,
+        missing_candidate_count=missing_count,
+        selected_candidate_ids=(),
+        blocker_counts={proof: 1 for proof in missing_proofs},
+        blocker_families=missing_proofs,
+        next_promotion_allowed=False,
+        next_promotion_requires=missing_proofs or ("frontier_review",),
+        detail={
+            "lane_id": spec.lane_id,
+            "triage_bucket": str(row.get("triage_bucket") or ""),
+            "oracle_only_sample_count": len(oracle_only_eid_samples),
+            "replay_only_sample_count": len(replay_only_eid_samples),
         },
     )
 

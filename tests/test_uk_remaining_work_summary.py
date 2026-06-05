@@ -221,6 +221,22 @@ def test_lane_filtered_items_are_non_executable_work_queue_rows(tmp_path) -> Non
     )
     assert frontier["target_witness"]["oracle_only_eid_samples"] == ["regulation-10"]
     assert frontier["compare_witness"]["n_only_in_oracle"] == 8
+    candidate_set = item["candidate_set_certificate"]
+    assert candidate_set["scope_id"] == item["work_item_id"]
+    assert (
+        candidate_set["candidate_set_kind"]
+        == "remaining_work_residual_eid_samples"
+    )
+    assert candidate_set["phase"] == "effect_metadata_frontend"
+    assert candidate_set["completeness_status"] == "partial"
+    assert candidate_set["candidate_count"] == 8
+    assert candidate_set["candidate_ids"] == ["regulation-10"]
+    assert candidate_set["missing_candidate_count"] == 7
+    assert candidate_set["selected_candidate_ids"] == []
+    assert candidate_set["blocker_counts"] == {"source_identity": 1}
+    assert candidate_set["blocker_families"] == ["source_identity"]
+    assert candidate_set["next_promotion_allowed"] is False
+    assert candidate_set["next_promotion_requires"] == ["source_identity"]
 
 
 def test_item_export_rejects_unknown_lane(tmp_path) -> None:
