@@ -117,6 +117,25 @@ def test_base_text_materialization_gap_is_compare_projection_artifact() -> None:
     assert row.agreement_residual["detail"]["base_text_witness_present"] is True
 
 
+def test_short_id_targets_are_reviewed_as_target_elements() -> None:
+    row = review.review_target(
+        statute_id="ukpga/1967/45",
+        target="schedule-1-paragraph-1",
+        base_xml=_xml(""),
+        oracle_xml=_xml(
+            """
+            <P1 id="schedule-1-chapter-I-crossheading-1_paragraph-1" shortId="schedule-1-paragraph-1">
+              <Pnumber>1</Pnumber>
+              <P1para><Text>The present Law shall apply.</Text></P1para>
+            </P1>
+            """
+        ),
+    )
+
+    assert row.oracle_target_present is True
+    assert row.review_status == "manual_review_candidate"
+
+
 def test_repeal_commentary_is_display_convention() -> None:
     row = review.review_target(
         statute_id="ukpga/1986/2",

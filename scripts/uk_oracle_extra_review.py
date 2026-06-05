@@ -352,12 +352,15 @@ def _parse_xml(xml: bytes | None) -> ET._Element:
 def _find_id(root: ET._Element | None, target: str) -> ET._Element | None:
     if root is None:
         return None
-    found = root.xpath("//*[@id=$target or @eId=$target]", target=target)
+    found = root.xpath(
+        "//*[@id=$target or @eId=$target or @shortId=$target]", target=target
+    )
     if not found:
         lowered = target.lower()
         found = root.xpath(
             "//*[translate(@id, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')=$target "
-            "or translate(@eId, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')=$target]",
+            "or translate(@eId, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')=$target "
+            "or translate(@shortId, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')=$target]",
             target=lowered,
         )
     return found[0] if found else None
