@@ -37,7 +37,7 @@ import xml.etree.ElementTree as ET
 import zlib
 from collections import Counter
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -627,6 +627,63 @@ def _multiple_choice_base_locator(locator: str) -> str:
     return locator.removesuffix("/data.xml")
 
 
+def _multiple_choice_manifest_locator(base_locator: str) -> str:
+    digest = hashlib.sha256(base_locator.encode("utf-8")).hexdigest()[:24]
+    return f"leg://source-frontier/uk/multiple-choices/{digest}.json"
+
+
+def _store_multiple_choice_manifest(
+    archive: Farchive,
+    *,
+    base_locator: str,
+    ambiguity_locators: Iterable[str],
+    candidate_urls: Iterable[str],
+) -> None:
+    urls = tuple(sorted({url for url in candidate_urls if url}))
+    if not urls:
+        return
+    available = _available_candidate_source_count(archive, urls)
+    payload = {
+        "schema": "lawvm.uk.multiple_choice_candidate_manifest.v1",
+        "truth_claim": "candidate_leaf_witnesses_not_source_selection",
+        "base_locator": base_locator,
+        "ambiguity_locators": sorted({loc for loc in ambiguity_locators if loc}),
+        "candidate_urls": list(urls),
+        "candidate_source_count": len(urls),
+        "candidate_sources_available": available,
+        "source_selection_claims": False,
+        "replay_claims": False,
+        "safe_default": "keep_ambiguous_locator_non_authoritative",
+        "forbidden_shortcuts": [
+            "multiple_choice_first_candidate_as_source_truth",
+            "candidate_leaf_presence_as_replay_authorization",
+            "ambiguous_locator_as_replay_source",
+        ],
+    }
+    archive.store(
+        _multiple_choice_manifest_locator(base_locator),
+        json.dumps(payload, sort_keys=True).encode("utf-8"),
+        storage_class="json",
+    )
+
+
+def _load_multiple_choice_manifest_candidate_urls(
+    archive: Farchive,
+    base_locator: str,
+) -> tuple[str, ...]:
+    locator = _multiple_choice_manifest_locator(base_locator)
+    if not archive.has(locator):
+        return ()
+    try:
+        payload = json.loads(archive.get(locator).decode("utf-8"))
+    except (AttributeError, json.JSONDecodeError):
+        return ()
+    values = payload.get("candidate_urls") if isinstance(payload, dict) else None
+    if not isinstance(values, list):
+        return ()
+    return tuple(str(value) for value in values if str(value))
+
+
 def do_repair_multiple_choices(
     archive: Farchive,
     http: _HTTP,
@@ -699,6 +756,12 @@ def do_repair_multiple_choices(
                 archive,
                 candidate_urls,
             )
+            _store_multiple_choice_manifest(
+                archive,
+                base_locator=_multiple_choice_base_locator(loc),
+                ambiguity_locators=locs,
+                candidate_urls=candidate_urls,
+            )
             group_repaired = True
             break
         if group_failed:
@@ -726,6 +789,72 @@ def do_repair_multiple_choices(
         "direct_sources": n_direct_sources,
         "no_candidates": n_no_candidates,
         "failed": n_failed,
+    }
+
+
+def _multiple_choice_candidate_source_summary(archive: Farchive) -> dict[str, int]:
+    """Summarize whether cached ambiguity markers have fetched leaf witnesses.
+
+    Multiple Choices locators remain non-authoritative even when every leaf is
+    cached.  This summary is acquisition evidence only: it answers whether the
+    candidate source witnesses are present without selecting any leaf for replay.
+    """
+    grouped: dict[str, set[str]] = {}
+    no_candidate_groups: set[str] = set()
+    ambiguous_locators = 0
+    for loc in archive.locators("%/data.xml"):
+        if _cached_source_xml_status(archive, loc) is not UKSourceStatus.MULTIPLE_CHOICES:
+            continue
+        ambiguous_locators += 1
+        blob = archive.get(loc)
+        base = _multiple_choice_base_locator(loc)
+        candidate_urls = set(
+            uk_multiple_choice_candidate_data_urls(
+                blob,
+                include_current=True,
+                include_enacted=True,
+            )
+        )
+        if not candidate_urls:
+            candidate_urls.update(
+                _load_multiple_choice_manifest_candidate_urls(archive, base)
+            )
+        if not candidate_urls:
+            no_candidate_groups.add(base)
+            grouped.setdefault(base, set())
+            continue
+        grouped.setdefault(base, set()).update(candidate_urls)
+
+    candidate_source_urls = 0
+    candidate_sources_available = 0
+    groups_with_candidates = 0
+    groups_fully_available = 0
+    groups_partially_available = 0
+    groups_without_available_candidates = 0
+    for urls in grouped.values():
+        if not urls:
+            continue
+        groups_with_candidates += 1
+        available = _available_candidate_source_count(archive, tuple(sorted(urls)))
+        candidate_source_urls += len(urls)
+        candidate_sources_available += available
+        if available == len(urls):
+            groups_fully_available += 1
+        elif available > 0:
+            groups_partially_available += 1
+        else:
+            groups_without_available_candidates += 1
+
+    return {
+        "ambiguous_locators": ambiguous_locators,
+        "ambiguous_groups": len(grouped),
+        "groups_with_candidates": groups_with_candidates,
+        "candidate_source_urls": candidate_source_urls,
+        "candidate_sources_available": candidate_sources_available,
+        "groups_fully_available": groups_fully_available,
+        "groups_partially_available": groups_partially_available,
+        "groups_without_available_candidates": groups_without_available_candidates,
+        "groups_without_candidate_urls": len(no_candidate_groups),
     }
 
 
@@ -758,6 +887,24 @@ def do_stats(archive: Farchive) -> None:
         print(
             "  Source states: "
             + ", ".join(f"{k}={v:,}" for k, v in sorted(source_states.items()))
+        )
+    multiple_choice_summary = _multiple_choice_candidate_source_summary(archive)
+    if multiple_choice_summary["ambiguous_locators"]:
+        print(
+            "  Multiple Choices leaves: "
+            f"ambiguous_locators={multiple_choice_summary['ambiguous_locators']:,}, "
+            f"ambiguous_groups={multiple_choice_summary['ambiguous_groups']:,}, "
+            f"candidate_urls={multiple_choice_summary['candidate_source_urls']:,}, "
+            f"candidate_sources_available="
+            f"{multiple_choice_summary['candidate_sources_available']:,}, "
+            f"groups_fully_available="
+            f"{multiple_choice_summary['groups_fully_available']:,}, "
+            f"groups_partially_available="
+            f"{multiple_choice_summary['groups_partially_available']:,}, "
+            f"groups_without_available_candidates="
+            f"{multiple_choice_summary['groups_without_available_candidates']:,}, "
+            f"groups_without_candidate_urls="
+            f"{multiple_choice_summary['groups_without_candidate_urls']:,}"
         )
     affecting = _scan_affecting_acts(archive)
     missing = sum(

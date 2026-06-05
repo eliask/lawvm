@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import json
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -376,7 +377,11 @@ def test_do_repair_multiple_choices_scans_cached_markers_for_leaf_candidates() -
         "failed": 0,
     }
     assert http.calls == [current_url, *leaf_urls]
-    assert archive.store_calls == [(url, leaf_xml, "xml") for url in leaf_urls]
+    assert archive.store_calls[:4] == [(url, leaf_xml, "xml") for url in leaf_urls]
+    assert archive.store_calls[4][0] == acquire_uk_corpus._multiple_choice_manifest_locator(
+        current_url.removesuffix("/data.xml")
+    )
+    assert archive.store_calls[4][2] == "json"
 
 
 def test_do_repair_multiple_choices_recurses_past_self_linking_candidate() -> None:
@@ -428,7 +433,11 @@ def test_do_repair_multiple_choices_recurses_past_self_linking_candidate() -> No
         "failed": 0,
     }
     assert http.calls == [current_url, self_enacted_url, *leaf_urls]
-    assert archive.store_calls == [(url, leaf_xml, "xml") for url in leaf_urls]
+    assert archive.store_calls[:2] == [(url, leaf_xml, "xml") for url in leaf_urls]
+    assert archive.store_calls[2][0] == acquire_uk_corpus._multiple_choice_manifest_locator(
+        current_url.removesuffix("/data.xml")
+    )
+    assert archive.store_calls[2][2] == "json"
 
 
 def test_do_repair_multiple_choices_reports_already_available_leaf_candidates() -> None:
@@ -472,7 +481,111 @@ def test_do_repair_multiple_choices_reports_already_available_leaf_candidates() 
         "failed": 0,
     }
     assert http.calls == [current_url]
-    assert archive.store_calls == []
+    manifest_locator = acquire_uk_corpus._multiple_choice_manifest_locator(
+        current_url.removesuffix("/data.xml")
+    )
+    assert archive.store_calls == [
+        (manifest_locator, archive.get(manifest_locator), "json")
+    ]
+    manifest = json.loads(cast(bytes, archive.get(manifest_locator)).decode("utf-8"))
+    assert manifest["truth_claim"] == "candidate_leaf_witnesses_not_source_selection"
+    assert manifest["source_selection_claims"] is False
+    assert manifest["replay_claims"] is False
+    assert manifest["candidate_source_count"] == 4
+    assert manifest["candidate_sources_available"] == 4
+
+
+def test_multiple_choice_candidate_source_summary_counts_available_leaves() -> None:
+    statute_id = "ukpga/1955/18"
+    current_url = f"{acquire_uk_corpus._LEG_BASE}/{statute_id}/data.xml"
+    leaf_urls = [
+        "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/enacted/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/enacted/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/4-5/18/data.xml",
+    ]
+    ambiguity_blob = b"""<div id="content">
+    <h1>Multiple Choices</h1>
+    <p>The link that you've followed could mean either of the following:</p>
+    <a href="/ukpga/Eliz2/3-4/18/enacted">Army Act 1955 (repealed)</a>
+    <a href="/ukpga/Eliz2/4-5/18/enacted">Aliens' Employment Act 1955</a>
+    </div>"""
+    leaf_xml = b"<Legislation>" + (b"cached-leaf" * 40) + b"</Legislation>"
+    archive = _FakeArchive()
+    archive.store(current_url, ambiguity_blob)
+    for url in leaf_urls:
+        archive.store(url, leaf_xml)
+
+    assert acquire_uk_corpus._multiple_choice_candidate_source_summary(
+        cast(Any, archive)
+    ) == {
+        "ambiguous_locators": 1,
+        "ambiguous_groups": 1,
+        "groups_with_candidates": 1,
+        "candidate_source_urls": 4,
+        "candidate_sources_available": 4,
+        "groups_fully_available": 1,
+        "groups_partially_available": 0,
+        "groups_without_available_candidates": 0,
+        "groups_without_candidate_urls": 0,
+    }
+
+
+def test_multiple_choice_candidate_source_summary_keeps_partial_gaps_visible() -> None:
+    statute_id = "ukpga/Geo5Sess2/13/4"
+    current_url = f"{acquire_uk_corpus._LEG_BASE}/{statute_id}/data.xml"
+    available_leaf = f"{acquire_uk_corpus._LEG_BASE}/ukpga/Geo5/13/4/data.xml"
+    ambiguity_blob = b"""<div id="content">
+    <h1>Multiple Choices</h1>
+    <p>The link that you've followed could mean either of the following:</p>
+    <a href="/ukpga/Geo5Sess2/13/4">Trade Facilities and Loans Guarantee Act 1922</a>
+    <a href="/ukpga/Geo5/13/4">Trade Facilities and Loans Guarantee Act 1922</a>
+    </div>"""
+    archive = _FakeArchive()
+    archive.store(current_url, ambiguity_blob)
+    archive.store(available_leaf, b"<Legislation>" + (b"leaf" * 40) + b"</Legislation>")
+
+    summary = acquire_uk_corpus._multiple_choice_candidate_source_summary(
+        cast(Any, archive)
+    )
+
+    assert summary["ambiguous_locators"] == 1
+    assert summary["candidate_source_urls"] == 4
+    assert summary["candidate_sources_available"] == 1
+    assert summary["groups_fully_available"] == 0
+    assert summary["groups_partially_available"] == 1
+    assert summary["groups_without_available_candidates"] == 0
+
+
+def test_multiple_choice_candidate_source_summary_uses_manifest_for_short_markers() -> None:
+    statute_id = "ukpga/1955/18"
+    current_url = f"{acquire_uk_corpus._LEG_BASE}/{statute_id}/data.xml"
+    base_locator = current_url.removesuffix("/data.xml")
+    leaf_urls = [
+        "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/enacted/data.xml",
+        "https://www.legislation.gov.uk/ukpga/Eliz2/3-4/18/data.xml",
+    ]
+    leaf_xml = b"<Legislation>" + (b"cached-leaf" * 40) + b"</Legislation>"
+    archive = _FakeArchive()
+    archive.store(current_url, b"HTTP 300 Multiple Choices")
+    for url in leaf_urls:
+        archive.store(url, leaf_xml)
+    acquire_uk_corpus._store_multiple_choice_manifest(
+        cast(Any, archive),
+        base_locator=base_locator,
+        ambiguity_locators=[current_url],
+        candidate_urls=leaf_urls,
+    )
+
+    summary = acquire_uk_corpus._multiple_choice_candidate_source_summary(
+        cast(Any, archive)
+    )
+
+    assert summary["ambiguous_locators"] == 1
+    assert summary["candidate_source_urls"] == 2
+    assert summary["candidate_sources_available"] == 2
+    assert summary["groups_fully_available"] == 1
+    assert summary["groups_without_candidate_urls"] == 0
 
 
 def test_do_repair_multiple_choices_reports_no_candidate_pages() -> None:
