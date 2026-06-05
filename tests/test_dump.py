@@ -178,6 +178,39 @@ def test_source_dump_parse_routes_j_uk_to_farchive(monkeypatch, tmp_path) -> Non
     assert "Native source." in bundle["xml"]
 
 
+def test_source_dump_uk_parse_uses_shared_roman_label_range(monkeypatch, tmp_path) -> None:
+    xml = b"""<Legislation xmlns='http://www.legislation.gov.uk/namespaces/legislation'>
+  <Primary><Body><P1><Pnumber>LX</Pnumber><P1para><Text>Roman sixty.</Text></P1para></P1></Body></Primary>
+</Legislation>
+"""
+    db_path = tmp_path / "uk_legislation.farchive"
+    db_path.write_bytes(b"")
+
+    class DummyArchive:
+        def __init__(self, path):
+            self.path = path
+
+        def get(self, locator: str) -> bytes | None:
+            return xml if locator.endswith("/ukpga/2002/30/enacted/data.xml") else None
+
+        def close(self) -> None:
+            return None
+
+    fake_farchive = types.ModuleType("farchive")
+    fake_farchive.Farchive = DummyArchive
+    monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
+
+    bundle = source_dump.build_uk_source_dump(
+        "ukpga/2002/30",
+        "section:60",
+        db_path=db_path,
+    )
+
+    assert bundle["selected_kind"] == "P1"
+    assert bundle["selected_label"] == "LX"
+    assert "Roman sixty." in bundle["xml"]
+
+
 def test_source_dump_uk_parse_finds_metadata_matched_archived_leaf_without_direct_locator(
     monkeypatch,
     tmp_path,

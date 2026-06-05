@@ -9,6 +9,7 @@ from typing import Any, Optional
 from lxml import etree
 
 from lawvm.corpus_store import get_corpus_store
+from lawvm.roman import roman_to_arabic
 
 _LEG_BASE = "https://www.legislation.gov.uk"
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -90,7 +91,7 @@ def _label_match_key(value: str) -> str:
     normalized = _normalize_label(value).strip().strip(".").lower()
     if normalized.isdecimal():
         return str(int(normalized))
-    roman = _roman_to_int(normalized)
+    roman = roman_to_arabic(normalized)
     if roman is not None:
         return str(roman)
     return normalized
@@ -100,45 +101,6 @@ def _labels_match(source_label: str, requested_label: str) -> bool:
     if _normalize_label(source_label) == _normalize_label(requested_label):
         return True
     return _label_match_key(source_label) == _label_match_key(requested_label)
-
-
-def _roman_to_int(value: str) -> int | None:
-    if not value or any(ch not in _ROMAN_VALUES for ch in value.upper()):
-        return None
-    total = 0
-    previous = 0
-    for ch in reversed(value.upper()):
-        current = _ROMAN_VALUES[ch]
-        if current < previous:
-            total -= current
-        else:
-            total += current
-            previous = current
-    if total <= 0 or total > 50 or _int_to_roman(total).lower() != value.lower():
-        return None
-    return total
-
-
-def _int_to_roman(value: int) -> str:
-    pairs = (
-        (50, "L"),
-        (40, "XL"),
-        (10, "X"),
-        (9, "IX"),
-        (5, "V"),
-        (4, "IV"),
-        (1, "I"),
-    )
-    remaining = value
-    out: list[str] = []
-    for amount, token in pairs:
-        while remaining >= amount:
-            out.append(token)
-            remaining -= amount
-    return "".join(out)
-
-
-_ROMAN_VALUES = {"I": 1, "V": 5, "X": 10, "L": 50}
 
 
 def _nearest_ancestor(node: etree._Element, kind: str) -> Optional[etree._Element]:
