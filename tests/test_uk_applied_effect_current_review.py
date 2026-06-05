@@ -273,6 +273,7 @@ def test_removed_phrase_candidate_records_archive_review_gates(monkeypatch) -> N
 
     row = rows[0]
     assert row.same_territorial_extent_status == "same_extent"
+    assert row.source_restrict_extent_basis == "explicit_source_restrict_extent"
     assert row.later_reinsertion_or_replacement_status == (
         "no_later_same_target_effects_found"
     )
@@ -321,8 +322,71 @@ def test_removed_phrase_candidate_blocks_on_extent_mismatch(monkeypatch) -> None
     assert row.same_territorial_extent_status == (
         "source_extent_narrower_than_current_surface"
     )
+    assert row.source_restrict_extent_basis == "explicit_source_restrict_extent"
     assert row.verification_matrix["same_territorial_extent"] == "no"
     assert row.public_review_gate_status == "blocked_by_machine_review_gate"
+
+
+def test_removed_phrase_candidate_uses_unqualified_source_extent_witness(
+    monkeypatch,
+) -> None:
+    effect = _effect(effect_id="key-omission", effect_type="words omitted")
+    _patch_effect_source(
+        monkeypatch,
+        effect,
+        'In section 1 omit "retained phrase".',
+    )
+    archive = _Archive(
+        b'<Legislation><P1 eId="section-1" RestrictExtent="E+W+S">'
+        b"<Text>retained phrase</Text></P1>"
+        + (b" current context" * 20)
+        + b"</Legislation>"
+    )
+
+    rows = review.build_review_rows(
+        ["ukpga/2020/1"],
+        archive=archive,
+        today=date(2026, 6, 5),
+    )
+
+    row = rows[0]
+    assert row.source_restrict_extent == "E+W+S"
+    assert row.source_restrict_extent_basis == (
+        "unqualified_source_fragment_inherits_target_extent_for_review_gate"
+    )
+    assert row.same_territorial_extent_status == "same_extent"
+    assert row.verification_matrix["same_territorial_extent"] == "yes"
+
+
+def test_removed_phrase_candidate_keeps_extent_unknown_when_source_has_geo_terms(
+    monkeypatch,
+) -> None:
+    effect = _effect(effect_id="key-omission", effect_type="words omitted")
+    _patch_effect_source(
+        monkeypatch,
+        effect,
+        'In relation to Scotland, omit "retained phrase".',
+    )
+    archive = _Archive(
+        b'<Legislation><P1 eId="section-1" RestrictExtent="E+W+S">'
+        b"<Text>retained phrase</Text></P1>"
+        + (b" current context" * 20)
+        + b"</Legislation>"
+    )
+
+    rows = review.build_review_rows(
+        ["ukpga/2020/1"],
+        archive=archive,
+        today=date(2026, 6, 5),
+    )
+
+    row = rows[0]
+    assert row.source_restrict_extent == ""
+    assert row.source_restrict_extent_basis == (
+        "source_fragment_contains_extent_or_geography_terms"
+    )
+    assert row.same_territorial_extent_status == "unknown_extent"
+    assert row.verification_matrix["same_territorial_extent"] == "unknown"
     assert "same_territorial_extent" in row.agreement_residual["missing_proofs"]
 
 

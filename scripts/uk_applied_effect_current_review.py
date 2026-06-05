@@ -90,6 +90,15 @@ _UNREVIEWABLE_REMOVAL_LABEL_CONTEXT_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+_SOURCE_EXTENT_LIMITATION_RE = re.compile(
+    r"\b(?:"
+    r"extends?\s+to|does\s+not\s+extend\s+to|"
+    r"extent|application|applies?\s+to|"
+    r"england|wales|scotland|northern\s+ireland|great\s+britain|"
+    r"united\s+kingdom|channel\s+islands|isle\s+of\s+man"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -120,6 +129,7 @@ class AppliedEffectCurrentReviewRow:
     current_xml_has_repeal_marker: bool
     current_restrict_extent: str
     source_restrict_extent: str
+    source_restrict_extent_basis: str
     same_territorial_extent_status: str
     later_same_target_effect_count: int
     later_same_target_effect_summaries: tuple[str, ...]
@@ -247,7 +257,11 @@ def _review_effect(
         effect_type=effect.effect_type,
         expected_phrase_role=expected_phrase_role,
     )
-    source_restrict_extent = _nearest_restrict_extent(selection.extracted_el)
+    source_restrict_extent, source_restrict_extent_basis = _source_restrict_extent_witness(
+        extracted_el=selection.extracted_el,
+        source_text=source_text,
+        current_restrict_extent=current_surface.restrict_extent,
+    )
     same_extent_status = _same_territorial_extent_status(
         current_restrict_extent=current_surface.restrict_extent,
         source_restrict_extent=source_restrict_extent,
@@ -288,6 +302,7 @@ def _review_effect(
         current_has_repeal_marker=current_has_repeal_marker,
         current_restrict_extent=current_surface.restrict_extent,
         source_restrict_extent=source_restrict_extent,
+        source_restrict_extent_basis=source_restrict_extent_basis,
         same_extent_status=same_extent_status,
         later_reinsertion_status=later_evidence.reinsertion_status,
         target_phrase_surface_status=target_phrase_surface_status,
@@ -324,6 +339,7 @@ def _review_effect(
         current_xml_has_repeal_marker=current_has_repeal_marker,
         current_restrict_extent=current_surface.restrict_extent,
         source_restrict_extent=source_restrict_extent,
+        source_restrict_extent_basis=source_restrict_extent_basis,
         same_territorial_extent_status=same_extent_status,
         later_same_target_effect_count=later_evidence.same_target_count,
         later_same_target_effect_summaries=later_evidence.summaries,
@@ -463,6 +479,22 @@ def _nearest_restrict_extent(element: ET._Element | None) -> str:
             return extent
         current = current.getparent()
     return ""
+
+
+def _source_restrict_extent_witness(
+    *,
+    extracted_el: ET._Element | None,
+    source_text: str,
+    current_restrict_extent: str,
+) -> tuple[str, str]:
+    explicit = _nearest_restrict_extent(extracted_el)
+    if explicit:
+        return explicit, "explicit_source_restrict_extent"
+    if not current_restrict_extent:
+        return "", "no_current_extent_to_compare"
+    if _SOURCE_EXTENT_LIMITATION_RE.search(source_text):
+        return "", "source_fragment_contains_extent_or_geography_terms"
+    return current_restrict_extent, "unqualified_source_fragment_inherits_target_extent_for_review_gate"
 
 
 def _combined_restrict_extent(elements: Iterable[ET._Element]) -> str:
@@ -889,6 +921,7 @@ def _agreement_residual(
     current_has_repeal_marker: bool,
     current_restrict_extent: str,
     source_restrict_extent: str,
+    source_restrict_extent_basis: str,
     same_extent_status: str,
     later_reinsertion_status: str,
     target_phrase_surface_status: str,
@@ -927,6 +960,7 @@ def _agreement_residual(
             "current_xml_has_repeal_marker": current_has_repeal_marker,
             "current_restrict_extent": current_restrict_extent,
             "source_restrict_extent": source_restrict_extent,
+            "source_restrict_extent_basis": source_restrict_extent_basis,
             "same_territorial_extent_status": same_extent_status,
             "later_reinsertion_or_replacement_status": later_reinsertion_status,
             "target_phrase_surface_status": target_phrase_surface_status,
