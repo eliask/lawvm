@@ -32156,6 +32156,93 @@ def test_compile_except_phrase_substitution_preserves_excluded_phrase_selector()
     ]
 
 
+def test_compile_each_place_except_reference_substitution_preserves_excluded_phrase_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="schedule-1-paragraph-5-b-i">
+          <Pnumber>i</Pnumber>
+          <Text>i for “Lands Tribunal”, in each place except in the reference to the Lands Tribunal Act 1949, substitute “Upper Tribunal”;</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-b0a71051925458e18ef450e7d24305e6",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-06-01",
+        affected_uri="/id/ukpga/1925/20/section/84/subsection/3A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1925",
+        affected_number="20",
+        affected_provisions="s. 84(3A)",
+        affecting_uri="/id/uksi/2009/1307",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2009",
+        affecting_number="1307",
+        affecting_provisions="Sch. 1 para. 5(b)(i)",
+        affecting_title="Test Order 2009",
+        in_force_dates=[{"date": "2009-06-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "84"), ("subsection", "3a"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        f"TEXT_EXCEPT_PHRASE{US}Lands Tribunal{US}Lands Tribunal Act 1949"
+    )
+    assert ops[0].text_patch.selector.occurrence == 0
+    assert ops[0].text_patch.replacement == "Upper Tribunal"
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_except_phrase_substitution_text_patch"
+    ] == ["uk_effect_except_phrase_substitution_text_patch"]
+
+    replayed = replay_uk_ops(
+        IRStatute(
+            statute_id="ukpga/1925/20",
+            title="Test Act",
+            body=IRNode(
+                kind=IRNodeKind.BODY,
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="84",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="3a",
+                                text=(
+                                    "The Lands Tribunal may act under the "
+                                    "Lands Tribunal Act 1949 and the Lands Tribunal "
+                                    "may state a case."
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            supplements=(),
+        ),
+        ops,
+    )
+
+    assert replayed.body.children[0].children[0].text == (
+        "The Upper Tribunal may act under the Lands Tribunal Act 1949 and "
+        "the Upper Tribunal may state a case."
+    )
+
+
 def test_compile_wherever_otherwise_than_expression_substitution_preserves_excluded_expression() -> None:
     extracted_el = ET.fromstring(
         f"""

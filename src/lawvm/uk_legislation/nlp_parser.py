@@ -127,6 +127,13 @@ _EXCEPT_PHRASE_SUBSTITUTED_RE = re.compile(
     rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
     re.I,
 )
+_EACH_PLACE_EXCEPT_REFERENCE_SUBSTITUTED_RE = re.compile(
+    rf"for\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]\s*,?\s+"
+    r"in\s+each\s+place\s+except\s+in\s+the\s+reference\s+to\s+(?:the\s+)?"
+    r"(?P<excluded>[^,;]{1,300}?)\s*,?\s+substitute\s+"
+    rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+    re.I,
+)
 _WHEREVER_OTHERWISE_THAN_EXPRESSION_SUBSTITUTED_RE = re.compile(
     rf"for\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’],?\s+"
     r"wherever\s+occurring\s*"
@@ -1158,6 +1165,21 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
                     selector=ExceptPhraseSelector(
                         m.group("original").strip(),
                         m.group("excluded").strip(),
+                    ),
+                    replacement=m.group("replacement").strip(),
+                    rule_id=UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID,
+                    occurrence="0",
+                )
+            )
+        )
+
+    for m in _EACH_PLACE_EXCEPT_REFERENCE_SUBSTITUTED_RE.finditer(text):
+        subs.append(
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=ExceptPhraseSelector(
+                        m.group("original").strip(),
+                        " ".join(m.group("excluded").split()).strip(),
                     ),
                     replacement=m.group("replacement").strip(),
                     rule_id=UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID,
