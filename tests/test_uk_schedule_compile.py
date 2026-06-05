@@ -71722,6 +71722,37 @@ def test_uk_source_selection_skips_xml_loaders_for_non_source_required_effect() 
     assert phase_timings["compile_source_context"] >= 0
     assert "compile_source_extract_current" not in phase_timings
 
+    second_selection = select_source_for_effect(
+        effect=UKEffectRecord(
+            effect_id="uk_test_modified_again",
+            effect_type="modified",
+            applied=True,
+            requires_applied=False,
+            modified="2024-01-01",
+            affected_uri="",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="2000",
+            affected_number="1",
+            affected_provisions="s. 2",
+            affecting_uri="",
+            affecting_class="UnitedKingdomPublicGeneralAct",
+            affecting_year="2001",
+            affecting_number="2",
+            affecting_provisions="s. 3",
+            affecting_title="Test Act",
+        ),
+        archive=object(),
+        applicability_mode="effective_date_plus_feed_applied",
+        extraction_cache={},
+        enacted_extraction_cache={},
+        effect_diagnostics_out=[],
+        current_xml_loader=fail_loader,
+        enacted_xml_loader=fail_loader,
+    )
+
+    assert second_selection.extracted_el is None
+    assert second_selection.source_context is selection.source_context
+
 
 def test_executor_skips_invariant_rescan_for_text_only_rewrite() -> None:
     statute = IRStatute(

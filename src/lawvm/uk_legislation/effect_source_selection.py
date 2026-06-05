@@ -37,6 +37,25 @@ class ExtractedTagAndText(NamedTuple):
     text: str
 
 
+_EFFECT_FEED_INDEX_CONTEXT_CACHE: dict[Any, UKAffectingSourceContext] = {}
+
+
+def _effect_feed_index_source_context(
+    provision_extractor=extract_provision_element_from_bytes,
+) -> UKAffectingSourceContext:
+    cached = _EFFECT_FEED_INDEX_CONTEXT_CACHE.get(provision_extractor)
+    if cached is not None:
+        return cached
+    source_context, _parse_error = _build_affecting_source_context(
+        xml_bytes=None,
+        locator="",
+        authority_layer="EFFECT_FEED_INDEX",
+        provision_extractor=provision_extractor,
+    )
+    _EFFECT_FEED_INDEX_CONTEXT_CACHE[provision_extractor] = source_context
+    return source_context
+
+
 def source_context_for_effect(
     *,
     effect: UKEffectRecord,
@@ -49,13 +68,7 @@ def source_context_for_effect(
 ) -> UKAffectingSourceContext:
     """Return the current affecting-source context for one UK effect row."""
     if not source_required_for_replay:
-        source_context, _parse_error = _build_affecting_source_context(
-            xml_bytes=None,
-            locator="",
-            authority_layer="EFFECT_FEED_INDEX",
-            provision_extractor=provision_extractor,
-        )
-        return source_context
+        return _effect_feed_index_source_context(provision_extractor)
     if effect.affecting_act_id in extraction_cache:
         return extraction_cache[effect.affecting_act_id]
 
