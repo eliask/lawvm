@@ -151,3 +151,62 @@ def test_repeal_markup_refutes_raw_oracle_divergence(tmp_path) -> None:
     assert row.dated_current_xml_repeal_markup_count == 1
     assert "explicit repeal markup" in row.refutation_reason
     assert row.agreement_residual["detail"]["dated_current_xml_repeal_markup_count"] == 1
+
+
+def test_markdown_preserves_refuted_queue_summary(tmp_path) -> None:
+    path = _write_packets(
+        tmp_path / "packets.json",
+        [
+            _packet(
+                statute_id="ukpga/2011/22",
+                kind="dated_current_xml_repealed",
+                dotted=True,
+                notes=["S. 4 repealed by s. 10(2)"],
+            ),
+            _packet(
+                statute_id="ukpga/1994/30",
+                kind="dated_current_xml_repeal_note_without_dotted_text",
+                dotted=False,
+                notes=["S. 53 repealed by S.I. 1994/1443"],
+            ),
+        ],
+    )
+
+    markdown = review._emit_markdown(review.load_reviews(path))
+
+    assert "Rows reviewed: 2." in markdown
+    assert "Clean likely divergence candidates: 0." in markdown
+    assert "- refuted_by_dated_current_xml: 1" in markdown
+    assert "- likely_not_divergence_because_repeal_note_present: 1" in markdown
+    assert "Representative refutations/frontiers:" in markdown
+    assert "ukpga/2011/22" in markdown
+    assert "First public check: Open current provision page:" in markdown
+    assert "does not authorize replay" in markdown
+
+
+def test_markdown_lists_plausible_and_refuted_rows(tmp_path) -> None:
+    path = _write_packets(
+        tmp_path / "packets.json",
+        [
+            _packet(
+                statute_id="eur/2020/2220",
+                kind="dated_current_xml_no_repeal_marker",
+                dotted=False,
+                notes=[],
+            ),
+            _packet(
+                statute_id="ukpga/2011/22",
+                kind="dated_current_xml_repealed",
+                dotted=True,
+                notes=["S. 4 repealed by s. 10(2)"],
+            ),
+        ],
+    )
+
+    markdown = review._emit_markdown(review.load_reviews(path))
+
+    assert "Clean likely divergence candidates: 1." in markdown
+    assert "Plausible candidates:" in markdown
+    assert "eur/2020/2220" in markdown
+    assert "Representative refutations/frontiers:" in markdown
+    assert "ukpga/2011/22" in markdown

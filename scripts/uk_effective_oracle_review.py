@@ -359,14 +359,26 @@ def _emit_markdown(rows: Sequence[EffectiveOracleReviewRow]) -> str:
         "# UK effective-current review candidates",
         "",
         "This is a review queue, not a legal conclusion.",
+        "The page-declared current XML is used only to classify the oracle surface; it does not authorize replay.",
+        "",
+        f"Rows reviewed: {len(rows)}.",
+        f"Clean likely divergence candidates: {len(plausible)}.",
         "",
     ]
+    status_counts = _review_status_counts(rows)
+    if status_counts:
+        lines.append("Status counts:")
+        for status, count in sorted(status_counts.items()):
+            lines.append(f"- {status}: {count}")
+        lines.append("")
     if not plausible:
         lines.append(
             "No packet currently survives the page-declared dated XML refutation "
             "check as a clean likely divergence."
         )
-        return "\n".join(lines) + "\n"
+        lines.append("")
+    if plausible:
+        lines.append("Plausible candidates:")
     for index, row in enumerate(plausible, start=1):
         lines.append(f"{index}. {row.statute_id} — {row.review_status}.")
         lines.append(
@@ -377,7 +389,43 @@ def _emit_markdown(rows: Sequence[EffectiveOracleReviewRow]) -> str:
         for step in row.simplest_public_check:
             lines.append(f"Verify: {step}")
         lines.append("")
+    non_plausible = [row for row in rows if row not in plausible]
+    if non_plausible:
+        lines.append("Representative refutations/frontiers:")
+        for row in _representative_rows_by_status(non_plausible, per_status=2):
+            targets = ", ".join(row.retained_targets[:5]) or "not recorded"
+            if len(row.retained_targets) > 5:
+                targets = f"{targets}, ..."
+            lines.append(f"- {row.statute_id} — {row.review_status}.")
+            lines.append(f"  Targets: {targets}.")
+            lines.append(f"  Classification: {row.refutation_reason}")
+            if row.simplest_public_check:
+                lines.append(f"  First public check: {row.simplest_public_check[0]}")
+        lines.append("")
     return "\n".join(lines)
+
+
+def _review_status_counts(rows: Sequence[EffectiveOracleReviewRow]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        counts[row.review_status] = counts.get(row.review_status, 0) + 1
+    return counts
+
+
+def _representative_rows_by_status(
+    rows: Sequence[EffectiveOracleReviewRow],
+    *,
+    per_status: int,
+) -> tuple[EffectiveOracleReviewRow, ...]:
+    counts: dict[str, int] = {}
+    selected: list[EffectiveOracleReviewRow] = []
+    for row in rows:
+        seen = counts.get(row.review_status, 0)
+        if seen >= per_status:
+            continue
+        counts[row.review_status] = seen + 1
+        selected.append(row)
+    return tuple(selected)
 
 
 def _mapping_tuple(value: Any) -> tuple[Mapping[str, Any], ...]:
