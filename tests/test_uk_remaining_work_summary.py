@@ -365,6 +365,94 @@ def test_item_export_rejects_unknown_lane(tmp_path) -> None:
         )
 
 
+def test_item_export_can_limit_rows_per_lane(tmp_path) -> None:
+    report = _write_report(
+        tmp_path,
+        [
+            {
+                "statute_id": "ukpga/2000/1",
+                "score_status": "scored",
+                "triage_bucket": "manual_compile_frontier_residual",
+                "aligned": 70.0,
+            },
+            {
+                "statute_id": "ukpga/2000/2",
+                "score_status": "scored",
+                "triage_bucket": "manual_compile_frontier_residual",
+                "aligned": 71.0,
+            },
+            {
+                "statute_id": "ukpga/2000/3",
+                "score_status": "scored",
+                "triage_bucket": "manual_compile_frontier_residual",
+                "aligned": 72.0,
+            },
+            {
+                "statute_id": "uksi/2009/41",
+                "score_status": "scored",
+                "triage_bucket": "effect_feed_absent_frontier",
+                "aligned": 60.0,
+            },
+            {
+                "statute_id": "uksi/2009/42",
+                "score_status": "scored",
+                "triage_bucket": "effect_feed_absent_frontier",
+                "aligned": 61.0,
+            },
+            {
+                "statute_id": "ukpga/1920/50",
+                "score_status": "scored",
+                "triage_bucket": "retained_repeal_oracle_branch",
+                "aligned": 0.0,
+            },
+        ],
+    )
+
+    payload = remaining.load_remaining_work(
+        report,
+        include_items=True,
+        item_limit_per_lane=1,
+    )
+
+    assert payload["summary"]["item_count"] == 3
+    assert payload["summary"]["item_limit_per_lane"] == 1
+    assert [item["lane_id"] for item in payload["items"]] == [
+        "manual_compilation_frontier",
+        "effect_source_footing_gap",
+        "oracle_suspect_review",
+    ]
+
+
+def test_item_export_global_limit_still_caps_per_lane_sampling(tmp_path) -> None:
+    report = _write_report(
+        tmp_path,
+        [
+            {
+                "statute_id": "ukpga/2000/1",
+                "score_status": "scored",
+                "triage_bucket": "manual_compile_frontier_residual",
+                "aligned": 70.0,
+            },
+            {
+                "statute_id": "uksi/2009/41",
+                "score_status": "scored",
+                "triage_bucket": "effect_feed_absent_frontier",
+                "aligned": 60.0,
+            },
+        ],
+    )
+
+    payload = remaining.load_remaining_work(
+        report,
+        include_items=True,
+        item_limit=1,
+        item_limit_per_lane=1,
+    )
+
+    assert payload["summary"]["item_count"] == 1
+    assert payload["items"][0]["lane_id"] == "manual_compilation_frontier"
+
+
 def test_pure_non_textual_effect_rows_get_distinct_non_replay_lane(tmp_path) -> None:
     report = _write_report(
         tmp_path,

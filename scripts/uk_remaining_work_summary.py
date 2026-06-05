@@ -340,6 +340,7 @@ def load_remaining_work(
     include_items: bool = False,
     item_lane_ids: frozenset[str] = frozenset(),
     item_limit: int = 0,
+    item_limit_per_lane: int = 0,
 ) -> dict[str, Any]:
     """Load a UK broad-baseline report and return remaining-work lanes."""
 
@@ -425,10 +426,12 @@ def load_remaining_work(
                 lane_rows,
                 lane_ids=item_lane_ids,
                 limit=item_limit,
+                limit_per_lane=item_limit_per_lane,
             )
         ]
         payload["summary"]["item_count"] = len(payload["items"])
         payload["summary"]["item_lane_filter"] = sorted(item_lane_ids)
+        payload["summary"]["item_limit_per_lane"] = item_limit_per_lane
     return payload
 
 
@@ -544,6 +547,7 @@ def _remaining_work_items(
     *,
     lane_ids: frozenset[str],
     limit: int,
+    limit_per_lane: int,
 ) -> list[UKRemainingWorkItem]:
     selected_lane_ids = lane_ids or frozenset(lane_rows)
     items: list[UKRemainingWorkItem] = []
@@ -552,8 +556,12 @@ def _remaining_work_items(
         key=lambda item: (-_LANE_SPECS[item].priority_rank, item),
     ):
         spec = _LANE_SPECS[lane_id]
+        lane_count = 0
         for row in sorted(lane_rows[lane_id], key=_sample_sort_key):
+            if limit_per_lane > 0 and lane_count >= limit_per_lane:
+                break
             items.append(_remaining_work_item(spec, row))
+            lane_count += 1
             if limit > 0 and len(items) >= limit:
                 return items
     return items
@@ -1352,6 +1360,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=0,
         help="with --include-items, maximum row-level items to emit",
     )
+    parser.add_argument(
+        "--item-limit-per-lane",
+        type=int,
+        default=0,
+        help=(
+            "with --include-items, maximum row-level items to emit from each "
+            "remaining-work lane"
+        ),
+    )
     args = parser.parse_args(argv)
 
     payload = load_remaining_work(
@@ -1361,6 +1378,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         include_items=args.include_items,
         item_lane_ids=frozenset(args.lane),
         item_limit=args.item_limit,
+        item_limit_per_lane=args.item_limit_per_lane,
     )
     if args.format == "json":
         print(_emit_json(payload))
