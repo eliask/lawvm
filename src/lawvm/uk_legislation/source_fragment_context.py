@@ -77,6 +77,22 @@ _SOURCE_PARENT_EACH_PROVISION_MARKERS = (
     "IN EACH PROVISION",
 )
 _SOURCE_PARENT_SUBSTITUTION_MARKERS = ("substitut", "Substitut", "SUBSTITUT")
+_SOURCE_PARENT_EACH_PROVISION_INSTRUCTION_TAGS = frozenset(
+    {
+        "Pblock",
+        "P1group",
+        "P1",
+        "P1para",
+        "P2",
+        "P2para",
+        "P3",
+        "P3para",
+        "P4",
+        "P4para",
+        "P5",
+        "P5para",
+    }
+)
 
 
 def _source_parent_each_provision_substitution_candidate(text: str) -> bool:
@@ -223,12 +239,20 @@ _SOURCE_PARENT_AFTER_ANCHOR_TO_END_SUBSTITUTION_RE = re.compile(
 # Eviction is handled by explicit evict_source_root_caches() calls.
 _SOURCE_LEAD_TEXT_CACHE: dict[ET._Element, str] = {}
 _SOURCE_TAIL_TEXT_CACHE: dict[ET._Element, str] = {}
+_SOURCE_PARENT_EACH_PROVISION_CACHE: dict[
+    ET._Element, Optional[tuple[tuple[str, ...], str]]
+] = {}
+_SOURCE_CHILD_SUBSTITUTION_RE = re.compile(r"\bsubstitut(?:e|ed)\b", flags=re.I)
 
 
 def evict_source_fragment_context_caches(root: Optional[ET._Element]) -> None:
     if root is None:
         return
-    for cache in (_SOURCE_LEAD_TEXT_CACHE, _SOURCE_TAIL_TEXT_CACHE):
+    for cache in (
+        _SOURCE_LEAD_TEXT_CACHE,
+        _SOURCE_TAIL_TEXT_CACHE,
+        _SOURCE_PARENT_EACH_PROVISION_CACHE,
+    ):
         for el in tuple(cache):
             if el is root or el.getroottree().getroot() is root:
                 cache.pop(el, None)
@@ -702,6 +726,39 @@ def _source_lead_text_before_subordinate_rows(el: ET._Element) -> str:
     text = " ".join(" ".join(parts).split())
     _SOURCE_LEAD_TEXT_CACHE[el] = text
     return text
+
+
+def _source_parent_each_provision_substitution_payload(
+    ancestor: ET._Element,
+) -> Optional[tuple[tuple[str, ...], str]]:
+    if _tag(ancestor) not in _SOURCE_PARENT_EACH_PROVISION_INSTRUCTION_TAGS:
+        return None
+    cached = _SOURCE_PARENT_EACH_PROVISION_CACHE.get(ancestor)
+    if cached is not None or ancestor in _SOURCE_PARENT_EACH_PROVISION_CACHE:
+        return cached
+    candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
+    if not _source_parent_each_provision_substitution_candidate(candidate_text):
+        _SOURCE_PARENT_EACH_PROVISION_CACHE[ancestor] = None
+        return None
+    match = _SOURCE_PARENT_EACH_PROVISION_SUBSTITUTION_RE.search(candidate_text)
+    if match is None:
+        _SOURCE_PARENT_EACH_PROVISION_CACHE[ancestor] = None
+        return None
+    originals = tuple(
+        original
+        for original in (
+            " ".join(match.group("original_a").split()).strip(),
+            " ".join(match.group("original_b").split()).strip(),
+        )
+        if original
+    )
+    replacement = " ".join(match.group("replacement").split()).strip()
+    if len(originals) < 2 or not replacement:
+        _SOURCE_PARENT_EACH_PROVISION_CACHE[ancestor] = None
+        return None
+    payload = (originals, replacement)
+    _SOURCE_PARENT_EACH_PROVISION_CACHE[ancestor] = payload
+    return payload
 
 
 def _source_tail_text_after_subordinate_rows(el: ET._Element) -> str:
@@ -1218,29 +1275,16 @@ def _fragment_substitutions_source_parent_each_provision_substitution(
 ) -> tuple[dict[str, str], ...]:
     """Resolve child target rows governed by a parent `In each provision ...` substitution."""
     child_text = " ".join((extracted_text or "").split())
-    if not child_text or re.search(r"\bsubstitut(?:e|ed)\b", child_text, flags=re.I):
+    if not child_text or _SOURCE_CHILD_SUBSTITUTION_RE.search(child_text):
         return ()
     ancestors = _source_ancestor_chain(source_root, extracted_el)
     if not ancestors:
         ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
     for ancestor_index, ancestor in enumerate(ancestors):
-        candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
-        if not _source_parent_each_provision_substitution_candidate(candidate_text):
+        payload = _source_parent_each_provision_substitution_payload(ancestor)
+        if payload is None:
             continue
-        match = _SOURCE_PARENT_EACH_PROVISION_SUBSTITUTION_RE.search(candidate_text)
-        if match is None:
-            continue
-        originals = tuple(
-            original
-            for original in (
-                " ".join(match.group("original_a").split()).strip(),
-                " ".join(match.group("original_b").split()).strip(),
-            )
-            if original
-        )
-        replacement = " ".join(match.group("replacement").split()).strip()
-        if len(originals) < 2 or not replacement:
-            return ()
+        originals, replacement = payload
         source_parent_id = str(
             ancestor.get("id")
             or next((candidate.get("id") for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")), "")

@@ -5,7 +5,9 @@ from lxml import etree as ET
 from lawvm.uk_legislation.source_context import evict_source_root_caches
 from lawvm.uk_legislation.source_fragment_context import (
     _SOURCE_LEAD_TEXT_CACHE,
+    _SOURCE_PARENT_EACH_PROVISION_CACHE,
     _SOURCE_TAIL_TEXT_CACHE,
+    _source_parent_each_provision_substitution_payload,
     _source_lead_text_before_subordinate_rows,
     _source_tail_text_after_subordinate_rows,
 )
@@ -35,6 +37,22 @@ def _root_with_subordinate_tail(root_id: str) -> ET._Element:
     )
 
 
+def _root_with_each_provision_instruction(root_id: str) -> ET._Element:
+    return ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="{root_id}">
+          <P1para id="{root_id}-instruction">
+            <Text>In each provision specified below, for “A” or, as the case may be,
+            “B” there is substituted “C”—</Text>
+            <P2 id="{root_id}-child">
+              <Text>section 1, and</Text>
+            </P2>
+          </P1para>
+        </P1>
+        """
+    )
+
+
 def test_source_fragment_context_caches_evict_by_source_root() -> None:
     root_a = _root_with_subordinate_tail("a")
     root_b = _root_with_subordinate_tail("b")
@@ -58,7 +76,21 @@ def test_source_fragment_context_caches_evict_by_source_root() -> None:
     assert root_b_descendant in _SOURCE_LEAD_TEXT_CACHE
     assert root_b_descendant in _SOURCE_TAIL_TEXT_CACHE
 
+    each_root_a = _root_with_each_provision_instruction("each-a")
+    each_root_b = _root_with_each_provision_instruction("each-b")
+    each_a_instruction = next(
+        el for el in each_root_a.iter() if el.get("id") == "each-a-instruction"
+    )
+    each_b_instruction = next(
+        el for el in each_root_b.iter() if el.get("id") == "each-b-instruction"
+    )
+    assert _source_parent_each_provision_substitution_payload(each_a_instruction)
+    assert _source_parent_each_provision_substitution_payload(each_b_instruction)
+    assert each_a_instruction in _SOURCE_PARENT_EACH_PROVISION_CACHE
+    assert each_b_instruction in _SOURCE_PARENT_EACH_PROVISION_CACHE
+
     evict_source_root_caches(root_a)
+    evict_source_root_caches(each_root_a)
 
     assert root_a not in _SOURCE_LEAD_TEXT_CACHE
     assert root_a not in _SOURCE_TAIL_TEXT_CACHE
@@ -68,3 +100,5 @@ def test_source_fragment_context_caches_evict_by_source_root() -> None:
     assert root_b in _SOURCE_TAIL_TEXT_CACHE
     assert root_b_descendant in _SOURCE_LEAD_TEXT_CACHE
     assert root_b_descendant in _SOURCE_TAIL_TEXT_CACHE
+    assert each_a_instruction not in _SOURCE_PARENT_EACH_PROVISION_CACHE
+    assert each_b_instruction in _SOURCE_PARENT_EACH_PROVISION_CACHE
