@@ -52,6 +52,9 @@ class PublicPageStatusWitness:
     timeline_version_dates: tuple[str, ...]
     current_timeline_date: str
     current_timeline_source_xml_url: str
+    current_timeline_source_xml_snapshot_sha256: str
+    current_timeline_source_xml_snapshot_path: str
+    current_timeline_source_xml_byte_count: int
 
 
 @dataclass(frozen=True)
@@ -92,6 +95,7 @@ def load_packets(
     *,
     supplement_path: Path | None = None,
     fetch_public_snapshots: bool = False,
+    fetch_current_timeline_xml: bool = False,
     snapshot_dir: Path | None = None,
     require_standalone_evidence: bool = False,
     limit: int = 0,
@@ -112,6 +116,7 @@ def load_packets(
             candidate,
             supplement,
             fetch_public_snapshots=fetch_public_snapshots,
+            fetch_current_timeline_xml=fetch_current_timeline_xml,
             snapshot_dir=snapshot_dir,
             fetcher=fetcher,
         )
@@ -141,6 +146,7 @@ def _packet_from_candidate(
     supplement: Mapping[str, Any],
     *,
     fetch_public_snapshots: bool,
+    fetch_current_timeline_xml: bool,
     snapshot_dir: Path | None,
     fetcher: Callable[[str], tuple[str, int, str, bytes]] | None,
 ) -> PublicDivergencePacket:
@@ -179,6 +185,18 @@ def _packet_from_candidate(
         else ()
     )
     current_page_status_witnesses = _current_page_status_witnesses(public_snapshots)
+    if fetch_current_timeline_xml and current_page_status_witnesses:
+        timeline_urls = _unique(
+            witness.current_timeline_source_xml_url
+            for witness in current_page_status_witnesses
+        )
+        timeline_snapshots = _fetch_public_snapshots(
+            tuple(("current_timeline_source_xml", url) for url in timeline_urls),
+            snapshot_dir=snapshot_dir,
+            fetcher=fetcher,
+        )
+        public_snapshots = (*public_snapshots, *timeline_snapshots)
+        current_page_status_witnesses = _current_page_status_witnesses(public_snapshots)
     missing = _missing_standalone_evidence(
         operation_evidence=operation_evidence,
         public_snapshots=public_snapshots,
@@ -352,6 +370,11 @@ def _fetch_public_snapshots(
 def _current_page_status_witnesses(
     snapshots: Sequence[PublicSnapshot],
 ) -> tuple[PublicPageStatusWitness, ...]:
+    timeline_snapshots = {
+        snapshot.requested_url: snapshot
+        for snapshot in snapshots
+        if snapshot.role == "current_timeline_source_xml"
+    }
     witnesses: list[PublicPageStatusWitness] = []
     for snapshot in snapshots:
         if snapshot.role != "current_page" or not snapshot.storage_path:
@@ -362,6 +385,11 @@ def _current_page_status_witnesses(
         text = path.read_text(encoding="utf-8", errors="replace")
         status_text = _status_warning_text(text)
         current_timeline_date = _current_timeline_date(text)
+        current_timeline_source_xml_url = _current_timeline_source_xml_url(
+            snapshot.final_url or snapshot.requested_url,
+            current_timeline_date,
+        )
+        timeline_snapshot = timeline_snapshots.get(current_timeline_source_xml_url)
         witnesses.append(
             PublicPageStatusWitness(
                 current_page_url=snapshot.final_url or snapshot.requested_url,
@@ -373,9 +401,15 @@ def _current_page_status_witnesses(
                 ),
                 timeline_version_dates=_timeline_version_dates(text),
                 current_timeline_date=current_timeline_date,
-                current_timeline_source_xml_url=_current_timeline_source_xml_url(
-                    snapshot.final_url or snapshot.requested_url,
-                    current_timeline_date,
+                current_timeline_source_xml_url=current_timeline_source_xml_url,
+                current_timeline_source_xml_snapshot_sha256=(
+                    timeline_snapshot.sha256 if timeline_snapshot else ""
+                ),
+                current_timeline_source_xml_snapshot_path=(
+                    timeline_snapshot.storage_path if timeline_snapshot else ""
+                ),
+                current_timeline_source_xml_byte_count=(
+                    timeline_snapshot.byte_count if timeline_snapshot else 0
                 ),
             )
         )
@@ -500,6 +534,15 @@ def _emit_json(packets: Sequence[PublicDivergencePacket]) -> str:
             "packet_count": len(packets),
             "forbidden_shortcuts": list(_FORBIDDEN_SHORTCUTS),
             "packets_with_snapshots": sum(1 for packet in packets if packet.public_snapshots),
+            "packets_with_current_page_status_witnesses": sum(
+                1 for packet in packets if packet.current_page_status_witnesses
+            ),
+            "current_timeline_source_xml_snapshot_count": sum(
+                1
+                for packet in packets
+                for snapshot in packet.public_snapshots
+                if snapshot.role == "current_timeline_source_xml"
+            ),
             "packets_missing_standalone_evidence": sum(
                 1 for packet in packets if packet.missing_standalone_evidence
             ),
@@ -533,6 +576,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Fetch public URLs and write exact response bytes to --snapshot-dir",
     )
     parser.add_argument(
+        "--fetch-current-timeline-xml",
+        action="store_true",
+        help=(
+            "After fetching current pages, also fetch each page-declared current "
+            "timeline XML URL as current_timeline_source_xml evidence."
+        ),
+    )
+    parser.add_argument(
         "--require-standalone-evidence",
         action="store_true",
         help=(
@@ -551,6 +602,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.candidates,
         supplement_path=args.supplement,
         fetch_public_snapshots=args.fetch_public_snapshots,
+        fetch_current_timeline_xml=args.fetch_current_timeline_xml,
         snapshot_dir=args.snapshot_dir,
         require_standalone_evidence=args.require_standalone_evidence,
         limit=args.limit,
