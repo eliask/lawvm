@@ -11,6 +11,7 @@ import hashlib
 import html
 import json
 import re
+import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -66,6 +67,7 @@ class CurrentTimelineXmlWitness:
     restrict_start_date: str
     restrict_end_date: str
     has_dotted_repeal_text: bool
+    has_repeal_markup: bool
     repeal_commentary_texts: tuple[str, ...]
     effective_oracle_kind: str
 
@@ -361,7 +363,7 @@ def _fetch_public_snapshots(
     snapshots: list[PublicSnapshot] = []
     for role, url in url_roles:
         final_url, status_code, content_type, body = (
-            fetcher(url) if fetcher is not None else _fetch_url(url)
+            _fetch_snapshot_response(url, fetcher=fetcher)
         )
         digest = hashlib.sha256(body).hexdigest()
         storage_path = snapshot_dir / f"{digest[:16]}-{_safe_name(role)}"
@@ -381,6 +383,17 @@ def _fetch_public_snapshots(
             )
         )
     return tuple(snapshots)
+
+
+def _fetch_snapshot_response(
+    url: str,
+    *,
+    fetcher: Callable[[str], tuple[str, int, str, bytes]] | None,
+) -> tuple[str, int, str, bytes]:
+    try:
+        return fetcher(url) if fetcher is not None else _fetch_url(url)
+    except urllib.error.HTTPError as exc:
+        return _http_error_response(exc)
 
 
 def _current_page_status_witnesses(
@@ -439,12 +452,15 @@ def _current_timeline_xml_witnesses(
     for snapshot in snapshots:
         if snapshot.role != "current_timeline_source_xml" or not snapshot.storage_path:
             continue
+        if snapshot.status_code < 200 or snapshot.status_code >= 300:
+            continue
         path = Path(snapshot.storage_path)
         if not path.exists():
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
         repeal_commentaries = _repeal_commentary_texts(text)
         has_dotted_repeal_text = _has_dotted_repeal_text(text)
+        has_repeal_markup = _has_repeal_markup(text)
         witnesses.append(
             CurrentTimelineXmlWitness(
                 source_xml_url=snapshot.final_url or snapshot.requested_url,
@@ -454,9 +470,11 @@ def _current_timeline_xml_witnesses(
                 restrict_start_date=_xml_attr(text, "RestrictStartDate"),
                 restrict_end_date=_xml_attr(text, "RestrictEndDate"),
                 has_dotted_repeal_text=has_dotted_repeal_text,
+                has_repeal_markup=has_repeal_markup,
                 repeal_commentary_texts=repeal_commentaries,
                 effective_oracle_kind=_effective_oracle_kind(
                     has_dotted_repeal_text=has_dotted_repeal_text,
+                    has_repeal_markup=has_repeal_markup,
                     repeal_commentaries=repeal_commentaries,
                 ),
             )
@@ -477,6 +495,10 @@ def _has_dotted_repeal_text(text: str) -> bool:
     return False
 
 
+def _has_repeal_markup(text: str) -> bool:
+    return bool(re.search(r"<Repeal\b", text))
+
+
 def _repeal_commentary_texts(text: str) -> tuple[str, ...]:
     out: list[str] = []
     for match in re.finditer(
@@ -485,7 +507,8 @@ def _repeal_commentary_texts(text: str) -> tuple[str, ...]:
         flags=re.DOTALL,
     ):
         value = _html_text(match.group(1))
-        if "repeal" in value.lower():
+        lower = value.lower()
+        if "repeal" in lower or "omitted" in lower or "omit" in lower:
             out.append(value)
         if len(out) >= 3:
             break
@@ -495,10 +518,15 @@ def _repeal_commentary_texts(text: str) -> tuple[str, ...]:
 def _effective_oracle_kind(
     *,
     has_dotted_repeal_text: bool,
+    has_repeal_markup: bool,
     repeal_commentaries: Sequence[str],
 ) -> str:
     if has_dotted_repeal_text and repeal_commentaries:
         return "dated_current_xml_repealed"
+    if has_repeal_markup and repeal_commentaries:
+        return "dated_current_xml_repeal_markup"
+    if has_repeal_markup:
+        return "dated_current_xml_repeal_markup_without_note"
     if has_dotted_repeal_text:
         return "dated_current_xml_dotted_without_repeal_note"
     if repeal_commentaries:
@@ -556,10 +584,19 @@ def _html_text(fragment: str) -> str:
 
 def _fetch_url(url: str) -> tuple[str, int, str, bytes]:
     request = urllib.request.Request(url, headers={"User-Agent": _FETCH_USER_AGENT})
-    with urllib.request.urlopen(request, timeout=30) as response:
-        body = response.read()
-        content_type = str(response.headers.get("Content-Type") or "")
-        return response.geturl(), int(response.status), content_type, body
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            body = response.read()
+            content_type = str(response.headers.get("Content-Type") or "")
+            return response.geturl(), int(response.status), content_type, body
+    except urllib.error.HTTPError as exc:
+        return _http_error_response(exc)
+
+
+def _http_error_response(exc: urllib.error.HTTPError) -> tuple[str, int, str, bytes]:
+    body = exc.read()
+    content_type = str(exc.headers.get("Content-Type") or "")
+    return exc.geturl(), int(exc.code), content_type, body
 
 
 def _missing_standalone_evidence(
@@ -637,7 +674,8 @@ def _emit_json(packets: Sequence[PublicDivergencePacket]) -> str:
                 1
                 for packet in packets
                 for witness in packet.current_timeline_xml_witnesses
-                if witness.effective_oracle_kind == "dated_current_xml_repealed"
+                if witness.effective_oracle_kind
+                in {"dated_current_xml_repealed", "dated_current_xml_repeal_markup"}
             ),
             "packets_missing_standalone_evidence": sum(
                 1 for packet in packets if packet.missing_standalone_evidence

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import urllib.error
 from pathlib import Path
 
 from scripts import uk_public_divergence_packets as packets
@@ -350,6 +352,7 @@ def test_fetch_current_timeline_xml_writes_dated_oracle_snapshot(tmp_path) -> No
     assert xml_witness.restrict_start_date == "2012-09-14"
     assert xml_witness.restrict_end_date == "2014-12-02"
     assert xml_witness.has_dotted_repeal_text is True
+    assert xml_witness.has_repeal_markup is False
     assert xml_witness.repeal_commentary_texts == (
         "S. 4 repealed (14.9.2012) by s. 10(2)",
     )
@@ -358,3 +361,119 @@ def test_fetch_current_timeline_xml_writes_dated_oracle_snapshot(tmp_path) -> No
     assert payload["summary"]["packets_with_current_page_status_witnesses"] == 1
     assert payload["summary"]["current_timeline_source_xml_snapshot_count"] == 1
     assert payload["summary"]["current_timeline_xml_repealed_witness_count"] == 1
+
+
+def test_current_timeline_xml_witness_detects_repeal_markup_with_retained_text(
+    tmp_path,
+) -> None:
+    candidates_path = _write_json(
+        tmp_path / "candidates.json",
+        {
+            "rows": [
+                {
+                    "statute_id": "eur/2020/2220",
+                    "candidate_family": "oracle_retains_source_repealed_state",
+                    "confidence": "high",
+                    "retained_repeal_targets": ["article-3"],
+                }
+            ]
+        },
+    )
+    current_page = "https://www.legislation.gov.uk/eur/2020/2220/article/3"
+    dated_xml = f"{current_page}/2022-07-22/data.xml"
+    bodies = {
+        current_page: b"""
+          <div id="timelineData">
+            <ul><li class="currentVersion"><a href="/eur/2020/2220/article/3/2022-07-22">current</a></li></ul>
+          </div></div>
+        """,
+        "https://www.legislation.gov.uk/eur/2020/2220/enacted/data.xml": b"<xml>enacted</xml>",
+        "https://www.legislation.gov.uk/eur/2020/2220/data.xml": b"<xml>current</xml>",
+        dated_xml: b"""
+          <Legislation RestrictStartDate="2022-07-22">
+            <Text><Repeal RetainText="true">retained wording</Repeal></Text>
+            <Commentaries>
+              <Commentary Type="F"><Para><Text>Arts. 1-4 omitted by S.S.I. 2021/33</Text></Para></Commentary>
+            </Commentaries>
+          </Legislation>
+        """,
+    }
+
+    def fetcher(url: str):
+        return url, 200, "text/xml", bodies[url]
+
+    row = packets.load_packets(
+        candidates_path,
+        fetch_public_snapshots=True,
+        fetch_current_timeline_xml=True,
+        snapshot_dir=tmp_path / "snapshots",
+        fetcher=fetcher,
+    )[0]
+
+    xml_witness = row.current_timeline_xml_witnesses[0]
+    assert xml_witness.has_dotted_repeal_text is False
+    assert xml_witness.has_repeal_markup is True
+    assert xml_witness.repeal_commentary_texts == (
+        "Arts. 1-4 omitted by S.S.I. 2021/33",
+    )
+    assert xml_witness.effective_oracle_kind == "dated_current_xml_repeal_markup"
+    payload = json.loads(packets._emit_json([row]))
+    assert payload["summary"]["current_timeline_xml_repealed_witness_count"] == 1
+
+
+def test_unavailable_current_timeline_xml_is_snapshot_not_xml_witness(
+    tmp_path,
+) -> None:
+    candidates_path = _write_json(
+        tmp_path / "candidates.json",
+        {
+            "rows": [
+                {
+                    "statute_id": "ukpga/1920/50",
+                    "candidate_family": "oracle_retains_source_repealed_state",
+                    "confidence": "high",
+                    "retained_repeal_targets": ["whole_act"],
+                }
+            ]
+        },
+    )
+    current_page = "https://www.legislation.gov.uk/ukpga/1920/50"
+    dated_xml = f"{current_page}/2015-05-26/data.xml"
+    bodies = {
+        current_page: b"""
+          <div id="timelineData">
+            <ul><li class="currentVersion"><a href="/ukpga/1920/50/2015-05-26">current</a></li></ul>
+          </div></div>
+        """,
+        "https://www.legislation.gov.uk/ukpga/1920/50/enacted/data.xml": b"<xml>enacted</xml>",
+        "https://www.legislation.gov.uk/ukpga/1920/50/data.xml": b"<xml>current</xml>",
+    }
+
+    def fetcher(url: str):
+        if url == dated_xml:
+            raise urllib.error.HTTPError(
+                url,
+                404,
+                "Not Found",
+                {},
+                io.BytesIO(b"missing dated XML"),
+            )
+        return url, 200, "text/xml", bodies[url]
+
+    row = packets.load_packets(
+        candidates_path,
+        fetch_public_snapshots=True,
+        fetch_current_timeline_xml=True,
+        snapshot_dir=tmp_path / "snapshots",
+        fetcher=fetcher,
+    )[0]
+
+    unavailable = [
+        snapshot
+        for snapshot in row.public_snapshots
+        if snapshot.role == "current_timeline_source_xml"
+    ]
+    assert len(unavailable) == 1
+    assert unavailable[0].status_code == 404
+    assert Path(unavailable[0].storage_path).read_bytes() == b"missing dated XML"
+    assert row.current_timeline_xml_witnesses == ()
