@@ -418,6 +418,8 @@ def _base_text_witness_present(
         return False
     if _roman_section_id_witness_present(root, target):
         return True
+    if _schedule_part_to_roman_chapter_witness_present(root, target):
+        return True
     needle = _materialization_witness_needle(text_preview)
     if not needle:
         return False
@@ -456,6 +458,23 @@ def _roman_section_id_witness_present(root: ET._Element, target: str) -> bool:
         return False
     roman_id = f"section-{arabic_to_roman(number)}"
     return _find_id(root, roman_id) is not None
+
+
+def _schedule_part_to_roman_chapter_witness_present(
+    root: ET._Element,
+    target: str,
+) -> bool:
+    parts = target.split("-")
+    if len(parts) < 4 or parts[0] != "schedule":
+        return False
+    if parts[2] != "part" or not parts[1].isdigit() or not parts[3].isdigit():
+        return False
+    number = int(parts[3])
+    if number <= 0 or number > 3999:
+        return False
+    roman = arabic_to_roman(number)
+    base_chapter_id = f"schedule-{parts[1]}-chapter-{roman}"
+    return _find_id(root, base_chapter_id) is not None
 
 
 def _normalize_materialization_witness(text: str) -> str:

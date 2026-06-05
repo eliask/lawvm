@@ -212,6 +212,35 @@ def test_heading_materialization_gap_can_use_short_heading_witness() -> None:
     assert row.base_text_witness_present is True
 
 
+def test_schedule_part_child_can_use_roman_chapter_enacted_id_witness() -> None:
+    row = review.review_target(
+        statute_id="ukpga/1967/45",
+        target="schedule-1-part-3-chapter-1",
+        base_xml=_xml(
+            """
+            <Chapter id="schedule-1-chapter-III">
+              <Number>CHAPTER III</Number>
+              <Title>OBLIGATIONS OF THE SELLER</Title>
+              <P><Text>Article 18 The seller shall effect delivery of the goods.</Text></P>
+            </Chapter>
+            """
+        ),
+        oracle_xml=_xml(
+            """
+            <Part id="schedule-1-part-3">
+              <Chapter id="schedule-1-part-3-chapter-1">
+                <P><Text>Article 18 The seller shall effect delivery of the goods.</Text></P>
+              </Chapter>
+            </Part>
+            """
+        ),
+    )
+
+    assert row.review_status == "likely_base_text_materialization_gap"
+    assert row.base_text_witness_present is True
+    assert row.agreement_residual["family"] == "non_commensurable_surface"
+
+
 def test_short_id_targets_are_reviewed_as_target_elements() -> None:
     row = review.review_target(
         statute_id="ukpga/1967/45",
