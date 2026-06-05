@@ -205,6 +205,55 @@ def test_item_export_rejects_unknown_lane(tmp_path) -> None:
         )
 
 
+def test_pure_non_textual_effect_rows_get_distinct_non_replay_lane(tmp_path) -> None:
+    report = _write_report(
+        tmp_path,
+        [
+            {
+                "statute_id": "ukpga/2025/26",
+                "score_status": "scored",
+                "triage_bucket": "nonreplay_effect_frontier",
+                "aligned": 75.0,
+                "n_only_in_oracle": 10,
+                "manual_frontier_status_counts": {"non_textual_or_out_of_scope": 3},
+                "agreement_residual": {
+                    "owner_phase": "effect_metadata_frontend",
+                    "missing_proofs": ["applicability_or_non_textual_semantics"],
+                },
+            },
+            {
+                "statute_id": "nia/2001/11",
+                "score_status": "scored",
+                "triage_bucket": "nonreplay_effect_frontier",
+                "aligned": 50.0,
+                "n_only_in_oracle": 20,
+                "manual_frontier_status_counts": {
+                    "manual_compile_candidate": 1,
+                    "non_textual_or_out_of_scope": 8,
+                },
+                "agreement_residual": {
+                    "owner_phase": "canonical_op_compilation",
+                    "missing_proofs": ["canonical_operation_compilation"],
+                },
+            },
+        ],
+    )
+
+    payload = remaining.load_remaining_work(report)
+    lane_by_id = {lane["lane_id"]: lane for lane in payload["lanes"]}
+
+    assert lane_by_id["canonical_or_temporal_frontier"]["row_count"] == 1
+    assert lane_by_id["non_textual_or_out_of_scope_effect_frontier"][
+        "row_count"
+    ] == 1
+    assert lane_by_id["non_textual_or_out_of_scope_effect_frontier"][
+        "owner_phase"
+    ] == "effect_metadata_frontend"
+    assert "commencement_effect_as_text_mutation" in lane_by_id[
+        "non_textual_or_out_of_scope_effect_frontier"
+    ]["forbidden_shortcuts"]
+
+
 def test_oracle_suspect_and_zero_oracle_get_distinct_lanes(tmp_path) -> None:
     report = _write_report(
         tmp_path,

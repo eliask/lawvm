@@ -170,6 +170,22 @@ _LANE_SPECS = {
             "candidate_as_replay_authorization",
         ),
     ),
+    "non_textual_or_out_of_scope_effect_frontier": _LaneSpec(
+        lane_id="non_textual_or_out_of_scope_effect_frontier",
+        priority_rank=45,
+        owner_phase="effect_metadata_frontend",
+        work_kind="non_textual_or_out_of_scope_effect_visibility",
+        next_action=(
+            "Keep commencement, non-textual, and out-of-scope effect rows out of "
+            "text/tree replay unless a separate temporal/applicability "
+            "materialization proof is introduced."
+        ),
+        forbidden_shortcuts=(
+            "commencement_effect_as_text_mutation",
+            "out_of_scope_effect_as_noop_success",
+            "oracle_shape_as_temporal_materialization",
+        ),
+    ),
     "oracle_topology_granularity_residual": _LaneSpec(
         lane_id="oracle_topology_granularity_residual",
         priority_rank=40,
@@ -367,6 +383,11 @@ def _lane_for_row(
         "source_frontier:"
     ):
         return "source_footing_gap"
+    if (
+        triage_bucket in {"nonreplay_effect_frontier", "no_compiled_ops_frontier"}
+        and _only_non_textual_or_out_of_scope_effects(row)
+    ):
+        return "non_textual_or_out_of_scope_effect_frontier"
     if triage_bucket in _TRIAGE_LANES:
         return _TRIAGE_LANES[triage_bucket]
     if triage_bucket == _DEFAULT_REFERENCE_BUCKET:
@@ -585,6 +606,12 @@ def _missing_proofs_for_row(row: Mapping[str, Any]) -> tuple[str, ...]:
             if _int(count) > 0:
                 proofs.append(str(proof))
     return tuple(dict.fromkeys(proofs))
+
+
+def _only_non_textual_or_out_of_scope_effects(row: Mapping[str, Any]) -> bool:
+    counts = _mapping(row.get("manual_frontier_status_counts"))
+    total = sum(_int(value) for value in counts.values())
+    return total > 0 and set(counts) == {"non_textual_or_out_of_scope"}
 
 
 def _sample_statutes(
