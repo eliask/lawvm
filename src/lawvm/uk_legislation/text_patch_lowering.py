@@ -14,6 +14,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     _separate_listed_word_and_range_to_end_repeal_fragments,
     _separate_multi_quoted_word_repeal_fragments,
     _separate_occurrence_text_replace_fragments,
+    _separate_referent_qualified_text_replace_fragments,
     _separate_source_range_definition_entry_insert_fragments,
 )
 
@@ -41,6 +42,9 @@ def build_uk_text_patch_items(
     )
     separate_all_occurrences_replacements = _separate_all_occurrences_text_replace_fragments(
         fragment_subs
+    )
+    separate_referent_qualified_replacements = (
+        _separate_referent_qualified_text_replace_fragments(fragment_subs)
     )
     separate_compound_lettered_replacements = (
         _separate_compound_lettered_text_replace_fragments(fragment_subs)
@@ -159,6 +163,21 @@ def build_uk_text_patch_items(
             )
     elif curr_action == "text_replace" and separate_all_occurrences_replacements:
         for fragment in separate_all_occurrences_replacements:
+            text_patch_items.append(
+                UKTextPatchItem(
+                    TextPatchSpec(
+                        kind=TextPatchKindEnum.REPLACE,
+                        selector=TextSelector(
+                            match_text=fragment["original"],
+                            occurrence=0,
+                        ),
+                        replacement=fragment["replacement"],
+                    ),
+                    [fragment],
+                )
+            )
+    elif curr_action == "text_replace" and separate_referent_qualified_replacements:
+        for fragment in separate_referent_qualified_replacements:
             text_patch_items.append(
                 UKTextPatchItem(
                     TextPatchSpec(

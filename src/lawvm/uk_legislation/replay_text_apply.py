@@ -45,6 +45,7 @@ _EXCEPT_CHILD_SELECTOR_PREFIX = f"TEXT_EXCEPT_CHILD{US}"
 _EXCEPT_SOURCE_SIBLING_OCCURRENCE_SELECTOR_PREFIX = (
     f"TEXT_EXCEPT_SOURCE_SIBLING_OCCURRENCE{US}"
 )
+_REFERENT_QUALIFIED_SELECTOR_PREFIX = f"TEXT_REFERENT_QUALIFIED{US}"
 _ALTERNATE_UNIQUE_SELECTOR_PREFIX = f"TEXT_ALTERNATE_UNIQUE{US}"
 
 
@@ -168,6 +169,30 @@ def _rewrite_literal_substitution(
     for match in reversed(matches):
         new_text = new_text[: match.start()] + replacement + new_text[match.end() :]
     return ExceptPhraseTextRewrite(new_text, new_text != text)
+
+
+def _rewrite_referent_qualified_substitution(
+    text: str,
+    *,
+    original: str,
+    referent: str,
+    replacement: str,
+    occurrence: int,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> ExceptPhraseTextRewrite:
+    if not original or not referent:
+        return ExceptPhraseTextRewrite(text, False)
+    if _normalize_text(referent) not in _normalize_text(text):
+        return ExceptPhraseTextRewrite(text, False)
+    return _rewrite_literal_substitution(
+        text,
+        original=original,
+        replacement=replacement,
+        occurrence=occurrence,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
 
 
 def _rewrite_opening_words_after_anchor(
@@ -2461,6 +2486,36 @@ class UKReplayTextApplyMixin:
                 replacement,
                 recovery_rule_ids_out=recovery_rule_ids_out,
             )
+
+        if match.startswith(_REFERENT_QUALIFIED_SELECTOR_PREFIX):
+            parts = match.split(US, 2)
+            if len(parts) != 3:
+                return node, False
+            original = parts[1]
+            referent = parts[2]
+            made_any = False
+            rebuilt = node
+            for path, text_node in text_nodes:
+                result = _rewrite_referent_qualified_substitution(
+                    text_node.text or "",
+                    original=original,
+                    referent=referent,
+                    replacement=replacement,
+                    occurrence=occurrence,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                if not result.applied:
+                    continue
+                rebuilt = self._replace_descendant_at_path(
+                    rebuilt,
+                    path,
+                    dc_replace(text_node, text=result.text),
+                )
+                made_any = True
+            if made_any:
+                self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, made_any
 
         if match.startswith(_EXCEPT_PHRASE_SELECTOR_PREFIX):
             parts = match.split(US, 2)

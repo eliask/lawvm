@@ -36,6 +36,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_BARE_QUOTED_SUBSTITUTION_RULE_ID,
     UK_IN_DEFINITION_AT_END_TARGET_CONTEXT_INSERT_RULE_ID,
     UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
+    UK_REFERENT_QUALIFIED_SUBSTITUTION_RULE_ID,
     UK_SECTION_REFERENCE_REPEAL_RULE_ID,
     US,
     parse_fragment_substitution,
@@ -32664,6 +32665,160 @@ def test_replay_except_child_selector_blocks_duplicate_excluded_child_labels() -
     assert subsection.text == "A wife or husband may apply."
     assert subsection.children[0].text == "First wife or husband branch."
     assert subsection.children[1].text == "Second wife or husband branch."
+
+
+def test_compile_referent_qualified_substitution_preserves_referent_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-2-paragraph-22-a">
+          <Pnumber>a</Pnumber>
+          <Text>a for “he” and “him”, where they refer to the Rail Regulator, substitute “ it ”, and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-4c2da6e94fd3535d80e3d3f8e47b2698",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2004-07-05",
+        affected_uri="/id/ukpga/1996/61/section/21",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1996",
+        affected_number="61",
+        affected_provisions="s. 21",
+        affecting_uri="/id/ukpga/2003/20",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="20",
+        affecting_provisions="Sch. 2 para. 22(a)",
+        affecting_title="Railways and Transport Safety Act 2003",
+        in_force_dates=[{"date": "2004-07-05", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 2
+    assert {op.target.path for op in ops} == {
+        (("section", "21"),),
+    }
+    assert {
+        op.text_patch.selector.match_text
+        for op in ops
+        if op.text_patch is not None
+    } == {
+        f"TEXT_REFERENT_QUALIFIED{US}he{US}the Rail Regulator",
+        f"TEXT_REFERENT_QUALIFIED{US}him{US}the Rail Regulator",
+    }
+    assert {
+        op.text_patch.replacement
+        for op in ops
+        if op.text_patch is not None
+    } == {"it"}
+    assert {
+        record["reason_code"]
+        for record in lowering_records
+        if record["rule_id"] == UK_REFERENT_QUALIFIED_SUBSTITUTION_RULE_ID
+    } == {"explicit_referent_qualified_text_patch"}
+    assert all(
+        f"{_NOTE_TEXT_REWRITE_RULE}{UK_REFERENT_QUALIFIED_SUBSTITUTION_RULE_ID}"
+        in op.provenance_tags
+        for op in ops
+    )
+
+
+def test_compile_referent_qualified_singular_substitution() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-2-paragraph-22-b">
+          <Pnumber>b</Pnumber>
+          <Text>b for “his”, where it refers to the Rail Regulator, substitute “ its ”.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-51154af709802f64f0cb09c617973355",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2004-07-05",
+        affected_uri="/id/ukpga/1996/61/section/21",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1996",
+        affected_number="61",
+        affected_provisions="s. 21",
+        affecting_uri="/id/ukpga/2003/20",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="20",
+        affecting_provisions="Sch. 2 para. 22(b)",
+        affecting_title="Railways and Transport Safety Act 2003",
+        in_force_dates=[{"date": "2004-07-05", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert len(ops) == 1
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        f"TEXT_REFERENT_QUALIFIED{US}his{US}the Rail Regulator"
+    )
+    assert ops[0].text_patch.replacement == "its"
+
+
+def test_replay_referent_qualified_substitution_rewrites_only_referent_surfaces() -> None:
+    op = LegalOperation(
+        op_id="uk_test_referent_qualified_his",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "21"),)),
+        text_patch=_replace_patch(
+            f"TEXT_REFERENT_QUALIFIED{US}his{US}the Rail Regulator",
+            "its",
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1996/61",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="21",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "The Rail Regulator shall exercise his regulatory "
+                                "functions."
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            text="A person may exercise his rights independently.",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+    section = replayed.body.children[0]
+
+    assert section.children[0].text == (
+        "The Rail Regulator shall exercise its regulatory functions."
+    )
+    assert section.children[1].text == "A person may exercise his rights independently."
 
 
 def test_compile_source_sibling_excluded_occurrence_substitution() -> None:

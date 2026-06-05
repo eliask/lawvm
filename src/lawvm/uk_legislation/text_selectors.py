@@ -179,6 +179,14 @@ class ExceptSourceSiblingOccurrenceSelector:
 
 
 @dataclass(frozen=True, slots=True)
+class ReferentQualifiedSelector:
+    """Occurrences of ``original`` on text surfaces naming the source referent."""
+
+    original: str
+    referent: str
+
+
+@dataclass(frozen=True, slots=True)
 class RawSelector:
     """A not-yet-migrated ``TEXT_*`` sentinel string carried verbatim.
 
@@ -211,6 +219,7 @@ UKTextSelector = (
     | ExceptPhraseSelector
     | ExceptChildSelector
     | ExceptSourceSiblingOccurrenceSelector
+    | ReferentQualifiedSelector
     | RawSelector
 )
 
@@ -294,6 +303,8 @@ def selector_to_legacy_original(selector: UKTextSelector) -> str:
             f"{selector.source_sibling_kind}{US}"
             f"{selector.source_sibling_label}"
         )
+    if isinstance(selector, ReferentQualifiedSelector):
+        return f"TEXT_REFERENT_QUALIFIED{US}{selector.original}{US}{selector.referent}"
     if isinstance(selector, RawSelector):
         return selector.original
     raise TypeError(f"unknown selector: {selector!r}")
@@ -356,6 +367,11 @@ def selector_from_legacy_original(original: str) -> UKTextSelector:
         parts = original.split(US, 3)
         if len(parts) == 4:
             return ExceptChildSelector(parts[1], parts[2], parts[3])
+        return RawSelector(original)
+    if original.startswith(f"TEXT_REFERENT_QUALIFIED{US}"):
+        parts = original.split(US, 2)
+        if len(parts) == 3:
+            return ReferentQualifiedSelector(parts[1], parts[2])
         return RawSelector(original)
     if original.startswith(f"TEXT_AFTER_ANCHOR_BEFORE_FINAL_WORD{US}"):
         parts = original.split(US, 2)

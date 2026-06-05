@@ -75,6 +75,7 @@ from lawvm.uk_legislation.text_selectors import (
     OpeningWordsSelector,
     RangeFromToSelector,
     RangeToEndSelector,
+    ReferentQualifiedSelector,
     UKTextRewriteFragment,
     fragment_from_legacy_dict,
     fragment_to_legacy_dict,
@@ -195,6 +196,14 @@ _WHEREVER_EXCEPT_CHILD_SUBSTITUTED_RE = re.compile(
     r"(?P<child_kind>subsection|paragraph|sub-paragraph|subparagraph)\s+"
     r"\((?P<child_label>[0-9A-Za-z]+)\)"
     r",?\s+there\s+(?:is|are|shall\s+be)\s+substituted\s+"
+    rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+    re.I,
+)
+_REFERENT_QUALIFIED_SUBSTITUTION_RE = re.compile(
+    rf"for\s+(?P<originals>[“\"'‘]{_NON_QUOTE}{{1,500}}[”\"'’]"
+    rf"(?:\s*(?:,|and)\s*[“\"'‘]{_NON_QUOTE}{{1,500}}[”\"'’]){{0,{_MULTI_TERM_LIST_MAX}}})"
+    r"\s*,?\s+where\s+(?:they|it)\s+refers?\s+to\s+"
+    r"(?P<referent>[^,.;]{1,240}?)\s*,?\s+substitute\s+"
     rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
     re.I,
 )
@@ -336,6 +345,9 @@ UK_QUOTED_WORD_ORDINAL_PLACES_SUBSTITUTION_RULE_ID = (
 )
 UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID = "uk_effect_except_phrase_substitution_text_patch"
 UK_EXCEPT_CHILD_SUBSTITUTION_RULE_ID = "uk_effect_except_child_substitution_text_patch"
+UK_REFERENT_QUALIFIED_SUBSTITUTION_RULE_ID = (
+    "uk_effect_referent_qualified_substitution_text_patch"
+)
 UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID = "uk_effect_passive_quoted_substitution_text_patch"
 UK_BARE_QUOTED_SUBSTITUTION_RULE_ID = "uk_effect_bare_quoted_substitution_text_patch"
 UK_IMPERATIVE_REPLACE_WITH_SUBSTITUTION_RULE_ID = (
@@ -1222,6 +1234,23 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
                 )
             )
         )
+
+    for m in _REFERENT_QUALIFIED_SUBSTITUTION_RE.finditer(text):
+        referent = " ".join(m.group("referent").split()).strip()
+        replacement = " ".join(m.group("replacement").split()).strip()
+        if not referent or not replacement:
+            continue
+        for original in _quoted_terms(m.group("originals")):
+            subs.append(
+                fragment_to_legacy_dict(
+                    UKTextRewriteFragment(
+                        selector=ReferentQualifiedSelector(original, referent),
+                        replacement=replacement,
+                        rule_id=UK_REFERENT_QUALIFIED_SUBSTITUTION_RULE_ID,
+                        occurrence="0",
+                    )
+                )
+            )
 
     for m in _EACH_TIME_IT_APPEARS_SUBSTITUTION_RE.finditer(text):
         subs.append(

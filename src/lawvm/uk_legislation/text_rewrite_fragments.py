@@ -23,6 +23,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_EXCEPT_CHILD_SUBSTITUTION_RULE_ID,
     UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID,
     UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID,
+    UK_REFERENT_QUALIFIED_SUBSTITUTION_RULE_ID,
     UK_QUOTED_SUBSTITUTE_DASH_QUOTED_PAYLOAD_RULE_ID,
     UK_QUOTED_SUBSTITUTION_SCOPE_NOTE_RULE_ID,
     UK_AFTER_QUOTED_ANCHOR_CLOSING_QUOTE_INSERT_RULE_ID,
@@ -583,6 +584,38 @@ def append_basic_text_rewrite_observations(
                     "replacement": str(fragment.get("replacement") or ""),
                     "excluded_child_kind": child_kind,
                     "excluded_child_label": child_label,
+                    "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
+                },
+            )
+    if UK_REFERENT_QUALIFIED_SUBSTITUTION_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if (
+                str(fragment.get("rule_id") or "")
+                != UK_REFERENT_QUALIFIED_SUBSTITUTION_RULE_ID
+            ):
+                continue
+            selector = str(fragment.get("original") or "")
+            parts = selector.split(US, 2)
+            referent = parts[2] if len(parts) == 3 else ""
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_REFERENT_QUALIFIED_SUBSTITUTION_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="explicit_referent_qualified_text_patch",
+                reason=(
+                    "UK effect source explicitly substitutes quoted words only "
+                    "where they refer to a named source entity; lowering preserves "
+                    "that entity as part of the text selector."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": selector,
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "referent": referent,
                     "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
                 },
             )
@@ -3278,6 +3311,32 @@ def _separate_all_occurrences_text_replace_fragments(
         replacement = str(item.get("replacement") or "")
         rule_id = str(item.get("rule_id") or "")
         if rule_id not in UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS or not original:
+            return ()
+        fragments.append(
+            {
+                "original": original,
+                "replacement": replacement,
+                "rule_id": rule_id,
+            }
+        )
+    return tuple(fragments)
+
+
+def _separate_referent_qualified_text_replace_fragments(
+    fragment_subs: Optional[list],
+) -> tuple[dict[str, str], ...]:
+    if not fragment_subs or len(fragment_subs) <= 1:
+        return ()
+    fragments: list[dict[str, str]] = []
+    for item in fragment_subs:
+        original = str(item.get("original") or "")
+        replacement = str(item.get("replacement") or "")
+        rule_id = str(item.get("rule_id") or "")
+        if (
+            rule_id != UK_REFERENT_QUALIFIED_SUBSTITUTION_RULE_ID
+            or not original.startswith(f"TEXT_REFERENT_QUALIFIED{US}")
+            or not replacement
+        ):
             return ()
         fragments.append(
             {
