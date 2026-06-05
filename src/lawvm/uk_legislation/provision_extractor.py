@@ -154,22 +154,28 @@ _PROVISION_KIND_SYNONYMS = {
 }
 
 
+def _append_sequence_token(seq_parts: list[str], part: str) -> None:
+    if not part:
+        return
+    p_low = part.lower()
+    if p_low in _SEQUENCE_KIND_TOKENS:
+        seq_parts.append(p_low)
+    elif p_low in _ROMAN_NUMERAL_LABELS:
+        seq_parts.append(_ROMAN_NUMERAL_LABELS[p_low])
+    elif p_low.isascii() and p_low.isdigit():
+        seq_parts.append(p_low)
+    elif p_low.isascii() and p_low.isalpha():
+        seq_parts.append(p_low)
+    elif match := _NUM_ALPHA_RE.fullmatch(p_low):
+        seq_parts.extend([match.group(1), match.group(2)])
+
+
 @lru_cache(maxsize=131072)
 def _sequence_tokens_cached(parts: tuple[str, ...]) -> tuple[str, ...]:
     """Normalize ID/reference parts while preserving token boundaries."""
     seq_parts: list[str] = []
     for p in parts:
-        p_low = p.lower()
-        if p_low in _SEQUENCE_KIND_TOKENS:
-            seq_parts.append(p_low)
-        elif p_low in _ROMAN_NUMERAL_LABELS:
-            seq_parts.append(_ROMAN_NUMERAL_LABELS[p_low])
-        elif p_low.isascii() and p_low.isdigit():
-            seq_parts.append(p_low)
-        elif p_low.isascii() and p_low.isalpha():
-            seq_parts.append(p_low)
-        elif match := _NUM_ALPHA_RE.fullmatch(p_low):
-            seq_parts.extend([match.group(1), match.group(2)])
+        _append_sequence_token(seq_parts, p)
     return tuple(seq_parts)
 
 
@@ -180,7 +186,10 @@ def _sequence_tokens(parts: list[str] | tuple[str, ...]) -> tuple[str, ...]:
 @lru_cache(maxsize=131072)
 def _get_id_sequence(eid: str) -> tuple[str, ...]:
     """Extract semantic components with boundary preservation."""
-    return _sequence_tokens_cached(tuple(eid.replace("_", "-").split("-")))
+    seq_parts: list[str] = []
+    for part in eid.replace("_", "-").split("-"):
+        _append_sequence_token(seq_parts, part)
+    return tuple(seq_parts)
 
 
 @lru_cache(maxsize=131072)
