@@ -2551,6 +2551,75 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_at_end_there_is_inse
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_schedule_target_end_insert_fragment_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text=(
+            "j at the end, after the insertions made by Schedule 1, insert- "
+            "\"Sitting in retirement office under section 123 of the Public "
+            "Service Pensions and Judicial Offices Act 2022\"."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+                "affected_provisions": "Sch. 5",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_marks_schedule_target_after_entry_fragment_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text="d after that entry insert- Lay magistrate appointed under the Justice Act;",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+                "original_affected_provisions": "Sch. 5",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_does_not_mark_end_insert_fragment_without_schedule_target() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text="j at the end insert- \"new words\".",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+                "affected_provisions": "s. 5",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["rule_id"] != "uk_manual_frontier_schedule_list_entry_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_schedule_table_end_rows_missing_payload_source_insufficient() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",

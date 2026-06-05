@@ -1459,6 +1459,23 @@ def _looks_like_table_crossheading_target(text: str, *, target_paths: Iterable[s
     )
 
 
+def _looks_like_schedule_list_entry_fragment(
+    text: str,
+    *,
+    target_paths: Iterable[str] = (),
+) -> bool:
+    norm = _normalize_effect_text(text)
+    if "insert" not in norm:
+        return False
+    targets_norm = " ".join(str(path or "").lower() for path in target_paths)
+    if not re.search(r"\b(?:sch\.?|schedule)\b", targets_norm):
+        return False
+    return bool(
+        re.search(r"\bat\s+the\s+end\b.{0,160}\binsert\b", norm)
+        or re.search(r"\bafter\s+(?:that\s+)?entry\s+insert\b", norm)
+    )
+
+
 def _looks_like_appropriate_place_insert_instruction(text: str) -> bool:
     norm = _normalize_effect_text(text)
     return bool(
@@ -3225,6 +3242,26 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_schedule_list_entry_candidate",
             "reason": "The source targets a schedule/list entry by anchor entry text; a claim or future list-entry compiler must identify the entry carrier and sibling insertion point rather than mutating collapsed schedule text.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and _looks_like_schedule_list_entry_fragment(
+            extracted_text_norm,
+            target_paths=(
+                str(
+                    rejection.get("original_affected_provisions")
+                    or rejection.get("affected_provisions")
+                    or ""
+                )
+                for rejection in lowering_rows
+            ),
+        )
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_schedule_list_entry_candidate",
+            "reason": "The source fragment carries a schedule/list entry insertion while the effect row supplies the schedule target; a claim or future list-entry compiler must identify the entry carrier and sibling insertion point before replay.",
         }
 
     if "uk_effect_structural_sibling_insert_rejected" in blocking_rules or (
