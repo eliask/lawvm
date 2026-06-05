@@ -255,6 +255,105 @@ def test_lane_filtered_items_are_non_executable_work_queue_rows(tmp_path) -> Non
     assert candidate_set["next_promotion_requires"] == ["source_identity"]
 
 
+def test_manual_frontier_items_export_replay_neutral_evidence_counters(
+    tmp_path,
+) -> None:
+    report = _write_report(
+        tmp_path,
+        [
+            {
+                "statute_id": "ukpga/2000/8",
+                "score_status": "scored",
+                "triage_bucket": "manual_compile_frontier_residual",
+                "aligned": 74.85,
+                "n_only_in_oracle": 3,
+                "oracle_only_eid_samples": ["section-1", "section-2"],
+                "source_chain_frontier_reasons": [
+                    "manual_frontier_source_insufficient"
+                ],
+                "manual_frontier_status_counts": {
+                    "manual_compile_candidate": 2,
+                    "source_insufficient": 1,
+                },
+                "manual_frontier_rule_counts": {
+                    "uk_manual_frontier_schedule_list_entry_candidate": 2,
+                    "uk_manual_frontier_source_payload_without_instruction_context": 1,
+                },
+                "manual_frontier_work_item_family_counts": {
+                    "uk_manual_frontier_schedule_list_entry_candidate": 2,
+                },
+                "compile_rejection_rule_counts": {
+                    "uk_effect_lowering_no_supported_action_rejected": 1,
+                    "zero_count_should_drop": 0,
+                },
+                "blocking_compile_rejection_rule_counts": {
+                    "uk_effect_repeal_table_structural_repeal_unresolved": 1,
+                },
+                "mutation_boundary_proof_status_counts": {"proved": 4},
+                "mutation_boundary_proof_rule_counts": {
+                    "mutation_boundary_path_set_proved": 4,
+                },
+                "mutation_boundary_result_code_counts": {"ok": 4},
+                "n_mutation_boundary_unexplained_reports": 0,
+                "n_mutation_boundary_unexplained_paths": 0,
+                "agreement_residual": {
+                    "owner_phase": "typed_elaboration",
+                    "missing_proofs": [
+                        "target_identity",
+                        "payload_or_boundary_identity",
+                        "mutation_boundary_proof",
+                    ],
+                },
+            },
+        ],
+    )
+
+    payload = remaining.load_remaining_work(
+        report,
+        include_items=True,
+        item_lane_ids=frozenset({"manual_compilation_frontier"}),
+    )
+
+    item = payload["items"][0]
+    assert item["executable"] is False
+    assert item["replay_authorized"] is False
+    assert item["manual_frontier_status_counts"] == {
+        "manual_compile_candidate": 2,
+        "source_insufficient": 1,
+    }
+    assert item["manual_frontier_rule_counts"] == {
+        "uk_manual_frontier_schedule_list_entry_candidate": 2,
+        "uk_manual_frontier_source_payload_without_instruction_context": 1,
+    }
+    assert item["manual_frontier_work_item_family_counts"] == {
+        "uk_manual_frontier_schedule_list_entry_candidate": 2,
+    }
+    assert item["compile_rejection_rule_counts"] == {
+        "uk_effect_lowering_no_supported_action_rejected": 1,
+    }
+    assert item["blocking_compile_rejection_rule_counts"] == {
+        "uk_effect_repeal_table_structural_repeal_unresolved": 1,
+    }
+    assert item["mutation_boundary_proof_status_counts"] == {"proved": 4}
+    assert item["mutation_boundary_proof_rule_counts"] == {
+        "mutation_boundary_path_set_proved": 4,
+    }
+    assert item["mutation_boundary_result_code_counts"] == {"ok": 4}
+    assert item["mutation_boundary_unexplained_report_count"] == 0
+    assert item["mutation_boundary_unexplained_path_count"] == 0
+    detail = item["frontier_work_item"]["detail"]
+    assert detail["evidence_counters"]["compile_rejection_rule_counts"] == {
+        "uk_effect_lowering_no_supported_action_rejected": 1,
+    }
+    assert detail["evidence_counters"]["manual_frontier_status_counts"] == {
+        "manual_compile_candidate": 2,
+        "source_insufficient": 1,
+    }
+    assert item["execution_authorization"]["authorization_status"] == (
+        "non_executable_work_item"
+    )
+
+
 def test_item_export_rejects_unknown_lane(tmp_path) -> None:
     report = _write_report(tmp_path, [])
 

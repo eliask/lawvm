@@ -71,6 +71,16 @@ class UKRemainingWorkItem:
     n_only_in_oracle: int
     source_chain_frontier_reasons: tuple[str, ...]
     missing_proofs: tuple[str, ...]
+    manual_frontier_status_counts: Mapping[str, int]
+    manual_frontier_rule_counts: Mapping[str, int]
+    manual_frontier_work_item_family_counts: Mapping[str, int]
+    compile_rejection_rule_counts: Mapping[str, int]
+    blocking_compile_rejection_rule_counts: Mapping[str, int]
+    mutation_boundary_proof_status_counts: Mapping[str, int]
+    mutation_boundary_proof_rule_counts: Mapping[str, int]
+    mutation_boundary_result_code_counts: Mapping[str, int]
+    mutation_boundary_unexplained_report_count: int
+    mutation_boundary_unexplained_path_count: int
     base_source_status: str
     base_source_locator: str
     oracle_source_status: str
@@ -561,6 +571,7 @@ def _remaining_work_item(
     source_chain_frontier_reasons = _string_tuple(
         row.get("source_chain_frontier_reasons")
     )
+    evidence_counters = _remaining_work_item_evidence_counters(row)
     replay_only_eid_samples = _string_tuple(row.get("replay_only_eid_samples"))
     oracle_only_eid_samples = _string_tuple(row.get("oracle_only_eid_samples"))
     return UKRemainingWorkItem(
@@ -582,6 +593,34 @@ def _remaining_work_item(
         n_only_in_oracle=_int(row.get("n_only_in_oracle")),
         source_chain_frontier_reasons=source_chain_frontier_reasons,
         missing_proofs=missing_proofs,
+        manual_frontier_status_counts=evidence_counters[
+            "manual_frontier_status_counts"
+        ],
+        manual_frontier_rule_counts=evidence_counters["manual_frontier_rule_counts"],
+        manual_frontier_work_item_family_counts=evidence_counters[
+            "manual_frontier_work_item_family_counts"
+        ],
+        compile_rejection_rule_counts=evidence_counters[
+            "compile_rejection_rule_counts"
+        ],
+        blocking_compile_rejection_rule_counts=evidence_counters[
+            "blocking_compile_rejection_rule_counts"
+        ],
+        mutation_boundary_proof_status_counts=evidence_counters[
+            "mutation_boundary_proof_status_counts"
+        ],
+        mutation_boundary_proof_rule_counts=evidence_counters[
+            "mutation_boundary_proof_rule_counts"
+        ],
+        mutation_boundary_result_code_counts=evidence_counters[
+            "mutation_boundary_result_code_counts"
+        ],
+        mutation_boundary_unexplained_report_count=_int(
+            row.get("n_mutation_boundary_unexplained_reports")
+        ),
+        mutation_boundary_unexplained_path_count=_int(
+            row.get("n_mutation_boundary_unexplained_paths")
+        ),
         base_source_status=str(row.get("base_source_status") or ""),
         base_source_locator=str(row.get("base_source_locator") or ""),
         oracle_source_status=str(row.get("oracle_source_status") or ""),
@@ -604,6 +643,7 @@ def _remaining_work_item(
             work_item_id=work_item_id,
             owner_phase=owner_phase,
             missing_proofs=missing_proofs,
+            evidence_counters=evidence_counters,
             source_chain_frontier_reasons=source_chain_frontier_reasons,
             replay_only_eid_samples=replay_only_eid_samples,
             oracle_only_eid_samples=oracle_only_eid_samples,
@@ -654,6 +694,7 @@ def _frontier_work_item(
     work_item_id: str,
     owner_phase: str,
     missing_proofs: tuple[str, ...],
+    evidence_counters: Mapping[str, Mapping[str, int]],
     source_chain_frontier_reasons: tuple[str, ...],
     replay_only_eid_samples: tuple[str, ...],
     oracle_only_eid_samples: tuple[str, ...],
@@ -709,8 +750,48 @@ def _frontier_work_item(
             "effective_oracle_remaining_question": str(
                 row.get("effective_oracle_remaining_question") or ""
             ),
+            "evidence_counters": {
+                key: dict(value) for key, value in evidence_counters.items()
+            },
+            "mutation_boundary_unexplained_report_count": _int(
+                row.get("n_mutation_boundary_unexplained_reports")
+            ),
+            "mutation_boundary_unexplained_path_count": _int(
+                row.get("n_mutation_boundary_unexplained_paths")
+            ),
         },
     )
+
+
+def _remaining_work_item_evidence_counters(
+    row: Mapping[str, Any],
+) -> Mapping[str, Mapping[str, int]]:
+    return {
+        "manual_frontier_status_counts": _int_mapping(
+            row.get("manual_frontier_status_counts")
+        ),
+        "manual_frontier_rule_counts": _int_mapping(
+            row.get("manual_frontier_rule_counts")
+        ),
+        "manual_frontier_work_item_family_counts": _int_mapping(
+            row.get("manual_frontier_work_item_family_counts")
+        ),
+        "compile_rejection_rule_counts": _int_mapping(
+            row.get("compile_rejection_rule_counts")
+        ),
+        "blocking_compile_rejection_rule_counts": _int_mapping(
+            row.get("blocking_compile_rejection_rule_counts")
+        ),
+        "mutation_boundary_proof_status_counts": _int_mapping(
+            row.get("mutation_boundary_proof_status_counts")
+        ),
+        "mutation_boundary_proof_rule_counts": _int_mapping(
+            row.get("mutation_boundary_proof_rule_counts")
+        ),
+        "mutation_boundary_result_code_counts": _int_mapping(
+            row.get("mutation_boundary_result_code_counts")
+        ),
+    }
 
 
 def _candidate_set_certificate(
@@ -1068,6 +1149,14 @@ def _mapping(value: Any) -> Mapping[str, Any]:
     if isinstance(value, Mapping):
         return value
     return {}
+
+
+def _int_mapping(value: Any) -> Mapping[str, int]:
+    return {
+        str(key): _int(count)
+        for key, count in _mapping(value).items()
+        if _int(count) > 0
+    }
 
 
 def _string_tuple(value: Any) -> tuple[str, ...]:
