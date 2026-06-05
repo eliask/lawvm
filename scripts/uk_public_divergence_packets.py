@@ -58,6 +58,19 @@ class PublicPageStatusWitness:
 
 
 @dataclass(frozen=True)
+class CurrentTimelineXmlWitness:
+    source_xml_url: str
+    snapshot_sha256: str
+    snapshot_path: str
+    byte_count: int
+    restrict_start_date: str
+    restrict_end_date: str
+    has_dotted_repeal_text: bool
+    repeal_commentary_texts: tuple[str, ...]
+    effective_oracle_kind: str
+
+
+@dataclass(frozen=True)
 class PublicOperationEvidence:
     action: str
     affected_provision: str
@@ -83,6 +96,7 @@ class PublicDivergencePacket:
     operation_evidence: tuple[PublicOperationEvidence, ...]
     public_snapshots: tuple[PublicSnapshot, ...]
     current_page_status_witnesses: tuple[PublicPageStatusWitness, ...]
+    current_timeline_xml_witnesses: tuple[CurrentTimelineXmlWitness, ...]
     missing_standalone_evidence: tuple[str, ...]
     verification_question: str
     caveats_to_check: tuple[str, ...]
@@ -197,6 +211,7 @@ def _packet_from_candidate(
         )
         public_snapshots = (*public_snapshots, *timeline_snapshots)
         current_page_status_witnesses = _current_page_status_witnesses(public_snapshots)
+    current_timeline_xml_witnesses = _current_timeline_xml_witnesses(public_snapshots)
     missing = _missing_standalone_evidence(
         operation_evidence=operation_evidence,
         public_snapshots=public_snapshots,
@@ -214,6 +229,7 @@ def _packet_from_candidate(
         operation_evidence=operation_evidence,
         public_snapshots=public_snapshots,
         current_page_status_witnesses=current_page_status_witnesses,
+        current_timeline_xml_witnesses=current_timeline_xml_witnesses,
         missing_standalone_evidence=missing,
         verification_question=(
             "Does the current page still expose the listed provision while the "
@@ -416,6 +432,80 @@ def _current_page_status_witnesses(
     return tuple(witnesses)
 
 
+def _current_timeline_xml_witnesses(
+    snapshots: Sequence[PublicSnapshot],
+) -> tuple[CurrentTimelineXmlWitness, ...]:
+    witnesses: list[CurrentTimelineXmlWitness] = []
+    for snapshot in snapshots:
+        if snapshot.role != "current_timeline_source_xml" or not snapshot.storage_path:
+            continue
+        path = Path(snapshot.storage_path)
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        repeal_commentaries = _repeal_commentary_texts(text)
+        has_dotted_repeal_text = _has_dotted_repeal_text(text)
+        witnesses.append(
+            CurrentTimelineXmlWitness(
+                source_xml_url=snapshot.final_url or snapshot.requested_url,
+                snapshot_sha256=snapshot.sha256,
+                snapshot_path=snapshot.storage_path,
+                byte_count=snapshot.byte_count,
+                restrict_start_date=_xml_attr(text, "RestrictStartDate"),
+                restrict_end_date=_xml_attr(text, "RestrictEndDate"),
+                has_dotted_repeal_text=has_dotted_repeal_text,
+                repeal_commentary_texts=repeal_commentaries,
+                effective_oracle_kind=_effective_oracle_kind(
+                    has_dotted_repeal_text=has_dotted_repeal_text,
+                    repeal_commentaries=repeal_commentaries,
+                ),
+            )
+        )
+    return tuple(witnesses)
+
+
+def _xml_attr(text: str, name: str) -> str:
+    match = re.search(rf'\b{re.escape(name)}="([^"]*)"', text)
+    return match.group(1) if match else ""
+
+
+def _has_dotted_repeal_text(text: str) -> bool:
+    for match in re.finditer(r"<Text>(.*?)</Text>", text, flags=re.DOTALL):
+        value = _html_text(match.group(1))
+        if len(value) >= 12 and set(value.replace(" ", "")) == {"."}:
+            return True
+    return False
+
+
+def _repeal_commentary_texts(text: str) -> tuple[str, ...]:
+    out: list[str] = []
+    for match in re.finditer(
+        r'<Commentary\b[^>]*\bType="F"[^>]*>(.*?)</Commentary>',
+        text,
+        flags=re.DOTALL,
+    ):
+        value = _html_text(match.group(1))
+        if "repeal" in value.lower():
+            out.append(value)
+        if len(out) >= 3:
+            break
+    return tuple(out)
+
+
+def _effective_oracle_kind(
+    *,
+    has_dotted_repeal_text: bool,
+    repeal_commentaries: Sequence[str],
+) -> str:
+    if has_dotted_repeal_text and repeal_commentaries:
+        return "dated_current_xml_repealed"
+    if has_dotted_repeal_text:
+        return "dated_current_xml_dotted_without_repeal_note"
+    if repeal_commentaries:
+        return "dated_current_xml_repeal_note_without_dotted_text"
+    return "dated_current_xml_no_repeal_marker"
+
+
 def _status_warning_class(text: str) -> str:
     match = re.search(r'<div\s+id="statusWarning"\s+class="([^"]*)"', text)
     return match.group(1) if match else ""
@@ -542,6 +632,12 @@ def _emit_json(packets: Sequence[PublicDivergencePacket]) -> str:
                 for packet in packets
                 for snapshot in packet.public_snapshots
                 if snapshot.role == "current_timeline_source_xml"
+            ),
+            "current_timeline_xml_repealed_witness_count": sum(
+                1
+                for packet in packets
+                for witness in packet.current_timeline_xml_witnesses
+                if witness.effective_oracle_kind == "dated_current_xml_repealed"
             ),
             "packets_missing_standalone_evidence": sum(
                 1 for packet in packets if packet.missing_standalone_evidence

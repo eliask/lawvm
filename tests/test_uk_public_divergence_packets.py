@@ -307,7 +307,14 @@ def test_fetch_current_timeline_xml_writes_dated_oracle_snapshot(tmp_path) -> No
         """,
         "https://www.legislation.gov.uk/ukpga/2011/22/enacted/data.xml": b"<xml>enacted</xml>",
         "https://www.legislation.gov.uk/ukpga/2011/22/data.xml": b"<xml>current</xml>",
-        dated_xml: b"<xml><Text>. . . repealed . . .</Text></xml>",
+        dated_xml: b"""
+          <Legislation RestrictStartDate="2012-09-14" RestrictEndDate="2014-12-02">
+            <Text>. . . . . . . . . . . . . . . . . . . . .</Text>
+            <Commentaries>
+              <Commentary Type="F"><Para><Text>S. 4 repealed (14.9.2012) by s. 10(2)</Text></Para></Commentary>
+            </Commentaries>
+          </Legislation>
+        """,
     }
 
     def fetcher(url: str):
@@ -336,6 +343,18 @@ def test_fetch_current_timeline_xml_writes_dated_oracle_snapshot(tmp_path) -> No
     assert row.current_page_status_witnesses[
         0
     ].current_timeline_source_xml_snapshot_path == timeline_snapshots[0].storage_path
+    assert len(row.current_timeline_xml_witnesses) == 1
+    xml_witness = row.current_timeline_xml_witnesses[0]
+    assert xml_witness.source_xml_url == dated_xml
+    assert xml_witness.snapshot_sha256 == timeline_snapshots[0].sha256
+    assert xml_witness.restrict_start_date == "2012-09-14"
+    assert xml_witness.restrict_end_date == "2014-12-02"
+    assert xml_witness.has_dotted_repeal_text is True
+    assert xml_witness.repeal_commentary_texts == (
+        "S. 4 repealed (14.9.2012) by s. 10(2)",
+    )
+    assert xml_witness.effective_oracle_kind == "dated_current_xml_repealed"
     payload = json.loads(packets._emit_json([row]))
     assert payload["summary"]["packets_with_current_page_status_witnesses"] == 1
     assert payload["summary"]["current_timeline_source_xml_snapshot_count"] == 1
+    assert payload["summary"]["current_timeline_xml_repealed_witness_count"] == 1
