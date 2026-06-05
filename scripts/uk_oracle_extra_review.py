@@ -304,15 +304,44 @@ def _emit_json(rows: Sequence[UKOracleExtraReviewRow]) -> str:
 
 def _emit_markdown(rows: Sequence[UKOracleExtraReviewRow]) -> str:
     manual = [row for row in rows if row.review_status == "manual_review_candidate"]
+    status_counts: dict[str, int] = {}
+    for row in rows:
+        status_counts[row.review_status] = status_counts.get(row.review_status, 0) + 1
     lines = [
         "# UK oracle-extra manual review candidates",
         "",
         "This is a review queue, not a legal conclusion.",
         "",
+        "Review status counts:",
     ]
+    for status, count in sorted(status_counts.items(), key=lambda item: (-item[1], item[0])):
+        lines.append(f"- {status}: {count}")
+    lines.append("")
+    source_chain = [
+        row for row in rows if row.review_status == "likely_source_chain_or_lowering_gap"
+    ]
+    if source_chain:
+        lines.extend(
+            [
+                "Source-chain/lowering leads to inspect:",
+                "",
+            ]
+        )
+        for index, row in enumerate(source_chain[:10], start=1):
+            lines.append(f"{index}. {row.statute_id} {row.target}: {row.reason}")
+            for commentary in row.oracle_commentaries[:2]:
+                lines.append(f"Commentary: {commentary}")
+            lines.append(f"Current text: {row.oracle_text_preview}")
+            lines.append("")
     if not manual:
         lines.append("No sampled target currently survives as a clean manual-review candidate.")
         return "\n".join(lines) + "\n"
+    lines.extend(
+        [
+            "Clean manual-review candidates:",
+            "",
+        ]
+    )
     for index, row in enumerate(manual, start=1):
         lines.append(f"{index}. {row.statute_id} {row.target}: {row.reason}")
         lines.append(f"Current text: {row.oracle_text_preview}")

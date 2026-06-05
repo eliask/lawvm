@@ -39,6 +39,31 @@ def test_addition_with_commentary_is_source_chain_gap() -> None:
     assert row.agreement_residual["family"] == "source_footing_gap"
 
 
+def test_markdown_surfaces_source_chain_leads_even_without_manual_candidates() -> None:
+    row = review.review_target(
+        statute_id="ukpga/1980/60",
+        target="section-6-1A",
+        base_xml=_xml('<P1 id="section-6"><Pnumber>6</Pnumber></P1>'),
+        oracle_xml=_xml(
+            """
+            <P2 id="section-6-1A">
+              <Pnumber><Addition ChangeId="d30p378" CommentaryRef="c739958">1A</Addition></Pnumber>
+              <P2para><Text><Addition ChangeId="d30p378" CommentaryRef="c739958">Inserted text.</Addition></Text></P2para>
+            </P2>
+            """,
+            '<Commentary id="c739958"><Para><Text>S. 6(1A) inserted by S.I. 1988/1984.</Text></Para></Commentary>',
+        ),
+    )
+
+    markdown = review._emit_markdown([row])
+
+    assert "likely_source_chain_or_lowering_gap: 1" in markdown
+    assert "Source-chain/lowering leads to inspect:" in markdown
+    assert "ukpga/1980/60 section-6-1A" in markdown
+    assert "S. 6(1A) inserted by S.I. 1988/1984." in markdown
+    assert "No sampled target currently survives" in markdown
+
+
 def test_wrapper_target_is_topology_residual() -> None:
     row = review.review_target(
         statute_id="asp/2020/2",
