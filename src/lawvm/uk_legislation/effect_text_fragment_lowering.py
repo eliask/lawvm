@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 import re
 from lxml import etree as ET
 from typing import Any, Optional
@@ -25,6 +26,7 @@ from lawvm.uk_legislation.heading_facets import (
 from lawvm.uk_legislation.nlp_parser import (
     _ORDINAL_OCCURRENCES,
     _ORDINAL_OCCURRENCE_WORDS,
+    UK_AFTER_QUOTED_ANCHOR_EXCEPT_CHILD_INSERT_RULE_ID,
     UK_IN_DEFINITION_AT_END_TARGET_CONTEXT_INSERT_RULE_ID,
     US,
     is_whole_node_replacement,
@@ -119,6 +121,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     UK_TARGET_SCOPED_EACH_CHILD_AFTER_WORD_INSERT_RULE_ID,
 )
 from lawvm.uk_legislation.text_selectors import (
+    ExceptChildSelector,
     ExceptSourceSiblingOccurrenceSelector,
     UKTextRewriteFragment,
     fragment_to_legacy_dict,
@@ -171,6 +174,22 @@ _SOURCE_SIBLING_CHILD_TARGET_RE = re.compile(
     r"\((?P<child_label>[0-9A-Za-z]+)\)",
     flags=re.I,
 )
+_AFTER_ANCHOR_EACH_PLACE_EXCEPT_CHILD_INSERT_RE = re.compile(
+    r"\bafter\s+[“\"'‘](?P<anchor>[^”\"'’]{1,500})[”\"'’]\s*,?\s+"
+    r"in\s+each\s+place\s+except\s+"
+    r"(?P<child_kind>paragraph|sub-?paragraph|subparagraph)\s*"
+    r"\(\s*(?P<child_label>[0-9A-Za-z]+)\s*\)"
+    r"(?:\s*\(\s*(?P<grandchild_label>[0-9A-Za-z]+)\s*\))?\s+"
+    r"to\s+the\s+proviso\s+to\s+subsection\s*"
+    r"\(\s*(?P<excluded_subsection>[0-9A-Za-z]+)\s*\)\s+"
+    r"insert\s+[“\"'‘](?P<inserted>[^”\"'’]{1,500})[”\"'’]",
+    flags=re.I,
+)
+_SOURCE_SUBSECTIONS_LIST_RE = re.compile(
+    r"\bsubsections\s+(?P<body>[^.;]{1,240})",
+    flags=re.I,
+)
+_SOURCE_SUBSECTION_LABEL_RE = re.compile(r"\(\s*([0-9A-Za-z]+)\s*\)")
 _AMOUNT_SPECIFIED_SECTION_TARGET_RE = re.compile(
     r"\bamount\s+specified\s+in\s+section\s+"
     r"(?P<section>[0-9]+[A-Za-z]?)"
@@ -183,6 +202,14 @@ _AMOUNT_SPECIFIED_SUBSECTION_TARGET_RE = re.compile(
     flags=re.I,
 )
 _AMOUNT_SPECIFIED_SUFFIX_LABEL_RE = re.compile(r"\(([0-9A-Za-z]+)\)")
+
+
+@lru_cache(maxsize=256)
+def _source_subsection_target_re(clean_target: str) -> re.Pattern[str]:
+    return re.compile(
+        rf"\bsubsection\s*\(\s*{re.escape(clean_target)}\s*\)",
+        flags=re.I,
+    )
 
 
 def _amount_specified_source_target_path(text: str) -> tuple[tuple[str, str], ...]:
@@ -293,6 +320,77 @@ def _fragment_substitution_source_sibling_except_occurrence(
             )
         )
     return None
+
+
+def _effect_after_anchor_except_child_insert_fragment(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect.effect_type or "").lower().split())
+    if norm_effect_type not in {"word inserted", "words inserted"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    match = _AFTER_ANCHOR_EACH_PLACE_EXCEPT_CHILD_INSERT_RE.search(text)
+    if match is None:
+        return None
+    target_kind = _addr_leaf_kind(target)
+    target_label = _clean_num(_addr_leaf_label(target) or "")
+    if target_kind != "subsection" or not target_label:
+        return None
+    if not _source_mentions_subsection_target(text, target_label):
+        return None
+    anchor = " ".join(match.group("anchor").split()).strip()
+    inserted = " ".join(match.group("inserted").split()).strip()
+    if not anchor or not inserted:
+        return None
+    joiner = (
+        ""
+        if anchor.endswith((" ", "\t", "\n", "\r"))
+        or inserted.startswith((" ", ",", ".", ";", ":", ")"))
+        else " "
+    )
+    replacement = f"{anchor}{joiner}{inserted}"
+    excluded_subsection = _clean_num(match.group("excluded_subsection"))
+    if target_label != excluded_subsection:
+        return {
+            "original": anchor,
+            "replacement": replacement,
+            "rule_id": UK_AFTER_QUOTED_ANCHOR_EXCEPT_CHILD_INSERT_RULE_ID,
+        }
+    child_kind = match.group("child_kind").replace("-", "").lower()
+    child_label = _clean_num(match.group("child_label"))
+    grandchild_label = _clean_num(match.group("grandchild_label") or "")
+    if grandchild_label:
+        child_kind = "subparagraph"
+        child_label = grandchild_label
+    if not child_label:
+        return None
+    return fragment_to_legacy_dict(
+        UKTextRewriteFragment(
+            selector=ExceptChildSelector(anchor, child_kind, child_label),
+            replacement=replacement,
+            rule_id=UK_AFTER_QUOTED_ANCHOR_EXCEPT_CHILD_INSERT_RULE_ID,
+            occurrence="0",
+        )
+    )
+
+
+def _source_mentions_subsection_target(text: str, target_label: str) -> bool:
+    clean_target = _clean_num(target_label)
+    if not clean_target:
+        return False
+    if _source_subsection_target_re(clean_target).search(text):
+        return True
+    for match in _SOURCE_SUBSECTIONS_LIST_RE.finditer(text):
+        labels = {
+            _clean_num(label)
+            for label in _SOURCE_SUBSECTION_LABEL_RE.findall(match.group("body"))
+        }
+        if clean_target in labels:
+            return True
+    return False
 
 
 @dataclass(frozen=True)
@@ -855,6 +953,13 @@ def _extract_text_fragment_substitutions(
         if table_column_parent_blocks_generic_at_end_insert
         else parse_fragment_substitution(extracted_text)
     )
+    target_scoped_except_child_insert = _effect_after_anchor_except_child_insert_fragment(
+        effect=effect,
+        target=target,
+        extracted_text=extracted_text,
+    )
+    if target_scoped_except_child_insert is not None:
+        subs = [target_scoped_except_child_insert]
     mixed_structural_text_rewrite_text_half = (
         _effect_mixed_structural_text_rewrite_text_half_repeal_fragment(
             effect_type=effect.effect_type,

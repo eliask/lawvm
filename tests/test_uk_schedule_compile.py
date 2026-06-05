@@ -28,6 +28,7 @@ from lawvm.uk_legislation.source_adjudication import (
 )
 from lawvm.uk_legislation.nlp_parser import (
     UK_AFTER_ANCHOR_TO_END_UNQUOTED_SUBSTITUTION_RULE_ID,
+    UK_AFTER_QUOTED_ANCHOR_EXCEPT_CHILD_INSERT_RULE_ID,
     UK_ALTERNATE_PREIMAGE_SUBSTITUTION_RULE_ID,
     UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID,
     UK_AT_END_NOT_AS_PART_INSERT_RULE_ID,
@@ -32433,6 +32434,236 @@ def test_replay_except_child_substitution_does_not_mutate_excluded_child() -> No
     assert section.text == "The relevant authority may act."
     assert section.children[0].text == "The relevant authority must consult."
     assert section.children[1].text == "The Secretary of State remains named here."
+
+
+def test_compile_after_anchor_except_child_insert_preserves_excluded_subsection_child() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-27-paragraph-27-2">
+          <Pnumber>2</Pnumber>
+          <Text>2 In subsections (4) and (5), after “wife or husband” in each place except paragraph (a)(ii) to the proviso to subsection (4) insert “ or civil partner ”.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-2c6305fd972471da1701a51d49f9c6ee",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-12-05",
+        affected_uri="/id/ukpga/1968/60/section/30/subsection/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1968",
+        affected_number="60",
+        affected_provisions="s. 30(4)",
+        affecting_uri="/id/ukpga/2004/33",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2004",
+        affecting_number="33",
+        affecting_provisions="Sch. 27 para. 27(2)",
+        affecting_title="Civil Partnership Act 2004",
+        in_force_dates=[{"date": "2005-12-05", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "30"), ("subsection", "4"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        f"TEXT_EXCEPT_CHILD{US}wife or husband{US}subparagraph{US}2"
+    )
+    assert ops[0].text_patch.selector.occurrence == 0
+    assert ops[0].text_patch.replacement == "wife or husband or civil partner"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}{UK_AFTER_QUOTED_ANCHOR_EXCEPT_CHILD_INSERT_RULE_ID}"
+        in ops[0].provenance_tags
+    )
+    assert [
+        record["reason_code"]
+        for record in lowering_records
+        if record["rule_id"] == UK_AFTER_QUOTED_ANCHOR_EXCEPT_CHILD_INSERT_RULE_ID
+    ] == ["explicit_after_anchor_except_child_insert_text_patch"]
+
+
+def test_compile_after_anchor_except_child_insert_uses_target_local_patch_outside_excluded_subsection() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-27-paragraph-27-2">
+          <Pnumber>2</Pnumber>
+          <Text>2 In subsections (4) and (5), after “wife or husband” in each place except paragraph (a)(ii) to the proviso to subsection (4) insert “ or civil partner ”.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-ec81ad0ac83b2797873601eb365d66bf",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-12-05",
+        affected_uri="/id/ukpga/1968/60/section/30/subsection/5",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1968",
+        affected_number="60",
+        affected_provisions="s. 30(5)",
+        affecting_uri="/id/ukpga/2004/33",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2004",
+        affecting_number="33",
+        affecting_provisions="Sch. 27 para. 27(2)",
+        affecting_title="Civil Partnership Act 2004",
+        in_force_dates=[{"date": "2005-12-05", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "30"), ("subsection", "5"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "wife or husband"
+    assert ops[0].text_patch.selector.occurrence == 0
+    assert ops[0].text_patch.replacement == "wife or husband or civil partner"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}{UK_AFTER_QUOTED_ANCHOR_EXCEPT_CHILD_INSERT_RULE_ID}"
+        in ops[0].provenance_tags
+    )
+    assert [
+        record["reason_code"]
+        for record in lowering_records
+        if record["rule_id"] == UK_AFTER_QUOTED_ANCHOR_EXCEPT_CHILD_INSERT_RULE_ID
+    ] == ["explicit_after_anchor_except_child_insert_text_patch"]
+
+
+def test_replay_after_anchor_except_child_insert_does_not_mutate_excluded_subparagraph() -> None:
+    selector = f"TEXT_EXCEPT_CHILD{US}wife or husband{US}subparagraph{US}2"
+    op = LegalOperation(
+        op_id="uk_test_after_anchor_except_child_insert",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "30"), ("subsection", "4"))),
+        text_patch=_replace_patch(selector, "wife or husband or civil partner"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1968/60",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="30",
+                    attrs={"eId": "section-30"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="4",
+                            attrs={"eId": "section-30-subsection-4"},
+                            text=(
+                                "A wife or husband may apply, and the wife or husband "
+                                "may continue."
+                            ),
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    attrs={"eId": "section-30-subsection-4-a"},
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.SUBPARAGRAPH,
+                                            label="i",
+                                            text="The wife or husband is included here.",
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.SUBPARAGRAPH,
+                                            label="ii",
+                                            text="The wife or husband is excluded here.",
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+    subsection = replayed.body.children[0].children[0]
+
+    assert subsection.text == (
+        "A wife or husband or civil partner may apply, and the "
+        "wife or husband or civil partner may continue."
+    )
+    assert subsection.children[0].children[0].text == (
+        "The wife or husband or civil partner is included here."
+    )
+    assert subsection.children[0].children[1].text == (
+        "The wife or husband is excluded here."
+    )
+
+
+def test_replay_except_child_selector_blocks_duplicate_excluded_child_labels() -> None:
+    selector = f"TEXT_EXCEPT_CHILD{US}wife or husband{US}subparagraph{US}2"
+    op = LegalOperation(
+        op_id="uk_test_duplicate_except_child_label",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "30"), ("subsection", "4"))),
+        text_patch=_replace_patch(selector, "wife or husband or civil partner"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1968/60",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="30",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="4",
+                            text="A wife or husband may apply.",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.SUBPARAGRAPH,
+                                    label="ii",
+                                    text="First wife or husband branch.",
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.SUBPARAGRAPH,
+                                    label="ii",
+                                    text="Second wife or husband branch.",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+    subsection = replayed.body.children[0].children[0]
+
+    assert subsection.text == "A wife or husband may apply."
+    assert subsection.children[0].text == "First wife or husband branch."
+    assert subsection.children[1].text == "Second wife or husband branch."
 
 
 def test_compile_source_sibling_excluded_occurrence_substitution() -> None:

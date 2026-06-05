@@ -287,6 +287,9 @@ UK_AFTER_QUOTED_ANCHOR_SPACE_BEFORE_COMMA_INSERT_RULE_ID = (
 UK_AFTER_QUOTED_ANCHOR_INCLUDE_INSERT_RULE_ID = (
     "uk_effect_after_quoted_anchor_include_text_patch"
 )
+UK_AFTER_QUOTED_ANCHOR_EXCEPT_CHILD_INSERT_RULE_ID = (
+    "uk_effect_after_quoted_anchor_except_child_insert_text_patch"
+)
 UK_AFTER_QUOTED_ANCHOR_CLOSING_QUOTE_INSERT_RULE_ID = (
     "uk_effect_after_quoted_anchor_closing_quote_insert_text_patch"
 )

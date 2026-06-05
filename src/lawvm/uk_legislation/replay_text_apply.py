@@ -2579,13 +2579,14 @@ class UKReplayTextApplyMixin:
             if len(parts) != 4:
                 return node, False
             original, child_kind, child_label = parts[1], parts[2], parts[3]
-            excluded_path = _find_descendant_path_by_kind_label(
+            excluded_paths = _collect_descendant_paths_by_label_and_kinds(
                 node,
-                kind=child_kind,
                 label=child_label,
+                allowed_kinds={child_kind},
             )
-            if excluded_path is None:
+            if len(excluded_paths) != 1:
                 return node, False
+            excluded_path = excluded_paths[0]
             made_any = False
             rebuilt = node
             for path, text_node in text_nodes:

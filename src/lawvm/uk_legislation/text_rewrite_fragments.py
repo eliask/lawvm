@@ -18,6 +18,7 @@ from lawvm.uk_legislation.lowering_records import (
 from lawvm.uk_legislation.nlp_parser import (
     UK_DANGLING_ACTIVE_SUBSTITUTION_QUOTE_RULE_ID,
     UK_AFTER_QUOTED_ANCHOR_SPACE_BEFORE_COMMA_INSERT_RULE_ID,
+    UK_AFTER_QUOTED_ANCHOR_EXCEPT_CHILD_INSERT_RULE_ID,
     UK_BARE_QUOTED_SUBSTITUTION_RULE_ID,
     UK_EXCEPT_CHILD_SUBSTITUTION_RULE_ID,
     UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID,
@@ -579,6 +580,40 @@ def append_basic_text_rewrite_observations(
                     "target_ref": target_ref,
                     "target": str(target),
                     "text_match": str(fragment.get("original") or ""),
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "excluded_child_kind": child_kind,
+                    "excluded_child_label": child_label,
+                    "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
+                },
+            )
+    if UK_AFTER_QUOTED_ANCHOR_EXCEPT_CHILD_INSERT_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if (
+                str(fragment.get("rule_id") or "")
+                != UK_AFTER_QUOTED_ANCHOR_EXCEPT_CHILD_INSERT_RULE_ID
+            ):
+                continue
+            selector = str(fragment.get("original") or "")
+            parts = selector.split(US, 3)
+            child_kind = parts[2] if len(parts) == 4 else ""
+            child_label = parts[3] if len(parts) == 4 else ""
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_AFTER_QUOTED_ANCHOR_EXCEPT_CHILD_INSERT_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="explicit_after_anchor_except_child_insert_text_patch",
+                reason=(
+                    "UK effect source explicitly inserts after a quoted anchor "
+                    "in each place except inside a named child provision; lowering "
+                    "preserves the excluded child as part of the text selector."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": selector,
                     "replacement": str(fragment.get("replacement") or ""),
                     "excluded_child_kind": child_kind,
                     "excluded_child_label": child_label,
