@@ -42,13 +42,20 @@ class _Archive:
         return b"<Legislation>affecting source</Legislation>"
 
 
-def _patch_effect_source(monkeypatch, effect: UKEffectRecord, source_text: str) -> None:
+def _patch_effect_source(
+    monkeypatch,
+    effect: UKEffectRecord,
+    source_text: str,
+    *,
+    source_extent: str = "",
+) -> None:
     monkeypatch.setattr(
         review,
         "load_effects_for_statute_from_archive",
         lambda statute_id, archive: [effect],
     )
-    source_el = ET.fromstring(f"<P1>{source_text}</P1>".encode())
+    extent_attr = f' RestrictExtent="{source_extent}"' if source_extent else ""
+    source_el = ET.fromstring(f"<P1{extent_attr}>{source_text}</P1>".encode())
     monkeypatch.setattr(
         review,
         "select_source_for_effect",
@@ -123,7 +130,9 @@ def test_applied_effect_review_surfaces_no_marker_public_review_candidate(
     assert rows[0].agreement_residual["missing_proofs"] == [
         "public_page_review",
         "page_declared_current_timeline_xml",
-        "savings_extent_or_editorial_policy_review",
+        "same_territorial_extent",
+        "operative_text_not_commentary",
+        "savings_or_editorial_policy_review",
     ]
     assert rows[0].public_current_urls == (
         "https://www.legislation.gov.uk/ukpga/2020/1/section/1",
@@ -239,6 +248,152 @@ def test_omitted_phrase_still_present_is_public_review_candidate(monkeypatch) ->
 
     assert rows[0].review_status == "needs_public_review_removed_phrase_still_present"
     assert rows[0].agreement_residual["status"] == "residual"
+
+
+def test_removed_phrase_candidate_records_archive_review_gates(monkeypatch) -> None:
+    effect = _effect(effect_id="key-omission", effect_type="words omitted")
+    _patch_effect_source(
+        monkeypatch,
+        effect,
+        'In section 1 omit "retained phrase".',
+        source_extent="E+W",
+    )
+    archive = _Archive(
+        b'<Legislation><P1 eId="section-1" RestrictExtent="E+W">'
+        b"<Text>retained phrase</Text></P1>"
+        + (b" current context" * 20)
+        + b"</Legislation>"
+    )
+
+    rows = review.build_review_rows(
+        ["ukpga/2020/1"],
+        archive=archive,
+        today=date(2026, 6, 5),
+    )
+
+    row = rows[0]
+    assert row.same_territorial_extent_status == "same_extent"
+    assert row.later_reinsertion_or_replacement_status == (
+        "no_later_same_target_effects_found"
+    )
+    assert row.target_phrase_surface_status == "operative_text"
+    assert row.verification_matrix == {
+        "current_body_text_contains_target_phrase": "yes",
+        "current_status_page_check": "requires_public_html_review",
+        "source_explicitly_omits_or_repeals_same_text": "yes",
+        "commencement_in_force": "yes",
+        "same_territorial_extent": "yes",
+        "no_later_reinsertion_revival_or_replacement_found": "yes",
+        "target_phrase_in_operative_text_not_commentary": "yes",
+    }
+    assert row.public_review_gate_status == (
+        "passes_archive_gates_requires_public_page_status_review"
+    )
+    assert row.agreement_residual["missing_proofs"] == [
+        "public_page_review",
+        "page_declared_current_timeline_xml",
+        "savings_or_editorial_policy_review",
+    ]
+
+
+def test_removed_phrase_candidate_blocks_on_extent_mismatch(monkeypatch) -> None:
+    effect = _effect(effect_id="key-omission", effect_type="words omitted")
+    _patch_effect_source(
+        monkeypatch,
+        effect,
+        'In section 1 omit "retained phrase".',
+        source_extent="E+W",
+    )
+    archive = _Archive(
+        b'<Legislation><P1 eId="section-1" RestrictExtent="E+W+S+N.I.">'
+        b"<Text>retained phrase</Text></P1>"
+        + (b" current context" * 20)
+        + b"</Legislation>"
+    )
+
+    rows = review.build_review_rows(
+        ["ukpga/2020/1"],
+        archive=archive,
+        today=date(2026, 6, 5),
+    )
+
+    row = rows[0]
+    assert row.same_territorial_extent_status == (
+        "source_extent_narrower_than_current_surface"
+    )
+    assert row.verification_matrix["same_territorial_extent"] == "no"
+    assert row.public_review_gate_status == "blocked_by_machine_review_gate"
+    assert "same_territorial_extent" in row.agreement_residual["missing_proofs"]
+
+
+def test_removed_phrase_candidate_blocks_on_later_reinsertion(monkeypatch) -> None:
+    first = _effect(effect_id="key-omission", effect_type="words omitted")
+    later = _effect(effect_id="key-later", effect_type="words inserted")
+    later = UKEffectRecord(
+        **{
+            **later.__dict__,
+            "modified": "2022-01-01",
+            "affected_provisions": "s. 1",
+            "affecting_number": "3",
+            "in_force_dates": [{"date": "2022-01-01", "prospective": "false"}],
+        }
+    )
+    source_by_effect = {
+        "key-omission": '<P1 RestrictExtent="E+W">In section 1 omit "retained phrase".</P1>',
+        "key-later": '<P1 RestrictExtent="E+W">In section 1 insert "retained phrase".</P1>',
+    }
+    monkeypatch.setattr(
+        review,
+        "load_effects_for_statute_from_archive",
+        lambda statute_id, archive: [first, later],
+    )
+
+    def _source_selection(**kwargs):
+        effect = kwargs["effect"]
+        source_el = ET.fromstring(source_by_effect[effect.effect_id].encode())
+        return SimpleNamespace(
+            extracted_el=source_el,
+            source_context=SimpleNamespace(
+                xml_bytes=b"<Legislation>source bytes</Legislation>",
+                locator="https://www.legislation.gov.uk/ukpga/2021/2/data.xml",
+            ),
+        )
+
+    monkeypatch.setattr(review, "select_source_for_effect", _source_selection)
+    archive = _Archive(
+        b'<Legislation><P1 eId="section-1" RestrictExtent="E+W">'
+        b"<Text>retained phrase</Text></P1>"
+        + (b" current context" * 20)
+        + b"</Legislation>"
+    )
+
+    rows = review.build_review_rows(
+        ["ukpga/2020/1"],
+        archive=archive,
+        today=date(2026, 6, 5),
+    )
+
+    row = rows[0]
+    assert row.later_same_target_effect_count == 1
+    assert row.later_reinsertion_or_replacement_status == (
+        "later_reinsertion_or_replacement_found"
+    )
+    assert row.verification_matrix[
+        "no_later_reinsertion_revival_or_replacement_found"
+    ] == "no"
+    assert row.public_review_gate_status == "blocked_by_machine_review_gate"
+
+
+def test_target_phrase_surface_status_rejects_commentary_only_match() -> None:
+    xml = (
+        "<P1><Commentary>retained phrase</Commentary>"
+        "<Text>operative text only</Text></P1>"
+    )
+
+    assert review._target_phrase_surface_status(
+        xml_or_text=xml,
+        phrase="retained phrase",
+    ) == "commentary_or_title_only"
 
 
 def test_removed_phrase_extraction_uses_omitted_entry_not_heading() -> None:

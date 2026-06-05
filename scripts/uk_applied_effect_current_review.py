@@ -46,6 +46,13 @@ _SIMPLE_EFFECT_WORDS = (
     "repeal",
     "revoke",
 )
+_REINSERTION_EFFECT_WORDS = (
+    "insert",
+    "add",
+    "substitut",
+    "reinsert",
+    "reviv",
+)
 _ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
 _ADDRESS_WITH_PARENS_RE = re.compile(
     r"\b(?P<kind>s|section|art|article|reg|regulation|rule)\.?\s+"
@@ -111,6 +118,15 @@ class AppliedEffectCurrentReviewRow:
     current_xml_has_expected_phrase: bool
     current_xml_has_any_commentary_marker: bool
     current_xml_has_repeal_marker: bool
+    current_restrict_extent: str
+    source_restrict_extent: str
+    same_territorial_extent_status: str
+    later_same_target_effect_count: int
+    later_same_target_effect_summaries: tuple[str, ...]
+    later_reinsertion_or_replacement_status: str
+    target_phrase_surface_status: str
+    verification_matrix: Mapping[str, str]
+    public_review_gate_status: str
     public_current_urls: tuple[str, ...]
     public_source_urls: tuple[str, ...]
     simplest_public_check: tuple[str, ...]
@@ -163,6 +179,7 @@ def build_review_rows(
                 current_status=current_status,
                 extraction_cache=extraction_cache,
                 enacted_extraction_cache=enacted_extraction_cache,
+                all_effects=effects,
             )
             if row is None:
                 continue
@@ -183,6 +200,7 @@ def _review_effect(
     current_status: str,
     extraction_cache: dict[str, Any],
     enacted_extraction_cache: dict[str, Any],
+    all_effects: Sequence[UKEffectRecord],
 ) -> AppliedEffectCurrentReviewRow | None:
     selection = select_source_for_effect(
         effect=effect,
@@ -229,6 +247,33 @@ def _review_effect(
         effect_type=effect.effect_type,
         expected_phrase_role=expected_phrase_role,
     )
+    source_restrict_extent = _nearest_restrict_extent(selection.extracted_el)
+    same_extent_status = _same_territorial_extent_status(
+        current_restrict_extent=current_surface.restrict_extent,
+        source_restrict_extent=source_restrict_extent,
+    )
+    later_evidence = _later_same_target_effect_evidence(
+        effect=effect,
+        all_effects=all_effects,
+        expected_phrase=expected_phrase,
+        extraction_cache=extraction_cache,
+        enacted_extraction_cache=enacted_extraction_cache,
+        archive=archive,
+    )
+    target_phrase_surface_status = _target_phrase_surface_status(
+        xml_or_text=current_surface.xml_or_text,
+        phrase=expected_phrase,
+    )
+    verification_matrix = _verification_matrix(
+        review_status=review_status,
+        effect=effect,
+        expected_phrase_role=expected_phrase_role,
+        current_has_expected_phrase=current_has_expected_phrase,
+        same_extent_status=same_extent_status,
+        later_reinsertion_status=later_evidence.reinsertion_status,
+        target_phrase_surface_status=target_phrase_surface_status,
+    )
+    public_review_gate_status = _public_review_gate_status(verification_matrix)
     public_current_urls = _public_current_urls(statute_id, effect.affected_provisions)
     public_source_urls = _public_source_urls(effect.affecting_act_id, effect.affecting_provisions)
     residual = _agreement_residual(
@@ -241,6 +286,13 @@ def _review_effect(
         current_has_expected_phrase=current_has_expected_phrase,
         current_has_any_commentary_marker=current_has_any_commentary_marker,
         current_has_repeal_marker=current_has_repeal_marker,
+        current_restrict_extent=current_surface.restrict_extent,
+        source_restrict_extent=source_restrict_extent,
+        same_extent_status=same_extent_status,
+        later_reinsertion_status=later_evidence.reinsertion_status,
+        target_phrase_surface_status=target_phrase_surface_status,
+        verification_matrix=verification_matrix,
+        public_review_gate_status=public_review_gate_status,
     )
     source_bytes = selection.source_context.xml_bytes or b""
     return AppliedEffectCurrentReviewRow(
@@ -270,6 +322,15 @@ def _review_effect(
         current_xml_has_expected_phrase=current_has_expected_phrase,
         current_xml_has_any_commentary_marker=current_has_any_commentary_marker,
         current_xml_has_repeal_marker=current_has_repeal_marker,
+        current_restrict_extent=current_surface.restrict_extent,
+        source_restrict_extent=source_restrict_extent,
+        same_territorial_extent_status=same_extent_status,
+        later_same_target_effect_count=later_evidence.same_target_count,
+        later_same_target_effect_summaries=later_evidence.summaries,
+        later_reinsertion_or_replacement_status=later_evidence.reinsertion_status,
+        target_phrase_surface_status=target_phrase_surface_status,
+        verification_matrix=verification_matrix,
+        public_review_gate_status=public_review_gate_status,
         public_current_urls=public_current_urls,
         public_source_urls=public_source_urls,
         simplest_public_check=_public_check_steps(
@@ -363,6 +424,7 @@ class _CurrentReviewSurface:
     surface: str
     locator: str
     xml_or_text: str
+    restrict_extent: str
 
 
 @dataclass(frozen=True)
@@ -370,6 +432,13 @@ class _CurrentXmlContext:
     status: str
     whole_xml: str
     root: ET._Element | None
+
+
+@dataclass(frozen=True)
+class _LaterSameTargetEffectEvidence:
+    same_target_count: int
+    summaries: tuple[str, ...]
+    reinsertion_status: str
 
 
 def _current_xml_context(
@@ -386,6 +455,275 @@ def _current_xml_context(
     )
 
 
+def _nearest_restrict_extent(element: ET._Element | None) -> str:
+    current = element
+    while current is not None:
+        extent = _element_restrict_extent(current)
+        if extent:
+            return extent
+        current = current.getparent()
+    return ""
+
+
+def _combined_restrict_extent(elements: Iterable[ET._Element]) -> str:
+    values = tuple(_nearest_restrict_extent(element) for element in elements)
+    values = tuple(value for value in values if value)
+    if not values:
+        return ""
+    if len(set(values)) == 1:
+        return values[0]
+    return " | ".join(sorted(set(values)))
+
+
+def _element_restrict_extent(element: ET._Element) -> str:
+    for key, value in element.attrib.items():
+        if key.endswith("RestrictExtent") and value:
+            return str(value)
+    return ""
+
+
+def _same_territorial_extent_status(
+    *,
+    current_restrict_extent: str,
+    source_restrict_extent: str,
+) -> str:
+    if not current_restrict_extent or not source_restrict_extent:
+        return "unknown_extent"
+    current = _extent_token_set(current_restrict_extent)
+    source = _extent_token_set(source_restrict_extent)
+    if current and source and current == source:
+        return "same_extent"
+    if current and source and source < current:
+        return "source_extent_narrower_than_current_surface"
+    if current and source and current < source:
+        return "current_surface_extent_narrower_than_source"
+    return "extent_mismatch_or_unparsed"
+
+
+def _extent_token_set(value: str) -> frozenset[str]:
+    if "|" in value:
+        return frozenset()
+    tokens = []
+    for raw in value.replace(" ", "").split("+"):
+        token = raw.strip(".").replace(".", "")
+        if token:
+            tokens.append(token.upper())
+    return frozenset(tokens)
+
+
+def _later_same_target_effect_evidence(
+    *,
+    effect: UKEffectRecord,
+    all_effects: Sequence[UKEffectRecord],
+    expected_phrase: str,
+    extraction_cache: dict[str, Any],
+    enacted_extraction_cache: dict[str, Any],
+    archive: Any,
+) -> _LaterSameTargetEffectEvidence:
+    candidates = [
+        other
+        for other in all_effects
+        if _is_later_same_target_effect(effect, other)
+    ]
+    summaries: list[str] = []
+    phrase_reinserted = False
+    phrase_key = _normalize_for_search(expected_phrase)
+    for other in candidates[:12]:
+        source_has_phrase = False
+        if phrase_key and _is_reinsertion_or_replacement_effect(other.effect_type):
+            selection = select_source_for_effect(
+                effect=other,
+                archive=archive,
+                applicability_mode="effective_date_plus_feed_applied",
+                extraction_cache=extraction_cache,
+                enacted_extraction_cache=enacted_extraction_cache,
+                effect_diagnostics_out=[],
+            )
+            other_text = _squash(extracted_tag_and_text(selection.extracted_el).text)
+            source_has_phrase = phrase_key in _normalize_for_search(other_text)
+            phrase_reinserted = phrase_reinserted or source_has_phrase
+        summaries.append(
+            " ".join(
+                part
+                for part in (
+                    other.effective_date or other.modified or "undated",
+                    other.effect_type,
+                    other.affecting_act_id,
+                    other.affecting_provisions,
+                    "source_has_target_phrase" if source_has_phrase else "",
+                )
+                if part
+            )
+        )
+    if phrase_reinserted:
+        status = "later_reinsertion_or_replacement_found"
+    elif candidates:
+        status = "later_same_target_effects_no_target_phrase_found"
+    else:
+        status = "no_later_same_target_effects_found"
+    return _LaterSameTargetEffectEvidence(
+        same_target_count=len(candidates),
+        summaries=tuple(summaries),
+        reinsertion_status=status,
+    )
+
+
+def _is_later_same_target_effect(
+    effect: UKEffectRecord,
+    other: UKEffectRecord,
+) -> bool:
+    if other.effect_id == effect.effect_id:
+        return False
+    if not other.applied or other.is_prospective_only:
+        return False
+    if not _effect_date_after(other, effect):
+        return False
+    return _target_keys_overlap(effect.affected_provisions, other.affected_provisions)
+
+
+def _effect_date_after(other: UKEffectRecord, effect: UKEffectRecord) -> bool:
+    base_date = effect.effective_date or effect.modified
+    other_date = other.effective_date or other.modified
+    if _ISO_DATE_RE.fullmatch(base_date or "") is None:
+        return False
+    if _ISO_DATE_RE.fullmatch(other_date or "") is None:
+        return False
+    return other_date > base_date
+
+
+def _target_keys_overlap(left: str, right: str) -> bool:
+    left_keys = frozenset(_affected_provision_eid_candidates(left))
+    right_keys = frozenset(_affected_provision_eid_candidates(right))
+    if not left_keys or not right_keys:
+        return _squash(left).casefold() == _squash(right).casefold()
+    return bool(left_keys & right_keys)
+
+
+def _is_reinsertion_or_replacement_effect(effect_type: str) -> bool:
+    lower_type = effect_type.lower()
+    return any(word in lower_type for word in _REINSERTION_EFFECT_WORDS)
+
+
+def _target_phrase_surface_status(*, xml_or_text: str, phrase: str) -> str:
+    if not xml_or_text or not phrase:
+        return "no_target_phrase"
+    phrase_key = _normalize_for_search(phrase)
+    if phrase_key not in _normalize_for_search(xml_or_text):
+        return "no_target_phrase"
+    root = _fragment_root(xml_or_text)
+    for element in root.iter():
+        local = _local_name(element.tag)
+        if local in {"Commentary", "CommentaryRef", "Title", "LongTitle", "ShortTitle"}:
+            continue
+        if phrase_key in _normalize_for_search(
+            _non_commentary_descendant_text(element)
+        ):
+            return "operative_text"
+    return "commentary_or_title_only"
+
+
+def _non_commentary_descendant_text(element: ET._Element) -> str:
+    banned = {"Commentary", "CommentaryRef", "Title", "LongTitle", "ShortTitle"}
+    parts: list[str] = []
+
+    def walk(node: ET._Element) -> None:
+        if _local_name(node.tag) in banned:
+            return
+        if isinstance(node.text, str):
+            parts.append(node.text)
+        for child in node:
+            walk(child)
+            if isinstance(child.tail, str):
+                parts.append(child.tail)
+
+    walk(element)
+    return " ".join(parts)
+
+
+def _fragment_root(xml_or_text: str) -> ET._Element:
+    text = re.sub(r"<\?xml[^>]*>", "", xml_or_text).strip()
+    if text.startswith("<") and text.count("<") == 1:
+        text = f"<Text>{text}</Text>"
+    wrapped = f"<LawVMReviewFragment>{text}</LawVMReviewFragment>"
+    return ET.fromstring(wrapped.encode("utf-8"), parser=ET.XMLParser(recover=True))
+
+
+def _local_name(tag: Any) -> str:
+    text = str(tag)
+    if "}" in text:
+        return text.rsplit("}", 1)[1]
+    return text
+
+
+def _verification_matrix(
+    *,
+    review_status: str,
+    effect: UKEffectRecord,
+    expected_phrase_role: str,
+    current_has_expected_phrase: bool,
+    same_extent_status: str,
+    later_reinsertion_status: str,
+    target_phrase_surface_status: str,
+) -> Mapping[str, str]:
+    return {
+        "current_body_text_contains_target_phrase": _yes_no(
+            current_has_expected_phrase
+        ),
+        "current_status_page_check": "requires_public_html_review",
+        "source_explicitly_omits_or_repeals_same_text": _yes_no(
+            expected_phrase_role == "removed_preimage"
+            and review_status == "needs_public_review_removed_phrase_still_present"
+        ),
+        "commencement_in_force": _commencement_status(effect),
+        "same_territorial_extent": _yes_no_unknown(
+            same_extent_status,
+            yes="same_extent",
+            unknown="unknown_extent",
+        ),
+        "no_later_reinsertion_revival_or_replacement_found": _yes_no(
+            later_reinsertion_status != "later_reinsertion_or_replacement_found"
+        ),
+        "target_phrase_in_operative_text_not_commentary": _yes_no_unknown(
+            target_phrase_surface_status,
+            yes="operative_text",
+            unknown="no_target_phrase",
+        ),
+    }
+
+
+def _commencement_status(effect: UKEffectRecord) -> str:
+    if effect.applied and effect.effective_date:
+        return "yes"
+    if effect.applied:
+        return "yes_from_effect_feed_applied_without_date"
+    return "no"
+
+
+def _public_review_gate_status(verification_matrix: Mapping[str, str]) -> str:
+    machine_values = [
+        value
+        for key, value in verification_matrix.items()
+        if key != "current_status_page_check"
+    ]
+    if any(value != "yes" for value in machine_values):
+        return "blocked_by_machine_review_gate"
+    if verification_matrix.get("current_status_page_check") != "yes":
+        return "passes_archive_gates_requires_public_page_status_review"
+    return "passes_all_review_gates"
+
+
+def _yes_no(value: bool) -> str:
+    return "yes" if value else "no"
+
+
+def _yes_no_unknown(value: str, *, yes: str, unknown: str) -> str:
+    if value == yes:
+        return "yes"
+    if value == unknown:
+        return "unknown"
+    return "no"
+
+
 def _current_review_surface(
     *,
     current_context: _CurrentXmlContext,
@@ -396,6 +734,7 @@ def _current_review_surface(
             surface="current_xml_unavailable",
             locator="",
             xml_or_text="",
+            restrict_extent="",
         )
     matched: list[tuple[str, ET._Element]] = []
     for target_eid in _affected_provision_eid_candidates(affected_provisions):
@@ -418,11 +757,13 @@ def _current_review_surface(
             xml_or_text=" ".join(
                 ET.tostring(target, encoding="unicode") for _target_eid, target in best
             ),
+            restrict_extent=_combined_restrict_extent(target for _target_eid, target in best),
         )
     return _CurrentReviewSurface(
         surface="whole_current_xml",
         locator="",
         xml_or_text=current_context.whole_xml,
+        restrict_extent=_nearest_restrict_extent(current_context.root),
     )
 
 
@@ -546,6 +887,13 @@ def _agreement_residual(
     current_has_expected_phrase: bool,
     current_has_any_commentary_marker: bool,
     current_has_repeal_marker: bool,
+    current_restrict_extent: str,
+    source_restrict_extent: str,
+    same_extent_status: str,
+    later_reinsertion_status: str,
+    target_phrase_surface_status: str,
+    verification_matrix: Mapping[str, str],
+    public_review_gate_status: str,
 ) -> AgreementResidual:
     return AgreementResidual(
         residual_id=f"uk-applied-effect-current:{statute_id}:{effect.effect_id}",
@@ -558,7 +906,10 @@ def _agreement_residual(
         source_artifact_id=statute_id,
         replay_count=1,
         oracle_count=1 if current_status == "available" else 0,
-        missing_proofs=_missing_proofs(review_status),
+        missing_proofs=_missing_proofs(
+            review_status=review_status,
+            verification_matrix=verification_matrix,
+        ),
         safe_default="review_without_replay_or_official_error_promotion",
         forbidden_shortcuts=_FORBIDDEN_SHORTCUTS,
         detail={
@@ -574,6 +925,13 @@ def _agreement_residual(
             "current_xml_has_expected_phrase": current_has_expected_phrase,
             "current_xml_has_any_commentary_marker": current_has_any_commentary_marker,
             "current_xml_has_repeal_marker": current_has_repeal_marker,
+            "current_restrict_extent": current_restrict_extent,
+            "source_restrict_extent": source_restrict_extent,
+            "same_territorial_extent_status": same_extent_status,
+            "later_reinsertion_or_replacement_status": later_reinsertion_status,
+            "target_phrase_surface_status": target_phrase_surface_status,
+            "verification_matrix": dict(verification_matrix),
+            "public_review_gate_status": public_review_gate_status,
         },
     )
 
@@ -598,16 +956,33 @@ def _residual_status(review_status: str) -> str:
     return "frontier"
 
 
-def _missing_proofs(review_status: str) -> tuple[str, ...]:
+def _missing_proofs(
+    *,
+    review_status: str,
+    verification_matrix: Mapping[str, str],
+) -> tuple[str, ...]:
     if review_status in {
         "needs_public_review_no_obvious_current_marker",
         "needs_public_review_removed_phrase_still_present",
     }:
-        return (
+        missing = [
             "public_page_review",
             "page_declared_current_timeline_xml",
-            "savings_extent_or_editorial_policy_review",
-        )
+        ]
+        proof_fields = {
+            "same_territorial_extent": "same_territorial_extent",
+            "no_later_reinsertion_revival_or_replacement_found": (
+                "no_later_reinsertion_or_revival"
+            ),
+            "target_phrase_in_operative_text_not_commentary": (
+                "operative_text_not_commentary"
+            ),
+        }
+        for field, proof in proof_fields.items():
+            if verification_matrix.get(field) != "yes":
+                missing.append(proof)
+        missing.append("savings_or_editorial_policy_review")
+        return tuple(missing)
     if review_status == "current_xml_unavailable_frontier":
         return ("current_xml_source_witness",)
     return ()
