@@ -383,6 +383,55 @@ def corrigendum_source_witness(
     )
 
 
+def finlex_html_topology_source_witness(
+    row: Mapping[str, Any],
+    *,
+    statute_id: str,
+    source_role: str = "finlex_html_topology_audit",
+) -> SourceWitness:
+    """Build a shared source witness for a Finland HTML/XML topology audit."""
+
+    html_url = str(row.get("html_url") or "")
+    missing_from_xml = _string_sequence(row.get("missing_from_xml"))
+    extra_in_xml = _string_sequence(row.get("extra_in_xml"))
+    noncommensurable_reason = str(row.get("noncommensurable_reason") or "")
+    html_error = str(row.get("html_error") or "")
+    preview = " | ".join(
+        part
+        for part in (
+            statute_id,
+            html_url,
+            f"missing_from_xml={','.join(missing_from_xml[:10])}" if missing_from_xml else "",
+            f"extra_in_xml={','.join(extra_in_xml[:10])}" if extra_in_xml else "",
+            f"noncommensurable_reason={noncommensurable_reason}" if noncommensurable_reason else "",
+            f"html_error={html_error}" if html_error else "",
+        )
+        if part
+    )
+    return SourceWitness(
+        source_role=source_role,
+        artifact_id=statute_id,
+        source_unit_id=statute_id,
+        locator=html_url,
+        version_id="live",
+        source_path=html_url,
+        bounded_preview=preview,
+        preview_digest=_preview_digest_witness(preview),
+        source_lane="finlex_html_live_audit",
+        metadata={
+            "statute_id": statute_id,
+            "html_url": html_url,
+            "mismatch": bool(row.get("mismatch")),
+            "missing_from_xml": missing_from_xml,
+            "extra_in_xml": extra_in_xml,
+            "missing_from_xml_count": len(missing_from_xml),
+            "extra_in_xml_count": len(extra_in_xml),
+            "html_error": html_error,
+            "noncommensurable_reason": noncommensurable_reason,
+        },
+    )
+
+
 def mutation_boundary_proof_rows(
     reports: tuple[MutationInvariantReport | Mapping[str, Any], ...],
     *,

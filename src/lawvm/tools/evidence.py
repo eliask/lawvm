@@ -26,7 +26,7 @@ from lawvm.core.compile_result import CompileFailure
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.target_scope import TargetUnitKind
 from lawvm.finland.corrigendum_records import load_patch_records, load_source_records
-from lawvm.finland.proof_surfaces import corrigendum_source_witness
+from lawvm.finland.proof_surfaces import corrigendum_source_witness, finlex_html_topology_source_witness
 from lawvm.finland.corpus import get_consolidated_oracle_suspect_cache_only
 from lawvm.finland.compile import compile_fi_facade_from_replay
 from lawvm.finland.source_adjudication import build_source_adjudication
@@ -3416,6 +3416,10 @@ def build_evidence_bundle(
         "noncommensurable_reason": ctx.html_audit.noncommensurable_reason,
         "html_url": _finlex_html_url(statute_id),
     }
+    html_topology["source_witness"] = finlex_html_topology_source_witness(
+        html_topology,
+        statute_id=statute_id,
+    ).to_dict()
 
     source_pathologies = list(oracle_result.source_pathologies or [])
     contingent_effective_sources = [str(v) for v in oracle_result.contingent_effective_sources if str(v)]

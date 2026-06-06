@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row
+from lawvm.core.source_witness import source_witness_digest_coverage
 from lawvm.tools.classify_result import ClassifyResult
 from lawvm.tools._evidence_helpers import (
     _cross_chapter_same_label_oracle_matches,
@@ -3250,6 +3251,12 @@ def test_build_evidence_bundle_summarizes_compiler_observations(monkeypatch) -> 
             ],
         }
     ]
+    html_witness = bundle["html_topology"]["source_witness"]
+    assert html_witness["source_role"] == "finlex_html_topology_audit"
+    assert html_witness["artifact_id"] == "1990/1295"
+    assert html_witness["source_lane"] == "finlex_html_live_audit"
+    assert html_witness["preview_digest"]
+    assert source_witness_digest_coverage(html_witness) == "preview_digest"
 
 
 def test_build_evidence_bundle_records_context_degradation(monkeypatch) -> None:

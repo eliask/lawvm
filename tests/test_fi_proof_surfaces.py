@@ -6,6 +6,7 @@ from lawvm.core.source_witness import source_witness_digest_coverage
 from lawvm.finland.proof_surfaces import (
     consolidated_artifact_source_witness,
     corrigendum_source_witness,
+    finlex_html_topology_source_witness,
     finland_strict_report_evidence_surface,
     finlex_editorial_witness_agreement_residual_rows,
     mutation_boundary_proof_rows,
@@ -89,6 +90,30 @@ def test_corrigendum_source_witness_carries_pdf_digest_and_preview() -> None:
     assert witness["source_lane"] == "corrigendum_pdf"
     assert witness["correction_item_count"] == 1
     assert source_witness_digest_coverage(witness) == "artifact_and_preview_digest"
+
+
+def test_finlex_html_topology_source_witness_is_preview_only() -> None:
+    row = {
+        "mismatch": True,
+        "missing_from_xml": ["4 a §"],
+        "extra_in_xml": ["section:7"],
+        "html_error": "",
+        "noncommensurable_reason": "",
+        "html_url": "https://www.finlex.fi/fi/laki/ajantasa/1999/19990132",
+    }
+
+    witness = finlex_html_topology_source_witness(row, statute_id="1999/132").to_dict()
+
+    assert witness["source_role"] == "finlex_html_topology_audit"
+    assert witness["artifact_id"] == "1999/132"
+    assert witness["source_unit_id"] == "1999/132"
+    assert witness["locator"] == row["html_url"]
+    assert witness["version_id"] == "live"
+    assert witness["source_lane"] == "finlex_html_live_audit"
+    assert witness["missing_from_xml_count"] == 1
+    assert witness["extra_in_xml_count"] == 1
+    assert witness["preview_digest_algorithm"] == "sha256"
+    assert source_witness_digest_coverage(witness) == "preview_digest"
 
 
 def test_mutation_boundary_reports_project_shared_proof_rows() -> None:
