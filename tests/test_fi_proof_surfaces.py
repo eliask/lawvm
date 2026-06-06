@@ -8,6 +8,7 @@ from lawvm.finland.proof_surfaces import (
     finland_bench_run_evidence_surface,
     finland_corrigendum_manual_template_evidence_surface,
     finland_corrigendum_manual_template_frontier_item,
+    finland_corrigendum_open_manual_evidence_surface,
     finland_corrigendum_overview_evidence_surface,
     finland_corrigendum_provenance_evidence_surface,
     corrigendum_source_witness,
@@ -139,6 +140,33 @@ def test_finland_bench_run_evidence_surface_declares_agreement_only_boundary() -
     assert report["summary"]["status_counts"] == {"OK": 2}
     assert report["written_paths"] == ["data/bench_runs/demo.csv", "data/benchmark_history.csv"]
     assert "bench_score_as_replay_authorization" in report["forbidden_shortcuts"]
+
+
+def test_finland_corrigendum_open_manual_evidence_surface_is_frontier_listing_only() -> None:
+    report = finland_corrigendum_open_manual_evidence_surface(
+        {
+            "rows": [
+                {
+                    "amendment_id": "442/2016",
+                    "db_row_count": 4,
+                    "db_no_match_rows": 2,
+                    "open_manual_rows": 1,
+                    "attachment_only_rows": 0,
+                    "manual_entry_count": 0,
+                }
+            ],
+            "limit": 20,
+            "include_all": False,
+        }
+    )
+
+    assert report["report_kind"] == "finland_corrigendum_open_manual"
+    assert report["replay_claims"] is False
+    assert report["agreement_claims"] is False
+    assert report["summary"]["candidate_count"] == 1
+    assert report["summary"]["open_manual_row_count"] == 1
+    assert report["rows"][0]["surface"] == "corrigendum_open_manual_candidate"
+    assert "open_manual_candidate_as_manual_claim" in report["forbidden_shortcuts"]
 
 
 def test_finlex_html_topology_source_witness_is_preview_only() -> None:

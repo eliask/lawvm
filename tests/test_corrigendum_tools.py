@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from argparse import Namespace
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,11 @@ def test_cli_parser_accepts_corrigendum_manual_template() -> None:
     assert args.corrigendum_command == "manual-template"
     assert args.amendment_id == "991/2012"
     assert args.json is True
+
+    open_args = parser.parse_args(["corrigendum", "open-manual", "--proof-report"])
+    assert open_args.command == "corrigendum"
+    assert open_args.corrigendum_command == "open-manual"
+    assert open_args.proof_report is True
 
     args = parser.parse_args(["corrigendum", "review", "1995/1552", "--json"])
     assert args.command == "corrigendum"
@@ -461,6 +467,62 @@ def test_corrigendum_open_manual_prints_rows(capsys, monkeypatch) -> None:
     assert "AMENDMENT" in out
     assert "442/2016" in out
     assert "1" in out
+
+
+def test_corrigendum_open_manual_proof_report_prints_bundle(capsys, monkeypatch) -> None:
+    monkeypatch.setattr(
+        corr_tools,
+        "build_open_manual_bundle",
+        lambda db_path=None, limit=20, include_all=False: {
+            "rows": [
+                {
+                    "amendment_id": "442/2016",
+                    "open_manual_rows": 1,
+                }
+            ],
+            "row_count": 1,
+            "limit": limit,
+            "include_all": include_all,
+            "evidence_surface_report": {
+                "report_kind": "finland_corrigendum_open_manual",
+                "replay_claims": False,
+            },
+        },
+    )
+
+    corr_tools._cmd_open_manual(
+        Namespace(db=None, limit=20, all=False, json=False, proof_report=True)
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["row_count"] == 1
+    assert payload["evidence_surface_report"]["report_kind"] == "finland_corrigendum_open_manual"
+    assert payload["evidence_surface_report"]["replay_claims"] is False
+
+
+def test_build_open_manual_bundle_exports_evidence_surface(monkeypatch) -> None:
+    monkeypatch.setattr(
+        corr_tools,
+        "list_open_manual_candidates",
+        lambda db_path=None, limit=20, include_all=False: [
+            {
+                "amendment_id": "442/2016",
+                "db_row_count": 4,
+                "db_no_match_rows": 2,
+                "open_manual_rows": 1,
+                "attachment_only_rows": 0,
+                "manual_entry_count": 0,
+            }
+        ],
+    )
+
+    bundle = corr_tools.build_open_manual_bundle(limit=5)
+
+    assert bundle["row_count"] == 1
+    report = bundle["evidence_surface_report"]
+    assert report["report_kind"] == "finland_corrigendum_open_manual"
+    assert report["summary"]["candidate_count"] == 1
+    assert report["replay_claims"] is False
 
 
 def test_corrigendum_provenance_prints_summary(capsys, monkeypatch) -> None:

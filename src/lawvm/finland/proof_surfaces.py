@@ -1214,6 +1214,53 @@ def finland_corrigendum_overview_evidence_surface(
     ).to_dict()
 
 
+def finland_corrigendum_open_manual_evidence_surface(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Wrap the open manual-corrigendum candidate listing in the shared envelope."""
+
+    candidates = _mapping_sequence(payload.get("rows"))
+    rows = tuple({**dict(row), "surface": "corrigendum_open_manual_candidate"} for row in candidates)
+    summary = {
+        "candidate_count": len(candidates),
+        "open_manual_row_count": sum(int(row.get("open_manual_rows") or 0) for row in candidates),
+        "attachment_only_row_count": sum(int(row.get("attachment_only_rows") or 0) for row in candidates),
+        "unverified_row_count": sum(int(row.get("db_no_match_rows") or 0) for row in candidates),
+        "manual_entry_count": sum(int(row.get("manual_entry_count") or 0) for row in candidates),
+        "db_row_count": sum(int(row.get("db_row_count") or 0) for row in candidates),
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction="fi",
+        report_kind="finland_corrigendum_open_manual",
+        schema="lawvm.finland_corrigendum_open_manual.v1",
+        truth_claim="finland_corrigendum_open_manual_frontier_listing",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={
+            "limit": int(payload.get("limit") or 0),
+            "include_all": bool(payload.get("include_all")),
+        },
+        filtered_summary=summary,
+        rows=rows,
+        rows_truncated=False,
+        detail={
+            "safe_default": "treat_open_manual_listing_as_frontier_triage_not_manual_claim_or_replay_authority",
+            "forbidden_shortcuts": (
+                "open_manual_candidate_as_replay_authorization",
+                "open_manual_candidate_as_manual_claim",
+                "candidate_rank_as_execution_priority",
+                "unverified_count_as_source_text_repair",
+                "manual_entry_count_as_claim_validation",
+            ),
+            "included_surfaces": ("corrigendum_open_manual_candidate",),
+        },
+    ).to_dict()
+
+
 def finland_corrigendum_manual_template_frontier_item(
     *,
     amendment_id: str,

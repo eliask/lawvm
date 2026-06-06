@@ -94,6 +94,7 @@ from lawvm.finland.proof_surfaces import (
     corrigendum_source_witness,
     finland_corrigendum_manual_template_evidence_surface,
     finland_corrigendum_manual_template_frontier_item,
+    finland_corrigendum_open_manual_evidence_surface,
     finland_corrigendum_overview_evidence_surface,
     finland_corrigendum_provenance_evidence_surface,
     finland_corrigendum_review_evidence_surface,
@@ -2806,6 +2807,27 @@ def list_open_manual_candidates(
     ]
 
 
+def build_open_manual_bundle(
+    *,
+    db_path: Optional[Path] = None,
+    limit: int = 20,
+    include_all: bool = False,
+) -> dict[str, object]:
+    rows = list_open_manual_candidates(
+        db_path=db_path,
+        limit=limit,
+        include_all=include_all,
+    )
+    bundle: dict[str, object] = {
+        "rows": rows,
+        "row_count": len(rows),
+        "limit": limit,
+        "include_all": include_all,
+    }
+    bundle["evidence_surface_report"] = finland_corrigendum_open_manual_evidence_surface(bundle)
+    return bundle
+
+
 def _cmd_manual_template(args) -> None:
     bundle = build_manual_template_bundle(
         args.amendment_id,
@@ -2859,10 +2881,21 @@ def _cmd_manual_template(args) -> None:
 
 
 def _cmd_open_manual(args) -> None:
+    limit = int(getattr(args, "limit", 20) or 20)
+    include_all = bool(getattr(args, "all", False))
+    db_path = Path(args.db) if getattr(args, "db", None) else None
+    if getattr(args, "proof_report", False):
+        bundle = build_open_manual_bundle(
+            db_path=db_path,
+            limit=limit,
+            include_all=include_all,
+        )
+        print(json.dumps(bundle, ensure_ascii=False, indent=2))
+        return
     rows = list_open_manual_candidates(
-        db_path=Path(args.db) if getattr(args, "db", None) else None,
-        limit=int(getattr(args, "limit", 20) or 20),
-        include_all=bool(getattr(args, "all", False)),
+        db_path=db_path,
+        limit=limit,
+        include_all=include_all,
     )
     if getattr(args, "json", False):
         print(json.dumps(rows, ensure_ascii=False, indent=2))
@@ -4270,6 +4303,10 @@ def register_cli(sub: Any) -> None:
     corr_open_manual_p.add_argument(
         "--json", action="store_true",
         help="emit JSON instead of plain text",
+    )
+    corr_open_manual_p.add_argument(
+        "--proof-report", action="store_true",
+        help="emit a bundled JSON proof-surface report; legacy --json remains a row list",
     )
 
     corr_overview_p = corr_sub.add_parser(
