@@ -21,7 +21,7 @@ from lawvm.tools.tier2_state import (
     DEFAULT_SCHEMA_VERSION,
     tier2_dir,
 )
-from lawvm.core.manual_claims.primitive import ProfileTag
+from lawvm.core.manual_claims.primitive import _ProfileTagDeprecated as ProfileTag
 
 
 # ---------------------------------------------------------------------------

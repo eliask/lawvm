@@ -14,8 +14,6 @@ from datetime import date, datetime, timezone
 
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.evidence_kernel import (
-    AuthorizationResult,
-    BuildTaintFinding,
     authorize,
     query_retraction_taint,
 )
@@ -23,13 +21,11 @@ from lawvm.core.evidence_policy import (
     EvidenceGraphPredicate,
     PolicyExpr,
     exists,
-    none,
 )
 from lawvm.core.provenance_graph import (
     ArtifactRef,
     GraphBuilder,
     GraphEdge,
-    GraphNode,
     Interval,
     Producer,
     ProvenanceAssertion,
@@ -483,3 +479,22 @@ def test_profile_tag_not_in_new_init_direct_import():
     import lawvm.core.manual_claims as mc
     # ProfileTag should not be directly exported
     assert "ProfileTag" not in mc.__all__
+
+
+def test_internal_profile_tag_compat_imports_do_not_warn():
+    """Legacy internals use the private transition enum, not the public warning alias."""
+    import importlib
+    import warnings
+
+    module_names = (
+        "lawvm.core.manual_claims.storage",
+        "lawvm.tools.build_index_db",
+        "lawvm.tools.cmd_propose_claims",
+        "lawvm.tools.cmd_validate_claims",
+        "lawvm.tools.export_fi_refs",
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        for module_name in module_names:
+            module = importlib.import_module(module_name)
+            importlib.reload(module)

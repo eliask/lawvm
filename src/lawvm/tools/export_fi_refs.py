@@ -44,7 +44,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from lawvm.core.reference_mention import reference_mention_to_row
 from lawvm.core.manual_claims.primitive import (
     ClaimStatus,
-    ProfileTag,
+    _ProfileTagDeprecated as ProfileTag,
     SourceWitnessType,
     ValidatorStatus,
     ReviewStatus,

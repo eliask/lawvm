@@ -22,12 +22,11 @@ Design:
 from __future__ import annotations
 
 import json
-import os
 from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
 
-from lawvm.core.manual_claims.hashing import canonical_payload, verify_claim_id
+from lawvm.core.manual_claims.hashing import verify_claim_id
 from lawvm.core.manual_claims.primitive import (
     ClaimCompositionDecision,
     ClaimConfidence,
@@ -38,7 +37,7 @@ from lawvm.core.manual_claims.primitive import (
     ClaimStatus,
     ManualCompilationClaim,
     Producer,
-    ProfileTag,
+    _ProfileTagDeprecated as ProfileTag,
     ReviewStatus,
     SourceLocator,
     SourceWitnessType,

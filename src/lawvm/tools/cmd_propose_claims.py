@@ -26,10 +26,9 @@ import hashlib
 import json
 import re
 import sys
-from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from lawvm.core.manual_claims.native import (
     attest,
@@ -39,9 +38,6 @@ from lawvm.core.manual_claims.primitive import (
     ClaimScope,
     ExtractionFrontierRow,
     GapDiscoveryRow,
-    ProfileTag,
-    SourceLocator,
-    SourceWitnessType,
 )
 from lawvm.core.manual_claims.proposal_backend import (
     ClaimSchema,
@@ -50,13 +46,10 @@ from lawvm.core.manual_claims.proposal_backend import (
     QuotedSource,
 )
 from lawvm.core.manual_claims.source_provider import (
-    FetchedSource,
-    SourceBytesProvider,
     get_source_provider,
     register_source_provider,
 )
 from lawvm.core.provenance_graph import (
-    ArtifactRef,
     GraphBuilder,
     Interval,
     Producer,
@@ -311,9 +304,11 @@ def _run_validators(
 
     if spec.span_validator:
         from lawvm.core.manual_claims.primitive import (
-            ClaimLayer, ClaimScope, ClaimStatus, ProfileTag,
-            ReviewStatus, SourceWitnessType, SourceLocator,
-            ValidatorStatus,
+            ClaimLayer,
+            ClaimScope,
+            _ProfileTagDeprecated as ProfileTag,
+            SourceLocator,
+            SourceWitnessType,
         )
         from lawvm.core.manual_claims.hashing import compute_claim_id
 
@@ -520,7 +515,7 @@ def _process_one_frontier(
 
     if _accepted_target_exists(store, claim_kind, target_json):
         if verbose:
-            print(f"  skip: gap already closed by accepted assertion")
+            print("  skip: gap already closed by accepted assertion")
         return None
 
     existing_id = _proposed_triple_exists(store, claim_kind, target_json, value_json)
@@ -799,7 +794,6 @@ def cmd_propose_gap_discovery(args: object) -> int:
 def cmd_propose_specific(args: object) -> int:
     he_id: str = getattr(args, "he", None)
     kind: str = getattr(args, "kind", "fi.v1.INLINE_STATUTE_RESOLUTION")
-    data_dir: str = getattr(args, "data_dir", "data/fi/v1")
     graph_store_root: Optional[str] = (
         getattr(args, "graph_store_root", None)
         or getattr(args, "claim_store_root", None)

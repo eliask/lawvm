@@ -13,13 +13,12 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from lawvm.core.manual_claims.native import attest
 from lawvm.core.provenance_graph import (
-    ArtifactRef,
     GraphBuilder,
     Producer,
     ProvenanceAssertion,
@@ -112,9 +111,12 @@ def _attestation_kinds_for(store: GraphStore, assertion_id: str) -> set:
 def _build_compat_claim(assertion: ProvenanceAssertion):
     """Build a v2.2-compatible ManualCompilationClaim for validator use."""
     from lawvm.core.manual_claims.primitive import (
-        ClaimLayer, ClaimScope, ClaimStatus, ProfileTag,
-        ReviewStatus, SourceLocator, SourceWitnessType,
-        ValidatorStatus, Producer as V2Producer,
+        ClaimLayer,
+        ClaimScope,
+        _ProfileTagDeprecated as ProfileTag,
+        Producer as V2Producer,
+        SourceLocator,
+        SourceWitnessType,
     )
     from lawvm.core.manual_claims.hashing import compute_claim_id
     from lawvm.core.manual_claims.primitive import ManualCompilationClaim
@@ -232,7 +234,7 @@ def _validate_one_assertion(
 
 
 def cmd_validate_one(args: object) -> int:
-    assertion_id: str = getattr(args, "claim_id", None) or getattr(args, "assertion_id")  # type: ignore[attr-defined]
+    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
@@ -246,7 +248,6 @@ def cmd_validate_one(args: object) -> int:
 
     # Fetch source bytes for span/entailment validators (same strategy as propose-claims).
     from lawvm.core.manual_claims.primitive import ClaimScope
-    from lawvm.core.manual_claims.source_provider import get_source_provider
 
     statute_id = str(assertion.scope.get("statute_id", ""))
     provision_ref = str(assertion.scope.get("provision_ref", "")) or None
