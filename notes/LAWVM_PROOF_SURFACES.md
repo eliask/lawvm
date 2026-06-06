@@ -341,6 +341,7 @@ temporal resolution evidence
 source completeness status
 mutation boundary proof rows
 recovery execution authorizations
+HE branch proposal diagnostics
 Finlex agreement residuals
 corrigendum source/manual/frontier rows
 bench evidence surfaces
@@ -354,6 +355,9 @@ Rules:
   rediscover meaning.
 - Strict/quirks recovery rows should be visible as non-executable authorization
   projections unless a phase-local gate proves execution authority.
+- HE branch proposal rows are future-law diagnostics. They are not enacted-law
+  authority, canonical operations, candidate effects, dry-run authority, or
+  current-law agreement claims.
 - Finlex comparison is an agreement surface, not the compilation objective.
 
 ---

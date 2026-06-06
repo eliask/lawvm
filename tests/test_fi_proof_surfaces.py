@@ -1,8 +1,17 @@
 import hashlib
+from datetime import date
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.mutation_accounting import MutationInvariantReport
 from lawvm.core.source_witness import source_witness_digest_coverage
+from lawvm.finland.he_branch_parser import (
+    BranchParseRecovery,
+    BranchProposedOp,
+    BranchTargetResolution,
+    BranchTargetResolutionFinding,
+    HEParsedBranch,
+    HEParseStatus,
+)
 from lawvm.finland.proof_surfaces import (
     consolidated_artifact_source_witness,
     finland_bench_run_evidence_surface,
@@ -17,6 +26,7 @@ from lawvm.finland.proof_surfaces import (
     finland_corrigendum_review_evidence_surface,
     finland_evidence_bundle_evidence_surface,
     finland_frontier_proof_evidence_surface,
+    finland_he_branch_evidence_surface,
     finland_strict_report_evidence_surface,
     finlex_editorial_witness_agreement_residual_rows,
     mutation_boundary_proof_rows,
@@ -306,6 +316,88 @@ def test_finland_frontier_proof_report_projects_shared_envelope() -> None:
     assert report["summary"]["proof_kinds"] == {"no_strong_claim": 1}
     assert report["rows"][0]["surface"] == "frontier_proof_row"
     assert "frontier_rank_as_replay_authorization" in report["forbidden_shortcuts"]
+
+
+def test_finland_he_branch_evidence_surface_keeps_proposals_non_enacted() -> None:
+    parsed = HEParsedBranch(
+        branch_id="fi/he/2026/1",
+        he_id="HE 1/2026 vp",
+        he_year=2026,
+        he_number=1,
+        proposed_voimaantulo=date(2026, 9, 1),
+        proposed_ops=(
+            BranchProposedOp(
+                op_index=0,
+                operation_kind="insert",
+                target_provision_ref="711/2022/4a",
+                target_statute_id="711/2022",
+                payload_summary="uusi 4 a §",
+                source_he_id="HE 1/2026 vp",
+                branch_id="fi/he/2026/1",
+                source_span_text="Ehdotetaan, että lannoitelakiin lisätään uusi 4 a §.",
+                source_span_preamble="Ehdotetaan, että",
+                target_resolution=BranchTargetResolution.PROPOSAL_RELATIVE,
+                parse_confidence=0.8,
+                is_proposal_relative=True,
+            ),
+        ),
+        target_statute_ids=("711/2022",),
+        parse_status=HEParseStatus.PARTIAL,
+        parse_findings=(
+            BranchTargetResolutionFinding(
+                rule_id="HE_BRANCH.TARGET_PROPOSAL_RELATIVE",
+                op_index=0,
+                target_provision_ref="711/2022/4a",
+                target_statute_id="711/2022",
+                reason="new provision is proposal-relative",
+                is_proposal_relative=True,
+            ),
+            BranchParseRecovery(
+                rule_id="HE_BRANCH.CLAUSE_PARSE_ERROR",
+                op_index=1,
+                clause_text="unparseable clause",
+                reason="unsupported clause shape",
+                detail="fixture",
+            ),
+        ),
+        enactment_sections_found=1,
+        clauses_attempted=2,
+        clauses_succeeded=1,
+    )
+
+    report = finland_he_branch_evidence_surface(parsed)
+
+    assert report["report_kind"] == "finland_he_branch"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is False
+    assert report["summary"]["proposed_op_count"] == 1
+    assert report["summary"]["parse_finding_count"] == 2
+    assert report["summary"]["proposal_relative_op_count"] == 1
+    assert report["summary"]["unresolved_target_finding_count"] == 1
+    assert report["filters"] == {
+        "branch_id": "fi/he/2026/1",
+        "he_id": "HE 1/2026 vp",
+        "parse_status": "partial",
+    }
+    assert [row["surface"] for row in report["rows"]] == [
+        "he_branch_proposed_op",
+        "he_branch_target_resolution_finding",
+        "he_branch_parse_finding",
+    ]
+    proposed = report["rows"][0]
+    assert proposed["status"] == "proposed_branch_op_not_enacted_authority"
+    assert proposed["target_resolution"] == "proposal_relative"
+    assert proposed["execution_authorization"]["executable"] is False
+    assert proposed["execution_authorization"]["replay_authorized"] is False
+    assert proposed["execution_authorization"]["authorization_status"] == "he_branch_proposal_not_replay_authority"
+    target_finding = report["rows"][1]
+    assert target_finding["owner_phase"] == "target_resolution"
+    assert target_finding["execution_authorization"]["authorization_status"] == "he_branch_finding_not_replay_authority"
+    assert "he_branch_op_as_enacted_operation" in report["forbidden_shortcuts"]
+    assert "he_branch_target_resolution_as_target_hijack" in proposed["forbidden_shortcuts"]
 
 
 def test_finland_corrigendum_review_projects_source_diagnostic_envelope() -> None:
