@@ -73,6 +73,7 @@ src/lawvm/core/candidate_set_certificate.py
 src/lawvm/core/mutation_boundary_proof.py
 src/lawvm/core/agreement_residual.py
 src/lawvm/core/provenance_graph.py
+src/lawvm/core/proof_surface_graph.py
 src/lawvm/core/evidence_policy.py
 src/lawvm/core/evidence_kernel.py
 src/lawvm/core/source_acquisition.py
@@ -149,6 +150,9 @@ Rules:
 - A proof surface may preserve legacy report JSON inside `detail`.
 - Missing source/proof/frontier refs should stay missing, not be invented.
 - Stable row ids are for audit/query identity, not legal identity.
+- Graph projection of proof-surface rows is observation-only. It may create
+  provenance graph nodes and `derives_projection` edges, but it does not verify
+  source spans and does not authorize replay.
 
 ---
 
