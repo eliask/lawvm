@@ -20,6 +20,7 @@ from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frontier_work_item import FrontierWorkItem
 from lawvm.core.source_witness import DigestWitness, SourceWitness
 from lawvm.core.source_witness import source_witness_digest_coverage
+from lawvm.finland.consolidated_artifacts import artifact_record
 
 
 _DEFAULT_REQUIRED_PROOFS: tuple[str, ...] = (
@@ -291,6 +292,42 @@ def source_pathology_proof_surface_rows(
         "source_pathology_execution_authorizations": authorizations,
         "source_pathology_frontier_work_items": frontier_items,
     }
+
+
+def consolidated_artifact_source_witness(
+    *,
+    locator: str,
+    xml_bytes: bytes,
+    source_role: str = "finlex_consolidated_oracle",
+) -> SourceWitness:
+    """Build a shared source witness for a cached Finland consolidated XML artifact."""
+
+    record = artifact_record(locator, xml_bytes)
+    preview = _bounded_bytes_preview(xml_bytes)
+    return SourceWitness(
+        source_role=source_role,
+        artifact_id=record.sid,
+        locator=locator,
+        version_id=record.embedded_version_tag or record.path_version,
+        source_path=locator,
+        digest=DigestWitness(
+            digest_algorithm="sha256",
+            digest=hashlib.sha256(xml_bytes).hexdigest(),
+        ),
+        bounded_preview=preview,
+        preview_digest=_preview_digest_witness(preview),
+        source_lane=record.namespace or "finlex_consolidated",
+        metadata={
+            "namespace": record.namespace,
+            "sid": record.sid,
+            "lang": record.lang,
+            "locator": locator,
+            "path_version": record.path_version,
+            "embedded_version_tag": record.embedded_version_tag,
+            "date_consolidated": (record.date_consolidated.isoformat() if record.date_consolidated is not None else ""),
+            "xml_size_bytes": len(xml_bytes),
+        },
+    )
 
 
 def sparse_slot_candidate_set_certificate_rows(
@@ -737,6 +774,10 @@ def _preview_digest_witness(text: str) -> DigestWitness | None:
         digest_algorithm="sha256",
         digest=hashlib.sha256(text.encode("utf-8")).hexdigest(),
     )
+
+
+def _bounded_bytes_preview(data: bytes, *, limit: int = 512) -> str:
+    return data[:limit].decode("utf-8", errors="replace")
 
 
 def _source_witness_digest_coverage_counts(

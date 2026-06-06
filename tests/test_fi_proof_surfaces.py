@@ -1,5 +1,9 @@
+import hashlib
+
 from lawvm.core.compile_result import SourcePathology
+from lawvm.core.source_witness import source_witness_digest_coverage
 from lawvm.finland.proof_surfaces import (
+    consolidated_artifact_source_witness,
     finland_strict_report_evidence_surface,
     finlex_editorial_witness_agreement_residual_rows,
     source_adjudication_agreement_residual_rows,
@@ -9,6 +13,51 @@ from lawvm.finland.proof_surfaces import (
     source_pathology_proof_surface_rows,
     sparse_slot_candidate_set_certificate_rows,
 )
+
+
+def _consolidated_xml() -> bytes:
+    return b"""<?xml version="1.0" encoding="UTF-8"?>
+<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+  <act>
+    <meta>
+      <identification>
+        <FRBRWork>
+          <FRBRthis value="/akn/fi/act/statute-consolidated/2014/1429/fin@20190112/!main"/>
+        </FRBRWork>
+        <FRBRExpression>
+          <FRBRlanguage language="fin"/>
+          <FRBRversionNumber value="20251497"/>
+        </FRBRExpression>
+        <FRBRManifestation>
+          <FRBRdate name="dateConsolidated" date="2024-12-19"/>
+        </FRBRManifestation>
+      </identification>
+    </meta>
+  </act>
+</akomaNtoso>
+"""
+
+
+def test_consolidated_artifact_source_witness_uses_embedded_artifact_identity() -> None:
+    xml = _consolidated_xml()
+    locator = "finlex://sd-cons-old/2014/1429/fin@20251497/main.xml"
+
+    witness = consolidated_artifact_source_witness(locator=locator, xml_bytes=xml).to_dict()
+
+    assert witness["source_role"] == "finlex_consolidated_oracle"
+    assert witness["artifact_id"] == "2014/1429"
+    assert witness["locator"] == locator
+    assert witness["source_path"] == locator
+    assert witness["version_id"] == "20190112"
+    assert witness["source_lane"] == "sd-cons-old"
+    assert witness["digest_algorithm"] == "sha256"
+    assert witness["digest"] == hashlib.sha256(xml).hexdigest()
+    assert witness["preview_digest_algorithm"] == "sha256"
+    assert witness["preview_digest"]
+    assert witness["path_version"] == "20251497"
+    assert witness["embedded_version_tag"] == "20190112"
+    assert witness["date_consolidated"] == "2024-12-19"
+    assert source_witness_digest_coverage(witness) == "artifact_and_preview_digest"
 
 
 def test_source_pathology_rule_owns_high_value_family() -> None:
