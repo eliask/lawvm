@@ -11,6 +11,8 @@ from lawvm.core.elaboration_context import (
     TargetUnitKind,
     build_payload_elaboration_context,
 )
+from lawvm.core.payload_elaboration import payload_elaboration_evidence_report
+from lawvm.core.proof_surfaces import proof_surface_from_evidence_report
 from lawvm.finland.apply_runtime_support import _build_subsection_override_map
 from lawvm.finland.helpers import _norm_row_anchor_text
 from lawvm.finland.payload_normalize import SubsectionSlotMap
@@ -121,6 +123,23 @@ def test_payload_elaboration_projection_from_group_result_records_slot_bindings(
     assert binding["source_slot_id"] == "1"
     assert binding["target_slot_id"] == "subsection:1"
     assert "treat_payload_projection_as_replay_authorization" in data["forbidden_shortcuts"]
+
+    report = payload_elaboration_evidence_report(
+        projection,
+        report_kind="finland_payload_elaboration",
+    )
+    report_data = report.to_dict()
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert report_data["replay_claims"] is False
+    assert report_data["summary"]["slot_binding_count"] == 1
+    assert report_data["filters"]["owner_phase"] == "payload_elaboration"
+    assert proof_surface["surface_kind"] == "finland_payload_elaboration"
+    assert {row["row_kind"] for row in proof_surface["rows"]} == {
+        "payload_elaboration_result",
+        "slot_binding_report",
+        "slot_binding",
+    }
 
 
 def _mock_ctx(

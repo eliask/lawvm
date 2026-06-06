@@ -163,6 +163,10 @@ Rules:
 - Token tapes should preserve the immutable source lexeme stream. Parser-facing
   structural views should be derived from annotation overlays and keep a
   view-to-raw token-span map.
+- Payload elaboration reports should expose completeness, slot bindings,
+  rejected-operation counts, and source-pathology counts through shared
+  evidence-report rows. Those rows are not replay authority and do not prove
+  target uniqueness or mutation-boundary safety by themselves.
 
 ---
 

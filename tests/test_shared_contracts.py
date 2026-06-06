@@ -45,7 +45,12 @@ from lawvm.core.frozen_values import FrozenDict
 from lawvm.core.mutation_accounting import build_mutation_invariant_reports
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.core.mutation_events import MutationEvent
-from lawvm.core.payload_elaboration import PayloadElaborationResult, SlotBinding, SlotBindingReport
+from lawvm.core.payload_elaboration import (
+    PayloadElaborationResult,
+    SlotBinding,
+    SlotBindingReport,
+    payload_elaboration_evidence_report,
+)
 from lawvm.core.proof_obligations import (
     PROOF_OBLIGATION_BLOCKED,
     PROOF_OBLIGATION_COMPLETE,
@@ -657,6 +662,61 @@ def test_payload_elaboration_result_is_projection_only_not_replay_authority() ->
     assert data["authorization_status"] == "projection_only_not_replay_authority"
     assert data["slot_binding_report"]["binding_count"] == 1
     assert "treat_payload_projection_as_replay_authorization" in data["forbidden_shortcuts"]
+
+
+def test_payload_elaboration_projection_has_shared_report_read_model() -> None:
+    slot_report = SlotBindingReport(
+        subject_id="fi:demo",
+        jurisdiction="fi",
+        owner_phase="payload_elaboration",
+        status="complete",
+        completeness_kind="complete",
+        bindings=(
+            SlotBinding(
+                binding_id="fi:demo:slot:0",
+                source_slot_id="payload:1",
+                target_slot_id="subsection:1",
+                status="bound",
+                operation_id="REPLACE P 5 1",
+                binding_rule_id="REPLACE",
+            ),
+        ),
+    )
+    result = PayloadElaborationResult(
+        result_id="fi:demo:payload",
+        jurisdiction="fi",
+        owner_phase="payload_elaboration",
+        status="elaborated",
+        payload_surface_kind="IRNode",
+        completeness_kind="complete",
+        elaborated_op_count=1,
+        slot_binding_report=slot_report,
+    )
+
+    report = payload_elaboration_evidence_report(result, report_kind="finland_payload_elaboration")
+    data = report.to_dict()
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert data["report_kind"] == "finland_payload_elaboration"
+    assert data["replay_claims"] is False
+    assert data["canonical_effect_claims"] is False
+    assert data["candidate_effect_claims"] is False
+    assert data["dry_run_claims"] is False
+    assert data["agreement_claims"] is False
+    assert data["summary"]["slot_binding_count"] == 1
+    rows = {(row["surface"], row["row_id"]): row for row in data["rows"]}
+    payload_row = rows[("payload_elaboration_result", "fi:demo:payload")]
+    binding_row = rows[("slot_binding", "fi:demo:slot:0")]
+    assert payload_row["replay_authorized"] is False
+    assert binding_row["source_slot_id"] == "payload:1"
+    assert binding_row["target_slot_id"] == "subsection:1"
+    assert "payload_elaboration_report_as_replay_authorization" in data["forbidden_shortcuts"]
+    assert proof_surface["surface_kind"] == "finland_payload_elaboration"
+    assert {row["row_kind"] for row in proof_surface["rows"]} == {
+        "payload_elaboration_result",
+        "slot_binding_report",
+        "slot_binding",
+    }
 
 
 def test_execution_authorization_rejects_hidden_promotion() -> None:
