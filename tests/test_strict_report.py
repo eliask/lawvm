@@ -513,6 +513,13 @@ def test_to_json_exports_sparse_slot_candidate_certificates() -> None:
     assert certificates[0]["completeness_status"] == "partial"
     assert certificates[0]["selected_candidate_ids"] == ["payload-slot:1:1"]
     assert certificates[0]["next_promotion_allowed"] is False
+    report = payload["evidence_surface_report"]
+    assert report["jurisdiction"] == "fi"
+    assert report["report_kind"] == "finland_strict_report"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is True
+    assert report["agreement_claims"] is False
+    assert report["summary"]["sparse_slot_candidate_set_certificate_count"] == 1
 
 
 def test_format_report_surfaces_target_scoped_projection_row_detail() -> None:

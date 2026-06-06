@@ -14,6 +14,7 @@ from typing import Any, Mapping
 
 from lawvm.core.candidate_set_certificate import CandidateSetCertificate
 from lawvm.core.compile_result import SourcePathology
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frontier_work_item import FrontierWorkItem
 from lawvm.core.source_witness import SourceWitness
@@ -310,6 +311,73 @@ def sparse_slot_candidate_set_certificate_rows(
     return certificates
 
 
+def finland_strict_report_evidence_surface(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Wrap Finland strict-report JSON in the shared evidence envelope."""
+
+    source_pathology_authorizations = _mapping_sequence(payload.get("source_pathology_execution_authorizations"))
+    source_pathology_frontier_items = _mapping_sequence(payload.get("source_pathology_frontier_work_items"))
+    sparse_certificates = _mapping_sequence(payload.get("sparse_slot_candidate_set_certificates"))
+    projection_rows = _mapping_sequence(payload.get("projection_rows"))
+    failed_ops = _mapping_sequence(payload.get("failed_ops"))
+    strict_fail_reasons = _string_sequence(payload.get("strict_fail_reasons"))
+    ops = payload.get("ops")
+    ops_summary = dict(ops) if isinstance(ops, Mapping) else {}
+    rows = tuple(
+        (
+            *(
+                {"surface": "source_pathology_execution_authorization", **dict(row)}
+                for row in source_pathology_authorizations
+            ),
+            *(
+                {"surface": "source_pathology_frontier_work_item", **dict(row)}
+                for row in source_pathology_frontier_items
+            ),
+            *({"surface": "sparse_slot_candidate_set_certificate", **dict(row)} for row in sparse_certificates),
+        )
+    )
+    summary = {
+        "canonical_op_count": int(ops_summary.get("canonical") or 0),
+        "failed_op_count": int(ops_summary.get("failed") or 0),
+        "total_op_count": int(ops_summary.get("total") or 0),
+        "source_pathology_execution_authorization_count": len(source_pathology_authorizations),
+        "source_pathology_frontier_work_item_count": len(source_pathology_frontier_items),
+        "sparse_slot_candidate_set_certificate_count": len(sparse_certificates),
+        "projection_row_count": len(projection_rows),
+        "failed_op_row_count": len(failed_ops),
+        "strict_fail_reason_count": len(strict_fail_reasons),
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction="fi",
+        report_kind="finland_strict_report",
+        schema="lawvm.finland_strict_report.v1",
+        truth_claim="finland_strict_compile_and_proof_surface_diagnostics",
+        replay_claims=False,
+        canonical_effect_claims=True,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={
+            "statute_id": str(payload.get("statute_id") or ""),
+            "profile": str(payload.get("profile") or ""),
+        },
+        filtered_summary=summary,
+        rows=rows,
+        rows_truncated=False,
+        detail={
+            "safe_default": "report_compile_diagnostics_without_authorizing_unproved_replay",
+            "forbidden_shortcuts": (
+                "strict_report_row_as_replay_authorization",
+                "frontier_item_as_canonical_operation",
+                "candidate_certificate_as_slot_uniqueness_proof",
+                "projection_row_as_oracle_agreement",
+            ),
+        },
+    ).to_dict()
+
+
 def _pathology_row(pathology: SourcePathology | Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(pathology, SourcePathology):
         return {
@@ -515,6 +583,12 @@ def _string_sequence(value: Any) -> tuple[str, ...]:
     if isinstance(value, list | tuple):
         return tuple(str(item) for item in value if str(item))
     return ()
+
+
+def _mapping_sequence(value: Any) -> tuple[Mapping[str, Any], ...]:
+    if not isinstance(value, list | tuple):
+        return ()
+    return tuple(item for item in value if isinstance(item, Mapping))
 
 
 def _sparse_payload_slot_candidate_id(*, slot_index: int, slot_label: str) -> str:

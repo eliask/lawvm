@@ -37,6 +37,7 @@ from lawvm.core.compile_views import (
     source_pathology_rows_from_findings,
 )
 from lawvm.finland.proof_surfaces import (
+    finland_strict_report_evidence_surface,
     source_pathology_proof_surface_rows,
     sparse_slot_candidate_set_certificate_rows,
 )
@@ -391,7 +392,7 @@ def _to_json(cr: Any) -> dict[str, Any]:
     n_canonical = len(canonical_ops)
     profile = _field(cr, "profile", None)
     profile_name = str(getattr(profile, "name", profile or "") or "")
-    return {
+    payload = {
         "statute_id": _field(cr, "statute_id", ""),
         "profile": profile_name,
         "ops": {
@@ -429,6 +430,8 @@ def _to_json(cr: Any) -> dict[str, Any]:
         ],
         "failed_ops": [_failed_op_to_jsonable(f) for f in failed_ops],
     }
+    payload["evidence_surface_report"] = finland_strict_report_evidence_surface(payload)
+    return payload
 
 
 # ---------------------------------------------------------------------------

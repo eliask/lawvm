@@ -1,5 +1,6 @@
 from lawvm.core.compile_result import SourcePathology
 from lawvm.finland.proof_surfaces import (
+    finland_strict_report_evidence_surface,
     source_pathology_execution_authorization,
     source_pathology_frontier_work_item,
     source_pathology_proof_rule,
@@ -169,3 +170,35 @@ def test_sparse_ambiguous_binding_projects_partial_candidate_certificate() -> No
     assert cert["candidate_ids"] == ["payload-slot:2"]
     assert cert["blocker_counts"] == {"ambiguous_binding": 1}
     assert cert["blocker_families"] == ["sparse_slot_ambiguity"]
+
+
+def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> None:
+    report = finland_strict_report_evidence_surface(
+        {
+            "statute_id": "2001/1234",
+            "profile": "FINLAND_INGESTION_V1",
+            "ops": {"canonical": 2, "failed": 1, "total": 3},
+            "source_pathology_execution_authorizations": [
+                {"authorization_status": "source_pathology_not_replay_authority"}
+            ],
+            "source_pathology_frontier_work_items": [{"frontier_family": "fi_destructive_shape_loss_risk"}],
+            "sparse_slot_candidate_set_certificates": [{"candidate_set_kind": "fi_sparse_payload_slot_assignment"}],
+            "projection_rows": [{"kind": "ELAB.SPARSE_SLOT_BINDING"}],
+            "failed_ops": [{"reason_code": "unsupported"}],
+            "strict_fail_reasons": ["source_incomplete"],
+        }
+    )
+
+    assert report["jurisdiction"] == "fi"
+    assert report["report_kind"] == "finland_strict_report"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is True
+    assert report["agreement_claims"] is False
+    assert report["summary"]["canonical_op_count"] == 2
+    assert report["summary"]["source_pathology_frontier_work_item_count"] == 1
+    assert report["summary"]["sparse_slot_candidate_set_certificate_count"] == 1
+    assert [row["surface"] for row in report["rows"]] == [
+        "source_pathology_execution_authorization",
+        "source_pathology_frontier_work_item",
+        "sparse_slot_candidate_set_certificate",
+    ]
