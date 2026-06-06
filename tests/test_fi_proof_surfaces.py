@@ -7,6 +7,7 @@ from lawvm.finland.proof_surfaces import (
     consolidated_artifact_source_witness,
     corrigendum_source_witness,
     finlex_html_topology_source_witness,
+    finland_evidence_bundle_evidence_surface,
     finland_strict_report_evidence_surface,
     finlex_editorial_witness_agreement_residual_rows,
     mutation_boundary_proof_rows,
@@ -115,6 +116,73 @@ def test_finlex_html_topology_source_witness_is_preview_only() -> None:
     assert witness["extra_in_xml_count"] == 1
     assert witness["preview_digest_algorithm"] == "sha256"
     assert source_witness_digest_coverage(witness) == "preview_digest"
+
+
+def test_finland_evidence_bundle_projects_passive_shared_report() -> None:
+    html_witness = finlex_html_topology_source_witness(
+        {
+            "mismatch": True,
+            "missing_from_xml": ["4 a §"],
+            "extra_in_xml": [],
+            "html_error": "",
+            "noncommensurable_reason": "",
+            "html_url": "https://www.finlex.fi/fi/laki/ajantasa/1999/19990132",
+        },
+        statute_id="1999/132",
+    ).to_dict()
+    corrigendum_witness = corrigendum_source_witness(
+        {
+            "source_pdf": "akn/fi/act/statute-consolidated/1999/132/media/corrigenda/sk20140041_1.pdf",
+            "pdf_name": "sk20140041_1.pdf",
+            "statute_id": "1999/132",
+            "amendment_id": "41/2013",
+            "date_published": "6.3.2014",
+            "correction_item_count": 1,
+            "sha256": "d97b0330313cd3cd12358381380c216a696d520df7205e8e0247492c7c03f97e",
+        }
+    ).to_dict()
+
+    report = finland_evidence_bundle_evidence_surface(
+        {
+            "statute_id": "1999/132",
+            "mode": "legal_pit",
+            "overall_score": 0.9,
+            "section_score": 0.8,
+            "html_topology": {"source_witness": html_witness},
+            "supporting_amendments": [{"amendment_id": "41/2013", "source_witnesses": [corrigendum_witness]}],
+            "proof_claims": [{"tier": "PROVED_ORACLE_INCORRECT", "kind": "xml_html_topology_drift"}],
+            "section_claims": [{"section": "section:4"}],
+            "source_pathologies": [{"code": "SPARSE_ITEM_BODY_MISSING"}],
+            "evidence_context_diagnostics": [{"surface": "body_pairing", "error": "unavailable"}],
+            "section_bisect": [{"section": "section:4"}],
+            "compiler_observations": {"normalized_section_observation_count": 3},
+            "proof_tiers": ["PROVED_ORACLE_INCORRECT"],
+            "primary_proof_tier": "PROVED_ORACLE_INCORRECT",
+        }
+    )
+
+    assert report["jurisdiction"] == "fi"
+    assert report["report_kind"] == "finland_evidence_bundle"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is True
+    assert report["summary"]["proof_claim_count"] == 1
+    assert report["summary"]["section_claim_count"] == 1
+    assert report["summary"]["html_topology_source_witness_count"] == 1
+    assert report["summary"]["corrigendum_source_witness_count"] == 1
+    assert report["summary"]["source_witness_digest_coverage_counts"] == {
+        "artifact_and_preview_digest": 1,
+        "preview_digest": 1,
+    }
+    assert {row["surface"] for row in report["rows"]} == {
+        "evidence_context_diagnostic",
+        "proof_claim",
+        "source_pathology",
+        "source_witness",
+    }
+    assert "proof_claim_as_mutation_instruction" in report["forbidden_shortcuts"]
 
 
 def test_mutation_boundary_reports_project_shared_proof_rows() -> None:

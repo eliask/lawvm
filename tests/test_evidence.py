@@ -3257,6 +3257,18 @@ def test_build_evidence_bundle_summarizes_compiler_observations(monkeypatch) -> 
     assert html_witness["source_lane"] == "finlex_html_live_audit"
     assert html_witness["preview_digest"]
     assert source_witness_digest_coverage(html_witness) == "preview_digest"
+    report = bundle["evidence_surface_report"]
+    assert report["jurisdiction"] == "fi"
+    assert report["report_kind"] == "finland_evidence_bundle"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["summary"]["proof_claim_count"] == len(bundle["proof_claims"])
+    assert report["summary"]["section_claim_count"] == len(bundle["section_claims"])
+    assert report["summary"]["html_topology_source_witness_count"] == 1
+    assert report["summary"]["source_witness_digest_coverage_counts"] == {"preview_digest": 1}
+    assert "proof_claim_as_mutation_instruction" in report["forbidden_shortcuts"]
 
 
 def test_build_evidence_bundle_records_context_degradation(monkeypatch) -> None:

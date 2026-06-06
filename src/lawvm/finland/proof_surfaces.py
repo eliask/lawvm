@@ -779,6 +779,94 @@ def finland_strict_report_evidence_surface(
     ).to_dict()
 
 
+def finland_evidence_bundle_evidence_surface(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Wrap Finland evidence-bundle JSON in the shared evidence envelope."""
+
+    html_topology = payload.get("html_topology")
+    html_witnesses: tuple[Mapping[str, Any], ...] = ()
+    if isinstance(html_topology, Mapping) and isinstance(html_topology.get("source_witness"), Mapping):
+        html_witnesses = (html_topology["source_witness"],)
+    supporting_amendments = _mapping_sequence(payload.get("supporting_amendments"))
+    corrigendum_witnesses = tuple(
+        witness
+        for amendment in supporting_amendments
+        for witness in _mapping_sequence(amendment.get("source_witnesses"))
+    )
+    source_witnesses = (*html_witnesses, *corrigendum_witnesses)
+    proof_claims = _mapping_sequence(payload.get("proof_claims"))
+    section_claims = _mapping_sequence(payload.get("section_claims"))
+    source_pathologies = _mapping_sequence(payload.get("source_pathologies"))
+    context_diagnostics = _mapping_sequence(payload.get("evidence_context_diagnostics"))
+    section_bisect = _mapping_sequence(payload.get("section_bisect"))
+    compiler_observations_raw = payload.get("compiler_observations")
+    compiler_observations = dict(compiler_observations_raw) if isinstance(compiler_observations_raw, Mapping) else {}
+    proof_tiers = _string_sequence(payload.get("proof_tiers"))
+    rows = tuple(
+        (
+            *({**dict(row), "surface": "source_witness"} for row in source_witnesses),
+            *({**dict(row), "surface": "proof_claim"} for row in proof_claims),
+            *({**dict(row), "surface": "source_pathology"} for row in source_pathologies),
+            *({**dict(row), "surface": "evidence_context_diagnostic"} for row in context_diagnostics),
+        )
+    )
+    summary = {
+        "proof_claim_count": len(proof_claims),
+        "section_claim_count": len(section_claims),
+        "source_pathology_count": len(source_pathologies),
+        "supporting_amendment_count": len(supporting_amendments),
+        "source_witness_count": len(source_witnesses),
+        "html_topology_source_witness_count": len(html_witnesses),
+        "corrigendum_source_witness_count": len(corrigendum_witnesses),
+        "source_witness_digest_coverage_counts": _source_witness_row_digest_coverage_counts(source_witnesses),
+        "evidence_context_diagnostic_count": len(context_diagnostics),
+        "section_bisect_row_count": len(section_bisect),
+        "proof_tiers": proof_tiers,
+        "primary_proof_tier": str(payload.get("primary_proof_tier") or ""),
+        "overall_score": payload.get("overall_score"),
+        "section_score": payload.get("section_score"),
+        "compiler_normalized_observation_count": int(
+            compiler_observations.get("normalized_section_observation_count") or 0
+        ),
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction="fi",
+        report_kind="finland_evidence_bundle",
+        schema="lawvm.finland_evidence_bundle.v1",
+        truth_claim="finland_oracle_review_and_proof_claim_diagnostics",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=True,
+        summary=summary,
+        filters={
+            "statute_id": str(payload.get("statute_id") or ""),
+            "mode": str(payload.get("mode") or ""),
+        },
+        filtered_summary=summary,
+        rows=rows,
+        rows_truncated=False,
+        detail={
+            "safe_default": "treat_evidence_bundle_as_passive_diagnostics_not_replay_authorization",
+            "forbidden_shortcuts": (
+                "evidence_bundle_as_replay_authorization",
+                "oracle_score_as_source_truth",
+                "proof_claim_as_mutation_instruction",
+                "html_topology_witness_as_raw_html_digest",
+                "corrigendum_witness_as_manual_patch_authority",
+            ),
+            "included_surfaces": (
+                "source_witness",
+                "proof_claim",
+                "source_pathology",
+                "evidence_context_diagnostic",
+            ),
+        },
+    ).to_dict()
+
+
 def _pathology_row(pathology: SourcePathology | Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(pathology, SourcePathology):
         return {

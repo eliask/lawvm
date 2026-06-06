@@ -26,7 +26,11 @@ from lawvm.core.compile_result import CompileFailure
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.target_scope import TargetUnitKind
 from lawvm.finland.corrigendum_records import load_patch_records, load_source_records
-from lawvm.finland.proof_surfaces import corrigendum_source_witness, finlex_html_topology_source_witness
+from lawvm.finland.proof_surfaces import (
+    corrigendum_source_witness,
+    finland_evidence_bundle_evidence_surface,
+    finlex_html_topology_source_witness,
+)
 from lawvm.finland.corpus import get_consolidated_oracle_suspect_cache_only
 from lawvm.finland.compile import compile_fi_facade_from_replay
 from lawvm.finland.source_adjudication import build_source_adjudication
@@ -3755,7 +3759,7 @@ def build_evidence_bundle(
     except Exception as exc:
         _evidence_context_diagnostics.append(_evidence_context_degradation("body_pairing", exc))
 
-    return {
+    bundle = {
         "statute_id": statute_id,
         "title": str(oracle_result.title or ""),
         "mode": mode,
@@ -3834,6 +3838,8 @@ def build_evidence_bundle(
         "trigger_coverage_certificates": _trigger_coverage_certificates,
         "trigger_coverage_search_failures": _trigger_coverage_search_failures,
     }
+    bundle["evidence_surface_report"] = finland_evidence_bundle_evidence_surface(bundle)
+    return bundle
 
 
 def build_uk_evidence_bundle(
