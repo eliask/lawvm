@@ -5,6 +5,7 @@ from lawvm.core.mutation_accounting import MutationInvariantReport
 from lawvm.core.source_witness import source_witness_digest_coverage
 from lawvm.finland.proof_surfaces import (
     consolidated_artifact_source_witness,
+    corrigendum_source_witness,
     finland_strict_report_evidence_surface,
     finlex_editorial_witness_agreement_residual_rows,
     mutation_boundary_proof_rows,
@@ -59,6 +60,34 @@ def test_consolidated_artifact_source_witness_uses_embedded_artifact_identity() 
     assert witness["path_version"] == "20251497"
     assert witness["embedded_version_tag"] == "20190112"
     assert witness["date_consolidated"] == "2024-12-19"
+    assert source_witness_digest_coverage(witness) == "artifact_and_preview_digest"
+
+
+def test_corrigendum_source_witness_carries_pdf_digest_and_preview() -> None:
+    row = {
+        "source_pdf": "akn/fi/act/statute-consolidated/1999/132/media/corrigenda/sk20140041_1.pdf",
+        "pdf_name": "sk20140041_1.pdf",
+        "statute_id": "1999/132",
+        "amendment_id": "41/2013",
+        "lang": "fi",
+        "date_published": "6.3.2014",
+        "date_status": "present",
+        "correction_item_count": 1,
+        "sha256": "d97b0330313cd3cd12358381380c216a696d520df7205e8e0247492c7c03f97e",
+        "size_bytes": 51642,
+    }
+
+    witness = corrigendum_source_witness(row).to_dict()
+
+    assert witness["source_role"] == "finland_corrigendum_pdf"
+    assert witness["artifact_id"] == row["source_pdf"]
+    assert witness["source_unit_id"] == "41/2013"
+    assert witness["locator"] == row["source_pdf"]
+    assert witness["digest_algorithm"] == "sha256"
+    assert witness["digest"] == row["sha256"]
+    assert witness["preview_digest_algorithm"] == "sha256"
+    assert witness["source_lane"] == "corrigendum_pdf"
+    assert witness["correction_item_count"] == 1
     assert source_witness_digest_coverage(witness) == "artifact_and_preview_digest"
 
 

@@ -40,6 +40,7 @@ from lawvm.tools.evidence_statute_rules import build_proof_claims_typed
 def _fixture_compile_metadata():
     from lawvm.core.compile_metadata import CompileMetadata
     from lawvm.core.provenance_graph import attestation_kind_registry_hash
+
     return CompileMetadata(
         provenance_graph_hash="sha256:" + "0" * 60,
         strict_profile_fingerprint="sha256:test-strict",
@@ -77,14 +78,12 @@ def test_build_proof_claims_marks_oracle_incorrect_for_html_topology_drift() -> 
     )
 
     assert any(
-        claim["tier"] == "PROVED_ORACLE_INCORRECT"
-        and claim["kind"] == "xml_html_topology_drift"
-        for claim in claims
+        claim["tier"] == "PROVED_ORACLE_INCORRECT" and claim["kind"] == "xml_html_topology_drift" for claim in claims
     )
     claim = next(
-        claim for claim in claims
-        if claim["tier"] == "PROVED_ORACLE_INCORRECT"
-        and claim["kind"] == "xml_html_topology_drift"
+        claim
+        for claim in claims
+        if claim["tier"] == "PROVED_ORACLE_INCORRECT" and claim["kind"] == "xml_html_topology_drift"
     )
     assert claim["inference_rule"] == "html_xml_topology_drift_detected"
     assert claim["trigger_observations"][0]["source"] == "html_topology"
@@ -121,11 +120,7 @@ def test_build_proof_claims_marks_html_fetch_error_separately() -> None:
         corrigendum_support=[],
     )
 
-    assert any(
-        claim["kind"] == "html_fetch_error"
-        and claim["tier"] == "UNRESOLVED"
-        for claim in claims
-    )
+    assert any(claim["kind"] == "html_fetch_error" and claim["tier"] == "UNRESOLVED" for claim in claims)
     assert not any(claim["kind"] == "xml_html_topology_drift" for claim in claims)
 
 
@@ -155,8 +150,7 @@ def test_build_proof_claims_marks_oracle_cutoff_version_drift() -> None:
     claim = next(
         claim
         for claim in claims
-        if claim["tier"] == "PROVED_ORACLE_INCORRECT"
-        and claim["kind"] == "oracle_metadata_inconsistency"
+        if claim["tier"] == "PROVED_ORACLE_INCORRECT" and claim["kind"] == "oracle_metadata_inconsistency"
     )
     assert claim["inference_rule"] == "oracle_version_mid_conflicts_with_consolidated_cutoff"
     assert claim["trigger_observations"][0]["source"] == "oracle_version_gate"
@@ -354,8 +348,7 @@ def test_build_proof_claims_demotes_sections_improved_by_blamed_amendment() -> N
 
     assert not any(claim["tier"] == "PROVED_REPLAY_BUG" for claim in claims)
     improved = next(
-        claim for claim in claims
-        if claim["kind"] == "UNRESOLVED.source_underdetermined.amendment_improves_section"
+        claim for claim in claims if claim["kind"] == "UNRESOLVED.source_underdetermined.amendment_improves_section"
     )
     assert improved["tier"] == "UNRESOLVED"
     assert improved["trigger_observations"][0]["source"] == "section_trace"
@@ -445,10 +438,7 @@ def test_build_proof_claims_demotes_repeal_only_without_payload_sections() -> No
     )
 
     assert not any(claim["tier"] == "PROVED_REPLAY_BUG" for claim in claims)
-    pathology = next(
-        claim for claim in claims
-        if claim["kind"] == "blamed_source_lacks_payload_support"
-    )
+    pathology = next(claim for claim in claims if claim["kind"] == "blamed_source_lacks_payload_support")
     assert pathology["tier"] == "PROVED_SOURCE_PATHOLOGY"
     assert pathology["trigger_observations"][0]["source"] == "source_payload"
     assert _primary_proof_tier(claims) == "PROVED_SOURCE_PATHOLOGY"
@@ -501,10 +491,7 @@ def test_build_proof_claims_demotes_sections_whose_payload_matches_replay_better
     )
 
     assert not any(claim["tier"] == "PROVED_REPLAY_BUG" for claim in claims)
-    pathology = next(
-        claim for claim in claims
-        if claim["kind"] == "blamed_source_payload_prefers_replay"
-    )
+    pathology = next(claim for claim in claims if claim["kind"] == "blamed_source_payload_prefers_replay")
     assert pathology["tier"] == "PROVED_SOURCE_PATHOLOGY"
     assert pathology["trigger_observations"][0]["source"] == "source_payload"
     assert _primary_proof_tier(claims) == "PROVED_SOURCE_PATHOLOGY"
@@ -561,14 +548,11 @@ def test_build_proof_claims_demotes_sections_with_same_section_elaboration() -> 
 
     assert not any(claim["tier"] == "PROVED_REPLAY_BUG" for claim in claims)
     unresolved = next(
-        claim for claim in claims
-        if claim["kind"] == "UNRESOLVED.source_underdetermined.elaboration_ambiguity"
+        claim for claim in claims if claim["kind"] == "UNRESOLVED.source_underdetermined.elaboration_ambiguity"
     )
     assert unresolved["tier"] == "UNRESOLVED"
     assert unresolved["trigger_observations"][0]["source"] == "elaboration"
-    assert unresolved["support"]["sections"][0]["apply_helpers"] == [
-        "_apply_deterministic_subsection_op"
-    ]
+    assert unresolved["support"]["sections"][0]["apply_helpers"] == ["_apply_deterministic_subsection_op"]
     assert _primary_proof_tier(claims) == "UNRESOLVED"
 
 
@@ -637,9 +621,9 @@ def test_build_proof_claims_demotes_deterministic_sparse_multistep_stale_oracle_
 
     assert not any(claim["tier"] == "PROVED_REPLAY_BUG" for claim in claims)
     oracle_claim = next(
-        claim for claim in claims
-        if claim["tier"] == "PROVED_ORACLE_INCORRECT"
-        and claim["kind"] == "oracle_section_stale"
+        claim
+        for claim in claims
+        if claim["tier"] == "PROVED_ORACLE_INCORRECT" and claim["kind"] == "oracle_section_stale"
     )
     assert oracle_claim["inference_rule"] == "oracle_stale_sections_detected"
     assert oracle_claim["support"]["sections"][0]["section"] == "section:3"
@@ -733,8 +717,7 @@ def test_build_proof_claims_keeps_extraction_coverage_gap_unresolved() -> None:
                 "selected_kind": "UNRESOLVED.source_underdetermined.extraction_coverage_gap",
                 "selected_tier": "UNRESOLVED",
                 "selected_inference_rule": (
-                    "statute_has_extraction_fallback_so_replay_divergence_"
-                    "cannot_be_attributed_to_replay_logic"
+                    "statute_has_extraction_fallback_so_replay_divergence_cannot_be_attributed_to_replay_logic"
                 ),
             }
         ],
@@ -851,10 +834,7 @@ def test_build_section_claims_marks_deterministic_sparse_multistep_oracle_stale(
     row = rows[0]
     assert row["selected_kind"] == "oracle_section_stale"
     assert row["selected_tier"] == "PROVED_ORACLE_INCORRECT"
-    assert (
-        row["selected_inference_rule"]
-        == "deterministic_sparse_same_section_drops_leave_oracle_stale"
-    )
+    assert row["selected_inference_rule"] == "deterministic_sparse_same_section_drops_leave_oracle_stale"
     assert row["candidate_kinds"] == [
         "oracle_section_stale",
         "UNRESOLVED.source_underdetermined.elaboration_ambiguity",
@@ -911,10 +891,7 @@ def test_build_section_claims_marks_deterministic_payload_completeness_oracle_st
     row = rows[0]
     assert row["selected_kind"] == "oracle_section_stale"
     assert row["selected_tier"] == "PROVED_ORACLE_INCORRECT"
-    assert (
-        row["selected_inference_rule"]
-        == "deterministic_payload_completeness_same_section_drop_leaves_oracle_stale"
-    )
+    assert row["selected_inference_rule"] == "deterministic_payload_completeness_same_section_drop_leaves_oracle_stale"
 
 
 def test_build_section_claims_marks_empty_oracle_text_unverified() -> None:
@@ -935,9 +912,7 @@ def test_build_section_claims_marks_empty_oracle_text_unverified() -> None:
     assert row["selected_kind"] == "UNRESOLVED.source_underdetermined.oracle_text_empty_unverified"
     assert row["selected_tier"] == "UNRESOLVED"
     assert row["selected_inference_rule"] == "oracle_text_empty_but_contentAbsent_not_verified"
-    assert row["candidate_kinds"] == [
-        "UNRESOLVED.source_underdetermined.oracle_text_empty_unverified"
-    ]
+    assert row["candidate_kinds"] == ["UNRESOLVED.source_underdetermined.oracle_text_empty_unverified"]
 
 
 def test_build_section_claims_marks_extraction_coverage_gap() -> None:
@@ -961,9 +936,7 @@ def test_build_section_claims_marks_extraction_coverage_gap() -> None:
         row["selected_inference_rule"]
         == "statute_has_extraction_fallback_so_replay_divergence_cannot_be_attributed_to_replay_logic"
     )
-    assert row["candidate_kinds"] == [
-        "UNRESOLVED.source_underdetermined.extraction_coverage_gap"
-    ]
+    assert row["candidate_kinds"] == ["UNRESOLVED.source_underdetermined.extraction_coverage_gap"]
 
 
 def test_build_section_claims_marks_section_strict_lineage_barrier() -> None:
@@ -995,9 +968,7 @@ def test_build_section_claims_marks_section_strict_lineage_barrier() -> None:
         row["selected_inference_rule"]
         == "blamed_amendment_section_has_source_or_extraction_strict_barriers_so_replay_attribution_unsupported"
     )
-    assert row["candidate_kinds"] == [
-        "UNRESOLVED.source_underdetermined.section_strict_lineage"
-    ]
+    assert row["candidate_kinds"] == ["UNRESOLVED.source_underdetermined.section_strict_lineage"]
 
 
 def test_build_section_claims_marks_section_recovery_barriers() -> None:
@@ -1029,9 +1000,7 @@ def test_build_section_claims_marks_section_recovery_barriers() -> None:
         row["selected_inference_rule"]
         == "blamed_amendment_section_required_recovery_paths_so_replay_divergence_may_be_recovery_artifact"
     )
-    assert row["candidate_kinds"] == [
-        "UNRESOLVED.source_underdetermined.section_recovery_barriers"
-    ]
+    assert row["candidate_kinds"] == ["UNRESOLVED.source_underdetermined.section_recovery_barriers"]
 
 
 def test_build_section_claims_records_defeated_candidates() -> None:
@@ -1231,9 +1200,7 @@ def test_build_section_claims_demotes_cross_chapter_oracle_section_drift() -> No
     row = rows[0]
     assert row["selected_kind"] == "address_relocation_cross_chapter_exact"
     assert row["selected_tier"] == "PROVED_HTML_XML_NONCOMMENSURABLE"
-    assert row["selected_inference_rule"] == (
-        "oracle_matches_same_label_section_in_different_chapter"
-    )
+    assert row["selected_inference_rule"] == ("oracle_matches_same_label_section_in_different_chapter")
     assert row["cross_chapter_oracle_match"] == {
         "oracle_section": "section:146",
         "oracle_section_score": 1.0,
@@ -1265,9 +1232,7 @@ def test_build_section_claims_cross_chapter_exact_noncommensurable() -> None:
     row = rows[0]
     assert row["selected_tier"] == "PROVED_HTML_XML_NONCOMMENSURABLE"
     assert row["selected_kind"] == "address_relocation_cross_chapter_exact"
-    assert row["selected_inference_rule"] == (
-        "oracle_matches_same_label_section_in_different_chapter"
-    )
+    assert row["selected_inference_rule"] == ("oracle_matches_same_label_section_in_different_chapter")
 
 
 def test_build_section_claims_cross_chapter_low_score_stays_unresolved() -> None:
@@ -1294,9 +1259,7 @@ def test_build_section_claims_cross_chapter_low_score_stays_unresolved() -> None
     row = rows[0]
     assert row["selected_tier"] == "UNRESOLVED"
     assert row["selected_kind"] == "UNRESOLVED.address_projection.cross_chapter_oracle_drift"
-    assert row["selected_inference_rule"] == (
-        "oracle_matches_same_label_section_in_different_chapter"
-    )
+    assert row["selected_inference_rule"] == ("oracle_matches_same_label_section_in_different_chapter")
 
 
 def test_cross_chapter_oracle_match_helper_keeps_ambiguous_near_tie_candidates() -> None:
@@ -1346,9 +1309,7 @@ def test_build_section_claims_cross_chapter_oracle_near_tie_stays_unresolved() -
     row = rows[0]
     assert row["selected_tier"] == "UNRESOLVED"
     assert row["selected_kind"] == "UNRESOLVED.address_projection.cross_chapter_oracle_drift"
-    assert row["selected_inference_rule"] == (
-        "oracle_matches_same_label_section_in_different_chapter"
-    )
+    assert row["selected_inference_rule"] == ("oracle_matches_same_label_section_in_different_chapter")
     assert row["cross_chapter_oracle_match"]["runner_up_oracle_section"] == "chapter:1/section:243"
 
 
@@ -1375,9 +1336,7 @@ def test_build_section_claims_cross_chapter_replay_exact_noncommensurable() -> N
     row = rows[0]
     assert row["selected_tier"] == "PROVED_HTML_XML_NONCOMMENSURABLE"
     assert row["selected_kind"] == "address_relocation_cross_chapter_exact"
-    assert row["selected_inference_rule"] == (
-        "replay_matches_same_label_section_in_different_chapter_than_oracle"
-    )
+    assert row["selected_inference_rule"] == ("replay_matches_same_label_section_in_different_chapter_than_oracle")
 
 
 def test_build_section_claims_cross_chapter_replay_low_score_stays_unresolved() -> None:
@@ -1403,9 +1362,7 @@ def test_build_section_claims_cross_chapter_replay_low_score_stays_unresolved() 
     row = rows[0]
     assert row["selected_tier"] == "UNRESOLVED"
     assert row["selected_kind"] == "UNRESOLVED.address_projection.cross_chapter_replay_drift"
-    assert row["selected_inference_rule"] == (
-        "replay_matches_same_label_section_in_different_chapter_than_oracle"
-    )
+    assert row["selected_inference_rule"] == ("replay_matches_same_label_section_in_different_chapter_than_oracle")
 
 
 def test_cross_chapter_replay_match_helper_skips_ambiguous_near_tie_candidates() -> None:
@@ -1484,9 +1441,7 @@ def test_build_section_claims_demotes_same_chapter_oracle_range_drift() -> None:
     row = rows[0]
     assert row["selected_kind"] == "same_chapter_oracle_range_drift"
     assert row["selected_tier"] == "PROVED_ORACLE_INCORRECT"
-    assert row["selected_inference_rule"] == (
-        "oracle_uses_same_chapter_section_range_instead_of_exact_section_label"
-    )
+    assert row["selected_inference_rule"] == ("oracle_uses_same_chapter_section_range_instead_of_exact_section_label")
     assert row["oracle_range_match"] == {
         "oracle_range_section": "chapter:11/section:96a–97",
         "oracle_range_label": "96a–97",
@@ -1609,9 +1564,7 @@ def test_build_section_claims_demotes_unblamed_replay_residue() -> None:
     row = rows[0]
     assert row["selected_kind"] == "UNRESOLVED.preexisting.baseline_residue"
     assert row["selected_tier"] == "UNRESOLVED"
-    assert row["selected_inference_rule"] == (
-        "residual_replay_divergence_has_no_blamed_amendment"
-    )
+    assert row["selected_inference_rule"] == ("residual_replay_divergence_has_no_blamed_amendment")
     assert row["candidate_kinds"] == ["UNRESOLVED.preexisting.baseline_residue"]
 
 
@@ -1647,8 +1600,7 @@ def test_build_proof_claims_demotes_same_chapter_alternative_replay_match() -> N
 
     assert not any(claim["tier"] == "PROVED_REPLAY_BUG" for claim in claims)
     drift = next(
-        claim for claim in claims
-        if claim["kind"] == "UNRESOLVED.address_projection.same_chapter_replay_drift"
+        claim for claim in claims if claim["kind"] == "UNRESOLVED.address_projection.same_chapter_replay_drift"
     )
     assert drift["tier"] == "UNRESOLVED"
     assert drift["trigger_observations"][0]["source"] == "oracle_check"
@@ -1658,9 +1610,7 @@ def test_build_proof_claims_demotes_same_chapter_alternative_replay_match() -> N
     assert row["diagnosis"] == "REPLAY_EXTRA"
     assert row["blame_source"] == "1995/190"
     assert row["blame_title"] == "Test"
-    assert row["similarity"] == pytest.approx(
-        round(_section_similarity("38 § Replay", "38 § Oracle"), 6)
-    )
+    assert row["similarity"] == pytest.approx(round(_section_similarity("38 § Replay", "38 § Oracle"), 6))
     assert row["best_replay_section"] == "chapter:8/section:41"
     assert row["best_replay_score"] == 0.751523
     assert row["same_section_score"] == 0.362177
@@ -1697,10 +1647,7 @@ def test_build_proof_claims_demotes_same_chapter_oracle_range_drift() -> None:
     )
 
     assert not any(claim["tier"] == "PROVED_REPLAY_BUG" for claim in claims)
-    drift = next(
-        claim for claim in claims
-        if claim["kind"] == "same_chapter_oracle_range_drift"
-    )
+    drift = next(claim for claim in claims if claim["kind"] == "same_chapter_oracle_range_drift")
     assert drift["tier"] == "PROVED_ORACLE_INCORRECT"
     assert drift["trigger_observations"][0]["source"] == "oracle_check"
     assert drift["support"]["sections"][0]["oracle_range_section"] == "chapter:11/section:96a–97"
@@ -1739,8 +1686,7 @@ def test_build_proof_claims_demotes_cross_chapter_oracle_section_drift() -> None
 
     assert not any(claim["tier"] == "PROVED_REPLAY_BUG" for claim in claims)
     drift = next(
-        claim for claim in claims
-        if claim["kind"] == "UNRESOLVED.address_projection.cross_chapter_oracle_drift"
+        claim for claim in claims if claim["kind"] == "UNRESOLVED.address_projection.cross_chapter_oracle_drift"
     )
     assert drift["tier"] == "UNRESOLVED"
     assert drift["trigger_observations"][0]["source"] == "oracle_check"
@@ -1785,13 +1731,8 @@ def test_build_proof_claims_exact_cross_chapter_oracle_yields_unanimous_noncomme
         ],
     )
 
-    assert not any(
-        claim["kind"] == "UNRESOLVED.address_projection.cross_chapter_oracle_drift"
-        for claim in claims
-    )
-    claim = next(
-        c for c in claims if c["kind"] == "section_claims_unanimously_oracle_incorrect"
-    )
+    assert not any(claim["kind"] == "UNRESOLVED.address_projection.cross_chapter_oracle_drift" for claim in claims)
+    claim = next(c for c in claims if c["kind"] == "section_claims_unanimously_oracle_incorrect")
     assert claim["tier"] == "PROVED_HTML_XML_NONCOMMENSURABLE"
     assert _primary_proof_tier(claims) == "PROVED_HTML_XML_NONCOMMENSURABLE"
 
@@ -1828,8 +1769,7 @@ def test_build_proof_claims_demotes_cross_chapter_replay_section_drift() -> None
 
     assert not any(claim["tier"] == "PROVED_REPLAY_BUG" for claim in claims)
     drift = next(
-        claim for claim in claims
-        if claim["kind"] == "UNRESOLVED.address_projection.cross_chapter_replay_drift"
+        claim for claim in claims if claim["kind"] == "UNRESOLVED.address_projection.cross_chapter_replay_drift"
     )
     assert drift["tier"] == "UNRESOLVED"
     assert drift["trigger_observations"][0]["source"] == "oracle_check"
@@ -1876,9 +1816,7 @@ def test_build_proof_claims_exact_cross_chapter_replay_yields_unanimous_noncomme
         ],
     )
 
-    claim = next(
-        c for c in claims if c["kind"] == "section_claims_unanimously_oracle_incorrect"
-    )
+    claim = next(c for c in claims if c["kind"] == "section_claims_unanimously_oracle_incorrect")
     assert claim["tier"] == "PROVED_HTML_XML_NONCOMMENSURABLE"
     assert _primary_proof_tier(claims) == "PROVED_HTML_XML_NONCOMMENSURABLE"
 
@@ -1946,9 +1884,7 @@ def test_1984_719_typed_section_claims_select_same_chapter_oracle_range_drift_fo
 
     assert row["selected_tier"] == "PROVED_ORACLE_INCORRECT"
     assert row["selected_kind"] == "same_chapter_oracle_range_drift"
-    assert row["selected_inference_rule"] == (
-        "oracle_uses_same_chapter_section_range_instead_of_exact_section_label"
-    )
+    assert row["selected_inference_rule"] == ("oracle_uses_same_chapter_section_range_instead_of_exact_section_label")
     assert row["oracle_range_match"]["oracle_range_section"] == "chapter:11/section:96a–97"
 
 
@@ -2196,9 +2132,7 @@ def test_1984_719_typed_proof_claims_keep_preexisting_same_section_structure_dri
         typed_section_results=typed_rows,
     )
 
-    claim = next(
-        c for c in claims if c["kind"] == "UNRESOLVED.preexisting.same_section_structure_drift"
-    )
+    claim = next(c for c in claims if c["kind"] == "UNRESOLVED.preexisting.same_section_structure_drift")
     assert claim["tier"] == "UNRESOLVED"
     assert claim["support"]["sections"][0]["section"] == "chapter:9/section:78"
     assert _primary_proof_tier(claims) == "UNRESOLVED"
@@ -2247,10 +2181,7 @@ def test_1984_719_typed_section_claims_select_oracle_section_stale_for_79() -> N
 
     assert row["selected_tier"] == "PROVED_ORACLE_INCORRECT"
     assert row["selected_kind"] == "oracle_section_stale"
-    assert (
-        row["selected_inference_rule"]
-        == "deterministic_payload_completeness_same_section_drop_leaves_oracle_stale"
-    )
+    assert row["selected_inference_rule"] == "deterministic_payload_completeness_same_section_drop_leaves_oracle_stale"
 
 
 def test_1984_719_typed_proof_claims_promote_oracle_section_stale_for_79() -> None:
@@ -2317,9 +2248,7 @@ def test_1984_719_typed_proof_claims_promote_oracle_section_stale_for_79() -> No
         typed_section_results=typed_rows,
     )
 
-    claim = next(
-        c for c in claims if c["kind"] == "section_claims_unanimously_oracle_incorrect"
-    )
+    claim = next(c for c in claims if c["kind"] == "section_claims_unanimously_oracle_incorrect")
     assert claim["tier"] == "PROVED_ORACLE_INCORRECT"
     assert claim["inference_rule"] == "all_section_claims_resolve_to_oracle_or_noncommensurable"
     assert claim["support"]["section_claim_kinds"] == ["oracle_section_stale"]
@@ -2430,9 +2359,7 @@ def test_1992_1702_bisect_support_finds_preexisting_same_chapter_section_drift_f
     assert float(baseline["best_replay_score"]) >= 0.85
     assert float(baseline["same_section_score"]) < 0.4
     assert not any(
-        issubclass(w.category, FutureWarning)
-        and "Truth-testing of elements" in str(w.message)
-        for w in caught
+        issubclass(w.category, FutureWarning) and "Truth-testing of elements" in str(w.message) for w in caught
     )
 
 
@@ -2496,13 +2423,9 @@ def test_1992_1702_typed_proof_claims_keep_section_38_as_same_chapter_replay_dri
         typed_section_results=typed_rows,
     )
 
-    claim = next(
-        c for c in claims if c["kind"] == "UNRESOLVED.address_projection.same_chapter_replay_drift"
-    )
+    claim = next(c for c in claims if c["kind"] == "UNRESOLVED.address_projection.same_chapter_replay_drift")
     assert claim["tier"] == "UNRESOLVED"
-    assert claim["inference_rule"] == (
-        "same_chapter_replay_section_matches_oracle_better_than_same_number_section"
-    )
+    assert claim["inference_rule"] == ("same_chapter_replay_section_matches_oracle_better_than_same_number_section")
     assert _primary_proof_tier(claims) == "UNRESOLVED"
 
 
@@ -2671,17 +2594,10 @@ def test_typed_proof_claims_exact_cross_chapter_oracle_stays_noncommensurable() 
         typed_section_results=typed_rows,
     )
 
-    assert not any(
-        c["kind"] == "UNRESOLVED.address_projection.cross_chapter_oracle_drift"
-        for c in claims
-    )
-    claim = next(
-        c for c in claims if c["kind"] == "section_claims_unanimously_oracle_incorrect"
-    )
+    assert not any(c["kind"] == "UNRESOLVED.address_projection.cross_chapter_oracle_drift" for c in claims)
+    claim = next(c for c in claims if c["kind"] == "section_claims_unanimously_oracle_incorrect")
     assert claim["tier"] == "PROVED_HTML_XML_NONCOMMENSURABLE"
     assert _primary_proof_tier(claims) == "PROVED_HTML_XML_NONCOMMENSURABLE"
-
-
 
 
 def test_build_proof_claims_demotes_preexisting_same_chapter_section_drift() -> None:
@@ -2719,8 +2635,7 @@ def test_build_proof_claims_demotes_preexisting_same_chapter_section_drift() -> 
 
     assert not any(claim["tier"] == "PROVED_REPLAY_BUG" for claim in claims)
     drift = next(
-        claim for claim in claims
-        if claim["kind"] == "UNRESOLVED.address_projection.same_chapter_section_drift"
+        claim for claim in claims if claim["kind"] == "UNRESOLVED.address_projection.same_chapter_section_drift"
     )
     assert drift["tier"] == "UNRESOLVED"
     assert drift["trigger_observations"][0]["source"] == "section_bisect"
@@ -2764,10 +2679,7 @@ def test_build_proof_claims_demotes_preexisting_same_section_structure_drift() -
     )
 
     assert not any(claim["tier"] == "PROVED_REPLAY_BUG" for claim in claims)
-    drift = next(
-        claim for claim in claims
-        if claim["kind"] == "UNRESOLVED.preexisting.same_section_structure_drift"
-    )
+    drift = next(claim for claim in claims if claim["kind"] == "UNRESOLVED.preexisting.same_section_structure_drift")
     assert drift["tier"] == "UNRESOLVED"
     assert drift["trigger_observations"][0]["source"] == "section_bisect"
     assert drift["support"]["sections"][0]["unmatched_oracle_subsection_count"] == 1
@@ -2847,9 +2759,20 @@ def test_corrigendum_support_for_amendments_summarizes_official_verified_and_man
             {"amendment_id": "991/2012", "verified_in_source": True},
         ],
         source_records=[
+            {
+                "amendment_id": "442/2016",
+                "pdf_name": "sk20160442_1.pdf",
+                "source_pdf": "akn/fi/act/statute-consolidated/2016/442/media/corrigenda/sk20160442_1.pdf",
+                "sha256": "a" * 64,
+                "size_bytes": 12345,
+                "correction_item_count": 2,
+            },
             {"amendment_id": "442/2016", "pdf_name": "sk20160442_1.pdf"},
-            {"amendment_id": "442/2016", "pdf_name": "sk20160442_1.pdf"},
-            {"amendment_id": "991/2012", "pdf_name": "sk20120991_1.pdf"},
+            {
+                "amendment_id": "991/2012",
+                "pdf_name": "sk20120991_1.pdf",
+                "sha256": "b" * 64,
+            },
         ],
         manual_override_counts={"442/2016": 2, "991/2012": 1},
     )
@@ -2859,6 +2782,10 @@ def test_corrigendum_support_for_amendments_summarizes_official_verified_and_man
     assert by_amendment_id["442/2016"]["verified_in_source_count"] == 1
     assert by_amendment_id["442/2016"]["unverified_item_count"] == 1
     assert by_amendment_id["442/2016"]["source_pdf_count"] == 1
+    assert len(by_amendment_id["442/2016"]["source_witnesses"]) == 1
+    assert by_amendment_id["442/2016"]["source_witnesses"][0]["source_role"] == "finland_corrigendum_pdf"
+    assert by_amendment_id["442/2016"]["source_witnesses"][0]["digest"] == "a" * 64
+    assert by_amendment_id["442/2016"]["source_witnesses"][0]["preview_digest"]
     assert by_amendment_id["442/2016"]["manual_override_count"] == 2
     assert by_amendment_id["991/2012"]["official_item_count"] == 1
     assert by_amendment_id["991/2012"]["manual_override_count"] == 1
@@ -2892,9 +2819,7 @@ def test_build_oracle_proof_bundle_filters_to_oracle_claims(monkeypatch) -> None
     assert bundle["proved"] is True
     assert bundle["primary_proof_tier"] == "PROVED_ORACLE_INCORRECT"
     assert bundle["alternative_tiers"] == ["PROVED_REPLAY_BUG"]
-    assert bundle["proof_claims"] == [
-        {"tier": "PROVED_ORACLE_INCORRECT", "kind": "xml_html_topology_drift"}
-    ]
+    assert bundle["proof_claims"] == [{"tier": "PROVED_ORACLE_INCORRECT", "kind": "xml_html_topology_drift"}]
 
 
 def test_evidence_main_json_output_is_clean(monkeypatch, capsys) -> None:
@@ -3131,10 +3056,11 @@ def test_build_evidence_bundle_summarizes_compiler_observations(monkeypatch) -> 
     monkeypatch.setattr(
         "lawvm.tools.evidence.replay_xml",
         lambda statute_id, mode="legal_pit", replay_meta_out=None, **_kw: (
-            replay_meta_out.update(replay_meta) if replay_meta_out is not None else None
-        ) or SimpleNamespace(
-            source_adjudication=None,
-            materialized_state=SimpleNamespace(ir=None),
+            (replay_meta_out.update(replay_meta) if replay_meta_out is not None else None)
+            or SimpleNamespace(
+                source_adjudication=None,
+                materialized_state=SimpleNamespace(ir=None),
+            )
         ),
     )
     monkeypatch.setattr(
@@ -3257,22 +3183,22 @@ def test_build_evidence_bundle_summarizes_compiler_observations(monkeypatch) -> 
         "PARSE.TARGET_GUESSING": 1,
     }
     assert observations["provenance_projection_rows"] == [
-            {
-                "kind": "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION",
-                "source_statute": "1993/805",
-                "tag": "context_anchor",
-                "target_unit_kind": "section",
-                "target_norm": "40",
-                "target_chapter": "",
-            },
-            {
-                "kind": "PARSE.TARGET_GUESSING",
-                "source_statute": "1993/805",
-                "tag": "normalize_item_like_target",
-                "target_unit_kind": "section",
-                "target_norm": "35",
-                "target_chapter": "",
-            },
+        {
+            "kind": "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION",
+            "source_statute": "1993/805",
+            "tag": "context_anchor",
+            "target_unit_kind": "section",
+            "target_norm": "40",
+            "target_chapter": "",
+        },
+        {
+            "kind": "PARSE.TARGET_GUESSING",
+            "source_statute": "1993/805",
+            "tag": "normalize_item_like_target",
+            "target_unit_kind": "section",
+            "target_norm": "35",
+            "target_chapter": "",
+        },
     ]
     assert observations["sparse_slot_binding_count"] == 1
     assert observations["sparse_slot_binding_labels"] == ["2"]
@@ -3287,42 +3213,42 @@ def test_build_evidence_bundle_summarizes_compiler_observations(monkeypatch) -> 
     assert observations["section_bisect_observation_row_count"] == 1
     assert observations["section_bisect_sparse_blocker_row_count"] == 1
     assert observations["section_bisect_rows_with_observation_support"] == [
-            {
-                "section": "section:35",
-                "blame_source": "1993/805",
-                "elaboration_kinds": [
-                    "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
-                ],
-                "sparse_slot_binding_count": 1,
-                "sparse_slot_binding_labels": ["2"],
-                "sparse_leftover_labels": ["2:2", "3:(unlabeled)"],
-                "payload_completeness_kinds": ["fragmentary"],
-                "payload_completeness_tail_policies": ["preserve_unstated_tail"],
-                "sparse_leftover_count": 1,
-                "sparse_leftover_slot_count": 2,
-                "apply_helpers": [
-                    "_apply_deterministic_subsection_op",
-                ],
-            }
+        {
+            "section": "section:35",
+            "blame_source": "1993/805",
+            "elaboration_kinds": [
+                "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
+            ],
+            "sparse_slot_binding_count": 1,
+            "sparse_slot_binding_labels": ["2"],
+            "sparse_leftover_labels": ["2:2", "3:(unlabeled)"],
+            "payload_completeness_kinds": ["fragmentary"],
+            "payload_completeness_tail_policies": ["preserve_unstated_tail"],
+            "sparse_leftover_count": 1,
+            "sparse_leftover_slot_count": 2,
+            "apply_helpers": [
+                "_apply_deterministic_subsection_op",
+            ],
+        }
     ]
     assert observations["section_bisect_rows_with_sparse_blocker"] == [
-            {
-                "section": "section:35",
-                "blame_source": "1993/805",
-                "elaboration_kinds": [
-                    "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
-                ],
-                "sparse_slot_binding_count": 1,
-                "sparse_slot_binding_labels": ["2"],
-                "sparse_leftover_labels": ["2:2", "3:(unlabeled)"],
-                "payload_completeness_kinds": ["fragmentary"],
-                "payload_completeness_tail_policies": ["preserve_unstated_tail"],
-                "sparse_leftover_count": 1,
-                "sparse_leftover_slot_count": 2,
-                "apply_helpers": [
-                    "_apply_deterministic_subsection_op",
-                ],
-            }
+        {
+            "section": "section:35",
+            "blame_source": "1993/805",
+            "elaboration_kinds": [
+                "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
+            ],
+            "sparse_slot_binding_count": 1,
+            "sparse_slot_binding_labels": ["2"],
+            "sparse_leftover_labels": ["2:2", "3:(unlabeled)"],
+            "payload_completeness_kinds": ["fragmentary"],
+            "payload_completeness_tail_policies": ["preserve_unstated_tail"],
+            "sparse_leftover_count": 1,
+            "sparse_leftover_slot_count": 2,
+            "apply_helpers": [
+                "_apply_deterministic_subsection_op",
+            ],
+        }
     ]
 
 
@@ -3403,21 +3329,17 @@ def test_build_evidence_bundle_records_context_degradation(monkeypatch) -> None:
         _raise_chain_completeness,
     )
 
-    bundle = build_evidence_bundle("1990/1295", mode="legal_pit", include_bisect=True, compile_metadata=_fixture_compile_metadata())
+    bundle = build_evidence_bundle(
+        "1990/1295", mode="legal_pit", include_bisect=True, compile_metadata=_fixture_compile_metadata()
+    )
 
     diagnostics = bundle["evidence_context_diagnostics"]
-    assert {
-        (item["rail"], item["exception_type"], item["message"])
-        for item in diagnostics
-    } >= {
+    assert {(item["rail"], item["exception_type"], item["message"]) for item in diagnostics} >= {
         ("section_strict_verdicts", "RuntimeError", "strict rail offline"),
         ("chain_completeness", "RuntimeError", "chain rail offline"),
     }
     rows = bundle["evidence"]["finding_rows"]
-    assert {
-        (row["rule_id"], row["phase"], row["source_artifact_id"])
-        for row in rows
-    } >= {
+    assert {(row["rule_id"], row["phase"], row["source_artifact_id"]) for row in rows} >= {
         ("evidence_context_degraded:section_strict_verdicts", "evidence_context", "1990/1295"),
         ("evidence_context_degraded:chain_completeness", "evidence_context", "1990/1295"),
     }

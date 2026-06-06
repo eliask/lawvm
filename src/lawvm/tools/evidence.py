@@ -26,6 +26,7 @@ from lawvm.core.compile_result import CompileFailure
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.target_scope import TargetUnitKind
 from lawvm.finland.corrigendum_records import load_patch_records, load_source_records
+from lawvm.finland.proof_surfaces import corrigendum_source_witness
 from lawvm.finland.corpus import get_consolidated_oracle_suspect_cache_only
 from lawvm.finland.compile import compile_fi_facade_from_replay
 from lawvm.finland.source_adjudication import build_source_adjudication
@@ -267,9 +268,7 @@ def _uk_rejection_rule_counts(rows: Iterable[dict[str, Any]]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
-def _uk_observation_field_counts(
-    rows: Iterable[dict[str, Any]], field: str
-) -> dict[str, int]:
+def _uk_observation_field_counts(rows: Iterable[dict[str, Any]], field: str) -> dict[str, int]:
     counts: Counter[str] = Counter()
     for row in rows:
         value = str(row.get(field) or "").strip()
@@ -420,9 +419,7 @@ def _normalize_compiler_observations(
         sparse_slot_bindings=(
             cast(Iterable[object], sparse_slot_bindings) if isinstance(sparse_slot_bindings, list) else None
         ),
-        sparse_leftovers=(
-            cast(Iterable[object], sparse_leftovers) if isinstance(sparse_leftovers, list) else None
-        ),
+        sparse_leftovers=(cast(Iterable[object], sparse_leftovers) if isinstance(sparse_leftovers, list) else None),
         apply_mutation_events=(
             cast(Iterable[object], apply_mutation_events) if isinstance(apply_mutation_events, list) else None
         ),
@@ -538,16 +535,8 @@ def _compiler_observation_summary(
             elaboration_stage_counts[stage] += 1
         if kind == "ELAB.PAYLOAD_COMPLETENESS":
             detail = cast(dict[str, object], item.get("detail")) if isinstance(item.get("detail"), dict) else {}
-            payload_kind = str(
-                item.get("payload_completeness_kind")
-                or detail.get("payload_completeness_kind")
-                or ""
-            )
-            tail_policy = str(
-                item.get("tail_policy")
-                or detail.get("tail_policy")
-                or ""
-            )
+            payload_kind = str(item.get("payload_completeness_kind") or detail.get("payload_completeness_kind") or "")
+            tail_policy = str(item.get("tail_policy") or detail.get("tail_policy") or "")
             if payload_kind:
                 payload_completeness_kind_counts[payload_kind] += 1
             if tail_policy:
@@ -619,9 +608,7 @@ def _compiler_observation_summary(
             apply_helper_counts[helper] += 1
 
     elaboration_projection_row_count = sum(
-        1
-        for item in projection_rows
-        if str(item.get("kind") or "") in _FRONTEND_ELABORATION_PROJECTION_KINDS
+        1 for item in projection_rows if str(item.get("kind") or "") in _FRONTEND_ELABORATION_PROJECTION_KINDS
     )
 
     section_rows = []
@@ -680,8 +667,7 @@ def _compiler_observation_summary(
             {
                 str(record.get("helper") or "")
                 for record in matching
-                if str(record.get("family") or "") in apply_observation_families
-                and str(record.get("helper") or "")
+                if str(record.get("family") or "") in apply_observation_families and str(record.get("helper") or "")
             }
         )
         section_sparse_slot_binding_count = sum(
@@ -700,12 +686,14 @@ def _compiler_observation_summary(
         )
         section_sparse_leftover_slot_count = sum(
             int(record.get("unassigned_slot_count") or 0)
-            for record in matching if str(record.get("family") or "") == "sparse_leftover"
+            for record in matching
+            if str(record.get("family") or "") == "sparse_leftover"
         )
         section_sparse_leftover_labels = sorted(
             {
                 str(label or "")
-                for record in matching if str(record.get("family") or "") == "sparse_leftover"
+                for record in matching
+                if str(record.get("family") or "") == "sparse_leftover"
                 for label in (record.get("unassigned_slots") or [])
                 if str(label or "")
             }
@@ -731,9 +719,8 @@ def _compiler_observation_summary(
                 "apply_helpers": apply_helpers,
             }
             section_rows.append(row)
-            is_sparse_blocker = (
-                section_sparse_leftover_slot_count > 0
-                or any(kind in _SPARSE_BLOCKER_KINDS for kind in elaboration_kinds)
+            is_sparse_blocker = section_sparse_leftover_slot_count > 0 or any(
+                kind in _SPARSE_BLOCKER_KINDS for kind in elaboration_kinds
             )
             if bool(item.get("blame_sparse_elaboration")) and is_sparse_blocker:
                 sparse_rows.append(dict(row))
@@ -761,9 +748,7 @@ def _compiler_observation_summary(
         "sparse_leftover_slot_count": sparse_leftover_slot_count,
         "sparse_leftover_labels": sorted(sparse_leftover_labels),
         "apply_mutation_event_count": sum(
-            1
-            for item in normalized_records
-            if str(item.get("family") or "") in apply_observation_families
+            1 for item in normalized_records if str(item.get("family") or "") in apply_observation_families
         ),
         "apply_helper_counts": dict(sorted(apply_helper_counts.items())),
         "section_bisect_observation_row_count": len(section_rows),
@@ -821,8 +806,6 @@ def _load_bundle_artifacts(paths: Iterable[str]) -> List[Dict]:
     return bundles
 
 
-
-
 def _display_primary_tier(primary: str, proof_kinds: set[str]) -> str:
     if primary == "UNRESOLVED" and proof_kinds == {"trivially_empty"}:
         return "BENIGN_TRIVIALLY_EMPTY"
@@ -867,12 +850,14 @@ def _bundle_dict_rows(bundle: Dict, field: str) -> List[Dict[str, Any]]:
 def _evidence_context_diagnostics(bundle: Dict) -> List[Dict[str, str]]:
     diagnostics: List[Dict[str, str]] = []
     for item in _bundle_dict_rows(bundle, "evidence_context_diagnostics"):
-        diagnostics.append({
-            "kind": str(item.get("kind") or ""),
-            "rail": str(item.get("rail") or ""),
-            "exception_type": str(item.get("exception_type") or ""),
-            "message": str(item.get("message") or ""),
-        })
+        diagnostics.append(
+            {
+                "kind": str(item.get("kind") or ""),
+                "rail": str(item.get("rail") or ""),
+                "exception_type": str(item.get("exception_type") or ""),
+                "message": str(item.get("message") or ""),
+            }
+        )
     return diagnostics
 
 
@@ -924,15 +909,14 @@ def _bundle_matches_filters(
         return False
     if elaboration_observation_kind and elaboration_observation_kind not in {
         str(obs_kind or "")
-        for obs_kind in (
-            ((bundle.get("compiler_observations") or {}).get("elaboration_kind_counts") or {}).keys()
-        )
+        for obs_kind in (((bundle.get("compiler_observations") or {}).get("elaboration_kind_counts") or {}).keys())
         if str(obs_kind or "")
     }:
         return False
-    if sparse_leftovers_only and int(
-        ((bundle.get("compiler_observations") or {}).get("sparse_leftover_count") or 0)
-    ) <= 0:
+    if (
+        sparse_leftovers_only
+        and int(((bundle.get("compiler_observations") or {}).get("sparse_leftover_count") or 0)) <= 0
+    ):
         return False
     if sparse_blocker_source:
         if sparse_blocker_source not in {
@@ -1007,9 +991,7 @@ def _bundle_matches_filters(
     if source_proof_kind and source_proof_kind not in {
         str(kind_text or "")
         for kind_text in (
-            str(item.get("kind") or "")
-            for item in claims
-            if str(item.get("tier") or "") == "PROVED_SOURCE_PATHOLOGY"
+            str(item.get("kind") or "") for item in claims if str(item.get("tier") or "") == "PROVED_SOURCE_PATHOLOGY"
         )
         if str(kind_text or "")
     }:
@@ -1017,9 +999,7 @@ def _bundle_matches_filters(
     if source_pathology_code and source_pathology_code not in {
         str(code or "")
         for code in (
-            str(item.get("code") or "")
-            for item in (bundle.get("source_pathologies") or [])
-            if isinstance(item, dict)
+            str(item.get("code") or "") for item in (bundle.get("source_pathologies") or []) if isinstance(item, dict)
         )
         if str(code or "")
     }:
@@ -1060,9 +1040,11 @@ def _bundle_matches_filters(
         if str((claim.get("alternative_replay_match") or {}).get("best_replay_section") or "")
     }:
         return False
-    if html_noncommensurable_reason and str(
-        ((bundle.get("html_topology") or {}).get("noncommensurable_reason") or "")
-    ) != html_noncommensurable_reason:
+    if (
+        html_noncommensurable_reason
+        and str(((bundle.get("html_topology") or {}).get("noncommensurable_reason") or ""))
+        != html_noncommensurable_reason
+    ):
         return False
     evidence_context_diagnostics = _evidence_context_diagnostics(bundle)
     if evidence_context_degraded_only and not evidence_context_diagnostics:
@@ -1200,9 +1182,7 @@ def _review_bundles(
         if isinstance(uk_comparison, dict):
             comparison_class = str(uk_comparison.get("comparison_class") or "unknown")
             by_uk_comparison_class[comparison_class] += 1
-            by_uk_core_comparison[
-                "core" if bool(uk_comparison.get("core_comparison", False)) else "non_core"
-            ] += 1
+            by_uk_core_comparison["core" if bool(uk_comparison.get("core_comparison", False)) else "non_core"] += 1
         compiler_observations = bundle.get("compiler_observations")
         if not isinstance(compiler_observations, dict):
             continue
@@ -1213,9 +1193,7 @@ def _review_bundles(
             bucket_text = str(bucket or "")
             if bucket_text:
                 by_uk_replay_adjudication_bucket[bucket_text] += int(count or 0)
-        for adjudication_kind, count in (
-            replay_summary.get("replay_adjudication_kind_counts") or {}
-        ).items():
+        for adjudication_kind, count in (replay_summary.get("replay_adjudication_kind_counts") or {}).items():
             kind_text = str(adjudication_kind or "")
             if kind_text:
                 by_uk_replay_adjudication_kind[kind_text] += int(count or 0)
@@ -1224,9 +1202,7 @@ def _review_bundles(
     for bundle in ok_bundles:
         primary = str(bundle.get("primary_proof_tier") or "UNRESOLVED")
         proof_kind_set = {
-            str(item.get("kind") or "")
-            for item in bundle.get("proof_claims", []) or []
-            if str(item.get("kind") or "")
+            str(item.get("kind") or "") for item in bundle.get("proof_claims", []) or [] if str(item.get("kind") or "")
         }
         by_primary_tier[primary] += 1
         by_display_primary_tier[_display_primary_tier(primary, proof_kind_set)] += 1
@@ -1240,13 +1216,10 @@ def _review_bundles(
             obs_kind_text = str(obs_kind or "")
             if obs_kind_text:
                 by_elaboration_observation_kind[obs_kind_text] += int(count or 0)
-        for blocker in (
-            (bundle.get("compiler_observations") or {}).get(
-                "section_bisect_rows_with_sparse_blocker",
-                [],
-            )
-            or []
-        ):
+        for blocker in (bundle.get("compiler_observations") or {}).get(
+            "section_bisect_rows_with_sparse_blocker",
+            [],
+        ) or []:
             if not isinstance(blocker, dict):
                 continue
             source_text = str(blocker.get("blame_source") or "")
@@ -1268,12 +1241,12 @@ def _review_bundles(
             if tail_policy_text:
                 by_payload_tail_policy[tail_policy_text] += int(count or 0)
         for provenance_kind, count in (
-            ((bundle.get("compiler_observations") or {}).get("provenance_projection_kind_counts") or {}).items()
-        ):
+            (bundle.get("compiler_observations") or {}).get("provenance_projection_kind_counts") or {}
+        ).items():
             provenance_kind_text = str(provenance_kind or "")
             if provenance_kind_text:
                 by_provenance_projection_kind[provenance_kind_text] += int(count or 0)
-        for pathology in ((bundle.get("compiler_observations") or {}).get("provenance_projection_rows") or []):
+        for pathology in (bundle.get("compiler_observations") or {}).get("provenance_projection_rows") or []:
             if not isinstance(pathology, dict):
                 continue
             tag_text = str(pathology.get("tag") or "")
@@ -1389,8 +1362,7 @@ def _review_bundles(
             {
                 str(item.get("kind") or "")
                 for item in bundle.get("proof_claims", []) or []
-                if str(item.get("tier") or "") == "PROVED_SOURCE_PATHOLOGY"
-                and str(item.get("kind") or "")
+                if str(item.get("tier") or "") == "PROVED_SOURCE_PATHOLOGY" and str(item.get("kind") or "")
             }
         )
         selected_section_claim_kinds = sorted(
@@ -1413,16 +1385,12 @@ def _review_bundles(
             replay_adjudication_summary = {}
         replay_adjudication_bucket_counts = {
             str(key): int(value or 0)
-            for key, value in (
-                replay_adjudication_summary.get("replay_adjudication_bucket_counts") or {}
-            ).items()
+            for key, value in (replay_adjudication_summary.get("replay_adjudication_bucket_counts") or {}).items()
             if str(key or "")
         }
         replay_adjudication_kind_counts = {
             str(key): int(value or 0)
-            for key, value in (
-                replay_adjudication_summary.get("replay_adjudication_kind_counts") or {}
-            ).items()
+            for key, value in (replay_adjudication_summary.get("replay_adjudication_kind_counts") or {}).items()
             if str(key or "")
         }
         rows.append(
@@ -1430,9 +1398,7 @@ def _review_bundles(
                 "statute_id": str(bundle.get("statute_id") or ""),
                 "title": str(bundle.get("title") or ""),
                 "evidence_review_lane": str(bundle.get("evidence_review_lane") or ""),
-                "evidence_review_materialization_lane": str(
-                    bundle.get("evidence_review_materialization_lane") or ""
-                ),
+                "evidence_review_materialization_lane": str(bundle.get("evidence_review_materialization_lane") or ""),
                 "enacted_source_status": str(bundle.get("enacted_source_status") or ""),
                 "oracle_source_status": str(bundle.get("oracle_source_status") or ""),
                 "enacted_source_size": int(bundle.get("enacted_source_size") or 0),
@@ -1572,20 +1538,13 @@ def _review_bundles(
                         "target_norm": str(item.get("target_norm") or ""),
                         "target_chapter": str(item.get("target_chapter") or ""),
                     }
-                    for item in (
-                        (bundle.get("compiler_observations") or {}).get("provenance_projection_rows")
-                        or []
-                    )
+                    for item in ((bundle.get("compiler_observations") or {}).get("provenance_projection_rows") or [])
                     if isinstance(item, dict)
                 ],
                 "source_proof_kinds": source_proof_kinds,
                 "source_pathology_count": len(source_pathologies),
                 "source_pathology_codes": sorted(
-                    {
-                        str(item.get("code") or "")
-                        for item in source_pathologies
-                        if str(item.get("code") or "")
-                    }
+                    {str(item.get("code") or "") for item in source_pathologies if str(item.get("code") or "")}
                 ),
                 "source_pathology_sources": sorted(
                     {
@@ -1626,7 +1585,9 @@ def _review_bundles(
                 "sparse_leftover_count": int(
                     (
                         (bundle.get("compiler_observations") or {}).get("sparse_leftover_count")
-                        if isinstance((bundle.get("compiler_observations") or {}).get("sparse_leftover_count"), (int, float, str))
+                        if isinstance(
+                            (bundle.get("compiler_observations") or {}).get("sparse_leftover_count"), (int, float, str)
+                        )
                         else None
                     )
                     or (bundle.get("compiler_observations") or {}).get(
@@ -1888,10 +1849,7 @@ def _review_bundles(
         or r.get("proof_claims", [{}])[0].get("kind") != "no_strong_claim"
     ]
     _strict_clean = [r for r in rows if not r.get("strict_fail_reasons")]
-    _chain_complete_count = sum(
-        1 for b in ok_bundles
-        if bool((b.get("chain_completeness") or {}).get("is_complete"))
-    )
+    _chain_complete_count = sum(1 for b in ok_bundles if bool((b.get("chain_completeness") or {}).get("is_complete")))
     return {
         "bundle_count": len(bundle_list),
         "error_count": len(error_rows),
@@ -1968,16 +1926,12 @@ def _review_bundles(
         "by_oracle_artifact_complexity": dict(sorted(by_oracle_artifact_complexity.items())),
         "by_oracle_artifact_gap": dict(sorted(by_oracle_artifact_gap.items())),
         "by_evidence_review_lane": dict(sorted(by_evidence_review_lane.items())),
-        "by_evidence_review_materialization_lane": dict(
-            sorted(by_evidence_review_materialization_lane.items())
-        ),
+        "by_evidence_review_materialization_lane": dict(sorted(by_evidence_review_materialization_lane.items())),
         "by_enacted_source_status": dict(sorted(by_enacted_source_status.items())),
         "by_oracle_source_status": dict(sorted(by_oracle_source_status.items())),
         "by_uk_comparison_class": dict(sorted(by_uk_comparison_class.items())),
         "by_uk_core_comparison": dict(sorted(by_uk_core_comparison.items())),
-        "by_uk_replay_adjudication_bucket": dict(
-            sorted(by_uk_replay_adjudication_bucket.items())
-        ),
+        "by_uk_replay_adjudication_bucket": dict(sorted(by_uk_replay_adjudication_bucket.items())),
         "by_uk_replay_adjudication_kind": dict(sorted(by_uk_replay_adjudication_kind.items())),
         "actionable_unresolved_count": sum(1 for row in rows if bool(row.get("actionable_unresolved"))),
         "nontrivial_unresolved_count": sum(1 for row in rows if bool(row.get("nontrivial_unresolved", True))),
@@ -2054,6 +2008,7 @@ def _build_live_review_bundle_one(
                 cache_only=cache_only,
             ):
                 from lawvm.core.compile_metadata_default import build_default_compile_metadata as _build_meta
+
                 _live_meta = _build_meta(
                     jurisdiction="fi",
                     source_bundle_hash="sha256:live-review",
@@ -2081,6 +2036,7 @@ def _build_live_review_bundle_one(
         # continues and the bug is diagnosable (ProcessPoolExecutor pickles
         # exceptions across process boundaries, losing the original traceback).
         import traceback as _tb
+
         bundle = {
             "statute_id": str(statute_id),
             "mode": mode,
@@ -2184,11 +2140,7 @@ def _build_live_review_bundles(
                 bundles[idx] = _with_evidence_review_lanes(
                     built_bundle,
                     review_lane="live_statute_id",
-                    materialization_lane=(
-                        "live_bundle_cache_miss"
-                        if bundle_cache_dir
-                        else "live_bundle_uncached"
-                    ),
+                    materialization_lane=("live_bundle_cache_miss" if bundle_cache_dir else "live_bundle_uncached"),
                 )
         else:
             with concurrent.futures.ProcessPoolExecutor(max_workers=worker_count) as executor:
@@ -2216,11 +2168,7 @@ def _build_live_review_bundles(
                     bundles[idx] = _with_evidence_review_lanes(
                         future.result(),
                         review_lane="live_statute_id",
-                        materialization_lane=(
-                            "live_bundle_cache_miss"
-                            if bundle_cache_dir
-                            else "live_bundle_uncached"
-                        ),
+                        materialization_lane=("live_bundle_cache_miss" if bundle_cache_dir else "live_bundle_uncached"),
                     )
 
     if cache_stats_out is not None:
@@ -2283,10 +2231,7 @@ def _supports_live_evidence_review_jurisdiction(jurisdiction: str) -> bool:
 def _assert_live_evidence_review_supported(jurisdiction: str) -> str:
     j = str(jurisdiction or "fi").lower()
     if not _supports_live_evidence_review_jurisdiction(j):
-        raise ValueError(
-            f"unsupported jurisdiction {j!r} for live evidence-review "
-            "(supported: fi, uk)"
-        )
+        raise ValueError(f"unsupported jurisdiction {j!r} for live evidence-review (supported: fi, uk)")
     return j
 
 
@@ -2316,11 +2261,7 @@ def _oracle_corpus_statute_ids(
                 oracle_index = oracle_index_fn()
         else:
             oracle_index = oracle_index_fn()
-        return sorted(
-            str(sid)
-            for sid in oracle_index.keys()
-            if not is_known_missing_source(str(sid))
-        )
+        return sorted(str(sid) for sid in oracle_index.keys() if not is_known_missing_source(str(sid)))
 
 
 def _sort_by_chain_length_desc(sids: List[str]) -> List[str]:
@@ -2407,9 +2348,7 @@ def _ee_oracle_corpus_pairs() -> List[tuple[str, str]]:
     from lawvm.tools.ee_bench import _CORPUS_CSV, _load_corpus_csv
 
     if not _CORPUS_CSV.exists():
-        raise RuntimeError(
-            "EE evidence-review oracle corpus requires the current EE replayable corpus CSV"
-        )
+        raise RuntimeError("EE evidence-review oracle corpus requires the current EE replayable corpus CSV")
     pairs, _ = _load_corpus_csv(_CORPUS_CSV, include_decrees=True)
     return [(str(base_id), str(oracle_id)) for _, base_id, oracle_id in pairs]
 
@@ -3117,9 +3056,7 @@ def review_live_oracle_corpus(
                         bundle,
                         review_lane="live_oracle_corpus",
                         materialization_lane=(
-                            "live_bundle_cache_miss"
-                            if effective_bundle_cache_dir
-                            else "live_bundle_uncached"
+                            "live_bundle_cache_miss" if effective_bundle_cache_dir else "live_bundle_uncached"
                         ),
                     )
                 )
@@ -3150,9 +3087,7 @@ def review_live_oracle_corpus(
                             future.result(),
                             review_lane="live_oracle_corpus",
                             materialization_lane=(
-                                "live_bundle_cache_miss"
-                                if effective_bundle_cache_dir
-                                else "live_bundle_uncached"
+                                "live_bundle_cache_miss" if effective_bundle_cache_dir else "live_bundle_uncached"
                             ),
                         )
                     )
@@ -3304,6 +3239,7 @@ def _corrigendum_support_for_amendments(
             "unverified_item_count": 0,
             "source_pdf_count": 0,
             "source_pdfs": [],
+            "source_witnesses": [],
             "manual_override_count": int(manual_override_counts.get(amendment_id, 0) or 0),
         }
 
@@ -3325,9 +3261,11 @@ def _corrigendum_support_for_amendments(
         pdf_name = str(record.get("pdf_name") or record.get("source_pdf") or "").strip()
         if pdf_name and pdf_name not in per_amendment_id[amendment_id]["source_pdfs"]:
             per_amendment_id[amendment_id]["source_pdfs"].append(pdf_name)
+            per_amendment_id[amendment_id]["source_witnesses"].append(corrigendum_source_witness(record).to_dict())
 
     for entry in per_amendment_id.values():
         entry["source_pdfs"].sort()
+        entry["source_witnesses"].sort(key=lambda item: str(item.get("locator") or ""))
         entry["source_pdf_count"] = len(entry["source_pdfs"])
 
     return sorted(
@@ -3409,9 +3347,7 @@ def build_evidence_bundle(
         else ""
     )
     _typed_oracle_suspect = (
-        str(_typed_source_adjudication.oracle_suspect or "")
-        if _typed_source_adjudication is not None
-        else ""
+        str(_typed_source_adjudication.oracle_suspect or "") if _typed_source_adjudication is not None else ""
     )
     ctx.oracle_version_amendment_id = _typed_oracle_version or oracle_result.oracle_version_amendment_id
 
@@ -3498,9 +3434,7 @@ def build_evidence_bundle(
             )
 
             _amendment_children_map = _get_amendment_children()
-            _statute_amendment_children = tuple(
-                str(c) for c in _amendment_children_map.get(statute_id, []) if str(c)
-            )
+            _statute_amendment_children = tuple(str(c) for c in _amendment_children_map.get(statute_id, []) if str(c))
 
             # Collect contingent activation rules from compiled ops
             _contingent_rules: List[_ActivationRule] = []
@@ -3541,18 +3475,12 @@ def build_evidence_bundle(
                     amendment_children=_statute_amendment_children,
                     as_of=_dt.date.today(),
                 )
-                _trigger_coverage_certificates = [
-                    c.to_dict() for c in _cert_result.certificates
-                ]
-                _trigger_coverage_search_failures = [
-                    f.to_dict() for f in _cert_result.search_failures
-                ]
+                _trigger_coverage_certificates = [c.to_dict() for c in _cert_result.certificates]
+                _trigger_coverage_search_failures = [f.to_dict() for f in _cert_result.search_failures]
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception as exc:
-            _evidence_context_diagnostics.append(
-                _evidence_context_degradation("trigger_coverage_certificates", exc)
-            )
+            _evidence_context_diagnostics.append(_evidence_context_degradation("trigger_coverage_certificates", exc))
 
     should_include_bisect = include_bisect or any(
         str(item.get("diagnosis") or "") in _REPLAY_BUG_DIAGNOSES for item in section_results
@@ -3641,9 +3569,7 @@ def build_evidence_bundle(
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception as exc:
-            _evidence_context_diagnostics.append(
-                _evidence_context_degradation("section_strict_verdicts", exc)
-            )
+            _evidence_context_diagnostics.append(_evidence_context_degradation("section_strict_verdicts", exc))
     # C3: Compute section-local invariant violations from timelines
     _section_inv_violations: dict[str, list[dict]] | None = None
     _rr2 = ctx.replay_result
@@ -3672,9 +3598,7 @@ def build_evidence_bundle(
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception as exc:
-            _evidence_context_diagnostics.append(
-                _evidence_context_degradation("section_timeline_invariants", exc)
-            )
+            _evidence_context_diagnostics.append(_evidence_context_degradation("section_timeline_invariants", exc))
     # Chain completeness: compute per-section chain completeness certificate
     # (attack #9 guard — missing compiler input can masquerade as oracle drift).
     _chain_completeness_by_section: dict[str, Any] | None = None
@@ -3684,9 +3608,7 @@ def build_evidence_bundle(
             from lawvm.core.chain_completeness import compute_chain_completeness
 
             _section_labels_for_cc = [
-                str(item.get("section") or "")
-                for item in section_results
-                if str(item.get("section") or "")
+                str(item.get("section") or "") for item in section_results if str(item.get("section") or "")
             ]
             _cc_failed_ops_dicts = [
                 {
@@ -3714,21 +3636,15 @@ def build_evidence_bundle(
                     int(source_completeness["source_available"]) == int(source_completeness["chain_length"])
                     and int(source_completeness["chain_length"]) > 0
                 ),
-                "section_complete_count": sum(
-                    1 for s in _chain_completeness_by_section.values()
-                    if s.is_complete
-                ),
+                "section_complete_count": sum(1 for s in _chain_completeness_by_section.values() if s.is_complete),
                 "section_incomplete_count": sum(
-                    1 for s in _chain_completeness_by_section.values()
-                    if not s.is_complete
+                    1 for s in _chain_completeness_by_section.values() if not s.is_complete
                 ),
             }
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception as exc:
-            _evidence_context_diagnostics.append(
-                _evidence_context_degradation("chain_completeness", exc)
-            )
+            _evidence_context_diagnostics.append(_evidence_context_degradation("chain_completeness", exc))
 
     # A1 proof algebra: typed section claim path (primary, since session 9).
     from lawvm.tools.evidence_claims import build_section_claims_typed
@@ -3767,13 +3683,12 @@ def build_evidence_bundle(
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception as exc:
-            _evidence_context_diagnostics.append(
-                _evidence_context_degradation("content_version_drift", exc)
-            )
+            _evidence_context_diagnostics.append(_evidence_context_degradation("content_version_drift", exc))
 
     # A2 typed statute-level proof algebra (primary path).
     # Produces identical output to _build_proof_claims(); keep legacy as fallback.
     from lawvm.tools.evidence_statute_rules import build_proof_claims_typed
+
     claims = build_proof_claims_typed(
         section_results=section_results,
         source_pathologies=source_pathologies,
@@ -3815,9 +3730,7 @@ def build_evidence_bundle(
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs -- fail loud
         except Exception as exc:
-            _evidence_context_diagnostics.append(
-                _evidence_context_degradation("span_anchor_counts", exc)
-            )
+            _evidence_context_diagnostics.append(_evidence_context_degradation("span_anchor_counts", exc))
 
     # Body pairing analysis: detect foreign/unmatched/repeal-blocked body units
     # across the amendment chain.  Lightweight — reuses amendment XML from corpus.
@@ -3836,9 +3749,7 @@ def build_evidence_bundle(
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs -- fail loud
     except Exception as exc:
-        _evidence_context_diagnostics.append(
-            _evidence_context_degradation("body_pairing", exc)
-        )
+        _evidence_context_diagnostics.append(_evidence_context_degradation("body_pairing", exc))
 
     return {
         "statute_id": statute_id,
@@ -3854,11 +3765,7 @@ def build_evidence_bundle(
         "section_score": float(oracle_result.section_score or 0.0),
         "strict_fail_reasons": _strict_reasons,
         "projection_kinds": sorted(
-            {
-                str(row.get("kind") or "")
-                for row in projection_rows
-                if str(row.get("kind") or "")
-            }
+            {str(row.get("kind") or "") for row in projection_rows if str(row.get("kind") or "")}
         ),
         "diagnosis_counts": _diagnosis_counts(section_results),
         "section_results": section_results,
@@ -3882,6 +3789,7 @@ def build_evidence_bundle(
                         "unverified_item_count": 0,
                         "source_pdf_count": 0,
                         "source_pdfs": [],
+                        "source_witnesses": [],
                         "manual_override_count": 0,
                     },
                 ),
@@ -3988,12 +3896,8 @@ def build_uk_evidence_bundle(
             "oracle_source_status": oracle_source.status.value,
             "enacted_source_size": enacted_source.size,
             "oracle_source_size": oracle_source.size,
-            "enacted_source_sha256": hashlib.sha256(enacted_bytes).hexdigest()
-            if enacted_bytes is not None
-            else "",
-            "oracle_source_sha256": hashlib.sha256(current_bytes).hexdigest()
-            if current_bytes is not None
-            else "",
+            "enacted_source_sha256": hashlib.sha256(enacted_bytes).hexdigest() if enacted_bytes is not None else "",
+            "oracle_source_sha256": hashlib.sha256(current_bytes).hexdigest() if current_bytes is not None else "",
             "enacted_source_parse_failed": False,
             "oracle_source_parse_failed": False,
         }
@@ -4013,6 +3917,7 @@ def build_uk_evidence_bundle(
             "authority_mode": authority_mode,
             "metadata_only_effects_enabled": bool(allow_metadata_only_effects),
         }
+
         def source_unavailable_compile_observations(
             source_parse_observations: Iterable[dict[str, Any]] = (),
         ) -> dict[str, Any]:
@@ -4038,9 +3943,7 @@ def build_uk_evidence_bundle(
                 },
                 "uk_compile_rejection_summary": {
                     "source_parse_rejection_count": len(source_parse_rejection_rows),
-                    "source_parse_rejection_rule_counts": _uk_rejection_rule_counts(
-                        source_parse_rejection_rows
-                    ),
+                    "source_parse_rejection_rule_counts": _uk_rejection_rule_counts(source_parse_rejection_rows),
                     "blocking_source_parse_rejection_count": len(source_parse_rejection_rows),
                     "blocking_source_parse_rejection_rule_counts": (
                         _uk_blocking_rejection_rule_counts(source_parse_observation_rows)
@@ -4069,9 +3972,7 @@ def build_uk_evidence_bundle(
                 },
                 "uk_compile_observation_summary": {
                     "source_parse_observation_count": len(source_parse_observation_rows),
-                    "source_parse_observation_rule_counts": _uk_rejection_rule_counts(
-                        source_parse_observation_rows
-                    ),
+                    "source_parse_observation_rule_counts": _uk_rejection_rule_counts(source_parse_observation_rows),
                     "source_parse_observations": source_parse_observation_rows,
                     "effect_feed_parse_observation_count": 0,
                     "effect_feed_parse_observation_rule_counts": {},
@@ -4092,6 +3993,7 @@ def build_uk_evidence_bundle(
                     "lowering_observations": [],
                 },
             }
+
         source_unavailable_common = {
             "uk_applicability_mode": applicability_mode,
             "uk_respect_feed_applied": applicability_mode == "effective_date_plus_feed_applied",
@@ -4208,9 +4110,7 @@ def build_uk_evidence_bundle(
         eid_map = dict(oracle_data.get("eid_map", {}) or {})
         text_map = dict(oracle_data.get("text_map", {}) or {})
         oracle_physical_eid_aliases = dict(oracle_data.get("physical_eid_aliases", {}) or {})
-        oracle_visible_number_eid_aliases = dict(
-            oracle_data.get("visible_number_eid_aliases", {}) or {}
-        )
+        oracle_visible_number_eid_aliases = dict(oracle_data.get("visible_number_eid_aliases", {}) or {})
 
         base_eids = _get_all_eids([base_ir.body])
         for schedule in base_ir.supplements:
@@ -4342,7 +4242,9 @@ def build_uk_evidence_bundle(
         if text_rewrite_witness is not None:
             text_rewrite_witness_op_count += 1
         op_notes = list(getattr(op, "notes", []) or [])
-        if text_rewrite_witness is None and any(str(note or "").startswith("fragment_substitution:") for note in op_notes):
+        if text_rewrite_witness is None and any(
+            str(note or "").startswith("fragment_substitution:") for note in op_notes
+        ):
             fragment_substitution_note_only_count += 1
         if getattr(witness, "insertion_anchor_witness", None) is None and any(
             str(note or "").startswith("preceding_eid:") for note in op_notes
@@ -4358,11 +4260,7 @@ def build_uk_evidence_bundle(
             if not bool(getattr(applicability_witness, "applied", True)):
                 applicability_unapplied_op_count += 1
     adjudication_kinds = sorted(
-        {
-            str(getattr(adj, "kind", "") or "")
-            for adj in replay_adjudications
-            if str(getattr(adj, "kind", "") or "")
-        }
+        {str(getattr(adj, "kind", "") or "") for adj in replay_adjudications if str(getattr(adj, "kind", "") or "")}
     )
     replay_adjudication_kind_counts = dict(
         sorted(
@@ -4375,9 +4273,7 @@ def build_uk_evidence_bundle(
     )
     replay_adjudication_bucket_counter: Counter[str] = Counter()
     for adjudication_kind, count in replay_adjudication_kind_counts.items():
-        replay_adjudication_bucket_counter[
-            classify_uk_replay_adjudication_bucket(adjudication_kind)
-        ] += count
+        replay_adjudication_bucket_counter[classify_uk_replay_adjudication_bucket(adjudication_kind)] += count
     replay_adjudication_bucket_counts = dict(sorted(replay_adjudication_bucket_counter.items()))
     semantic_replay_lane = "metadata_backfilled_replay" if metadata_backfill_op_count else "effects_assisted_replay"
     oracle_alignment_lane = "oracle_alignment_adapter" if allow_oracle_alignment else "none"
@@ -4417,7 +4313,9 @@ def build_uk_evidence_bundle(
                 reason_key = str(reason or "")
                 if not reason_key:
                     continue
-                authority_rejection_reason_counts[reason_key] = authority_rejection_reason_counts.get(reason_key, 0) + int(count or 0)
+                authority_rejection_reason_counts[reason_key] = authority_rejection_reason_counts.get(
+                    reason_key, 0
+                ) + int(count or 0)
         else:
             for reason in rejection.get("rejected_reasons") or []:
                 reason_key = str(reason or "")
@@ -4436,56 +4334,44 @@ def build_uk_evidence_bundle(
         if str(row.get("rule_id") or "") == "uk_manual_compile_frontier_classified"
     ]
     source_acquisition_observations = [
-        dict(row)
-        for row in effect_diagnostics
-        if is_uk_affecting_act_xml_source_observation(row)
+        dict(row) for row in effect_diagnostics if is_uk_affecting_act_xml_source_observation(row)
     ]
     lowering_observations = [dict(row) for row in lowering_rejections]
     blocking_effect_feed_parse_rejections = _uk_blocking_rejection_rows(effect_feed_parse_observations)
-    blocking_effect_source_pathology_rejections = _uk_blocking_rejection_rows(
-        effect_source_pathology_observations
-    )
-    blocking_source_acquisition_rejections = _uk_blocking_rejection_rows(
-        source_acquisition_observations
-    )
+    blocking_effect_source_pathology_rejections = _uk_blocking_rejection_rows(effect_source_pathology_observations)
+    blocking_source_acquisition_rejections = _uk_blocking_rejection_rows(source_acquisition_observations)
     blocking_lowering_rejections = _uk_blocking_rejection_rows(lowering_observations)
     lowering_observation_rule_counts = _uk_rejection_rule_counts(lowering_observations)
     lowering_rejection_rule_counts = _uk_rejection_rule_counts(blocking_lowering_rejections)
     effect_feed_parse_observation_rule_counts = _uk_rejection_rule_counts(effect_feed_parse_observations)
     effect_feed_parse_rejection_rule_counts = _uk_rejection_rule_counts(blocking_effect_feed_parse_rejections)
-    effect_source_pathology_observation_rule_counts = _uk_rejection_rule_counts(
-        effect_source_pathology_observations
-    )
+    effect_source_pathology_observation_rule_counts = _uk_rejection_rule_counts(effect_source_pathology_observations)
     effect_source_pathology_rejection_rule_counts = _uk_rejection_rule_counts(
         blocking_effect_source_pathology_rejections
     )
     manual_compile_status_counts = dict(
         sorted(
             Counter(
-                str(row.get("manual_compile_status") or "__none__")
-                for row in manual_compile_frontier_observations
+                str(row.get("manual_compile_status") or "__none__") for row in manual_compile_frontier_observations
             ).items()
         )
     )
     manual_compile_rule_counts = dict(
         sorted(
             Counter(
-                str(row.get("manual_compile_rule_id") or "__none__")
-                for row in manual_compile_frontier_observations
+                str(row.get("manual_compile_rule_id") or "__none__") for row in manual_compile_frontier_observations
             ).items()
         )
     )
     suggested_claim_template_status_counts = _uk_observation_field_counts(
         manual_compile_frontier_observations, "suggested_claim_template_status"
     )
-    source_acquisition_observation_rule_counts = _uk_rejection_rule_counts(
-        source_acquisition_observations
-    )
-    source_acquisition_rejection_rule_counts = _uk_rejection_rule_counts(
-        blocking_source_acquisition_rejections
-    )
+    source_acquisition_observation_rule_counts = _uk_rejection_rule_counts(source_acquisition_observations)
+    source_acquisition_rejection_rule_counts = _uk_rejection_rule_counts(blocking_source_acquisition_rejections)
     blocking_lowering_rejection_rule_counts = _uk_blocking_rejection_rule_counts(lowering_observations)
-    blocking_effect_feed_parse_rejection_rule_counts = _uk_blocking_rejection_rule_counts(effect_feed_parse_observations)
+    blocking_effect_feed_parse_rejection_rule_counts = _uk_blocking_rejection_rule_counts(
+        effect_feed_parse_observations
+    )
     blocking_effect_source_pathology_rejection_rule_counts = _uk_blocking_rejection_rule_counts(
         effect_source_pathology_observations
     )
@@ -4539,8 +4425,8 @@ def build_uk_evidence_bundle(
                 "tier": "UNRESOLVED",
                 "kind": "no_strong_claim",
                 "trigger_observations": trigger_observations,
-                }
-            ]
+            }
+        ]
 
     residual_claim_summary = {
         "selected_tier": str(proof_claims[0].get("tier") or "") if proof_claims else "",
@@ -4633,30 +4519,18 @@ def build_uk_evidence_bundle(
                 "effect_feed_parse_rejection_count": len(blocking_effect_feed_parse_rejections),
                 "effect_feed_parse_rejection_rule_counts": effect_feed_parse_rejection_rule_counts,
                 "blocking_effect_feed_parse_rejection_count": len(blocking_effect_feed_parse_rejections),
-                "blocking_effect_feed_parse_rejection_rule_counts": (
-                    blocking_effect_feed_parse_rejection_rule_counts
-                ),
+                "blocking_effect_feed_parse_rejection_rule_counts": (blocking_effect_feed_parse_rejection_rule_counts),
                 "effect_feed_parse_rejections": blocking_effect_feed_parse_rejections,
-                "effect_source_pathology_rejection_count": len(
-                    blocking_effect_source_pathology_rejections
-                ),
-                "effect_source_pathology_rejection_rule_counts": (
-                    effect_source_pathology_rejection_rule_counts
-                ),
-                "blocking_effect_source_pathology_rejection_count": len(
-                    blocking_effect_source_pathology_rejections
-                ),
+                "effect_source_pathology_rejection_count": len(blocking_effect_source_pathology_rejections),
+                "effect_source_pathology_rejection_rule_counts": (effect_source_pathology_rejection_rule_counts),
+                "blocking_effect_source_pathology_rejection_count": len(blocking_effect_source_pathology_rejections),
                 "blocking_effect_source_pathology_rejection_rule_counts": (
                     blocking_effect_source_pathology_rejection_rule_counts
                 ),
-                "effect_source_pathology_rejections": (
-                    blocking_effect_source_pathology_rejections
-                ),
+                "effect_source_pathology_rejections": (blocking_effect_source_pathology_rejections),
                 "source_acquisition_rejection_count": len(blocking_source_acquisition_rejections),
                 "source_acquisition_rejection_rule_counts": source_acquisition_rejection_rule_counts,
-                "blocking_source_acquisition_rejection_count": len(
-                    blocking_source_acquisition_rejections
-                ),
+                "blocking_source_acquisition_rejection_count": len(blocking_source_acquisition_rejections),
                 "blocking_source_acquisition_rejection_rule_counts": (
                     blocking_source_acquisition_rejection_rule_counts
                 ),
@@ -4672,35 +4546,26 @@ def build_uk_evidence_bundle(
                 "source_parse_observation_rule_counts": {},
                 "source_parse_observations": [],
                 "effect_feed_parse_observation_count": len(effect_feed_parse_observations),
-                "effect_feed_parse_observation_rule_counts": (
-                    effect_feed_parse_observation_rule_counts
-                ),
+                "effect_feed_parse_observation_rule_counts": (effect_feed_parse_observation_rule_counts),
                 "effect_feed_parse_observations": effect_feed_parse_observations,
-                "effect_source_pathology_observation_count": len(
-                    effect_source_pathology_observations
-                ),
-                "effect_source_pathology_observation_rule_counts": (
-                    effect_source_pathology_observation_rule_counts
-                ),
+                "effect_source_pathology_observation_count": len(effect_source_pathology_observations),
+                "effect_source_pathology_observation_rule_counts": (effect_source_pathology_observation_rule_counts),
                 "effect_source_pathology_observations": effect_source_pathology_observations,
-                "manual_compile_frontier_observation_count": len(
-                    manual_compile_frontier_observations
-                ),
+                "manual_compile_frontier_observation_count": len(manual_compile_frontier_observations),
                 "manual_compile_status_counts": manual_compile_status_counts,
                 "manual_compile_rule_counts": manual_compile_rule_counts,
                 "suggested_claim_template_status_counts": suggested_claim_template_status_counts,
                 "manual_compile_frontier_observations": manual_compile_frontier_observations,
                 "source_acquisition_observation_count": len(source_acquisition_observations),
-                "source_acquisition_observation_rule_counts": (
-                    source_acquisition_observation_rule_counts
-                ),
+                "source_acquisition_observation_rule_counts": (source_acquisition_observation_rule_counts),
                 "source_acquisition_observations": source_acquisition_observations,
                 "lowering_observation_count": len(lowering_observations),
                 "lowering_observation_rule_counts": lowering_observation_rule_counts,
                 "lowering_observations": lowering_observations,
             },
             "uk_witness_migration_summary": {
-                "payload_sidecar_attached_op_count": sum(authority_counts.values()) - authority_counts.get("UNSPECIFIED", 0),
+                "payload_sidecar_attached_op_count": sum(authority_counts.values())
+                - authority_counts.get("UNSPECIFIED", 0),
                 "text_rewrite_witness_op_count": text_rewrite_witness_op_count,
                 "fragment_substitution_runtime_note_fallback_count": fragment_substitution_runtime_note_fallback_count,
                 "fragment_substitution_note_only_count": fragment_substitution_note_only_count,
@@ -4798,8 +4663,7 @@ def build_ee_evidence_bundle(
         }
 
     divergence_addresses = [
-        "/".join(f"{kind}:{label}" for kind, label in getattr(d.address, "path", ()))
-        for d in result.divergences
+        "/".join(f"{kind}:{label}" for kind, label in getattr(d.address, "path", ())) for d in result.divergences
     ]
     residual_summary = build_ee_residual_summary(
         base_id=base_id,
@@ -4873,9 +4737,17 @@ def build_ee_evidence_bundle(
 
     trigger_observations = [
         {"source": "ee_oracle_comparison", "field": "source_basis", "value": getattr(result, "source_basis", "")},
-        {"source": "ee_oracle_comparison", "field": "comparison_class", "value": getattr(result, "comparison_class", "")},
+        {
+            "source": "ee_oracle_comparison",
+            "field": "comparison_class",
+            "value": getattr(result, "comparison_class", ""),
+        },
         {"source": "ee_oracle_comparison", "field": "divergence_count", "value": len(result.divergences)},
-        {"source": "ee_oracle_comparison", "field": "unknown_current_divergence_count", "value": unknown_divergence_count},
+        {
+            "source": "ee_oracle_comparison",
+            "field": "unknown_current_divergence_count",
+            "value": unknown_divergence_count,
+        },
         {
             "source": "ee_oracle_comparison",
             "field": "benchmark_reporting_stratum",
@@ -4934,7 +4806,9 @@ def build_ee_evidence_bundle(
             )
 
     title = str(getattr(result.oracle, "title", "") or getattr(result.replayed, "title", "") or result.base_title or "")
-    diagnosis_counts = dict(Counter(getattr(d, "divergence_type", "") for d in result.divergences if getattr(d, "divergence_type", "")))
+    diagnosis_counts = dict(
+        Counter(getattr(d, "divergence_type", "") for d in result.divergences if getattr(d, "divergence_type", ""))
+    )
     strict_fail_reasons = ["EE.AMENDMENT_FETCH_OR_PARSE_FAILURE"] if getattr(result, "amendments_failed", []) else []
 
     return {
@@ -4946,13 +4820,23 @@ def build_ee_evidence_bundle(
         "jurisdiction": "ee",
         "proof_contract": _proof_contract(),
         "oracle_version_amendment_id": oracle_id,
-        "oracle_suspect_detail": "" if getattr(result, "comparison_class", "") == "commensurable_delta" else getattr(result, "comparison_class", ""),
+        "oracle_suspect_detail": ""
+        if getattr(result, "comparison_class", "") == "commensurable_delta"
+        else getattr(result, "comparison_class", ""),
         "oracle_suspect_pending": "",
         "oracle_present": bool(getattr(result, "oracle", None) is not None),
         "overall_score": 1.0 if not result.divergences else 0.0,
-        "section_score": 1.0 if not result.divergences else max(0.0, 1.0 - (len(result.divergences) / max(1, len(result.divergences) + 1))),
+        "section_score": 1.0
+        if not result.divergences
+        else max(0.0, 1.0 - (len(result.divergences) / max(1, len(result.divergences) + 1))),
         "strict_fail_reasons": strict_fail_reasons,
-        "adjudication_kinds": sorted({str(getattr(adj, "kind", "") or "") for adj in getattr(result, "adjudications", []) if str(getattr(adj, "kind", "") or "")}),
+        "adjudication_kinds": sorted(
+            {
+                str(getattr(adj, "kind", "") or "")
+                for adj in getattr(result, "adjudications", [])
+                if str(getattr(adj, "kind", "") or "")
+            }
+        ),
         "diagnosis_counts": diagnosis_counts,
         "section_results": [],
         "section_claims": section_claims,
@@ -5040,12 +4924,15 @@ def build_oracle_proof_bundle(
 ) -> Dict:
     if compile_metadata is None:
         from lawvm.core.compile_metadata_default import build_default_compile_metadata as _build_meta
+
         compile_metadata = _build_meta(
             jurisdiction="fi",
             source_bundle_hash="sha256:live-review",
             build_id="cli.evidence.fi",
         )
-    bundle = build_evidence_bundle(statute_id, mode=mode, include_bisect=include_bisect, compile_metadata=compile_metadata)
+    bundle = build_evidence_bundle(
+        statute_id, mode=mode, include_bisect=include_bisect, compile_metadata=compile_metadata
+    )
     if bundle.get("error"):
         return bundle
     oracle_claims = [
@@ -5157,9 +5044,7 @@ def build_oracle_proof_bundle(
         section_results=enriched_section_results,
     )
     oracle_version_amendment_id = str(
-        bundle.get("oracle_version_amendment_id")
-        or bundle.get("oracle_version_mid")
-        or ""
+        bundle.get("oracle_version_amendment_id") or bundle.get("oracle_version_mid") or ""
     )
 
     return {
@@ -5519,6 +5404,7 @@ def main(args) -> None:
         sys.exit(1)
 
     from lawvm.core.compile_metadata_default import build_default_compile_metadata as _build_cli_meta
+
     _cli_evidence_meta = _build_cli_meta(
         jurisdiction="fi",
         source_bundle_hash="sha256:live-review",
@@ -5540,7 +5426,9 @@ def main(args) -> None:
                     allow_metadata_only_effects=uk_allow_metadata_only_effects,
                 )
             elif include_bisect:
-                bundle = build_evidence_bundle(statute_id, mode=mode, include_bisect=True, compile_metadata=_cli_evidence_meta)
+                bundle = build_evidence_bundle(
+                    statute_id, mode=mode, include_bisect=True, compile_metadata=_cli_evidence_meta
+                )
             else:
                 bundle = build_evidence_bundle(statute_id, mode=mode, compile_metadata=_cli_evidence_meta)
         elif command == "prove-oracle":

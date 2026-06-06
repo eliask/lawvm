@@ -337,6 +337,52 @@ def consolidated_artifact_source_witness(
     )
 
 
+def corrigendum_source_witness(
+    row: Mapping[str, Any],
+    *,
+    source_role: str = "finland_corrigendum_pdf",
+) -> SourceWitness:
+    """Build a shared source witness for a Finland corrigendum PDF record."""
+
+    source_pdf = str(row.get("source_pdf") or row.get("pdf_name") or "")
+    amendment_id = str(row.get("amendment_id") or "")
+    preview_parts = [
+        part
+        for part in (
+            str(row.get("pdf_name") or ""),
+            amendment_id,
+            str(row.get("date_published") or ""),
+            str(row.get("correction_item_count") or ""),
+        )
+        if part
+    ]
+    preview = " | ".join(preview_parts)
+    digest_text = str(row.get("sha256") or "")
+    return SourceWitness(
+        source_role=source_role,
+        artifact_id=source_pdf,
+        source_unit_id=amendment_id,
+        locator=source_pdf,
+        version_id=str(row.get("date_published") or ""),
+        source_path=source_pdf,
+        digest=(DigestWitness(digest_algorithm="sha256", digest=digest_text) if digest_text else None),
+        bounded_preview=preview,
+        preview_digest=_preview_digest_witness(preview),
+        source_lane="corrigendum_pdf",
+        metadata={
+            "statute_id": str(row.get("statute_id") or ""),
+            "amendment_id": amendment_id,
+            "pdf_name": str(row.get("pdf_name") or ""),
+            "source_pdf": source_pdf,
+            "lang": str(row.get("lang") or ""),
+            "date_published": str(row.get("date_published") or ""),
+            "date_status": str(row.get("date_status") or ""),
+            "correction_item_count": int(row.get("correction_item_count") or 0),
+            "size_bytes": int(row.get("size_bytes") or 0),
+        },
+    )
+
+
 def mutation_boundary_proof_rows(
     reports: tuple[MutationInvariantReport | Mapping[str, Any], ...],
     *,
