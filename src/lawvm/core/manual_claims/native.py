@@ -20,10 +20,7 @@ Design
 """
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Mapping
 
 from lawvm.core.compile_result import StrictProfile
@@ -34,23 +31,31 @@ from lawvm.core.evidence_kernel import (
     query_retraction_taint as _kernel_query_retraction_taint,
 )
 from lawvm.core.evidence_policy import EvidenceGraphPredicate
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
+from lawvm.core.execution_authorization import (
+    ExecutionAuthorization,
+    execution_authorization_evidence_report,
+    execution_authorization_from_kernel_result,
+)
 from lawvm.core.provenance_graph import (
     ArtifactRef,
     GraphBuilder,
-    GraphEdge,
-    GraphNode,
-    Interval,
     Producer,
     ProvenanceAssertion,
     ProvenanceAttestation,
     ProvenanceGraph,
-    SourceRef,
-    assertion_canonical_payload,
     attestation_canonical_payload,
     attestation_kind_registry_hash,
     _sha256,
 )
 from lawvm.core.provenance_graph_storage import GraphStore
+
+
+_MANUAL_CLAIM_AUTHORIZATION_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
+    "manual_claim_authorization_as_replay_authority",
+    "manual_claim_authorization_as_canonical_operation",
+    "manual_claim_policy_success_as_phase_local_proof",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -217,26 +222,12 @@ def query_state_from_store(
     attestation_index: dict[str, ProvenanceAttestation] = {}
 
     for node in graph.nodes:
-        objects_dir = graph_store._objects_dir()
-        obj_path = objects_dir / f"{node.node_id}.json"
-        if not obj_path.exists():
-            continue
-        import json as _json
-        d = _json.loads(obj_path.read_text(encoding="utf-8"))
-        if node.node_type == "assertion" and "assertion_id" in d:
-            from lawvm.core.provenance_graph_storage import _deserialize_assertion
-            try:
-                a = _deserialize_assertion(d)
-                assertion_index[a.assertion_id] = a
-            except Exception:
-                pass
-        elif node.node_type == "attestation" and "attestation_id" in d:
-            from lawvm.core.provenance_graph_storage import _deserialize_attestation
-            try:
-                a = _deserialize_attestation(d)
-                attestation_index[a.attestation_id] = a
-            except Exception:
-                pass
+        if node.node_type == "assertion":
+            assertion = graph_store.read_assertion(node.node_id)
+            assertion_index[assertion.assertion_id] = assertion
+        elif node.node_type == "attestation":
+            attestation = graph_store.read_attestation(node.node_id)
+            attestation_index[attestation.attestation_id] = attestation
 
     subject_ref = ArtifactRef(
         artifact_type="assertion",
@@ -251,6 +242,105 @@ def query_state_from_store(
         assertion_index=assertion_index,
         attestation_index=attestation_index,
         at=at,
+    )
+
+
+def manual_claim_authorization_projection(
+    result: AuthorizationResult,
+    *,
+    executable: bool = False,
+    owner_phase: str = "manual_claim_graph_authorization",
+    authorization_rule_id: str = "",
+    strict_disposition: str = "",
+    quirks_disposition: str = "record",
+    validator_status: str = "",
+    replay_authorized_when_policy_satisfied: bool = False,
+) -> ExecutionAuthorization:
+    """Project graph-native manual-claim authorization into the shared shape.
+
+    EvidenceKernel success means an assertion satisfied a graph policy.  It is
+    not replay authority by itself.  The default projection is therefore
+    non-executable and non-replay-authorized; callers that have a separate
+    phase-local proof must opt in explicitly.
+    """
+
+    return execution_authorization_from_kernel_result(
+        result,
+        executable=executable,
+        owner_phase=owner_phase,
+        authorization_rule_id=authorization_rule_id or result.policy_id,
+        strict_disposition=strict_disposition,
+        quirks_disposition=quirks_disposition,
+        validator_status=validator_status,
+        replay_authorized_when_policy_satisfied=replay_authorized_when_policy_satisfied,
+        forbidden_shortcuts=_MANUAL_CLAIM_AUTHORIZATION_FORBIDDEN_SHORTCUTS,
+        detail={
+            "manual_claim_authorization": {
+                "projection": "graph_native_manual_claim_authorization",
+                "read_model_only": True,
+                "requires_separate_phase_local_replay_gate": True,
+            }
+        },
+    )
+
+
+def manual_claim_authorization_evidence_report(
+    results: AuthorizationResult | tuple[AuthorizationResult, ...],
+    *,
+    jurisdiction: str,
+    report_kind: str = "manual_claim_authorization",
+    executable: bool = False,
+    owner_phase: str = "manual_claim_graph_authorization",
+    replay_authorized_when_policy_satisfied: bool = False,
+) -> EvidenceSurfaceReport:
+    """Report graph-native manual-claim authorization without promoting replay.
+
+    This is a read-model bridge from ``AuthorizationResult`` to the shared
+    ``EvidenceSurfaceReport``/``ProofSurface`` path.  It reuses
+    ``ExecutionAuthorization`` rows so manual claims do not grow a local
+    stringly authorization envelope.
+    """
+
+    result_rows = results if isinstance(results, tuple) else (results,)
+    authorizations = tuple(
+        manual_claim_authorization_projection(
+            result,
+            executable=executable,
+            owner_phase=owner_phase,
+            replay_authorized_when_policy_satisfied=replay_authorized_when_policy_satisfied,
+        )
+        for result in result_rows
+    )
+    base = execution_authorization_evidence_report(
+        authorizations,
+        jurisdiction=jurisdiction,
+        report_kind=report_kind,
+    )
+    return EvidenceSurfaceReport(
+        jurisdiction=base.jurisdiction,
+        report_kind=report_kind,
+        schema="lawvm.manual_claim_authorization_report.v1",
+        truth_claim="graph-native manual-claim authorization projections",
+        replay_claims=base.replay_claims,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=base.summary,
+        filters={
+            **dict(base.filters),
+            "owner_phase": owner_phase,
+        },
+        filtered_summary=base.filtered_summary,
+        rows=base.rows,
+        rows_truncated=base.rows_truncated,
+        evidence_jsonl=base.evidence_jsonl,
+        written_paths=base.written_paths,
+        detail={
+            "safe_default": "manual_claim_authorization_is_read_model_until_phase_gate",
+            "forbidden_shortcuts": _MANUAL_CLAIM_AUTHORIZATION_FORBIDDEN_SHORTCUTS,
+            "included_surfaces": ("execution_authorization",),
+        },
     )
 
 

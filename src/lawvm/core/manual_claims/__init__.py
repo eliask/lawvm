@@ -48,6 +48,8 @@ from lawvm.core.manual_claims.precedence import (
 from lawvm.core.manual_claims.native import (
     attest,
     build_claim_subgraph,
+    manual_claim_authorization_evidence_report,
+    manual_claim_authorization_projection,
     query_retraction_taint,
     query_state,
     query_state_from_store,
@@ -85,6 +87,8 @@ __all__ = [
     # v3 graph-native
     "attest",
     "build_claim_subgraph",
+    "manual_claim_authorization_evidence_report",
+    "manual_claim_authorization_projection",
     "query_retraction_taint",
     "query_state",
     "query_state_from_store",

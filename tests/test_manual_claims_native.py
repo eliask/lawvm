@@ -9,8 +9,6 @@ Required by spec:
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -19,13 +17,14 @@ import pytest
 from lawvm.core.manual_claims.native import (
     attest,
     build_claim_subgraph,
+    manual_claim_authorization_evidence_report,
     query_state,
+    query_state_from_store,
     submit_assertion,
 )
 from lawvm.core.evidence_policy import (
     EvidenceGraphPredicate,
     exists,
-    none,
 )
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.provenance_graph import (
@@ -38,6 +37,7 @@ from lawvm.core.provenance_graph import (
     _sha256,
 )
 from lawvm.core.provenance_graph_storage import GraphStore
+from lawvm.core.proof_surfaces import proof_surface_from_evidence_report
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +242,94 @@ def test_query_state_returns_auth_result(tmp_path):
     # But it should return an AuthorizationResult without erroring
     assert hasattr(result, "authorized")
     assert hasattr(result, "evidence_bundle_hash")
+
+
+def test_query_state_from_store_loads_full_authorization_indexes(tmp_path):
+    """Store-backed query sees assertion and attestation objects from the graph."""
+    store = _make_store(tmp_path)
+    producer = _make_producer()
+    assertion = _make_test_assertion()
+
+    assertion_id = submit_assertion(store, assertion, producer)
+    attest_id = attest(store, assertion_id, "span_verified", {}, producer)
+
+    reg_hash = attestation_kind_registry_hash()
+    builder = GraphBuilder(attestation_kind_registry_hash_val=reg_hash)
+    builder.add_assertion(store.read_assertion(assertion_id))
+    builder.add_attestation(store.read_attestation(attest_id))
+    graph = builder.finalize()
+    store.write_graph(graph)
+
+    policy = EvidenceGraphPredicate(
+        predicate_id="test.manual_claim.policy",
+        claim_kind="fi.v1.INLINE_STATUTE_RESOLUTION",
+        required=(exists("span_verified"),),
+        forbidden=(exists("retracted"),),
+    )
+    result = query_state_from_store(
+        graph_store=store,
+        snapshot_hash=graph.snapshot_hash,
+        subject_id=assertion_id,
+        policy=policy,
+        profile=StrictProfile(name="fi_strict"),
+        at=datetime.now(tz=timezone.utc),
+    )
+
+    assert result.authorized is True
+    assert result.satisfied_clauses == ("exists:span_verified",)
+    assert result.unsatisfied_clauses == ()
+    assert result.forbidden_present == ()
+
+
+def test_manual_claim_authorization_report_is_not_replay_authority(tmp_path):
+    """Graph policy success is report-visible but not replay authority by default."""
+    store = _make_store(tmp_path)
+    producer = _make_producer()
+    assertion = _make_test_assertion()
+
+    assertion_id = submit_assertion(store, assertion, producer)
+    attest_id = attest(store, assertion_id, "span_verified", {}, producer)
+
+    reg_hash = attestation_kind_registry_hash()
+    builder = GraphBuilder(attestation_kind_registry_hash_val=reg_hash)
+    builder.add_assertion(store.read_assertion(assertion_id))
+    builder.add_attestation(store.read_attestation(attest_id))
+    graph = builder.finalize()
+    store.write_graph(graph)
+
+    result = query_state_from_store(
+        graph_store=store,
+        snapshot_hash=graph.snapshot_hash,
+        subject_id=assertion_id,
+        policy=EvidenceGraphPredicate(
+            predicate_id="test.manual_claim.policy",
+            claim_kind="fi.v1.INLINE_STATUTE_RESOLUTION",
+            required=(exists("span_verified"),),
+        ),
+        profile=StrictProfile(name="fi_strict"),
+        at=datetime.now(tz=timezone.utc),
+    )
+
+    report = manual_claim_authorization_evidence_report(result, jurisdiction="fi")
+    data = report.to_dict()
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert result.authorized is True
+    assert data["report_kind"] == "manual_claim_authorization"
+    assert data["schema"] == "lawvm.manual_claim_authorization_report.v1"
+    assert data["replay_claims"] is False
+    assert data["rows"][0]["surface"] == "execution_authorization"
+    assert data["rows"][0]["subject_id"] == assertion_id
+    assert data["rows"][0]["status"] == "evidence_policy_satisfied_non_executable"
+    assert data["rows"][0]["replay_authorized"] is False
+    assert data["rows"][0]["required_proofs"] == ["phase_local_replay_authorization"]
+    assert (
+        "manual_claim_authorization_as_replay_authority"
+        in data["rows"][0]["forbidden_shortcuts"]
+    )
+    assert proof_surface["surface_kind"] == "manual_claim_authorization"
+    assert proof_surface["rows"][0]["row_kind"] == "execution_authorization"
+    assert proof_surface["rows"][0]["authorization_ref"] == "test.manual_claim.policy"
 
 
 # ---------------------------------------------------------------------------

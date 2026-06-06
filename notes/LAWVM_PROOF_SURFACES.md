@@ -217,6 +217,11 @@ The EvidenceKernel adapter follows the same rule: a satisfied declarative
 evidence policy remains non-replay-authorizing unless the caller explicitly
 sets the phase-local replay gate.
 
+Graph-native manual-claim authorization uses the same adapter path. A manual
+claim assertion satisfying an evidence policy is report-visible, but it remains
+non-executable and non-replay-authorized unless a separate phase-local replay
+gate is supplied.
+
 Execution-authorization evidence reports may carry explicit authorization rows.
 The report envelope's `replay_claims` bit must be derived from row-level
 `replay_authorized=true`; evidence-policy success alone must still project as a
