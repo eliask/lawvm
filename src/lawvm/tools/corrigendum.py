@@ -92,6 +92,7 @@ from lawvm.finland.corrigendum_records import (
 )
 from lawvm.finland.proof_surfaces import (
     corrigendum_source_witness,
+    finland_corrigendum_overview_evidence_surface,
     finland_corrigendum_provenance_evidence_surface,
     finland_corrigendum_review_evidence_surface,
 )
@@ -2454,8 +2455,9 @@ def build_overview_bundle(
         ),
     )[: int(limit)]
 
-    return {
+    bundle = {
         "mode": "live" if live else "stored",
+        "limit": int(limit),
         "records_path": str(path),
         "manual_yaml_path": str(_MANUAL_YAML),
         "official_item_count": len(records),
@@ -2474,6 +2476,8 @@ def build_overview_bundle(
         "top_open_manual_amendments": top_open_manual,
         "top_attachment_only_amendments": top_attachment_only,
     }
+    bundle["evidence_surface_report"] = finland_corrigendum_overview_evidence_surface(bundle)
+    return bundle
 
 
 def build_review_bundle(

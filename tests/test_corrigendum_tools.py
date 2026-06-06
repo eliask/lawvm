@@ -649,6 +649,8 @@ def test_build_overview_bundle_counts_statuses(monkeypatch, tmp_path: Path) -> N
 
     bundle = corr_tools.build_overview_bundle(db_path=tmp_path / "missing.jsonl", limit=5, live=True)
 
+    assert bundle["mode"] == "live"
+    assert bundle["limit"] == 5
     assert bundle["official_item_count"] == 2
     assert bundle["missing_amendment_id_count"] == 0
     assert bundle["missing_date_published_count"] == 2
@@ -656,6 +658,16 @@ def test_build_overview_bundle_counts_statuses(monkeypatch, tmp_path: Path) -> N
     assert bundle["status_counts"]["source_verified"] == 1
     assert bundle["status_counts"]["attachment_only"] == 1
     assert bundle["top_attachment_only_amendments"][0]["amendment_id"] == "577/2019"
+    report = bundle["evidence_surface_report"]
+    assert report["report_kind"] == "finland_corrigendum_overview"
+    assert report["replay_claims"] is False
+    assert report["agreement_claims"] is False
+    assert report["summary"]["official_item_count"] == 2
+    assert report["summary"]["amendment_count"] == 2
+    assert report["summary"]["top_attachment_only_amendment_count"] == 1
+    assert {row["surface"] for row in report["rows"]} == {
+        "corrigendum_overview_attachment_only_amendment",
+    }
 
 
 def test_build_source_manifest_records_groups_items_per_pdf(monkeypatch, tmp_path: Path) -> None:

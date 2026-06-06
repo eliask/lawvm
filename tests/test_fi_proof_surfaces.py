@@ -5,6 +5,7 @@ from lawvm.core.mutation_accounting import MutationInvariantReport
 from lawvm.core.source_witness import source_witness_digest_coverage
 from lawvm.finland.proof_surfaces import (
     consolidated_artifact_source_witness,
+    finland_corrigendum_overview_evidence_surface,
     finland_corrigendum_provenance_evidence_surface,
     corrigendum_source_witness,
     finlex_html_topology_source_witness,
@@ -347,6 +348,51 @@ def test_finland_corrigendum_provenance_projects_source_diagnostic_envelope() ->
         "corrigendum_source_witness",
     }
     assert "corrigendum_provenance_as_replay_authorization" in report["forbidden_shortcuts"]
+
+
+def test_finland_corrigendum_overview_projects_corpus_diagnostic_envelope() -> None:
+    report = finland_corrigendum_overview_evidence_surface(
+        {
+            "mode": "live",
+            "limit": 10,
+            "official_item_count": 12,
+            "amendment_count": 5,
+            "source_pdf_count": 4,
+            "missing_amendment_id_count": 0,
+            "missing_date_published_count": 3,
+            "source_date_status_counts": {"present": 2, "xml_ref_without_date": 2},
+            "type_counts": {"johtolause": 5, "prose": 7},
+            "status_counts": {
+                "source_verified": 8,
+                "open_manual_candidate": 2,
+                "unresolved_unverified": 1,
+                "unresolved_unreviewed": 1,
+            },
+            "top_unresolved_amendments": [{"amendment_id": "577/2019", "item_count": 6}],
+            "top_open_manual_amendments": [{"amendment_id": "442/2016", "item_count": 2}],
+            "top_attachment_only_amendments": [{"amendment_id": "700/2020", "item_count": 1}],
+        }
+    )
+
+    assert report["jurisdiction"] == "fi"
+    assert report["report_kind"] == "finland_corrigendum_overview"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is False
+    assert report["summary"]["official_item_count"] == 12
+    assert report["summary"]["open_manual_candidate_count"] == 2
+    assert report["summary"]["unresolved_unverified_count"] == 1
+    assert report["summary"]["top_unresolved_amendment_count"] == 1
+    assert report["summary"]["top_open_manual_amendment_count"] == 1
+    assert report["summary"]["top_attachment_only_amendment_count"] == 1
+    assert {row["surface"] for row in report["rows"]} == {
+        "corrigendum_overview_attachment_only_amendment",
+        "corrigendum_overview_open_manual_amendment",
+        "corrigendum_overview_unresolved_amendment",
+    }
+    assert "status_count_as_manual_claim" in report["forbidden_shortcuts"]
 
 
 def test_mutation_boundary_reports_project_shared_proof_rows() -> None:

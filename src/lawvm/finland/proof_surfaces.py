@@ -1073,6 +1073,77 @@ def finland_corrigendum_provenance_evidence_surface(
     ).to_dict()
 
 
+def finland_corrigendum_overview_evidence_surface(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Wrap corpus-level Finland corrigendum overview in the shared envelope."""
+
+    top_unresolved = _mapping_sequence(payload.get("top_unresolved_amendments"))
+    top_open_manual = _mapping_sequence(payload.get("top_open_manual_amendments"))
+    top_attachment_only = _mapping_sequence(payload.get("top_attachment_only_amendments"))
+    rows = tuple(
+        (
+            *({**dict(row), "surface": "corrigendum_overview_unresolved_amendment"} for row in top_unresolved),
+            *({**dict(row), "surface": "corrigendum_overview_open_manual_amendment"} for row in top_open_manual),
+            *(
+                {**dict(row), "surface": "corrigendum_overview_attachment_only_amendment"}
+                for row in top_attachment_only
+            ),
+        )
+    )
+    status_counts = dict(payload.get("status_counts") or {})
+    summary = {
+        "official_item_count": int(payload.get("official_item_count") or 0),
+        "amendment_count": int(payload.get("amendment_count") or 0),
+        "source_pdf_count": int(payload.get("source_pdf_count") or 0),
+        "missing_amendment_id_count": int(payload.get("missing_amendment_id_count") or 0),
+        "missing_date_published_count": int(payload.get("missing_date_published_count") or 0),
+        "source_date_status_counts": dict(payload.get("source_date_status_counts") or {}),
+        "type_counts": dict(payload.get("type_counts") or {}),
+        "status_counts": status_counts,
+        "top_unresolved_amendment_count": len(top_unresolved),
+        "top_open_manual_amendment_count": len(top_open_manual),
+        "top_attachment_only_amendment_count": len(top_attachment_only),
+        "open_manual_candidate_count": int(status_counts.get("open_manual_candidate") or 0),
+        "unresolved_unverified_count": int(status_counts.get("unresolved_unverified") or 0),
+        "unresolved_unreviewed_count": int(status_counts.get("unresolved_unreviewed") or 0),
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction="fi",
+        report_kind="finland_corrigendum_overview",
+        schema="lawvm.finland_corrigendum_overview.v1",
+        truth_claim="finland_corrigendum_corpus_overview_diagnostics",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={
+            "mode": str(payload.get("mode") or ""),
+            "limit": int(payload.get("limit") or 0),
+        },
+        filtered_summary=summary,
+        rows=rows,
+        rows_truncated=False,
+        detail={
+            "safe_default": "treat_corrigendum_overview_as_corpus_diagnostics_not_replay_authorization",
+            "forbidden_shortcuts": (
+                "corrigendum_overview_as_replay_authorization",
+                "status_count_as_manual_claim",
+                "status_count_as_mutation_boundary_proof",
+                "source_date_status_as_source_text_repair",
+                "top_list_rank_as_execution_priority",
+            ),
+            "included_surfaces": (
+                "corrigendum_overview_unresolved_amendment",
+                "corrigendum_overview_open_manual_amendment",
+                "corrigendum_overview_attachment_only_amendment",
+            ),
+        },
+    ).to_dict()
+
+
 def _pathology_row(pathology: SourcePathology | Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(pathology, SourcePathology):
         return {
