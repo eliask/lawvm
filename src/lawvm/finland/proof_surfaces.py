@@ -1280,6 +1280,12 @@ def finland_evidence_bundle_evidence_surface(
     proof_claims = _mapping_sequence(payload.get("proof_claims"))
     section_claims = _mapping_sequence(payload.get("section_claims"))
     source_pathologies = _mapping_sequence(payload.get("source_pathologies"))
+    source_pathology_report = source_pathology_evidence_report(
+        _source_pathology_projections(source_pathologies),
+        jurisdiction="fi",
+        report_kind="finland_evidence_bundle_source_pathology",
+    ).to_dict()
+    source_pathology_rows = _mapping_sequence(source_pathology_report.get("rows"))
     context_diagnostics = _mapping_sequence(payload.get("evidence_context_diagnostics"))
     section_bisect = _mapping_sequence(payload.get("section_bisect"))
     compiler_observations_raw = payload.get("compiler_observations")
@@ -1289,14 +1295,23 @@ def finland_evidence_bundle_evidence_surface(
         (
             *({**dict(row), "surface": "source_witness"} for row in source_witnesses),
             *({**dict(row), "surface": "proof_claim"} for row in proof_claims),
-            *({**dict(row), "surface": "source_pathology"} for row in source_pathologies),
+            *({"surface": "source_pathology", **dict(row)} for row in source_pathology_rows),
             *({**dict(row), "surface": "evidence_context_diagnostic"} for row in context_diagnostics),
         )
     )
     summary = {
         "proof_claim_count": len(proof_claims),
         "section_claim_count": len(section_claims),
-        "source_pathology_count": len(source_pathologies),
+        "source_pathology_count": len(source_pathology_rows),
+        "source_pathology_kind_counts": dict(
+            source_pathology_report.get("summary", {}).get("pathology_kind_counts", {})
+        ),
+        "source_pathology_affected_phase_counts": dict(
+            source_pathology_report.get("summary", {}).get("affected_phase_counts", {})
+        ),
+        "source_pathology_suggested_lane_counts": dict(
+            source_pathology_report.get("summary", {}).get("suggested_lane_counts", {})
+        ),
         "supporting_amendment_count": len(supporting_amendments),
         "source_witness_count": len(source_witnesses),
         "html_topology_source_witness_count": len(html_witnesses),
@@ -1502,6 +1517,12 @@ def finland_corrigendum_review_evidence_surface(
 
     amendments = _mapping_sequence(payload.get("amendments"))
     source_pathologies = _mapping_sequence(payload.get("source_pathologies"))
+    source_pathology_report = source_pathology_evidence_report(
+        _source_pathology_projections(source_pathologies),
+        jurisdiction="fi",
+        report_kind="finland_corrigendum_review_source_pathology",
+    ).to_dict()
+    source_pathology_rows = _mapping_sequence(source_pathology_report.get("rows"))
     unblamed_sections = _mapping_sequence(payload.get("unblamed_sections"))
     witnesses = tuple(
         witness
@@ -1511,14 +1532,23 @@ def finland_corrigendum_review_evidence_surface(
     rows = tuple(
         (
             *({**dict(row), "surface": "corrigendum_source_witness"} for row in witnesses),
-            *({**dict(row), "surface": "source_pathology"} for row in source_pathologies),
+            *({"surface": "source_pathology", **dict(row)} for row in source_pathology_rows),
             *({**dict(row), "surface": "corrigendum_review_amendment"} for row in amendments),
             *({**dict(row), "surface": "unblamed_section"} for row in unblamed_sections),
         )
     )
     summary = {
         "amendment_count": len(amendments),
-        "source_pathology_count": len(source_pathologies),
+        "source_pathology_count": len(source_pathology_rows),
+        "source_pathology_kind_counts": dict(
+            source_pathology_report.get("summary", {}).get("pathology_kind_counts", {})
+        ),
+        "source_pathology_affected_phase_counts": dict(
+            source_pathology_report.get("summary", {}).get("affected_phase_counts", {})
+        ),
+        "source_pathology_suggested_lane_counts": dict(
+            source_pathology_report.get("summary", {}).get("suggested_lane_counts", {})
+        ),
         "unblamed_section_count": len(unblamed_sections),
         "contingent_effective_source_count": len(_string_sequence(payload.get("contingent_effective_sources"))),
         "corrigendum_source_witness_count": len(witnesses),

@@ -270,6 +270,13 @@ def test_finland_evidence_bundle_projects_passive_shared_report() -> None:
     assert report["agreement_claims"] is True
     assert report["summary"]["proof_claim_count"] == 1
     assert report["summary"]["section_claim_count"] == 1
+    assert report["summary"]["source_pathology_count"] == 1
+    assert report["summary"]["source_pathology_kind_counts"] == {
+        "SPARSE_ITEM_BODY_MISSING": 1
+    }
+    assert report["summary"]["source_pathology_affected_phase_counts"] == {
+        "typed_elaboration": 1
+    }
     assert report["summary"]["html_topology_source_witness_count"] == 1
     assert report["summary"]["corrigendum_source_witness_count"] == 1
     assert report["summary"]["source_witness_digest_coverage_counts"] == {
@@ -282,6 +289,10 @@ def test_finland_evidence_bundle_projects_passive_shared_report() -> None:
         "source_pathology",
         "source_witness",
     }
+    pathology_row = next(row for row in report["rows"] if row["surface"] == "source_pathology")
+    assert pathology_row["replay_authorized"] is False
+    assert pathology_row["pathology_kind"] == "SPARSE_ITEM_BODY_MISSING"
+    assert pathology_row["suggested_lane"] == "source_pathology"
     assert "proof_claim_as_mutation_instruction" in report["forbidden_shortcuts"]
 
 
@@ -466,6 +477,12 @@ def test_finland_corrigendum_review_projects_source_diagnostic_envelope() -> Non
     assert report["agreement_claims"] is True
     assert report["summary"]["amendment_count"] == 1
     assert report["summary"]["source_pathology_count"] == 1
+    assert report["summary"]["source_pathology_kind_counts"] == {
+        "DESTRUCTIVE_SHAPE_LOSS_RISK": 1
+    }
+    assert report["summary"]["source_pathology_suggested_lane_counts"] == {
+        "replay_recovery_risk": 1
+    }
     assert report["summary"]["corrigendum_source_witness_count"] == 1
     assert report["summary"]["corrigendum_source_witness_digest_coverage_counts"] == {
         "artifact_and_preview_digest": 1
@@ -476,6 +493,9 @@ def test_finland_corrigendum_review_projects_source_diagnostic_envelope() -> Non
         "source_pathology",
         "unblamed_section",
     }
+    pathology_row = next(row for row in report["rows"] if row["surface"] == "source_pathology")
+    assert pathology_row["replay_authorized"] is False
+    assert pathology_row["pathology_kind"] == "DESTRUCTIVE_SHAPE_LOSS_RISK"
     assert "corrigendum_source_witness_as_patch_application" in report["forbidden_shortcuts"]
 
 

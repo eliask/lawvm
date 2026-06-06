@@ -798,9 +798,13 @@ def test_build_overview_bundle_counts_statuses(monkeypatch, tmp_path: Path) -> N
     assert report["summary"]["official_item_count"] == 2
     assert report["summary"]["amendment_count"] == 2
     assert report["summary"]["top_attachment_only_amendment_count"] == 1
+    assert report["summary"]["source_completeness_status_count"] == 1
     assert {row["surface"] for row in report["rows"]} == {
         "corrigendum_overview_attachment_only_amendment",
+        "source_completeness_status",
     }
+    source_status = next(row for row in report["rows"] if row["surface"] == "source_completeness_status")
+    assert source_status["replay_authorized"] is False
 
 
 def test_build_source_manifest_records_groups_items_per_pdf(monkeypatch, tmp_path: Path) -> None:
