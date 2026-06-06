@@ -62,6 +62,18 @@ _MUTATION_BOUNDARY_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
     "ignore_unexplained_changed_paths",
     "treat_allowed_recovery_as_universal_target_widening",
 )
+_RECOVERY_AUTHORIZATION_REQUIRED_PROOFS: tuple[str, ...] = (
+    "source_identity_proof",
+    "target_identity_proof",
+    "recovery_rule_ownership_proof",
+    "mutation_boundary_proof_before_replay_promotion",
+)
+_RECOVERY_AUTHORIZATION_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
+    "recovery_projection_as_replay_authorization",
+    "strict_recovery_row_as_quirks_permission",
+    "recovery_finding_as_mutation_boundary_proof",
+    "recovery_projection_as_target_widening",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +97,21 @@ class FinlandSourcePathologyProofRule:
         "validate_source_pathology_resolution_claim",
         "validate_mutation_boundary_before_replay_promotion",
     )
+
+
+@dataclass(frozen=True, slots=True)
+class FinlandRecoveryAuthorizationRule:
+    """Declarative projection metadata for Finland recovery/strictness findings."""
+
+    kind: str
+    owner_phase: str
+    family: str
+    strict_disposition: str = "record"
+    quirks_disposition: str = "record"
+    validator_status: str = "not_validated_for_replay_promotion"
+    required_proofs: tuple[str, ...] = _RECOVERY_AUTHORIZATION_REQUIRED_PROOFS
+    forbidden_shortcuts: tuple[str, ...] = _RECOVERY_AUTHORIZATION_FORBIDDEN_SHORTCUTS
+    safe_default: str = "treat_recovery_projection_as_diagnostic_not_replay_authorization"
 
 
 _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
@@ -173,6 +200,98 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         frontier_family="fi_destructive_shape_loss_risk",
         frontier_status="mutation_boundary_frontier",
         required_claim_kind="mutation_boundary_resolution",
+    ),
+}
+
+_RECOVERY_AUTHORIZATION_RULES: dict[str, FinlandRecoveryAuthorizationRule] = {
+    "PARSE.EXTRACTION_FALLBACK": FinlandRecoveryAuthorizationRule(
+        kind="PARSE.EXTRACTION_FALLBACK",
+        owner_phase="surface_parse",
+        family="formula_extraction_recovery",
+    ),
+    "PARSE.SEMANTIC_COLLAPSE_MOVE_RENUMBER": FinlandRecoveryAuthorizationRule(
+        kind="PARSE.SEMANTIC_COLLAPSE_MOVE_RENUMBER",
+        owner_phase="surface_parse",
+        family="semantic_collapse_recovery",
+    ),
+    "PARSE.TARGET_GUESSING": FinlandRecoveryAuthorizationRule(
+        kind="PARSE.TARGET_GUESSING",
+        owner_phase="surface_parse",
+        family="target_resolution_recovery",
+    ),
+    "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION": FinlandRecoveryAuthorizationRule(
+        kind="LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION",
+        owner_phase="canonical_op_compilation",
+        family="context_dependent_anchor_resolution",
+    ),
+    "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE": FinlandRecoveryAuthorizationRule(
+        kind="ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
+        owner_phase="typed_elaboration",
+        family="sparse_payload_elaboration_recovery",
+    ),
+    "ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE": FinlandRecoveryAuthorizationRule(
+        kind="ELAB.SPLIT_SPARSE_OMISSION_CONSECUTIVE",
+        owner_phase="typed_elaboration",
+        family="sparse_payload_elaboration_recovery",
+    ),
+    "ELAB.CONTAINER_PRUNED_SHADOWED": FinlandRecoveryAuthorizationRule(
+        kind="ELAB.CONTAINER_PRUNED_SHADOWED",
+        owner_phase="typed_elaboration",
+        family="payload_ownership_recovery",
+    ),
+    "ELAB.PAYLOAD_COMPLETENESS": FinlandRecoveryAuthorizationRule(
+        kind="ELAB.PAYLOAD_COMPLETENESS",
+        owner_phase="payload_elaboration",
+        family="payload_completeness_recovery",
+    ),
+    "ELAB.SPARSE_PAYLOAD_LEFTOVER": FinlandRecoveryAuthorizationRule(
+        kind="ELAB.SPARSE_PAYLOAD_LEFTOVER",
+        owner_phase="typed_elaboration",
+        family="sparse_payload_frontier",
+        strict_disposition="block",
+    ),
+    "ELAB.STRICT_REJECTED_OPERATION": FinlandRecoveryAuthorizationRule(
+        kind="ELAB.STRICT_REJECTED_OPERATION",
+        owner_phase="typed_elaboration",
+        family="strict_operation_barrier",
+        strict_disposition="block",
+    ),
+    "APPLY.UNCOVERED_BODY_RECOVERY": FinlandRecoveryAuthorizationRule(
+        kind="APPLY.UNCOVERED_BODY_RECOVERY",
+        owner_phase="replay_apply",
+        family="uncovered_body_recovery",
+    ),
+    "APPLY.STRICT_REJECTED_UNCOVERED_BODY": FinlandRecoveryAuthorizationRule(
+        kind="APPLY.STRICT_REJECTED_UNCOVERED_BODY",
+        owner_phase="replay_apply",
+        family="uncovered_body_recovery",
+        strict_disposition="block",
+    ),
+    "APPLY.FALLBACK_WHOLE_SECTION_REPLACE": FinlandRecoveryAuthorizationRule(
+        kind="APPLY.FALLBACK_WHOLE_SECTION_REPLACE",
+        owner_phase="replay_apply",
+        family="whole_section_replace_fallback",
+    ),
+    "APPLY.WORD_SUBSTITUTION": FinlandRecoveryAuthorizationRule(
+        kind="APPLY.WORD_SUBSTITUTION",
+        owner_phase="replay_apply",
+        family="text_substitution_recovery",
+    ),
+    "APPLY.SOURCE_CORRECTED_BY_PATCH": FinlandRecoveryAuthorizationRule(
+        kind="APPLY.SOURCE_CORRECTED_BY_PATCH",
+        owner_phase="replay_apply",
+        family="source_corrected_by_patch",
+    ),
+    "APPLY.LEGACY_DISPATCH_FALLBACK": FinlandRecoveryAuthorizationRule(
+        kind="APPLY.LEGACY_DISPATCH_FALLBACK",
+        owner_phase="replay_apply",
+        family="legacy_dispatch_fallback",
+    ),
+    "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED": FinlandRecoveryAuthorizationRule(
+        kind="COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED",
+        owner_phase="payload_elaboration",
+        family="uncovered_body_coverage_barrier",
+        strict_disposition="block",
     ),
 }
 
@@ -724,6 +843,11 @@ def finland_strict_report_evidence_surface(
         projection_rows,
         strict_fail_reasons=strict_fail_reasons,
     )
+    recovery_authorization_rows = recovery_execution_authorization_rows_from_projection_rows(
+        projection_rows,
+        strict_fail_reasons=strict_fail_reasons,
+        statute_id=str(payload.get("statute_id") or ""),
+    )
     ops = payload.get("ops")
     ops_summary = dict(ops) if isinstance(ops, Mapping) else {}
     rows = tuple(
@@ -742,6 +866,7 @@ def finland_strict_report_evidence_surface(
             *({"surface": "mutation_boundary_proof", **dict(row)} for row in mutation_boundary_proofs),
             *(({"surface": "source_completeness_status", **source_completeness_row},) if source_completeness_row else ()),
             *({"surface": "temporal_resolution_evidence", **dict(row)} for row in temporal_resolution_rows),
+            *({"surface": "recovery_execution_authorization", **dict(row)} for row in recovery_authorization_rows),
         )
     )
     summary = {
@@ -757,6 +882,7 @@ def finland_strict_report_evidence_surface(
         "source_completeness_status_count": 1 if source_completeness_row else 0,
         "source_completeness": source_completeness_row.get("counts", {}) if source_completeness_row else {},
         "temporal_resolution_evidence_count": len(temporal_resolution_rows),
+        "recovery_execution_authorization_count": len(recovery_authorization_rows),
         "source_pathology_frontier_source_witness_digest_coverage_counts": (
             nested_source_witness_digest_coverage_counts(source_pathology_frontier_items)
         ),
@@ -795,6 +921,7 @@ def finland_strict_report_evidence_surface(
                 "mutation_boundary_proof_as_replay_authorization",
                 "source_completeness_status_as_replay_authorization",
                 "temporal_resolution_evidence_as_unconditional_commencement_proof",
+                "recovery_projection_as_replay_authorization",
             ),
         },
     ).to_dict()
@@ -871,6 +998,69 @@ def temporal_resolution_evidence_rows_from_projection_rows(
     return tuple(rows)
 
 
+def recovery_execution_authorization_rows_from_projection_rows(
+    projection_rows: tuple[Mapping[str, Any], ...],
+    *,
+    strict_fail_reasons: tuple[str, ...] = (),
+    statute_id: str = "",
+) -> tuple[dict[str, Any], ...]:
+    """Project Finland recovery/strictness findings into non-executable authorizations."""
+
+    fail_reason_set = {str(reason) for reason in strict_fail_reasons}
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for index, row in enumerate(projection_rows, start=1):
+        kind = str(row.get("kind") or "")
+        rule = _RECOVERY_AUTHORIZATION_RULES.get(kind)
+        if rule is None:
+            continue
+        detail = row.get("detail") if isinstance(row.get("detail"), Mapping) else {}
+        source_statute = str(row.get("source") or detail.get("source_statute") or detail.get("amendment_id") or "")
+        message = str(row.get("message") or "")
+        key = (kind, source_statute, message)
+        if key in seen:
+            continue
+        seen.add(key)
+        blocking = kind in fail_reason_set or rule.strict_disposition == "block"
+        authorization = ExecutionAuthorization(
+            executable=False,
+            replay_authorized=False,
+            authorization_status="strict_recovery_blocked" if blocking else "recovery_projection_not_replay_authority",
+            authorization_rule_id=f"fi_recovery_{_kind_slug(kind)}",
+            owner_phase=rule.owner_phase,
+            strict_disposition="block" if blocking else rule.strict_disposition,
+            quirks_disposition=rule.quirks_disposition,
+            validator_status=rule.validator_status,
+            required_proofs=rule.required_proofs,
+            safe_default=rule.safe_default,
+            forbidden_shortcuts=rule.forbidden_shortcuts,
+            detail={
+                "jurisdiction": "fi",
+                "statute_id": statute_id,
+                "finding_kind": kind,
+                "family": rule.family,
+                "source_statute": source_statute,
+                "message": message,
+                "strict_fail_reason_present": kind in fail_reason_set,
+                "projection_only": True,
+                "projection_detail": dict(detail),
+            },
+        ).to_dict()
+        authorization["row_id"] = _recovery_authorization_row_id(
+            statute_id=statute_id,
+            index=index,
+            kind=kind,
+            source_statute=source_statute,
+            message=message,
+        )
+        authorization["finding_kind"] = kind
+        authorization["family"] = rule.family
+        if source_statute:
+            authorization["source_artifact_id"] = source_statute
+        rows.append(authorization)
+    return tuple(rows)
+
+
 def _temporal_resolution_rule_id(kind: str) -> str:
     if kind == "TIME.CONTINGENT_EFFECTIVE_DATE":
         return "fi_time_contingent_effective_date"
@@ -887,6 +1077,29 @@ def _temporal_resolution_reason(kind: str) -> str:
     if kind == "TIME.CONTINGENT_EFFECTIVE_DATE":
         return "effective date is contingent or decree-set"
     return "effective date was estimated or substituted from publication metadata"
+
+
+def _kind_slug(kind: str) -> str:
+    return "".join(ch.lower() if ch.isalnum() else "_" for ch in str(kind or "")).strip("_") or "unknown"
+
+
+def _recovery_authorization_row_id(
+    *,
+    statute_id: str,
+    index: int,
+    kind: str,
+    source_statute: str,
+    message: str,
+) -> str:
+    payload = {
+        "statute_id": statute_id,
+        "index": index,
+        "kind": kind,
+        "source_statute": source_statute,
+        "message": message,
+    }
+    digest = hashlib.sha256(json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+    return f"fi:{statute_id or 'unknown'}:recovery-auth:{_kind_slug(kind)}:{digest}"
 
 
 def finland_bench_run_evidence_surface(

@@ -27,6 +27,7 @@ from lawvm.finland.proof_surfaces import (
     source_pathology_proof_rule,
     source_pathology_proof_surface_rows,
     sparse_slot_candidate_set_certificate_rows,
+    recovery_execution_authorization_rows_from_projection_rows,
     source_completeness_status_row,
     temporal_resolution_evidence_rows_from_projection_rows,
 )
@@ -879,9 +880,19 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
                     "source": "2025/78",
                     "detail": {"step": "publication_date"},
                 },
+                {
+                    "kind": "APPLY.UNCOVERED_BODY_RECOVERY",
+                    "message": "Uncovered body text was preserved as recovery evidence.",
+                    "source": "2025/79",
+                    "detail": {"recovery_rule": "preserve_uncovered_body"},
+                },
             ],
             "failed_ops": [{"reason_code": "unsupported"}],
-            "strict_fail_reasons": ["source_incomplete", "TIME.ESTIMATED_EFFECTIVE_DATE"],
+            "strict_fail_reasons": [
+                "source_incomplete",
+                "TIME.ESTIMATED_EFFECTIVE_DATE",
+                "APPLY.UNCOVERED_BODY_RECOVERY",
+            ],
         }
     )
 
@@ -903,6 +914,7 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
         "missing_dates": 2,
     }
     assert report["summary"]["temporal_resolution_evidence_count"] == 1
+    assert report["summary"]["recovery_execution_authorization_count"] == 1
     assert report["summary"]["source_pathology_frontier_source_witness_digest_coverage_counts"] == {"preview_digest": 1}
     assert [row["surface"] for row in report["rows"]] == [
         "source_pathology_execution_authorization",
@@ -911,18 +923,27 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
         "mutation_boundary_proof",
         "source_completeness_status",
         "temporal_resolution_evidence",
+        "recovery_execution_authorization",
     ]
-    temporal = report["rows"][-1]
+    temporal = report["rows"][-2]
     assert temporal["family"] == "temporal_recovery"
     assert temporal["temporal_resolution_status"] == "unknown_effective_date"
     assert temporal["strict_disposition"] == "block"
     assert temporal["source_locator"] == "2025/78"
-    source_status = report["rows"][-2]
+    recovery = report["rows"][-1]
+    assert recovery["authorization_status"] == "strict_recovery_blocked"
+    assert recovery["replay_authorized"] is False
+    assert recovery["owner_phase"] == "replay_apply"
+    assert recovery["finding_kind"] == "APPLY.UNCOVERED_BODY_RECOVERY"
+    assert recovery["family"] == "uncovered_body_recovery"
+    assert "recovery_projection_as_replay_authorization" in recovery["forbidden_shortcuts"]
+    source_status = report["rows"][-3]
     assert source_status["status"] == "incomplete"
     assert source_status["counts"]["missing_sources"] == 1
     assert source_status["counts"]["missing_dates"] == 2
     assert "source_completeness_status_as_replay_authorization" in source_status["forbidden_shortcuts"]
     assert "temporal_resolution_evidence_as_unconditional_commencement_proof" in report["forbidden_shortcuts"]
+    assert "recovery_projection_as_replay_authorization" in report["forbidden_shortcuts"]
     assert "source_completeness_status_as_replay_authorization" in report["forbidden_shortcuts"]
 
 
@@ -983,6 +1004,40 @@ def test_temporal_resolution_evidence_rows_project_finland_time_findings() -> No
     assert rows[1]["rule_id"] == "fi_time_estimated_effective_date"
     assert rows[1]["temporal_resolution_status"] == "unknown_effective_date"
     assert rows[1]["strict_disposition"] == "record"
+
+
+def test_recovery_execution_authorization_rows_project_finland_recoveries() -> None:
+    rows = recovery_execution_authorization_rows_from_projection_rows(
+        (
+            {
+                "kind": "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION",
+                "message": "Anchor was resolved from source context.",
+                "source": "2020/1",
+                "detail": {"target": "section:3"},
+            },
+            {
+                "kind": "APPLY.STRICT_REJECTED_UNCOVERED_BODY",
+                "message": "Uncovered body recovery was rejected in strict mode.",
+                "source": "2021/2",
+            },
+            {"kind": "TIME.ESTIMATED_EFFECTIVE_DATE"},
+        ),
+        strict_fail_reasons=("APPLY.STRICT_REJECTED_UNCOVERED_BODY",),
+        statute_id="2001/1234",
+    )
+
+    assert len(rows) == 2
+    assert rows[0]["authorization_status"] == "recovery_projection_not_replay_authority"
+    assert rows[0]["owner_phase"] == "canonical_op_compilation"
+    assert rows[0]["strict_disposition"] == "record"
+    assert rows[0]["replay_authorized"] is False
+    assert rows[0]["detail"]["family"] == "context_dependent_anchor_resolution"
+    assert rows[0]["source_artifact_id"] == "2020/1"
+    assert rows[1]["authorization_status"] == "strict_recovery_blocked"
+    assert rows[1]["owner_phase"] == "replay_apply"
+    assert rows[1]["strict_disposition"] == "block"
+    assert "mutation_boundary_proof_before_replay_promotion" in rows[1]["required_proofs"]
+    assert "recovery_finding_as_mutation_boundary_proof" in rows[1]["forbidden_shortcuts"]
 
 
 def test_finlex_editorial_witness_residuals_classify_agreement_and_disagreement() -> None:
