@@ -9,6 +9,7 @@ import sys
 import pytest
 
 from lawvm.tools import (
+    bench,
     bisect_section,
     classify,
     cli,
@@ -313,6 +314,7 @@ def test_cli_parser_accepts_new_debug_commands(cli_parser) -> None:
     assert args.command == "structural-review"
     assert args.oracle_selector_mode == "latest_cached_editorial"
 
+
     args = cli_parser.parse_args(["import-zip", "--dry-run"])
     assert args.command == "import-zip"
     assert args.dry_run is True
@@ -327,6 +329,43 @@ def test_cli_parser_accepts_new_debug_commands(cli_parser) -> None:
     )
     assert eu_reul_args.command == "eu-reul"
     assert eu_reul_args.eu_reul_command == "resolve"
+
+
+def test_finland_bench_evidence_surface_sidecar_writer(tmp_path) -> None:
+    run_path = tmp_path / "demo.csv"
+
+    report_path = bench._write_bench_evidence_surface(
+        run_path=run_path,
+        label="demo",
+        timestamp="2026-06-06T12:00",
+        mode="finlex_oracle",
+        corpus_path="data/finland/bench_corpus.csv",
+        stats={
+            "n": 1,
+            "errors": 0,
+            "mean": 1.0,
+            "perfect": 1,
+            "above_99": 1,
+            "above_95": 1,
+            "below_90": 0,
+        },
+        results=[(0, "1999/1", 1.0, "OK", 0.1)],
+        workers=8,
+        section_score=False,
+        fast_mode=False,
+        diagnostic_replay=False,
+        lev_sims={"1999/1": 1.0},
+        diagnostic_summaries={"1999/1": "diagnostics: source_pathologyx1"},
+        oracle_stale_adjusted=None,
+    )
+
+    assert report_path == tmp_path / "demo.evidence.json"
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert payload["report_kind"] == "finland_bench_run"
+    assert payload["agreement_claims"] is True
+    assert payload["replay_claims"] is False
+    assert payload["summary"]["status_counts"] == {"OK": 1}
+    assert payload["summary"]["diagnostic_summary_row_count"] == 1
 
 
 def test_phase_witness_main_writes_json_artifact(monkeypatch, tmp_path, capsys) -> None:

@@ -24,6 +24,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 import csv
 import io
+import json
 import os
 import re
 import sys
@@ -37,6 +38,7 @@ import Levenshtein
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import get_ground_truth, get_ground_truth_bytes, get_ground_truth_tree
 from lawvm.finland.grafter import replay_xml
+from lawvm.finland.proof_surfaces import finland_bench_run_evidence_surface
 from lawvm.finland.transparent_store import is_known_missing_source
 from lawvm.tools.editorial_hygiene import (
     count_kumottu_bytes,
@@ -1172,6 +1174,56 @@ def _save_run(
             if has_diagnostics:
                 row_vals.append((diagnostic_summaries or {}).get(sid, ""))
             w.writerow(row_vals)
+    return path
+
+
+def _bench_evidence_report_path(run_path: Path) -> Path:
+    return run_path.with_suffix(".evidence.json")
+
+
+def _write_bench_evidence_surface(
+    *,
+    run_path: Path,
+    label: str,
+    timestamp: str,
+    mode: str,
+    corpus_path: str,
+    stats: Dict[str, Any],
+    results: List[Tuple[int, str, float, str, float]],
+    workers: int,
+    section_score: bool,
+    fast_mode: bool,
+    diagnostic_replay: bool,
+    lev_sims: Optional[Dict[str, float]],
+    diagnostic_summaries: Dict[str, str],
+    oracle_stale_adjusted: Optional[Dict[str, Any]],
+) -> Path:
+    diagnostic_summary_counts: Counter[str] = Counter(
+        summary for summary in diagnostic_summaries.values() if summary
+    )
+    status_counts: Counter[str] = Counter(status for _count, _sid, _sim, status, _elapsed in results)
+    report = finland_bench_run_evidence_surface(
+        {
+            "label": label,
+            "timestamp": timestamp,
+            "mode": mode,
+            "corpus_path": corpus_path,
+            "run_path": str(run_path),
+            "history_path": str(_history_path()),
+            "stats": stats,
+            "status_counts": dict(sorted(status_counts.items())),
+            "diagnostic_summary_counts": dict(sorted(diagnostic_summary_counts.items())),
+            "diagnostic_summary_row_count": len(diagnostic_summaries),
+            "section_score": section_score,
+            "levenshtein_score": bool(lev_sims),
+            "worker_count": workers,
+            "fast_mode": fast_mode,
+            "diagnostic_replay": diagnostic_replay,
+            "oracle_stale_adjusted": oracle_stale_adjusted or {},
+        }
+    )
+    path = _bench_evidence_report_path(run_path)
+    path.write_text(json.dumps(report, ensure_ascii=True, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return path
 
 
@@ -2328,9 +2380,26 @@ def main(args) -> None:
         diagnostic_summaries=diagnostic_summaries,
     )
     _append_history(timestamp, label, stats)
+    evidence_report_path = _write_bench_evidence_surface(
+        run_path=run_path,
+        label=label,
+        timestamp=timestamp,
+        mode=bench_mode,
+        corpus_path=corpus_path,
+        stats=stats,
+        results=results,
+        workers=workers,
+        section_score=section_score_mode,
+        fast_mode=fast_mode,
+        diagnostic_replay=diagnostic_replay,
+        lev_sims=lev_sims,
+        diagnostic_summaries=diagnostic_summaries,
+        oracle_stale_adjusted=oracle_adjusted_summary,
+    )
 
     print(f"\nRun saved: {run_path}")
     print(f"History  : {_history_path()}")
+    print(f"Evidence : {evidence_report_path}")
 
     # Show errors last — the most visible position for tail output
     _show_errors(results)

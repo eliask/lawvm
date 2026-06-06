@@ -779,6 +779,76 @@ def finland_strict_report_evidence_surface(
     ).to_dict()
 
 
+def finland_bench_run_evidence_surface(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Wrap a saved Finland benchmark run in a passive evidence envelope."""
+
+    stats_raw = payload.get("stats")
+    stats = dict(stats_raw) if isinstance(stats_raw, Mapping) else {}
+    diagnostic_counts = dict(payload.get("diagnostic_summary_counts") or {})
+    status_counts = dict(payload.get("status_counts") or {})
+    summary = {
+        "statute_count": int(stats.get("n") or 0),
+        "error_count": int(stats.get("errors") or 0),
+        "mean_score": stats.get("mean"),
+        "perfect_count": int(stats.get("perfect") or 0),
+        "above_99_count": int(stats.get("above_99") or 0),
+        "above_95_count": int(stats.get("above_95") or 0),
+        "below_90_count": int(stats.get("below_90") or 0),
+        "status_counts": status_counts,
+        "diagnostic_summary_counts": diagnostic_counts,
+        "diagnostic_summary_row_count": int(payload.get("diagnostic_summary_row_count") or 0),
+        "section_score": bool(payload.get("section_score") or False),
+        "levenshtein_score": bool(payload.get("levenshtein_score") or False),
+    }
+    oracle_adjusted = payload.get("oracle_stale_adjusted")
+    if isinstance(oracle_adjusted, Mapping):
+        summary["oracle_stale_adjusted_mean"] = oracle_adjusted.get("mean")
+        summary["oracle_stale_adjusted_excluded_count"] = len(oracle_adjusted.get("excluded") or ())
+    return EvidenceSurfaceReport(
+        jurisdiction="fi",
+        report_kind="finland_bench_run",
+        schema="lawvm.finland_bench_run.v1",
+        truth_claim="finland_benchmark_agreement_regression_evidence_not_source_truth",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=True,
+        summary=summary,
+        filters={
+            "label": str(payload.get("label") or ""),
+            "mode": str(payload.get("mode") or ""),
+            "corpus_path": str(payload.get("corpus_path") or ""),
+        },
+        filtered_summary=summary,
+        rows=(),
+        rows_truncated=False,
+        written_paths=tuple(str(path) for path in (payload.get("run_path"), payload.get("history_path")) if path),
+        detail={
+            "safe_default": "treat_benchmark_scores_as_regression_evidence_not_replay_authorization",
+            "forbidden_shortcuts": (
+                "bench_score_as_source_truth",
+                "bench_score_as_replay_authorization",
+                "diagnostics_summary_as_mutation_instruction",
+                "oracle_adjusted_headline_as_legal_state",
+                "run_csv_as_manual_claim_authority",
+            ),
+            "included_surfaces": (
+                "saved_run_csv",
+                "benchmark_history_csv",
+                "status_counts",
+                "diagnostic_summary_counts",
+            ),
+            "timestamp": str(payload.get("timestamp") or ""),
+            "worker_count": int(payload.get("worker_count") or 0),
+            "fast_mode": bool(payload.get("fast_mode") or False),
+            "diagnostic_replay": bool(payload.get("diagnostic_replay") or False),
+        },
+    ).to_dict()
+
+
 def finland_evidence_bundle_evidence_surface(
     payload: Mapping[str, Any],
 ) -> dict[str, Any]:

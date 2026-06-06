@@ -5,6 +5,7 @@ from lawvm.core.mutation_accounting import MutationInvariantReport
 from lawvm.core.source_witness import source_witness_digest_coverage
 from lawvm.finland.proof_surfaces import (
     consolidated_artifact_source_witness,
+    finland_bench_run_evidence_surface,
     finland_corrigendum_manual_template_evidence_surface,
     finland_corrigendum_manual_template_frontier_item,
     finland_corrigendum_overview_evidence_surface,
@@ -99,6 +100,45 @@ def test_corrigendum_source_witness_carries_pdf_digest_and_preview() -> None:
     assert witness["source_lane"] == "corrigendum_pdf"
     assert witness["correction_item_count"] == 1
     assert source_witness_digest_coverage(witness) == "artifact_and_preview_digest"
+
+
+def test_finland_bench_run_evidence_surface_declares_agreement_only_boundary() -> None:
+    report = finland_bench_run_evidence_surface(
+        {
+            "label": "demo",
+            "timestamp": "2026-06-06T12:00",
+            "mode": "finlex_oracle",
+            "corpus_path": "data/finland/bench_corpus.csv",
+            "run_path": "data/bench_runs/demo.csv",
+            "history_path": "data/benchmark_history.csv",
+            "stats": {
+                "n": 2,
+                "errors": 0,
+                "mean": 0.99,
+                "perfect": 1,
+                "above_99": 1,
+                "above_95": 2,
+                "below_90": 0,
+            },
+            "status_counts": {"OK": 2},
+            "diagnostic_summary_counts": {"diagnostics: source_pathologyx1": 1},
+            "diagnostic_summary_row_count": 1,
+            "section_score": False,
+            "levenshtein_score": True,
+            "worker_count": 8,
+            "fast_mode": False,
+            "diagnostic_replay": False,
+        }
+    )
+
+    assert report["report_kind"] == "finland_bench_run"
+    assert report["agreement_claims"] is True
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["summary"]["statute_count"] == 2
+    assert report["summary"]["status_counts"] == {"OK": 2}
+    assert report["written_paths"] == ["data/bench_runs/demo.csv", "data/benchmark_history.csv"]
+    assert "bench_score_as_replay_authorization" in report["forbidden_shortcuts"]
 
 
 def test_finlex_html_topology_source_witness_is_preview_only() -> None:
