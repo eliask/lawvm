@@ -499,6 +499,7 @@ def test_build_provenance_bundle_classifies_row_statuses(monkeypatch, tmp_path: 
                 "amendment_id": "442/2016",
                 "lang": "fi",
                 "source_pdf": "akn/fi/act/statute-consolidated/2013/23/media/corrigenda/sk20160442_1.pdf",
+                "pdf_name": "sk20160442_1.pdf",
                 "correction_index": 0,
                 "correction_type": "johtolause",
                 "location_desc": "johtolause",
@@ -507,12 +508,14 @@ def test_build_provenance_bundle_classifies_row_statuses(monkeypatch, tmp_path: 
                 "llm_confidence": "high",
                 "verified_in_source": 1,
                 "date_published": "31.5.2016",
+                "sha256": "b" * 64,
             },
             {
                 "stable_id": "sk20160442_1.pdf#1",
                 "amendment_id": "442/2016",
                 "lang": "fi",
                 "source_pdf": "akn/fi/act/statute-consolidated/2013/23/media/corrigenda/sk20160442_1.pdf",
+                "pdf_name": "sk20160442_1.pdf",
                 "correction_index": 1,
                 "correction_type": "johtolause",
                 "location_desc": "johtolause",
@@ -521,6 +524,7 @@ def test_build_provenance_bundle_classifies_row_statuses(monkeypatch, tmp_path: 
                 "llm_confidence": "medium",
                 "verified_in_source": 0,
                 "date_published": "31.5.2016",
+                "sha256": "b" * 64,
             },
         ],
     )
@@ -562,6 +566,23 @@ def test_build_provenance_bundle_classifies_row_statuses(monkeypatch, tmp_path: 
         "source_verified",
         "manual_override_exact",
     ]
+    assert len(bundle["source_witnesses"]) == 1
+    assert bundle["source_witnesses"][0]["source_role"] == "finland_corrigendum_pdf"
+    assert bundle["source_witnesses"][0]["digest"] == "b" * 64
+    assert all(row["source_witness"]["digest"] == "b" * 64 for row in bundle["rows"])
+    report = bundle["evidence_surface_report"]
+    assert report["report_kind"] == "finland_corrigendum_provenance"
+    assert report["replay_claims"] is False
+    assert report["agreement_claims"] is False
+    assert report["summary"]["provenance_row_count"] == 2
+    assert report["summary"]["source_witness_count"] == 1
+    assert report["summary"]["status_counts"] == {
+        "manual_override_exact": 1,
+        "source_verified": 1,
+    }
+    assert report["summary"]["source_witness_digest_coverage_counts"] == {
+        "artifact_and_preview_digest": 1
+    }
 
 
 def test_build_overview_bundle_counts_statuses(monkeypatch, tmp_path: Path) -> None:

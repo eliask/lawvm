@@ -1004,6 +1004,75 @@ def finland_corrigendum_review_evidence_surface(
     ).to_dict()
 
 
+def finland_corrigendum_provenance_evidence_surface(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Wrap amendment-scoped Finland corrigendum provenance in the shared envelope."""
+
+    provenance_rows = _mapping_sequence(payload.get("rows"))
+    source_witnesses = _mapping_sequence(payload.get("source_witnesses"))
+    row_witnesses = tuple(
+        witness
+        for row in provenance_rows
+        for witness in (row.get("source_witness"),)
+        if isinstance(witness, Mapping)
+    )
+    witnesses = source_witnesses or row_witnesses
+    status_counts: dict[str, int] = {}
+    for row in provenance_rows:
+        status = str(row.get("status") or "unknown")
+        status_counts[status] = status_counts.get(status, 0) + 1
+    rows = tuple(
+        (
+            *({**dict(row), "surface": "corrigendum_source_witness"} for row in witnesses),
+            *({**dict(row), "surface": "corrigendum_provenance_row"} for row in provenance_rows),
+        )
+    )
+    summary = {
+        "provenance_row_count": len(provenance_rows),
+        "source_witness_count": len(witnesses),
+        "source_witness_digest_coverage_counts": _source_witness_row_digest_coverage_counts(witnesses),
+        "status_counts": dict(sorted(status_counts.items())),
+        "verified_count": int(payload.get("verified_count") or 0),
+        "attachment_only_count": int(payload.get("attachment_only_count") or 0),
+        "manual_exact_count": int(payload.get("manual_exact_count") or 0),
+        "open_manual_candidate_count": int(payload.get("open_manual_candidate_count") or 0),
+        "manual_entry_count": int(payload.get("manual_entry_count") or 0),
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction="fi",
+        report_kind="finland_corrigendum_provenance",
+        schema="lawvm.finland_corrigendum_provenance.v1",
+        truth_claim="finland_corrigendum_provenance_diagnostics",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={
+            "amendment_id": str(payload.get("amendment_id") or ""),
+        },
+        filtered_summary=summary,
+        rows=rows,
+        rows_truncated=False,
+        detail={
+            "safe_default": "treat_corrigendum_provenance_as_source_diagnostics_not_replay_authorization",
+            "forbidden_shortcuts": (
+                "corrigendum_provenance_as_replay_authorization",
+                "corrigendum_source_witness_as_patch_application",
+                "manual_override_status_as_manual_claim",
+                "source_verified_status_as_mutation_boundary_proof",
+                "attachment_only_status_as_source_text_repair",
+            ),
+            "included_surfaces": (
+                "corrigendum_source_witness",
+                "corrigendum_provenance_row",
+            ),
+        },
+    ).to_dict()
+
+
 def _pathology_row(pathology: SourcePathology | Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(pathology, SourcePathology):
         return {

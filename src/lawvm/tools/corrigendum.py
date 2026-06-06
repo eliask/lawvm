@@ -92,6 +92,7 @@ from lawvm.finland.corrigendum_records import (
 )
 from lawvm.finland.proof_surfaces import (
     corrigendum_source_witness,
+    finland_corrigendum_provenance_evidence_surface,
     finland_corrigendum_review_evidence_surface,
 )
 from lawvm.tools.section_keys import leaf_section_label, norm_section_label
@@ -2224,6 +2225,7 @@ def build_provenance_bundle(
     ]
 
     rendered_rows: list[dict] = []
+    source_witnesses_by_locator: dict[str, dict] = {}
     for row in rows:
         db_verified = row.get("verified_in_source")
         current_verified = _verify_in_source_xml(source_xml, str(row.get("wrong_text") or ""))
@@ -2249,28 +2251,36 @@ def build_provenance_bundle(
             status = "amendment_manually_overridden"
         else:
             status = "open_manual_candidate"
+        source_witness = None
+        if row.get("source_pdf"):
+            source_witness = corrigendum_source_witness(row).to_dict()
+            source_witnesses_by_locator.setdefault(
+                str(source_witness.get("locator") or source_witness.get("artifact_id") or ""),
+                source_witness,
+            )
 
-        rendered_rows.append(
-            {
-                "stable_id": str(row.get("stable_id") or ""),
-                "source_pdf": Path(str(row.get("source_pdf") or "")).name,
-                "correction_index": int(row.get("correction_index") or 0),
-                "correction_type": str(row.get("correction_type") or ""),
-                "location_desc": str(row.get("location_desc") or ""),
-                "wrong_text": str(row.get("wrong_text") or ""),
-                "correct_text": str(row.get("correct_text") or ""),
-                "extraction_source": str(row.get("extraction_source") or row.get("llm_confidence") or ""),
-                "date_published": str(row.get("date_published") or ""),
-                "db_verified": db_verified,
-                "current_verified": current_verified,
-                "attachment_only": attachment_only,
-                "exact_manual_override": exact_manual,
-                "manual_override_count_for_amendment": len(manual_entries),
-                "status": status,
-            }
-        )
+        rendered_row = {
+            "stable_id": str(row.get("stable_id") or ""),
+            "source_pdf": Path(str(row.get("source_pdf") or "")).name,
+            "correction_index": int(row.get("correction_index") or 0),
+            "correction_type": str(row.get("correction_type") or ""),
+            "location_desc": str(row.get("location_desc") or ""),
+            "wrong_text": str(row.get("wrong_text") or ""),
+            "correct_text": str(row.get("correct_text") or ""),
+            "extraction_source": str(row.get("extraction_source") or row.get("llm_confidence") or ""),
+            "date_published": str(row.get("date_published") or ""),
+            "db_verified": db_verified,
+            "current_verified": current_verified,
+            "attachment_only": attachment_only,
+            "exact_manual_override": exact_manual,
+            "manual_override_count_for_amendment": len(manual_entries),
+            "status": status,
+        }
+        if source_witness is not None:
+            rendered_row["source_witness"] = source_witness
+        rendered_rows.append(rendered_row)
 
-    return {
+    bundle = {
         "amendment_id": amendment_id,
         "records_path": str(path),
         "manual_yaml_path": str(_MANUAL_YAML),
@@ -2282,8 +2292,14 @@ def build_provenance_bundle(
             1 for row in rendered_rows if row["status"] == "open_manual_candidate"
         ),
         "manual_entry_count": len(manual_entries),
+        "source_witnesses": sorted(
+            source_witnesses_by_locator.values(),
+            key=lambda item: str(item.get("locator") or ""),
+        ),
         "rows": rendered_rows,
     }
+    bundle["evidence_surface_report"] = finland_corrigendum_provenance_evidence_surface(bundle)
+    return bundle
 
 
 def build_overview_bundle(

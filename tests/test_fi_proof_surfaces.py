@@ -5,6 +5,7 @@ from lawvm.core.mutation_accounting import MutationInvariantReport
 from lawvm.core.source_witness import source_witness_digest_coverage
 from lawvm.finland.proof_surfaces import (
     consolidated_artifact_source_witness,
+    finland_corrigendum_provenance_evidence_surface,
     corrigendum_source_witness,
     finlex_html_topology_source_witness,
     finland_corrigendum_review_evidence_surface,
@@ -286,6 +287,66 @@ def test_finland_corrigendum_review_projects_source_diagnostic_envelope() -> Non
         "unblamed_section",
     }
     assert "corrigendum_source_witness_as_patch_application" in report["forbidden_shortcuts"]
+
+
+def test_finland_corrigendum_provenance_projects_source_diagnostic_envelope() -> None:
+    witness = corrigendum_source_witness(
+        {
+            "source_pdf": "akn/fi/act/statute-consolidated/2016/442/media/corrigenda/sk20160442_1.pdf",
+            "pdf_name": "sk20160442_1.pdf",
+            "statute_id": "2016/442",
+            "amendment_id": "442/2016",
+            "date_published": "31.5.2016",
+            "correction_item_count": 2,
+            "sha256": "b" * 64,
+        }
+    ).to_dict()
+
+    report = finland_corrigendum_provenance_evidence_surface(
+        {
+            "amendment_id": "442/2016",
+            "verified_count": 1,
+            "attachment_only_count": 0,
+            "manual_exact_count": 1,
+            "open_manual_candidate_count": 0,
+            "manual_entry_count": 1,
+            "source_witnesses": [witness],
+            "rows": [
+                {
+                    "stable_id": "sk20160442_1.pdf#0",
+                    "status": "source_verified",
+                    "source_witness": witness,
+                },
+                {
+                    "stable_id": "sk20160442_1.pdf#1",
+                    "status": "manual_override_exact",
+                    "source_witness": witness,
+                },
+            ],
+        }
+    )
+
+    assert report["jurisdiction"] == "fi"
+    assert report["report_kind"] == "finland_corrigendum_provenance"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is False
+    assert report["summary"]["provenance_row_count"] == 2
+    assert report["summary"]["source_witness_count"] == 1
+    assert report["summary"]["status_counts"] == {
+        "manual_override_exact": 1,
+        "source_verified": 1,
+    }
+    assert report["summary"]["source_witness_digest_coverage_counts"] == {
+        "artifact_and_preview_digest": 1
+    }
+    assert {row["surface"] for row in report["rows"]} == {
+        "corrigendum_provenance_row",
+        "corrigendum_source_witness",
+    }
+    assert "corrigendum_provenance_as_replay_authorization" in report["forbidden_shortcuts"]
 
 
 def test_mutation_boundary_reports_project_shared_proof_rows() -> None:
