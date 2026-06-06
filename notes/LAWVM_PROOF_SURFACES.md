@@ -413,6 +413,9 @@ Rules:
 - Government proposal branch rows are future-law diagnostics. They are not
   enacted-law authority, canonical operations, candidate effects, dry-run
   authority, or current-law agreement claims.
+- Government proposal branch impact rows should project through the shared core
+  branch graph/projection vocabulary when possible. A branch impact projection
+  describes proposal-local effects only; it is not enacted-law materialization.
 - Finlex comparison is an agreement surface, not the compilation objective.
 - Corrigendum source manifests and corpus overviews should expose PDF/date
   coverage through passive `SourceCompletenessStatus` rows while preserving

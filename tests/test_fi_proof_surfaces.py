@@ -386,6 +386,8 @@ def test_finland_he_branch_evidence_surface_keeps_proposals_non_enacted() -> Non
     assert report["dry_run_claims"] is False
     assert report["agreement_claims"] is False
     assert report["summary"]["proposed_op_count"] == 1
+    assert report["summary"]["branch_impact_projection_count"] == 1
+    assert report["summary"]["branch_impact_row_count"] == 1
     assert report["summary"]["parse_finding_count"] == 2
     assert report["summary"]["proposal_relative_op_count"] == 1
     assert report["summary"]["unresolved_target_finding_count"] == 1
@@ -398,6 +400,7 @@ def test_finland_he_branch_evidence_surface_keeps_proposals_non_enacted() -> Non
         "he_branch_proposed_op",
         "he_branch_target_resolution_finding",
         "he_branch_parse_finding",
+        "he_branch_impact_projection",
     ]
     proposed = report["rows"][0]
     assert proposed["status"] == "proposed_branch_op_not_enacted_authority"
@@ -408,6 +411,14 @@ def test_finland_he_branch_evidence_surface_keeps_proposals_non_enacted() -> Non
     target_finding = report["rows"][1]
     assert target_finding["owner_phase"] == "target_resolution"
     assert target_finding["execution_authorization"]["authorization_status"] == "he_branch_finding_not_replay_authority"
+    branch_projection = report["rows"][3]
+    assert branch_projection["status"] == "branch_projection_not_enacted_authority"
+    assert branch_projection["executable"] is False
+    assert branch_projection["replay_authorized"] is False
+    assert branch_projection["projection"]["status"] == "diagnostic_only"
+    assert branch_projection["projection"]["branch"]["authority_layer"] == "proposal"
+    assert branch_projection["projection"]["rows"][0]["edge_kind"] == "would_insert"
+    assert branch_projection["projection"]["rows"][0]["target_statute_id"] == "711/2022"
     assert "he_branch_op_as_enacted_operation" in report["forbidden_shortcuts"]
     assert "he_branch_target_resolution_as_target_hijack" in proposed["forbidden_shortcuts"]
 
