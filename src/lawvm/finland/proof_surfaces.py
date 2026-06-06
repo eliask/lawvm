@@ -25,6 +25,12 @@ from lawvm.core.source_witness import (
     nested_source_witness_digest_coverage_counts,
     source_witness_digest_coverage_counts,
 )
+from lawvm.core.temporal_resolution import (
+    TEMPORAL_RECOVERY_FAMILY,
+    TEMPORAL_UNRESOLVED_CONTINGENT,
+    TEMPORAL_UNKNOWN_EFFECTIVE_DATE,
+    TemporalResolutionEvidence,
+)
 from lawvm.finland.consolidated_artifacts import artifact_record
 
 
@@ -713,6 +719,10 @@ def finland_strict_report_evidence_surface(
     projection_rows = _mapping_sequence(payload.get("projection_rows"))
     failed_ops = _mapping_sequence(payload.get("failed_ops"))
     strict_fail_reasons = _string_sequence(payload.get("strict_fail_reasons"))
+    temporal_resolution_rows = temporal_resolution_evidence_rows_from_projection_rows(
+        projection_rows,
+        strict_fail_reasons=strict_fail_reasons,
+    )
     ops = payload.get("ops")
     ops_summary = dict(ops) if isinstance(ops, Mapping) else {}
     rows = tuple(
@@ -729,6 +739,7 @@ def finland_strict_report_evidence_surface(
             *({"surface": "source_lineage_source_witness", **dict(row)} for row in source_lineage_witnesses),
             *({"surface": "agreement_residual", **dict(row)} for row in agreement_residuals),
             *({"surface": "mutation_boundary_proof", **dict(row)} for row in mutation_boundary_proofs),
+            *({"surface": "temporal_resolution_evidence", **dict(row)} for row in temporal_resolution_rows),
         )
     )
     summary = {
@@ -741,6 +752,7 @@ def finland_strict_report_evidence_surface(
         "source_lineage_source_witness_count": len(source_lineage_witnesses),
         "agreement_residual_count": len(agreement_residuals),
         "mutation_boundary_proof_count": len(mutation_boundary_proofs),
+        "temporal_resolution_evidence_count": len(temporal_resolution_rows),
         "source_pathology_frontier_source_witness_digest_coverage_counts": (
             nested_source_witness_digest_coverage_counts(source_pathology_frontier_items)
         ),
@@ -777,9 +789,65 @@ def finland_strict_report_evidence_surface(
                 "candidate_certificate_as_slot_uniqueness_proof",
                 "projection_row_as_oracle_agreement",
                 "mutation_boundary_proof_as_replay_authorization",
+                "temporal_resolution_evidence_as_unconditional_commencement_proof",
             ),
         },
     ).to_dict()
+
+
+def temporal_resolution_evidence_rows_from_projection_rows(
+    projection_rows: tuple[Mapping[str, Any], ...],
+    *,
+    strict_fail_reasons: tuple[str, ...] = (),
+) -> tuple[dict[str, Any], ...]:
+    """Project existing Finland TIME.* findings into shared temporal evidence rows."""
+    fail_reason_set = {str(reason) for reason in strict_fail_reasons}
+    rows: list[dict[str, Any]] = []
+    for row in projection_rows:
+        kind = str(row.get("kind") or "")
+        if kind not in {
+            "TIME.ESTIMATED_EFFECTIVE_DATE",
+            "TIME.CONTINGENT_EFFECTIVE_DATE",
+        }:
+            continue
+        detail = row.get("detail") if isinstance(row.get("detail"), Mapping) else {}
+        rows.append(
+            TemporalResolutionEvidence(
+                rule_id=_temporal_resolution_rule_id(kind),
+                phase="temporal_elaboration",
+                reason=str(row.get("message") or _temporal_resolution_reason(kind)),
+                status=_temporal_resolution_status(kind),
+                family=TEMPORAL_RECOVERY_FAMILY,
+                blocking=kind in fail_reason_set,
+                source_locator=str(row.get("source") or ""),
+                strict_disposition="block" if kind in fail_reason_set else "record",
+                quirks_disposition="record",
+                detail={
+                    "finding_kind": kind,
+                    "step": str(detail.get("step") or ""),
+                    "source_statute": str(row.get("source") or ""),
+                },
+            ).to_diagnostic_detail()
+        )
+    return tuple(rows)
+
+
+def _temporal_resolution_rule_id(kind: str) -> str:
+    if kind == "TIME.CONTINGENT_EFFECTIVE_DATE":
+        return "fi_time_contingent_effective_date"
+    return "fi_time_estimated_effective_date"
+
+
+def _temporal_resolution_status(kind: str) -> str:
+    if kind == "TIME.CONTINGENT_EFFECTIVE_DATE":
+        return TEMPORAL_UNRESOLVED_CONTINGENT
+    return TEMPORAL_UNKNOWN_EFFECTIVE_DATE
+
+
+def _temporal_resolution_reason(kind: str) -> str:
+    if kind == "TIME.CONTINGENT_EFFECTIVE_DATE":
+        return "effective date is contingent or decree-set"
+    return "effective date was estimated or substituted from publication metadata"
 
 
 def finland_bench_run_evidence_surface(

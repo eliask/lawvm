@@ -27,6 +27,7 @@ from lawvm.finland.proof_surfaces import (
     source_pathology_proof_rule,
     source_pathology_proof_surface_rows,
     sparse_slot_candidate_set_certificate_rows,
+    temporal_resolution_evidence_rows_from_projection_rows,
 )
 
 
@@ -864,9 +865,17 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
                     "status": "proved",
                 }
             ],
-            "projection_rows": [{"kind": "ELAB.SPARSE_SLOT_BINDING"}],
+            "projection_rows": [
+                {"kind": "ELAB.SPARSE_SLOT_BINDING"},
+                {
+                    "kind": "TIME.ESTIMATED_EFFECTIVE_DATE",
+                    "message": "Effective date substituted by publication date.",
+                    "source": "2025/78",
+                    "detail": {"step": "publication_date"},
+                },
+            ],
             "failed_ops": [{"reason_code": "unsupported"}],
-            "strict_fail_reasons": ["source_incomplete"],
+            "strict_fail_reasons": ["source_incomplete", "TIME.ESTIMATED_EFFECTIVE_DATE"],
         }
     )
 
@@ -879,13 +888,51 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     assert report["summary"]["source_pathology_frontier_work_item_count"] == 1
     assert report["summary"]["sparse_slot_candidate_set_certificate_count"] == 1
     assert report["summary"]["mutation_boundary_proof_count"] == 1
+    assert report["summary"]["temporal_resolution_evidence_count"] == 1
     assert report["summary"]["source_pathology_frontier_source_witness_digest_coverage_counts"] == {"preview_digest": 1}
     assert [row["surface"] for row in report["rows"]] == [
         "source_pathology_execution_authorization",
         "source_pathology_frontier_work_item",
         "sparse_slot_candidate_set_certificate",
         "mutation_boundary_proof",
+        "temporal_resolution_evidence",
     ]
+    temporal = report["rows"][-1]
+    assert temporal["family"] == "temporal_recovery"
+    assert temporal["temporal_resolution_status"] == "unknown_effective_date"
+    assert temporal["strict_disposition"] == "block"
+    assert temporal["source_locator"] == "2025/78"
+    assert "temporal_resolution_evidence_as_unconditional_commencement_proof" in report["forbidden_shortcuts"]
+
+
+def test_temporal_resolution_evidence_rows_project_finland_time_findings() -> None:
+    rows = temporal_resolution_evidence_rows_from_projection_rows(
+        (
+            {
+                "kind": "TIME.CONTINGENT_EFFECTIVE_DATE",
+                "message": "Effective date is contingent.",
+                "source": "2020/1",
+                "detail": {"step": "contingent_text"},
+            },
+            {
+                "kind": "TIME.ESTIMATED_EFFECTIVE_DATE",
+                "message": "Effective date estimated.",
+                "source": "2021/2",
+                "detail": {"step": "text_regex"},
+            },
+            {"kind": "ELAB.SPARSE_SLOT_BINDING"},
+        ),
+        strict_fail_reasons=("TIME.CONTINGENT_EFFECTIVE_DATE",),
+    )
+
+    assert len(rows) == 2
+    assert rows[0]["rule_id"] == "fi_time_contingent_effective_date"
+    assert rows[0]["temporal_resolution_status"] == "unresolved_contingent"
+    assert rows[0]["strict_disposition"] == "block"
+    assert rows[0]["step"] == "contingent_text"
+    assert rows[1]["rule_id"] == "fi_time_estimated_effective_date"
+    assert rows[1]["temporal_resolution_status"] == "unknown_effective_date"
+    assert rows[1]["strict_disposition"] == "record"
 
 
 def test_finlex_editorial_witness_residuals_classify_agreement_and_disagreement() -> None:
