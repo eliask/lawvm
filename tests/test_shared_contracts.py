@@ -45,6 +45,11 @@ from lawvm.core.proof_obligations import (
     PROOF_OBLIGATION_COMPLETE,
     ProofObligationCertificate,
 )
+from lawvm.core.proof_surfaces import (
+    ProofSurface,
+    ProofSurfaceRow,
+    proof_surface_from_evidence_report,
+)
 from lawvm.core.provenance_graph import ArtifactRef
 from lawvm.core.source_witness import (
     DigestWitness,
@@ -724,6 +729,84 @@ def test_evidence_surface_report_declares_non_replay_claims() -> None:
     assert data["agreement_claims"] is False
     assert data["rows"] == [{"effect_id": "eff-1"}]
     assert data["statute_id"] == "ukpga/2000/1"
+
+
+def test_proof_surface_rows_are_queryable_without_replay_authority() -> None:
+    row = ProofSurfaceRow(
+        row_id="row-1",
+        subject_id="fi:2001/1234",
+        row_kind="temporal_resolution_evidence",
+        status="block",
+        source_refs=("2025/78",),
+        proof_refs=("proof-1",),
+        detail={"replay_authorized": False},
+    )
+    surface = ProofSurface(
+        surface_id="fi:strict:demo",
+        surface_kind="finland_strict_report",
+        jurisdiction="fi",
+        profile_id="FINLAND_INGESTION_V1",
+        summary={"row_count": 1},
+        rows=(row,),
+    )
+    data = surface.to_dict()
+
+    assert data["surface_id"] == "fi:strict:demo"
+    assert data["rows"][0]["row_kind"] == "temporal_resolution_evidence"
+    assert data["rows"][0]["status"] == "block"
+    assert data["rows"][0]["source_refs"] == ["2025/78"]
+    assert data["rows"][0]["detail"]["replay_authorized"] is False
+
+
+def test_proof_surface_from_evidence_report_preserves_report_rows_as_read_model() -> None:
+    report = EvidenceSurfaceReport(
+        jurisdiction="fi",
+        report_kind="finland_strict_report",
+        schema="lawvm.finland_strict_report.v1",
+        truth_claim="strict diagnostics only",
+        replay_claims=False,
+        canonical_effect_claims=True,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary={"temporal_resolution_evidence_count": 1},
+        filters={"profile": "FINLAND_INGESTION_V1"},
+        rows=(
+            {
+                "surface": "temporal_resolution_evidence",
+                "rule_id": "fi_time_estimated_effective_date",
+                "source": "2025/78",
+                "strict_disposition": "block",
+                "temporal_resolution_status": "unknown_effective_date",
+            },
+            {
+                "surface": "source_pathology_frontier_work_item",
+                "work_item_id": "fi:frontier:1",
+                "source_witness": {
+                    "artifact_id": "2020/1",
+                    "source_unit_id": "section:2",
+                    "locator": "finlex://2020/1",
+                },
+                "frontier_status": "source_pathology_frontier",
+            },
+        ),
+    )
+
+    surface = proof_surface_from_evidence_report(report)
+    data = surface.to_dict()
+
+    assert data["surface_kind"] == "finland_strict_report"
+    assert data["profile_id"] == "FINLAND_INGESTION_V1"
+    assert data["summary"] == {"temporal_resolution_evidence_count": 1}
+    assert data["rows"][0]["row_kind"] == "temporal_resolution_evidence"
+    assert data["rows"][0]["status"] == "block"
+    assert data["rows"][0]["source_refs"] == ["2025/78"]
+    assert data["rows"][1]["frontier_ref"] == "fi:frontier:1"
+    assert data["rows"][1]["source_refs"] == [
+        "2020/1",
+        "section:2",
+        "finlex://2020/1",
+    ]
 
 
 def test_evidence_surface_report_requires_claim_flags() -> None:
