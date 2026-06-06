@@ -49,6 +49,7 @@ from lawvm.core.source_witness import (
     source_witness_from_mapping,
     source_witness_role_key,
 )
+from lawvm.core.token_tape import AnnotatedTokenView, TokenAnnotation, TokenLexeme, TokenTape
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
 from lawvm.core.replay_contracts import ReplayAmendmentStep, ReplayCheckpoint, ReplaySummary, ReplayTextView
 from lawvm.core.verification_contracts import (
@@ -154,6 +155,35 @@ def test_frontend_capability_declares_supported_waists_without_replay_authority(
     assert data["has_agreement_surface"] is False
     assert data["compatibility_outputs"] == ["ParsedOp"]
     assert data["caveats"] == ["capability_declaration_does_not_authorize_replay"]
+
+
+def test_token_tape_projects_source_preserving_lexemes_and_view() -> None:
+    tape = TokenTape(
+        source_text="muutetaan 5 §",
+        lexemes=(
+            TokenLexeme("muutetaan", "muuttaa", "VERB", semantic_code="M"),
+            TokenLexeme("5", "5", "NUM", char_start=10, char_end=11),
+            TokenLexeme("§", "§", "PYKALA", gram_case="NOM", char_start=12, char_end=13),
+        ),
+    )
+    annotation = TokenAnnotation(
+        annotation_id="demo-annotation",
+        kind="demo_span",
+        start=1,
+        end=3,
+        sentinel_kind="DEMO_SPAN",
+    )
+    view = AnnotatedTokenView(tape=tape, annotations=(annotation,), visible_indices=(0, 1))
+
+    tape_data = tape.to_dict()
+    view_data = view.to_dict()
+
+    assert tape_data["tape_schema"] == "lawvm.token_tape.v1"
+    assert tape_data["lexeme_count"] == 3
+    assert tape_data["lexemes"][0]["semantic_code"] == "M"
+    assert view_data["source_hash"] == tape.source_hash
+    assert view_data["visible_indices"] == [0, 1]
+    assert view_data["annotations"][0]["sentinel_kind"] == "DEMO_SPAN"
 
 
 def test_execution_authorization_rejects_hidden_promotion() -> None:

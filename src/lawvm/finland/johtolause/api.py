@@ -15,7 +15,6 @@ ParsedOps are derived from ClauseAST via clause_ast_to_legal_ops.
 
 from __future__ import annotations
 
-import hashlib
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Sequence
@@ -27,6 +26,7 @@ from lawvm.core.frontend_phase_surface import (
     FrontendPhaseSurface,
 )
 from lawvm.core.ir import LegalAddress
+from lawvm.core.token_tape import TokenLexeme, TokenTape
 from lawvm.finland.johtolause.types import ParsedOp
 from lawvm.finland.johtolause.surface_model import TargetKind
 from lawvm.core.clause_ast import ClauseAST
@@ -190,6 +190,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     )
 
     raw_tokens = tokenize(text)
+    core_token_tape = _core_token_tape_from_finland_tokens(text, raw_tokens)
     target_version_bindings = extract_target_version_bindings(raw_tokens)
     tokens, _jolloin_pairs = apply_annotations_with_jolloin_pairs(raw_tokens)
 
@@ -353,6 +354,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
 
     phase_surface = _build_finland_clause_phase_surface(
         text=text,
+        token_tape=core_token_tape,
         raw_token_count=len(raw_tokens),
         structural_token_count=len(tokens),
         jolloin_pair_count=len(_jolloin_pairs),
@@ -393,6 +395,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
 def _build_finland_clause_phase_surface(
     *,
     text: str,
+    token_tape: TokenTape,
     raw_token_count: int,
     structural_token_count: int,
     jolloin_pair_count: int,
@@ -455,6 +458,9 @@ def _build_finland_clause_phase_surface(
             input_artifacts=("source_text",),
             output_artifacts=("raw_token_tape",),
             detail={
+                "token_tape_schema": token_tape.tape_schema,
+                "token_tape_source_hash": token_tape.source_hash,
+                "token_tape_lexeme_count": len(token_tape),
                 "raw_token_count": raw_token_count,
                 "source_length": len(text),
             },
@@ -561,7 +567,7 @@ def _build_finland_clause_phase_surface(
             "ClauseAST is the primary semantic parser output; ParsedOps are a "
             "compatibility projection and this phase surface does not authorize replay."
         ),
-        source_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        source_hash=token_tape.source_hash,
         source_length=len(text),
         authority_path=(
             "source_text",
@@ -586,6 +592,25 @@ def _build_finland_clause_phase_surface(
             "clause_ast_is_primary_semantic_output": True,
         },
     )
+
+
+def _core_token_tape_from_finland_tokens(text: str, tokens: Sequence[object]) -> TokenTape:
+    lexemes: list[TokenLexeme] = []
+    for token in tokens:
+        verb_code = getattr(token, "verb_code", None)
+        semantic_code = getattr(verb_code, "value", "") if verb_code is not None else ""
+        lexemes.append(
+            TokenLexeme(
+                text=str(getattr(token, "text", "") or ""),
+                lemma=str(getattr(token, "lemma", "") or ""),
+                category=str(getattr(token, "cat", "") or ""),
+                gram_case=str(getattr(token, "case", "") or ""),
+                semantic_code=str(semantic_code or ""),
+                char_start=int(getattr(token, "char_start", -1)),
+                char_end=int(getattr(token, "char_end", -1)),
+            )
+        )
+    return TokenTape(source_text=text, lexemes=tuple(lexemes))
 
 
 def _build_finland_frontend_diagnostics(

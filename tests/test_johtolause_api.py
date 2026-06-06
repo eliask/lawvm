@@ -179,6 +179,9 @@ def test_parse_clause_exports_typed_phase_surface_authority_boundary() -> None:
     assert rows["clause_ast_lowering"]["authority_role"] == "primary_semantic_authority"
     assert rows["parsed_ops_compat"]["authority_role"] == "compatibility_projection_not_authority"
     assert rows["parsed_ops_compat"]["detail"]["parsed_op_count"] == len(result.parsed_ops)
+    assert rows["tokenize"]["detail"]["token_tape_schema"] == "lawvm.token_tape.v1"
+    assert rows["tokenize"]["detail"]["token_tape_lexeme_count"] == rows["tokenize"]["detail"]["raw_token_count"]
+    assert rows["tokenize"]["detail"]["token_tape_source_hash"] == data["source_hash"]
     assert data["detail"]["parsed_ops_are_compatibility_output"] is True
     assert data["detail"]["frontend_capability_id"] == FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY.frontend_id
     assert result.typed_diagnostics == phase_surface.diagnostics
