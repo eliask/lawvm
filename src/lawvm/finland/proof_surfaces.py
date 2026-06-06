@@ -719,6 +719,7 @@ def finland_strict_report_evidence_surface(
     projection_rows = _mapping_sequence(payload.get("projection_rows"))
     failed_ops = _mapping_sequence(payload.get("failed_ops"))
     strict_fail_reasons = _string_sequence(payload.get("strict_fail_reasons"))
+    source_completeness_row = source_completeness_status_row(payload)
     temporal_resolution_rows = temporal_resolution_evidence_rows_from_projection_rows(
         projection_rows,
         strict_fail_reasons=strict_fail_reasons,
@@ -739,6 +740,7 @@ def finland_strict_report_evidence_surface(
             *({"surface": "source_lineage_source_witness", **dict(row)} for row in source_lineage_witnesses),
             *({"surface": "agreement_residual", **dict(row)} for row in agreement_residuals),
             *({"surface": "mutation_boundary_proof", **dict(row)} for row in mutation_boundary_proofs),
+            *(({"surface": "source_completeness_status", **source_completeness_row},) if source_completeness_row else ()),
             *({"surface": "temporal_resolution_evidence", **dict(row)} for row in temporal_resolution_rows),
         )
     )
@@ -752,6 +754,8 @@ def finland_strict_report_evidence_surface(
         "source_lineage_source_witness_count": len(source_lineage_witnesses),
         "agreement_residual_count": len(agreement_residuals),
         "mutation_boundary_proof_count": len(mutation_boundary_proofs),
+        "source_completeness_status_count": 1 if source_completeness_row else 0,
+        "source_completeness": source_completeness_row.get("counts", {}) if source_completeness_row else {},
         "temporal_resolution_evidence_count": len(temporal_resolution_rows),
         "source_pathology_frontier_source_witness_digest_coverage_counts": (
             nested_source_witness_digest_coverage_counts(source_pathology_frontier_items)
@@ -789,10 +793,45 @@ def finland_strict_report_evidence_surface(
                 "candidate_certificate_as_slot_uniqueness_proof",
                 "projection_row_as_oracle_agreement",
                 "mutation_boundary_proof_as_replay_authorization",
+                "source_completeness_status_as_replay_authorization",
                 "temporal_resolution_evidence_as_unconditional_commencement_proof",
             ),
         },
     ).to_dict()
+
+
+def source_completeness_status_row(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Project strict-report source-completeness counts into a passive row."""
+    source_completeness = payload.get("source_completeness")
+    if not isinstance(source_completeness, Mapping):
+        return {}
+    chain_length = _nonnegative_int(source_completeness.get("chain_length"))
+    source_available = _nonnegative_int(source_completeness.get("source_available"))
+    dates_available = _nonnegative_int(source_completeness.get("dates_available"))
+    if chain_length == 0 and source_available == 0 and dates_available == 0:
+        return {}
+    missing_sources = max(chain_length - source_available, 0)
+    missing_dates = max(chain_length - dates_available, 0)
+    status = "complete" if missing_sources == 0 and missing_dates == 0 else "incomplete"
+    return {
+        "row_id": f"fi:{payload.get('statute_id') or 'unknown'}:source-completeness",
+        "statute_id": str(payload.get("statute_id") or ""),
+        "status": status,
+        "owner_phase": "source_chain_elaboration",
+        "counts": {
+            "chain_length": chain_length,
+            "source_available": source_available,
+            "dates_available": dates_available,
+            "missing_sources": missing_sources,
+            "missing_dates": missing_dates,
+        },
+        "safe_default": "treat_source_completeness_as_diagnostic_not_replay_authorization",
+        "forbidden_shortcuts": [
+            "source_completeness_status_as_replay_authorization",
+            "source_available_count_as_source_identity_proof",
+            "date_available_count_as_commencement_proof",
+        ],
+    }
 
 
 def temporal_resolution_evidence_rows_from_projection_rows(
@@ -1833,6 +1872,16 @@ def _bool_field(row: Mapping[str, Any], key: str, *, default: bool) -> bool:
     if isinstance(value, bool):
         return value
     raise ValueError(f"mutation invariant {key} must be a boolean")
+
+
+def _nonnegative_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return max(value, 0)
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return 0
 
 
 def _field(record: Any, name: str, default: Any = None) -> Any:

@@ -27,6 +27,7 @@ from lawvm.finland.proof_surfaces import (
     source_pathology_proof_rule,
     source_pathology_proof_surface_rows,
     sparse_slot_candidate_set_certificate_rows,
+    source_completeness_status_row,
     temporal_resolution_evidence_rows_from_projection_rows,
 )
 
@@ -846,6 +847,11 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
             "statute_id": "2001/1234",
             "profile": "FINLAND_INGESTION_V1",
             "ops": {"canonical": 2, "failed": 1, "total": 3},
+            "source_completeness": {
+                "chain_length": 3,
+                "source_available": 2,
+                "dates_available": 1,
+            },
             "source_pathology_execution_authorizations": [
                 {"authorization_status": "source_pathology_not_replay_authority"}
             ],
@@ -888,6 +894,14 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     assert report["summary"]["source_pathology_frontier_work_item_count"] == 1
     assert report["summary"]["sparse_slot_candidate_set_certificate_count"] == 1
     assert report["summary"]["mutation_boundary_proof_count"] == 1
+    assert report["summary"]["source_completeness_status_count"] == 1
+    assert report["summary"]["source_completeness"] == {
+        "chain_length": 3,
+        "source_available": 2,
+        "dates_available": 1,
+        "missing_sources": 1,
+        "missing_dates": 2,
+    }
     assert report["summary"]["temporal_resolution_evidence_count"] == 1
     assert report["summary"]["source_pathology_frontier_source_witness_digest_coverage_counts"] == {"preview_digest": 1}
     assert [row["surface"] for row in report["rows"]] == [
@@ -895,6 +909,7 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
         "source_pathology_frontier_work_item",
         "sparse_slot_candidate_set_certificate",
         "mutation_boundary_proof",
+        "source_completeness_status",
         "temporal_resolution_evidence",
     ]
     temporal = report["rows"][-1]
@@ -902,7 +917,42 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     assert temporal["temporal_resolution_status"] == "unknown_effective_date"
     assert temporal["strict_disposition"] == "block"
     assert temporal["source_locator"] == "2025/78"
+    source_status = report["rows"][-2]
+    assert source_status["status"] == "incomplete"
+    assert source_status["counts"]["missing_sources"] == 1
+    assert source_status["counts"]["missing_dates"] == 2
+    assert "source_completeness_status_as_replay_authorization" in source_status["forbidden_shortcuts"]
     assert "temporal_resolution_evidence_as_unconditional_commencement_proof" in report["forbidden_shortcuts"]
+    assert "source_completeness_status_as_replay_authorization" in report["forbidden_shortcuts"]
+
+
+def test_source_completeness_status_row_records_counts_without_authority() -> None:
+    incomplete = source_completeness_status_row(
+        {
+            "statute_id": "2001/1234",
+            "source_completeness": {
+                "chain_length": 4,
+                "source_available": 3,
+                "dates_available": 4,
+            },
+        }
+    )
+    complete = source_completeness_status_row(
+        {
+            "statute_id": "2001/1234",
+            "source_completeness": {
+                "chain_length": 2,
+                "source_available": 2,
+                "dates_available": 2,
+            },
+        }
+    )
+
+    assert incomplete["status"] == "incomplete"
+    assert incomplete["counts"]["missing_sources"] == 1
+    assert incomplete["counts"]["missing_dates"] == 0
+    assert complete["status"] == "complete"
+    assert source_completeness_status_row({"source_completeness": {}}) == {}
 
 
 def test_temporal_resolution_evidence_rows_project_finland_time_findings() -> None:

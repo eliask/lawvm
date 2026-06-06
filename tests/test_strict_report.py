@@ -576,9 +576,18 @@ def test_to_json_exports_source_adjudication_agreement_residual() -> None:
     assert report["summary"]["source_lineage_source_witness_count"] == 1
     assert report["summary"]["source_lineage_source_witness_digest_coverage_counts"] == {"preview_digest": 1}
     assert report["summary"]["agreement_residual_count"] == 1
+    assert report["summary"]["source_completeness_status_count"] == 1
+    assert report["summary"]["source_completeness"] == {
+        "chain_length": 1,
+        "source_available": 1,
+        "dates_available": 1,
+        "missing_sources": 0,
+        "missing_dates": 0,
+    }
     assert [row["surface"] for row in report["rows"]] == [
         "source_lineage_source_witness",
         "agreement_residual",
+        "source_completeness_status",
     ]
 
 
