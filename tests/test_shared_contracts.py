@@ -23,6 +23,7 @@ from lawvm.core.execution_authorization import (
     validate_execution_authorization,
 )
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
+from lawvm.core.frontend_contract import FrontendCapability
 from lawvm.core.frontend_phase_surface import (
     FrontendDiagnostic,
     FrontendPhaseRow,
@@ -128,6 +129,31 @@ def test_frontend_phase_surface_marks_compatibility_output_without_replay_claims
     assert data["canonical_effect_claims"] is False
     assert data["phase_rows"][1]["authority_role"] == "compatibility_projection_not_authority"
     assert data["diagnostics"][0]["forbidden_shortcuts"] == ["drop_residual"]
+
+
+def test_frontend_capability_declares_supported_waists_without_replay_authority() -> None:
+    capability = FrontendCapability(
+        frontend_id="fi.demo",
+        jurisdiction="fi",
+        scope="clause_compiler_spine",
+        status="reference_clause_compiler",
+        has_token_tape=True,
+        has_surface_clause=True,
+        has_clause_ast=True,
+        compatibility_outputs=("ParsedOp",),
+        phase_names=("tokenize", "surface_parse", "clause_ast_lowering"),
+        caveats=("capability_declaration_does_not_authorize_replay",),
+    )
+
+    data = capability.to_dict()
+
+    assert data["frontend_id"] == "fi.demo"
+    assert data["has_token_tape"] is True
+    assert data["has_clause_ast"] is True
+    assert data["has_replay_apply"] is False
+    assert data["has_agreement_surface"] is False
+    assert data["compatibility_outputs"] == ["ParsedOp"]
+    assert data["caveats"] == ["capability_declaration_does_not_authorize_replay"]
 
 
 def test_execution_authorization_rejects_hidden_promotion() -> None:

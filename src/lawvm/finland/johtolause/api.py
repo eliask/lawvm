@@ -20,6 +20,7 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Sequence
 
+from lawvm.core.frontend_contract import FrontendCapability
 from lawvm.core.frontend_phase_surface import (
     FrontendDiagnostic,
     FrontendPhaseRow,
@@ -37,6 +38,43 @@ if TYPE_CHECKING:
         SurfaceNode as _SurfaceNodeType,
     )
     from lawvm.finland.johtolause.surface_resolve import ResolvedSurfaceClause as _ResolvedSurfaceClauseType
+
+
+FINLAND_JOHTOLAUSE_FRONTEND_ID = "finland.johtolause.parse_clause"
+FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY = FrontendCapability(
+    frontend_id=FINLAND_JOHTOLAUSE_FRONTEND_ID,
+    jurisdiction="fi",
+    scope="clause_compiler_spine",
+    status="reference_clause_compiler",
+    has_token_tape=True,
+    has_annotation_overlay=True,
+    has_surface_clause=True,
+    has_enriched_surface=True,
+    has_resolved_surface=True,
+    has_clause_ast=True,
+    has_payload_surface=False,
+    has_payload_elaboration=False,
+    has_canonical_effects=False,
+    has_replay_apply=False,
+    has_materialization=False,
+    has_agreement_surface=False,
+    compatibility_outputs=("ParsedOp",),
+    phase_names=(
+        "tokenize",
+        "scan_annotations",
+        "surface_parse",
+        "surface_enrichment",
+        "surface_resolve",
+        "clause_ast_lowering",
+        "parsed_ops_compat",
+        "residual_collection",
+    ),
+    caveats=(
+        "capability_is_scoped_to_clause_parsing_not_full_finland_replay",
+        "parsed_ops_are_compatibility_output_not_primary_authority",
+        "capability_declaration_does_not_authorize_replay",
+    ),
+)
 
 
 def infer_move_clause_target_unit_kind(
@@ -517,7 +555,7 @@ def _build_finland_clause_phase_surface(
 
     return FrontendPhaseSurface(
         jurisdiction="fi",
-        frontend="finland.johtolause.parse_clause",
+        frontend=FINLAND_JOHTOLAUSE_FRONTEND_ID,
         schema="lawvm.frontend_phase_surface.v1",
         truth_claim=(
             "ClauseAST is the primary semantic parser output; ParsedOps are a "
@@ -541,6 +579,9 @@ def _build_finland_clause_phase_surface(
         dry_run_claims=False,
         agreement_claims=False,
         detail={
+            "frontend_capability_id": FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY.frontend_id,
+            "frontend_capability_status": FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY.status,
+            "frontend_capability_scope": FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY.scope,
             "parsed_ops_are_compatibility_output": True,
             "clause_ast_is_primary_semantic_output": True,
         },
@@ -561,7 +602,7 @@ def _build_finland_frontend_diagnostics(
             FrontendDiagnostic(
                 diagnostic_id=f"fi-johtolause-{internal_error_phase}-internal-error",
                 jurisdiction="fi",
-                frontend="finland.johtolause.parse_clause",
+                frontend=FINLAND_JOHTOLAUSE_FRONTEND_ID,
                 phase=internal_error_phase,
                 severity="bug",
                 rule_id=f"fi.johtolause.{internal_error_phase}.internal_error.v1",
@@ -589,7 +630,7 @@ def _build_finland_frontend_diagnostics(
             FrontendDiagnostic(
                 diagnostic_id="fi-johtolause-residuals-present",
                 jurisdiction="fi",
-                frontend="finland.johtolause.parse_clause",
+                frontend=FINLAND_JOHTOLAUSE_FRONTEND_ID,
                 phase="residual_collection",
                 severity="warning",
                 rule_id="fi.johtolause.residuals_present.v1",
@@ -610,7 +651,7 @@ def _build_finland_frontend_diagnostics(
             FrontendDiagnostic(
                 diagnostic_id="fi-johtolause-lowering-diagnostics",
                 jurisdiction="fi",
-                frontend="finland.johtolause.parse_clause",
+                frontend=FINLAND_JOHTOLAUSE_FRONTEND_ID,
                 phase="clause_ast_lowering",
                 severity="warning",
                 rule_id="fi.johtolause.lowering_diagnostics_present.v1",

@@ -2,6 +2,7 @@ from unittest.mock import patch
 import pytest
 
 from lawvm.finland.johtolause import parse_clause
+from lawvm.finland.johtolause.api import FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY
 
 
 def test_parse_clause_collapses_multiline_johtolause_whitespace() -> None:
@@ -179,7 +180,26 @@ def test_parse_clause_exports_typed_phase_surface_authority_boundary() -> None:
     assert rows["parsed_ops_compat"]["authority_role"] == "compatibility_projection_not_authority"
     assert rows["parsed_ops_compat"]["detail"]["parsed_op_count"] == len(result.parsed_ops)
     assert data["detail"]["parsed_ops_are_compatibility_output"] is True
+    assert data["detail"]["frontend_capability_id"] == FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY.frontend_id
     assert result.typed_diagnostics == phase_surface.diagnostics
+
+
+def test_finland_johtolause_frontend_capability_is_clause_scoped() -> None:
+    data = FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY.to_dict()
+
+    assert data["frontend_id"] == "finland.johtolause.parse_clause"
+    assert data["scope"] == "clause_compiler_spine"
+    assert data["status"] == "reference_clause_compiler"
+    assert data["has_token_tape"] is True
+    assert data["has_annotation_overlay"] is True
+    assert data["has_surface_clause"] is True
+    assert data["has_resolved_surface"] is True
+    assert data["has_clause_ast"] is True
+    assert data["has_payload_surface"] is False
+    assert data["has_replay_apply"] is False
+    assert data["has_agreement_surface"] is False
+    assert data["compatibility_outputs"] == ["ParsedOp"]
+    assert "capability_declaration_does_not_authorize_replay" in data["caveats"]
 
 
 def test_parse_clause_phase_surface_records_resolver_internal_error() -> None:
