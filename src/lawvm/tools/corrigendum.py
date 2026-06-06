@@ -90,6 +90,10 @@ from lawvm.finland.corrigendum_records import (
     write_official_records,
     write_source_records,
 )
+from lawvm.finland.proof_surfaces import (
+    corrigendum_source_witness,
+    finland_corrigendum_review_evidence_surface,
+)
 from lawvm.tools.section_keys import leaf_section_label, norm_section_label
 
 # ---------------------------------------------------------------------------
@@ -2519,6 +2523,7 @@ def build_review_bundle(
                 "corrigendum_verified_rows": 0,
                 "corrigendum_types": [],
                 "corrigendum_pdfs": [],
+                "source_witnesses": [],
                 "manual_override_count": manual_counts.get(_to_db_amendment_id(amendment_id), 0),
                 "manual_template_entry_count": 0,
                 "relevance_kinds": [],
@@ -2620,6 +2625,10 @@ def build_review_bundle(
         amendment["corrigendum_pdfs"] = sorted(
             {Path(str(row.get("source_pdf") or "")).name for row in matched_rows if row.get("source_pdf")}
         )
+        amendment["source_witnesses"] = sorted(
+            (corrigendum_source_witness(row).to_dict() for row in matched_rows if row.get("source_pdf")),
+            key=lambda item: str(item.get("locator") or ""),
+        )
         template_bundle = build_manual_template_bundle(
             amendment["db_amendment_id"],
             db_path=dbp,
@@ -2627,7 +2636,7 @@ def build_review_bundle(
         )
         amendment["manual_template_entry_count"] = int(template_bundle.get("entry_count", 0))
 
-    return {
+    bundle = {
         "statute_id": statute_id,
         "mode": mode,
         "title": str(result.title or ""),
@@ -2647,6 +2656,8 @@ def build_review_bundle(
         ),
         "unblamed_sections": unblamed_sections,
     }
+    bundle["evidence_surface_report"] = finland_corrigendum_review_evidence_surface(bundle)
+    return bundle
 
 
 def list_open_manual_candidates(

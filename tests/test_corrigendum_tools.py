@@ -295,6 +295,17 @@ def test_corrigendum_review_prints_grouped_amendment_evidence(capsys, monkeypatc
 def test_build_review_bundle_links_source_pathology_amendment_to_current_section(
     monkeypatch, tmp_path: Path
 ) -> None:
+    official_path = tmp_path / "corrigendum_official_fi.jsonl"
+    official_path.write_text(
+        '{"statute_id":"1995/1598","amendment_id":"1334/2004","lang":"fi",'
+        '"source_pdf":"akn/fi/act/statute-consolidated/1995/1598/media/corrigenda/sk20041334_1.pdf",'
+        '"pdf_name":"sk20041334_1.pdf","date_published":"1.1.2005",'
+        '"correction_item_count":1,"sha256":"'
+        + ("a" * 64)
+        + '","verified_in_source":1,"correction_type":"johtolause"}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(corr_tools, "_MANUAL_YAML", tmp_path / "corrigendum_manual.yaml")
     monkeypatch.setattr(
         oracle_check,
         "_classify_statute",
@@ -329,7 +340,7 @@ def test_build_review_bundle_links_source_pathology_amendment_to_current_section
     bundle = corr_tools.build_review_bundle(
         "1995/1598",
         mode="legal_pit",
-        db_path=tmp_path / "missing.db",
+        db_path=official_path,
     )
 
     assert len(bundle["amendments"]) == 1
@@ -345,6 +356,16 @@ def test_build_review_bundle_links_source_pathology_amendment_to_current_section
             "why": "DESTRUCTIVE_SHAPE_LOSS_RISK 48 §",
         }
     ]
+    assert len(amendment["source_witnesses"]) == 1
+    assert amendment["source_witnesses"][0]["source_role"] == "finland_corrigendum_pdf"
+    assert amendment["source_witnesses"][0]["digest"] == "a" * 64
+    report = bundle["evidence_surface_report"]
+    assert report["report_kind"] == "finland_corrigendum_review"
+    assert report["replay_claims"] is False
+    assert report["summary"]["corrigendum_source_witness_count"] == 1
+    assert report["summary"]["corrigendum_source_witness_digest_coverage_counts"] == {
+        "artifact_and_preview_digest": 1
+    }
 
 
 def test_corrigendum_open_manual_prints_rows(capsys, monkeypatch) -> None:

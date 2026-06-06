@@ -927,6 +927,83 @@ def finland_frontier_proof_evidence_surface(
     ).to_dict()
 
 
+def finland_corrigendum_review_evidence_surface(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Wrap Finland corrigendum review JSON in the shared evidence envelope."""
+
+    amendments = _mapping_sequence(payload.get("amendments"))
+    source_pathologies = _mapping_sequence(payload.get("source_pathologies"))
+    unblamed_sections = _mapping_sequence(payload.get("unblamed_sections"))
+    witnesses = tuple(
+        witness
+        for amendment in amendments
+        for witness in _mapping_sequence(amendment.get("source_witnesses"))
+    )
+    rows = tuple(
+        (
+            *({**dict(row), "surface": "corrigendum_source_witness"} for row in witnesses),
+            *({**dict(row), "surface": "source_pathology"} for row in source_pathologies),
+            *({**dict(row), "surface": "corrigendum_review_amendment"} for row in amendments),
+            *({**dict(row), "surface": "unblamed_section"} for row in unblamed_sections),
+        )
+    )
+    summary = {
+        "amendment_count": len(amendments),
+        "source_pathology_count": len(source_pathologies),
+        "unblamed_section_count": len(unblamed_sections),
+        "contingent_effective_source_count": len(_string_sequence(payload.get("contingent_effective_sources"))),
+        "corrigendum_source_witness_count": len(witnesses),
+        "corrigendum_source_witness_digest_coverage_counts": _source_witness_row_digest_coverage_counts(witnesses),
+        "corrigendum_db_row_count": sum(int(amendment.get("corrigendum_db_rows") or 0) for amendment in amendments),
+        "corrigendum_no_match_row_count": sum(
+            int(amendment.get("corrigendum_no_match_rows") or 0) for amendment in amendments
+        ),
+        "corrigendum_verified_row_count": sum(
+            int(amendment.get("corrigendum_verified_rows") or 0) for amendment in amendments
+        ),
+        "manual_override_count": sum(int(amendment.get("manual_override_count") or 0) for amendment in amendments),
+        "manual_template_entry_count": sum(
+            int(amendment.get("manual_template_entry_count") or 0) for amendment in amendments
+        ),
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction="fi",
+        report_kind="finland_corrigendum_review",
+        schema="lawvm.finland_corrigendum_review.v1",
+        truth_claim="finland_corrigendum_review_diagnostics",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=True,
+        summary=summary,
+        filters={
+            "statute_id": str(payload.get("statute_id") or ""),
+            "mode": str(payload.get("mode") or ""),
+        },
+        filtered_summary=summary,
+        rows=rows,
+        rows_truncated=False,
+        detail={
+            "safe_default": "treat_corrigendum_review_as_source_diagnostics_not_replay_authorization",
+            "forbidden_shortcuts": (
+                "corrigendum_review_as_replay_authorization",
+                "corrigendum_source_witness_as_patch_application",
+                "source_pathology_as_corrigendum_proof",
+                "manual_template_count_as_manual_claim",
+                "oracle_score_as_source_truth",
+            ),
+            "included_surfaces": (
+                "corrigendum_source_witness",
+                "source_pathology",
+                "corrigendum_review_amendment",
+                "unblamed_section",
+            ),
+        },
+    ).to_dict()
+
+
 def _pathology_row(pathology: SourcePathology | Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(pathology, SourcePathology):
         return {

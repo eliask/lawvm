@@ -7,6 +7,7 @@ from lawvm.finland.proof_surfaces import (
     consolidated_artifact_source_witness,
     corrigendum_source_witness,
     finlex_html_topology_source_witness,
+    finland_corrigendum_review_evidence_surface,
     finland_evidence_bundle_evidence_surface,
     finland_frontier_proof_evidence_surface,
     finland_strict_report_evidence_surface,
@@ -229,6 +230,62 @@ def test_finland_frontier_proof_report_projects_shared_envelope() -> None:
     assert report["summary"]["proof_kinds"] == {"no_strong_claim": 1}
     assert report["rows"][0]["surface"] == "frontier_proof_row"
     assert "frontier_rank_as_replay_authorization" in report["forbidden_shortcuts"]
+
+
+def test_finland_corrigendum_review_projects_source_diagnostic_envelope() -> None:
+    witness = corrigendum_source_witness(
+        {
+            "source_pdf": "akn/fi/act/statute-consolidated/1999/132/media/corrigenda/sk20140041_1.pdf",
+            "pdf_name": "sk20140041_1.pdf",
+            "statute_id": "1999/132",
+            "amendment_id": "41/2013",
+            "date_published": "6.3.2014",
+            "correction_item_count": 1,
+            "sha256": "d97b0330313cd3cd12358381380c216a696d520df7205e8e0247492c7c03f97e",
+        }
+    ).to_dict()
+
+    report = finland_corrigendum_review_evidence_surface(
+        {
+            "statute_id": "1999/132",
+            "mode": "legal_pit",
+            "source_pathologies": [{"code": "DESTRUCTIVE_SHAPE_LOSS_RISK"}],
+            "contingent_effective_sources": ["41/2013"],
+            "amendments": [
+                {
+                    "amendment_id": "41/2013",
+                    "corrigendum_db_rows": 2,
+                    "corrigendum_no_match_rows": 1,
+                    "corrigendum_verified_rows": 1,
+                    "manual_override_count": 0,
+                    "manual_template_entry_count": 1,
+                    "source_witnesses": [witness],
+                }
+            ],
+            "unblamed_sections": [{"section": "section:4", "diagnosis": "REPLAY_MISSING"}],
+        }
+    )
+
+    assert report["jurisdiction"] == "fi"
+    assert report["report_kind"] == "finland_corrigendum_review"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is True
+    assert report["summary"]["amendment_count"] == 1
+    assert report["summary"]["source_pathology_count"] == 1
+    assert report["summary"]["corrigendum_source_witness_count"] == 1
+    assert report["summary"]["corrigendum_source_witness_digest_coverage_counts"] == {
+        "artifact_and_preview_digest": 1
+    }
+    assert {row["surface"] for row in report["rows"]} == {
+        "corrigendum_review_amendment",
+        "corrigendum_source_witness",
+        "source_pathology",
+        "unblamed_section",
+    }
+    assert "corrigendum_source_witness_as_patch_application" in report["forbidden_shortcuts"]
 
 
 def test_mutation_boundary_reports_project_shared_proof_rows() -> None:
