@@ -588,6 +588,11 @@ def test_to_json_exports_source_adjudication_agreement_residual() -> None:
     assert report["summary"]["source_lineage_source_witness_count"] == 1
     assert report["summary"]["source_lineage_source_witness_digest_coverage_counts"] == {"preview_digest": 1}
     assert report["summary"]["agreement_residual_count"] == 1
+    assert report["summary"]["agreement_materialization_kind"] == "legal_text_state"
+    assert (
+        report["summary"]["agreement_comparison_materialization_kind"]
+        == "official_consolidation_view"
+    )
     assert report["summary"]["source_completeness_status_count"] == 1
     assert report["summary"]["source_completeness"] == {
         "chain_length": 1,

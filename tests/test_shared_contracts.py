@@ -1140,6 +1140,8 @@ def test_agreement_surface_report_projects_residuals_without_replay_claims() -> 
         materialization_id="fi:2001/1234:materialization",
         comparison_target_id="finlex:2001/1234",
         comparison_kind="residual_classification",
+        materialization_kind="legal_text_state",
+        comparison_materialization_kind="official_consolidation_view",
         exact_ratio=0.99,
     )
     report = agreement_surface_evidence_report(
@@ -1153,9 +1155,15 @@ def test_agreement_surface_report_projects_residuals_without_replay_claims() -> 
     assert report_data["agreement_claims"] is True
     assert report_data["replay_claims"] is False
     assert report_data["summary"]["agreement_residual_count"] == 1
+    assert report_data["summary"]["materialization_kind"] == "legal_text_state"
+    assert (
+        report_data["summary"]["comparison_materialization_kind"]
+        == "official_consolidation_view"
+    )
     assert report_data["summary"]["residual_family_counts"] == {
         "non_commensurable_surface": 1
     }
+    assert report_data["filters"]["materialization_kind"] == "legal_text_state"
     assert report_data["rows"][0]["surface"] == "agreement_residual"
     assert report_data["rows"][0]["replay_authorized"] is False
     assert proof_surface["surface_kind"] == "finland_agreement_surface"
@@ -1174,6 +1182,19 @@ def test_agreement_residual_rejects_unknown_family() -> None:
             rule_id="bad_rule",
             safe_default="classify",
             forbidden_shortcuts=("shortcut",),
+        )
+
+
+def test_agreement_surface_rejects_unknown_materialization_kind() -> None:
+    with pytest.raises(ValueError, match="materialization kind"):
+        agreement_surface_from_residuals(
+            (),
+            jurisdiction="fi",
+            agreement_surface="surface",
+            materialization_id="mat",
+            comparison_target_id="target",
+            comparison_kind="compare",
+            materialization_kind="raw_oracle_text",
         )
 
 

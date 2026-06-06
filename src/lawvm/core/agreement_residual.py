@@ -33,8 +33,18 @@ AgreementResidualStatus = Literal[
     "error",
 ]
 
+MaterializationKind = Literal[
+    "legal_text_state",
+    "official_consolidation_view",
+    "editorial_display_view",
+    "proposed_future_branch",
+    "source_as_enacted",
+    "unknown",
+]
+
 _VALID_FAMILIES = frozenset(AgreementResidualFamily.__args__)
 _VALID_STATUSES = frozenset(AgreementResidualStatus.__args__)
+_VALID_MATERIALIZATION_KINDS = frozenset(MaterializationKind.__args__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +157,8 @@ class AgreementSurface:
     materialization_id: str
     comparison_target_id: str
     comparison_kind: str
+    materialization_kind: MaterializationKind = "legal_text_state"
+    comparison_materialization_kind: MaterializationKind = "unknown"
     profile_id: str = ""
     exact_ratio: float | None = None
     residuals: tuple[AgreementResidual, ...] = ()
@@ -165,6 +177,20 @@ class AgreementSurface:
                 field_name,
                 _required_string(field_name, getattr(self, field_name)),
             )
+        materialization_kind = _materialization_kind(
+            "materialization_kind",
+            self.materialization_kind,
+        )
+        comparison_materialization_kind = _materialization_kind(
+            "comparison_materialization_kind",
+            self.comparison_materialization_kind,
+        )
+        object.__setattr__(self, "materialization_kind", materialization_kind)
+        object.__setattr__(
+            self,
+            "comparison_materialization_kind",
+            comparison_materialization_kind,
+        )
         object.__setattr__(self, "profile_id", str(self.profile_id or ""))
         if self.exact_ratio is not None:
             if not isinstance(self.exact_ratio, int | float) or isinstance(self.exact_ratio, bool):
@@ -185,6 +211,8 @@ class AgreementSurface:
             "materialization_id": self.materialization_id,
             "comparison_target_id": self.comparison_target_id,
             "comparison_kind": self.comparison_kind,
+            "materialization_kind": self.materialization_kind,
+            "comparison_materialization_kind": self.comparison_materialization_kind,
             "profile_id": self.profile_id,
             "exact_ratio": self.exact_ratio,
             "residuals": [residual.to_dict() for residual in self.residuals],
@@ -199,6 +227,8 @@ def agreement_surface_from_residuals(
     materialization_id: str,
     comparison_target_id: str,
     comparison_kind: str,
+    materialization_kind: MaterializationKind = "legal_text_state",
+    comparison_materialization_kind: MaterializationKind = "unknown",
     surface_id: str = "",
     profile_id: str = "",
     exact_ratio: float | None = None,
@@ -217,6 +247,8 @@ def agreement_surface_from_residuals(
         materialization_id=materialization_id,
         comparison_target_id=comparison_target_id,
         comparison_kind=comparison_kind,
+        materialization_kind=materialization_kind,
+        comparison_materialization_kind=comparison_materialization_kind,
         profile_id=profile_id,
         exact_ratio=exact_ratio,
         residuals=typed_residuals,
@@ -239,6 +271,8 @@ def agreement_surface_evidence_report(
         "residual_status_counts": _counts(residual.status for residual in typed_surface.residuals),
         "agreement_surface": typed_surface.agreement_surface,
         "comparison_kind": typed_surface.comparison_kind,
+        "materialization_kind": typed_surface.materialization_kind,
+        "comparison_materialization_kind": typed_surface.comparison_materialization_kind,
         "exact_ratio": typed_surface.exact_ratio,
         "claim_flags": {
             "replay_claims": False,
@@ -262,6 +296,8 @@ def agreement_surface_evidence_report(
         filters={
             "agreement_surface": typed_surface.agreement_surface,
             "comparison_kind": typed_surface.comparison_kind,
+            "materialization_kind": typed_surface.materialization_kind,
+            "comparison_materialization_kind": typed_surface.comparison_materialization_kind,
             "profile": typed_surface.profile_id,
         },
         filtered_summary=summary,
@@ -292,6 +328,8 @@ def _agreement_surface(surface: AgreementSurface | Mapping[str, Any]) -> Agreeme
         materialization_id=str(surface.get("materialization_id") or ""),
         comparison_target_id=str(surface.get("comparison_target_id") or ""),
         comparison_kind=str(surface.get("comparison_kind") or ""),
+        materialization_kind=str(surface.get("materialization_kind") or "legal_text_state"),
+        comparison_materialization_kind=str(surface.get("comparison_materialization_kind") or "unknown"),
         surface_id=str(surface.get("surface_id") or ""),
         profile_id=str(surface.get("profile_id") or ""),
         exact_ratio=surface.get("exact_ratio") if surface.get("exact_ratio") is not None else None,
@@ -335,6 +373,16 @@ def _required_string(field_name: str, value: Any) -> str:
     text = str(value or "").strip()
     if not text:
         raise ValueError(f"AgreementResidual.{field_name} is required")
+    return text
+
+
+def _materialization_kind(field_name: str, value: Any) -> MaterializationKind:
+    text = _required_string(field_name, value)
+    if text not in _VALID_MATERIALIZATION_KINDS:
+        raise ValueError(
+            "AgreementSurface.materialization kind must be one of "
+            f"{sorted(_VALID_MATERIALIZATION_KINDS)}"
+        )
     return text
 
 

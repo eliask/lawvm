@@ -1117,6 +1117,11 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     assert report["summary"]["agreement_residual_family_counts"] == {
         "non_commensurable_surface": 1
     }
+    assert report["summary"]["agreement_materialization_kind"] == "legal_text_state"
+    assert (
+        report["summary"]["agreement_comparison_materialization_kind"]
+        == "official_consolidation_view"
+    )
     assert report["summary"]["mutation_boundary_proof_count"] == 1
     assert report["summary"]["source_completeness_status_count"] == 1
     assert report["summary"]["source_completeness"] == {

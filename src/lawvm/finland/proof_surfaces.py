@@ -969,6 +969,12 @@ def finland_strict_report_evidence_surface(
         "agreement_residual_status_counts": dict(
             agreement_report_summary.get("residual_status_counts", {})
         ),
+        "agreement_materialization_kind": str(
+            agreement_report_summary.get("materialization_kind") or ""
+        ),
+        "agreement_comparison_materialization_kind": str(
+            agreement_report_summary.get("comparison_materialization_kind") or ""
+        ),
         "mutation_boundary_proof_count": len(mutation_boundary_proofs),
         "source_completeness_status_count": 1 if source_completeness_row else 0,
         "source_completeness": source_completeness_row.get("counts", {}) if source_completeness_row else {},
@@ -1033,6 +1039,8 @@ def _strict_report_agreement_surface_rows(
         materialization_id=f"fi:{statute_id}:materialization",
         comparison_target_id=f"finlex:{statute_id}",
         comparison_kind="residual_classification",
+        materialization_kind="legal_text_state",
+        comparison_materialization_kind="official_consolidation_view",
         profile_id=str(payload.get("profile") or ""),
     )
     report = agreement_surface_evidence_report(

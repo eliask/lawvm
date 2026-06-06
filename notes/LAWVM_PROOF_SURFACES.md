@@ -377,6 +377,10 @@ publication DB row vs verified manual review
 Rules:
 
 - The agreement surface must be named.
+- The agreement surface should name both materialization kinds: the replay side
+  might be `legal_text_state`, while the compared witness might be
+  `official_consolidation_view`, `editorial_display_view`,
+  `proposed_future_branch`, or `source_as_enacted`.
 - A residual is not a mutation instruction.
 - An agreement-surface report may set `agreement_claims=true`, but that means
   only "this report is a comparison/adjudication surface"; it is not replay
