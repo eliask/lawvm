@@ -1705,10 +1705,20 @@ def _diag_num_text(el) -> str:
 
 
 def _bench_tail_proof_summary(statute_id: str) -> dict[str, object]:
+    from lawvm.core.compile_metadata_default import build_default_compile_metadata
     from lawvm.tools.evidence import build_evidence_bundle, _display_primary_tier
 
     with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-        bundle = build_evidence_bundle(statute_id, mode="legal_pit", include_bisect=True)
+        bundle = build_evidence_bundle(
+            statute_id,
+            mode="legal_pit",
+            include_bisect=True,
+            compile_metadata=build_default_compile_metadata(
+                jurisdiction="fi",
+                source_bundle_hash="sha256:bench-compare",
+                build_id="cli.bench.compare.fi",
+            ),
+        )
     if bundle.get("error"):
         return {
             "primary_proof_tier": "ERROR",

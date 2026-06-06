@@ -124,6 +124,15 @@ def run_fi_proposal_history(
             "c.finlex_state",
             "r.target_provision_ref_str AS provisions_touched",
         )
+        group_cols = (
+            "c.he_id",
+            "c.he_year",
+            "c.he_number",
+            "c.ministry_show_as",
+            "c.title",
+            "c.finlex_state",
+            "r.target_provision_ref_str",
+        )
     else:
         cols = (
             "c.he_id",
@@ -132,8 +141,17 @@ def run_fi_proposal_history(
             "c.title",
             "c.finlex_state",
         )
+        group_cols = (
+            "c.he_id",
+            "c.he_year",
+            "c.he_number",
+            "c.ministry_show_as",
+            "c.title",
+            "c.finlex_state",
+        )
 
     select_clause = ", ".join(cols)
+    group_by_clause = "GROUP BY " + ", ".join(group_cols)
 
     # Build WHERE conditions using parameter binding where possible.
     # DuckDB supports positional parameters with ?; we collect them in order.
@@ -170,6 +188,9 @@ def run_fi_proposal_history(
         f"FROM {refs_expr} r "
         f"JOIN {corpus_expr} c ON r.he_id = c.he_id "
         f"{where_clause} "
+        # One HE can touch multiple provisions in the same statute. Collapse
+        # those duplicate HE rows unless provisions are part of the output.
+        f"{group_by_clause} "
         f"ORDER BY c.he_year DESC, c.he_number DESC "
         f"{limit_clause}"
     )
