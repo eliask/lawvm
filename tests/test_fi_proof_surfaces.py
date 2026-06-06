@@ -945,6 +945,16 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
                 "source_available": 2,
                 "dates_available": 1,
             },
+            "source_pathologies": [
+                {
+                    "code": "DESTRUCTIVE_SHAPE_LOSS_RISK",
+                    "message": "source pathology",
+                    "source_statute": "2001/748",
+                    "target_unit_kind": "section",
+                    "target_label": "6 §",
+                    "detail": {"diagnostic_reason": "partial_body_only"},
+                }
+            ],
             "source_pathology_execution_authorizations": [
                 {"authorization_status": "source_pathology_not_replay_authority"}
             ],
@@ -958,6 +968,24 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
                 }
             ],
             "sparse_slot_candidate_set_certificates": [{"candidate_set_kind": "fi_sparse_payload_slot_assignment"}],
+            "agreement_residuals": [
+                {
+                    "residual_id": "fi:2001/1234:noncommensurable",
+                    "jurisdiction": "fi",
+                    "agreement_surface": "finlex_html_oracle_compare",
+                    "family": "non_commensurable_surface",
+                    "status": "residual",
+                    "owner_phase": "oracle_adjudication",
+                    "rule_id": "fi_finlex_html_non_commensurable_surface",
+                    "source_artifact_id": "2001/1234",
+                    "replay_count": 0,
+                    "oracle_count": 0,
+                    "missing_proofs": ["compare_projection_review"],
+                    "safe_default": "classify_without_replay_promotion",
+                    "forbidden_shortcuts": ["finlex_oracle_as_source_truth"],
+                    "detail": {"html_noncommensurable_reason": "oracle_extra_scoped_labels"},
+                }
+            ],
             "mutation_boundary_proofs": [
                 {
                     "proof_id": "fi:2001/1234:mutation-boundary:1:op-1",
@@ -994,8 +1022,14 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     assert report["canonical_effect_claims"] is True
     assert report["agreement_claims"] is False
     assert report["summary"]["canonical_op_count"] == 2
+    assert report["summary"]["source_pathology_count"] == 1
+    assert report["summary"]["source_pathology_kind_counts"] == {"DESTRUCTIVE_SHAPE_LOSS_RISK": 1}
     assert report["summary"]["source_pathology_frontier_work_item_count"] == 1
     assert report["summary"]["sparse_slot_candidate_set_certificate_count"] == 1
+    assert report["summary"]["agreement_residual_count"] == 1
+    assert report["summary"]["agreement_residual_family_counts"] == {
+        "non_commensurable_surface": 1
+    }
     assert report["summary"]["mutation_boundary_proof_count"] == 1
     assert report["summary"]["source_completeness_status_count"] == 1
     assert report["summary"]["source_completeness"] == {
@@ -1009,27 +1043,36 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     assert report["summary"]["recovery_execution_authorization_count"] == 1
     assert report["summary"]["source_pathology_frontier_source_witness_digest_coverage_counts"] == {"preview_digest": 1}
     assert [row["surface"] for row in report["rows"]] == [
+        "source_pathology",
         "source_pathology_execution_authorization",
         "source_pathology_frontier_work_item",
         "sparse_slot_candidate_set_certificate",
+        "agreement_residual",
         "mutation_boundary_proof",
         "source_completeness_status",
         "temporal_resolution_evidence",
         "recovery_execution_authorization",
     ]
-    temporal = report["rows"][-2]
+    rows_by_surface = {row["surface"]: row for row in report["rows"]}
+    source_pathology = rows_by_surface["source_pathology"]
+    assert source_pathology["replay_authorized"] is False
+    assert source_pathology["affected_phase"] == "replay_apply"
+    agreement = rows_by_surface["agreement_residual"]
+    assert agreement["replay_authorized"] is False
+    assert agreement["family"] == "non_commensurable_surface"
+    temporal = rows_by_surface["temporal_resolution_evidence"]
     assert temporal["family"] == "temporal_recovery"
     assert temporal["temporal_resolution_status"] == "unknown_effective_date"
     assert temporal["strict_disposition"] == "block"
     assert temporal["source_locator"] == "2025/78"
-    recovery = report["rows"][-1]
+    recovery = rows_by_surface["recovery_execution_authorization"]
     assert recovery["authorization_status"] == "strict_recovery_blocked"
     assert recovery["replay_authorized"] is False
     assert recovery["owner_phase"] == "replay_apply"
     assert recovery["finding_kind"] == "APPLY.UNCOVERED_BODY_RECOVERY"
     assert recovery["family"] == "uncovered_body_recovery"
     assert "recovery_projection_as_replay_authorization" in recovery["forbidden_shortcuts"]
-    source_status = report["rows"][-3]
+    source_status = rows_by_surface["source_completeness_status"]
     assert source_status["status"] == "incomplete"
     assert source_status["counts"]["missing_sources"] == 1
     assert source_status["counts"]["missing_dates"] == 2

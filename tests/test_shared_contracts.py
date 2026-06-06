@@ -2,7 +2,12 @@ from typing import Any, cast
 
 import pytest
 
-from lawvm.core.agreement_residual import AgreementResidual
+from lawvm.core.agreement_residual import (
+    AgreementResidual,
+    AgreementSurface,
+    agreement_surface_evidence_report,
+    agreement_surface_from_residuals,
+)
 from lawvm.core.candidate_set_certificate import (
     CANDIDATE_SET_COMPLETE,
     CANDIDATE_SET_TRUNCATED,
@@ -992,6 +997,50 @@ def test_agreement_residual_classifies_without_replay_promotion() -> None:
     assert data["status"] == "frontier"
     assert data["missing_proofs"] == ["commensurable_oracle_surface"]
     assert "oracle_score_as_source_truth" in data["forbidden_shortcuts"]
+
+
+def test_agreement_surface_report_projects_residuals_without_replay_claims() -> None:
+    residual = AgreementResidual(
+        residual_id="fi:2001/1234:oracle-extra-labels",
+        jurisdiction="fi",
+        agreement_surface="finlex_html_oracle_compare",
+        family="non_commensurable_surface",
+        status="residual",
+        owner_phase="oracle_adjudication",
+        rule_id="fi_finlex_html_non_commensurable_surface",
+        source_artifact_id="2001/1234",
+        missing_proofs=("compare_projection_review",),
+        safe_default="classify_without_replay_promotion",
+        forbidden_shortcuts=("finlex_oracle_as_source_truth",),
+    )
+
+    surface = agreement_surface_from_residuals(
+        (residual,),
+        jurisdiction="fi",
+        agreement_surface="finlex_html_oracle_compare",
+        materialization_id="fi:2001/1234:materialization",
+        comparison_target_id="finlex:2001/1234",
+        comparison_kind="residual_classification",
+        exact_ratio=0.99,
+    )
+    report = agreement_surface_evidence_report(
+        surface,
+        report_kind="finland_agreement_surface",
+    )
+    report_data = report.to_dict()
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert isinstance(surface, AgreementSurface)
+    assert report_data["agreement_claims"] is True
+    assert report_data["replay_claims"] is False
+    assert report_data["summary"]["agreement_residual_count"] == 1
+    assert report_data["summary"]["residual_family_counts"] == {
+        "non_commensurable_surface": 1
+    }
+    assert report_data["rows"][0]["surface"] == "agreement_residual"
+    assert report_data["rows"][0]["replay_authorized"] is False
+    assert proof_surface["surface_kind"] == "finland_agreement_surface"
+    assert proof_surface["rows"][0]["row_kind"] == "agreement_residual"
 
 
 def test_agreement_residual_rejects_unknown_family() -> None:

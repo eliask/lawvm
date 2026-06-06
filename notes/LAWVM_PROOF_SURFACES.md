@@ -340,6 +340,7 @@ Rules:
 ## 11. AgreementResidual
 
 An `AgreementResidual` classifies disagreement between named surfaces.
+An `AgreementSurface` is the report/read-model envelope over those residuals.
 
 Examples:
 
@@ -355,6 +356,9 @@ Rules:
 
 - The agreement surface must be named.
 - A residual is not a mutation instruction.
+- An agreement-surface report may set `agreement_claims=true`, but that means
+  only "this report is a comparison/adjudication surface"; it is not replay
+  authority.
 - Oracle text is not source truth unless the jurisdiction makes it so.
 - Agreement classifications should separate replay bugs, source pathologies,
   oracle/editorial pathologies, manual frontiers, and non-commensurable views.

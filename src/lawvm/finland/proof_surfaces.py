@@ -12,7 +12,11 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Mapping
 
-from lawvm.core.agreement_residual import AgreementResidual
+from lawvm.core.agreement_residual import (
+    AgreementResidual,
+    agreement_surface_evidence_report,
+    agreement_surface_from_residuals,
+)
 from lawvm.core.candidate_set_certificate import CandidateSetCertificate
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
@@ -880,6 +884,10 @@ def finland_strict_report_evidence_surface(
     sparse_certificates = _mapping_sequence(payload.get("sparse_slot_candidate_set_certificates"))
     source_lineage_witnesses = _mapping_sequence(payload.get("source_lineage_source_witnesses"))
     agreement_residuals = _mapping_sequence(payload.get("agreement_residuals"))
+    agreement_report_rows, agreement_report_summary = _strict_report_agreement_surface_rows(
+        agreement_residuals,
+        payload=payload,
+    )
     mutation_boundary_proofs = _mapping_sequence(payload.get("mutation_boundary_proofs"))
     projection_rows = _mapping_sequence(payload.get("projection_rows"))
     failed_ops = _mapping_sequence(payload.get("failed_ops"))
@@ -912,7 +920,7 @@ def finland_strict_report_evidence_surface(
             ),
             *({"surface": "sparse_slot_candidate_set_certificate", **dict(row)} for row in sparse_certificates),
             *({"surface": "source_lineage_source_witness", **dict(row)} for row in source_lineage_witnesses),
-            *({"surface": "agreement_residual", **dict(row)} for row in agreement_residuals),
+            *({"surface": "agreement_residual", **dict(row)} for row in agreement_report_rows),
             *({"surface": "mutation_boundary_proof", **dict(row)} for row in mutation_boundary_proofs),
             *(({"surface": "source_completeness_status", **source_completeness_row},) if source_completeness_row else ()),
             *({"surface": "temporal_resolution_evidence", **dict(row)} for row in temporal_resolution_rows),
@@ -934,7 +942,13 @@ def finland_strict_report_evidence_surface(
         "source_pathology_frontier_work_item_count": len(source_pathology_frontier_items),
         "sparse_slot_candidate_set_certificate_count": len(sparse_certificates),
         "source_lineage_source_witness_count": len(source_lineage_witnesses),
-        "agreement_residual_count": len(agreement_residuals),
+        "agreement_residual_count": len(agreement_report_rows),
+        "agreement_residual_family_counts": dict(
+            agreement_report_summary.get("residual_family_counts", {})
+        ),
+        "agreement_residual_status_counts": dict(
+            agreement_report_summary.get("residual_status_counts", {})
+        ),
         "mutation_boundary_proof_count": len(mutation_boundary_proofs),
         "source_completeness_status_count": 1 if source_completeness_row else 0,
         "source_completeness": source_completeness_row.get("counts", {}) if source_completeness_row else {},
@@ -982,6 +996,30 @@ def finland_strict_report_evidence_surface(
             ),
         },
     ).to_dict()
+
+
+def _strict_report_agreement_surface_rows(
+    agreement_residuals: tuple[Mapping[str, Any], ...],
+    *,
+    payload: Mapping[str, Any],
+) -> tuple[tuple[Mapping[str, Any], ...], Mapping[str, Any]]:
+    if not agreement_residuals:
+        return (), {}
+    statute_id = str(payload.get("statute_id") or "unknown")
+    surface = agreement_surface_from_residuals(
+        agreement_residuals,
+        jurisdiction="fi",
+        agreement_surface="finlex_oracle_compare",
+        materialization_id=f"fi:{statute_id}:materialization",
+        comparison_target_id=f"finlex:{statute_id}",
+        comparison_kind="residual_classification",
+        profile_id=str(payload.get("profile") or ""),
+    )
+    report = agreement_surface_evidence_report(
+        surface,
+        report_kind="finland_agreement_surface",
+    ).to_dict()
+    return _mapping_sequence(report.get("rows")), dict(report.get("summary") or {})
 
 
 def source_completeness_status_row(payload: Mapping[str, Any]) -> dict[str, Any]:

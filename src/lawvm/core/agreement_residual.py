@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping
 
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
 
 
@@ -136,6 +137,200 @@ class AgreementResidual:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class AgreementSurface:
+    """Comparison surface over replay/materialization and an external witness."""
+
+    surface_id: str
+    jurisdiction: str
+    agreement_surface: str
+    materialization_id: str
+    comparison_target_id: str
+    comparison_kind: str
+    profile_id: str = ""
+    exact_ratio: float | None = None
+    residuals: tuple[AgreementResidual, ...] = ()
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "surface_id",
+            "jurisdiction",
+            "agreement_surface",
+            "materialization_id",
+            "comparison_target_id",
+            "comparison_kind",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _required_string(field_name, getattr(self, field_name)),
+            )
+        object.__setattr__(self, "profile_id", str(self.profile_id or ""))
+        if self.exact_ratio is not None:
+            if not isinstance(self.exact_ratio, int | float) or isinstance(self.exact_ratio, bool):
+                raise ValueError("AgreementSurface.exact_ratio must be numeric when present")
+            if self.exact_ratio < 0 or self.exact_ratio > 1:
+                raise ValueError("AgreementSurface.exact_ratio must be between 0 and 1")
+            object.__setattr__(self, "exact_ratio", float(self.exact_ratio))
+        residuals = tuple(self.residuals)
+        if not all(isinstance(residual, AgreementResidual) for residual in residuals):
+            raise ValueError("AgreementSurface.residuals must contain AgreementResidual objects")
+        object.__setattr__(self, "residuals", residuals)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "surface_id": self.surface_id,
+            "jurisdiction": self.jurisdiction,
+            "agreement_surface": self.agreement_surface,
+            "materialization_id": self.materialization_id,
+            "comparison_target_id": self.comparison_target_id,
+            "comparison_kind": self.comparison_kind,
+            "profile_id": self.profile_id,
+            "exact_ratio": self.exact_ratio,
+            "residuals": [residual.to_dict() for residual in self.residuals],
+        }
+
+
+def agreement_surface_from_residuals(
+    residuals: tuple[AgreementResidual | Mapping[str, Any], ...],
+    *,
+    jurisdiction: str,
+    agreement_surface: str,
+    materialization_id: str,
+    comparison_target_id: str,
+    comparison_kind: str,
+    surface_id: str = "",
+    profile_id: str = "",
+    exact_ratio: float | None = None,
+) -> AgreementSurface:
+    """Build a typed agreement surface from already-classified residual rows."""
+
+    typed_residuals = tuple(_residual(row) for row in residuals)
+    default_surface_id = (
+        f"{jurisdiction}:agreement:{agreement_surface}:"
+        f"{materialization_id}:{comparison_target_id}"
+    )
+    return AgreementSurface(
+        surface_id=surface_id or default_surface_id,
+        jurisdiction=jurisdiction,
+        agreement_surface=agreement_surface,
+        materialization_id=materialization_id,
+        comparison_target_id=comparison_target_id,
+        comparison_kind=comparison_kind,
+        profile_id=profile_id,
+        exact_ratio=exact_ratio,
+        residuals=typed_residuals,
+    )
+
+
+def agreement_surface_evidence_report(
+    surface: AgreementSurface | Mapping[str, Any],
+    *,
+    report_kind: str = "agreement_surface",
+) -> EvidenceSurfaceReport:
+    """Project an agreement surface into the shared evidence-report envelope."""
+
+    typed_surface = _agreement_surface(surface)
+    rows = tuple(_agreement_residual_report_row(residual) for residual in typed_surface.residuals)
+    summary = {
+        "agreement_surface_count": 1,
+        "agreement_residual_count": len(typed_surface.residuals),
+        "residual_family_counts": _counts(residual.family for residual in typed_surface.residuals),
+        "residual_status_counts": _counts(residual.status for residual in typed_surface.residuals),
+        "agreement_surface": typed_surface.agreement_surface,
+        "comparison_kind": typed_surface.comparison_kind,
+        "exact_ratio": typed_surface.exact_ratio,
+        "claim_flags": {
+            "replay_claims": False,
+            "canonical_effect_claims": False,
+            "candidate_effect_claims": False,
+            "dry_run_claims": False,
+            "agreement_claims": True,
+        },
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction=typed_surface.jurisdiction,
+        report_kind=report_kind,
+        schema="lawvm.agreement_surface_report.v1",
+        truth_claim="agreement residual classification",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=True,
+        summary=summary,
+        filters={
+            "agreement_surface": typed_surface.agreement_surface,
+            "comparison_kind": typed_surface.comparison_kind,
+            "profile": typed_surface.profile_id,
+        },
+        filtered_summary=summary,
+        rows=rows,
+        rows_truncated=False,
+        detail={
+            "safe_default": "classify_agreement_without_rewriting_materialization_or_oracle",
+            "forbidden_shortcuts": (
+                "agreement_surface_as_replay_authorization",
+                "agreement_residual_as_mutation_instruction",
+                "oracle_score_as_source_truth",
+            ),
+            "agreement_surface": typed_surface.to_dict(),
+        },
+    )
+
+
+def _agreement_surface(surface: AgreementSurface | Mapping[str, Any]) -> AgreementSurface:
+    if isinstance(surface, AgreementSurface):
+        return surface
+    residual_rows = surface.get("residuals", ())
+    if not isinstance(residual_rows, tuple | list):
+        residual_rows = ()
+    return agreement_surface_from_residuals(
+        tuple(row for row in residual_rows if isinstance(row, AgreementResidual | Mapping)),
+        jurisdiction=str(surface.get("jurisdiction") or ""),
+        agreement_surface=str(surface.get("agreement_surface") or ""),
+        materialization_id=str(surface.get("materialization_id") or ""),
+        comparison_target_id=str(surface.get("comparison_target_id") or ""),
+        comparison_kind=str(surface.get("comparison_kind") or ""),
+        surface_id=str(surface.get("surface_id") or ""),
+        profile_id=str(surface.get("profile_id") or ""),
+        exact_ratio=surface.get("exact_ratio") if surface.get("exact_ratio") is not None else None,
+    )
+
+
+def _residual(row: AgreementResidual | Mapping[str, Any]) -> AgreementResidual:
+    if isinstance(row, AgreementResidual):
+        return row
+    return AgreementResidual(
+        residual_id=str(row.get("residual_id") or ""),
+        jurisdiction=str(row.get("jurisdiction") or ""),
+        agreement_surface=str(row.get("agreement_surface") or ""),
+        family=str(row.get("family") or ""),
+        status=str(row.get("status") or ""),
+        owner_phase=str(row.get("owner_phase") or ""),
+        rule_id=str(row.get("rule_id") or ""),
+        source_artifact_id=str(row.get("source_artifact_id") or ""),
+        replay_count=int(row.get("replay_count") or 0),
+        oracle_count=int(row.get("oracle_count") or 0),
+        missing_proofs=tuple(str(item) for item in _sequence(row.get("missing_proofs"))),
+        safe_default=str(row.get("safe_default") or ""),
+        forbidden_shortcuts=tuple(str(item) for item in _sequence(row.get("forbidden_shortcuts"))),
+        detail=dict(row.get("detail") or {}) if isinstance(row.get("detail"), Mapping) else {},
+    )
+
+
+def _agreement_residual_report_row(residual: AgreementResidual) -> dict[str, Any]:
+    data = residual.to_dict()
+    return {
+        "surface": "agreement_residual",
+        "row_id": residual.residual_id,
+        "subject_id": residual.source_artifact_id or residual.residual_id,
+        "status": residual.status,
+        "replay_authorized": False,
+        **data,
+    }
+
+
 def _required_string(field_name: str, value: Any) -> str:
     text = str(value or "").strip()
     if not text:
@@ -154,6 +349,22 @@ def _string_tuple(field_name: str, values: Any) -> tuple[str, ...]:
     if isinstance(values, str) or not isinstance(values, tuple):
         raise ValueError(f"AgreementResidual.{field_name} must be a tuple")
     return tuple(str(value) for value in values if str(value))
+
+
+def _sequence(value: Any) -> tuple[Any, ...]:
+    if isinstance(value, str):
+        return (value,) if value else ()
+    if isinstance(value, list | tuple):
+        return tuple(value)
+    return ()
+
+
+def _counts(values: Any) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = str(value or "__blank__")
+        counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def _plain_jsonable(value: Any) -> Any:
