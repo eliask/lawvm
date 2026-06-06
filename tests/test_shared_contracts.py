@@ -23,6 +23,11 @@ from lawvm.core.execution_authorization import (
     validate_execution_authorization,
 )
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
+from lawvm.core.frontend_phase_surface import (
+    FrontendDiagnostic,
+    FrontendPhaseRow,
+    FrontendPhaseSurface,
+)
 from lawvm.core.frontier_work_item import (
     FrontierWorkItem,
     validate_frontier_work_item,
@@ -72,6 +77,57 @@ def test_execution_authorization_allows_explicit_replay_authorized_rows() -> Non
     assert data["replay_authorized"] is True
     assert data["required_proofs"] == []
     assert validate_execution_authorization(data) == ()
+
+
+def test_frontend_phase_surface_marks_compatibility_output_without_replay_claims() -> None:
+    diagnostic = FrontendDiagnostic(
+        diagnostic_id="fi-demo-residual",
+        jurisdiction="fi",
+        frontend="finland.demo",
+        phase="residual_collection",
+        severity="warning",
+        rule_id="fi.demo.residual.v1",
+        message="demo residual",
+        forbidden_shortcuts=("drop_residual",),
+    )
+    surface = FrontendPhaseSurface(
+        jurisdiction="fi",
+        frontend="finland.demo",
+        schema="lawvm.frontend_phase_surface.v1",
+        truth_claim="ClauseAST is primary; ParsedOps are compatibility output.",
+        source_hash="abc123",
+        source_length=12,
+        authority_path=("source_text", "SurfaceClause", "ClauseAST"),
+        compatibility_outputs=("ParsedOp",),
+        phase_rows=(
+            FrontendPhaseRow(
+                phase="clause_ast_lowering",
+                status="lowered",
+                artifact_kind="ClauseAST",
+                authority_role="primary_semantic_authority",
+                produced=True,
+                output_artifacts=("clause_ast",),
+            ),
+            FrontendPhaseRow(
+                phase="parsed_ops_compat",
+                status="derived",
+                artifact_kind="ParsedOp",
+                authority_role="compatibility_projection_not_authority",
+                produced=True,
+                input_artifacts=("clause_ast",),
+                output_artifacts=("parsed_ops",),
+            ),
+        ),
+        diagnostics=(diagnostic,),
+    )
+
+    data = surface.to_dict()
+
+    assert data["compatibility_outputs"] == ["ParsedOp"]
+    assert data["replay_claims"] is False
+    assert data["canonical_effect_claims"] is False
+    assert data["phase_rows"][1]["authority_role"] == "compatibility_projection_not_authority"
+    assert data["diagnostics"][0]["forbidden_shortcuts"] == ["drop_residual"]
 
 
 def test_execution_authorization_rejects_hidden_promotion() -> None:

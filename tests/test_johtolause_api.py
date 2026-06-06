@@ -147,6 +147,65 @@ def test_parse_result_populated_in_extract_ops_diagnostic() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Core proof-surface cohesion: phase surface exposes authority roles
+# ---------------------------------------------------------------------------
+
+
+def test_parse_clause_exports_typed_phase_surface_authority_boundary() -> None:
+    result = parse_clause("muutetaan 5 §")
+
+    phase_surface = result.phase_surface
+    assert phase_surface is not None
+    data = phase_surface.to_dict()
+
+    assert data["jurisdiction"] == "fi"
+    assert data["frontend"] == "finland.johtolause.parse_clause"
+    assert data["authority_path"] == [
+        "source_text",
+        "raw_token_tape",
+        "structural_token_view",
+        "SurfaceClause",
+        "ResolvedSurfaceClause",
+        "ClauseAST",
+    ]
+    assert data["compatibility_outputs"] == ["ParsedOp"]
+    assert data["replay_claims"] is False
+    assert data["canonical_effect_claims"] is False
+    assert data["dry_run_claims"] is False
+    assert data["agreement_claims"] is False
+
+    rows = {row["phase"]: row for row in data["phase_rows"]}
+    assert rows["clause_ast_lowering"]["authority_role"] == "primary_semantic_authority"
+    assert rows["parsed_ops_compat"]["authority_role"] == "compatibility_projection_not_authority"
+    assert rows["parsed_ops_compat"]["detail"]["parsed_op_count"] == len(result.parsed_ops)
+    assert data["detail"]["parsed_ops_are_compatibility_output"] is True
+    assert result.typed_diagnostics == phase_surface.diagnostics
+
+
+def test_parse_clause_phase_surface_records_resolver_internal_error() -> None:
+    with patch(
+        "lawvm.finland.johtolause.surface_resolve.resolve_surface_clause",
+        side_effect=RuntimeError("synthetic resolver failure"),
+    ):
+        result = parse_clause("muutetaan 5 §")
+
+    assert result.phase_surface is not None
+    data = result.phase_surface.to_dict()
+    diagnostics = {row["diagnostic_id"]: row for row in data["diagnostics"]}
+    diagnostic = diagnostics["fi-johtolause-surface_resolve-internal-error"]
+
+    assert diagnostic["phase"] == "surface_resolve"
+    assert diagnostic["severity"] == "bug"
+    assert diagnostic["blocking"] is True
+    assert diagnostic["strict_disposition"] == "block"
+    assert "derive_replay_from_failed_phase" in diagnostic["forbidden_shortcuts"]
+
+    rows = {row["phase"]: row for row in data["phase_rows"]}
+    assert rows["surface_resolve"]["status"] == "failed"
+    assert diagnostic["diagnostic_id"] in rows["surface_resolve"]["diagnostic_ids"]
+
+
+# ---------------------------------------------------------------------------
 # Pro audit d-#2: residuals must not be silently dropped
 # ---------------------------------------------------------------------------
 

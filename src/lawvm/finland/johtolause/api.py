@@ -15,10 +15,16 @@ ParsedOps are derived from ClauseAST via clause_ast_to_legal_ops.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, Sequence
+from typing import TYPE_CHECKING, Any, Literal, Sequence
 
+from lawvm.core.frontend_phase_surface import (
+    FrontendDiagnostic,
+    FrontendPhaseRow,
+    FrontendPhaseSurface,
+)
 from lawvm.core.ir import LegalAddress
 from lawvm.finland.johtolause.types import ParsedOp
 from lawvm.finland.johtolause.surface_model import TargetKind
@@ -87,6 +93,10 @@ class ClauseParseResult:
                                  are NOT part of any structural verb group.
         target_version_bindings: Finland-local cited-version selector sidecars
                                  preserved from provenance text.
+        phase_surface:          Typed report-facing phase surface.  It names
+                                 the compiler waists and marks ParsedOps as a
+                                 compatibility projection, not semantic authority.
+        typed_diagnostics:      Typed diagnostic rows backing phase_surface.
     """
 
     clause_ast: ClauseAST
@@ -101,6 +111,8 @@ class ClauseParseResult:
     target_version_bindings: tuple = ()
     parse_error: str | None = None
     lowering_diagnostics: tuple = ()
+    phase_surface: FrontendPhaseSurface | None = None
+    typed_diagnostics: tuple[FrontendDiagnostic, ...] = ()
 
     @property
     def is_failed(self) -> bool:
@@ -235,12 +247,14 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     # propagate to the caller so they are not silently swallowed.
     resolve_input = enriched_surface_clause if enriched_surface_clause is not None else original_surface_clause
     parse_error: str | None = None
+    internal_error_phase: str | None = None
     try:
         resolved = resolve_surface_clause(resolve_input)
     except RuntimeError as exc:
         resolved = None
         _err = f"resolve_error: {type(exc).__name__}: {exc}"
         parse_error = _err
+        internal_error_phase = "surface_resolve"
         diagnostics.append(f"internal_error: resolve: {type(exc).__name__}: {exc}")
 
     # -- Phase 3: Lower -> ClauseAST (native) --
@@ -253,6 +267,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
             lowering_diagnostics = ()
             _err = f"lower_error: {type(exc).__name__}: {exc}"
             parse_error = _err
+            internal_error_phase = "clause_ast_lowering"
             diagnostics.append(f"internal_error: lower: {type(exc).__name__}: {exc}")
     else:
         clause_ast = ClauseAST(verb_groups=(), source_text=text)
@@ -298,6 +313,27 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
                 )
     meta_clauses = tuple(ast_meta) if ast_meta else tuple(extract_meta_surface_clauses(text))
 
+    phase_surface = _build_finland_clause_phase_surface(
+        text=text,
+        raw_token_count=len(raw_tokens),
+        structural_token_count=len(tokens),
+        jolloin_pair_count=len(_jolloin_pairs),
+        target_version_binding_count=len(target_version_bindings),
+        original_surface_clause=original_surface_clause,
+        enriched_surface_clause=enriched_surface_clause,
+        resolved=resolved,
+        clause_ast=clause_ast,
+        parsed_ops=ops,
+        residuals=residuals,
+        diagnostics=diagnostics,
+        parse_error=parse_error,
+        internal_error_phase=internal_error_phase,
+        lowering_diagnostics=lowering_diagnostics,
+        meta_clause_count=len(meta_nodes),
+        text_amend_clause_count=len(text_amend_nodes),
+        supplementary_clause_count=len(supplementary_nodes),
+    )
+
     return ClauseParseResult(
         clause_ast=clause_ast,
         surface_clause=original_surface_clause,
@@ -311,7 +347,285 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
         supplementary_clauses=supplementary_nodes,
         target_version_bindings=resolve_input.target_version_bindings,
         lowering_diagnostics=lowering_diagnostics,
+        phase_surface=phase_surface,
+        typed_diagnostics=phase_surface.diagnostics,
     )
+
+
+def _build_finland_clause_phase_surface(
+    *,
+    text: str,
+    raw_token_count: int,
+    structural_token_count: int,
+    jolloin_pair_count: int,
+    target_version_binding_count: int,
+    original_surface_clause: _SurfaceClauseType,
+    enriched_surface_clause: _SurfaceClauseType | None,
+    resolved: _ResolvedSurfaceClauseType | None,
+    clause_ast: ClauseAST,
+    parsed_ops: list[ParsedOp],
+    residuals: list,
+    diagnostics: list[str],
+    parse_error: str | None,
+    internal_error_phase: str | None,
+    lowering_diagnostics: tuple,
+    meta_clause_count: int,
+    text_amend_clause_count: int,
+    supplementary_clause_count: int,
+) -> FrontendPhaseSurface:
+    typed_diagnostics = _build_finland_frontend_diagnostics(
+        diagnostics=diagnostics,
+        residuals=residuals,
+        parse_error=parse_error,
+        internal_error_phase=internal_error_phase,
+        lowering_diagnostics=lowering_diagnostics,
+    )
+    diagnostic_ids_by_phase: dict[str, list[str]] = {}
+    for diagnostic in typed_diagnostics:
+        diagnostic_ids_by_phase.setdefault(diagnostic.phase, []).append(diagnostic.diagnostic_id)
+
+    def row(
+        phase: str,
+        status: str,
+        artifact_kind: str,
+        authority_role: str,
+        produced: bool,
+        *,
+        input_artifacts: tuple[str, ...] = (),
+        output_artifacts: tuple[str, ...] = (),
+        detail: dict[str, Any] | None = None,
+    ) -> FrontendPhaseRow:
+        return FrontendPhaseRow(
+            phase=phase,
+            status=status,
+            artifact_kind=artifact_kind,
+            authority_role=authority_role,
+            produced=produced,
+            input_artifacts=input_artifacts,
+            output_artifacts=output_artifacts,
+            diagnostic_ids=tuple(diagnostic_ids_by_phase.get(phase, ())),
+            detail=detail or {},
+        )
+
+    phase_rows = (
+        row(
+            "tokenize",
+            "produced",
+            "token_tape",
+            "source_witness",
+            True,
+            input_artifacts=("source_text",),
+            output_artifacts=("raw_token_tape",),
+            detail={
+                "raw_token_count": raw_token_count,
+                "source_length": len(text),
+            },
+        ),
+        row(
+            "scan_annotations",
+            "produced",
+            "annotated_token_view",
+            "source_preserving_annotation_overlay",
+            True,
+            input_artifacts=("raw_token_tape",),
+            output_artifacts=("structural_token_view",),
+            detail={
+                "raw_token_count": raw_token_count,
+                "structural_token_count": structural_token_count,
+                "jolloin_pair_count": jolloin_pair_count,
+                "target_version_binding_count": target_version_binding_count,
+            },
+        ),
+        row(
+            "surface_parse",
+            "produced",
+            "SurfaceClause",
+            "original_surface_parser_output",
+            original_surface_clause is not None,
+            input_artifacts=("structural_token_view",),
+            output_artifacts=("surface_clause",),
+            detail={
+                "verb_group_count": len(original_surface_clause.verb_groups),
+                "consumed_count": original_surface_clause.consumed_count,
+            },
+        ),
+        row(
+            "surface_enrichment",
+            "enriched" if enriched_surface_clause is not None else "identity",
+            "SurfaceClause",
+            "enrichment_projection_not_source_authority",
+            True,
+            input_artifacts=("surface_clause",),
+            output_artifacts=("resolver_surface_clause",),
+            detail={
+                "meta_clause_count": meta_clause_count,
+                "text_amend_clause_count": text_amend_clause_count,
+                "supplementary_clause_count": supplementary_clause_count,
+            },
+        ),
+        row(
+            "surface_resolve",
+            "resolved" if resolved is not None else "failed",
+            "ResolvedSurfaceClause",
+            "source_local_resolution",
+            resolved is not None,
+            input_artifacts=("resolver_surface_clause",),
+            output_artifacts=("resolved_surface_clause",) if resolved is not None else (),
+            detail={
+                "residual_count": len(resolved.residuals) if resolved is not None else 0,
+            },
+        ),
+        row(
+            "clause_ast_lowering",
+            "lowered" if not parse_error else "failed",
+            "ClauseAST",
+            "primary_semantic_authority",
+            True,
+            input_artifacts=("resolved_surface_clause",) if resolved is not None else (),
+            output_artifacts=("clause_ast",),
+            detail={
+                "verb_group_count": len(clause_ast.verb_groups),
+                "lowering_diagnostic_count": len(lowering_diagnostics),
+            },
+        ),
+        row(
+            "parsed_ops_compat",
+            "derived",
+            "ParsedOp",
+            "compatibility_projection_not_authority",
+            True,
+            input_artifacts=("clause_ast",),
+            output_artifacts=("parsed_ops",),
+            detail={
+                "parsed_op_count": len(parsed_ops),
+            },
+        ),
+        row(
+            "residual_collection",
+            "residuals_present" if residuals else "clean",
+            "FrontendResiduals",
+            "diagnostic_residual_surface",
+            True,
+            input_artifacts=("surface_clause", "resolved_surface_clause", "clause_ast"),
+            output_artifacts=("residuals",),
+            detail={
+                "residual_count": len(residuals),
+                "residual_kinds": sorted(str(entry.get("kind", "unknown")) for entry in residuals if isinstance(entry, dict)),
+            },
+        ),
+    )
+
+    return FrontendPhaseSurface(
+        jurisdiction="fi",
+        frontend="finland.johtolause.parse_clause",
+        schema="lawvm.frontend_phase_surface.v1",
+        truth_claim=(
+            "ClauseAST is the primary semantic parser output; ParsedOps are a "
+            "compatibility projection and this phase surface does not authorize replay."
+        ),
+        source_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        source_length=len(text),
+        authority_path=(
+            "source_text",
+            "raw_token_tape",
+            "structural_token_view",
+            "SurfaceClause",
+            "ResolvedSurfaceClause",
+            "ClauseAST",
+        ),
+        compatibility_outputs=("ParsedOp",),
+        phase_rows=phase_rows,
+        diagnostics=typed_diagnostics,
+        replay_claims=False,
+        canonical_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        detail={
+            "parsed_ops_are_compatibility_output": True,
+            "clause_ast_is_primary_semantic_output": True,
+        },
+    )
+
+
+def _build_finland_frontend_diagnostics(
+    *,
+    diagnostics: list[str],
+    residuals: list,
+    parse_error: str | None,
+    internal_error_phase: str | None,
+    lowering_diagnostics: tuple,
+) -> tuple[FrontendDiagnostic, ...]:
+    out: list[FrontendDiagnostic] = []
+    if parse_error and internal_error_phase:
+        out.append(
+            FrontendDiagnostic(
+                diagnostic_id=f"fi-johtolause-{internal_error_phase}-internal-error",
+                jurisdiction="fi",
+                frontend="finland.johtolause.parse_clause",
+                phase=internal_error_phase,
+                severity="bug",
+                rule_id=f"fi.johtolause.{internal_error_phase}.internal_error.v1",
+                message=parse_error,
+                blocking=True,
+                strict_disposition="block",
+                quirks_disposition="record",
+                safe_default="do_not_promote_failed_parse_to_authority",
+                forbidden_shortcuts=(
+                    "swallow_internal_parser_bug",
+                    "derive_replay_from_failed_phase",
+                ),
+                detail={
+                    "human_diagnostics": tuple(diagnostics),
+                },
+            )
+        )
+    if residuals:
+        residual_kinds = tuple(
+            str(entry.get("kind", "unknown"))
+            for entry in residuals
+            if isinstance(entry, dict)
+        )
+        out.append(
+            FrontendDiagnostic(
+                diagnostic_id="fi-johtolause-residuals-present",
+                jurisdiction="fi",
+                frontend="finland.johtolause.parse_clause",
+                phase="residual_collection",
+                severity="warning",
+                rule_id="fi.johtolause.residuals_present.v1",
+                message="Finland clause parse produced residual material.",
+                blocking=False,
+                strict_disposition="record",
+                quirks_disposition="record",
+                safe_default="record_residuals_without_replay_authority",
+                forbidden_shortcuts=("drop_unconsumed_or_unresolved_parse_material",),
+                detail={
+                    "residual_kinds": residual_kinds,
+                    "residual_count": len(residuals),
+                },
+            )
+        )
+    if lowering_diagnostics:
+        out.append(
+            FrontendDiagnostic(
+                diagnostic_id="fi-johtolause-lowering-diagnostics",
+                jurisdiction="fi",
+                frontend="finland.johtolause.parse_clause",
+                phase="clause_ast_lowering",
+                severity="warning",
+                rule_id="fi.johtolause.lowering_diagnostics_present.v1",
+                message="ClauseAST lowering emitted typed diagnostics.",
+                blocking=False,
+                strict_disposition="record",
+                quirks_disposition="record",
+                safe_default="record_lowering_diagnostics_without_replay_authority",
+                forbidden_shortcuts=("drop_unlowerable_surface_nodes",),
+                detail={
+                    "lowering_diagnostic_count": len(lowering_diagnostics),
+                },
+            )
+        )
+    return tuple(out)
 
 
 def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:
