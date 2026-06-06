@@ -255,6 +255,10 @@ Rules:
 - Source witnesses should be attached when a bounded source preview or digest
   exists.
 - Frontier rows must not be silently dropped from strict reports.
+- Frontend-local workqueue rows, such as Finland open-manual corrigendum
+  candidates, should project to `FrontierWorkItem` rows when they cross a report
+  boundary. They remain non-executable triage until the required claim and
+  mutation-boundary proofs exist.
 
 ---
 
@@ -410,6 +414,13 @@ Rules:
   enacted-law authority, canonical operations, candidate effects, dry-run
   authority, or current-law agreement claims.
 - Finlex comparison is an agreement surface, not the compilation objective.
+- Corrigendum source manifests and corpus overviews should expose PDF/date
+  coverage through passive `SourceCompletenessStatus` rows while preserving
+  compatibility summaries. Source/date coverage does not prove source identity,
+  commencement, source-text repair, or replay authority.
+- Open manual corrigendum listings should emit shared `FrontierWorkItem` rows
+  alongside compatibility rows. A listed candidate is not a manual claim and is
+  not replay-authorized.
 
 ---
 
