@@ -81,6 +81,7 @@ class ProofSurface:
     profile_id: str = ""
     graph_snapshot_hash: str = ""
     generated_at: str = ""
+    claim_flags: Mapping[str, bool] = field(default_factory=dict)
     summary: Mapping[str, Any] = field(default_factory=dict)
     rows: tuple[ProofSurfaceRow, ...] = ()
 
@@ -100,6 +101,9 @@ class ProofSurface:
         object.__setattr__(self, "profile_id", str(self.profile_id or ""))
         object.__setattr__(self, "graph_snapshot_hash", str(self.graph_snapshot_hash or ""))
         object.__setattr__(self, "generated_at", str(self.generated_at or ""))
+        if not isinstance(self.claim_flags, Mapping):
+            raise ValueError("ProofSurface.claim_flags must be a mapping")
+        object.__setattr__(self, "claim_flags", freeze_mapping(_claim_flags(self.claim_flags)))
         if not isinstance(self.summary, Mapping):
             raise ValueError("ProofSurface.summary must be a mapping")
         rows = tuple(self.rows)
@@ -117,6 +121,7 @@ class ProofSurface:
             "profile_id": self.profile_id,
             "graph_snapshot_hash": self.graph_snapshot_hash,
             "generated_at": self.generated_at,
+            "claim_flags": _plain_jsonable(self.claim_flags),
             "summary": _plain_jsonable(self.summary),
             "rows": [row.to_dict() for row in self.rows],
         }
@@ -151,6 +156,7 @@ def proof_surface_from_evidence_report(
         profile_id=profile_id or str(_mapping(data.get("filters")).get("profile") or ""),
         graph_snapshot_hash=graph_snapshot_hash,
         generated_at=generated_at,
+        claim_flags=_report_claim_flags(data),
         summary=_mapping(data.get("summary")),
         rows=rows,
     )
@@ -271,6 +277,26 @@ def _mapping_rows(value: Any) -> tuple[Mapping[str, Any], ...]:
     if not isinstance(value, (list, tuple)):
         return ()
     return tuple(row for row in value if isinstance(row, Mapping))
+
+
+def _report_claim_flags(data: Mapping[str, Any]) -> Mapping[str, bool]:
+    return {
+        "replay_claims": bool(data.get("replay_claims")),
+        "canonical_effect_claims": bool(data.get("canonical_effect_claims")),
+        "candidate_effect_claims": bool(data.get("candidate_effect_claims")),
+        "dry_run_claims": bool(data.get("dry_run_claims")),
+        "agreement_claims": bool(data.get("agreement_claims")),
+    }
+
+
+def _claim_flags(values: Mapping[str, Any]) -> Mapping[str, bool]:
+    return {
+        "replay_claims": bool(values.get("replay_claims")),
+        "canonical_effect_claims": bool(values.get("canonical_effect_claims")),
+        "candidate_effect_claims": bool(values.get("candidate_effect_claims")),
+        "dry_run_claims": bool(values.get("dry_run_claims")),
+        "agreement_claims": bool(values.get("agreement_claims")),
+    }
 
 
 def _required_string(field_name: str, value: Any) -> str:

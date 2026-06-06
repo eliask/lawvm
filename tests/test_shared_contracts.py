@@ -1446,6 +1446,13 @@ def test_proof_surface_from_evidence_report_preserves_report_rows_as_read_model(
 
     assert data["surface_kind"] == "finland_strict_report"
     assert data["profile_id"] == "FINLAND_INGESTION_V1"
+    assert data["claim_flags"] == {
+        "replay_claims": False,
+        "canonical_effect_claims": True,
+        "candidate_effect_claims": False,
+        "dry_run_claims": False,
+        "agreement_claims": False,
+    }
     assert data["summary"] == {"temporal_resolution_evidence_count": 1}
     assert data["rows"][0]["row_kind"] == "temporal_resolution_evidence"
     assert data["rows"][0]["status"] == "block"

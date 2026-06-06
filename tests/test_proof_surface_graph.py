@@ -12,6 +12,13 @@ def test_proof_surface_rows_project_to_graph_observations_without_authority() ->
         surface_kind="finland_recovery_findings",
         jurisdiction="fi",
         source_bundle_hash="bundle-1",
+        claim_flags={
+            "replay_claims": False,
+            "canonical_effect_claims": True,
+            "candidate_effect_claims": False,
+            "dry_run_claims": False,
+            "agreement_claims": False,
+        },
         rows=(
             ProofSurfaceRow(
                 row_id="row-1",
@@ -33,6 +40,13 @@ def test_proof_surface_rows_project_to_graph_observations_without_authority() ->
     assert assertion.kind == "lawvm.proof_surface.row.v0"
     assert assertion.layer == "facade_observation"
     assert assertion.value["row_id"] == "row-1"
+    assert assertion.value["surface_claim_flags"] == {
+        "replay_claims": False,
+        "canonical_effect_claims": True,
+        "candidate_effect_claims": False,
+        "dry_run_claims": False,
+        "agreement_claims": False,
+    }
     assert assertion.value["replay_authorized"] is False
     assert assertion.value["read_model_only"] is True
     assert assertion.source_refs == ()
@@ -56,7 +70,7 @@ def test_evidence_report_projects_through_proof_surface_graph_path() -> None:
         canonical_effect_claims=False,
         candidate_effect_claims=False,
         dry_run_claims=False,
-        agreement_claims=False,
+        agreement_claims=True,
         rows=(
             {
                 "surface": "frontend_phase_row",
@@ -83,6 +97,8 @@ def test_evidence_report_projects_through_proof_surface_graph_path() -> None:
     assert assertion.scope["surface_kind"] == "frontend_phase_surface"
     assert assertion.scope["source_bundle_hash"] == "bundle-2"
     assert assertion.value["row_kind"] == "frontend_phase_row"
+    assert assertion.value["surface_claim_flags"]["agreement_claims"] is True
+    assert assertion.value["replay_authorized"] is False
     assert assertion.value["source_refs"] == ["source-hash-1"]
     assert assertion.dependency_refs == (surface_ref,)
     assert graph.edges[0].dst_node_id == "report-1"

@@ -153,6 +153,8 @@ frontier_ref
 Rules:
 
 - A proof surface is a read model only.
+- `claim_flags` preserve the originating report's claim boundary; they do not
+  authorize any proof-surface row by themselves.
 - A proof surface may preserve legacy report JSON inside `detail`.
 - Missing source/proof/frontier refs should stay missing, not be invented.
 - Stable row ids are for audit/query identity, not legal identity.

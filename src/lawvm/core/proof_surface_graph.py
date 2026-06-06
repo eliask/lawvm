@@ -114,6 +114,7 @@ def _row_to_assertion(
         "residual_refs": list(row.residual_refs),
         "frontier_ref": row.frontier_ref,
         "detail": dict(row.detail),
+        "surface_claim_flags": dict(surface.claim_flags),
         "read_model_only": True,
         "replay_authorized": False,
         "forbidden_shortcuts": list(_FORBIDDEN_SHORTCUTS),
