@@ -20,6 +20,10 @@ from dataclasses import dataclass
 from typing import Optional, Protocol
 
 from lawvm.core.manual_claims.primitive import ClaimScope, SourceLocator
+from lawvm.core.source_locator import (
+    SourceLocator as CoreSourceLocator,
+    source_locator_from_legacy_manual_locator,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +100,34 @@ def make_fetched_source(
         sha256_hex=hashlib.sha256(bytes_).hexdigest(),
         locator=locator,
         span=span,
+    )
+
+
+def fetched_source_core_locator(
+    source: FetchedSource,
+    *,
+    jurisdiction: str,
+    structural_path: str = "",
+    xpath: str = "",
+    normalization_policy: str = "manual_claim_source_provider.v1",
+) -> CoreSourceLocator:
+    """Project a fetched manual-claim source into the shared source locator."""
+
+    start, end = source.span
+    bounded = source.bytes_[start:end]
+    return source_locator_from_legacy_manual_locator(
+        {
+            "artifact_kind": source.locator.artifact_kind,
+            "statute_id": source.locator.statute_id,
+            "he_id": source.locator.he_id,
+            "version_id": source.locator.version_id,
+        },
+        jurisdiction=jurisdiction,
+        structural_path=structural_path,
+        xpath=xpath,
+        byte_span=source.span,
+        quote_hash=hashlib.sha256(bounded).hexdigest(),
+        normalization_policy=normalization_policy,
     )
 
 

@@ -11,6 +11,7 @@ Required tests (per task spec):
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -21,22 +22,19 @@ import lawvm.finland.claim_kinds  # noqa: F401
 
 from lawvm.core.manual_claims.primitive import ClaimScope, SourceLocator
 from lawvm.core.manual_claims.source_provider import (
-    FetchedSource,
     MockSourceProvider,
-    SourceBytesProvider,
+    fetched_source_core_locator,
     get_source_provider,
     make_fetched_source,
     register_source_provider,
-    _PROVIDERS,
 )
+from lawvm.core.source_locator import source_ref_from_locator
 from lawvm.core.manual_claims.proposal_backend import MockProposalBackend
-from lawvm.core.manual_claims.storage import ClaimStore
 from lawvm.core.manual_claims.primitive import (
-    ClaimStatus,
     ExtractionFrontierRow,
-    Producer,
-    ValidatorStatus,
 )
+from lawvm.core.provenance_graph import Producer
+from lawvm.core.provenance_graph_storage import GraphStore
 
 
 # ---------------------------------------------------------------------------
@@ -68,11 +66,10 @@ def _make_frontier_row(statute_id: str = "711/2022", provision_ref: Optional[str
 
 def _make_producer() -> Producer:
     return Producer(
-        producer_kind="tool",
-        handle=None,
-        model_id="mock",
-        timestamp=datetime.now(tz=timezone.utc),
-        environment="test",
+        producer_id="test.tool",
+        producer_kind="script",
+        public_key=None,
+        metadata={},
     )
 
 
@@ -83,6 +80,41 @@ def _make_args(**kwargs):
     for k, v in kwargs.items():
         setattr(a, k, v)
     return a
+
+
+def test_fetched_source_projects_shared_source_locator() -> None:
+    locator = SourceLocator(
+        artifact_kind="finlex_akn",
+        statute_id="2003/434",
+        he_id=None,
+        version_id="2024-01-15",
+    )
+    source = make_fetched_source(
+        b"alpha beta gamma",
+        locator,
+        span=(6, 10),
+    )
+
+    core_locator = fetched_source_core_locator(
+        source,
+        jurisdiction="fi",
+        structural_path="section:1",
+    )
+    source_ref = source_ref_from_locator(
+        core_locator,
+        artifact_digest=source.sha256_hex,
+    )
+
+    assert core_locator.jurisdiction == "fi"
+    assert core_locator.artifact_kind == "finlex_akn"
+    assert core_locator.source_id == "finlex_akn:2003/434"
+    assert core_locator.structural_path == "section:1"
+    assert core_locator.byte_span == (6, 10)
+    assert core_locator.quote_hash == hashlib.sha256(b"beta").hexdigest()
+    assert core_locator.version_id == "2024-01-15"
+    assert source_ref.structural_locator == "section:1"
+    assert source_ref.byte_range == (6, 10)
+    assert source_ref.bounded_quote_hash == core_locator.quote_hash
 
 
 # ---------------------------------------------------------------------------
@@ -239,8 +271,7 @@ def test_propose_claims_uses_provider(tmp_path: Path):
     provider = MockSourceProvider(canned_bytes=provider_bytes)
     register_source_provider("fi", provider)
 
-    store = ClaimStore(tmp_path / "manual_claims")
-    store.ensure_dirs()
+    store = GraphStore(tmp_path / "provenance_graph")
 
     fr = _make_frontier_row()
     backend = MockProposalBackend()
@@ -269,10 +300,20 @@ def test_propose_claims_uses_provider(tmp_path: Path):
         verbose=False,
     )
     assert claim_id is not None, "Expected claim proposed successfully"
-    state = store.read_state(claim_id)
-    assert state is not None
-    assert state.status == ClaimStatus.PROPOSED
-    assert state.validator_status == ValidatorStatus.ENTAILMENT_VERIFIED
+    assertion = store.read_assertion(claim_id)
+    object_rows = list(store._objects_dir().glob("*.json"))
+    attestation_rows = [path for path in object_rows if path.stem != claim_id]
+    attestation_kinds = {
+        json.loads(path.read_text(encoding="utf-8"))["attestation_kind"]
+        for path in attestation_rows
+    }
+    assert assertion.kind == "fi.v1.INLINE_STATUTE_RESOLUTION"
+    assert attestation_kinds == {
+        "claim_submitted",
+        "schema_validated",
+        "span_verified",
+        "entailment_verified",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +400,6 @@ def test_propose_claims_with_real_finlex_provider():
 
     Marked @pytest.mark.slow — requires data/finlex.farchive to be present.
     """
-    import os
     farchive_path = Path("data/finlex.farchive")
     if not farchive_path.exists():
         pytest.skip("data/finlex.farchive not present — real-corpus test skipped")
@@ -376,7 +416,8 @@ def test_propose_claims_with_real_finlex_provider():
         # Oracle not yet in corpus — acceptable, but emit a warning
         import warnings
         warnings.warn(
-            f"real-corpus test: {statute_id!r} oracle not in farchive — corpus may need refresh"
+            f"real-corpus test: {statute_id!r} oracle not in farchive — corpus may need refresh",
+            stacklevel=2,
         )
         return
 

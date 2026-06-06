@@ -302,6 +302,8 @@ source-pathology previews
 
 Rules:
 
+- Source locators should use the shared core locator/read model when source
+  footing crosses report, graph, or manual-claim boundaries.
 - Prefer artifact digest plus preview digest when bytes are available.
 - Preview-only witnesses are weaker and must stay weaker.
 - Locator identity, embedded version identity, and source lane should remain
