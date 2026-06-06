@@ -474,7 +474,12 @@ def test_to_json_preserves_source_pathology_target_unit_kind() -> None:
     assert frontier_item["jurisdiction"] == "fi"
     assert frontier_item["executable"] is False
     assert frontier_item["replay_authorized"] is False
+    assert frontier_item["source_witness"]["preview_digest_algorithm"] == "sha256"
+    assert frontier_item["source_witness"]["preview_digest"]
     assert frontier_item["detail"]["execution_authorization"]["replay_authorized"] is False
+    assert payload["evidence_surface_report"]["summary"][
+        "source_pathology_frontier_source_witness_digest_coverage_counts"
+    ] == {"preview_digest": 1}
 
 
 def test_to_json_exports_sparse_slot_candidate_certificates() -> None:

@@ -18,7 +18,8 @@ from lawvm.core.compile_result import SourcePathology
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frontier_work_item import FrontierWorkItem
-from lawvm.core.source_witness import SourceWitness
+from lawvm.core.source_witness import DigestWitness, SourceWitness
+from lawvm.core.source_witness import source_witness_digest_coverage
 
 
 _DEFAULT_REQUIRED_PROOFS: tuple[str, ...] = (
@@ -221,11 +222,13 @@ def source_pathology_frontier_work_item(
     source_statute = str(row.get("source_statute") or statute_id or "unknown")
     target_label = str(row.get("target_label") or "")
     source_unit_id = target_label or str(row.get("code") or "source_pathology")
+    bounded_preview = str(row.get("message") or "")
     source_witness = SourceWitness(
         source_role="finland_source_pathology",
         artifact_id=source_statute,
         source_unit_id=source_unit_id,
-        bounded_preview=str(row.get("message") or ""),
+        bounded_preview=bounded_preview,
+        preview_digest=_preview_digest_witness(bounded_preview),
         source_lane=rule.lane,
         metadata={
             "source_pathology_code": row.get("code", ""),
@@ -477,6 +480,9 @@ def finland_strict_report_evidence_surface(
         "source_pathology_frontier_work_item_count": len(source_pathology_frontier_items),
         "sparse_slot_candidate_set_certificate_count": len(sparse_certificates),
         "agreement_residual_count": len(agreement_residuals),
+        "source_pathology_frontier_source_witness_digest_coverage_counts": (
+            _source_witness_digest_coverage_counts(source_pathology_frontier_items)
+        ),
         "projection_row_count": len(projection_rows),
         "failed_op_row_count": len(failed_ops),
         "strict_fail_reason_count": len(strict_fail_reasons),
@@ -722,6 +728,26 @@ def _mapping_sequence(value: Any) -> tuple[Mapping[str, Any], ...]:
     if not isinstance(value, list | tuple):
         return ()
     return tuple(item for item in value if isinstance(item, Mapping))
+
+
+def _preview_digest_witness(text: str) -> DigestWitness | None:
+    if not text:
+        return None
+    return DigestWitness(
+        digest_algorithm="sha256",
+        digest=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+    )
+
+
+def _source_witness_digest_coverage_counts(
+    frontier_items: tuple[Mapping[str, Any], ...],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in frontier_items:
+        witness = item.get("source_witness")
+        coverage = source_witness_digest_coverage(witness) if isinstance(witness, Mapping) else "missing_source_witness"
+        counts[coverage] = counts.get(coverage, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _field(record: Any, name: str, default: Any = None) -> Any:

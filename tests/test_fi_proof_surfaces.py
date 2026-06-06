@@ -63,6 +63,8 @@ def test_source_pathology_frontier_work_item_is_non_executable() -> None:
     assert item["replay_authorized"] is False
     assert item["authorization_status"] == "source_pathology_not_replay_authority"
     assert item["source_witness"]["source_role"] == "finland_source_pathology"
+    assert item["source_witness"]["preview_digest_algorithm"] == "sha256"
+    assert item["source_witness"]["preview_digest"]
     assert item["target_witness"]["target_label"] == "section 5 subsection 2 item 3"
     assert "validate_source_pathology_resolution_claim" in item["required_validator_checks"]
     assert item["detail"]["execution_authorization"]["replay_authorized"] is False
@@ -183,7 +185,15 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
             "source_pathology_execution_authorizations": [
                 {"authorization_status": "source_pathology_not_replay_authority"}
             ],
-            "source_pathology_frontier_work_items": [{"frontier_family": "fi_destructive_shape_loss_risk"}],
+            "source_pathology_frontier_work_items": [
+                {
+                    "frontier_family": "fi_destructive_shape_loss_risk",
+                    "source_witness": {
+                        "source_role": "finland_source_pathology",
+                        "preview_digest": "abc123",
+                    },
+                }
+            ],
             "sparse_slot_candidate_set_certificates": [{"candidate_set_kind": "fi_sparse_payload_slot_assignment"}],
             "projection_rows": [{"kind": "ELAB.SPARSE_SLOT_BINDING"}],
             "failed_ops": [{"reason_code": "unsupported"}],
@@ -199,6 +209,7 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     assert report["summary"]["canonical_op_count"] == 2
     assert report["summary"]["source_pathology_frontier_work_item_count"] == 1
     assert report["summary"]["sparse_slot_candidate_set_certificate_count"] == 1
+    assert report["summary"]["source_pathology_frontier_source_witness_digest_coverage_counts"] == {"preview_digest": 1}
     assert [row["surface"] for row in report["rows"]] == [
         "source_pathology_execution_authorization",
         "source_pathology_frontier_work_item",
