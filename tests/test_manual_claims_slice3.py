@@ -17,11 +17,9 @@ Covers all 12 mandatory acceptance criteria from the Slice 3 spec:
 from __future__ import annotations
 
 import json
-import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, patch
+from typing import Any, Dict
 
 import pytest
 
@@ -37,7 +35,6 @@ from lawvm.core.manual_claims.precedence import (
     load_precedence_registry,
 )
 from lawvm.core.manual_claims.primitive import (
-    ClaimCompositionDecision,
     ClaimConfidence,
     ClaimLayer,
     ClaimScope,
@@ -224,6 +221,19 @@ def _minimal_precedence_registry() -> PrecedenceRegistry:
     )
 
 
+def _minimal_compile_metadata():
+    from lawvm.core.compile_metadata import CompileMetadata
+
+    return CompileMetadata(
+        provenance_graph_hash="a" * 64,
+        strict_profile_fingerprint="b" * 64,
+        evidence_policy_fingerprint="c" * 64,
+        source_bundle_hash="d" * 64,
+        attestation_kind_registry_hash="e" * 64,
+        build_id="manual-claims-slice3-test",
+    )
+
+
 # ---------------------------------------------------------------------------
 # 1. test_deterministic_only_no_claims_consumed
 # ---------------------------------------------------------------------------
@@ -232,7 +242,6 @@ def _minimal_precedence_registry() -> PrecedenceRegistry:
 def test_deterministic_only_no_claims_consumed():
     """Even with accepted claims present, deterministic_only profile never consumes them."""
     from lawvm.core.manual_claims.composer import derive_composition_decision
-    from lawvm.core.manual_claims.precedence import _minimal_precedence_registry as _reg
 
     claim = _make_inline_claim()
     state = _make_accepted_state(claim.claim_id)
@@ -365,7 +374,12 @@ def test_profile_metadata_sticky_in_parquet(tmp_path: Path):
 
     out_path = tmp_path / "fi_refs__deterministic_only.parquet"
     rows = [_make_null_fi_refs_row(profile=ProfileTag.DETERMINISTIC_ONLY)]
-    ok = _try_write_parquet(out_path, rows, ProfileTag.DETERMINISTIC_ONLY)
+    ok = _try_write_parquet(
+        out_path,
+        rows,
+        ProfileTag.DETERMINISTIC_ONLY,
+        _minimal_compile_metadata(),
+    )
 
     assert ok
     meta = pq.read_metadata(str(out_path))
@@ -396,7 +410,7 @@ def test_profile_metadata_sticky_in_filename(tmp_path: Path):
     ):
         fname = f"fi_refs__{profile.value}.parquet"
         out_path = tmp_path / fname
-        _try_write_parquet(out_path, [], profile)
+        _try_write_parquet(out_path, [], profile, _minimal_compile_metadata())
         assert out_path.exists(), f"Expected {fname} to be written"
         # Verify metadata
         meta = pq.read_metadata(str(out_path))
@@ -411,8 +425,6 @@ def test_profile_metadata_sticky_in_filename(tmp_path: Path):
 
 def test_ambiguous_claim_set_rejects_row_in_strict(tmp_path: Path):
     """Two competing claims for same target → AmbiguousClaimSet; row not filled in strict."""
-    from lawvm.tools.export_fi_refs import _apply_null_slot_fills
-
     # Two claims for the same target span but different resolved_statute_id
     claim_a = _make_inline_claim(
         resolved_statute_id="1234/2020",
@@ -536,19 +548,13 @@ def test_composition_decision_event_logged():
 
 def test_duckdb_refuses_emit_without_profile(tmp_path: Path):
     """build-index-db without --profile exits non-zero with error message."""
-    from unittest.mock import patch
-    import io
-
     # Create a minimal parquet to satisfy the directory check
     try:
         import pyarrow as pa
         import pyarrow.parquet as pq
     except ImportError:
         pytest.skip("pyarrow not installed")
-    try:
-        import duckdb
-    except ImportError:
-        pytest.skip("duckdb not installed")
+    pytest.importorskip("duckdb")
 
     tier_dir = tmp_path / "data" / "fi" / "v1"
     tier_dir.mkdir(parents=True)
@@ -575,20 +581,27 @@ def test_duckdb_refuses_emit_without_profile(tmp_path: Path):
 
 def test_cross_profile_join_warning(tmp_path: Path):
     """Parquets with different claim_profiles emit a WARNING to stderr."""
-    try:
-        import pyarrow as pa
-        import pyarrow.parquet as pq
-    except ImportError:
-        pytest.skip("pyarrow not installed")
+    pytest.importorskip("pyarrow")
+    pytest.importorskip("pyarrow.parquet")
 
-    from lawvm.tools.export_fi_refs import _try_write_parquet, _attach_profile_metadata
+    from lawvm.tools.export_fi_refs import _try_write_parquet
     from lawvm.tools.build_index_db import _detect_cross_profile_joins
 
     p1 = tmp_path / "fi_refs__deterministic_only.parquet"
     p2 = tmp_path / "fi_refs__non_strict_with_claims.parquet"
 
-    _try_write_parquet(p1, [], ProfileTag.DETERMINISTIC_ONLY)
-    _try_write_parquet(p2, [], ProfileTag.NON_STRICT_WITH_CLAIMS)
+    _try_write_parquet(
+        p1,
+        [],
+        ProfileTag.DETERMINISTIC_ONLY,
+        _minimal_compile_metadata(),
+    )
+    _try_write_parquet(
+        p2,
+        [],
+        ProfileTag.NON_STRICT_WITH_CLAIMS,
+        _minimal_compile_metadata(),
+    )
 
     warning = _detect_cross_profile_joins([p1, p2])
     assert warning is not None
