@@ -1,6 +1,8 @@
 from unittest.mock import patch
 import pytest
 
+from lawvm.core.frontend_phase_surface import frontend_phase_surface_evidence_report
+from lawvm.core.proof_surfaces import proof_surface_from_evidence_report
 from lawvm.finland.johtolause import parse_clause
 from lawvm.finland.johtolause.api import FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY
 
@@ -185,6 +187,34 @@ def test_parse_clause_exports_typed_phase_surface_authority_boundary() -> None:
     assert data["detail"]["parsed_ops_are_compatibility_output"] is True
     assert data["detail"]["frontend_capability_id"] == FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY.frontend_id
     assert result.typed_diagnostics == phase_surface.diagnostics
+
+
+def test_parse_clause_phase_surface_projects_to_shared_report_read_model() -> None:
+    result = parse_clause("muutetaan 5 §")
+    assert result.phase_surface is not None
+
+    report = frontend_phase_surface_evidence_report(
+        result.phase_surface,
+        report_kind="finland_johtolause_phase_surface",
+    )
+    data = report.to_dict()
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert data["report_kind"] == "finland_johtolause_phase_surface"
+    assert data["replay_claims"] is False
+    assert data["canonical_effect_claims"] is False
+    assert data["candidate_effect_claims"] is False
+    assert data["dry_run_claims"] is False
+    assert data["agreement_claims"] is False
+    assert data["filters"]["frontend"] == "finland.johtolause.parse_clause"
+    assert data["summary"]["phase_row_count"] >= 7
+    assert "ParsedOp" in data["summary"]["compatibility_outputs"]
+    rows = {(row["surface"], row["phase"]): row for row in data["rows"]}
+    compat = rows[("frontend_phase_row", "parsed_ops_compat")]
+    assert compat["authority_role"] == "compatibility_projection_not_authority"
+    assert compat["replay_authorized"] is False
+    assert proof_surface["surface_kind"] == "finland_johtolause_phase_surface"
+    assert proof_surface["rows"][0]["row_kind"] == "frontend_phase_row"
 
 
 def test_parse_clause_exports_surface_parse_result_for_clean_structural_clause() -> None:

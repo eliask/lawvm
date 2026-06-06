@@ -12,7 +12,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
+
+
+_FRONTEND_PHASE_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
+    "frontend_phase_surface_as_replay_authorization",
+    "compatibility_output_as_semantic_authority",
+    "diagnostic_row_as_mutation_instruction",
+    "phase_success_as_canonical_effect_proof",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,6 +230,153 @@ class FrontendPhaseSurface:
             "agreement_claims": self.agreement_claims,
             "detail": _plain_jsonable(self.detail),
         }
+
+
+def frontend_phase_surface_evidence_report(
+    surface: FrontendPhaseSurface | Mapping[str, Any],
+    *,
+    report_kind: str = "frontend_phase_surface",
+) -> EvidenceSurfaceReport:
+    """Project a frontend phase surface into the shared report envelope.
+
+    The projection is read-model evidence only. It lets tooling consume
+    frontend phase rows through the same ``EvidenceSurfaceReport`` /
+    ``ProofSurface`` path as other proof surfaces, without promoting parser
+    outputs, compatibility artifacts, or diagnostics into replay authority.
+    """
+
+    data = surface.to_dict() if isinstance(surface, FrontendPhaseSurface) else dict(surface)
+    phase_rows = _mapping_rows(data.get("phase_rows"))
+    diagnostics = _mapping_rows(data.get("diagnostics"))
+    rows = (
+        *(_phase_row_report_row(row, data=data) for row in phase_rows),
+        *(_diagnostic_report_row(row, data=data) for row in diagnostics),
+    )
+    summary = {
+        "phase_row_count": len(phase_rows),
+        "diagnostic_count": len(diagnostics),
+        "blocking_diagnostic_count": sum(1 for row in diagnostics if bool(row.get("blocking"))),
+        "authority_path": tuple(str(item) for item in _sequence(data.get("authority_path"))),
+        "compatibility_outputs": tuple(str(item) for item in _sequence(data.get("compatibility_outputs"))),
+        "source_length": _nonnegative_int(data.get("source_length")),
+        "claim_flags": {
+            "replay_claims": bool(data.get("replay_claims", False)),
+            "canonical_effect_claims": bool(data.get("canonical_effect_claims", False)),
+            "candidate_effect_claims": False,
+            "dry_run_claims": bool(data.get("dry_run_claims", False)),
+            "agreement_claims": bool(data.get("agreement_claims", False)),
+        },
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction=str(data.get("jurisdiction") or ""),
+        report_kind=report_kind,
+        schema="lawvm.frontend_phase_surface_report.v1",
+        truth_claim=str(data.get("truth_claim") or "frontend phase diagnostics only"),
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={
+            "frontend": str(data.get("frontend") or ""),
+            "source_hash": str(data.get("source_hash") or ""),
+            "schema": str(data.get("schema") or ""),
+        },
+        filtered_summary=summary,
+        rows=rows,
+        rows_truncated=False,
+        detail={
+            "safe_default": "treat_frontend_phase_surface_as_parse_diagnostics_not_replay_authority",
+            "forbidden_shortcuts": _FRONTEND_PHASE_FORBIDDEN_SHORTCUTS,
+            "included_surfaces": ("frontend_phase_row", "frontend_diagnostic"),
+            "frontend_surface_detail": _mapping(data.get("detail")),
+        },
+    )
+
+
+def _phase_row_report_row(row: Mapping[str, Any], *, data: Mapping[str, Any]) -> dict[str, Any]:
+    phase = str(row.get("phase") or "")
+    return {
+        "surface": "frontend_phase_row",
+        "status": str(row.get("status") or "reported"),
+        "subject_id": _phase_subject_id(data, phase),
+        "source_ref": str(data.get("source_hash") or ""),
+        "frontend": str(data.get("frontend") or ""),
+        "phase": phase,
+        "artifact_kind": str(row.get("artifact_kind") or ""),
+        "authority_role": str(row.get("authority_role") or ""),
+        "produced": bool(row.get("produced", False)),
+        "input_artifacts": tuple(str(item) for item in _sequence(row.get("input_artifacts"))),
+        "output_artifacts": tuple(str(item) for item in _sequence(row.get("output_artifacts"))),
+        "diagnostic_ids": tuple(str(item) for item in _sequence(row.get("diagnostic_ids"))),
+        "detail": _mapping(row.get("detail")),
+        "replay_authorized": False,
+        "forbidden_shortcuts": list(_FRONTEND_PHASE_FORBIDDEN_SHORTCUTS),
+    }
+
+
+def _diagnostic_report_row(row: Mapping[str, Any], *, data: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "surface": "frontend_diagnostic",
+        "status": "blocking" if bool(row.get("blocking")) else str(row.get("severity") or "reported"),
+        "row_id": str(row.get("diagnostic_id") or ""),
+        "subject_id": _phase_subject_id(data, str(row.get("phase") or "diagnostic")),
+        "source_ref": str(data.get("source_hash") or ""),
+        "frontend": str(row.get("frontend") or data.get("frontend") or ""),
+        "phase": str(row.get("phase") or ""),
+        "severity": str(row.get("severity") or ""),
+        "rule_id": str(row.get("rule_id") or ""),
+        "message": str(row.get("message") or ""),
+        "blocking": bool(row.get("blocking", False)),
+        "strict_disposition": str(row.get("strict_disposition") or "record"),
+        "quirks_disposition": str(row.get("quirks_disposition") or "record"),
+        "safe_default": str(row.get("safe_default") or "record_without_replay_authority"),
+        "detail": _mapping(row.get("detail")),
+        "replay_authorized": False,
+        "forbidden_shortcuts": tuple(
+            dict.fromkeys(
+                (
+                    *tuple(str(item) for item in _sequence(row.get("forbidden_shortcuts"))),
+                    *_FRONTEND_PHASE_FORBIDDEN_SHORTCUTS,
+                )
+            )
+        ),
+    }
+
+
+def _phase_subject_id(data: Mapping[str, Any], phase: str) -> str:
+    frontend = str(data.get("frontend") or "frontend")
+    source_hash = str(data.get("source_hash") or "unknown-source")
+    phase_slug = phase or "phase"
+    return f"{frontend}:{source_hash}:{phase_slug}"
+
+
+def _mapping_rows(value: Any) -> tuple[Mapping[str, Any], ...]:
+    if isinstance(value, list | tuple):
+        return tuple(item for item in value if isinstance(item, Mapping))
+    return ()
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _sequence(value: Any) -> tuple[Any, ...]:
+    if isinstance(value, str):
+        return (value,) if value else ()
+    if isinstance(value, list | tuple):
+        return tuple(value)
+    return ()
+
+
+def _nonnegative_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return max(value, 0)
+    text = str(value or "")
+    return int(text) if text.isdigit() else 0
 
 
 def _required_string(field_name: str, value: Any) -> str:

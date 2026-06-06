@@ -30,6 +30,7 @@ from lawvm.core.frontend_phase_surface import (
     FrontendDiagnostic,
     FrontendPhaseRow,
     FrontendPhaseSurface,
+    frontend_phase_surface_evidence_report,
 )
 from lawvm.core.frontier_work_item import (
     FrontierWorkItem,
@@ -314,6 +315,75 @@ def test_frontend_phase_surface_marks_compatibility_output_without_replay_claims
     assert data["canonical_effect_claims"] is False
     assert data["phase_rows"][1]["authority_role"] == "compatibility_projection_not_authority"
     assert data["diagnostics"][0]["forbidden_shortcuts"] == ["drop_residual"]
+
+
+def test_frontend_phase_surface_projects_to_evidence_report_without_authority() -> None:
+    surface = FrontendPhaseSurface(
+        jurisdiction="fi",
+        frontend="finland.johtolause.parse_clause",
+        schema="lawvm.frontend_phase_surface.v1",
+        truth_claim="ClauseAST authority path diagnostics",
+        source_hash="abc123",
+        source_length=17,
+        authority_path=("source_text", "ClauseAST"),
+        compatibility_outputs=("ParsedOp",),
+        phase_rows=(
+            FrontendPhaseRow(
+                phase="clause_ast_lowering",
+                status="lowered",
+                artifact_kind="ClauseAST",
+                authority_role="primary_semantic_authority",
+                produced=True,
+                output_artifacts=("clause_ast",),
+            ),
+            FrontendPhaseRow(
+                phase="parsed_ops_compat",
+                status="derived",
+                artifact_kind="ParsedOp",
+                authority_role="compatibility_projection_not_authority",
+                produced=True,
+                input_artifacts=("clause_ast",),
+                output_artifacts=("parsed_ops",),
+                diagnostic_ids=("diag-1",),
+            ),
+        ),
+        diagnostics=(
+            FrontendDiagnostic(
+                diagnostic_id="diag-1",
+                jurisdiction="fi",
+                frontend="finland.johtolause.parse_clause",
+                phase="parsed_ops_compat",
+                severity="info",
+                rule_id="fi.compat.parsed_ops",
+                message="ParsedOps are compatibility output.",
+            ),
+        ),
+    )
+
+    report = frontend_phase_surface_evidence_report(surface)
+    data = report.to_dict()
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert data["report_kind"] == "frontend_phase_surface"
+    assert data["replay_claims"] is False
+    assert data["canonical_effect_claims"] is False
+    assert data["candidate_effect_claims"] is False
+    assert data["dry_run_claims"] is False
+    assert data["agreement_claims"] is False
+    assert data["summary"]["phase_row_count"] == 2
+    assert data["summary"]["diagnostic_count"] == 1
+    assert data["summary"]["compatibility_outputs"] == ["ParsedOp"]
+    assert [row["surface"] for row in data["rows"]] == [
+        "frontend_phase_row",
+        "frontend_phase_row",
+        "frontend_diagnostic",
+    ]
+    assert data["rows"][1]["authority_role"] == "compatibility_projection_not_authority"
+    assert data["rows"][1]["replay_authorized"] is False
+    assert "compatibility_output_as_semantic_authority" in data["forbidden_shortcuts"]
+    assert proof_surface["surface_kind"] == "frontend_phase_surface"
+    assert proof_surface["rows"][0]["row_kind"] == "frontend_phase_row"
+    assert proof_surface["rows"][0]["source_refs"] == ["abc123"]
 
 
 def test_frontend_capability_declares_supported_waists_without_replay_authority() -> None:

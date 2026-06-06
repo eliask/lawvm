@@ -334,6 +334,7 @@ the clean compiler chain without hiding recoveries:
 
 ```text
 token tape / surface parse
+frontend phase-surface report rows
 payload elaboration
 sparse slot candidate certificates
 source pathology frontiers
@@ -378,6 +379,7 @@ MutationBoundaryProof
 AgreementResidual
 TemporalResolutionEvidence
 SourceBundlePolicy / SourceAcquisitionAssertion
+FrontendPhaseSurface
 ```
 
 If none fit, add the new local row only with a narrow TODO or spec note
