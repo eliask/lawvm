@@ -547,8 +547,81 @@ def test_token_tape_projects_source_preserving_lexemes_and_view() -> None:
     assert tape_data["lexeme_count"] == 3
     assert tape_data["lexemes"][0]["semantic_code"] == "M"
     assert view_data["source_hash"] == tape.source_hash
+    assert view_data["visible_count"] == 2
+    assert view_data["structural_count"] == 2
     assert view_data["visible_indices"] == [0, 1]
+    assert view_data["structural_view_to_raw"] == [[0, 1], [1, 2]]
     assert view_data["annotations"][0]["sentinel_kind"] == "DEMO_SPAN"
+    structural, view_to_raw = view.structural_view_with_map()
+    assert [lexeme.text for lexeme in structural] == ["muutetaan", "5"]
+    assert view_to_raw == ((0, 1), (1, 2))
+
+
+def test_annotated_token_view_builds_structural_view_without_mutating_tape() -> None:
+    tape = TokenTape(
+        source_text="a b c d",
+        lexemes=(
+            TokenLexeme("a", "a", "WORD"),
+            TokenLexeme("b", "b", "WORD"),
+            TokenLexeme("c", "c", "WORD"),
+            TokenLexeme("d", "d", "WORD"),
+        ),
+    )
+    view = AnnotatedTokenView(
+        tape=tape,
+        annotations=(
+            TokenAnnotation("ann-1", "citation", 1, 3, sentinel_kind="CITATION_SPAN"),
+        ),
+    )
+
+    structural, view_to_raw = view.structural_view_with_map()
+
+    assert [lexeme.text for lexeme in structural] == ["a", "CITATION_SPAN", "d"]
+    assert view_to_raw == ((0, 1), (1, 3), (3, 4))
+    assert view.to_dict()["visible_count"] == 0
+    assert view.to_dict()["structural_count"] == 3
+    assert view.to_dict()["structural_view_to_raw"] == [[0, 1], [1, 3], [3, 4]]
+    assert [lexeme.text for lexeme in tape.lexemes] == ["a", "b", "c", "d"]
+    assert structural[1].detail["source_preserving_sentinel"] is True
+    assert structural[1].detail["annotation_id"] == "ann-1"
+
+
+def test_annotated_token_view_prefers_outer_annotation_for_overlaps() -> None:
+    tape = TokenTape(
+        source_text="a b c d",
+        lexemes=(
+            TokenLexeme("a", "a", "WORD"),
+            TokenLexeme("b", "b", "WORD"),
+            TokenLexeme("c", "c", "WORD"),
+            TokenLexeme("d", "d", "WORD"),
+        ),
+    )
+    view = AnnotatedTokenView(
+        tape=tape,
+        annotations=(
+            TokenAnnotation("inner", "inner", 1, 2, sentinel_kind="INNER"),
+            TokenAnnotation("outer", "outer", 0, 3, sentinel_kind="OUTER"),
+        ),
+    )
+
+    structural, view_to_raw = view.structural_view_with_map()
+
+    assert [lexeme.text for lexeme in structural] == ["OUTER", "d"]
+    assert view_to_raw == ((0, 3), (3, 4))
+
+
+def test_annotated_token_view_rejects_annotation_outside_tape() -> None:
+    tape = TokenTape(
+        source_text="a",
+        lexemes=(TokenLexeme("a", "a", "WORD"),),
+    )
+    view = AnnotatedTokenView(
+        tape=tape,
+        annotations=(TokenAnnotation("bad", "bad", 0, 2, sentinel_kind="BAD"),),
+    )
+
+    with pytest.raises(ValueError, match="TokenAnnotation.end"):
+        view.structural_view_with_map()
 
 
 def test_payload_elaboration_result_is_projection_only_not_replay_authority() -> None:

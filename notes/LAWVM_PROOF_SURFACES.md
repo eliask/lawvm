@@ -160,6 +160,9 @@ Rules:
 - Frontend diagnostics should project to governed `Finding` rows when they
   cross a phase boundary. Human diagnostic strings may remain as rendering
   compatibility, but they should not be the only control-plane record.
+- Token tapes should preserve the immutable source lexeme stream. Parser-facing
+  structural views should be derived from annotation overlays and keep a
+  view-to-raw token-span map.
 
 ---
 

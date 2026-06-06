@@ -154,15 +154,82 @@ class AnnotatedTokenView:
     def __len__(self) -> int:
         return len(self.visible_indices)
 
+    def structural_view(self) -> tuple[TokenLexeme, ...]:
+        """Return the parser-visible lexeme stream without mutating the tape.
+
+        If ``visible_indices`` is supplied, it is treated as an explicit
+        compatibility projection. Otherwise annotations are applied over the
+        immutable tape: annotated spans are hidden and optionally represented by
+        a single sentinel lexeme at the span start.
+        """
+
+        return self.structural_view_with_map()[0]
+
+    def structural_view_with_map(
+        self,
+    ) -> tuple[tuple[TokenLexeme, ...], tuple[tuple[int, int], ...]]:
+        """Return structural lexemes plus their raw tape span map."""
+
+        if self.visible_indices:
+            return (
+                tuple(self.tape.lexemes[index] for index in self.visible_indices),
+                tuple((index, index + 1) for index in self.visible_indices),
+            )
+
+        covered = self._annotation_cover()
+        lexemes: list[TokenLexeme] = []
+        view_to_raw: list[tuple[int, int]] = []
+        index = 0
+        while index < len(self.tape.lexemes):
+            annotation = covered[index]
+            if annotation is None:
+                lexemes.append(self.tape.lexemes[index])
+                view_to_raw.append((index, index + 1))
+                index += 1
+                continue
+            if annotation.sentinel_kind:
+                lexemes.append(_sentinel_lexeme(annotation))
+                view_to_raw.append((annotation.start, annotation.end))
+            index = annotation.end
+        return tuple(lexemes), tuple(view_to_raw)
+
+    def _annotation_cover(self) -> tuple[TokenAnnotation | None, ...]:
+        covered: list[TokenAnnotation | None] = [None] * len(self.tape.lexemes)
+        annotations = sorted(self.annotations, key=lambda item: -(item.end - item.start))
+        for annotation in annotations:
+            if annotation.end > len(self.tape.lexemes):
+                raise ValueError("TokenAnnotation.end must not exceed tape length")
+            for index in range(annotation.start, annotation.end):
+                if covered[index] is None:
+                    covered[index] = annotation
+        return tuple(covered)
+
     def to_dict(self) -> dict[str, Any]:
+        structural, view_to_raw = self.structural_view_with_map()
         return {
             "view_schema": self.view_schema,
             "source_hash": self.tape.source_hash,
             "visible_count": len(self.visible_indices),
+            "structural_count": len(structural),
             "annotation_count": len(self.annotations),
             "visible_indices": list(self.visible_indices),
+            "structural_view_to_raw": [list(span) for span in view_to_raw],
             "annotations": [annotation.to_dict() for annotation in self.annotations],
         }
+
+
+def _sentinel_lexeme(annotation: TokenAnnotation) -> TokenLexeme:
+    return TokenLexeme(
+        text=annotation.sentinel_kind,
+        lemma=annotation.kind,
+        category=annotation.sentinel_kind,
+        detail={
+            "annotation_id": annotation.annotation_id,
+            "annotation_kind": annotation.kind,
+            "annotation_detail": annotation.detail,
+            "source_preserving_sentinel": True,
+        },
+    )
 
 
 def _required_string(field_name: str, value: Any) -> str:
