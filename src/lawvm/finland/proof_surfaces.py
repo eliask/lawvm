@@ -1715,9 +1715,22 @@ def finland_corrigendum_open_manual_evidence_surface(
     """Wrap the open manual-corrigendum candidate listing in the shared envelope."""
 
     candidates = _mapping_sequence(payload.get("rows"))
-    rows = tuple({**dict(row), "surface": "corrigendum_open_manual_candidate"} for row in candidates)
+    frontier_items = tuple(
+        _corrigendum_open_manual_frontier_work_item(index=index, candidate=candidate).to_dict()
+        for index, candidate in enumerate(candidates)
+    )
+    rows = tuple(
+        (
+            *({**dict(row), "surface": "corrigendum_open_manual_candidate"} for row in candidates),
+            *(
+                {**dict(row), "surface": "corrigendum_open_manual_frontier_work_item"}
+                for row in frontier_items
+            ),
+        )
+    )
     summary = {
         "candidate_count": len(candidates),
+        "frontier_work_item_count": len(frontier_items),
         "open_manual_row_count": sum(int(row.get("open_manual_rows") or 0) for row in candidates),
         "attachment_only_row_count": sum(int(row.get("attachment_only_rows") or 0) for row in candidates),
         "unverified_row_count": sum(int(row.get("db_no_match_rows") or 0) for row in candidates),
@@ -1751,9 +1764,78 @@ def finland_corrigendum_open_manual_evidence_surface(
                 "unverified_count_as_source_text_repair",
                 "manual_entry_count_as_claim_validation",
             ),
-            "included_surfaces": ("corrigendum_open_manual_candidate",),
+            "included_surfaces": (
+                "corrigendum_open_manual_candidate",
+                "corrigendum_open_manual_frontier_work_item",
+            ),
         },
     ).to_dict()
+
+
+def _corrigendum_open_manual_frontier_work_item(
+    *,
+    index: int,
+    candidate: Mapping[str, Any],
+) -> FrontierWorkItem:
+    amendment_id = str(candidate.get("amendment_id") or f"unknown-{index}")
+    digest = hashlib.sha256(
+        json.dumps(
+            {
+                "amendment_id": amendment_id,
+                "db_row_count": int(candidate.get("db_row_count") or 0),
+                "db_no_match_rows": int(candidate.get("db_no_match_rows") or 0),
+                "open_manual_rows": int(candidate.get("open_manual_rows") or 0),
+                "attachment_only_rows": int(candidate.get("attachment_only_rows") or 0),
+                "manual_entry_count": int(candidate.get("manual_entry_count") or 0),
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()[:16]
+    return FrontierWorkItem(
+        work_item_id=f"fi:{amendment_id}:corrigendum-open-manual:{digest}",
+        jurisdiction="fi",
+        source_artifact_id=amendment_id,
+        source_unit_id=f"{amendment_id}#open-manual",
+        owner_phase="manual_claim_frontier",
+        frontier_family="fi_corrigendum_open_manual_candidate",
+        frontier_status="manual_claim_needed",
+        candidate_operation_family="corrigendum_source_repair",
+        candidate_targets=(amendment_id,),
+        guidance_refs=("lawvm_corrigendum_open_manual_review",),
+        required_claim_kind="finland_corrigendum_manual_override",
+        required_validator_checks=(
+            "manual_corrigendum_claim_review",
+            "source_xml_non_verification_review",
+            "mutation_boundary_check_before_replay",
+        ),
+        required_proofs=(
+            "manual_corrigendum_override_claim",
+            "source_corrigendum_witness_review",
+            "targeted_source_xml_non_verification_review",
+            "mutation_boundary_proof_before_replay_promotion",
+        ),
+        safe_default="do_not_apply_open_manual_candidate_without_manual_claim",
+        forbidden_shortcuts=(
+            "open_manual_candidate_as_replay_authorization",
+            "open_manual_candidate_as_manual_claim",
+            "candidate_rank_as_execution_priority",
+            "unverified_count_as_source_text_repair",
+            "manual_entry_count_as_claim_validation",
+        ),
+        executable=False,
+        replay_authorized=False,
+        authorization_status="blocked_manual_claim_required",
+        detail={
+            "amendment_id": amendment_id,
+            "candidate_index": index,
+            "db_row_count": int(candidate.get("db_row_count") or 0),
+            "db_no_match_rows": int(candidate.get("db_no_match_rows") or 0),
+            "open_manual_rows": int(candidate.get("open_manual_rows") or 0),
+            "attachment_only_rows": int(candidate.get("attachment_only_rows") or 0),
+            "manual_entry_count": int(candidate.get("manual_entry_count") or 0),
+        },
+    )
 
 
 def finland_corrigendum_manual_template_frontier_item(

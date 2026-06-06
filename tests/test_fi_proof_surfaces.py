@@ -177,8 +177,20 @@ def test_finland_corrigendum_open_manual_evidence_surface_is_frontier_listing_on
     assert report["replay_claims"] is False
     assert report["agreement_claims"] is False
     assert report["summary"]["candidate_count"] == 1
+    assert report["summary"]["frontier_work_item_count"] == 1
     assert report["summary"]["open_manual_row_count"] == 1
-    assert report["rows"][0]["surface"] == "corrigendum_open_manual_candidate"
+    rows_by_surface = {row["surface"]: row for row in report["rows"]}
+    assert set(rows_by_surface) == {
+        "corrigendum_open_manual_candidate",
+        "corrigendum_open_manual_frontier_work_item",
+    }
+    frontier = rows_by_surface["corrigendum_open_manual_frontier_work_item"]
+    assert frontier["frontier_family"] == "fi_corrigendum_open_manual_candidate"
+    assert frontier["frontier_status"] == "manual_claim_needed"
+    assert frontier["required_claim_kind"] == "finland_corrigendum_manual_override"
+    assert frontier["executable"] is False
+    assert frontier["replay_authorized"] is False
+    assert frontier["authorization_status"] == "blocked_manual_claim_required"
     assert "open_manual_candidate_as_manual_claim" in report["forbidden_shortcuts"]
 
 
