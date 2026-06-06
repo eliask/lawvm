@@ -12,6 +12,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from lawvm.core.candidate_set_certificate import CandidateSetCertificate
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frontier_work_item import FrontierWorkItem
@@ -30,6 +31,12 @@ _DEFAULT_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
     "delete_or_overwrite_live_structure_to_match_oracle",
 )
 _DEFAULT_SAFE_DEFAULT = "preserve_uncertainty_and_do_not_promote_pathology_to_replay_authority"
+_SPARSE_SLOT_PROMOTION_PROOFS: tuple[str, ...] = (
+    "full_sparse_slot_candidate_enumeration",
+    "slot_uniqueness_proof",
+    "payload_identity_proof",
+    "mutation_boundary_proof_before_replay_promotion",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,6 +283,33 @@ def source_pathology_proof_surface_rows(
     }
 
 
+def sparse_slot_candidate_set_certificate_rows(
+    projection_rows: tuple[Mapping[str, Any], ...],
+    *,
+    statute_id: str = "",
+) -> list[dict[str, Any]]:
+    """Project Finland sparse-slot report rows into candidate certificates."""
+
+    certificates: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, tuple[str, ...]]] = set()
+    for row in projection_rows:
+        certificate = _sparse_slot_candidate_certificate(row, statute_id=statute_id)
+        if certificate is None:
+            continue
+        payload = certificate.to_dict()
+        key = (
+            str(payload.get("scope_id") or ""),
+            str(payload.get("rule_id") or ""),
+            str(payload.get("reason") or ""),
+            tuple(str(candidate) for candidate in payload.get("candidate_ids", []) or []),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        certificates.append(payload)
+    return certificates
+
+
 def _pathology_row(pathology: SourcePathology | Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(pathology, SourcePathology):
         return {
@@ -310,3 +344,210 @@ def _pathology_work_item_id(row: Mapping[str, Any], *, statute_id: str = "") -> 
     code = str(row.get("code") or "unknown").lower()
     source = str(row.get("source_statute") or statute_id or "unknown").replace("/", "_")
     return f"fi-source-pathology:{source}:{code}:{digest}"
+
+
+def _sparse_slot_candidate_certificate(
+    row: Mapping[str, Any],
+    *,
+    statute_id: str = "",
+) -> CandidateSetCertificate | None:
+    kind = str(row.get("kind") or "")
+    detail_raw = row.get("detail")
+    if not isinstance(detail_raw, Mapping):
+        return None
+    detail = dict(detail_raw)
+    if kind == "ELAB.SPARSE_SLOT_BINDING":
+        return _sparse_slot_binding_candidate_certificate(detail, statute_id=statute_id)
+    if kind == "ELAB.SPARSE_PAYLOAD_LEFTOVER":
+        return _sparse_leftover_candidate_certificate(detail, statute_id=statute_id)
+    if kind == "ELAB.AMBIGUOUS_BINDING":
+        return _sparse_ambiguous_binding_candidate_certificate(detail, statute_id=statute_id)
+    if kind == "ELAB.UNASSIGNED_SPARSE_SLOTS":
+        return _sparse_leftover_candidate_certificate(detail, statute_id=statute_id)
+    return None
+
+
+def _sparse_slot_binding_candidate_certificate(
+    detail: Mapping[str, Any],
+    *,
+    statute_id: str,
+) -> CandidateSetCertificate:
+    source_statute = str(detail.get("source_statute") or statute_id or "unknown")
+    target_unit_kind = str(detail.get("target_unit_kind") or "")
+    target_norm = str(detail.get("target_norm") or "")
+    target_chapter = str(detail.get("target_chapter") or "")
+    slot_index = _positive_int(detail.get("payload_slot_index"))
+    slot_label = str(detail.get("payload_slot_label") or "")
+    candidate_id = _sparse_payload_slot_candidate_id(slot_index=slot_index, slot_label=slot_label)
+    scope_id = _sparse_scope_id(
+        source_statute=source_statute,
+        target_unit_kind=target_unit_kind,
+        target_norm=target_norm,
+        target_chapter=target_chapter,
+        suffix=f"binding:{candidate_id}",
+    )
+    return CandidateSetCertificate(
+        scope_id=scope_id,
+        candidate_set_kind="fi_sparse_payload_slot_assignment",
+        phase="typed_elaboration",
+        rule_id="fi_sparse_slot_binding_candidate_set",
+        reason="selected_sparse_slot_binding_recorded_without_full_candidate_enumeration",
+        completeness_status="partial",
+        candidate_count=1,
+        candidate_ids=(candidate_id,),
+        selected_candidate_ids=(candidate_id,),
+        blocker_counts={"candidate_set_not_enumerated": 1},
+        blocker_families=("candidate_set_completeness",),
+        next_promotion_allowed=False,
+        next_promotion_requires=_SPARSE_SLOT_PROMOTION_PROOFS,
+        detail={
+            "jurisdiction": "fi",
+            "source_statute": source_statute,
+            "target_unit_kind_witness": target_unit_kind,
+            "target_norm_witness": target_norm,
+            "target_chapter_witness": target_chapter,
+            "op_description": str(detail.get("op_description") or ""),
+            "op_type": str(detail.get("op_type") or ""),
+            "target_paragraph": str(detail.get("target_paragraph") or ""),
+            "target_item": str(detail.get("target_item") or ""),
+            "target_special": str(detail.get("target_special") or ""),
+            "payload_slot_index": slot_index,
+            "payload_slot_label": slot_label,
+            "projection_only": True,
+        },
+    )
+
+
+def _sparse_ambiguous_binding_candidate_certificate(
+    detail: Mapping[str, Any],
+    *,
+    statute_id: str,
+) -> CandidateSetCertificate:
+    source_statute = str(detail.get("amendment_id") or detail.get("source_statute") or statute_id or "unknown")
+    slot_id = _positive_int(detail.get("slot_id"))
+    candidate_count = max(_positive_int(detail.get("candidate_count")), 1)
+    candidate_id = f"payload-slot:{slot_id}" if slot_id else "payload-slot:unknown"
+    return CandidateSetCertificate(
+        scope_id=_sparse_scope_id(
+            source_statute=source_statute,
+            target_unit_kind="",
+            target_norm="",
+            target_chapter="",
+            suffix=f"ambiguous:{candidate_id}",
+        ),
+        candidate_set_kind="fi_sparse_payload_slot_assignment",
+        phase="typed_elaboration",
+        rule_id="fi_sparse_slot_ambiguous_binding_candidate_set",
+        reason="ambiguous_sparse_slot_binding",
+        completeness_status="partial",
+        candidate_count=candidate_count,
+        candidate_ids=(candidate_id,),
+        blocker_counts={"ambiguous_binding": 1},
+        blocker_families=("sparse_slot_ambiguity",),
+        next_promotion_allowed=False,
+        next_promotion_requires=_SPARSE_SLOT_PROMOTION_PROOFS,
+        detail={
+            "jurisdiction": "fi",
+            "source_statute": source_statute,
+            "slot_id": slot_id,
+            "admissibility": str(detail.get("admissibility") or ""),
+            "projection_only": True,
+        },
+    )
+
+
+def _sparse_leftover_candidate_certificate(
+    detail: Mapping[str, Any],
+    *,
+    statute_id: str,
+) -> CandidateSetCertificate | None:
+    slots = _string_sequence(detail.get("unassigned_slots"))
+    if not slots:
+        return None
+    source_statute = str(detail.get("source_statute") or statute_id or "unknown")
+    target_unit_kind = str(detail.get("target_unit_kind") or "")
+    target_norm = str(detail.get("target_norm") or "")
+    target_chapter = str(detail.get("target_chapter") or "")
+    candidate_ids = tuple(_sparse_payload_slot_candidate_id_from_text(slot) for slot in slots)
+    return CandidateSetCertificate(
+        scope_id=_sparse_scope_id(
+            source_statute=source_statute,
+            target_unit_kind=target_unit_kind,
+            target_norm=target_norm,
+            target_chapter=target_chapter,
+            suffix="unassigned:" + hashlib.sha256("|".join(candidate_ids).encode("utf-8")).hexdigest()[:12],
+        ),
+        candidate_set_kind="fi_sparse_payload_slot_assignment",
+        phase="typed_elaboration",
+        rule_id="fi_sparse_unassigned_payload_slot_candidate_set",
+        reason="unassigned_sparse_payload_slots",
+        completeness_status="rejected",
+        candidate_count=len(candidate_ids),
+        candidate_ids=candidate_ids,
+        blocker_counts={"unassigned_payload_slot": len(candidate_ids)},
+        blocker_families=("sparse_payload_leftover",),
+        next_promotion_allowed=False,
+        next_promotion_requires=_SPARSE_SLOT_PROMOTION_PROOFS,
+        detail={
+            "jurisdiction": "fi",
+            "source_statute": source_statute,
+            "target_unit_kind_witness": target_unit_kind,
+            "target_norm_witness": target_norm,
+            "target_chapter_witness": target_chapter,
+            "unassigned_slots": slots,
+            "projection_only": True,
+        },
+    )
+
+
+def _positive_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int) and value > 0:
+        return value
+    text = str(value or "").strip()
+    return int(text) if text.isdigit() else 0
+
+
+def _string_sequence(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return (value,) if value else ()
+    if isinstance(value, list | tuple):
+        return tuple(str(item) for item in value if str(item))
+    return ()
+
+
+def _sparse_payload_slot_candidate_id(*, slot_index: int, slot_label: str) -> str:
+    label = slot_label.strip() or "unlabeled"
+    index = str(slot_index) if slot_index else "unknown"
+    return f"payload-slot:{index}:{label}"
+
+
+def _sparse_payload_slot_candidate_id_from_text(slot: str) -> str:
+    text = str(slot or "").strip()
+    if ":" not in text:
+        return f"payload-slot:unknown:{text or 'unlabeled'}"
+    index, label = text.split(":", 1)
+    return _sparse_payload_slot_candidate_id(
+        slot_index=_positive_int(index),
+        slot_label=label.strip("()") or "unlabeled",
+    )
+
+
+def _sparse_scope_id(
+    *,
+    source_statute: str,
+    target_unit_kind: str,
+    target_norm: str,
+    target_chapter: str,
+    suffix: str,
+) -> str:
+    scope_parts = (
+        source_statute or "unknown",
+        target_unit_kind or "unknown-target-kind",
+        target_chapter or "no-chapter",
+        target_norm or "unknown-target",
+        suffix,
+    )
+    safe = ":".join(part.replace("/", "_").replace(" ", "_") for part in scope_parts)
+    return f"fi-sparse-slot:{safe}"

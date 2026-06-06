@@ -4,6 +4,7 @@ from lawvm.finland.proof_surfaces import (
     source_pathology_frontier_work_item,
     source_pathology_proof_rule,
     source_pathology_proof_surface_rows,
+    sparse_slot_candidate_set_certificate_rows,
 )
 
 
@@ -83,3 +84,88 @@ def test_source_pathology_proof_surface_rows_bundle_authorization_and_frontier()
     assert len(rows["source_pathology_frontier_work_items"]) == 1
     assert rows["source_pathology_execution_authorizations"][0]["owner_phase"] == "source_chain_elaboration"
     assert rows["source_pathology_frontier_work_items"][0]["frontier_status"] == "source_chain_frontier"
+
+
+def test_sparse_slot_binding_projects_partial_candidate_certificate() -> None:
+    certificates = sparse_slot_candidate_set_certificate_rows(
+        (
+            {
+                "kind": "ELAB.SPARSE_SLOT_BINDING",
+                "detail": {
+                    "source_statute": "2010/100",
+                    "target_unit_kind": "section",
+                    "target_norm": "3",
+                    "target_chapter": "",
+                    "op_description": "REPLACE 3 § 1 mom",
+                    "op_type": "REPLACE",
+                    "target_paragraph": 1,
+                    "target_item": "",
+                    "target_special": "",
+                    "payload_slot_index": 1,
+                    "payload_slot_label": "1",
+                },
+            },
+        ),
+        statute_id="1999/1",
+    )
+
+    assert len(certificates) == 1
+    cert = certificates[0]
+    assert cert["candidate_set_kind"] == "fi_sparse_payload_slot_assignment"
+    assert cert["phase"] == "typed_elaboration"
+    assert cert["completeness_status"] == "partial"
+    assert cert["candidate_ids"] == ["payload-slot:1:1"]
+    assert cert["selected_candidate_ids"] == ["payload-slot:1:1"]
+    assert cert["next_promotion_allowed"] is False
+    assert "slot_uniqueness_proof" in cert["next_promotion_requires"]
+
+
+def test_sparse_leftover_projects_rejected_candidate_certificate() -> None:
+    certificates = sparse_slot_candidate_set_certificate_rows(
+        (
+            {
+                "kind": "ELAB.SPARSE_PAYLOAD_LEFTOVER",
+                "detail": {
+                    "source_statute": "2010/100",
+                    "target_unit_kind": "section",
+                    "target_norm": "3",
+                    "target_chapter": "",
+                    "unassigned_slots": ["2:2", "3:(unlabeled)"],
+                },
+            },
+        ),
+        statute_id="1999/1",
+    )
+
+    assert len(certificates) == 1
+    cert = certificates[0]
+    assert cert["completeness_status"] == "rejected"
+    assert cert["candidate_count"] == 2
+    assert cert["blocker_counts"] == {"unassigned_payload_slot": 2}
+    assert cert["blocker_families"] == ["sparse_payload_leftover"]
+    assert cert["candidate_ids"] == ["payload-slot:2:2", "payload-slot:3:unlabeled"]
+
+
+def test_sparse_ambiguous_binding_projects_partial_candidate_certificate() -> None:
+    certificates = sparse_slot_candidate_set_certificate_rows(
+        (
+            {
+                "kind": "ELAB.AMBIGUOUS_BINDING",
+                "detail": {
+                    "slot_id": 2,
+                    "amendment_id": "2010/100",
+                    "candidate_count": 3,
+                    "admissibility": "ambiguous",
+                },
+            },
+        ),
+        statute_id="1999/1",
+    )
+
+    assert len(certificates) == 1
+    cert = certificates[0]
+    assert cert["completeness_status"] == "partial"
+    assert cert["candidate_count"] == 3
+    assert cert["candidate_ids"] == ["payload-slot:2"]
+    assert cert["blocker_counts"] == {"ambiguous_binding": 1}
+    assert cert["blocker_families"] == ["sparse_slot_ambiguity"]

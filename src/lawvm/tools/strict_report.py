@@ -36,7 +36,10 @@ from lawvm.core.compile_views import (
     projection_rows_from_findings,
     source_pathology_rows_from_findings,
 )
-from lawvm.finland.proof_surfaces import source_pathology_proof_surface_rows
+from lawvm.finland.proof_surfaces import (
+    source_pathology_proof_surface_rows,
+    sparse_slot_candidate_set_certificate_rows,
+)
 from lawvm.finland.source_adjudication import build_source_adjudication
 from lawvm.finland.ops import FailedOp
 from lawvm.replay_adjudication import SourceAdjudication
@@ -380,6 +383,10 @@ def _to_json(cr: Any) -> dict[str, Any]:
         tuple(cast(Any, p) for p in source_pathologies),
         statute_id=str(_field(cr, "statute_id", "") or ""),
     )
+    sparse_slot_candidate_certificates = sparse_slot_candidate_set_certificate_rows(
+        tuple(row for row in projection_rows if isinstance(row, dict)),
+        statute_id=str(_field(cr, "statute_id", "") or ""),
+    )
     sc_chain_length, sc_source_available, sc_dates_available = _source_completeness_counts(cr)
     n_canonical = len(canonical_ops)
     profile = _field(cr, "profile", None)
@@ -409,6 +416,7 @@ def _to_json(cr: Any) -> dict[str, Any]:
             for p in source_pathologies
         ],
         **source_pathology_proof_rows,
+        "sparse_slot_candidate_set_certificates": sparse_slot_candidate_certificates,
         "strict_fail_reasons": strict_fail_reasons,
         "projection_rows": [
             {

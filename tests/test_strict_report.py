@@ -477,6 +477,44 @@ def test_to_json_preserves_source_pathology_target_unit_kind() -> None:
     assert frontier_item["detail"]["execution_authorization"]["replay_authorized"] is False
 
 
+def test_to_json_exports_sparse_slot_candidate_certificates() -> None:
+    payload = strict_report._to_json(
+        {
+            "statute_id": "2001/1234",
+            "replay_mode": "legal_pit",
+            "compile_mode": "strict",
+            "profile": FINLAND_INGESTION_V1,
+            "projection_rows": [
+                {
+                    "kind": "ELAB.SPARSE_SLOT_BINDING",
+                    "message": "Frontend elaboration recorded sparse slot ownership.",
+                    "source": "2010/100",
+                    "detail": {
+                        "source_statute": "2010/100",
+                        "target_unit_kind": "section",
+                        "target_norm": "3",
+                        "target_chapter": "",
+                        "op_description": "REPLACE 3 § 1 mom",
+                        "op_type": "REPLACE",
+                        "target_paragraph": 1,
+                        "target_item": "",
+                        "target_special": "",
+                        "payload_slot_index": 1,
+                        "payload_slot_label": "1",
+                    },
+                }
+            ],
+        }
+    )
+
+    certificates = payload["sparse_slot_candidate_set_certificates"]
+    assert len(certificates) == 1
+    assert certificates[0]["candidate_set_kind"] == "fi_sparse_payload_slot_assignment"
+    assert certificates[0]["completeness_status"] == "partial"
+    assert certificates[0]["selected_candidate_ids"] == ["payload-slot:1:1"]
+    assert certificates[0]["next_promotion_allowed"] is False
+
+
 def test_format_report_surfaces_target_scoped_projection_row_detail() -> None:
     cr = SimpleNamespace(
         statute_id="2001/1234",
