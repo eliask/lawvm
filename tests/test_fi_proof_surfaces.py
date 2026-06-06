@@ -702,13 +702,28 @@ def test_finland_corrigendum_sources_projects_source_manifest_envelope() -> None
     assert report["summary"]["shown_record_count"] == 1
     assert report["summary"]["source_witness_count"] == 1
     assert report["summary"]["missing_date_count"] == 1
+    assert report["summary"]["source_completeness_status_count"] == 1
+    assert report["summary"]["source_completeness"] == {
+        "chain_length": 3,
+        "source_available": 3,
+        "dates_available": 2,
+        "missing_sources": 0,
+        "missing_dates": 1,
+    }
     assert report["summary"]["source_witness_digest_coverage_counts"] == {
         "artifact_and_preview_digest": 1
     }
     assert {row["surface"] for row in report["rows"]} == {
         "corrigendum_source_manifest_record",
         "corrigendum_source_witness",
+        "source_completeness_status",
     }
+    rows_by_surface = {row["surface"]: row for row in report["rows"]}
+    source_status = rows_by_surface["source_completeness_status"]
+    assert source_status["status"] == "incomplete"
+    assert source_status["owner_phase"] == "source_acquisition"
+    assert source_status["replay_authorized"] is False
+    assert source_status["execution_authorization"]["replay_authorized"] is False
     assert "source_manifest_as_replay_authorization" in report["forbidden_shortcuts"]
 
 

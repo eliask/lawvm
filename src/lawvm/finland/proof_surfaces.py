@@ -24,7 +24,10 @@ from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frontier_work_item import FrontierWorkItem
 from lawvm.core.mutation_accounting import MutationAccountingResult, MutationInvariantReport
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
-from lawvm.core.source_completeness import source_completeness_status_from_mapping
+from lawvm.core.source_completeness import (
+    SourceCompletenessStatus,
+    source_completeness_status_from_mapping,
+)
 from lawvm.core.source_witness import DigestWitness, SourceWitness
 from lawvm.core.source_witness import (
     nested_source_witness_digest_coverage_counts,
@@ -1869,25 +1872,47 @@ def finland_corrigendum_sources_evidence_surface(
 
     records = _mapping_sequence(payload.get("records"))
     source_witnesses = _mapping_sequence(payload.get("source_witnesses"))
+    date_status_counts = dict(payload.get("date_status_counts") or {})
+    pdf_count = int(payload.get("pdf_count") or 0)
+    missing_date_count = sum(
+        int(count or 0)
+        for status, count in date_status_counts.items()
+        if str(status) != "present"
+    )
+    source_completeness_status = _corrigendum_sources_completeness_status(
+        pdf_count=pdf_count,
+        missing_date_count=missing_date_count,
+        date_status_counts=date_status_counts,
+        mode=str(payload.get("mode") or ""),
+    )
     rows = tuple(
         (
             *({**dict(row), "surface": "corrigendum_source_witness"} for row in source_witnesses),
             *({**dict(row), "surface": "corrigendum_source_manifest_record"} for row in records),
+            *(
+                (
+                    {
+                        "surface": "source_completeness_status",
+                        **source_completeness_status.to_dict(),
+                    },
+                )
+                if source_completeness_status is not None
+                else ()
+            ),
         )
     )
-    date_status_counts = dict(payload.get("date_status_counts") or {})
     summary = {
-        "pdf_count": int(payload.get("pdf_count") or 0),
+        "pdf_count": pdf_count,
         "amendment_count": int(payload.get("amendment_count") or 0),
         "total_item_count": int(payload.get("total_item_count") or 0),
         "shown_record_count": len(records),
         "source_witness_count": len(source_witnesses),
         "source_witness_digest_coverage_counts": source_witness_digest_coverage_counts(source_witnesses),
         "date_status_counts": date_status_counts,
-        "missing_date_count": sum(
-            int(count or 0)
-            for status, count in date_status_counts.items()
-            if str(status) != "present"
+        "missing_date_count": missing_date_count,
+        "source_completeness_status_count": 1 if source_completeness_status is not None else 0,
+        "source_completeness": (
+            source_completeness_status.counts if source_completeness_status is not None else {}
         ),
     }
     return EvidenceSurfaceReport(
@@ -1920,9 +1945,35 @@ def finland_corrigendum_sources_evidence_surface(
             "included_surfaces": (
                 "corrigendum_source_witness",
                 "corrigendum_source_manifest_record",
+                "source_completeness_status",
             ),
         },
     ).to_dict()
+
+
+def _corrigendum_sources_completeness_status(
+    *,
+    pdf_count: int,
+    missing_date_count: int,
+    date_status_counts: Mapping[str, Any],
+    mode: str,
+) -> SourceCompletenessStatus | None:
+    if pdf_count <= 0:
+        return None
+    dates_available = max(pdf_count - missing_date_count, 0)
+    return SourceCompletenessStatus(
+        jurisdiction="fi",
+        statute_id="corrigendum_source_manifest",
+        chain_length=pdf_count,
+        source_available=pdf_count,
+        dates_available=dates_available,
+        owner_phase="source_acquisition",
+        detail={
+            "manifest_kind": "finland_corrigendum_pdf_sources",
+            "mode": mode,
+            "date_status_counts": dict(date_status_counts),
+        },
+    )
 
 
 def _pathology_row(pathology: SourcePathology | Mapping[str, Any]) -> dict[str, Any]:
