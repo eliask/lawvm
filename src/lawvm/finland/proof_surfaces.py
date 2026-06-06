@@ -21,7 +21,10 @@ from lawvm.core.frontier_work_item import FrontierWorkItem
 from lawvm.core.mutation_accounting import MutationAccountingResult, MutationInvariantReport
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.core.source_witness import DigestWitness, SourceWitness
-from lawvm.core.source_witness import source_witness_digest_coverage
+from lawvm.core.source_witness import (
+    nested_source_witness_digest_coverage_counts,
+    source_witness_digest_coverage_counts,
+)
 from lawvm.finland.consolidated_artifacts import artifact_record
 
 
@@ -739,10 +742,10 @@ def finland_strict_report_evidence_surface(
         "agreement_residual_count": len(agreement_residuals),
         "mutation_boundary_proof_count": len(mutation_boundary_proofs),
         "source_pathology_frontier_source_witness_digest_coverage_counts": (
-            _source_witness_digest_coverage_counts(source_pathology_frontier_items)
+            nested_source_witness_digest_coverage_counts(source_pathology_frontier_items)
         ),
         "source_lineage_source_witness_digest_coverage_counts": (
-            _source_witness_row_digest_coverage_counts(source_lineage_witnesses)
+            source_witness_digest_coverage_counts(source_lineage_witnesses)
         ),
         "projection_row_count": len(projection_rows),
         "failed_op_row_count": len(failed_ops),
@@ -889,7 +892,7 @@ def finland_evidence_bundle_evidence_surface(
         "source_witness_count": len(source_witnesses),
         "html_topology_source_witness_count": len(html_witnesses),
         "corrigendum_source_witness_count": len(corrigendum_witnesses),
-        "source_witness_digest_coverage_counts": _source_witness_row_digest_coverage_counts(source_witnesses),
+        "source_witness_digest_coverage_counts": source_witness_digest_coverage_counts(source_witnesses),
         "evidence_context_diagnostic_count": len(context_diagnostics),
         "section_bisect_row_count": len(section_bisect),
         "proof_tiers": proof_tiers,
@@ -1024,7 +1027,7 @@ def finland_corrigendum_review_evidence_surface(
         "unblamed_section_count": len(unblamed_sections),
         "contingent_effective_source_count": len(_string_sequence(payload.get("contingent_effective_sources"))),
         "corrigendum_source_witness_count": len(witnesses),
-        "corrigendum_source_witness_digest_coverage_counts": _source_witness_row_digest_coverage_counts(witnesses),
+        "corrigendum_source_witness_digest_coverage_counts": source_witness_digest_coverage_counts(witnesses),
         "corrigendum_db_row_count": sum(int(amendment.get("corrigendum_db_rows") or 0) for amendment in amendments),
         "corrigendum_no_match_row_count": sum(
             int(amendment.get("corrigendum_no_match_rows") or 0) for amendment in amendments
@@ -1101,7 +1104,7 @@ def finland_corrigendum_provenance_evidence_surface(
     summary = {
         "provenance_row_count": len(provenance_rows),
         "source_witness_count": len(witnesses),
-        "source_witness_digest_coverage_counts": _source_witness_row_digest_coverage_counts(witnesses),
+        "source_witness_digest_coverage_counts": source_witness_digest_coverage_counts(witnesses),
         "status_counts": dict(sorted(status_counts.items())),
         "verified_count": int(payload.get("verified_count") or 0),
         "attachment_only_count": int(payload.get("attachment_only_count") or 0),
@@ -1353,7 +1356,7 @@ def finland_corrigendum_manual_template_evidence_surface(
         "entry_count": len(entries),
         "frontier_work_item_count": len(frontier_items),
         "source_witness_count": len(source_witnesses),
-        "source_witness_digest_coverage_counts": _source_witness_row_digest_coverage_counts(source_witnesses),
+        "source_witness_digest_coverage_counts": source_witness_digest_coverage_counts(source_witnesses),
         "manual_entry_count": int(payload.get("manual_entry_count") or 0),
         "already_covered": bool(payload.get("already_covered")),
         "attachment_only_entry_count": int(payload.get("attachment_only_entry_count") or 0),
@@ -1415,7 +1418,7 @@ def finland_corrigendum_sources_evidence_surface(
         "total_item_count": int(payload.get("total_item_count") or 0),
         "shown_record_count": len(records),
         "source_witness_count": len(source_witnesses),
-        "source_witness_digest_coverage_counts": _source_witness_row_digest_coverage_counts(source_witnesses),
+        "source_witness_digest_coverage_counts": source_witness_digest_coverage_counts(source_witnesses),
         "date_status_counts": date_status_counts,
         "missing_date_count": sum(
             int(count or 0)
@@ -1762,27 +1765,6 @@ def _bool_field(row: Mapping[str, Any], key: str, *, default: bool) -> bool:
     if isinstance(value, bool):
         return value
     raise ValueError(f"mutation invariant {key} must be a boolean")
-
-
-def _source_witness_digest_coverage_counts(
-    frontier_items: tuple[Mapping[str, Any], ...],
-) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for item in frontier_items:
-        witness = item.get("source_witness")
-        coverage = source_witness_digest_coverage(witness) if isinstance(witness, Mapping) else "missing_source_witness"
-        counts[coverage] = counts.get(coverage, 0) + 1
-    return dict(sorted(counts.items()))
-
-
-def _source_witness_row_digest_coverage_counts(
-    witnesses: tuple[Mapping[str, Any], ...],
-) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for witness in witnesses:
-        coverage = source_witness_digest_coverage(witness)
-        counts[coverage] = counts.get(coverage, 0) + 1
-    return dict(sorted(counts.items()))
 
 
 def _field(record: Any, name: str, default: Any = None) -> Any:

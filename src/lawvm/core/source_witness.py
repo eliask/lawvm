@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from lawvm.core.frozen_values import freeze_mapping
 
@@ -156,6 +156,35 @@ def source_witness_digest_coverage(row: Mapping[str, Any]) -> str:
     if has_preview_digest:
         return "preview_digest"
     return "missing_digest"
+
+
+def source_witness_digest_coverage_counts(
+    witnesses: Iterable[Mapping[str, Any]],
+) -> dict[str, int]:
+    """Count digest coverage classes for direct source-witness mappings."""
+    counts: dict[str, int] = {}
+    for witness in witnesses:
+        coverage = source_witness_digest_coverage(witness)
+        counts[coverage] = counts.get(coverage, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def nested_source_witness_digest_coverage_counts(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    field: str = "source_witness",
+) -> dict[str, int]:
+    """Count digest coverage classes for rows that carry a nested witness."""
+    counts: dict[str, int] = {}
+    for row in rows:
+        witness = row.get(field)
+        coverage = (
+            source_witness_digest_coverage(witness)
+            if isinstance(witness, Mapping)
+            else "missing_source_witness"
+        )
+        counts[coverage] = counts.get(coverage, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _digest_witness(row: Mapping[str, Any]) -> DigestWitness | None:

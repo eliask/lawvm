@@ -48,8 +48,10 @@ from lawvm.core.proof_obligations import (
 from lawvm.core.provenance_graph import ArtifactRef
 from lawvm.core.source_witness import (
     DigestWitness,
+    nested_source_witness_digest_coverage_counts,
     SourceWitness,
     source_witness_digest_coverage,
+    source_witness_digest_coverage_counts,
     source_witness_from_mapping,
     source_witness_role_key,
 )
@@ -649,6 +651,41 @@ def test_source_witness_reporting_keys_classify_role_and_digest_coverage() -> No
         "missing_digest"
     )
     assert source_witness_digest_coverage({}) == "missing_source_witness"
+
+
+def test_source_witness_digest_coverage_counts_are_shared_sorted_summaries() -> None:
+    counts = source_witness_digest_coverage_counts(
+        (
+            {"digest": "abc", "preview_digest": "def"},
+            {"digest": "ghi"},
+            {"preview_digest": "jkl"},
+            {},
+        )
+    )
+
+    assert counts == {
+        "artifact_and_preview_digest": 1,
+        "artifact_digest": 1,
+        "missing_source_witness": 1,
+        "preview_digest": 1,
+    }
+
+
+def test_nested_source_witness_digest_coverage_counts_handles_missing_witnesses() -> None:
+    counts = nested_source_witness_digest_coverage_counts(
+        (
+            {"source_witness": {"digest": "abc"}},
+            {"source_witness": {"preview_digest": "def"}},
+            {"source_witness": {}},
+            {},
+        )
+    )
+
+    assert counts == {
+        "artifact_digest": 1,
+        "missing_source_witness": 2,
+        "preview_digest": 1,
+    }
 
 
 def test_source_witness_requires_role_and_digest_witness_requires_digest() -> None:
