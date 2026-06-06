@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from typing import Any, Mapping
 
 from lawvm.core.frozen_values import freeze_mapping
+
+if TYPE_CHECKING:
+    from lawvm.core.evidence_kernel import AuthorizationResult
 
 
 @dataclass(frozen=True)
@@ -97,3 +101,116 @@ def validate_execution_authorization(row: Mapping[str, Any]) -> tuple[str, ...]:
     if detail is not None and not isinstance(detail, Mapping):
         issues.append("detail must be a mapping when present")
     return tuple(issues)
+
+
+def execution_authorization_from_kernel_result(
+    result: "AuthorizationResult",
+    *,
+    executable: bool,
+    owner_phase: str,
+    authorization_rule_id: str = "",
+    strict_disposition: str = "",
+    quirks_disposition: str = "record",
+    validator_status: str = "",
+    replay_authorized_when_policy_satisfied: bool = False,
+    required_proofs: tuple[str, ...] = (),
+    safe_default: str = "",
+    forbidden_shortcuts: tuple[str, ...] = (),
+    detail: Mapping[str, Any] | None = None,
+) -> ExecutionAuthorization:
+    """Project EvidenceKernel output into the shared replay-authorization shape.
+
+    ``AuthorizationResult.authorized`` means a declarative evidence policy was
+    satisfied.  It is intentionally not replay authority by itself.  Callers
+    that want a satisfied policy to authorize replay must also set
+    ``executable=True`` and ``replay_authorized_when_policy_satisfied=True``.
+    """
+    replay_authorized = (
+        bool(result.authorized)
+        and bool(executable)
+        and bool(replay_authorized_when_policy_satisfied)
+    )
+    status = _kernel_authorization_status(
+        result_authorized=result.authorized,
+        executable=executable,
+        replay_authorized=replay_authorized,
+    )
+    blocked_proofs = required_proofs or _kernel_required_proofs(result)
+    default_safe = safe_default or _kernel_safe_default(
+        result_authorized=result.authorized,
+        replay_authorized=replay_authorized,
+    )
+    shortcuts = forbidden_shortcuts or (
+        "treat_evidence_policy_satisfaction_as_replay_authority",
+    )
+    return ExecutionAuthorization(
+        executable=bool(executable),
+        replay_authorized=replay_authorized,
+        authorization_status=status,
+        authorization_rule_id=authorization_rule_id or result.policy_id,
+        owner_phase=owner_phase,
+        strict_disposition=strict_disposition or ("record" if replay_authorized else "block"),
+        quirks_disposition=quirks_disposition,
+        validator_status=validator_status,
+        required_proofs=() if replay_authorized else blocked_proofs,
+        safe_default=default_safe,
+        forbidden_shortcuts=shortcuts,
+        detail={
+            **dict(detail or {}),
+            "evidence_kernel": {
+                "subject": {
+                    "artifact_type": result.subject.artifact_type,
+                    "artifact_id": result.subject.artifact_id,
+                    "content_hash": result.subject.content_hash,
+                },
+                "policy_id": result.policy_id,
+                "profile_name": result.profile_name,
+                "authorized": result.authorized,
+                "satisfied_clauses": list(result.satisfied_clauses),
+                "unsatisfied_clauses": list(result.unsatisfied_clauses),
+                "forbidden_present": list(result.forbidden_present),
+                "evidence_bundle_hash": result.evidence_bundle_hash,
+            },
+        },
+    )
+
+
+def _kernel_authorization_status(
+    *,
+    result_authorized: bool,
+    executable: bool,
+    replay_authorized: bool,
+) -> str:
+    if replay_authorized:
+        return "replay_authorized"
+    if not result_authorized:
+        return "evidence_policy_unsatisfied"
+    if not executable:
+        return "evidence_policy_satisfied_non_executable"
+    return "evidence_policy_satisfied_replay_gate_required"
+
+
+def _kernel_required_proofs(result: "AuthorizationResult") -> tuple[str, ...]:
+    proofs = [
+        f"evidence_policy_clause:{clause}"
+        for clause in result.unsatisfied_clauses
+    ]
+    proofs.extend(
+        f"forbidden_evidence_absence:{clause}"
+        for clause in result.forbidden_present
+    )
+    if not proofs:
+        proofs.append("phase_local_replay_authorization")
+    return tuple(proofs)
+
+
+def _kernel_safe_default(
+    *,
+    result_authorized: bool,
+    replay_authorized: bool,
+) -> str:
+    if replay_authorized:
+        return "execute_only_after_evidence_policy_and_phase_local_gate"
+    if result_authorized:
+        return "record_evidence_policy_result_without_promoting_to_replay"
+    return "block_until_evidence_policy_is_satisfied"

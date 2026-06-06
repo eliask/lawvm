@@ -20,8 +20,10 @@ from lawvm.core.evidence_contracts import (
 )
 from lawvm.core.execution_authorization import (
     ExecutionAuthorization,
+    execution_authorization_from_kernel_result,
     validate_execution_authorization,
 )
+from lawvm.core.evidence_kernel import AuthorizationResult
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frontend_contract import FrontendCapability, SurfaceParseResult
 from lawvm.core.frontend_phase_surface import (
@@ -43,6 +45,7 @@ from lawvm.core.proof_obligations import (
     PROOF_OBLIGATION_COMPLETE,
     ProofObligationCertificate,
 )
+from lawvm.core.provenance_graph import ArtifactRef
 from lawvm.core.source_witness import (
     DigestWitness,
     SourceWitness,
@@ -80,6 +83,101 @@ def test_execution_authorization_allows_explicit_replay_authorized_rows() -> Non
     assert data["replay_authorized"] is True
     assert data["required_proofs"] == []
     assert validate_execution_authorization(data) == ()
+
+
+def test_kernel_authorization_projection_does_not_promote_policy_success_by_default() -> None:
+    result = AuthorizationResult(
+        subject=ArtifactRef(
+            artifact_type="assertion",
+            artifact_id="assertion-1",
+            content_hash="abc123",
+        ),
+        policy_id="fi.demo.policy",
+        profile_name="fi_strict",
+        authorized=True,
+        satisfied_clauses=("exists:span_verified",),
+        unsatisfied_clauses=(),
+        forbidden_present=(),
+        evidence_bundle_hash="a" * 64,
+    )
+
+    authorization = execution_authorization_from_kernel_result(
+        result,
+        executable=True,
+        owner_phase="semantic_compilation",
+    )
+    data = authorization.to_dict()
+
+    assert data["replay_authorized"] is False
+    assert data["authorization_status"] == "evidence_policy_satisfied_replay_gate_required"
+    assert data["required_proofs"] == ["phase_local_replay_authorization"]
+    assert (
+        "treat_evidence_policy_satisfaction_as_replay_authority"
+        in data["forbidden_shortcuts"]
+    )
+    assert data["detail"]["evidence_kernel"]["evidence_bundle_hash"] == "a" * 64
+
+
+def test_kernel_authorization_projection_blocks_unsatisfied_policy_clauses() -> None:
+    result = AuthorizationResult(
+        subject=ArtifactRef(
+            artifact_type="assertion",
+            artifact_id="assertion-2",
+            content_hash="def456",
+        ),
+        policy_id="fi.demo.policy",
+        profile_name="fi_strict",
+        authorized=False,
+        satisfied_clauses=(),
+        unsatisfied_clauses=("exists:span_verified",),
+        forbidden_present=("none:retracted",),
+        evidence_bundle_hash="b" * 64,
+    )
+
+    authorization = execution_authorization_from_kernel_result(
+        result,
+        executable=True,
+        owner_phase="semantic_compilation",
+    )
+    data = authorization.to_dict()
+
+    assert data["replay_authorized"] is False
+    assert data["authorization_status"] == "evidence_policy_unsatisfied"
+    assert data["strict_disposition"] == "block"
+    assert data["required_proofs"] == [
+        "evidence_policy_clause:exists:span_verified",
+        "forbidden_evidence_absence:none:retracted",
+    ]
+
+
+def test_kernel_authorization_projection_requires_explicit_replay_gate() -> None:
+    result = AuthorizationResult(
+        subject=ArtifactRef(
+            artifact_type="assertion",
+            artifact_id="assertion-3",
+            content_hash="ghi789",
+        ),
+        policy_id="fi.demo.policy",
+        profile_name="fi_strict",
+        authorized=True,
+        satisfied_clauses=("exists:span_verified",),
+        unsatisfied_clauses=(),
+        forbidden_present=(),
+        evidence_bundle_hash="c" * 64,
+    )
+
+    authorization = execution_authorization_from_kernel_result(
+        result,
+        executable=True,
+        owner_phase="semantic_compilation",
+        replay_authorized_when_policy_satisfied=True,
+    )
+    data = authorization.to_dict()
+
+    assert data["replay_authorized"] is True
+    assert data["authorization_status"] == "replay_authorized"
+    assert data["required_proofs"] == []
+    assert data["strict_disposition"] == "record"
 
 
 def test_frontend_phase_surface_marks_compatibility_output_without_replay_claims() -> None:
