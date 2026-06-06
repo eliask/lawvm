@@ -1278,6 +1278,69 @@ def finland_corrigendum_manual_template_evidence_surface(
     ).to_dict()
 
 
+def finland_corrigendum_sources_evidence_surface(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Wrap Finland corrigendum PDF source manifest output in the shared envelope."""
+
+    records = _mapping_sequence(payload.get("records"))
+    source_witnesses = _mapping_sequence(payload.get("source_witnesses"))
+    rows = tuple(
+        (
+            *({**dict(row), "surface": "corrigendum_source_witness"} for row in source_witnesses),
+            *({**dict(row), "surface": "corrigendum_source_manifest_record"} for row in records),
+        )
+    )
+    date_status_counts = dict(payload.get("date_status_counts") or {})
+    summary = {
+        "pdf_count": int(payload.get("pdf_count") or 0),
+        "amendment_count": int(payload.get("amendment_count") or 0),
+        "total_item_count": int(payload.get("total_item_count") or 0),
+        "shown_record_count": len(records),
+        "source_witness_count": len(source_witnesses),
+        "source_witness_digest_coverage_counts": _source_witness_row_digest_coverage_counts(source_witnesses),
+        "date_status_counts": date_status_counts,
+        "missing_date_count": sum(
+            int(count or 0)
+            for status, count in date_status_counts.items()
+            if str(status) != "present"
+        ),
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction="fi",
+        report_kind="finland_corrigendum_sources",
+        schema="lawvm.finland_corrigendum_sources.v1",
+        truth_claim="finland_corrigendum_pdf_source_manifest_diagnostics",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={
+            "mode": str(payload.get("mode") or ""),
+            "limit": int(payload.get("limit") or 0),
+        },
+        filtered_summary=summary,
+        rows=rows,
+        rows_truncated=bool(payload.get("records_truncated")),
+        detail={
+            "safe_default": "treat_corrigendum_source_manifest_as_source_footing_not_replay_authorization",
+            "forbidden_shortcuts": (
+                "source_manifest_as_replay_authorization",
+                "source_witness_as_patch_application",
+                "pdf_digest_as_manual_claim",
+                "date_status_as_commencement_proof",
+                "manifest_record_as_source_text_repair",
+            ),
+            "included_surfaces": (
+                "corrigendum_source_witness",
+                "corrigendum_source_manifest_record",
+            ),
+        },
+    ).to_dict()
+
+
 def _pathology_row(pathology: SourcePathology | Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(pathology, SourcePathology):
         return {

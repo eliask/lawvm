@@ -97,6 +97,7 @@ from lawvm.finland.proof_surfaces import (
     finland_corrigendum_overview_evidence_surface,
     finland_corrigendum_provenance_evidence_surface,
     finland_corrigendum_review_evidence_surface,
+    finland_corrigendum_sources_evidence_surface,
 )
 from lawvm.tools.section_keys import leaf_section_label, norm_section_label
 
@@ -2147,6 +2148,50 @@ def build_source_manifest_records(*, records_path: Optional[Path] = None) -> lis
     )
 
 
+def build_source_manifest_bundle(
+    records: list[dict],
+    *,
+    mode: str,
+    official_records_path: Path,
+    source_records_path: Path,
+    limit: int = 10,
+) -> dict:
+    """Build the report bundle for PDF-level corrigendum source manifest rows."""
+
+    shown = records[:limit] if limit > 0 else records
+    date_statuses = sorted(
+        {
+            str(record.get("date_status") or "").strip()
+            for record in records
+            if str(record.get("date_status") or "").strip()
+        }
+    )
+    bundle = {
+        "mode": mode,
+        "limit": int(limit),
+        "official_records_path": str(official_records_path),
+        "source_records_path": str(source_records_path),
+        "pdf_count": len(records),
+        "amendment_count": len(
+            {str(record.get("amendment_id") or "") for record in records if record.get("amendment_id")}
+        ),
+        "total_item_count": sum(int(record.get("correction_item_count") or 0) for record in records),
+        "date_status_counts": {
+            status: sum(1 for record in records if str(record.get("date_status") or "").strip() == status)
+            for status in date_statuses
+        },
+        "records_truncated": limit > 0 and len(shown) < len(records),
+        "source_witnesses": [
+            corrigendum_source_witness(record).to_dict()
+            for record in shown
+            if record.get("source_pdf")
+        ],
+        "records": shown,
+    }
+    bundle["evidence_surface_report"] = finland_corrigendum_sources_evidence_surface(bundle)
+    return bundle
+
+
 def build_official_metadata_backfill(*, records_path: Optional[Path] = None) -> dict:
     """Backfill missing official corrigendum metadata from XML refs and filenames."""
     path = records_path or _OFFICIAL_TEXT
@@ -2933,24 +2978,14 @@ def _cmd_sources(args) -> None:
             mode = "ephemeral"
 
     limit = int(getattr(args, "limit", 10) or 10)
-    shown = records[:limit] if limit > 0 else records
-    bundle = {
-        "mode": mode,
-        "official_records_path": str(official_path or _OFFICIAL_TEXT),
-        "source_records_path": str(stored_path),
-        "pdf_count": len(records),
-        "amendment_count": len(
-            {str(record.get("amendment_id") or "") for record in records if record.get("amendment_id")}
-        ),
-        "total_item_count": sum(int(record.get("correction_item_count") or 0) for record in records),
-        "date_status_counts": {
-            status: sum(1 for record in records if str(record.get("date_status") or "").strip() == status)
-            for status in sorted(
-                {str(record.get("date_status") or "").strip() for record in records if str(record.get("date_status") or "").strip()}
-            )
-        },
-        "records": shown,
-    }
+    bundle = build_source_manifest_bundle(
+        records,
+        mode=mode,
+        official_records_path=official_path or _OFFICIAL_TEXT,
+        source_records_path=stored_path,
+        limit=limit,
+    )
+    shown = bundle["records"]
     if getattr(args, "json", False):
         print(json.dumps(bundle, ensure_ascii=False, indent=2))
         return

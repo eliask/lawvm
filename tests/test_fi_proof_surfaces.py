@@ -10,6 +10,7 @@ from lawvm.finland.proof_surfaces import (
     finland_corrigendum_overview_evidence_surface,
     finland_corrigendum_provenance_evidence_surface,
     corrigendum_source_witness,
+    finland_corrigendum_sources_evidence_surface,
     finlex_html_topology_source_witness,
     finland_corrigendum_review_evidence_surface,
     finland_evidence_bundle_evidence_surface,
@@ -495,6 +496,57 @@ def test_finland_corrigendum_manual_template_projects_frontier_envelope() -> Non
         "corrigendum_source_witness",
     }
     assert "manual_template_entry_as_manual_claim" in report["forbidden_shortcuts"]
+
+
+def test_finland_corrigendum_sources_projects_source_manifest_envelope() -> None:
+    record = {
+        "source_pdf": "akn/fi/act/statute-consolidated/2013/23/media/corrigenda/sk20160442_1.pdf",
+        "pdf_name": "sk20160442_1.pdf",
+        "statute_id": "2013/23",
+        "amendment_id": "442/2016",
+        "lang": "fi",
+        "date_published": "2016-06-01",
+        "date_status": "present",
+        "correction_item_count": 2,
+        "sha256": "d" * 64,
+        "size_bytes": 321,
+    }
+    witness = corrigendum_source_witness(record).to_dict()
+
+    report = finland_corrigendum_sources_evidence_surface(
+        {
+            "mode": "stored",
+            "limit": 1,
+            "pdf_count": 3,
+            "amendment_count": 2,
+            "total_item_count": 5,
+            "date_status_counts": {"present": 2, "xml_ref_without_date": 1},
+            "records_truncated": True,
+            "source_witnesses": [witness],
+            "records": [record],
+        }
+    )
+
+    assert report["jurisdiction"] == "fi"
+    assert report["report_kind"] == "finland_corrigendum_sources"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is False
+    assert report["rows_truncated"] is True
+    assert report["summary"]["pdf_count"] == 3
+    assert report["summary"]["shown_record_count"] == 1
+    assert report["summary"]["source_witness_count"] == 1
+    assert report["summary"]["missing_date_count"] == 1
+    assert report["summary"]["source_witness_digest_coverage_counts"] == {
+        "artifact_and_preview_digest": 1
+    }
+    assert {row["surface"] for row in report["rows"]} == {
+        "corrigendum_source_manifest_record",
+        "corrigendum_source_witness",
+    }
+    assert "source_manifest_as_replay_authorization" in report["forbidden_shortcuts"]
 
 
 def test_mutation_boundary_reports_project_shared_proof_rows() -> None:

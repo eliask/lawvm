@@ -802,6 +802,62 @@ def test_build_source_manifest_records_groups_items_per_pdf(monkeypatch, tmp_pat
     assert records[1]["amendment_id"] == "577/2019"
 
 
+def test_build_source_manifest_bundle_exports_source_witness_report(tmp_path: Path) -> None:
+    records = [
+        {
+            "source_pdf": "akn/fi/act/statute-consolidated/2013/23/media/corrigenda/sk20160442_1.pdf",
+            "pdf_name": "sk20160442_1.pdf",
+            "statute_id": "2013/23",
+            "amendment_id": "442/2016",
+            "lang": "fi",
+            "date_published": "2016-06-01",
+            "date_status": "present",
+            "correction_item_count": 2,
+            "sha256": "d" * 64,
+            "size_bytes": 321,
+        },
+        {
+            "source_pdf": "akn/fi/act/statute-consolidated/2019/577/media/corrigenda/sk20190577_1.pdf",
+            "pdf_name": "sk20190577_1.pdf",
+            "statute_id": "2019/577",
+            "amendment_id": "577/2019",
+            "lang": "fi",
+            "date_published": "",
+            "date_status": "xml_ref_without_date",
+            "correction_item_count": 1,
+            "sha256": "e" * 64,
+            "size_bytes": 111,
+        },
+    ]
+
+    bundle = corr_tools.build_source_manifest_bundle(
+        records,
+        mode="stored",
+        official_records_path=tmp_path / "official.jsonl",
+        source_records_path=tmp_path / "sources.jsonl",
+        limit=1,
+    )
+
+    assert bundle["mode"] == "stored"
+    assert bundle["limit"] == 1
+    assert bundle["pdf_count"] == 2
+    assert bundle["amendment_count"] == 2
+    assert bundle["total_item_count"] == 3
+    assert bundle["date_status_counts"] == {"present": 1, "xml_ref_without_date": 1}
+    assert bundle["records_truncated"] is True
+    assert len(bundle["records"]) == 1
+    assert len(bundle["source_witnesses"]) == 1
+    assert bundle["source_witnesses"][0]["digest"] == "d" * 64
+    report = bundle["evidence_surface_report"]
+    assert report["report_kind"] == "finland_corrigendum_sources"
+    assert report["replay_claims"] is False
+    assert report["summary"]["pdf_count"] == 2
+    assert report["summary"]["shown_record_count"] == 1
+    assert report["summary"]["source_witness_digest_coverage_counts"] == {
+        "artifact_and_preview_digest": 1
+    }
+
+
 def test_build_source_manifest_records_backfills_missing_metadata_from_xml_refs(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         corr_tools,
