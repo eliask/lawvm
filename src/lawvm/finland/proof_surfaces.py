@@ -1621,6 +1621,16 @@ def finland_corrigendum_overview_evidence_surface(
     top_unresolved = _mapping_sequence(payload.get("top_unresolved_amendments"))
     top_open_manual = _mapping_sequence(payload.get("top_open_manual_amendments"))
     top_attachment_only = _mapping_sequence(payload.get("top_attachment_only_amendments"))
+    source_pdf_count = int(payload.get("source_pdf_count") or 0)
+    missing_date_published_count = int(payload.get("missing_date_published_count") or 0)
+    source_date_status_counts = dict(payload.get("source_date_status_counts") or {})
+    source_completeness_status = _corrigendum_sources_completeness_status(
+        pdf_count=source_pdf_count,
+        missing_date_count=missing_date_published_count,
+        date_status_counts=source_date_status_counts,
+        mode=str(payload.get("mode") or ""),
+        manifest_kind="finland_corrigendum_overview_sources",
+    )
     rows = tuple(
         (
             *({**dict(row), "surface": "corrigendum_overview_unresolved_amendment"} for row in top_unresolved),
@@ -1629,16 +1639,26 @@ def finland_corrigendum_overview_evidence_surface(
                 {**dict(row), "surface": "corrigendum_overview_attachment_only_amendment"}
                 for row in top_attachment_only
             ),
+            *(
+                (
+                    {
+                        "surface": "source_completeness_status",
+                        **source_completeness_status.to_dict(),
+                    },
+                )
+                if source_completeness_status is not None
+                else ()
+            ),
         )
     )
     status_counts = dict(payload.get("status_counts") or {})
     summary = {
         "official_item_count": int(payload.get("official_item_count") or 0),
         "amendment_count": int(payload.get("amendment_count") or 0),
-        "source_pdf_count": int(payload.get("source_pdf_count") or 0),
+        "source_pdf_count": source_pdf_count,
         "missing_amendment_id_count": int(payload.get("missing_amendment_id_count") or 0),
-        "missing_date_published_count": int(payload.get("missing_date_published_count") or 0),
-        "source_date_status_counts": dict(payload.get("source_date_status_counts") or {}),
+        "missing_date_published_count": missing_date_published_count,
+        "source_date_status_counts": source_date_status_counts,
         "type_counts": dict(payload.get("type_counts") or {}),
         "status_counts": status_counts,
         "top_unresolved_amendment_count": len(top_unresolved),
@@ -1647,6 +1667,10 @@ def finland_corrigendum_overview_evidence_surface(
         "open_manual_candidate_count": int(status_counts.get("open_manual_candidate") or 0),
         "unresolved_unverified_count": int(status_counts.get("unresolved_unverified") or 0),
         "unresolved_unreviewed_count": int(status_counts.get("unresolved_unreviewed") or 0),
+        "source_completeness_status_count": 1 if source_completeness_status is not None else 0,
+        "source_completeness": (
+            source_completeness_status.counts if source_completeness_status is not None else {}
+        ),
     }
     return EvidenceSurfaceReport(
         jurisdiction="fi",
@@ -1679,6 +1703,7 @@ def finland_corrigendum_overview_evidence_surface(
                 "corrigendum_overview_unresolved_amendment",
                 "corrigendum_overview_open_manual_amendment",
                 "corrigendum_overview_attachment_only_amendment",
+                "source_completeness_status",
             ),
         },
     ).to_dict()
@@ -1884,6 +1909,7 @@ def finland_corrigendum_sources_evidence_surface(
         missing_date_count=missing_date_count,
         date_status_counts=date_status_counts,
         mode=str(payload.get("mode") or ""),
+        manifest_kind="finland_corrigendum_pdf_sources",
     )
     rows = tuple(
         (
@@ -1957,6 +1983,7 @@ def _corrigendum_sources_completeness_status(
     missing_date_count: int,
     date_status_counts: Mapping[str, Any],
     mode: str,
+    manifest_kind: str,
 ) -> SourceCompletenessStatus | None:
     if pdf_count <= 0:
         return None
@@ -1969,7 +1996,7 @@ def _corrigendum_sources_completeness_status(
         dates_available=dates_available,
         owner_phase="source_acquisition",
         detail={
-            "manifest_kind": "finland_corrigendum_pdf_sources",
+            "manifest_kind": manifest_kind,
             "mode": mode,
             "date_status_counts": dict(date_status_counts),
         },

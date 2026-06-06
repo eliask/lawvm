@@ -553,11 +553,25 @@ def test_finland_corrigendum_overview_projects_corpus_diagnostic_envelope() -> N
     assert report["summary"]["top_unresolved_amendment_count"] == 1
     assert report["summary"]["top_open_manual_amendment_count"] == 1
     assert report["summary"]["top_attachment_only_amendment_count"] == 1
+    assert report["summary"]["source_completeness_status_count"] == 1
+    assert report["summary"]["source_completeness"] == {
+        "chain_length": 4,
+        "source_available": 4,
+        "dates_available": 1,
+        "missing_sources": 0,
+        "missing_dates": 3,
+    }
     assert {row["surface"] for row in report["rows"]} == {
         "corrigendum_overview_attachment_only_amendment",
         "corrigendum_overview_open_manual_amendment",
         "corrigendum_overview_unresolved_amendment",
+        "source_completeness_status",
     }
+    rows_by_surface = {row["surface"]: row for row in report["rows"]}
+    source_status = rows_by_surface["source_completeness_status"]
+    assert source_status["status"] == "incomplete"
+    assert source_status["owner_phase"] == "source_acquisition"
+    assert source_status["replay_authorized"] is False
     assert "status_count_as_manual_claim" in report["forbidden_shortcuts"]
 
 
