@@ -75,6 +75,7 @@ src/lawvm/core/agreement_residual.py
 src/lawvm/core/provenance_graph.py
 src/lawvm/core/evidence_policy.py
 src/lawvm/core/evidence_kernel.py
+src/lawvm/core/source_acquisition.py
 ```
 
 Frontend surfaces should reuse these objects before creating local report
@@ -258,7 +259,35 @@ Rules:
 
 ---
 
-## 9. MutationBoundaryProof
+## 9. SourceBundlePolicy
+
+`SourceBundlePolicy` separates source-set admission from replay recovery.
+
+Use it for source substrates such as:
+
+```text
+official XML
+official PDFs
+pre-AKN source material
+OCR text
+manual source atoms
+corrigendum source packets
+```
+
+Rules:
+
+- Admission to a source bundle is not replay authorization.
+- Source-acquisition attestations are not semantic compilation.
+- PDF/OCR/pre-AKN source lanes should require explicit attestations before
+  admission.
+- A blocked source lane should become source-acquisition frontier work, not a
+  hidden fallback to another source.
+- Even an admitted source bundle still needs phase-local authorization before
+  legal-state mutation.
+
+---
+
+## 10. MutationBoundaryProof
 
 `MutationBoundaryProof` is passive proof that an operation's changed paths stay
 within the authorized mutation region.
@@ -274,7 +303,7 @@ Rules:
 
 ---
 
-## 10. AgreementResidual
+## 11. AgreementResidual
 
 An `AgreementResidual` classifies disagreement between named surfaces.
 
@@ -298,7 +327,7 @@ Rules:
 
 ---
 
-## 11. Finland Reference Surface
+## 12. Finland Reference Surface
 
 Finland is the reference compiler frontend. Its proof surfaces should expose
 the clean compiler chain without hiding recoveries:
@@ -329,7 +358,7 @@ Rules:
 
 ---
 
-## 12. Adoption Rule
+## 13. Adoption Rule
 
 Before adding a new local status row, report row, workqueue row, candidate row,
 or diagnostic envelope, check whether it is one of:
@@ -344,6 +373,7 @@ SourceWitness / DigestWitness
 MutationBoundaryProof
 AgreementResidual
 TemporalResolutionEvidence
+SourceBundlePolicy / SourceAcquisitionAssertion
 ```
 
 If none fit, add the new local row only with a narrow TODO or spec note
@@ -353,7 +383,7 @@ Do not change replay semantics merely to satisfy a proof-surface abstraction.
 
 ---
 
-## 13. Completion Rule
+## 14. Completion Rule
 
 A frontend is not complete because a score is high.
 
@@ -373,4 +403,3 @@ out-of-scope source acquisition gap
 ```
 
 Completion is accounting plus evidence, not silence.
-
