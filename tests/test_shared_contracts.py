@@ -25,12 +25,16 @@ from lawvm.core.execution_authorization import (
 )
 from lawvm.core.evidence_kernel import AuthorizationResult
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
-from lawvm.core.frontend_contract import FrontendCapability, SurfaceParseResult
-from lawvm.core.frontend_contract import DerivedCompatibilityArtifact
+from lawvm.core.frontend_contract import (
+    DerivedCompatibilityArtifact,
+    FrontendCapability,
+    SurfaceParseResult,
+)
 from lawvm.core.frontend_phase_surface import (
     FrontendDiagnostic,
     FrontendPhaseRow,
     FrontendPhaseSurface,
+    frontend_diagnostic_findings,
     frontend_phase_surface_evidence_report,
 )
 from lawvm.core.frontier_work_item import (
@@ -437,6 +441,57 @@ def test_derived_compatibility_artifact_declares_non_authority_boundary() -> Non
     assert data["preserved_fields"] == ["operation_kind"]
     assert data["lost_fields"] == ["native_clause_ast_node_identity"]
     assert "compatibility_artifact_as_replay_authorization" in data["forbidden_shortcuts"]
+
+
+def test_frontend_diagnostics_project_to_governed_findings() -> None:
+    diagnostic = FrontendDiagnostic(
+        diagnostic_id="diag-1",
+        jurisdiction="fi",
+        frontend="fi.demo",
+        phase="surface_parse",
+        severity="warning",
+        rule_id="fi.demo.warning",
+        message="demo warning",
+    )
+    blocking = FrontendDiagnostic(
+        diagnostic_id="diag-2",
+        jurisdiction="fi",
+        frontend="fi.demo",
+        phase="surface_resolve",
+        severity="error",
+        rule_id="fi.demo.blocking",
+        message="demo blocker",
+        blocking=True,
+        strict_disposition="block",
+    )
+    bug = FrontendDiagnostic(
+        diagnostic_id="diag-3",
+        jurisdiction="fi",
+        frontend="fi.demo",
+        phase="clause_ast_lowering",
+        severity="bug",
+        rule_id="fi.demo.bug",
+        message="demo bug",
+        blocking=True,
+        strict_disposition="block",
+    )
+
+    findings = frontend_diagnostic_findings((diagnostic, blocking, bug))
+
+    assert [finding.kind for finding in findings] == [
+        "PARSE.FRONTEND_DIAGNOSTIC",
+        "PARSE.FRONTEND_BLOCKING_DIAGNOSTIC",
+        "PARSE.FRONTEND_INTERNAL_ERROR",
+    ]
+    assert [finding.role for finding in findings] == [
+        "observation",
+        "obligation",
+        "violation",
+    ]
+    assert findings[0].blocking is False
+    assert findings[1].blocking is True
+    assert findings[2].blocking is True
+    assert findings[0].detail["diagnostic_id"] == "diag-1"
 
 
 def test_surface_parse_result_records_original_enriched_resolved_waist() -> None:

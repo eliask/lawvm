@@ -28,8 +28,10 @@ from lawvm.core.frontend_phase_surface import (
     FrontendDiagnostic,
     FrontendPhaseRow,
     FrontendPhaseSurface,
+    frontend_diagnostic_findings,
 )
 from lawvm.core.ir import LegalAddress
+from lawvm.core.phase_result import Finding
 from lawvm.core.token_tape import TokenLexeme, TokenTape
 from lawvm.finland.johtolause.types import ParsedOp
 from lawvm.finland.johtolause.surface_model import TargetKind
@@ -143,6 +145,8 @@ class ClauseParseResult:
         compatibility_artifacts:
                                 Typed certificates for derived compatibility
                                 artifacts such as ParsedOps.
+        findings:               Governed core Finding projection of typed
+                                 frontend diagnostics.
         typed_diagnostics:      Typed diagnostic rows backing phase_surface.
     """
 
@@ -161,6 +165,7 @@ class ClauseParseResult:
     phase_surface: FrontendPhaseSurface | None = None
     surface_result: SurfaceParseResult | None = None
     compatibility_artifacts: tuple[DerivedCompatibilityArtifact, ...] = ()
+    findings: tuple[Finding, ...] = ()
     typed_diagnostics: tuple[FrontendDiagnostic, ...] = ()
 
     @property
@@ -402,6 +407,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
         supplementary_nodes=supplementary_nodes,
         diagnostic_ids=tuple(diagnostic.diagnostic_id for diagnostic in phase_surface.diagnostics),
     )
+    findings = frontend_diagnostic_findings(phase_surface.diagnostics)
 
     return ClauseParseResult(
         clause_ast=clause_ast,
@@ -419,6 +425,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
         phase_surface=phase_surface,
         surface_result=surface_result,
         compatibility_artifacts=compatibility_artifacts,
+        findings=findings,
         typed_diagnostics=phase_surface.diagnostics,
     )
 

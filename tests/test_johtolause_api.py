@@ -197,6 +197,7 @@ def test_parse_clause_exports_typed_phase_surface_authority_boundary() -> None:
     assert data["detail"]["parsed_ops_are_compatibility_output"] is True
     assert data["detail"]["frontend_capability_id"] == FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY.frontend_id
     assert result.typed_diagnostics == phase_surface.diagnostics
+    assert result.findings == ()
 
 
 def test_parse_clause_phase_surface_projects_to_shared_report_read_model() -> None:
@@ -292,6 +293,9 @@ def test_parse_clause_phase_surface_records_resolver_internal_error() -> None:
 
     assert result.phase_surface is not None
     data = result.phase_surface.to_dict()
+    assert result.findings
+    assert result.findings[0].kind == "PARSE.FRONTEND_INTERNAL_ERROR"
+    assert result.findings[0].role == "violation"
     diagnostics = {row["diagnostic_id"]: row for row in data["diagnostics"]}
     diagnostic = diagnostics["fi-johtolause-surface_resolve-internal-error"]
 

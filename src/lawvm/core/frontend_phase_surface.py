@@ -14,6 +14,7 @@ from typing import Any, Mapping
 
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
+from lawvm.core.phase_result import Finding
 
 
 _FRONTEND_PHASE_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
@@ -291,6 +292,58 @@ def frontend_phase_surface_evidence_report(
             "forbidden_shortcuts": _FRONTEND_PHASE_FORBIDDEN_SHORTCUTS,
             "included_surfaces": ("frontend_phase_row", "frontend_diagnostic"),
             "frontend_surface_detail": _mapping(data.get("detail")),
+        },
+    )
+
+
+def frontend_diagnostic_findings(
+    diagnostics: tuple[FrontendDiagnostic, ...] | tuple[Mapping[str, Any], ...],
+) -> tuple[Finding, ...]:
+    """Project frontend diagnostics into governed findings.
+
+    Human diagnostic strings may remain as compatibility/rendering fields. This
+    projection gives phase-boundary consumers typed findings without treating
+    diagnostics as replay authorization.
+    """
+
+    return tuple(_frontend_diagnostic_finding(row) for row in diagnostics)
+
+
+def _frontend_diagnostic_finding(diagnostic: FrontendDiagnostic | Mapping[str, Any]) -> Finding:
+    row = diagnostic.to_dict() if isinstance(diagnostic, FrontendDiagnostic) else dict(diagnostic)
+    severity = str(row.get("severity") or "")
+    blocking = bool(row.get("blocking"))
+    if severity == "bug":
+        kind = "PARSE.FRONTEND_INTERNAL_ERROR"
+        role = "violation"
+        finding_blocking = True
+    elif blocking:
+        kind = "PARSE.FRONTEND_BLOCKING_DIAGNOSTIC"
+        role = "obligation"
+        finding_blocking = True
+    else:
+        kind = "PARSE.FRONTEND_DIAGNOSTIC"
+        role = "observation"
+        finding_blocking = False
+    return Finding(
+        kind=kind,
+        role=role,  # type: ignore[arg-type]
+        stage=str(row.get("phase") or "frontend_phase_surface"),
+        blocking=finding_blocking,
+        detail={
+            "diagnostic_id": str(row.get("diagnostic_id") or ""),
+            "frontend": str(row.get("frontend") or ""),
+            "jurisdiction": str(row.get("jurisdiction") or ""),
+            "severity": severity,
+            "rule_id": str(row.get("rule_id") or ""),
+            "message": str(row.get("message") or ""),
+            "strict_disposition": str(row.get("strict_disposition") or "record"),
+            "quirks_disposition": str(row.get("quirks_disposition") or "record"),
+            "safe_default": str(row.get("safe_default") or "record_without_replay_authority"),
+            "forbidden_shortcuts": tuple(
+                str(item) for item in _sequence(row.get("forbidden_shortcuts"))
+            ),
+            "diagnostic_detail": _mapping(row.get("detail")),
         },
     )
 

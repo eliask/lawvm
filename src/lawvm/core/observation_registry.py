@@ -390,6 +390,10 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "strict_fail", "frontend_observations",
                 "op target requires chapter-scope carry-forward",
                 ("ambiguity_resolution",), role="observation"),
+    FindingSpec("PARSE.FRONTEND_DIAGNOSTIC", "frontend_phase_surface",
+                "audit", "info", "frontend_phase_surface",
+                "frontend phase diagnostic projected into the governed finding ledger",
+                ("parse_witness",), role="observation"),
     FindingSpec("TIME.SECTION_NO_TIMELINE", "check_consistency",
                 "violation", "hard_fail", "consistency",
                 "section present in PIT-materialized replay state has no corresponding timeline entry",
@@ -447,6 +451,10 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "strict_fail", "frontend_compile",
                 "parse_ops fallback heuristic rejected by strict profile",
                 ("strictness",), role="obligation"),
+    FindingSpec("PARSE.FRONTEND_BLOCKING_DIAGNOSTIC", "frontend_phase_surface",
+                "ambiguity", "strict_fail", "frontend_phase_surface",
+                "frontend phase diagnostic blocks promotion until resolved",
+                ("parse_witness", "strictness"), role="obligation"),
     # --- Strict barriers (role="barrier") ---
     FindingSpec("APPLY.UNCOVERED_BODY_RECOVERY", "apply",
                 "recovery", "strict_fail", "compile_result",
@@ -796,6 +804,10 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "audit", "info", "evidence_kernel",
                 "bounded negative-evidence search completed without finding a counterexample",
                 ("negative",), role="observation"),
+    FindingSpec("PARSE.FRONTEND_INTERNAL_ERROR", "frontend_phase_surface",
+                "violation", "hard_fail", "frontend_phase_surface",
+                "frontend phase diagnostic reports an internal compiler error",
+                ("safety_invariant",), role="violation"),
 )}
 
 

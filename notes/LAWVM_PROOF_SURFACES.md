@@ -157,6 +157,9 @@ Rules:
 - Derived compatibility artifacts, such as Finland `ParsedOp` projections from
   `ClauseAST`, should declare their source artifact, lossy boundary, and
   non-authority status instead of relying on prose.
+- Frontend diagnostics should project to governed `Finding` rows when they
+  cross a phase boundary. Human diagnostic strings may remain as rendering
+  compatibility, but they should not be the only control-plane record.
 
 ---
 
