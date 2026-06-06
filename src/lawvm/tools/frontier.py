@@ -15,6 +15,7 @@ Usage:
     lawvm frontier --label v_post_merge --top 30 --exclude-suspect
     lawvm frontier --label v_post_merge --strict-label strict_v1 --top 30
 """
+
 from __future__ import annotations
 
 import ast
@@ -28,6 +29,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from lawvm.finland.corpus import get_consolidated_oracle_suspect_cache_only
+from lawvm.finland.proof_surfaces import finland_frontier_proof_evidence_surface
 
 FRESH_ORACLE_CHECK_LIMIT = 100
 FRESH_SCORE_REFRESH_LIMIT = 100
@@ -36,6 +38,7 @@ PROVISIONAL_ORACLE_REFRESH_LIMIT = 50
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
+
 
 def _data_dir() -> Path:
     """LawVM/data/ — sibling of src/."""
@@ -61,6 +64,7 @@ def _frontier_reports_dir() -> Path:
 # ---------------------------------------------------------------------------
 # Step 1: Load bench results
 # ---------------------------------------------------------------------------
+
 
 def _load_bench_run(label: str) -> Optional[List[Dict]]:
     """Load per-statute results for a labeled bench run.
@@ -88,11 +92,13 @@ def _load_bench_run(label: str) -> Optional[List[Dict]]:
             except (ValueError, TypeError):
                 amendments = 0
             if sim >= 0:
-                results.append({
-                    "statute_id": sid,
-                    "similarity": sim,
-                    "amendments": amendments,
-                })
+                results.append(
+                    {
+                        "statute_id": sid,
+                        "similarity": sim,
+                        "amendments": amendments,
+                    }
+                )
     return results if results else None
 
 
@@ -164,6 +170,7 @@ from lawvm.tools._evidence_helpers import _run_quietly  # noqa: E302
 def _load_oracle_check_cache(db_path: Path) -> Dict[str, Dict]:
     """Load previously computed oracle-check results from divergences.db."""
     import sqlite3
+
     if not db_path.exists():
         return {}
     try:
@@ -198,18 +205,14 @@ def _load_oracle_check_cache(db_path: Path) -> Dict[str, Dict]:
         total_divs = sum(counts.values())
         suspect = sum(v for k, v in counts.items() if k in ORACLE_SUSPECT_CATEGORIES)
         replay_bug = sum(v for k, v in counts.items() if k in REPLAY_BUG_CATEGORIES)
-        replay_bug_unblamed = sum(
-            v for k, v in by_sid_unblamed[sid].items() if k in REPLAY_BUG_CATEGORIES
-        )
+        replay_bug_unblamed = sum(v for k, v in by_sid_unblamed[sid].items() if k in REPLAY_BUG_CATEGORIES)
         suspect_frac = suspect / total_divs if total_divs else 0.0
         result[sid] = {
             "total_divergences": total_divs,
             "suspect_count": suspect,
             "replay_bug_count": replay_bug,
             "replay_bug_unblamed_count": replay_bug_unblamed,
-            "replay_bug_unblamed_fraction": (
-                replay_bug_unblamed / replay_bug if replay_bug else 0.0
-            ),
+            "replay_bug_unblamed_fraction": (replay_bug_unblamed / replay_bug if replay_bug else 0.0),
             "suspect_fraction": suspect_frac,
             "top_diagnosis": max(counts, key=counts.__getitem__) if counts else "UNKNOWN",
         }
@@ -246,9 +249,7 @@ def _load_oracle_check_cache(db_path: Path) -> Dict[str, Dict]:
             except json.JSONDecodeError:
                 loaded_rows = None
             if isinstance(loaded_rows, list):
-                source_pathology_rows = [
-                    item for item in loaded_rows if isinstance(item, dict)
-                ]
+                source_pathology_rows = [item for item in loaded_rows if isinstance(item, dict)]
         info["source_pathology_rows"] = source_pathology_rows
         info["html_topology_mismatch"] = bool(html_topology_mismatch)
         info["html_missing_from_xml"] = _parse_string_listish(html_missing_from_xml)
@@ -279,6 +280,7 @@ def _run_oracle_checks_parallel(
                 raise  # programming bugs — fail loud
             except Exception as e:
                 from lawvm.tools.classify_result import ClassifyResult as _CR
+
                 r = _CR(sid=sid, error=str(e)[:80])
             done += 1
             if progress and (done % 10 == 0 or done == total):
@@ -290,9 +292,7 @@ def _run_oracle_checks_parallel(
             suspect = sum(1 for s in secs if s["diagnosis"] in ORACLE_SUSPECT_CATEGORIES)
             replay_bug = sum(1 for s in secs if s["diagnosis"] in REPLAY_BUG_CATEGORIES)
             replay_bug_unblamed = sum(
-                1
-                for s in secs
-                if s["diagnosis"] in REPLAY_BUG_CATEGORIES and not s["blame_source"]
+                1 for s in secs if s["diagnosis"] in REPLAY_BUG_CATEGORIES and not s["blame_source"]
             )
             suspect_frac = suspect / total_divs if total_divs else 0.0
             counts: Dict[str, int] = defaultdict(int)
@@ -303,9 +303,7 @@ def _run_oracle_checks_parallel(
                 "suspect_count": suspect,
                 "replay_bug_count": replay_bug,
                 "replay_bug_unblamed_count": replay_bug_unblamed,
-                "replay_bug_unblamed_fraction": (
-                    replay_bug_unblamed / replay_bug if replay_bug else 0.0
-                ),
+                "replay_bug_unblamed_fraction": (replay_bug_unblamed / replay_bug if replay_bug else 0.0),
                 "suspect_fraction": suspect_frac,
                 "top_diagnosis": max(counts, key=counts.__getitem__) if counts else "UNKNOWN",
                 "source_pathology": bool(r.source_pathologies),
@@ -316,23 +314,11 @@ def _run_oracle_checks_parallel(
                 ],
                 "html_topology_mismatch": bool((r.html_topology or {}).get("mismatch")),
                 "html_missing_from_xml": [
-                    str(v)
-                    for v in (r.html_topology or {}).get("missing_from_xml", [])
-                    if str(v)
+                    str(v) for v in (r.html_topology or {}).get("missing_from_xml", []) if str(v)
                 ],
-                "html_extra_in_xml": [
-                    str(v)
-                    for v in (r.html_topology or {}).get("extra_in_xml", [])
-                    if str(v)
-                ],
-                "html_noncommensurable_reason": str(
-                    (r.html_topology or {}).get("noncommensurable_reason") or ""
-                ),
-                "contingent_effective_sources": [
-                    str(v)
-                    for v in r.contingent_effective_sources
-                    if str(v)
-                ],
+                "html_extra_in_xml": [str(v) for v in (r.html_topology or {}).get("extra_in_xml", []) if str(v)],
+                "html_noncommensurable_reason": str((r.html_topology or {}).get("noncommensurable_reason") or ""),
+                "contingent_effective_sources": [str(v) for v in r.contingent_effective_sources if str(v)],
             }
 
     return results
@@ -436,10 +422,12 @@ def _apply_refreshed_scores(
         sid = item["statute_id"]
         refreshed = refreshed_scores.get(sid)
         if refreshed and refreshed.get("status") == "OK" and refreshed.get("similarity", -1.0) >= 0:
-            out.append({
-                **item,
-                "similarity": float(refreshed["similarity"]),
-            })
+            out.append(
+                {
+                    **item,
+                    "similarity": float(refreshed["similarity"]),
+                }
+            )
         else:
             out.append(item)
     return out
@@ -448,6 +436,7 @@ def _apply_refreshed_scores(
 # ---------------------------------------------------------------------------
 # Step 3: Load strict run data (projection-row kinds)
 # ---------------------------------------------------------------------------
+
 
 def _load_strict_run(label: str) -> Optional[Dict[str, Dict]]:
     """Load per-statute strict run data. Returns {sid -> dict}."""
@@ -475,17 +464,13 @@ def _load_strict_run(label: str) -> Optional[Dict[str, Dict]]:
                 except json.JSONDecodeError:
                     loaded_rows = None
                 if isinstance(loaded_rows, list):
-                    source_pathology_rows = [
-                        item for item in loaded_rows if isinstance(item, dict)
-                    ]
+                    source_pathology_rows = [item for item in loaded_rows if isinstance(item, dict)]
             result[sid] = {
                 "n_failed": int(row.get("n_failed", 0) or 0),
                 "projection_kinds": projection_kinds,
                 "source_pathology_codes": source_pathology_codes,
                 "source_pathology_rows": source_pathology_rows,
-                "contingent_effective_sources": _parse_string_listish(
-                    row.get("contingent_effective_sources", "")
-                ),
+                "contingent_effective_sources": _parse_string_listish(row.get("contingent_effective_sources", "")),
                 "source_incomplete": row.get("source_incomplete", "0") in ("1", "True", "true"),
                 "fail_reasons": fail_reasons,
             }
@@ -514,24 +499,14 @@ def _parse_string_listish(raw: str) -> List[str]:
 
 def _strict_marks_source_pathology(strict_row: Dict) -> bool:
     fail_reasons = {str(v) for v in strict_row.get("fail_reasons", [])}
-    source_pathology_codes = {
-        str(v) for v in strict_row.get("source_pathology_codes", []) if str(v)
-    }
-    return (
-        "APPLY.SOURCE_PATHOLOGY_DETECTED" in fail_reasons
-        or bool(source_pathology_codes)
-    )
+    source_pathology_codes = {str(v) for v in strict_row.get("source_pathology_codes", []) if str(v)}
+    return "APPLY.SOURCE_PATHOLOGY_DETECTED" in fail_reasons or bool(source_pathology_codes)
 
 
 def _strict_marks_contingent_effective_date(strict_row: Dict) -> bool:
     fail_reasons = {str(v) for v in strict_row.get("fail_reasons", [])}
-    contingent_effective_sources = {
-        str(v) for v in strict_row.get("contingent_effective_sources", []) if str(v)
-    }
-    return (
-        "TIME.CONTINGENT_EFFECTIVE_DATE" in fail_reasons
-        or bool(contingent_effective_sources)
-    )
+    contingent_effective_sources = {str(v) for v in strict_row.get("contingent_effective_sources", []) if str(v)}
+    return "TIME.CONTINGENT_EFFECTIVE_DATE" in fail_reasons or bool(contingent_effective_sources)
 
 
 def _source_pathology_signal(
@@ -542,11 +517,7 @@ def _source_pathology_signal(
     signaled = False
     if oracle_info:
         signaled = bool(oracle_info.get("source_pathology"))
-        codes.extend(
-            str(code)
-            for code in oracle_info.get("source_pathology_codes", [])
-            if str(code)
-        )
+        codes.extend(str(code) for code in oracle_info.get("source_pathology_codes", []) if str(code))
         if not codes:
             codes.extend(
                 str(row.get("code") or "")
@@ -555,11 +526,7 @@ def _source_pathology_signal(
             )
     if strict_row:
         signaled = signaled or _strict_marks_source_pathology(strict_row)
-        codes.extend(
-            str(code)
-            for code in strict_row.get("source_pathology_codes", [])
-            if str(code)
-        )
+        codes.extend(str(code) for code in strict_row.get("source_pathology_codes", []) if str(code))
         if not codes:
             codes.extend(
                 str(row.get("code") or "")
@@ -574,16 +541,8 @@ def _html_topology_signal(oracle_info: Optional[Dict]) -> tuple[bool, List[str],
         return False, [], []
     if str(oracle_info.get("html_noncommensurable_reason") or "").strip():
         return False, [], []
-    missing_raw = [
-        str(v)
-        for v in oracle_info.get("html_missing_from_xml", [])
-        if str(v)
-    ]
-    extra_raw = [
-        str(v)
-        for v in oracle_info.get("html_extra_in_xml", [])
-        if str(v)
-    ]
+    missing_raw = [str(v) for v in oracle_info.get("html_missing_from_xml", []) if str(v)]
+    extra_raw = [str(v) for v in oracle_info.get("html_extra_in_xml", []) if str(v)]
     missing: List[str] = []
     seen_missing: set[str] = set()
     for label in missing_raw:
@@ -613,21 +572,13 @@ def _contingent_effective_date_signal(
     sources: List[str] = []
     signaled = False
     if oracle_info:
-        live_sources = [
-            str(v)
-            for v in oracle_info.get("contingent_effective_sources", [])
-            if str(v)
-        ]
+        live_sources = [str(v) for v in oracle_info.get("contingent_effective_sources", []) if str(v)]
         if live_sources:
             signaled = True
             sources.extend(live_sources)
     if strict_row and _strict_marks_contingent_effective_date(strict_row):
         signaled = True
-        sources.extend(
-            str(v)
-            for v in strict_row.get("contingent_effective_sources", [])
-            if str(v)
-        )
+        sources.extend(str(v) for v in strict_row.get("contingent_effective_sources", []) if str(v))
     return signaled, sorted(set(sources))
 
 
@@ -635,10 +586,11 @@ def _contingent_effective_date_signal(
 # Step 4: Score and rank
 # ---------------------------------------------------------------------------
 
+
 def _amendment_count_factor(n: int) -> float:
     """Scale factor based on amendment count. Fewer amendments = more tractable fix."""
     if n == 0:
-        return 0.5   # 0-amendment failure is probably a structural issue
+        return 0.5  # 0-amendment failure is probably a structural issue
     if n <= 5:
         return 1.0
     if n <= 15:
@@ -731,11 +683,7 @@ def _bucket_frontier_row(
         oracle_info is not None and float(oracle_info.get("suspect_fraction", 0.0) or 0.0) > 0.5
     )
     final_suspect = (
-        base_suspect
-        or source_pathology
-        or html_noncommensurable
-        or html_topology_mismatch
-        or contingent_effective_date
+        base_suspect or source_pathology or html_noncommensurable or html_topology_mismatch or contingent_effective_date
     )
 
     if oracle_or_version:
@@ -809,9 +757,7 @@ def _build_frontier(
             fixability *= 0.1
             is_suspect = True
             top_diag = (
-                f"SOURCE_PATHOLOGY:{','.join(source_pathology_codes)}"
-                if source_pathology_codes
-                else "SOURCE_PATHOLOGY"
+                f"SOURCE_PATHOLOGY:{','.join(source_pathology_codes)}" if source_pathology_codes else "SOURCE_PATHOLOGY"
             )
         elif html_noncommensurable_reason:
             fixability *= 0.1
@@ -845,29 +791,31 @@ def _build_frontier(
             contingent_effective_date=contingent_effective_date,
         )
 
-        rows.append({
-            "statute_id": sid,
-            "score": sim,
-            "replay_loss": 1.0 - sim,
-            "fixability": fixability,
-            "is_suspect": is_suspect,
-            "top_diagnosis": top_diag,
-            "amendments": amendments,
-            "source_incomplete": source_incomplete,
-            "source_pathology": source_pathology,
-            "source_pathology_codes": "|".join(source_pathology_codes) if source_pathology_codes else "",
-            "html_noncommensurable_reason": html_noncommensurable_reason,
-            "html_topology_mismatch": html_topology_mismatch,
-            "html_missing_from_xml": "|".join(html_missing) if html_missing else "",
-            "html_extra_in_xml": "|".join(html_extra) if html_extra else "",
-            "contingent_effective_date": contingent_effective_date,
-            "contingent_effective_sources": "|".join(contingent_sources) if contingent_sources else "",
-            "projection_kinds": "|".join(sorted(projection_kinds)) if projection_kinds else "",
-            "suspect_fraction": oracle_info["suspect_fraction"] if oracle_info else None,
-            "oracle_version_suspect": (version_gate or {}).get("suspect_detail", ""),
-            "oracle_version_pending": (version_gate or {}).get("pending_detail", ""),
-            "bucket": bucket,
-        })
+        rows.append(
+            {
+                "statute_id": sid,
+                "score": sim,
+                "replay_loss": 1.0 - sim,
+                "fixability": fixability,
+                "is_suspect": is_suspect,
+                "top_diagnosis": top_diag,
+                "amendments": amendments,
+                "source_incomplete": source_incomplete,
+                "source_pathology": source_pathology,
+                "source_pathology_codes": "|".join(source_pathology_codes) if source_pathology_codes else "",
+                "html_noncommensurable_reason": html_noncommensurable_reason,
+                "html_topology_mismatch": html_topology_mismatch,
+                "html_missing_from_xml": "|".join(html_missing) if html_missing else "",
+                "html_extra_in_xml": "|".join(html_extra) if html_extra else "",
+                "contingent_effective_date": contingent_effective_date,
+                "contingent_effective_sources": "|".join(contingent_sources) if contingent_sources else "",
+                "projection_kinds": "|".join(sorted(projection_kinds)) if projection_kinds else "",
+                "suspect_fraction": oracle_info["suspect_fraction"] if oracle_info else None,
+                "oracle_version_suspect": (version_gate or {}).get("suspect_detail", ""),
+                "oracle_version_pending": (version_gate or {}).get("pending_detail", ""),
+                "bucket": bucket,
+            }
+        )
 
     # Sort by fixability descending (highest fixability = best target)
     rows.sort(key=lambda r: r["fixability"], reverse=True)
@@ -968,9 +916,7 @@ def _build_proof_report_rows(rows: List[Dict], mode: str) -> List[Dict]:
             continue
         bundle = build_evidence_bundle(sid, mode=mode)
         proof_kinds = [
-            str(item.get("kind") or "")
-            for item in bundle.get("proof_claims", [])
-            if str(item.get("kind") or "")
+            str(item.get("kind") or "") for item in bundle.get("proof_claims", []) if str(item.get("kind") or "")
         ]
         section_claim_kinds = sorted(
             {
@@ -989,14 +935,10 @@ def _build_proof_report_rows(rows: List[Dict], mode: str) -> List[Dict]:
                 "proof_kinds": proof_kinds,
                 "section_claim_count": len(bundle.get("section_claims", []) or []),
                 "selected_section_claim_count": sum(
-                    1
-                    for item in bundle.get("section_claims", []) or []
-                    if str(item.get("selected_kind") or "")
+                    1 for item in bundle.get("section_claims", []) or [] if str(item.get("selected_kind") or "")
                 ),
                 "section_claim_kinds": section_claim_kinds,
-                "statute_only_proof_kinds": [
-                    kind for kind in proof_kinds if kind not in set(section_claim_kinds)
-                ],
+                "statute_only_proof_kinds": [kind for kind in proof_kinds if kind not in set(section_claim_kinds)],
                 "section_claim_rules": sorted(
                     {
                         str(item.get("selected_inference_rule") or "")
@@ -1045,22 +987,13 @@ def _proof_bucket_for_row(row: Dict, proof_row: Optional[Dict]) -> str:
         return current
     tier = str(proof_row.get("primary_proof_tier") or "UNRESOLVED")
     if tier == "UNRESOLVED":
-        proof_kinds = {
-            str(kind or "")
-            for kind in (proof_row.get("proof_kinds") or [])
-            if str(kind or "")
-        }
+        proof_kinds = {str(kind or "") for kind in (proof_row.get("proof_kinds") or []) if str(kind or "")}
         section_claim_kinds = {
-            str(kind or "")
-            for kind in (proof_row.get("section_claim_kinds") or [])
-            if str(kind or "")
+            str(kind or "") for kind in (proof_row.get("section_claim_kinds") or []) if str(kind or "")
         }
         if "no_strong_claim" in proof_kinds:
             return "other_suspect"
-        if (
-            section_claim_kinds
-            and section_claim_kinds <= _PREEXISTING_ONLY_SECTION_CLAIM_KINDS
-        ):
+        if section_claim_kinds and section_claim_kinds <= _PREEXISTING_ONLY_SECTION_CLAIM_KINDS:
             return "base_drift"
         if {
             "UNRESOLVED.preexisting.baseline_residue",
@@ -1085,16 +1018,8 @@ def _apply_proof_rebucketing(
     proof-demoted non-candidates are dropped from the displayed frontier while
     remaining visible in the proof report.
     """
-    proof_by_sid = {
-        str(item.get("statute_id") or ""): item
-        for item in proof_rows
-        if str(item.get("statute_id") or "")
-    }
-    rows_by_sid = {
-        str(item.get("statute_id") or ""): item
-        for item in rows
-        if str(item.get("statute_id") or "")
-    }
+    proof_by_sid = {str(item.get("statute_id") or ""): item for item in proof_rows if str(item.get("statute_id") or "")}
+    rows_by_sid = {str(item.get("statute_id") or ""): item for item in rows if str(item.get("statute_id") or "")}
     adjusted_rows: List[Dict] = []
     adjusted_proof_rows: List[Dict] = []
 
@@ -1125,11 +1050,7 @@ def _apply_proof_rebucketing_to_summary(
 ) -> Dict[str, int]:
     """Move pre-proof candidate counts into proof-backed buckets."""
     adjusted = dict(summary)
-    proof_by_sid = {
-        str(item.get("statute_id") or ""): item
-        for item in proof_rows
-        if str(item.get("statute_id") or "")
-    }
+    proof_by_sid = {str(item.get("statute_id") or ""): item for item in proof_rows if str(item.get("statute_id") or "")}
     for row in rows:
         old_bucket = str(row.get("bucket") or "")
         proof_row = proof_by_sid.get(str(row.get("statute_id") or ""))
@@ -1213,12 +1134,10 @@ def _summarize_proof_rows(rows: List[Dict]) -> Dict[str, Dict[str, int]]:
         "bucket_primary_tiers": dict(sorted(bucket_tier_counts.items())),
     }
 
+
 def _print_frontier(rows: List[Dict], label: str, exclude_suspect: bool, mode: str) -> None:
     suspect_note = " (oracle-suspect excluded)" if exclude_suspect else ""
-    print(
-        f"\n=== Honest Frontier: top {len(rows)} replay targets — "
-        f"{label} [{mode}]{suspect_note} ===\n"
-    )
+    print(f"\n=== Honest Frontier: top {len(rows)} replay targets — {label} [{mode}]{suspect_note} ===\n")
 
     header = (
         f"{'Rank':>4}  {'Statute':>12}  {'Score':>6}  {'Loss':>6}  "
@@ -1241,7 +1160,21 @@ def _print_frontier(rows: List[Dict], label: str, exclude_suspect: bool, mode: s
         cont_src = row["contingent_effective_sources"]
         html_detail = row["html_missing_from_xml"] or row["html_extra_in_xml"]
         html_noncomm = row["html_noncommensurable_reason"]
-        detail = path_detail if path_detail else (path_codes if path_codes else (html_noncomm if html_noncomm else (html_detail if html_detail else (cont_src if cont_src else (projection if projection else diag)))))
+        detail = (
+            path_detail
+            if path_detail
+            else (
+                path_codes
+                if path_codes
+                else (
+                    html_noncomm
+                    if html_noncomm
+                    else (
+                        html_detail if html_detail else (cont_src if cont_src else (projection if projection else diag))
+                    )
+                )
+            )
+        )
         src_inc = "yes" if row["source_incomplete"] else "no"
         src_path = "yes" if row["source_pathology"] else "no"
         cont_eff = "yes" if row["contingent_effective_date"] else "no"
@@ -1254,9 +1187,7 @@ def _print_frontier(rows: List[Dict], label: str, exclude_suspect: bool, mode: s
 
 
 def _print_bucket_report(rows: List[Dict], top: int, label: str, mode: str) -> None:
-    print(
-        f"\n=== Frontier Bucket Report: top {top} per bucket — {label} [{mode}] ===\n"
-    )
+    print(f"\n=== Frontier Bucket Report: top {top} per bucket — {label} [{mode}] ===\n")
     by_bucket: Dict[str, List[Dict]] = defaultdict(list)
     for row in rows:
         by_bucket[str(row["bucket"])].append(row)
@@ -1278,12 +1209,7 @@ def _print_bucket_report(rows: List[Dict], top: int, label: str, mode: str) -> N
                 detail = row.get("html_missing_from_xml") or row.get("html_extra_in_xml")
             elif row.get("contingent_effective_sources"):
                 detail = row["contingent_effective_sources"]
-            print(
-                f"  {i:>2}. {row['statute_id']}  "
-                f"{row['score']:.1%}  "
-                f"{row['amendments']} amend  "
-                f"{detail}"
-            )
+            print(f"  {i:>2}. {row['statute_id']}  {row['score']:.1%}  {row['amendments']} amend  {detail}")
         print()
 
 
@@ -1292,10 +1218,7 @@ def _print_proof_report(rows: List[Dict], label: str, mode: str) -> None:
     for row in rows:
         kinds = ", ".join(row["proof_kinds"]) if row["proof_kinds"] else "none"
         tiers = ", ".join(row["proof_tiers"]) if row["proof_tiers"] else "UNRESOLVED"
-        print(
-            f"{row['statute_id']:<12}  {row['bucket']:<24}  "
-            f"{row['primary_proof_tier']:<32}  {kinds}"
-        )
+        print(f"{row['statute_id']:<12}  {row['bucket']:<24}  {row['primary_proof_tier']:<32}  {kinds}")
         if row["strict_fail_reasons"]:
             print(f"  strict: {', '.join(row['strict_fail_reasons'])}")
         print(f"  tiers : {tiers}")
@@ -1362,38 +1285,55 @@ def _save_frontier_csv(rows: List[Dict], label: str) -> Path:
     path = reports_dir / f"{label}_frontier.csv"
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow([
-            "rank", "statute_id", "score", "replay_loss", "fixability",
-            "bucket", "is_suspect", "suspect_fraction", "amendments", "source_incomplete",
-            "source_pathology", "source_pathology_codes",
-            "html_noncommensurable_reason",
-            "html_topology_mismatch", "html_missing_from_xml", "html_extra_in_xml",
-            "contingent_effective_date", "contingent_effective_sources",
-            "projection_kinds", "top_diagnosis",
-        ])
+        w.writerow(
+            [
+                "rank",
+                "statute_id",
+                "score",
+                "replay_loss",
+                "fixability",
+                "bucket",
+                "is_suspect",
+                "suspect_fraction",
+                "amendments",
+                "source_incomplete",
+                "source_pathology",
+                "source_pathology_codes",
+                "html_noncommensurable_reason",
+                "html_topology_mismatch",
+                "html_missing_from_xml",
+                "html_extra_in_xml",
+                "contingent_effective_date",
+                "contingent_effective_sources",
+                "projection_kinds",
+                "top_diagnosis",
+            ]
+        )
         for i, row in enumerate(rows, 1):
-            w.writerow([
-                i,
-                row["statute_id"],
-                f"{row['score']:.6f}",
-                f"{row['replay_loss']:.6f}",
-                f"{row['fixability']:.6f}",
-                row["bucket"],
-                "1" if row["is_suspect"] else "0",
-                f"{row['suspect_fraction']:.4f}" if row["suspect_fraction"] is not None else "",
-                row["amendments"],
-                "1" if row["source_incomplete"] else "0",
-                "1" if row["source_pathology"] else "0",
-                row["source_pathology_codes"],
-                row["html_noncommensurable_reason"],
-                "1" if row["html_topology_mismatch"] else "0",
-                row["html_missing_from_xml"],
-                row["html_extra_in_xml"],
-                "1" if row["contingent_effective_date"] else "0",
-                row["contingent_effective_sources"],
-                row["projection_kinds"],
-                row["top_diagnosis"],
-            ])
+            w.writerow(
+                [
+                    i,
+                    row["statute_id"],
+                    f"{row['score']:.6f}",
+                    f"{row['replay_loss']:.6f}",
+                    f"{row['fixability']:.6f}",
+                    row["bucket"],
+                    "1" if row["is_suspect"] else "0",
+                    f"{row['suspect_fraction']:.4f}" if row["suspect_fraction"] is not None else "",
+                    row["amendments"],
+                    "1" if row["source_incomplete"] else "0",
+                    "1" if row["source_pathology"] else "0",
+                    row["source_pathology_codes"],
+                    row["html_noncommensurable_reason"],
+                    "1" if row["html_topology_mismatch"] else "0",
+                    row["html_missing_from_xml"],
+                    row["html_extra_in_xml"],
+                    "1" if row["contingent_effective_date"] else "0",
+                    row["contingent_effective_sources"],
+                    row["projection_kinds"],
+                    row["top_diagnosis"],
+                ]
+            )
     return path
 
 
@@ -1422,6 +1362,7 @@ def _save_evidence_bundles_jsonl(bundles: List[Dict], label: str, path: Optional
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main(args) -> None:
     label = getattr(args, "label", None)
@@ -1511,10 +1452,7 @@ def main(args) -> None:
             f"mode={mode}, parallel={workers})..."
         )
     else:
-        refresh_sids = [
-            r["statute_id"] for r in low_scoring
-            if r["statute_id"] not in oracle_checks
-        ]
+        refresh_sids = [r["statute_id"] for r in low_scoring if r["statute_id"] not in oracle_checks]
         if refresh_sids:
             status(
                 f"Running fresh oracle-check for {len(refresh_sids)} uncovered low-scoring statutes "
@@ -1561,10 +1499,7 @@ def main(args) -> None:
                 version_suspect_count += 1
             elif pending_detail:
                 version_pending_count += 1
-    status(
-        f"  Version-suspect: {version_suspect_count}, "
-        f"version-pending: {version_pending_count}"
-    )
+    status(f"  Version-suspect: {version_suspect_count}, version-pending: {version_pending_count}")
 
     # Step 3: Load strict run data if available
     strict_data: Optional[Dict[str, Dict]] = None
@@ -1632,9 +1567,7 @@ def main(args) -> None:
     if bucket_filter:
         frontier = [row for row in frontier if row["bucket"] == bucket_filter][:top]
         if proof_payload:
-            proof_payload = [
-                row for row in proof_payload if row["bucket"] == bucket_filter
-            ][:top]
+            proof_payload = [row for row in proof_payload if row["bucket"] == bucket_filter][:top]
         status(f"Bucket filter: {bucket_filter} -> {len(frontier)} row(s)")
 
     total_low = summary["total_low"]
@@ -1642,29 +1575,41 @@ def main(args) -> None:
         print(
             f"\nSummary: {total_low} statutes below {score_threshold:.0%}, "
             f"{summary['resolved_after_refresh']} resolved-after-refresh "
-            f"({summary['resolved_after_refresh']*100//total_low if total_low else 0}%), "
+            f"({summary['resolved_after_refresh'] * 100 // total_low if total_low else 0}%), "
             f"{summary['oracle_version_suspect']} oracle/version-suspect "
-            f"({summary['oracle_version_suspect']*100//total_low if total_low else 0}%), "
+            f"({summary['oracle_version_suspect'] * 100 // total_low if total_low else 0}%), "
             f"{summary['no_oracle_check']} no-oracle-check "
-            f"({summary['no_oracle_check']*100//total_low if total_low else 0}%), "
+            f"({summary['no_oracle_check'] * 100 // total_low if total_low else 0}%), "
             f"{summary['source_pathology']} source-pathology "
-            f"({summary['source_pathology']*100//total_low if total_low else 0}%), "
+            f"({summary['source_pathology'] * 100 // total_low if total_low else 0}%), "
             f"{summary['html_noncommensurable']} html-noncommensurable "
-            f"({summary['html_noncommensurable']*100//total_low if total_low else 0}%), "
+            f"({summary['html_noncommensurable'] * 100 // total_low if total_low else 0}%), "
             f"{summary['html_topology']} html-topology "
-            f"({summary['html_topology']*100//total_low if total_low else 0}%), "
+            f"({summary['html_topology'] * 100 // total_low if total_low else 0}%), "
             f"{summary['contingent_effective_date']} contingent-effective-date "
-            f"({summary['contingent_effective_date']*100//total_low if total_low else 0}%), "
+            f"({summary['contingent_effective_date'] * 100 // total_low if total_low else 0}%), "
             f"{summary['base_drift']} base-drift "
-            f"({summary['base_drift']*100//total_low if total_low else 0}%), "
+            f"({summary['base_drift'] * 100 // total_low if total_low else 0}%), "
             f"{summary['other_suspect']} other-suspect "
-            f"({summary['other_suspect']*100//total_low if total_low else 0}%), "
+            f"({summary['other_suspect'] * 100 // total_low if total_low else 0}%), "
             f"{summary['candidate']} candidate replay targets."
         )
 
     display_rows = frontier[:top]
     bucket_payload = _bucket_report_payload(frontier, top) if bucket_report else {}
     proof_summary_payload = _summarize_proof_rows(proof_payload) if proof_payload and proof_summary else {}
+    proof_surface_report = (
+        finland_frontier_proof_evidence_surface(
+            rows=tuple(proof_payload),
+            summary=_summarize_proof_rows(proof_payload),
+            label=str(label),
+            mode=str(mode),
+            top=int(top),
+            bucket_filter=str(bucket_filter or ""),
+        )
+        if proof_payload
+        else {}
+    )
     evidence_payload = _build_evidence_bundles(display_rows, mode) if evidence_export else []
     save_path: Optional[Path] = None
     proof_save_path: Optional[Path] = None
@@ -1690,6 +1635,7 @@ def main(args) -> None:
             "buckets": bucket_payload,
             "proof_rows": proof_payload,
             "proof_summary": proof_summary_payload,
+            "proof_surface_report": proof_surface_report,
             "saved_proof_jsonl": str(proof_save_path) if proof_save_path else "",
             "saved_evidence_jsonl": str(evidence_save_path) if evidence_save_path else "",
             "saved_csv": str(save_path) if save_path else "",
@@ -1727,20 +1673,27 @@ def register_cli(sub: Any) -> None:
         ),
     )
     frontier_p.add_argument(
-        "--label", metavar="LABEL", required=True,
+        "--label",
+        metavar="LABEL",
+        required=True,
         help="bench run label to analyse, e.g. v_post_merge",
     )
     frontier_p.add_argument(
-        "--mode", default="finlex_oracle",
+        "--mode",
+        default="finlex_oracle",
         choices=["finlex_oracle", "legal_pit"],
         help="replay mode for fresh oracle-check and score refresh (default: finlex_oracle)",
     )
     frontier_p.add_argument(
-        "--top", type=int, default=30,
+        "--top",
+        type=int,
+        default=30,
         help="number of top fixable targets to show (default: 30)",
     )
     frontier_p.add_argument(
-        "--exclude-suspect", dest="exclude_suspect", action="store_true",
+        "--exclude-suspect",
+        dest="exclude_suspect",
+        action="store_true",
         help="omit oracle-suspect statutes from the ranked list",
     )
     frontier_p.add_argument(
@@ -1774,40 +1727,55 @@ def register_cli(sub: Any) -> None:
         help="summarize proof tiers and proof kinds across the current proof-report rows",
     )
     frontier_p.add_argument(
-        "--proof-export", metavar="PATH",
+        "--proof-export",
+        metavar="PATH",
         help="write proof-report rows as JSONL (default: data/frontier_reports/<label>_frontier_proof.jsonl when --proof-report)",
     )
     frontier_p.add_argument(
-        "--evidence-export", metavar="PATH",
+        "--evidence-export",
+        metavar="PATH",
         help="write full evidence bundles for the displayed frontier rows as JSONL",
     )
     frontier_p.add_argument(
-        "--json", dest="json_output", action="store_true",
+        "--json",
+        dest="json_output",
+        action="store_true",
         help="emit the refreshed frontier snapshot as JSON",
     )
     frontier_p.add_argument(
-        "--strict-label", dest="strict_label", metavar="LABEL",
+        "--strict-label",
+        dest="strict_label",
+        metavar="LABEL",
         help="strict run label to load projection-row data from (e.g. strict_v1)",
     )
     frontier_p.add_argument(
-        "--corpus", metavar="CSV_PATH",
+        "--corpus",
+        metavar="CSV_PATH",
         help="optional corpus CSV to restrict the bench run analysis to a subset of statutes",
     )
     frontier_p.add_argument(
-        "--export-low-corpus", dest="export_low_corpus", metavar="CSV_PATH",
+        "--export-low-corpus",
+        dest="export_low_corpus",
+        metavar="CSV_PATH",
         help="write the current low-scoring corpus slice (after score refresh) to CSV",
     )
     frontier_p.add_argument(
-        "--db", metavar="PATH",
-        help="path to divergences.db for pre-computed oracle-check data "
-             "(default: .tmp/divergences.db if it exists)",
+        "--db",
+        metavar="PATH",
+        help="path to divergences.db for pre-computed oracle-check data (default: .tmp/divergences.db if it exists)",
     )
     frontier_p.add_argument(
-        "--threshold", type=float, default=0.95, metavar="SCORE",
+        "--threshold",
+        type=float,
+        default=0.95,
+        metavar="SCORE",
         help="only consider statutes scoring below this (default: 0.95)",
     )
     frontier_p.add_argument(
-        "--parallel", type=int, default=None, metavar="N",
+        "--parallel",
+        type=int,
+        default=None,
+        metavar="N",
         help="workers for fresh oracle-check runs (default: cpu_count)",
     )
     frontier_p.add_argument(
@@ -1829,6 +1797,8 @@ def register_cli(sub: Any) -> None:
         ),
     )
     frontier_p.add_argument(
-        "--no-save", dest="no_save", action="store_true",
+        "--no-save",
+        dest="no_save",
+        action="store_true",
         help="do not write CSV to data/frontier_reports/",
     )

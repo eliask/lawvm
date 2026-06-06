@@ -8,6 +8,7 @@ from lawvm.finland.proof_surfaces import (
     corrigendum_source_witness,
     finlex_html_topology_source_witness,
     finland_evidence_bundle_evidence_surface,
+    finland_frontier_proof_evidence_surface,
     finland_strict_report_evidence_surface,
     finlex_editorial_witness_agreement_residual_rows,
     mutation_boundary_proof_rows,
@@ -183,6 +184,51 @@ def test_finland_evidence_bundle_projects_passive_shared_report() -> None:
         "source_witness",
     }
     assert "proof_claim_as_mutation_instruction" in report["forbidden_shortcuts"]
+
+
+def test_finland_frontier_proof_report_projects_shared_envelope() -> None:
+    report = finland_frontier_proof_evidence_surface(
+        rows=(
+            {
+                "statute_id": "1999/132",
+                "bucket": "candidate",
+                "score": 0.7,
+                "primary_proof_tier": "UNRESOLVED",
+                "proof_tiers": ["UNRESOLVED"],
+                "proof_kinds": ["no_strong_claim"],
+            },
+        ),
+        summary={
+            "primary_tiers": {"UNRESOLVED": 1},
+            "proof_kinds": {"no_strong_claim": 1},
+            "section_claim_kinds": {},
+            "statute_only_proof_kinds": {"no_strong_claim": 1},
+            "bucket_primary_tiers": {"candidate:UNRESOLVED": 1},
+        },
+        label="fi_frontier",
+        mode="legal_pit",
+        top=30,
+        bucket_filter="candidate",
+    )
+
+    assert report["jurisdiction"] == "fi"
+    assert report["report_kind"] == "finland_frontier_proof_report"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is True
+    assert report["filters"] == {
+        "label": "fi_frontier",
+        "mode": "legal_pit",
+        "top": 30,
+        "bucket_filter": "candidate",
+    }
+    assert report["summary"]["frontier_proof_row_count"] == 1
+    assert report["summary"]["primary_tiers"] == {"UNRESOLVED": 1}
+    assert report["summary"]["proof_kinds"] == {"no_strong_claim": 1}
+    assert report["rows"][0]["surface"] == "frontier_proof_row"
+    assert "frontier_rank_as_replay_authorization" in report["forbidden_shortcuts"]
 
 
 def test_mutation_boundary_reports_project_shared_proof_rows() -> None:

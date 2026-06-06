@@ -867,6 +867,66 @@ def finland_evidence_bundle_evidence_surface(
     ).to_dict()
 
 
+def finland_frontier_proof_evidence_surface(
+    *,
+    rows: tuple[Mapping[str, Any], ...],
+    summary: Mapping[str, Any],
+    label: str,
+    mode: str,
+    top: int | None = None,
+    bucket_filter: str = "",
+) -> dict[str, Any]:
+    """Wrap Finland frontier proof rows in the shared evidence envelope."""
+
+    normalized_rows = tuple(dict(row) for row in rows)
+    normalized_summary = dict(summary)
+    row_surfaces = tuple({**row, "surface": "frontier_proof_row"} for row in normalized_rows)
+    report_summary = {
+        "frontier_proof_row_count": len(normalized_rows),
+        "primary_tiers": dict(normalized_summary.get("primary_tiers") or {}),
+        "proof_kinds": dict(normalized_summary.get("proof_kinds") or {}),
+        "section_claim_kinds": dict(normalized_summary.get("section_claim_kinds") or {}),
+        "statute_only_proof_kinds": dict(normalized_summary.get("statute_only_proof_kinds") or {}),
+        "section_claim_rules": dict(normalized_summary.get("section_claim_rules") or {}),
+        "defeated_section_claim_kinds": dict(normalized_summary.get("defeated_section_claim_kinds") or {}),
+        "defeated_section_claim_rules": dict(normalized_summary.get("defeated_section_claim_rules") or {}),
+        "alternative_replay_sections": dict(normalized_summary.get("alternative_replay_sections") or {}),
+        "bucket_primary_tiers": dict(normalized_summary.get("bucket_primary_tiers") or {}),
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction="fi",
+        report_kind="finland_frontier_proof_report",
+        schema="lawvm.finland_frontier_proof_report.v1",
+        truth_claim="finland_frontier_proof_diagnostics",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=True,
+        summary=report_summary,
+        filters={
+            "label": label,
+            "mode": mode,
+            "top": top if top is not None else "",
+            "bucket_filter": bucket_filter,
+        },
+        filtered_summary=report_summary,
+        rows=row_surfaces,
+        rows_truncated=False,
+        detail={
+            "safe_default": "treat_frontier_proof_report_as_diagnostic_ranking_not_replay_authorization",
+            "forbidden_shortcuts": (
+                "frontier_rank_as_replay_authorization",
+                "proof_tier_as_canonical_operation",
+                "proof_row_as_mutation_instruction",
+                "oracle_score_as_source_truth",
+                "bucket_as_source_pathology_proof",
+            ),
+            "included_surfaces": ("frontier_proof_row",),
+        },
+    ).to_dict()
+
+
 def _pathology_row(pathology: SourcePathology | Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(pathology, SourcePathology):
         return {
