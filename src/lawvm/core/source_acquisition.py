@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.source_witness import SourceWitness
@@ -303,6 +304,79 @@ class SourceBundlePolicy:
         )
 
 
+def source_bundle_evidence_report(
+    admissions: tuple[SourceBundleAdmission, ...],
+    *,
+    jurisdiction: str,
+    assertions: tuple[SourceAcquisitionAssertion, ...] = (),
+    attestations: tuple[SourceAcquisitionAttestation, ...] = (),
+    report_kind: str = "source_bundle_admission",
+    filters: Mapping[str, Any] | None = None,
+    rows_truncated: bool = False,
+) -> EvidenceSurfaceReport:
+    """Project source-bundle policy results without granting replay authority."""
+
+    admission_rows = tuple(
+        {
+            "surface": "source_bundle_admission",
+            **admission.to_dict(),
+            "execution_authorization": admission.to_execution_authorization().to_dict(),
+        }
+        for admission in admissions
+    )
+    assertion_rows = tuple(
+        {
+            "surface": "source_acquisition_assertion",
+            **assertion.to_dict(),
+        }
+        for assertion in assertions
+    )
+    attestation_rows = tuple(
+        {
+            "surface": "source_acquisition_attestation",
+            **attestation.to_dict(),
+        }
+        for attestation in attestations
+    )
+    status_counts = _count_by(admission.status for admission in admissions)
+    lane_counts = _count_by(admission.source_lane for admission in admissions)
+    admitted_count = sum(1 for admission in admissions if admission.admitted)
+    summary = {
+        "assertion_count": len(assertions),
+        "attestation_count": len(attestations),
+        "admission_count": len(admissions),
+        "admitted_count": admitted_count,
+        "blocked_count": len(admissions) - admitted_count,
+        "status_counts": status_counts,
+        "source_lane_counts": lane_counts,
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction=jurisdiction,
+        report_kind=report_kind,
+        schema="lawvm.source_bundle_evidence_report.v1",
+        truth_claim="source_bundle_admission_is_source_footing_not_replay_authority",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters=dict(filters or {}),
+        filtered_summary=summary,
+        rows=(*assertion_rows, *attestation_rows, *admission_rows),
+        rows_truncated=rows_truncated,
+        detail={
+            "safe_default": "treat_source_bundle_admission_as_source_footing_not_replay_authorization",
+            "forbidden_shortcuts": _SOURCE_BUNDLE_FORBIDDEN_SHORTCUTS,
+            "included_surfaces": (
+                "source_acquisition_assertion",
+                "source_acquisition_attestation",
+                "source_bundle_admission",
+            ),
+        },
+    )
+
+
 def _required_string(field_name: str, value: Any) -> str:
     text = str(value or "")
     if not text:
@@ -326,9 +400,19 @@ def _plain_jsonable(value: Any) -> Any:
     return value
 
 
+def _count_by(values: object) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = str(value)
+        if key:
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
 __all__ = [
     "SourceAcquisitionAssertion",
     "SourceAcquisitionAttestation",
     "SourceBundleAdmission",
     "SourceBundlePolicy",
+    "source_bundle_evidence_report",
 ]

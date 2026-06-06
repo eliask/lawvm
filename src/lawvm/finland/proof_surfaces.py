@@ -39,6 +39,11 @@ from lawvm.core.source_completeness import (
     SourceCompletenessStatus,
     source_completeness_status_from_mapping,
 )
+from lawvm.core.source_acquisition import (
+    SourceAcquisitionAssertion,
+    SourceBundlePolicy,
+    source_bundle_evidence_report,
+)
 from lawvm.core.source_witness import DigestWitness, SourceWitness
 from lawvm.core.source_witness import (
     nested_source_witness_digest_coverage_counts,
@@ -2016,10 +2021,19 @@ def finland_corrigendum_sources_evidence_surface(
         mode=str(payload.get("mode") or ""),
         manifest_kind="finland_corrigendum_pdf_sources",
     )
+    source_bundle_report = _corrigendum_source_bundle_report(
+        records,
+        mode=str(payload.get("mode") or ""),
+        rows_truncated=bool(payload.get("records_truncated")),
+    )
+    source_bundle_summary = (
+        dict(source_bundle_report.summary) if source_bundle_report is not None else {}
+    )
     rows = tuple(
         (
             *({**dict(row), "surface": "corrigendum_source_witness"} for row in source_witnesses),
             *({**dict(row), "surface": "corrigendum_source_manifest_record"} for row in records),
+            *(source_bundle_report.rows if source_bundle_report is not None else ()),
             *(
                 (
                     {
@@ -2045,6 +2059,10 @@ def finland_corrigendum_sources_evidence_surface(
         "source_completeness": (
             source_completeness_status.counts if source_completeness_status is not None else {}
         ),
+        "source_bundle_assertion_count": int(source_bundle_summary.get("assertion_count") or 0),
+        "source_bundle_admission_count": int(source_bundle_summary.get("admission_count") or 0),
+        "source_bundle_admitted_count": int(source_bundle_summary.get("admitted_count") or 0),
+        "source_bundle_status_counts": dict(source_bundle_summary.get("status_counts") or {}),
     }
     return EvidenceSurfaceReport(
         jurisdiction="fi",
@@ -2072,14 +2090,89 @@ def finland_corrigendum_sources_evidence_surface(
                 "pdf_digest_as_manual_claim",
                 "date_status_as_commencement_proof",
                 "manifest_record_as_source_text_repair",
+                "source_bundle_admission_as_replay_authorization",
             ),
             "included_surfaces": (
                 "corrigendum_source_witness",
                 "corrigendum_source_manifest_record",
+                "source_acquisition_assertion",
+                "source_bundle_admission",
                 "source_completeness_status",
             ),
         },
     ).to_dict()
+
+
+def _corrigendum_source_bundle_report(
+    records: tuple[Mapping[str, Any], ...],
+    *,
+    mode: str,
+    rows_truncated: bool,
+) -> EvidenceSurfaceReport | None:
+    if not records:
+        return None
+    assertions = tuple(_corrigendum_source_acquisition_assertion(record) for record in records)
+    policy = SourceBundlePolicy(
+        policy_id="fi.corrigendum_source_bundle.v1",
+        jurisdiction="fi",
+        admitted_source_lanes=("corrigendum_pdf",),
+        safe_default="exclude_corrigendum_pdf_source_until_manifest_policy_is_satisfied",
+        detail={
+            "source_family": "finland_corrigendum_pdf_sources",
+            "source_role": "finland_corrigendum_pdf",
+        },
+    )
+    admissions = tuple(policy.evaluate(assertion) for assertion in assertions)
+    return source_bundle_evidence_report(
+        admissions,
+        jurisdiction="fi",
+        assertions=assertions,
+        report_kind="finland_corrigendum_source_bundle",
+        filters={"mode": mode},
+        rows_truncated=rows_truncated,
+    )
+
+
+def _corrigendum_source_acquisition_assertion(
+    record: Mapping[str, Any],
+) -> SourceAcquisitionAssertion:
+    witness = corrigendum_source_witness(record)
+    digest = str(record.get("sha256") or "")
+    artifact_id = (
+        witness.artifact_id
+        or witness.source_unit_id
+        or str(record.get("pdf_name") or "")
+        or (f"sha256:{digest}" if digest else "unknown_corrigendum_pdf_source")
+    )
+    assertion_key = json.dumps(
+        {
+            "amendment_id": str(record.get("amendment_id") or ""),
+            "artifact_id": artifact_id,
+            "digest": digest,
+            "source_pdf": str(record.get("source_pdf") or ""),
+        },
+        ensure_ascii=True,
+        sort_keys=True,
+    )
+    assertion_digest = hashlib.sha256(assertion_key.encode("utf-8")).hexdigest()[:16]
+    return SourceAcquisitionAssertion(
+        assertion_id=f"fi.corrigendum-source:{assertion_digest}",
+        jurisdiction="fi",
+        artifact_id=artifact_id,
+        source_lane=witness.source_lane,
+        assertion_kind="finland_corrigendum_pdf_manifest_record",
+        status="source_manifest_recorded",
+        witness=witness,
+        detail={
+            "statute_id": str(record.get("statute_id") or ""),
+            "amendment_id": str(record.get("amendment_id") or ""),
+            "pdf_name": str(record.get("pdf_name") or ""),
+            "source_pdf": str(record.get("source_pdf") or ""),
+            "date_status": str(record.get("date_status") or ""),
+            "digest_available": bool(digest),
+            "manifest_source": "finland_corrigendum_pdf_sources",
+        },
+    )
 
 
 def _corrigendum_sources_completeness_status(

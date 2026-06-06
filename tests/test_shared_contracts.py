@@ -75,6 +75,7 @@ from lawvm.core.source_acquisition import (
     SourceAcquisitionAssertion,
     SourceAcquisitionAttestation,
     SourceBundlePolicy,
+    source_bundle_evidence_report,
 )
 from lawvm.core.source_completeness import (
     SourceCompletenessStatus,
@@ -436,6 +437,52 @@ def test_source_bundle_policy_blocks_missing_attestations() -> None:
     )
     assert authorization["strict_disposition"] == "block"
     assert authorization["authorization_status"] == "source_bundle_policy_unsatisfied"
+
+
+def test_source_bundle_evidence_report_projects_passive_admissions() -> None:
+    witness = SourceWitness(
+        source_role="official_source_xml",
+        artifact_id="2024/2",
+        source_lane="official_xml",
+    )
+    assertion = SourceAcquisitionAssertion(
+        assertion_id="assertion-3",
+        jurisdiction="fi",
+        artifact_id="2024/2",
+        source_lane="official_xml",
+        assertion_kind="source_artifact_available",
+        status="observed",
+        witness=witness,
+    )
+    policy = SourceBundlePolicy(
+        policy_id="fi.source_bundle.v1",
+        jurisdiction="fi",
+        admitted_source_lanes=("official_xml",),
+    )
+    admission = policy.evaluate(assertion)
+
+    report = source_bundle_evidence_report(
+        (admission,),
+        jurisdiction="fi",
+        assertions=(assertion,),
+    ).to_dict()
+
+    assert report["report_kind"] == "source_bundle_admission"
+    assert report["replay_claims"] is False
+    assert report["summary"]["assertion_count"] == 1
+    assert report["summary"]["admitted_count"] == 1
+    assert report["summary"]["status_counts"] == {"source_bundle_admitted": 1}
+    assert {row["surface"] for row in report["rows"]} == {
+        "source_acquisition_assertion",
+        "source_bundle_admission",
+    }
+    admission_row = next(row for row in report["rows"] if row["surface"] == "source_bundle_admission")
+    assert admission_row["execution_authorization"]["executable"] is False
+    assert admission_row["execution_authorization"]["replay_authorized"] is False
+    assert (
+        "source_bundle_admission_as_replay_authorization"
+        in admission_row["execution_authorization"]["forbidden_shortcuts"]
+    )
 
 
 def test_frontend_phase_surface_marks_compatibility_output_without_replay_claims() -> None:

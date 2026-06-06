@@ -328,6 +328,8 @@ Rules:
 
 - Admission to a source bundle is not replay authorization.
 - Source-acquisition attestations are not semantic compilation.
+- Source-bundle admission reports should expose `SourceAcquisitionAssertion`
+  and `SourceBundleAdmission` rows with non-executable authorization metadata.
 - PDF/OCR/pre-AKN source lanes should require explicit attestations before
   admission.
 - A blocked source lane should become source-acquisition frontier work, not a
@@ -394,6 +396,7 @@ sparse slot candidate certificates
 source pathology frontiers
 temporal resolution evidence
 source completeness status
+source-bundle admission rows
 mutation boundary proof rows
 recovery execution authorizations
 government proposal branch diagnostics

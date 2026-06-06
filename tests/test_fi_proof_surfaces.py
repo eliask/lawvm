@@ -747,21 +747,36 @@ def test_finland_corrigendum_sources_projects_source_manifest_envelope() -> None
         "missing_sources": 0,
         "missing_dates": 1,
     }
+    assert report["summary"]["source_bundle_assertion_count"] == 1
+    assert report["summary"]["source_bundle_admission_count"] == 1
+    assert report["summary"]["source_bundle_admitted_count"] == 1
+    assert report["summary"]["source_bundle_status_counts"] == {"source_bundle_admitted": 1}
     assert report["summary"]["source_witness_digest_coverage_counts"] == {
         "artifact_and_preview_digest": 1
     }
     assert {row["surface"] for row in report["rows"]} == {
         "corrigendum_source_manifest_record",
         "corrigendum_source_witness",
+        "source_acquisition_assertion",
+        "source_bundle_admission",
         "source_completeness_status",
     }
     rows_by_surface = {row["surface"]: row for row in report["rows"]}
+    source_admission = rows_by_surface["source_bundle_admission"]
+    assert source_admission["admitted"] is True
+    assert source_admission["execution_authorization"]["executable"] is False
+    assert source_admission["execution_authorization"]["replay_authorized"] is False
+    assert (
+        source_admission["execution_authorization"]["authorization_status"]
+        == "source_bundle_admitted_not_replay_authority"
+    )
     source_status = rows_by_surface["source_completeness_status"]
     assert source_status["status"] == "incomplete"
     assert source_status["owner_phase"] == "source_acquisition"
     assert source_status["replay_authorized"] is False
     assert source_status["execution_authorization"]["replay_authorized"] is False
     assert "source_manifest_as_replay_authorization" in report["forbidden_shortcuts"]
+    assert "source_bundle_admission_as_replay_authorization" in report["forbidden_shortcuts"]
 
 
 def test_mutation_boundary_reports_project_shared_proof_rows() -> None:
