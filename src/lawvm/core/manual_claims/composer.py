@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Optional
 
 from lawvm.core.manual_claims.kind_registry import get_claim_kind_spec
 from lawvm.core.manual_claims.primitive import (
@@ -39,10 +38,10 @@ from lawvm.core.manual_claims.primitive import (
     ClaimStatus,
     ManualCompilationClaim,
     Producer,
-    ProfileTag,
     ReviewStatus,
     SourceWitnessType,
     ValidatorStatus,
+    _ProfileTagDeprecated as ProfileTag,
 )
 from lawvm.core.manual_claims.precedence import PrecedenceRegistry
 
