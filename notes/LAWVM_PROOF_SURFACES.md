@@ -178,6 +178,9 @@ Rules:
   suggested lane, blocking status, and forbidden shortcuts. A source-pathology
   row records why source material cannot be used literally; it is not source
   truth, replay authorization, target widening, or mutation-boundary proof.
+- Frontend capability declarations should project as passive rows listing the
+  phase waists a frontend claims to expose. A capability row is not parse
+  success, replay authority, or canonical-effect proof.
 
 ---
 

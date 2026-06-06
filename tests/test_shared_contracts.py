@@ -36,6 +36,7 @@ from lawvm.core.frontend_contract import (
     DerivedCompatibilityArtifact,
     FrontendCapability,
     SurfaceParseResult,
+    frontend_capability_evidence_report,
 )
 from lawvm.core.frontend_phase_surface import (
     FrontendDiagnostic,
@@ -524,6 +525,21 @@ def test_frontend_capability_declares_supported_waists_without_replay_authority(
     assert data["has_agreement_surface"] is False
     assert data["compatibility_outputs"] == ["ParsedOp"]
     assert data["caveats"] == ["capability_declaration_does_not_authorize_replay"]
+
+    report = frontend_capability_evidence_report(capability)
+    report_data = report.to_dict()
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert report_data["replay_claims"] is False
+    assert report_data["canonical_effect_claims"] is False
+    assert report_data["summary"]["frontend_capability_count"] == 1
+    assert report_data["summary"]["supported_waist_count"] == 3
+    assert report_data["rows"][0]["surface"] == "frontend_capability"
+    assert report_data["rows"][0]["replay_authorized"] is False
+    assert "has_token_tape" in report_data["rows"][0]["supported_waists"]
+    assert "frontend_capability_as_replay_authorization" in report_data["forbidden_shortcuts"]
+    assert proof_surface["surface_kind"] == "frontend_capability"
+    assert proof_surface["rows"][0]["row_kind"] == "frontend_capability"
 
 
 def test_derived_compatibility_artifact_declares_non_authority_boundary() -> None:

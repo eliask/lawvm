@@ -11,7 +11,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
+
+
+_FRONTEND_CAPABILITY_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
+    "frontend_capability_as_replay_authorization",
+    "frontend_capability_as_parse_success",
+    "frontend_capability_as_canonical_effect_proof",
+    "compatibility_output_as_semantic_authority",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -315,6 +324,113 @@ class DerivedCompatibilityArtifact:
         }
 
 
+def frontend_capability_evidence_report(
+    capability: FrontendCapability | Mapping[str, Any],
+    *,
+    report_kind: str = "frontend_capability",
+) -> EvidenceSurfaceReport:
+    """Project a frontend capability declaration into a passive report row."""
+
+    data = _frontend_capability_mapping(capability)
+    supported_waists = tuple(
+        field_name
+        for field_name in (
+            "has_token_tape",
+            "has_annotation_overlay",
+            "has_surface_clause",
+            "has_enriched_surface",
+            "has_resolved_surface",
+            "has_clause_ast",
+            "has_payload_surface",
+            "has_payload_elaboration",
+            "has_canonical_effects",
+            "has_replay_apply",
+            "has_materialization",
+            "has_agreement_surface",
+        )
+        if bool(data.get(field_name))
+    )
+    row = {
+        "surface": "frontend_capability",
+        "row_id": str(data.get("frontend_id") or ""),
+        "subject_id": str(data.get("frontend_id") or ""),
+        "status": str(data.get("status") or "reported"),
+        "replay_authorized": False,
+        "semantic_authority": False,
+        "supported_waists": supported_waists,
+        "forbidden_shortcuts": _FRONTEND_CAPABILITY_FORBIDDEN_SHORTCUTS,
+        **data,
+    }
+    summary = {
+        "frontend_capability_count": 1,
+        "frontend_id": str(data.get("frontend_id") or ""),
+        "scope": str(data.get("scope") or ""),
+        "status": str(data.get("status") or ""),
+        "supported_waists": supported_waists,
+        "supported_waist_count": len(supported_waists),
+        "compatibility_outputs": tuple(str(item) for item in data.get("compatibility_outputs", ())),
+        "phase_names": tuple(str(item) for item in data.get("phase_names", ())),
+        "claim_flags": {
+            "replay_claims": False,
+            "canonical_effect_claims": False,
+            "candidate_effect_claims": False,
+            "dry_run_claims": False,
+            "agreement_claims": False,
+        },
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction=str(data.get("jurisdiction") or ""),
+        report_kind=report_kind,
+        schema="lawvm.frontend_capability_report.v1",
+        truth_claim="frontend capability declaration",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={
+            "frontend_id": str(data.get("frontend_id") or ""),
+            "scope": str(data.get("scope") or ""),
+        },
+        filtered_summary=summary,
+        rows=(row,),
+        rows_truncated=False,
+        detail={
+            "safe_default": "treat_capability_as_declaration_not_parse_or_replay_authority",
+            "forbidden_shortcuts": _FRONTEND_CAPABILITY_FORBIDDEN_SHORTCUTS,
+        },
+    )
+
+
+def _frontend_capability_mapping(capability: FrontendCapability | Mapping[str, Any]) -> dict[str, Any]:
+    if isinstance(capability, FrontendCapability):
+        return capability.to_dict()
+    return FrontendCapability(
+        frontend_id=str(capability.get("frontend_id") or ""),
+        jurisdiction=str(capability.get("jurisdiction") or ""),
+        scope=str(capability.get("scope") or ""),
+        status=str(capability.get("status") or ""),
+        capability_schema=str(capability.get("capability_schema") or "lawvm.frontend_capability.v1"),
+        has_token_tape=bool(capability.get("has_token_tape")),
+        has_annotation_overlay=bool(capability.get("has_annotation_overlay")),
+        has_surface_clause=bool(capability.get("has_surface_clause")),
+        has_enriched_surface=bool(capability.get("has_enriched_surface")),
+        has_resolved_surface=bool(capability.get("has_resolved_surface")),
+        has_clause_ast=bool(capability.get("has_clause_ast")),
+        has_payload_surface=bool(capability.get("has_payload_surface")),
+        has_payload_elaboration=bool(capability.get("has_payload_elaboration")),
+        has_canonical_effects=bool(capability.get("has_canonical_effects")),
+        has_replay_apply=bool(capability.get("has_replay_apply")),
+        has_materialization=bool(capability.get("has_materialization")),
+        has_agreement_surface=bool(capability.get("has_agreement_surface")),
+        compatibility_outputs=tuple(str(item) for item in _sequence(capability.get("compatibility_outputs"))),
+        phase_names=tuple(str(item) for item in _sequence(capability.get("phase_names"))),
+        caveats=tuple(str(item) for item in _sequence(capability.get("caveats"))),
+        detail=dict(capability.get("detail") or {}) if isinstance(capability.get("detail"), Mapping) else {},
+    ).to_dict()
+
+
 def _required_string(field_name: str, value: Any) -> str:
     text = str(value or "")
     if not text:
@@ -329,6 +445,14 @@ def _string_tuple(field_name: str, values: tuple[str, ...]) -> tuple[str, ...]:
         return tuple(str(value) for value in values)
     except TypeError as exc:
         raise ValueError(f"{field_name} must be iterable") from exc
+
+
+def _sequence(value: Any) -> tuple[Any, ...]:
+    if isinstance(value, str):
+        return (value,) if value else ()
+    if isinstance(value, list | tuple):
+        return tuple(value)
+    return ()
 
 
 def _plain_jsonable(value: Any) -> Any:

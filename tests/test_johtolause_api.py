@@ -1,6 +1,7 @@
 from unittest.mock import patch
 import pytest
 
+from lawvm.core.frontend_contract import frontend_capability_evidence_report
 from lawvm.core.frontend_phase_surface import frontend_phase_surface_evidence_report
 from lawvm.core.proof_surfaces import proof_surface_from_evidence_report
 from lawvm.finland.johtolause import parse_clause
@@ -282,6 +283,17 @@ def test_finland_johtolause_frontend_capability_is_clause_scoped() -> None:
     assert data["has_agreement_surface"] is False
     assert data["compatibility_outputs"] == ["ParsedOp"]
     assert "capability_declaration_does_not_authorize_replay" in data["caveats"]
+
+    report = frontend_capability_evidence_report(FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY)
+    report_data = report.to_dict()
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert report_data["replay_claims"] is False
+    assert report_data["summary"]["frontend_id"] == "finland.johtolause.parse_clause"
+    assert report_data["summary"]["supported_waist_count"] == 6
+    assert "has_resolved_surface" in report_data["rows"][0]["supported_waists"]
+    assert report_data["rows"][0]["has_payload_elaboration"] is False
+    assert proof_surface["rows"][0]["row_kind"] == "frontend_capability"
 
 
 def test_parse_clause_phase_surface_records_resolver_internal_error() -> None:
