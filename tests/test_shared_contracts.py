@@ -51,6 +51,11 @@ from lawvm.core.proof_surfaces import (
     proof_surface_from_evidence_report,
 )
 from lawvm.core.provenance_graph import ArtifactRef
+from lawvm.core.source_acquisition import (
+    SourceAcquisitionAssertion,
+    SourceAcquisitionAttestation,
+    SourceBundlePolicy,
+)
 from lawvm.core.source_witness import (
     DigestWitness,
     nested_source_witness_digest_coverage_counts,
@@ -185,6 +190,79 @@ def test_kernel_authorization_projection_requires_explicit_replay_gate() -> None
     assert data["authorization_status"] == "replay_authorized"
     assert data["required_proofs"] == []
     assert data["strict_disposition"] == "record"
+
+
+def test_source_bundle_policy_admission_does_not_authorize_replay() -> None:
+    witness = SourceWitness(
+        source_role="official_source_xml",
+        artifact_id="2024/1",
+        source_lane="official_xml",
+    )
+    assertion = SourceAcquisitionAssertion(
+        assertion_id="assertion-1",
+        jurisdiction="fi",
+        artifact_id="2024/1",
+        source_lane="official_xml",
+        assertion_kind="source_artifact_available",
+        status="observed",
+        witness=witness,
+    )
+    attestation = SourceAcquisitionAttestation(
+        attestation_id="attestation-1",
+        assertion_id="assertion-1",
+        attestation_kind="artifact_digest_verified",
+        producer_id="lawvm.fetcher",
+        status="verified",
+        witness=witness,
+    )
+    policy = SourceBundlePolicy(
+        policy_id="fi.source_bundle.v1",
+        jurisdiction="fi",
+        admitted_source_lanes=("official_xml", "official_pdf"),
+        required_attestation_kinds=("artifact_digest_verified",),
+    )
+
+    admission = policy.evaluate(assertion, attestations=(attestation,))
+    authorization = admission.to_execution_authorization().to_dict()
+
+    assert admission.admitted is True
+    assert admission.status == "source_bundle_admitted"
+    assert authorization["executable"] is False
+    assert authorization["replay_authorized"] is False
+    assert authorization["authorization_status"] == "source_bundle_admitted_not_replay_authority"
+    assert (
+        "source_bundle_admission_as_replay_authorization"
+        in authorization["forbidden_shortcuts"]
+    )
+
+
+def test_source_bundle_policy_blocks_missing_attestations() -> None:
+    assertion = SourceAcquisitionAssertion(
+        assertion_id="assertion-2",
+        jurisdiction="fi",
+        artifact_id="1917/1",
+        source_lane="official_pdf",
+        assertion_kind="pdf_source_atom_available",
+        status="observed",
+    )
+    policy = SourceBundlePolicy(
+        policy_id="fi.source_bundle.v1",
+        jurisdiction="fi",
+        admitted_source_lanes=("official_xml", "official_pdf"),
+        required_attestation_kinds=("artifact_digest_verified", "ocr_reviewed"),
+    )
+
+    admission = policy.evaluate(assertion)
+    authorization = admission.to_execution_authorization().to_dict()
+
+    assert admission.admitted is False
+    assert admission.status == "source_attestation_missing"
+    assert admission.missing_attestation_kinds == (
+        "artifact_digest_verified",
+        "ocr_reviewed",
+    )
+    assert authorization["strict_disposition"] == "block"
+    assert authorization["authorization_status"] == "source_bundle_policy_unsatisfied"
 
 
 def test_frontend_phase_surface_marks_compatibility_output_without_replay_claims() -> None:
