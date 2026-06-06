@@ -18,6 +18,8 @@ from lawvm.core.compile_result import SourcePathology
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frontier_work_item import FrontierWorkItem
+from lawvm.core.mutation_accounting import MutationAccountingResult, MutationInvariantReport
+from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.core.source_witness import DigestWitness, SourceWitness
 from lawvm.core.source_witness import source_witness_digest_coverage
 from lawvm.finland.consolidated_artifacts import artifact_record
@@ -45,6 +47,11 @@ _FINLEX_RESIDUAL_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
     "finlex_oracle_as_source_truth",
     "editorial_witness_as_replay_authorization",
     "agreement_residual_as_mutation_instruction",
+)
+_MUTATION_BOUNDARY_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
+    "mutation_boundary_report_as_replay_authorization",
+    "ignore_unexplained_changed_paths",
+    "treat_allowed_recovery_as_universal_target_widening",
 )
 
 
@@ -330,6 +337,40 @@ def consolidated_artifact_source_witness(
     )
 
 
+def mutation_boundary_proof_rows(
+    reports: tuple[MutationInvariantReport | Mapping[str, Any], ...],
+    *,
+    statute_id: str,
+    materialization_surface: str = "finland_strict_report",
+) -> list[dict[str, Any]]:
+    """Project Finland apply mutation-invariant reports into shared proof rows."""
+
+    rows: list[dict[str, Any]] = []
+    for index, report_like in enumerate(reports, start=1):
+        report = _mutation_invariant_report(report_like)
+        proof = MutationBoundaryProof.from_mutation_invariant_report(
+            report,
+            proof_id=_mutation_boundary_proof_id(
+                statute_id=statute_id,
+                index=index,
+                op_id=report.op_id,
+            ),
+            jurisdiction="fi",
+            materialization_surface=materialization_surface,
+            owner_phase="replay_apply",
+            safe_default="preserve_report_as_passive_boundary_evidence_not_replay_authorization",
+            forbidden_shortcuts=_MUTATION_BOUNDARY_FORBIDDEN_SHORTCUTS,
+        )
+        row = proof.to_dict()
+        source_statute = ""
+        if isinstance(report_like, Mapping):
+            source_statute = str(report_like.get("source_statute") or "")
+        if source_statute:
+            row["source_artifact_id"] = source_statute
+        rows.append(row)
+    return rows
+
+
 def sparse_slot_candidate_set_certificate_rows(
     projection_rows: tuple[Mapping[str, Any], ...],
     *,
@@ -490,6 +531,7 @@ def finland_strict_report_evidence_surface(
     source_pathology_frontier_items = _mapping_sequence(payload.get("source_pathology_frontier_work_items"))
     sparse_certificates = _mapping_sequence(payload.get("sparse_slot_candidate_set_certificates"))
     agreement_residuals = _mapping_sequence(payload.get("agreement_residuals"))
+    mutation_boundary_proofs = _mapping_sequence(payload.get("mutation_boundary_proofs"))
     projection_rows = _mapping_sequence(payload.get("projection_rows"))
     failed_ops = _mapping_sequence(payload.get("failed_ops"))
     strict_fail_reasons = _string_sequence(payload.get("strict_fail_reasons"))
@@ -507,6 +549,7 @@ def finland_strict_report_evidence_surface(
             ),
             *({"surface": "sparse_slot_candidate_set_certificate", **dict(row)} for row in sparse_certificates),
             *({"surface": "agreement_residual", **dict(row)} for row in agreement_residuals),
+            *({"surface": "mutation_boundary_proof", **dict(row)} for row in mutation_boundary_proofs),
         )
     )
     summary = {
@@ -517,6 +560,7 @@ def finland_strict_report_evidence_surface(
         "source_pathology_frontier_work_item_count": len(source_pathology_frontier_items),
         "sparse_slot_candidate_set_certificate_count": len(sparse_certificates),
         "agreement_residual_count": len(agreement_residuals),
+        "mutation_boundary_proof_count": len(mutation_boundary_proofs),
         "source_pathology_frontier_source_witness_digest_coverage_counts": (
             _source_witness_digest_coverage_counts(source_pathology_frontier_items)
         ),
@@ -549,6 +593,7 @@ def finland_strict_report_evidence_surface(
                 "frontier_item_as_canonical_operation",
                 "candidate_certificate_as_slot_uniqueness_proof",
                 "projection_row_as_oracle_agreement",
+                "mutation_boundary_proof_as_replay_authorization",
             ),
         },
     ).to_dict()
@@ -778,6 +823,86 @@ def _preview_digest_witness(text: str) -> DigestWitness | None:
 
 def _bounded_bytes_preview(data: bytes, *, limit: int = 512) -> str:
     return data[:limit].decode("utf-8", errors="replace")
+
+
+def _mutation_invariant_report(
+    report: MutationInvariantReport | Mapping[str, Any],
+) -> MutationInvariantReport:
+    if isinstance(report, MutationInvariantReport):
+        return report
+    return MutationInvariantReport(
+        op_id=str(report.get("op_id") or ""),
+        helper=str(report.get("helper") or ""),
+        outcome=str(report.get("outcome") or ""),
+        touched_paths=_path_tuple(report.get("touched_paths")),
+        changed_paths=_path_tuple(report.get("changed_paths")),
+        allowed_roots=_path_tuple(report.get("allowed_roots")),
+        allowed_effect_region_paths=_path_tuple(report.get("allowed_effect_region_paths")),
+        declared_allowance_paths=_path_tuple(report.get("declared_allowance_paths")),
+        declared_recovery_paths=_path_tuple(report.get("declared_recovery_paths")),
+        declared_recovery_rule_ids=_string_sequence(report.get("declared_recovery_rule_ids")),
+        declared_migration_paths=_path_tuple(report.get("declared_migration_paths")),
+        declared_migration_rule_ids=_string_sequence(report.get("declared_migration_rule_ids")),
+        permitted_paths=_path_tuple(report.get("permitted_paths")),
+        covered_changed_paths=_path_tuple(report.get("covered_changed_paths")),
+        unexplained_changed_paths=_path_tuple(report.get("unexplained_changed_paths")),
+        allowed_non_target_paths=_path_tuple(report.get("allowed_non_target_paths")),
+        out_of_scope_paths=_path_tuple(report.get("out_of_scope_paths")),
+        matched_allowance_rule_ids=_string_sequence(report.get("matched_allowance_rule_ids")),
+        path_set_invariant_holds=_bool_field(
+            report,
+            "path_set_invariant_holds",
+            default=True,
+        ),
+        results=tuple(_mutation_accounting_result(result) for result in _mapping_sequence(report.get("results"))),
+    )
+
+
+def _mutation_accounting_result(row: Mapping[str, Any]) -> MutationAccountingResult:
+    return MutationAccountingResult(
+        code=str(row.get("code") or ""),
+        op_id=str(row.get("op_id") or ""),
+        helper=str(row.get("helper") or ""),
+        touched_count=int(row.get("touched_count") or 0),
+        allowed_roots=_path_tuple(row.get("allowed_roots")),
+        out_of_scope_paths=_path_tuple(row.get("out_of_scope_paths")),
+        allowed_paths=_path_tuple(row.get("allowed_paths")),
+        matched_allowance_rule_ids=_string_sequence(row.get("matched_allowance_rule_ids")),
+    )
+
+
+def _mutation_boundary_proof_id(
+    *,
+    statute_id: str,
+    index: int,
+    op_id: str,
+) -> str:
+    return f"fi:{statute_id}:mutation-boundary:{index}:{op_id or 'unknown-op'}"
+
+
+def _path_tuple(value: Any) -> tuple[tuple[tuple[str, str], ...], ...]:
+    if value in (None, ""):
+        return ()
+    if not isinstance(value, (list, tuple)):
+        raise ValueError("mutation invariant path field must be a sequence")
+    paths: list[tuple[tuple[str, str], ...]] = []
+    for path_index, path in enumerate(value):
+        if not isinstance(path, (list, tuple)):
+            raise ValueError(f"mutation invariant path {path_index} must be a sequence")
+        steps: list[tuple[str, str]] = []
+        for step_index, step in enumerate(path):
+            if not isinstance(step, (list, tuple)) or len(step) != 2:
+                raise ValueError(f"mutation invariant path {path_index} step {step_index} must have kind and label")
+            steps.append((str(step[0]), str(step[1])))
+        paths.append(tuple(steps))
+    return tuple(paths)
+
+
+def _bool_field(row: Mapping[str, Any], key: str, *, default: bool) -> bool:
+    value = row.get(key, default)
+    if isinstance(value, bool):
+        return value
+    raise ValueError(f"mutation invariant {key} must be a boolean")
 
 
 def _source_witness_digest_coverage_counts(

@@ -561,6 +561,43 @@ def test_to_json_exports_source_adjudication_agreement_residual() -> None:
     assert report["rows"][0]["surface"] == "agreement_residual"
 
 
+def test_to_json_exports_mutation_boundary_proofs() -> None:
+    payload = strict_report._to_json(
+        {
+            "statute_id": "2001/1234",
+            "profile": FINLAND_INGESTION_V1,
+            "canonical_ops": [],
+            "failed_ops": [],
+            "projection_rows": [],
+            "source_pathologies": [],
+            "strict_fail_reasons": [],
+            "apply_mutation_invariant_reports": [
+                {
+                    "op_id": "op-1",
+                    "helper": "_apply_deterministic_subsection_op",
+                    "outcome": "applied",
+                    "touched_paths": [[["chapter", "1"], ["section", "2"]]],
+                    "changed_paths": [[["chapter", "1"], ["section", "2"]]],
+                    "allowed_roots": [[["chapter", "1"], ["section", "2"]]],
+                    "allowed_effect_region_paths": [[["chapter", "1"], ["section", "2"]]],
+                    "permitted_paths": [[["chapter", "1"], ["section", "2"]]],
+                    "covered_changed_paths": [[["chapter", "1"], ["section", "2"]]],
+                    "path_set_invariant_holds": True,
+                }
+            ],
+        }
+    )
+
+    proofs = payload["mutation_boundary_proofs"]
+    assert len(proofs) == 1
+    assert proofs[0]["operation_id"] == "op-1"
+    assert proofs[0]["status"] == "proved"
+    assert proofs[0]["owner_phase"] == "replay_apply"
+    report = payload["evidence_surface_report"]
+    assert report["summary"]["mutation_boundary_proof_count"] == 1
+    assert report["rows"][0]["surface"] == "mutation_boundary_proof"
+
+
 def test_format_report_surfaces_target_scoped_projection_row_detail() -> None:
     cr = SimpleNamespace(
         statute_id="2001/1234",

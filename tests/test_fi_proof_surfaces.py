@@ -1,11 +1,13 @@
 import hashlib
 
 from lawvm.core.compile_result import SourcePathology
+from lawvm.core.mutation_accounting import MutationInvariantReport
 from lawvm.core.source_witness import source_witness_digest_coverage
 from lawvm.finland.proof_surfaces import (
     consolidated_artifact_source_witness,
     finland_strict_report_evidence_surface,
     finlex_editorial_witness_agreement_residual_rows,
+    mutation_boundary_proof_rows,
     source_adjudication_agreement_residual_rows,
     source_pathology_execution_authorization,
     source_pathology_frontier_work_item,
@@ -58,6 +60,63 @@ def test_consolidated_artifact_source_witness_uses_embedded_artifact_identity() 
     assert witness["embedded_version_tag"] == "20190112"
     assert witness["date_consolidated"] == "2024-12-19"
     assert source_witness_digest_coverage(witness) == "artifact_and_preview_digest"
+
+
+def test_mutation_boundary_reports_project_shared_proof_rows() -> None:
+    report = MutationInvariantReport(
+        op_id="op-1",
+        helper="_apply_deterministic_subsection_op",
+        outcome="applied",
+        touched_paths=((("chapter", "1"), ("section", "2")),),
+        changed_paths=((("chapter", "1"), ("section", "2")),),
+        allowed_roots=((("chapter", "1"), ("section", "2")),),
+        allowed_effect_region_paths=((("chapter", "1"), ("section", "2")),),
+        permitted_paths=((("chapter", "1"), ("section", "2")),),
+        covered_changed_paths=((("chapter", "1"), ("section", "2")),),
+        path_set_invariant_holds=True,
+    )
+
+    rows = mutation_boundary_proof_rows((report,), statute_id="2001/1234")
+
+    assert len(rows) == 1
+    proof = rows[0]
+    assert proof["jurisdiction"] == "fi"
+    assert proof["materialization_surface"] == "finland_strict_report"
+    assert proof["owner_phase"] == "replay_apply"
+    assert proof["operation_id"] == "op-1"
+    assert proof["status"] == "proved"
+    assert proof["path_set_invariant_holds"] is True
+    assert "mutation_boundary_report_as_replay_authorization" in proof["forbidden_shortcuts"]
+
+
+def test_serialized_mutation_boundary_reports_project_shared_proof_rows() -> None:
+    rows = mutation_boundary_proof_rows(
+        (
+            {
+                "op_id": "op-2",
+                "helper": "apply_op",
+                "outcome": "failed",
+                "touched_paths": [[["chapter", "1"], ["section", "9"]]],
+                "changed_paths": [[["chapter", "1"], ["section", "9"]]],
+                "results": [
+                    {
+                        "code": "REPLAY_FAILED_OP_MUTATED_TREE",
+                        "op_id": "op-2",
+                        "helper": "apply_op",
+                        "touched_count": 1,
+                    }
+                ],
+                "source_statute": "2010/100",
+            },
+        ),
+        statute_id="2001/1234",
+    )
+
+    proof = rows[0]
+    assert proof["operation_id"] == "op-2"
+    assert proof["status"] == "violated"
+    assert proof["source_artifact_id"] == "2010/100"
+    assert proof["result_codes"] == ["REPLAY_FAILED_OP_MUTATED_TREE"]
 
 
 def test_source_pathology_rule_owns_high_value_family() -> None:
@@ -244,6 +303,12 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
                 }
             ],
             "sparse_slot_candidate_set_certificates": [{"candidate_set_kind": "fi_sparse_payload_slot_assignment"}],
+            "mutation_boundary_proofs": [
+                {
+                    "proof_id": "fi:2001/1234:mutation-boundary:1:op-1",
+                    "status": "proved",
+                }
+            ],
             "projection_rows": [{"kind": "ELAB.SPARSE_SLOT_BINDING"}],
             "failed_ops": [{"reason_code": "unsupported"}],
             "strict_fail_reasons": ["source_incomplete"],
@@ -258,11 +323,13 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     assert report["summary"]["canonical_op_count"] == 2
     assert report["summary"]["source_pathology_frontier_work_item_count"] == 1
     assert report["summary"]["sparse_slot_candidate_set_certificate_count"] == 1
+    assert report["summary"]["mutation_boundary_proof_count"] == 1
     assert report["summary"]["source_pathology_frontier_source_witness_digest_coverage_counts"] == {"preview_digest": 1}
     assert [row["surface"] for row in report["rows"]] == [
         "source_pathology_execution_authorization",
         "source_pathology_frontier_work_item",
         "sparse_slot_candidate_set_certificate",
+        "mutation_boundary_proof",
     ]
 
 

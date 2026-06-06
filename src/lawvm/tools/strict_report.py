@@ -38,6 +38,7 @@ from lawvm.core.compile_views import (
 )
 from lawvm.finland.proof_surfaces import (
     finland_strict_report_evidence_surface,
+    mutation_boundary_proof_rows,
     source_pathology_proof_surface_rows,
     source_adjudication_agreement_residual_rows,
     sparse_slot_candidate_set_certificate_rows,
@@ -198,6 +199,17 @@ def _source_pathologies(record: Any) -> list[Any]:
         and isinstance(row.get("detail"), dict)
         and str((row.get("detail") or {}).get("code") or "")
     ]
+
+
+def _mutation_invariant_reports(record: Any) -> list[Any]:
+    if isinstance(record, dict):
+        return list(record.get("apply_mutation_invariant_reports", []) or [])
+    reports = getattr(record, "apply_mutation_invariant_reports", None)
+    if callable(reports):
+        return list(reports() or [])
+    if reports is not None:
+        return list(reports or [])
+    return []
 
 
 def _source_completeness_counts(record: Any) -> tuple[int, int, int]:
@@ -393,6 +405,10 @@ def _to_json(cr: Any) -> dict[str, Any]:
         _field(cr, "source_adjudication", None),
         statute_id=str(_field(cr, "statute_id", "") or ""),
     )
+    mutation_boundary_proofs = mutation_boundary_proof_rows(
+        tuple(cast(Any, row) for row in _mutation_invariant_reports(cr)),
+        statute_id=str(_field(cr, "statute_id", "") or ""),
+    )
     sc_chain_length, sc_source_available, sc_dates_available = _source_completeness_counts(cr)
     n_canonical = len(canonical_ops)
     profile = _field(cr, "profile", None)
@@ -424,6 +440,7 @@ def _to_json(cr: Any) -> dict[str, Any]:
         **source_pathology_proof_rows,
         "sparse_slot_candidate_set_certificates": sparse_slot_candidate_certificates,
         "agreement_residuals": agreement_residuals,
+        "mutation_boundary_proofs": mutation_boundary_proofs,
         "strict_fail_reasons": strict_fail_reasons,
         "projection_rows": [
             {
@@ -1102,6 +1119,9 @@ def main(args: Any) -> None:
         failed_ops=failed_ops,
         source_adjudication=master.source_adjudication,
     )
+    report_record["apply_mutation_invariant_reports"] = [
+        dict(row) for row in replay_meta.get("apply_mutation_invariant_reports", []) if isinstance(row, dict)
+    ]
 
     if getattr(args, "json_output", False):
         json.dump(_to_json(report_record), sys.stdout, indent=2, ensure_ascii=False)
