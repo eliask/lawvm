@@ -1,6 +1,8 @@
 from lawvm.core.compile_result import SourcePathology
 from lawvm.finland.proof_surfaces import (
     finland_strict_report_evidence_surface,
+    finlex_editorial_witness_agreement_residual_rows,
+    source_adjudication_agreement_residual_rows,
     source_pathology_execution_authorization,
     source_pathology_frontier_work_item,
     source_pathology_proof_rule,
@@ -202,3 +204,60 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
         "source_pathology_frontier_work_item",
         "sparse_slot_candidate_set_certificate",
     ]
+
+
+def test_finlex_editorial_witness_residuals_classify_agreement_and_disagreement() -> None:
+    rows = finlex_editorial_witness_agreement_residual_rows(
+        (
+            {
+                "kind": "editorial_witness_confirmed",
+                "slot_address": "section:3/subsection:1/paragraph:2",
+                "amendment_id": "2021/1030",
+            },
+            {
+                "kind": "editorial_witness_disagrees",
+                "slot_address": "section:3/subsection:1/paragraph:2",
+                "amendment_id": "2020/999",
+                "timeline_terminator": "2021/1030",
+                "severity": "REQUIRES_TRIAGE",
+            },
+            {
+                "kind": "editorial_witness_unresolved",
+                "slot_address": "section:3/subsection:1/paragraph:2",
+                "amendment_id": "2021/1030",
+                "timeline_terminator": None,
+            },
+        ),
+        statute_id="2013/331",
+    )
+
+    assert [row["status"] for row in rows] == ["agrees", "residual", "residual"]
+    assert [row["family"] for row in rows] == ["agreement", "unknown", "source_footing_gap"]
+    assert rows[0]["replay_count"] == 1
+    assert rows[0]["oracle_count"] == 1
+    assert rows[1]["missing_proofs"] == [
+        "manual_editorial_witness_triage",
+        "timeline_terminator_source_review",
+    ]
+    assert rows[2]["rule_id"] == "fi_finlex_inline_repeal_stub_unresolved"
+    assert all("finlex_oracle_as_source_truth" in row["forbidden_shortcuts"] for row in rows)
+
+
+def test_source_adjudication_noncommensurable_reason_projects_residual() -> None:
+    rows = source_adjudication_agreement_residual_rows(
+        {
+            "statute_id": "2001/1234",
+            "replay_mode": "legal_pit",
+            "cutoff_date": "2024-01-01",
+            "oracle_version_amendment_id": "2024/1",
+            "html_noncommensurable_reason": "oracle_extra_scoped_labels:chapter:15/section:1",
+        }
+    )
+
+    assert len(rows) == 1
+    residual = rows[0]
+    assert residual["family"] == "non_commensurable_surface"
+    assert residual["status"] == "residual"
+    assert residual["agreement_surface"] == "finlex_html_oracle_compare"
+    assert residual["missing_proofs"] == ["compare_projection_review"]
+    assert residual["detail"]["html_noncommensurable_reason"] == ("oracle_extra_scoped_labels:chapter:15/section:1")

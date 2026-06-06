@@ -39,6 +39,7 @@ from lawvm.core.compile_views import (
 from lawvm.finland.proof_surfaces import (
     finland_strict_report_evidence_surface,
     source_pathology_proof_surface_rows,
+    source_adjudication_agreement_residual_rows,
     sparse_slot_candidate_set_certificate_rows,
 )
 from lawvm.finland.source_adjudication import build_source_adjudication
@@ -388,6 +389,10 @@ def _to_json(cr: Any) -> dict[str, Any]:
         tuple(row for row in projection_rows if isinstance(row, dict)),
         statute_id=str(_field(cr, "statute_id", "") or ""),
     )
+    agreement_residuals = source_adjudication_agreement_residual_rows(
+        _field(cr, "source_adjudication", None),
+        statute_id=str(_field(cr, "statute_id", "") or ""),
+    )
     sc_chain_length, sc_source_available, sc_dates_available = _source_completeness_counts(cr)
     n_canonical = len(canonical_ops)
     profile = _field(cr, "profile", None)
@@ -418,6 +423,7 @@ def _to_json(cr: Any) -> dict[str, Any]:
         ],
         **source_pathology_proof_rows,
         "sparse_slot_candidate_set_certificates": sparse_slot_candidate_certificates,
+        "agreement_residuals": agreement_residuals,
         "strict_fail_reasons": strict_fail_reasons,
         "projection_rows": [
             {

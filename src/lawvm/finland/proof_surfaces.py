@@ -12,6 +12,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from lawvm.core.agreement_residual import AgreementResidual
 from lawvm.core.candidate_set_certificate import CandidateSetCertificate
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
@@ -37,6 +38,11 @@ _SPARSE_SLOT_PROMOTION_PROOFS: tuple[str, ...] = (
     "slot_uniqueness_proof",
     "payload_identity_proof",
     "mutation_boundary_proof_before_replay_promotion",
+)
+_FINLEX_RESIDUAL_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
+    "finlex_oracle_as_source_truth",
+    "editorial_witness_as_replay_authorization",
+    "agreement_residual_as_mutation_instruction",
 )
 
 
@@ -311,6 +317,130 @@ def sparse_slot_candidate_set_certificate_rows(
     return certificates
 
 
+def finlex_editorial_witness_agreement_residual(
+    row: Mapping[str, Any],
+    *,
+    statute_id: str = "",
+) -> AgreementResidual:
+    """Project a Finlex editorial witness row into an agreement residual."""
+
+    kind = str(row.get("kind") or "")
+    slot_address = str(row.get("slot_address") or "")
+    amendment_id = str(row.get("amendment_id") or "")
+    timeline_terminator = str(row.get("timeline_terminator") or "")
+    residual_id = _stable_residual_id(
+        "fi-finlex-editorial-witness",
+        statute_id,
+        kind,
+        slot_address,
+        amendment_id,
+        timeline_terminator,
+    )
+    if kind == "editorial_witness_confirmed":
+        family = "agreement"
+        status = "agrees"
+        rule_id = "fi_finlex_inline_repeal_stub_confirmed"
+        missing_proofs: tuple[str, ...] = ()
+    elif kind == "editorial_witness_disagrees":
+        family = "unknown"
+        status = "residual"
+        rule_id = "fi_finlex_inline_repeal_stub_disagrees"
+        missing_proofs = (
+            "manual_editorial_witness_triage",
+            "timeline_terminator_source_review",
+        )
+    else:
+        family = "source_footing_gap"
+        status = "residual"
+        rule_id = "fi_finlex_inline_repeal_stub_unresolved"
+        missing_proofs = (
+            "timeline_terminator_proof",
+            "source_lineage_review",
+        )
+    return AgreementResidual(
+        residual_id=residual_id,
+        jurisdiction="fi",
+        agreement_surface="finlex_inline_repeal_stub",
+        family=family,
+        status=status,
+        owner_phase="oracle_adjudication",
+        rule_id=rule_id,
+        source_artifact_id=amendment_id or statute_id,
+        replay_count=1 if kind == "editorial_witness_confirmed" or timeline_terminator else 0,
+        oracle_count=1,
+        missing_proofs=missing_proofs,
+        safe_default="classify_finlex_editorial_witness_without_authorizing_replay",
+        forbidden_shortcuts=_FINLEX_RESIDUAL_FORBIDDEN_SHORTCUTS,
+        detail={
+            "statute_id": statute_id,
+            "witness_kind": kind,
+            "slot_address": slot_address,
+            "amendment_id": amendment_id,
+            "timeline_terminator": timeline_terminator,
+            "severity": str(row.get("severity") or ""),
+        },
+    )
+
+
+def finlex_editorial_witness_agreement_residual_rows(
+    rows: tuple[Mapping[str, Any], ...],
+    *,
+    statute_id: str = "",
+) -> list[dict[str, Any]]:
+    """Return shared residual rows for Finlex editorial witness records."""
+
+    return [
+        finlex_editorial_witness_agreement_residual(row, statute_id=statute_id).to_dict()
+        for row in rows
+        if str(row.get("kind") or "").startswith("editorial_witness_")
+    ]
+
+
+def source_adjudication_agreement_residual_rows(
+    source_adjudication: Any,
+    *,
+    statute_id: str = "",
+) -> list[dict[str, Any]]:
+    """Project Finland source/oracle adjudication into agreement residual rows."""
+
+    if source_adjudication is None:
+        return []
+    adjudication_statute = str(_field(source_adjudication, "statute_id", "") or statute_id or "")
+    replay_mode = str(_field(source_adjudication, "replay_mode", "") or "")
+    reason = str(_field(source_adjudication, "html_noncommensurable_reason", "") or "").strip()
+    if not reason:
+        return []
+    residual = AgreementResidual(
+        residual_id=_stable_residual_id(
+            "fi-finlex-source-adjudication",
+            adjudication_statute,
+            replay_mode,
+            reason,
+        ),
+        jurisdiction="fi",
+        agreement_surface="finlex_html_oracle_compare",
+        family="non_commensurable_surface",
+        status="residual",
+        owner_phase="oracle_adjudication",
+        rule_id="fi_finlex_html_non_commensurable_surface",
+        source_artifact_id=adjudication_statute,
+        replay_count=0,
+        oracle_count=0,
+        missing_proofs=("compare_projection_review",),
+        safe_default="classify_non_commensurable_finlex_surface_without_rewriting_replay",
+        forbidden_shortcuts=_FINLEX_RESIDUAL_FORBIDDEN_SHORTCUTS,
+        detail={
+            "statute_id": adjudication_statute,
+            "replay_mode": replay_mode,
+            "html_noncommensurable_reason": reason,
+            "cutoff_date": str(_field(source_adjudication, "cutoff_date", "") or ""),
+            "oracle_version_amendment_id": str(_field(source_adjudication, "oracle_version_amendment_id", "") or ""),
+            "oracle_suspect": str(_field(source_adjudication, "oracle_suspect", "") or ""),
+        },
+    )
+    return [residual.to_dict()]
+
+
 def finland_strict_report_evidence_surface(
     payload: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -319,6 +449,7 @@ def finland_strict_report_evidence_surface(
     source_pathology_authorizations = _mapping_sequence(payload.get("source_pathology_execution_authorizations"))
     source_pathology_frontier_items = _mapping_sequence(payload.get("source_pathology_frontier_work_items"))
     sparse_certificates = _mapping_sequence(payload.get("sparse_slot_candidate_set_certificates"))
+    agreement_residuals = _mapping_sequence(payload.get("agreement_residuals"))
     projection_rows = _mapping_sequence(payload.get("projection_rows"))
     failed_ops = _mapping_sequence(payload.get("failed_ops"))
     strict_fail_reasons = _string_sequence(payload.get("strict_fail_reasons"))
@@ -335,6 +466,7 @@ def finland_strict_report_evidence_surface(
                 for row in source_pathology_frontier_items
             ),
             *({"surface": "sparse_slot_candidate_set_certificate", **dict(row)} for row in sparse_certificates),
+            *({"surface": "agreement_residual", **dict(row)} for row in agreement_residuals),
         )
     )
     summary = {
@@ -344,6 +476,7 @@ def finland_strict_report_evidence_surface(
         "source_pathology_execution_authorization_count": len(source_pathology_authorizations),
         "source_pathology_frontier_work_item_count": len(source_pathology_frontier_items),
         "sparse_slot_candidate_set_certificate_count": len(sparse_certificates),
+        "agreement_residual_count": len(agreement_residuals),
         "projection_row_count": len(projection_rows),
         "failed_op_row_count": len(failed_ops),
         "strict_fail_reason_count": len(strict_fail_reasons),
@@ -589,6 +722,19 @@ def _mapping_sequence(value: Any) -> tuple[Mapping[str, Any], ...]:
     if not isinstance(value, list | tuple):
         return ()
     return tuple(item for item in value if isinstance(item, Mapping))
+
+
+def _field(record: Any, name: str, default: Any = None) -> Any:
+    if isinstance(record, Mapping):
+        return record.get(name, default)
+    return getattr(record, name, default)
+
+
+def _stable_residual_id(*parts: str) -> str:
+    normalized = tuple(str(part or "") for part in parts)
+    digest = hashlib.sha256(json.dumps(normalized, ensure_ascii=True).encode("utf-8")).hexdigest()[:16]
+    prefix = normalized[0] if normalized else "fi-residual"
+    return f"{prefix}:{digest}"
 
 
 def _sparse_payload_slot_candidate_id(*, slot_index: int, slot_label: str) -> str:

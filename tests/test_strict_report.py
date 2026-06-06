@@ -522,6 +522,40 @@ def test_to_json_exports_sparse_slot_candidate_certificates() -> None:
     assert report["summary"]["sparse_slot_candidate_set_certificate_count"] == 1
 
 
+def test_to_json_exports_source_adjudication_agreement_residual() -> None:
+    payload = strict_report._to_json(
+        SimpleNamespace(
+            statute_id="2001/1234",
+            replay_mode="legal_pit",
+            compile_mode="strict",
+            profile=FINLAND_INGESTION_V1,
+            canonical_ops=[],
+            failed_ops=[],
+            projection_rows=lambda: (),
+            source_pathology_rows=lambda: (),
+            strict_fail_reasons=[],
+            source_adjudication=SimpleNamespace(
+                statute_id="2001/1234",
+                replay_mode="legal_pit",
+                html_noncommensurable_reason="oracle_extra_scoped_labels:chapter:15/section:1",
+                cutoff_date="2024-01-01",
+                oracle_version_amendment_id="2024/1",
+                oracle_suspect="",
+                lineage=(),
+            ),
+        )
+    )
+
+    residuals = payload["agreement_residuals"]
+    assert len(residuals) == 1
+    assert residuals[0]["family"] == "non_commensurable_surface"
+    assert residuals[0]["status"] == "residual"
+    assert residuals[0]["detail"]["html_noncommensurable_reason"] == ("oracle_extra_scoped_labels:chapter:15/section:1")
+    report = payload["evidence_surface_report"]
+    assert report["summary"]["agreement_residual_count"] == 1
+    assert report["rows"][0]["surface"] == "agreement_residual"
+
+
 def test_format_report_surfaces_target_scoped_projection_row_detail() -> None:
     cr = SimpleNamespace(
         statute_id="2001/1234",
