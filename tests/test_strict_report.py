@@ -41,9 +41,8 @@ def test_load_strict_run_reads_source_pathology_codes(tmp_path, monkeypatch) -> 
         "partial_body_only",
     ]
     assert rows[0]["source_pathology_rows"] == []
-    assert rows[0]["html_noncommensurable_reason"] == (
-        "oracle_extra_scoped_labels:chapter:15/section:1"
-    )
+    assert rows[0]["html_noncommensurable_reason"] == ("oracle_extra_scoped_labels:chapter:15/section:1")
+
 
 def test_load_strict_run_ignores_legacy_adjudication_kinds_column(tmp_path, monkeypatch) -> None:
     strict_dir = tmp_path / "strict_runs"
@@ -88,12 +87,7 @@ def test_load_strict_run_ignores_legacy_n_adjudications_column(tmp_path, monkeyp
                     "html_noncommensurable_reason,contingent_effective_sources,fail_reasons,"
                     "source_incomplete,chain_length,source_available,elapsed_s,error"
                 ),
-                (
-                    "1994/1472,10,0,7,"
-                    ",,,,"
-                    ","
-                    "APPLY.SOURCE_PATHOLOGY_DETECTED,0,43,43,1.00,"
-                ),
+                ("1994/1472,10,0,7,,,,,,APPLY.SOURCE_PATHOLOGY_DETECTED,0,43,43,1.00,"),
             ]
         )
         + "\n",
@@ -189,7 +183,7 @@ def test_load_strict_run_reads_source_pathology_rows_json(tmp_path, monkeypatch)
                     "1994/1472,10,0,2,1,0,"
                     "APPLY.SOURCE_PATHOLOGY_DETECTED,"
                     "DESTRUCTIVE_SHAPE_LOSS_RISK,"
-                    f"\"{rows_json}\","
+                    f'"{rows_json}",'
                     "partial_body_only,,APPLY.SOURCE_PATHOLOGY_DETECTED,0,43,43,1.00,"
                 ),
             ]
@@ -472,6 +466,15 @@ def test_to_json_preserves_source_pathology_target_unit_kind() -> None:
     assert pathology["target_unit_kind"] == "chapter"
     assert "target_kind" not in pathology
     assert pathology["target_label"] == "4a luku"
+    authorization = payload["source_pathology_execution_authorizations"][0]
+    frontier_item = payload["source_pathology_frontier_work_items"][0]
+    assert authorization["executable"] is False
+    assert authorization["replay_authorized"] is False
+    assert authorization["authorization_status"] == "source_pathology_not_replay_authority"
+    assert frontier_item["jurisdiction"] == "fi"
+    assert frontier_item["executable"] is False
+    assert frontier_item["replay_authorized"] is False
+    assert frontier_item["detail"]["execution_authorization"]["replay_authorized"] is False
 
 
 def test_format_report_surfaces_target_scoped_projection_row_detail() -> None:
@@ -584,7 +587,10 @@ def test_format_report_surfaces_source_pathology_projection_row_detail() -> None
 
     assert "ELAB.SOURCE_PATHOLOGY" in out
     assert "source: 2001/748" in out
-    assert "detail: code=DESTRUCTIVE_SHAPE_LOSS_RISK; target(kind=section); target_label=6 §; diagnostic_reason=partial_body_only" in out
+    assert (
+        "detail: code=DESTRUCTIVE_SHAPE_LOSS_RISK; target(kind=section); target_label=6 §; diagnostic_reason=partial_body_only"
+        in out
+    )
 
 
 def test_build_facade_for_statute_preserves_projection_row_detail(monkeypatch) -> None:
@@ -648,6 +654,7 @@ def test_compile_one_replays_quietly(monkeypatch) -> None:
         )
 
     monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
+
     def fake_compile_fi_facade_from_replay(**kwargs):
         strict_profile = kwargs.get("strict_profile")
         assert strict_profile is not None
@@ -696,9 +703,7 @@ def test_compile_one_prefers_typed_source_adjudication_lineage_over_replay_meta(
             )
         return SimpleNamespace(
             source_adjudication=SimpleNamespace(
-                lineage=(
-                    {"included": True, "effective_date": "2025-01-01"},
-                ),
+                lineage=({"included": True, "effective_date": "2025-01-01"},),
                 html_noncommensurable_reason="",
             ),
             finding_ledger=(),

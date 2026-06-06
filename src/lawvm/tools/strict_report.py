@@ -14,6 +14,7 @@ Corpus-wide (new):
 
 Corpus results are saved to LawVM/data/strict_runs/<timestamp>_<label>.csv.
 """
+
 from __future__ import annotations
 
 import csv
@@ -35,6 +36,7 @@ from lawvm.core.compile_views import (
     projection_rows_from_findings,
     source_pathology_rows_from_findings,
 )
+from lawvm.finland.proof_surfaces import source_pathology_proof_surface_rows
 from lawvm.finland.source_adjudication import build_source_adjudication
 from lawvm.finland.ops import FailedOp
 from lawvm.replay_adjudication import SourceAdjudication
@@ -44,6 +46,7 @@ from lawvm.tools._compile_report_record import report_record_from_facade
 # ---------------------------------------------------------------------------
 # Single-statute formatting (original)
 # ---------------------------------------------------------------------------
+
 
 def _compiled_op_display_tag(op_dict: dict[str, Any], *, is_recovered: bool) -> str:
     """Display typed compiled-op provenance, else fall back to op class only."""
@@ -181,7 +184,8 @@ def _source_pathologies(record: Any) -> list[Any]:
         }
         for row in _projection_rows(record)
         if isinstance(row, dict)
-        and str(row.get("kind") or "") in {
+        and str(row.get("kind") or "")
+        in {
             "ELAB.SOURCE_PATHOLOGY",
             "ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY",
             "APPLY.SOURCE_PATHOLOGY_DETECTED",
@@ -270,7 +274,7 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
     n_canonical = len(canonical_ops)
     n_failed = len(failed_ops)
     n_total = n_canonical + n_failed
-    strict_frac = f"{n_canonical}/{n_total} ({100*n_canonical/n_total:.1f}%)" if n_total else "0/0"
+    strict_frac = f"{n_canonical}/{n_total} ({100 * n_canonical / n_total:.1f}%)" if n_total else "0/0"
 
     profile = _field(cr, "profile", None)
     profile_name = str(getattr(profile, "name", profile or "") or "")
@@ -284,15 +288,14 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
     lines.append("Source completeness")
     if sc_chain_length:
         lines.append(f"  chain_length     : {sc_chain_length}")
-        lines.append(f"  source_available : {sc_source_available}  ({100*sc_source_available/sc_chain_length:.0f}%)")
-        lines.append(f"  dates_available  : {sc_dates_available}  ({100*sc_dates_available/sc_chain_length:.0f}%)")
+        lines.append(
+            f"  source_available : {sc_source_available}  ({100 * sc_source_available / sc_chain_length:.0f}%)"
+        )
+        lines.append(f"  dates_available  : {sc_dates_available}  ({100 * sc_dates_available / sc_chain_length:.0f}%)")
     else:
         lines.append(f"  chain_length     : {sc_chain_length}")
     if source_pathologies:
-        lines.append(
-            "  pathologies      : "
-            + ", ".join(str(_field(p, "code", "")) for p in source_pathologies)
-        )
+        lines.append("  pathologies      : " + ", ".join(str(_field(p, "code", "")) for p in source_pathologies))
     lines.append("")
 
     # Ops summary
@@ -335,10 +338,7 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
             src = f"  source: {source_statute}" if source_statute else ""
             detail = _field(adj, "detail", {})
             detail_suffix = _projection_detail_suffix(detail) if isinstance(detail, dict) else ""
-            lines.append(
-                f"  [{_field(adj, 'kind', '')}]  "
-                f"{_field(adj, 'message', '')}{src}{detail_suffix}"
-            )
+            lines.append(f"  [{_field(adj, 'kind', '')}]  {_field(adj, 'message', '')}{src}{detail_suffix}")
         lines.append("")
 
     if source_pathologies:
@@ -352,8 +352,7 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
             diag = str(detail.get("diagnostic_reason") or "") if isinstance(detail, dict) else ""
             diag_text = f"  diagnostic_reason: {diag}" if diag else ""
             lines.append(
-                f"  [{_field(pathology, 'code', '')}]  "
-                f"{_field(pathology, 'message', '')}{src}{tgt}{diag_text}"
+                f"  [{_field(pathology, 'code', '')}]  {_field(pathology, 'message', '')}{src}{tgt}{diag_text}"
             )
         lines.append("")
 
@@ -377,6 +376,10 @@ def _to_json(cr: Any) -> dict[str, Any]:
     projection_rows = _projection_rows(cr)
     strict_fail_reasons = list(_field(cr, "strict_fail_reasons", []) or [])
     source_pathologies = _source_pathologies(cr)
+    source_pathology_proof_rows = source_pathology_proof_surface_rows(
+        tuple(cast(Any, p) for p in source_pathologies),
+        statute_id=str(_field(cr, "statute_id", "") or ""),
+    )
     sc_chain_length, sc_source_available, sc_dates_available = _source_completeness_counts(cr)
     n_canonical = len(canonical_ops)
     profile = _field(cr, "profile", None)
@@ -405,6 +408,7 @@ def _to_json(cr: Any) -> dict[str, Any]:
             }
             for p in source_pathologies
         ],
+        **source_pathology_proof_rows,
         "strict_fail_reasons": strict_fail_reasons,
         "projection_rows": [
             {
@@ -422,6 +426,7 @@ def _to_json(cr: Any) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Corpus-wide helpers
 # ---------------------------------------------------------------------------
+
 
 def _data_dir() -> Path:
     """LawVM/data/ — sibling of src/."""
@@ -528,11 +533,7 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             replay_result=master,
             replay_meta=replay_meta,
         )
-        lineage = (
-            list(cast(Any, source_adjudication.lineage) or [])
-            if source_adjudication is not None
-            else []
-        )
+        lineage = list(cast(Any, source_adjudication.lineage) or []) if source_adjudication is not None else []
         source_pathologies = [dict(item) for item in source_pathology_rows_from_findings(facade.finding_ledger)]
         projection_rows = list(projection_rows_from_findings(facade.finding_ledger))
         contingent_sources = sorted(
@@ -569,14 +570,16 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
                 {str(row.get("kind") or "") for row in projection_rows if str(row.get("kind") or "")}
             ),
             "source_pathology_codes": sorted(
-                {str(p.get("code") or "") for p in source_pathologies if isinstance(p, dict) and str(p.get("code") or "")}
+                {
+                    str(p.get("code") or "")
+                    for p in source_pathologies
+                    if isinstance(p, dict) and str(p.get("code") or "")
+                }
             ),
             "source_pathology_rows": source_pathologies,
             "source_pathology_diagnostic_reasons": source_pathology_diagnostic_reasons,
             "html_noncommensurable_reason": (
-                str(source_adjudication.html_noncommensurable_reason or "")
-                if source_adjudication is not None
-                else ""
+                str(source_adjudication.html_noncommensurable_reason or "") if source_adjudication is not None else ""
             ),
             "contingent_effective_sources": contingent_sources,
             "fail_reasons": fail_reasons,
@@ -623,10 +626,7 @@ def _run_corpus(
 
         results: list[dict[str, Any]] = [{}] * total
         with ProcessPoolExecutor(max_workers=workers) as pool:
-            future_to_idx = {
-                pool.submit(_compile_one, item): i
-                for i, item in enumerate(corpus)
-            }
+            future_to_idx = {pool.submit(_compile_one, item): i for i, item in enumerate(corpus)}
             done = 0
             for future in as_completed(future_to_idx):
                 idx = future_to_idx[future]
@@ -667,26 +667,28 @@ def _save_strict_run(results: list[dict[str, Any]], label: str, timestamp: str) 
         w = csv.writer(f)
         w.writerow(_STRICT_RUN_HEADER)
         for rec in results:
-            w.writerow([
-                rec["sid"],
-                rec["n_canonical"],
-                rec["n_failed"],
-                rec["n_projection_rows"],
-                rec["n_source_pathologies"],
-                rec["n_contingent_effective_dates"],
-                "|".join(rec["projection_kinds"]),
-                "|".join(rec["source_pathology_codes"]),
-                json.dumps(rec.get("source_pathology_rows", []), ensure_ascii=True, sort_keys=True),
-                "|".join(rec.get("source_pathology_diagnostic_reasons", [])),
-                str(rec.get("html_noncommensurable_reason", "") or ""),
-                "|".join(rec["contingent_effective_sources"]),
-                "|".join(rec["fail_reasons"]),
-                "1" if rec["source_incomplete"] else "0",
-                rec["chain_length"],
-                rec["source_available"],
-                f"{rec['elapsed_s']:.2f}",
-                rec["error"],
-            ])
+            w.writerow(
+                [
+                    rec["sid"],
+                    rec["n_canonical"],
+                    rec["n_failed"],
+                    rec["n_projection_rows"],
+                    rec["n_source_pathologies"],
+                    rec["n_contingent_effective_dates"],
+                    "|".join(rec["projection_kinds"]),
+                    "|".join(rec["source_pathology_codes"]),
+                    json.dumps(rec.get("source_pathology_rows", []), ensure_ascii=True, sort_keys=True),
+                    "|".join(rec.get("source_pathology_diagnostic_reasons", [])),
+                    str(rec.get("html_noncommensurable_reason", "") or ""),
+                    "|".join(rec["contingent_effective_sources"]),
+                    "|".join(rec["fail_reasons"]),
+                    "1" if rec["source_incomplete"] else "0",
+                    rec["chain_length"],
+                    rec["source_available"],
+                    f"{rec['elapsed_s']:.2f}",
+                    rec["error"],
+                ]
+            )
     return path
 
 
@@ -712,23 +714,25 @@ def _load_strict_run(label: str) -> list[dict[str, Any]] | None:
                 except json.JSONDecodeError:
                     loaded = None
                 if isinstance(loaded, list):
-                    source_pathology_rows = [
-                        item for item in loaded if isinstance(item, dict)
-                    ]
+                    source_pathology_rows = [item for item in loaded if isinstance(item, dict)]
             row["source_pathology_rows"] = source_pathology_rows
             row["source_pathology_diagnostic_reasons"] = [
                 k for k in row.get("source_pathology_diagnostic_reasons", "").split("|") if k
             ]
-            row["html_noncommensurable_reason"] = str(
-                row.get("html_noncommensurable_reason", "") or ""
-            )
+            row["html_noncommensurable_reason"] = str(row.get("html_noncommensurable_reason", "") or "")
             row["contingent_effective_sources"] = [
                 k for k in row.get("contingent_effective_sources", "").split("|") if k
             ]
             row["fail_reasons"] = [r for r in row["fail_reasons"].split("|") if r]
-            for int_col in ("n_canonical", "n_failed", "n_projection_rows",
-                            "n_source_pathologies", "n_contingent_effective_dates",
-                            "chain_length", "source_available"):
+            for int_col in (
+                "n_canonical",
+                "n_failed",
+                "n_projection_rows",
+                "n_source_pathologies",
+                "n_contingent_effective_dates",
+                "chain_length",
+                "source_available",
+            ):
                 try:
                     if int_col == "n_projection_rows":
                         row[int_col] = int(row.get("n_projection_rows", 0) or 0)
@@ -743,6 +747,7 @@ def _load_strict_run(label: str) -> list[dict[str, Any]] | None:
 # ---------------------------------------------------------------------------
 # Summary display
 # ---------------------------------------------------------------------------
+
 
 def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     total = len(results)
@@ -760,10 +765,7 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
 
     # Quirks pass: compiled with at least some canonical ops
     # or no amendments to apply (chain_length == 0, trivially passes)
-    n_quirks_pass = sum(
-        1 for r in valid
-        if r["n_canonical"] > 0 or r["chain_length"] == 0
-    )
+    n_quirks_pass = sum(1 for r in valid if r["n_canonical"] > 0 or r["chain_length"] == 0)
 
     # Per-projection-row kind frequency
     kind_counter: Counter[str] = Counter()
@@ -821,12 +823,9 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     print(f"=== STRICT REPORT SUMMARY  label={label} ===")
     print(f"  Statutes total   : {total}  (valid={n_valid}, errors={len(errors)})")
     print()
-    print(f"  1. Strict rate        : {n_strict}/{n_valid}  "
-          f"({100*n_strict/n_valid:.1f}%)")
-    print(f"  2. Quirks pass rate   : {n_quirks_pass}/{n_valid}  "
-          f"({100*n_quirks_pass/n_valid:.1f}%)")
-    print(f"  3. Source incomplete  : {n_source_incomplete}/{n_valid}  "
-          f"({100*n_source_incomplete/n_valid:.1f}%)")
+    print(f"  1. Strict rate        : {n_strict}/{n_valid}  ({100 * n_strict / n_valid:.1f}%)")
+    print(f"  2. Quirks pass rate   : {n_quirks_pass}/{n_valid}  ({100 * n_quirks_pass / n_valid:.1f}%)")
+    print(f"  3. Source incomplete  : {n_source_incomplete}/{n_valid}  ({100 * n_source_incomplete / n_valid:.1f}%)")
     print()
 
     print("  4. Per-projection-row kind frequency:")
@@ -884,10 +883,14 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     print()
 
     print("  5e. Strict vs canonical fraction (correlation proxy):")
-    print(f"       strict=YES        mean canonical fraction: {_mean(strict_yes_canonical):.3f}"
-          f"  (N={len(strict_yes_canonical)})")
-    print(f"       strict=NO         mean canonical fraction: {_mean(strict_no_canonical):.3f}"
-          f"  (N={len(strict_no_canonical)})")
+    print(
+        f"       strict=YES        mean canonical fraction: {_mean(strict_yes_canonical):.3f}"
+        f"  (N={len(strict_yes_canonical)})"
+    )
+    print(
+        f"       strict=NO         mean canonical fraction: {_mean(strict_no_canonical):.3f}"
+        f"  (N={len(strict_no_canonical)})"
+    )
     print()
 
     if errors:
@@ -895,13 +898,14 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
         for r in errors[:10]:
             print(f"    {r['sid']:12s}  {r['error'][:80]}")
         if len(errors) > 10:
-            print(f"    ... and {len(errors)-10} more")
+            print(f"    ... and {len(errors) - 10} more")
         print()
 
 
 # ---------------------------------------------------------------------------
 # CompileFacade helpers (single-statute mode)
 # ---------------------------------------------------------------------------
+
 
 def _build_facade_for_statute(
     statute_id: str,
@@ -929,9 +933,7 @@ def _print_facade_summary(
         has_blocking = bool(fail_reasons)
     pass_label = "YES" if not bool(has_blocking) else "NO"
     quirks = tuple(quirks_used_from_findings(getattr(facade, "finding_ledger", ()) or ()))
-    source_completeness = tuple(
-        source_completeness_issues_from_findings(getattr(facade, "finding_ledger", ()) or ())
-    )
+    source_completeness = tuple(source_completeness_issues_from_findings(getattr(facade, "finding_ledger", ()) or ()))
     source_pathologies = tuple(getattr(facade, "source_pathology_rows", lambda: ())() or ())
     findings = len(getattr(facade, "finding_ledger", ()))
     bundle = getattr(facade, "bundle", None)
@@ -959,21 +961,18 @@ def _print_facade_summary(
     if fail_reasons:
         print(f"  Fail reasons : {', '.join(fail_reasons)}")
     pathology_codes = tuple(
-        sorted({
-            str(row.get("code") or "")
-            for row in source_pathologies
-            if str(row.get("code") or "")
-        })
+        sorted({str(row.get("code") or "") for row in source_pathologies if str(row.get("code") or "")})
     )
     if pathology_codes:
         print(f"  Pathologies  : {', '.join(pathology_codes)}")
     pathology_reasons = tuple(
-        sorted({
-            str((row.get("detail") or {}).get("diagnostic_reason") or "")
-            for row in source_pathologies
-            if isinstance(row.get("detail"), dict)
-            and str((row.get("detail") or {}).get("diagnostic_reason") or "")
-        })
+        sorted(
+            {
+                str((row.get("detail") or {}).get("diagnostic_reason") or "")
+                for row in source_pathologies
+                if isinstance(row.get("detail"), dict) and str((row.get("detail") or {}).get("diagnostic_reason") or "")
+            }
+        )
     )
     if pathology_reasons:
         print(f"  Pathology reasons : {', '.join(pathology_reasons)}")
@@ -981,9 +980,7 @@ def _print_facade_summary(
     if html_noncomm_reason:
         print(f"  HTML/XML reason : {html_noncomm_reason}")
     obligations = [
-        finding
-        for finding in getattr(facade, "finding_ledger", ())
-        if getattr(finding, "role", "") == "obligation"
+        finding for finding in getattr(facade, "finding_ledger", ()) if getattr(finding, "role", "") == "obligation"
     ]
     if obligations:
         print(
@@ -998,6 +995,7 @@ def _print_facade_summary(
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def main(args: Any) -> None:
     # Corpus-wide mode: triggered by --label or --show (no statute_id)
     statute_id: str | None = getattr(args, "statute_id", None)
@@ -1005,6 +1003,7 @@ def main(args: Any) -> None:
     show_label: str | None = getattr(args, "show", None)
     corpus_path: str | None = getattr(args, "corpus", None)
     import os as _os
+
     _par = getattr(args, "parallel", None)
     workers: int = _par if _par is not None else max(8, _os.cpu_count() or 4)
 
