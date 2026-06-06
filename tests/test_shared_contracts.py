@@ -76,6 +76,11 @@ from lawvm.core.source_acquisition import (
     SourceAcquisitionAttestation,
     SourceBundlePolicy,
 )
+from lawvm.core.source_completeness import (
+    SourceCompletenessStatus,
+    source_completeness_evidence_report,
+    source_completeness_status_from_mapping,
+)
 from lawvm.core.source_pathology import (
     SourcePathologyProjection,
     source_pathology_evidence_report,
@@ -163,6 +168,57 @@ def test_source_pathology_projection_is_passive_proof_surface_row() -> None:
     assert "source_pathology_as_replay_authorization" in row["forbidden_shortcuts"]
     assert proof_surface["surface_kind"] == "finland_source_pathology"
     assert proof_surface["rows"][0]["row_kind"] == "source_pathology"
+
+
+def test_source_completeness_status_is_passive_authorization_row() -> None:
+    status = SourceCompletenessStatus(
+        jurisdiction="fi",
+        statute_id="2001/1234",
+        chain_length=4,
+        source_available=3,
+        dates_available=4,
+    )
+
+    data = status.to_dict()
+
+    assert data["status"] == "incomplete"
+    assert data["counts"]["missing_sources"] == 1
+    assert data["counts"]["missing_dates"] == 0
+    assert data["executable"] is False
+    assert data["replay_authorized"] is False
+    assert data["execution_authorization"]["replay_authorized"] is False
+    assert data["execution_authorization"]["strict_disposition"] == "block"
+    assert (
+        "source_completeness_status_as_replay_authorization"
+        in data["forbidden_shortcuts"]
+    )
+
+
+def test_source_completeness_report_projects_proof_surface_rows() -> None:
+    status = source_completeness_status_from_mapping(
+        {
+            "statute_id": "2001/1234",
+            "source_completeness": {
+                "chain_length": 2,
+                "source_available": 2,
+                "dates_available": 2,
+            },
+        },
+        jurisdiction="fi",
+    )
+    assert status is not None
+
+    report = source_completeness_evidence_report(status, jurisdiction="fi")
+    report_data = report.to_dict()
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert report_data["report_kind"] == "source_completeness_status"
+    assert report_data["replay_claims"] is False
+    assert report_data["summary"]["status_counts"] == {"complete": 1}
+    assert report_data["rows"][0]["surface"] == "source_completeness_status"
+    assert report_data["rows"][0]["replay_authorized"] is False
+    assert proof_surface["surface_kind"] == "source_completeness_status"
+    assert proof_surface["rows"][0]["row_kind"] == "source_completeness_status"
 
 
 def test_kernel_authorization_projection_does_not_promote_policy_success_by_default() -> None:

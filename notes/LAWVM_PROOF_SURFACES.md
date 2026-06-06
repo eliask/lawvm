@@ -77,6 +77,7 @@ src/lawvm/core/proof_surface_graph.py
 src/lawvm/core/evidence_policy.py
 src/lawvm/core/evidence_kernel.py
 src/lawvm/core/source_acquisition.py
+src/lawvm/core/source_completeness.py
 src/lawvm/core/source_pathology.py
 src/lawvm/core/frontend_contract.py
 src/lawvm/core/frontend_phase_surface.py
@@ -178,6 +179,9 @@ Rules:
   suggested lane, blocking status, and forbidden shortcuts. A source-pathology
   row records why source material cannot be used literally; it is not source
   truth, replay authorization, target widening, or mutation-boundary proof.
+- Source-completeness rows should record source-chain and date coverage as
+  passive diagnostics. A complete source/date count is not source identity
+  proof, commencement proof, or replay authorization.
 - Frontend capability declarations should project as passive rows listing the
   phase waists a frontend claims to expose. A capability row is not parse
   success, replay authority, or canonical-effect proof.

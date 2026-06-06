@@ -24,6 +24,7 @@ from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frontier_work_item import FrontierWorkItem
 from lawvm.core.mutation_accounting import MutationAccountingResult, MutationInvariantReport
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
+from lawvm.core.source_completeness import source_completeness_status_from_mapping
 from lawvm.core.source_witness import DigestWitness, SourceWitness
 from lawvm.core.source_witness import (
     nested_source_witness_digest_coverage_counts,
@@ -1024,36 +1025,10 @@ def _strict_report_agreement_surface_rows(
 
 def source_completeness_status_row(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Project strict-report source-completeness counts into a passive row."""
-    source_completeness = payload.get("source_completeness")
-    if not isinstance(source_completeness, Mapping):
+    status = source_completeness_status_from_mapping(payload, jurisdiction="fi")
+    if status is None:
         return {}
-    chain_length = _nonnegative_int(source_completeness.get("chain_length"))
-    source_available = _nonnegative_int(source_completeness.get("source_available"))
-    dates_available = _nonnegative_int(source_completeness.get("dates_available"))
-    if chain_length == 0 and source_available == 0 and dates_available == 0:
-        return {}
-    missing_sources = max(chain_length - source_available, 0)
-    missing_dates = max(chain_length - dates_available, 0)
-    status = "complete" if missing_sources == 0 and missing_dates == 0 else "incomplete"
-    return {
-        "row_id": f"fi:{payload.get('statute_id') or 'unknown'}:source-completeness",
-        "statute_id": str(payload.get("statute_id") or ""),
-        "status": status,
-        "owner_phase": "source_chain_elaboration",
-        "counts": {
-            "chain_length": chain_length,
-            "source_available": source_available,
-            "dates_available": dates_available,
-            "missing_sources": missing_sources,
-            "missing_dates": missing_dates,
-        },
-        "safe_default": "treat_source_completeness_as_diagnostic_not_replay_authorization",
-        "forbidden_shortcuts": [
-            "source_completeness_status_as_replay_authorization",
-            "source_available_count_as_source_identity_proof",
-            "date_available_count_as_commencement_proof",
-        ],
-    }
+    return status.to_dict()
 
 
 def temporal_resolution_evidence_rows_from_projection_rows(
