@@ -181,6 +181,16 @@ def test_parse_clause_exports_typed_phase_surface_authority_boundary() -> None:
     assert rows["clause_ast_lowering"]["authority_role"] == "primary_semantic_authority"
     assert rows["parsed_ops_compat"]["authority_role"] == "compatibility_projection_not_authority"
     assert rows["parsed_ops_compat"]["detail"]["parsed_op_count"] == len(result.parsed_ops)
+    artifact = result.compatibility_artifacts[0].to_dict()
+    assert artifact["artifact_kind"] == "ParsedOp"
+    assert artifact["source_artifact_kind"] == "ClauseAST"
+    assert artifact["status"] == "derived_compatibility_projection"
+    assert artifact["lossy"] is True
+    assert artifact["semantic_authority"] is False
+    assert artifact["replay_authorized"] is False
+    assert "compatibility_artifact_as_semantic_authority" in artifact["forbidden_shortcuts"]
+    compat_artifacts = rows["parsed_ops_compat"]["detail"]["compatibility_artifacts"]
+    assert compat_artifacts[0]["artifact_id"] == artifact["artifact_id"]
     assert rows["tokenize"]["detail"]["token_tape_schema"] == "lawvm.token_tape.v1"
     assert rows["tokenize"]["detail"]["token_tape_lexeme_count"] == rows["tokenize"]["detail"]["raw_token_count"]
     assert rows["tokenize"]["detail"]["token_tape_source_hash"] == data["source_hash"]
@@ -213,6 +223,7 @@ def test_parse_clause_phase_surface_projects_to_shared_report_read_model() -> No
     compat = rows[("frontend_phase_row", "parsed_ops_compat")]
     assert compat["authority_role"] == "compatibility_projection_not_authority"
     assert compat["replay_authorized"] is False
+    assert compat["detail"]["compatibility_artifacts"][0]["semantic_authority"] is False
     assert proof_surface["surface_kind"] == "finland_johtolause_phase_surface"
     assert proof_surface["rows"][0]["row_kind"] == "frontend_phase_row"
 

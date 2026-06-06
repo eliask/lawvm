@@ -195,6 +195,126 @@ class SurfaceParseResult:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class DerivedCompatibilityArtifact:
+    """A compatibility artifact derived from a primary frontend artifact.
+
+    This is a report/control-plane certificate for legacy or transitional
+    outputs such as Finland ``ParsedOp`` rows. It records derivation and loss
+    boundaries; it does not make the compatibility artifact semantic authority
+    and does not authorize replay.
+    """
+
+    artifact_id: str
+    jurisdiction: str
+    frontend_id: str
+    artifact_kind: str
+    source_artifact_id: str
+    source_artifact_kind: str
+    derivation_phase: str
+    status: str
+    lossy: bool
+    preserved_fields: tuple[str, ...] = ()
+    lost_fields: tuple[str, ...] = ()
+    input_artifacts: tuple[str, ...] = ()
+    output_artifacts: tuple[str, ...] = ()
+    replay_authorized: bool = False
+    semantic_authority: bool = False
+    safe_default: str = "treat_compatibility_artifact_as_projection_not_authority"
+    forbidden_shortcuts: tuple[str, ...] = (
+        "compatibility_artifact_as_semantic_authority",
+        "compatibility_artifact_as_replay_authorization",
+        "compatibility_projection_as_canonical_effect_proof",
+    )
+    detail: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "artifact_id",
+            "jurisdiction",
+            "frontend_id",
+            "artifact_kind",
+            "source_artifact_id",
+            "source_artifact_kind",
+            "derivation_phase",
+            "status",
+            "safe_default",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _required_string(
+                    f"DerivedCompatibilityArtifact.{field_name}",
+                    getattr(self, field_name),
+                ),
+            )
+        for field_name in ("lossy", "replay_authorized", "semantic_authority"):
+            if not isinstance(getattr(self, field_name), bool):
+                raise ValueError(f"DerivedCompatibilityArtifact.{field_name} must be boolean")
+        object.__setattr__(
+            self,
+            "preserved_fields",
+            _string_tuple(
+                "DerivedCompatibilityArtifact.preserved_fields",
+                self.preserved_fields,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "lost_fields",
+            _string_tuple("DerivedCompatibilityArtifact.lost_fields", self.lost_fields),
+        )
+        object.__setattr__(
+            self,
+            "input_artifacts",
+            _string_tuple(
+                "DerivedCompatibilityArtifact.input_artifacts",
+                self.input_artifacts,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "output_artifacts",
+            _string_tuple(
+                "DerivedCompatibilityArtifact.output_artifacts",
+                self.output_artifacts,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "forbidden_shortcuts",
+            _string_tuple(
+                "DerivedCompatibilityArtifact.forbidden_shortcuts",
+                self.forbidden_shortcuts,
+            ),
+        )
+        if not isinstance(self.detail, Mapping):
+            raise ValueError("DerivedCompatibilityArtifact.detail must be a mapping")
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "artifact_id": self.artifact_id,
+            "jurisdiction": self.jurisdiction,
+            "frontend_id": self.frontend_id,
+            "artifact_kind": self.artifact_kind,
+            "source_artifact_id": self.source_artifact_id,
+            "source_artifact_kind": self.source_artifact_kind,
+            "derivation_phase": self.derivation_phase,
+            "status": self.status,
+            "lossy": self.lossy,
+            "preserved_fields": list(self.preserved_fields),
+            "lost_fields": list(self.lost_fields),
+            "input_artifacts": list(self.input_artifacts),
+            "output_artifacts": list(self.output_artifacts),
+            "replay_authorized": self.replay_authorized,
+            "semantic_authority": self.semantic_authority,
+            "safe_default": self.safe_default,
+            "forbidden_shortcuts": list(self.forbidden_shortcuts),
+            "detail": _plain_jsonable(self.detail),
+        }
+
+
 def _required_string(field_name: str, value: Any) -> str:
     text = str(value or "")
     if not text:

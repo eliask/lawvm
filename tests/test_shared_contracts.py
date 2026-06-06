@@ -26,6 +26,7 @@ from lawvm.core.execution_authorization import (
 from lawvm.core.evidence_kernel import AuthorizationResult
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frontend_contract import FrontendCapability, SurfaceParseResult
+from lawvm.core.frontend_contract import DerivedCompatibilityArtifact
 from lawvm.core.frontend_phase_surface import (
     FrontendDiagnostic,
     FrontendPhaseRow,
@@ -409,6 +410,33 @@ def test_frontend_capability_declares_supported_waists_without_replay_authority(
     assert data["has_agreement_surface"] is False
     assert data["compatibility_outputs"] == ["ParsedOp"]
     assert data["caveats"] == ["capability_declaration_does_not_authorize_replay"]
+
+
+def test_derived_compatibility_artifact_declares_non_authority_boundary() -> None:
+    artifact = DerivedCompatibilityArtifact(
+        artifact_id="fi:demo:parsed_ops",
+        jurisdiction="fi",
+        frontend_id="fi.demo",
+        artifact_kind="ParsedOp",
+        source_artifact_id="fi:demo:clause_ast",
+        source_artifact_kind="ClauseAST",
+        derivation_phase="parsed_ops_compat",
+        status="derived_compatibility_projection",
+        lossy=True,
+        preserved_fields=("operation_kind",),
+        lost_fields=("native_clause_ast_node_identity",),
+        input_artifacts=("clause_ast",),
+        output_artifacts=("parsed_ops",),
+    )
+
+    data = artifact.to_dict()
+
+    assert data["semantic_authority"] is False
+    assert data["replay_authorized"] is False
+    assert data["lossy"] is True
+    assert data["preserved_fields"] == ["operation_kind"]
+    assert data["lost_fields"] == ["native_clause_ast_node_identity"]
+    assert "compatibility_artifact_as_replay_authorization" in data["forbidden_shortcuts"]
 
 
 def test_surface_parse_result_records_original_enriched_resolved_waist() -> None:

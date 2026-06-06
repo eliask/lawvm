@@ -77,6 +77,7 @@ src/lawvm/core/proof_surface_graph.py
 src/lawvm/core/evidence_policy.py
 src/lawvm/core/evidence_kernel.py
 src/lawvm/core/source_acquisition.py
+src/lawvm/core/frontend_contract.py
 ```
 
 Frontend surfaces should reuse these objects before creating local report
@@ -153,6 +154,9 @@ Rules:
 - Graph projection of proof-surface rows is observation-only. It may create
   provenance graph nodes and `derives_projection` edges, but it does not verify
   source spans and does not authorize replay.
+- Derived compatibility artifacts, such as Finland `ParsedOp` projections from
+  `ClauseAST`, should declare their source artifact, lossy boundary, and
+  non-authority status instead of relying on prose.
 
 ---
 

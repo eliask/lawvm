@@ -19,7 +19,11 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Sequence
 
-from lawvm.core.frontend_contract import FrontendCapability, SurfaceParseResult
+from lawvm.core.frontend_contract import (
+    DerivedCompatibilityArtifact,
+    FrontendCapability,
+    SurfaceParseResult,
+)
 from lawvm.core.frontend_phase_surface import (
     FrontendDiagnostic,
     FrontendPhaseRow,
@@ -136,6 +140,9 @@ class ClauseParseResult:
                                  compatibility projection, not semantic authority.
         surface_result:         Shared surface-parse waist projection recording
                                  original/enriched/resolved status.
+        compatibility_artifacts:
+                                Typed certificates for derived compatibility
+                                artifacts such as ParsedOps.
         typed_diagnostics:      Typed diagnostic rows backing phase_surface.
     """
 
@@ -153,6 +160,7 @@ class ClauseParseResult:
     lowering_diagnostics: tuple = ()
     phase_surface: FrontendPhaseSurface | None = None
     surface_result: SurfaceParseResult | None = None
+    compatibility_artifacts: tuple[DerivedCompatibilityArtifact, ...] = ()
     typed_diagnostics: tuple[FrontendDiagnostic, ...] = ()
 
     @property
@@ -317,6 +325,13 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
 
     # -- Derive ParsedOps from ClauseAST --
     ops = _derive_parsed_ops_from_ast(clause_ast)
+    compatibility_artifacts = (
+        _build_parsed_ops_compatibility_artifact(
+            source_hash=core_token_tape.source_hash,
+            parsed_ops=ops,
+            clause_ast=clause_ast,
+        ),
+    )
 
     residuals: list = []
 
@@ -367,6 +382,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
         resolved=resolved,
         clause_ast=clause_ast,
         parsed_ops=ops,
+        compatibility_artifacts=compatibility_artifacts,
         residuals=residuals,
         diagnostics=diagnostics,
         parse_error=parse_error,
@@ -402,6 +418,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
         lowering_diagnostics=lowering_diagnostics,
         phase_surface=phase_surface,
         surface_result=surface_result,
+        compatibility_artifacts=compatibility_artifacts,
         typed_diagnostics=phase_surface.diagnostics,
     )
 
@@ -419,6 +436,7 @@ def _build_finland_clause_phase_surface(
     resolved: _ResolvedSurfaceClauseType | None,
     clause_ast: ClauseAST,
     parsed_ops: list[ParsedOp],
+    compatibility_artifacts: tuple[DerivedCompatibilityArtifact, ...],
     residuals: list,
     diagnostics: list[str],
     parse_error: str | None,
@@ -556,6 +574,9 @@ def _build_finland_clause_phase_surface(
             output_artifacts=("parsed_ops",),
             detail={
                 "parsed_op_count": len(parsed_ops),
+                "compatibility_artifacts": tuple(
+                    artifact.to_dict() for artifact in compatibility_artifacts
+                ),
             },
         ),
         row(
@@ -603,7 +624,50 @@ def _build_finland_clause_phase_surface(
             "frontend_capability_status": FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY.status,
             "frontend_capability_scope": FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY.scope,
             "parsed_ops_are_compatibility_output": True,
+            "compatibility_artifacts": tuple(
+                artifact.to_dict() for artifact in compatibility_artifacts
+            ),
             "clause_ast_is_primary_semantic_output": True,
+        },
+    )
+
+
+def _build_parsed_ops_compatibility_artifact(
+    *,
+    source_hash: str,
+    parsed_ops: list[ParsedOp],
+    clause_ast: ClauseAST,
+) -> DerivedCompatibilityArtifact:
+    return DerivedCompatibilityArtifact(
+        artifact_id=f"fi:johtolause:{source_hash}:parsed_ops",
+        jurisdiction="fi",
+        frontend_id=FINLAND_JOHTOLAUSE_FRONTEND_ID,
+        artifact_kind="ParsedOp",
+        source_artifact_id=f"fi:johtolause:{source_hash}:clause_ast",
+        source_artifact_kind="ClauseAST",
+        derivation_phase="parsed_ops_compat",
+        status="derived_compatibility_projection",
+        lossy=True,
+        preserved_fields=(
+            "operation_kind",
+            "target_reference",
+            "verb_group_order",
+            "facet",
+        ),
+        lost_fields=(
+            "native_clause_ast_node_identity",
+            "supplementary_meta_clause_authority",
+            "text_amend_clause_authority",
+        ),
+        input_artifacts=("clause_ast",),
+        output_artifacts=("parsed_ops",),
+        replay_authorized=False,
+        semantic_authority=False,
+        detail={
+            "parsed_op_count": len(parsed_ops),
+            "clause_ast_verb_group_count": len(clause_ast.verb_groups),
+            "primary_authority": "ClauseAST",
+            "compatibility_projection_only": True,
         },
     )
 
