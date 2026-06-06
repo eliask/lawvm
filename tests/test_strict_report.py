@@ -477,6 +477,18 @@ def test_to_json_preserves_source_pathology_target_unit_kind() -> None:
     assert frontier_item["source_witness"]["preview_digest_algorithm"] == "sha256"
     assert frontier_item["source_witness"]["preview_digest"]
     assert frontier_item["detail"]["execution_authorization"]["replay_authorized"] is False
+    assert payload["evidence_surface_report"]["summary"]["source_pathology_count"] == 1
+    assert payload["evidence_surface_report"]["summary"]["source_pathology_kind_counts"] == {
+        "DESTRUCTIVE_SHAPE_LOSS_RISK": 1
+    }
+    source_pathology_rows = [
+        row
+        for row in payload["evidence_surface_report"]["rows"]
+        if row["surface"] == "source_pathology"
+    ]
+    assert len(source_pathology_rows) == 1
+    assert source_pathology_rows[0]["replay_authorized"] is False
+    assert source_pathology_rows[0]["affected_phase"] == "replay_apply"
     assert payload["evidence_surface_report"]["summary"][
         "source_pathology_frontier_source_witness_digest_coverage_counts"
     ] == {"preview_digest": 1}

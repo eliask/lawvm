@@ -77,6 +77,7 @@ src/lawvm/core/proof_surface_graph.py
 src/lawvm/core/evidence_policy.py
 src/lawvm/core/evidence_kernel.py
 src/lawvm/core/source_acquisition.py
+src/lawvm/core/source_pathology.py
 src/lawvm/core/frontend_contract.py
 src/lawvm/core/frontend_phase_surface.py
 src/lawvm/core/token_tape.py
@@ -173,6 +174,10 @@ Rules:
 - Payload completeness witnesses should be first-class rows when present. A
   completeness witness can classify ownership and tail policy, but it is not a
   mutation-boundary proof and does not authorize replay by itself.
+- Source pathologies should project as passive rows with affected phase,
+  suggested lane, blocking status, and forbidden shortcuts. A source-pathology
+  row records why source material cannot be used literally; it is not source
+  truth, replay authorization, target widening, or mutation-boundary proof.
 
 ---
 

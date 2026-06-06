@@ -18,6 +18,7 @@ from lawvm.core.evidence_contracts import (
     validate_corpus_finding_evidence_row,
     validate_corpus_operation_evidence_row,
 )
+from lawvm.core.compile_result import SourcePathology
 from lawvm.core.execution_authorization import (
     ExecutionAuthorization,
     execution_authorization_evidence_report,
@@ -69,6 +70,11 @@ from lawvm.core.source_acquisition import (
     SourceAcquisitionAttestation,
     SourceBundlePolicy,
 )
+from lawvm.core.source_pathology import (
+    SourcePathologyProjection,
+    source_pathology_evidence_report,
+    source_pathology_projection,
+)
 from lawvm.core.source_witness import (
     DigestWitness,
     nested_source_witness_digest_coverage_counts,
@@ -108,6 +114,49 @@ def test_execution_authorization_allows_explicit_replay_authorized_rows() -> Non
     assert data["replay_authorized"] is True
     assert data["required_proofs"] == []
     assert validate_execution_authorization(data) == ()
+
+
+def test_source_pathology_projection_is_passive_proof_surface_row() -> None:
+    pathology = SourcePathology.from_scope(
+        code="DESTRUCTIVE_SHAPE_LOSS_RISK",
+        message="source payload would risk destructive shape loss",
+        source_statute="2001/748",
+        target_unit_kind="section",
+        target_label="6 §",
+        detail={"diagnostic_reason": "partial_body_only"},
+    )
+
+    projection = source_pathology_projection(
+        pathology,
+        jurisdiction="fi",
+        affected_phase="payload_elaboration",
+        suggested_lane="source_pathology",
+        blocks_execution=True,
+    )
+    report = source_pathology_evidence_report(
+        projection,
+        jurisdiction="fi",
+        report_kind="finland_source_pathology",
+    )
+    report_data = report.to_dict()
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert isinstance(projection, SourcePathologyProjection)
+    assert projection.pathology_kind == "DESTRUCTIVE_SHAPE_LOSS_RISK"
+    assert projection.blocks_execution is True
+    assert report_data["replay_claims"] is False
+    assert report_data["summary"]["source_pathology_count"] == 1
+    assert report_data["summary"]["blocking_source_pathology_count"] == 1
+    assert report_data["summary"]["pathology_kind_counts"] == {
+        "DESTRUCTIVE_SHAPE_LOSS_RISK": 1
+    }
+    row = report_data["rows"][0]
+    assert row["surface"] == "source_pathology"
+    assert row["replay_authorized"] is False
+    assert row["source_artifact_id"] == "2001/748"
+    assert "source_pathology_as_replay_authorization" in row["forbidden_shortcuts"]
+    assert proof_surface["surface_kind"] == "finland_source_pathology"
+    assert proof_surface["rows"][0]["row_kind"] == "source_pathology"
 
 
 def test_kernel_authorization_projection_does_not_promote_policy_success_by_default() -> None:

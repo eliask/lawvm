@@ -25,6 +25,11 @@ from lawvm.core.source_witness import (
     nested_source_witness_digest_coverage_counts,
     source_witness_digest_coverage_counts,
 )
+from lawvm.core.source_pathology import (
+    SourcePathologyProjection,
+    source_pathology_evidence_report,
+    source_pathology_projection,
+)
 from lawvm.core.temporal_resolution import (
     TEMPORAL_RECOVERY_FAMILY,
     TEMPORAL_UNRESOLVED_CONTINGENT,
@@ -444,6 +449,24 @@ def source_pathology_proof_surface_rows(
     }
 
 
+def _source_pathology_projections(
+    pathologies: tuple[Mapping[str, Any], ...],
+) -> tuple[SourcePathologyProjection, ...]:
+    projections: list[SourcePathologyProjection] = []
+    for pathology in pathologies:
+        rule = source_pathology_proof_rule(str(pathology.get("code") or ""))
+        projections.append(
+            source_pathology_projection(
+                pathology,
+                jurisdiction="fi",
+                affected_phase=rule.owner_phase,
+                suggested_lane=rule.lane,
+                blocks_execution=rule.strict_disposition == "block",
+            )
+        )
+    return tuple(projections)
+
+
 def consolidated_artifact_source_witness(
     *,
     locator: str,
@@ -844,6 +867,14 @@ def finland_strict_report_evidence_surface(
 ) -> dict[str, Any]:
     """Wrap Finland strict-report JSON in the shared evidence envelope."""
 
+    source_pathologies = _mapping_sequence(payload.get("source_pathologies"))
+    source_pathology_projections = _source_pathology_projections(source_pathologies)
+    source_pathology_report = source_pathology_evidence_report(
+        source_pathology_projections,
+        jurisdiction="fi",
+        report_kind="finland_source_pathology",
+    ).to_dict()
+    source_pathology_rows = _mapping_sequence(source_pathology_report.get("rows"))
     source_pathology_authorizations = _mapping_sequence(payload.get("source_pathology_execution_authorizations"))
     source_pathology_frontier_items = _mapping_sequence(payload.get("source_pathology_frontier_work_items"))
     sparse_certificates = _mapping_sequence(payload.get("sparse_slot_candidate_set_certificates"))
@@ -868,6 +899,10 @@ def finland_strict_report_evidence_surface(
     rows = tuple(
         (
             *(
+                {"surface": "source_pathology", **dict(row)}
+                for row in source_pathology_rows
+            ),
+            *(
                 {"surface": "source_pathology_execution_authorization", **dict(row)}
                 for row in source_pathology_authorizations
             ),
@@ -888,6 +923,13 @@ def finland_strict_report_evidence_surface(
         "canonical_op_count": int(ops_summary.get("canonical") or 0),
         "failed_op_count": int(ops_summary.get("failed") or 0),
         "total_op_count": int(ops_summary.get("total") or 0),
+        "source_pathology_count": len(source_pathology_rows),
+        "source_pathology_kind_counts": dict(
+            source_pathology_report.get("summary", {}).get("pathology_kind_counts", {})
+        ),
+        "source_pathology_affected_phase_counts": dict(
+            source_pathology_report.get("summary", {}).get("affected_phase_counts", {})
+        ),
         "source_pathology_execution_authorization_count": len(source_pathology_authorizations),
         "source_pathology_frontier_work_item_count": len(source_pathology_frontier_items),
         "sparse_slot_candidate_set_certificate_count": len(sparse_certificates),
