@@ -108,6 +108,93 @@ class FrontendCapability:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class SurfaceParseResult:
+    """Report-facing surface-parse waist projection.
+
+    This object records original/enriched/resolved surface status without
+    importing frontend-local surface classes into core. It is not replay
+    authority; it makes enrichment and resolver consumption visible.
+    """
+
+    frontend_id: str
+    jurisdiction: str
+    source_hash: str
+    status: str
+    original_surface_kind: str
+    original_produced: bool
+    enriched_surface_kind: str = ""
+    enriched: bool = False
+    resolved_surface_kind: str = ""
+    resolved_produced: bool = False
+    consumed_count: int = 0
+    enrichment_rule_ids: tuple[str, ...] = ()
+    supplementary_surface_kinds: tuple[str, ...] = ()
+    diagnostic_ids: tuple[str, ...] = ()
+    detail: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "frontend_id",
+            "jurisdiction",
+            "source_hash",
+            "status",
+            "original_surface_kind",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _required_string(f"SurfaceParseResult.{field_name}", getattr(self, field_name)),
+            )
+        object.__setattr__(self, "enriched_surface_kind", str(self.enriched_surface_kind or ""))
+        object.__setattr__(self, "resolved_surface_kind", str(self.resolved_surface_kind or ""))
+        for field_name in ("original_produced", "enriched", "resolved_produced"):
+            if not isinstance(getattr(self, field_name), bool):
+                raise ValueError(f"SurfaceParseResult.{field_name} must be boolean")
+        if not isinstance(self.consumed_count, int) or self.consumed_count < 0:
+            raise ValueError("SurfaceParseResult.consumed_count must be a non-negative integer")
+        object.__setattr__(
+            self,
+            "enrichment_rule_ids",
+            _string_tuple("SurfaceParseResult.enrichment_rule_ids", self.enrichment_rule_ids),
+        )
+        object.__setattr__(
+            self,
+            "supplementary_surface_kinds",
+            _string_tuple(
+                "SurfaceParseResult.supplementary_surface_kinds",
+                self.supplementary_surface_kinds,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "diagnostic_ids",
+            _string_tuple("SurfaceParseResult.diagnostic_ids", self.diagnostic_ids),
+        )
+        if not isinstance(self.detail, Mapping):
+            raise ValueError("SurfaceParseResult.detail must be a mapping")
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "frontend_id": self.frontend_id,
+            "jurisdiction": self.jurisdiction,
+            "source_hash": self.source_hash,
+            "status": self.status,
+            "original_surface_kind": self.original_surface_kind,
+            "original_produced": self.original_produced,
+            "enriched_surface_kind": self.enriched_surface_kind,
+            "enriched": self.enriched,
+            "resolved_surface_kind": self.resolved_surface_kind,
+            "resolved_produced": self.resolved_produced,
+            "consumed_count": self.consumed_count,
+            "enrichment_rule_ids": list(self.enrichment_rule_ids),
+            "supplementary_surface_kinds": list(self.supplementary_surface_kinds),
+            "diagnostic_ids": list(self.diagnostic_ids),
+            "detail": _plain_jsonable(self.detail),
+        }
+
+
 def _required_string(field_name: str, value: Any) -> str:
     text = str(value or "")
     if not text:

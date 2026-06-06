@@ -187,6 +187,43 @@ def test_parse_clause_exports_typed_phase_surface_authority_boundary() -> None:
     assert result.typed_diagnostics == phase_surface.diagnostics
 
 
+def test_parse_clause_exports_surface_parse_result_for_clean_structural_clause() -> None:
+    result = parse_clause("muutetaan 5 §")
+
+    surface_result = result.surface_result
+    assert surface_result is not None
+    data = surface_result.to_dict()
+
+    assert data["frontend_id"] == "finland.johtolause.parse_clause"
+    assert data["status"] == "resolved"
+    assert data["original_surface_kind"] == "SurfaceClause"
+    assert data["original_produced"] is True
+    assert data["enriched"] is False
+    assert data["resolved_surface_kind"] == "ResolvedSurfaceClause"
+    assert data["resolved_produced"] is True
+    assert data["enrichment_rule_ids"] == []
+    assert data["supplementary_surface_kinds"] == []
+    assert data["detail"]["original_surface_preserved"] is True
+    assert result.phase_surface is not None
+    assert data["source_hash"] == result.phase_surface.source_hash
+
+
+def test_parse_clause_surface_parse_result_records_supplementary_enrichment() -> None:
+    result = parse_clause("Tämä laki tulee voimaan 1 päivänä tammikuuta 2025.")
+
+    surface_result = result.surface_result
+    assert surface_result is not None
+    data = surface_result.to_dict()
+
+    assert data["status"] == "enriched_resolved"
+    assert data["enriched"] is True
+    assert data["enriched_surface_kind"] == "SurfaceClause"
+    assert "fi.surface_enrichment.meta_clauses.v1" in data["enrichment_rule_ids"]
+    assert "SurfaceMetaClause" in data["supplementary_surface_kinds"]
+    assert data["detail"]["meta_clause_count"] >= 1
+    assert data["detail"]["resolver_consumed_enriched_surface"] is True
+
+
 def test_finland_johtolause_frontend_capability_is_clause_scoped() -> None:
     data = FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY.to_dict()
 

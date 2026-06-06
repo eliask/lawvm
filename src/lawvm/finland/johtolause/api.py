@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Sequence
 
-from lawvm.core.frontend_contract import FrontendCapability
+from lawvm.core.frontend_contract import FrontendCapability, SurfaceParseResult
 from lawvm.core.frontend_phase_surface import (
     FrontendDiagnostic,
     FrontendPhaseRow,
@@ -134,6 +134,8 @@ class ClauseParseResult:
         phase_surface:          Typed report-facing phase surface.  It names
                                  the compiler waists and marks ParsedOps as a
                                  compatibility projection, not semantic authority.
+        surface_result:         Shared surface-parse waist projection recording
+                                 original/enriched/resolved status.
         typed_diagnostics:      Typed diagnostic rows backing phase_surface.
     """
 
@@ -150,6 +152,7 @@ class ClauseParseResult:
     parse_error: str | None = None
     lowering_diagnostics: tuple = ()
     phase_surface: FrontendPhaseSurface | None = None
+    surface_result: SurfaceParseResult | None = None
     typed_diagnostics: tuple[FrontendDiagnostic, ...] = ()
 
     @property
@@ -373,6 +376,16 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
         text_amend_clause_count=len(text_amend_nodes),
         supplementary_clause_count=len(supplementary_nodes),
     )
+    surface_result = _build_finland_surface_parse_result(
+        source_hash=core_token_tape.source_hash,
+        original_surface_clause=original_surface_clause,
+        enriched_surface_clause=enriched_surface_clause,
+        resolved=resolved,
+        meta_clause_count=len(meta_nodes),
+        text_amend_clause_count=len(text_amend_nodes),
+        supplementary_nodes=supplementary_nodes,
+        diagnostic_ids=tuple(diagnostic.diagnostic_id for diagnostic in phase_surface.diagnostics),
+    )
 
     return ClauseParseResult(
         clause_ast=clause_ast,
@@ -388,6 +401,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
         target_version_bindings=resolve_input.target_version_bindings,
         lowering_diagnostics=lowering_diagnostics,
         phase_surface=phase_surface,
+        surface_result=surface_result,
         typed_diagnostics=phase_surface.diagnostics,
     )
 
@@ -590,6 +604,50 @@ def _build_finland_clause_phase_surface(
             "frontend_capability_scope": FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY.scope,
             "parsed_ops_are_compatibility_output": True,
             "clause_ast_is_primary_semantic_output": True,
+        },
+    )
+
+
+def _build_finland_surface_parse_result(
+    *,
+    source_hash: str,
+    original_surface_clause: _SurfaceClauseType,
+    enriched_surface_clause: _SurfaceClauseType | None,
+    resolved: _ResolvedSurfaceClauseType | None,
+    meta_clause_count: int,
+    text_amend_clause_count: int,
+    supplementary_nodes: tuple,
+    diagnostic_ids: tuple[str, ...],
+) -> SurfaceParseResult:
+    enrichment_rule_ids: list[str] = []
+    if meta_clause_count:
+        enrichment_rule_ids.append("fi.surface_enrichment.meta_clauses.v1")
+    if text_amend_clause_count:
+        enrichment_rule_ids.append("fi.surface_enrichment.text_amend_clauses.v1")
+    status = "resolved" if resolved is not None else "unresolved"
+    if enriched_surface_clause is not None:
+        status = f"enriched_{status}"
+    return SurfaceParseResult(
+        frontend_id=FINLAND_JOHTOLAUSE_FRONTEND_ID,
+        jurisdiction="fi",
+        source_hash=source_hash,
+        status=status,
+        original_surface_kind=type(original_surface_clause).__name__,
+        original_produced=True,
+        enriched_surface_kind=type(enriched_surface_clause).__name__ if enriched_surface_clause is not None else "",
+        enriched=enriched_surface_clause is not None,
+        resolved_surface_kind=type(resolved).__name__ if resolved is not None else "",
+        resolved_produced=resolved is not None,
+        consumed_count=original_surface_clause.consumed_count,
+        enrichment_rule_ids=tuple(enrichment_rule_ids),
+        supplementary_surface_kinds=tuple(type(node).__name__ for node in supplementary_nodes),
+        diagnostic_ids=diagnostic_ids,
+        detail={
+            "meta_clause_count": meta_clause_count,
+            "text_amend_clause_count": text_amend_clause_count,
+            "supplementary_clause_count": len(supplementary_nodes),
+            "original_surface_preserved": True,
+            "resolver_consumed_enriched_surface": enriched_surface_clause is not None,
         },
     )
 

@@ -23,7 +23,7 @@ from lawvm.core.execution_authorization import (
     validate_execution_authorization,
 )
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
-from lawvm.core.frontend_contract import FrontendCapability
+from lawvm.core.frontend_contract import FrontendCapability, SurfaceParseResult
 from lawvm.core.frontend_phase_surface import (
     FrontendDiagnostic,
     FrontendPhaseRow,
@@ -155,6 +155,34 @@ def test_frontend_capability_declares_supported_waists_without_replay_authority(
     assert data["has_agreement_surface"] is False
     assert data["compatibility_outputs"] == ["ParsedOp"]
     assert data["caveats"] == ["capability_declaration_does_not_authorize_replay"]
+
+
+def test_surface_parse_result_records_original_enriched_resolved_waist() -> None:
+    result = SurfaceParseResult(
+        frontend_id="fi.demo",
+        jurisdiction="fi",
+        source_hash="abc123",
+        status="enriched_resolved",
+        original_surface_kind="SurfaceClause",
+        original_produced=True,
+        enriched_surface_kind="SurfaceClause",
+        enriched=True,
+        resolved_surface_kind="ResolvedSurfaceClause",
+        resolved_produced=True,
+        consumed_count=4,
+        enrichment_rule_ids=("fi.demo.enrichment.v1",),
+        supplementary_surface_kinds=("SurfaceMetaClause",),
+        diagnostic_ids=("demo-diagnostic",),
+    )
+
+    data = result.to_dict()
+
+    assert data["status"] == "enriched_resolved"
+    assert data["original_surface_kind"] == "SurfaceClause"
+    assert data["enriched"] is True
+    assert data["resolved_produced"] is True
+    assert data["enrichment_rule_ids"] == ["fi.demo.enrichment.v1"]
+    assert data["supplementary_surface_kinds"] == ["SurfaceMetaClause"]
 
 
 def test_token_tape_projects_source_preserving_lexemes_and_view() -> None:
