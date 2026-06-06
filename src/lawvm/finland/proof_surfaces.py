@@ -432,6 +432,85 @@ def finlex_html_topology_source_witness(
     )
 
 
+def source_adjudication_lineage_source_witness_rows(
+    source_adjudication: Any,
+    *,
+    statute_id: str = "",
+) -> list[dict[str, Any]]:
+    """Project Finland source-adjudication lineage rows into source witnesses."""
+
+    if source_adjudication is None:
+        return []
+    adjudication_statute = str(_field(source_adjudication, "statute_id", "") or statute_id or "")
+    lineage = _mapping_sequence(_field(source_adjudication, "lineage", ()))
+    rows: list[dict[str, Any]] = []
+    for index, row in enumerate(lineage, start=1):
+        amendment_id = str(row.get("statute_id") or "")
+        if not amendment_id:
+            continue
+        rows.append(
+            source_adjudication_lineage_source_witness(
+                row,
+                statute_id=adjudication_statute,
+                index=index,
+            ).to_dict()
+        )
+    return rows
+
+
+def source_adjudication_lineage_source_witness(
+    row: Mapping[str, Any],
+    *,
+    statute_id: str,
+    index: int,
+    source_role: str = "finland_source_lineage_amendment",
+) -> SourceWitness:
+    """Build source footing for one Finland replay source-chain lineage row."""
+
+    amendment_id = str(row.get("statute_id") or "")
+    effective_date = str(row.get("effective_date") or "")
+    issue_date = str(row.get("issue_date") or "")
+    title = str(row.get("title") or "")
+    included = bool(row.get("included"))
+    selection_basis = str(row.get("selection_basis") or "")
+    preview = " | ".join(
+        part
+        for part in (
+            f"parent={statute_id}",
+            f"sequence={index}",
+            amendment_id,
+            effective_date,
+            issue_date,
+            "included" if included else "not_included",
+            selection_basis,
+            title,
+        )
+        if part
+    )
+    return SourceWitness(
+        source_role=source_role,
+        artifact_id=amendment_id,
+        source_unit_id=amendment_id,
+        locator=amendment_id,
+        version_id=effective_date or issue_date,
+        source_path=amendment_id,
+        bounded_preview=preview,
+        preview_digest=_preview_digest_witness(preview),
+        source_lane="finland_source_adjudication_lineage",
+        metadata={
+            "statute_id": statute_id,
+            "sequence": index,
+            "amendment_id": amendment_id,
+            "title": title,
+            "effective_date": effective_date,
+            "issue_date": issue_date,
+            "sort_mode": str(row.get("sort_mode") or ""),
+            "included": included,
+            "selection_basis": selection_basis,
+        },
+    )
+
+
 def mutation_boundary_proof_rows(
     reports: tuple[MutationInvariantReport | Mapping[str, Any], ...],
     *,
@@ -625,6 +704,7 @@ def finland_strict_report_evidence_surface(
     source_pathology_authorizations = _mapping_sequence(payload.get("source_pathology_execution_authorizations"))
     source_pathology_frontier_items = _mapping_sequence(payload.get("source_pathology_frontier_work_items"))
     sparse_certificates = _mapping_sequence(payload.get("sparse_slot_candidate_set_certificates"))
+    source_lineage_witnesses = _mapping_sequence(payload.get("source_lineage_source_witnesses"))
     agreement_residuals = _mapping_sequence(payload.get("agreement_residuals"))
     mutation_boundary_proofs = _mapping_sequence(payload.get("mutation_boundary_proofs"))
     projection_rows = _mapping_sequence(payload.get("projection_rows"))
@@ -643,6 +723,7 @@ def finland_strict_report_evidence_surface(
                 for row in source_pathology_frontier_items
             ),
             *({"surface": "sparse_slot_candidate_set_certificate", **dict(row)} for row in sparse_certificates),
+            *({"surface": "source_lineage_source_witness", **dict(row)} for row in source_lineage_witnesses),
             *({"surface": "agreement_residual", **dict(row)} for row in agreement_residuals),
             *({"surface": "mutation_boundary_proof", **dict(row)} for row in mutation_boundary_proofs),
         )
@@ -654,10 +735,14 @@ def finland_strict_report_evidence_surface(
         "source_pathology_execution_authorization_count": len(source_pathology_authorizations),
         "source_pathology_frontier_work_item_count": len(source_pathology_frontier_items),
         "sparse_slot_candidate_set_certificate_count": len(sparse_certificates),
+        "source_lineage_source_witness_count": len(source_lineage_witnesses),
         "agreement_residual_count": len(agreement_residuals),
         "mutation_boundary_proof_count": len(mutation_boundary_proofs),
         "source_pathology_frontier_source_witness_digest_coverage_counts": (
             _source_witness_digest_coverage_counts(source_pathology_frontier_items)
+        ),
+        "source_lineage_source_witness_digest_coverage_counts": (
+            _source_witness_row_digest_coverage_counts(source_lineage_witnesses)
         ),
         "projection_row_count": len(projection_rows),
         "failed_op_row_count": len(failed_ops),
@@ -1007,6 +1092,16 @@ def _source_witness_digest_coverage_counts(
     for item in frontier_items:
         witness = item.get("source_witness")
         coverage = source_witness_digest_coverage(witness) if isinstance(witness, Mapping) else "missing_source_witness"
+        counts[coverage] = counts.get(coverage, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _source_witness_row_digest_coverage_counts(
+    witnesses: tuple[Mapping[str, Any], ...],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for witness in witnesses:
+        coverage = source_witness_digest_coverage(witness)
         counts[coverage] = counts.get(coverage, 0) + 1
     return dict(sorted(counts.items()))
 

@@ -39,6 +39,7 @@ from lawvm.core.compile_views import (
 from lawvm.finland.proof_surfaces import (
     finland_strict_report_evidence_surface,
     mutation_boundary_proof_rows,
+    source_adjudication_lineage_source_witness_rows,
     source_pathology_proof_surface_rows,
     source_adjudication_agreement_residual_rows,
     sparse_slot_candidate_set_certificate_rows,
@@ -405,6 +406,10 @@ def _to_json(cr: Any) -> dict[str, Any]:
         _field(cr, "source_adjudication", None),
         statute_id=str(_field(cr, "statute_id", "") or ""),
     )
+    source_lineage_witnesses = source_adjudication_lineage_source_witness_rows(
+        _field(cr, "source_adjudication", None),
+        statute_id=str(_field(cr, "statute_id", "") or ""),
+    )
     mutation_boundary_proofs = mutation_boundary_proof_rows(
         tuple(cast(Any, row) for row in _mutation_invariant_reports(cr)),
         statute_id=str(_field(cr, "statute_id", "") or ""),
@@ -439,6 +444,7 @@ def _to_json(cr: Any) -> dict[str, Any]:
         ],
         **source_pathology_proof_rows,
         "sparse_slot_candidate_set_certificates": sparse_slot_candidate_certificates,
+        "source_lineage_source_witnesses": source_lineage_witnesses,
         "agreement_residuals": agreement_residuals,
         "mutation_boundary_proofs": mutation_boundary_proofs,
         "strict_fail_reasons": strict_fail_reasons,

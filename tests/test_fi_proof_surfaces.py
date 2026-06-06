@@ -11,6 +11,7 @@ from lawvm.finland.proof_surfaces import (
     finlex_editorial_witness_agreement_residual_rows,
     mutation_boundary_proof_rows,
     source_adjudication_agreement_residual_rows,
+    source_adjudication_lineage_source_witness_rows,
     source_pathology_execution_authorization,
     source_pathology_frontier_work_item,
     source_pathology_proof_rule,
@@ -442,3 +443,34 @@ def test_source_adjudication_noncommensurable_reason_projects_residual() -> None
     assert residual["agreement_surface"] == "finlex_html_oracle_compare"
     assert residual["missing_proofs"] == ["compare_projection_review"]
     assert residual["detail"]["html_noncommensurable_reason"] == ("oracle_extra_scoped_labels:chapter:15/section:1")
+
+
+def test_source_adjudication_lineage_projects_source_witnesses() -> None:
+    rows = source_adjudication_lineage_source_witness_rows(
+        {
+            "statute_id": "2001/1234",
+            "lineage": [
+                {
+                    "sequence": 1,
+                    "statute_id": "2020/1",
+                    "title": "Test amendment",
+                    "effective_date": "2020-02-01",
+                    "issue_date": "2020-01-01",
+                    "sort_mode": "legal_pit",
+                    "included": True,
+                    "selection_basis": "oracle_editorial_repeal_stub_override",
+                }
+            ],
+        }
+    )
+
+    assert len(rows) == 1
+    witness = rows[0]
+    assert witness["source_role"] == "finland_source_lineage_amendment"
+    assert witness["artifact_id"] == "2020/1"
+    assert witness["source_unit_id"] == "2020/1"
+    assert witness["source_lane"] == "finland_source_adjudication_lineage"
+    assert witness["version_id"] == "2020-02-01"
+    assert witness["included"] is True
+    assert witness["selection_basis"] == "oracle_editorial_repeal_stub_override"
+    assert source_witness_digest_coverage(witness) == "preview_digest"

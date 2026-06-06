@@ -546,19 +546,40 @@ def test_to_json_exports_source_adjudication_agreement_residual() -> None:
                 cutoff_date="2024-01-01",
                 oracle_version_amendment_id="2024/1",
                 oracle_suspect="",
-                lineage=(),
+                lineage=(
+                    {
+                        "sequence": 1,
+                        "statute_id": "2024/1",
+                        "title": "Test source",
+                        "effective_date": "2024-01-01",
+                        "issue_date": "2023-12-15",
+                        "sort_mode": "legal_pit",
+                        "included": True,
+                        "selection_basis": "",
+                    },
+                ),
             ),
         )
     )
 
+    lineage_witnesses = payload["source_lineage_source_witnesses"]
+    assert len(lineage_witnesses) == 1
+    assert lineage_witnesses[0]["source_role"] == "finland_source_lineage_amendment"
+    assert lineage_witnesses[0]["artifact_id"] == "2024/1"
+    assert lineage_witnesses[0]["preview_digest"]
     residuals = payload["agreement_residuals"]
     assert len(residuals) == 1
     assert residuals[0]["family"] == "non_commensurable_surface"
     assert residuals[0]["status"] == "residual"
     assert residuals[0]["detail"]["html_noncommensurable_reason"] == ("oracle_extra_scoped_labels:chapter:15/section:1")
     report = payload["evidence_surface_report"]
+    assert report["summary"]["source_lineage_source_witness_count"] == 1
+    assert report["summary"]["source_lineage_source_witness_digest_coverage_counts"] == {"preview_digest": 1}
     assert report["summary"]["agreement_residual_count"] == 1
-    assert report["rows"][0]["surface"] == "agreement_residual"
+    assert [row["surface"] for row in report["rows"]] == [
+        "source_lineage_source_witness",
+        "agreement_residual",
+    ]
 
 
 def test_to_json_exports_mutation_boundary_proofs() -> None:
