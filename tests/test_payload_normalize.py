@@ -33,6 +33,7 @@ from lawvm.finland.payload_normalize import (
     _rebase_item_targets_to_sparse_slot_labels,
     SparsePayloadSlotBinding,
     SubsectionSlotAssignmentResult,
+    payload_elaboration_projection_from_group_result,
     prepare_payload_surface,
     elaborate_payload_against_live,
     summarize_slot_assignment,
@@ -81,6 +82,45 @@ def _muutos_ir(
     muutos_ir = result.muutos_ir
     assert muutos_ir is not None
     return muutos_ir
+
+
+def test_payload_elaboration_projection_from_group_result_records_slot_bindings() -> None:
+    assignment = SubsectionSlotAssignmentResult(
+        subsec_map=SubsectionSlotMap(),
+        sparse_slot_bindings=(
+            SparsePayloadSlotBinding(
+                op_description="REPLACE P 5 1",
+                op_type="REPLACE",
+                target_paragraph=1,
+                target_item=None,
+                target_special=None,
+                payload_slot_index=0,
+                payload_slot_label="1",
+            ),
+        ),
+        used_subs=(0,),
+        unassigned_payload_slots=(),
+    )
+    result = GroupPayloadNormalizationResult(
+        muutos_ir=None,
+        group_ops=(),
+        subsec_map=SubsectionSlotMap(),
+        slot_assignment=assignment,
+        payload_completeness=PayloadCompletenessWitness(kind="complete"),
+    )
+
+    projection = payload_elaboration_projection_from_group_result(result, subject_id="fi-demo")
+    data = projection.to_dict()
+
+    assert data["result_id"] == "fi:payload_elaboration:fi-demo"
+    assert data["owner_phase"] == "payload_elaboration"
+    assert data["replay_authorized"] is False
+    assert data["completeness_kind"] == "complete"
+    assert data["slot_binding_report"]["binding_count"] == 1
+    binding = data["slot_binding_report"]["bindings"][0]
+    assert binding["source_slot_id"] == "1"
+    assert binding["target_slot_id"] == "subsection:1"
+    assert "treat_payload_projection_as_replay_authorization" in data["forbidden_shortcuts"]
 
 
 def _mock_ctx(

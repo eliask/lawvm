@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Mapping, Optional, 
 from lawvm.core.compile_result import AdmissibleBindingCertificate, SourcePathology
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.payload_elaboration import PayloadElaborationResult, SlotBinding, SlotBindingReport
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import normalized_label_key
@@ -213,6 +214,113 @@ class SparseSubsectionElaborationResult:
             object.__setattr__(self, "unassigned_sparse_payload_slots", ())
         if self.elaboration_observations is None:
             object.__setattr__(self, "elaboration_observations", ())
+
+
+def payload_elaboration_projection_from_group_result(
+    result: GroupPayloadNormalizationResult,
+    *,
+    subject_id: str,
+    result_id: str = "",
+    jurisdiction: str = "fi",
+) -> PayloadElaborationResult:
+    """Project Finland payload normalization output into a shared report object."""
+
+    completeness = result.payload_completeness
+    completeness_kind = completeness.kind if completeness is not None else "unknown"
+    slot_report = _slot_binding_report_from_assignment(
+        result.slot_assignment,
+        subject_id=subject_id,
+        jurisdiction=jurisdiction,
+        completeness_kind=completeness_kind,
+    )
+    status = _payload_projection_status(result, completeness_kind)
+    return PayloadElaborationResult(
+        result_id=result_id or f"{jurisdiction}:payload_elaboration:{subject_id}",
+        jurisdiction=jurisdiction,
+        owner_phase="payload_elaboration",
+        status=status,
+        payload_surface_kind=type(result.muutos_ir).__name__ if result.muutos_ir is not None else "missing_payload_ir",
+        completeness_kind=completeness_kind,
+        elaborated_op_count=len(result.group_ops),
+        rejected_op_count=len(result.rejected_ops),
+        source_pathology_count=len(result.source_pathologies or ()),
+        observation_count=len(result.elaboration_observations or ()),
+        slot_binding_report=slot_report,
+        replay_authorized=False,
+        authorization_status="projection_only_not_replay_authority",
+        safe_default="record_without_replay_authority",
+        forbidden_shortcuts=("treat_payload_projection_as_replay_authorization",),
+        detail={
+            "payload_pruned": result.payload_pruned,
+            "unassigned_sparse_payload_slots": tuple(result.unassigned_sparse_payload_slots or ()),
+            "payload_completeness_reasons": completeness.reasons if completeness is not None else (),
+            "tail_policy": completeness.tail_policy if completeness is not None else "",
+        },
+    )
+
+
+def _payload_projection_status(
+    result: GroupPayloadNormalizationResult,
+    completeness_kind: str,
+) -> str:
+    if result.rejected_ops:
+        return "rejected_ops_present"
+    if result.source_pathologies:
+        return "source_pathology_present"
+    if completeness_kind in {"fragmentary", "unsupported"}:
+        return completeness_kind
+    return "elaborated"
+
+
+def _slot_binding_report_from_assignment(
+    assignment: "SubsectionSlotAssignmentResult | None",
+    *,
+    subject_id: str,
+    jurisdiction: str,
+    completeness_kind: str,
+) -> SlotBindingReport | None:
+    if assignment is None:
+        return None
+    bindings = tuple(
+        SlotBinding(
+            binding_id=f"{subject_id}:slot:{idx}",
+            source_slot_id=str(binding.payload_slot_label),
+            target_slot_id=_slot_binding_target_id(binding),
+            status="bound",
+            operation_id=str(binding.op_description),
+            binding_rule_id=str(binding.op_type),
+            detail={
+                "payload_slot_index": binding.payload_slot_index,
+                "target_paragraph": binding.target_paragraph,
+                "target_item": binding.target_item,
+                "target_special": binding.target_special,
+            },
+        )
+        for idx, binding in enumerate(assignment.sparse_slot_bindings)
+    )
+    status = "complete" if not assignment.unassigned_payload_slots else "unassigned_source_slots"
+    return SlotBindingReport(
+        subject_id=subject_id,
+        jurisdiction=jurisdiction,
+        owner_phase="payload_elaboration",
+        status=status,
+        completeness_kind=completeness_kind,
+        bindings=bindings,
+        unassigned_source_slots=assignment.unassigned_payload_slots,
+        detail={
+            "used_sub_count": len(assignment.used_subs),
+            "binding_certificate_count": len(assignment.binding_certificates),
+            "binding_observation_count": len(assignment.binding_observations),
+        },
+    )
+
+
+def _slot_binding_target_id(binding: "SparsePayloadSlotBinding") -> str:
+    if binding.target_item:
+        return f"subsection:{binding.target_paragraph or ''}/item:{binding.target_item}"
+    if binding.target_special:
+        return f"subsection:{binding.target_paragraph or ''}/{binding.target_special}"
+    return f"subsection:{binding.target_paragraph or ''}"
 
 
 @dataclass(frozen=True)
@@ -4312,6 +4420,7 @@ __all__ = [
     "GroupPayloadNormalizationResult",
     "PayloadCompletenessWitness",
     "SubsectionSlotMap",
+    "payload_elaboration_projection_from_group_result",
     "prepare_payload_surface",
     "elaborate_payload_against_live",
     "_collapse_intro_list_subsections_inside_section_ir",

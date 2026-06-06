@@ -37,6 +37,7 @@ from lawvm.core.frozen_values import FrozenDict
 from lawvm.core.mutation_accounting import build_mutation_invariant_reports
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.core.mutation_events import MutationEvent
+from lawvm.core.payload_elaboration import PayloadElaborationResult, SlotBinding, SlotBindingReport
 from lawvm.core.proof_obligations import (
     PROOF_OBLIGATION_BLOCKED,
     PROOF_OBLIGATION_COMPLETE,
@@ -212,6 +213,41 @@ def test_token_tape_projects_source_preserving_lexemes_and_view() -> None:
     assert view_data["source_hash"] == tape.source_hash
     assert view_data["visible_indices"] == [0, 1]
     assert view_data["annotations"][0]["sentinel_kind"] == "DEMO_SPAN"
+
+
+def test_payload_elaboration_result_is_projection_only_not_replay_authority() -> None:
+    slot_report = SlotBindingReport(
+        subject_id="fi:demo",
+        jurisdiction="fi",
+        owner_phase="payload_elaboration",
+        status="complete",
+        completeness_kind="complete",
+        bindings=(
+            SlotBinding(
+                binding_id="fi:demo:slot:0",
+                source_slot_id="payload:1",
+                target_slot_id="subsection:1",
+                status="bound",
+            ),
+        ),
+    )
+    result = PayloadElaborationResult(
+        result_id="fi:demo:payload",
+        jurisdiction="fi",
+        owner_phase="payload_elaboration",
+        status="elaborated",
+        payload_surface_kind="IRNode",
+        completeness_kind="complete",
+        elaborated_op_count=1,
+        slot_binding_report=slot_report,
+    )
+
+    data = result.to_dict()
+
+    assert data["replay_authorized"] is False
+    assert data["authorization_status"] == "projection_only_not_replay_authority"
+    assert data["slot_binding_report"]["binding_count"] == 1
+    assert "treat_payload_projection_as_replay_authorization" in data["forbidden_shortcuts"]
 
 
 def test_execution_authorization_rejects_hidden_promotion() -> None:
