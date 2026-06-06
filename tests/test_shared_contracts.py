@@ -20,6 +20,7 @@ from lawvm.core.evidence_contracts import (
 )
 from lawvm.core.execution_authorization import (
     ExecutionAuthorization,
+    execution_authorization_evidence_report,
     execution_authorization_from_kernel_result,
     validate_execution_authorization,
 )
@@ -140,6 +141,29 @@ def test_kernel_authorization_projection_does_not_promote_policy_success_by_defa
     )
     assert data["detail"]["evidence_kernel"]["evidence_bundle_hash"] == "a" * 64
 
+    report = execution_authorization_evidence_report(authorization, jurisdiction="fi")
+    report_data = report.to_dict()
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert report_data["report_kind"] == "execution_authorization"
+    assert report_data["replay_claims"] is False
+    assert report_data["summary"]["authorization_count"] == 1
+    assert report_data["summary"]["replay_authorized_count"] == 0
+    assert report_data["summary"]["claim_flags"]["replay_claims"] is False
+    assert report_data["rows"][0]["surface"] == "execution_authorization"
+    assert report_data["rows"][0]["subject_id"] == "assertion-1"
+    assert report_data["rows"][0]["replay_authorized"] is False
+    assert report_data["rows"][0]["required_proofs"] == [
+        "phase_local_replay_authorization"
+    ]
+    assert (
+        "evidence_policy_result_as_replay_authority_without_phase_gate"
+        in report_data["rows"][0]["forbidden_shortcuts"]
+    )
+    assert proof_surface["surface_kind"] == "execution_authorization"
+    assert proof_surface["rows"][0]["row_kind"] == "execution_authorization"
+    assert proof_surface["rows"][0]["authorization_ref"] == "fi.demo.policy"
+
 
 def test_kernel_authorization_projection_blocks_unsatisfied_policy_clauses() -> None:
     result = AuthorizationResult(
@@ -201,6 +225,32 @@ def test_kernel_authorization_projection_requires_explicit_replay_gate() -> None
     assert data["authorization_status"] == "replay_authorized"
     assert data["required_proofs"] == []
     assert data["strict_disposition"] == "record"
+
+    report = execution_authorization_evidence_report(authorization, jurisdiction="fi")
+    report_data = report.to_dict()
+
+    assert report_data["replay_claims"] is True
+    assert report_data["summary"]["authorization_count"] == 1
+    assert report_data["summary"]["replay_authorized_count"] == 1
+    assert report_data["summary"]["claim_flags"]["replay_claims"] is True
+    assert report_data["rows"][0]["replay_authorized"] is True
+
+
+def test_execution_authorization_report_validates_mapping_rows() -> None:
+    with pytest.raises(ValueError, match="safe_default is required"):
+        execution_authorization_evidence_report(
+            {
+                "executable": False,
+                "replay_authorized": False,
+                "authorization_status": "blocked",
+                "authorization_rule_id": "bad_rule",
+                "owner_phase": "typed_elaboration",
+                "strict_disposition": "block",
+                "quirks_disposition": "record",
+                "required_proofs": ("phase_local_replay_authorization",),
+            },
+            jurisdiction="fi",
+        )
 
 
 def test_source_bundle_policy_admission_does_not_authorize_replay() -> None:

@@ -6,10 +6,18 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from typing import Any, Mapping
 
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
 
 if TYPE_CHECKING:
     from lawvm.core.evidence_kernel import AuthorizationResult
+
+
+_EXECUTION_AUTHORIZATION_REPORT_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
+    "authorization_report_as_operation_payload",
+    "authorization_report_as_mutation_boundary_proof",
+    "evidence_policy_result_as_replay_authority_without_phase_gate",
+)
 
 
 @dataclass(frozen=True)
@@ -172,6 +180,75 @@ def execution_authorization_from_kernel_result(
                 "evidence_bundle_hash": result.evidence_bundle_hash,
             },
         },
+        )
+
+
+def execution_authorization_evidence_report(
+    authorizations: (
+        ExecutionAuthorization
+        | Mapping[str, Any]
+        | tuple[ExecutionAuthorization | Mapping[str, Any], ...]
+    ),
+    *,
+    jurisdiction: str,
+    report_kind: str = "execution_authorization",
+) -> EvidenceSurfaceReport:
+    """Project execution authorization rows into a shared report envelope.
+
+    This adapter is a read-model bridge for already-computed authorization
+    objects. It does not evaluate evidence policy and does not synthesize replay
+    permission. If any row is explicitly replay-authorized, the report's
+    ``replay_claims`` flag becomes true so downstream readers do not miss that
+    the envelope contains authority-bearing rows.
+    """
+
+    rows = tuple(
+        _authorization_mapping(row)
+        for row in _authorization_sequence(authorizations)
+    )
+    report_rows = tuple(
+        _authorization_report_row(row, index=index)
+        for index, row in enumerate(rows, start=1)
+    )
+    replay_authorized_count = sum(1 for row in rows if bool(row.get("replay_authorized")))
+    executable_count = sum(1 for row in rows if bool(row.get("executable")))
+    status_counts = _counts(str(row.get("authorization_status") or "") for row in rows)
+    owner_phase_counts = _counts(str(row.get("owner_phase") or "") for row in rows)
+    summary = {
+        "authorization_count": len(rows),
+        "executable_count": executable_count,
+        "replay_authorized_count": replay_authorized_count,
+        "non_authorized_count": len(rows) - replay_authorized_count,
+        "authorization_status_counts": status_counts,
+        "owner_phase_counts": owner_phase_counts,
+        "claim_flags": {
+            "replay_claims": replay_authorized_count > 0,
+            "canonical_effect_claims": False,
+            "candidate_effect_claims": False,
+            "dry_run_claims": False,
+            "agreement_claims": False,
+        },
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction=jurisdiction,
+        report_kind=report_kind,
+        schema="lawvm.execution_authorization_report.v1",
+        truth_claim="execution authorization projections",
+        replay_claims=replay_authorized_count > 0,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={"report_kind": report_kind},
+        filtered_summary=summary,
+        rows=report_rows,
+        rows_truncated=False,
+        detail={
+            "safe_default": "read_authorization_rows_but_do_not_infer_missing_authority",
+            "forbidden_shortcuts": _EXECUTION_AUTHORIZATION_REPORT_FORBIDDEN_SHORTCUTS,
+            "included_surfaces": ("execution_authorization",),
+        },
     )
 
 
@@ -214,3 +291,82 @@ def _kernel_safe_default(
     if result_authorized:
         return "record_evidence_policy_result_without_promoting_to_replay"
     return "block_until_evidence_policy_is_satisfied"
+
+
+def _authorization_sequence(
+    value: (
+        ExecutionAuthorization
+        | Mapping[str, Any]
+        | tuple[ExecutionAuthorization | Mapping[str, Any], ...]
+    ),
+) -> tuple[ExecutionAuthorization | Mapping[str, Any], ...]:
+    if isinstance(value, ExecutionAuthorization) or isinstance(value, Mapping):
+        return (value,)
+    return tuple(value)
+
+
+def _authorization_mapping(value: ExecutionAuthorization | Mapping[str, Any]) -> Mapping[str, Any]:
+    if isinstance(value, ExecutionAuthorization):
+        return value.to_dict()
+    row = dict(value)
+    issues = validate_execution_authorization(row)
+    if issues:
+        raise ValueError("; ".join(issues))
+    return row
+
+
+def _authorization_report_row(row: Mapping[str, Any], *, index: int) -> dict[str, Any]:
+    detail = row.get("detail") if isinstance(row.get("detail"), Mapping) else {}
+    evidence_kernel = (
+        detail.get("evidence_kernel")
+        if isinstance(detail, Mapping)
+        else None
+    )
+    subject = evidence_kernel.get("subject") if isinstance(evidence_kernel, Mapping) else None
+    subject_id = (
+        str(subject.get("artifact_id") or "")
+        if isinstance(subject, Mapping)
+        else str(row.get("authorization_rule_id") or f"authorization:{index}")
+    )
+    row_id = f"{subject_id}:{row.get('authorization_rule_id') or 'authorization'}"
+    return {
+        "surface": "execution_authorization",
+        "row_id": row_id,
+        "subject_id": subject_id,
+        "status": str(row.get("authorization_status") or "reported"),
+        "authorization_ref": str(row.get("authorization_rule_id") or ""),
+        "authorization_rule_id": str(row.get("authorization_rule_id") or ""),
+        "owner_phase": str(row.get("owner_phase") or ""),
+        "executable": bool(row.get("executable", False)),
+        "replay_authorized": bool(row.get("replay_authorized", False)),
+        "strict_disposition": str(row.get("strict_disposition") or ""),
+        "quirks_disposition": str(row.get("quirks_disposition") or ""),
+        "validator_status": str(row.get("validator_status") or ""),
+        "required_proofs": tuple(str(item) for item in _sequence(row.get("required_proofs"))),
+        "safe_default": str(row.get("safe_default") or ""),
+        "forbidden_shortcuts": tuple(
+            dict.fromkeys(
+                (
+                    *tuple(str(item) for item in _sequence(row.get("forbidden_shortcuts"))),
+                    *_EXECUTION_AUTHORIZATION_REPORT_FORBIDDEN_SHORTCUTS,
+                )
+            )
+        ),
+        "detail": detail,
+    }
+
+
+def _sequence(value: Any) -> tuple[Any, ...]:
+    if isinstance(value, str):
+        return (value,) if value else ()
+    if isinstance(value, list | tuple):
+        return tuple(value)
+    return ()
+
+
+def _counts(values: Any) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = str(value or "__blank__")
+        counts[key] = counts.get(key, 0) + 1
+    return counts

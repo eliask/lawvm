@@ -78,6 +78,9 @@ src/lawvm/core/evidence_policy.py
 src/lawvm/core/evidence_kernel.py
 src/lawvm/core/source_acquisition.py
 src/lawvm/core/frontend_contract.py
+src/lawvm/core/frontend_phase_surface.py
+src/lawvm/core/token_tape.py
+src/lawvm/core/payload_elaboration.py
 ```
 
 Frontend surfaces should reuse these objects before creating local report
@@ -202,6 +205,11 @@ Rules:
 The EvidenceKernel adapter follows the same rule: a satisfied declarative
 evidence policy remains non-replay-authorizing unless the caller explicitly
 sets the phase-local replay gate.
+
+Execution-authorization evidence reports may carry explicit authorization rows.
+The report envelope's `replay_claims` bit must be derived from row-level
+`replay_authorized=true`; evidence-policy success alone must still project as a
+non-authorizing row with required proofs.
 
 ---
 
