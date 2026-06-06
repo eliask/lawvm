@@ -92,6 +92,8 @@ from lawvm.finland.corrigendum_records import (
 )
 from lawvm.finland.proof_surfaces import (
     corrigendum_source_witness,
+    finland_corrigendum_manual_template_evidence_surface,
+    finland_corrigendum_manual_template_frontier_item,
     finland_corrigendum_overview_evidence_surface,
     finland_corrigendum_provenance_evidence_surface,
     finland_corrigendum_review_evidence_surface,
@@ -1867,6 +1869,8 @@ def build_manual_template_bundle(
             manual_entries = []
 
     entries: list[dict] = []
+    frontier_work_items: list[dict] = []
+    source_witnesses_by_locator: dict[str, dict] = {}
     attachment_only_entry_count = 0
     already_covered = bool(manual_entries) and not include_all
     for row in rows:
@@ -1910,18 +1914,32 @@ def build_manual_template_bundle(
             ]
             if part
         )
-        entries.append(
-            {
-                "amendment_id": amendment_id,
-                "wrong_text": wrong,
-                "correct_text": correct,
-                "correction_type": str(corr_type or "johtolause"),
-                "notes": notes,
-                "verified": "",
-            }
+        entry = {
+            "amendment_id": amendment_id,
+            "wrong_text": wrong,
+            "correct_text": correct,
+            "correction_type": str(corr_type or "johtolause"),
+            "notes": notes,
+            "verified": "",
+        }
+        source_witness = None
+        if source_pdf:
+            source_witness = corrigendum_source_witness(row).to_dict()
+            source_witnesses_by_locator.setdefault(
+                str(source_witness.get("locator") or source_witness.get("artifact_id") or ""),
+                source_witness,
+            )
+        frontier_work_items.append(
+            finland_corrigendum_manual_template_frontier_item(
+                amendment_id=amendment_id,
+                entry_index=len(entries),
+                entry=entry,
+                source_witness=source_witness,
+            ).to_dict()
         )
+        entries.append(entry)
 
-    return {
+    bundle = {
         "amendment_id": amendment_id,
         "records_path": str(path),
         "include_all": include_all,
@@ -1930,8 +1948,15 @@ def build_manual_template_bundle(
         "already_covered": already_covered,
         "attachment_only_entry_count": attachment_only_entry_count,
         "entry_count": len(entries),
+        "source_witnesses": sorted(
+            source_witnesses_by_locator.values(),
+            key=lambda item: str(item.get("locator") or ""),
+        ),
+        "frontier_work_items": frontier_work_items,
         "entries": entries,
     }
+    bundle["evidence_surface_report"] = finland_corrigendum_manual_template_evidence_surface(bundle)
+    return bundle
 
 
 def _to_db_amendment_id(amendment_id: str) -> str:

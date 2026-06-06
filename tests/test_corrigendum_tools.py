@@ -230,6 +230,77 @@ def test_corrigendum_manual_template_suppresses_db_rows_when_already_covered(cap
     assert "# Manual corrigendum scaffold" not in out
 
 
+def test_build_manual_template_bundle_exports_frontier_surface(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        corr_tools,
+        "_load_patch_rows",
+        lambda path=None: [
+            {
+                "stable_id": "sk20120991_1.pdf#0",
+                "amendment_id": "991/2012",
+                "lang": "fi",
+                "source_pdf": "akn/fi/act/statute-consolidated/2012/991/media/corrigenda/sk20120991_1.pdf",
+                "pdf_name": "sk20120991_1.pdf",
+                "correction_index": 0,
+                "correction_type": "johtolause",
+                "location_desc": "johtolause",
+                "wrong_text": "sekä 43 b ja 43 c §,",
+                "correct_text": "sekä väliaikaisesti 43 b ja 43 c §,",
+                "llm_confidence": "high",
+                "verified_in_source": 0,
+                "date_published": "1.1.2013",
+                "sha256": "c" * 64,
+            },
+        ],
+    )
+    monkeypatch.setattr(corr_tools, "_MANUAL_YAML", tmp_path / "corrigendum_manual.yaml")
+
+    class _Store:
+        def read_source(self, sid):
+            assert sid == "2012/991"
+            return b"<root/>"
+
+    monkeypatch.setattr(corr_tools, "_make_corpus_store", lambda: _Store())
+    monkeypatch.setattr(corr_tools, "_verify_in_source_xml", lambda source_xml, wrong_text: False)
+    monkeypatch.setattr(
+        corr_tools,
+        "_looks_like_attachment_only_correction",
+        lambda location_desc, correction_type, source_xml: False,
+    )
+
+    bundle = corr_tools.build_manual_template_bundle("991/2012", db_path=tmp_path / "missing.jsonl")
+
+    assert bundle["entry_count"] == 1
+    assert bundle["entries"] == [
+        {
+            "amendment_id": "991/2012",
+            "wrong_text": "sekä 43 b ja 43 c §,",
+            "correct_text": "sekä väliaikaisesti 43 b ja 43 c §,",
+            "correction_type": "johtolause",
+            "notes": (
+                "source_pdf=sk20120991_1.pdf; location=johtolause; "
+                "extraction_source=high; db_verified=0; current_verify=False"
+            ),
+            "verified": "",
+        }
+    ]
+    assert len(bundle["source_witnesses"]) == 1
+    assert bundle["source_witnesses"][0]["digest"] == "c" * 64
+    assert len(bundle["frontier_work_items"]) == 1
+    frontier = bundle["frontier_work_items"][0]
+    assert frontier["frontier_family"] == "fi_corrigendum_manual_override"
+    assert frontier["executable"] is False
+    assert frontier["replay_authorized"] is False
+    report = bundle["evidence_surface_report"]
+    assert report["report_kind"] == "finland_corrigendum_manual_template"
+    assert report["replay_claims"] is False
+    assert report["summary"]["entry_count"] == 1
+    assert report["summary"]["frontier_work_item_count"] == 1
+    assert report["summary"]["source_witness_digest_coverage_counts"] == {
+        "artifact_and_preview_digest": 1
+    }
+
+
 def test_corrigendum_review_prints_grouped_amendment_evidence(capsys, monkeypatch) -> None:
     monkeypatch.setattr(
         corr_tools,

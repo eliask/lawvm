@@ -5,6 +5,8 @@ from lawvm.core.mutation_accounting import MutationInvariantReport
 from lawvm.core.source_witness import source_witness_digest_coverage
 from lawvm.finland.proof_surfaces import (
     consolidated_artifact_source_witness,
+    finland_corrigendum_manual_template_evidence_surface,
+    finland_corrigendum_manual_template_frontier_item,
     finland_corrigendum_overview_evidence_surface,
     finland_corrigendum_provenance_evidence_surface,
     corrigendum_source_witness,
@@ -393,6 +395,106 @@ def test_finland_corrigendum_overview_projects_corpus_diagnostic_envelope() -> N
         "corrigendum_overview_unresolved_amendment",
     }
     assert "status_count_as_manual_claim" in report["forbidden_shortcuts"]
+
+
+def test_finland_corrigendum_manual_template_projects_frontier_work_item() -> None:
+    witness = corrigendum_source_witness(
+        {
+            "source_pdf": "akn/fi/act/statute-consolidated/2012/991/media/corrigenda/sk20120991_1.pdf",
+            "pdf_name": "sk20120991_1.pdf",
+            "statute_id": "2012/991",
+            "amendment_id": "991/2012",
+            "date_published": "1.1.2013",
+            "correction_item_count": 1,
+            "sha256": "c" * 64,
+        }
+    ).to_dict()
+    entry = {
+        "amendment_id": "991/2012",
+        "wrong_text": "old",
+        "correct_text": "new",
+        "correction_type": "johtolause",
+        "notes": "current_verify=False",
+        "verified": "",
+    }
+
+    item = finland_corrigendum_manual_template_frontier_item(
+        amendment_id="991/2012",
+        entry_index=0,
+        entry=entry,
+        source_witness=witness,
+    ).to_dict()
+
+    assert item["jurisdiction"] == "fi"
+    assert item["frontier_family"] == "fi_corrigendum_manual_override"
+    assert item["frontier_status"] == "manual_claim_needed"
+    assert item["required_claim_kind"] == "finland_corrigendum_manual_override"
+    assert item["executable"] is False
+    assert item["replay_authorized"] is False
+    assert item["authorization_status"] == "blocked_manual_claim_required"
+    assert item["source_witness"]["digest"] == "c" * 64
+    assert "manual_template_entry_as_manual_claim" in item["forbidden_shortcuts"]
+
+
+def test_finland_corrigendum_manual_template_projects_frontier_envelope() -> None:
+    witness = corrigendum_source_witness(
+        {
+            "source_pdf": "akn/fi/act/statute-consolidated/2012/991/media/corrigenda/sk20120991_1.pdf",
+            "pdf_name": "sk20120991_1.pdf",
+            "statute_id": "2012/991",
+            "amendment_id": "991/2012",
+            "date_published": "1.1.2013",
+            "correction_item_count": 1,
+            "sha256": "c" * 64,
+        }
+    ).to_dict()
+    entry = {
+        "amendment_id": "991/2012",
+        "wrong_text": "old",
+        "correct_text": "new",
+        "correction_type": "johtolause",
+        "notes": "current_verify=False",
+        "verified": "",
+    }
+    frontier = finland_corrigendum_manual_template_frontier_item(
+        amendment_id="991/2012",
+        entry_index=0,
+        entry=entry,
+        source_witness=witness,
+    ).to_dict()
+
+    report = finland_corrigendum_manual_template_evidence_surface(
+        {
+            "amendment_id": "991/2012",
+            "include_all": False,
+            "manual_entry_count": 0,
+            "already_covered": False,
+            "attachment_only_entry_count": 0,
+            "source_witnesses": [witness],
+            "frontier_work_items": [frontier],
+            "entries": [entry],
+        }
+    )
+
+    assert report["jurisdiction"] == "fi"
+    assert report["report_kind"] == "finland_corrigendum_manual_template"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is False
+    assert report["summary"]["entry_count"] == 1
+    assert report["summary"]["frontier_work_item_count"] == 1
+    assert report["summary"]["source_witness_count"] == 1
+    assert report["summary"]["source_witness_digest_coverage_counts"] == {
+        "artifact_and_preview_digest": 1
+    }
+    assert {row["surface"] for row in report["rows"]} == {
+        "corrigendum_manual_template_entry",
+        "corrigendum_manual_template_frontier_work_item",
+        "corrigendum_source_witness",
+    }
+    assert "manual_template_entry_as_manual_claim" in report["forbidden_shortcuts"]
 
 
 def test_mutation_boundary_reports_project_shared_proof_rows() -> None:

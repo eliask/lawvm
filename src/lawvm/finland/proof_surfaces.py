@@ -1144,6 +1144,140 @@ def finland_corrigendum_overview_evidence_surface(
     ).to_dict()
 
 
+def finland_corrigendum_manual_template_frontier_item(
+    *,
+    amendment_id: str,
+    entry_index: int,
+    entry: Mapping[str, Any],
+    source_witness: Mapping[str, Any] | None = None,
+) -> FrontierWorkItem:
+    """Project a generated corrigendum manual-template entry as non-executable work."""
+
+    witness = dict(source_witness or {})
+    source_artifact_id = str(witness.get("artifact_id") or witness.get("locator") or amendment_id)
+    source_unit_id = str(witness.get("source_unit_id") or f"{amendment_id}#{entry_index}")
+    wrong_text = str(entry.get("wrong_text") or "")
+    correct_text = str(entry.get("correct_text") or "")
+    correction_type = str(entry.get("correction_type") or "")
+    digest = hashlib.sha256(
+        json.dumps(
+            {
+                "amendment_id": amendment_id,
+                "entry_index": entry_index,
+                "wrong_text": wrong_text,
+                "correct_text": correct_text,
+                "correction_type": correction_type,
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()[:16]
+    return FrontierWorkItem(
+        work_item_id=f"fi:{amendment_id}:corrigendum-manual-template:{digest}",
+        jurisdiction="fi",
+        source_artifact_id=source_artifact_id,
+        source_unit_id=source_unit_id,
+        source_witness=witness,
+        owner_phase="manual_claim_frontier",
+        frontier_family="fi_corrigendum_manual_override",
+        frontier_status="manual_claim_needed",
+        candidate_operation_family="corrigendum_source_repair",
+        candidate_targets=(amendment_id,),
+        guidance_refs=("lawvm_corrigendum_manual_template",),
+        required_claim_kind="finland_corrigendum_manual_override",
+        required_validator_checks=(
+            "manual_corrigendum_claim_review",
+            "source_xml_non_verification_review",
+            "mutation_boundary_check_before_replay",
+        ),
+        required_proofs=(
+            "manual_corrigendum_override_claim",
+            "source_corrigendum_witness_review",
+            "targeted_source_xml_non_verification_review",
+            "mutation_boundary_proof_before_replay_promotion",
+        ),
+        safe_default="do_not_apply_corrigendum_template_without_manual_claim",
+        forbidden_shortcuts=(
+            "manual_template_entry_as_replay_authorization",
+            "wrong_correct_text_pair_as_source_repair",
+            "source_witness_as_patch_application",
+            "manual_template_entry_as_manual_claim",
+        ),
+        executable=False,
+        replay_authorized=False,
+        authorization_status="blocked_manual_claim_required",
+        detail={
+            "amendment_id": amendment_id,
+            "entry_index": entry_index,
+            "correction_type": correction_type,
+            "wrong_text_preview": wrong_text[:160],
+            "correct_text_preview": correct_text[:160],
+            "notes": str(entry.get("notes") or ""),
+        },
+    )
+
+
+def finland_corrigendum_manual_template_evidence_surface(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Wrap Finland corrigendum manual-template output in the shared envelope."""
+
+    entries = _mapping_sequence(payload.get("entries"))
+    frontier_items = _mapping_sequence(payload.get("frontier_work_items"))
+    source_witnesses = _mapping_sequence(payload.get("source_witnesses"))
+    rows = tuple(
+        (
+            *({**dict(row), "surface": "corrigendum_source_witness"} for row in source_witnesses),
+            *({**dict(row), "surface": "corrigendum_manual_template_frontier_work_item"} for row in frontier_items),
+            *({**dict(row), "surface": "corrigendum_manual_template_entry"} for row in entries),
+        )
+    )
+    summary = {
+        "entry_count": len(entries),
+        "frontier_work_item_count": len(frontier_items),
+        "source_witness_count": len(source_witnesses),
+        "source_witness_digest_coverage_counts": _source_witness_row_digest_coverage_counts(source_witnesses),
+        "manual_entry_count": int(payload.get("manual_entry_count") or 0),
+        "already_covered": bool(payload.get("already_covered")),
+        "attachment_only_entry_count": int(payload.get("attachment_only_entry_count") or 0),
+        "include_all": bool(payload.get("include_all")),
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction="fi",
+        report_kind="finland_corrigendum_manual_template",
+        schema="lawvm.finland_corrigendum_manual_template.v1",
+        truth_claim="finland_corrigendum_manual_template_frontier_diagnostics",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={
+            "amendment_id": str(payload.get("amendment_id") or ""),
+            "include_all": bool(payload.get("include_all")),
+        },
+        filtered_summary=summary,
+        rows=rows,
+        rows_truncated=False,
+        detail={
+            "safe_default": "treat_manual_template_as_frontier_scaffold_not_manual_claim_or_replay_authority",
+            "forbidden_shortcuts": (
+                "manual_template_as_replay_authorization",
+                "manual_template_entry_as_manual_claim",
+                "frontier_work_item_as_canonical_operation",
+                "source_witness_as_patch_application",
+                "wrong_correct_text_pair_as_source_repair",
+            ),
+            "included_surfaces": (
+                "corrigendum_source_witness",
+                "corrigendum_manual_template_frontier_work_item",
+                "corrigendum_manual_template_entry",
+            ),
+        },
+    ).to_dict()
+
+
 def _pathology_row(pathology: SourcePathology | Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(pathology, SourcePathology):
         return {
