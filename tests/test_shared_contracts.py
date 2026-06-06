@@ -47,6 +47,7 @@ from lawvm.core.mutation_accounting import build_mutation_invariant_reports
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.payload_elaboration import (
+    PayloadCompletenessWitness,
     PayloadElaborationResult,
     SlotBinding,
     SlotBindingReport,
@@ -703,6 +704,11 @@ def test_payload_elaboration_result_is_projection_only_not_replay_authority() ->
         payload_surface_kind="IRNode",
         completeness_kind="complete",
         elaborated_op_count=1,
+        payload_completeness=PayloadCompletenessWitness(
+            kind="complete",
+            reasons=("no_sparse_or_fragmentary_signals",),
+            tail_policy="replace_if_target_scope_requires",
+        ),
         slot_binding_report=slot_report,
     )
 
@@ -710,6 +716,7 @@ def test_payload_elaboration_result_is_projection_only_not_replay_authority() ->
 
     assert data["replay_authorized"] is False
     assert data["authorization_status"] == "projection_only_not_replay_authority"
+    assert data["payload_completeness"]["kind"] == "complete"
     assert data["slot_binding_report"]["binding_count"] == 1
     assert "treat_payload_projection_as_replay_authorization" in data["forbidden_shortcuts"]
 
@@ -740,6 +747,11 @@ def test_payload_elaboration_projection_has_shared_report_read_model() -> None:
         payload_surface_kind="IRNode",
         completeness_kind="complete",
         elaborated_op_count=1,
+        payload_completeness=PayloadCompletenessWitness(
+            kind="complete",
+            reasons=("no_sparse_or_fragmentary_signals",),
+            tail_policy="replace_if_target_scope_requires",
+        ),
         slot_binding_report=slot_report,
     )
 
@@ -753,17 +765,23 @@ def test_payload_elaboration_projection_has_shared_report_read_model() -> None:
     assert data["candidate_effect_claims"] is False
     assert data["dry_run_claims"] is False
     assert data["agreement_claims"] is False
+    assert data["summary"]["payload_completeness_witness_count"] == 1
     assert data["summary"]["slot_binding_count"] == 1
     rows = {(row["surface"], row["row_id"]): row for row in data["rows"]}
     payload_row = rows[("payload_elaboration_result", "fi:demo:payload")]
+    completeness_row = rows[("payload_completeness_witness", "fi:demo:payload:payload_completeness")]
     binding_row = rows[("slot_binding", "fi:demo:slot:0")]
     assert payload_row["replay_authorized"] is False
+    assert completeness_row["completeness_kind"] == "complete"
+    assert completeness_row["tail_policy"] == "replace_if_target_scope_requires"
+    assert completeness_row["replay_authorized"] is False
     assert binding_row["source_slot_id"] == "payload:1"
     assert binding_row["target_slot_id"] == "subsection:1"
     assert "payload_elaboration_report_as_replay_authorization" in data["forbidden_shortcuts"]
     assert proof_surface["surface_kind"] == "finland_payload_elaboration"
     assert {row["row_kind"] for row in proof_surface["rows"]} == {
         "payload_elaboration_result",
+        "payload_completeness_witness",
         "slot_binding_report",
         "slot_binding",
     }

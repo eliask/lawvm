@@ -170,6 +170,9 @@ Rules:
   rejected-operation counts, and source-pathology counts through shared
   evidence-report rows. Those rows are not replay authority and do not prove
   target uniqueness or mutation-boundary safety by themselves.
+- Payload completeness witnesses should be first-class rows when present. A
+  completeness witness can classify ownership and tail policy, but it is not a
+  mutation-boundary proof and does not authorize replay by itself.
 
 ---
 

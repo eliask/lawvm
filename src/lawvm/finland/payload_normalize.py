@@ -28,7 +28,12 @@ from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Mapping, Optional, 
 from lawvm.core.compile_result import AdmissibleBindingCertificate, SourcePathology
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
-from lawvm.core.payload_elaboration import PayloadElaborationResult, SlotBinding, SlotBindingReport
+from lawvm.core.payload_elaboration import (
+    PayloadCompletenessWitness,
+    PayloadElaborationResult,
+    SlotBinding,
+    SlotBindingReport,
+)
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import normalized_label_key
@@ -143,16 +148,6 @@ class SubsectionSlotMap(MutableMapping[int, IRNode]):
 
 
 @dataclass(frozen=True)
-class PayloadCompletenessWitness:
-    """Typed payload completeness assessment emitted before replay apply."""
-
-    kind: str
-    reasons: tuple[str, ...] = ()
-    tail_policy: str = "preserve_unstated_tail"
-    detail: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
 class ElaborationObservation:
     """Typed frontend/elaboration observation emitted before replay apply."""
 
@@ -245,6 +240,7 @@ def payload_elaboration_projection_from_group_result(
         rejected_op_count=len(result.rejected_ops),
         source_pathology_count=len(result.source_pathologies or ()),
         observation_count=len(result.elaboration_observations or ()),
+        payload_completeness=completeness,
         slot_binding_report=slot_report,
         replay_authorized=False,
         authorization_status="projection_only_not_replay_authority",

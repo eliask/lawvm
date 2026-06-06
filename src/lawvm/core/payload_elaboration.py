@@ -18,6 +18,40 @@ _PAYLOAD_ELABORATION_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
 
 
 @dataclass(frozen=True, slots=True)
+class PayloadCompletenessWitness:
+    """Payload ownership/completeness assessment emitted before replay apply."""
+
+    kind: str
+    reasons: tuple[str, ...] = ()
+    tail_policy: str = "preserve_unstated_tail"
+    detail: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "kind", _required_string("PayloadCompletenessWitness.kind", self.kind))
+        object.__setattr__(
+            self,
+            "reasons",
+            _string_tuple("PayloadCompletenessWitness.reasons", self.reasons),
+        )
+        object.__setattr__(
+            self,
+            "tail_policy",
+            _required_string("PayloadCompletenessWitness.tail_policy", self.tail_policy),
+        )
+        if not isinstance(self.detail, Mapping):
+            raise ValueError("PayloadCompletenessWitness.detail must be a mapping")
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "reasons": list(self.reasons),
+            "tail_policy": self.tail_policy,
+            "detail": _plain_jsonable(self.detail),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class SlotBinding:
     """Projection of one source payload slot to one target/effective slot."""
 
@@ -127,6 +161,7 @@ class PayloadElaborationResult:
     rejected_op_count: int = 0
     source_pathology_count: int = 0
     observation_count: int = 0
+    payload_completeness: PayloadCompletenessWitness | None = None
     slot_binding_report: SlotBindingReport | None = None
     replay_authorized: bool = False
     authorization_status: str = "projection_only_not_replay_authority"
@@ -161,6 +196,11 @@ class PayloadElaborationResult:
                 raise ValueError(f"PayloadElaborationResult.{field_name} must be a non-negative integer")
         if self.slot_binding_report is not None and not isinstance(self.slot_binding_report, SlotBindingReport):
             raise ValueError("PayloadElaborationResult.slot_binding_report must be a SlotBindingReport")
+        if self.payload_completeness is not None and not isinstance(
+            self.payload_completeness,
+            PayloadCompletenessWitness,
+        ):
+            raise ValueError("PayloadElaborationResult.payload_completeness must be a PayloadCompletenessWitness")
         if not isinstance(self.replay_authorized, bool):
             raise ValueError("PayloadElaborationResult.replay_authorized must be boolean")
         if self.replay_authorized:
@@ -188,6 +228,11 @@ class PayloadElaborationResult:
             "rejected_op_count": self.rejected_op_count,
             "source_pathology_count": self.source_pathology_count,
             "observation_count": self.observation_count,
+            "payload_completeness": (
+                self.payload_completeness.to_dict()
+                if self.payload_completeness is not None
+                else None
+            ),
             "slot_binding_report": (
                 self.slot_binding_report.to_dict() if self.slot_binding_report is not None else None
             ),
@@ -213,15 +258,18 @@ def payload_elaboration_evidence_report(
     """
 
     data = result.to_dict() if isinstance(result, PayloadElaborationResult) else dict(result)
+    payload_completeness = _mapping(data.get("payload_completeness"))
     slot_report = _mapping(data.get("slot_binding_report"))
     slot_bindings = _mapping_rows(slot_report.get("bindings"))
     rows = (
         _payload_result_report_row(data),
+        *(_payload_completeness_report_row(payload_completeness, data=data) if payload_completeness else ()),
         *(_slot_report_rows(slot_report, data=data) if slot_report else ()),
         *(_slot_binding_report_row(row, data=data, index=index) for index, row in enumerate(slot_bindings)),
     )
     summary = {
         "result_count": 1,
+        "payload_completeness_witness_count": 1 if payload_completeness else 0,
         "slot_binding_report_count": 1 if slot_report else 0,
         "slot_binding_count": len(slot_bindings),
         "elaborated_op_count": _nonnegative_int(data.get("elaborated_op_count")),
@@ -261,6 +309,7 @@ def payload_elaboration_evidence_report(
             "forbidden_shortcuts": _PAYLOAD_ELABORATION_FORBIDDEN_SHORTCUTS,
             "included_surfaces": (
                 "payload_elaboration_result",
+                "payload_completeness_witness",
                 "slot_binding_report",
                 "slot_binding",
             ),
@@ -296,6 +345,28 @@ def _payload_result_report_row(data: Mapping[str, Any]) -> dict[str, Any]:
         ),
         "detail": _mapping(data.get("detail")),
     }
+
+
+def _payload_completeness_report_row(
+    witness: Mapping[str, Any],
+    *,
+    data: Mapping[str, Any],
+) -> tuple[dict[str, Any], ...]:
+    row = {
+        "surface": "payload_completeness_witness",
+        "row_id": f"{data.get('result_id')}:payload_completeness",
+        "subject_id": str(data.get("result_id") or ""),
+        "status": str(witness.get("kind") or "reported"),
+        "jurisdiction": str(data.get("jurisdiction") or ""),
+        "owner_phase": str(data.get("owner_phase") or ""),
+        "completeness_kind": str(witness.get("kind") or ""),
+        "reasons": tuple(str(item) for item in _sequence(witness.get("reasons"))),
+        "tail_policy": str(witness.get("tail_policy") or ""),
+        "replay_authorized": False,
+        "forbidden_shortcuts": _PAYLOAD_ELABORATION_FORBIDDEN_SHORTCUTS,
+        "detail": _mapping(witness.get("detail")),
+    }
+    return (row,)
 
 
 def _slot_report_rows(

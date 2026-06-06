@@ -84,7 +84,7 @@ from lawvm.finland.kumotaan import (
 from lawvm.finland.metadata import (
     _amendment_effective_date,
 )
-from lawvm.finland.payload_normalize import PayloadCompletenessWitness
+from lawvm.core.payload_elaboration import PayloadCompletenessWitness
 from lawvm.finland.acquisition import build_amendment_acquisition_result
 from lawvm.finland.vts import VtsSkippedTarget, VtsSourceDiagnostic, extract_voimaantulo_repeals
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops

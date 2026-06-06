@@ -118,6 +118,7 @@ def test_payload_elaboration_projection_from_group_result_records_slot_bindings(
     assert data["owner_phase"] == "payload_elaboration"
     assert data["replay_authorized"] is False
     assert data["completeness_kind"] == "complete"
+    assert data["payload_completeness"]["kind"] == "complete"
     assert data["slot_binding_report"]["binding_count"] == 1
     binding = data["slot_binding_report"]["bindings"][0]
     assert binding["source_slot_id"] == "1"
@@ -137,6 +138,7 @@ def test_payload_elaboration_projection_from_group_result_records_slot_bindings(
     assert proof_surface["surface_kind"] == "finland_payload_elaboration"
     assert {row["row_kind"] for row in proof_surface["rows"]} == {
         "payload_elaboration_result",
+        "payload_completeness_witness",
         "slot_binding_report",
         "slot_binding",
     }
@@ -4939,7 +4941,7 @@ def test_payload_completeness_fragmentary_for_unassigned_sparse_slots() -> None:
     assert got.payload_completeness is not None
     assert got.payload_completeness.kind == "fragmentary"
     assert got.payload_completeness.tail_policy == "preserve_unstated_tail"
-    assert got.payload_completeness.detail["unassigned_payload_slots"] == ["2:2", "3:(unlabeled)"]
+    assert got.payload_completeness.detail["unassigned_payload_slots"] == ("2:2", "3:(unlabeled)")
 
 
 def test_payload_completeness_sparse_certified_for_tail_omission_binding() -> None:
