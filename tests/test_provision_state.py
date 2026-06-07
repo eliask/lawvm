@@ -52,7 +52,9 @@ def test_provision_state_response_exposes_text_hash_and_temporal_pin() -> None:
     assert payload["source_locator_status"] == "canonical_document_locator"
     assert payload["source_locator"]["artifact_kind"] == "operation_source_statute_xml"
     assert payload["source_locator"]["document_uri"] == "finlex://sd/2019/1/fin/main.xml"
-    assert payload["source_locator"]["detail"]["precision"] == "document"
+    assert payload["source_locator"]["structural_path"] == "lawvm-target:chapter:1/section:1"
+    assert payload["source_locator"]["detail"]["precision"] == "document_plus_resolved_target_legal_address"
+    assert payload["source_locator"]["detail"]["target_legal_address_kind"] == "lawvm_resolved_target"
     assert payload["lineage"]["status"] == "self_only"
     assert payload["lineage"]["address_chain"] == [payload["resolved_address"]]
     assert payload["engine"]["producer"] == "lawvm"
@@ -154,3 +156,4 @@ def test_provision_state_response_uses_base_source_locator_for_sourceless_base_v
     assert payload["source_locator_status"] == "canonical_document_locator"
     assert payload["source_locator"]["artifact_kind"] == "base_statute_xml"
     assert payload["source_locator"]["document_uri"] == "finlex://sd/2000/1/fin/main.xml"
+    assert payload["source_locator"]["structural_path"] == "lawvm-target:section:1"
