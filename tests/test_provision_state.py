@@ -49,6 +49,10 @@ def test_provision_state_response_exposes_text_hash_and_temporal_pin() -> None:
     assert payload["version"]["effective"] == "2020-01-01"
     assert payload["version"]["enacted"] == "2019-12-01"
     assert payload["source"]["statute_id"] == "2019/1"
+    assert payload["source_locator_status"] == "canonical_document_locator"
+    assert payload["source_locator"]["artifact_kind"] == "operation_source_statute_xml"
+    assert payload["source_locator"]["document_uri"] == "finlex://sd/2019/1/fin/main.xml"
+    assert payload["source_locator"]["detail"]["precision"] == "document"
     assert payload["lineage"]["status"] == "self_only"
     assert payload["lineage"]["address_chain"] == [payload["resolved_address"]]
     assert payload["engine"]["producer"] == "lawvm"
@@ -119,3 +123,34 @@ def test_provision_state_response_exposes_lineage_chain_from_migration_events() 
         "chapter:1/section:2",
     ]
     assert payload["lineage"]["migration_event_count_considered"] == 1
+
+
+def test_provision_state_response_uses_base_source_locator_for_sourceless_base_version() -> None:
+    address = LegalAddress(path=(("section", "1"),))
+    content = _section("Base duty.")
+    timelines = {
+        address: ProvisionTimeline(
+            address=address,
+            versions=[
+                ProvisionVersion(
+                    effective="2000-01-01",
+                    enacted="2000-01-01",
+                    content=content,
+                    content_hash=irnode_content_hash(content),
+                )
+            ],
+        )
+    }
+
+    payload = build_provision_state_response(
+        timelines=timelines,
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="section:1",
+        as_of="2021-01-01",
+    )
+
+    assert payload["source"] is None
+    assert payload["source_locator_status"] == "canonical_document_locator"
+    assert payload["source_locator"]["artifact_kind"] == "base_statute_xml"
+    assert payload["source_locator"]["document_uri"] == "finlex://sd/2000/1/fin/main.xml"

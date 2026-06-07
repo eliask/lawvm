@@ -11,9 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from lawvm.corpus_store import statute_url
 from lawvm.core.ir import IRStatute, LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.ir_helpers import irnode_content_hash, irnode_to_text
 from lawvm.core.provenance import MigrationEvent
+from lawvm.core.source_locator import SourceLocator
 from lawvm.core.timeline_lineage import lineage_address_chain
 from lawvm.core.timeline_selection import VersionSelectionResult, select_active_version_ex
 
@@ -123,7 +125,8 @@ def build_provision_state_response(
                 content_hash="",
             ),
             "engine": _engine_payload(),
-            "source_locator_status": "unavailable_initial_surface",
+            "source_locator": None,
+            "source_locator_status": "unavailable_unresolved_provision",
         }
 
     selection = select_active_version_ex(
@@ -229,9 +232,17 @@ def _selected_response(
         ),
         "text": _text_payload(version),
         "source": _source_payload(version),
+        "source_locator": _source_locator_payload(
+            statute_id=statute_id,
+            jurisdiction=jurisdiction,
+            address=address,
+            version=version,
+        ),
         "engine": _engine_payload(),
-        "source_locator_status": "unavailable_initial_surface",
     }
+    payload["source_locator_status"] = (
+        "canonical_document_locator" if payload["source_locator"] is not None else "unavailable_no_source"
+    )
     if include_ir:
         payload["ir"] = _ir_payload(version)
     if base is not None:
@@ -424,6 +435,40 @@ def _source_payload(version: ProvisionVersion | None) -> dict[str, str] | None:
         "branch_id": source.branch_id,
         "scenario_id": source.scenario_id,
     }
+
+
+def _source_locator_payload(
+    *,
+    statute_id: str,
+    jurisdiction: str,
+    address: LegalAddress,
+    version: ProvisionVersion | None,
+) -> dict[str, Any] | None:
+    source_sid = statute_id
+    artifact_kind = "base_statute_xml"
+    locator_status = "base_statute_locator"
+    if version is not None and version.source is not None and version.source.statute_id:
+        source_sid = version.source.statute_id
+        artifact_kind = "operation_source_statute_xml"
+        locator_status = "operation_source_locator"
+    if jurisdiction != "fi":
+        return None
+    locator = SourceLocator(
+        jurisdiction=jurisdiction,
+        artifact_kind=artifact_kind,
+        source_id=f"finlex:{artifact_kind}:{source_sid}",
+        document_uri=statute_url(source_sid),
+        statute_id=source_sid,
+        normalization_policy="finlex_statute_document_locator.v1",
+        detail={
+            "locator_status": locator_status,
+            "selected_target_address": str(address),
+            "precision": "document",
+            "xpath": "unavailable",
+            "byte_span": "unavailable",
+        },
+    )
+    return locator.to_dict()
 
 
 def _engine_payload() -> dict[str, str]:
