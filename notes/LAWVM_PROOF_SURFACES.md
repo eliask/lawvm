@@ -188,6 +188,9 @@ Rules:
 - Frontend capability declarations should project as passive rows listing the
   phase waists a frontend claims to expose. A capability row is not parse
   success, replay authority, or canonical-effect proof.
+- Frontend capability matrix reports should aggregate multiple declarations as
+  passive status rows. They are for phase-contract visibility, not for
+  selecting targets, admitting candidates, or authorizing replay.
 
 ---
 
@@ -491,6 +494,7 @@ CurrentTextVerificationMatrix
 TemporalResolutionEvidence
 SourceBundlePolicy / SourceAcquisitionAssertion
 FrontendPhaseSurface
+FrontendCapability
 ```
 
 If none fit, add the new local row only with a narrow TODO or spec note

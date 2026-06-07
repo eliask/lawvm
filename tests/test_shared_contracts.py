@@ -36,6 +36,7 @@ from lawvm.core.frontend_contract import (
     DerivedCompatibilityArtifact,
     FrontendCapability,
     SurfaceParseResult,
+    frontend_capability_matrix_evidence_report,
     frontend_capability_evidence_report,
 )
 from lawvm.core.frontend_phase_surface import (
@@ -709,6 +710,51 @@ def test_frontend_capability_declares_supported_waists_without_replay_authority(
     assert "has_token_tape" in report_data["rows"][0]["supported_waists"]
     assert "frontend_capability_as_replay_authorization" in report_data["forbidden_shortcuts"]
     assert proof_surface["surface_kind"] == "frontend_capability"
+    assert proof_surface["rows"][0]["row_kind"] == "frontend_capability"
+
+
+def test_frontend_capability_matrix_projects_multiple_declarations() -> None:
+    finland = FrontendCapability(
+        frontend_id="fi.clause",
+        jurisdiction="fi",
+        scope="clause_compiler_spine",
+        status="reference_clause_compiler",
+        has_token_tape=True,
+        has_surface_clause=True,
+        has_clause_ast=True,
+        compatibility_outputs=("ParsedOp",),
+    )
+    diagnostic = FrontendCapability(
+        frontend_id="fi.manual_frontier",
+        jurisdiction="fi",
+        scope="manual_frontier",
+        status="diagnostic_frontier_surface",
+        has_agreement_surface=True,
+        caveats=("capability_declaration_does_not_authorize_replay",),
+    )
+
+    report = frontend_capability_matrix_evidence_report(
+        (finland, diagnostic),
+        jurisdiction="fi",
+    )
+    data = report.to_dict()
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert data["report_kind"] == "frontend_capability_matrix"
+    assert data["replay_claims"] is False
+    assert data["summary"]["frontend_capability_count"] == 2
+    assert data["summary"]["jurisdiction_counts"] == {"fi": 2}
+    assert data["summary"]["status_counts"] == {
+        "diagnostic_frontier_surface": 1,
+        "reference_clause_compiler": 1,
+    }
+    assert data["summary"]["supported_waist_counts"]["fi.clause"] == 3
+    assert [row["surface"] for row in data["rows"]] == [
+        "frontend_capability",
+        "frontend_capability",
+    ]
+    assert data["rows"][0]["replay_authorized"] is False
+    assert proof_surface["surface_kind"] == "frontend_capability_matrix"
     assert proof_surface["rows"][0]["row_kind"] == "frontend_capability"
 
 

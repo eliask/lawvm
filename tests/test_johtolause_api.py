@@ -1,7 +1,10 @@
 from unittest.mock import patch
 import pytest
 
-from lawvm.core.frontend_contract import frontend_capability_evidence_report
+from lawvm.core.frontend_contract import (
+    frontend_capability_evidence_report,
+    frontend_capability_matrix_evidence_report,
+)
 from lawvm.core.frontend_phase_surface import frontend_phase_surface_evidence_report
 from lawvm.core.proof_surfaces import proof_surface_from_evidence_report
 from lawvm.finland.johtolause import parse_clause
@@ -293,6 +296,29 @@ def test_finland_johtolause_frontend_capability_is_clause_scoped() -> None:
     assert report_data["summary"]["supported_waist_count"] == 6
     assert "has_resolved_surface" in report_data["rows"][0]["supported_waists"]
     assert report_data["rows"][0]["has_payload_elaboration"] is False
+    assert proof_surface["rows"][0]["row_kind"] == "frontend_capability"
+
+
+def test_finland_johtolause_frontend_capability_projects_to_matrix() -> None:
+    report = frontend_capability_matrix_evidence_report(
+        (FINLAND_JOHTOLAUSE_FRONTEND_CAPABILITY,),
+        jurisdiction="fi",
+    )
+    data = report.to_dict()
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert data["report_kind"] == "frontend_capability_matrix"
+    assert data["replay_claims"] is False
+    assert data["canonical_effect_claims"] is False
+    assert data["agreement_claims"] is False
+    assert data["summary"]["frontend_capability_count"] == 1
+    assert data["summary"]["frontend_ids"] == ["finland.johtolause.parse_clause"]
+    assert data["summary"]["supported_waist_counts"] == {
+        "finland.johtolause.parse_clause": 6
+    }
+    assert data["rows"][0]["has_replay_apply"] is False
+    assert data["rows"][0]["has_agreement_surface"] is False
+    assert proof_surface["surface_kind"] == "frontend_capability_matrix"
     assert proof_surface["rows"][0]["row_kind"] == "frontend_capability"
 
 

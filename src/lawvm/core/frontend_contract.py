@@ -9,7 +9,7 @@ diagnostics.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
@@ -332,35 +332,8 @@ def frontend_capability_evidence_report(
     """Project a frontend capability declaration into a passive report row."""
 
     data = _frontend_capability_mapping(capability)
-    supported_waists = tuple(
-        field_name
-        for field_name in (
-            "has_token_tape",
-            "has_annotation_overlay",
-            "has_surface_clause",
-            "has_enriched_surface",
-            "has_resolved_surface",
-            "has_clause_ast",
-            "has_payload_surface",
-            "has_payload_elaboration",
-            "has_canonical_effects",
-            "has_replay_apply",
-            "has_materialization",
-            "has_agreement_surface",
-        )
-        if bool(data.get(field_name))
-    )
-    row = {
-        "surface": "frontend_capability",
-        "row_id": str(data.get("frontend_id") or ""),
-        "subject_id": str(data.get("frontend_id") or ""),
-        "status": str(data.get("status") or "reported"),
-        "replay_authorized": False,
-        "semantic_authority": False,
-        "supported_waists": supported_waists,
-        "forbidden_shortcuts": _FRONTEND_CAPABILITY_FORBIDDEN_SHORTCUTS,
-        **data,
-    }
+    row = _frontend_capability_row(data)
+    supported_waists = tuple(row["supported_waists"])
     summary = {
         "frontend_capability_count": 1,
         "frontend_id": str(data.get("frontend_id") or ""),
@@ -401,6 +374,90 @@ def frontend_capability_evidence_report(
             "forbidden_shortcuts": _FRONTEND_CAPABILITY_FORBIDDEN_SHORTCUTS,
         },
     )
+
+
+def frontend_capability_matrix_evidence_report(
+    capabilities: tuple[FrontendCapability | Mapping[str, Any], ...],
+    *,
+    jurisdiction: str = "multi",
+    report_kind: str = "frontend_capability_matrix",
+) -> EvidenceSurfaceReport:
+    """Project multiple frontend declarations into one passive status matrix."""
+
+    rows = tuple(
+        _frontend_capability_row(_frontend_capability_mapping(capability))
+        for capability in capabilities
+    )
+    summary = {
+        "frontend_capability_count": len(rows),
+        "jurisdiction_counts": _counts(str(row.get("jurisdiction") or "") for row in rows),
+        "scope_counts": _counts(str(row.get("scope") or "") for row in rows),
+        "status_counts": _counts(str(row.get("status") or "") for row in rows),
+        "frontend_ids": tuple(str(row.get("frontend_id") or "") for row in rows),
+        "supported_waist_counts": {
+            str(row.get("frontend_id") or ""): len(tuple(row.get("supported_waists") or ()))
+            for row in rows
+        },
+        "claim_flags": {
+            "replay_claims": False,
+            "canonical_effect_claims": False,
+            "candidate_effect_claims": False,
+            "dry_run_claims": False,
+            "agreement_claims": False,
+        },
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction=jurisdiction,
+        report_kind=report_kind,
+        schema="lawvm.frontend_capability_matrix_report.v1",
+        truth_claim="frontend capability declarations matrix",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={"jurisdiction": jurisdiction},
+        filtered_summary=summary,
+        rows=rows,
+        rows_truncated=False,
+        detail={
+            "safe_default": "treat_capability_matrix_as_status_declaration_not_execution_authority",
+            "forbidden_shortcuts": _FRONTEND_CAPABILITY_FORBIDDEN_SHORTCUTS,
+        },
+    )
+
+
+def _frontend_capability_row(data: Mapping[str, Any]) -> dict[str, Any]:
+    supported_waists = tuple(
+        field_name
+        for field_name in (
+            "has_token_tape",
+            "has_annotation_overlay",
+            "has_surface_clause",
+            "has_enriched_surface",
+            "has_resolved_surface",
+            "has_clause_ast",
+            "has_payload_surface",
+            "has_payload_elaboration",
+            "has_canonical_effects",
+            "has_replay_apply",
+            "has_materialization",
+            "has_agreement_surface",
+        )
+        if bool(data.get(field_name))
+    )
+    return {
+        "surface": "frontend_capability",
+        "row_id": str(data.get("frontend_id") or ""),
+        "subject_id": str(data.get("frontend_id") or ""),
+        "status": str(data.get("status") or "reported"),
+        "replay_authorized": False,
+        "semantic_authority": False,
+        "supported_waists": supported_waists,
+        "forbidden_shortcuts": _FRONTEND_CAPABILITY_FORBIDDEN_SHORTCUTS,
+        **data,
+    }
 
 
 def _frontend_capability_mapping(capability: FrontendCapability | Mapping[str, Any]) -> dict[str, Any]:
@@ -453,6 +510,15 @@ def _sequence(value: Any) -> tuple[Any, ...]:
     if isinstance(value, list | tuple):
         return tuple(value)
     return ()
+
+
+def _counts(values: Iterable[str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        if not value:
+            continue
+        counts[value] = counts.get(value, 0) + 1
+    return counts
 
 
 def _plain_jsonable(value: Any) -> Any:
