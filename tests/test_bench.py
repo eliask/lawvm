@@ -319,7 +319,7 @@ def test_save_run_persists_diagnostics_summary_column(tmp_path, monkeypatch) -> 
 def test_bench_tail_proof_summary_uses_display_tier_and_mixed_risk(monkeypatch) -> None:
     monkeypatch.setattr(
         "lawvm.tools.evidence.build_evidence_bundle",
-        lambda sid, mode="legal_pit", include_bisect=True: {
+        lambda sid, mode="legal_pit", include_bisect=True, **_kwargs: {
             "primary_proof_tier": "UNRESOLVED",
             "proof_claims": [{"kind": "trivially_empty"}],
             "strict_fail_reasons": ["APPLY.TREE_INVARIANT_VIOLATION"],

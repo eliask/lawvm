@@ -169,9 +169,21 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: _SAME_LABEL_MOVE_CLAUSE_RE — complex nested "
         "quantifiers. Pre-existing baseline."
     ),
+    "src/lawvm/finland/he_branch_parser.py": (
+        "Pre-existing baseline from Finland proposal-branch parsing: anchored "
+        "government-proposal preamble/relative-section recognizers flagged by "
+        "the AST lint. Proposal branch support is non-replay authority; clean up "
+        "with the next HE parser grammar pass."
+    ),
     "src/lawvm/finland/inline_repeal_stub.py": (
         "Pre-existing baseline: _PARA_KUMOTTU_RE has nested quantifiers. "
         "Pre-existing baseline."
+    ),
+    "src/lawvm/finland/inline_citation_extractor.py": (
+        "Pre-existing baseline from inline-citation inventory: compact citation "
+        "recognizers for ombudsman, chancellor, audit, and committee references. "
+        "These are source-evidence extractors, not replay regexes; batch-clean "
+        "with the parser-smell inventory."
     ),
     "src/lawvm/finland/johtolause/clause_patterns.py": (
         "Pre-existing baseline: _SINGLE_ROW_{REPLACE,REPEAL}_RE have complex "
@@ -197,10 +209,30 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "(CATEGORY false-positives partially resolved by A18; bounded .{N} "
         "adjacent pairs remain). Pre-existing baseline."
     ),
+    "src/lawvm/finland/preparatory_reference_extractor.py": (
+        "Pre-existing baseline from preparatory-reference extraction: government "
+        "proposal href and Official Journal citation recognizers. Evidence-only "
+        "surface; clean up with the citation/reference extractor pass."
+    ),
+    "src/lawvm/finland/ref_mention_extractor.py": (
+        "Pre-existing baseline: verbose plain-text Finnish statute mention "
+        "recognizer is a parser-smell inventory target. Evidence extraction only; "
+        "replace with a structured recognizer when this family is next touched."
+    ),
     "src/lawvm/finland/scope.py": (
         "Pre-existing baseline: _SAME_LABEL_MOVE_CLAUSE_RE and "
         "_SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE nested+adjacent quantifiers. "
         "Pre-existing baseline."
+    ),
+    "src/lawvm/finland/section_resolver.py": (
+        "Pre-existing baseline: short EID version-tail helper flagged by nested "
+        "quantifier lint. Section resolver identity normalization should be "
+        "cleaned with the next locator/resolver pass."
+    ),
+    "src/lawvm/finland/section_text_extractor.py": (
+        "Pre-existing baseline: section EID recognizer flagged by nested "
+        "quantifier lint. Bounded section-text extractor helper; clean up with "
+        "the next locator/resolver pass."
     ),
     "src/lawvm/finland/source_normalize.py": (
         "Pre-existing baseline: _NUM_IN_INTRO_CAPTURE_RE adjacent repeat "
@@ -293,9 +325,29 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: bounded .{0,N}? adjacent-repeat (not CATEGORY; "
         "genuine bounded-pair risk). Pre-existing baseline."
     ),
+    "src/lawvm/uk_legislation/effect_text_fragment_lowering.py": (
+        "Pre-existing baseline from UK source-fragment lowering: many bounded "
+        "drafting-instruction recognizers now flagged by the stricter lint. "
+        "Requires a UK grammar/recognizer pass, not ad hoc regex edits."
+    ),
+    "src/lawvm/uk_legislation/heading_facets.py": (
+        "Pre-existing baseline from UK heading-facet source parsing. This family "
+        "is grammar-shaped and should be migrated through typed selectors when "
+        "next touched."
+    ),
+    "src/lawvm/uk_legislation/metadata_rewrites.py": (
+        "Pre-existing baseline from UK effect-metadata rewrite helpers. Keep "
+        "allowlisted until metadata rewrite parsing is replaced with typed "
+        "target/action records."
+    ),
     "src/lawvm/uk_legislation/nlp_parser.py": (
         "NLP parser regexes slated for replacement by "
         "surface pipeline. Not yet fixed."
+    ),
+    "src/lawvm/uk_legislation/provision_extractor.py": (
+        "Pre-existing baseline from UK provision-source extraction helpers. "
+        "Short label/insert recognizers; clean up with the provision extractor "
+        "grammar pass."
     ),
     "src/lawvm/uk_legislation/replay_table_apply.py": (
         "Pre-existing baseline: adjacent .{0,N} repeats. Pre-existing baseline."
@@ -333,6 +385,11 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "by the 2026-05-30 soundness hardening (A19 bounded the old risk). "
         "Anchored instruction patterns; low practical risk. Batch 6."
     ),
+    "src/lawvm/uk_legislation/schedule_list_selectors.py": (
+        "Pre-existing baseline from UK schedule/list selector parsing. This is a "
+        "typed-selector migration target; defer broad regex surgery until that "
+        "bounded family is active."
+    ),
     "src/lawvm/uk_legislation/source_labeled_child_parts.py": (
         "Pre-existing baseline: _ROMAN/_ALPHA_CHILD_LABEL_RE prefix alternation "
         "leaves \\s*(?:and|or)?\\s+ nullable-separated \\s repeats, newly detected "
@@ -342,6 +399,11 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: after/at-end insert instruction patterns leave "
         "nullable-separated \\s repeats, newly detected by the 2026-05-30 "
         "soundness hardening (A19 bounded the old risk). Low risk. Batch 6."
+    ),
+    "src/lawvm/uk_legislation/source_context.py": (
+        "Pre-existing baseline from UK source-context normalization. Compound "
+        "paragraph/table context patterns are grammar-shaped; clean up with the "
+        "source-context recognizer pass."
     ),
     "src/lawvm/uk_legislation/source_structural_sibling.py": (
         "Pre-existing baseline: adjacent .+ repeat. Pre-existing baseline."
@@ -363,6 +425,15 @@ _KNOWN_UNFIXED: dict[str, str] = {
     "src/lawvm/uk_legislation/table_sources.py": (
         "Pre-existing baseline: bounded adjacent-repeat (not CATEGORY; genuine "
         "bounded-pair risk). Pre-existing baseline."
+    ),
+    "src/lawvm/uk_legislation/target_parser.py": (
+        "Pre-existing baseline from UK target-string parsing. This should be "
+        "cleaned by typed target grammar migration, not isolated regex rewrites."
+    ),
+    "src/lawvm/uk_legislation/uk_grafter.py": (
+        "Pre-existing baseline: short clean-number-prefix helper flagged by "
+        "nullable lookahead lint. Low practical risk; clean when UK grafter "
+        "target normalization is next touched."
     ),
 }
 
