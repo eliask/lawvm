@@ -229,6 +229,12 @@ claim assertion satisfying an evidence policy is report-visible, but it remains
 non-executable and non-replay-authorized unless a separate phase-local replay
 gate is supplied.
 
+Legacy manual-claim composition has a StrictProfile-authoritative bridge. The
+v2.2 `ClaimCompositionDecision` still carries a deprecated compatibility
+profile label, but new composer callers should derive that label from
+StrictProfile attested-channel policy rather than selecting profile authority
+from manual-claim data.
+
 Execution-authorization evidence reports may carry explicit authorization rows.
 The report envelope's `replay_claims` bit must be derived from row-level
 `replay_authorized=true`; evidence-policy success alone must still project as a

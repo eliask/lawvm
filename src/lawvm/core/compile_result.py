@@ -99,6 +99,10 @@ class StrictProfile:
     allows_attested_semantic_compilation: bool = False
     allows_attested_ambiguity_adjudication: bool = False
     allows_attested_oracle_adjudication: bool = False
+    # When False, attested LLM claims still need human review even if the
+    # relevant attested channel is enabled. This keeps strict review policy in
+    # StrictProfile instead of the legacy manual-claim ProfileTag.
+    allows_unreviewed_llm_attestations: bool = False
 
     def __post_init__(self):
         if not self.name:
@@ -135,6 +139,7 @@ class StrictProfile:
         _require_bool_field("StrictProfile", "allows_attested_semantic_compilation", self.allows_attested_semantic_compilation)
         _require_bool_field("StrictProfile", "allows_attested_ambiguity_adjudication", self.allows_attested_ambiguity_adjudication)
         _require_bool_field("StrictProfile", "allows_attested_oracle_adjudication", self.allows_attested_oracle_adjudication)
+        _require_bool_field("StrictProfile", "allows_unreviewed_llm_attestations", self.allows_unreviewed_llm_attestations)
 
 
 @dataclass(frozen=True)

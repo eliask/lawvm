@@ -9,7 +9,7 @@ import pytest
 from lawvm.core.compile_result import StrictProfile, _profile_allows, _PROFILE_GATES
 
 
-def test_seven_new_channel_fields_have_defaults():
+def test_attested_channel_fields_have_defaults():
     p = StrictProfile(name="test")
     assert p.allows_attested_reference_resolution is False
     assert p.allows_attested_surface_extraction is False
@@ -18,9 +18,10 @@ def test_seven_new_channel_fields_have_defaults():
     assert p.allows_attested_semantic_compilation is False
     assert p.allows_attested_ambiguity_adjudication is False
     assert p.allows_attested_oracle_adjudication is False
+    assert p.allows_unreviewed_llm_attestations is False
 
 
-def test_seven_new_channel_fields_accept_true():
+def test_attested_channel_fields_accept_true():
     p = StrictProfile(
         name="test",
         allows_attested_reference_resolution=True,
@@ -30,9 +31,11 @@ def test_seven_new_channel_fields_accept_true():
         allows_attested_semantic_compilation=True,
         allows_attested_ambiguity_adjudication=True,
         allows_attested_oracle_adjudication=True,
+        allows_unreviewed_llm_attestations=True,
     )
     assert p.allows_attested_reference_resolution is True
     assert p.allows_attested_oracle_adjudication is True
+    assert p.allows_unreviewed_llm_attestations is True
 
 
 def test_channel_fields_require_bool():

@@ -4,7 +4,8 @@ This is the ONLY code path that produces ClaimCompositionDecision records.
 Claims cannot self-authorize. The composer reads:
   - ManualCompilationClaim  (immutable claim content)
   - ClaimState              (current lifecycle state)
-  - ProfileTag              (which profile we are composing for)
+  - StrictProfile           (authoritative profile for new callers)
+  - ProfileTag              (deprecated compatibility profile label)
   - build_id                (stable build identifier)
   - PrecedenceRegistry      (operator-authored precedence rules)
 
@@ -30,8 +31,10 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+from lawvm.core.compile_result import StrictProfile
 from lawvm.core.manual_claims.kind_registry import get_claim_kind_spec
 from lawvm.core.manual_claims.primitive import (
+    ClaimLayer,
     ClaimCompositionDecision,
     ClaimState,
     ClaimStateEvent,
@@ -101,6 +104,7 @@ def _make_composed_event(
     authorized: bool,
     reason_code: str,
     producer: Producer,
+    strict_profile_name: str = "",
 ) -> ClaimStateEvent:
     """Emit a ClaimStateEvent for each composition decision (authorized or not).
 
@@ -111,6 +115,7 @@ def _make_composed_event(
     reason_payload = json.dumps({
         "build_id": build_id,
         "profile": profile.value,
+        **({"strict_profile": strict_profile_name} if strict_profile_name else {}),
         "authorized": authorized,
         "reason_code": reason_code,
     })
@@ -188,6 +193,105 @@ def derive_composition_decision(
     return decision, event
 
 
+def derive_composition_decision_for_strict_profile(
+    claim: ManualCompilationClaim,
+    state: ClaimState,
+    strict_profile: StrictProfile,
+    build_id: str,
+    precedence_registry: PrecedenceRegistry,
+) -> tuple[ClaimCompositionDecision, ClaimStateEvent]:
+    """Composer decision where StrictProfile is the source of authority.
+
+    The returned compatibility decision still contains a deprecated ProfileTag
+    because ``ClaimCompositionDecision`` is a v2.2 transition record. The tag is
+    derived from StrictProfile channel policy, not chosen by the caller.
+    """
+
+    producer = Producer(
+        producer_kind="tool",
+        handle=None,
+        model_id=None,
+        timestamp=datetime.now(tz=timezone.utc),
+        environment="lawvm-composer",
+    )
+    compatibility_profile, blocker = compatibility_profile_for_strict_profile(
+        claim,
+        strict_profile,
+    )
+    if blocker:
+        decision = _make_decision(
+            claim,
+            build_id,
+            ProfileTag.DETERMINISTIC_ONLY,
+            False,
+            blocker,
+            False,
+        )
+        event = _make_composed_event(
+            claim,
+            build_id,
+            ProfileTag.DETERMINISTIC_ONLY,
+            False,
+            blocker,
+            producer,
+            strict_profile_name=strict_profile.name,
+        )
+        return decision, event
+    return _derive(
+        claim,
+        state,
+        compatibility_profile,
+        build_id,
+        producer,
+        precedence_registry,
+        strict_profile_name=strict_profile.name,
+    )
+
+
+def compatibility_profile_for_strict_profile(
+    claim: ManualCompilationClaim,
+    strict_profile: StrictProfile,
+) -> tuple[ProfileTag, str]:
+    """Return deprecated compatibility label plus a blocker reason."""
+
+    channel = _claim_attestation_channel(claim)
+    if not _strict_profile_allows_channel(strict_profile, channel):
+        return ProfileTag.DETERMINISTIC_ONLY, "strict_profile_disallows_attested_channel"
+    if strict_profile.allows_unreviewed_llm_attestations:
+        return ProfileTag.NON_STRICT_WITH_CLAIMS, ""
+    return ProfileTag.STRICT_WITH_ATTESTED_CLAIMS, ""
+
+
+def _claim_attestation_channel(claim: ManualCompilationClaim) -> str:
+    if _is_semantic_compilation(claim.claim_kind):
+        return "semantic_compilation"
+    if claim.claim_kind == "fi.v1.INLINE_STATUTE_RESOLUTION":
+        return "reference_resolution"
+    if claim.claim_layer == ClaimLayer.SUBSTRATE:
+        return "surface_extraction"
+    if claim.claim_layer == ClaimLayer.EXTRACTION:
+        return "surface_extraction"
+    if claim.claim_layer == ClaimLayer.CORRECTION:
+        return "source_correction"
+    if claim.claim_layer == ClaimLayer.ADJUDICATION:
+        return "ambiguity_adjudication"
+    return "unknown"
+
+
+def _strict_profile_allows_channel(strict_profile: StrictProfile, channel: str) -> bool:
+    channel_flags = {
+        "reference_resolution": strict_profile.allows_attested_reference_resolution,
+        "surface_extraction": strict_profile.allows_attested_surface_extraction,
+        "source_correction": strict_profile.allows_attested_source_correction,
+        "target_selection": strict_profile.allows_attested_target_selection,
+        "semantic_compilation": strict_profile.allows_attested_semantic_compilation,
+        "ambiguity_adjudication": strict_profile.allows_attested_ambiguity_adjudication,
+        "oracle_adjudication": strict_profile.allows_attested_oracle_adjudication,
+        "unknown": False,
+    }
+    return channel_flags[channel]
+
+
 def _derive(
     claim: ManualCompilationClaim,
     state: ClaimState,
@@ -195,17 +299,34 @@ def _derive(
     build_id: str,
     producer: Producer,
     precedence_registry: PrecedenceRegistry,
+    strict_profile_name: str = "",
 ) -> tuple[ClaimCompositionDecision, ClaimStateEvent]:
     """Inner derivation — separated to make testing producer-independent."""
 
     def _reject(reason_code: str) -> tuple[ClaimCompositionDecision, ClaimStateEvent]:
         dec = _make_decision(claim, build_id, profile, False, reason_code, False)
-        evt = _make_composed_event(claim, build_id, profile, False, reason_code, producer)
+        evt = _make_composed_event(
+            claim,
+            build_id,
+            profile,
+            False,
+            reason_code,
+            producer,
+            strict_profile_name=strict_profile_name,
+        )
         return dec, evt
 
     def _accept(reason_code: str, replay_auth: bool = False) -> tuple[ClaimCompositionDecision, ClaimStateEvent]:
         dec = _make_decision(claim, build_id, profile, True, reason_code, replay_auth)
-        evt = _make_composed_event(claim, build_id, profile, True, reason_code, producer)
+        evt = _make_composed_event(
+            claim,
+            build_id,
+            profile,
+            True,
+            reason_code,
+            producer,
+            strict_profile_name=strict_profile_name,
+        )
         return dec, evt
 
     # --- deterministic_only: no claims consumed ---

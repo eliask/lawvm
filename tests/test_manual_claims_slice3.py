@@ -26,7 +26,11 @@ import pytest
 # Activate Finland claim kinds
 import lawvm.finland.claim_kinds  # noqa: F401
 
-from lawvm.core.manual_claims.composer import derive_composition_decision
+from lawvm.core.compile_result import StrictProfile
+from lawvm.core.manual_claims.composer import (
+    derive_composition_decision,
+    derive_composition_decision_for_strict_profile,
+)
 from lawvm.core.manual_claims.hashing import compute_claim_id
 from lawvm.core.manual_claims.precedence import (
     AmbiguousClaimSet,
@@ -676,6 +680,93 @@ def test_composer_non_strict_llm_span_verified_no_human_review_rejected():
     )
     assert not decision.authorized
     assert decision.reason_code == "rejected_unreviewed_llm"
+
+
+def test_strict_profile_bridge_blocks_when_attested_channel_disabled():
+    """StrictProfile, not requested ProfileTag, controls new composition calls."""
+    claim = _make_inline_claim(source_witness_type=SourceWitnessType.OPERATOR_FILING)
+    state = _make_accepted_state(
+        claim.claim_id,
+        review_status=ReviewStatus.HUMAN_REVIEWED,
+        validator_status=ValidatorStatus.SPAN_VERIFIED,
+    )
+
+    decision, event = derive_composition_decision_for_strict_profile(
+        claim=claim,
+        state=state,
+        strict_profile=StrictProfile(name="fi_blocking"),
+        build_id="build-strict-profile-block",
+        precedence_registry=_minimal_precedence_registry(),
+    )
+
+    assert not decision.authorized
+    assert decision.profile == ProfileTag.DETERMINISTIC_ONLY
+    assert decision.reason_code == "strict_profile_disallows_attested_channel"
+    payload = json.loads(event.reason)
+    assert payload["strict_profile"] == "fi_blocking"
+
+
+def test_strict_profile_bridge_accepts_reviewed_reference_resolution_claim():
+    claim = _make_inline_claim(source_witness_type=SourceWitnessType.OPERATOR_FILING)
+    state = _make_accepted_state(
+        claim.claim_id,
+        review_status=ReviewStatus.HUMAN_REVIEWED,
+        validator_status=ValidatorStatus.SPAN_VERIFIED,
+    )
+
+    decision, event = derive_composition_decision_for_strict_profile(
+        claim=claim,
+        state=state,
+        strict_profile=StrictProfile(
+            name="fi_attested_refs",
+            allows_attested_reference_resolution=True,
+        ),
+        build_id="build-strict-profile-accept",
+        precedence_registry=_minimal_precedence_registry(),
+    )
+
+    assert decision.authorized
+    assert decision.profile == ProfileTag.STRICT_WITH_ATTESTED_CLAIMS
+    assert decision.reason_code == "accepted_strict_attested"
+    payload = json.loads(event.reason)
+    assert payload["strict_profile"] == "fi_attested_refs"
+
+
+def test_strict_profile_bridge_requires_explicit_unreviewed_llm_admission():
+    claim = _make_inline_claim(source_witness_type=SourceWitnessType.LLM_PROPOSAL)
+    state = _make_accepted_state(
+        claim.claim_id,
+        review_status=ReviewStatus.PROPOSED,
+        validator_status=ValidatorStatus.ENTAILMENT_VERIFIED,
+    )
+
+    strict_decision, _ = derive_composition_decision_for_strict_profile(
+        claim=claim,
+        state=state,
+        strict_profile=StrictProfile(
+            name="fi_attested_refs_strict",
+            allows_attested_reference_resolution=True,
+        ),
+        build_id="build-strict-profile-llm-strict",
+        precedence_registry=_minimal_precedence_registry(),
+    )
+    non_strict_decision, _ = derive_composition_decision_for_strict_profile(
+        claim=claim,
+        state=state,
+        strict_profile=StrictProfile(
+            name="fi_attested_refs_non_strict",
+            allows_attested_reference_resolution=True,
+            allows_unreviewed_llm_attestations=True,
+        ),
+        build_id="build-strict-profile-llm-nonstrict",
+        precedence_registry=_minimal_precedence_registry(),
+    )
+
+    assert not strict_decision.authorized
+    assert strict_decision.reason_code == "rejected_unreviewed_llm"
+    assert non_strict_decision.authorized
+    assert non_strict_decision.profile == ProfileTag.NON_STRICT_WITH_CLAIMS
+    assert non_strict_decision.reason_code == "accepted_non_strict"
 
 
 def test_composer_exploratory_accepts_accepted_non_semantic():
