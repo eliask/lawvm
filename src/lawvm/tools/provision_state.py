@@ -38,29 +38,9 @@ def main(args: Any) -> None:
 
 
 async def _main(args: Any) -> None:
-    from lawvm.finland.grafter import replay_xml
+    from lawvm.provision_state import resolve_provision_state
 
-    if args.jurisdiction != "fi":
-        payload = _unsupported_jurisdiction_payload(
-            jurisdiction=args.jurisdiction,
-            statute_id=args.statute_id,
-            provision=args.provision,
-            as_of=args.as_of,
-            query_type=args.query_type,
-        )
-        print(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2))
-        return
-
-    print(f"Replaying {args.statute_id}...", file=sys.stderr)
-    master = replay_xml(args.statute_id, quiet=True)
-    base_ir = IRStatute(
-        statute_id=args.statute_id,
-        title=master.title,
-        body=master.ctx.base_ir,
-    )
-    payload = build_provision_state_response(
-        timelines=master.timelines,
-        migration_events=tuple(master.migration_events or ()),
+    payload = resolve_provision_state(
         statute_id=args.statute_id,
         jurisdiction=args.jurisdiction,
         provision=args.provision,
@@ -68,8 +48,7 @@ async def _main(args: Any) -> None:
         query_type=args.query_type,
         territory=args.territory,
         include_ir=args.include_ir,
-        title=master.title,
-        base=base_ir,
+        status_stream=sys.stderr,
     )
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2))
 
@@ -447,30 +426,52 @@ def _source_locator_payload(
     source_sid = statute_id
     artifact_kind = "base_statute_xml"
     locator_status = "base_statute_locator"
+    source_quote = _source_quote_payload(version)
     if version is not None and version.source is not None and version.source.statute_id:
         source_sid = version.source.statute_id
         artifact_kind = "operation_source_statute_xml"
         locator_status = "operation_source_locator"
     if jurisdiction != "fi":
         return None
+    detail: dict[str, Any] = {
+        "locator_status": locator_status,
+        "selected_target_address": str(address),
+        "precision": "document_plus_resolved_target_legal_address",
+        "target_legal_address_kind": "lawvm_resolved_target",
+        "xpath": "unavailable",
+        "byte_span": "unavailable",
+    }
+    if source_quote is not None:
+        detail["source_witness"] = source_quote
     locator = SourceLocator(
         jurisdiction=jurisdiction,
         artifact_kind=artifact_kind,
         source_id=f"finlex:{artifact_kind}:{source_sid}",
         document_uri=statute_url(source_sid),
         structural_path=f"lawvm-target:{address}",
+        quote_hash=source_quote["quote_hash"] if source_quote is not None else "",
         statute_id=source_sid,
         normalization_policy="finlex_statute_document_locator.v1",
-        detail={
-            "locator_status": locator_status,
-            "selected_target_address": str(address),
-            "precision": "document_plus_resolved_target_legal_address",
-            "target_legal_address_kind": "lawvm_resolved_target",
-            "xpath": "unavailable",
-            "byte_span": "unavailable",
-        },
+        detail=detail,
     )
     return locator.to_dict()
+
+
+def _source_quote_payload(version: ProvisionVersion | None) -> dict[str, Any] | None:
+    if version is None or version.source is None:
+        return None
+    raw_text = str(version.source.raw_text or "").strip()
+    if not raw_text:
+        return None
+    bounded = raw_text[:1000]
+    return {
+        "kind": "operation_source_raw_text",
+        "quote": bounded,
+        "quote_hash": _sha256_text(raw_text),
+        "quote_hash_semantics": "sha256(full OperationSource.raw_text)",
+        "quote_truncated": len(raw_text) > len(bounded),
+        "precision": "bounded_source_quote",
+    }
 
 
 def _engine_payload() -> dict[str, str]:
@@ -485,7 +486,7 @@ def _engine_payload() -> dict[str, str]:
     }
 
 
-def _unsupported_jurisdiction_payload(
+def unsupported_jurisdiction_payload(
     *,
     jurisdiction: str,
     statute_id: str,
@@ -518,7 +519,11 @@ def _require_address(resolution: AddressResolution) -> LegalAddress:
 
 def _sha256_canonical(value: Mapping[str, Any]) -> str:
     encoded = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    return _sha256_text(encoded)
+
+
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _lawvm_code_identity() -> dict[str, str]:

@@ -4,6 +4,7 @@ from lawvm.core.ir import IRNode, LegalAddress, ProvisionTimeline, ProvisionVers
 from lawvm.core.ir_helpers import irnode_content_hash
 from lawvm.core.provenance import MigrationEvent, OperationSource
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.provision_state import resolve_provision_state
 from lawvm.tools.provision_state import build_provision_state_response, resolve_address
 
 
@@ -24,6 +25,7 @@ def _timeline(*, expires: str = "") -> dict[LegalAddress, ProvisionTimeline]:
             title="Amending Act",
             enacted="2019-12-01",
             effective="2020-01-01",
+            raw_text="Section 1 is replaced with a new duty.",
         ),
         content_hash=irnode_content_hash(content),
     )
@@ -55,6 +57,12 @@ def test_provision_state_response_exposes_text_hash_and_temporal_pin() -> None:
     assert payload["source_locator"]["structural_path"] == "lawvm-target:chapter:1/section:1"
     assert payload["source_locator"]["detail"]["precision"] == "document_plus_resolved_target_legal_address"
     assert payload["source_locator"]["detail"]["target_legal_address_kind"] == "lawvm_resolved_target"
+    assert payload["source_locator"]["quote_hash"]
+    assert payload["source_locator"]["detail"]["source_witness"]["kind"] == "operation_source_raw_text"
+    assert payload["source_locator"]["detail"]["source_witness"]["quote"] == (
+        "Section 1 is replaced with a new duty."
+    )
+    assert payload["source_locator"]["detail"]["source_witness"]["quote_truncated"] is False
     assert payload["lineage"]["status"] == "self_only"
     assert payload["lineage"]["address_chain"] == [payload["resolved_address"]]
     assert payload["engine"]["producer"] == "lawvm"
@@ -157,3 +165,17 @@ def test_provision_state_response_uses_base_source_locator_for_sourceless_base_v
     assert payload["source_locator"]["artifact_kind"] == "base_statute_xml"
     assert payload["source_locator"]["document_uri"] == "finlex://sd/2000/1/fin/main.xml"
     assert payload["source_locator"]["structural_path"] == "lawvm-target:section:1"
+    assert "source_witness" not in payload["source_locator"]["detail"]
+
+
+def test_public_resolve_provision_state_reports_unsupported_jurisdiction_without_replay() -> None:
+    payload = resolve_provision_state(
+        statute_id="ukpga/2000/1",
+        jurisdiction="uk",
+        provision="section:1",
+        as_of="2024-01-01",
+    )
+
+    assert payload["schema"] == "lawvm.provision_state.v1"
+    assert payload["status"] == "unsupported_jurisdiction"
+    assert payload["supported_jurisdictions"] == ["fi"]
