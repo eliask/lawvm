@@ -1,7 +1,7 @@
 {
   "registry_id": "lawvm.fi.v1.evidence_policy",
   "registry_version": "v0",
-  "registry_hash": "439cafbb00dd0d31aa219179c78b2f5a4e89dce20dd23c0f36d6b9ed32e82b44",
+  "registry_hash": "d04259ad0a4d9f7db7676e37cced8736295cb7fb3990bd2581d21a6bf7b5cb59",
   "predicates": [
     {
       "predicate_id": "fi.v1.INLINE_STATUTE_RESOLUTION.strict",
@@ -73,6 +73,230 @@
           "op": "not_retracted",
           "args": {
             "subject": "self"
+          }
+        }
+      ]
+    },
+    {
+      "predicate_id": "fi.v1.CORRIGENDUM_SOURCE_CORRECTION.strict",
+      "claim_kind": "fi.v1.CORRIGENDUM_SOURCE_CORRECTION",
+      "required": [
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "span_verified"
+          }
+        },
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "entailment_verified"
+          }
+        },
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "reviewed"
+          }
+        }
+      ],
+      "forbidden": [
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "retracted"
+          }
+        }
+      ]
+    },
+    {
+      "predicate_id": "fi.v1.PAYLOAD_COMPLETENESS_RESOLUTION.strict",
+      "claim_kind": "fi.v1.PAYLOAD_COMPLETENESS_RESOLUTION",
+      "required": [
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "span_verified"
+          }
+        },
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "entailment_verified"
+          }
+        },
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "reviewed"
+          }
+        }
+      ],
+      "forbidden": [
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "retracted"
+          }
+        }
+      ]
+    },
+    {
+      "predicate_id": "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION.strict",
+      "claim_kind": "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+      "required": [
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "span_verified"
+          }
+        },
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "entailment_verified"
+          }
+        },
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "reviewed"
+          }
+        }
+      ],
+      "forbidden": [
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "retracted"
+          }
+        }
+      ]
+    },
+    {
+      "predicate_id": "fi.v1.CONTAINER_MEMBERSHIP_RESOLUTION.strict",
+      "claim_kind": "fi.v1.CONTAINER_MEMBERSHIP_RESOLUTION",
+      "required": [
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "span_verified"
+          }
+        },
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "entailment_verified"
+          }
+        },
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "reviewed"
+          }
+        }
+      ],
+      "forbidden": [
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "retracted"
+          }
+        }
+      ]
+    },
+    {
+      "predicate_id": "fi.v1.SOURCE_CHAIN_RESOLUTION.strict",
+      "claim_kind": "fi.v1.SOURCE_CHAIN_RESOLUTION",
+      "required": [
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "span_verified"
+          }
+        },
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "entailment_verified"
+          }
+        },
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "reviewed"
+          }
+        }
+      ],
+      "forbidden": [
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "retracted"
+          }
+        }
+      ]
+    },
+    {
+      "predicate_id": "fi.v1.TEMPORAL_BASE_SELECTION_RESOLUTION.strict",
+      "claim_kind": "fi.v1.TEMPORAL_BASE_SELECTION_RESOLUTION",
+      "required": [
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "span_verified"
+          }
+        },
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "entailment_verified"
+          }
+        },
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "reviewed"
+          }
+        }
+      ],
+      "forbidden": [
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "retracted"
+          }
+        }
+      ]
+    },
+    {
+      "predicate_id": "fi.v1.MUTATION_BOUNDARY_RESOLUTION.strict",
+      "claim_kind": "fi.v1.MUTATION_BOUNDARY_RESOLUTION",
+      "required": [
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "span_verified"
+          }
+        },
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "entailment_verified"
+          }
+        },
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "reviewed"
+          }
+        }
+      ],
+      "forbidden": [
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "retracted"
           }
         }
       ]
