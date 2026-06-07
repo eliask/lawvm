@@ -20,6 +20,116 @@ from lawvm.core.frozen_values import freeze_mapping
 VerifySeverity = Literal["error", "warning", "info"]
 VERIFY_SEVERITIES = frozenset({"error", "warning", "info"})
 
+CurrentTextGateStatus = Literal[
+    "yes",
+    "no",
+    "unknown",
+    "not_applicable",
+    "requires_public_html_review",
+]
+CURRENT_TEXT_GATE_STATUSES = frozenset(
+    {
+        "yes",
+        "no",
+        "unknown",
+        "not_applicable",
+        "requires_public_html_review",
+    }
+)
+CURRENT_TEXT_GATE_FIELDS = (
+    "current_body_text_contains_target_phrase",
+    "current_status_page_check",
+    "source_explicitly_omits_or_repeals_same_text",
+    "commencement_in_force",
+    "same_territorial_extent",
+    "no_later_reinsertion_revival_or_replacement_found",
+    "target_phrase_in_operative_text_not_commentary",
+)
+
+
+@dataclass(frozen=True)
+class CurrentTextVerificationMatrix:
+    """A-G gate for source-backed current-text review packets.
+
+    This is a reporting/adjudication contract only. It does not authorize replay
+    and does not classify an official current representation as wrong by itself.
+    """
+
+    current_body_text_contains_target_phrase: CurrentTextGateStatus
+    current_status_page_check: CurrentTextGateStatus
+    source_explicitly_omits_or_repeals_same_text: CurrentTextGateStatus
+    commencement_in_force: CurrentTextGateStatus
+    same_territorial_extent: CurrentTextGateStatus
+    no_later_reinsertion_revival_or_replacement_found: CurrentTextGateStatus
+    target_phrase_in_operative_text_not_commentary: CurrentTextGateStatus
+    detail: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for field_name in CURRENT_TEXT_GATE_FIELDS:
+            object.__setattr__(
+                self,
+                field_name,
+                _current_text_gate_status(field_name, getattr(self, field_name)),
+            )
+        if not isinstance(self.detail, Mapping):
+            raise ValueError("CurrentTextVerificationMatrix.detail must be a mapping")
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
+
+    @property
+    def blocking_gate_names(self) -> tuple[str, ...]:
+        """Gate names that block an email-safe/public-proof candidate."""
+
+        blocked: list[str] = []
+        for field_name in CURRENT_TEXT_GATE_FIELDS:
+            status = getattr(self, field_name)
+            if field_name == "commencement_in_force":
+                if status not in {"yes", "not_applicable"}:
+                    blocked.append(field_name)
+                continue
+            if status != "yes":
+                blocked.append(field_name)
+        return tuple(blocked)
+
+    @property
+    def is_email_safe(self) -> bool:
+        return not self.blocking_gate_names
+
+    def to_dict(self) -> dict[str, Any]:
+        data = {field_name: getattr(self, field_name) for field_name in CURRENT_TEXT_GATE_FIELDS}
+        data["blocking_gate_names"] = list(self.blocking_gate_names)
+        data["is_email_safe"] = self.is_email_safe
+        data["detail"] = dict(self.detail)
+        return data
+
+
+def current_text_verification_matrix_from_mapping(
+    matrix: Mapping[str, Any],
+) -> CurrentTextVerificationMatrix:
+    """Build a typed current-text verification matrix from report rows."""
+
+    return CurrentTextVerificationMatrix(
+        current_body_text_contains_target_phrase=matrix.get(
+            "current_body_text_contains_target_phrase",
+            "unknown",
+        ),
+        current_status_page_check=matrix.get("current_status_page_check", "unknown"),
+        source_explicitly_omits_or_repeals_same_text=matrix.get(
+            "source_explicitly_omits_or_repeals_same_text",
+            "unknown",
+        ),
+        commencement_in_force=matrix.get("commencement_in_force", "unknown"),
+        same_territorial_extent=matrix.get("same_territorial_extent", "unknown"),
+        no_later_reinsertion_revival_or_replacement_found=matrix.get(
+            "no_later_reinsertion_revival_or_replacement_found",
+            "unknown",
+        ),
+        target_phrase_in_operative_text_not_commentary=matrix.get(
+            "target_phrase_in_operative_text_not_commentary",
+            "unknown",
+        ),
+        detail=matrix.get("detail", {}) if isinstance(matrix.get("detail", {}), Mapping) else {},
+    )
+
 
 @dataclass(frozen=True)
 class VerifyIssue:
@@ -207,3 +317,15 @@ class VerifySummary:
 def _require_field(value: str, name: str) -> None:
     if not str(value or "").strip():
         raise ValueError(f"{name} must be non-empty")
+
+
+def _current_text_gate_status(field_name: str, value: Any) -> CurrentTextGateStatus:
+    text = str(value or "").strip()
+    if text == "n/a":
+        text = "not_applicable"
+    if text not in CURRENT_TEXT_GATE_STATUSES:
+        raise ValueError(
+            f"CurrentTextVerificationMatrix.{field_name} must be one of "
+            f"{sorted(CURRENT_TEXT_GATE_STATUSES)}"
+        )
+    return text

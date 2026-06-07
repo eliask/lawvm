@@ -101,11 +101,13 @@ from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
 from lawvm.core.replay_contracts import ReplayAmendmentStep, ReplayCheckpoint, ReplaySummary, ReplayTextView
 from lawvm.core.verification_contracts import (
     CoverageAttribution,
+    CurrentTextVerificationMatrix,
     DivergenceRecord,
     DivergencePartition,
     FilteredDivergenceRecord,
     VerifyIssue,
     VerifySummary,
+    current_text_verification_matrix_from_mapping,
 )
 
 
@@ -220,6 +222,71 @@ def test_source_completeness_report_projects_proof_surface_rows() -> None:
     assert report_data["rows"][0]["replay_authorized"] is False
     assert proof_surface["surface_kind"] == "source_completeness_status"
     assert proof_surface["rows"][0]["row_kind"] == "source_completeness_status"
+
+
+def test_current_text_verification_matrix_marks_email_safe_candidate() -> None:
+    matrix = CurrentTextVerificationMatrix(
+        current_body_text_contains_target_phrase="yes",
+        current_status_page_check="yes",
+        source_explicitly_omits_or_repeals_same_text="yes",
+        commencement_in_force="not_applicable",
+        same_territorial_extent="yes",
+        no_later_reinsertion_revival_or_replacement_found="yes",
+        target_phrase_in_operative_text_not_commentary="yes",
+    )
+
+    data = matrix.to_dict()
+
+    assert matrix.is_email_safe is True
+    assert data["blocking_gate_names"] == []
+    assert data["commencement_in_force"] == "not_applicable"
+
+
+def test_current_text_verification_matrix_blocks_public_html_gap() -> None:
+    matrix = current_text_verification_matrix_from_mapping(
+        {
+            "current_body_text_contains_target_phrase": "yes",
+            "current_status_page_check": "requires_public_html_review",
+            "source_explicitly_omits_or_repeals_same_text": "yes",
+            "commencement_in_force": "yes",
+            "same_territorial_extent": "yes",
+            "no_later_reinsertion_revival_or_replacement_found": "yes",
+            "target_phrase_in_operative_text_not_commentary": "yes",
+        }
+    )
+
+    assert matrix.is_email_safe is False
+    assert matrix.blocking_gate_names == ("current_status_page_check",)
+
+
+def test_current_text_verification_matrix_normalizes_not_applicable_alias() -> None:
+    matrix = current_text_verification_matrix_from_mapping(
+        {
+            "current_body_text_contains_target_phrase": "yes",
+            "current_status_page_check": "yes",
+            "source_explicitly_omits_or_repeals_same_text": "yes",
+            "commencement_in_force": "n/a",
+            "same_territorial_extent": "yes",
+            "no_later_reinsertion_revival_or_replacement_found": "yes",
+            "target_phrase_in_operative_text_not_commentary": "yes",
+        }
+    )
+
+    assert matrix.commencement_in_force == "not_applicable"
+    assert matrix.is_email_safe is True
+
+
+def test_current_text_verification_matrix_rejects_unknown_gate_status() -> None:
+    with pytest.raises(ValueError, match="same_territorial_extent"):
+        CurrentTextVerificationMatrix(
+            current_body_text_contains_target_phrase="yes",
+            current_status_page_check="yes",
+            source_explicitly_omits_or_repeals_same_text="yes",
+            commencement_in_force="yes",
+            same_territorial_extent="probably",
+            no_later_reinsertion_revival_or_replacement_found="yes",
+            target_phrase_in_operative_text_not_commentary="yes",
+        )
 
 
 def test_kernel_authorization_projection_does_not_promote_policy_success_by_default() -> None:

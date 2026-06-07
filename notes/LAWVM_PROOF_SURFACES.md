@@ -83,6 +83,7 @@ src/lawvm/core/frontend_contract.py
 src/lawvm/core/frontend_phase_surface.py
 src/lawvm/core/token_tape.py
 src/lawvm/core/payload_elaboration.py
+src/lawvm/core/verification_contracts.py
 ```
 
 Frontend surfaces should reuse these objects before creating local report
@@ -391,7 +392,35 @@ Rules:
 
 ---
 
-## 12. Finland Reference Surface
+## 12. CurrentTextVerificationMatrix
+
+`CurrentTextVerificationMatrix` is the reusable A-G gate for source-backed
+current-text review packets.
+
+The gates are:
+
+```text
+current_body_text_contains_target_phrase
+current_status_page_check
+source_explicitly_omits_or_repeals_same_text
+commencement_in_force
+same_territorial_extent
+no_later_reinsertion_revival_or_replacement_found
+target_phrase_in_operative_text_not_commentary
+```
+
+Rules:
+
+- The matrix is a verification/reporting object, not replay authority.
+- Public-facing candidates should pass every gate before being treated as
+  email-safe; `commencement_in_force=not_applicable` is acceptable.
+- `requires_public_html_review`, `unknown`, and `no` remain blockers.
+- Passing the matrix still means "source/current-text contrast worth review",
+  not a final legal conclusion.
+
+---
+
+## 13. Finland Reference Surface
 
 Finland is the reference compiler frontend. Its proof surfaces should expose
 the clean compiler chain without hiding recoveries:
@@ -438,7 +467,7 @@ Rules:
 
 ---
 
-## 13. Adoption Rule
+## 14. Adoption Rule
 
 Before adding a new local status row, report row, workqueue row, candidate row,
 or diagnostic envelope, check whether it is one of:
@@ -452,6 +481,7 @@ CandidateSetCertificate
 SourceWitness / DigestWitness
 MutationBoundaryProof
 AgreementResidual
+CurrentTextVerificationMatrix
 TemporalResolutionEvidence
 SourceBundlePolicy / SourceAcquisitionAssertion
 FrontendPhaseSurface
@@ -464,7 +494,7 @@ Do not change replay semantics merely to satisfy a proof-surface abstraction.
 
 ---
 
-## 14. Completion Rule
+## 15. Completion Rule
 
 A frontend is not complete because a score is high.
 
