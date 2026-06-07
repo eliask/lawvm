@@ -71,6 +71,7 @@ Subcommands:
     follow-refs --start REF         Multi-hop reference traversal from a provision.
     pit-timeline --provision REF    Provision amendment history (index-backed).
     pit-diff --provision REF        Provision diff between two PIT dates (index-backed).
+    provision-state <statute_id>    Stable PIT provision-state JSON seam output.
     telos [--statute STATUTE_ID]    Query telos/purpose sections (feature #5).
     claim propose|accept|reject|retract|list|show  Manual compilation claims (Slices 1+2).
 
@@ -2889,6 +2890,51 @@ def _build_parser() -> argparse.ArgumentParser:
             "'governing' (Q2, default) includes retroactive amendments; "
             "'in_force' (Q1) returns only what was enacted by that date"
         ),
+    )
+
+    # --- provision-state ---
+    provision_state_p = sub.add_parser(
+        "provision-state",
+        parents=_P,
+        help="stable PIT provision-state JSON seam output",
+        description=(
+            "Resolve one provision at one point in time and emit a stable JSON "
+            "state pin for consumers such as MeVM. Currently backed by Finnish "
+            "live replay timelines."
+        ),
+    )
+    provision_state_p.add_argument("statute_id", help="statute ID, e.g. 2009/953")
+    provision_state_p.add_argument(
+        "--provision",
+        required=True,
+        metavar="ADDR",
+        help="provision address, e.g. 'section:4' or 'chapter:1/section:4'",
+    )
+    provision_state_p.add_argument(
+        "--as-of",
+        required=True,
+        metavar="DATE",
+        help="PIT date, e.g. '2024-01-01'",
+    )
+    provision_state_p.add_argument(
+        "--query-type",
+        metavar="TYPE",
+        default="governing",
+        choices=["governing", "in_force"],
+        help=(
+            "PIT query semantics: 'governing' (default) includes retroactive amendments; "
+            "'in_force' returns only what was enacted by that date"
+        ),
+    )
+    provision_state_p.add_argument(
+        "--territory",
+        metavar="TERRITORY",
+        help="explicit territory/scope selector when timeline selection requires it",
+    )
+    provision_state_p.add_argument(
+        "--include-ir",
+        action="store_true",
+        help="include structured IRNode JSON for the selected provision",
     )
 
     # --- export ---
@@ -8967,6 +9013,11 @@ def main() -> None:
         from lawvm.tools.timeline import main as timeline_main
 
         timeline_main(args)
+
+    elif args.command == "provision-state":
+        from lawvm.tools.provision_state import main as provision_state_main
+
+        provision_state_main(args)
 
     elif args.command == "export":
         from lawvm.tools.export import main as export_main
