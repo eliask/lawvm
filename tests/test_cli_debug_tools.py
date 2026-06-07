@@ -123,6 +123,7 @@ def test_cli_parser_accepts_new_debug_commands(cli_parser) -> None:
             "--show-replay-meta",
             "--show-temporal-events",
             "--show-failed-ops",
+            "--failed-only",
             "--show-findings",
             "--contains",
             "14 b",
@@ -138,6 +139,7 @@ def test_cli_parser_accepts_new_debug_commands(cli_parser) -> None:
     assert args.show_replay_meta is True
     assert args.show_temporal_events is True
     assert args.show_failed_ops is True
+    assert args.failed_only is True
     assert args.show_findings is True
     assert args.contains == "14 b"
     assert args.limit == 7
@@ -1282,6 +1284,75 @@ def test_replay_debug_main_prints_filtered_replay_meta_and_temporal_events(capsy
     assert "Replay meta:" in out
     assert "cutoff_date: 2024-12-19" in out
     assert "source_pathologies [1]:" in out
+
+
+def test_replay_debug_failed_only_prints_filtered_failed_ops(capsys, monkeypatch) -> None:
+    def fake_replay_xml(*args, **kwargs):
+        compiled_ops_out = kwargs.get("compiled_ops_out")
+        failed_ops_out = kwargs.get("failed_ops_out")
+        assert compiled_ops_out is not None
+        compiled_ops_out.append(
+            {
+                "source_statute": "2020/162",
+                "source_title": "Source title",
+                "sequence": 1,
+                "action": "replace",
+                "target": {"container": "section", "section": "4"},
+            }
+        )
+        assert failed_ops_out is not None
+        failed_ops_out.extend(
+            [
+                SimpleNamespace(
+                    amendment_id="2020/162",
+                    description="REPLACE 4 § 1 mom",
+                    reason="no deterministic path",
+                    reason_code="no_deterministic_path",
+                    target_section="4",
+                    target_chapter=None,
+                    target_unit_kind="section",
+                ),
+                SimpleNamespace(
+                    amendment_id="2021/999",
+                    description="REPLACE 99 § 1 mom",
+                    reason="other",
+                    reason_code="other",
+                    target_section="99",
+                    target_chapter=None,
+                    target_unit_kind="section",
+                ),
+            ]
+        )
+        return SimpleNamespace(title="Replay title")
+
+    monkeypatch.setattr(replay_debug, "replay_xml", fake_replay_xml)
+
+    replay_debug.main(
+        Namespace(
+            statute_id="1995/1552",
+            source="2020/162",
+            target=None,
+            mode="legal_pit",
+            show_clause_text=False,
+            show_source_blocks=False,
+            show_replay_ops=False,
+            show_replay_meta=False,
+            show_temporal_events=False,
+            show_failed_ops=False,
+            failed_only=True,
+            show_findings=False,
+            contains="4 §",
+            limit=10,
+            json=False,
+        )
+    )
+
+    out = capsys.readouterr().out
+    assert "Failed  : total=2 matched=1 shown=1" in out
+    assert "Failed ops (1/1 shown):" in out
+    assert "REPLACE 4 § 1 mom" in out
+    assert "REPLACE 99 § 1 mom" not in out
+    assert "Compiled ops:" not in out
 
 
 def test_replay_debug_bundle_can_include_filtered_findings(monkeypatch) -> None:

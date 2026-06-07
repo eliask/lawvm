@@ -133,11 +133,13 @@ def build_replay_debug_bundle(
     show_replay_meta: bool = False,
     show_temporal_events: bool = False,
     show_failed_ops: bool = False,
+    failed_only: bool = False,
     show_findings: bool = False,
     contains: Optional[str] = None,
     limit: int = 10,
 ) -> Dict[str, Any]:
     """Build a replay-debug report for one Finnish statute."""
+    show_failed_ops = show_failed_ops or failed_only
     compiled_ops: list[dict[str, Any]] = []
     lo_ops_out: list[Any] | None = [] if show_replay_ops else None
     replay_meta_out: dict[str, Any] | None = {} if show_replay_meta else None
@@ -190,9 +192,14 @@ def build_replay_debug_bundle(
     if temporal_events_out is not None:
         temporal_events = _filter_payload_items(list(temporal_events_out), source, target, contains)[:limit]
 
+    failed_ops_total = 0
+    failed_ops_matched = 0
     failed_ops: list[Any] = []
     if failed_ops_out is not None:
-        failed_ops = _filter_payload_items(list(failed_ops_out), source, target, contains)[:limit]
+        failed_ops_total = len(failed_ops_out)
+        matched_failed_ops = _filter_payload_items(list(failed_ops_out), source, target, contains)
+        failed_ops_matched = len(matched_failed_ops)
+        failed_ops = matched_failed_ops[:limit]
 
     findings: list[Any] = []
     if show_findings:
@@ -207,8 +214,12 @@ def build_replay_debug_bundle(
         "contains": contains or "",
         "ops_total": len(compiled_ops),
         "ops_shown": len(ops),
-        "compiled_ops": ops,
-        "replay_ops": replay_ops,
+        "failed_only": failed_only,
+        "failed_ops_total": failed_ops_total,
+        "failed_ops_matched": failed_ops_matched,
+        "failed_ops_shown": len(failed_ops),
+        "compiled_ops": [] if failed_only else ops,
+        "replay_ops": [] if failed_only else replay_ops,
     }
     if replay_meta is not None:
         report["replay_meta"] = replay_meta
@@ -241,6 +252,13 @@ def _format_text(bundle: Dict[str, Any]) -> str:
         f"Mode     : {bundle['mode']}",
         f"Ops total: {bundle['ops_total']}  shown: {bundle['ops_shown']}",
     ]
+    if bundle.get("failed_only"):
+        lines.append(
+            "Failed  : "
+            f"total={bundle.get('failed_ops_total', 0)} "
+            f"matched={bundle.get('failed_ops_matched', 0)} "
+            f"shown={bundle.get('failed_ops_shown', 0)}"
+        )
     if bundle.get("source"):
         lines.append(f"Filter   : source={bundle['source']}")
     if bundle.get("target"):
@@ -268,27 +286,28 @@ def _format_text(bundle: Dict[str, Any]) -> str:
         for block in bundle["source_blocks"]:
             lines.append(f"  [{block.get('name', '')}] {block.get('text', '')}")
 
-    lines.append("")
-    lines.append("Compiled ops:")
-    if not bundle.get("compiled_ops"):
-        lines.append("  (no compiled ops match filters)")
-    else:
-        current_source = None
-        for op in bundle["compiled_ops"]:
-            src = op.get("source_statute", "?")
-            title = op.get("source_title", "")[:50]
-            seq = op.get("sequence", "?")
-            action = str(op.get("action", "?")).upper()
-            target = op.get("target", {})
-            addr = _fmt_target(target)
+    if not bundle.get("failed_only"):
+        lines.append("")
+        lines.append("Compiled ops:")
+        if not bundle.get("compiled_ops"):
+            lines.append("  (no compiled ops match filters)")
+        else:
+            current_source = None
+            for op in bundle["compiled_ops"]:
+                src = op.get("source_statute", "?")
+                title = op.get("source_title", "")[:50]
+                seq = op.get("sequence", "?")
+                action = str(op.get("action", "?")).upper()
+                target = op.get("target", {})
+                addr = _fmt_target(target)
 
-            if src != current_source:
-                lines.append(f"--- {src}  {title}")
-                current_source = src
+                if src != current_source:
+                    lines.append(f"--- {src}  {title}")
+                    current_source = src
 
-            lines.append(f"  [{seq:3}] {action:<8}  {addr}")
+                lines.append(f"  [{seq:3}] {action:<8}  {addr}")
 
-    if bundle.get("replay_ops"):
+    if not bundle.get("failed_only") and bundle.get("replay_ops"):
         lines.append("")
         lines.append("Replay ops:")
         current_source = None
@@ -307,7 +326,7 @@ def _format_text(bundle: Dict[str, Any]) -> str:
             lines.append(f"  [{seq:3}] {action:<8}  {target}{suffix}")
             if op.get("payload_preview"):
                 lines.append(f"        {op['payload_preview']}")
-    elif not bundle.get("compiled_ops"):
+    elif not bundle.get("failed_only") and not bundle.get("compiled_ops"):
         lines.append("")
         lines.append("(no operations match filters)")
 
@@ -332,9 +351,16 @@ def _format_text(bundle: Dict[str, Any]) -> str:
 
     if bundle.get("failed_ops"):
         lines.append("")
-        lines.append("Failed ops:")
+        lines.append(
+            "Failed ops "
+            f"({bundle.get('failed_ops_shown', len(bundle['failed_ops']))}/"
+            f"{bundle.get('failed_ops_matched', len(bundle['failed_ops']))} shown):"
+        )
         for op in bundle["failed_ops"]:
             lines.append(f"  - {json.dumps(op, ensure_ascii=False, sort_keys=True, default=str)}")
+    elif bundle.get("failed_only"):
+        lines.append("")
+        lines.append("Failed ops: (none match filters)")
 
     if bundle.get("findings"):
         lines.append("")
@@ -357,6 +383,7 @@ def main(args) -> None:
         show_replay_meta=getattr(args, "show_replay_meta", False),
         show_temporal_events=getattr(args, "show_temporal_events", False),
         show_failed_ops=getattr(args, "show_failed_ops", False),
+        failed_only=getattr(args, "failed_only", False),
         show_findings=getattr(args, "show_findings", False),
         contains=getattr(args, "contains", None),
         limit=getattr(args, "limit", 10),

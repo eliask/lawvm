@@ -2616,6 +2616,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="print filtered failed operations emitted during replay",
     )
     replay_debug_p.add_argument(
+        "--failed-only",
+        action="store_true",
+        help="print only filtered replay failed operations and counts",
+    )
+    replay_debug_p.add_argument(
         "--show-findings",
         action="store_true",
         help="print filtered typed findings emitted during replay",
