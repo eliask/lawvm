@@ -6,10 +6,7 @@ Mandatory acceptance criterion:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
-
-import pytest
 
 import lawvm.finland.claim_kinds  # noqa: F401
 
@@ -130,6 +127,37 @@ class TestValidateClaimsCLI:
         assert rc == 0
         out = capsys.readouterr().out
         assert "no assertions" in out
+
+    def test_validate_all_fetches_source_bytes_for_each_assertion(self, tmp_path: Path, monkeypatch):
+        """--all uses provider-backed source bytes, not empty bytes."""
+        from lawvm.core.manual_claims.source_provider import MockSourceProvider, register_source_provider
+        from lawvm.tools.cmd_validate_claims import cmd_validate_all
+
+        store = _make_store(tmp_path)
+        _file_assertion(store)
+        provider_bytes = b"lain 1234/2020 on voimassa"
+        register_source_provider("fi", MockSourceProvider(canned_bytes=provider_bytes))
+
+        seen_source_bytes = []
+
+        def _record_source_bytes(assertion, store, source_bytes=b"", *, verbose=True):
+            seen_source_bytes.append(source_bytes)
+            return True
+
+        monkeypatch.setattr(
+            "lawvm.tools.cmd_validate_claims._validate_one_assertion",
+            _record_source_bytes,
+        )
+
+        rc = cmd_validate_all(_make_args(
+            graph_store_root=str(tmp_path / "provenance_graph"),
+            kind=None,
+            missing_attestation_kind=None,
+            all=True,
+        ))
+
+        assert rc == 0
+        assert seen_source_bytes == [provider_bytes]
 
     def test_validate_does_not_mutate_assertion(self, tmp_path: Path):
         """Validate emits new attestations; assertion content hash is unchanged."""

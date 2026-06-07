@@ -233,6 +233,45 @@ def _validate_one_assertion(
     return all_passed
 
 
+def _source_bytes_for_assertion(assertion: ProvenanceAssertion) -> bytes:
+    """Fetch source bytes for assertion validators.
+
+    The validator contract is identical for single-claim and bulk validation:
+    span/entailment checks must run against the cited XML/source artifact, not
+    an empty byte string. Missing providers or missing source stay visible as
+    warnings and cause the validators to fail normally.
+    """
+
+    from lawvm.core.manual_claims.primitive import ClaimScope
+    from lawvm.core.manual_claims.source_provider import _PROVIDERS
+
+    jurisdiction = str(assertion.jurisdiction or "fi")
+    source_provider = _PROVIDERS.get(jurisdiction)
+    if source_provider is None:
+        print(
+            f"  warning: no source provider for jurisdiction {jurisdiction!r} — validators run on empty bytes",
+            file=sys.stderr,
+        )
+        return b""
+
+    statute_id = str(assertion.scope.get("statute_id", ""))
+    provision_ref = str(assertion.scope.get("provision_ref", "")) or None
+    scope = ClaimScope(
+        statute_id=statute_id,
+        provision_ref=provision_ref,
+        valid_at_start=assertion.valid_at.start,
+        valid_at_end=assertion.valid_at.end,
+    )
+    fetched = source_provider.fetch(scope)
+    if fetched is None:
+        print(
+            f"  warning: source not found for {statute_id!r} — validators will run on empty bytes",
+            file=sys.stderr,
+        )
+        return b""
+    return fetched.bytes_
+
+
 def cmd_validate_one(args: object) -> int:
     assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]
     graph_store_root = _resolve_graph_store_root(args)
@@ -246,31 +285,7 @@ def cmd_validate_one(args: object) -> int:
     d = json.loads(obj_path.read_text(encoding="utf-8"))
     assertion = _deserialize_assertion(d)
 
-    # Fetch source bytes for span/entailment validators (same strategy as propose-claims).
-    from lawvm.core.manual_claims.primitive import ClaimScope
-
-    statute_id = str(assertion.scope.get("statute_id", ""))
-    provision_ref = str(assertion.scope.get("provision_ref", "")) or None
-
-    source_bytes: bytes = b""
-    jurisdiction = str(assertion.jurisdiction or "fi")
-    from lawvm.core.manual_claims.source_provider import _PROVIDERS
-    source_provider = _PROVIDERS.get(jurisdiction)
-    if source_provider is None:
-        print(f"  warning: no source provider for jurisdiction {jurisdiction!r} — validators run on empty bytes", file=sys.stderr)
-    if source_provider is not None:
-        scope = ClaimScope(
-            statute_id=statute_id,
-            provision_ref=provision_ref,
-            valid_at_start=assertion.valid_at.start,
-            valid_at_end=assertion.valid_at.end,
-        )
-        fetched = source_provider.fetch(scope)
-        if fetched is not None:
-            source_bytes = fetched.bytes_
-        else:
-            print(f"  warning: source not found for {statute_id!r} — validators will run on empty bytes", file=sys.stderr)
-
+    source_bytes = _source_bytes_for_assertion(assertion)
     passed = _validate_one_assertion(assertion, store, source_bytes, verbose=True)
     _write_live_snapshot(store)
     return 0 if passed else 1
@@ -300,7 +315,8 @@ def cmd_validate_all(args: object) -> int:
                 continue
 
         print(f"\nvalidating {assertion.assertion_id[:32]}... ({assertion.kind})")
-        passed = _validate_one_assertion(assertion, store, b"", verbose=True)
+        source_bytes = _source_bytes_for_assertion(assertion)
+        passed = _validate_one_assertion(assertion, store, source_bytes, verbose=True)
         if not passed:
             all_ok = False
         validated += 1
