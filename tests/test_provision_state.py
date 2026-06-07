@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from lawvm.core.ir import IRNode, LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.ir_helpers import irnode_content_hash
-from lawvm.core.provenance import OperationSource
+from lawvm.core.provenance import MigrationEvent, OperationSource
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.tools.provision_state import build_provision_state_response, resolve_address
 
@@ -49,6 +49,11 @@ def test_provision_state_response_exposes_text_hash_and_temporal_pin() -> None:
     assert payload["version"]["effective"] == "2020-01-01"
     assert payload["version"]["enacted"] == "2019-12-01"
     assert payload["source"]["statute_id"] == "2019/1"
+    assert payload["lineage"]["status"] == "self_only"
+    assert payload["lineage"]["address_chain"] == [payload["resolved_address"]]
+    assert payload["engine"]["producer"] == "lawvm"
+    assert payload["engine"]["interface"] == "lawvm provision-state"
+    assert {"build_id", "git_commit", "git_dirty", "repository"} <= set(payload["engine"])
 
 
 def test_derived_state_hash_changes_when_temporal_metadata_changes_without_text_change() -> None:
@@ -88,3 +93,29 @@ def test_address_resolution_reports_ambiguous_suffix_without_order_dependent_cho
         "chapter:2/section:1",
     )
 
+
+def test_provision_state_response_exposes_lineage_chain_from_migration_events() -> None:
+    migration = MigrationEvent(
+        event_id="renumber-1",
+        kind="renumber",
+        from_address=LegalAddress(path=(("chapter", "1"), ("section", "1"))),
+        to_address=LegalAddress(path=(("chapter", "1"), ("section", "2"))),
+        effective="2020-06-01",
+        source_statute="2020/2",
+    )
+
+    payload = build_provision_state_response(
+        timelines=_timeline(),
+        migration_events=(migration,),
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="chapter:1/section:1",
+        as_of="2021-01-01",
+    )
+
+    assert payload["lineage"]["status"] == "migration_chain"
+    assert [entry["text"] for entry in payload["lineage"]["address_chain"]] == [
+        "chapter:1/section:1",
+        "chapter:1/section:2",
+    ]
+    assert payload["lineage"]["migration_event_count_considered"] == 1

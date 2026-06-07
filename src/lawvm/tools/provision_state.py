@@ -5,12 +5,16 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Mapping
 
 from lawvm.core.ir import IRStatute, LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.ir_helpers import irnode_content_hash, irnode_to_text
+from lawvm.core.provenance import MigrationEvent
+from lawvm.core.timeline_lineage import lineage_address_chain
 from lawvm.core.timeline_selection import VersionSelectionResult, select_active_version_ex
 
 SCHEMA = "lawvm.provision_state.v1"
@@ -54,6 +58,7 @@ async def _main(args: Any) -> None:
     )
     payload = build_provision_state_response(
         timelines=master.timelines,
+        migration_events=tuple(master.migration_events or ()),
         statute_id=args.statute_id,
         jurisdiction=args.jurisdiction,
         provision=args.provision,
@@ -70,6 +75,7 @@ async def _main(args: Any) -> None:
 def build_provision_state_response(
     *,
     timelines: Mapping[LegalAddress, ProvisionTimeline],
+    migration_events: tuple[MigrationEvent, ...] = (),
     statute_id: str,
     jurisdiction: str,
     provision: str,
@@ -99,6 +105,11 @@ def build_provision_state_response(
             "status": resolution.status,
             "query": query,
             "resolved_address": None,
+            "lineage": _lineage_payload(
+                address=None,
+                migration_events=migration_events,
+                as_of=as_of,
+            ),
             "address_candidates": [_address_wire(candidate) for candidate in resolution.candidates],
             "selection": None,
             "hashes": _hash_payload(
@@ -107,6 +118,7 @@ def build_provision_state_response(
                 jurisdiction=jurisdiction,
                 query=query,
                 address=None,
+                lineage=None,
                 version=None,
                 content_hash="",
             ),
@@ -123,6 +135,7 @@ def build_provision_state_response(
     return _selected_response(
         selection=selection,
         resolution=resolution,
+        migration_events=migration_events,
         statute_id=statute_id,
         jurisdiction=jurisdiction,
         query=query,
@@ -172,6 +185,7 @@ def _selected_response(
     *,
     selection: VersionSelectionResult,
     resolution: AddressResolution,
+    migration_events: tuple[MigrationEvent, ...],
     statute_id: str,
     jurisdiction: str,
     query: dict[str, Any],
@@ -183,6 +197,11 @@ def _selected_response(
     version = selection.version
     content_hash = _content_hash(version)
     status = "selected" if version is not None else selection.status
+    lineage = _lineage_payload(
+        address=address,
+        migration_events=migration_events,
+        as_of=query["as_of"],
+    )
     payload: dict[str, Any] = {
         "schema": SCHEMA,
         "jurisdiction": jurisdiction,
@@ -191,6 +210,7 @@ def _selected_response(
         "status": status,
         "query": query,
         "resolved_address": _address_wire(address),
+        "lineage": lineage,
         "address_match": {
             "requested": resolution.requested,
             "mode": "exact" if str(address) == resolution.requested else "unique_suffix",
@@ -203,6 +223,7 @@ def _selected_response(
             jurisdiction=jurisdiction,
             query=query,
             address=address,
+            lineage=lineage,
             version=version,
             content_hash=content_hash,
         ),
@@ -284,6 +305,32 @@ def _selection_payload(selection: VersionSelectionResult) -> dict[str, Any]:
     }
 
 
+def _lineage_payload(
+    *,
+    address: LegalAddress | None,
+    migration_events: tuple[MigrationEvent, ...],
+    as_of: str,
+) -> dict[str, Any]:
+    if address is None:
+        return {
+            "status": "unresolved_address",
+            "address_chain": [],
+            "migration_event_count_considered": len(migration_events),
+        }
+    chain = lineage_address_chain(
+        address,
+        migration_events,
+        as_of_date=as_of,
+        address_prefix_matches=lambda current, prefix: current.has_prefix(prefix),
+    )
+    status = "migration_chain" if len(chain) > 1 else "self_only"
+    return {
+        "status": status,
+        "address_chain": [_address_wire(chain_address) for chain_address in chain],
+        "migration_event_count_considered": len(migration_events),
+    }
+
+
 def _version_payload(version: ProvisionVersion | None) -> dict[str, Any] | None:
     if version is None:
         return None
@@ -319,6 +366,7 @@ def _hash_payload(
     jurisdiction: str,
     query: Mapping[str, Any],
     address: LegalAddress | None,
+    lineage: Mapping[str, Any] | None,
     version: ProvisionVersion | None,
     content_hash: str,
 ) -> dict[str, str]:
@@ -329,6 +377,7 @@ def _hash_payload(
         "statute_id": statute_id,
         "query": query,
         "resolved_address": _address_wire(address) if address is not None else None,
+        "lineage": lineage,
         "version": _version_payload(version),
         "content_hash": content_hash,
     }
@@ -378,10 +427,14 @@ def _source_payload(version: ProvisionVersion | None) -> dict[str, str] | None:
 
 
 def _engine_payload() -> dict[str, str]:
+    identity = _lawvm_code_identity()
     return {
         "producer": "lawvm",
-        "build_id": "",
+        "build_id": identity["build_id"],
         "interface": "lawvm provision-state",
+        "git_commit": identity["git_commit"],
+        "git_dirty": identity["git_dirty"],
+        "repository": identity["repository"],
     }
 
 
@@ -419,3 +472,45 @@ def _require_address(resolution: AddressResolution) -> LegalAddress:
 def _sha256_canonical(value: Mapping[str, Any]) -> str:
     encoded = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _lawvm_code_identity() -> dict[str, str]:
+    repo_root = Path(__file__).resolve().parents[3]
+    inside = subprocess.run(
+        ("git", "-C", str(repo_root), "rev-parse", "--is-inside-work-tree"),
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        return {
+            "repository": repo_root.name,
+            "git_commit": "",
+            "git_dirty": "unknown",
+            "build_id": "",
+        }
+    commit = subprocess.run(
+        ("git", "-C", str(repo_root), "rev-parse", "HEAD"),
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    ).stdout.strip()
+    status = subprocess.run(
+        ("git", "-C", str(repo_root), "status", "--short"),
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    ).stdout.strip()
+    dirty = "true" if status else "false"
+    build_id = f"git:{commit}" if commit else ""
+    if build_id and dirty == "true":
+        build_id = f"{build_id}+dirty"
+    return {
+        "repository": repo_root.name,
+        "git_commit": commit,
+        "git_dirty": dirty,
+        "build_id": build_id,
+    }
