@@ -102,9 +102,21 @@ import sys
 from collections.abc import Iterator
 from typing import TextIO
 
-from lawvm.core.invariant_detectors import SUPPORTED_INVARIANT_DETECTORS
 from lawvm.tools.uk_replay_regime import UK_APPLICABILITY_MODE_CHOICES
 from lawvm.tools.uk_replay_regime import add_uk_replay_regime_arguments
+
+# Inlined from lawvm.core.invariant_detectors.SUPPORTED_INVARIANT_DETECTORS.
+# Used only as argparse choices= — no need to import the full module (which pulls
+# replay_lints, tree_ops, icontract) just to serve --help.
+# KEEP IN SYNC with invariant_detectors.py::SUPPORTED_INVARIANT_DETECTORS.
+# Drift is caught by tests/test_invariant_detectors.py::test_cli_inlined_choices_match.
+_INVARIANT_DETECTOR_CHOICES: tuple[str, ...] = (
+    "duplicate_label",
+    "illegal_edge",
+    "all_tree",
+    "text_duplication",
+    "flattened_sublist_family",
+)
 
 
 def _oracle_version_amendment_id(value: str) -> str:
@@ -457,7 +469,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     diagnose_phase_p.add_argument(
         "--detector",
         default="duplicate_label",
-        choices=SUPPORTED_INVARIANT_DETECTORS,
+        choices=_INVARIANT_DETECTOR_CHOICES,
         help="structural detector to run (default: duplicate_label)",
     )
     diagnose_phase_p.add_argument(
@@ -514,7 +526,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     invariant_bisect_p.add_argument(
         "--detector",
         default="duplicate_label",
-        choices=SUPPORTED_INVARIANT_DETECTORS,
+        choices=_INVARIANT_DETECTOR_CHOICES,
         help="structural detector to run (default: duplicate_label)",
     )
     invariant_bisect_p.add_argument(
@@ -1291,9 +1303,381 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
 
     # --- bench ---
-    from lawvm.tools.bench import register_cli as _register_bench
-
-    _register_bench(sub, _j_subcommand_parent)
+    # Inlined from lawvm.tools.bench.register_cli to avoid importing bench.py
+    # at parser-build time (bench → grafter → lxml/icontract/johtolause = ~374 ms).
+    # Dispatch in main() still imports bench lazily; this is pure argparse only.
+    bench_p = sub.add_parser(
+        "bench",
+        parents=_P,
+        help="corpus benchmark with history",
+        description=(
+            "Run full corpus benchmark and record results. Tracks score trajectory over time and detects regressions."
+        ),
+    )
+    bench_p.add_argument(
+        "--label",
+        metavar="LABEL",
+        help="tag for this run, e.g. v22 (default: auto-generated timestamp)",
+    )
+    bench_p.add_argument(
+        "--mode",
+        default="finlex_oracle",
+        choices=["finlex_oracle", "legal_pit"],
+        help=(
+            "replay mode: finlex_oracle (default) compares against the Finlex consolidated XML; "
+            "legal_pit applies date-cutoff PIT materialization (excludes future-dated amendments "
+            "and corrigendum patches, giving a cleaner accuracy signal against the legal record)"
+        ),
+    )
+    bench_p.add_argument(
+        "--corpus",
+        metavar="CSV_PATH",
+        help="path to corpus CSV (default: .tmp/batch_test_list.csv)",
+    )
+    bench_p.add_argument(
+        "--top",
+        type=int,
+        default=20,
+        help="number of worst statutes to report (default: 20)",
+    )
+    bench_p.add_argument(
+        "--history",
+        action="store_true",
+        help="show score trajectory from benchmark_history.csv",
+    )
+    bench_p.add_argument(
+        "--regressions",
+        action="store_true",
+        help="show statutes that regressed vs previous run",
+    )
+    bench_p.add_argument(
+        "--compare",
+        nargs=2,
+        metavar=("LABEL_A", "LABEL_B"),
+        help="compare two labeled runs",
+    )
+    bench_p.add_argument(
+        "--show",
+        metavar="LABEL",
+        help="show worst performers from a past labeled run (no re-run needed)",
+    )
+    bench_p.add_argument(
+        "--filter-live",
+        dest="filter_live",
+        action="store_true",
+        help="skip statutes whose consolidated oracle is contentAbsent (repealed/expired)",
+    )
+    bench_p.add_argument(
+        "--filter-repealed",
+        dest="filter_repealed",
+        action="store_true",
+        help="skip statutes where ≥50%% of oracle sections are kumottu (L:lla/A:lla) "
+        "(individually-repealed statutes whose oracle is just repeal annotations)",
+    )
+    bench_p.add_argument(
+        "--filter-empty",
+        dest="filter_empty",
+        action="store_true",
+        help="skip statutes where oracle appears silently-emptied: ≤3 sections, "
+        "0 kumottu annotations, <2000 bytes of body text",
+    )
+    bench_p.add_argument(
+        "--parallel",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "parallel workers (FI default: 1=sequential; UK/EE default: "
+            "min(cpu_count, 8); per-worker peak RSS ~860 MB after source-root "
+            "eviction — heavy lanes still serialize via memory guard)"
+        ),
+    )
+    bench_p.add_argument(
+        "--by-decade",
+        dest="by_decade",
+        action="store_true",
+        help="show score breakdown grouped by enactment decade (use with --show or live run)",
+    )
+    bench_p.add_argument(
+        "--filter-decade",
+        dest="filter_decade",
+        metavar="DECADE",
+        help="restrict corpus to statutes from DECADE (e.g. '1980s', '1990s')",
+    )
+    bench_p.add_argument(
+        "--filter-zero-amend",
+        dest="filter_zero_amend",
+        action="store_true",
+        help="keep only statutes with 0 amendments (isolates XML format failures from PEG failures)",
+    )
+    bench_p.add_argument(
+        "--filter-nonzero-amend",
+        dest="filter_nonzero_amend",
+        action="store_true",
+        help="keep only statutes with ≥1 amendment (focus on PEG/grafter accuracy)",
+    )
+    bench_p.add_argument(
+        "--corpus-stats",
+        dest="corpus_stats",
+        action="store_true",
+        help="print corpus statistics by decade (N statutes, amendment distribution) without running the benchmark",
+    )
+    bench_p.add_argument(
+        "--source-closure-stats",
+        dest="source_closure_stats",
+        action="store_true",
+        help=(
+            "[-j uk --corpus-stats] also inspect replay-required affecting-act "
+            "XML closure from the archive; slower than header-only corpus stats"
+        ),
+    )
+    bench_p.add_argument(
+        "--diagnose",
+        action="store_true",
+        help="with --show: classify failure modes for worst performers "
+        "(KUMOTTU_ORACLE / UNCOVERED_INSERT / EXTRA_REPLAY / CONTENT_DRIFT / EMPTY_ORACLE)",
+    )
+    bench_p.add_argument(
+        "--diagnostic-replay",
+        action="store_true",
+        help="use full replay materialization and replay notices instead of the default fast bench replay",
+    )
+    bench_p.add_argument(
+        "--db",
+        metavar="PATH",
+        help="[-j ee/-j uk] Farchive DB path",
+    )
+    bench_p.add_argument(
+        "--include-decrees",
+        action="store_true",
+        default=True,
+        dest="include_decrees",
+        help="[-j ee] include decree groups in addition to laws (default)",
+    )
+    bench_p.add_argument(
+        "--laws-only",
+        action="store_false",
+        dest="include_decrees",
+        help="[-j ee] restrict Estonia corpus loading to law schemas",
+    )
+    bench_p.add_argument(
+        "--ee-corpus",
+        metavar="CSV_PATH",
+        dest="ee_corpus",
+        help="[-j ee] path to corpus CSV (default: data/estonia/current_replayable_corpus.csv)",
+    )
+    bench_p.add_argument(
+        "--reindex",
+        action="store_true",
+        help="[-j ee] force live re-index of the RT archive instead of reading corpus CSV",
+    )
+    bench_p.add_argument(
+        "--statute",
+        metavar="ID",
+        help="run bench for a single statute ID (FI/EE/UK)",
+    )
+    bench_p.add_argument(
+        "--types",
+        nargs="+",
+        metavar="TYPE",
+        help="[-j uk] act types to include (default: ukpga asp asc nia)",
+    )
+    bench_p.add_argument(
+        "--corpus-csv",
+        action="store_true",
+        dest="corpus_csv",
+        help="[-j uk] build/refresh data/uk/bench_corpus.csv from archive and exit",
+    )
+    bench_p.add_argument(
+        "--curate-corpus",
+        metavar="CSV_PATH",
+        help="[-j uk] write a source-complete curated corpus CSV and exit",
+    )
+    bench_p.add_argument(
+        "--curate-preset",
+        choices=[
+            "canary",
+            "tight",
+            "stress",
+            "modern-canary",
+            "modern-tight",
+            "hard-canary",
+            "hard-tight",
+            "hard-stress",
+        ],
+        help=(
+            "[-j uk] curated corpus preset: canary=40, tight=200, stress=400, "
+            "modern-canary=40, modern-tight=200, hard-canary=40, hard-tight=200, "
+            "hard-stress=400. Hard presets require source-complete effectful rows "
+            "and prefer heavier replay rows within each stratum. "
+            "If --curate-corpus is omitted, writes the standard data/uk preset CSV"
+        ),
+    )
+    bench_p.add_argument(
+        "--curate-size",
+        type=int,
+        default=None,
+        metavar="N",
+        help="[-j uk --curate-corpus] maximum curated rows to write (default: preset size or 200)",
+    )
+    bench_p.add_argument(
+        "--curate-require-source-closure",
+        dest="curate_require_source_closure",
+        action="store_true",
+        help=(
+            "[-j uk --curate-corpus] only curate rows whose replay-required "
+            "affecting-act XML closure is full, or not required"
+        ),
+    )
+    bench_p.add_argument(
+        "--limit",
+        type=int,
+        metavar="N",
+        help="[-j uk] process only first N statutes (for quick smoke tests)",
+    )
+    bench_p.add_argument(
+        "--no-save",
+        action="store_true",
+        dest="no_save",
+        help="[-j uk] print a bench report without writing run CSV/history artifacts",
+    )
+    bench_p.add_argument(
+        "--summary-only",
+        action="store_true",
+        dest="summary_only",
+        help="[-j uk] print bounded headline metrics instead of the full detailed report",
+    )
+    bench_p.add_argument(
+        "--replay",
+        action="store_true",
+        help="[-j uk] also run amendment replay and report replayed vs enacted EID scores",
+    )
+    bench_p.add_argument(
+        "--replay-adjudication-samples",
+        nargs="+",
+        metavar="KIND",
+        help="[-j uk --replay] print bounded sample rows for selected replay adjudication kinds",
+    )
+    bench_p.add_argument(
+        "--replay-adjudication-sample-limit",
+        type=int,
+        default=5,
+        metavar="N",
+        help="[-j uk --replay] samples per selected replay adjudication kind (default: 5)",
+    )
+    bench_p.add_argument(
+        "--diagnostic-sample-lane",
+        metavar="LANE",
+        help=(
+            "[-j uk --show] stream sample rows from a bench diagnostics sidecar "
+            "for one lane, e.g. source_acquisition or lowering"
+        ),
+    )
+    bench_p.add_argument(
+        "--diagnostic-sample-rule",
+        metavar="RULE_ID",
+        help="[-j uk --show --diagnostic-sample-lane] restrict samples to one rule_id",
+    )
+    bench_p.add_argument(
+        "--diagnostic-sample-pattern",
+        metavar="PATTERN",
+        help=(
+            "[-j uk --show --diagnostic-sample-lane] restrict samples to one "
+            "extracted source-preview pattern"
+        ),
+    )
+    bench_p.add_argument(
+        "--diagnostic-sample-blocking",
+        action="store_true",
+        help="[-j uk --show --diagnostic-sample-lane] only sample blocking diagnostics",
+    )
+    bench_p.add_argument(
+        "--diagnostic-sample-limit",
+        type=int,
+        default=5,
+        metavar="N",
+        help="[-j uk --show --diagnostic-sample-lane] maximum sidecar samples to print (default: 5)",
+    )
+    bench_p.add_argument(
+        "--diagnostic-pattern-summary",
+        action="store_true",
+        help=(
+            "[-j uk --show --diagnostic-sample-lane] group matched diagnostics "
+            "by extracted source-preview pattern"
+        ),
+    )
+    add_uk_replay_regime_arguments(bench_p, help_prefix="[-j uk --replay]")
+    bench_p.add_argument(
+        "--no-commencement",
+        action="store_true",
+        dest="no_commencement",
+        help="[-j uk] disable commencement filtering (on by default; use to compare raw EID scores)",
+    )
+    bench_p.add_argument(
+        "--phase-timings",
+        action="store_true",
+        dest="phase_timings",
+        help="[-j uk] print measured per-row phase timings for replay performance triage",
+    )
+    bench_p.add_argument(
+        "--no-text-scores",
+        action="store_true",
+        dest="no_text_scores",
+        help="[-j uk] skip diagnostic Levenshtein text similarity scoring for faster corpus sweeps",
+    )
+    bench_p.add_argument(
+        "--worker-max-tasks",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "[-j uk] recycle each parallel worker after N statutes to cap long-run "
+            "worker RSS growth; slower, but useful for WSL2/full-corpus replay sweeps"
+        ),
+    )
+    bench_p.add_argument(
+        "--min-year",
+        type=int,
+        metavar="YEAR",
+        help="[-j uk] only include statutes from this year onward",
+    )
+    bench_p.add_argument(
+        "--max-year",
+        type=int,
+        metavar="YEAR",
+        help="[-j uk] only include statutes up to this year",
+    )
+    bench_p.add_argument(
+        "--html-summary",
+        dest="html_summary",
+        action="store_true",
+        help="after the bench run, compare corpus oracle section counts against the "
+        "HTML oracle cache (from farchive) to quantify stale-oracle "
+        "impact on bench scores",
+    )
+    bench_p.add_argument(
+        "--oracle-aware-headline",
+        dest="oracle_aware_headline",
+        action="store_true",
+        help="add an oracle-stale-aware headline mean that excludes statutes "
+        "classified as ORACLE_STALE by oracle-check; raw scores remain unchanged",
+    )
+    bench_p.add_argument(
+        "--section-score",
+        dest="section_score",
+        action="store_true",
+        help="compute per-section Levenshtein similarity in addition to full-text "
+        "score; reports mean section accuracy vs full-text accuracy and adds "
+        "section_similarity column to the run CSV",
+    )
+    bench_p.add_argument(
+        "--warm-oracle",
+        dest="warm_oracle",
+        action="store_true",
+        help="before running, pre-fetch API PITs for statutes that lack a versioned "
+        "oracle (fin@YYYYNNNN) in the corpus store; requires data/finlex.farchive; "
+        "rate-limited at ~1 req/sec",
+    )
 
     # --- blame ---
     blame_p = sub.add_parser(
@@ -3412,9 +3796,412 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
 
     # --- corrigendum ---
-    from lawvm.tools.corrigendum import register_cli as _register_corrigendum
+    # Inlined from lawvm.tools.corrigendum.register_cli to avoid importing corrigendum.py
+    # at parser-build time (corrigendum → aiohttp ~111 ms + lawvm.finland.proof_surfaces ~26 ms).
+    # Dispatch in main() still imports corrigendum lazily; this is pure argparse only.
+    corr_p = sub.add_parser(
+        "corrigendum",
+        help="corrigendum (oikaisu) status, inspection, and LLM classification",
+        description=(
+            "Inspect legally binding corrections (corrigenda) to published statutes. "
+            "Subcommands: status [SID], apply SID, classify, report."
+        ),
+    )
+    corr_sub = corr_p.add_subparsers(dest="corrigendum_command", metavar="<subcommand>")
 
-    _register_corrigendum(sub)
+    corr_status_p = corr_sub.add_parser(
+        "status",
+        help="corpus-wide summary or single-statute corrigendum details",
+    )
+    corr_status_p.add_argument(
+        "statute_id", nargs="?",
+        help="statute ID (e.g. 2007/26) — omit for corpus summary",
+    )
+
+    corr_apply_p = corr_sub.add_parser(
+        "apply",
+        help="extract corrigendum PDF(s) and show text via pdftotext",
+    )
+    corr_apply_p.add_argument("statute_id", help="statute ID, e.g. 2007/26")
+    corr_apply_p.add_argument(
+        "--save", metavar="PATH",
+        help="save extracted PDF to this path",
+    )
+
+    corr_classify_p = corr_sub.add_parser(
+        "classify",
+        help="LLM-classify corrigendum PDFs into typed corrections (johtolause/table/prose/…)",
+        description=(
+            "Run all Finnish (sk*) corrigendum PDFs through a local LLM to extract "
+            "typed correction records. Results are synced into the git-tracked "
+            "data/finland/corrigendum_official_fi.jsonl and "
+            "data/finland/corrigendum_adjudications_fi.jsonl corpora "
+            "(with sqlite kept only as a transitional scratch artifact). "
+            "Johtolause corrections are source-verified against the corpus store. "
+            "Idempotent — already-classified PDFs are skipped unless --rerun."
+        ),
+    )
+    corr_classify_p.add_argument(
+        "--lang", choices=["fi", "sv", "all"], default="fi",
+        help="language filter: fi=sk* (default), sv=fs*, all=both",
+    )
+    corr_classify_p.add_argument(
+        "--type", metavar="TYPE",
+        help="after classification, show only this correction type (e.g. johtolause)",
+    )
+    corr_classify_p.add_argument(
+        "--parallel", type=int, default=None, metavar="N",
+        help="concurrent LLM calls (default: cpu_count)",
+    )
+    corr_classify_p.add_argument(
+        "--limit", type=int, metavar="N",
+        help="process at most N PDFs (for testing)",
+    )
+    corr_classify_p.add_argument(
+        "--dry-run", dest="dry_run", action="store_true",
+        help="run LLM extraction but do not write to DB",
+    )
+    corr_classify_p.add_argument(
+        "--rerun", action="store_true",
+        help="re-classify already-classified PDFs (overwrite)",
+    )
+    corr_classify_p.add_argument(
+        "--compare", action="store_true",
+        help="run both regex and LLM; log divergences; write regex result (implies --rerun for comparison scope)",
+    )
+    corr_classify_p.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="print result for every PDF (default: only johtolause cases)",
+    )
+
+    corr_check_p = corr_sub.add_parser(
+        "check-patches",
+        help="audit patch hit/miss/ambig rates across corpus; write misapplied JSONL",
+    )
+    corr_check_p.add_argument(
+        "--out", metavar="PATH",
+        help="output path for misapplied JSONL (default: data/finland/corrigendum_misapplied_fi.jsonl)",
+    )
+    corr_check_p.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="print first 20 misapplied records",
+    )
+    corr_check_p.add_argument(
+        "--workers", "-j", type=int, default=8, metavar="N",
+        help="parallel worker threads (default: 8)",
+    )
+
+    corr_compl_p = corr_sub.add_parser(
+        "check-completeness",
+        help="report PDFs where expected_pair_count exceeds extracted record count",
+    )
+    corr_compl_p.add_argument(
+        "--db", metavar="PATH",
+        help="path to official records JSONL (default: data/finland/corrigendum_official_fi.jsonl)",
+    )
+    corr_compl_p.add_argument(
+        "--json", action="store_true",
+        help="output as JSON array",
+    )
+
+    corr_recomp_p = corr_sub.add_parser(
+        "recompute-completeness",
+        help="refresh expected_pair_count in JSONL from regex (no LLM)",
+    )
+    corr_recomp_p.add_argument(
+        "--db", metavar="PATH",
+        help="official JSONL path (default: data/finland/corrigendum_official_fi.jsonl)",
+    )
+    corr_recomp_p.add_argument(
+        "--dry-run", action="store_true",
+        help="compute counts but do not write JSONL",
+    )
+    corr_recomp_p.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="print each PDF whose count changes",
+    )
+
+    corr_verify_p = corr_sub.add_parser(
+        "verify",
+        help="re-run source verification for classified corrections (no LLM needed)",
+        description=(
+            "Update verified_in_source column without re-running LLM classification. "
+            "Use after: fixing _verify_in_source bugs, updating the corpus store, etc."
+        ),
+    )
+    corr_verify_p.add_argument(
+        "--type", metavar="TYPE", default="johtolause",
+        help="correction type to verify (default: johtolause)",
+    )
+    corr_verify_p.add_argument(
+        "--amendment", metavar="AMENDMENT_ID", dest="amendment_id",
+        help="restrict verification to one amendment (e.g. 1246/2002)",
+    )
+
+    corr_report_p = corr_sub.add_parser(
+        "report",
+        help="query classified corrigendum results from the text corpus",
+        description=(
+            "Print classified correction records from the git-tracked "
+            "corrigendum text corpus. "
+            "Filter by type, amendment, or verified status."
+        ),
+    )
+    corr_report_p.add_argument(
+        "--type", metavar="TYPE",
+        help="filter by correction type (johtolause|table|footnote|prose|metadata|unknown)",
+    )
+    corr_report_p.add_argument(
+        "--amendment", metavar="AMENDMENT_ID", dest="amendment_id",
+        help="filter to one amendment (e.g. 984/2018)",
+    )
+    corr_report_p.add_argument(
+        "--verified", action="store_true",
+        help="only show corrections verified in the corpus store",
+    )
+
+    corr_test_p = corr_sub.add_parser(
+        "test",
+        help="dry-run patch application for one amendment — shows what would change",
+        description=(
+            "Load classified patches for an amendment, apply them to the source XML "
+            "from the corpus store, and show pass/fail + before/after context for each patch. "
+            "Useful for debugging why a corrigendum patch does or doesn't match."
+        ),
+    )
+    corr_test_p.add_argument(
+        "amendment_id",
+        help="amendment ID to test (NUM/YEAR or YEAR/NUM, e.g. '984/2018' or '2018/984')",
+    )
+
+    corr_diffpdf_p = corr_sub.add_parser(
+        "diff-pdf",
+        help="diff PDF vs XML text for corrigendum-affected amendments (ground-truth validation)",
+        description=(
+            "For each amendment in the classified corrigendum corpus, extract the preamble text from "
+            "both the PDF and the XML in the corpus store, and compare them. PDFs have corrigenda "
+            "applied; XMLs do not — so diffs reveal corrections not yet in the patch pipeline. "
+            "Output: .tmp/pdf_xml_diffs.jsonl with one record per amendment."
+        ),
+    )
+    corr_diffpdf_p.add_argument(
+        "--output", "-o", metavar="FILE",
+        help="output JSONL file (default: .tmp/pdf_xml_diffs.jsonl)",
+    )
+    corr_diffpdf_p.add_argument(
+        "--limit", type=int, metavar="N",
+        help="process only first N amendments (for testing)",
+    )
+    corr_diffpdf_p.add_argument(
+        "--workers", type=int, default=8, metavar="N",
+        help="parallel workers for pdftotext (default: 8)",
+    )
+    corr_diffpdf_p.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="print each amendment with a diff",
+    )
+    corr_diffpdf_p.add_argument(
+        "--db", metavar="PATH",
+        help="classified corrigendum source path (default: data/finland/corrigendum_official_fi.jsonl)",
+    )
+    corr_reex_p = corr_sub.add_parser(
+        "reextract",
+        help="LLM-assisted reextraction for no-match patches (gives LLM both PDF + XML context)",
+        description=(
+            "For each patch where wrong_text doesn't match the amendment XML, calls the local "
+            "LLM with both the corrigendum PDF text and the amendment XML. The LLM finds the "
+            "exact bytes in the XML to replace. Use --update to apply changes and resync "
+            "the git-tracked corrigendum corpus."
+        ),
+    )
+    corr_reex_p.add_argument(
+        "--limit", type=int, default=None, metavar="N",
+        help="process at most N no-match patches (default: all)",
+    )
+    corr_reex_p.add_argument(
+        "--update", action="store_true",
+        help="write verified improvements back to the official corrigendum text corpus",
+    )
+    corr_reex_p.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="show LLM output for all patches including failures",
+    )
+
+    corr_manual_p = corr_sub.add_parser(
+        "manual-template",
+        help="emit YAML scaffold entries for corrigendum_manual.yaml from classified patches",
+        description=(
+            "Load one amendment's classified corrigendum items from the git-tracked "
+            "corrigendum corpus, "
+            "filter to the items that still do not match source XML by default, and emit "
+            "a ready-to-paste YAML scaffold for corrigendum_manual.yaml."
+        ),
+    )
+    corr_manual_p.add_argument(
+        "amendment_id", metavar="AMENDMENT_ID",
+        help="corrected amendment id in NUM/YEAR format, e.g. 991/2012",
+    )
+    corr_manual_p.add_argument(
+        "--db", metavar="PATH",
+        help="classified corrigendum source path (default: data/finland/corrigendum_official_fi.jsonl)",
+    )
+    corr_manual_p.add_argument(
+        "--all", action="store_true",
+        help="include all fi correction items for this amendment, not just current no-match items",
+    )
+    corr_manual_p.add_argument(
+        "--json", action="store_true",
+        help="emit JSON instead of YAML",
+    )
+
+    corr_open_manual_p = corr_sub.add_parser(
+        "open-manual",
+        help="list current live manual-corrigendum candidates",
+        description=(
+            "Scan high-no-match Finnish corrigendum amendments and recompute "
+            "current manual-template viability, separating real open manual "
+            "items from attachment-only and already-covered cases."
+        ),
+    )
+    corr_open_manual_p.add_argument(
+        "--limit", type=int, default=20, metavar="N",
+        help="inspect at most N amendments with unverified classified items (default: 20)",
+    )
+    corr_open_manual_p.add_argument(
+        "--db", metavar="PATH",
+        help="classified corrigendum source path (default: data/finland/corrigendum_official_fi.jsonl)",
+    )
+    corr_open_manual_p.add_argument(
+        "--all", action="store_true",
+        help="include attachment-only and already-covered amendments in the output",
+    )
+    corr_open_manual_p.add_argument(
+        "--json", action="store_true",
+        help="emit JSON instead of plain text",
+    )
+    corr_open_manual_p.add_argument(
+        "--proof-report", action="store_true",
+        help="emit a bundled JSON proof-surface report; legacy --json remains a row list",
+    )
+
+    corr_overview_p = corr_sub.add_parser(
+        "overview",
+        help="summarize corpus-wide corrigendum adjudication state",
+        description=(
+            "Build a corpus-level view over official corrigendum items, current "
+            "verification/adjudication status, and the top amendments that still "
+            "look open or attachment-only."
+        ),
+    )
+    corr_overview_p.add_argument(
+        "--db", metavar="PATH",
+        help="classified corrigendum source path (default: data/finland/corrigendum_official_fi.jsonl)",
+    )
+    corr_overview_p.add_argument(
+        "--limit", type=int, default=10, metavar="N",
+        help="show at most N amendments in each top-list bucket (default: 10)",
+    )
+    corr_overview_p.add_argument(
+        "--live", action="store_true",
+        help="recompute unresolved item status against source XML instead of relying on stored adjudications",
+    )
+    corr_overview_p.add_argument(
+        "--json", action="store_true",
+        help="emit JSON instead of plain text",
+    )
+
+    corr_sources_p = corr_sub.add_parser(
+        "sources",
+        help="inspect or rebuild the PDF-level corrigendum provenance manifest",
+        description=(
+            "Build or inspect the git-tracked one-record-per-PDF provenance "
+            "manifest for official Finnish corrigendum PDFs."
+        ),
+    )
+    corr_sources_p.add_argument(
+        "--db", metavar="PATH",
+        help="classified corrigendum source path (default: data/finland/corrigendum_official_fi.jsonl)",
+    )
+    corr_sources_p.add_argument(
+        "--refresh", action="store_true",
+        help="rebuild data/finland/corrigendum_sources_fi.jsonl from the official corrigendum corpus",
+    )
+    corr_sources_p.add_argument(
+        "--limit", type=int, default=10, metavar="N",
+        help="show at most N source records (default: 10; <=0 shows all)",
+    )
+    corr_sources_p.add_argument(
+        "--json", action="store_true",
+        help="emit JSON instead of plain text",
+    )
+
+    corr_backfill_meta_p = corr_sub.add_parser(
+        "backfill-meta",
+        help="backfill missing official corrigendum amendment/date metadata from XML refs",
+        description=(
+            "Use authoritative <finlex:corrigendum> blocks from the consolidated "
+            "oracle XML to fill missing amendment ids and publish dates in the "
+            "official corrigendum corpus."
+        ),
+    )
+    corr_backfill_meta_p.add_argument(
+        "--db", metavar="PATH",
+        help="official corrigendum source path (default: data/finland/corrigendum_official_fi.jsonl)",
+    )
+    corr_backfill_meta_p.add_argument(
+        "--update", action="store_true",
+        help="write backfilled metadata into the official corrigendum JSONL",
+    )
+    corr_backfill_meta_p.add_argument(
+        "--json", action="store_true",
+        help="emit JSON instead of plain text",
+    )
+
+    corr_prov_p = corr_sub.add_parser(
+        "provenance",
+        help="show one amendment's official items, verification state, and manual coverage together",
+        description=(
+            "Build an amendment-scoped operator view over official corrigendum items, "
+            "current source verification, and manual override coverage so each "
+            "corrigendum item can be audited in one place."
+        ),
+    )
+    corr_prov_p.add_argument(
+        "amendment_id", metavar="AMENDMENT_ID",
+        help="corrected amendment id in NUM/YEAR format, e.g. 442/2016",
+    )
+    corr_prov_p.add_argument(
+        "--db", metavar="PATH",
+        help="classified corrigendum source path (default: data/finland/corrigendum_official_fi.jsonl)",
+    )
+    corr_prov_p.add_argument(
+        "--json", action="store_true",
+        help="emit JSON instead of plain text",
+    )
+
+    corr_review_p = corr_sub.add_parser(
+        "review",
+        help="review one statute's live oracle disagreements against corrigendum evidence",
+        description=(
+            "Run live oracle disagreement classification for one statute and group "
+            "diverging sections by blamed amendment, then overlay existing "
+            "classified corrigendum items and manual-override counts for those amendments."
+        ),
+    )
+    corr_review_p.add_argument("statute_id", help="statute ID, e.g. 1995/1552")
+    corr_review_p.add_argument(
+        "--mode", default="legal_pit",
+        choices=["finlex_oracle", "legal_pit"],
+        help="replay mode for live disagreement classification (default: legal_pit)",
+    )
+    corr_review_p.add_argument(
+        "--db", metavar="PATH",
+        help="classified corrigendum source path (default: data/finland/corrigendum_official_fi.jsonl)",
+    )
+    corr_review_p.add_argument(
+        "--json", action="store_true",
+        help="emit JSON instead of plain text",
+    )
 
     # --- faults ---
     faults_p = sub.add_parser(
@@ -4763,9 +5550,149 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
 
     # --- frontier ---
-    from lawvm.tools.frontier import register_cli as _register_frontier
-
-    _register_frontier(sub)
+    # Inlined from lawvm.tools.frontier.register_cli to avoid importing frontier.py
+    # at parser-build time (frontier → lxml/icontract/proof_surfaces ~127 ms standalone).
+    # Dispatch in main() still imports frontier lazily; this is pure argparse only.
+    frontier_p = sub.add_parser(
+        "frontier",
+        help="honest frontier report — ranked fixable replay targets",
+        description=(
+            "Combine bench results with oracle-check classifications to rank "
+            "low-scoring statutes by fixability. Separates real replay bugs "
+            "(fixable) from oracle-suspect, editorial-convention, and "
+            "source-incomplete failures (not fixable)."
+        ),
+    )
+    frontier_p.add_argument(
+        "--label",
+        metavar="LABEL",
+        required=True,
+        help="bench run label to analyse, e.g. v_post_merge",
+    )
+    frontier_p.add_argument(
+        "--mode",
+        default="finlex_oracle",
+        choices=["finlex_oracle", "legal_pit"],
+        help="replay mode for fresh oracle-check and score refresh (default: finlex_oracle)",
+    )
+    frontier_p.add_argument(
+        "--top",
+        type=int,
+        default=30,
+        help="number of top fixable targets to show (default: 30)",
+    )
+    frontier_p.add_argument(
+        "--exclude-suspect",
+        dest="exclude_suspect",
+        action="store_true",
+        help="omit oracle-suspect statutes from the ranked list",
+    )
+    frontier_p.add_argument(
+        "--bucket",
+        choices=[
+            "oracle_version_suspect",
+            "no_oracle_check",
+            "source_pathology",
+            "html_noncommensurable",
+            "html_topology",
+            "contingent_effective_date",
+            "base_drift",
+            "other_suspect",
+            "candidate",
+        ],
+        help="filter the ranked list to one frontier bucket",
+    )
+    frontier_p.add_argument(
+        "--bucket-report",
+        action="store_true",
+        help="print a compact top-N-per-bucket report from the current refreshed frontier",
+    )
+    frontier_p.add_argument(
+        "--proof-report",
+        action="store_true",
+        help="attach live proof-tier summaries for the displayed frontier statutes",
+    )
+    frontier_p.add_argument(
+        "--proof-summary",
+        action="store_true",
+        help="summarize proof tiers and proof kinds across the current proof-report rows",
+    )
+    frontier_p.add_argument(
+        "--proof-export",
+        metavar="PATH",
+        help="write proof-report rows as JSONL (default: data/frontier_reports/<label>_frontier_proof.jsonl when --proof-report)",
+    )
+    frontier_p.add_argument(
+        "--evidence-export",
+        metavar="PATH",
+        help="write full evidence bundles for the displayed frontier rows as JSONL",
+    )
+    frontier_p.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="emit the refreshed frontier snapshot as JSON",
+    )
+    frontier_p.add_argument(
+        "--strict-label",
+        dest="strict_label",
+        metavar="LABEL",
+        help="strict run label to load projection-row data from (e.g. strict_v1)",
+    )
+    frontier_p.add_argument(
+        "--corpus",
+        metavar="CSV_PATH",
+        help="optional corpus CSV to restrict the bench run analysis to a subset of statutes",
+    )
+    frontier_p.add_argument(
+        "--export-low-corpus",
+        dest="export_low_corpus",
+        metavar="CSV_PATH",
+        help="write the current low-scoring corpus slice (after score refresh) to CSV",
+    )
+    frontier_p.add_argument(
+        "--db",
+        metavar="PATH",
+        help="path to divergences.db for pre-computed oracle-check data (default: .tmp/divergences.db if it exists)",
+    )
+    frontier_p.add_argument(
+        "--threshold",
+        type=float,
+        default=0.95,
+        metavar="SCORE",
+        help="only consider statutes scoring below this (default: 0.95)",
+    )
+    frontier_p.add_argument(
+        "--parallel",
+        type=int,
+        default=None,
+        metavar="N",
+        help="workers for fresh oracle-check runs (default: cpu_count)",
+    )
+    frontier_p.add_argument(
+        "--refresh-all-oracle-check",
+        dest="refresh_all_oracle_check",
+        action="store_true",
+        help=(
+            "force a live oracle-check refresh for all low-scoring statutes, "
+            "even when the candidate pool is too large for the default full-refresh heuristic"
+        ),
+    )
+    frontier_p.add_argument(
+        "--refresh-all-scores",
+        dest="refresh_all_scores",
+        action="store_true",
+        help=(
+            "force a live score refresh for all low-scoring statutes, "
+            "even when the candidate pool is too large for the default score-refresh heuristic"
+        ),
+    )
+    frontier_p.add_argument(
+        "--no-save",
+        dest="no_save",
+        action="store_true",
+        help="do not write CSV to data/frontier_reports/",
+    )
 
     # --- strict-report ---
     strict_p = sub.add_parser(
@@ -4992,9 +5919,543 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
 
     # --- sweden ---
-    from lawvm.tools.sweden import register_cli as _register_sweden
+    # Inlined from lawvm.tools.sweden.register_cli to avoid importing sweden.py
+    # at parser-build time (sweden → lawvm.sweden.grafter/fetch → lxml/tree_ops ~41 ms).
+    # Dispatch in main() still imports sweden lazily; this is pure argparse only.
+    sweden_p = sub.add_parser(
+        "sweden",
+        help="Sweden frontend helpers (source records, current-text IR, official PDFs)",
+        description=(
+            "Helpers for the Sweden frontend: archive official SFS artifacts, "
+            "fetch live RK current JSON, inspect SourceRecord metadata from "
+            "local RK-style JSON, and parse current-text IR."
+        ),
+    )
+    sweden_sub = sweden_p.add_subparsers(dest="sweden_command", metavar="<subcommand>")
 
-    _register_sweden(sub)
+    sw_compile_p = sweden_sub.add_parser(
+        "compile-official",
+        help="compile first-pass replace ops from archived official act JSON",
+    )
+    sw_compile_p.add_argument("sfs_id", help="SFS ID, e.g. 2026:286")
+    sw_compile_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+    sw_compile_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+
+    sw_current_p = sweden_sub.add_parser(
+        "fetch-current",
+        help="fetch RK current JSON and archive it",
+    )
+    sw_current_p.add_argument("sfs_id", help="SFS ID, e.g. 2025:399")
+    sw_current_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+    sw_current_p.add_argument(
+        "--max-age-hours",
+        dest="max_age_hours",
+        type=float,
+        default=None,
+        metavar="HOURS",
+        help="cache max age for RK current JSON (default: 24 hours)",
+    )
+    sw_current_p.add_argument(
+        "--show-json",
+        action="store_true",
+        help="print archived current JSON after fetch",
+    )
+
+    sw_fetch_p = sweden_sub.add_parser(
+        "fetch-official",
+        help="fetch official SFS doc page + PDF, archive raw and extracted text",
+    )
+    sw_fetch_p.add_argument("sfs_id", help="SFS ID, e.g. 2026:286")
+    sw_fetch_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+    sw_fetch_p.add_argument(
+        "--max-age-hours",
+        dest="max_age_hours",
+        type=float,
+        default=None,
+        metavar="HOURS",
+        help="override cache max age; default is immutable/no refetch for official sources",
+    )
+    sw_fetch_p.add_argument(
+        "--force-reextract",
+        dest="force_reextract",
+        action="store_true",
+        help="rerun pdftotext even if extracted text already exists",
+    )
+    sw_fetch_p.add_argument(
+        "--show-text",
+        action="store_true",
+        help="print archived extracted text after fetch",
+    )
+    sw_fetch_p.add_argument(
+        "--raw-text",
+        action="store_true",
+        help="with --show-text, print raw pdftotext output instead of cleaned text",
+    )
+
+    sw_fetch_p.add_argument(
+        "--pdf-url",
+        metavar="URL",
+        help="explicit direct official PDF URL; used when the doc page is blocked or unavailable",
+    )
+
+    sw_hydrate_bulk_p = sweden_sub.add_parser(
+        "hydrate-bulk",
+        help="bulk hydrate Sweden official/current artifacts into sweden.farchive",
+    )
+    sw_hydrate_bulk_p.add_argument(
+        "sfs_ids",
+        nargs="*",
+        help="optional explicit SFS IDs; default is all archived official.doc.html locators",
+    )
+    sw_hydrate_bulk_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+    sw_hydrate_bulk_p.add_argument(
+        "--scrape-json",
+        metavar="PATH",
+        help="optional browser-scraped doc-page JSON to ingest before hydrating",
+    )
+    sw_hydrate_bulk_p.add_argument(
+        "--hydrate-current",
+        action="store_true",
+        help="also fetch RK current JSON and archive source/current bundle artifacts",
+    )
+    sw_hydrate_bulk_p.add_argument(
+        "--compile-ops",
+        action="store_true",
+        help="compile archived official act JSON into official.ops.json when the act is amending",
+    )
+    sw_hydrate_bulk_p.add_argument(
+        "--official-max-age-hours",
+        dest="official_max_age_hours",
+        type=float,
+        default=None,
+        metavar="HOURS",
+        help="override immutable caching for official sources",
+    )
+    sw_hydrate_bulk_p.add_argument(
+        "--current-max-age-hours",
+        dest="current_max_age_hours",
+        type=float,
+        default=None,
+        metavar="HOURS",
+        help="cache max age for RK current JSON (default: 24 hours)",
+    )
+    sw_hydrate_bulk_p.add_argument(
+        "--force-reextract",
+        dest="force_reextract",
+        action="store_true",
+        help="rerun pdftotext even if extracted text already exists",
+    )
+    sw_hydrate_bulk_p.add_argument(
+        "--no-skip-complete",
+        action="store_true",
+        help="do not skip SFS IDs that already have the requested archived artifacts",
+    )
+    sw_hydrate_bulk_p.add_argument(
+        "--offset",
+        type=int,
+        default=0,
+        metavar="N",
+        help="skip the first N input IDs after archive/scrape expansion",
+    )
+    sw_hydrate_bulk_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        metavar="N",
+        help="process at most N IDs after offset (default: all)",
+    )
+    sw_hydrate_bulk_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+
+    sw_backfill_p = sweden_sub.add_parser(
+        "backfill-official",
+        help="exhaustively probe Sweden SFS IDs and hydrate official artifacts into sweden.farchive",
+    )
+    sw_backfill_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+    sw_backfill_p.add_argument(
+        "--year-start",
+        type=int,
+        default=1999,
+        metavar="YEAR",
+        help="first SFS year to probe (default: 1999)",
+    )
+    sw_backfill_p.add_argument(
+        "--year-end",
+        type=int,
+        default=2026,
+        metavar="YEAR",
+        help="last SFS year to probe (default: 2026)",
+    )
+    sw_backfill_p.add_argument(
+        "--max-number",
+        type=int,
+        default=2100,
+        metavar="N",
+        help="maximum SFS number to probe per year (default: 2100)",
+    )
+    sw_backfill_p.add_argument(
+        "--hydrate-current",
+        action="store_true",
+        help="also fetch RK current JSON and archive source/current bundle artifacts",
+    )
+    sw_backfill_p.add_argument(
+        "--compile-ops",
+        action="store_true",
+        help="compile archived official act JSON into official.ops.json when the act is amending",
+    )
+    sw_backfill_p.add_argument(
+        "--official-max-age-hours",
+        dest="official_max_age_hours",
+        type=float,
+        default=None,
+        metavar="HOURS",
+        help="override immutable caching for official sources",
+    )
+    sw_backfill_p.add_argument(
+        "--current-max-age-hours",
+        dest="current_max_age_hours",
+        type=float,
+        default=None,
+        metavar="HOURS",
+        help="cache max age for RK current JSON (default: 24 hours)",
+    )
+    sw_backfill_p.add_argument(
+        "--force-reextract",
+        dest="force_reextract",
+        action="store_true",
+        help="rerun pdftotext even if extracted text already exists",
+    )
+    sw_backfill_p.add_argument(
+        "--no-skip-complete",
+        action="store_true",
+        help="do not skip SFS IDs that already have the requested archived artifacts",
+    )
+    sw_backfill_p.add_argument(
+        "--resume",
+        action="store_true",
+        help="resume from the archive checkpoint artifact when the run signature matches",
+    )
+    sw_backfill_p.add_argument(
+        "--offset",
+        type=int,
+        default=0,
+        metavar="N",
+        help="skip the first N candidate IDs after generation",
+    )
+    sw_backfill_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        metavar="N",
+        help="process at most N candidate IDs after offset (default: all)",
+    )
+    sw_backfill_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+
+    sw_hydrate_p = sweden_sub.add_parser(
+        "hydrate-live",
+        help="fetch RK current JSON and official PDF artifacts, then archive the Sweden bundle",
+    )
+    sw_hydrate_p.add_argument("sfs_id", help="SFS ID, e.g. 2025:399")
+    sw_hydrate_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+    sw_hydrate_p.add_argument(
+        "--current-max-age-hours",
+        dest="current_max_age_hours",
+        type=float,
+        default=None,
+        metavar="HOURS",
+        help="cache max age for RK current JSON (default: 24 hours)",
+    )
+    sw_hydrate_p.add_argument(
+        "--official-max-age-hours",
+        dest="official_max_age_hours",
+        type=float,
+        default=None,
+        metavar="HOURS",
+        help="override immutable caching for official sources",
+    )
+    sw_hydrate_p.add_argument(
+        "--force-reextract",
+        dest="force_reextract",
+        action="store_true",
+        help="rerun pdftotext even if extracted text already exists",
+    )
+    sw_hydrate_p.add_argument(
+        "--show-text",
+        action="store_true",
+        help="print archived extracted text after hydration",
+    )
+    sw_hydrate_p.add_argument(
+        "--raw-text",
+        action="store_true",
+        help="with --show-text, print raw pdftotext output instead of cleaned text",
+    )
+    sw_hydrate_p.add_argument(
+        "--pdf-url",
+        metavar="URL",
+        help="explicit direct official PDF URL; used when the doc page is blocked or unavailable",
+    )
+
+    sw_materialize_p = sweden_sub.add_parser(
+        "materialize-current",
+        help="materialize archived RK current JSON at one date",
+    )
+    sw_materialize_p.add_argument("sfs_id", help="SFS ID, e.g. 2026:106")
+    sw_materialize_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+    sw_materialize_p.add_argument("--as-of", required=True, metavar="DATE", help="materialization date YYYY-MM-DD")
+    sw_materialize_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+
+    sw_replay_check_p = sweden_sub.add_parser(
+        "replay-check",
+        help="replay compiled official ops against a temporal Sweden base and compare to current",
+    )
+    sw_replay_check_p.add_argument("sfs_id", help="amending SFS ID, e.g. 2026:286")
+    sw_replay_check_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+    sw_replay_check_p.add_argument(
+        "--base-sfs-id",
+        metavar="SFS_ID",
+        help="base SFS ID; defaults to the amended act recorded in official.act.json",
+    )
+    sw_replay_check_p.add_argument(
+        "--as-of",
+        metavar="DATE",
+        help="effective date YYYY-MM-DD; defaults to the compiled op source effective date",
+    )
+    sw_replay_check_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+
+    sw_diagnose_replay_p = sweden_sub.add_parser(
+        "diagnose-replay",
+        help="analyze whether one Sweden act can be replayed from the archived current base surface",
+    )
+    sw_diagnose_replay_p.add_argument("sfs_id", help="amending SFS ID, e.g. 2018:1381")
+    sw_diagnose_replay_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+    sw_diagnose_replay_p.add_argument(
+        "--base-sfs-id",
+        metavar="SFS_ID",
+        help="override the base SFS ID if it cannot be inferred from the official act",
+    )
+    sw_diagnose_replay_p.add_argument(
+        "--as-of",
+        metavar="DATE",
+        help="effective date YYYY-MM-DD; defaults to the compiled op source effective date",
+    )
+    sw_diagnose_replay_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+    sw_diagnose_replay_p.add_argument(
+        "--fetch-missing",
+        dest="fetch_missing",
+        action="store_true",
+        help="when printing older-base diagnostics, try to fetch missing official-chain artifacts",
+    )
+    sw_diagnose_replay_p.add_argument(
+        "--probe-sources",
+        dest="probe_sources",
+        action="store_true",
+        help="probe public official-source reachability for older-base blockers",
+    )
+
+    sw_plan_older_base_p = sweden_sub.add_parser(
+        "plan-older-base",
+        help="plan older-base reconstruction from the base act's official chain inputs",
+    )
+    sw_plan_older_base_p.add_argument("sfs_id", help="amending SFS ID, e.g. 2018:1381")
+    sw_plan_older_base_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+    sw_plan_older_base_p.add_argument(
+        "--base-sfs-id",
+        metavar="SFS_ID",
+        help="override the base SFS ID if it cannot be inferred from the official act",
+    )
+    sw_plan_older_base_p.add_argument(
+        "--as-of",
+        metavar="DATE",
+        help="effective date YYYY-MM-DD; defaults to official ops source or the base amendment register",
+    )
+    sw_plan_older_base_p.add_argument(
+        "--fetch-missing",
+        dest="fetch_missing",
+        action="store_true",
+        help="try to fetch missing official-chain artifacts before reporting statuses",
+    )
+    sw_plan_older_base_p.add_argument(
+        "--probe-sources",
+        dest="probe_sources",
+        action="store_true",
+        help="probe public official-source reachability for missing base/chain acts",
+    )
+    sw_plan_older_base_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+
+    sw_probe_p = sweden_sub.add_parser(
+        "probe",
+        help="refresh/fetch and replay-check a batch of Sweden acts",
+    )
+    sw_probe_p.add_argument("sfs_ids", nargs="+", help="amending SFS IDs, e.g. 2026:280 2026:286 2026:290")
+    sw_probe_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+    sw_probe_p.add_argument(
+        "--force-reextract",
+        dest="force_reextract",
+        action="store_true",
+        help="rerun pdftotext / official-act parse before probing",
+    )
+    sw_probe_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+
+    sw_probe_base_p = sweden_sub.add_parser(
+        "probe-base",
+        help="fetch one base statute, read its amendment register, and probe listed amending acts",
+    )
+    sw_probe_base_p.add_argument("base_sfs_id", help="base SFS ID, e.g. 2015:284")
+    sw_probe_base_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+    sw_probe_base_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        metavar="N",
+        help="probe only the first N register entries (default: all)",
+    )
+    sw_probe_base_p.add_argument(
+        "--force-reextract",
+        dest="force_reextract",
+        action="store_true",
+        help="rerun pdftotext / official-act parse before probing",
+    )
+    sw_probe_base_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+
+    sw_show_official_p = sweden_sub.add_parser(
+        "show-official",
+        help="inspect the parsed official SFS act surface",
+    )
+    sw_show_official_p.add_argument("sfs_id", help="SFS ID, e.g. 2026:286")
+    sw_show_official_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+    sw_show_official_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+    sw_show_official_p.add_argument(
+        "--show-text",
+        action="store_true",
+        help="print enacting clause, provisions, and effective clause",
+    )
+
+    sw_show_official_ops_p = sweden_sub.add_parser(
+        "show-official-ops",
+        help="inspect compiled first-pass ops from archived official act JSON",
+    )
+    sw_show_official_ops_p.add_argument("sfs_id", help="SFS ID, e.g. 2026:286")
+    sw_show_official_ops_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+    sw_show_official_ops_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+
+    sw_source_p = sweden_sub.add_parser(
+        "source-record",
+        help="build a Sweden SourceRecord from local RK-style JSON",
+    )
+    sw_source_p.add_argument("--json-path", required=True, metavar="PATH", help="local JSON file")
+    sw_source_p.add_argument(
+        "--doc-html",
+        metavar="PATH",
+        help="optional local official SFS doc page HTML to enrich PDF URL",
+    )
+
+    sw_parse_p = sweden_sub.add_parser(
+        "parse-current",
+        help="parse current-text IR from local RK-style JSON",
+    )
+    sw_parse_p.add_argument("--json-path", required=True, metavar="PATH", help="local JSON file")
+    sw_parse_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+
+    sw_ingest_p = sweden_sub.add_parser(
+        "ingest-json",
+        help="archive local RK-style JSON and derived Sweden bundle artifacts",
+    )
+    sw_ingest_p.add_argument("--json-path", required=True, metavar="PATH", help="local JSON file")
+    sw_ingest_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+    sw_ingest_p.add_argument(
+        "--doc-html",
+        metavar="PATH",
+        help="optional local official SFS doc page HTML to archive alongside the bundle",
+    )
+
+    sw_ingest_scrape_p = sweden_sub.add_parser(
+        "ingest-scrape-json",
+        help="archive browser-scraped Sweden doc-page HTML map",
+    )
+    sw_ingest_scrape_p.add_argument("--json-path", required=True, metavar="PATH", help="local scrape JSON file")
+    sw_ingest_scrape_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+
+    sw_show_p = sweden_sub.add_parser(
+        "show-archive",
+        help="inspect archived Sweden bundle and PDF-text artifacts",
+    )
+    sw_show_p.add_argument("sfs_id", help="SFS ID, e.g. 2026:286")
+    sw_show_p.add_argument("--db", metavar="PATH", help="Farchive DB path (default: data/sweden.farchive)")
+    sw_show_p.add_argument(
+        "--format",
+        choices=["summary", "json"],
+        default="summary",
+        help="output format (default: summary)",
+    )
+    sw_show_p.add_argument(
+        "--show-text",
+        action="store_true",
+        help="print archived extracted text if available",
+    )
+    sw_show_p.add_argument(
+        "--raw-text",
+        action="store_true",
+        help="with --show-text, print raw pdftotext output instead of cleaned text",
+    )
 
     # --- finland rulebook ---
     fr_p = sub.add_parser(

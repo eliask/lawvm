@@ -6,9 +6,11 @@ import pytest
 
 from lawvm.core.frozen_values import FrozenDict
 from lawvm.core.invariant_detectors import InvariantDetectorResult
+from lawvm.core.invariant_detectors import SUPPORTED_INVARIANT_DETECTORS
 from lawvm.core.invariant_detectors import run_invariant_detector, run_invariant_detector_messages
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.tools.cli import _INVARIANT_DETECTOR_CHOICES
 
 
 def test_run_invariant_detector_returns_typed_tree_results_with_legacy_messages() -> None:
@@ -62,6 +64,14 @@ def test_run_invariant_detector_rejects_unknown_detector() -> None:
 
     with pytest.raises(ValueError, match="unsupported invariant detector 'typo_detector'"):
         run_invariant_detector(tree, "typo_detector")
+
+
+def test_cli_inlined_choices_match() -> None:
+    """Guard against drift between cli.py's inlined tuple and the canonical source."""
+    assert _INVARIANT_DETECTOR_CHOICES == SUPPORTED_INVARIANT_DETECTORS, (
+        "cli._INVARIANT_DETECTOR_CHOICES is out of sync with "
+        "invariant_detectors.SUPPORTED_INVARIANT_DETECTORS — update cli.py"
+    )
 
 
 def test_invariant_detector_result_freezes_detail_payload() -> None:
