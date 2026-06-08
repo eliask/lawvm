@@ -353,6 +353,47 @@ def test_cli_parser_accepts_new_debug_commands(cli_parser) -> None:
     assert eu_reul_args.eu_reul_command == "resolve"
 
 
+def test_cli_rejects_finnish_num_year_like_id(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as raised:
+        cli._reject_pre_1734_fi_command_line_ids(Namespace(jurisdiction="fi", statute_id="4/1734"))
+
+    assert raised.value.code == 2
+    error = capsys.readouterr().err
+    assert "invalid Finnish ID '4/1734' in statute_id: year 4 is before 1734" in error
+    assert "use '1734/4'" in error
+
+
+def test_cli_rejects_finnish_pre_1734_option_ids(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as raised:
+        cli._reject_pre_1734_fi_command_line_ids(
+            Namespace(jurisdiction="fi", statute_id="2006/1299", source="5/1800")
+        )
+
+    assert raised.value.code == 2
+    error = capsys.readouterr().err
+    assert "invalid Finnish ID '5/1800' in --source: year 5 is before 1734" in error
+    assert "use '1800/5'" in error
+
+
+def test_cli_rejects_finnish_pre_1734_list_ids(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as raised:
+        cli._reject_pre_1734_fi_command_line_ids(
+            Namespace(jurisdiction="fi", statute_ids=["1734/4", "4/1734"])
+        )
+
+    assert raised.value.code == 2
+    error = capsys.readouterr().err
+    assert "invalid Finnish ID '1734/4'" not in error
+    assert "invalid Finnish ID '4/1734' in --statute-ids: year 4 is before 1734" in error
+
+
+def test_cli_pre_1734_rejection_is_fi_cli_only(capsys: pytest.CaptureFixture[str]) -> None:
+    cli._reject_pre_1734_fi_command_line_ids(Namespace(jurisdiction="uk", statute_id="4/1734"))
+    cli._reject_pre_1734_fi_command_line_ids(Namespace(jurisdiction="fi", statute_id="2006/1299"))
+
+    assert capsys.readouterr().err == ""
+
+
 def test_finland_bench_evidence_surface_sidecar_writer(tmp_path) -> None:
     run_path = tmp_path / "demo.csv"
 

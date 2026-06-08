@@ -99,6 +99,8 @@ import argparse
 import os
 import re
 import sys
+from collections.abc import Iterator
+from typing import TextIO
 
 from lawvm.core.invariant_detectors import SUPPORTED_INVARIANT_DETECTORS
 from lawvm.tools.uk_replay_regime import UK_APPLICABILITY_MODE_CHOICES
@@ -109,6 +111,82 @@ def _oracle_version_amendment_id(value: str) -> str:
     if re.fullmatch(r"\d{4}/\d{1,4}", value) is None:
         raise argparse.ArgumentTypeError("expected oracle version amendment id in YYYY/NNN form")
     return value
+
+
+_FI_NUMERIC_ID_RE = re.compile(r"^\s*(\d{1,4})/(\d{1,6})\s*$")
+_FI_CLI_ID_FIELD_TOKENS = (
+    "id",
+    "statute",
+    "amendment",
+    "source",
+    "before",
+    "after",
+    "base",
+    "oracle_version",
+)
+
+
+def _iter_cli_string_values(value: object) -> Iterator[str]:
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        for item in value:
+            yield from _iter_cli_string_values(item)
+
+
+def _looks_like_cli_id_field(field_name: str) -> bool:
+    return any(token in field_name for token in _FI_CLI_ID_FIELD_TOKENS)
+
+
+def _cli_field_label(field_name: str) -> str:
+    if field_name == "statute_id":
+        return "statute_id"
+    return f"--{field_name.replace('_', '-')}"
+
+
+def _reject_pre_1734_fi_command_line_ids(
+    args: argparse.Namespace,
+    *,
+    stream: TextIO | None = None,
+) -> None:
+    """Reject CLI-supplied Finnish IDs whose year component predates 1734."""
+
+    if getattr(args, "jurisdiction", "fi") != "fi":
+        return
+    stream = sys.stderr if stream is None else stream
+    seen: set[tuple[str, str]] = set()
+    errors: list[str] = []
+    for field_name, value in vars(args).items():
+        if not _looks_like_cli_id_field(field_name):
+            continue
+        for text in _iter_cli_string_values(value):
+            match = _FI_NUMERIC_ID_RE.fullmatch(text)
+            if match is None:
+                continue
+            first, second = match.groups()
+            year = int(first)
+            if year >= 1734:
+                continue
+            key = (field_name, text)
+            if key in seen:
+                continue
+            seen.add(key)
+            label = _cli_field_label(field_name)
+            if int(second) >= 1734:
+                errors.append(
+                    f"ERROR: invalid Finnish ID '{text}' in {label}: year {year} is before 1734. "
+                    f"Finnish IDs must use year/num; use '{second}/{first}' for year {second} "
+                    f"number {first}."
+                )
+            else:
+                errors.append(
+                    f"ERROR: invalid Finnish ID '{text}' in {label}: year {year} is before 1734. "
+                    "Finnish IDs must use year/num."
+                )
+    if errors:
+        for error in errors:
+            print(error, file=stream)
+        raise SystemExit(2)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -8468,6 +8546,7 @@ def _reject_uk_replay_regime_flags_for_non_uk(args: argparse.Namespace, *, comma
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
+    _reject_pre_1734_fi_command_line_ids(args)
 
     if args.command == "bisect":
         from lawvm.tools.bisect import main as bisect_main
