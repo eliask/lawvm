@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List
+import sys
+from typing import Any, Dict, List, Optional
 
 import lawvm.finland.section_resolver  # noqa: F401 — registers FI section resolver at import time
 
@@ -41,6 +42,13 @@ def _normalize_section_label(label: str) -> str:
     return re.sub(r"[\s§.*]", "", label).lower()
 
 
+def _num_text_to_canonical_selector(num_text: str) -> str:
+    """Convert AKN num-text like '7 §' or '14 b §' to canonical 'section:7' / 'section:14 b'."""
+    # Strip trailing § (with optional surrounding whitespace) and any trailing dots/spaces
+    label = re.sub(r"\s*§\s*$", "", num_text).strip().rstrip(".")
+    return f"section:{label}" if label else ""
+
+
 def _find_section_el(oracle_root: Any, section_filter: str) -> Any | None:
     """Delegate to the registered Finnish section resolver.
 
@@ -52,15 +60,95 @@ def _find_section_el(oracle_root: Any, section_filter: str) -> Any | None:
     is authoritative — we do NOT fall through to raw num-text matching,
     because that would silently widen `section:3` to a deeply-nested
     section and `subsection:1` to whatever has `<num>1 §</num>`.
+
+    Additional pre-processing (CLI-edge only, no semantics change):
+    - Accept an exact eId match (e.g. 'chp_2__sec_7') directly.
+    - Strip one wrapping parenthesis pair so '(7 §)' resolves like '7 §'.
     """
     if not section_filter:
         return None
+
+    # Pre-processing: strip one wrapping paren pair
+    stripped = section_filter.strip()
+    if stripped.startswith("(") and stripped.endswith(")"):
+        stripped = stripped[1:-1].strip()
+    else:
+        stripped = stripped
+
     from lawvm.core.locator import get_section_resolver, parse_locator_string
     resolver = get_section_resolver("fi")
-    locator = parse_locator_string(section_filter)
+
+    # Accept an exact eId match first (e.g. 'chp_2__sec_7v20221023')
+    exact_by_eid = oracle_root.find(f'.//*[@eId="{stripped}"]')
+    if exact_by_eid is not None:
+        return exact_by_eid
+
+    locator = parse_locator_string(stripped)
     if locator is not None:
         return resolver.resolve(oracle_root, locator)
-    return resolver.resolve_raw(oracle_root, section_filter)
+    return resolver.resolve_raw(oracle_root, stripped)
+
+
+def _collect_section_info(oracle_root: Any) -> List[Dict[str, str]]:
+    """Collect (canonical_selector, eid, num_text) for every <section> in the oracle XML.
+
+    Returns list of dicts with keys: canonical, eid, num_text.
+    canonical is the --section-accepted form, e.g. 'section:7 a'.
+    """
+    items = []
+    for sec in oracle_root.findall(".//{*}section"):
+        eid = sec.get("eId") or ""
+        num_el = sec.find(".//{*}num")
+        num_text = (num_el.text or "").strip() if num_el is not None else ""
+        canonical = _num_text_to_canonical_selector(num_text) if num_text else ""
+        items.append({"canonical": canonical, "eid": eid, "num_text": num_text})
+    return items
+
+
+def _find_nearby_sections(
+    section_info: List[Dict[str, str]],
+    section_filter: str,
+    n: int = 4,
+) -> List[str]:
+    """Return up to n canonical selectors near section_filter (for teaching errors).
+
+    Strategy: extract the numeric label from the filter and find sections with
+    numerically nearby labels. Falls back to the first few sections.
+    """
+    # Extract a numeric stem from the filter for proximity search
+    # e.g. 'section:127a' → 127, 'section:127' → 127, '127 a' → 127, 'chp_3__sec_5' → skip
+    _NUM_STEM_RE = re.compile(r"(\d+)")
+    m = _NUM_STEM_RE.search(section_filter)
+    if m:
+        target_num = int(m.group(1))
+        scored: List[tuple] = []
+        for info in section_info:
+            canon = info["canonical"]
+            if not canon:
+                continue
+            m2 = _NUM_STEM_RE.search(canon)
+            if m2:
+                dist = abs(int(m2.group(1)) - target_num)
+                scored.append((dist, canon))
+        if scored:
+            scored.sort(key=lambda x: x[0])
+            seen: List[str] = []
+            for _, c in scored:
+                if c not in seen:
+                    seen.append(c)
+                if len(seen) >= n:
+                    break
+            return seen
+
+    # Fallback: return first n canonical selectors
+    fallback = []
+    for info in section_info:
+        c = info["canonical"]
+        if c and c not in fallback:
+            fallback.append(c)
+        if len(fallback) >= n:
+            break
+    return fallback
 
 
 def build_oracle_text_bundle(
@@ -113,12 +201,20 @@ def build_oracle_text_bundle(
 
     # No section filter → list all section labels and return
     if not section_filter:
+        section_info = _collect_section_info(oracle_root)
+        # Print the canonical selector (--section-accepted form) as the primary token,
+        # with eId and raw num_text as metadata so a user/agent can copy the token directly.
         labels: List[str] = []
-        for sec in oracle_root.findall(".//{*}section"):
-            eid = sec.get("eId") or ""
-            num_el = sec.find(".//{*}num")
-            num_text = (num_el.text or "").strip() if num_el is not None else ""
-            labels.append(f"{eid} ({num_text})" if eid else num_text)
+        for info in section_info:
+            canon = info["canonical"]
+            eid = info["eid"]
+            num_text = info["num_text"]
+            if canon:
+                labels.append(f"{canon}  (eId={eid}, num={num_text})")
+            elif eid:
+                labels.append(f"(no-num)  (eId={eid})")
+            else:
+                labels.append(f"(no-num, no-eId)  num={num_text}")
         return {
             "statute_id": statute_id,
             "locator": locator,
@@ -134,6 +230,8 @@ def build_oracle_text_bundle(
     section_el = _find_section_el(oracle_root, section_filter)
 
     if section_el is None:
+        section_info = _collect_section_info(oracle_root)
+        nearby = _find_nearby_sections(section_info, section_filter)
         return {
             "statute_id": statute_id,
             "locator": locator,
@@ -141,6 +239,7 @@ def build_oracle_text_bundle(
             "section_filter": section_filter,
             "found": False,
             "error": f"section {section_filter!r} not found at this oracle version",
+            "nearby_sections": nearby,
             "full_text": "",
             "subsections": [],
         }
@@ -190,6 +289,9 @@ def _format_text(bundle: Dict[str, Any]) -> str:
 
     if not bundle.get("found"):
         lines.append(f"\nERROR: {bundle.get('error', 'not found')}")
+        nearby = bundle.get("nearby_sections", [])
+        if nearby:
+            lines.append(f"  nearby: {', '.join(nearby)}")
         return "\n".join(lines)
 
     lines.append(f"Subsections: {bundle.get('subsection_count', 0)}")
@@ -215,4 +317,16 @@ def main(args: Any) -> None:
     if getattr(args, "json", False):
         print(json.dumps(bundle, ensure_ascii=False, indent=2, default=str))
         return
+    # On not-found, emit the concise teaching error to stderr for agent/pipe
+    # consumers while _format_text includes it in the human-readable stdout output.
+    if not bundle.get("found") and bundle.get("nearby_sections"):
+        nearby = bundle["nearby_sections"]
+        statute_id = bundle.get("statute_id", "")
+        section_filter = bundle.get("section_filter", "")
+        print(
+            f"hint: --section {section_filter!r} not found in {statute_id} "
+            f"@{bundle.get('at_amendment') or 'latest'} — "
+            f"nearby: {', '.join(nearby)}",
+            file=sys.stderr,
+        )
     print(_format_text(bundle))
