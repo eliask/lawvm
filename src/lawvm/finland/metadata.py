@@ -47,17 +47,17 @@ from lawvm.finland.helpers import _norm_num_token, _parse_iso_date
 
 # Horizontal-space variants → ordinary space (U+0020).
 #
-# Computed from the Unicode ``Zs`` (Space Separator) general category rather
-# than maintained as a hand-written list.  Using the category makes this
+# Precomputed literal below, derived from the Unicode ``Zs`` (Space Separator)
+# general category and drift-guarded by a regenerate-and-compare test.  Using
+# the category as the source of truth makes this
 # exhaustive against all Unicode spaces — including EN SPACE (U+2002),
 # EM SPACE (U+2003), the N-PER-EM quads (U+2004..U+2006), MEDIUM
 # MATHEMATICAL SPACE (U+205F), IDEOGRAPHIC SPACE (U+3000), etc. — that a
 # hand-written list would likely miss.  Excludes U+0020 itself (the target).
-_ZS_NON_ASCII_SPACES: frozenset[str] = frozenset(
-    chr(cp)
-    for cp in range(sys.maxunicode + 1)
-    if cp != 0x20 and unicodedata.category(chr(cp)) == 'Zs'
-)
+_ZS_NON_ASCII_SPACE_CPS: frozenset[int] = frozenset({
+    0x00A0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006,
+    0x2007, 0x2008, 0x2009, 0x200A, 0x202F, 0x205F, 0x3000,
+})
 
 # Unicode ``Cf`` (Format) characters that should be deleted from structural
 # parse text.  These are invisible control characters that do not carry
@@ -68,11 +68,29 @@ _ZS_NON_ASCII_SPACES: frozenset[str] = frozenset(
 # We delete all Cf characters (zero-width joiners, non-joiners, soft hyphens,
 # etc.) except for U+FEFF BOM which should never appear mid-stream but is
 # harmless to strip as well.
-_CF_FORMAT_CHARS: frozenset[str] = frozenset(
-    chr(cp)
-    for cp in range(sys.maxunicode + 1)
-    if unicodedata.category(chr(cp)) == 'Cf'
-)
+_CF_FORMAT_CPS: frozenset[int] = frozenset({
+    0x00AD, 0x0600, 0x0601, 0x0602, 0x0603, 0x0604, 0x0605, 0x061C, 0x06DD,
+    0x070F, 0x0890, 0x0891, 0x08E2, 0x180E, 0x200B, 0x200C, 0x200D, 0x200E,
+    0x200F, 0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2060, 0x2061, 0x2062,
+    0x2063, 0x2064, 0x2066, 0x2067, 0x2068, 0x2069, 0x206A, 0x206B, 0x206C,
+    0x206D, 0x206E, 0x206F, 0xFEFF, 0xFFF9, 0xFFFA, 0xFFFB, 0x110BD, 0x110CD,
+    0x13430, 0x13431, 0x13432, 0x13433, 0x13434, 0x13435, 0x13436, 0x13437,
+    0x13438, 0x13439, 0x1343A, 0x1343B, 0x1343C, 0x1343D, 0x1343E, 0x1343F,
+    0x1BCA0, 0x1BCA1, 0x1BCA2, 0x1BCA3, 0x1D173, 0x1D174, 0x1D175, 0x1D176,
+    0x1D177, 0x1D178, 0x1D179, 0x1D17A, 0xE0001, 0xE0020, 0xE0021, 0xE0022,
+    0xE0023, 0xE0024, 0xE0025, 0xE0026, 0xE0027, 0xE0028, 0xE0029, 0xE002A,
+    0xE002B, 0xE002C, 0xE002D, 0xE002E, 0xE002F, 0xE0030, 0xE0031, 0xE0032,
+    0xE0033, 0xE0034, 0xE0035, 0xE0036, 0xE0037, 0xE0038, 0xE0039, 0xE003A,
+    0xE003B, 0xE003C, 0xE003D, 0xE003E, 0xE003F, 0xE0040, 0xE0041, 0xE0042,
+    0xE0043, 0xE0044, 0xE0045, 0xE0046, 0xE0047, 0xE0048, 0xE0049, 0xE004A,
+    0xE004B, 0xE004C, 0xE004D, 0xE004E, 0xE004F, 0xE0050, 0xE0051, 0xE0052,
+    0xE0053, 0xE0054, 0xE0055, 0xE0056, 0xE0057, 0xE0058, 0xE0059, 0xE005A,
+    0xE005B, 0xE005C, 0xE005D, 0xE005E, 0xE005F, 0xE0060, 0xE0061, 0xE0062,
+    0xE0063, 0xE0064, 0xE0065, 0xE0066, 0xE0067, 0xE0068, 0xE0069, 0xE006A,
+    0xE006B, 0xE006C, 0xE006D, 0xE006E, 0xE006F, 0xE0070, 0xE0071, 0xE0072,
+    0xE0073, 0xE0074, 0xE0075, 0xE0076, 0xE0077, 0xE0078, 0xE0079, 0xE007A,
+    0xE007B, 0xE007C, 0xE007D, 0xE007E, 0xE007F,
+})
 
 # Dash variants → en-dash (U+2013), the standard Finnish range dash.
 # Hyphen-minus U+002D is intentionally excluded: it is used in statute IDs
@@ -88,9 +106,9 @@ _DASH_TO_EN_DASH: tuple[str, ...] = (
 # ``str.translate`` with a single table is both faster than repeated
 # ``str.replace`` calls and makes the set of folds declarative in one place.
 _TYPO_TRANSLATION_TABLE: dict[int, str] = {
-    **{ord(ch): ' ' for ch in _ZS_NON_ASCII_SPACES},
+    **{cp: ' ' for cp in _ZS_NON_ASCII_SPACE_CPS},
     **{ord(ch): '\u2013' for ch in _DASH_TO_EN_DASH},
-    **{ord(ch): '' for ch in _CF_FORMAT_CHARS},
+    **{cp: '' for cp in _CF_FORMAT_CPS},
 }
 
 
