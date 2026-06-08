@@ -258,6 +258,7 @@ def compile_timelines(
     base: IRStatute,
     ops: List[LegalOperation],
     base_date: str = "",
+    base_enacted_date: str = "",
     label_norm: Optional[Callable[[str], str]] = None,
     temporal_events: Tuple[TemporalEvent, ...] = (),
     issue_sink: Optional[List[TimelineIssue]] = None,
@@ -279,6 +280,16 @@ def compile_timelines(
                     carrier.
         base_date:  Effective date of the base statute. Falls back to
                     base.metadata["enacted_date"] then "0000-00-00".
+        base_enacted_date:
+                    Enacted date for base provisions (used only as the
+                    ``enacted`` field on seeded ProvisionVersions).  When
+                    provided this is used instead of ``effective_base`` for
+                    the ``enacted`` field, leaving ``effective`` unchanged.
+                    This allows ``--query-type in_force`` to correctly exclude
+                    pre-enactment queries (enacted > as_of → not eligible)
+                    while keeping ``--query-type governing`` unaffected
+                    (governing only checks ``effective``, not ``enacted``).
+                    Falls back to ``effective_base`` when empty.
         authority_context:
                     Materialization authority lane. The default accepts only
                     enacted/commenced branchless operations. A non-default
@@ -294,6 +305,11 @@ def compile_timelines(
 
     # Step 1: seed from base statute
     effective_base = base_date or base.metadata.get("enacted_date", "") or "0000-00-00"
+    # When base_enacted_date is explicitly provided (e.g. Finland FRBR signature_date),
+    # use it as the enacted date for base provisions so that --query-type in_force
+    # correctly excludes pre-enactment as_of dates.  governing queries are unaffected
+    # because eligible() only checks v.effective for the governing path.
+    enacted_base = base_enacted_date or effective_base
 
     def _norm_addr(addr: LegalAddress) -> LegalAddress:
         """Normalize labels in address using label_norm callback."""
@@ -310,7 +326,7 @@ def compile_timelines(
         tl.versions.append(
             ProvisionVersion(
                 effective=effective_base,
-                enacted=effective_base,
+                enacted=enacted_base,
                 content=node,
                 content_hash=irnode_content_hash(node),
             )
@@ -327,7 +343,7 @@ def compile_timelines(
         versions=[
             ProvisionVersion(
                 effective=effective_base,
-                enacted=effective_base,
+                enacted=enacted_base,
                 content=title_node,
                 content_hash=irnode_content_hash(title_node),
             )

@@ -510,6 +510,8 @@ def build_replay_products(
         )
 
     from lawvm.core.timeline import compile_timelines, materialize_pit
+    import lxml.etree as _etree
+    from lawvm.finland.metadata import _statute_issue_date as _fi_statute_issue_date
 
     base_ir = IRStatute(
         statute_id=statute_id,
@@ -549,9 +551,20 @@ def build_replay_products(
             resolved_temporal_events,
             synthesized_temporal_events,
         )
+    # Extract the base statute's issue date (FRBR dateIssued / signature date) so
+    # that compile_timelines can set the correct `enacted` date on base provisions.
+    # This fixes --query-type in_force for pre-enactment as_of dates: the
+    # `eligible()` check (enacted <= as_of) correctly excludes base provisions
+    # when as_of < statute issue date.  The `effective` date of base provisions
+    # remains "0000-00-00" so --query-type governing is completely unaffected
+    # (governing only checks v.effective, not v.enacted).
+    _base_tree = _etree.fromstring(ctx.base_xml_bytes)
+    _base_issue_date = _fi_statute_issue_date(_base_tree)
+    _base_enacted_date: str = _base_issue_date.isoformat() if _base_issue_date is not None else ""
     raw_timelines = compile_timelines(
         base_ir,
         lo_ops,
+        base_enacted_date=_base_enacted_date,
         label_norm=fi_label_norm,
         temporal_events=resolved_temporal_events,
     )
