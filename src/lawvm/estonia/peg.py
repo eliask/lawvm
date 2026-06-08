@@ -63,6 +63,7 @@ from lawvm.core.ir import (
     TextSelector,
 )
 from lawvm.core.semantic_types import FacetKind
+from lawvm.core.unicode_folds import CF_FORMAT_CPS, PD_DASH_CPS, ZS_NON_ASCII_SPACE_CPS
 from lawvm.estonia.text_morphology import (
     _EE_ARUANDED_ARUANNE_FORMS_RULE,
     _EE_ARUANDED_HEADING_AGREEMENT_RULE,
@@ -83,28 +84,16 @@ _EE_SUPERSCRIPT_DIGIT_CLASS = re.escape(_EE_SUPERSCRIPT_DIGITS)
 _EE_SUPERSCRIPT_DIGIT_TRANSLATION = {
     ord(ch): str(unicodedata.digit(ch)) for ch in _EE_SUPERSCRIPT_DIGITS
 }
-_EE_DASH_CHARS = "".join(
-    chr(cp)
-    for cp in range(sys.maxunicode + 1)
-    if unicodedata.category(chr(cp)) == "Pd"
-)
-_EE_DASH_CHARS += "\u2212"
+# Pd chars from lawvm.core.unicode_folds (static literal, no import-time scan)
+# plus U+2212 MINUS SIGN which Estonian amendment text uses as a range dash.
+_EE_DASH_CHARS = "".join(chr(cp) for cp in sorted(PD_DASH_CPS)) + "\u2212"
 _EE_DASH_CLASS = re.escape(_EE_DASH_CHARS)
 _EE_NUM_ATOM = r"\d+(?:\s+\d+|[" + _EE_SUPERSCRIPT_DIGIT_CLASS + r"]+)?"
-_EE_ZS_NON_ASCII_SPACES = frozenset(
-    chr(cp)
-    for cp in range(sys.maxunicode + 1)
-    if cp != 0x20 and unicodedata.category(chr(cp)) == "Zs"
-)
-_EE_CF_FORMAT_CHARS = frozenset(
-    chr(cp)
-    for cp in range(sys.maxunicode + 1)
-    if unicodedata.category(chr(cp)) == "Cf"
-)
+# Zs and Cf sets from lawvm.core.unicode_folds (static literals, no import-time scan)
 _EE_PARSE_TRANSLATION_TABLE = {
-    **{ord(ch): " " for ch in _EE_ZS_NON_ASCII_SPACES},
+    **{cp: " " for cp in ZS_NON_ASCII_SPACE_CPS},
     **{ord(ch): "\u2013" for ch in _EE_DASH_CHARS},
-    **{ord(ch): "" for ch in _EE_CF_FORMAT_CHARS},
+    **{cp: "" for cp in CF_FORMAT_CPS},
 }
 
 
