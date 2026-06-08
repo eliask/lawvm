@@ -17,6 +17,7 @@ Usage:
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import re
@@ -27,6 +28,10 @@ import lawvm.finland.section_resolver  # noqa: F401 — registers FI section res
 
 # Once-per-process gate for Task-N discovery hint (stateless: no files, no session state).
 _HINT_EMITTED: bool = False
+
+# Snapshots older than this many years trigger the coverage caveat on stderr.
+# Uses the cutoff date of the last-included amendment in the ingested oracle chain.
+_STALE_SNAPSHOT_YEARS = 2
 
 
 def _amendment_id_to_version_tag(amendment_id: str) -> str:
@@ -187,6 +192,12 @@ def build_oracle_text_bundle(
 
     cs = get_corpus()
 
+    # oracle_cutoff_date and oracle_version_amendment_id are populated for the
+    # default/latest snapshot path; for --at-amendment they remain None/"" because
+    # the user pinned the version deliberately and the coverage caveat does not apply.
+    oracle_cutoff_date: Optional[datetime.date] = None
+    oracle_version_amendment_id_resolved: str = ""
+
     if at_amendment:
         version_tag = _amendment_id_to_version_tag(at_amendment)
         locator = build_consolidated_main_locator(
@@ -196,12 +207,35 @@ def build_oracle_text_bundle(
         selector = ConsolidatedArtifactSelector.latest_cached_editorial()
         ctx = get_consolidated_oracle_context(statute_id, corpus=cs, selector=selector)
         locator = ctx.locator
+        # Reuse the cutoff metadata already resolved by get_consolidated_oracle_context.
+        # Source: src/lawvm/finland/corpus.py — ConsolidatedOracleContext.cutoff_date
+        # and ConsolidatedOracleContext.oracle_version_amendment_id.
+        oracle_cutoff_date = ctx.cutoff_date
+        oracle_version_amendment_id_resolved = ctx.oracle_version_amendment_id
 
     oracle_bytes = cs.read_locator(locator)
     if oracle_bytes is None:
         raise SystemExit(f"oracle not found in archive: {locator!r}")
 
     oracle_root = etree.fromstring(oracle_bytes)
+
+    # Coverage staleness: snapshot is stale if its cutoff date is more than
+    # _STALE_SNAPSHOT_YEARS before today.  Only applies to the default/latest
+    # snapshot (not when the caller pinned a version with --at-amendment).
+    coverage_possibly_stale = False
+    if oracle_cutoff_date is not None and not at_amendment:
+        stale_threshold = datetime.date.today().replace(
+            year=datetime.date.today().year - _STALE_SNAPSHOT_YEARS
+        )
+        coverage_possibly_stale = oracle_cutoff_date < stale_threshold
+
+    # Shared coverage fields included in every bundle variant so machine consumers
+    # can inspect them without special-casing per path.
+    coverage_fields: Dict[str, Any] = {
+        "oracle_cutoff_date": oracle_cutoff_date.isoformat() if oracle_cutoff_date else None,
+        "oracle_version_amendment_id": oracle_version_amendment_id_resolved or None,
+        "coverage_possibly_stale": coverage_possibly_stale,
+    }
 
     # No section filter → list all section labels and return
     if not section_filter:
@@ -230,6 +264,7 @@ def build_oracle_text_bundle(
             "total_section_count": len(labels),
             "full_text": "",
             "subsections": [],
+            **coverage_fields,
         }
 
     # Count all sections in this oracle (used by Task-N hint gate).
@@ -251,6 +286,7 @@ def build_oracle_text_bundle(
             "total_section_count": total_section_count,
             "full_text": "",
             "subsections": [],
+            **coverage_fields,
         }
 
     full_text = _el_to_text(section_el)
@@ -277,6 +313,7 @@ def build_oracle_text_bundle(
         "subsection_count": len(section_el.findall(".//{*}subsection")),
         "total_section_count": total_section_count,
         "subsections": subsections,
+        **coverage_fields,
     }
 
 
@@ -343,13 +380,37 @@ def main(args: Any) -> None:
         )
     print(_format_text(bundle))
 
-    # Task N: point-of-use discovery nudge — stateless, once-per-process,
-    # never on JSON (handled above), suppressible.
-    # Gates: section filter set, total_section_count > 12, not suppressed.
+    # Suppress all stderr hints/caveats when --no-hints or LAWVM_NO_HINTS=1.
     _no_hints = (
         getattr(args, "no_hints", False)
         or bool(os.environ.get("LAWVM_NO_HINTS", ""))
     )
+
+    # Coverage staleness caveat — emitted to stderr when:
+    #   • the default/latest snapshot is being used (not --at-amendment)
+    #   • its cutoff date is more than _STALE_SNAPSHOT_YEARS years ago
+    #   • hints are not suppressed
+    # This is a COVERAGE statement (not a repeal claim): LawVM cannot confirm
+    # what happened after the ingested chain's cutoff.
+    at_amendment_used = bool(getattr(args, "at_amendment", ""))
+    if (
+        not _no_hints
+        and not at_amendment_used
+        and bundle.get("coverage_possibly_stale")
+    ):
+        cutoff_str = bundle.get("oracle_cutoff_date") or "unknown"
+        last_amendment = bundle.get("oracle_version_amendment_id") or "unknown"
+        print(
+            f"note: consolidated snapshot reflects amendments through {cutoff_str} "
+            f"(last: {last_amendment}). "
+            f"LawVM cannot confirm amendments or repeals enacted after that date "
+            f"— verify currency in Finlex.",
+            file=sys.stderr,
+        )
+
+    # Task N: point-of-use discovery nudge — stateless, once-per-process,
+    # never on JSON (handled above), suppressible.
+    # Gates: section filter set, total_section_count > 12, not suppressed.
     section_filter_set = bool(getattr(args, "section", ""))
     total_count = bundle.get("total_section_count", 0)
     if (

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from typing import Any
 
 from lxml import etree
@@ -10,6 +11,7 @@ from lawvm.tools.oracle_text import (
     _find_nearby_sections,
     _find_section_el,
     _num_text_to_canonical_selector,
+    _STALE_SNAPSHOT_YEARS,
 )
 
 
@@ -134,13 +136,18 @@ def test_find_nearby_sections_fallback_when_no_numeric_stem() -> None:
 # Task N: total_section_count is present in all bundle variants
 # ---------------------------------------------------------------------------
 
-def _make_fake_args(section: str = "", json_out: bool = False, no_hints: bool = False) -> Any:
+def _make_fake_args(
+    section: str = "",
+    json_out: bool = False,
+    no_hints: bool = False,
+    at_amendment: str = "",
+) -> Any:
     """Create a minimal fake args namespace for testing main() gate logic."""
     import argparse
     ns = argparse.Namespace()
     ns.statute_id = "2009/738"
     ns.section = section
-    ns.at_amendment = ""
+    ns.at_amendment = at_amendment
     ns.subsections = False
     ns.json = json_out
     ns.no_hints = no_hints
@@ -345,3 +352,157 @@ def test_hint_emitted_only_once_per_process(capsys, monkeypatch) -> None:
     captured = capsys.readouterr()
     hint_lines = [ln for ln in captured.err.splitlines() if "hint: searching" in ln]
     assert len(hint_lines) == 1, f"hint must fire exactly once; got {len(hint_lines)} occurrences"
+
+
+# ---------------------------------------------------------------------------
+# Coverage staleness caveat tests
+# ---------------------------------------------------------------------------
+
+def _stale_bundle(*, at_amendment: str = "") -> dict:
+    """Fake bundle with a cutoff date more than _STALE_SNAPSHOT_YEARS years ago."""
+    stale_date = (
+        datetime.date.today().replace(year=datetime.date.today().year - _STALE_SNAPSHOT_YEARS - 1)
+    )
+    return {
+        "statute_id": "2003/497",
+        "locator": "fi/fin/2003/497/cons.xml",
+        "at_amendment": at_amendment,
+        "section_filter": "section:7",
+        "found": True,
+        "full_text": "some text",
+        "full_text_length": 9,
+        "subsection_count": 1,
+        "total_section_count": 10,
+        "subsections": [],
+        "oracle_cutoff_date": stale_date.isoformat(),
+        "oracle_version_amendment_id": "2009/1561",
+        "coverage_possibly_stale": True,
+    }
+
+
+def _recent_bundle() -> dict:
+    """Fake bundle with a cutoff date within _STALE_SNAPSHOT_YEARS years."""
+    recent_date = datetime.date.today().replace(year=datetime.date.today().year - 1)
+    return {
+        "statute_id": "2017/530",
+        "locator": "fi/fin/2017/530/cons.xml",
+        "at_amendment": "",
+        "section_filter": "section:2",
+        "found": True,
+        "full_text": "recent text",
+        "full_text_length": 11,
+        "subsection_count": 1,
+        "total_section_count": 10,
+        "subsections": [],
+        "oracle_cutoff_date": recent_date.isoformat(),
+        "oracle_version_amendment_id": "2022/1200",
+        "coverage_possibly_stale": False,
+    }
+
+
+def test_coverage_caveat_emitted_for_stale_snapshot(capsys, monkeypatch) -> None:
+    """Caveat must appear on stderr when snapshot is stale (cutoff > 2y ago)."""
+    import lawvm.tools.oracle_text as ot_module
+    ot_module._HINT_EMITTED = False
+    monkeypatch.delenv("LAWVM_NO_HINTS", raising=False)
+
+    from unittest.mock import patch
+    args = _make_fake_args(section="section:7", no_hints=False)
+
+    with patch.object(ot_module, "build_oracle_text_bundle", return_value=_stale_bundle()):
+        ot_module.main(args)
+
+    captured = capsys.readouterr()
+    assert "note: consolidated snapshot reflects amendments through" in captured.err
+    assert "2009/1561" in captured.err
+    assert "Finlex" in captured.err
+    # Caveat must be on stderr, not stdout
+    assert "note: consolidated snapshot" not in captured.out
+
+
+def test_coverage_caveat_absent_for_recent_snapshot(capsys, monkeypatch) -> None:
+    """Caveat must NOT appear when the snapshot cutoff is within the staleness window."""
+    import lawvm.tools.oracle_text as ot_module
+    ot_module._HINT_EMITTED = False
+    monkeypatch.delenv("LAWVM_NO_HINTS", raising=False)
+
+    from unittest.mock import patch
+    args = _make_fake_args(section="section:2", no_hints=False)
+
+    with patch.object(ot_module, "build_oracle_text_bundle", return_value=_recent_bundle()):
+        ot_module.main(args)
+
+    captured = capsys.readouterr()
+    assert "note: consolidated snapshot" not in captured.err
+
+
+def test_coverage_caveat_absent_in_json_mode(capsys, monkeypatch) -> None:
+    """Caveat must NOT appear in JSON mode; coverage fields must be present in JSON payload."""
+    import json as json_mod
+    import lawvm.tools.oracle_text as ot_module
+    ot_module._HINT_EMITTED = False
+    monkeypatch.delenv("LAWVM_NO_HINTS", raising=False)
+
+    from unittest.mock import patch
+    args = _make_fake_args(section="section:7", json_out=True, no_hints=False)
+
+    with patch.object(ot_module, "build_oracle_text_bundle", return_value=_stale_bundle()):
+        ot_module.main(args)
+
+    captured = capsys.readouterr()
+    assert "note: consolidated snapshot" not in captured.err
+    payload = json_mod.loads(captured.out)
+    assert "oracle_cutoff_date" in payload
+    assert "oracle_version_amendment_id" in payload
+    assert "coverage_possibly_stale" in payload
+    assert payload["coverage_possibly_stale"] is True
+
+
+def test_coverage_caveat_suppressed_by_no_hints_flag(capsys, monkeypatch) -> None:
+    """Caveat must NOT appear when --no-hints is set."""
+    import lawvm.tools.oracle_text as ot_module
+    ot_module._HINT_EMITTED = False
+    monkeypatch.delenv("LAWVM_NO_HINTS", raising=False)
+
+    from unittest.mock import patch
+    args = _make_fake_args(section="section:7", no_hints=True)
+
+    with patch.object(ot_module, "build_oracle_text_bundle", return_value=_stale_bundle()):
+        ot_module.main(args)
+
+    captured = capsys.readouterr()
+    assert "note: consolidated snapshot" not in captured.err
+
+
+def test_coverage_caveat_suppressed_by_env(capsys, monkeypatch) -> None:
+    """Caveat must NOT appear when LAWVM_NO_HINTS=1 is set."""
+    import lawvm.tools.oracle_text as ot_module
+    ot_module._HINT_EMITTED = False
+    monkeypatch.setenv("LAWVM_NO_HINTS", "1")
+
+    from unittest.mock import patch
+    args = _make_fake_args(section="section:7", no_hints=False)
+
+    with patch.object(ot_module, "build_oracle_text_bundle", return_value=_stale_bundle()):
+        ot_module.main(args)
+
+    captured = capsys.readouterr()
+    assert "note: consolidated snapshot" not in captured.err
+
+
+def test_coverage_caveat_absent_when_at_amendment_used(capsys, monkeypatch) -> None:
+    """Caveat must NOT appear when the user explicitly pinned a version with --at-amendment."""
+    import lawvm.tools.oracle_text as ot_module
+    ot_module._HINT_EMITTED = False
+    monkeypatch.delenv("LAWVM_NO_HINTS", raising=False)
+
+    from unittest.mock import patch
+    # at_amendment set on both args and bundle (the bundle won't have coverage_possibly_stale=True
+    # when at_amendment is used, but we also check the args gate independently)
+    args = _make_fake_args(section="section:7", no_hints=False, at_amendment="2009/1561")
+
+    with patch.object(ot_module, "build_oracle_text_bundle", return_value=_stale_bundle(at_amendment="2009/1561")):
+        ot_module.main(args)
+
+    captured = capsys.readouterr()
+    assert "note: consolidated snapshot" not in captured.err
