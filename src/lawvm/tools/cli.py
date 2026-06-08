@@ -741,6 +741,12 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         action="store_true",
         help="emit JSON",
     )
+    oracle_text_p.add_argument(
+        "--no-hints",
+        dest="no_hints",
+        action="store_true",
+        help="suppress point-of-use discovery hints on stderr (also: LAWVM_NO_HINTS=1)",
+    )
 
     # --- replay-plan ---
     replay_plan_p = sub.add_parser(

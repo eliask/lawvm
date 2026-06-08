@@ -18,11 +18,15 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from typing import Any, Dict, List, Optional
 
 import lawvm.finland.section_resolver  # noqa: F401 — registers FI section resolver at import time
+
+# Once-per-process gate for Task-N discovery hint (stateless: no files, no session state).
+_HINT_EMITTED: bool = False
 
 
 def _amendment_id_to_version_tag(amendment_id: str) -> str:
@@ -223,9 +227,13 @@ def build_oracle_text_bundle(
             "found": True,
             "section_labels": labels,
             "section_count": len(labels),
+            "total_section_count": len(labels),
             "full_text": "",
             "subsections": [],
         }
+
+    # Count all sections in this oracle (used by Task-N hint gate).
+    total_section_count = len(oracle_root.findall(".//{*}section"))
 
     section_el = _find_section_el(oracle_root, section_filter)
 
@@ -240,6 +248,7 @@ def build_oracle_text_bundle(
             "found": False,
             "error": f"section {section_filter!r} not found at this oracle version",
             "nearby_sections": nearby,
+            "total_section_count": total_section_count,
             "full_text": "",
             "subsections": [],
         }
@@ -266,6 +275,7 @@ def build_oracle_text_bundle(
         "full_text": full_text,
         "full_text_length": len(full_text),
         "subsection_count": len(section_el.findall(".//{*}subsection")),
+        "total_section_count": total_section_count,
         "subsections": subsections,
     }
 
@@ -308,6 +318,8 @@ def _format_text(bundle: Dict[str, Any]) -> str:
 
 
 def main(args: Any) -> None:
+    global _HINT_EMITTED
+
     bundle = build_oracle_text_bundle(
         statute_id=args.statute_id,
         section_filter=getattr(args, "section", "") or "",
@@ -321,12 +333,36 @@ def main(args: Any) -> None:
     # consumers while _format_text includes it in the human-readable stdout output.
     if not bundle.get("found") and bundle.get("nearby_sections"):
         nearby = bundle["nearby_sections"]
-        statute_id = bundle.get("statute_id", "")
-        section_filter = bundle.get("section_filter", "")
+        statute_id_str = bundle.get("statute_id", "")
+        section_filter_str = bundle.get("section_filter", "")
         print(
-            f"hint: --section {section_filter!r} not found in {statute_id} "
+            f"hint: --section {section_filter_str!r} not found in {statute_id_str} "
             f"@{bundle.get('at_amendment') or 'latest'} — "
             f"nearby: {', '.join(nearby)}",
             file=sys.stderr,
         )
     print(_format_text(bundle))
+
+    # Task N: point-of-use discovery nudge — stateless, once-per-process,
+    # never on JSON (handled above), suppressible.
+    # Gates: section filter set, total_section_count > 12, not suppressed.
+    _no_hints = (
+        getattr(args, "no_hints", False)
+        or bool(os.environ.get("LAWVM_NO_HINTS", ""))
+    )
+    section_filter_set = bool(getattr(args, "section", ""))
+    total_count = bundle.get("total_section_count", 0)
+    if (
+        not _HINT_EMITTED
+        and not _no_hints
+        and section_filter_set
+        and total_count > 12
+    ):
+        _HINT_EMITTED = True
+        statute_id_str = bundle.get("statute_id", "")
+        print(
+            f"hint: searching a statute? "
+            f"'refs --to {statute_id_str}' (who cites it) · "
+            f"'topic --topic <kw>' (text) · 'sgrep' (structural).",
+            file=sys.stderr,
+        )
