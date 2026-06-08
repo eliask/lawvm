@@ -212,14 +212,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     _CAPABILITY_MAP = """\
-lawvm — point-in-time FI/EU legal state + citation graph + amendment history + HE corpus.
+lawvm — point-in-time legal state + citation graph + amendment history across jurisdictions (fi/ee/uk/no/nz). Select with -j.
 
-  FIND   topic (FTS text) · sgrep (structural) · refs / cite (citation graph, fwd+reverse) · fi-proposals (HE)
+  FIND   topic (FTS text) · sgrep (structural) · refs / cite (citation graph, fwd+reverse) · fi-proposals (FI HE corpus)
   READ   oracle-text (section @version) · provision-state · pit-timeline · pit-diff
   TRACE  bisect · explain · evidence
   recipes: `lawvm recipes`     ·     full command list below
 
-examples:
+examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
   lawvm refs --to 2007/571          # what provisions cite this statute (reverse citation graph)
   lawvm cite 2009/738               # outgoing refs of a statute
   lawvm topic --topic kadmium       # full-text search across in-force sections
@@ -8539,6 +8539,18 @@ examples:
         help="path to provenance graph store (default: data/fi/v1/provenance_graph/)",
     )
 
+    # --- recipes ---
+    sub.add_parser(
+        "recipes",
+        help="task-shaped workflow recipes (find/read/trace patterns with real command examples)",
+        description=(
+            "Print a curated set of task-shaped recipes mapping common research "
+            "questions to the lawvm commands that serve them, with runnable examples.  "
+            "Every command named in the recipe table is CI-verified against the live "
+            "parser, so names stay accurate."
+        ),
+    )
+
     return parser
 
 
@@ -9732,6 +9744,11 @@ def main() -> None:
         from lawvm.tools.cmd_validate_claims import main as validate_claims_main
 
         validate_claims_main(args)
+
+    elif args.command == "recipes":
+        from lawvm.tools.cmd_recipes import main as recipes_main
+
+        recipes_main(args)
 
     elif args.command is None:
         parser.print_help()

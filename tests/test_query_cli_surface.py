@@ -1001,6 +1001,15 @@ class TestHelpCapabilityMap:
         assert "sgrep" in desc, "FIND row must mention sgrep"
         assert "fi-proposals" in desc, "FIND row must mention fi-proposals"
 
+    def test_help_description_is_jurisdiction_neutral(self, cli_parser):
+        """The header must not present LawVM as FI/EU-only; it is multi-jurisdiction."""
+        desc = cli_parser.description or ""
+        assert "FI/EU" not in desc, "header must be jurisdiction-neutral, not FI/EU-specific"
+        assert "-j" in desc, "header must mention the -j jurisdiction selector"
+        # the multi-jurisdiction list should be advertised
+        for code in ("fi", "ee", "uk", "no", "nz"):
+            assert code in desc, f"header should list jurisdiction code {code!r}"
+
     def test_help_description_contains_read_row(self, cli_parser):
         desc = cli_parser.description or ""
         assert "READ" in desc
@@ -1028,3 +1037,53 @@ class TestHelpCapabilityMap:
     def test_help_uses_raw_description_formatter(self, cli_parser):
         import argparse
         assert cli_parser.formatter_class is argparse.RawDescriptionHelpFormatter
+
+
+class TestRecipesCommandCI:
+    """CI guard: every command named in cmd_recipes.RECIPES must exist in the live parser.
+
+    This ensures that if a command is renamed or removed, the build fails rather
+    than silently serving stale recipe advice.  The guard inspects the live argparse
+    subparser set — no network calls, no corpus access required.
+    """
+
+    def _live_subcommand_names(self, cli_parser) -> set[str]:
+        """Extract the set of registered subcommand names from the parser."""
+        # argparse stores subparsers in _subparsers._actions; the subparser
+        # container is the first positional _SubParsersAction.
+        for action in cli_parser._subparsers._actions:
+            if hasattr(action, "_name_parser_map"):
+                return set(action._name_parser_map.keys())
+        # Fallback: use choices if the above doesn't work
+        for action in cli_parser._actions:
+            if hasattr(action, "choices") and action.choices:
+                return set(action.choices.keys())
+        return set()
+
+    def test_recipes_subcommand_is_registered(self, cli_parser):
+        """The 'recipes' subcommand itself must be registered in the parser."""
+        names = self._live_subcommand_names(cli_parser)
+        assert "recipes" in names, (
+            "'recipes' subcommand not found in live parser; "
+            "ensure it is registered in _build_parser()"
+        )
+
+    def test_all_recipe_commands_exist_in_live_parser(self, cli_parser):
+        """Every command named in a recipe must exist as a live argparse subcommand.
+
+        A renamed or removed command must FAIL this test, not silently mislead.
+        """
+        from lawvm.tools.cmd_recipes import RECIPES
+
+        live_names = self._live_subcommand_names(cli_parser)
+        missing: list[str] = []
+        for recipe in RECIPES:
+            for cmd in recipe["commands"]:
+                if cmd not in live_names:
+                    missing.append(f"  recipe {recipe['task']!r} names '{cmd}' — not in live parser")
+
+        assert not missing, (
+            "Recipe table references commands not in the live argparse surface. "
+            "Either the command was renamed/removed (update the recipe) "
+            "or the recipe has a typo.  Missing:\n" + "\n".join(missing)
+        )
