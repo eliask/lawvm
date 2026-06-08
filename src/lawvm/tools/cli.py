@@ -211,9 +211,31 @@ def _build_parser() -> argparse.ArgumentParser:
         help="jurisdiction (default: fi, or LAWVM_JURISDICTION env var)",
     )
 
+    _CAPABILITY_MAP = """\
+lawvm — point-in-time FI/EU legal state + citation graph + amendment history + HE corpus.
+
+  FIND   topic (FTS text) · sgrep (structural) · refs / cite (citation graph, fwd+reverse) · fi-proposals (HE)
+  READ   oracle-text (section @version) · provision-state · pit-timeline · pit-diff
+  TRACE  bisect · explain · evidence
+  recipes: `lawvm recipes`     ·     full command list below
+
+examples:
+  lawvm refs --to 2007/571          # what provisions cite this statute (reverse citation graph)
+  lawvm cite 2009/738               # outgoing refs of a statute
+  lawvm topic --topic kadmium       # full-text search across in-force sections
+  lawvm oracle-text 1992/734 --section section:7 a   # consolidated section text at current version
+"""
+
+    _EPILOG = (
+        "For 'what relates to / cites / nets X', try refs/cite/topic BEFORE reading sections. "
+        "See: lawvm recipes"
+    )
+
     parser = argparse.ArgumentParser(
         prog="lawvm",
-        description="LawVM developer tools",
+        description=_CAPABILITY_MAP,
+        epilog=_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         parents=[_j_root_parent],
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")

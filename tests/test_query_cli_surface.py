@@ -982,3 +982,49 @@ class TestDefaultDataDir:
         )
         err = capsys.readouterr().err
         assert "Using projections from" in err
+
+
+# ---------------------------------------------------------------------------
+# Task H: capability-map header in --help
+# ---------------------------------------------------------------------------
+
+class TestHelpCapabilityMap:
+    """Verify the FIND-row capability map appears in the parser description."""
+
+    def test_help_description_contains_find_row(self, cli_parser):
+        """The parser description must advertise the key discovery commands."""
+        desc = cli_parser.description or ""
+        assert "FIND" in desc, "capability map must have a FIND row"
+        assert "topic" in desc, "FIND row must mention topic"
+        assert "refs" in desc, "FIND row must mention refs"
+        assert "cite" in desc, "FIND row must mention cite"
+        assert "sgrep" in desc, "FIND row must mention sgrep"
+        assert "fi-proposals" in desc, "FIND row must mention fi-proposals"
+
+    def test_help_description_contains_read_row(self, cli_parser):
+        desc = cli_parser.description or ""
+        assert "READ" in desc
+        assert "oracle-text" in desc
+        assert "pit-timeline" in desc
+        assert "pit-diff" in desc
+
+    def test_help_description_contains_trace_row(self, cli_parser):
+        desc = cli_parser.description or ""
+        assert "TRACE" in desc
+        assert "bisect" in desc
+        assert "explain" in desc
+        assert "evidence" in desc
+
+    def test_help_description_contains_recipes_pointer(self, cli_parser):
+        desc = cli_parser.description or ""
+        assert "recipes" in desc, "description must point at 'lawvm recipes'"
+
+    def test_help_epilog_contains_discovery_guidance(self, cli_parser):
+        epilog = cli_parser.epilog or ""
+        assert "refs" in epilog
+        assert "topic" in epilog
+        assert "recipes" in epilog
+
+    def test_help_uses_raw_description_formatter(self, cli_parser):
+        import argparse
+        assert cli_parser.formatter_class is argparse.RawDescriptionHelpFormatter
