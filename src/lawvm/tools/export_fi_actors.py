@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import sys
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -178,6 +177,7 @@ def export_fi_actors(
     use_parquet: bool = True,
     limit: Optional[int] = None,
     compile_metadata: Optional[Any] = None,
+    workers: int = 0,
 ) -> int:
     """Export fi_actors.parquet projection for a corpus of Finnish statutes.
 
@@ -186,6 +186,10 @@ def export_fi_actors(
         data_dir:    Output directory. fi_actors.parquet written here.
         use_parquet: Write Parquet if pyarrow available (also writes JSONL).
         limit:       Process only first N statutes (for testing).
+        workers:     Parallel worker processes (0 = auto = cpu_count - 2; 1 =
+                     serial). Per-statute projection is sharded across the pool;
+                     rows are reassembled in corpus order so the output is
+                     byte-identical regardless of worker count.
 
     Returns:
         Number of ActorMention rows written.
@@ -200,19 +204,17 @@ def export_fi_actors(
     if limit:
         corpus = corpus[:limit]
 
-    total = len(corpus)
-    all_mention_rows: List[Dict[str, Any]] = []
-    all_diag_rows: List[Dict[str, Any]] = []
+    from lawvm.tools._parallel_corpus import project_corpus_parallel
 
-    for i, (_, statute_id) in enumerate(corpus, 1):
-        t0 = time.time()
-        mention_rows, diag_rows = _project_actors_for_statute(statute_id, store)
-        all_mention_rows.extend(mention_rows)
-        all_diag_rows.extend(diag_rows)
-
-        if i % 50 == 0 or i == total:
-            elapsed = time.time() - t0
-            print(f"  [{i}/{total}] actors: {len(all_mention_rows):,} total ({elapsed:.1f}s last)")
+    statute_ids = [sid for _, sid in corpus]
+    all_mention_rows, all_diag_rows = project_corpus_parallel(
+        statute_ids=statute_ids,
+        projector_ref=(__name__, "_project_actors_for_statute"),
+        serial_projector=_project_actors_for_statute,
+        store=store,
+        workers=workers,
+    )
+    print(f"  actors: {len(all_mention_rows):,} mention rows over {len(statute_ids):,} statutes")
 
     out = Path(data_dir)
     out.mkdir(parents=True, exist_ok=True)

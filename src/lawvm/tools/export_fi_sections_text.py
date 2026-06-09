@@ -198,6 +198,7 @@ def export_fi_sections_text(
     use_parquet: bool = True,
     limit: Optional[int] = None,
     compile_metadata: Optional[Any] = None,
+    workers: int = 0,
 ) -> int:
     """Export fi_sections_text.parquet projection for a corpus of Finnish statutes.
 
@@ -206,6 +207,9 @@ def export_fi_sections_text(
         data_dir:    Output directory. fi_sections_text.parquet written here.
         use_parquet: Write Parquet if pyarrow available (also writes JSONL).
         limit:       Process only first N statutes (for testing).
+        workers:     Parallel worker processes (0 = auto; 1 = serial). Rows are
+                     reassembled in corpus order so output is byte-identical
+                     regardless of worker count.
 
     Returns:
         Number of SectionText rows written.
@@ -220,23 +224,24 @@ def export_fi_sections_text(
     if limit:
         corpus = corpus[:limit]
 
-    total = len(corpus)
-    all_section_rows: List[Dict[str, Any]] = []
-    all_diag_rows: List[Dict[str, Any]] = []
     t_start = time.time()
 
-    for i, (_, statute_id) in enumerate(corpus, 1):
-        section_rows, diag_rows = _project_sections_for_statute(statute_id, store)
-        all_section_rows.extend(section_rows)
-        all_diag_rows.extend(diag_rows)
+    from lawvm.tools._parallel_corpus import project_corpus_parallel
 
-        if i % 1000 == 0 or i == total:
-            elapsed = time.time() - t_start
-            rate = i / elapsed if elapsed > 0 else 0
-            print(
-                f"  [{i}/{total}] sections: {len(all_section_rows):,} total "
-                f"({rate:.0f} statutes/s)"
-            )
+    statute_ids = [sid for _, sid in corpus]
+    all_section_rows, all_diag_rows = project_corpus_parallel(
+        statute_ids=statute_ids,
+        projector_ref=(__name__, "_project_sections_for_statute"),
+        serial_projector=_project_sections_for_statute,
+        store=store,
+        workers=workers,
+    )
+    _rate_elapsed = time.time() - t_start
+    _rate = len(statute_ids) / _rate_elapsed if _rate_elapsed > 0 else 0
+    print(
+        f"  sections: {len(all_section_rows):,} rows over {len(statute_ids):,} "
+        f"statutes ({_rate:.0f} statutes/s)"
+    )
 
     out = Path(data_dir)
     out.mkdir(parents=True, exist_ok=True)

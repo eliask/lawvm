@@ -324,6 +324,7 @@ def _dispatch_projection(
             data_dir=data_dir,
             out_dir=out_dir,
             compile_metadata=compile_metadata,
+            workers=workers,
         )
 
     if name == "fi_he_branch_ops":
@@ -339,6 +340,7 @@ def _dispatch_projection(
             data_dir=data_dir,
             out_dir=out_dir,
             compile_metadata=compile_metadata,
+            workers=workers,
         )
 
     if name == "fi_sections_text":
@@ -346,6 +348,7 @@ def _dispatch_projection(
             data_dir=data_dir,
             out_dir=out_dir,
             compile_metadata=compile_metadata,
+            workers=workers,
         )
 
     if name in ("statutes", "sections", "findings", "ops"):
@@ -399,8 +402,14 @@ def _rebuild_fi_crosslink_projection(
     data_dir: str,
     out_dir: Path,
     compile_metadata: Optional[Any] = None,
+    workers: int = 0,
 ) -> int:
-    """Rebuild fi_refs / fi_actors / fi_pools from finlex.farchive corpus."""
+    """Rebuild fi_refs / fi_actors / fi_pools from finlex.farchive corpus.
+
+    Per-statute projection is sharded across ``workers`` processes; rows are
+    reassembled in corpus order so the output is byte-identical to the serial
+    (workers=1) build.
+    """
     # These emitters take a corpus list. Load from bench_core.csv if available.
     corpus = _load_default_fi_corpus(data_dir)
     if not corpus:
@@ -412,19 +421,19 @@ def _rebuild_fi_crosslink_projection(
 
     if name == "fi_refs":
         from lawvm.tools.export_fi_refs import export_fi_refs
-        return export_fi_refs(corpus, data_dir=str(out_dir), use_parquet=True, compile_metadata=compile_metadata)
+        return export_fi_refs(corpus, data_dir=str(out_dir), use_parquet=True, compile_metadata=compile_metadata, workers=workers)
 
     if name == "fi_actors":
         from lawvm.tools.export_fi_actors import export_fi_actors
-        return export_fi_actors(corpus, data_dir=str(out_dir), use_parquet=True, compile_metadata=compile_metadata)
+        return export_fi_actors(corpus, data_dir=str(out_dir), use_parquet=True, compile_metadata=compile_metadata, workers=workers)
 
     if name == "fi_pools":
         from lawvm.tools.export_fi_pools import export_fi_pools
-        return export_fi_pools(corpus, data_dir=str(out_dir), use_parquet=True, compile_metadata=compile_metadata)
+        return export_fi_pools(corpus, data_dir=str(out_dir), use_parquet=True, compile_metadata=compile_metadata, workers=workers)
 
     if name == "fi_preparatory_refs":
         from lawvm.tools.export_fi_preparatory_refs import export_fi_preparatory_refs
-        return export_fi_preparatory_refs(corpus, data_dir=str(out_dir), use_parquet=True, compile_metadata=compile_metadata)
+        return export_fi_preparatory_refs(corpus, data_dir=str(out_dir), use_parquet=True, compile_metadata=compile_metadata, workers=workers)
 
     return 0
 
@@ -461,8 +470,14 @@ def _rebuild_fi_inline_citations_projection(
     data_dir: str,
     out_dir: Path,
     compile_metadata: Optional[Any] = None,
+    workers: int = 0,
 ) -> int:
-    """Rebuild fi_inline_citations from finlex.farchive + fi_government_proposal.farchive."""
+    """Rebuild fi_inline_citations from finlex.farchive + fi_government_proposal.farchive.
+
+    The statute phase is sharded across ``workers`` processes (corpus-ordered
+    reassembly); the HE phase stays serial. Output is byte-identical to the
+    serial build.
+    """
     corpus = _load_default_fi_corpus(data_dir)
     if not corpus:
         print(
@@ -479,6 +494,7 @@ def _rebuild_fi_inline_citations_projection(
         use_parquet=True,
         he_farchive_path=he_farchive_path,
         compile_metadata=compile_metadata,
+        workers=workers,
     )
 
 
@@ -487,8 +503,13 @@ def _rebuild_fi_sections_text_projection(
     data_dir: str,
     out_dir: Path,
     compile_metadata: Optional[Any] = None,
+    workers: int = 0,
 ) -> int:
-    """Rebuild fi_sections_text from finlex.farchive oracle corpus."""
+    """Rebuild fi_sections_text from finlex.farchive oracle corpus.
+
+    Per-statute projection is sharded across ``workers`` processes; rows are
+    reassembled in corpus order so output is byte-identical to the serial build.
+    """
     corpus = _load_default_fi_corpus(data_dir)
     if not corpus:
         print(
@@ -503,6 +524,7 @@ def _rebuild_fi_sections_text_projection(
         data_dir=str(out_dir),
         use_parquet=True,
         compile_metadata=compile_metadata,
+        workers=workers,
     )
 
 

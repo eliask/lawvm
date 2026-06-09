@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import sys
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -197,6 +196,7 @@ def export_fi_inline_citations(
     he_farchive_path: Optional[str] = None,
     limit: Optional[int] = None,
     compile_metadata: Optional[Any] = None,
+    workers: int = 0,
 ) -> int:
     """Export fi_inline_citations.parquet projection.
 
@@ -210,6 +210,11 @@ def export_fi_inline_citations(
         use_parquet:      Write Parquet if pyarrow available (always writes JSONL).
         he_farchive_path: Path to fi_government_proposal.farchive. If None, skip HE extraction.
         limit:            Process only first N statutes (for testing).
+        workers:          Parallel worker processes for the statute phase (0 =
+                          auto; 1 = serial). Statute rows are reassembled in
+                          corpus order and the HE phase appends after them
+                          (unchanged serial order), so output is byte-identical
+                          regardless of worker count.
 
     Returns:
         Total number of InlineCitation rows written (statutes + HEs combined).
@@ -223,18 +228,22 @@ def export_fi_inline_citations(
     all_citation_rows: List[Dict[str, Any]] = []
     all_diag_rows: List[Dict[str, Any]] = []
 
-    # --- Phase 1: Enacted statutes ---
+    # --- Phase 1: Enacted statutes (parallel, corpus-ordered) ---
     print(f"  inline_citations: processing {total_statutes:,} statutes...")
-    for i, (_, statute_id) in enumerate(corpus, 1):
-        citation_rows, diag_rows = _project_inline_citations_for_statute(statute_id, store)
-        all_citation_rows.extend(citation_rows)
-        all_diag_rows.extend(diag_rows)
+    from lawvm.tools._parallel_corpus import project_corpus_parallel
 
-        if i % 100 == 0 or i == total_statutes:
-            print(
-                f"  [{i}/{total_statutes}] inline_citations (statutes): "
-                f"{len(all_citation_rows):,} total"
-            )
+    statute_ids = [sid for _, sid in corpus]
+    all_citation_rows, all_diag_rows = project_corpus_parallel(
+        statute_ids=statute_ids,
+        projector_ref=(__name__, "_project_inline_citations_for_statute"),
+        serial_projector=_project_inline_citations_for_statute,
+        store=store,
+        workers=workers,
+    )
+    print(
+        f"  [{total_statutes}/{total_statutes}] inline_citations (statutes): "
+        f"{len(all_citation_rows):,} total"
+    )
 
     # --- Phase 2: HE bodies ---
     if he_farchive_path and Path(he_farchive_path).exists():
