@@ -610,6 +610,14 @@ _ALTERNATE_PREIMAGE_SUBSTITUTION_RE = re.compile(
     rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
     re.I,
 )
+# An ``(or "…")`` parenthetical is an alternate-preimage form owned by
+# _ALTERNATE_PREIMAGE_SUBSTITUTION_RE, not a scope note.  The generic
+# scope-note rule must not also fire on it (would emit a spurious literal
+# substitution against the primary preimage alone).
+_ALTERNATE_PREIMAGE_SCOPE_NOTE_RE = re.compile(
+    rf"^\s*or\s+[“\"'‘]{_NON_QUOTE}{{1,500}}[”\"'’]\s*$",
+    re.I,
+)
 _AFTER_ANCHOR_BEFORE_FINAL_WORD_SUBSTITUTED_RE = re.compile(
     rf"for\s+(?:the\s+)?words?\s+(?:after|following)\s+[“\"'‘]"
     rf"(?P<anchor>{_NON_QUOTE}{{1,500}})[”\"'’]\s*"
@@ -2891,6 +2899,9 @@ def _parse_leading_substitutions(text: str, subs: list) -> None:
 
     for m in _QUOTED_SUBSTITUTION_SCOPE_NOTE_RE.finditer(text):
         if not _is_non_occurrence_scope_note(m.group("scope_note")):
+            continue
+        if _ALTERNATE_PREIMAGE_SCOPE_NOTE_RE.match(m.group("scope_note")):
+            # Owned by the alternate-preimage rule; do not double-emit.
             continue
         subs.append(
             {
