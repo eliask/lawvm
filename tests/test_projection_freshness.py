@@ -221,6 +221,55 @@ def test_suppress_freshness_silences(tmp_path: Path, capsys, monkeypatch) -> Non
     assert capsys.readouterr().err == ""
 
 
+def test_source_age_warns_when_old(tmp_path: Path, capsys, monkeypatch) -> None:
+    import time
+
+    monkeypatch.delenv("LAWVM_SUPPRESS_FRESHNESS", raising=False)
+    monkeypatch.setenv("LAWVM_SOURCE_AGE_WARN_DAYS", "30")
+    pf._AGE_WARNED.clear()
+
+    fa = _write_farchive(tmp_path, "finlex.farchive", b"v1")
+    # Backdate the farchive mtime to 45 days ago.
+    old = time.time() - 45 * 86400
+    os.utime(fa, (old, old))
+    pdir = _projection_dir(tmp_path)
+    (pdir / "ops.parquet").write_bytes(b"PAR1")
+
+    pf.warn_if_source_old("ops", str(pdir))
+    err = capsys.readouterr().err
+    assert "SOURCE MAY BE OUT OF DATE" in err
+    assert "finlex.farchive" in err
+
+
+def test_source_age_quiet_when_recent(tmp_path: Path, capsys, monkeypatch) -> None:
+    monkeypatch.delenv("LAWVM_SUPPRESS_FRESHNESS", raising=False)
+    monkeypatch.setenv("LAWVM_SOURCE_AGE_WARN_DAYS", "30")
+    pf._AGE_WARNED.clear()
+
+    _write_farchive(tmp_path, "finlex.farchive", b"v1")  # fresh mtime
+    pdir = _projection_dir(tmp_path)
+    (pdir / "ops.parquet").write_bytes(b"PAR1")
+
+    pf.warn_if_source_old("ops", str(pdir))
+    assert capsys.readouterr().err == ""
+
+
+def test_source_age_disabled_with_zero(tmp_path: Path, capsys, monkeypatch) -> None:
+    import time
+
+    monkeypatch.setenv("LAWVM_SOURCE_AGE_WARN_DAYS", "0")
+    pf._AGE_WARNED.clear()
+
+    fa = _write_farchive(tmp_path, "finlex.farchive", b"v1")
+    old = time.time() - 999 * 86400
+    os.utime(fa, (old, old))
+    pdir = _projection_dir(tmp_path)
+    (pdir / "ops.parquet").write_bytes(b"PAR1")
+
+    pf.warn_if_source_old("ops", str(pdir))
+    assert capsys.readouterr().err == ""
+
+
 def test_branch_ops_registered() -> None:
     # Q1 added fi_he_branch_ops to the rebuild registry; the freshness sweep
     # must therefore know about it.

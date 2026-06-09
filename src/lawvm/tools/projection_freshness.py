@@ -138,6 +138,88 @@ def check_projection_freshness(
 
 
 # ---------------------------------------------------------------------------
+# Source-age check (the farchive itself may be old → real law drifted)
+# ---------------------------------------------------------------------------
+#
+# Distinct from staleness: a projection can be perfectly FRESH against its
+# farchive while the FARCHIVE is weeks old. In that case the latest real-world
+# legal state is simply unknowable from local data — recent statutes/amendments
+# may exist that were never ingested. This is an advisory drift warning, keyed
+# on the backing farchive's mtime, with a configurable threshold
+# (LAWVM_SOURCE_AGE_WARN_DAYS, default 30; 0 disables).
+
+
+def _source_age_threshold_days() -> int:
+    raw = os.environ.get("LAWVM_SOURCE_AGE_WARN_DAYS")
+    if raw is None:
+        return 30
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 30
+
+
+def farchive_age_days(data_root: str, farchive_name: str) -> Optional[float]:
+    """Return the backing farchive's age in days (by mtime), or None if absent."""
+    import time
+
+    path = Path(data_root) / farchive_name
+    if not path.exists():
+        return None
+    age_sec = time.time() - path.stat().st_mtime
+    return age_sec / 86400.0
+
+
+# Track which farchives we've already age-warned about this process.
+_AGE_WARNED: set = set()
+
+
+def warn_if_source_old(
+    stem: str,
+    data_dir: str,
+    *,
+    jurisdiction: str = "fi",
+) -> None:
+    """Advisory: warn (once per farchive per process) if the backing farchive is
+    older than the configured threshold, so a user does not mistake "fresh
+    projection" for "current law". Silent when LAWVM_SUPPRESS_FRESHNESS is set,
+    the threshold is 0, or the farchive is absent/recent.
+    """
+    if _truthy(os.environ.get("LAWVM_SUPPRESS_FRESHNESS")):
+        return
+    threshold = _source_age_threshold_days()
+    if threshold <= 0:
+        return
+
+    spec = _projection_spec(stem, jurisdiction)
+    if spec is None:
+        return
+    data_root = _data_root_for(data_dir, jurisdiction)
+
+    for dep in spec.tier_1_deps:
+        if dep in _AGE_WARNED:
+            continue
+        age = farchive_age_days(data_root, dep)
+        if age is None or age < threshold:
+            continue
+        _AGE_WARNED.add(dep)
+        print(
+            "\n"
+            + "=" * 72
+            + f"\n  SOURCE MAY BE OUT OF DATE: {dep} is {age:.0f} days old"
+            + f" (threshold {threshold}d).\n"
+            + "  The latest real-world legal state is unknowable from local data —\n"
+            + "  recently published statutes/amendments may not be ingested yet.\n"
+            + "  Refresh:  uv run lawvm sync-finlex-latest   (statutes)\n"
+            + "            uv run lawvm sync-fi-proposals     (HE corpus)\n"
+            + "  (set LAWVM_SOURCE_AGE_WARN_DAYS=0 to silence)\n"
+            + "=" * 72
+            + "\n",
+            file=sys.stderr,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Warning emission (deduplicated per-process)
 # ---------------------------------------------------------------------------
 
@@ -180,6 +262,13 @@ def warn_if_stale(
     """
     if _truthy(os.environ.get("LAWVM_SUPPRESS_FRESHNESS")):
         return FreshnessVerdict(stem, "unknown", "", "")
+
+    # Advisory source-age drift warning (independent of staleness): even a fresh
+    # projection over a weeks-old farchive cannot know recently published law.
+    try:
+        warn_if_source_old(stem, data_dir, jurisdiction=jurisdiction)
+    except Exception:
+        pass
 
     try:
         verdict = check_projection_freshness(
