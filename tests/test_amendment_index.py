@@ -1,15 +1,33 @@
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 
+import pytest
+
 from lawvm.corpus_store import CorpusStore
+import lawvm.finland.amendment_index as amendment_index
 from lawvm.finland.amendment_index import build_amendment_index, ensure_amendment_index
 
 
+class _FakeArchive:
+    def __init__(self, db_path: Path) -> None:
+        self._db_path = db_path
+
+
 class _FakeCorpus(CorpusStore):
-    def __init__(self, *, oracle_map: dict[str, bytes], source_map: dict[str, bytes]) -> None:
+    def __init__(
+        self,
+        *,
+        oracle_map: dict[str, bytes],
+        source_map: dict[str, bytes],
+        archive: object | None = None,
+    ) -> None:
         self._oracle_map = oracle_map
         self._source_map = source_map
+        if archive is not None:
+            self._archive = archive
 
     def oracle_path_index(self, **kwargs: object) -> dict[str, str]:
         return {sid: f"oracle://{sid}" for sid in self._oracle_map}
@@ -134,3 +152,122 @@ def test_ensure_amendment_index_rebuilds_old_two_column_schema(tmp_path: Path) -
 
     header = csv_path.read_text(encoding="utf-8").splitlines()[0]
     assert header == "amendment_id,parent_id,edge_kind"
+
+
+def test_ensure_amendment_index_adopts_current_schema_csv_when_meta_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    csv_path = tmp_path / "amendment_parents.csv"
+    meta_path = csv_path.with_suffix(".meta.json")
+    db_path = tmp_path / "finlex.farchive"
+    csv_path.write_text(
+        "amendment_id,parent_id,edge_kind\n1991/806,1986/506,oracle_amendedBy\n",
+        encoding="utf-8",
+    )
+    db_path.write_bytes(b"current")
+    corpus = _FakeCorpus(
+        oracle_map={},
+        source_map={},
+        archive=_FakeArchive(db_path),
+    )
+    calls: list[object] = []
+
+    def fail_build(*args: object, **kwargs: object) -> list[tuple[str, str, str]]:
+        calls.append((args, kwargs))
+        raise AssertionError("existing current-schema CSV should be adopted without rebuild")
+
+    monkeypatch.setattr(amendment_index, "build_amendment_index", fail_build)
+
+    ensure_amendment_index(cs=corpus, csv_path=csv_path)
+
+    assert calls == []
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert meta["schema"] == ["amendment_id", "parent_id", "edge_kind"]
+    assert meta["source"] == amendment_index._corpus_source_fingerprint(corpus)
+
+
+def test_ensure_amendment_index_rebuilds_when_farchive_fingerprint_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    csv_path = tmp_path / "amendment_parents.csv"
+    meta_path = csv_path.with_suffix(".meta.json")
+    db_path = tmp_path / "finlex.farchive"
+    db_path.write_bytes(b"old")
+    corpus = _FakeCorpus(
+        oracle_map={},
+        source_map={},
+        archive=_FakeArchive(db_path),
+    )
+    old_fingerprint = amendment_index._corpus_source_fingerprint(corpus)
+    csv_path.write_text(
+        "amendment_id,parent_id,edge_kind\n1991/806,1986/506,oracle_amendedBy\n",
+        encoding="utf-8",
+    )
+    meta_path.write_text(
+        json.dumps(
+            {
+                "schema": ["amendment_id", "parent_id", "edge_kind"],
+                "source": old_fingerprint,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    db_path.write_bytes(b"new larger payload")
+    os.utime(db_path, None)
+    calls: list[object] = []
+
+    def stub_build(*args: object, **kwargs: object) -> list[tuple[str, str, str]]:
+        calls.append((args, kwargs))
+        return [("2026/269", "2011/805", "oracle_amendedBy")]
+
+    monkeypatch.setattr(amendment_index, "build_amendment_index", stub_build)
+
+    ensure_amendment_index(cs=corpus, csv_path=csv_path)
+
+    assert len(calls) == 1
+    assert "2026/269,2011/805,oracle_amendedBy" in csv_path.read_text(encoding="utf-8")
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert meta["source"] == amendment_index._corpus_source_fingerprint(corpus)
+
+
+def test_ensure_amendment_index_skips_when_farchive_fingerprint_matches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    csv_path = tmp_path / "amendment_parents.csv"
+    meta_path = csv_path.with_suffix(".meta.json")
+    db_path = tmp_path / "finlex.farchive"
+    db_path.write_bytes(b"current")
+    corpus = _FakeCorpus(
+        oracle_map={},
+        source_map={},
+        archive=_FakeArchive(db_path),
+    )
+    csv_path.write_text(
+        "amendment_id,parent_id,edge_kind\n1991/806,1986/506,oracle_amendedBy\n",
+        encoding="utf-8",
+    )
+    meta_path.write_text(
+        json.dumps(
+            {
+                "schema": ["amendment_id", "parent_id", "edge_kind"],
+                "source": amendment_index._corpus_source_fingerprint(corpus),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    calls: list[object] = []
+
+    def fail_build(*args: object, **kwargs: object) -> list[tuple[str, str, str]]:
+        calls.append((args, kwargs))
+        raise AssertionError("fresh cache should not rebuild")
+
+    monkeypatch.setattr(amendment_index, "build_amendment_index", fail_build)
+
+    ensure_amendment_index(cs=corpus, csv_path=csv_path)
+
+    assert calls == []

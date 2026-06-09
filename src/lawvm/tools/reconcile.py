@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 import sys
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
@@ -44,6 +45,43 @@ from lawvm.tools.section_keys import _clean_section_text
 
 # Agree threshold — matches the existing dedup thresholds elsewhere in the tool.
 _AGREE_RATIO = 0.995
+
+# Leading "12 § " (section number marker) the replay render prepends but the
+# oracle structural body spans (build_temporal_spans, which skips num/heading)
+# do not carry. Stripped before the agree comparison so a heading-only delta is
+# never miscounted as a divergence.
+_SECTION_NUM_MARKER_RE = re.compile(r"^\s*\d+\s*(?:[a-zäöå])?\s*§\s*")
+
+
+def _strip_section_heading(replay_text: str, oracle_body: str) -> str:
+    """Drop the leading 'N § <heading>' that replay renders but oracle-L1 omits.
+
+    The replay-L1 section render is ``"<num> § <heading> <body...>"`` while
+    oracle-L1 (built from build_temporal_spans, which skips <num>/<heading>) is
+    body-only. Comparing them raw spuriously reports DISAGREE(editorial) even
+    when the in-force bodies are identical (the 2011/805 §3:1 case after replay
+    correctly applies a same-day amendment).
+
+    Strategy (anchor-based, self-correcting):
+      1. strip a leading "<num> § " marker if present;
+      2. if the oracle body is non-trivial and occurs in the remaining replay
+         text, drop everything before that anchor (this removes the heading
+         without needing to know where the heading ends);
+      3. otherwise return the marker-stripped text (best effort — never worse
+         than today, and the heading delta is small relative to the body).
+
+    This only normalizes the replay side toward the oracle's body-only view; it
+    never invents or reorders content.
+    """
+    stripped = _SECTION_NUM_MARKER_RE.sub("", replay_text, count=1)
+    anchor = (oracle_body or "").strip()
+    if len(anchor) >= 24:
+        # Anchor on a prefix of the oracle body to tolerate trailing drift.
+        probe = anchor[:24]
+        idx = stripped.find(probe)
+        if idx > 0:
+            return stripped[idx:]
+    return stripped
 
 
 @dataclass
@@ -258,8 +296,13 @@ def reconcile_provision(
 
     oracle = build_oracle_l1(statute_id, section_locator, as_of, at_amendment=at_amendment)
 
+    # Normalize the replay section render toward oracle-L1's body-only view:
+    # replay prepends "<num> § <heading>" which oracle-L1 (num/heading-stripped
+    # structural spans) never carries. Compare bodies, not the heading.
+    replay_body = _strip_section_heading(replay_text, oracle.text)
+
     # Compare cleaned in-force text.
-    clean_a = _clean_section_text(replay_text)
+    clean_a = _clean_section_text(replay_body)
     clean_b = _clean_section_text(oracle.text)
 
     if not replay_available and not oracle.available:
@@ -368,7 +411,13 @@ def _render_human(r: ReconcileResult) -> str:
         marker = f" [{', '.join(dict.fromkeys(r.oracle.version_markers))}]"
     lines.append(f"  oracle-L1 (Finlex consolidated, basis={r.oracle.basis}){marker}:")
     lines.append(f"    {r.oracle.text or '[no text]'}")
-    if r.oracle.straddling_notes:
+    # The "replay did NOT apply" note and the snapshot-cutoff context line are
+    # claims that replay is STUCK behind a dated change. Only emit them when the
+    # divergence was actually classified temporal — after the amendment-ingestion
+    # fix, replay routinely applies same-day/past-commencement amendments, so a
+    # straddling note can co-exist with an editorial-only (or agreeing) result.
+    is_temporal = r.divergence_class == "temporal"
+    if is_temporal and r.oracle.straddling_notes:
         lines.append("")
         for note in r.oracle.straddling_notes:
             efd = note.get("enters_force_date")
@@ -381,7 +430,7 @@ def _render_human(r: ReconcileResult) -> str:
         "  → DIVERGENCE is the signal. Do not assume either side. "
         f"Check: lawvm blame {r.statute_id} ; Finlex."
     )
-    if r.oracle.cutoff_date:
+    if is_temporal and r.oracle.cutoff_date:
         lines.append(
             f"  → context: replay PIT path is bounded by the consolidated oracle "
             f"snapshot cutoff {r.oracle.cutoff_date}."

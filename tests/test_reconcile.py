@@ -117,6 +117,28 @@ class TestReconcileClassification:
         assert r.divergence_class is None
         assert r.agree_ratio >= 0.995
 
+    def test_agree_when_replay_carries_section_heading(self, monkeypatch):
+        # Replay-L1 renders "<num> § <heading> <body...>"; oracle-L1 is body-only
+        # (build_temporal_spans skips num/heading). The leading heading must be
+        # normalized away so the agreeing bodies are NOT reported as a divergence.
+        # This is the live 2011/805 §3:1 case after the amendment-ingestion fix.
+        _patch_oracle(monkeypatch)
+        self._patch_replay(
+            monkeypatch,
+            rendered=(
+                "1 § Rikoksesta tehdyn ilmoituksen kirjaaminen "
+                "AMENDED MOM1 IN FORCE ADDED MOM2 IN FORCE"
+            ),
+            effective="2026-06-01",
+            src="2026/269",
+        )
+        r = rec.reconcile_provision(
+            statute_id="2011/805", selector="§3:1", as_of="2026-06-09",
+        )
+        assert r.verdict == "AGREE"
+        assert r.divergence_class is None
+        assert r.agree_ratio >= 0.995
+
     def test_editorial_divergence_no_straddle(self, monkeypatch):
         # A section with a single plain (no-marker) subsection: oracle-L1 is the
         # raw prose (basis=inline_unsegmented), no notes straddle. A text diff
@@ -227,3 +249,48 @@ class TestRenderAndJson:
         assert "replay-L1" in out
         assert "oracle-L1" in out
         assert "DIVERGENCE is the signal" in out
+        # Temporal: the "replay did NOT apply" note + cutoff context are valid.
+        assert "replay did NOT apply" in out
+        assert "snapshot cutoff" in out
+
+    def test_human_agree_render_omits_stale_temporal_narratives(self, monkeypatch):
+        # AGREE (replay applied the amendment): the "replay did NOT apply" note
+        # and the snapshot-cutoff context line are FALSE and must not render,
+        # even though straddling notes exist on the oracle side.
+        _patch_oracle(monkeypatch)
+        TestReconcileClassification()._patch_replay(
+            monkeypatch,
+            rendered="AMENDED MOM1 IN FORCE ADDED MOM2 IN FORCE",
+            effective="2026-06-01",
+            src="2026/269",
+        )
+        r = rec.reconcile_provision(
+            statute_id="2011/805", selector="§3:1", as_of="2026-06-09",
+        )
+        assert r.verdict == "AGREE"
+        assert r.oracle.straddling_notes  # straddle present on oracle side
+        out = rec._render_human(r)
+        assert "✔ replay and oracle agree" in out
+        assert "replay did NOT apply" not in out
+        assert "snapshot cutoff" not in out
+
+    def test_human_editorial_render_omits_did_not_apply_note(self, monkeypatch):
+        # DISAGREE(editorial) with a straddling note present: replay DID apply
+        # the dated change (text resembles in-force, not superseded), so the
+        # "replay did NOT apply" / cutoff narratives must be suppressed.
+        _patch_oracle(monkeypatch)
+        TestReconcileClassification()._patch_replay(
+            monkeypatch,
+            rendered="AMENDED MOM1 IN FORCE ADDED MOM2 IN FORCEX extra drift",
+            effective="2026-06-01",
+            src="2026/269",
+        )
+        r = rec.reconcile_provision(
+            statute_id="2011/805", selector="§3:1", as_of="2026-06-09",
+        )
+        assert r.verdict == "DISAGREE"
+        assert r.divergence_class == "editorial"
+        out = rec._render_human(r)
+        assert "⚠ DISAGREE (editorial)" in out
+        assert "replay did NOT apply" not in out
+        assert "snapshot cutoff" not in out
