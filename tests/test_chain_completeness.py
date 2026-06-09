@@ -43,6 +43,21 @@ from lawvm.tools.evidence_section_rules import (
 )
 
 
+def _test_compile_metadata():
+    """A default CompileMetadata for v3 substrate-locked persistence.
+
+    build_evidence_bundle requires CompileMetadata (v3 §13 Step 5); provide a
+    deterministic test one so the bundle-wiring tests exercise the real path.
+    """
+    from lawvm.core.compile_metadata_default import build_default_compile_metadata
+
+    return build_default_compile_metadata(
+        jurisdiction="fi",
+        source_bundle_hash="sha256:test-chain-completeness",
+        build_id="test.chain_completeness",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -1104,7 +1119,9 @@ class TestChainCompletenessBundleWiring:
             lambda mids: [],
         )
 
-        bundle = build_evidence_bundle("1991/827", mode="legal_pit")
+        bundle = build_evidence_bundle(
+            "1991/827", mode="legal_pit", compile_metadata=_test_compile_metadata()
+        )
 
         assert "chain_completeness" in bundle
         cc = bundle["chain_completeness"]
@@ -1223,6 +1240,11 @@ class TestChainCompletenessBundleWiring:
             lambda mids: [],
         )
 
-        bundle = build_evidence_bundle("1991/827", mode="legal_pit", include_bisect=True)
+        bundle = build_evidence_bundle(
+            "1991/827",
+            mode="legal_pit",
+            include_bisect=True,
+            compile_metadata=_test_compile_metadata(),
+        )
 
         assert bundle["section_claims"][0]["strict_payload_confidence"] == "source_incomplete"

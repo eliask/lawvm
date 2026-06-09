@@ -73,14 +73,41 @@ class TestExportParquet:
         assert len(corpus) == 2
 
     def test_try_write_parquet_returns_false_without_pyarrow(self, tmp_path: Path) -> None:
+        import builtins
+
+        import pytest
+
         from lawvm.tools.export_parquet import _try_write_parquet
 
-        # pyarrow is not installed, so this should return False
-        result = _try_write_parquet(
-            tmp_path / "test.parquet",
-            [{"x": 1}],
-        )
+        # When pyarrow is genuinely unimportable, _try_write_parquet must return
+        # False (graceful degradation). Simulate the absence so the test holds
+        # regardless of whether pyarrow is installed in the environment.
+        real_import = builtins.__import__
+
+        def _no_pyarrow(name, *args, **kwargs):
+            if name == "pyarrow" or name.startswith("pyarrow."):
+                raise ImportError("simulated: pyarrow not installed")
+            return real_import(name, *args, **kwargs)
+
+        builtins.__import__ = _no_pyarrow
+        try:
+            result = _try_write_parquet(tmp_path / "test.parquet", [{"x": 1}])
+        finally:
+            builtins.__import__ = real_import
         assert result is False
+
+    def test_try_write_parquet_requires_compile_metadata_when_pyarrow_present(
+        self, tmp_path: Path
+    ) -> None:
+        import pytest
+
+        pytest.importorskip("pyarrow")
+        from lawvm.tools.export_parquet import _try_write_parquet
+
+        # v3 substrate-locked persistence: writing a Parquet without
+        # CompileMetadata is a programming error (no provenance).
+        with pytest.raises(ValueError, match="CompileMetadata is required"):
+            _try_write_parquet(tmp_path / "test.parquet", [{"x": 1}])
 
     def test_try_write_parquet_empty_rows(self, tmp_path: Path) -> None:
         from lawvm.tools.export_parquet import _try_write_parquet
