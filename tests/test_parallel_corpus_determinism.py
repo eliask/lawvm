@@ -47,7 +47,7 @@ def _expected_serial(statute_ids: List[str]) -> Tuple[list, list]:
 @pytest.mark.parametrize("workers", [2, 4, 8])
 def test_parallel_matches_serial_order(workers: int) -> None:
     statute_ids = [str(i) for i in range(500)]
-    ref = (f"lawvm.tools._parallel_corpus", "_fake_projector")
+    ref = ("lawvm.tools._parallel_corpus", "_fake_projector")
 
     serial_rows, serial_diags = project_corpus_parallel(
         statute_ids=statute_ids,

@@ -308,7 +308,6 @@ def _project_from_he_farchive(
     from lawvm.finland.he_acquisition import (
         HEStructuralTier,
         classify_structural_tier,
-        _AKN_NS,
         _extract_he_id,
     )
     try:

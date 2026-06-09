@@ -29,7 +29,6 @@ from typing import Any, Dict, List, Optional
 
 from lawvm.tools.tier2_state import (
     DEFAULT_SCHEMA_VERSION,
-    ProjectionState,
     make_state,
     parquet_path_for,
     read_state,
