@@ -570,13 +570,21 @@ def test_temporal_spans_superseded_text_is_the_prior_wording() -> None:
 
 
 def test_temporal_spans_future_amendment_is_enters_force() -> None:
-    """With today BEFORE the 'tulee voimaan' date, the versioned span is ENTERS_FORCE."""
+    """With today BEFORE the 'tulee voimaan' date, the versioned span is
+    ENTERS_FORCE and — crucially — the prior wording it replaces is still
+    IN_FORCE (the change has not commenced, so the old text is still the law),
+    NOT SUPERSEDED. Once it commences the prior wording becomes SUPERSEDED
+    (see test_temporal_spans_label_sequence_when_amendment_in_force)."""
     sec = _temporal_section()
     spans = build_temporal_spans(sec, today=datetime.date(2026, 5, 1))
     labels = [s["label"] for s in spans]
-    assert labels == ["ENTERS_FORCE", "NOTE", "SUPERSEDED", "NOTE", "CURRENT"]
+    # Before commencement: new momentti ENTERS_FORCE, prior wording still IN_FORCE.
+    assert labels == ["ENTERS_FORCE", "NOTE", "IN_FORCE", "NOTE", "CURRENT"]
     enters = [s for s in spans if s["label"] == "ENTERS_FORCE"][0]
     assert enters["enters_force_date"] == "2026-06-01"
+    # The prior wording (OLD-MOM1) is the one kept IN_FORCE before commencement.
+    in_force_texts = [s["text"] for s in spans if s["label"] == "IN_FORCE"]
+    assert any("OLD-MOM1" in t for t in in_force_texts)
 
 
 def test_temporal_spans_added_momentti_has_no_superseded_text() -> None:
@@ -639,6 +647,76 @@ def test_temporal_spans_past_tense_tuli_voimaan_parsed() -> None:
     new_before = [s for s in spans_before if "NEW" in s["text"]][0]
     assert new_before["label"] == "ENTERS_FORCE"
     assert new_before["enters_force_date"] == "2017-01-01"
+
+
+def test_repeal_marker_subsection_is_note_not_current() -> None:
+    """A future-repeal marker carried in a bare <subsection> (no noteAuthorial
+    wrapper), e.g. '4 momentti on kumottu L:lla 22.5.2026/380, joka tulee
+    voimaan 1.9.2026.', must be labeled NOTE (editorial metadata, never in-force
+    law), date-gated by its commencement — finding #5."""
+    xml = (
+        """<section xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" """
+        f'''xmlns:finlex="{_FIN_NS}" eId="s">
+          <num>14 §</num>
+          <subsection><content><p>MOM1 STABLE</p></content></subsection>
+          <subsection><content><p>4 momentti on kumottu L:lla 22.5.2026/380, joka tulee voimaan 1.9.2026.</p></content></subsection>
+          <subsection><content><p>MOM5 STABLE</p></content></subsection>
+        </section>'''
+    ).encode("utf-8")
+    sec = etree.fromstring(xml)
+    spans = build_temporal_spans(sec, today=datetime.date(2026, 6, 1))
+    marker = [s for s in spans if "on kumottu" in s["text"]]
+    assert len(marker) == 1
+    assert marker[0]["label"] == "NOTE"
+    assert marker[0]["enters_force_date"] == "2026-09-01"
+    # The marker prose must NOT appear as any CURRENT/IN_FORCE span.
+    in_force_like = [
+        s for s in spans if s["label"] in ("CURRENT", "IN_FORCE") and "on kumottu" in s["text"]
+    ]
+    assert in_force_like == []
+
+
+def test_section_level_repeal_overlay_in_bare_content_is_note() -> None:
+    """A section-level future-repeal overlay carried as bare <content> directly
+    under <section> (the literal finding #5 example) is a NOTE, and its prior
+    wording is kept IN_FORCE before commencement, SUPERSEDED after."""
+    xml = (
+        """<section xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" """
+        f'''xmlns:finlex="{_FIN_NS}" eId="chp_X__sec_11">
+          <num>11 §</num>
+          <content><p>11 § on kumottu L:lla 5.12.2025/1159, joka tulee voimaan 1.5.2026. Aiempi sanamuoto kuuluu:</p></content>
+          <subsection><content><p>VANHA PYKALA TEKSTI</p></content></subsection>
+        </section>'''
+    ).encode("utf-8")
+    sec = etree.fromstring(xml)
+    # BEFORE the 1.5.2026 repeal commences: marker NOTE, prior wording IN_FORCE.
+    before = build_temporal_spans(sec, today=datetime.date(2026, 4, 1))
+    note_before = [s for s in before if "on kumottu" in s["text"]][0]
+    assert note_before["label"] == "NOTE"
+    prior_before = [s for s in before if "VANHA PYKALA" in s["text"]][0]
+    assert prior_before["label"] == "IN_FORCE"
+    # AFTER commencement: prior wording SUPERSEDED (section repealed).
+    after = build_temporal_spans(sec, today=datetime.date(2026, 6, 1))
+    prior_after = [s for s in after if "VANHA PYKALA" in s["text"]][0]
+    assert prior_after["label"] == "SUPERSEDED"
+
+
+def test_repeal_marker_does_not_match_substantive_prose() -> None:
+    """The repeal-marker discriminator must NOT fire on substantive legal text
+    that merely mentions a repeal mid-sentence without a dated 'L:lla' citation,
+    so real in-force law is never mislabeled as an editorial NOTE."""
+    from lawvm.tools.oracle_text import _is_repeal_marker_text
+
+    assert _is_repeal_marker_text(
+        "4 momentti on kumottu L:lla 22.5.2026/380, joka tulee voimaan 1.9.2026."
+    )
+    # Substantive prose: no dated L:lla citation near the start → not a marker.
+    assert not _is_repeal_marker_text(
+        "Jos sopimus on kumottu lailla tai asetuksella, sovelletaan mitä L:lla 5/2020 säädetään."
+    )
+    assert not _is_repeal_marker_text(
+        "Päätös, joka on kumottu hallinto-oikeudessa, ei ole täytäntöönpanokelpoinen."
+    )
 
 
 def test_temporal_spans_section_without_markers_is_all_current() -> None:

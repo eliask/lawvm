@@ -82,6 +82,31 @@ _AIEMPI_SANAMUOTO_RE = re.compile(r"\bAiempi sanamuoto kuuluu\b", re.IGNORECASE)
 _TULEE_VOIMAAN_DATE_RE = re.compile(
     r"tul(?:ee|i) voimaan\s+(\d{1,2})\.(\d{1,2})\.(\d{4})", re.IGNORECASE
 )
+# A repeal-marker is editorial prose Finlex sometimes places directly in a
+# <subsection>/<content> (NOT wrapped in <hcontainer name="noteAuthorial">) when
+# a provision/momentti has been repealed: e.g.
+#   "11 § on kumottu L:lla 5.12.2025/1159, joka tulee voimaan 1.5.2026.
+#    Aiempi sanamuoto kuuluu:"  or
+#   "4 momentti on kumottu L:lla 22.5.2026/380, joka tulee voimaan 1.7.2026."
+# This is editorial metadata, never in-force legal text, so it must be labeled
+# NOTE (and date-gated by its commencement), not CURRENT — otherwise oracle-L1
+# leaks the marker prose as if it were current law.
+# Discriminator vs substantive prose that merely mentions a repeal: a marker
+# says "on kumottu L:lla <D.M.YYYY/NNN>" near the START of the span (optionally
+# led by the repealed unit reference "N §" / "N momentti" / "tämä pykälä"), and
+# the repealing act citation always carries a date. Substantive text instead
+# says "on kumottu lailla / hallinto-oikeudessa / ..." mid-sentence, without a
+# dated "L:lla D.M.YYYY/NNN" citation, so it does not match.
+_REPEAL_MARKER_RE = re.compile(
+    r"^\s*(?:\d+\s*(?:[a-zäöå])?\s*(?:§|moment(?:ti|tti))"
+    r"|t[äa]m[äa]\s+(?:pykälä|laki|momentti))?"
+    r"\s*.{0,40}?\bon\s+kumott[ua]\s+L:lla\s+\d{1,2}\.\d{1,2}\.\d{4}\s*/\s*\d+",
+    re.IGNORECASE,
+)
+
+
+def _is_repeal_marker_text(text: str) -> bool:
+    return bool(_REPEAL_MARKER_RE.search(text or ""))
 
 
 def _local_tag(el: Any) -> str:
@@ -137,6 +162,13 @@ def build_temporal_spans(
     # immediately FOLLOWS it, while a SUPERSEDED bare subsection comes from the
     # note that immediately PRECEDES it.
     prior_wording_armed = False  # set by the immediately-preceding note
+    # The commencement date of the note that armed prior_wording. When that date
+    # is in the FUTURE (a not-yet-commenced change/repeal), the "prior wording"
+    # is still the IN-FORCE law and must NOT be dropped as SUPERSEDED; only once
+    # the change commences (date ≤ today) does the prior wording become
+    # superseded. None means "treat as already commenced" (legacy behavior for
+    # notes without a parseable date).
+    prior_wording_arm_date: Optional[datetime.date] = None
     # For ADDED ("lisätty N momentti tulee voimaan <date>") provisions the
     # controlling note PRECEDES the new subsection (there is no prior wording to
     # show afterwards), unlike CHANGED ("muutettu ... Aiempi sanamuoto kuuluu:")
@@ -172,6 +204,7 @@ def build_temporal_spans(
                 }
             )
             prior_wording_armed = _note_introduces_prior_wording(child)
+            prior_wording_arm_date = enters if prior_wording_armed else None
             # A note that does NOT introduce prior wording (e.g. "lisätty N
             # momentti tulee voimaan <date>") controls the FOLLOWING added
             # subsection; remember its date as the preceding-note fallback.
@@ -187,18 +220,55 @@ def build_temporal_spans(
             )
             text = _el_to_text(child)
 
-            if not has_version and prior_wording_armed:
-                # Bare subsection right after an "Aiempi sanamuoto kuuluu:" note.
+            if not has_version and _is_repeal_marker_text(text):
+                # A repeal-marker placed directly in a <subsection> (no
+                # noteAuthorial wrapper). Treat it as an editorial NOTE — never
+                # in-force law — and date-gate it by its commencement. If it ends
+                # with "Aiempi sanamuoto kuuluu:", arm the following bare
+                # subsection as the SUPERSEDED prior wording (still in force until
+                # the repeal commences).
+                enters = _note_enters_force_date(child)
                 spans.append(
                     {
-                        "label": "SUPERSEDED",
+                        "label": "NOTE",
                         "text": text,
                         "version": "",
-                        "enters_force_date": None,
+                        "enters_force_date": enters.isoformat() if enters else None,
                     }
                 )
+                prior_wording_armed = bool(_AIEMPI_SANAMUOTO_RE.search(text))
+                prior_wording_arm_date = enters if prior_wording_armed else None
+                pending_preceding_note_date = enters if not prior_wording_armed else None
+                continue
+
+            if not has_version and prior_wording_armed:
+                # Bare subsection right after an "Aiempi sanamuoto kuuluu:" note.
+                # If the arming change/repeal has NOT yet commenced (future date),
+                # this "prior wording" is still the IN-FORCE law — keep it as
+                # IN_FORCE and carry the commencement date so date-aware consumers
+                # can drop it once the change takes effect. Only a past-commenced
+                # (or undated) change makes the prior wording SUPERSEDED.
+                if prior_wording_arm_date is not None and prior_wording_arm_date > today:
+                    spans.append(
+                        {
+                            "label": "IN_FORCE",
+                            "text": text,
+                            "version": "",
+                            "enters_force_date": None,
+                        }
+                    )
+                else:
+                    spans.append(
+                        {
+                            "label": "SUPERSEDED",
+                            "text": text,
+                            "version": "",
+                            "enters_force_date": None,
+                        }
+                    )
                 # The prior wording is a single subsection; disarm afterwards.
                 prior_wording_armed = False
+                prior_wording_arm_date = None
                 continue
 
             if has_version:
@@ -238,14 +308,34 @@ def build_temporal_spans(
                 )
             # A versioned/current subsection consumes any pending note context.
             prior_wording_armed = False
+            prior_wording_arm_date = None
             pending_preceding_note_date = None
             continue
 
-        # Any other child (rare): pass through unlabeled as CURRENT.
+        # Any other child (rare): a <content>/<p> directly under <section>.
+        other_text = _el_to_text(child)
+        if _is_repeal_marker_text(other_text):
+            # Section-level future-repeal overlay carried as bare content rather
+            # than a noteAuthorial. Editorial metadata → NOTE, date-gated; arm
+            # prior wording if it introduces "Aiempi sanamuoto kuuluu:".
+            enters = _note_enters_force_date(child)
+            spans.append(
+                {
+                    "label": "NOTE",
+                    "text": other_text,
+                    "version": "",
+                    "enters_force_date": enters.isoformat() if enters else None,
+                }
+            )
+            prior_wording_armed = bool(_AIEMPI_SANAMUOTO_RE.search(other_text))
+            prior_wording_arm_date = enters if prior_wording_armed else None
+            pending_preceding_note_date = enters if not prior_wording_armed else None
+            continue
+        # Otherwise pass through unlabeled as CURRENT.
         spans.append(
             {
                 "label": "CURRENT",
-                "text": _el_to_text(child),
+                "text": other_text,
                 "version": "",
                 "enters_force_date": None,
             }
