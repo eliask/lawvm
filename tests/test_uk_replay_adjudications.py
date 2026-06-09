@@ -4227,7 +4227,11 @@ def test_executor_applies_labeled_child_end_range_without_target_hijack() -> Non
         "In making a guardianship order the sheriff may require an individual "
         "appointed as guardian to find caution."
     )
-    assert subsection.children == ()
+    # executor.statute is a UKMutableStatute: UKMutableNode.children is a list
+    # (the mutable working representation), not the immutable IRNode tuple that
+    # replay_uk_ops(...) returns. The sibling .children == () assertions in this
+    # file all inspect replay_uk_ops results, not executor.statute directly.
+    assert subsection.children == []
     assert [row.kind for row in adjudications] == ["uk_replay_labeled_child_end_range_applied"]
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "record"

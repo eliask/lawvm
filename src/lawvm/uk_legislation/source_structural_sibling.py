@@ -92,6 +92,12 @@ def _structural_sibling_insert_from_source(
     match = _SOURCE_CARRIED_STRUCTURAL_SIBLING_INSERT_RE.match(text)
     if match is None:
         return None
+    # `insert— and/or/but …` is a textual continuation appended after a child,
+    # not a new structural sibling whose label happens to be "and". That form
+    # is owned by the after-child-text-insertion rule; do not capture the
+    # connector word as a structural label here.
+    if str(match.group("inserted_label") or "").lower() in {"and", "or", "but"}:
+        return None
     inserted_label = _clean_num(match.group("inserted_label"))
     anchor_label = _clean_num(match.group("anchor_label"))
     direction = str(match.group("direction") or "").lower()

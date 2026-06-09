@@ -64742,6 +64742,7 @@ def test_pipeline_compile_ops_records_replay_applicability_filter_for_compiled_o
             "affected_provisions": "s. 57",
             "affecting_provisions": "Sch. 2 para. 7",
             "effect_type": "inserted",
+            "owner_phase": "replay_invariants",
             "compiled_op_count": 1,
             "compiled_op_ids": ["uk_test_unapplied_compiled_filter_0"],
             "compiled_op_actions": ["insert"],
@@ -64907,6 +64908,7 @@ def test_pipeline_compile_ops_records_pit_date_filtered_effects(monkeypatch) -> 
             "blocking": False,
             "strict_disposition": "record",
             "quirks_disposition": "record",
+            "owner_phase": "effect_metadata_frontend",
         }
     ]
 
@@ -65772,6 +65774,7 @@ def test_pipeline_compile_ops_records_metadata_only_selection_rejection(monkeypa
             "affected_provisions": "s. 57",
             "affecting_provisions": "Sch. 2 para. 7",
             "effect_type": "repealed",
+            "owner_phase": "effect_metadata_frontend",
             "metadata_only": True,
             "reason": "UK replay regime excludes metadata-only effect rows",
             "blocking": True,

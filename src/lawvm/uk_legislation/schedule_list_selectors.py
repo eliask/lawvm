@@ -539,7 +539,11 @@ def _uk_schedule_list_entry_repeal_selector(
         match = _TYPE_LABEL_LIST_ENTRY_REPEAL_RE.search(text)
         if match is not None:
             anchors = _split_type_label_repeal_anchors(match.group("anchors"))
-            if anchors:
+            # A single `omit Type X` is a unique-literal text-patch repeal,
+            # owned by uk_effect_unquoted_type_label_repeal_text_patch. Only
+            # the plural/multi-anchor form (`omit Types X and Y …`) is a
+            # structural local schedule-entry repeal.
+            if len(anchors) >= 2:
                 return {
                     "rule_id": UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
                     "anchors": list(anchors),
@@ -548,11 +552,26 @@ def _uk_schedule_list_entry_repeal_selector(
                     "entry_carrier_family": "non_schedule_local_list",
                     "source_anchor_form": "type_label",
                 }
-        match = re.search(
+        # A QUOTED anchor (`omit the entry relating to "working day"`) names a
+        # definition term and is owned by the definition-entry text-patch rule
+        # (uk_effect_definition_entry_repeal_text_patch). Only an unquoted
+        # structural-reference anchor (`… relating to section 134(5)(a)`) is a
+        # structural local schedule-entry repeal.
+        quoted_entry_relating_to = re.search(
             r"\bomit(?:ted)?\s+(?:the\s+)?entry\s+(?:relating\s+to|for)\s+"
-            r"[“\"']?(?P<anchor>.+?)[”\"']?(?:,?\s+and\b|[.;,]|$)",
+            r"[“\"'‘]",
             text,
             re.I,
+        )
+        match = (
+            None
+            if quoted_entry_relating_to is not None
+            else re.search(
+                r"\bomit(?:ted)?\s+(?:the\s+)?entry\s+(?:relating\s+to|for)\s+"
+                r"(?P<anchor>.+?)(?:,?\s+and\b|[.;,]|$)",
+                text,
+                re.I,
+            )
         )
         if match is not None:
             anchor = _strip_schedule_entry_repeal_anchor(match.group("anchor"))

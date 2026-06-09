@@ -288,11 +288,40 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "2026-05-30 soundness hardening (A19 bounded the old risk; this is the "
         "stricter nullable-separator class). Anchored; low practical risk. Batch 6."
     ),
+    # core
+    "src/lawvm/core/selector.py": (
+        "Pre-existing baseline: _BARE_SECTION_LABEL_RE — anchored "
+        "\\d+\\s*[a-z]?\\s*§ section-label pattern leaves nullable-separated \\s "
+        "repeats flagged by the AST lint. Short anchored pattern; low practical "
+        "risk. Surfaced after earlier-shard test fixes un-masked this gate; not "
+        "modified by the test-rootcause work. Batch 6."
+    ),
     # tools
     "src/lawvm/tools/audit.py": (
         "Pre-existing baseline: _HTML_PRESENTATION_RANGE_RE — \\d+\\s*[a-z]? range "
         "anchors leave nullable-separated \\s repeats, newly detected by the "
         "2026-05-30 soundness hardening. Anchored short pattern; low risk. Batch 6."
+    ),
+    "src/lawvm/tools/hyperlinks.py": (
+        "Pre-existing baseline: _STATUTE_RE — anchored ^\\d{4}/\\d+(?:-\\w+)?$ "
+        "statute-id pattern flagged for nested backtracking quantifiers. Fully "
+        "anchored, bounded; low practical risk. Surfaced after earlier-shard "
+        "fixes un-masked this gate (hyperlinks merge 514bd8f5 predates this "
+        "branch and is not modified here). Batch 6."
+    ),
+    "src/lawvm/tools/oracle_text.py": (
+        "Pre-existing baseline: _REPEAL_MARKER_RE — anchored Finnish "
+        "repeal-marker pattern with bounded .{0,40}? leaves adjacent "
+        "nullable-separated repeats flagged by the AST lint. Anchored, bounded; "
+        "low risk. Surfaced after earlier-shard fixes un-masked this gate; not "
+        "modified here. Batch 6."
+    ),
+    "src/lawvm/tools/reconcile.py": (
+        "Pre-existing baseline: _SECTION_NUM_MARKER_RE — anchored "
+        "^\\s*\\d+\\s*[a-zäöå]?\\s*§\\s* section-number pattern leaves "
+        "nullable-separated \\s repeats flagged by the AST lint. Short anchored "
+        "pattern; low risk. Surfaced after earlier-shard fixes un-masked this "
+        "gate; not modified here. Batch 6."
     ),
     "src/lawvm/tools/divergence_heuristics.py": (
         "Pre-existing baseline: _SECTION_KEY_RE nested quantifiers (lint flags "

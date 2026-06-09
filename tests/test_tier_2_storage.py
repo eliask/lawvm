@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 
+from lawvm.core.manual_claims.primitive import ProfileTag
 from lawvm.tools.tier2_state import (
     DEFAULT_SCHEMA_VERSION,
     IncrementalState,
@@ -427,6 +428,7 @@ class TestBuildIndexDb:
             out_db=out_db,
             build_fts=False,
             schema_version=sv,
+            profile=ProfileTag.DETERMINISTIC_ONLY,
         )
 
         assert Path(out_db).exists()
@@ -459,6 +461,7 @@ class TestBuildIndexDb:
             data_dir=data_dir,
             out_db=None,
             schema_version=sv,
+            profile=ProfileTag.DETERMINISTIC_ONLY,
         )
         expected_db = str(
             tier2_dir(data_dir=data_dir, jurisdiction=jurisdiction, schema_version=sv)
@@ -487,6 +490,7 @@ class TestBuildIndexDb:
         build_index_db(
             jurisdiction=jurisdiction, data_dir=data_dir,
             out_db=out_db, schema_version=sv,
+            profile=ProfileTag.DETERMINISTIC_ONLY,
         )
 
         # Add fi_actors, rebuild
@@ -498,6 +502,7 @@ class TestBuildIndexDb:
         result2 = build_index_db(
             jurisdiction=jurisdiction, data_dir=data_dir,
             out_db=out_db, schema_version=sv,
+            profile=ProfileTag.DETERMINISTIC_ONLY,
         )
 
         assert "fi_actors" in result2["views_created"]
@@ -524,7 +529,12 @@ class TestBuildIndexDb:
         )
 
         with pytest.raises(SystemExit):
-            build_index_db(jurisdiction="fi", data_dir=data_dir, schema_version="v1")
+            build_index_db(
+                jurisdiction="fi",
+                data_dir=data_dir,
+                schema_version="v1",
+                profile=ProfileTag.DETERMINISTIC_ONLY,
+            )
 
     def test_build_missing_tier2_dir_exits(self, tmp_path: Path) -> None:
         """build-index-db with missing tier2 dir calls sys.exit."""
@@ -535,6 +545,7 @@ class TestBuildIndexDb:
                 jurisdiction="fi",
                 data_dir=str(tmp_path),
                 schema_version="v99",  # non-existent
+                profile=ProfileTag.DETERMINISTIC_ONLY,
             )
 
 
@@ -576,6 +587,7 @@ class TestFtsFlag:
             out_db=out_db,
             build_fts=True,
             schema_version=sv,
+            profile=ProfileTag.DETERMINISTIC_ONLY,
         )
 
         # Should not raise; fts_indexed may be empty if FTS extension unavailable
@@ -603,6 +615,7 @@ class TestFtsFlag:
             out_db=out_db,
             build_fts=True,
             schema_version=sv,
+            profile=ProfileTag.DETERMINISTIC_ONLY,
         )
         # FTS should not appear for sections since column is missing
         assert "sections.replay_text" not in result["fts_indexed"]

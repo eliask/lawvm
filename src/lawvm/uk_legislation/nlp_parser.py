@@ -262,7 +262,8 @@ _UNQUOTED_ANCHOR_QUOTED_SUBSTITUTION_RE = re.compile(
 _UNQUOTED_ANCHOR_STRUCTURAL_PREFIX_RE = re.compile(
     r"^(?:articles?|chapters?|paragraphs?|parts?|regulations?|rules?|"
     r"schedules?|sections?|sub-?paragraphs?|subsections?|"
-    r"the\s+(?:amount\s+specified|opening\s+words|words?\s+(?:after|before|from|in)\b))",
+    r"the\s+(?:amount\s+specified|opening\s+words|"
+    r"words?\s+(?:after|before|following|from|in)\b))",
     re.I,
 )
 
@@ -608,6 +609,14 @@ _ALTERNATE_PREIMAGE_SUBSTITUTION_RE = re.compile(
     rf"\(\s*or\s+[“\"'‘](?P<alternate>{_NON_QUOTE}{{1,500}})[”\"'’]\s*\)"
     r",?\s+substitute\s+"
     rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+    re.I,
+)
+# An ``(or "…")`` parenthetical is an alternate-preimage form owned by
+# _ALTERNATE_PREIMAGE_SUBSTITUTION_RE, not a scope note.  The generic
+# scope-note rule must not also fire on it (would emit a spurious literal
+# substitution against the primary preimage alone).
+_ALTERNATE_PREIMAGE_SCOPE_NOTE_RE = re.compile(
+    rf"^\s*or\s+[“\"'‘]{_NON_QUOTE}{{1,500}}[”\"'’]\s*$",
     re.I,
 )
 _AFTER_ANCHOR_BEFORE_FINAL_WORD_SUBSTITUTED_RE = re.compile(
@@ -2891,6 +2900,9 @@ def _parse_leading_substitutions(text: str, subs: list) -> None:
 
     for m in _QUOTED_SUBSTITUTION_SCOPE_NOTE_RE.finditer(text):
         if not _is_non_occurrence_scope_note(m.group("scope_note")):
+            continue
+        if _ALTERNATE_PREIMAGE_SCOPE_NOTE_RE.match(m.group("scope_note")):
+            # Owned by the alternate-preimage rule; do not double-emit.
             continue
         subs.append(
             {
@@ -5279,8 +5291,12 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[UKTextRewriteFragmen
 
     text = normalize_uk_parser_text(text)
     normalized_lower_text = text.lower()
-    if "for " in normalized_lower_text or (
-        "replace" in normalized_lower_text and " with " in normalized_lower_text
+    if (
+        "for " in normalized_lower_text
+        or ("replace" in normalized_lower_text and " with " in normalized_lower_text)
+        # "… become, respectively, …" substitutions carry no "for"/"replace …
+        # with" cue but are recognized inside _parse_leading_substitutions.
+        or "become" in normalized_lower_text
     ):
         _parse_leading_substitutions(text, subs)
 
