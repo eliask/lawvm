@@ -9498,6 +9498,15 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="discard incremental state and regenerate all projections",
     )
     ri_p.add_argument(
+        "--check",
+        action="store_true",
+        default=False,
+        help=(
+            "report projection freshness vs the source farchive and exit "
+            "non-zero if any are stale; does NOT rebuild"
+        ),
+    )
+    ri_p.add_argument(
         "--workers",
         type=int,
         default=0,

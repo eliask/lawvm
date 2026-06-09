@@ -47,6 +47,10 @@ def _find_law_refs_source(data_dir: str) -> Optional[Path]:
     return find_source_file(data_dir, "fi_he_law_refs")
 
 
+def _find_preparatory_refs_source(data_dir: str) -> Optional[Path]:
+    return find_source_file(data_dir, "fi_preparatory_refs")
+
+
 def run_fi_proposal_history(
     *,
     statute: str,
@@ -114,7 +118,36 @@ def run_fi_proposal_history(
     corpus_expr = source_expr_for_path(corpus_path)
     refs_expr = source_expr_for_path(law_refs_path)
 
+    # Enacted-law surfacing: fi_he_corpus.finlex_state reflects only the HE's
+    # OWN self-reported lifecycle (Finlex can keep an HE at "pending" long after
+    # its law is in force). fi_preparatory_refs is the INVERSE link — each
+    # enacted statute cites the HE that produced it (kind='he') — so we can
+    # surface the enacted law(s) for an HE even when its self-state is still
+    # "pending". LEFT JOIN so it degrades gracefully when the projection is
+    # absent (the column shows NULL, never a wrong value).
+    prep_path = _find_preparatory_refs_source(data_dir)
+    has_prep = prep_path is not None
+    enacted_subquery = ""
+    enacted_join = ""
+    if has_prep:
+        prep_expr = source_expr_for_path(prep_path)
+        enacted_subquery = (
+            "enacted AS ("
+            "  SELECT he_year, he_number, "
+            "         string_agg(DISTINCT source_statute_id, ', ' "
+            "                    ORDER BY source_statute_id) AS enacted_as "
+            f"  FROM {prep_expr} "
+            "  WHERE kind = 'he' AND source_statute_id IS NOT NULL "
+            "  GROUP BY he_year, he_number"
+            ")"
+        )
+        enacted_join = (
+            "LEFT JOIN enacted e "
+            "ON e.he_year = c.he_year AND e.he_number = c.he_number "
+        )
+
     # Base columns always present
+    enacted_col = ("e.enacted_as",) if has_prep else ()
     if include_provisions:
         cols = (
             "c.he_id",
@@ -122,6 +155,7 @@ def run_fi_proposal_history(
             "c.ministry_show_as",
             "c.title",
             "c.finlex_state",
+        ) + enacted_col + (
             "r.target_provision_ref_str AS provisions_touched",
         )
         group_cols = (
@@ -131,6 +165,7 @@ def run_fi_proposal_history(
             "c.ministry_show_as",
             "c.title",
             "c.finlex_state",
+        ) + enacted_col + (
             "r.target_provision_ref_str",
         )
     else:
@@ -140,7 +175,7 @@ def run_fi_proposal_history(
             "c.ministry_show_as",
             "c.title",
             "c.finlex_state",
-        )
+        ) + enacted_col
         group_cols = (
             "c.he_id",
             "c.he_year",
@@ -148,7 +183,7 @@ def run_fi_proposal_history(
             "c.ministry_show_as",
             "c.title",
             "c.finlex_state",
-        )
+        ) + enacted_col
 
     select_clause = ", ".join(cols)
     group_by_clause = "GROUP BY " + ", ".join(group_cols)
@@ -183,10 +218,13 @@ def run_fi_proposal_history(
     where_clause = "WHERE " + " AND ".join(conditions)
     limit_clause = f"LIMIT {limit}" if limit else ""
 
+    with_clause = f"WITH {enacted_subquery} " if enacted_subquery else ""
     query = (
+        f"{with_clause}"
         f"SELECT {select_clause} "
         f"FROM {refs_expr} r "
         f"JOIN {corpus_expr} c ON r.he_id = c.he_id "
+        f"{enacted_join}"
         f"{where_clause} "
         # One HE can touch multiple provisions in the same statute. Collapse
         # those duplicate HE rows unless provisions are part of the output.

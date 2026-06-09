@@ -34,11 +34,12 @@ State file format (typed, per AGENTS.md §1.9):
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 
 # ---------------------------------------------------------------------------
@@ -216,3 +217,82 @@ def parquet_path_for(
         jurisdiction=jurisdiction,
         schema_version=schema_version,
     ) / f"{projection_name}.parquet"
+
+
+# ---------------------------------------------------------------------------
+# Canonical farchive fingerprint (single source of truth)
+# ---------------------------------------------------------------------------
+#
+# These are the ONE definition of "what hash goes in a projection's
+# source_farchive_hash". Both the builder (rebuild-indexes / the dedicated
+# export-* commands) and the READ-side freshness guard
+# (lawvm.tools.projection_freshness) must compute the hash identically, or a
+# freshly-built projection would look stale immediately. Keep this here so every
+# producer and consumer imports the same function.
+
+
+def farchive_hash(data_root: str, farchive_name: str) -> str:
+    """Lightweight size+mtime fingerprint of a single farchive (hex, 16 chars).
+
+    A full SHA-256 over multi-GB farchives would be prohibitively slow; size +
+    mtime_ns is a fast, deterministic proxy that flips whenever the farchive is
+    re-ingested. Returns "" when the farchive is absent.
+    """
+    path = Path(data_root) / farchive_name
+    if not path.exists():
+        return ""
+    stat = path.stat()
+    raw = f"{stat.st_size}:{stat.st_mtime_ns}".encode()
+    return hashlib.sha256(raw).hexdigest()[:16]
+
+
+def primary_farchive_hash(data_root: str, tier_1_deps: Sequence[str]) -> str:
+    """Combined fingerprint of all Tier 1 deps for a projection (hex, 24 chars).
+
+    Returns "" if ALL dependency farchives are absent (so pre-populated ""
+    hashes still match in farchive-less environments such as CI).
+    """
+    parts = [farchive_hash(data_root, dep) for dep in tier_1_deps]
+    if all(p == "" for p in parts):
+        return ""
+    combined = ":".join(parts).encode()
+    return hashlib.sha256(combined).hexdigest()[:24]
+
+
+def write_projection_state_after_export(
+    *,
+    projection_dir: str,
+    projection_name: str,
+    row_count: int,
+    tier_1_dependencies: Sequence[str],
+    schema_version: str = DEFAULT_SCHEMA_VERSION,
+    data_root: Optional[str] = None,
+) -> None:
+    """Write/refresh a projection's .state.json after a dedicated export.
+
+    The dedicated export commands (sync-fi-proposals, export-fi-he-branch-ops,
+    ...) write parquet bodies but historically did NOT update the tier-2 state
+    sidecar, so the READ-side freshness guard would report a just-built
+    projection as stale. Call this after writing the parquet to keep the sidecar
+    in lockstep with the farchive the export read from.
+
+    ``projection_dir`` is the directory the parquet was written to
+    (e.g. ``data/fi/v1``). ``data_root`` is where the farchives live; when None
+    it is inferred as the directory two levels up (``data/fi/v1`` -> ``data``),
+    falling back to ``"data"``.
+    """
+    pdir = Path(projection_dir)
+    if data_root is None:
+        candidate = pdir.parent.parent
+        data_root = str(candidate) if candidate != pdir else "data"
+
+    current_hash = primary_farchive_hash(data_root, list(tier_1_dependencies))
+    parquet_path = pdir / f"{projection_name}.parquet"
+    state = make_state(
+        projection_name=projection_name,
+        schema_version=schema_version,
+        row_count=row_count,
+        source_farchive_hash=current_hash,
+        tier_1_dependencies=list(tier_1_dependencies),
+    )
+    write_state(parquet_path, state)
