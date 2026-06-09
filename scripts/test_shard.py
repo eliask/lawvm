@@ -305,6 +305,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_projection_completeness.py",
         "test_proof_surface_graph.py",
         "test_provenance.py",
+        "test_hyperlinks.py",
         "test_verify_chain.py",
         # Step 1: provenance graph substrate
         "test_provenance_graph.py",

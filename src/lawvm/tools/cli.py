@@ -3598,6 +3598,15 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
             help="projection directory for fi_he_corpus.parquet (default: data/fi/v1)",
         )
         provenance_p.add_argument("--json", action="store_true", help="emit JSON")
+        provenance_p.add_argument(
+            "--hyperlinks",
+            choices=["auto", "always", "never"],
+            default="auto",
+            help=(
+                "OSC 8 terminal hyperlinks on legislative refs in HUMAN output "
+                "(auto = only on a TTY; never emitted into JSON/non-tty)"
+            ),
+        )
 
     # --- export ---
     export_p = sub.add_parser(
