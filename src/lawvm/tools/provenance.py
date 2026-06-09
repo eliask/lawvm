@@ -274,6 +274,211 @@ def build_provenance(
     }
 
 
+_STATUTE_SCHEMA = "lawvm.provenance_statute.v1"
+
+
+def _amendment_sources_from_replay(statute_id: str) -> dict[str, Any]:
+    """Replay the statute ONCE and return {amendment_id: OperationSource}.
+
+    The timeline versions carry an OperationSource per applied amendment with
+    enacted/effective/legal_status — the commencement facts we want — so one
+    replay yields the whole statute's amendment commencement map without a
+    per-amendment replay.
+    """
+    from lawvm.finland.grafter import replay_xml
+
+    master = replay_xml(statute_id, quiet=True)
+    sources: dict[str, Any] = {}
+    timelines = master.timelines or {}
+    iterator = timelines.values() if hasattr(timelines, "values") else timelines
+    for timeline in iterator:
+        versions = getattr(timeline, "versions", None) or timeline
+        if not hasattr(versions, "__iter__"):
+            continue
+        for v in versions:
+            # ProvisionVersion carries the applied amendment as `.source`
+            # (an OperationSource with statute_id/enacted/effective/...).
+            src = getattr(v, "source", None) or getattr(v, "source_amendment", None)
+            sid = getattr(src, "statute_id", None) if src is not None else None
+            if sid and sid not in sources:
+                sources[sid] = src
+    return sources
+
+
+def _op_source_commencement(src: Any) -> dict[str, str]:
+    if src is None:
+        return {"enacted": "", "effective": "", "legal_status": "", "title": ""}
+    return {
+        "enacted": _dateish(getattr(src, "enacted", "")),
+        "effective": _dateish(getattr(src, "effective", "")),
+        "legal_status": str(getattr(src, "legal_status", "") or ""),
+        "title": str(getattr(src, "title", "") or ""),
+    }
+
+
+def build_statute_provenance(
+    statute_id: str,
+    *,
+    as_of: str = "",
+    jurisdiction: str = "fi",
+    data_dir: str = _DEFAULT_DATA_DIR,
+) -> dict[str, Any]:
+    """Build the statute-level HE -> [enacted amendments] inversion.
+
+    For a statute id with NO section, emit every HE that touched the statute,
+    each with its enacted law + commencement (from one replay) + committee /
+    parliament-response preparatory refs (from the live extractor). Schema
+    ``lawvm.provenance_statute.v1``.
+    """
+    if jurisdiction != "fi":
+        raise ValueError(
+            f"lawvm provenance currently supports only jurisdiction='fi' (got {jurisdiction!r})"
+        )
+
+    as_of_value = as_of or _today_iso()
+    notes: list[str] = []
+
+    # 1. Enacted amendments of this statute (the amendment-index graph).
+    from lawvm.finland.amendment_index import get_amendment_children
+
+    children = get_amendment_children()
+    amend_ids = sorted(
+        set(children.get(statute_id, [])),
+        key=_amendment_sort_key,
+        reverse=True,
+    )
+
+    # 2. One replay → per-amendment commencement (enacted/effective/status).
+    try:
+        replay_sources = _amendment_sources_from_replay(statute_id)
+    except Exception as exc:
+        replay_sources = {}
+        notes.append(
+            f"Replay of {statute_id} for commencement facts failed: "
+            f"{type(exc).__name__}: {str(exc)[:120]}"
+        )
+
+    store = get_corpus_store()
+    amendments: list[dict[str, Any]] = []
+    try:
+        for amend_id in amend_ids:
+            entry: dict[str, Any] = {
+                "amendment_id": amend_id,
+                "commencement": _op_source_commencement(replay_sources.get(amend_id)),
+                "applied_in_replay": amend_id in replay_sources,
+                "originating_he": None,
+                "committee_refs": [],
+                "parliament_response_refs": [],
+                "preparatory": [],
+            }
+            # 3. Live preparatory chain for this amendment.
+            try:
+                xml = store.read_source(amend_id)
+            except (OSError, KeyError):
+                xml = None
+            if xml is None:
+                entry["preparatory_available"] = False
+            else:
+                entry["preparatory_available"] = True
+                result = extract_preparatory_refs(xml, amend_id)
+                refs = list(result.refs)
+                entry["preparatory"] = [_prep_row(r) for r in refs]
+                for r in refs:
+                    kind = getattr(r, "kind", None)
+                    canonical = getattr(r, "canonical_id", None)
+                    raw = getattr(r, "raw_text", None)
+                    if kind == PreparatoryReferenceKind.HE and entry["originating_he"] is None:
+                        meta = _lookup_he_meta(canonical, data_dir) if canonical else None
+                        entry["originating_he"] = {
+                            "he_id": canonical,
+                            "raw_text": raw,
+                            "confidence": _confidence(r),
+                            "title": (meta or {}).get("title"),
+                            "ministry": (meta or {}).get("ministry"),
+                            "date_issued": (meta or {}).get("date_issued"),
+                            "finlex_state": (meta or {}).get("finlex_state"),
+                        }
+                    elif kind == PreparatoryReferenceKind.COMMITTEE_REPORT:
+                        entry["committee_refs"].append(
+                            {"canonical_id": canonical, "raw_text": raw}
+                        )
+                    elif kind == PreparatoryReferenceKind.PARLIAMENT_RESPONSE:
+                        entry["parliament_response_refs"].append(
+                            {"canonical_id": canonical, "raw_text": raw}
+                        )
+            amendments.append(entry)
+    finally:
+        store.close()
+
+    he_count = sum(1 for a in amendments if a["originating_he"] is not None)
+    return {
+        "schema": _STATUTE_SCHEMA,
+        "statute_id": statute_id,
+        "as_of": as_of_value,
+        "amendment_count": len(amendments),
+        "he_resolved_count": he_count,
+        "amendments": amendments,
+        "notes": notes,
+    }
+
+
+def _amendment_sort_key(amend_id: str) -> tuple[int, int]:
+    """Sort key (year, number) for 'YYYY/N' amendment ids; safe on odd ids."""
+    try:
+        year_s, num_s = amend_id.split("/", 1)
+        num = int(num_s.split("-", 1)[0])
+        return (int(year_s), num)
+    except (ValueError, IndexError):
+        return (0, 0)
+
+
+def _render_statute_human(record: dict[str, Any]) -> str:
+    lines: list[str] = []
+    lines.append(
+        f"{record['statute_id']}  statute provenance @ {record['as_of']}  "
+        f"({record['amendment_count']} amendments, "
+        f"{record['he_resolved_count']} with originating HE)"
+    )
+    lines.append("")
+    for a in record["amendments"]:
+        comm = a["commencement"]
+        applied = "" if a["applied_in_replay"] else "  [not applied in replay]"
+        lines.append(
+            f"L {a['amendment_id']}"
+            f"  · enacted {comm['enacted'] or '?'}"
+            f" · in force {comm['effective'] or '?'}"
+            f" · {comm['legal_status'] or '?'}{applied}"
+        )
+        if comm.get("title"):
+            lines.append(f"    {comm['title']}")
+        he = a["originating_he"]
+        if he is not None:
+            bits = [he.get("he_id") or "?"]
+            if he.get("title"):
+                bits.append(he["title"])
+            if he.get("finlex_state"):
+                bits.append(f"finlex_state={he['finlex_state']}")
+            lines.append("    HE   : " + " · ".join(bits))
+            if he.get("ministry"):
+                lines.append(
+                    f"           {he['ministry']} · {he.get('date_issued') or 'date unknown'}"
+                )
+        elif a.get("preparatory_available") is False:
+            lines.append("    HE   : (amendment source XML unavailable)")
+        else:
+            lines.append("    HE   : (none found in preliminaryWork)")
+        for c in a["committee_refs"]:
+            lines.append(f"    cmte : {c['raw_text']} ({c['canonical_id']})")
+        for ev in a["parliament_response_refs"]:
+            lines.append(f"    EV   : {ev['raw_text']} ({ev['canonical_id']})")
+        lines.append("")
+    if record["notes"]:
+        lines.append("notes:")
+        for note in record["notes"]:
+            lines.append(f"  - {note}")
+    return "\n".join(lines)
+
+
 def _render_human(record: dict[str, Any]) -> str:
     lines: list[str] = []
     lines.append(f"{record['statute_id']} {record['selector']}  (provenance @ {record['as_of']})")
@@ -330,9 +535,25 @@ def main(args: Any) -> None:
     if jurisdiction != "fi":
         print(f"ERROR: lawvm provenance currently supports only -j fi (got {jurisdiction!r})", file=sys.stderr)
         raise SystemExit(2)
+
+    selector = getattr(args, "selector", "") or ""
+    if not selector:
+        # Statute-level: HE -> [enacted amendments] inversion (no section).
+        record = build_statute_provenance(
+            statute_id=args.statute_id,
+            as_of=getattr(args, "as_of", "") or _today_iso(),
+            jurisdiction=jurisdiction,
+            data_dir=getattr(args, "data_dir", _DEFAULT_DATA_DIR),
+        )
+        if getattr(args, "json", False):
+            print(json.dumps(record, ensure_ascii=False, indent=2, default=str))
+            return
+        print(_render_statute_human(record))
+        return
+
     record = build_provenance(
         statute_id=args.statute_id,
-        selector=getattr(args, "selector", "") or "",
+        selector=selector,
         as_of=getattr(args, "as_of", "") or _today_iso(),
         query_type=getattr(args, "query_type", "in_force"),
         jurisdiction=jurisdiction,
