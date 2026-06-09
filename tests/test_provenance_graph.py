@@ -386,7 +386,7 @@ def test_interval_rejects_end_before_start() -> None:
 
 def test_producer_kind_validated() -> None:
     with pytest.raises(ValueError, match="producer_kind"):
-        Producer(producer_id="test", producer_kind="robot")  # type: ignore[arg-type]
+        Producer(producer_id="test", producer_kind="robot")  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
 
 def test_graph_builder_deduplicates_nodes() -> None:

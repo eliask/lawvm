@@ -304,7 +304,7 @@ def _eval_none(args: Mapping[str, object], ctx: _EvalContext) -> bool:
 def _eval_count_distinct_at_least(args: Mapping[str, object], ctx: _EvalContext) -> bool:
     kind = str(args.get("attestation_kind", ""))
     path = str(args.get("path", ""))
-    n = int(args.get("n", 1))
+    n = int(args.get("n", 1))  # ty:ignore[invalid-argument-type]
     attestations = _attestations_for_subject(ctx)
     filtered = _filter_attestations(attestations, kind if kind else None, {})
     values: set[str] = set()
@@ -358,7 +358,7 @@ def _eval_signed_by(args: Mapping[str, object], ctx: _EvalContext) -> bool:
     keyring = str(args.get("keyring", ""))
     attestations = _attestations_for_subject(ctx)
     for a in attestations:
-        if a.signature is not None and a.signature.keyring_id == keyring:
+        if a.signature is not None and a.signature.keyring_id == keyring:  # ty:ignore[unresolved-attribute]
             return True
     return False
 

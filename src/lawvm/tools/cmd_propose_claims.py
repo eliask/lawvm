@@ -341,7 +341,7 @@ def _run_validators(
                 he_id=None,
                 version_id=None,
             ),
-            cited_source_span=list(assertion.source_refs[0].byte_range) if assertion.source_refs else [0, 0],
+            cited_source_span=list(assertion.source_refs[0].byte_range) if assertion.source_refs else [0, 0],  # ty:ignore[invalid-argument-type]
             cited_source_hash=assertion.source_refs[0].artifact_digest if assertion.source_refs else "unknown",
             dependency_fingerprint=(),
             valid_at=(assertion.valid_at.start, assertion.valid_at.end),
@@ -406,7 +406,7 @@ def _normalize_fi_statute_resolution(
 
     value_dict = dict(proposed.value)
     raw_id = value_dict.get("resolved_statute_id", "")
-    canonical = _canonicalize_finnish_statute_id(raw_id)
+    canonical = _canonicalize_finnish_statute_id(raw_id)  # ty:ignore[invalid-argument-type]
 
     if canonical is None or canonical == raw_id:
         return proposed
@@ -503,7 +503,7 @@ def _process_one_frontier(
         cited_span_hash=cited_span_hash,
     )
 
-    proposed: ProposedClaim = backend.propose(frontier_row, schema, quoted_source)  # type: ignore[attr-defined]
+    proposed: ProposedClaim = backend.propose(frontier_row, schema, quoted_source)  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
 
     if claim_kind == "fi.v1.INLINE_STATUTE_RESOLUTION":
         proposed = _normalize_fi_statute_resolution(proposed, verbose=verbose)
@@ -736,7 +736,7 @@ def cmd_propose_from_frontier(args: object) -> int:
 
 
 def cmd_propose_gap_discovery(args: object) -> int:
-    he_id: str = getattr(args, "he", None)
+    he_id: str = getattr(args, "he", None)  # ty:ignore[invalid-assignment]
     if not he_id:
         print("error: --gap-discovery requires --he HE_ID", file=sys.stderr)
         return 1
@@ -792,7 +792,7 @@ def cmd_propose_gap_discovery(args: object) -> int:
 
 
 def cmd_propose_specific(args: object) -> int:
-    he_id: str = getattr(args, "he", None)
+    he_id: str = getattr(args, "he", None)  # ty:ignore[invalid-assignment]
     kind: str = getattr(args, "kind", "fi.v1.INLINE_STATUTE_RESOLUTION")
     graph_store_root: Optional[str] = (
         getattr(args, "graph_store_root", None)

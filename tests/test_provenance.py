@@ -80,7 +80,7 @@ def _patch_refs(monkeypatch) -> None:
                 _ref(PreparatoryReferenceKind.HE, "he/2025/188", "HE 188/2025"),
                 _ref(PreparatoryReferenceKind.COMMITTEE_REPORT, "fi.committee.lavm.3.2026", "LaVM 3/2026"),
                 _ref(PreparatoryReferenceKind.PARLIAMENT_RESPONSE, "fi.ev.23.2026", "EV 23/2026"),
-            ]
+            ]  # ty:ignore[invalid-argument-type]
         )
 
     monkeypatch.setattr(provenance, "extract_preparatory_refs", fake_extract_preparatory_refs)

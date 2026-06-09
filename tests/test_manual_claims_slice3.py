@@ -825,4 +825,4 @@ def test_is_semantic_compilation_false_for_inline_statute():
 
 # Expose _minimal_precedence_registry from precedence module for test import
 from lawvm.core.manual_claims import precedence as _prec_mod
-_prec_mod._minimal_precedence_registry = _minimal_precedence_registry  # type: ignore[attr-defined]
+_prec_mod._minimal_precedence_registry = _minimal_precedence_registry  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]

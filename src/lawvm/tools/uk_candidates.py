@@ -377,11 +377,11 @@ def _residual_claim_agreement_residual(
         residual_id=work_item_id,
         jurisdiction="uk",
         agreement_surface="candidate_residual_claim_vs_current_oracle",
-        family=family,
+        family=family,  # ty:ignore[invalid-argument-type]
         status=_residual_claim_agreement_residual_status(
             family,
             candidate_set_certificate=candidate_set_certificate,
-        ),
+        ),  # ty:ignore[invalid-argument-type]
         owner_phase=owner_phase,
         rule_id=f"uk_residual_claim_{family}",
         source_artifact_id=str(row.get("statute_id") or ""),

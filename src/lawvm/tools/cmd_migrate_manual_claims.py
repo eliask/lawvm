@@ -120,7 +120,7 @@ def _make_assertion_from_claim(claim_dict: dict) -> ProvenanceAssertion:
 
     producer = Producer(  # noqa: F841  # BUG: Producer built but ProvenanceAssertion schema has no producer field; entire block is dead
         producer_id=producer_id,
-        producer_kind=producer_kind,
+        producer_kind=producer_kind,  # ty:ignore[invalid-argument-type]
         public_key=None,
         metadata={"migrated_from": "v2.2", "original_claim_id": claim_id},
     )
@@ -216,7 +216,7 @@ def _make_attestation_from_event(
 
     producer = Producer(
         producer_id=producer_id,
-        producer_kind=producer_kind,
+        producer_kind=producer_kind,  # ty:ignore[invalid-argument-type]
         public_key=None,
         metadata={"migrated_from": "v2.2", "original_event_kind": event_kind},
     )

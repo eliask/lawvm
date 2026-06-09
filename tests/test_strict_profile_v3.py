@@ -42,7 +42,7 @@ def test_channel_fields_require_bool():
     with pytest.raises(ValueError, match="must be a bool"):
         StrictProfile(
             name="bad",
-            allows_attested_reference_resolution="yes",  # type: ignore[arg-type]
+            allows_attested_reference_resolution="yes",  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
         )
 
 

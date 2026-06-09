@@ -48,7 +48,7 @@ def test_compile_facade_with_metadata_factory() -> None:
         bundle=CanonicalBundle(),
         finding_ledger=(),
         replay_mode="finlex_oracle",
-        graph=graph,
+        graph=graph,  # ty:ignore[invalid-argument-type]
         strict_profile=profile,
         evidence_policy=registry,
         source_bundle_hash="s" * 64,
@@ -56,7 +56,7 @@ def test_compile_facade_with_metadata_factory() -> None:
     )
 
     assert facade.compile_metadata is not None
-    assert facade.compile_metadata.provenance_graph_hash == graph.snapshot_hash
+    assert facade.compile_metadata.provenance_graph_hash == graph.snapshot_hash  # ty:ignore[unresolved-attribute]
     assert facade.compile_metadata.strict_profile_fingerprint == compute_strict_profile_fingerprint(profile)
     assert facade.compile_metadata.evidence_policy_fingerprint == registry.registry_hash
     assert facade.compile_metadata.source_bundle_hash == "s" * 64
@@ -92,7 +92,7 @@ def test_compile_facade_with_metadata_replay_mode_preserved() -> None:
         bundle=CanonicalBundle(),
         finding_ledger=(),
         replay_mode="legal_pit",
-        graph=graph,
+        graph=graph,  # ty:ignore[invalid-argument-type]
         strict_profile=profile,
         evidence_policy=registry,
         source_bundle_hash="s" * 64,

@@ -305,7 +305,7 @@ def _node_raw_number_values(el: ET._Element) -> list[str]:
                 found_raw_nums.append(raw_text.strip())
             elif child.text is not None:
                 found_raw_nums.append(child.text)
-    return found_raw_nums
+    return found_raw_nums  # ty:ignore[invalid-return-type]
 
 
 def _match_node_prepared(

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, cast
 
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
@@ -328,8 +328,8 @@ def _agreement_surface(surface: AgreementSurface | Mapping[str, Any]) -> Agreeme
         materialization_id=str(surface.get("materialization_id") or ""),
         comparison_target_id=str(surface.get("comparison_target_id") or ""),
         comparison_kind=str(surface.get("comparison_kind") or ""),
-        materialization_kind=str(surface.get("materialization_kind") or "legal_text_state"),
-        comparison_materialization_kind=str(surface.get("comparison_materialization_kind") or "unknown"),
+        materialization_kind=cast(MaterializationKind, str(surface.get("materialization_kind") or "legal_text_state")),
+        comparison_materialization_kind=cast(MaterializationKind, str(surface.get("comparison_materialization_kind") or "unknown")),
         surface_id=str(surface.get("surface_id") or ""),
         profile_id=str(surface.get("profile_id") or ""),
         exact_ratio=surface.get("exact_ratio") if surface.get("exact_ratio") is not None else None,
@@ -343,8 +343,8 @@ def _residual(row: AgreementResidual | Mapping[str, Any]) -> AgreementResidual:
         residual_id=str(row.get("residual_id") or ""),
         jurisdiction=str(row.get("jurisdiction") or ""),
         agreement_surface=str(row.get("agreement_surface") or ""),
-        family=str(row.get("family") or ""),
-        status=str(row.get("status") or ""),
+        family=cast(AgreementResidualFamily, str(row.get("family") or "")),
+        status=cast(AgreementResidualStatus, str(row.get("status") or "")),
         owner_phase=str(row.get("owner_phase") or ""),
         rule_id=str(row.get("rule_id") or ""),
         source_artifact_id=str(row.get("source_artifact_id") or ""),
@@ -383,7 +383,7 @@ def _materialization_kind(field_name: str, value: Any) -> MaterializationKind:
             "AgreementSurface.materialization kind must be one of "
             f"{sorted(_VALID_MATERIALIZATION_KINDS)}"
         )
-    return text
+    return cast(MaterializationKind, text)
 
 
 def _require_nonnegative_int(field_name: str, value: Any) -> None:

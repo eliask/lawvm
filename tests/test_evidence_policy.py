@@ -42,7 +42,7 @@ def test_policy_expr_requires_nonempty_op():
 
 def test_policy_expr_requires_mapping_args():
     with pytest.raises(ValueError, match="Mapping"):
-        PolicyExpr(op="exists", args="bad")  # type: ignore[arg-type]
+        PolicyExpr(op="exists", args="bad")  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
 
 def test_policy_expr_canonical_dict_sorted():
@@ -237,7 +237,7 @@ def _make_attestation(
         materials=(),
         producer=Producer(
             producer_id=producer_id,
-            producer_kind=producer_kind,
+            producer_kind=producer_kind,  # ty:ignore[invalid-argument-type]
             public_key=None,
             metadata={},
         ),

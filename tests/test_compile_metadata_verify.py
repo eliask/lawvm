@@ -81,7 +81,7 @@ def test_consumer_verifies_graph_snapshot_exists() -> None:
     d = _make_valid_dict(graph_hash=graph_hash)
     store = _FakeGraphStore(frozenset({graph_hash}))
 
-    result = verify_artifact_metadata(d, graph_store=store)
+    result = verify_artifact_metadata(d, graph_store=store)  # ty:ignore[invalid-argument-type]
 
     assert result.graph_snapshot_exists is True
     assert result.is_valid
@@ -92,7 +92,7 @@ def test_consumer_detects_missing_graph_snapshot() -> None:
     d = _make_valid_dict(graph_hash=graph_hash)
     store = _FakeGraphStore(frozenset())  # empty — no known snapshots
 
-    result = verify_artifact_metadata(d, graph_store=store)
+    result = verify_artifact_metadata(d, graph_store=store)  # ty:ignore[invalid-argument-type]
 
     assert result.graph_snapshot_exists is False
     assert not result.is_valid
@@ -172,7 +172,7 @@ def test_verify_artifact_metadata_all_checks_pass() -> None:
 
     result = verify_artifact_metadata(
         d,
-        graph_store=store,
+        graph_store=store,  # ty:ignore[invalid-argument-type]
         expected_strict_profile_fingerprint=profile_fp,
         expected_evidence_policy_fingerprint=policy_fp,
     )

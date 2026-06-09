@@ -728,7 +728,7 @@ def mutation_boundary_proof_rows(
         row = proof.to_dict()
         source_statute = ""
         if isinstance(report_like, Mapping):
-            source_statute = str(report_like.get("source_statute") or "")
+            source_statute = str(report_like.get("source_statute") or "")  # ty:ignore[invalid-argument-type]
         if source_statute:
             row["source_artifact_id"] = source_statute
         rows.append(row)
@@ -1079,7 +1079,7 @@ def temporal_resolution_evidence_rows_from_projection_rows(
                 rule_id=_temporal_resolution_rule_id(kind),
                 phase="temporal_elaboration",
                 reason=str(row.get("message") or _temporal_resolution_reason(kind)),
-                status=_temporal_resolution_status(kind),
+                status=_temporal_resolution_status(kind),  # ty:ignore[invalid-argument-type]
                 family=TEMPORAL_RECOVERY_FAMILY,
                 blocking=kind in fail_reason_set,
                 source_locator=str(row.get("source") or ""),
@@ -1087,7 +1087,7 @@ def temporal_resolution_evidence_rows_from_projection_rows(
                 quirks_disposition="record",
                 detail={
                     "finding_kind": kind,
-                    "step": str(detail.get("step") or ""),
+                    "step": str(detail.get("step") or ""),  # ty:ignore[unresolved-attribute]
                     "source_statute": str(row.get("source") or ""),
                 },
             ).to_diagnostic_detail()
@@ -1112,7 +1112,7 @@ def recovery_execution_authorization_rows_from_projection_rows(
         if rule is None:
             continue
         detail = row.get("detail") if isinstance(row.get("detail"), Mapping) else {}
-        source_statute = str(row.get("source") or detail.get("source_statute") or detail.get("amendment_id") or "")
+        source_statute = str(row.get("source") or detail.get("source_statute") or detail.get("amendment_id") or "")  # ty:ignore[unresolved-attribute]
         message = str(row.get("message") or "")
         key = (kind, source_statute, message)
         if key in seen:
@@ -1140,7 +1140,7 @@ def recovery_execution_authorization_rows_from_projection_rows(
                 "message": message,
                 "strict_fail_reason_present": kind in fail_reason_set,
                 "projection_only": True,
-                "projection_detail": dict(detail),
+                "projection_detail": dict(detail),  # ty:ignore[no-matching-overload]
             },
         ).to_dict()
         authorization["row_id"] = _recovery_authorization_row_id(
@@ -2596,7 +2596,7 @@ def _he_branch_graph_edge(*, branch: LegalBranch, op: Any) -> BranchGraphEdge | 
     op_index = _nonnegative_int(_field(op, "op_index", 0))
     return BranchGraphEdge(
         branch_id=branch.branch_id,
-        edge_kind=_he_branch_edge_kind(str(_field(op, "operation_kind", ""))),
+        edge_kind=_he_branch_edge_kind(str(_field(op, "operation_kind", ""))),  # ty:ignore[invalid-argument-type]
         scenario_id=branch.scenario_id,
         source_artifact_id=str(_field(op, "source_he_id", branch.source_artifact_id)),
         source_statute_id=str(_field(op, "source_he_id", branch.source_artifact_id)),

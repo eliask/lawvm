@@ -585,8 +585,8 @@ class TestRealCorpus:
                     if not chunk:
                         break
                     h.update(chunk)
-            TestRealCorpus._sha256_cached = h.hexdigest()  # type: ignore[attr-defined]
-        return TestRealCorpus._sha256_cached  # type: ignore[attr-defined]
+            TestRealCorpus._sha256_cached = h.hexdigest()  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        return TestRealCorpus._sha256_cached  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
 
     def test_he_98_1996_structured(self) -> None:
         """HE 98/1996 is a structured full-AKN HE (35KB main.xml)."""

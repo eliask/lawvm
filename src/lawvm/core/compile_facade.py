@@ -485,7 +485,7 @@ class CompileFacade:
         evidence_policy: "EvidencePolicyRegistry",
         source_bundle_hash: str,
         build_id: str = "",
-        build_timestamp: "Optional[__import__('datetime').datetime]" = None,
+        build_timestamp: "Optional[__import__('datetime').datetime]" = None,  # ty:ignore[invalid-type-form]
     ) -> "CompileFacade":
         """Build a CompileFacade with CompileMetadata derived from graph + profile + policy.
 

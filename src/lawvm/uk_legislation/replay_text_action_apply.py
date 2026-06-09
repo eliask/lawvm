@@ -249,9 +249,9 @@ class UKReplayTextActionApplyMixin:
             return nodes
 
         text_nodes: list[tuple[tuple[tuple[str, str], ...], UKMutableNode]] = []
-        for child in self.statute.body.children:
+        for child in self.statute.body.children:  # ty:ignore[unresolved-attribute]
             text_nodes.extend(_walk(child, (_kind_label(child),)))
-        for supplement in self.statute.supplements:
+        for supplement in self.statute.supplements:  # ty:ignore[unresolved-attribute]
             text_nodes.extend(_walk(supplement, (_kind_label(supplement),)))
         return text_nodes
 
@@ -282,11 +282,11 @@ class UKReplayTextActionApplyMixin:
         top_path: tuple[str, str],
     ) -> UKMutableNode | None:
         top_kind, top_label = top_path
-        for child in self.statute.body.children:
+        for child in self.statute.body.children:  # ty:ignore[unresolved-attribute]
             child_kind = child.kind.value if hasattr(child.kind, "value") else str(child.kind)
             if child_kind == top_kind and (child.label or "") == top_label:
                 return child
-        for supplement in self.statute.supplements:
+        for supplement in self.statute.supplements:  # ty:ignore[unresolved-attribute]
             supplement_kind = (
                 supplement.kind.value if hasattr(supplement.kind, "value") else str(supplement.kind)
             )

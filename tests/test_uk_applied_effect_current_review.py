@@ -400,7 +400,7 @@ def test_removed_phrase_candidate_blocks_on_later_reinsertion(monkeypatch) -> No
             "affected_provisions": "s. 1",
             "affecting_number": "3",
             "in_force_dates": [{"date": "2022-01-01", "prospective": "false"}],
-        }
+        }  # ty:ignore[invalid-argument-type]
     )
     source_by_effect = {
         "key-omission": '<P1 RestrictExtent="E+W">In section 1 omit "retained phrase".</P1>',
@@ -518,7 +518,7 @@ def test_removed_phrase_source_text_scopes_to_affected_title() -> None:
         **{
             **effect.__dict__,
             "affected_title": "Backing of Warrants (Republic of Ireland) Act 1965",
-        }
+        }  # ty:ignore[invalid-argument-type]
     )
     source = (
         "Bankers' Books Evidence Act 1879 In section 4, the paragraph beginning "
@@ -542,7 +542,7 @@ def test_removed_phrase_source_text_keeps_matching_first_repeal_table_row() -> N
         **{
             **effect.__dict__,
             "affected_title": "Bankers' Books Evidence Act 1879",
-        }
+        }  # ty:ignore[invalid-argument-type]
     )
     source = (
         "Bankers' Books Evidence Act 1879 In section 4, the paragraph beginning "
@@ -564,7 +564,7 @@ def test_current_surface_combines_named_sibling_subunits(monkeypatch) -> None:
         **{
             **effect.__dict__,
             "affected_provisions": "s. 1(1)(a) (b)",
-        }
+        }  # ty:ignore[invalid-argument-type]
     )
     _patch_effect_source(
         monkeypatch,
@@ -725,7 +725,7 @@ def test_removed_phrase_status_prefilter_skips_heading_targets(monkeypatch) -> N
         **{
             **effect.__dict__,
             "affected_provisions": "Sch. 7 para. 22 heading",
-        }
+        }  # ty:ignore[invalid-argument-type]
     )
     monkeypatch.setattr(
         review,
@@ -760,7 +760,7 @@ def test_removed_phrase_status_prefilter_skips_non_act_whole_xml_fallback(
         **{
             **effect.__dict__,
             "affected_provisions": "Annex 5 Pt. C Final Table",
-        }
+        }  # ty:ignore[invalid-argument-type]
     )
     monkeypatch.setattr(
         review,

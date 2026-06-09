@@ -281,8 +281,8 @@ def _uk_misses_agreement_residual(
         residual_id=f"uk-misses:{statute_id}",
         jurisdiction="uk",
         agreement_surface="replay_eid_set_vs_current_oracle_eid_set",
-        family=family,
-        status=status,
+        family=family,  # ty:ignore[invalid-argument-type]
+        status=status,  # ty:ignore[invalid-argument-type]
         owner_phase=owner_phase,
         rule_id=rule_id,
         source_artifact_id=statute_id,

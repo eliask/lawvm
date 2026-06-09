@@ -31,7 +31,7 @@ def _fake_projector(statute_id: str, store: Any) -> Tuple[List[Dict[str, Any]], 
 
 # Register the fake projector on the module under a stable qualname so the
 # worker init can import it by (module, qualname).
-_parallel_corpus._fake_projector = _fake_projector  # type: ignore[attr-defined]
+_parallel_corpus._fake_projector = _fake_projector  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
 
 
 def _expected_serial(statute_ids: List[str]) -> Tuple[list, list]:

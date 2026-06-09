@@ -520,9 +520,9 @@ def test_build_open_manual_bundle_exports_evidence_surface(monkeypatch) -> None:
 
     assert bundle["row_count"] == 1
     report = bundle["evidence_surface_report"]
-    assert report["report_kind"] == "finland_corrigendum_open_manual"
-    assert report["summary"]["candidate_count"] == 1
-    assert report["replay_claims"] is False
+    assert report["report_kind"] == "finland_corrigendum_open_manual"  # ty:ignore[not-subscriptable]
+    assert report["summary"]["candidate_count"] == 1  # ty:ignore[not-subscriptable]
+    assert report["replay_claims"] is False  # ty:ignore[not-subscriptable]
 
 
 def test_corrigendum_provenance_prints_summary(capsys, monkeypatch) -> None:

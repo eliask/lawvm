@@ -288,7 +288,7 @@ def build_amendment_index(
 
 def _path_from_pathlike(value: object) -> Path | None:
     if isinstance(value, os.PathLike | str):
-        return Path(value)
+        return Path(value)  # ty:ignore[invalid-argument-type]
     return None
 
 
@@ -444,8 +444,8 @@ def _default_source_cache_key() -> tuple[()] | tuple[str, int, int]:
             return ()
         return (
             str(fingerprint["path"]),
-            int(fingerprint["size"]),
-            int(fingerprint["mtime_ns"]),
+            int(fingerprint["size"]),  # ty:ignore[invalid-argument-type]
+            int(fingerprint["mtime_ns"]),  # ty:ignore[invalid-argument-type]
         )
     finally:
         cs.close()

@@ -284,7 +284,7 @@ def test_current_text_verification_matrix_rejects_unknown_gate_status() -> None:
             current_status_page_check="yes",
             source_explicitly_omits_or_repeals_same_text="yes",
             commencement_in_force="yes",
-            same_territorial_extent="probably",
+            same_territorial_extent="probably",  # ty:ignore[invalid-argument-type]
             no_later_reinsertion_revival_or_replacement_found="yes",
             target_phrase_in_operative_text_not_commentary="yes",
         )
@@ -1289,7 +1289,7 @@ def test_agreement_residual_rejects_unknown_family() -> None:
             residual_id="bad",
             jurisdiction="uk",
             agreement_surface="surface",
-            family="loose_string",
+            family="loose_string",  # ty:ignore[invalid-argument-type]
             status="frontier",
             owner_phase="compare_oracle_classification",
             rule_id="bad_rule",
@@ -1307,7 +1307,7 @@ def test_agreement_surface_rejects_unknown_materialization_kind() -> None:
             materialization_id="mat",
             comparison_target_id="target",
             comparison_kind="compare",
-            materialization_kind="raw_oracle_text",
+            materialization_kind="raw_oracle_text",  # ty:ignore[invalid-argument-type]
         )
 
 

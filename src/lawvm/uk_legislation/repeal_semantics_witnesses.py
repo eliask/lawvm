@@ -525,4 +525,4 @@ def _preview(text: str, *, limit: int = 240) -> str:
 
 
 def _element_text(el: ET._Element) -> str:
-    return _WHITESPACE_RE.sub(" ", " ".join(part for part in el.itertext() if part)).strip()
+    return _WHITESPACE_RE.sub(" ", " ".join(part for part in el.itertext() if part)).strip()  # ty:ignore[no-matching-overload]

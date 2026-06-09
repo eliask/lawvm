@@ -52,7 +52,7 @@ FI_SECTIONS_TEXT_COLUMNS = (
 
 def _make_parquet_schema() -> Any:
     """Build a pyarrow.Schema for fi_sections_text. Requires pyarrow."""
-    import pyarrow as pa  # ty: ignore[unresolved-import]
+    import pyarrow as pa
     return pa.schema([
         pa.field("statute_id", pa.string()),
         pa.field("section_key", pa.string()),
@@ -163,8 +163,8 @@ def _try_write_parquet(
     Returns True if successful.
     """
     try:
-        import pyarrow as pa  # ty: ignore[unresolved-import]
-        import pyarrow.parquet as pq  # ty: ignore[unresolved-import]
+        import pyarrow as pa
+        import pyarrow.parquet as pq
     except ImportError:
         return False
 

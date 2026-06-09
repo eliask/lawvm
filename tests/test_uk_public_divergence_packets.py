@@ -618,7 +618,7 @@ def test_unavailable_current_timeline_xml_is_snapshot_not_xml_witness(
                 url,
                 404,
                 "Not Found",
-                {},
+                {},  # ty:ignore[invalid-argument-type]
                 io.BytesIO(b"missing dated XML"),
             )
         return url, 200, "text/xml", bodies[url]

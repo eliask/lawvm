@@ -88,7 +88,7 @@ class TestExportParquet:
                 raise ImportError("simulated: pyarrow not installed")
             return real_import(name, *args, **kwargs)
 
-        builtins.__import__ = _no_pyarrow
+        builtins.__import__ = _no_pyarrow  # ty:ignore[invalid-assignment]
         try:
             result = _try_write_parquet(tmp_path / "test.parquet", [{"x": 1}])
         finally:

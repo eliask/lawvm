@@ -170,8 +170,8 @@ def test_uk_bench_diagnostics_report_envelopes_sidecar_claims(tmp_path, monkeypa
     )
 
     assert report_path == tmp_path / "unit.diagnostics.report.json"
-    assert report_path.exists()
-    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report_path.exists()  # ty:ignore[unresolved-attribute]
+    payload = json.loads(report_path.read_text(encoding="utf-8"))  # ty:ignore[unresolved-attribute]
     assert payload["truth_claim"] == (
         "uk_bench_diagnostics_and_scores_regression_evidence_not_source_truth"
     )

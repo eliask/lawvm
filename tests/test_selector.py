@@ -16,35 +16,39 @@ class TestParseSectionSelector:
             chapter="3", section="1", momentti=None, kohta=None,
             locator="chapter:3/section:1",
         )
-        assert p.is_section_scope
+        assert p is not None and p.is_section_scope
 
     def test_chapter_section_momentti(self):
         p = parse_section_selector("§3:1.2")
+        assert p is not None
         assert p.locator == "chapter:3/section:1/subsection:2"
         assert p.momentti == "2"
         assert not p.is_section_scope
 
     def test_flat_section(self):
         p = parse_section_selector("§7")
+        assert p is not None
         assert p.locator == "section:7"
         assert p.chapter is None
 
     def test_section_momentti_kohta(self):
         p = parse_section_selector("§7.1.3")
+        assert p is not None
         assert p.locator == "section:7/subsection:1/paragraph:3"
         assert p.momentti == "1"
         assert p.kohta == "3"
 
     def test_without_leading_sign(self):
-        assert parse_section_selector("3:1").locator == "chapter:3/section:1"
+        assert parse_section_selector("3:1").locator == "chapter:3/section:1"  # ty: ignore[unresolved-attribute]
 
     def test_lettered_label(self):
-        assert parse_section_selector("§14 b").locator == "section:14 b"
-        assert parse_section_selector("§14b").locator == "section:14 b"
+        assert parse_section_selector("§14 b").locator == "section:14 b"  # ty: ignore[unresolved-attribute]
+        assert parse_section_selector("§14b").locator == "section:14 b"  # ty: ignore[unresolved-attribute]
 
     def test_chapter_section_with_lettered_momentti(self):
         # uncommon but allowed: momentti label normalization
         p = parse_section_selector("§3:1.2")
+        assert p is not None
         assert p.section == "1"
 
     def test_rejects_non_selector(self):
@@ -54,7 +58,7 @@ class TestParseSectionSelector:
         assert parse_section_selector("garbage text here") is None
 
     def test_whitespace_tolerated(self):
-        assert parse_section_selector("  §3:1  ").locator == "chapter:3/section:1"
+        assert parse_section_selector("  §3:1  ").locator == "chapter:3/section:1"  # ty: ignore[unresolved-attribute]
 
 
 class TestToLocatorString:

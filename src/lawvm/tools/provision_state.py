@@ -109,7 +109,7 @@ def build_provision_state_response(
         }
 
     selection = select_active_version_ex(
-        resolution.timeline,
+        resolution.timeline,  # ty:ignore[invalid-argument-type]
         as_of=as_of,
         query_type=query_type,
         territory=territory,

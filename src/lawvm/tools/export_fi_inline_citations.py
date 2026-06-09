@@ -155,8 +155,8 @@ def _try_write_parquet(
 ) -> bool:
     """Try to write rows as Parquet with optional compile metadata. Returns True if ok."""
     try:
-        import pyarrow as pa  # ty: ignore[unresolved-import]
-        import pyarrow.parquet as pq  # ty: ignore[unresolved-import]
+        import pyarrow as pa
+        import pyarrow.parquet as pq
     except ImportError:
         return False
 
@@ -297,7 +297,7 @@ def _project_from_he_farchive(
 ) -> int:
     """Extract inline citations from HE farchive. Returns count of HE citation rows added."""
     try:
-        from farchive import Farchive  # ty: ignore[unresolved-import]
+        from farchive import Farchive
     except ImportError:
         print(
             "  inline_citations: farchive not installed; skipping HE extraction",

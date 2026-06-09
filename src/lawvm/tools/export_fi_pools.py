@@ -134,8 +134,8 @@ def _try_write_parquet(
 ) -> bool:
     """Try to write rows as Parquet with optional compile metadata. Returns True if ok."""
     try:
-        import pyarrow as pa  # ty: ignore[unresolved-import]
-        import pyarrow.parquet as pq  # ty: ignore[unresolved-import]
+        import pyarrow as pa
+        import pyarrow.parquet as pq
     except ImportError:
         return False
 

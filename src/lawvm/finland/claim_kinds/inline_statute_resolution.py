@@ -301,8 +301,8 @@ def validate_span(claim: object, source_bytes: bytes) -> ValidationResult:
     claim: ManualCompilationClaim (typed as object to avoid circular import).
     source_bytes: bytes of the cited source artifact.
     """
-    cited_span = claim.cited_source_span  # type: ignore[attr-defined]
-    cited_hash = claim.cited_source_hash  # type: ignore[attr-defined]
+    cited_span = claim.cited_source_span  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    cited_hash = claim.cited_source_hash  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     return _validate_span(
         claim_target=None,
         claim_value=None,
@@ -324,7 +324,7 @@ def validate_entailment(claim: object, source_bytes: bytes) -> ValidationResult:
     canonical form stored in the claim should normalize before calling
     (see cmd_propose_claims.py normalize_fi_statute_resolution_value).
     """
-    cited_span = claim.cited_source_span  # type: ignore[attr-defined]
+    cited_span = claim.cited_source_span  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     start, end = cited_span
 
     if start < 0 or end > len(source_bytes) or start >= end:
@@ -338,7 +338,7 @@ def validate_entailment(claim: object, source_bytes: bytes) -> ValidationResult:
     span_text = source_bytes[start:end].decode("utf-8", errors="replace")
 
     # Extract value fields from frozen tuple-of-pairs representation
-    value_dict = dict(claim.value)  # type: ignore[attr-defined]
+    value_dict = dict(claim.value)  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     raw_statute_id = value_dict.get("resolved_statute_id", "")
     citation_form = value_dict.get("citation_form", "")
 
@@ -381,8 +381,8 @@ _SPEC = ClaimKindSpec(
     ),
     target_fields=("statute_id", "section_locator", "mention_span"),
     value_fields=("resolved_statute_id", "citation_form"),
-    span_validator=validate_span,
-    entailment_validator=validate_entailment,
+    span_validator=validate_span,  # ty:ignore[invalid-argument-type]
+    entailment_validator=validate_entailment,  # ty:ignore[invalid-argument-type]
 )
 
 register_claim_kind(_SPEC)

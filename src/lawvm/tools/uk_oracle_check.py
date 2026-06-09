@@ -478,7 +478,7 @@ def oracle_check_uk_statute(
         ),
         (
             "Mutation boundary proof statuses: "
-            f"{_format_counts(mutation_proof_status_counts)}"
+            f"{_format_counts(mutation_proof_status_counts)}"  # ty:ignore[invalid-argument-type]
         ),
         (
             "Mutation boundary proof rules: "

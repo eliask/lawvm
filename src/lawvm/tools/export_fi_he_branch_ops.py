@@ -74,7 +74,7 @@ class HEBranchProjectionRun:
     not_applicable_count: int = 0
     pdf_wrapper_skipped: int = 0
     elapsed_sec: float = 0.0
-    failures: List[Dict[str, Any]] = None  # type: ignore[assignment]
+    failures: List[Dict[str, Any]] = None  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
 
     def __post_init__(self) -> None:
         if self.failures is None:
@@ -217,7 +217,7 @@ def project_he_branch_ops(
             blob = farchive.get(loc)
             span = farchive.resolve(loc)
             if span is not None and getattr(span, "last_metadata", None):
-                metadata = dict(span.last_metadata) or {}
+                metadata = dict(span.last_metadata) or {}  # ty:ignore[no-matching-overload]
         except Exception as exc:
             run.failures.append({
                 "loc": loc,

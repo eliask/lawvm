@@ -286,7 +286,7 @@ def test_real_phase_result_converts_to_graph() -> None:
 
     # Import Finland compile pipeline
     try:
-        from lawvm.finland.compile import compile_ops_for_statute
+        from lawvm.finland.compile import compile_ops_for_statute  # ty:ignore[unresolved-import]
         from lawvm.core.phase_result import PhaseResult
     except ImportError as e:
         pytest.skip(f"Finland compile not importable: {e}")

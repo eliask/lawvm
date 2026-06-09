@@ -755,7 +755,7 @@ class TestFarchiveSignatureRegression:
             he_number=number,
             lang="fin",
             source_file=locator,
-            source_zip_sha256=str(meta.get("source_zip_sha256", "")),
+            source_zip_sha256=str(meta.get("source_zip_sha256", "")),  # ty:ignore[unresolved-attribute]
         )
 
     def test_he_2024_100_has_signatures_via_farchive(self) -> None:

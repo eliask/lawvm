@@ -1911,23 +1911,23 @@ def test_manual_frontier_diagnostic_records_claim_template_status() -> None:
         diagnostics[0]["authorization_rule_id"]
         == "uk_execution_authorization_manual_claim_required"
     )
-    assert "mutation_boundary_proof" in diagnostics[0]["required_proofs"]
+    assert "mutation_boundary_proof" in diagnostics[0]["required_proofs"]  # ty:ignore[unsupported-operator]
     assert diagnostics[0]["safe_default"] == (
         "block_until_validated_claim_authorizes_replay"
     )
-    assert diagnostics[0]["source_witness"]["source_role"] == (
+    assert diagnostics[0]["source_witness"]["source_role"] == (  # ty:ignore[not-subscriptable]
         "affecting_source_fragment"
     )
-    assert diagnostics[0]["source_witness"]["text_preview"] == (
+    assert diagnostics[0]["source_witness"]["text_preview"] == (  # ty:ignore[not-subscriptable]
         'In the title to section 10, for "old" substitute "new".'
     )
     work_item = diagnostics[0]["frontier_work_item"]
-    assert work_item["source_witness"]["source_role"] == "affecting_source_fragment"
-    assert work_item["source_witness"]["preview_digest"]
-    assert work_item["detail"]["packet_completeness"][
+    assert work_item["source_witness"]["source_role"] == "affecting_source_fragment"  # ty:ignore[not-subscriptable]
+    assert work_item["source_witness"]["preview_digest"]  # ty:ignore[not-subscriptable]
+    assert work_item["detail"]["packet_completeness"][  # ty:ignore[not-subscriptable]
         "has_source_digest_or_preview_digest"
     ] is True
-    assert work_item["detail"]["packet_completeness"]["missing_fields"] == []
+    assert work_item["detail"]["packet_completeness"]["missing_fields"] == []  # ty:ignore[not-subscriptable]
 
 
 def test_manual_frontier_diagnostic_uses_effect_feed_witness_when_source_missing() -> None:
@@ -1963,18 +1963,18 @@ def test_manual_frontier_diagnostic_uses_effect_feed_witness_when_source_missing
     )
 
     assert diagnostics[0]["manual_compile_status"] == "source_insufficient"
-    assert "official_source_witness" in diagnostics[0]["required_proofs"]
-    assert diagnostics[0]["source_witness"]["source_role"] == "effect_feed_row"
-    assert diagnostics[0]["source_witness"]["source_lane"] == (
+    assert "official_source_witness" in diagnostics[0]["required_proofs"]  # ty:ignore[unsupported-operator]
+    assert diagnostics[0]["source_witness"]["source_role"] == "effect_feed_row"  # ty:ignore[not-subscriptable]
+    assert diagnostics[0]["source_witness"]["source_lane"] == (  # ty:ignore[not-subscriptable]
         "legislation_effect_feed"
     )
     work_item = diagnostics[0]["frontier_work_item"]
-    assert work_item["source_witness"]["source_role"] == "effect_feed_row"
-    assert work_item["source_witness"]["preview_digest"]
-    assert work_item["detail"]["packet_completeness"][
+    assert work_item["source_witness"]["source_role"] == "effect_feed_row"  # ty:ignore[not-subscriptable]
+    assert work_item["source_witness"]["preview_digest"]  # ty:ignore[not-subscriptable]
+    assert work_item["detail"]["packet_completeness"][  # ty:ignore[not-subscriptable]
         "has_source_digest_or_preview_digest"
     ] is True
-    assert work_item["detail"]["packet_completeness"]["missing_fields"] == []
+    assert work_item["detail"]["packet_completeness"]["missing_fields"] == []  # ty:ignore[not-subscriptable]
 
 
 def test_manual_frontier_diagnostic_extends_multi_enactment_source_list_witness() -> None:
@@ -2024,14 +2024,14 @@ def test_manual_frontier_diagnostic_extends_multi_enactment_source_list_witness(
 
     source_witness = diagnostics[0]["source_witness"]
     work_item = diagnostics[0]["frontier_work_item"]
-    certificate = work_item["detail"]["source_membership_certificate"]
+    certificate = work_item["detail"]["source_membership_certificate"]  # ty:ignore[not-subscriptable]
 
-    assert source_witness["text_preview"] != source_witness["extended_text_preview"]
-    assert "FA 2003 Section 95(2)(b)" not in source_witness["text_preview"]
-    assert "FA 2003 Section 95(2)(b)" in source_witness["extended_text_preview"]
+    assert source_witness["text_preview"] != source_witness["extended_text_preview"]  # ty:ignore[not-subscriptable]
+    assert "FA 2003 Section 95(2)(b)" not in source_witness["text_preview"]  # ty:ignore[not-subscriptable]
+    assert "FA 2003 Section 95(2)(b)" in source_witness["extended_text_preview"]  # ty:ignore[not-subscriptable]
     assert certificate["completeness_status"] == "complete"
     assert certificate["candidate_ids"] == ["s. 95(2)(b)"]
-    assert work_item["replay_authorized"] is False
+    assert work_item["replay_authorized"] is False  # ty:ignore[not-subscriptable]
 
 
 def test_manual_frontier_out_of_scope_reclassifies_lowering_rejection() -> None:

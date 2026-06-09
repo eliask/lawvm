@@ -18,7 +18,7 @@ from typing import Any, Optional
 def check_duckdb() -> bool:
     """Return True if duckdb is importable."""
     try:
-        import duckdb  # noqa: F401  # ty: ignore[unresolved-import]
+        import duckdb  # noqa: F401
         return True
     except ImportError:
         return False
@@ -34,7 +34,7 @@ def require_duckdb() -> Any:
             file=sys.stderr,
         )
         sys.exit(1)
-    import duckdb  # ty: ignore[unresolved-import]
+    import duckdb
     return duckdb
 
 

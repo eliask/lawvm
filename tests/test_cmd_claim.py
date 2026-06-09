@@ -71,7 +71,7 @@ def _load_assertions(tmp_path: Path) -> list[dict]:
     ]
 
 
-def _propose_and_get_id(tmp_path: Path, d: dict = None) -> str:
+def _propose_and_get_id(tmp_path: Path, d: dict = None) -> str:  # ty:ignore[invalid-parameter-default]
     from lawvm.tools.cmd_claim import cmd_propose
     if d is None:
         d = _make_assertion_dict()

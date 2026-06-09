@@ -1956,7 +1956,7 @@ def _build_se_official_clause_surface(act: SEOfficialActText) -> SEOfficialClaus
     inserted_section_labels = cast(
         tuple[str, ...],
         tuple(sorted(dict.fromkeys(inserted_section_label_list), key=_se_label_sort_key)),
-    )
+    )  # ty:ignore[redundant-cast]
     renumber_destinations = {_label_norm(destination) for _, destination in renumber_pairs if _label_norm(destination)}
     if extracted_replace_labels:
         replace_labels = extracted_replace_labels
@@ -2012,7 +2012,7 @@ def _build_se_official_elaboration(act: SEOfficialActText) -> SEOfficialElaborat
     supported_section_labels = cast(
         tuple[str, ...],
         tuple(sorted(supported_section_labels_set, key=_se_label_sort_key)),
-    )
+    )  # ty:ignore[redundant-cast]
     inserted_heading_labels = tuple(
         _label_norm(heading.before_label)
         for heading in payload_surface.inserted_headings

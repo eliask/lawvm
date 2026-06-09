@@ -154,7 +154,7 @@ def _build_compat_claim(assertion: ProvenanceAssertion):
             he_id=None,
             version_id=None,
         ),
-        cited_source_span=list(byte_range),
+        cited_source_span=list(byte_range),  # ty:ignore[invalid-argument-type]
         cited_source_hash=artifact_digest,
         dependency_fingerprint=(),
         valid_at=(assertion.valid_at.start, assertion.valid_at.end),
@@ -273,7 +273,7 @@ def _source_bytes_for_assertion(assertion: ProvenanceAssertion) -> bytes:
 
 
 def cmd_validate_one(args: object) -> int:
-    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]
+    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 

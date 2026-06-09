@@ -328,4 +328,4 @@ def _current_text_gate_status(field_name: str, value: Any) -> CurrentTextGateSta
             f"CurrentTextVerificationMatrix.{field_name} must be one of "
             f"{sorted(CURRENT_TEXT_GATE_STATUSES)}"
         )
-    return text
+    return text  # ty:ignore[invalid-return-type]

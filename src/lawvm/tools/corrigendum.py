@@ -1957,7 +1957,7 @@ def build_manual_template_bundle(
         "frontier_work_items": frontier_work_items,
         "entries": entries,
     }
-    bundle["evidence_surface_report"] = finland_corrigendum_manual_template_evidence_surface(bundle)
+    bundle["evidence_surface_report"] = finland_corrigendum_manual_template_evidence_surface(bundle)  # ty:ignore[invalid-assignment]
     return bundle
 
 
@@ -2370,7 +2370,7 @@ def build_provenance_bundle(
         ),
         "rows": rendered_rows,
     }
-    bundle["evidence_surface_report"] = finland_corrigendum_provenance_evidence_surface(bundle)
+    bundle["evidence_surface_report"] = finland_corrigendum_provenance_evidence_surface(bundle)  # ty:ignore[invalid-assignment]
     return bundle
 
 
@@ -2747,7 +2747,7 @@ def build_review_bundle(
         ),
         "unblamed_sections": unblamed_sections,
     }
-    bundle["evidence_surface_report"] = finland_corrigendum_review_evidence_surface(bundle)
+    bundle["evidence_surface_report"] = finland_corrigendum_review_evidence_surface(bundle)  # ty:ignore[invalid-assignment]
     return bundle
 
 
@@ -3682,7 +3682,7 @@ def _cmd_reextract(args) -> None:
         if not cand:
             continue
         # Verify the new wrong_text actually applies
-        _, ok = _apply_text_replace(cand["xml_bytes"], new_wrong, new_correct or cand["correct"])
+        _, ok = _apply_text_replace(cand["xml_bytes"], new_wrong, new_correct or cand["correct"])  # ty:ignore[invalid-argument-type]
         status = "APPLIES" if ok else "STILL NO MATCH"
         improved.append({
             "op_id": res["op_id"],
@@ -3694,7 +3694,7 @@ def _cmd_reextract(args) -> None:
             "applies": ok,
         })
         print(f"  {cand['amendment_id']:>10}  [{status}] [{conf}]")
-        print(f"    old: {repr(cand['wrong'][:70])}")
+        print(f"    old: {repr(cand['wrong'][:70])}")  # ty:ignore[not-subscriptable]
         print(f"    new: {repr(new_wrong[:70])}")
 
     applies_n = sum(1 for x in improved if x["applies"])
@@ -3707,9 +3707,9 @@ def _cmd_reextract(args) -> None:
         for item in improved:
             if not item["applies"]:
                 continue
-            parts = item["op_id"].split("/")
+            parts = item["op_id"].split("/")  # ty:ignore[unresolved-attribute]
             idx = int(parts[3])
-            stable_id = _stable_id(pdf_map.get(item["op_id"], ""), idx)
+            stable_id = _stable_id(pdf_map.get(item["op_id"], ""), idx)  # ty:ignore[no-matching-overload]
             row = updated_by_id.get(stable_id)
             if row is None:
                 continue

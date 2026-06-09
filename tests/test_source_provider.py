@@ -202,7 +202,7 @@ def test_finlex_section_provider_happy_path(tmp_path: Path):
     def _mock_get_store(**kwargs):
         return _MockStore()
 
-    cs_module.get_corpus_store = _mock_get_store
+    cs_module.get_corpus_store = _mock_get_store  # ty:ignore[invalid-assignment]
     try:
         provider = FinlexSectionSourceProvider()
         scope = _make_scope(statute_id=statute_id, provision_ref="section:1")
@@ -246,7 +246,7 @@ def test_finlex_section_provider_missing_statute_returns_none():
     def _mock_get_store(**kwargs):
         return _EmptyStore()
 
-    cs_module.get_corpus_store = _mock_get_store
+    cs_module.get_corpus_store = _mock_get_store  # ty:ignore[invalid-assignment]
     try:
         provider = FinlexSectionSourceProvider()
         scope = _make_scope(statute_id="9999/9999", provision_ref="section:1")

@@ -8834,6 +8834,7 @@ def test_compile_schedule_qualified_at_end_insert_to_text_append() -> None:
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.APPEND
     assert op.text_patch.selector.match_text == "TEXT_END"
+    assert op.text_patch.replacement is not None
     assert op.text_patch.replacement.startswith(
         "and for the purposes of this paragraph"
     )
@@ -12327,7 +12328,7 @@ def test_compile_source_parent_carried_after_word_ordinal_insert() -> None:
           </P1para>
         </P1>
         """
-    ).xpath(".//*[local-name()='P3']")[0]
+    ).xpath(".//*[local-name()='P3']")[0]  # ty: ignore[not-subscriptable]
     effect = UKEffectRecord(
         effect_id="uk_test_source_parent_carried_after_word_ordinal_insert",
         effect_type="words inserted",
@@ -12351,7 +12352,7 @@ def test_compile_source_parent_carried_after_word_ordinal_insert() -> None:
 
     ops = compile_effect_to_ir_ops(
         effect,
-        extracted_el,
+        extracted_el,  # ty:ignore[invalid-argument-type]
         sequence=0,
         lowering_rejections_out=lowering_records,
     )
@@ -13153,7 +13154,7 @@ def test_compile_grouped_anchor_place_substitution_uses_parent_source_context() 
                 effect_id="uk_test_grouped_anchor_first_place_substitution",
                 effect_type="words substituted",
                 affecting_provisions="Sch. 9 para. 12(a)",
-                **effect_base,
+                **effect_base,  # ty:ignore[invalid-argument-type]
             ),
             1,
             "FCA and, if the society is a PRA-authorised person, the PRA",
@@ -13164,7 +13165,7 @@ def test_compile_grouped_anchor_place_substitution_uses_parent_source_context() 
                 effect_id="uk_test_grouped_anchor_second_place_substitution",
                 effect_type="word substituted",
                 affecting_provisions="Sch. 9 para. 12(b)",
-                **effect_base,
+                **effect_base,  # ty:ignore[invalid-argument-type]
             ),
             2,
             "FCA",
@@ -14531,7 +14532,7 @@ def test_compile_source_carried_deictic_definition_entry_insert_from_sibling_con
     assert ops[0].target.path == (("section", "833"), ("subsection", "7"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_DEFINITION_designated"
-    assert ops[0].text_patch.replacement.startswith(', and “the EU civilian staff” means—')
+    assert ops[0].text_patch.replacement is not None and ops[0].text_patch.replacement.startswith(', and “the EU civilian staff” means—')
     assert (
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_deictic_definition_entry_insert_text_patch"
         in ops[0].provenance_tags
@@ -19251,7 +19252,7 @@ def test_compile_source_carried_between_paragraphs_substitution_refines_to_first
         </P1>
         """
     )
-    extracted_el = source_root.xpath('//*[@id="schedule-19-paragraph-52-d"]')[0]
+    extracted_el = source_root.xpath('//*[@id="schedule-19-paragraph-52-d"]')[0]  # ty: ignore[not-subscriptable]
     effect = UKEffectRecord(
         effect_id="key-05d0458a776bede3c7452fa48382fb00",
         effect_type="word substituted",
@@ -19275,7 +19276,7 @@ def test_compile_source_carried_between_paragraphs_substitution_refines_to_first
 
     ops = compile_effect_to_ir_ops(
         effect,
-        extracted_el,
+        extracted_el,  # ty:ignore[invalid-argument-type]
         sequence=0,
         lowering_rejections_out=lowering_records,
         source_root=source_root,
@@ -19348,7 +19349,7 @@ def test_compile_source_carried_between_paragraphs_substitution_requires_anteced
         </P1>
         """
     )
-    extracted_el = source_root.xpath('//*[@id="schedule-19-paragraph-52-d"]')[0]
+    extracted_el = source_root.xpath('//*[@id="schedule-19-paragraph-52-d"]')[0]  # ty: ignore[not-subscriptable]
     effect = UKEffectRecord(
         effect_id="key-between-paragraphs-no-antecedent",
         effect_type="word substituted",
@@ -19372,7 +19373,7 @@ def test_compile_source_carried_between_paragraphs_substitution_requires_anteced
 
     ops = compile_effect_to_ir_ops(
         effect,
-        extracted_el,
+        extracted_el,  # ty:ignore[invalid-argument-type]
         sequence=0,
         lowering_rejections_out=lowering_records,
         source_root=source_root,
@@ -20660,7 +20661,7 @@ def test_compile_source_parent_final_column_table_entry_paragraph_text_patch() -
         </P1>
         """
     )
-    extracted_el = source_root.xpath('//*[@id="schedule-4-paragraph-8-a"]')[0]
+    extracted_el = source_root.xpath('//*[@id="schedule-4-paragraph-8-a"]')[0]  # ty: ignore[not-subscriptable]
     effect = UKEffectRecord(
         effect_id="key-db35c35db5cd161469da356981ff192e",
         effect_type="words substituted",
@@ -20684,7 +20685,7 @@ def test_compile_source_parent_final_column_table_entry_paragraph_text_patch() -
 
     ops = compile_effect_to_ir_ops(
         effect,
-        extracted_el,
+        extracted_el,  # ty:ignore[invalid-argument-type]
         sequence=0,
         lowering_rejections_out=lowering_records,
         source_root=source_root,
@@ -22474,8 +22475,8 @@ def test_table_column_entry_omission_skips_non_omission_sources(
         extracted_text="in the second column of the Table after the entry insert text",
         source_root=None,
         sequence=0,
-        effect_witness=object(),  # type: ignore[arg-type]
-        extraction_witness=object(),  # type: ignore[arg-type]
+        effect_witness=object(),  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+        extraction_witness=object(),  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
         original_targets_str=["s. 98"],
         lowering_rejections_out=[],
     )
@@ -31874,7 +31875,7 @@ def test_compile_labeled_range_to_end_without_words_from_prefix() -> None:
     assert ops[0].target.path == (("section", "88"), ("subsection", "1"), ("paragraph", "a"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_or (d)_TO_END"
-    assert ops[0].text_patch.replacement.startswith(", (d) or (da) of the Electricity Act 1989")
+    assert ops[0].text_patch.replacement is not None and ops[0].text_patch.replacement.startswith(", (d) or (da) of the Electricity Act 1989")
     assert (
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_labeled_end_range_substitution_text_patch"
         in ops[0].provenance_tags
@@ -31919,7 +31920,7 @@ def test_compile_words_following_anchor_block_substitution_lowers_to_after_ancho
     assert ops[0].target.path == (("section", "7"), ("subsection", "2"), ("paragraph", "d"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_included references to_TO_END"
-    assert ops[0].text_patch.replacement.startswith("i the Scottish Ministers")
+    assert ops[0].text_patch.replacement is not None and ops[0].text_patch.replacement.startswith("i the Scottish Ministers")
     assert (
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_anchor_to_end_block_substitution_text_patch"
         in ops[0].provenance_tags
@@ -48834,7 +48835,7 @@ def test_parse_schedule_group_note_target_rejects_multi_child_surface() -> None:
 def test_match_schedule_group_note_carriers_without_fake_paragraphs() -> None:
     group = UKMutableNode(kind=IRNodeKind.CHAPTER, label="Group 6— Education")
     different_group = UKMutableNode(kind=IRNodeKind.CHAPTER, label="Group 60— Health")
-    notes = UKMutableNode(kind="p1group", text="Notes:")
+    notes = UKMutableNode(kind="p1group", text="Notes:")  # ty:ignore[invalid-argument-type]
 
     assert uk_match_kind_label(group, "chapter", "group 6")
     assert not uk_match_kind_label(different_group, "chapter", "group 6")
@@ -50477,6 +50478,7 @@ def test_compile_at_end_step_insert_lowers_to_step_boundary_selector() -> None:
     assert op.target.path == (("section", "23"),)
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == f"TEXT_AT_END_OF_STEP{US}4"
+    assert op.text_patch.replacement is not None
     assert op.text_patch.replacement.startswith("See also section 863I of ITTOIA 2005")
     assert (
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_at_end_step_insert_text_patch"
@@ -52916,7 +52918,7 @@ def test_pipeline_excludes_temporally_qualified_ceases_to_have_effect_repeal_ops
         effect_type=effect.effect_type,
         source_pathology="",
         extracted_tag="P2",
-        extracted_text=" ".join(extracted_el.itertext()),
+        extracted_text=" ".join(extracted_el.itertext()),  # ty:ignore[no-matching-overload]
         lowering_rejections=(),
         compiled_op_count=len(ops),
         replay_applicable=True,
@@ -56135,6 +56137,7 @@ def test_compile_from_beginning_end_anchor_occurrence_substitution() -> None:
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_FROM__TO_order"
     assert op.text_patch.selector.occurrence == 1
+    assert op.text_patch.replacement is not None
     assert op.text_patch.replacement.startswith("Where a harbour revision order")
     assert (
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_from_beginning_end_anchor_occurrence_substitution_text_patch"

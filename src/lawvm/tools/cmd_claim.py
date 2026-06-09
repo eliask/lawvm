@@ -273,7 +273,7 @@ def _default_profile(allows_attested_reference_resolution: bool = True):
 
 def cmd_propose(args: object) -> int:
     """Load assertion from JSON; submit to graph store; emit claim_submitted attestation."""
-    claim_file = Path(args.claim_file)  # type: ignore[attr-defined]
+    claim_file = Path(args.claim_file)  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     if not claim_file.exists():
         print(f"error: claim file not found: {claim_file}", file=sys.stderr)
         return 1
@@ -297,7 +297,7 @@ def cmd_propose(args: object) -> int:
 
 def cmd_accept(args: object) -> int:
     """Emit reviewed attestation with accepted=True."""
-    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]
+    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
@@ -319,8 +319,8 @@ def cmd_accept(args: object) -> int:
 
 def cmd_reject(args: object) -> int:
     """Emit reviewed attestation with accepted=False."""
-    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]
-    reason: str = args.reason  # type: ignore[attr-defined]
+    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    reason: str = args.reason  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
@@ -342,8 +342,8 @@ def cmd_reject(args: object) -> int:
 
 def cmd_retract(args: object) -> int:
     """Emit retracted attestation; render retraction taint report."""
-    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]
-    reason: str = args.reason  # type: ignore[attr-defined]
+    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    reason: str = args.reason  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
@@ -378,8 +378,8 @@ def cmd_retract(args: object) -> int:
 
 def cmd_supersede(args: object) -> int:
     """Submit new assertion superseding old; emit superseded attestation."""
-    old_id: str = args.old_assertion_id  # type: ignore[attr-defined]
-    new_file = Path(args.with_file)  # type: ignore[attr-defined]
+    old_id: str = args.old_assertion_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    new_file = Path(args.with_file)  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     delta_reason: str = getattr(args, "delta_reason", "") or ""
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
@@ -419,7 +419,7 @@ def cmd_supersede(args: object) -> int:
 
 def cmd_show(args: object) -> int:
     """Render assertion + attestations + authorization result."""
-    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]
+    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     profile_name: Optional[str] = getattr(args, "profile", None)  # noqa: F841  # BUG: --profile arg is read but never forwarded to _default_profile()
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
@@ -562,7 +562,7 @@ def cmd_list(args: object) -> int:
 
 def cmd_history(args: object) -> int:
     """Show all assertions targeting a provision_ref over time, chronologically."""
-    target_ref: str = args.target  # type: ignore[attr-defined]
+    target_ref: str = args.target  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
@@ -592,7 +592,7 @@ def cmd_history(args: object) -> int:
 
 def cmd_disputes(args: object) -> int:
     """Show conflicting assertion pairs for a statute."""
-    statute_id: str = args.statute  # type: ignore[attr-defined]
+    statute_id: str = args.statute  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
@@ -687,7 +687,7 @@ def main(args: object) -> None:
         "disputes": cmd_disputes,
         "taint-report": cmd_taint_report,
     }
-    fn = dispatch.get(subcmd)
+    fn = dispatch.get(subcmd)  # ty:ignore[invalid-argument-type]
     if fn is None:
         print(f"unknown claim subcommand: {subcmd!r}", file=sys.stderr)
         sys.exit(1)

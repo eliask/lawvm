@@ -426,7 +426,7 @@ def test_cmd_propose_claims_rejected_proposal_stored_for_audit(tmp_path):
                 cited_source_span=(0, 10),
                 cited_source_hash="e" * 64,
                 rationale="",
-                producer_model_id=None,
+                producer_model_id=None,  # ty:ignore[invalid-argument-type]
                 raw_response="{}",
                 parse_error="schema validation failure: bad field",
             )

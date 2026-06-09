@@ -186,8 +186,8 @@ def _uk_replay_adjudication_agreement_residual(
         residual_id=f"uk-replay-adjudication:{source_statute}:{suffix}",
         jurisdiction="uk",
         agreement_surface="replay_adjudication",
-        family=_uk_replay_adjudication_residual_family(bucket),
-        status=_uk_replay_adjudication_residual_status(bucket),
+        family=_uk_replay_adjudication_residual_family(bucket),  # ty:ignore[invalid-argument-type]
+        status=_uk_replay_adjudication_residual_status(bucket),  # ty:ignore[invalid-argument-type]
         owner_phase=owner_phase,
         rule_id=f"uk_replay_adjudication_{bucket or 'unknown'}",
         source_artifact_id=source_statute,
