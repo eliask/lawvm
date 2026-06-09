@@ -235,6 +235,7 @@ def _rebuild_projection(
     current_hash: str,
     verbose: bool = False,
     compile_metadata: Optional[Any] = None,
+    workers: int = 0,
 ) -> Dict[str, Any]:
     """Rebuild one projection and write its state file.
 
@@ -266,6 +267,7 @@ def _rebuild_projection(
             parquet_out=parquet_out,
             verbose=verbose,
             compile_metadata=compile_metadata,
+            workers=workers,
         )
         result["row_count"] = row_count
 
@@ -298,6 +300,7 @@ def _dispatch_projection(
     parquet_out: Path,
     verbose: bool,
     compile_metadata: Optional[Any] = None,
+    workers: int = 0,
 ) -> int:
     """Route each projection name to its existing emitter.
 
@@ -352,6 +355,7 @@ def _dispatch_projection(
             out_dir=out_dir,
             jurisdiction=jurisdiction,
             compile_metadata=compile_metadata,
+            workers=workers,
         )
 
     # Unknown projection — log and skip (not an error; allow forward-compat)
@@ -509,8 +513,15 @@ def _rebuild_core_projections(
     out_dir: Path,
     jurisdiction: str,
     compile_metadata: Optional[Any] = None,
+    workers: int = 0,
 ) -> int:
-    """Rebuild statutes / sections / findings / ops from export_parquet."""
+    """Rebuild statutes / sections / findings / ops from export_parquet.
+
+    export_projections already parallelizes per-statute replay across a process
+    pool; thread the caller's --workers choice through so it is honored end-to-
+    end (previously rebuild-indexes computed workers and dropped them, leaving
+    export_projections on its own default). 0 = export_projections' auto.
+    """
     from lawvm.tools.export_parquet import export_projections
 
     corpus = _load_default_fi_corpus(data_dir)
@@ -529,6 +540,7 @@ def _rebuild_core_projections(
         include_pools=False,
         include_he_corpus=False,
         compile_metadata=compile_metadata,
+        workers=workers,
     )
     return counts.get(name, 0)
 
@@ -641,6 +653,7 @@ def rebuild_indexes(
             current_hash=current_hash,
             verbose=verbose,
             compile_metadata=compile_metadata,
+            workers=workers,
         )
 
         if res["status"] == "ok":
