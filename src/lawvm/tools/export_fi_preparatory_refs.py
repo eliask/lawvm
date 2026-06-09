@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import sys
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -167,6 +166,7 @@ def export_fi_preparatory_refs(
     use_parquet: bool = True,
     limit: Optional[int] = None,
     compile_metadata: Optional[Any] = None,
+    workers: int = 0,
 ) -> int:
     """Export fi_preparatory_refs.parquet projection for a corpus of Finnish statutes.
 
@@ -175,6 +175,9 @@ def export_fi_preparatory_refs(
         data_dir:    Output directory. fi_preparatory_refs.parquet written here.
         use_parquet: Write Parquet if pyarrow available (also writes JSONL).
         limit:       Process only first N statutes (for testing).
+        workers:     Parallel worker processes (0 = auto; 1 = serial). Rows are
+                     reassembled in corpus order so output is byte-identical
+                     regardless of worker count.
 
     Returns:
         Number of PreparatoryReference rows written.
@@ -185,22 +188,20 @@ def export_fi_preparatory_refs(
     if limit:
         corpus = corpus[:limit]
 
-    total = len(corpus)
-    all_ref_rows: List[Dict[str, Any]] = []
-    all_diag_rows: List[Dict[str, Any]] = []
+    from lawvm.tools._parallel_corpus import project_corpus_parallel
 
-    for i, (_, statute_id) in enumerate(corpus, 1):
-        t0 = time.time()
-        ref_rows, diag_rows = _project_preparatory_refs_for_statute(statute_id, store)
-        all_ref_rows.extend(ref_rows)
-        all_diag_rows.extend(diag_rows)
-
-        if i % 50 == 0 or i == total:
-            elapsed = time.time() - t0
-            print(
-                f"  [{i}/{total}] preparatory_refs: {len(all_ref_rows):,} total "
-                f"({elapsed:.1f}s last)"
-            )
+    statute_ids = [sid for _, sid in corpus]
+    all_ref_rows, all_diag_rows = project_corpus_parallel(
+        statute_ids=statute_ids,
+        projector_ref=(__name__, "_project_preparatory_refs_for_statute"),
+        serial_projector=_project_preparatory_refs_for_statute,
+        store=store,
+        workers=workers,
+    )
+    print(
+        f"  preparatory_refs: {len(all_ref_rows):,} ref rows over "
+        f"{len(statute_ids):,} statutes"
+    )
 
     out = Path(data_dir)
     out.mkdir(parents=True, exist_ok=True)

@@ -152,6 +152,21 @@ def _project_refs_for_statute(
     return mention_rows, diag_rows
 
 
+def _project_refs_for_statute_deterministic(
+    statute_id: str,
+    store: Any,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """2-arg adapter for the DETERMINISTIC_ONLY profile.
+
+    The parallel corpus mapper expects a ``(statute_id, store)`` projector. For
+    the deterministic profile there is no cross-statute post-processing (the
+    claim NULL-slot fill only runs for non-deterministic profiles), so per-
+    statute projection is fully independent and safe to shard. Module-level so
+    it is picklable for the worker pool.
+    """
+    return _project_refs_for_statute(statute_id, store, ProfileTag.DETERMINISTIC_ONLY)
+
+
 # ---------------------------------------------------------------------------
 # Claim-based NULL-slot fill (Piece 4)
 # ---------------------------------------------------------------------------
@@ -379,6 +394,7 @@ def export_fi_refs(
     build_id: str = "default",
     claims_base_dir: Optional[Path] = None,
     compile_metadata: Optional[Any] = None,
+    workers: int = 0,
 ) -> int:
     """Export fi_refs__{profile}.parquet projection for a corpus of Finnish statutes.
 
@@ -433,15 +449,32 @@ def export_fi_refs(
     all_mention_rows: List[Dict[str, Any]] = []
     all_diag_rows: List[Dict[str, Any]] = []
 
-    for i, (_, statute_id) in enumerate(corpus, 1):
-        t0 = time.time()
-        mention_rows, diag_rows = _project_refs_for_statute(statute_id, store, profile)
-        all_mention_rows.extend(mention_rows)
-        all_diag_rows.extend(diag_rows)
+    if profile == ProfileTag.DETERMINISTIC_ONLY:
+        # No cross-statute post-processing: shard per statute and reassemble in
+        # corpus order (byte-identical to the serial accumulation).
+        from lawvm.tools._parallel_corpus import project_corpus_parallel
 
-        if i % 50 == 0 or i == total:
-            elapsed = time.time() - t0
-            print(f"  [{i}/{total}] refs: {len(all_mention_rows):,} total ({elapsed:.1f}s last)")
+        statute_ids = [sid for _, sid in corpus]
+        all_mention_rows, all_diag_rows = project_corpus_parallel(
+            statute_ids=statute_ids,
+            projector_ref=(__name__, "_project_refs_for_statute_deterministic"),
+            serial_projector=_project_refs_for_statute_deterministic,
+            store=store,
+            workers=workers,
+        )
+        print(f"  refs: {len(all_mention_rows):,} mention rows over {total:,} statutes")
+    else:
+        # Non-deterministic profiles run claim NULL-slot fills below that read
+        # accumulated rows; keep the serial loop so that path is unchanged.
+        for i, (_, statute_id) in enumerate(corpus, 1):
+            t0 = time.time()
+            mention_rows, diag_rows = _project_refs_for_statute(statute_id, store, profile)
+            all_mention_rows.extend(mention_rows)
+            all_diag_rows.extend(diag_rows)
+
+            if i % 50 == 0 or i == total:
+                elapsed = time.time() - t0
+                print(f"  [{i}/{total}] refs: {len(all_mention_rows):,} total ({elapsed:.1f}s last)")
 
     # For non-deterministic profiles, apply NULL-slot fills from claims
     composition_events: List[Any] = []
