@@ -115,12 +115,28 @@ class UKReplayStateMixin:
     _recursive_match_all_cache: dict[_RecursiveMatchAllKey, tuple[int, tuple[UKCanonicalNodeMatch, ...]]]
     _node_tree_path_index: Optional[_NodeTreePathIndex]
 
-    def _note_structure_mutation(self) -> None:
-        self._structure_mutation_serial += 1
+    def _invalidate_node_lookup_caches(self) -> None:
+        """Drop every cache that holds *node-object references*.
+
+        These caches (eid-search, target-lookup, recursive-match,
+        recursive-match-all) memoize results that contain references to live
+        ``UKMutableNode`` objects.  Any node replacement — including a
+        *text-only* replace that keeps the structural shape unchanged —
+        detaches the old node object and substitutes a new one.  If an
+        ancestor is mutated in place (same ``id()``) the cache key survives
+        but its cached matches now reference the stale, detached child.  A
+        later op that hits the cache would mutate the orphaned node and lose
+        the edit.  So these caches must be cleared on *every* replacement,
+        not only structural ones.
+        """
         self._eid_search_cache.clear()
         self._target_lookup_cache.clear()
         self._recursive_match_cache.clear()
         self._recursive_match_all_cache.clear()
+
+    def _note_structure_mutation(self) -> None:
+        self._structure_mutation_serial += 1
+        self._invalidate_node_lookup_caches()
 
     def _node_eid_values(self, node: UKMutableNode) -> tuple[str, ...]:
         values: list[str] = []
@@ -1041,6 +1057,18 @@ class UKReplayStateMixin:
         )
 
     def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool:
+        replaced = self._do_replace_node_in_statute(old_node, new_node)
+        if replaced:
+            # A node replacement always detaches the old object and substitutes
+            # a new one.  Node-reference caches that survive across the swap
+            # (e.g. when an ancestor is mutated in place and keeps its id())
+            # would otherwise serve stale matches to the next op.  The serial
+            # bump inside _do_replace_*'s structure_changed branches only covers
+            # *structural* changes; text-only replaces need this too.
+            self._invalidate_node_lookup_caches()
+        return replaced
+
+    def _do_replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool:
         structure_changed = self._structural_shape(old_node) != self._structural_shape(new_node)
         old_path = self._tree_path_for_mutable_node(old_node) if self.mutation_events_out is not None else None
         if self.statute.body is old_node:
