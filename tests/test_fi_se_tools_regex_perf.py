@@ -412,3 +412,84 @@ def test_future_repeal_overlay_adversarial_gap_exceeds_bound_is_fast() -> None:
         f"adversarial future-repeal gap-exceeds-bound took {elapsed_ms:.1f} ms "
         f"(ceiling {_CEILING_MS} ms); bounded regex regression suspected"
     )
+
+
+# ---------------------------------------------------------------------------
+# Site #16 — FI editorial_hygiene._KUMOTTU_STUBS_RE (rebuild-indexes stall)
+#
+# `lawvm rebuild-indexes` stalled for >30 min on a single tail statute
+# (2008/834): a ~1 MB table/attachment-heavy consolidated body with thousands
+# of "digit + huge indentation run" sequences but ZERO "kumottu" occurrences.
+# The unbounded \s* / \s+ in the optional-prefix vs. required structural-group
+# alternation partitioned each whitespace run exponentially → catastrophic
+# backtracking. Fix: bounded whitespace quantifiers ({0,4}/{1,4}) + literal
+# "kumottu" fast-guard in normalize_kumottu_stubs.
+# ---------------------------------------------------------------------------
+
+from lawvm.tools.editorial_hygiene import (
+    _KUMOTTU_STUBS_RE,
+    normalize_kumottu_stubs,
+)
+
+
+def test_kumottu_stub_positive_still_stripped() -> None:
+    """Canonical kumottu stub sentences must still be removed (output preserved)."""
+    cases = {
+        "2 kohta on kumottu A:lla 25.11.2021/1030.": "",
+        "2 momentti on kumottu A:lla 25.11.2021/1030.": "",
+        "5 § on kumottu L:lla 1.4.2022/261, joka tuli voimaan 1.5.2022.": "",
+        "3 luku on kumottu L:lla 123/2020.": "",
+        # range form leaves the leading "N–"/"N-" residual prefix (pre-existing
+        # behaviour — pinned here so the bounded rewrite cannot drift it):
+        "1–2 kohta on kumottu A:lla 25.11.2021/1030.": "1–",
+        "1-2 kohta on kumottu A:lla 25.11.2021/1030.": "1-",
+        # NBSP-separated form (etree/Finlex residue):
+        "2 kohta on kumottu A:lla 25.11.2021/1030.": "",
+    }
+    for src, expected in cases.items():
+        assert normalize_kumottu_stubs(src) == expected, (
+            f"kumottu stub stripping changed for {src!r}: "
+            f"got {normalize_kumottu_stubs(src)!r}, expected {expected!r}"
+        )
+
+
+def test_kumottu_stub_no_kumottu_guard_returns_text_unchanged() -> None:
+    """Text without the literal 'kumottu' is returned untouched (fast-guard)."""
+    text = "1 § Tämä on tavallinen pykälä ilman kumoamista. 2 § Toinen pykälä."
+    assert "kumottu" not in text
+    assert normalize_kumottu_stubs(text) == text
+
+
+def test_kumottu_stub_adversarial_large_whitespace_no_kumottu_is_fast() -> None:
+    """Reproduces the 2008/834 stall feature: many digit tokens separated by
+    huge indentation runs, ZERO 'kumottu'.
+
+    Old unbounded \\s*/\\s+ alternation: >30 min on the real ~1 MB statute via
+    rebuild-indexes. New bounded rule + literal guard: must complete fast.
+    """
+    # ~1 MB of "<num>\n<big whitespace>" — the exact digit/whitespace shape that
+    # fed the optional-prefix/required-group backtracking explosion.
+    block = "892\n" + (" " * 400 + "\n") * 6
+    text = block * 2000
+    assert "kumottu" not in text
+    assert len(text) > 1_000_000
+
+    # Direct rule (no guard) must still be bounded thanks to the bounded quantifiers.
+    t0 = time.perf_counter()
+    out_rule = _KUMOTTU_STUBS_RE.sub("", text)
+    elapsed_rule_ms = (time.perf_counter() - t0) * 1000
+    assert out_rule == text  # nothing to strip
+    assert elapsed_rule_ms < 5000, (
+        f"bounded _KUMOTTU_STUBS_RE took {elapsed_rule_ms:.1f} ms on 1 MB "
+        f"no-kumottu text; catastrophic backtracking regression suspected"
+    )
+
+    # The guarded public path must be effectively instant.
+    t0 = time.perf_counter()
+    out_guarded = normalize_kumottu_stubs(text)
+    elapsed_guard_ms = (time.perf_counter() - t0) * 1000
+    assert out_guarded == text
+    assert elapsed_guard_ms < _CEILING_MS, (
+        f"guarded normalize_kumottu_stubs took {elapsed_guard_ms:.1f} ms "
+        f"(ceiling {_CEILING_MS} ms); 'kumottu' fast-guard regression suspected"
+    )

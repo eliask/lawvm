@@ -42,26 +42,40 @@ _KUMOTTU_ATTRIBUTION_RE = re.compile(
 #      EtuoikeusA:lla, etc. — matched by \w+:ll[äa]; no date after, so [^.]*
 #      is safe here.
 #   3. Bare "lailla" or "-lailla" suffixed forms (Rakennuslailla etc.).
+# Backtracking note: every interior whitespace gap inside a kumottu stub is a
+# single NBSP/space (or a short run from etree text-serialization), so the
+# structural-prefix/required-group whitespace quantifiers are BOUNDED ({0,4} /
+# {1,4}) rather than unbounded \s* / \s+.  The unbounded form caused catastrophic
+# backtracking on large table/attachment-heavy consolidated statutes (e.g.
+# 2008/834 — ~1 MB body, thousands of "digit + huge indentation run" sequences
+# but zero "kumottu"): the overlapping optional-prefix vs. required-group
+# alternation could partition each whitespace run exponentially, taking >60 s on
+# a single statute (this was the rebuild-indexes per-statute stall).  Callers
+# additionally fast-guard on the literal "kumottu" (see normalize_kumottu_stubs /
+# normalize_finlex_oracle_comparison_text) so the regex is never run on text that
+# cannot match.  Bounding does not change matches on real stubs — the gaps there
+# are always within {0,4}/{1,4} — but stops the engine from chasing million-char
+# whitespace partitions.
 _KUMOTTU_STUBS_RE = re.compile(
     # Optional <num>-element residual prefix: when oracle XML has both <num>7 §</num>
     # and <content>7 § on kumottu...</content>, etree text-serialization produces
     # "7 §  7 § on kumottu..." — the optional prefix consumes the first "7 §".
     rf'(?:'
-    rf'\d+\s*[a-zäöå]?\s*(?:[–\-—]\s*\d+\s*[a-zäöå]?\s*)?§'       # N § / N–M § (prefix)
-    rf'|\d+\s*[a-zäöå]?\s*(?:[–\-—]\s*\d+\s*[a-zäöå]?\s*)?luku'    # N luku (prefix)
-    rf'|\d+\s+(?:mome?ntti|momentin|kohta|kohdan)'                    # N momentti (prefix)
-    rf'|\d+[–\-—]\d+\s+(?:momentit|kohdat|momenttia|kohtaa)'         # N–M momentit (prefix)
-    rf')?\s*'
+    rf'\d+\s{{0,4}}[a-zäöå]?\s{{0,4}}(?:[–\-—]\s{{0,4}}\d+\s{{0,4}}[a-zäöå]?\s{{0,4}})?§'       # N § / N–M § (prefix)
+    rf'|\d+\s{{0,4}}[a-zäöå]?\s{{0,4}}(?:[–\-—]\s{{0,4}}\d+\s{{0,4}}[a-zäöå]?\s{{0,4}})?luku'    # N luku (prefix)
+    rf'|\d+\s{{1,4}}(?:mome?ntti|momentin|kohta|kohdan)'                    # N momentti (prefix)
+    rf'|\d+[–\-—]\d+\s{{1,4}}(?:momentit|kohdat|momenttia|kohtaa)'         # N–M momentit (prefix)
+    rf')?\s{{0,4}}'
     rf'(?:'
-    rf'\d+\s*[a-zäöå]?\s*(?:[–\-—]\s*\d+\s*[a-zäöå]?\s*)?§'       # N § / N–M §
-    rf'|\d+\s*[a-zäöå]?\s*(?:[–\-—]\s*\d+\s*[a-zäöå]?\s*)?luku'    # N luku / N–M luku (case-insensitive below)
-    rf'|\d+\s+(?:mome?ntti|momentin|kohta|kohdan)'                    # N momentti / N kohta
-    rf'|\d+[–\-—]\d+\s+(?:momentit|kohdat|momenttia|kohtaa)'         # N–M momentit/kohdat
+    rf'\d+\s{{0,4}}[a-zäöå]?\s{{0,4}}(?:[–\-—]\s{{0,4}}\d+\s{{0,4}}[a-zäöå]?\s{{0,4}})?§'       # N § / N–M §
+    rf'|\d+\s{{0,4}}[a-zäöå]?\s{{0,4}}(?:[–\-—]\s{{0,4}}\d+\s{{0,4}}[a-zäöå]?\s{{0,4}})?luku'    # N luku / N–M luku (case-insensitive below)
+    rf'|\d+\s{{1,4}}(?:mome?ntti|momentin|kohta|kohdan)'                    # N momentti / N kohta
+    rf'|\d+[–\-—]\d+\s{{1,4}}(?:momentit|kohdat|momenttia|kohtaa)'         # N–M momentit/kohdat
     rf')'
-    rf'\s+(?:on|ovat)\s+kumottu'
-    rf'(?:\s+\d{{1,2}}\.\d{{1,2}}\.\d{{4}})?'                        # optional DD.MM.YYYY prefix
-    rf'\s+(?:{_REPEAL_CITATION_RE}'                                    # standard: L/A/P + statute ref
-    rf'(?:\s*,\s*joka\s+tul(?:ee|i)\s+voimaan\s+\d{{1,2}}\.\d{{1,2}}\.\d{{4}})?'  # optional commencement
+    rf'\s{{1,4}}(?:on|ovat)\s{{1,4}}kumottu'
+    rf'(?:\s{{1,4}}\d{{1,2}}\.\d{{1,2}}\.\d{{4}})?'                        # optional DD.MM.YYYY prefix
+    rf'\s{{1,4}}(?:{_REPEAL_CITATION_RE}'                                    # standard: L/A/P + statute ref
+    rf'(?:\s{{0,4}},\s{{0,4}}joka\s{{1,4}}tul(?:ee|i)\s{{1,4}}voimaan\s{{1,4}}\d{{1,2}}\.\d{{1,2}}\.\d{{4}})?'  # optional commencement
     rf'|\w+:ll[äa]'                                                    # historical: FooL:lla, BarA:llä
     rf'|[a-zäöåA-ZÄÖÅ\-]*lailla'                                       # lailla / Rakennuslailla
     rf')[^.]*\.?',
@@ -144,6 +158,12 @@ def normalize_kumottu_stubs(text: str) -> str:
     This is the canonical Finland oracle-normalization function.  All scoring
     and comparison paths should use this instead of ad-hoc per-file regex subs.
     """
+    # Fast-guard: the literal "kumottu" is mandatory in every alternative of the
+    # pattern, so text without it can never match.  Skipping the regex on such
+    # text is exactly equivalent and avoids running the structural alternation
+    # over large statute bodies (e.g. table/attachment-heavy consolidated laws).
+    if "kumottu" not in text:
+        return text
     return _KUMOTTU_STUBS_RE.sub('', text)
 
 
