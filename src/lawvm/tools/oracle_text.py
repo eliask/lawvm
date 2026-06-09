@@ -238,6 +238,70 @@ def _section_has_temporal_markers(spans: List[Dict[str, Any]]) -> bool:
     return any(s["label"] in ("IN_FORCE", "ENTERS_FORCE", "SUPERSEDED", "NOTE") for s in spans)
 
 
+def load_oracle_section(
+    statute_id: str,
+    section_filter: str,
+    at_amendment: str = "",
+    lang: str = "fin",
+) -> Dict[str, Any]:
+    """Load one consolidated oracle section element + provenance metadata.
+
+    Reusable seam for the ``reconcile`` verb: it needs the raw section element so
+    it can compute date-aware temporal spans (``build_temporal_spans(el, today=D)``)
+    rather than the today-relative spans baked into ``build_oracle_text_bundle``.
+
+    Returns a dict with keys:
+      - found:        bool
+      - section_el:   lxml element or None
+      - locator:      consolidated oracle locator string
+      - oracle_cutoff_date / oracle_version_amendment_id: provenance
+      - error:        present only when found is False
+    """
+    from lawvm.finland.grafter import get_corpus
+    from lawvm.finland.consolidated_artifacts import build_consolidated_main_locator
+    from lawvm.finland.corpus import get_consolidated_oracle_context
+    from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
+    from lxml import etree
+
+    cs = get_corpus()
+    oracle_cutoff_date: Optional[datetime.date] = None
+    oracle_version_amendment_id_resolved: str = ""
+
+    if at_amendment:
+        version_tag = _amendment_id_to_version_tag(at_amendment)
+        locator = build_consolidated_main_locator(
+            sid=statute_id, lang=lang, version_tag=version_tag
+        )
+    else:
+        selector = ConsolidatedArtifactSelector.latest_cached_editorial()
+        ctx = get_consolidated_oracle_context(statute_id, corpus=cs, selector=selector)
+        locator = ctx.locator
+        oracle_cutoff_date = ctx.cutoff_date
+        oracle_version_amendment_id_resolved = ctx.oracle_version_amendment_id
+
+    base = {
+        "statute_id": statute_id,
+        "locator": locator,
+        "oracle_cutoff_date": (
+            oracle_cutoff_date.isoformat() if oracle_cutoff_date else None
+        ),
+        "oracle_version_amendment_id": oracle_version_amendment_id_resolved or None,
+    }
+
+    oracle_bytes = cs.read_locator(locator)
+    if oracle_bytes is None:
+        return {**base, "found": False, "section_el": None,
+                "error": f"oracle not found in archive: {locator!r}"}
+
+    oracle_root = etree.fromstring(oracle_bytes)
+    section_el = _find_section_el(oracle_root, section_filter)
+    if section_el is None:
+        return {**base, "found": False, "section_el": None,
+                "error": f"section {section_filter!r} not found at this oracle version"}
+
+    return {**base, "found": True, "section_el": section_el}
+
+
 def _normalize_section_label(label: str) -> str:
     return re.sub(r"[\s§.*]", "", label).lower()
 
