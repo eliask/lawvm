@@ -946,16 +946,28 @@ profile before reasoning.
 
 ## 20. Agent Final Response Contract
 
+**Before finishing, the canonical gate must pass.** Run `./scripts/ci.sh --affected <touched paths>`
+(change-scoped) or `./scripts/ci.sh` (full bounded gate). It runs the relevant pytest shards **plus ruff lint**
+and is the definition of done — a green `--affected` run is required before you report; use the full gate for
+broad work.
+
+**Do NOT use raw `pytest tests/` as your gate.** It pulls in the `network` (live-HTTP) and `slow` (full gold
+corpus) marked tests, which hang in sandboxed/headless runs — a raw full run can sit for an hour with no result
+and is *not* a code bug. `ci.sh` runs bounded shards that exclude those markers. (To exercise a marked set
+deliberately: `pytest -m network` / `pytest -m slow`.) Keep touched files ruff-clean — do not add to the lint
+debt; `--affected` scopes lint to the relevant shard.
+
 When an agent finishes, it must report:
 
-1. files changed;
-2. semantic behavior changed;
-3. tests added/changed;
-4. findings or observations added;
-5. strict-mode behavior;
-6. corpus examples verified;
-7. known remaining risk;
-8. whether the fix is family-level or statute-local.
+1. the gate result (`ci.sh --affected` or full — which, and green/red);
+2. files changed;
+3. semantic behavior changed;
+4. tests added/changed;
+5. findings or observations added;
+6. strict-mode behavior;
+7. corpus examples verified;
+8. known remaining risk;
+9. whether the fix is family-level or statute-local.
 
 Never report only “tests pass.”
 
