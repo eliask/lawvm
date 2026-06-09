@@ -35,7 +35,6 @@ from lawvm.core.provenance_graph import (
     GraphBuilder,
     GraphEdge,
     Interval,
-    Producer,
     ProvenanceAssertion,
     ProvenanceGraph,
     _sha256,

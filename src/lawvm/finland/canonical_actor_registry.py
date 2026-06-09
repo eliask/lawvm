@@ -25,7 +25,7 @@ Design discipline (AGENTS.md §1.1, §1.6, §1.9):
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from typing import Dict, List, Optional, Tuple
 

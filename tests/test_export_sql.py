@@ -75,7 +75,6 @@ class TestExportParquet:
     def test_try_write_parquet_returns_false_without_pyarrow(self, tmp_path: Path) -> None:
         import builtins
 
-        import pytest
 
         from lawvm.tools.export_parquet import _try_write_parquet
 

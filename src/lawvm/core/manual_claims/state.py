@@ -21,7 +21,7 @@ State machine (§7 of design memo):
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Iterator, List, Optional, Sequence, Tuple
+from typing import Optional, Sequence
 
 from lawvm.core.manual_claims.primitive import (
     ClaimConfidence,

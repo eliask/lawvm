@@ -14,19 +14,13 @@ from __future__ import annotations
 import csv
 import io
 import json
-import os
-import sys
-import tempfile
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
-from unittest.mock import patch, MagicMock
 
 import pytest
 
 from lawvm.tools import cli
 from lawvm.tools._cli_duckdb import (
     as_of_conditions,
-    check_duckdb,
     find_source_file,
     source_expr_for_path,
 )

@@ -47,7 +47,6 @@ from lawvm.core.actor_mention import (
     AmbiguousActorMention,
     LifecycleActorObservation,
     RejectedActorCandidate,
-    actor_mention_to_row,
 )
 from lawvm.finland.canonical_actor_registry import REGISTRY, CanonicalActor
 

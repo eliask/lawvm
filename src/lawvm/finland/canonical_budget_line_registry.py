@@ -28,7 +28,7 @@ Design discipline (AGENTS.md §1.1, §1.6, §1.9):
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 

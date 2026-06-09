@@ -45,7 +45,7 @@ from lawvm.tools._cli_duckdb import (
     require_duckdb,
     source_expr_for_path,
 )
-from lawvm.tools._cli_output import emit_rows, format_table, json_safe
+from lawvm.tools._cli_output import emit_rows, format_table
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +303,6 @@ def _run_fts_query(
     limit_n = limit or len(results)
     results = results[:limit_n]
 
-    from lawvm.tools._cli_output import format_table
     print(format_table(columns, results))
 
 
@@ -383,7 +382,7 @@ def run_topic(
 
     if include_statutes and sections_text_path is not None:
         print(
-            f"  statute source: fi_sections_text (oracle text)",
+            "  statute source: fi_sections_text (oracle text)",
             file=sys.stderr,
         )
     elif include_statutes and sections_path is not None:

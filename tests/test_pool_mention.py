@@ -19,7 +19,7 @@ Module coverage:
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import pytest
 
@@ -37,7 +37,7 @@ from lawvm.finland.pool_mention_extractor import (
     PoolExtractionResult,
     extract_pool_mentions,
 )
-from lawvm.finland.canonical_budget_line_registry import REGISTRY, BudgetLine
+from lawvm.finland.canonical_budget_line_registry import REGISTRY
 from lawvm.finland.conformance_corpus.pools.fixtures import (
     ALL_FIXTURES,
     APPROXIMATE_BUDGET_LINE_RENUMBERED,

@@ -44,7 +44,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from lawvm.finland.he_branch_parser import (
-    HEParsedBranch,
     HEParseStatus,
     branch_to_parquet_rows,
     parse_he_branch,
@@ -122,8 +121,8 @@ def project_he_branch_ops(
     HEBranchProjectionRun with provenance + counts.
     """
     try:
-        import pyarrow as pa  # type: ignore[import]
-        import pyarrow.parquet as pq  # type: ignore[import]
+        import pyarrow as pa  # type: ignore[import]  # noqa: F401
+        import pyarrow.parquet as pq  # type: ignore[import]  # noqa: F401
     except ImportError:
         print(
             "ERROR: pyarrow not installed; run: uv pip install 'lawvm[analytics]'",
@@ -436,6 +435,6 @@ def main(args: object) -> None:
     print(f"  PDF_WRAPPER skip:  {run.pdf_wrapper_skipped:,}", file=sys.stderr)
     print(f"  Elapsed:           {run.elapsed_sec:.1f}s", file=sys.stderr)
     if run.failures:
-        print(f"  Failures (first 5):", file=sys.stderr)
+        print("  Failures (first 5):", file=sys.stderr)
         for f in run.failures[:5]:
             print(f"    {f}", file=sys.stderr)

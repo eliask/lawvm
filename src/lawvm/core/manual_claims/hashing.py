@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import date, datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict
 
 from lawvm.core.manual_claims.primitive import ManualCompilationClaim
 

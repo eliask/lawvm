@@ -24,11 +24,8 @@ Coverage map to brief §Verification regime:
 """
 from __future__ import annotations
 
-import types
 from datetime import date
-from typing import Any
 
-import pytest
 
 from lawvm.finland.he_branch_parser import (
     BranchParseRecovery,
@@ -1072,7 +1069,6 @@ class TestStrictMode:
         # Build a branch object that is PARTIAL
         # We do this by using simulate directly with a synthetic branch via
         # patching — we test the strict rejection path in SimulationReport
-        from lawvm.finland.he_branch_parser import HEParsedBranch, HEParseStatus
 
         # simulate_branch resolves branch from farchive; with no farchive present
         # it returns a "branch not found" report. Test the code path directly.
@@ -1130,7 +1126,6 @@ class TestNoLeak:
 
     def test_branch_proposed_ops_not_enacted(self) -> None:
         """BranchProposedOp records are proposal-authority only."""
-        from lawvm.core.authority import ENACTED_AUTHORITY
 
         branch = parse_he_branch(
             SINGLE_STATUTE_HE_XML,
@@ -1169,7 +1164,7 @@ class TestDeterminism:
         assert branch_a.branch_id == branch_b.branch_id
         assert branch_a.parse_status == branch_b.parse_status
         assert len(branch_a.proposed_ops) == len(branch_b.proposed_ops)
-        for op_a, op_b in zip(branch_a.proposed_ops, branch_b.proposed_ops):
+        for op_a, op_b in zip(branch_a.proposed_ops, branch_b.proposed_ops, strict=True):
             assert op_a.operation_kind == op_b.operation_kind
             assert op_a.target_provision_ref == op_b.target_provision_ref
             assert op_a.target_statute_id == op_b.target_statute_id
@@ -1235,7 +1230,6 @@ class TestSimulateCommand:
             he_id="HE 400/2024 vp",
         )
         # Force parse_status to PARTIAL for testing strict rejection
-        from dataclasses import replace
 
         partial_branch_forced = HEParsedBranch(
             branch_id=partial_branch.branch_id,

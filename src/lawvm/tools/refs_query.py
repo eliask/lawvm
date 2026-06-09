@@ -26,12 +26,11 @@ from typing import Any, List, Optional
 
 from lawvm.tools._cli_duckdb import (
     as_of_conditions,
-    check_duckdb,
     find_source_file,
     require_duckdb,
     source_expr_for_path,
 )
-from lawvm.tools._cli_output import emit_rows, format_table, json_safe
+from lawvm.tools._cli_output import emit_rows
 
 
 # ---------------------------------------------------------------------------
@@ -115,11 +114,11 @@ def _build_query(
 
     if broken_after:
         # References that became BROKEN after this date
-        conditions.append(f"cite_confidence = 'broken'")
+        conditions.append("cite_confidence = 'broken'")
         conditions.append(f"valid_at_end >= '{broken_after}'")
 
     if broken_before:
-        conditions.append(f"cite_confidence = 'broken'")
+        conditions.append("cite_confidence = 'broken'")
         conditions.append(f"valid_at_end <= '{broken_before}'")
 
     if as_of:

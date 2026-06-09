@@ -38,7 +38,6 @@ Additional cases:
 """
 from __future__ import annotations
 
-from typing import Optional
 
 import pytest
 
@@ -46,7 +45,6 @@ from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.telos_section_flag import (
     BorderlineTelosCandidate,
-    TelosExtractionResult,
     classify_telos_section,
 )
 

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import pytest
 
@@ -34,7 +34,6 @@ from lawvm.finland.conformance_corpus.he_projection.fixtures import (
 )
 from lawvm.tools.export_fi_he_corpus import (
     HEMissingMinistryObservation,
-    HEProjectionFailure,
     HEProjectionResult,
     project_he_from_xml,
 )

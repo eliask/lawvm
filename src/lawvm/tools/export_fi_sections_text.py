@@ -249,11 +249,11 @@ def export_fi_sections_text(
     # Always write JSONL (DuckDB can read it directly)
     jsonl_count = _write_jsonl(out / "fi_sections_text.jsonl", all_section_rows)
 
-    parquet_written = False
+    _parquet_written = False
     if use_parquet:
         ok = _try_write_parquet(out / "fi_sections_text.parquet", all_section_rows, compile_metadata)
         if ok:
-            parquet_written = True
+            _parquet_written = True
             print(
                 f"  fi_sections_text: {jsonl_count:,} rows "
                 f"(Parquet+zstd + JSONL)"

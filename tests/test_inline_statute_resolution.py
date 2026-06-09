@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 
-import pytest
 
 # Activate Finland claim kinds
 import lawvm.finland.claim_kinds  # noqa: F401
@@ -19,7 +18,6 @@ from lawvm.finland.claim_kinds.inline_statute_resolution import (
     _extract_year_number,
     _validate_entailment,
     _validate_span,
-    get_spec,
 )
 
 

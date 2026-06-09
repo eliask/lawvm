@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from lawvm.tools import reconcile_sweep as rs
 

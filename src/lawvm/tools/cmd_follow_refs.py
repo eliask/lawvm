@@ -29,8 +29,7 @@ from __future__ import annotations
 
 import sys
 from collections import deque
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, List, Optional, Set, Tuple
 
 from lawvm.tools._cli_duckdb import (
     as_of_conditions,
@@ -38,7 +37,7 @@ from lawvm.tools._cli_duckdb import (
     require_duckdb,
     source_expr_for_path,
 )
-from lawvm.tools._cli_output import emit_rows, format_table, json_safe
+from lawvm.tools._cli_output import emit_rows
 
 
 _DEFAULT_DATA_DIR = "data/fi/v1"
@@ -292,12 +291,12 @@ def run_follow_refs(
 
         # Build a representative DuckDB query for parquet output mode
         dummy_query = (
-            f"SELECT 0 AS depth, 'forward' AS direction, "
-            f"'' AS source_statute_id, '' AS source_provision_ref_str, "
-            f"'' AS target_statute_id, '' AS target_provision_ref_str, "
-            f"'' AS cite_kind, '' AS cite_confidence, "
-            f"NULL AS valid_at_start, NULL AS valid_at_end "
-            f"WHERE 1=0"
+            "SELECT 0 AS depth, 'forward' AS direction, "
+            "'' AS source_statute_id, '' AS source_provision_ref_str, "
+            "'' AS target_statute_id, '' AS target_provision_ref_str, "
+            "'' AS cite_kind, '' AS cite_confidence, "
+            "NULL AS valid_at_start, NULL AS valid_at_end "
+            "WHERE 1=0"
         )
 
         if not rows:

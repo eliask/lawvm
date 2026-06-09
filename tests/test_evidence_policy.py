@@ -9,7 +9,6 @@ Required by spec:
 from __future__ import annotations
 
 import json
-from datetime import date
 
 import pytest
 
@@ -27,11 +26,8 @@ from lawvm.core.evidence_policy import (
     not_retracted,
     registry_from_dict,
     registry_to_dict,
-    reachable,
-    signed_by,
-    within_time,
 )
-from lawvm.core.provenance_graph import Interval, Producer, ProvenanceAttestation, ArtifactRef
+from lawvm.core.provenance_graph import Producer, ProvenanceAttestation, ArtifactRef
 
 
 # ---------------------------------------------------------------------------

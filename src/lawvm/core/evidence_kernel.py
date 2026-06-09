@@ -34,8 +34,6 @@ from lawvm.core.evidence_policy import (
 )
 from lawvm.core.provenance_graph import (
     ArtifactRef,
-    GraphEdge,
-    GraphNode,
     ProvenanceAssertion,
     ProvenanceAttestation,
     ProvenanceGraph,

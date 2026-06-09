@@ -5,10 +5,9 @@ Covers:
 """
 from __future__ import annotations
 
-import pytest
 
 from lawvm.core.compile_facade import CompileFacade
-from lawvm.core.compile_metadata import CompileMetadata, compute_strict_profile_fingerprint
+from lawvm.core.compile_metadata import compute_strict_profile_fingerprint
 from lawvm.core.compile_result import CanonicalBundle, StrictProfile
 from lawvm.core.evidence_policy import EvidencePolicyRegistry
 from lawvm.core.provenance_graph import (

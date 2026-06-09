@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 
-import pytest
 
 import lawvm.finland.claim_kinds  # noqa: F401 — activate claim kind registry
 

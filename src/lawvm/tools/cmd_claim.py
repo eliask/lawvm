@@ -27,7 +27,6 @@ from typing import Optional
 
 from lawvm.core.manual_claims.native import (
     attest,
-    build_claim_subgraph,
     query_retraction_taint,
     query_state_from_store,
     submit_assertion,
@@ -298,7 +297,7 @@ def cmd_propose(args: object) -> int:
 
 def cmd_accept(args: object) -> int:
     """Emit reviewed attestation with accepted=True."""
-    assertion_id: str = getattr(args, "claim_id", None) or getattr(args, "assertion_id")  # type: ignore[attr-defined]
+    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
@@ -320,7 +319,7 @@ def cmd_accept(args: object) -> int:
 
 def cmd_reject(args: object) -> int:
     """Emit reviewed attestation with accepted=False."""
-    assertion_id: str = getattr(args, "claim_id", None) or getattr(args, "assertion_id")  # type: ignore[attr-defined]
+    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]
     reason: str = args.reason  # type: ignore[attr-defined]
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
@@ -343,7 +342,7 @@ def cmd_reject(args: object) -> int:
 
 def cmd_retract(args: object) -> int:
     """Emit retracted attestation; render retraction taint report."""
-    assertion_id: str = getattr(args, "claim_id", None) or getattr(args, "assertion_id")  # type: ignore[attr-defined]
+    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]
     reason: str = args.reason  # type: ignore[attr-defined]
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
@@ -420,8 +419,8 @@ def cmd_supersede(args: object) -> int:
 
 def cmd_show(args: object) -> int:
     """Render assertion + attestations + authorization result."""
-    assertion_id: str = getattr(args, "claim_id", None) or getattr(args, "assertion_id")  # type: ignore[attr-defined]
-    profile_name: Optional[str] = getattr(args, "profile", None)
+    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]
+    profile_name: Optional[str] = getattr(args, "profile", None)  # noqa: F841  # BUG: --profile arg is read but never forwarded to _default_profile()
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 

@@ -30,7 +30,7 @@ from lawvm.tools._cli_duckdb import (
     require_duckdb,
     source_expr_for_path,
 )
-from lawvm.tools._cli_output import emit_rows, format_table, json_safe
+from lawvm.tools._cli_output import emit_rows
 
 
 # ---------------------------------------------------------------------------

@@ -24,7 +24,6 @@ from typing import Any, Dict, List
 import pytest
 
 from lawvm.core.preparatory_reference import (
-    CommitteeLifecycleObservation,
     PreparatoryReference,
     PreparatoryReferenceConfidence,
     PreparatoryReferenceKind,
@@ -37,7 +36,6 @@ from lawvm.finland.preparatory_reference_extractor import (
     extract_preparatory_refs,
 )
 from lawvm.finland.conformance_corpus.preparatory.fixtures import (
-    ALL_FIXTURES,
     COMMITTEE_OPINION_ONLY,
     EU_DIRECTIVE,
     EVK_RESPONSE,

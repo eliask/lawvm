@@ -8,14 +8,11 @@ Covers:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
 
 import lawvm.finland.claim_kinds  # noqa: F401
 
-from lawvm.core.provenance_graph_storage import GraphStore, _deserialize_assertion
 
 
 def _make_assertion_dict(statute_id: str = "711/2022", resolved: str = "1234/2020") -> dict:

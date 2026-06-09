@@ -8,18 +8,13 @@ Tests cover:
 """
 from __future__ import annotations
 
-from datetime import date
 
 import pytest
 
-from lawvm.core.observation_registry import FINDING_REGISTRY
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.provenance_graph import (
     ATTESTATION_KIND_REGISTRY_V0_HASH,
     ArtifactRef,
-    Interval,
-    ProvenanceAssertion,
-    ProvenanceGraph,
 )
 from lawvm.core.provenance_graph_facade import (
     _KIND_OBLIGATION,
@@ -283,8 +278,6 @@ def test_real_phase_result_converts_to_graph() -> None:
     Requires corpus farchive data under data/finlex.farchive.
     Marked @pytest.mark.slow — run with --run-slow or -m slow.
     """
-    import importlib
-    import os
     from pathlib import Path
 
     farchive_path = Path("data/finlex.farchive")

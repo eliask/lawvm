@@ -17,7 +17,7 @@ Per AGENTS.md §15, covers all 7 required test categories:
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import pytest
 

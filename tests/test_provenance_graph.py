@@ -12,7 +12,6 @@ Tests cover:
 """
 from __future__ import annotations
 
-import dataclasses
 from datetime import date, datetime, timezone
 
 import pytest
@@ -21,7 +20,6 @@ from lawvm.core.provenance_graph import (
     ATTESTATION_KIND_REGISTRY_V0_HASH,
     EDGE_TYPES,
     ArtifactRef,
-    AttestationKindSpec,
     GraphBuilder,
     GraphEdge,
     GraphNode,
@@ -34,9 +32,6 @@ from lawvm.core.provenance_graph import (
     SourceRef,
     _ATTESTATION_KIND_REGISTRY_V0,
     _compute_registry_hash,
-    _sha256,
-    assertion_canonical_payload,
-    attestation_canonical_payload,
     attestation_kind_registry_hash,
     get_attestation_kind,
 )

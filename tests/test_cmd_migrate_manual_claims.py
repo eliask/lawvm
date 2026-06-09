@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
 
 def _make_fake_v2_claims(base_dir: Path, n: int = 2) -> list[str]:

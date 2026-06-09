@@ -18,7 +18,7 @@ Test IDs per spec:
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -28,13 +28,6 @@ import lawvm.finland.claim_kinds  # noqa: F401
 
 from lawvm.core.provenance_graph_storage import (
     GraphStore,
-    _deserialize_assertion,
-    _deserialize_attestation,
-)
-from lawvm.core.provenance_graph import (
-    attestation_kind_registry_hash,
-    assertion_canonical_payload,
-    _sha256,
 )
 
 
@@ -418,7 +411,7 @@ def test_cmd_propose_claims_writes_assertions_and_validator_attestations(tmp_pat
 def test_cmd_propose_claims_rejected_proposal_stored_for_audit(tmp_path):
     from lawvm.tools.cmd_propose_claims import _process_one_frontier, _get_store, _cli_producer
     from lawvm.core.manual_claims.primitive import ExtractionFrontierRow
-    from lawvm.core.manual_claims.proposal_backend import MockProposalBackend, ProposedClaim
+    from lawvm.core.manual_claims.proposal_backend import ProposedClaim
 
     store = _get_store(str(tmp_path / "provenance_graph"))
     store._objects_dir().mkdir(parents=True, exist_ok=True)
@@ -651,7 +644,6 @@ def test_cmd_propose_claims_reads_claim_store_root(tmp_path):
 def test_cmd_claim_propose_real_corpus_regression(tmp_path):
     """Propose against synthetic substrate; verify graph snapshot reads back."""
     from lawvm.tools.cmd_claim import cmd_propose
-    from lawvm.core.provenance_graph_storage import GraphStore
 
     d = _make_assertion_dict(statute_id="555/2024")
     cf = _write_claim_file(tmp_path, d)

@@ -357,7 +357,7 @@ def run_fi_proposal_show(
 
 def main(args: Any) -> None:
     run_fi_proposal_show(
-        he_id=getattr(args, "he_id"),
+        he_id=args.he_id,
         include_atoms=getattr(args, "include_atoms", False),
         include_law_refs=getattr(args, "include_law_refs", False),
         include_signatures=getattr(args, "include_signatures", False),

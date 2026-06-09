@@ -18,10 +18,7 @@ Per AGENTS.md §15, covers all required test categories:
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, patch
 
 import pytest
 

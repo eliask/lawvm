@@ -29,7 +29,6 @@ Per JURISDICTION_CLI_TOOLING_CONTRACT.md §4: common flags
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from typing import Any, List, Optional
 
 from lawvm.tools._cli_duckdb import (

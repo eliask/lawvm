@@ -65,10 +65,10 @@ Phase: Parse (§6 phase 3) + Emit evidence (§6 phase 11).
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from enum import Enum
-from typing import Optional, Sequence
+from typing import Optional
 
 from lxml import etree
 
@@ -493,10 +493,7 @@ def _build_provision_ref(
     Format: STATUTE_ID/SECTION[/SUBSECTION[/ITEM]]
     e.g. '711/2022/7/3' or '711/2022/5' or '711/2022' (statute-level).
     """
-    # Import here to avoid circular imports
-    from lawvm.finland.johtolause.surface_model import TargetKind
-
-    kind = getattr(op, "kind", "")
+    _kind = getattr(op, "kind", "")
     number = getattr(op, "number", "")
     chapter = getattr(op, "chapter", "")
     momentti = getattr(op, "momentti", 0)

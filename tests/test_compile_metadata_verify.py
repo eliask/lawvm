@@ -6,11 +6,8 @@ Covers:
 """
 from __future__ import annotations
 
-import pytest
 
-from lawvm.core.compile_metadata import CompileMetadata
 from lawvm.core.compile_metadata_verify import (
-    CompileMetadataVerification,
     verify_artifact_metadata,
 )
 

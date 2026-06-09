@@ -26,7 +26,7 @@ from lawvm.tools._cli_duckdb import (
     require_duckdb,
     source_expr_for_path,
 )
-from lawvm.tools._cli_output import emit_rows, format_table
+from lawvm.tools._cli_output import emit_rows
 
 _DEFAULT_DATA_DIR = "data/fi/v1"
 

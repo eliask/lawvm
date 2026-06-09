@@ -38,7 +38,6 @@ module over ``compile_result`` for top-level compile products.
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Literal, Optional, Tuple
 

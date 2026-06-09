@@ -353,7 +353,7 @@ def _project_from_he_farchive(
             # Use stdlib ET for compatibility with the extractor
             import xml.etree.ElementTree as ET
             root_et = ET.fromstring(xml_bytes)
-            he_id_short = he_id.replace("HE ", "").strip() if he_id.startswith("HE ") else he_id
+            _he_id_short = he_id.replace("HE ", "").strip() if he_id.startswith("HE ") else he_id
 
             citation_rows, diag_rows = _project_inline_citations_for_he(
                 xml_bytes=ET.tostring(root_et),
