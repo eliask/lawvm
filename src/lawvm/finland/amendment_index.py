@@ -12,9 +12,11 @@ In LawVM terms, this is part of the 'Source Fact Extraction' layer for Finland.
 
 import argparse
 import csv
+import json
+import os
 import re
 from pathlib import Path
-from typing import Dict, List, Tuple, Set, cast
+from typing import Any, Dict, List, Tuple, Set, cast
 
 import lxml.etree as etree
 from functools import lru_cache
@@ -31,6 +33,7 @@ REF_PATTERN = re.compile(r'/akn/fi/act/statute(?:-consolidated)?/(\d{4})/(\d+(?:
 
 # Canonical cache path — stored in .cache (gitignored)
 _DEFAULT_CACHE_CSV = Path(".cache/finland/amendment_parents.csv")
+_DEFAULT_CACHE_META = _DEFAULT_CACHE_CSV.with_suffix(".meta.json")
 _CSV_HEADER = ["amendment_id", "parent_id", "edge_kind"]
 
 
@@ -283,24 +286,113 @@ def build_amendment_index(
 
     return sorted(list(edges))
 
-def _consolidated_zip_path_for_store(cs: CorpusStore) -> Path | None:
-    """Return the consolidated ZIP path for cs, or None for Farchive-backed stores."""
-    # Farchive-backed stores have no ZIP path.
+def _path_from_pathlike(value: object) -> Path | None:
+    if isinstance(value, os.PathLike | str):
+        return Path(value)
     return None
+
+
+def _corpus_source_fingerprint(cs: CorpusStore | None) -> dict[str, object] | None:
+    """Return the backing farchive DB fingerprint, or None for unknown stores."""
+    try:
+        archive = getattr(cs, "_archive", None) if cs is not None else None
+        candidates: list[object] = []
+        if archive is not None:
+            candidates.append(archive)
+        if cs is not None:
+            candidates.append(cs)
+
+        path: Path | None = None
+        for candidate in candidates:
+            for attr in ("path", "_path", "db_path", "_db_path", "filename", "_filename"):
+                value = getattr(candidate, attr, None)
+                path = _path_from_pathlike(value)
+                if path is not None:
+                    break
+            if path is not None:
+                break
+
+        if path is None:
+            path = Path(os.environ.get("LAWVM_FARCHIVE_DB", "data/finlex.farchive"))
+        if not path.exists():
+            return None
+        stat = path.stat()
+        return {
+            "path": str(path),
+            "size": int(stat.st_size),
+            "mtime_ns": int(stat.st_mtime_ns),
+        }
+    except Exception:
+        return None
+
+
+def _read_csv_header(csv_path: Path) -> list[str]:
+    try:
+        with open(csv_path, "r", encoding="utf-8") as f:
+            return next(csv.reader(f), [])
+    except (OSError, StopIteration, csv.Error):
+        return []
+
+
+def _read_cache_meta(meta_path: Path) -> dict[str, Any] | None:
+    try:
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if isinstance(data, dict):
+        return data
+    return None
+
+
+def _cache_meta_payload(source_fingerprint: dict[str, object] | None) -> dict[str, object]:
+    return {
+        "schema": list(_CSV_HEADER),
+        "source": source_fingerprint,
+    }
+
+
+def _write_cache_meta_atomic(
+    meta_path: Path,
+    source_fingerprint: dict[str, object] | None,
+) -> None:
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = meta_path.with_name(f".{meta_path.name}.tmp")
+    tmp_path.write_text(
+        json.dumps(_cache_meta_payload(source_fingerprint), sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(tmp_path, meta_path)
+
+
+def _write_amendment_index_cache(
+    csv_path: Path,
+    edges: List[Tuple[str, str, str]],
+    source_fingerprint: dict[str, object] | None,
+) -> None:
+    meta_path = csv_path.with_suffix(".meta.json")
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    csv_tmp_path = csv_path.with_name(f".{csv_path.name}.tmp")
+    with open(csv_tmp_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(_CSV_HEADER)
+        writer.writerows(edges)
+    os.replace(csv_tmp_path, csv_path)
+    _write_cache_meta_atomic(meta_path, source_fingerprint)
 
 
 def ensure_amendment_index(
     cs: CorpusStore | None = None,
     csv_path: Path = _DEFAULT_CACHE_CSV,
 ) -> None:
-    """Ensure amendment_parents.csv exists and is not older than the source ZIP.
+    """Ensure amendment_parents.csv exists and is fresh for the source farchive.
 
-    Transparent caching: rebuilds automatically when the ZIP is newer than the
-    CSV (e.g., after a data refresh) or when the CSV is missing.
+    Transparent caching: rebuilds automatically when the farchive fingerprint
+    differs from the sidecar metadata, when the CSV is missing, or when the CSV
+    schema is stale.
 
     ``cs`` may be a CorpusStore (preferred) or None (auto-detects via
-    get_corpus_store()).  For non-ZIP backends the mtime staleness check is
-    skipped and the CSV is used as long as it exists.
+    get_corpus_store()).  For unknown backends the source staleness check is
+    skipped and the CSV is used as long as it exists with the current schema.
     """
     should_close_cs = False
     if cs is None:
@@ -308,73 +400,60 @@ def ensure_amendment_index(
         should_close_cs = True
 
     try:
-        zip_path = _consolidated_zip_path_for_store(cs)
+        source_fingerprint = _corpus_source_fingerprint(cs)
+        meta_path = csv_path.with_suffix(".meta.json")
 
         if csv_path.exists():
-            try:
-                with open(csv_path, "r", encoding="utf-8") as f:
-                    header = next(csv.reader(f), [])
-            except OSError:
-                header = []
+            header = _read_csv_header(csv_path)
             header_is_current = header[:3] == _CSV_HEADER
-            if zip_path is not None and zip_path.exists():
-                if header_is_current and csv_path.stat().st_mtime >= zip_path.stat().st_mtime:
-                    return  # cache is fresh
-                print(f"[amendment_index] {csv_path} is stale — rebuilding from {zip_path}")
+            if header_is_current and source_fingerprint is None:
+                return
+            if header_is_current:
+                if not meta_path.exists():
+                    # Adopt an existing current-schema CSV as fresh on first
+                    # sidecar rollout. The full source scan is expensive, and
+                    # the written fingerprint will catch subsequent DB changes.
+                    _write_cache_meta_atomic(meta_path, source_fingerprint)
+                    return
+                meta = _read_cache_meta(meta_path)
+                if meta is not None and meta.get("source") == source_fingerprint:
+                    return
+                print(f"[amendment_index] {csv_path} source fingerprint is stale — rebuilding")
             else:
-                if header_is_current:
-                    return  # no ZIP to compare against; trust existing CSV
                 print(f"[amendment_index] {csv_path} schema is stale — rebuilding")
         else:
-            if zip_path is not None and not zip_path.exists():
-                raise FileNotFoundError(
-                    f"Cannot build amendment index: neither {csv_path} nor {zip_path} exist."
-                )
             print(f"[amendment_index] Building {csv_path}...")
 
         edges = build_amendment_index(cs=cs)
-        csv_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(csv_path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(_CSV_HEADER)
-            writer.writerows(edges)
+        _write_amendment_index_cache(csv_path, edges, source_fingerprint)
         print(f"[amendment_index] Wrote {len(edges)} mappings to {csv_path}")
     finally:
         if should_close_cs:
             cs.close()
 
 
-def _zip_mtime(p: Path) -> float:
-    """Return mtime of p, or 0.0 if it doesn't exist."""
-    try:
-        return p.stat().st_mtime
-    except FileNotFoundError:
-        return 0.0
-
-
-def _corpus_store_mtime() -> float:
-    """Return mtime of the consolidated ZIP for the default corpus store.
-
-    Used as an lru_cache key so the in-process result auto-invalidates when
-    the ZIP is replaced on disk.  Returns 0.0 for non-ZIP backends (archive
-    stores are always fresh from the DB).
-    """
+def _default_source_cache_key() -> tuple[()] | tuple[str, int, int]:
+    """Return an lru_cache key for the default corpus store source file."""
     try:
         cs = get_corpus_store()
     except (OSError, RuntimeError):
-        return 0.0
+        return ()
     try:
-        zip_path = _consolidated_zip_path_for_store(cs)
-        if zip_path is None:
-            return 0.0
-        return _zip_mtime(zip_path)
+        fingerprint = _corpus_source_fingerprint(cs)
+        if fingerprint is None:
+            return ()
+        return (
+            str(fingerprint["path"]),
+            int(fingerprint["size"]),
+            int(fingerprint["mtime_ns"]),
+        )
     finally:
         cs.close()
 
 
 @lru_cache(maxsize=256)
-def _get_amendment_children_for_mtime(zip_mtime: float) -> Dict[str, List[str]]:
-    """Inner impl keyed on ZIP mtime — auto-invalidates in-process when ZIP changes."""
+def _get_amendment_children_for_source_key(source_key: tuple[()] | tuple[str, int, int]) -> Dict[str, List[str]]:
+    """Inner impl keyed on farchive fingerprint so DB changes invalidate in-process."""
     ensure_amendment_index(cs=None, csv_path=_DEFAULT_CACHE_CSV)
     mapping: Dict[str, List[str]] = {}
     with open(_DEFAULT_CACHE_CSV, "r", encoding="utf-8") as f:
@@ -386,7 +465,9 @@ def _get_amendment_children_for_mtime(zip_mtime: float) -> Dict[str, List[str]]:
 
 
 @lru_cache(maxsize=256)
-def _get_amendment_child_edges_for_mtime(zip_mtime: float) -> Dict[str, List[Tuple[str, str]]]:
+def _get_amendment_child_edges_for_source_key(
+    source_key: tuple[()] | tuple[str, int, int],
+) -> Dict[str, List[Tuple[str, str]]]:
     """Return cached {parent_statute_id: [(amendment_id, edge_kind), ...]} mapping."""
     ensure_amendment_index(cs=None, csv_path=_DEFAULT_CACHE_CSV)
     mapping: Dict[str, List[Tuple[str, str]]] = {}
@@ -402,18 +483,17 @@ def _get_amendment_child_edges_for_mtime(zip_mtime: float) -> Dict[str, List[Tup
 def get_amendment_children() -> Dict[str, List[str]]:
     """Return {parent_statute_id: [amendment_id, ...]} mapping.
 
-    Transparent caching: on-disk CSV rebuilt from the corpus store's
-    consolidated ZIP when the ZIP is newer or the cache is missing.
-    In-process result is keyed on the ZIP mtime so any ZIP replacement
-    automatically invalidates.  Callers never need to know about the
+    Transparent caching: on-disk CSV rebuilt from the corpus store's farchive
+    fingerprint when the DB changes or the cache is missing. In-process result
+    is keyed on the same fingerprint, so callers never need to know about the
     backing CSV.
     """
-    return _get_amendment_children_for_mtime(_corpus_store_mtime())
+    return _get_amendment_children_for_source_key(_default_source_cache_key())
 
 
 def get_amendment_child_edges() -> Dict[str, List[Tuple[str, str]]]:
     """Return {parent_statute_id: [(amendment_id, edge_kind), ...]} mapping."""
-    return _get_amendment_child_edges_for_mtime(_corpus_store_mtime())
+    return _get_amendment_child_edges_for_source_key(_default_source_cache_key())
 
 
 def main():

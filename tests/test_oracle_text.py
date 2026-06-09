@@ -10,8 +10,11 @@ from lawvm.tools.oracle_text import (
     _el_to_text,
     _find_nearby_sections,
     _find_section_el,
+    _format_temporal_span,
     _num_text_to_canonical_selector,
+    _section_has_temporal_markers,
     _STALE_SNAPSHOT_YEARS,
+    build_temporal_spans,
 )
 
 
@@ -506,3 +509,293 @@ def test_coverage_caveat_absent_when_at_amendment_used(capsys, monkeypatch) -> N
 
     captured = capsys.readouterr()
     assert "note: consolidated snapshot" not in captured.err
+
+
+# ---------------------------------------------------------------------------
+# --temporal-labels: structural in-force / superseded / future labeling
+# ---------------------------------------------------------------------------
+#
+# Fixture mirrors the real 2011/805 §3:1 / §3:9 structure: a version-pinned
+# subsection, an editorial noteAuthorial with "tulee voimaan <date>. Aiempi
+# sanamuoto kuuluu:", a bare prior-wording subsection, a note that ADDS a
+# subsection (no "Aiempi sanamuoto"), and a plain in-force subsection.
+_FIN_NS = "http://data.finlex.fi/schema/finlex"
+
+_TEMPORAL_SECTION_XML = (
+    """<section xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" """
+    f'''xmlns:finlex="{_FIN_NS}" eId="chp_3__sec_1">
+      <num>1 §</num>
+      <heading>Otsikko</heading>
+      <subsection eId="s1v20260269" finlex:originalVersion="@20260269" finlex:originalVersionLabel="17.4.2026/269">
+        <content><p>AMENDED-MOM1</p></content>
+      </subsection>
+      <hcontainer eId="note_2" finlex:outline="huomautus" name="noteAuthorial">
+        <content><p>L:lla 269/2026 muutettu 1 momentti tulee voimaan 1.6.2026. Aiempi sanamuoto kuuluu:</p></content>
+      </hcontainer>
+      <subsection eId="s1">
+        <content><p>OLD-MOM1</p></content>
+      </subsection>
+      <hcontainer eId="note_3" finlex:outline="huomautus" name="noteAuthorial">
+        <content><p>L:lla 269/2026 lisätty 2 momentti tulee voimaan 1.6.2026.</p></content>
+      </hcontainer>
+      <subsection eId="s3">
+        <content><p>PLAIN-MOM3</p></content>
+      </subsection>
+    </section>'''
+).encode("utf-8")
+
+
+def _temporal_section():
+    return etree.fromstring(_TEMPORAL_SECTION_XML)
+
+
+def test_temporal_spans_label_sequence_when_amendment_in_force() -> None:
+    """With today AFTER the 'tulee voimaan' date, the versioned span is IN_FORCE."""
+    sec = _temporal_section()
+    spans = build_temporal_spans(sec, today=datetime.date(2026, 7, 1))
+    labels = [s["label"] for s in spans]
+    assert labels == ["IN_FORCE", "NOTE", "SUPERSEDED", "NOTE", "CURRENT"]
+
+
+def test_temporal_spans_superseded_text_is_the_prior_wording() -> None:
+    sec = _temporal_section()
+    spans = build_temporal_spans(sec, today=datetime.date(2026, 7, 1))
+    superseded = [s for s in spans if s["label"] == "SUPERSEDED"]
+    assert len(superseded) == 1
+    assert "OLD-MOM1" in superseded[0]["text"]
+    # The amended (new) wording must be the IN_FORCE span, not superseded.
+    in_force = [s for s in spans if s["label"] == "IN_FORCE"][0]
+    assert "AMENDED-MOM1" in in_force["text"]
+    assert in_force["version"] == "17.4.2026/269"
+
+
+def test_temporal_spans_future_amendment_is_enters_force() -> None:
+    """With today BEFORE the 'tulee voimaan' date, the versioned span is
+    ENTERS_FORCE and — crucially — the prior wording it replaces is still
+    IN_FORCE (the change has not commenced, so the old text is still the law),
+    NOT SUPERSEDED. Once it commences the prior wording becomes SUPERSEDED
+    (see test_temporal_spans_label_sequence_when_amendment_in_force)."""
+    sec = _temporal_section()
+    spans = build_temporal_spans(sec, today=datetime.date(2026, 5, 1))
+    labels = [s["label"] for s in spans]
+    # Before commencement: new momentti ENTERS_FORCE, prior wording still IN_FORCE.
+    assert labels == ["ENTERS_FORCE", "NOTE", "IN_FORCE", "NOTE", "CURRENT"]
+    enters = [s for s in spans if s["label"] == "ENTERS_FORCE"][0]
+    assert enters["enters_force_date"] == "2026-06-01"
+    # The prior wording (OLD-MOM1) is the one kept IN_FORCE before commencement.
+    in_force_texts = [s["text"] for s in spans if s["label"] == "IN_FORCE"]
+    assert any("OLD-MOM1" in t for t in in_force_texts)
+
+
+def test_temporal_spans_added_momentti_has_no_superseded_text() -> None:
+    """A 'lisätty N momentti' note (no 'Aiempi sanamuoto') must NOT mark the
+    following plain subsection as SUPERSEDED."""
+    sec = _temporal_section()
+    spans = build_temporal_spans(sec, today=datetime.date(2026, 7, 1))
+    plain = [s for s in spans if "PLAIN-MOM3" in s["text"]]
+    assert len(plain) == 1
+    assert plain[0]["label"] == "CURRENT"
+
+
+_ADDED_MOMENTTI_XML = (
+    """<section xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" """
+    f'''xmlns:finlex="{_FIN_NS}" eId="chp_3__sec_1">
+      <num>1 §</num>
+      <hcontainer finlex:outline="huomautus" name="noteAuthorial">
+        <content><p>L:lla 269/2026 lisätty 2 momentti tulee voimaan 1.6.2026.</p></content>
+      </hcontainer>
+      <subsection finlex:originalVersion="@20260269" finlex:originalVersionLabel="17.4.2026/269">
+        <content><p>ADDED-MOM2</p></content>
+      </subsection>
+    </section>'''
+).encode("utf-8")
+
+
+def test_temporal_spans_added_versioned_momentti_gated_by_preceding_note() -> None:
+    """An ADDED versioned momentti's note PRECEDES it; before commencement it must
+    be ENTERS_FORCE, after commencement IN_FORCE (preceding-note date fallback)."""
+    sec = etree.fromstring(_ADDED_MOMENTTI_XML)
+    before = build_temporal_spans(sec, today=datetime.date(2026, 5, 1))
+    added_before = [s for s in before if "ADDED-MOM2" in s["text"]][0]
+    assert added_before["label"] == "ENTERS_FORCE"
+    assert added_before["enters_force_date"] == "2026-06-01"
+    after = build_temporal_spans(sec, today=datetime.date(2026, 7, 1))
+    added_after = [s for s in after if "ADDED-MOM2" in s["text"]][0]
+    assert added_after["label"] == "IN_FORCE"
+
+
+def test_temporal_spans_past_tense_tuli_voimaan_parsed() -> None:
+    """Finlex past-form 'tuli voimaan <date>' must parse like 'tulee voimaan'."""
+    xml = (
+        """<section xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" """
+        f'''xmlns:finlex="{_FIN_NS}" eId="s">
+          <num>1 §</num>
+          <subsection finlex:originalVersionLabel="1.1.2017/1491"><content><p>NEW</p></content></subsection>
+          <hcontainer finlex:outline="huomautus" name="noteAuthorial">
+            <content><p>L:lla 1491/2016 muutettu 1 momentti tuli voimaan 1.1.2017. Aiempi sanamuoto kuuluu:</p></content>
+          </hcontainer>
+          <subsection><content><p>OLD</p></content></subsection>
+        </section>'''
+    ).encode("utf-8")
+    sec = etree.fromstring(xml)
+    # today AFTER 2017-01-01 → IN_FORCE
+    spans = build_temporal_spans(sec, today=datetime.date(2020, 1, 1))
+    new_span = [s for s in spans if "NEW" in s["text"]][0]
+    assert new_span["label"] == "IN_FORCE"
+    # today BEFORE 2017-01-01 → ENTERS_FORCE (date was correctly parsed)
+    spans_before = build_temporal_spans(sec, today=datetime.date(2016, 6, 1))
+    new_before = [s for s in spans_before if "NEW" in s["text"]][0]
+    assert new_before["label"] == "ENTERS_FORCE"
+    assert new_before["enters_force_date"] == "2017-01-01"
+
+
+def test_repeal_marker_subsection_is_note_not_current() -> None:
+    """A future-repeal marker carried in a bare <subsection> (no noteAuthorial
+    wrapper), e.g. '4 momentti on kumottu L:lla 22.5.2026/380, joka tulee
+    voimaan 1.9.2026.', must be labeled NOTE (editorial metadata, never in-force
+    law), date-gated by its commencement — finding #5."""
+    xml = (
+        """<section xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" """
+        f'''xmlns:finlex="{_FIN_NS}" eId="s">
+          <num>14 §</num>
+          <subsection><content><p>MOM1 STABLE</p></content></subsection>
+          <subsection><content><p>4 momentti on kumottu L:lla 22.5.2026/380, joka tulee voimaan 1.9.2026.</p></content></subsection>
+          <subsection><content><p>MOM5 STABLE</p></content></subsection>
+        </section>'''
+    ).encode("utf-8")
+    sec = etree.fromstring(xml)
+    spans = build_temporal_spans(sec, today=datetime.date(2026, 6, 1))
+    marker = [s for s in spans if "on kumottu" in s["text"]]
+    assert len(marker) == 1
+    assert marker[0]["label"] == "NOTE"
+    assert marker[0]["enters_force_date"] == "2026-09-01"
+    # The marker prose must NOT appear as any CURRENT/IN_FORCE span.
+    in_force_like = [
+        s for s in spans if s["label"] in ("CURRENT", "IN_FORCE") and "on kumottu" in s["text"]
+    ]
+    assert in_force_like == []
+
+
+def test_section_level_repeal_overlay_in_bare_content_is_note() -> None:
+    """A section-level future-repeal overlay carried as bare <content> directly
+    under <section> (the literal finding #5 example) is a NOTE, and its prior
+    wording is kept IN_FORCE before commencement, SUPERSEDED after."""
+    xml = (
+        """<section xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" """
+        f'''xmlns:finlex="{_FIN_NS}" eId="chp_X__sec_11">
+          <num>11 §</num>
+          <content><p>11 § on kumottu L:lla 5.12.2025/1159, joka tulee voimaan 1.5.2026. Aiempi sanamuoto kuuluu:</p></content>
+          <subsection><content><p>VANHA PYKALA TEKSTI</p></content></subsection>
+        </section>'''
+    ).encode("utf-8")
+    sec = etree.fromstring(xml)
+    # BEFORE the 1.5.2026 repeal commences: marker NOTE, prior wording IN_FORCE.
+    before = build_temporal_spans(sec, today=datetime.date(2026, 4, 1))
+    note_before = [s for s in before if "on kumottu" in s["text"]][0]
+    assert note_before["label"] == "NOTE"
+    prior_before = [s for s in before if "VANHA PYKALA" in s["text"]][0]
+    assert prior_before["label"] == "IN_FORCE"
+    # AFTER commencement: prior wording SUPERSEDED (section repealed).
+    after = build_temporal_spans(sec, today=datetime.date(2026, 6, 1))
+    prior_after = [s for s in after if "VANHA PYKALA" in s["text"]][0]
+    assert prior_after["label"] == "SUPERSEDED"
+
+
+def test_repeal_marker_does_not_match_substantive_prose() -> None:
+    """The repeal-marker discriminator must NOT fire on substantive legal text
+    that merely mentions a repeal mid-sentence without a dated 'L:lla' citation,
+    so real in-force law is never mislabeled as an editorial NOTE."""
+    from lawvm.tools.oracle_text import _is_repeal_marker_text
+
+    assert _is_repeal_marker_text(
+        "4 momentti on kumottu L:lla 22.5.2026/380, joka tulee voimaan 1.9.2026."
+    )
+    # Substantive prose: no dated L:lla citation near the start → not a marker.
+    assert not _is_repeal_marker_text(
+        "Jos sopimus on kumottu lailla tai asetuksella, sovelletaan mitä L:lla 5/2020 säädetään."
+    )
+    assert not _is_repeal_marker_text(
+        "Päätös, joka on kumottu hallinto-oikeudessa, ei ole täytäntöönpanokelpoinen."
+    )
+
+
+def test_temporal_spans_section_without_markers_is_all_current() -> None:
+    """A vanilla section with no version attrs / notes yields only CURRENT spans
+    and reports no temporal markers (so the renderer prints the 'all current' note)."""
+    sec = etree.fromstring(
+        b"""<section xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" eId="s">
+          <num>5 \xc2\xa7</num><heading>H</heading>
+          <subsection><content><p>plain one</p></content></subsection>
+          <subsection><content><p>plain two</p></content></subsection>
+        </section>"""
+    )
+    spans = build_temporal_spans(sec, today=datetime.date(2026, 7, 1))
+    assert [s["label"] for s in spans] == ["CURRENT", "CURRENT"]
+    assert _section_has_temporal_markers(spans) is False
+
+
+def test_section_has_temporal_markers_true_when_versioned() -> None:
+    sec = _temporal_section()
+    spans = build_temporal_spans(sec, today=datetime.date(2026, 7, 1))
+    assert _section_has_temporal_markers(spans) is True
+
+
+def test_format_temporal_span_headers() -> None:
+    in_force = _format_temporal_span(
+        {"label": "IN_FORCE", "text": "T", "version": "17.4.2026/269", "enters_force_date": None}
+    )
+    assert in_force[0] == "  [IN FORCE — 17.4.2026/269]"
+    enters = _format_temporal_span(
+        {"label": "ENTERS_FORCE", "text": "T", "version": "x", "enters_force_date": "2026-06-01"}
+    )
+    assert enters[0] == "  [ENTERS FORCE 2026-06-01 — x]"
+    superseded = _format_temporal_span(
+        {"label": "SUPERSEDED", "text": "T", "version": "", "enters_force_date": None}
+    )
+    assert superseded[0] == "  [SUPERSEDED (aiempi sanamuoto)]"
+
+
+def test_temporal_labels_default_off_leaves_full_text_block_unchanged() -> None:
+    """Without temporal_spans in the bundle, _format_text must not emit a
+    'Temporal breakdown' block (default output unchanged)."""
+    from lawvm.tools.oracle_text import _format_text
+    bundle = {
+        "statute_id": "2011/805",
+        "locator": "loc",
+        "at_amendment": "",
+        "section_filter": "chp_3__sec_1",
+        "found": True,
+        "full_text": "some flat text",
+        "full_text_length": 14,
+        "subsection_count": 2,
+        "total_section_count": 30,
+        "subsections": [],
+        "temporal_spans": [],
+    }
+    out = _format_text(bundle)
+    assert "Temporal breakdown" not in out
+    assert "some flat text" in out
+
+
+def test_temporal_labels_render_block_when_spans_present() -> None:
+    from lawvm.tools.oracle_text import _format_text
+    sec = _temporal_section()
+    spans = build_temporal_spans(sec, today=datetime.date(2026, 7, 1))
+    bundle = {
+        "statute_id": "2011/805",
+        "locator": "loc",
+        "at_amendment": "",
+        "section_filter": "chp_3__sec_1",
+        "found": True,
+        "full_text": "flat",
+        "full_text_length": 4,
+        "subsection_count": 3,
+        "total_section_count": 30,
+        "subsections": [],
+        "temporal_spans": spans,
+        "section_has_temporal_markers": True,
+    }
+    out = _format_text(bundle)
+    assert "Temporal breakdown (structural amendment-version markers):" in out
+    assert "[IN FORCE — 17.4.2026/269]" in out
+    assert "[SUPERSEDED (aiempi sanamuoto)]" in out

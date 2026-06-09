@@ -72,6 +72,8 @@ Subcommands:
     pit-timeline --provision REF    Provision amendment history (index-backed).
     pit-diff --provision REF        Provision diff between two PIT dates (index-backed).
     provision-state <statute_id>    Stable PIT provision-state JSON seam output.
+    provenance <statute_id>         Trace in-force wording to amendment, HE, and preparatory refs.
+    trace <statute_id>              Alias for provenance.
     telos [--statute STATUTE_ID]    Query telos/purpose sections (feature #5).
     claim propose|accept|reject|retract|list|show  Manual compilation claims (Slices 1+2).
 
@@ -747,6 +749,17 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         "--subsections",
         action="store_true",
         help="show per-subsection text breakdown",
+    )
+    oracle_text_p.add_argument(
+        "--temporal-labels",
+        dest="temporal_labels",
+        action="store_true",
+        help=(
+            "label each span of the section as [IN FORCE] / [ENTERS FORCE <date>] / "
+            "[SUPERSEDED (aiempi sanamuoto)] / [NOTE] using the structural "
+            "amendment-version markers in the consolidated XML. The default "
+            "flattened 'Full text' output is unchanged."
+        ),
     )
     oracle_text_p.add_argument(
         "--json",
@@ -3426,6 +3439,125 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         action="store_true",
         help="include structured IRNode JSON for the selected provision",
     )
+
+    # --- read (clean L1 analyst reading surface) ---
+    read_p = sub.add_parser(
+        "read",
+        parents=_P,
+        help="clean point-in-time in-force reading surface (replay-L1)",
+        description=(
+            "Read a provision in force on a date, cruft-free. With a §-selector "
+            "(e.g. §3:1 or §3:1.2) it resolves replay-L1 via provision-state; with "
+            "no selector it replays the whole statute. --raw drills down to the L0 "
+            "consolidated prose at the SAME selector; --xml to the raw source XML. "
+            "--json returns the stable lawvm.provision_state.v1 pin unchanged."
+        ),
+    )
+    read_p.add_argument("statute_id", help="statute ID, e.g. 2011/805")
+    read_p.add_argument(
+        "selector",
+        nargs="?",
+        default="",
+        help="provision selector, e.g. '§3:1', '§3:1.2', '§7'; omit for whole statute",
+    )
+    read_p.add_argument(
+        "--as-of", dest="as_of", metavar="DATE",
+        help="PIT date (default: today)",
+    )
+    read_p.add_argument(
+        "--query-type", dest="query_type", default="in_force",
+        choices=["governing", "in_force"],
+        help="PIT query semantics (default: in_force)",
+    )
+    read_p.add_argument("--territory", dest="territory", metavar="TERRITORY")
+    read_p.add_argument(
+        "--include-ir", dest="include_ir", action="store_true",
+        help="include structured IRNode JSON (--json only)",
+    )
+    read_p.add_argument(
+        "--raw", action="store_true",
+        help="drill down to L0 consolidated prose at the same selector (oracle-text)",
+    )
+    read_p.add_argument(
+        "--temporal-labels", dest="temporal_labels", action="store_true",
+        help="with --raw: segment the L0 prose into IN_FORCE/SUPERSEDED/... spans",
+    )
+    read_p.add_argument(
+        "--subsections", action="store_true",
+        help="with --raw: include per-subsection breakdown",
+    )
+    read_p.add_argument(
+        "--xml", action="store_true",
+        help="drill down to raw archived source XML at the same selector (source-dump)",
+    )
+    read_p.add_argument("--json", action="store_true", help="emit JSON")
+
+    # --- reconcile (replay-L1 vs oracle-L1; divergence is the signal) ---
+    reconcile_p = sub.add_parser(
+        "reconcile",
+        parents=_P,
+        help="diff replay-L1 vs oracle-L1 at a selector; flag divergence",
+        description=(
+            "Compute two independent clean in-force-at-D views — replay-L1 "
+            "(provision-state) and oracle-L1 (consolidated, structurally "
+            "segmented) — and compare. AGREE shows one view; DISAGREE shows BOTH "
+            "and classifies the cause (temporal / editorial / presence). "
+            "Divergence is the signal and is never silently resolved."
+        ),
+    )
+    reconcile_p.add_argument("statute_id", help="statute ID, e.g. 2011/805")
+    reconcile_p.add_argument(
+        "selector", nargs="?", default="",
+        help="provision selector, e.g. '§3:1'; omit to scan the whole statute",
+    )
+    reconcile_p.add_argument(
+        "--as-of", dest="as_of", metavar="DATE", help="PIT date (default: today)",
+    )
+    reconcile_p.add_argument(
+        "--query-type", dest="query_type", default="in_force",
+        choices=["governing", "in_force"],
+        help="PIT query semantics (default: in_force)",
+    )
+    reconcile_p.add_argument(
+        "--at-amendment", dest="at_amendment", metavar="ID",
+        help="pin the oracle consolidated version to this amendment",
+    )
+    reconcile_p.add_argument("--json", action="store_true", help="emit JSON")
+
+    # --- provenance / trace (wording -> amendment -> HE/preparatory chain) ---
+    for command_name, command_help in (
+        ("provenance", "trace in-force wording to amendment, HE, and preparatory refs"),
+        ("trace", "alias for provenance"),
+    ):
+        provenance_p = sub.add_parser(
+            command_name,
+            parents=_P,
+            help=command_help,
+            description=(
+                "Resolve one §-selector through replay-L1, then surface the source "
+                "amendment, originating HE, committee/parliament preparatory refs, "
+                "and fixed-date commencement gate. This assembles existing engines "
+                "and does not introduce a new replay or parsing kernel."
+            ),
+        )
+        provenance_p.add_argument("statute_id", help="statute ID, e.g. 2011/805")
+        provenance_p.add_argument(
+            "selector", nargs="?", default="",
+            help="provision selector, e.g. '§3:1'",
+        )
+        provenance_p.add_argument(
+            "--as-of", dest="as_of", metavar="DATE", help="PIT date (default: today)",
+        )
+        provenance_p.add_argument(
+            "--query-type", dest="query_type", default="in_force",
+            choices=["governing", "in_force"],
+            help="PIT query semantics (default: in_force)",
+        )
+        provenance_p.add_argument(
+            "--data-dir", dest="data_dir", metavar="PATH", default="data/fi/v1",
+            help="projection directory for fi_he_corpus.parquet (default: data/fi/v1)",
+        )
+        provenance_p.add_argument("--json", action="store_true", help="emit JSON")
 
     # --- export ---
     export_p = sub.add_parser(
@@ -10598,6 +10730,21 @@ def main() -> None:
         from lawvm.tools.provision_state import main as provision_state_main
 
         provision_state_main(args)
+
+    elif args.command == "read":
+        from lawvm.tools.read_provision import main as read_main
+
+        read_main(args)
+
+    elif args.command == "reconcile":
+        from lawvm.tools.reconcile import main as reconcile_main
+
+        reconcile_main(args)
+
+    elif args.command in ("provenance", "trace"):
+        from lawvm.tools.provenance import main as provenance_main
+
+        provenance_main(args)
 
     elif args.command == "export":
         from lawvm.tools.export import main as export_main
