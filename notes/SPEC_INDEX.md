@@ -64,6 +64,7 @@ the architecture, keep it explanatory.
 - [UK_FRONTEND_ELABORATION_ARCHITECTURE.md](UK_FRONTEND_ELABORATION_ARCHITECTURE.md)
 - [UK_REPLAY_LIVING_SPEC.md](UK_REPLAY_LIVING_SPEC.md)
 - [UK_REPLAY_REGIME_CONTRACT.md](UK_REPLAY_REGIME_CONTRACT.md)
+- [UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md](UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md) — per-statute UK official drafting-source rules
 - [OPEN_LAW_FRONTEND_SPEC.md](OPEN_LAW_FRONTEND_SPEC.md)
 
 ## Evidence and Verification
@@ -87,3 +88,5 @@ the architecture, keep it explanatory.
 - [LAWVM_ARCHITECTURE_INDEX.md](LAWVM_ARCHITECTURE_INDEX.md)
 - [LAWVM_STACK_MAP.md](LAWVM_STACK_MAP.md)
 - [REGEX_TO_GRAMMAR_MIGRATION.md](REGEX_TO_GRAMMAR_MIGRATION.md) — when string matching stays regex (lint + prefilter) vs becomes a named recognizer/spec; applies AGENTS.md §1.13
+- [IMPLEMENTATION_DIVERGENCE_LEDGER.md](IMPLEMENTATION_DIVERGENCE_LEDGER.md) — current target-vs-implementation gaps + active work queue
+- [FINLAND_COVERAGE_GAP_REPORT.md](FINLAND_COVERAGE_GAP_REPORT.md) — Finland projection freshness / coverage snapshot

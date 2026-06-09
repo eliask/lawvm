@@ -447,7 +447,7 @@ Required response:
 Classification: `RISK_SIGNAL`, `SECTION_STATE`.
 Status: reserved for future wave-1+ discoveries not yet classified.
 
-**Note:** `BASE_SYNTHETIC_EID_RENAME` was renamed to `ORACLE_SYNTHETIC_EID_RENAME` and moved to §8.5 per `notes/FINLAND_INTRA_KOHTA_DECISION_CORRIGENDUM_2026-04-15.md` §1.3.
+**Note:** `BASE_SYNTHETIC_EID_RENAME` was renamed to `ORACLE_SYNTHETIC_EID_RENAME` and moved to §8.5.
 
 ### 8.4 Semantic projection defects
 
