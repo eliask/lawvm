@@ -47,6 +47,197 @@ def _el_to_text(el: Any) -> str:
     return re.sub(r"\s+", " ", raw).strip()
 
 
+# --- Temporal labeling (opt-in, presentation-only) -------------------------
+#
+# Finlex consolidated (sd-cons) XML structurally marks amendment versions and
+# editorial notes inside a <section>.  The default flattened `full_text` mixes
+# in-force, soon-to-be-superseded, and future-in-force wording into one blob,
+# which is ambiguous for a reader.  The `--temporal-labels` flag walks the
+# section's direct children and emits labeled spans using ONLY structural
+# signals already present in the source XML:
+#
+#   • <subsection finlex:originalVersion="@YYYYNNNN"
+#                 finlex:originalVersionLabel="D.M.YYYY/NNN"> — a version-pinned
+#     amended/added provision.  Whether it is already IN FORCE or ENTERS FORCE
+#     in the future is decided by the "tulee voimaan <date>" date carried in the
+#     adjacent editorial note (compared to today).
+#   • <hcontainer name="noteAuthorial" finlex:outline="huomautus"> — an editorial
+#     note (e.g. "L:lla 269/2026 muutettu 1 momentti tulee voimaan 1.6.2026.
+#     Aiempi sanamuoto kuuluu:").
+#   • a bare <subsection> (no version attrs) IMMEDIATELY following a note whose
+#     text contains "Aiempi sanamuoto kuuluu" — the SUPERSEDED prior wording.
+#
+# This mirrors the structural model already used by
+# tools/section_keys.py (_strip_inline_prior_wording_sibling /
+# _is_oracle_version_shadow_section).  It is presentation-only: the default
+# `full_text` output is untouched.
+
+_FINLEX_NS = "http://data.finlex.fi/schema/finlex"
+_FINLEX_ORIG_VERSION_ATTR = f"{{{_FINLEX_NS}}}originalVersion"
+_FINLEX_ORIG_VERSION_LABEL_ATTR = f"{{{_FINLEX_NS}}}originalVersionLabel"
+_AIEMPI_SANAMUOTO_RE = re.compile(r"\bAiempi sanamuoto kuuluu\b", re.IGNORECASE)
+# "tulee voimaan 1.6.2026" — the entering-into-force date carried by the note.
+_TULEE_VOIMAAN_DATE_RE = re.compile(
+    r"tulee voimaan\s+(\d{1,2})\.(\d{1,2})\.(\d{4})", re.IGNORECASE
+)
+
+
+def _local_tag(el: Any) -> str:
+    from lxml import etree
+    return etree.QName(el).localname
+
+
+def _is_authorial_note(el: Any) -> bool:
+    return _local_tag(el) == "hcontainer" and el.get("name") == "noteAuthorial"
+
+
+def _note_introduces_prior_wording(note_el: Any) -> bool:
+    return bool(_AIEMPI_SANAMUOTO_RE.search(_el_to_text(note_el)))
+
+
+def _note_enters_force_date(note_el: Any) -> Optional[datetime.date]:
+    """Parse 'tulee voimaan D.M.YYYY' from a note, or None if absent/unparseable."""
+    m = _TULEE_VOIMAAN_DATE_RE.search(_el_to_text(note_el))
+    if not m:
+        return None
+    day, month, year = (int(g) for g in m.groups())
+    try:
+        return datetime.date(year, month, day)
+    except ValueError:
+        return None
+
+
+def build_temporal_spans(
+    section_el: Any, today: Optional[datetime.date] = None
+) -> List[Dict[str, Any]]:
+    """Walk a section's direct children → ordered, labeled temporal spans.
+
+    Each span is a dict with keys:
+      - label:   one of "IN_FORCE", "ENTERS_FORCE", "SUPERSEDED", "NOTE",
+                 "CURRENT" (a bare in-force subsection with no temporal marker).
+      - text:    the flattened text of the span.
+      - version: finlex:originalVersionLabel for versioned subsections, else "".
+      - enters_force_date: ISO date string for ENTERS_FORCE spans, else None.
+
+    Structural-only: no semantic interpretation beyond the markers Finlex
+    already encodes.  The most-recent note's "tulee voimaan" date is carried
+    forward to label the version-pinned subsection that the note refers to.
+    """
+    if today is None:
+        today = datetime.date.today()
+
+    spans: List[Dict[str, Any]] = []
+    children = list(section_el)
+    # In Finlex sd-cons, the editorial note ("... tulee voimaan <date>. Aiempi
+    # sanamuoto kuuluu:") is placed AFTER the version-pinned subsection it
+    # refers to and BEFORE the prior-wording subsection it introduces.  So a
+    # versioned subsection's in-force/future status comes from the note that
+    # immediately FOLLOWS it, while a SUPERSEDED bare subsection comes from the
+    # note that immediately PRECEDES it.
+    prior_wording_armed = False  # set by the immediately-preceding note
+
+    def _following_note_enters_force(idx: int) -> Optional[datetime.date]:
+        """Date from the next authorial note before the next subsection, if any."""
+        for j in range(idx + 1, len(children)):
+            nxt = children[j]
+            ntag = _local_tag(nxt)
+            if _is_authorial_note(nxt):
+                return _note_enters_force_date(nxt)
+            if ntag == "subsection":
+                break
+        return None
+
+    for i, child in enumerate(children):
+        tag = _local_tag(child)
+        if tag in ("num", "heading"):
+            continue
+
+        if _is_authorial_note(child):
+            enters = _note_enters_force_date(child)
+            spans.append(
+                {
+                    "label": "NOTE",
+                    "text": _el_to_text(child),
+                    "version": "",
+                    "enters_force_date": enters.isoformat() if enters else None,
+                }
+            )
+            prior_wording_armed = _note_introduces_prior_wording(child)
+            continue
+
+        if tag == "subsection":
+            version_label = child.get(_FINLEX_ORIG_VERSION_LABEL_ATTR) or ""
+            has_version = bool(
+                child.get(_FINLEX_ORIG_VERSION_ATTR) or version_label
+            )
+            text = _el_to_text(child)
+
+            if not has_version and prior_wording_armed:
+                # Bare subsection right after an "Aiempi sanamuoto kuuluu:" note.
+                spans.append(
+                    {
+                        "label": "SUPERSEDED",
+                        "text": text,
+                        "version": "",
+                        "enters_force_date": None,
+                    }
+                )
+                # The prior wording is a single subsection; disarm afterwards.
+                prior_wording_armed = False
+                continue
+
+            if has_version:
+                # In force vs future depends on the FOLLOWING note's date
+                # (the note that announces when this version takes effect).
+                enters_force = _following_note_enters_force(i)
+                if enters_force is not None and enters_force > today:
+                    label = "ENTERS_FORCE"
+                else:
+                    label = "IN_FORCE"
+                spans.append(
+                    {
+                        "label": label,
+                        "text": text,
+                        "version": version_label,
+                        "enters_force_date": (
+                            enters_force.isoformat()
+                            if (label == "ENTERS_FORCE" and enters_force)
+                            else None
+                        ),
+                    }
+                )
+            else:
+                # Bare, in-force subsection with no temporal annotation.
+                spans.append(
+                    {
+                        "label": "CURRENT",
+                        "text": text,
+                        "version": "",
+                        "enters_force_date": None,
+                    }
+                )
+            # A versioned/current subsection consumes any pending note context.
+            prior_wording_armed = False
+            continue
+
+        # Any other child (rare): pass through unlabeled as CURRENT.
+        spans.append(
+            {
+                "label": "CURRENT",
+                "text": _el_to_text(child),
+                "version": "",
+                "enters_force_date": None,
+            }
+        )
+
+    return spans
+
+
+def _section_has_temporal_markers(spans: List[Dict[str, Any]]) -> bool:
+    """True if any span carries a temporal label beyond plain CURRENT text."""
+    return any(s["label"] in ("IN_FORCE", "ENTERS_FORCE", "SUPERSEDED", "NOTE") for s in spans)
+
+
 def _normalize_section_label(label: str) -> str:
     return re.sub(r"[\s§.*]", "", label).lower()
 
@@ -166,6 +357,7 @@ def build_oracle_text_bundle(
     at_amendment: str = "",
     lang: str = "fin",
     show_subsections: bool = False,
+    temporal_labels: bool = False,
 ) -> Dict[str, Any]:
     """Fetch oracle section text from the consolidated archive.
 
@@ -183,6 +375,11 @@ def build_oracle_text_bundle(
         Language code (default 'fin').
     show_subsections:
         If True, include per-subsection text breakdown.
+    temporal_labels:
+        If True, include a `temporal_spans` breakdown that labels each span of
+        the section as IN_FORCE / ENTERS_FORCE / SUPERSEDED / NOTE / CURRENT
+        using the structural amendment-version markers in the source XML. The
+        default flattened `full_text` is unchanged.
     """
     from lawvm.finland.grafter import get_corpus
     from lawvm.finland.consolidated_artifacts import build_consolidated_main_locator
@@ -302,6 +499,12 @@ def build_oracle_text_bundle(
                 "hcontainer_count": len(hcontainers),
             })
 
+    temporal_spans: List[Dict[str, Any]] = []
+    section_has_temporal_markers = False
+    if temporal_labels:
+        temporal_spans = build_temporal_spans(section_el)
+        section_has_temporal_markers = _section_has_temporal_markers(temporal_spans)
+
     return {
         "statute_id": statute_id,
         "locator": locator,
@@ -313,8 +516,32 @@ def build_oracle_text_bundle(
         "subsection_count": len(section_el.findall(".//{*}subsection")),
         "total_section_count": total_section_count,
         "subsections": subsections,
+        "temporal_spans": temporal_spans,
+        "section_has_temporal_markers": section_has_temporal_markers,
         **coverage_fields,
     }
+
+
+def _format_temporal_span(span: Dict[str, Any]) -> List[str]:
+    """Render one temporal span as labeled, indented lines."""
+    label = span.get("label", "")
+    version = span.get("version") or ""
+    enters = span.get("enters_force_date")
+    text = span.get("text", "")
+
+    if label == "IN_FORCE":
+        header = f"[IN FORCE{f' — {version}' if version else ''}]"
+    elif label == "ENTERS_FORCE":
+        date_part = f" {enters}" if enters else ""
+        header = f"[ENTERS FORCE{date_part}{f' — {version}' if version else ''}]"
+    elif label == "SUPERSEDED":
+        header = "[SUPERSEDED (aiempi sanamuoto)]"
+    elif label == "NOTE":
+        header = "[NOTE (editorial)]"
+    else:  # CURRENT
+        header = "[CURRENT]"
+
+    return [f"  {header}", f"    {text}"]
 
 
 def _format_text(bundle: Dict[str, Any]) -> str:
@@ -347,6 +574,19 @@ def _format_text(bundle: Dict[str, Any]) -> str:
     lines.append("Full text:")
     lines.append(f"  {bundle.get('full_text', '')}")
 
+    temporal_spans = bundle.get("temporal_spans") or []
+    if temporal_spans:
+        lines.append("")
+        if bundle.get("section_has_temporal_markers"):
+            lines.append("Temporal breakdown (structural amendment-version markers):")
+        else:
+            lines.append(
+                "Temporal breakdown (no amendment-version markers in this section "
+                "— all text is current):"
+            )
+        for span in temporal_spans:
+            lines.extend(_format_temporal_span(span))
+
     for ss in bundle.get("subsections", []):
         lines.append(f"\nSubsection {ss['index']} ({ss['text_length']} chars):")
         lines.append(f"  {ss['text']}")
@@ -362,6 +602,7 @@ def main(args: Any) -> None:
         section_filter=getattr(args, "section", "") or "",
         at_amendment=getattr(args, "at_amendment", "") or "",
         show_subsections=getattr(args, "subsections", False),
+        temporal_labels=getattr(args, "temporal_labels", False),
     )
     if getattr(args, "json", False):
         print(json.dumps(bundle, ensure_ascii=False, indent=2, default=str))

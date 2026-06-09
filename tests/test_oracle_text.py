@@ -10,8 +10,11 @@ from lawvm.tools.oracle_text import (
     _el_to_text,
     _find_nearby_sections,
     _find_section_el,
+    _format_temporal_span,
     _num_text_to_canonical_selector,
+    _section_has_temporal_markers,
     _STALE_SNAPSHOT_YEARS,
+    build_temporal_spans,
 )
 
 
@@ -506,3 +509,163 @@ def test_coverage_caveat_absent_when_at_amendment_used(capsys, monkeypatch) -> N
 
     captured = capsys.readouterr()
     assert "note: consolidated snapshot" not in captured.err
+
+
+# ---------------------------------------------------------------------------
+# --temporal-labels: structural in-force / superseded / future labeling
+# ---------------------------------------------------------------------------
+#
+# Fixture mirrors the real 2011/805 §3:1 / §3:9 structure: a version-pinned
+# subsection, an editorial noteAuthorial with "tulee voimaan <date>. Aiempi
+# sanamuoto kuuluu:", a bare prior-wording subsection, a note that ADDS a
+# subsection (no "Aiempi sanamuoto"), and a plain in-force subsection.
+_FIN_NS = "http://data.finlex.fi/schema/finlex"
+
+_TEMPORAL_SECTION_XML = (
+    """<section xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" """
+    f'''xmlns:finlex="{_FIN_NS}" eId="chp_3__sec_1">
+      <num>1 §</num>
+      <heading>Otsikko</heading>
+      <subsection eId="s1v20260269" finlex:originalVersion="@20260269" finlex:originalVersionLabel="17.4.2026/269">
+        <content><p>AMENDED-MOM1</p></content>
+      </subsection>
+      <hcontainer eId="note_2" finlex:outline="huomautus" name="noteAuthorial">
+        <content><p>L:lla 269/2026 muutettu 1 momentti tulee voimaan 1.6.2026. Aiempi sanamuoto kuuluu:</p></content>
+      </hcontainer>
+      <subsection eId="s1">
+        <content><p>OLD-MOM1</p></content>
+      </subsection>
+      <hcontainer eId="note_3" finlex:outline="huomautus" name="noteAuthorial">
+        <content><p>L:lla 269/2026 lisätty 2 momentti tulee voimaan 1.6.2026.</p></content>
+      </hcontainer>
+      <subsection eId="s3">
+        <content><p>PLAIN-MOM3</p></content>
+      </subsection>
+    </section>'''
+).encode("utf-8")
+
+
+def _temporal_section():
+    return etree.fromstring(_TEMPORAL_SECTION_XML)
+
+
+def test_temporal_spans_label_sequence_when_amendment_in_force() -> None:
+    """With today AFTER the 'tulee voimaan' date, the versioned span is IN_FORCE."""
+    sec = _temporal_section()
+    spans = build_temporal_spans(sec, today=datetime.date(2026, 7, 1))
+    labels = [s["label"] for s in spans]
+    assert labels == ["IN_FORCE", "NOTE", "SUPERSEDED", "NOTE", "CURRENT"]
+
+
+def test_temporal_spans_superseded_text_is_the_prior_wording() -> None:
+    sec = _temporal_section()
+    spans = build_temporal_spans(sec, today=datetime.date(2026, 7, 1))
+    superseded = [s for s in spans if s["label"] == "SUPERSEDED"]
+    assert len(superseded) == 1
+    assert "OLD-MOM1" in superseded[0]["text"]
+    # The amended (new) wording must be the IN_FORCE span, not superseded.
+    in_force = [s for s in spans if s["label"] == "IN_FORCE"][0]
+    assert "AMENDED-MOM1" in in_force["text"]
+    assert in_force["version"] == "17.4.2026/269"
+
+
+def test_temporal_spans_future_amendment_is_enters_force() -> None:
+    """With today BEFORE the 'tulee voimaan' date, the versioned span is ENTERS_FORCE."""
+    sec = _temporal_section()
+    spans = build_temporal_spans(sec, today=datetime.date(2026, 5, 1))
+    labels = [s["label"] for s in spans]
+    assert labels == ["ENTERS_FORCE", "NOTE", "SUPERSEDED", "NOTE", "CURRENT"]
+    enters = [s for s in spans if s["label"] == "ENTERS_FORCE"][0]
+    assert enters["enters_force_date"] == "2026-06-01"
+
+
+def test_temporal_spans_added_momentti_has_no_superseded_text() -> None:
+    """A 'lisätty N momentti' note (no 'Aiempi sanamuoto') must NOT mark the
+    following plain subsection as SUPERSEDED."""
+    sec = _temporal_section()
+    spans = build_temporal_spans(sec, today=datetime.date(2026, 7, 1))
+    plain = [s for s in spans if "PLAIN-MOM3" in s["text"]]
+    assert len(plain) == 1
+    assert plain[0]["label"] == "CURRENT"
+
+
+def test_temporal_spans_section_without_markers_is_all_current() -> None:
+    """A vanilla section with no version attrs / notes yields only CURRENT spans
+    and reports no temporal markers (so the renderer prints the 'all current' note)."""
+    sec = etree.fromstring(
+        b"""<section xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" eId="s">
+          <num>5 \xc2\xa7</num><heading>H</heading>
+          <subsection><content><p>plain one</p></content></subsection>
+          <subsection><content><p>plain two</p></content></subsection>
+        </section>"""
+    )
+    spans = build_temporal_spans(sec, today=datetime.date(2026, 7, 1))
+    assert [s["label"] for s in spans] == ["CURRENT", "CURRENT"]
+    assert _section_has_temporal_markers(spans) is False
+
+
+def test_section_has_temporal_markers_true_when_versioned() -> None:
+    sec = _temporal_section()
+    spans = build_temporal_spans(sec, today=datetime.date(2026, 7, 1))
+    assert _section_has_temporal_markers(spans) is True
+
+
+def test_format_temporal_span_headers() -> None:
+    in_force = _format_temporal_span(
+        {"label": "IN_FORCE", "text": "T", "version": "17.4.2026/269", "enters_force_date": None}
+    )
+    assert in_force[0] == "  [IN FORCE — 17.4.2026/269]"
+    enters = _format_temporal_span(
+        {"label": "ENTERS_FORCE", "text": "T", "version": "x", "enters_force_date": "2026-06-01"}
+    )
+    assert enters[0] == "  [ENTERS FORCE 2026-06-01 — x]"
+    superseded = _format_temporal_span(
+        {"label": "SUPERSEDED", "text": "T", "version": "", "enters_force_date": None}
+    )
+    assert superseded[0] == "  [SUPERSEDED (aiempi sanamuoto)]"
+
+
+def test_temporal_labels_default_off_leaves_full_text_block_unchanged() -> None:
+    """Without temporal_spans in the bundle, _format_text must not emit a
+    'Temporal breakdown' block (default output unchanged)."""
+    from lawvm.tools.oracle_text import _format_text
+    bundle = {
+        "statute_id": "2011/805",
+        "locator": "loc",
+        "at_amendment": "",
+        "section_filter": "chp_3__sec_1",
+        "found": True,
+        "full_text": "some flat text",
+        "full_text_length": 14,
+        "subsection_count": 2,
+        "total_section_count": 30,
+        "subsections": [],
+        "temporal_spans": [],
+    }
+    out = _format_text(bundle)
+    assert "Temporal breakdown" not in out
+    assert "some flat text" in out
+
+
+def test_temporal_labels_render_block_when_spans_present() -> None:
+    from lawvm.tools.oracle_text import _format_text
+    sec = _temporal_section()
+    spans = build_temporal_spans(sec, today=datetime.date(2026, 7, 1))
+    bundle = {
+        "statute_id": "2011/805",
+        "locator": "loc",
+        "at_amendment": "",
+        "section_filter": "chp_3__sec_1",
+        "found": True,
+        "full_text": "flat",
+        "full_text_length": 4,
+        "subsection_count": 3,
+        "total_section_count": 30,
+        "subsections": [],
+        "temporal_spans": spans,
+        "section_has_temporal_markers": True,
+    }
+    out = _format_text(bundle)
+    assert "Temporal breakdown (structural amendment-version markers):" in out
+    assert "[IN FORCE — 17.4.2026/269]" in out
+    assert "[SUPERSEDED (aiempi sanamuoto)]" in out

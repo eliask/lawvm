@@ -749,6 +749,17 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="show per-subsection text breakdown",
     )
     oracle_text_p.add_argument(
+        "--temporal-labels",
+        dest="temporal_labels",
+        action="store_true",
+        help=(
+            "label each span of the section as [IN FORCE] / [ENTERS FORCE <date>] / "
+            "[SUPERSEDED (aiempi sanamuoto)] / [NOTE] using the structural "
+            "amendment-version markers in the consolidated XML. The default "
+            "flattened 'Full text' output is unchanged."
+        ),
+    )
+    oracle_text_p.add_argument(
         "--json",
         action="store_true",
         help="emit JSON",
