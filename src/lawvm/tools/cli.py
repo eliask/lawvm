@@ -3505,7 +3505,10 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
             "Divergence is the signal and is never silently resolved."
         ),
     )
-    reconcile_p.add_argument("statute_id", help="statute ID, e.g. 2011/805")
+    reconcile_p.add_argument(
+        "statute_id", nargs="?", default="",
+        help="statute ID, e.g. 2011/805 (omit with --sweep)",
+    )
     reconcile_p.add_argument(
         "selector", nargs="?", default="",
         help="provision selector, e.g. '§3:1'; omit to scan the whole statute",
@@ -3523,6 +3526,43 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="pin the oracle consolidated version to this amendment",
     )
     reconcile_p.add_argument("--json", action="store_true", help="emit JSON")
+    # --- corpus-wide sweep mode (the self-audit) ---
+    reconcile_p.add_argument(
+        "--sweep", action="store_true",
+        help="corpus-wide replay-L1 vs oracle-L1 self-audit; writes a ranked report",
+    )
+    reconcile_p.add_argument(
+        "--sample", type=int, metavar="N",
+        help="(--sweep) reconcile the top-N statutes by amendment count",
+    )
+    reconcile_p.add_argument(
+        "--all", action="store_true",
+        help="(--sweep) reconcile the full corpus (slow; explicit opt-in)",
+    )
+    reconcile_p.add_argument(
+        "--min-amendments", dest="min_amendments", type=int, default=1, metavar="N",
+        help="(--sweep) only statutes with >= N amendments (default: 1)",
+    )
+    reconcile_p.add_argument(
+        "--max-sections", dest="max_sections", type=int, metavar="N",
+        help="(--sweep) cap sections reconciled per statute (debug)",
+    )
+    reconcile_p.add_argument(
+        "--statute", action="append", default=[], metavar="ID",
+        help="(--sweep) reconcile these explicit statute IDs (repeatable)",
+    )
+    reconcile_p.add_argument(
+        "--label", dest="label", metavar="LABEL",
+        help="(--sweep) report label (default: sweep_<as-of>)",
+    )
+    reconcile_p.add_argument(
+        "--out-dir", dest="out_dir", metavar="DIR", default="reports",
+        help="(--sweep) report output directory (default: reports)",
+    )
+    reconcile_p.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="(--sweep) per-statute progress to stderr",
+    )
 
     # --- provenance / trace (wording -> amendment -> HE/preparatory chain) ---
     for command_name, command_help in (
@@ -10746,9 +10786,20 @@ def main() -> None:
         read_main(args)
 
     elif args.command == "reconcile":
-        from lawvm.tools.reconcile import main as reconcile_main
+        if getattr(args, "sweep", False):
+            from lawvm.tools.reconcile_sweep import main as reconcile_sweep_main
 
-        reconcile_main(args)
+            reconcile_sweep_main(args)
+        else:
+            if not getattr(args, "statute_id", ""):
+                print(
+                    "reconcile: a statute_id is required (or use --sweep)",
+                    file=sys.stderr,
+                )
+                raise SystemExit(2)
+            from lawvm.tools.reconcile import main as reconcile_main
+
+            reconcile_main(args)
 
     elif args.command in ("provenance", "trace"):
         from lawvm.tools.provenance import main as provenance_main
