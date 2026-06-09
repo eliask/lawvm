@@ -50,6 +50,13 @@ _EXCEPTION_COMPAT_FILES = frozenset(
         "finland/johtolause/lift_to_surface.py",
         # surface_model.py contains a docstring explaining the compat note — not a read.
         "finland/johtolause/surface_model.py",
+        # NOT a note read: `_could_match_source_parent_schedule_entry_insert`
+        # does `"exception" in text.lower()` on RAW extracted amendment text as
+        # a cheap necessary-condition pre-filter before an expensive regex. The
+        # blunt `"exception" in` guard pattern can't tell this raw-text word
+        # check apart from a parser-local is_exception note read; there is no
+        # typed field to migrate to here (the input is a free-text instruction).
+        "uk_legislation/source_parent_payloads.py",
     }
 )
 
