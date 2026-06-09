@@ -262,7 +262,8 @@ _UNQUOTED_ANCHOR_QUOTED_SUBSTITUTION_RE = re.compile(
 _UNQUOTED_ANCHOR_STRUCTURAL_PREFIX_RE = re.compile(
     r"^(?:articles?|chapters?|paragraphs?|parts?|regulations?|rules?|"
     r"schedules?|sections?|sub-?paragraphs?|subsections?|"
-    r"the\s+(?:amount\s+specified|opening\s+words|words?\s+(?:after|before|from|in)\b))",
+    r"the\s+(?:amount\s+specified|opening\s+words|"
+    r"words?\s+(?:after|before|following|from|in)\b))",
     re.I,
 )
 
@@ -5290,8 +5291,12 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[UKTextRewriteFragmen
 
     text = normalize_uk_parser_text(text)
     normalized_lower_text = text.lower()
-    if "for " in normalized_lower_text or (
-        "replace" in normalized_lower_text and " with " in normalized_lower_text
+    if (
+        "for " in normalized_lower_text
+        or ("replace" in normalized_lower_text and " with " in normalized_lower_text)
+        # "… become, respectively, …" substitutions carry no "for"/"replace …
+        # with" cue but are recognized inside _parse_leading_substitutions.
+        or "become" in normalized_lower_text
     ):
         _parse_leading_substitutions(text, subs)
 
