@@ -93,7 +93,7 @@ def test_qwen_local_backend_smoke():
         value_dict = dict(result.value)
         assert "resolved_statute_id" in value_dict
         assert "citation_form" in value_dict
-        assert "/" in value_dict.get("resolved_statute_id", ""), (
+        assert "/" in value_dict.get("resolved_statute_id", ""), (  # ty:ignore[unsupported-operator]
             "resolved_statute_id should be NNNN/YYYY format"
         )
     else:

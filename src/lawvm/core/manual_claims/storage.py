@@ -61,7 +61,7 @@ def _to_json_value(v: object) -> object:
     if isinstance(v, (tuple, list)):
         return [_to_json_value(x) for x in v]
     if hasattr(v, "__dataclass_fields__"):
-        return {k: _to_json_value(getattr(v, k)) for k in v.__dataclass_fields__}
+        return {k: _to_json_value(getattr(v, k)) for k in v.__dataclass_fields__}  # ty:ignore[not-iterable]
     raise TypeError(f"Cannot serialize {type(v).__name__!r}")
 
 
@@ -148,7 +148,7 @@ def _dict_to_claim(d: Dict) -> ManualCompilationClaim:
         cited_source_locator=_parse_source_locator(d["cited_source_locator"]),
         cited_source_span=(d["cited_source_span"][0], d["cited_source_span"][1]),
         cited_source_hash=d["cited_source_hash"],
-        dependency_fingerprint=_parse_tuple_pairs(d["dependency_fingerprint"]),
+        dependency_fingerprint=_parse_tuple_pairs(d["dependency_fingerprint"]),  # ty:ignore[invalid-argument-type]
         valid_at=valid_at,
         supersedes=tuple(d.get("supersedes", [])),
         supersession_delta_reason=d.get("supersession_delta_reason"),

@@ -26,7 +26,6 @@ from typing import Any
 
 from lawvm.core.locator import (
     HierarchicalLocator,
-    SectionResolver,
     register_section_resolver,
 )
 

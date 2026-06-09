@@ -242,7 +242,7 @@ def _pathology_sequence(
     ),
 ) -> tuple[SourcePathologyProjection | SourcePathology | Mapping[str, Any], ...]:
     if isinstance(value, SourcePathologyProjection | SourcePathology) or isinstance(value, Mapping):
-        return (value,)
+        return (value,)  # ty:ignore[invalid-return-type]
     return tuple(value)
 
 

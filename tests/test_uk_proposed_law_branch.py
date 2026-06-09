@@ -49,9 +49,9 @@ def test_uk_proposed_law_branch_payload_is_graph_only_and_non_enacted() -> None:
     row = payload.impact_projection.rows[0]
     assert row.current_text == "Current text."
     assert row.branch_text == "Proposed section."
-    assert exported["graph_counts"]["branches"] == 1
-    assert exported["graph_counts"]["branch_edges"] == 1
-    assert exported["graph_counts"]["branch_lifecycle_events"] == 1
+    assert exported["graph_counts"]["branches"] == 1  # ty:ignore[not-subscriptable]
+    assert exported["graph_counts"]["branch_edges"] == 1  # ty:ignore[not-subscriptable]
+    assert exported["graph_counts"]["branch_lifecycle_events"] == 1  # ty:ignore[not-subscriptable]
 
 
 def test_uk_proposed_law_branch_payload_can_record_failed_lifecycle() -> None:
@@ -114,8 +114,8 @@ def test_uk_proposed_law_branch_payload_imports_structured_claim_dict() -> None:
     exported = payload.to_dict()
     assert exported["default_enacted_operation_ids"] == ()
     assert exported["branch_operation_ids"] == ("uk-structured-op-1",)
-    assert exported["branch_edges"][0]["edge_kind"] == "would_replace"
-    assert exported["impact_projection"]["rows"][0]["branch_text"] == (
+    assert exported["branch_edges"][0]["edge_kind"] == "would_replace"  # ty:ignore[not-subscriptable]
+    assert exported["impact_projection"]["rows"][0]["branch_text"] == (  # ty:ignore[not-subscriptable]
         "Structured proposed section text."
     )
 
@@ -149,17 +149,17 @@ def test_uk_branch_import_tool_reads_structured_json(tmp_path) -> None:
     payload = build_uk_branch_import_payload(str(path))
 
     assert payload["default_enacted_operation_ids"] == ()
-    assert payload["branch_edges"][0]["source_unit_id"] == "clause:5"
-    assert payload["graph_counts"]["branch_edges"] == 1
+    assert payload["branch_edges"][0]["source_unit_id"] == "clause:5"  # ty:ignore[not-subscriptable]
+    assert payload["graph_counts"]["branch_edges"] == 1  # ty:ignore[not-subscriptable]
 
 
 def test_uk_branch_demo_payload_uses_uk_ids_and_proposal_layer() -> None:
     payload = build_uk_branch_demo_payload()
 
-    assert payload["branch"]["branch_id"] == "proposal:uk:uk-bill-2026-example-bill"
-    assert payload["branch"]["authority_layer"] == "proposal"
-    assert payload["branch_edges"][0]["target_statute_id"] == "ukpga/1978/30"
-    assert payload["impact_projection"]["rows"][0]["source_unit_id"] == "clause:1"
+    assert payload["branch"]["branch_id"] == "proposal:uk:uk-bill-2026-example-bill"  # ty:ignore[not-subscriptable]
+    assert payload["branch"]["authority_layer"] == "proposal"  # ty:ignore[not-subscriptable]
+    assert payload["branch_edges"][0]["target_statute_id"] == "ukpga/1978/30"  # ty:ignore[not-subscriptable]
+    assert payload["impact_projection"]["rows"][0]["source_unit_id"] == "clause:1"  # ty:ignore[not-subscriptable]
 
 
 def test_uk_branch_demo_main_outputs_json(capsys) -> None:

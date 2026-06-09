@@ -3461,15 +3461,15 @@ def build_evidence_bundle(
                 if _amendment_id in _seen_amendment_ids:
                     continue
                 _seen_amendment_ids.add(_amendment_id)
-                _kind = str(_ar_raw.get("kind") or "")
+                _kind = str(_ar_raw.get("kind") or "")  # ty:ignore[invalid-argument-type]
                 if _kind not in ("pending_decree", "pending_condition"):
                     continue
                 _contingent_rules.append(
                     _ActivationRule(
-                        kind=_kind,  # type: ignore[arg-type]
-                        effective_date=str(_ar_raw.get("effective_date") or ""),
-                        condition_ref=str(_ar_raw.get("condition_ref") or ""),
-                        raw_text=str(_ar_raw.get("raw_text") or ""),
+                        kind=_kind,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                        effective_date=str(_ar_raw.get("effective_date") or ""),  # ty:ignore[invalid-argument-type]
+                        condition_ref=str(_ar_raw.get("condition_ref") or ""),  # ty:ignore[invalid-argument-type]
+                        raw_text=str(_ar_raw.get("raw_text") or ""),  # ty:ignore[invalid-argument-type]
                     )
                 )
 
@@ -3479,7 +3479,7 @@ def build_evidence_bundle(
                 _cert_result = _produce_certs(
                     statute_id=statute_id,
                     amendment_id="|".join(sorted(_seen_amendment_ids)),
-                    activation_rules=_contingent_rules,
+                    activation_rules=_contingent_rules,  # ty:ignore[invalid-argument-type]
                     amendment_children=_statute_amendment_children,
                     as_of=_dt.date.today(),
                 )

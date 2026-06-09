@@ -75,7 +75,6 @@ class TestExportParquet:
     def test_try_write_parquet_returns_false_without_pyarrow(self, tmp_path: Path) -> None:
         import builtins
 
-        import pytest
 
         from lawvm.tools.export_parquet import _try_write_parquet
 
@@ -89,7 +88,7 @@ class TestExportParquet:
                 raise ImportError("simulated: pyarrow not installed")
             return real_import(name, *args, **kwargs)
 
-        builtins.__import__ = _no_pyarrow
+        builtins.__import__ = _no_pyarrow  # ty:ignore[invalid-assignment]
         try:
             result = _try_write_parquet(tmp_path / "test.parquet", [{"x": 1}])
         finally:

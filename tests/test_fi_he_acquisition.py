@@ -17,10 +17,9 @@ from __future__ import annotations
 
 import hashlib
 import io
-import json
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 import zipfile
 
 import pytest
@@ -29,8 +28,6 @@ from lxml import etree
 from lawvm.finland.he_acquisition import (
     HEAcquisitionFailure,
     HEAcquisitionMetadata,
-    HEIngestRun,
-    HEMetadataDisagreement,
     HEStructuralTier,
     _build_he_groups,
     _build_he_lang_map,
@@ -588,8 +585,8 @@ class TestRealCorpus:
                     if not chunk:
                         break
                     h.update(chunk)
-            TestRealCorpus._sha256_cached = h.hexdigest()  # type: ignore[attr-defined]
-        return TestRealCorpus._sha256_cached  # type: ignore[attr-defined]
+            TestRealCorpus._sha256_cached = h.hexdigest()  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        return TestRealCorpus._sha256_cached  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
 
     def test_he_98_1996_structured(self) -> None:
         """HE 98/1996 is a structured full-AKN HE (35KB main.xml)."""
@@ -771,7 +768,6 @@ def test_he_locator_convention() -> None:
 
 def test_cli_acquire_fi_proposals_subcommand_exists() -> None:
     """Verify CLI parser recognizes 'acquire-fi-proposals' subcommand."""
-    import argparse
 
     from lawvm.tools.cli import _build_parser
 

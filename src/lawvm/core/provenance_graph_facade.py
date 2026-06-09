@@ -35,7 +35,6 @@ from lawvm.core.provenance_graph import (
     GraphBuilder,
     GraphEdge,
     Interval,
-    Producer,
     ProvenanceAssertion,
     ProvenanceGraph,
     _sha256,
@@ -250,7 +249,7 @@ def _assertion_to_finding(assertion: ProvenanceAssertion) -> "Finding | None":
 
     return Finding(
         kind=str(original_kind),
-        role=str(original_role),  # type: ignore[arg-type]
+        role=str(original_role),  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
         stage=str(original_stage),
         detail=original_detail if isinstance(original_detail, dict) else {},
         blocking=bool(original_blocking),

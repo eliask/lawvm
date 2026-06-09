@@ -378,7 +378,7 @@ def test_uk_mutable_node_normalizes_replaced_tuple_children_for_insert() -> None
         label="1",
         children=(
             UKMutableNode(kind=IRNodeKind.SUBSECTION, label="1", text="Existing text."),
-        ),
+        ),  # ty:ignore[invalid-argument-type]
     )
     new_node = UKMutableNode(
         kind=IRNodeKind.SUBSECTION,

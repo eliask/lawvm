@@ -162,7 +162,7 @@ class TestTriggerCoverageCertificateConstruction:
             as_of=_TODAY,
         )
         with pytest.raises(AttributeError):
-            cert.coverage_status = CoverageStatus.SATISFIED  # type: ignore[misc]
+            cert.coverage_status = CoverageStatus.SATISFIED  # type: ignore[misc]  # ty:ignore[invalid-assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -384,7 +384,7 @@ class TestTriggerCoverageSearchFailure:
             as_of=_TODAY,
         )
         with pytest.raises(AttributeError):
-            failure.failure_kind = "other"  # type: ignore[misc]
+            failure.failure_kind = "other"  # type: ignore[misc]  # ty:ignore[invalid-assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -550,7 +550,7 @@ class TestProduceCertificatesForActivationRules:
         result = produce_certificates_for_activation_rules(
             statute_id=_STATUTE_ID,
             amendment_id=_AMENDMENT_ID,
-            activation_rules=rules,
+            activation_rules=rules,  # ty:ignore[invalid-argument-type]
             amendment_children=("2025/200",),
             as_of=_TODAY,
         )
@@ -589,7 +589,7 @@ class TestProduceCertificatesForActivationRules:
         result = produce_certificates_for_activation_rules(
             statute_id=_STATUTE_ID,
             amendment_id=_AMENDMENT_ID,
-            activation_rules=rules,
+            activation_rules=rules,  # ty:ignore[invalid-argument-type]
             amendment_children=("2025/50", "2025/51"),
             as_of=_TODAY,
         )
@@ -609,7 +609,7 @@ class TestProduceCertificatesForActivationRules:
         result = produce_certificates_for_activation_rules(
             statute_id=_STATUTE_ID,
             amendment_id=_AMENDMENT_ID,
-            activation_rules=rules,
+            activation_rules=rules,  # ty:ignore[invalid-argument-type]
             amendment_children=("2025/50",),
             as_of=_TODAY,
         )
@@ -627,7 +627,7 @@ class TestProduceCertificatesForActivationRules:
         result = produce_certificates_for_activation_rules(
             statute_id=_STATUTE_ID,
             amendment_id=_AMENDMENT_ID,
-            activation_rules=rules,
+            activation_rules=rules,  # ty:ignore[invalid-argument-type]
             amendment_children=(),
             as_of=_TODAY,
         )
@@ -647,7 +647,7 @@ class TestProduceCertificatesForActivationRules:
         result = produce_certificates_for_activation_rules(
             statute_id=_STATUTE_ID,
             amendment_id=_AMENDMENT_ID,
-            activation_rules=rules,
+            activation_rules=rules,  # ty:ignore[invalid-argument-type]
             amendment_children=("2025/50",),
             as_of=_TODAY,
         )
@@ -663,7 +663,7 @@ class TestProduceCertificatesForActivationRules:
         result = produce_certificates_for_activation_rules(
             statute_id=_STATUTE_ID,
             amendment_id=_AMENDMENT_ID,
-            activation_rules=rules,
+            activation_rules=rules,  # ty:ignore[invalid-argument-type]
             amendment_children=("2025/50",),
             as_of=_TODAY,
         )
@@ -683,7 +683,7 @@ class TestStrictModeOnBulkResult:
         result = produce_certificates_for_activation_rules(
             statute_id=_STATUTE_ID,
             amendment_id=_AMENDMENT_ID,
-            activation_rules=rules,
+            activation_rules=rules,  # ty:ignore[invalid-argument-type]
             amendment_children=("2025/50",),
             as_of=_TODAY,
         )
@@ -706,7 +706,7 @@ class TestStrictModeOnBulkResult:
         result = produce_certificates_for_activation_rules(
             statute_id=_STATUTE_ID,
             amendment_id=_AMENDMENT_ID,
-            activation_rules=rules,
+            activation_rules=rules,  # ty:ignore[invalid-argument-type]
             amendment_children=(),
             as_of=_TODAY,
         )

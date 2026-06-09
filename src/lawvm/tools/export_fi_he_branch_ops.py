@@ -44,7 +44,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from lawvm.finland.he_branch_parser import (
-    HEParsedBranch,
     HEParseStatus,
     branch_to_parquet_rows,
     parse_he_branch,
@@ -75,7 +74,7 @@ class HEBranchProjectionRun:
     not_applicable_count: int = 0
     pdf_wrapper_skipped: int = 0
     elapsed_sec: float = 0.0
-    failures: List[Dict[str, Any]] = None  # type: ignore[assignment]
+    failures: List[Dict[str, Any]] = None  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
 
     def __post_init__(self) -> None:
         if self.failures is None:
@@ -122,8 +121,8 @@ def project_he_branch_ops(
     HEBranchProjectionRun with provenance + counts.
     """
     try:
-        import pyarrow as pa  # type: ignore[import]
-        import pyarrow.parquet as pq  # type: ignore[import]
+        import pyarrow as pa  # type: ignore[import]  # noqa: F401
+        import pyarrow.parquet as pq  # type: ignore[import]  # noqa: F401
     except ImportError:
         print(
             "ERROR: pyarrow not installed; run: uv pip install 'lawvm[analytics]'",
@@ -218,7 +217,7 @@ def project_he_branch_ops(
             blob = farchive.get(loc)
             span = farchive.resolve(loc)
             if span is not None and getattr(span, "last_metadata", None):
-                metadata = dict(span.last_metadata) or {}
+                metadata = dict(span.last_metadata) or {}  # ty:ignore[no-matching-overload]
         except Exception as exc:
             run.failures.append({
                 "loc": loc,
@@ -436,6 +435,6 @@ def main(args: object) -> None:
     print(f"  PDF_WRAPPER skip:  {run.pdf_wrapper_skipped:,}", file=sys.stderr)
     print(f"  Elapsed:           {run.elapsed_sec:.1f}s", file=sys.stderr)
     if run.failures:
-        print(f"  Failures (first 5):", file=sys.stderr)
+        print("  Failures (first 5):", file=sys.stderr)
         for f in run.failures[:5]:
             print(f"    {f}", file=sys.stderr)

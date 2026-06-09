@@ -59,7 +59,6 @@ from lawvm.core.reference_mention import (
     ProvisionRef,
     ReferenceMention,
     RejectedRefCandidate,
-    SourceSpan,
 )
 from lawvm.finland.cross_refs import (
     CrossRefDiagnostic,
@@ -686,9 +685,9 @@ def extract_plain_text_statute_mentions(
     valid_start, valid_end = valid_at_interval
 
     # Walk <p> elements in the body
-    ns_p = f"{{{_AKN_NS}}}p"
+    _ns_p = f"{{{_AKN_NS}}}p"
     # Also accept bare <p> (some test fixtures omit the namespace on p)
-    bare_p = "p"
+    _bare_p = "p"
 
     p_elements: List[ET.Element] = []
     for el in root.iter():

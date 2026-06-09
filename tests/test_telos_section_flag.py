@@ -38,7 +38,6 @@ Additional cases:
 """
 from __future__ import annotations
 
-from typing import Optional
 
 import pytest
 
@@ -46,7 +45,6 @@ from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.telos_section_flag import (
     BorderlineTelosCandidate,
-    TelosExtractionResult,
     classify_telos_section,
 )
 
@@ -548,7 +546,7 @@ class TestSchemaStability:
         result = classify_telos_section(section, "1", "2024/schema6")
         assert result.borderline_candidate is not None
         with pytest.raises((AttributeError, TypeError)):
-            result.borderline_candidate.rule_id = "mutated"  # type: ignore[misc]
+            result.borderline_candidate.rule_id = "mutated"  # type: ignore[misc]  # ty:ignore[invalid-assignment]
 
     def test_result_is_frozen(self) -> None:
         """TelosExtractionResult is frozen (immutable)."""
@@ -557,7 +555,7 @@ class TestSchemaStability:
         )
         result = classify_telos_section(section, "1", "2024/schema7")
         with pytest.raises((AttributeError, TypeError)):
-            result.is_purpose_section = False  # type: ignore[misc]
+            result.is_purpose_section = False  # type: ignore[misc]  # ty:ignore[invalid-assignment]
 
 
 # ---------------------------------------------------------------------------

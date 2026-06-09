@@ -8,8 +8,7 @@ Covers:
 """
 from __future__ import annotations
 
-import hashlib
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 import pytest
 
@@ -199,7 +198,7 @@ def test_build_compile_metadata_from_graph_profile_policy() -> None:
         build_timestamp=datetime(2026, 6, 4, 0, 0, 0, tzinfo=timezone.utc),
     )
 
-    assert meta.provenance_graph_hash == graph.snapshot_hash
+    assert meta.provenance_graph_hash == graph.snapshot_hash  # ty:ignore[unresolved-attribute]
     assert meta.strict_profile_fingerprint == compute_strict_profile_fingerprint(profile)
     assert meta.evidence_policy_fingerprint == registry.registry_hash
     assert meta.source_bundle_hash == "s" * 64

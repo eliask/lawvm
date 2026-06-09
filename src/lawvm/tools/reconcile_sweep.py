@@ -248,7 +248,7 @@ def _memoized_provision_replay():
             return cache[parent_id]
         return real(parent_id, *args, **kwargs)
 
-    grafter.replay_xml = _wrapped
+    grafter.replay_xml = _wrapped  # ty:ignore[invalid-assignment]
     try:
         yield
     finally:

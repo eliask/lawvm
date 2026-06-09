@@ -5,7 +5,6 @@ Covers:
 """
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -74,7 +73,7 @@ def test_duckdb_emit_includes_compile_metadata(tmp_path: Path) -> None:
     # Build a dict from column names
     con2 = duckdb.connect(out_db)
     col_names = [d[0] for d in con2.execute("DESCRIBE lawvm_meta").fetchall()]
-    row_dict = dict(zip(col_names, row))
+    row_dict = dict(zip(col_names, row, strict=True))
     con2.close()
 
     assert row_dict["provenance_graph_hash"] == "a" * 64
@@ -122,7 +121,7 @@ def test_duckdb_emit_with_default_compile_metadata(tmp_path: Path) -> None:
     assert len(rows) == 1
     col_names_con = duckdb.connect(out_db)
     col_names = [d[0] for d in col_names_con.execute("DESCRIBE lawvm_meta").fetchall()]
-    row_dict = dict(zip(col_names, rows[0]))
+    row_dict = dict(zip(col_names, rows[0], strict=True))
     col_names_con.close()
 
     assert row_dict["provenance_graph_hash"] == "a" * 64

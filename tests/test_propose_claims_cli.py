@@ -13,18 +13,15 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
-import pytest
 
 import lawvm.finland.claim_kinds  # noqa: F401
 
 from lawvm.core.manual_claims.primitive import ExtractionFrontierRow
 from lawvm.core.manual_claims.proposal_backend import (
     MockProposalBackend,
-    ProposedClaim,
 )
 from lawvm.core.provenance_graph import Producer
 from lawvm.core.provenance_graph_storage import GraphStore

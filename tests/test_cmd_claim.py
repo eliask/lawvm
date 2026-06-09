@@ -8,14 +8,11 @@ Covers:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
 
 import lawvm.finland.claim_kinds  # noqa: F401
 
-from lawvm.core.provenance_graph_storage import GraphStore, _deserialize_assertion
 
 
 def _make_assertion_dict(statute_id: str = "711/2022", resolved: str = "1234/2020") -> dict:
@@ -74,7 +71,7 @@ def _load_assertions(tmp_path: Path) -> list[dict]:
     ]
 
 
-def _propose_and_get_id(tmp_path: Path, d: dict = None) -> str:
+def _propose_and_get_id(tmp_path: Path, d: dict = None) -> str:  # ty:ignore[invalid-parameter-default]
     from lawvm.tools.cmd_claim import cmd_propose
     if d is None:
         d = _make_assertion_dict()

@@ -56,7 +56,6 @@ def build_default_compile_metadata(
         CompileMetadata,
         compute_strict_profile_fingerprint,
     )
-    from lawvm.core.evidence_policy import EvidencePolicyRegistry
     from lawvm.core.provenance_graph import attestation_kind_registry_hash
 
     # --- strict_profile ---
@@ -79,7 +78,7 @@ def build_default_compile_metadata(
     return CompileMetadata(
         provenance_graph_hash=provenance_graph_hash,
         strict_profile_fingerprint=compute_strict_profile_fingerprint(strict_profile),
-        evidence_policy_fingerprint=evidence_policy.registry_hash,
+        evidence_policy_fingerprint=evidence_policy.registry_hash,  # ty:ignore[unresolved-attribute]
         source_bundle_hash=source_bundle_hash,
         attestation_kind_registry_hash=attestation_kind_registry_hash(),
         build_id=build_id,

@@ -124,11 +124,11 @@ def census_1_2(citations: list, delegations: list) -> tuple[list, dict]:
         'total_statutes': len(rows),
         'statutes_with_child': len(has_child),
         'unexercised_clauses': unexercised_total,
-        'unexercised_pct': unexercised_total / total_clauses * 100 if total_clauses > 0 else 0.0,
+        'unexercised_pct': unexercised_total / total_clauses * 100 if total_clauses > 0 else 0.0,  # ty:ignore[division-by-zero]
         'mandatory_unexercised': sum(r['mandatory_unexercised'] for r in rows),
     }
     # Return only rows with unexercised clauses
-    return [r for r in rows if r['unexercised_clauses'] > 0], stats
+    return [r for r in rows if r['unexercised_clauses'] > 0], stats  # ty:ignore[unsupported-operator]
 
 
 # ---------------------------------------------------------------------------

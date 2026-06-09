@@ -50,7 +50,7 @@ def _reg_hash() -> str:
 def _make_producer(producer_id: str = "test.prod", producer_kind: str = "human") -> Producer:
     return Producer(
         producer_id=producer_id,
-        producer_kind=producer_kind,
+        producer_kind=producer_kind,  # ty:ignore[invalid-argument-type]
         public_key=None,
         metadata={},
     )

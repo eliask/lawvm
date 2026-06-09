@@ -3143,7 +3143,7 @@ def _get_score_witness_dict_rows(r: _BenchResult, label: str) -> list[dict[str, 
             "uk_applicability_mode": r.uk_applicability_mode,
             "uk_authority_mode": r.uk_authority_mode,
         })
-    return rows
+    return rows  # ty:ignore[invalid-return-type]
 
 
 def _run_bench_parallel_entries(

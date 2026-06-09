@@ -16,9 +16,7 @@ from __future__ import annotations
 import csv
 import io
 import json
-import sys
 from pathlib import Path
-from typing import List, Tuple
 
 import pytest
 
@@ -214,7 +212,7 @@ class TestFiProposalHistoryOutputFormats:
         reader = csv.DictReader(io.StringIO(out))
         rows = list(reader)
         assert len(rows) == 3
-        assert "he_id" in reader.fieldnames
+        assert "he_id" in reader.fieldnames  # ty:ignore[unsupported-operator]
 
 
 # ---------------------------------------------------------------------------

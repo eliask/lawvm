@@ -19,7 +19,7 @@ from typing import Any, Optional
 def _check_duckdb() -> bool:
     """Check if duckdb is importable."""
     try:
-        import duckdb  # noqa: F401  # ty: ignore[unresolved-import]
+        import duckdb  # noqa: F401
         return True
     except ImportError:
         return False
@@ -132,7 +132,7 @@ def run_sql(
         )
         sys.exit(1)
 
-    import duckdb  # ty: ignore[unresolved-import]
+    import duckdb
 
     dd = Path(data_dir)
     tables = _discover_tables(dd)

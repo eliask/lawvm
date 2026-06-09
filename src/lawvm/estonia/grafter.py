@@ -6118,7 +6118,7 @@ def _ee_global_generic_minister_plural_replace(
             key=len,
             reverse=True,
         ),
-    )
+    )  # ty:ignore[redundant-cast]
     shared_head_pattern = None
     if title_stems:
         stem_pattern = "|".join(_ee_surface_pattern(stem) for stem in title_stems)

@@ -68,7 +68,7 @@ def test_dump_parse_routes_uk_statute_id_to_farchive(monkeypatch, tmp_path, caps
             seen["closed"] = True
 
     fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive
+    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
     monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
 
     dump.main(
@@ -121,7 +121,7 @@ def test_dump_default_routes_uk_statute_id_to_farchive(monkeypatch, tmp_path, ca
             seen["closed"] = True
 
     fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive
+    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
     monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
 
     dump.main(
@@ -163,7 +163,7 @@ def test_source_dump_parse_routes_j_uk_to_farchive(monkeypatch, tmp_path) -> Non
             return None
 
     fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive
+    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
     monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
 
     bundle = source_dump.build_uk_source_dump(
@@ -197,7 +197,7 @@ def test_source_dump_uk_parse_uses_shared_roman_label_range(monkeypatch, tmp_pat
             return None
 
     fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive
+    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
     monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
 
     bundle = source_dump.build_uk_source_dump(
@@ -241,7 +241,7 @@ def test_source_dump_uk_parse_finds_metadata_matched_archived_leaf_without_direc
             return None
 
     fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive
+    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
     monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
 
     bundle = source_dump.build_uk_source_dump("ukpga/2002/30", db_path=db_path)
@@ -285,7 +285,7 @@ def test_source_dump_uk_parse_scans_archive_when_multiple_choice_has_no_links(
             return None
 
     fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive
+    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
     monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
 
     bundle = source_dump.build_uk_source_dump("ukpga/1955/18", db_path=db_path)
@@ -337,7 +337,7 @@ The link that you've followed could mean either of the following:
             seen["closed"] = True
 
     fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive
+    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
     monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
 
     dump.main(
@@ -398,7 +398,7 @@ The link that you've followed could mean either of the following:
             return None
 
     fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive
+    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
     monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
 
     with pytest.raises(SystemExit) as exc_info:
@@ -445,7 +445,7 @@ def test_source_dump_uk_parse_rejects_ambiguous_bare_multiple_choice_archive_row
             return None
 
     fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive
+    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
     monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
 
     with pytest.raises(SystemExit) as exc_info:
@@ -486,7 +486,7 @@ def test_source_dump_main_routes_j_uk_to_farchive(monkeypatch, tmp_path, capsys)
             seen["closed"] = True
 
     fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive
+    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
     monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
 
     source_dump.main(

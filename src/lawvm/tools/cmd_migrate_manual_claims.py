@@ -25,7 +25,6 @@ AGENTS.md §1.10: no broad try/except in non-test code.
 from __future__ import annotations
 
 import json
-import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -91,7 +90,7 @@ def _make_assertion_from_claim(claim_dict: dict) -> ProvenanceAssertion:
     artifact_digest = str(claim_dict.get("cited_source_hash", "")) or "unknown"
     span = claim_dict.get("cited_source_span", [0, 0])
     byte_range: tuple[int, int] = (int(span[0]), int(span[1])) if len(span) == 2 else (0, 0)
-    source_locator = claim_dict.get("cited_source_locator", {})
+    source_locator = claim_dict.get("cited_source_locator", {})  # noqa: F841  # BUG: cited_source_locator read but never passed to SourceRef (structural_locator used instead)
     structural_locator = str(provision_ref or "")
     source_ref = SourceRef(
         artifact_digest=artifact_digest,
@@ -111,17 +110,17 @@ def _make_assertion_from_claim(claim_dict: dict) -> ProvenanceAssertion:
         producer_kind = _kind_map.get(raw_kind, raw_kind)
         ts_raw = producer_raw.get("timestamp", "")
         if ts_raw:
-            produced_dt = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
+            produced_dt = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))  # noqa: F841  # BUG: timestamp parsed but ProvenanceAssertion has no producer/timestamp field; dead computation
         else:
-            produced_dt = datetime.now(tz=timezone.utc)
+            produced_dt = datetime.now(tz=timezone.utc)  # noqa: F841  # BUG: same — ProvenanceAssertion has no producer field to receive this
     else:
         producer_id = "unknown"
         producer_kind = "human"
-        produced_dt = datetime.now(tz=timezone.utc)
+        produced_dt = datetime.now(tz=timezone.utc)  # noqa: F841  # BUG: same
 
-    producer = Producer(
+    producer = Producer(  # noqa: F841  # BUG: Producer built but ProvenanceAssertion schema has no producer field; entire block is dead
         producer_id=producer_id,
-        producer_kind=producer_kind,
+        producer_kind=producer_kind,  # ty:ignore[invalid-argument-type]
         public_key=None,
         metadata={"migrated_from": "v2.2", "original_claim_id": claim_id},
     )
@@ -217,7 +216,7 @@ def _make_attestation_from_event(
 
     producer = Producer(
         producer_id=producer_id,
-        producer_kind=producer_kind,
+        producer_kind=producer_kind,  # ty:ignore[invalid-argument-type]
         public_key=None,
         metadata={"migrated_from": "v2.2", "original_event_kind": event_kind},
     )

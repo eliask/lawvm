@@ -207,8 +207,8 @@ def _source_carried_table_entry_paragraph_substitution(
             subparagraph_label = ""
             original = preimage
         else:
-            paragraph_label = _clean_num(para_match.group("paragraph"))
-            replacement_body = _strip_source_payload_label(para_match.group("replacement"), paragraph_label)
+            paragraph_label = _clean_num(para_match.group("paragraph"))  # ty:ignore[unresolved-attribute]
+            replacement_body = _strip_source_payload_label(para_match.group("replacement"), paragraph_label)  # ty:ignore[unresolved-attribute]
             if not paragraph_label or not replacement_body:
                 return None
             replacement = f"{paragraph_label}. {_parenthesize_flat_source_subparagraph_labels(replacement_body)}"

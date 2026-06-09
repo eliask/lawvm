@@ -24,6 +24,7 @@ from lawvm.core.provenance_graph import (
     Producer,
     ProvenanceAssertion,
     ProvenanceAttestation,
+    ProvenanceGraph,
     _sha256,
     assertion_canonical_payload,
     attestation_canonical_payload,
@@ -112,7 +113,6 @@ def _make_valid_attestation() -> ProvenanceAttestation:
 
 
 def _make_simple_graph() -> "tuple[ProvenanceGraph, ...]":
-    from lawvm.core.provenance_graph import ProvenanceGraph
 
     n1 = GraphNode(
         node_id="node_1",

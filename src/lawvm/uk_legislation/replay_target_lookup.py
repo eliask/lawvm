@@ -100,7 +100,7 @@ def _target_resolution_address_for_node(
         root_path = ()
         if root_kind.lower() != "body":
             root_path = ((root_kind, str(root.label or "")),)
-        found = _walk(root, root_path)
+        found = _walk(root, root_path)  # ty:ignore[invalid-argument-type]
         if found:
             return found
     return ""
@@ -408,7 +408,7 @@ class UKReplayTargetLookupMixin:
                                 else:
                                     per_node: list[UKCanonicalNodeMatch] = []
                                     uk_recursive_kind_match_all(
-                                        cast(IRNode, curr_node),
+                                        cast(IRNode, curr_node),  # ty:ignore[redundant-cast]
                                         kind=str(p_kind),
                                         label=str(p_label),
                                         match_kind_label=uk_match_kind_label,
@@ -485,7 +485,7 @@ class UKReplayTargetLookupMixin:
                                 next_cands.append(
                                     UKCanonicalNodeMatch(
                                         cast(IRNode, res_node),
-                                        cast(Optional[IRNode], res_p),
+                                        cast(Optional[IRNode], res_p),  # ty:ignore[redundant-cast]
                                         res_i,
                                     )
                                 )
@@ -499,7 +499,7 @@ class UKReplayTargetLookupMixin:
                                         target=(
                                             _target_resolution_address_for_node(
                                                 self.statute,
-                                                cast(IRNode, match[0]),
+                                                cast(IRNode, match[0]),  # ty:ignore[redundant-cast]
                                                 path_resolver=self._tree_path_for_mutable_node,
                                             )
                                             or (
@@ -640,7 +640,7 @@ class UKReplayTargetLookupMixin:
         recovered_node, recovered_parent, recovered_idx = candidates[0]
         recovered_target = _target_resolution_address_for_node(
             self.statute,
-            recovered_node,
+            recovered_node,  # ty:ignore[invalid-argument-type]
             path_resolver=self._tree_path_for_mutable_node,
         ) or str(target)
         _append_uk_replay_adjudication(

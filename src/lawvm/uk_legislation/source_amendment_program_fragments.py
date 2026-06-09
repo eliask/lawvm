@@ -340,7 +340,7 @@ def _amendment_program_inserted_anchor_structural_insert(
         "inserted_payload_label_count": len(inserted_payload_labels),
         "inserted_text": inserted_text,
         "inserted_text_preview": inserted_text[:240],
-    }
+    }  # ty:ignore[invalid-return-type]
 
 
 def _source_inserted_by_detail(source_inserted_by: str) -> dict[str, str]:

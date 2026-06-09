@@ -226,7 +226,7 @@ class TestFiProposalsCompetingOutputFormats:
         reader = csv.DictReader(io.StringIO(out))
         rows = list(reader)
         assert len(rows) == 3
-        assert "he_id" in reader.fieldnames
+        assert "he_id" in reader.fieldnames  # ty:ignore[unsupported-operator]
 
 
 # ---------------------------------------------------------------------------

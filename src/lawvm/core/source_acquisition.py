@@ -402,7 +402,7 @@ def _plain_jsonable(value: Any) -> Any:
 
 def _count_by(values: object) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for value in values:
+    for value in values:  # ty:ignore[not-iterable]
         key = str(value)
         if key:
             counts[key] = counts.get(key, 0) + 1

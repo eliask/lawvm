@@ -1662,7 +1662,7 @@ def _manual_compile_agreement_residual(payload: Mapping[str, Any]) -> dict[str, 
         residual_id=work_item_id,
         jurisdiction="uk",
         agreement_surface="manual_compile_frontier_vs_current_oracle",
-        family=_manual_compile_agreement_residual_family(payload),
+        family=_manual_compile_agreement_residual_family(payload),  # ty:ignore[invalid-argument-type]
         status="frontier",
         owner_phase=str(
             payload.get("owner_phase")

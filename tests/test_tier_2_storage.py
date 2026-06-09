@@ -18,10 +18,7 @@ Per AGENTS.md §15, covers all required test categories:
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -642,13 +639,13 @@ class TestNegativeCases:
         """IncrementalState is a frozen dataclass — must not be mutable."""
         inc = IncrementalState(partition_hashes={}, last_amendment_seen="")
         with pytest.raises((AttributeError, TypeError)):
-            inc.last_amendment_seen = "mutated"  # type: ignore[misc]
+            inc.last_amendment_seen = "mutated"  # type: ignore[misc]  # ty:ignore[invalid-assignment]
 
     def test_projection_state_is_frozen(self) -> None:
         """ProjectionState is a frozen dataclass."""
         state = _make_test_state()
         with pytest.raises((AttributeError, TypeError)):
-            state.row_count = 0  # type: ignore[misc]
+            state.row_count = 0  # type: ignore[misc]  # ty:ignore[invalid-assignment]
 
     def test_unknown_jurisdiction_returns_empty_projections(self) -> None:
         """rebuild_indexes for an unknown jurisdiction logs and returns cleanly."""

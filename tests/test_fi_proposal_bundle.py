@@ -33,11 +33,7 @@ so they do not depend on the filesystem farchive or external downloads.
 """
 from __future__ import annotations
 
-import io
 import json
-import sys
-import tempfile
-from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -51,11 +47,9 @@ from lawvm.finland.conformance_corpus.he_projection.fixtures import (
 from lawvm.tools.export_fi_he_corpus import project_he_from_xml
 from lawvm.tools.fi_proposal_bundle import (
     AtomRow,
-    LawRefRow,
     MinistryRef,
     ProposalBundle,
     SignatureRow,
-    TelosSectionRow,
     _bundle_to_json,
     _parse_he_id_variants,
     _row_to_dict,

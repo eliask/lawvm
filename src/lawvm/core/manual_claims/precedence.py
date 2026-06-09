@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import yaml  # operator-authored config boundary
 
@@ -216,9 +216,9 @@ def load_precedence_registry(yaml_path: Path) -> PrecedenceRegistry:
         if missing:
             raise ValueError(f"Rule at index {i} missing required keys: {missing!r}")
         rules.append(LayerPrecedenceRule(
-            layer=str(item["layer"]),
-            rule=str(item["rule"]),
-            rationale=str(item["rationale"]),
+            layer=str(item["layer"]),  # ty:ignore[invalid-argument-type]
+            rule=str(item["rule"]),  # ty:ignore[invalid-argument-type]
+            rationale=str(item["rationale"]),  # ty:ignore[invalid-argument-type]
         ))
 
     return PrecedenceRegistry(

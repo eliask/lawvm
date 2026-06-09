@@ -38,7 +38,6 @@ module over ``compile_result`` for top-level compile products.
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Literal, Optional, Tuple
 
@@ -486,7 +485,7 @@ class CompileFacade:
         evidence_policy: "EvidencePolicyRegistry",
         source_bundle_hash: str,
         build_id: str = "",
-        build_timestamp: "Optional[__import__('datetime').datetime]" = None,
+        build_timestamp: "Optional[__import__('datetime').datetime]" = None,  # ty:ignore[invalid-type-form]
     ) -> "CompileFacade":
         """Build a CompileFacade with CompileMetadata derived from graph + profile + policy.
 

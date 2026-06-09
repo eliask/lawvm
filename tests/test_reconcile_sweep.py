@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from lawvm.tools import reconcile_sweep as rs
 
@@ -138,7 +137,7 @@ def test_memoized_provision_replay_caches_no_outparam_calls() -> None:
         calls["n"] += 1
         return f"master::{parent_id}"
 
-    grafter.replay_xml = _counting
+    grafter.replay_xml = _counting  # ty:ignore[invalid-assignment]
     try:
         with rs._memoized_provision_replay():
             # Same statute, no out-params: cached after first call.

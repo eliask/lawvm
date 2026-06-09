@@ -13,7 +13,6 @@ import pytest
 
 from lawvm.core.manual_claims.hashing import compute_claim_id
 from lawvm.core.manual_claims.primitive import (
-    ClaimCompositionDecision,
     ClaimConfidence,
     ClaimLayer,
     ClaimScope,

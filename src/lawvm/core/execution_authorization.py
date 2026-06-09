@@ -301,7 +301,7 @@ def _authorization_sequence(
     ),
 ) -> tuple[ExecutionAuthorization | Mapping[str, Any], ...]:
     if isinstance(value, ExecutionAuthorization) or isinstance(value, Mapping):
-        return (value,)
+        return (value,)  # ty:ignore[invalid-return-type]
     return tuple(value)
 
 

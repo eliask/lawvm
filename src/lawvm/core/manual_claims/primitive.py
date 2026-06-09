@@ -95,7 +95,7 @@ class _ProfileTagDeprecated(Enum):
     EXPLORATORY = "exploratory"
 
 
-def __getattr__(name: str) -> object:
+def __getattr__(name: str) -> "type[_ProfileTagDeprecated]":
     if name == "ProfileTag":
         warnings.warn(
             "ProfileTag is deprecated and will be removed in a future release. "
@@ -202,7 +202,7 @@ class ManualCompilationClaim:
     disputes: Tuple[str, ...]
     """claim_ids this claim disputes."""
 
-    requested_profiles: Tuple[ProfileTag, ...]
+    requested_profiles: Tuple[ProfileTag, ...]  # noqa: F821  # ty: ignore[unresolved-reference]
     """Profile membership request — NOT assertion. Composer decides eligibility."""
     rationale: str
 
@@ -260,7 +260,7 @@ class ClaimCompositionDecision:
 
     claim_id: str
     build_id: str
-    profile: ProfileTag
+    profile: ProfileTag  # noqa: F821  # ty: ignore[unresolved-reference]
     authorized: bool
     reason_code: str
     """e.g. 'extraction_layer_null_slot_filled' | 'rejected_replay_authorized_false'"""

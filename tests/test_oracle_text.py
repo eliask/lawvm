@@ -170,7 +170,6 @@ def test_build_oracle_text_bundle_listing_has_total_section_count() -> None:
 
 def test_no_hints_flag_suppresses_hint(capsys) -> None:
     """The hint must NOT appear when --no-hints is set."""
-    import importlib
     import lawvm.tools.oracle_text as ot_module
 
     # Reset the once-per-process flag

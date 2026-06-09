@@ -173,7 +173,7 @@ class CompileMetadata:
 # ---------------------------------------------------------------------------
 
 
-def compute_strict_profile_fingerprint(profile: "StrictProfile") -> str:  # type: ignore[name-defined]
+def compute_strict_profile_fingerprint(profile: "StrictProfile") -> str:  # type: ignore[name-defined]  # noqa: F821  # ty: ignore[unresolved-reference]
     """Return sha256 over canonical serialization of all StrictProfile fields.
 
     Deterministic field ordering: sorted by field name. Same profile object
@@ -195,9 +195,9 @@ def compute_strict_profile_fingerprint(profile: "StrictProfile") -> str:  # type
 
 def build_compile_metadata(
     *,
-    graph: "ProvenanceGraph",  # type: ignore[name-defined]
-    profile: "StrictProfile",  # type: ignore[name-defined]
-    evidence_policy: "EvidencePolicyRegistry",  # type: ignore[name-defined]
+    graph: "ProvenanceGraph",  # type: ignore[name-defined]  # noqa: F821  # ty: ignore[unresolved-reference]
+    profile: "StrictProfile",  # type: ignore[name-defined]  # noqa: F821  # ty: ignore[unresolved-reference]
+    evidence_policy: "EvidencePolicyRegistry",  # type: ignore[name-defined]  # noqa: F821  # ty: ignore[unresolved-reference]
     source_bundle_hash: str,
     interpretation_policy_fingerprint: Optional[str] = None,
     build_id: str = "",

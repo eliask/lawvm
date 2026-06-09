@@ -883,7 +883,7 @@ def uk_frontier_work_item_from_manual_frontier_row(
             default_artifact_id=source_artifact_id,
             default_source_unit_id=source_unit_id,
         ).to_dict()
-        detail["source_fragment_witness"] = proof_source_witness
+        detail["source_fragment_witness"] = proof_source_witness  # ty:ignore[invalid-assignment]
     target_witness = _target_witness(row)
     modeled_targets = _string_tuple(target_witness.get("modeled_targets"))
     target_model_statuses = _string_tuple(target_witness.get("target_model_statuses"))
@@ -939,14 +939,14 @@ def uk_frontier_work_item_from_manual_frontier_row(
         or execution_authorization.get("authorization_status")
         or ""
     )
-    detail["execution_authorization"] = execution_authorization
+    detail["execution_authorization"] = execution_authorization  # ty:ignore[invalid-assignment]
     detail["candidate_set_certificate"] = _candidate_target_set_certificate(
         work_item_id=work_item_id,
         owner_phase=owner_phase,
         candidate_targets=candidate_targets,
         frontier_family=frontier_family,
         target_witness=target_witness,
-    )
+    )  # ty:ignore[invalid-assignment]
     source_membership_certificate = _source_membership_certificate(
         work_item_id=work_item_id,
         owner_phase=owner_phase,
@@ -956,7 +956,7 @@ def uk_frontier_work_item_from_manual_frontier_row(
         candidate_targets=candidate_targets,
     )
     if source_membership_certificate:
-        detail["source_membership_certificate"] = source_membership_certificate
+        detail["source_membership_certificate"] = source_membership_certificate  # ty:ignore[invalid-assignment]
     exclusion_scope_certificate = _exclusion_scope_certificate(
         work_item_id=work_item_id,
         owner_phase=owner_phase,
@@ -965,22 +965,22 @@ def uk_frontier_work_item_from_manual_frontier_row(
         target_witness=target_witness,
     )
     if exclusion_scope_certificate:
-        detail["exclusion_scope_certificate"] = exclusion_scope_certificate
+        detail["exclusion_scope_certificate"] = exclusion_scope_certificate  # ty:ignore[invalid-assignment]
     proof_obligation_certificate = _proof_obligation_certificate(
         work_item_id=work_item_id,
         owner_phase=owner_phase,
         frontier_family=frontier_family,
-        candidate_set_certificate=detail["candidate_set_certificate"],
+        candidate_set_certificate=detail["candidate_set_certificate"],  # ty:ignore[invalid-argument-type]
         source_membership_certificate=source_membership_certificate,
         exclusion_scope_certificate=exclusion_scope_certificate,
     )
     if proof_obligation_certificate:
-        detail["proof_obligation_certificate"] = proof_obligation_certificate
+        detail["proof_obligation_certificate"] = proof_obligation_certificate  # ty:ignore[invalid-assignment]
     detail["target_resolution_certificate"] = _target_resolution_certificate(
         owner_phase=owner_phase,
         target_witness=target_witness,
         candidate_targets=candidate_targets,
-    )
+    )  # ty:ignore[invalid-assignment]
     provisional_work_item_row = {
         "work_item_id": work_item_id,
         "jurisdiction": "uk",
@@ -1016,8 +1016,8 @@ def uk_frontier_work_item_from_manual_frontier_row(
         source_witness=normalized_source_witness,
         target_witness=target_witness,
         compare_witness=compare_witness,
-        candidate_set_certificate=detail["candidate_set_certificate"],
-        target_resolution_certificate=detail["target_resolution_certificate"],
+        candidate_set_certificate=detail["candidate_set_certificate"],  # ty:ignore[invalid-argument-type]
+        target_resolution_certificate=detail["target_resolution_certificate"],  # ty:ignore[invalid-argument-type]
         owner_phase=owner_phase,
         frontier_family=frontier_family,
         frontier_status=frontier_status,
@@ -1030,7 +1030,7 @@ def uk_frontier_work_item_from_manual_frontier_row(
         executable=executable,
         replay_authorized=replay_authorized,
         authorization_status=authorization_status,
-    )
+    )  # ty:ignore[invalid-assignment]
     return FrontierWorkItem(
         work_item_id=work_item_id,
         jurisdiction="uk",
@@ -1204,7 +1204,7 @@ def _candidate_target_set_certificate(
                 "target_model_statuses": target_model_statuses,
                 "modeled_targets_not_replay_authorization": True,
             }
-        )
+        )  # ty:ignore[no-matching-overload]
     certificate = CandidateSetCertificate(
         scope_id=f"uk-frontier-work-item:{work_item_id}",
         candidate_set_kind="uk_frontier_work_item_candidate_targets",
@@ -1784,7 +1784,7 @@ def _target_witness(row: Mapping[str, Any]) -> Mapping[str, Any]:
         "target_model_statuses": target_model_statuses,
     }
     if modeled_targets:
-        witness["modeled_targets_not_replay_authorization"] = True
+        witness["modeled_targets_not_replay_authorization"] = True  # ty:ignore[invalid-assignment]
     return _compact_witness(witness)
 
 

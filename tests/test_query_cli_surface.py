@@ -14,19 +14,13 @@ from __future__ import annotations
 import csv
 import io
 import json
-import os
-import sys
-import tempfile
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
-from unittest.mock import patch, MagicMock
 
 import pytest
 
 from lawvm.tools import cli
 from lawvm.tools._cli_duckdb import (
     as_of_conditions,
-    check_duckdb,
     find_source_file,
     source_expr_for_path,
 )
@@ -492,7 +486,7 @@ class TestRefsQueryIntegration:
         reader = csv.DictReader(io.StringIO(out))
         rows = list(reader)
         assert len(rows) >= 1
-        assert "source_statute_id" in reader.fieldnames
+        assert "source_statute_id" in reader.fieldnames  # ty:ignore[unsupported-operator]
 
     @duckdb_required
     def test_refs_cross_jurisdiction_error(self, tmp_proj_dir):
@@ -904,7 +898,7 @@ class TestDefaultDataDir:
             required_extra = ["--provision", "x", "--t1", "2020-01-01", "--t2", "2024-01-01"]
 
         args = parser.parse_args([command] + required_extra)
-        return getattr(args, "data_dir", None)
+        return getattr(args, "data_dir", None)  # ty:ignore[invalid-return-type]
 
     def test_refs_default_data_dir(self):
         assert self._get_default("refs") == "data/fi/v1"

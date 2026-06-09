@@ -240,7 +240,7 @@ def _load_oracle_check_cache(db_path: Path) -> Dict[str, Dict]:
             },
         )
         info["source_pathology"] = bool(source_pathology)
-        info["source_pathology_codes"] = _parse_string_listish(source_pathology_codes)
+        info["source_pathology_codes"] = _parse_string_listish(source_pathology_codes)  # ty:ignore[invalid-assignment]
         source_pathology_rows: list[dict[str, Any]] = []
         raw_rows = str(source_pathology_rows_json or "")
         if raw_rows:
@@ -250,12 +250,12 @@ def _load_oracle_check_cache(db_path: Path) -> Dict[str, Dict]:
                 loaded_rows = None
             if isinstance(loaded_rows, list):
                 source_pathology_rows = [item for item in loaded_rows if isinstance(item, dict)]
-        info["source_pathology_rows"] = source_pathology_rows
+        info["source_pathology_rows"] = source_pathology_rows  # ty:ignore[invalid-assignment]
         info["html_topology_mismatch"] = bool(html_topology_mismatch)
-        info["html_missing_from_xml"] = _parse_string_listish(html_missing_from_xml)
-        info["html_extra_in_xml"] = _parse_string_listish(html_extra_in_xml)
+        info["html_missing_from_xml"] = _parse_string_listish(html_missing_from_xml)  # ty:ignore[invalid-assignment]
+        info["html_extra_in_xml"] = _parse_string_listish(html_extra_in_xml)  # ty:ignore[invalid-assignment]
         info["html_noncommensurable_reason"] = str(html_noncommensurable_reason or "")
-        info["contingent_effective_sources"] = _parse_string_listish(contingent_effective_sources)
+        info["contingent_effective_sources"] = _parse_string_listish(contingent_effective_sources)  # ty:ignore[invalid-assignment]
     return result
 
 

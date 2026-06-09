@@ -887,7 +887,7 @@ def _direct_parent_text_before_child(parent_el: ET._Element, child_el: ET._Eleme
         if child is child_el:
             break
         if child.tag.rsplit("}", 1)[-1] == "Text":
-            parts.append(" ".join(" ".join(child.itertext()).split()).strip())
+            parts.append(" ".join(" ".join(child.itertext()).split()).strip())  # ty:ignore[no-matching-overload]
     return " ".join(part for part in parts if part).strip()
 
 
@@ -1251,7 +1251,7 @@ def _extract_text_fragment_substitutions(
             _effect_source_parent_carried_after_word_ordinal_insert_fragment(
                 effect=effect,
                 target=target,
-                extracted_el=extracted_el,
+                extracted_el=extracted_el,  # ty:ignore[invalid-argument-type]
                 extracted_text=extracted_text,
             )
         )
@@ -2998,7 +2998,7 @@ def _effect_source_parent_carried_after_word_ordinal_insert_fragment(
     parent_el = extracted_el.getparent()
     if parent_el is None:
         return None
-    parent_text = " ".join(" ".join(parent_el.itertext()).split()).strip()
+    parent_text = " ".join(" ".join(parent_el.itertext()).split()).strip()  # ty:ignore[no-matching-overload]
     anchor = _parse_parent_after_word_anchor(parent_text)
     if anchor is None:
         return None

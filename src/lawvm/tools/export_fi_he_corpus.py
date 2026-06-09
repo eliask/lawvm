@@ -188,7 +188,7 @@ def _element_text_content(element: etree._Element) -> str:
     import re as _re
     parts: List[str] = []
     for text in element.itertext():
-        parts.append(text)
+        parts.append(text)  # ty:ignore[invalid-argument-type]
     raw = "".join(parts)
     return _re.sub(r"\s+", " ", raw).strip()
 
@@ -622,7 +622,7 @@ def _write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> int:
 def _build_parquet_schemas() -> Dict[str, Any]:
     """Build pinned Parquet schemas for each projection table."""
     try:
-        import pyarrow as pa  # ty: ignore[unresolved-import]
+        import pyarrow as pa
     except ImportError:
         return {}
 
@@ -732,8 +732,8 @@ def _try_write_parquet(
 ) -> bool:
     """Try to write rows as Parquet+zstd with optional compile metadata. Returns True if ok."""
     try:
-        import pyarrow as pa  # ty: ignore[unresolved-import]
-        import pyarrow.parquet as pq  # ty: ignore[unresolved-import]
+        import pyarrow as pa
+        import pyarrow.parquet as pq
     except ImportError:
         return False
 
@@ -781,7 +781,7 @@ def project_he_corpus(
     Returns:
         Dict mapping table name to row count.
     """
-    from farchive import Farchive  # ty: ignore[unresolved-import]
+    from farchive import Farchive
 
     farchive = Farchive(farchive_path)
 

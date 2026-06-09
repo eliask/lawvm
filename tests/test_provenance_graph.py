@@ -12,7 +12,6 @@ Tests cover:
 """
 from __future__ import annotations
 
-import dataclasses
 from datetime import date, datetime, timezone
 
 import pytest
@@ -21,7 +20,6 @@ from lawvm.core.provenance_graph import (
     ATTESTATION_KIND_REGISTRY_V0_HASH,
     EDGE_TYPES,
     ArtifactRef,
-    AttestationKindSpec,
     GraphBuilder,
     GraphEdge,
     GraphNode,
@@ -34,9 +32,6 @@ from lawvm.core.provenance_graph import (
     SourceRef,
     _ATTESTATION_KIND_REGISTRY_V0,
     _compute_registry_hash,
-    _sha256,
-    assertion_canonical_payload,
-    attestation_canonical_payload,
     attestation_kind_registry_hash,
     get_attestation_kind,
 )
@@ -391,7 +386,7 @@ def test_interval_rejects_end_before_start() -> None:
 
 def test_producer_kind_validated() -> None:
     with pytest.raises(ValueError, match="producer_kind"):
-        Producer(producer_id="test", producer_kind="robot")  # type: ignore[arg-type]
+        Producer(producer_id="test", producer_kind="robot")  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
 
 def test_graph_builder_deduplicates_nodes() -> None:

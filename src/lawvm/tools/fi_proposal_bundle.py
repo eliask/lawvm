@@ -38,7 +38,6 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from lawvm.tools._cli_duckdb import (

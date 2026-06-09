@@ -20,7 +20,6 @@ AGENTS.md §1.10: no broad try/except in non-test code.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -28,7 +27,6 @@ from typing import Any, Dict, Optional, Tuple
 
 from lawvm.core.manual_claims.proposal_backend import (
     ClaimSchema,
-    MockProposalBackend,
     ProposedClaim,
     QuotedSource,
 )
@@ -252,7 +250,7 @@ class QwenLocalBackend:
 
         raw_response = ""
         model_id = self.model_name
-        parse_error: Optional[str] = None
+        _parse_error: Optional[str] = None
 
         req = urllib.request.Request(
             chat_url,

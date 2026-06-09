@@ -48,9 +48,8 @@ from lawvm.core.pool_mention import (
     PoolResolutionConfidence,
     QuantityKind,
     RejectedPoolCandidate,
-    pool_mention_to_row,
 )
-from lawvm.finland.canonical_budget_line_registry import REGISTRY, BudgetLine
+from lawvm.finland.canonical_budget_line_registry import REGISTRY
 
 # ---------------------------------------------------------------------------
 # Module-scope compiled patterns (AGENTS.md §1.11)
@@ -481,7 +480,7 @@ def _resolve_budget_line(
 
     # No exact match: try lineage resolution across years
     # Build a provisional canonical_id from the code to probe the lineage table
-    provisional_id = _canonical_id_from_code(code)
+    _provisional_id = _canonical_id_from_code(code)
     # Check if there's a year in the registry that has this code
     for check_year in REGISTRY.available_years():
         cid, cands = REGISTRY.lookup_by_code(code, check_year)

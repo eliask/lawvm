@@ -15,7 +15,7 @@ import hashlib
 import json
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import List
 
 import pytest
 
@@ -143,7 +143,7 @@ def _emit_consumed_event(
     build_id: str,
     profile: str = "strict_with_attested_claims",
     projection_path: str = "/data/fi_refs.parquet",
-    row_hashes: List[str] = None,
+    row_hashes: List[str] = None,  # ty:ignore[invalid-parameter-default]
 ) -> None:
     """Emit a consumed event for a claim (simulates export_fi_refs calling track_consumption)."""
     claim = store.read_claim(claim_id)

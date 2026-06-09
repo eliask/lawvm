@@ -19,7 +19,7 @@ Module coverage:
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import pytest
 
@@ -37,7 +37,7 @@ from lawvm.finland.pool_mention_extractor import (
     PoolExtractionResult,
     extract_pool_mentions,
 )
-from lawvm.finland.canonical_budget_line_registry import REGISTRY, BudgetLine
+from lawvm.finland.canonical_budget_line_registry import REGISTRY
 from lawvm.finland.conformance_corpus.pools.fixtures import (
     ALL_FIXTURES,
     APPROXIMATE_BUDGET_LINE_RENUMBERED,
@@ -172,7 +172,7 @@ class TestPoolMentionConstruction:
             valid_at_end=None,
         )
         with pytest.raises((TypeError, AttributeError)):
-            mention.quantity_kind = QuantityKind.FISCAL_POOL  # type: ignore[misc]
+            mention.quantity_kind = QuantityKind.FISCAL_POOL  # type: ignore[misc]  # ty:ignore[invalid-assignment]
 
     def test_capacity_cap_with_numeric_and_unit(self) -> None:
         """CAPACITY_CAP with numeric value and unit stores correctly."""
@@ -344,7 +344,7 @@ class TestCanonicalBudgetLineRegistry:
         if lines:
             bl = lines[0]
             with pytest.raises((TypeError, AttributeError)):
-                bl.paaluokka = 99  # type: ignore[misc]
+                bl.paaluokka = 99  # type: ignore[misc]  # ty:ignore[invalid-assignment]
 
 
 # ===========================================================================
@@ -364,7 +364,7 @@ class TestBudgetLineRecognizer:
         candidates = self.recognizer.recognize(text)
         bl = [c for c in candidates if c.inferred_kind == QuantityKind.BUDGET_LINE]
         assert len(bl) >= 1
-        assert "28.91.50" in bl[0].momentti_code
+        assert "28.91.50" in bl[0].momentti_code  # ty:ignore[unsupported-operator]
 
     def test_recognize_bare_momentti_code(self) -> None:
         """Bare '29.20.30' without 'momentilla' keyword recognized as BUDGET_LINE."""
@@ -527,7 +527,7 @@ class TestFindingObservation:
             source_statute_id="711/2022",
             source_provision_ref="711/2022/3",
             quantity_phrase="28.91.50",
-            candidate_canonical_ids=["fi.budget.28.91.50", "fi.budget.28.91.51"],
+            candidate_canonical_ids=["fi.budget.28.91.50", "fi.budget.28.91.51"],  # ty:ignore[invalid-argument-type]
             reason="Momentti code maps to 2 entries.",
         )
         assert isinstance(finding.candidate_canonical_ids, tuple)

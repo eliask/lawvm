@@ -32,7 +32,7 @@ from lawvm.core.manual_claims.primitive import _ProfileTagDeprecated as ProfileT
 def _require_duckdb() -> Any:
     """Import duckdb or print a helpful error and exit."""
     try:
-        import duckdb  # ty: ignore[unresolved-import]
+        import duckdb
         return duckdb
     except ImportError:
         print(
@@ -122,7 +122,7 @@ def _detect_cross_profile_joins(parquets: List[Path]) -> Optional[str]:
     match or no profiles are set. Returns a warning string if profiles differ.
     """
     try:
-        import pyarrow.parquet as pq  # ty: ignore[unresolved-import]
+        import pyarrow.parquet as pq
     except ImportError:
         return None
 

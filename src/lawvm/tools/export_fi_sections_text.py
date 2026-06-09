@@ -52,7 +52,7 @@ FI_SECTIONS_TEXT_COLUMNS = (
 
 def _make_parquet_schema() -> Any:
     """Build a pyarrow.Schema for fi_sections_text. Requires pyarrow."""
-    import pyarrow as pa  # ty: ignore[unresolved-import]
+    import pyarrow as pa
     return pa.schema([
         pa.field("statute_id", pa.string()),
         pa.field("section_key", pa.string()),
@@ -163,8 +163,8 @@ def _try_write_parquet(
     Returns True if successful.
     """
     try:
-        import pyarrow as pa  # ty: ignore[unresolved-import]
-        import pyarrow.parquet as pq  # ty: ignore[unresolved-import]
+        import pyarrow as pa
+        import pyarrow.parquet as pq
     except ImportError:
         return False
 
@@ -249,11 +249,11 @@ def export_fi_sections_text(
     # Always write JSONL (DuckDB can read it directly)
     jsonl_count = _write_jsonl(out / "fi_sections_text.jsonl", all_section_rows)
 
-    parquet_written = False
+    _parquet_written = False
     if use_parquet:
         ok = _try_write_parquet(out / "fi_sections_text.parquet", all_section_rows, compile_metadata)
         if ok:
-            parquet_written = True
+            _parquet_written = True
             print(
                 f"  fi_sections_text: {jsonl_count:,} rows "
                 f"(Parquet+zstd + JSONL)"
