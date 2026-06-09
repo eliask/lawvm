@@ -60,6 +60,15 @@ from lawvm.core.selector import to_locator_string
 from lawvm.corpus_store import get_corpus_store
 from lawvm.finland.preparatory_reference_extractor import extract_preparatory_refs
 from lawvm.provision_state import resolve_provision_state
+from lawvm.tools.hyperlinks import (
+    committee_url_from_raw,
+    consolidated_url_from_id,
+    ev_url_from_raw,
+    he_url_from_canonical,
+    maybe_link,
+    should_hyperlink,
+    statute_url_from_id,
+)
 
 _SCHEMA = "lawvm.provenance.v1"
 _DEFAULT_DATA_DIR = "data/fi/v1"
@@ -432,10 +441,13 @@ def _amendment_sort_key(amend_id: str) -> tuple[int, int]:
         return (0, 0)
 
 
-def _render_statute_human(record: dict[str, Any]) -> str:
+def _render_statute_human(record: dict[str, Any], *, link: bool = False) -> str:
     lines: list[str] = []
+    statute_token = maybe_link(
+        record["statute_id"], consolidated_url_from_id(record["statute_id"]), enabled=link
+    )
     lines.append(
-        f"{record['statute_id']}  statute provenance @ {record['as_of']}  "
+        f"{statute_token}  statute provenance @ {record['as_of']}  "
         f"({record['amendment_count']} amendments, "
         f"{record['he_resolved_count']} with originating HE)"
     )
@@ -443,8 +455,11 @@ def _render_statute_human(record: dict[str, Any]) -> str:
     for a in record["amendments"]:
         comm = a["commencement"]
         applied = "" if a["applied_in_replay"] else "  [not applied in replay]"
+        amend_token = maybe_link(
+            f"L {a['amendment_id']}", statute_url_from_id(a["amendment_id"]), enabled=link
+        )
         lines.append(
-            f"L {a['amendment_id']}"
+            f"{amend_token}"
             f"  · enacted {comm['enacted'] or '?'}"
             f" · in force {comm['effective'] or '?'}"
             f" · {comm['legal_status'] or '?'}{applied}"
@@ -453,7 +468,9 @@ def _render_statute_human(record: dict[str, Any]) -> str:
             lines.append(f"    {comm['title']}")
         he = a["originating_he"]
         if he is not None:
-            bits = [he.get("he_id") or "?"]
+            he_id = he.get("he_id") or "?"
+            he_token = maybe_link(he_id, he_url_from_canonical(he.get("he_id")), enabled=link)
+            bits = [he_token]
             if he.get("title"):
                 bits.append(he["title"])
             if he.get("finlex_state"):
@@ -468,9 +485,11 @@ def _render_statute_human(record: dict[str, Any]) -> str:
         else:
             lines.append("    HE   : (none found in preliminaryWork)")
         for c in a["committee_refs"]:
-            lines.append(f"    cmte : {c['raw_text']} ({c['canonical_id']})")
+            token = maybe_link(c["raw_text"], committee_url_from_raw(c["raw_text"]), enabled=link)
+            lines.append(f"    cmte : {token} ({c['canonical_id']})")
         for ev in a["parliament_response_refs"]:
-            lines.append(f"    EV   : {ev['raw_text']} ({ev['canonical_id']})")
+            token = maybe_link(ev["raw_text"], ev_url_from_raw(ev["raw_text"]), enabled=link)
+            lines.append(f"    EV   : {token} ({ev['canonical_id']})")
         lines.append("")
     if record["notes"]:
         lines.append("notes:")
@@ -479,9 +498,30 @@ def _render_statute_human(record: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _render_human(record: dict[str, Any]) -> str:
+def _prep_token(row: dict[str, Any], *, link: bool) -> str:
+    """Hyperlink a section-level preparatory row's raw_text by its kind."""
+    kind = row.get("kind")
+    raw = row.get("raw_text")
+    canonical = row.get("canonical_id")
+    if not raw:
+        return str(raw)
+    if kind == PreparatoryReferenceKind.HE.value:
+        url = he_url_from_canonical(canonical)
+    elif kind == PreparatoryReferenceKind.COMMITTEE_REPORT.value:
+        url = committee_url_from_raw(raw)
+    elif kind == PreparatoryReferenceKind.PARLIAMENT_RESPONSE.value:
+        url = ev_url_from_raw(raw)
+    else:
+        url = None
+    return maybe_link(raw, url, enabled=link)
+
+
+def _render_human(record: dict[str, Any], *, link: bool = False) -> str:
     lines: list[str] = []
-    lines.append(f"{record['statute_id']} {record['selector']}  (provenance @ {record['as_of']})")
+    statute_token = maybe_link(
+        record["statute_id"], consolidated_url_from_id(record["statute_id"]), enabled=link
+    )
+    lines.append(f"{statute_token} {record['selector']}  (provenance @ {record['as_of']})")
     lines.append(f"locator           : {record['locator']}")
     lines.append(f"query             : {record['query_type']}")
     in_force = record["in_force"]
@@ -493,13 +533,18 @@ def _render_human(record: dict[str, Any]) -> str:
         lines.append("[no text available]")
     lines.append("")
     source = in_force["source_amendment"] or "(base statute)"
-    lines.append(f"source amendment  : L {source}" if source != "(base statute)" else f"source amendment  : {source}")
+    if source != "(base statute)":
+        source_token = maybe_link(f"L {source}", statute_url_from_id(source), enabled=link)
+        lines.append(f"source amendment  : {source_token}")
+    else:
+        lines.append(f"source amendment  : {source}")
 
     he = record["originating_he"]
     if he is None:
         lines.append("originating HE    : (none)")
     else:
-        bits = [he["he_id"]]
+        he_token = maybe_link(he["he_id"], he_url_from_canonical(he["he_id"]), enabled=link)
+        bits = [he_token]
         if he.get("title"):
             bits.append(he["title"])
         if he.get("finlex_state"):
@@ -507,13 +552,19 @@ def _render_human(record: dict[str, Any]) -> str:
         lines.append("originating HE    : " + " · ".join(bits))
         if he.get("ministry"):
             lines.append(f"HE ministry/date  : {he['ministry']} · {he.get('date_issued') or 'date unknown'}")
-        lines.append(f"enacted law       : L {he['enacted_law_surfaced']} (surfaced by amendment→HE inversion)")
+        enacted_token = maybe_link(
+            f"L {he['enacted_law_surfaced']}",
+            statute_url_from_id(he["enacted_law_surfaced"]),
+            enabled=link,
+        )
+        lines.append(f"enacted law       : {enacted_token} (surfaced by amendment→HE inversion)")
 
     prep = record["preparatory"]
     lines.append("preparatory       :")
     if prep:
         for row in prep:
-            lines.append(f"  - {row['kind']}: {row['raw_text']} ({row['canonical_id']})")
+            token = _prep_token(row, link=link)
+            lines.append(f"  - {row['kind']}: {token} ({row['canonical_id']})")
     else:
         lines.append("  - (none)")
 
@@ -536,6 +587,11 @@ def main(args: Any) -> None:
         print(f"ERROR: lawvm provenance currently supports only -j fi (got {jurisdiction!r})", file=sys.stderr)
         raise SystemExit(2)
 
+    emit_json = getattr(args, "json", False)
+    hyperlinks_mode = getattr(args, "hyperlinks", "auto") or "auto"
+    # Gate: never emit OSC 8 into JSON/structured or a non-tty/dumb stream.
+    link = should_hyperlink(hyperlinks_mode, sys.stdout, is_json=emit_json)
+
     selector = getattr(args, "selector", "") or ""
     if not selector:
         # Statute-level: HE -> [enacted amendments] inversion (no section).
@@ -545,10 +601,10 @@ def main(args: Any) -> None:
             jurisdiction=jurisdiction,
             data_dir=getattr(args, "data_dir", _DEFAULT_DATA_DIR),
         )
-        if getattr(args, "json", False):
+        if emit_json:
             print(json.dumps(record, ensure_ascii=False, indent=2, default=str))
             return
-        print(_render_statute_human(record))
+        print(_render_statute_human(record, link=link))
         return
 
     record = build_provenance(
@@ -559,7 +615,7 @@ def main(args: Any) -> None:
         jurisdiction=jurisdiction,
         data_dir=getattr(args, "data_dir", _DEFAULT_DATA_DIR),
     )
-    if getattr(args, "json", False):
+    if emit_json:
         print(json.dumps(record, ensure_ascii=False, indent=2, default=str))
         return
-    print(_render_human(record))
+    print(_render_human(record, link=link))
