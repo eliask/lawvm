@@ -72,6 +72,8 @@ Subcommands:
     pit-timeline --provision REF    Provision amendment history (index-backed).
     pit-diff --provision REF        Provision diff between two PIT dates (index-backed).
     provision-state <statute_id>    Stable PIT provision-state JSON seam output.
+    provenance <statute_id>         Trace in-force wording to amendment, HE, and preparatory refs.
+    trace <statute_id>              Alias for provenance.
     telos [--statute STATUTE_ID]    Query telos/purpose sections (feature #5).
     claim propose|accept|reject|retract|list|show  Manual compilation claims (Slices 1+2).
 
@@ -3521,6 +3523,41 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="pin the oracle consolidated version to this amendment",
     )
     reconcile_p.add_argument("--json", action="store_true", help="emit JSON")
+
+    # --- provenance / trace (wording -> amendment -> HE/preparatory chain) ---
+    for command_name, command_help in (
+        ("provenance", "trace in-force wording to amendment, HE, and preparatory refs"),
+        ("trace", "alias for provenance"),
+    ):
+        provenance_p = sub.add_parser(
+            command_name,
+            parents=_P,
+            help=command_help,
+            description=(
+                "Resolve one §-selector through replay-L1, then surface the source "
+                "amendment, originating HE, committee/parliament preparatory refs, "
+                "and fixed-date commencement gate. This assembles existing engines "
+                "and does not introduce a new replay or parsing kernel."
+            ),
+        )
+        provenance_p.add_argument("statute_id", help="statute ID, e.g. 2011/805")
+        provenance_p.add_argument(
+            "selector", nargs="?", default="",
+            help="provision selector, e.g. '§3:1'",
+        )
+        provenance_p.add_argument(
+            "--as-of", dest="as_of", metavar="DATE", help="PIT date (default: today)",
+        )
+        provenance_p.add_argument(
+            "--query-type", dest="query_type", default="in_force",
+            choices=["governing", "in_force"],
+            help="PIT query semantics (default: in_force)",
+        )
+        provenance_p.add_argument(
+            "--data-dir", dest="data_dir", metavar="PATH", default="data/fi/v1",
+            help="projection directory for fi_he_corpus.parquet (default: data/fi/v1)",
+        )
+        provenance_p.add_argument("--json", action="store_true", help="emit JSON")
 
     # --- export ---
     export_p = sub.add_parser(
@@ -10703,6 +10740,11 @@ def main() -> None:
         from lawvm.tools.reconcile import main as reconcile_main
 
         reconcile_main(args)
+
+    elif args.command in ("provenance", "trace"):
+        from lawvm.tools.provenance import main as provenance_main
+
+        provenance_main(args)
 
     elif args.command == "export":
         from lawvm.tools.export import main as export_main
