@@ -76,9 +76,11 @@ _FINLEX_NS = "http://data.finlex.fi/schema/finlex"
 _FINLEX_ORIG_VERSION_ATTR = f"{{{_FINLEX_NS}}}originalVersion"
 _FINLEX_ORIG_VERSION_LABEL_ATTR = f"{{{_FINLEX_NS}}}originalVersionLabel"
 _AIEMPI_SANAMUOTO_RE = re.compile(r"\bAiempi sanamuoto kuuluu\b", re.IGNORECASE)
-# "tulee voimaan 1.6.2026" — the entering-into-force date carried by the note.
+# The entering-into-force date carried by the note. Finlex uses both the future
+# form ("tulee voimaan 1.6.2026") and the past form ("tuli voimaan 1.1.2017")
+# depending on when the consolidated snapshot was produced relative to that date.
 _TULEE_VOIMAAN_DATE_RE = re.compile(
-    r"tulee voimaan\s+(\d{1,2})\.(\d{1,2})\.(\d{4})", re.IGNORECASE
+    r"tul(?:ee|i) voimaan\s+(\d{1,2})\.(\d{1,2})\.(\d{4})", re.IGNORECASE
 )
 
 
@@ -135,6 +137,13 @@ def build_temporal_spans(
     # immediately FOLLOWS it, while a SUPERSEDED bare subsection comes from the
     # note that immediately PRECEDES it.
     prior_wording_armed = False  # set by the immediately-preceding note
+    # For ADDED ("lisätty N momentti tulee voimaan <date>") provisions the
+    # controlling note PRECEDES the new subsection (there is no prior wording to
+    # show afterwards), unlike CHANGED ("muutettu ... Aiempi sanamuoto kuuluu:")
+    # provisions where it follows. Carry the most recent preceding note date as a
+    # fallback so an added momentti is also correctly date-gated before/after its
+    # commencement.
+    pending_preceding_note_date: Optional[datetime.date] = None
 
     def _following_note_enters_force(idx: int) -> Optional[datetime.date]:
         """Date from the next authorial note before the next subsection, if any."""
@@ -163,6 +172,12 @@ def build_temporal_spans(
                 }
             )
             prior_wording_armed = _note_introduces_prior_wording(child)
+            # A note that does NOT introduce prior wording (e.g. "lisätty N
+            # momentti tulee voimaan <date>") controls the FOLLOWING added
+            # subsection; remember its date as the preceding-note fallback.
+            pending_preceding_note_date = (
+                enters if not prior_wording_armed else None
+            )
             continue
 
         if tag == "subsection":
@@ -187,9 +202,14 @@ def build_temporal_spans(
                 continue
 
             if has_version:
-                # In force vs future depends on the FOLLOWING note's date
-                # (the note that announces when this version takes effect).
+                # In force vs future depends on the controlling note's date.
+                # For a CHANGED momentti that note FOLLOWS the subsection; for an
+                # ADDED momentti it PRECEDES it. Prefer the following note (the
+                # canonical changed-provision shape), else fall back to the most
+                # recent preceding non-prior-wording note.
                 enters_force = _following_note_enters_force(i)
+                if enters_force is None:
+                    enters_force = pending_preceding_note_date
                 if enters_force is not None and enters_force > today:
                     label = "ENTERS_FORCE"
                 else:
@@ -218,6 +238,7 @@ def build_temporal_spans(
                 )
             # A versioned/current subsection consumes any pending note context.
             prior_wording_armed = False
+            pending_preceding_note_date = None
             continue
 
         # Any other child (rare): pass through unlabeled as CURRENT.

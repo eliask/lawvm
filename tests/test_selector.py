@@ -2,7 +2,9 @@
 
 from lawvm.core.selector import (
     ParsedSelector,
+    has_subprovision,
     parse_section_selector,
+    section_scope_locator,
     to_locator_string,
 )
 
@@ -77,3 +79,28 @@ class TestToLocatorString:
 
     def test_empty_passthrough(self):
         assert to_locator_string("") == ""
+
+
+class TestSectionScope:
+    def test_section_scope_drops_momentti(self):
+        assert section_scope_locator("§3:1.2") == "chapter:3/section:1"
+        assert section_scope_locator("§7.1.3") == "section:7"
+
+    def test_section_scope_section_unchanged(self):
+        assert section_scope_locator("§3:1") == "chapter:3/section:1"
+        assert section_scope_locator("§7") == "section:7"
+
+    def test_section_scope_legacy_locator(self):
+        assert (
+            section_scope_locator("chapter:3/section:1/subsection:2")
+            == "chapter:3/section:1"
+        )
+        assert section_scope_locator("section:7/paragraph:1") == "section:7"
+
+    def test_has_subprovision(self):
+        assert has_subprovision("§3:1.2") is True
+        assert has_subprovision("§7.1.3") is True
+        assert has_subprovision("chapter:3/section:1/subsection:2") is True
+        assert has_subprovision("§3:1") is False
+        assert has_subprovision("§7") is False
+        assert has_subprovision("chapter:3/section:1") is False

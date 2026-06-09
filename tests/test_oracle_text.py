@@ -589,6 +589,58 @@ def test_temporal_spans_added_momentti_has_no_superseded_text() -> None:
     assert plain[0]["label"] == "CURRENT"
 
 
+_ADDED_MOMENTTI_XML = (
+    """<section xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" """
+    f'''xmlns:finlex="{_FIN_NS}" eId="chp_3__sec_1">
+      <num>1 §</num>
+      <hcontainer finlex:outline="huomautus" name="noteAuthorial">
+        <content><p>L:lla 269/2026 lisätty 2 momentti tulee voimaan 1.6.2026.</p></content>
+      </hcontainer>
+      <subsection finlex:originalVersion="@20260269" finlex:originalVersionLabel="17.4.2026/269">
+        <content><p>ADDED-MOM2</p></content>
+      </subsection>
+    </section>'''
+).encode("utf-8")
+
+
+def test_temporal_spans_added_versioned_momentti_gated_by_preceding_note() -> None:
+    """An ADDED versioned momentti's note PRECEDES it; before commencement it must
+    be ENTERS_FORCE, after commencement IN_FORCE (preceding-note date fallback)."""
+    sec = etree.fromstring(_ADDED_MOMENTTI_XML)
+    before = build_temporal_spans(sec, today=datetime.date(2026, 5, 1))
+    added_before = [s for s in before if "ADDED-MOM2" in s["text"]][0]
+    assert added_before["label"] == "ENTERS_FORCE"
+    assert added_before["enters_force_date"] == "2026-06-01"
+    after = build_temporal_spans(sec, today=datetime.date(2026, 7, 1))
+    added_after = [s for s in after if "ADDED-MOM2" in s["text"]][0]
+    assert added_after["label"] == "IN_FORCE"
+
+
+def test_temporal_spans_past_tense_tuli_voimaan_parsed() -> None:
+    """Finlex past-form 'tuli voimaan <date>' must parse like 'tulee voimaan'."""
+    xml = (
+        """<section xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" """
+        f'''xmlns:finlex="{_FIN_NS}" eId="s">
+          <num>1 §</num>
+          <subsection finlex:originalVersionLabel="1.1.2017/1491"><content><p>NEW</p></content></subsection>
+          <hcontainer finlex:outline="huomautus" name="noteAuthorial">
+            <content><p>L:lla 1491/2016 muutettu 1 momentti tuli voimaan 1.1.2017. Aiempi sanamuoto kuuluu:</p></content>
+          </hcontainer>
+          <subsection><content><p>OLD</p></content></subsection>
+        </section>'''
+    ).encode("utf-8")
+    sec = etree.fromstring(xml)
+    # today AFTER 2017-01-01 → IN_FORCE
+    spans = build_temporal_spans(sec, today=datetime.date(2020, 1, 1))
+    new_span = [s for s in spans if "NEW" in s["text"]][0]
+    assert new_span["label"] == "IN_FORCE"
+    # today BEFORE 2017-01-01 → ENTERS_FORCE (date was correctly parsed)
+    spans_before = build_temporal_spans(sec, today=datetime.date(2016, 6, 1))
+    new_before = [s for s in spans_before if "NEW" in s["text"]][0]
+    assert new_before["label"] == "ENTERS_FORCE"
+    assert new_before["enters_force_date"] == "2017-01-01"
+
+
 def test_temporal_spans_section_without_markers_is_all_current() -> None:
     """A vanilla section with no version attrs / notes yields only CURRENT spans
     and reports no temporal markers (so the renderer prints the 'all current' note)."""

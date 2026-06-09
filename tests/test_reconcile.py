@@ -118,16 +118,24 @@ class TestReconcileClassification:
         assert r.agree_ratio >= 0.995
 
     def test_editorial_divergence_no_straddle(self, monkeypatch):
-        # Before commencement: oracle-L1 still concatenates the marked IN_FORCE
-        # spans (markers are version-pinned, not date-gated here), but no note
-        # straddles → an unexplained diff classifies as editorial, not temporal.
-        _patch_oracle(monkeypatch)
+        # A section with a single plain (no-marker) subsection: oracle-L1 is the
+        # raw prose (basis=inline_unsegmented), no notes straddle. A text diff
+        # then classifies as editorial, not temporal.
+        plain_xml = (
+            """<section xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" """
+            f'''xmlns:finlex="{_FIN_NS}" eId="chp_1__sec_1">
+              <num>1 §</num>
+              <subsection><content><p>STABLE CURRENT TEXT</p></content></subsection>
+            </section>'''
+        ).encode("utf-8")
+        _patch_oracle(monkeypatch, section_xml=plain_xml)
         self._patch_replay(monkeypatch, rendered="COMPLETELY DIFFERENT TEXT")
         r = rec.reconcile_provision(
-            statute_id="2011/805", selector="§3:1", as_of="2026-05-01",
+            statute_id="2011/805", selector="§1:1", as_of="2026-05-01",
         )
         assert r.verdict == "DISAGREE"
         assert r.divergence_class == "editorial"
+        assert r.oracle.straddling_notes == []
 
     def test_presence_divergence(self, monkeypatch):
         _patch_oracle(monkeypatch)
@@ -137,6 +145,55 @@ class TestReconcileClassification:
         )
         assert r.verdict == "DISAGREE"
         assert r.divergence_class == "presence"
+
+    def test_straddle_but_replay_resembles_in_force_is_editorial(self, monkeypatch):
+        # A straddling note exists, but replay matches the IN-FORCE text (with a
+        # small typo), NOT the superseded prior wording → the diff is editorial
+        # drift, not an un-applied amendment. Must NOT over-claim temporal.
+        _patch_oracle(monkeypatch)
+        self._patch_replay(
+            monkeypatch,
+            # in-force text is "AMENDED MOM1 IN FORCE ADDED MOM2 IN FORCE";
+            # here replay has it with a tiny edit, far from "OLD MOM1 SUPERSEDED".
+            rendered="AMENDED MOM1 IN FORCE ADDED MOM2 IN FORCEX extra",
+        )
+        r = rec.reconcile_provision(
+            statute_id="2011/805", selector="§3:1", as_of="2026-06-09",
+        )
+        assert r.verdict == "DISAGREE"
+        assert r.divergence_class == "editorial"
+
+
+class TestSubprovisionScope:
+    def test_momentti_selector_compares_at_section_scope(self, monkeypatch):
+        # §3:1.2 must NOT yield a false 'presence' from the oracle being unable to
+        # address a momentti; reconcile drops to section scope and flags it.
+        _patch_oracle(monkeypatch)
+        captured = {}
+
+        def fake_resolve(**kwargs):
+            captured.update(kwargs)
+            return {
+                "statute_id": kwargs["statute_id"], "status": "selected",
+                "query": {"provision": kwargs["provision"], "as_of": kwargs["as_of"],
+                          "query_type": kwargs["query_type"]},
+                "version": {"effective": "2026-04-14", "content_state": "live"},
+                "source": {"statute_id": "2026/222"},
+                "text": {"rendered": "AMENDED MOM1 IN FORCE ADDED MOM2 IN FORCE",
+                         "available": True},
+            }
+
+        monkeypatch.setattr(
+            "lawvm.provision_state.resolve_provision_state", fake_resolve
+        )
+        r = rec.reconcile_provision(
+            statute_id="2011/805", selector="§3:1.2", as_of="2026-06-09",
+        )
+        # replay was resolved at SECTION scope, not the momentti
+        assert captured["provision"] == "chapter:3/section:1"
+        assert r.scope == "section_for_subprovision"
+        assert r.scope_note is not None
+        assert r.verdict != "DISAGREE" or r.divergence_class != "presence"
 
 
 class TestRenderAndJson:

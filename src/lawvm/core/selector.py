@@ -147,3 +147,41 @@ def to_locator_string(s: str) -> str:
         return parsed.locator
     # Bare "N §" or anything else — pass through for resolver_raw to handle.
     return stripped
+
+
+def section_scope_locator(s: str) -> str:
+    """Lower a selector to its SECTION-scope locator (drop momentti/kohta).
+
+    Used where only section-granularity resolution is available (the oracle
+    consolidated resolver segments whole <section> elements, not momentti). For
+    a canonical ``§3:1.2`` this returns ``chapter:3/section:1``; for an already
+    section-scoped or legacy form it returns ``to_locator_string(s)`` unchanged.
+    """
+    parsed = parse_section_selector(s.strip()) if s else None
+    if parsed is not None:
+        parts: list[str] = []
+        if parsed.chapter is not None:
+            parts.append(f"chapter:{parsed.chapter}")
+        parts.append(f"section:{parsed.section}")
+        return "/".join(parts)
+    # Legacy locator: drop trailing subsection:/paragraph: segments.
+    lowered = to_locator_string(s)
+    if "/" in lowered and ":" in lowered:
+        kept = [
+            seg for seg in lowered.split("/")
+            if not seg.lower().startswith(("subsection:", "paragraph:", "point:", "item:"))
+        ]
+        return "/".join(kept) if kept else lowered
+    return lowered
+
+
+def has_subprovision(s: str) -> bool:
+    """True if the selector addresses below the section (momentti/kohta)."""
+    parsed = parse_section_selector(s.strip()) if s else None
+    if parsed is not None:
+        return not parsed.is_section_scope
+    lowered = to_locator_string(s)
+    return any(
+        seg.lower().startswith(("subsection:", "paragraph:", "point:", "item:"))
+        for seg in lowered.split("/")
+    )

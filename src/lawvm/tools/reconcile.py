@@ -35,7 +35,11 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Any
 
-from lawvm.core.selector import to_locator_string
+from lawvm.core.selector import (
+    has_subprovision,
+    section_scope_locator,
+    to_locator_string,
+)
 from lawvm.tools.section_keys import _clean_section_text
 
 # Agree threshold — matches the existing dedup thresholds elsewhere in the tool.
@@ -52,6 +56,7 @@ class OracleL1:
     version_markers: list[str] = field(default_factory=list)
     notes: list[dict[str, Any]] = field(default_factory=list)
     straddling_notes: list[dict[str, Any]] = field(default_factory=list)
+    superseded_text: str = ""  # concatenated prior-wording spans (for discrimination)
     cutoff_date: str | None = None
     oracle_version_amendment_id: str | None = None
     locator: str = ""
@@ -95,6 +100,7 @@ def build_oracle_l1(
     version_markers: list[str] = []
     notes: list[dict[str, Any]] = []
     straddling: list[dict[str, Any]] = []
+    superseded_parts: list[str] = []
     for span in spans:
         label = span["label"]
         if label == "NOTE":
@@ -107,6 +113,7 @@ def build_oracle_l1(
                 straddling.append(note)
             continue
         if label == "SUPERSEDED":
+            superseded_parts.append(span["text"])
             continue  # prior wording — never in force at D
         if label == "ENTERS_FORCE":
             efd = _parse_date(span.get("enters_force_date") or "")
@@ -133,6 +140,7 @@ def build_oracle_l1(
             version_markers=[],
             notes=notes,
             straddling_notes=straddling,
+            superseded_text=" ".join(superseded_parts).strip(),
             cutoff_date=loaded.get("oracle_cutoff_date"),
             oracle_version_amendment_id=loaded.get("oracle_version_amendment_id"),
             locator=loaded.get("locator", ""),
@@ -145,6 +153,7 @@ def build_oracle_l1(
         version_markers=version_markers,
         notes=notes,
         straddling_notes=straddling,
+        superseded_text=" ".join(superseded_parts).strip(),
         cutoff_date=loaded.get("oracle_cutoff_date"),
         oracle_version_amendment_id=loaded.get("oracle_version_amendment_id"),
         locator=loaded.get("locator", ""),
@@ -167,6 +176,39 @@ class ReconcileResult:
     replay_source: dict[str, Any] | None
     replay_status: str
     oracle: OracleL1
+    scope: str = "section"  # section comparison; "section_for_subprovision" caveat
+    scope_note: str | None = None
+
+
+def _classify_disagreement(
+    *, clean_replay: str, clean_oracle_in_force: str, oracle: OracleL1
+) -> str:
+    """Classify a text DISAGREE as temporal vs editorial.
+
+    Temporal requires positive evidence that the divergence is caused by an
+    un-applied dated amendment, not just the presence of any old dated note:
+
+      1. the oracle carries a note whose commencement date has passed (straddle),
+         AND
+      2. replay is plausibly 'stuck' on the prior version — i.e. the replay text
+         resembles the oracle's SUPERSEDED (prior-wording) text at least as much
+         as it resembles the oracle's in-force text.
+
+    When (1) holds but (2) does not, the dated note is incidental and the diff is
+    more likely editorial/structural drift, so we do NOT over-claim temporal.
+    """
+    if not oracle.straddling_notes:
+        return "editorial"
+    clean_superseded = _clean_section_text(oracle.superseded_text)
+    if not clean_superseded:
+        # A straddling note but no recoverable prior wording (e.g. added-only
+        # momentti): treat the dated straddle as the temporal signal.
+        return "temporal"
+    sim_to_superseded = SequenceMatcher(None, clean_replay, clean_superseded).ratio()
+    sim_to_in_force = SequenceMatcher(None, clean_replay, clean_oracle_in_force).ratio()
+    if sim_to_superseded >= sim_to_in_force:
+        return "temporal"
+    return "editorial"
 
 
 def reconcile_provision(
@@ -181,12 +223,28 @@ def reconcile_provision(
     """Compute the replay-L1 vs oracle-L1 reconciliation for one provision."""
     from lawvm.provision_state import resolve_provision_state
 
+    # The oracle consolidated resolver segments whole <section> elements, not
+    # momentit. So reconcile compares at SECTION granularity on both sides. When
+    # the caller addressed a momentti/kohta we resolve the section and flag the
+    # comparison scope rather than silently reporting a false 'presence' diff
+    # (the oracle simply cannot address below the section).
+    sub = has_subprovision(selector)
+    section_locator = section_scope_locator(selector)
     locator = to_locator_string(selector)
+    scope = "section"
+    scope_note: str | None = None
+    if sub:
+        scope = "section_for_subprovision"
+        scope_note = (
+            f"selector {selector!r} addresses below the section; oracle-L1 is "
+            f"section-granular, so reconcile compares at section scope "
+            f"({section_locator})."
+        )
 
     payload = resolve_provision_state(
         statute_id=statute_id,
         jurisdiction=jurisdiction,
-        provision=locator,
+        provision=section_locator,
         as_of=as_of,
         query_type=query_type,
         territory=None,
@@ -198,7 +256,7 @@ def reconcile_provision(
     replay_text = text_block.get("rendered", "") if replay_status == "selected" else ""
     replay_available = bool(text_block.get("available")) and replay_status == "selected"
 
-    oracle = build_oracle_l1(statute_id, locator, as_of, at_amendment=at_amendment)
+    oracle = build_oracle_l1(statute_id, section_locator, as_of, at_amendment=at_amendment)
 
     # Compare cleaned in-force text.
     clean_a = _clean_section_text(replay_text)
@@ -213,13 +271,12 @@ def reconcile_provision(
         if clean_a == clean_b or ratio >= _AGREE_RATIO:
             verdict, divergence = "AGREE", None
         else:
-            # Classify: temporal if the oracle carries a note whose commencement
-            # date has passed (straddles D) that replay did not apply; else
-            # editorial/structural.
-            if oracle.straddling_notes:
-                verdict, divergence = "DISAGREE", "temporal"
-            else:
-                verdict, divergence = "DISAGREE", "editorial"
+            verdict = "DISAGREE"
+            divergence = _classify_disagreement(
+                clean_replay=clean_a,
+                clean_oracle_in_force=clean_b,
+                oracle=oracle,
+            )
 
     return ReconcileResult(
         selector=selector,
@@ -236,6 +293,8 @@ def reconcile_provision(
         replay_source=payload.get("source"),
         replay_status=replay_status,
         oracle=oracle,
+        scope=scope,
+        scope_note=scope_note,
     )
 
 
@@ -249,6 +308,8 @@ def _result_to_jsonable(r: ReconcileResult) -> dict[str, Any]:
         "verdict": r.verdict,
         "divergence_class": r.divergence_class,
         "agree_ratio": r.agree_ratio,
+        "scope": r.scope,
+        "scope_note": r.scope_note,
         "replay": {
             "status": r.replay_status,
             "available": r.replay_available,
@@ -263,6 +324,7 @@ def _result_to_jsonable(r: ReconcileResult) -> dict[str, Any]:
             "version_markers": r.oracle.version_markers,
             "notes": r.oracle.notes,
             "straddling_notes": r.oracle.straddling_notes,
+            "superseded_text": r.oracle.superseded_text,
             "cutoff_date": r.oracle.cutoff_date,
             "oracle_version_amendment_id": r.oracle.oracle_version_amendment_id,
         },
@@ -277,8 +339,10 @@ def _render_human(r: ReconcileResult) -> str:
     lines: list[str] = []
     eff = (r.replay_version or {}).get("effective") or "—"
     header = f"{r.statute_id} {r.selector}  (in force @ {r.as_of})"
+    scope_lines = [f"  · {r.scope_note}"] if r.scope_note else []
     if r.verdict == "AGREE":
         lines.append(f"{header}   ✔ replay and oracle agree")
+        lines.extend(scope_lines)
         lines.append("")
         lines.append(f"  {r.replay_text}")
         lines.append("")
@@ -290,6 +354,7 @@ def _render_human(r: ReconcileResult) -> str:
 
     # DISAGREE
     lines.append(f"{header}   ⚠ DISAGREE ({r.divergence_class})")
+    lines.extend(scope_lines)
     lines.append("")
     if r.divergence_class == "presence":
         which = "replay" if not r.replay_available else "oracle"
