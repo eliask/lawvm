@@ -20,7 +20,6 @@ Usage:
 """
 from __future__ import annotations
 
-import hashlib
 import os
 import sys
 import time
@@ -107,6 +106,12 @@ _FI_PROJECTIONS: tuple = (
         description="HE typed signature elements",
     ),
     ProjectionSpec(
+        name="fi_he_branch_ops",
+        tier_1_deps=("fi_government_proposal.farchive",),
+        tier_2_deps=(),
+        description="HE proposed amendment ops (branch ops; backs pit-timeline branch view)",
+    ),
+    ProjectionSpec(
         name="statutes",
         tier_1_deps=("finlex.farchive",),
         tier_2_deps=(),
@@ -164,42 +169,26 @@ def _projections_for(jurisdiction: str) -> tuple:
 # ---------------------------------------------------------------------------
 
 
-def _farchive_hash(data_dir: str, farchive_name: str) -> str:
-    """Compute a lightweight hash of a farchive for staleness detection.
+# Canonical hashing lives in tier2_state so producers and the READ-side
+# freshness guard agree byte-for-byte. These thin wrappers preserve the
+# existing call sites/signatures.
 
-    Uses file size + mtime as a proxy (fast; deterministic for unchanged files).
-    A full SHA-256 over multi-GB farchives would be prohibitively slow here.
-    Returns a hex string suitable for state-file comparison.
-    """
-    path = Path(data_dir) / farchive_name
-    if not path.exists():
-        return ""
-    stat = path.stat()
-    # Stable: size + mtime_ns encoded as hex
-    raw = f"{stat.st_size}:{stat.st_mtime_ns}".encode()
-    return hashlib.sha256(raw).hexdigest()[:16]
+
+def _farchive_hash(data_dir: str, farchive_name: str) -> str:
+    """Lightweight size+mtime fingerprint of a farchive (see tier2_state)."""
+    from lawvm.tools.tier2_state import farchive_hash
+
+    return farchive_hash(data_dir, farchive_name)
 
 
 def _primary_farchive_hash(
     data_dir: str,
     spec: ProjectionSpec,
 ) -> str:
-    """Return the combined hash of all Tier 1 deps for a projection.
+    """Combined hash of all Tier 1 deps for a projection (see tier2_state)."""
+    from lawvm.tools.tier2_state import primary_farchive_hash
 
-    Returns "" if ALL dependency farchives are absent (no data to hash).
-    This ensures that state files pre-populated with "" hash correctly match
-    subsequent incremental checks when no farchive exists.
-    """
-    parts = []
-    for dep in spec.tier_1_deps:
-        parts.append(_farchive_hash(data_dir, dep))
-
-    # If all deps are absent (empty hash), propagate "" so incremental check works.
-    if all(p == "" for p in parts):
-        return ""
-
-    combined = ":".join(parts).encode()
-    return hashlib.sha256(combined).hexdigest()[:24]
+    return primary_farchive_hash(data_dir, spec.tier_1_deps)
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +235,7 @@ def _rebuild_projection(
     current_hash: str,
     verbose: bool = False,
     compile_metadata: Optional[Any] = None,
+    workers: int = 0,
 ) -> Dict[str, Any]:
     """Rebuild one projection and write its state file.
 
@@ -277,6 +267,7 @@ def _rebuild_projection(
             parquet_out=parquet_out,
             verbose=verbose,
             compile_metadata=compile_metadata,
+            workers=workers,
         )
         result["row_count"] = row_count
 
@@ -309,6 +300,7 @@ def _dispatch_projection(
     parquet_out: Path,
     verbose: bool,
     compile_metadata: Optional[Any] = None,
+    workers: int = 0,
 ) -> int:
     """Route each projection name to its existing emitter.
 
@@ -334,6 +326,14 @@ def _dispatch_projection(
             compile_metadata=compile_metadata,
         )
 
+    if name == "fi_he_branch_ops":
+        return _rebuild_he_branch_ops_projection(
+            data_dir=data_dir,
+            out_dir=out_dir,
+            verbose=verbose,
+            compile_metadata=compile_metadata,
+        )
+
     if name == "fi_inline_citations":
         return _rebuild_fi_inline_citations_projection(
             data_dir=data_dir,
@@ -355,6 +355,7 @@ def _dispatch_projection(
             out_dir=out_dir,
             jurisdiction=jurisdiction,
             compile_metadata=compile_metadata,
+            workers=workers,
         )
 
     # Unknown projection — log and skip (not an error; allow forward-compat)
@@ -428,6 +429,33 @@ def _rebuild_fi_crosslink_projection(
     return 0
 
 
+def _rebuild_he_branch_ops_projection(
+    *,
+    data_dir: str,
+    out_dir: Path,
+    verbose: bool,
+    compile_metadata: Optional[Any] = None,
+) -> int:
+    """Rebuild fi_he_branch_ops from fi_government_proposal.farchive."""
+    from lawvm.tools.export_fi_he_branch_ops import project_he_branch_ops
+
+    farchive_path = str(Path(data_dir) / "fi_government_proposal.farchive")
+    if not Path(farchive_path).exists():
+        print(
+            f"  SKIP fi_he_branch_ops: farchive not found at {farchive_path}",
+            file=sys.stderr,
+        )
+        return 0
+
+    run = project_he_branch_ops(
+        farchive_path=farchive_path,
+        data_dir=str(out_dir),
+        verbose=verbose,
+        compile_metadata=compile_metadata,
+    )
+    return run.ops_count
+
+
 def _rebuild_fi_inline_citations_projection(
     *,
     data_dir: str,
@@ -485,8 +513,15 @@ def _rebuild_core_projections(
     out_dir: Path,
     jurisdiction: str,
     compile_metadata: Optional[Any] = None,
+    workers: int = 0,
 ) -> int:
-    """Rebuild statutes / sections / findings / ops from export_parquet."""
+    """Rebuild statutes / sections / findings / ops from export_parquet.
+
+    export_projections already parallelizes per-statute replay across a process
+    pool; thread the caller's --workers choice through so it is honored end-to-
+    end (previously rebuild-indexes computed workers and dropped them, leaving
+    export_projections on its own default). 0 = export_projections' auto.
+    """
     from lawvm.tools.export_parquet import export_projections
 
     corpus = _load_default_fi_corpus(data_dir)
@@ -505,6 +540,7 @@ def _rebuild_core_projections(
         include_pools=False,
         include_he_corpus=False,
         compile_metadata=compile_metadata,
+        workers=workers,
     )
     return counts.get(name, 0)
 
@@ -617,6 +653,7 @@ def rebuild_indexes(
             current_hash=current_hash,
             verbose=verbose,
             compile_metadata=compile_metadata,
+            workers=workers,
         )
 
         if res["status"] == "ok":
@@ -648,6 +685,48 @@ def rebuild_indexes(
 # ---------------------------------------------------------------------------
 
 
+def _run_freshness_check(
+    *,
+    jurisdiction: str,
+    data_dir: str,
+    schema_version: str,
+) -> None:
+    """Report per-projection freshness vs the source farchive; exit non-zero if stale.
+
+    Does NOT rebuild — read-only audit surface for CI / pre-flight checks.
+    """
+    from lawvm.tools.projection_freshness import sweep_freshness
+
+    # The query commands read projections from data/{j}/{sv}; map the farchive
+    # root data_dir to that projection dir for the sweep.
+    projection_dir = str(tier2_dir(
+        data_dir=data_dir,
+        jurisdiction=jurisdiction,
+        schema_version=schema_version,
+    ))
+    verdicts = sweep_freshness(
+        projection_dir,
+        jurisdiction=jurisdiction,
+        schema_version=schema_version,
+    )
+    stale = [n for n, v in verdicts.items() if v.status in ("stale", "no_state")]
+    print(f"freshness check: {jurisdiction}/{schema_version} ({projection_dir})")
+    for name in sorted(verdicts):
+        v = verdicts[name]
+        print(f"  {name:<22} {v.status}")
+    if stale:
+        print(
+            f"\n{len(stale)} projection(s) stale/missing-state: {', '.join(sorted(stale))}",
+            file=sys.stderr,
+        )
+        print(
+            f"Rebuild with:  lawvm rebuild-indexes -j {jurisdiction} --incremental",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print("\nAll projections fresh.")
+
+
 def main(args: Any) -> None:
     """CLI entry point for lawvm rebuild-indexes."""
     jurisdiction = getattr(args, "jurisdiction", "fi") or "fi"
@@ -660,6 +739,14 @@ def main(args: Any) -> None:
     data_dir = getattr(args, "data_dir", None) or "data"
     schema_version = getattr(args, "schema_version", None) or DEFAULT_SCHEMA_VERSION
     verbose = getattr(args, "verbose", False)
+
+    if getattr(args, "check", False):
+        _run_freshness_check(
+            jurisdiction=jurisdiction,
+            data_dir=data_dir,
+            schema_version=schema_version,
+        )
+        return
 
     result = rebuild_indexes(
         jurisdiction=jurisdiction,

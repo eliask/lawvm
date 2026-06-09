@@ -149,6 +149,32 @@ def sync_fi_proposals(
         )
         result["projection_counts"] = counts
 
+        # Keep the Tier 2 freshness sidecars in lockstep with the farchive we
+        # just projected from, so the READ-side freshness guard does not flag a
+        # just-built projection as stale (these dedicated exporters historically
+        # wrote only the parquet body, not the .state.json).
+        from lawvm.tools.tier2_state import write_projection_state_after_export
+
+        for _proj in (
+            "fi_he_corpus",
+            "fi_he_atoms",
+            "fi_he_law_refs",
+            "fi_he_signatures",
+        ):
+            if _proj in counts:
+                try:
+                    write_projection_state_after_export(
+                        projection_dir=_data_dir,
+                        projection_name=_proj,
+                        row_count=int(counts[_proj]),
+                        tier_1_dependencies=("fi_government_proposal.farchive",),
+                    )
+                except Exception as _exc:  # never fail the sync over a sidecar
+                    print(
+                        f"  warning: could not write {_proj}.state.json: {_exc}",
+                        file=sys.stderr,
+                    )
+
         print("\nProjection counts:", file=sys.stderr)
         for name, n in counts.items():
             print(f"  {name}: {n:,}", file=sys.stderr)

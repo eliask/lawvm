@@ -246,3 +246,7 @@ pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/linux,python
 .claude
+
+# Generated audit/sweep reports (reconcile-sweep, coverage-gap, ...) — local,
+# regenerable artifacts; never commit them.
+reports/

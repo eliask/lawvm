@@ -52,14 +52,38 @@ def find_source_file(data_dir: str, stem: str) -> Optional[Path]:
 
     Returns:
         Path to the found file, or None if neither exists.
+
+    Side effect: when a registered Tier 2 projection is resolved, this is the
+    universal READ choke point, so we run the projection-freshness guard here.
+    If the projection is behind its source farchive, a LOUD stderr warning is
+    emitted (deduplicated per process) pointing at the rebuild command. The
+    check is cheap (sidecar read + farchive stat) and never blocks the read
+    unless ``LAWVM_STRICT_FRESHNESS`` is set.
     """
     parquet = Path(data_dir) / f"{stem}.parquet"
     if parquet.exists():
+        _check_freshness(data_dir, stem)
         return parquet
     jsonl = Path(data_dir) / f"{stem}.jsonl"
     if jsonl.exists():
+        _check_freshness(data_dir, stem)
         return jsonl
     return None
+
+
+def _check_freshness(data_dir: str, stem: str) -> None:
+    """Run the projection-freshness guard, swallowing any failure.
+
+    Freshness is advisory: a stale projection is still a usable answer, so a bug
+    in the guard must never break a real query. Imported lazily to keep the
+    common path (and module import) free of the rebuild-index registry.
+    """
+    try:
+        from lawvm.tools.projection_freshness import warn_if_stale
+
+        warn_if_stale(stem, data_dir)
+    except Exception:
+        return
 
 
 def source_expr_for_path(path: Path) -> str:

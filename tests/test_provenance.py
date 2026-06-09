@@ -180,3 +180,102 @@ def test_build_provenance_future_commencement_gate(monkeypatch) -> None:
         "content_state": "live",
         "gate": "future",
     }
+
+
+# ---------------------------------------------------------------------------
+# Statute-level provenance (Q3): HE -> [enacted amendments] inversion
+# ---------------------------------------------------------------------------
+
+
+class _OpSource:
+    def __init__(self, statute_id, enacted, effective, legal_status, title):
+        self.statute_id = statute_id
+        self.enacted = enacted
+        self.effective = effective
+        self.legal_status = legal_status
+        self.title = title
+
+
+def _patch_statute_replay(monkeypatch) -> None:
+    src = _OpSource("2026/269", "2026-04-17", "2026-06-01", "commenced", "Laki ... muuttamisesta")
+    monkeypatch.setattr(
+        provenance,
+        "_amendment_sources_from_replay",
+        lambda statute_id: {"2026/269": src},
+    )
+
+
+def _patch_amendment_children(monkeypatch) -> None:
+    import lawvm.finland.amendment_index as ai
+
+    # Two amendments; one we have source XML for, one we don't.
+    monkeypatch.setattr(
+        ai, "get_amendment_children", lambda: {"2011/805": ["2026/269", "2014/672"]}
+    )
+
+
+class _StatuteFakeStore:
+    def __init__(self):
+        self.closed = False
+
+    def read_source(self, statute_id):
+        if statute_id == "2026/269":
+            return b"<xml/>"
+        return None  # 2014/672: source unavailable
+
+    def close(self):
+        self.closed = True
+
+
+def test_build_statute_provenance_inverts_he_to_amendments(monkeypatch) -> None:
+    _patch_statute_replay(monkeypatch)
+    _patch_amendment_children(monkeypatch)
+    _patch_refs(monkeypatch)  # extractor returns HE/cmte/EV for 2026/269
+    # Override the store _patch_refs installed with the statute-level fake (which
+    # returns None for 2014/672 to exercise the missing-source path).
+    monkeypatch.setattr(provenance, "get_corpus_store", _StatuteFakeStore)
+    _patch_he_meta(monkeypatch, finlex_state="pending")
+
+    record = provenance.build_statute_provenance(
+        "2011/805", as_of="2026-06-09", data_dir="test-data"
+    )
+
+    assert record["schema"] == "lawvm.provenance_statute.v1"
+    assert record["statute_id"] == "2011/805"
+    assert record["amendment_count"] == 2
+    assert record["he_resolved_count"] == 1
+
+    by_id = {a["amendment_id"]: a for a in record["amendments"]}
+    a269 = by_id["2026/269"]
+    assert a269["applied_in_replay"] is True
+    assert a269["commencement"]["effective"] == "2026-06-01"
+    assert a269["commencement"]["enacted"] == "2026-04-17"
+    assert a269["originating_he"]["he_id"] == "he/2025/188"
+    # finlex_state pending but still surfaced as an enacted amendment (inversion)
+    assert a269["originating_he"]["finlex_state"] == "pending"
+    assert a269["committee_refs"][0]["raw_text"] == "LaVM 3/2026"
+    assert a269["parliament_response_refs"][0]["raw_text"] == "EV 23/2026"
+
+    a672 = by_id["2014/672"]
+    assert a672["preparatory_available"] is False
+    assert a672["originating_he"] is None
+    # ordering: newest amendment first
+    assert record["amendments"][0]["amendment_id"] == "2026/269"
+
+
+def test_statute_provenance_human_render(monkeypatch) -> None:
+    _patch_statute_replay(monkeypatch)
+    _patch_amendment_children(monkeypatch)
+    _patch_refs(monkeypatch)
+    monkeypatch.setattr(provenance, "get_corpus_store", _StatuteFakeStore)
+    _patch_he_meta(monkeypatch, finlex_state="pending")
+
+    record = provenance.build_statute_provenance(
+        "2011/805", as_of="2026-06-09", data_dir="test-data"
+    )
+    text = provenance._render_statute_human(record)
+    assert "statute provenance" in text
+    assert "L 2026/269" in text
+    assert "in force 2026-06-01" in text
+    assert "HE   : he/2025/188" in text
+    assert "EV 23/2026" in text

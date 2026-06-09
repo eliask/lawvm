@@ -153,7 +153,7 @@ def project_he_branch_ops(
 
     # Collect all fin@ main.xml locators
     locators: list[str] = []
-    for loc in farchive.list():
+    for loc in farchive.locators():
         if not isinstance(loc, str):
             continue
         if not loc.startswith(_AKN_PATH_PREFIX):
@@ -209,14 +209,16 @@ def project_he_branch_ops(
             done += 1
             continue
 
-        # Read blob from farchive
+        # Read blob from farchive. The farchive API exposes raw bytes via
+        # get(locator); span metadata (if any) lives on the resolved StateSpan's
+        # last_metadata. (Older resolve()/read(span)/meta(span) API is gone.)
         blob: Optional[bytes] = None
         metadata: dict = {}
         try:
+            blob = farchive.get(loc)
             span = farchive.resolve(loc)
-            if span is not None:
-                blob = farchive.read(span)
-                metadata = farchive.meta(span) or {}
+            if span is not None and getattr(span, "last_metadata", None):
+                metadata = dict(span.last_metadata) or {}
         except Exception as exc:
             run.failures.append({
                 "loc": loc,
@@ -374,6 +376,28 @@ def main(args: object) -> None:
     verbose = bool(getattr(args, "verbose", False))
     dry_run = bool(getattr(args, "dry_run", False))
 
+    # v3 substrate-locked persistence requires CompileMetadata. Build a default
+    # bound to the source farchive fingerprint (mirrors sync-fi-proposals).
+    compile_metadata = None
+    if not dry_run:
+        from lawvm.core.compile_metadata_default import build_default_compile_metadata
+        import hashlib as _hashlib
+
+        _fa = Path(farchive_path)
+        if _fa.exists():
+            _stat = _fa.stat()
+            _src = _hashlib.sha256(
+                f"{_stat.st_size}:{_stat.st_mtime_ns}".encode()
+            ).hexdigest()
+            _source_bundle_hash = f"sha256:{_src}"
+        else:
+            _source_bundle_hash = "sha256:no-farchive"
+        compile_metadata = build_default_compile_metadata(
+            jurisdiction="fi",
+            source_bundle_hash=_source_bundle_hash,
+            build_id="cli.export-fi-he-branch-ops.fi",
+        )
+
     run = project_he_branch_ops(
         farchive_path=farchive_path,
         data_dir=data_dir,
@@ -382,7 +406,25 @@ def main(args: object) -> None:
         strict=strict,
         verbose=verbose,
         dry_run=dry_run,
+        compile_metadata=compile_metadata,
     )
+
+    # Keep the Tier 2 freshness sidecar in lockstep with the farchive.
+    if not dry_run:
+        try:
+            from lawvm.tools.tier2_state import write_projection_state_after_export
+
+            write_projection_state_after_export(
+                projection_dir=data_dir,
+                projection_name="fi_he_branch_ops",
+                row_count=run.ops_count,
+                tier_1_dependencies=("fi_government_proposal.farchive",),
+            )
+        except Exception as _exc:
+            print(
+                f"  warning: could not write fi_he_branch_ops.state.json: {_exc}",
+                file=sys.stderr,
+            )
 
     print("\nBranch-ops projection complete:", file=sys.stderr)
     print(f"  HEs processed:     {run.he_count:,}", file=sys.stderr)
