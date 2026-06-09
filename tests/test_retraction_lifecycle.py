@@ -1,13 +1,21 @@
 """Tests for Slice 5 retraction lifecycle + taint reports.
 
-Mandatory acceptance criteria:
+ClaimStore-direct acceptance criteria still validated here:
   10. test_consumption_event_logged_per_consumed_claim
-  11. test_retraction_emits_taint_report
-  12. test_retraction_lists_multiple_affected_builds
-  13. test_invalidated_PIT_intervals_present_in_report
-  14. test_strict_rebuild_refuses_retracted_claim (actually: strict build properly
+  14. test_strict_rebuild_refuses_retracted_claim (strict build properly
       observes retraction — retracted claims leave NULL slots as NULL)
-  15. test_taint_report_cli_renders
+
+Criteria 11/12/13/15 exercised the v2.2 ClaimStore-backed `lawvm claim
+retract` / `taint-report` CLI. Commit 7d0eb1df migrated those CLI commands
+to the v3 GraphStore / ProvenanceAssertion substrate (they no longer read
+ClaimStore), so those four tests — which seeded a ClaimStore and then drove
+the migrated CLI — became incoherent and are now covered against the current
+substrate by tests/test_cmd_claim_v3.py
+(test_cmd_claim_retract_emits_retracted_and_renders_taint,
+test_cmd_claim_taint_report_computed_at_query_time, and the claim_id
+variants). They were deleted rather than ported to avoid duplicating the v3
+suite. The build_id/affected_builds/invalidated_PIT_intervals taint-report
+data shape they asserted no longer exists in the GraphStore taint model.
 """
 from __future__ import annotations
 
@@ -15,7 +23,6 @@ import hashlib
 import json
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import List
 
 import pytest
 
@@ -137,53 +144,6 @@ def _make_and_accept_claim(
     return claim_id
 
 
-def _emit_consumed_event(
-    store: ClaimStore,
-    claim_id: str,
-    build_id: str,
-    profile: str = "strict_with_attested_claims",
-    projection_path: str = "/data/fi_refs.parquet",
-    row_hashes: List[str] = None,  # ty:ignore[invalid-parameter-default]
-) -> None:
-    """Emit a consumed event for a claim (simulates export_fi_refs calling track_consumption)."""
-    claim = store.read_claim(claim_id)
-    valid_at = claim.valid_at
-
-    reason = json.dumps({
-        "build_id": build_id,
-        "profile": profile,
-        "projection_artifact_path": projection_path,
-        "row_hashes": row_hashes or ["rowhashabc123"],
-        "invalidated_PIT_intervals": [
-            {
-                "target_locator": claim.claim_scope.provision_ref or claim.claim_scope.statute_id,
-                "interval_start": valid_at[0].isoformat(),
-                "interval_end": valid_at[1].isoformat() if valid_at[1] else None,
-            }
-        ],
-        "dependent_downstream_artifacts": [],
-    })
-
-    now = datetime.now(tz=timezone.utc)
-    producer = Producer(
-        producer_kind="tool",
-        handle=None,
-        model_id=None,
-        timestamp=now,
-        environment="test",
-    )
-
-    store.append_event(ClaimStateEvent(
-        claim_id=claim_id,
-        event_kind="consumed",
-        timestamp=now,
-        producer=producer,
-        old_status=None,
-        new_status=None,
-        reason=reason,
-    ))
-
-
 # ---------------------------------------------------------------------------
 # Test 10: consumption event logged per consumed claim
 # ---------------------------------------------------------------------------
@@ -213,106 +173,6 @@ def test_consumption_event_logged_per_consumed_claim(tmp_path: Path):
     payload = json.loads(consumed_events[0].reason)
     assert payload["build_id"] == "build-test-001"
     assert payload["profile"] == "strict_with_attested_claims"
-
-
-# ---------------------------------------------------------------------------
-# Test 11: retraction emits taint report
-# ---------------------------------------------------------------------------
-
-
-def test_retraction_emits_taint_report(tmp_path: Path):
-    """Claim accepted → consumed → retracted. Taint report file exists with build_id + row hashes."""
-    store = ClaimStore(tmp_path / "manual_claims")
-    claim_id = _make_and_accept_claim(store)
-
-    # Simulate consumption
-    _emit_consumed_event(store, claim_id, "build-abc-001", row_hashes=["row_hash_xyz"])
-
-    # Retract via CLI
-    from lawvm.tools.cmd_claim import cmd_retract
-    args = _make_args(
-        claim_id=claim_id,
-        reason="bad claim detected",
-        data_dir=str(tmp_path),
-    )
-    rc = cmd_retract(args)
-    assert rc == 0
-
-    # Check taint report was created
-    taint_dir = tmp_path / "manual_claims" / "claim_taint_reports"
-    from lawvm.core.manual_claims.taint_report import find_taint_reports_for_claim, read_taint_report
-    paths = find_taint_reports_for_claim(taint_dir, claim_id)
-    assert len(paths) >= 1, "Taint report file must be created after retraction"
-
-    report = read_taint_report(paths[0])
-    assert report.retracted_claim_id == claim_id
-    assert len(report.affected_builds) == 1
-    ab = report.affected_builds[0]
-    assert ab.build_id == "build-abc-001"
-    assert "row_hash_xyz" in ab.affected_projection_row_hashes
-
-
-# ---------------------------------------------------------------------------
-# Test 12: retraction lists multiple affected builds
-# ---------------------------------------------------------------------------
-
-
-def test_retraction_lists_multiple_affected_builds(tmp_path: Path):
-    """Claim consumed by 2 builds; retraction enumerates both."""
-    store = ClaimStore(tmp_path / "manual_claims")
-    claim_id = _make_and_accept_claim(store)
-
-    _emit_consumed_event(store, claim_id, "build-001", projection_path="/data/build001.parquet")
-    _emit_consumed_event(store, claim_id, "build-002", projection_path="/data/build002.parquet")
-
-    from lawvm.tools.cmd_claim import cmd_retract
-    args = _make_args(
-        claim_id=claim_id,
-        reason="multi-build retraction test",
-        data_dir=str(tmp_path),
-    )
-    rc = cmd_retract(args)
-    assert rc == 0
-
-    taint_dir = tmp_path / "manual_claims" / "claim_taint_reports"
-    from lawvm.core.manual_claims.taint_report import find_taint_reports_for_claim, read_taint_report
-    paths = find_taint_reports_for_claim(taint_dir, claim_id)
-    assert paths
-
-    report = read_taint_report(paths[0])
-    build_ids = {ab.build_id for ab in report.affected_builds}
-    assert "build-001" in build_ids
-    assert "build-002" in build_ids
-
-
-# ---------------------------------------------------------------------------
-# Test 13: invalidated PIT intervals present in report
-# ---------------------------------------------------------------------------
-
-
-def test_invalidated_PIT_intervals_present_in_report(tmp_path: Path):
-    """Claim with valid_at=(2020-01-01, None) retracted; report contains interval (2020-01-01, None)."""
-    store = ClaimStore(tmp_path / "manual_claims")
-    claim_id = _make_and_accept_claim(store)  # valid_at=(2020-01-01, None)
-
-    _emit_consumed_event(store, claim_id, "build-pit-001")
-
-    from lawvm.tools.cmd_claim import cmd_retract
-    args = _make_args(claim_id=claim_id, reason="PIT interval test", data_dir=str(tmp_path))
-    cmd_retract(args)
-
-    taint_dir = tmp_path / "manual_claims" / "claim_taint_reports"
-    from lawvm.core.manual_claims.taint_report import find_taint_reports_for_claim, read_taint_report
-    paths = find_taint_reports_for_claim(taint_dir, claim_id)
-    assert paths
-
-    report = read_taint_report(paths[0])
-    assert len(report.affected_builds) >= 1
-    ab = report.affected_builds[0]
-    assert len(ab.invalidated_PIT_intervals) >= 1
-    iv = ab.invalidated_PIT_intervals[0]
-    assert iv.interval_start == date(2020, 1, 1)
-    assert iv.interval_end is None  # open-ended
 
 
 # ---------------------------------------------------------------------------
@@ -377,56 +237,3 @@ def test_strict_rebuild_refuses_retracted_claim(tmp_path: Path):
     )  # must not raise
 
 
-# ---------------------------------------------------------------------------
-# Test 15: taint-report CLI renders
-# ---------------------------------------------------------------------------
-
-
-def test_taint_report_cli_renders(tmp_path: Path, capsys):
-    """lawvm claim taint-report CLAIM_ID + --list + --build BUILD_ID all render."""
-    store = ClaimStore(tmp_path / "manual_claims")
-    claim_id = _make_and_accept_claim(store)
-    _emit_consumed_event(store, claim_id, "build-cli-001")
-
-    # Retract to create taint report
-    from lawvm.tools.cmd_claim import cmd_retract
-    cmd_retract(_make_args(
-        claim_id=claim_id,
-        reason="CLI render test",
-        data_dir=str(tmp_path),
-    ))
-
-    # Test: taint-report CLAIM_ID
-    from lawvm.tools.cmd_claim import cmd_taint_report
-    rc = cmd_taint_report(_make_args(
-        claim_id=claim_id,
-        list=False,
-        build=None,
-        data_dir=str(tmp_path),
-    ))
-    assert rc == 0
-    captured = capsys.readouterr()
-    assert claim_id in captured.out
-
-    # Test: taint-report --list
-    rc = cmd_taint_report(_make_args(
-        claim_id=None,
-        list=True,
-        build=None,
-        data_dir=str(tmp_path),
-    ))
-    assert rc == 0
-    captured = capsys.readouterr()
-    # Should show count or claim_id prefix
-    assert len(captured.out) > 0
-
-    # Test: taint-report --build BUILD_ID
-    rc = cmd_taint_report(_make_args(
-        claim_id=None,
-        list=False,
-        build="build-cli-001",
-        data_dir=str(tmp_path),
-    ))
-    assert rc == 0
-    captured = capsys.readouterr()
-    assert "build-cli-001" in captured.out or claim_id[:10] in captured.out
