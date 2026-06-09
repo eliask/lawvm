@@ -1,0 +1,392 @@
+"""lawvm reconcile — diff replay-L1 vs oracle-L1 at one selector.
+
+Two independent clean "what is in force at date D" views are computed and
+compared:
+
+  A = replay-L1   — provision-state(...).text.rendered, normalized. The
+                    materialized PIT in-force text from amendment replay.
+  B = oracle-L1   — the Finlex consolidated section run through the structural
+                    temporal-span machinery (oracle_text.build_temporal_spans),
+                    keeping only IN_FORCE / CURRENT spans (and IN_FORCE spans
+                    whose entering-into-force date is ≤ D), dropping NOTE,
+                    SUPERSEDED and future ENTERS_FORCE spans.
+
+Divergence is the signal — it is NEVER silently resolved. When A and B agree we
+show one clean view; when they disagree we show BOTH and classify the cause:
+
+  - temporal   — the oracle carries a version/note whose entry-into-force date
+                 straddles D in a way replay did not apply (or vice-versa). This
+                 is the 2011/805 §3:1 case as of 2026: oracle marks 269/2026 in
+                 force (eff 1.6.2026) but replay's PIT path is bounded by the
+                 consolidated snapshot cutoff and did not materialize it.
+  - editorial  — they differ with no temporal straddle (parse / dedup / prior-
+                 wording drift).
+  - presence   — one side has no provision at this selector.
+
+This is the generalized antidote to the in-force-vs-superseded ambiguity that a
+flat L0 read invites.
+"""
+from __future__ import annotations
+
+import datetime
+import json
+import sys
+from dataclasses import dataclass, field
+from difflib import SequenceMatcher
+from typing import Any
+
+from lawvm.core.selector import to_locator_string
+from lawvm.tools.section_keys import _clean_section_text
+
+# Agree threshold — matches the existing dedup thresholds elsewhere in the tool.
+_AGREE_RATIO = 0.995
+
+
+@dataclass
+class OracleL1:
+    """The cruft-stripped 'what the oracle says is in force at D' view."""
+
+    text: str
+    available: bool
+    basis: str  # "structural" | "inline_unsegmented" | "absent"
+    version_markers: list[str] = field(default_factory=list)
+    notes: list[dict[str, Any]] = field(default_factory=list)
+    straddling_notes: list[dict[str, Any]] = field(default_factory=list)
+    cutoff_date: str | None = None
+    oracle_version_amendment_id: str | None = None
+    locator: str = ""
+
+
+def _parse_date(s: str) -> datetime.date | None:
+    try:
+        return datetime.date.fromisoformat(s)
+    except (ValueError, TypeError):
+        return None
+
+
+def build_oracle_l1(
+    statute_id: str,
+    section_filter: str,
+    as_of: str,
+    at_amendment: str = "",
+) -> OracleL1:
+    """Compute oracle-L1 (in-force-at-D, cruft stripped) from structural spans."""
+    from lawvm.tools.oracle_text import build_temporal_spans, load_oracle_section
+
+    as_of_date = _parse_date(as_of) or datetime.date.today()
+    loaded = load_oracle_section(statute_id, section_filter, at_amendment=at_amendment)
+    if not loaded.get("found"):
+        return OracleL1(
+            text="",
+            available=False,
+            basis="absent",
+            cutoff_date=loaded.get("oracle_cutoff_date"),
+            oracle_version_amendment_id=loaded.get("oracle_version_amendment_id"),
+            locator=loaded.get("locator", ""),
+        )
+
+    section_el = loaded["section_el"]
+    spans = build_temporal_spans(section_el, today=as_of_date)
+    has_markers = any(
+        s["label"] in ("IN_FORCE", "ENTERS_FORCE", "SUPERSEDED", "NOTE") for s in spans
+    )
+
+    kept: list[str] = []
+    version_markers: list[str] = []
+    notes: list[dict[str, Any]] = []
+    straddling: list[dict[str, Any]] = []
+    for span in spans:
+        label = span["label"]
+        if label == "NOTE":
+            note = {"text": span["text"], "enters_force_date": span.get("enters_force_date")}
+            notes.append(note)
+            efd = _parse_date(span.get("enters_force_date") or "")
+            if efd is not None and efd <= as_of_date:
+                # A note whose commencement date has already passed → this is the
+                # straddle signal (oracle announces a change in force ≤ D).
+                straddling.append(note)
+            continue
+        if label == "SUPERSEDED":
+            continue  # prior wording — never in force at D
+        if label == "ENTERS_FORCE":
+            efd = _parse_date(span.get("enters_force_date") or "")
+            if efd is not None and efd > as_of_date:
+                continue  # future — not yet in force at D
+            kept.append(span["text"])
+            if span.get("version"):
+                version_markers.append(span["version"])
+            continue
+        # IN_FORCE or CURRENT
+        kept.append(span["text"])
+        if span.get("version"):
+            version_markers.append(span["version"])
+
+    if not has_markers:
+        # No structural temporal markers in this section: oracle-L1 degrades to
+        # raw prose with an inline_unsegmented basis (don't fake confidence).
+        from lawvm.tools.oracle_text import _el_to_text
+
+        return OracleL1(
+            text=_el_to_text(section_el),
+            available=True,
+            basis="inline_unsegmented",
+            version_markers=[],
+            notes=notes,
+            straddling_notes=straddling,
+            cutoff_date=loaded.get("oracle_cutoff_date"),
+            oracle_version_amendment_id=loaded.get("oracle_version_amendment_id"),
+            locator=loaded.get("locator", ""),
+        )
+
+    return OracleL1(
+        text=" ".join(kept).strip(),
+        available=bool(kept),
+        basis="structural",
+        version_markers=version_markers,
+        notes=notes,
+        straddling_notes=straddling,
+        cutoff_date=loaded.get("oracle_cutoff_date"),
+        oracle_version_amendment_id=loaded.get("oracle_version_amendment_id"),
+        locator=loaded.get("locator", ""),
+    )
+
+
+@dataclass
+class ReconcileResult:
+    selector: str
+    locator: str
+    statute_id: str
+    as_of: str
+    query_type: str
+    verdict: str  # AGREE | DISAGREE
+    divergence_class: str | None  # temporal | editorial | presence | None
+    agree_ratio: float
+    replay_text: str
+    replay_available: bool
+    replay_version: dict[str, Any] | None
+    replay_source: dict[str, Any] | None
+    replay_status: str
+    oracle: OracleL1
+
+
+def reconcile_provision(
+    *,
+    statute_id: str,
+    selector: str,
+    as_of: str,
+    query_type: str = "in_force",
+    jurisdiction: str = "fi",
+    at_amendment: str = "",
+) -> ReconcileResult:
+    """Compute the replay-L1 vs oracle-L1 reconciliation for one provision."""
+    from lawvm.provision_state import resolve_provision_state
+
+    locator = to_locator_string(selector)
+
+    payload = resolve_provision_state(
+        statute_id=statute_id,
+        jurisdiction=jurisdiction,
+        provision=locator,
+        as_of=as_of,
+        query_type=query_type,
+        territory=None,
+        include_ir=False,
+        status_stream=sys.stderr,
+    )
+    replay_status = payload.get("status", "")
+    text_block = payload.get("text") or {}
+    replay_text = text_block.get("rendered", "") if replay_status == "selected" else ""
+    replay_available = bool(text_block.get("available")) and replay_status == "selected"
+
+    oracle = build_oracle_l1(statute_id, locator, as_of, at_amendment=at_amendment)
+
+    # Compare cleaned in-force text.
+    clean_a = _clean_section_text(replay_text)
+    clean_b = _clean_section_text(oracle.text)
+
+    if not replay_available and not oracle.available:
+        verdict, divergence, ratio = "DISAGREE", "presence", 0.0
+    elif not replay_available or not oracle.available:
+        verdict, divergence, ratio = "DISAGREE", "presence", 0.0
+    else:
+        ratio = SequenceMatcher(None, clean_a, clean_b).ratio()
+        if clean_a == clean_b or ratio >= _AGREE_RATIO:
+            verdict, divergence = "AGREE", None
+        else:
+            # Classify: temporal if the oracle carries a note whose commencement
+            # date has passed (straddles D) that replay did not apply; else
+            # editorial/structural.
+            if oracle.straddling_notes:
+                verdict, divergence = "DISAGREE", "temporal"
+            else:
+                verdict, divergence = "DISAGREE", "editorial"
+
+    return ReconcileResult(
+        selector=selector,
+        locator=locator,
+        statute_id=statute_id,
+        as_of=as_of,
+        query_type=query_type,
+        verdict=verdict,
+        divergence_class=divergence,
+        agree_ratio=round(ratio, 4),
+        replay_text=replay_text,
+        replay_available=replay_available,
+        replay_version=payload.get("version"),
+        replay_source=payload.get("source"),
+        replay_status=replay_status,
+        oracle=oracle,
+    )
+
+
+def _result_to_jsonable(r: ReconcileResult) -> dict[str, Any]:
+    return {
+        "selector": r.selector,
+        "locator": r.locator,
+        "statute_id": r.statute_id,
+        "as_of": r.as_of,
+        "query_type": r.query_type,
+        "verdict": r.verdict,
+        "divergence_class": r.divergence_class,
+        "agree_ratio": r.agree_ratio,
+        "replay": {
+            "status": r.replay_status,
+            "available": r.replay_available,
+            "text": r.replay_text,
+            "version": r.replay_version,
+            "source_amendment": (r.replay_source or {}).get("statute_id"),
+        },
+        "oracle": {
+            "available": r.oracle.available,
+            "basis": r.oracle.basis,
+            "text": r.oracle.text,
+            "version_markers": r.oracle.version_markers,
+            "notes": r.oracle.notes,
+            "straddling_notes": r.oracle.straddling_notes,
+            "cutoff_date": r.oracle.cutoff_date,
+            "oracle_version_amendment_id": r.oracle.oracle_version_amendment_id,
+        },
+    }
+
+
+def _src_of(r: ReconcileResult) -> str:
+    return (r.replay_source or {}).get("statute_id") or "(base statute)"
+
+
+def _render_human(r: ReconcileResult) -> str:
+    lines: list[str] = []
+    eff = (r.replay_version or {}).get("effective") or "—"
+    header = f"{r.statute_id} {r.selector}  (in force @ {r.as_of})"
+    if r.verdict == "AGREE":
+        lines.append(f"{header}   ✔ replay and oracle agree")
+        lines.append("")
+        lines.append(f"  {r.replay_text}")
+        lines.append("")
+        lines.append(
+            f"  ── eff {eff} · src {_src_of(r)} · query {r.query_type}"
+            f" · agree {r.agree_ratio}"
+        )
+        return "\n".join(lines)
+
+    # DISAGREE
+    lines.append(f"{header}   ⚠ DISAGREE ({r.divergence_class})")
+    lines.append("")
+    if r.divergence_class == "presence":
+        which = "replay" if not r.replay_available else "oracle"
+        lines.append(f"  → {which} has no provision in force at this selector.")
+        lines.append("")
+    lines.append(f"  replay-L1 (effective {eff}, src {_src_of(r)}):")
+    lines.append(f"    {r.replay_text or '[no text]'}")
+    lines.append("")
+    marker = ""
+    if r.oracle.version_markers:
+        marker = f" [{', '.join(dict.fromkeys(r.oracle.version_markers))}]"
+    lines.append(f"  oracle-L1 (Finlex consolidated, basis={r.oracle.basis}){marker}:")
+    lines.append(f"    {r.oracle.text or '[no text]'}")
+    if r.oracle.straddling_notes:
+        lines.append("")
+        for note in r.oracle.straddling_notes:
+            efd = note.get("enters_force_date")
+            lines.append(
+                f"    note: \"{note['text']}\""
+                f" (commencement {efd} ≤ as-of; replay did NOT apply)"
+            )
+    lines.append("")
+    lines.append(
+        "  → DIVERGENCE is the signal. Do not assume either side. "
+        f"Check: lawvm blame {r.statute_id} ; Finlex."
+    )
+    if r.oracle.cutoff_date:
+        lines.append(
+            f"  → context: replay PIT path is bounded by the consolidated oracle "
+            f"snapshot cutoff {r.oracle.cutoff_date}."
+        )
+    return "\n".join(lines)
+
+
+def main(args: Any) -> None:
+    selector = getattr(args, "selector", "") or ""
+    as_of = getattr(args, "as_of", "") or datetime.date.today().isoformat()
+    query_type = getattr(args, "query_type", "in_force") or "in_force"
+    jurisdiction = getattr(args, "jurisdiction", "fi")
+
+    if jurisdiction != "fi":
+        print(
+            json.dumps({"status": "unsupported_jurisdiction", "jurisdiction": jurisdiction})
+            if getattr(args, "json", False)
+            else f"reconcile currently supports jurisdiction 'fi' only (got {jurisdiction!r})",
+            file=sys.stderr if not getattr(args, "json", False) else sys.stdout,
+        )
+        raise SystemExit(2)
+
+    if not selector:
+        _run_statute_scope(args, as_of, query_type)
+        return
+
+    result = reconcile_provision(
+        statute_id=args.statute_id,
+        selector=selector,
+        as_of=as_of,
+        query_type=query_type,
+        jurisdiction=jurisdiction,
+        at_amendment=getattr(args, "at_amendment", "") or "",
+    )
+    if getattr(args, "json", False):
+        print(json.dumps(_result_to_jsonable(result), ensure_ascii=False, indent=2, default=str))
+    else:
+        print(_render_human(result))
+
+
+def _run_statute_scope(args: Any, as_of: str, query_type: str) -> None:
+    """Whole-statute reconcile: list only diverging sections."""
+    from lawvm.finland.grafter import replay_xml
+
+    result = replay_xml(args.statute_id, mode="legal_pit", as_of=as_of, quiet=True)
+    diverging: list[dict[str, Any]] = []
+    checked = 0
+    for addr in result.timelines:
+        addr_str = str(addr)
+        # Only reconcile section-level addresses (skip deep momentti rows).
+        rr = reconcile_provision(
+            statute_id=args.statute_id,
+            selector=addr_str,
+            as_of=as_of,
+            query_type=query_type,
+            jurisdiction="fi",
+        )
+        checked += 1
+        if rr.verdict != "AGREE":
+            diverging.append(_result_to_jsonable(rr))
+
+    if getattr(args, "json", False):
+        print(json.dumps(
+            {"statute_id": args.statute_id, "as_of": as_of, "query_type": query_type,
+             "checked": checked, "diverging_count": len(diverging), "diverging": diverging},
+            ensure_ascii=False, indent=2, default=str,
+        ))
+        return
+
+    print(f"{args.statute_id} reconcile @ {as_of} — checked {checked}, "
+          f"{len(diverging)} diverging")
+    for d in diverging:
+        print(f"  ⚠ {d['locator']}  ({d['divergence_class']})  agree={d['agree_ratio']}")
