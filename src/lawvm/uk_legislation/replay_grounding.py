@@ -9,6 +9,7 @@ import Levenshtein
 
 from lawvm.uk_legislation.addressing import _uk_eid_value, _uk_kind_value
 from lawvm.uk_legislation.canonicalize import uk_is_transparent_wrapper_kind, uk_semantic_path_key
+from lawvm.uk_legislation.grounding_classification import classify_suppression_mechanism
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 from lawvm.uk_legislation.replay_text import _normalize_text_for_grounding
 from lawvm.uk_legislation.uk_grafter import _clean_num, _semantic_hash
@@ -130,7 +131,7 @@ class UKReplayGroundingMixin:
             match_method: str,
             match_key: Optional[str],
         ) -> dict[str, object]:
-            return {
+            event: dict[str, object] = {
                 "rule_id": "uk_oracle_eid_alignment_adapter",
                 "phase": "oracle_alignment",
                 "family": "oracle_alignment_adapter",
@@ -141,6 +142,15 @@ class UKReplayGroundingMixin:
                 "match_method": match_method,
                 "match_key": match_key,
             }
+            # Totality: every suppression event (after_eid is None) carries
+            # exactly one grounding classification, derived from an explicit
+            # rule over the mechanism. Conservative default is ``unresolved``;
+            # matched events (after_eid set) carry no classification.
+            if after_eid is None:
+                event["grounding_classification"] = classify_suppression_mechanism(
+                    match_method
+                )
+            return event
 
         def _queue_cleared_alignment_event(
             node: UKMutableNode,

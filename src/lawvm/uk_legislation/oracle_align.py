@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from lawvm.core.ir import IRNode, IRStatute
+from lawvm.uk_legislation.grounding_classification import (
+    GROUNDING_CLASSIFICATIONS,
+    classify_suppression_mechanism,
+)
 from lawvm.uk_legislation.uk_amendment_replay import UKReplayExecutor
 
 UK_ORACLE_ALIGNMENT_RULE_ID = "uk_oracle_eid_alignment_adapter"
@@ -19,6 +23,10 @@ class UKOracleAlignmentChange:
     after_eid: str | None
     match_method: str | None = None
     match_key: str | None = None
+    # Set iff the node was left unmatched (after_eid is None). Exactly one of
+    # the four GROUNDING_CLASSIFICATIONS; ``None`` for matched (oracle-assigned)
+    # changes.
+    grounding_classification: str | None = None
     rule_id: str = UK_ORACLE_ALIGNMENT_RULE_ID
 
 
@@ -41,6 +49,12 @@ class UKOracleAlignmentReport:
     local_fallback_suppressed_count: int
     transparent_wrapper_cleared_count: int
     match_method_counts: dict[str, int]
+    # Total over unmatched (after_eid=None) changes: each contributes to exactly
+    # one of the four GROUNDING_CLASSIFICATIONS buckets. ``unclassified_count``
+    # counts unmatched changes carrying no classification — a contract
+    # violation that must always be zero.
+    grounding_classification_counts: dict[str, int]
+    unclassified_count: int
     strict_disposition: str
     quirks_disposition: str
     changes: tuple[UKOracleAlignmentChange, ...] = ()
@@ -64,6 +78,10 @@ class UKOracleAlignmentReport:
             "local_fallback_suppressed_count": self.local_fallback_suppressed_count,
             "transparent_wrapper_cleared_count": self.transparent_wrapper_cleared_count,
             "match_method_counts": dict(sorted(self.match_method_counts.items())),
+            "grounding_classification_counts": dict(
+                sorted(self.grounding_classification_counts.items())
+            ),
+            "unclassified_count": self.unclassified_count,
             "strict_disposition": self.strict_disposition,
             "quirks_disposition": self.quirks_disposition,
             "changes": [change.__dict__ for change in self.changes],
@@ -96,6 +114,8 @@ def _empty_alignment_report(*, enabled: bool, eid_map: Optional[dict[str, str]])
         local_fallback_suppressed_count=0,
         transparent_wrapper_cleared_count=0,
         match_method_counts={},
+        grounding_classification_counts={},
+        unclassified_count=0,
         strict_disposition="block",
         quirks_disposition="record",
     )
@@ -166,6 +186,9 @@ def _alignment_report(
                 used_cleared_event_indexes.add(event_index)
                 break
         path = before_path if before_path == after_path else f"{before_path} -> {after_path}"
+        match_method = (
+            str(event.get("match_method")) if event and event.get("match_method") else None
+        )
         changes.append(
             UKOracleAlignmentChange(
                 path=path,
@@ -173,8 +196,13 @@ def _alignment_report(
                 label=after_node.label,
                 before_eid=before_eid,
                 after_eid=after_eid,
-                match_method=str(event.get("match_method")) if event and event.get("match_method") else None,
+                match_method=match_method,
                 match_key=str(event.get("match_key")) if event and event.get("match_key") else None,
+                grounding_classification=(
+                    classify_suppression_mechanism(match_method)
+                    if after_eid is None
+                    else None
+                ),
             )
         )
     for event_index, event in enumerate(cleared_events):
@@ -186,6 +214,9 @@ def _alignment_report(
             if label_value is None or isinstance(label_value, str)
             else str(label_value)
         )
+        event_match_method = (
+            str(event.get("match_method")) if event.get("match_method") else None
+        )
         changes.append(
             UKOracleAlignmentChange(
                 path="oracle_alignment/event",
@@ -193,8 +224,9 @@ def _alignment_report(
                 label=label,
                 before_eid=str(event.get("before_eid")) if event.get("before_eid") else None,
                 after_eid=None,
-                match_method=str(event.get("match_method")) if event.get("match_method") else None,
+                match_method=event_match_method,
                 match_key=str(event.get("match_key")) if event.get("match_key") else None,
+                grounding_classification=classify_suppression_mechanism(event_match_method),
             )
         )
 
@@ -221,6 +253,22 @@ def _alignment_report(
     for change in changes:
         if change.match_method:
             match_method_counts[change.match_method] = match_method_counts.get(change.match_method, 0) + 1
+    # Totality over the negative space: every unmatched (after_eid=None) change
+    # is tallied into exactly one of the four GROUNDING_CLASSIFICATIONS buckets.
+    # An unmatched change with no classification — or one carrying a value
+    # outside the contract set — is counted as ``unclassified`` and must be 0.
+    grounding_classification_counts: dict[str, int] = {
+        value: 0 for value in GROUNDING_CLASSIFICATIONS
+    }
+    unclassified_count = 0
+    for change in changes:
+        if change.after_eid is not None:
+            continue
+        classification = change.grounding_classification
+        if classification in grounding_classification_counts:
+            grounding_classification_counts[classification] += 1
+        else:
+            unclassified_count += 1
     return UKOracleAlignmentReport(
         enabled=True,
         stage="post_replay_adapter",
@@ -239,6 +287,8 @@ def _alignment_report(
         local_fallback_suppressed_count=local_fallback_suppressed_count,
         transparent_wrapper_cleared_count=transparent_wrapper_cleared_count,
         match_method_counts=match_method_counts,
+        grounding_classification_counts=grounding_classification_counts,
+        unclassified_count=unclassified_count,
         strict_disposition="block",
         quirks_disposition="record",
         changes=tuple(changes),
