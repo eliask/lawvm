@@ -329,6 +329,16 @@ WHOLE_LAW_VALIDITY_REMAINDER_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
+# NOTE deliberately NOT matched: the two-sentence bare-subject form "Tämä
+# asetus tulee voimaan X. Asetus/Laki on voimassa Y." In an amendment's
+# voimaantulosäännös the bare act-word subject of a follow-on sentence
+# refers to the TARGET statute, not to the amendment itself (1992/272
+# regression: "Laki on voimassa vuoden 1993 loppuun" stated the amended
+# 1990/1105's validity; treating the PERMANENT amendment as temporary
+# reverted its ops after 1993). 1992/884 → 1990/912 is the same class.
+# Whole-law subjecthood requires the explicit "Tämä ..." in the same
+# sentence as "on voimassa".
+
 # Sentence boundary. A bare [^.] window would truncate dotted numeric dates
 # ("1.1.1993"), so cut at period + space + capital/digit instead.
 _VALIDITY_REMAINDER_SENTENCE_BOUNDARY_RE = re.compile(
@@ -476,16 +486,16 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
     intentionally excluded.
     """
     # Per-sentence matching: the whole-law subject and its validity clause
-    # must live in the SAME sentence (see WHOLE_LAW_VALIDITY_REMAINDER_RE).
+    # must live in the SAME sentence (see WHOLE_LAW_VALIDITY_REMAINDER_RE
+    # and the bare-subject NOTE above it).
+    boundaries = list(_VALIDITY_REMAINDER_SENTENCE_BOUNDARY_RE.finditer(text))
+    starts = [0] + [b.end() for b in boundaries]
+    ends = [b.start() for b in boundaries] + [len(text)]
     m = None
-    offset = 0
-    for boundary in _VALIDITY_REMAINDER_SENTENCE_BOUNDARY_RE.finditer(text):
-        m = WHOLE_LAW_VALIDITY_REMAINDER_RE.search(text, offset, boundary.start())
+    for start, end in zip(starts, ends, strict=True):
+        m = WHOLE_LAW_VALIDITY_REMAINDER_RE.search(text, start, end)
         if m is not None:
             break
-        offset = boundary.end()
-    if m is None:
-        m = WHOLE_LAW_VALIDITY_REMAINDER_RE.search(text, offset)
     if m is None:
         return None
     remainder = m.group(1)

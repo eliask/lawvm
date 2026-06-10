@@ -104,6 +104,30 @@ def test_amendment_expiry_date_does_not_cross_sentence_boundary() -> None:
     )
 
 
+def test_amendment_expiry_date_two_sentence_bare_subject_is_target_reference() -> None:
+    """A follow-on sentence with a bare act-word subject must NOT parse.
+
+    1992/884 (amending 1990/912) states:
+      "Tämä asetus tulee voimaan 1 päivänä lokakuuta 1992.
+       Asetus on voimassa 31 päivään joulukuuta 1992."
+
+    Like "Laki on voimassa vuoden 1993 loppuun" in 1992/272 (see
+    test_amendment_expiry_date_vuoden_loppuun_not_matched_for_target_statute),
+    the bare-subject sentence states the TARGET statute's validity, not the
+    amendment's. Stamping the amendment temporary from it erroneously reverts
+    its ops at the target's expiry. Whole-act amendment expiry requires the
+    explicit "Tämä ..." subject in the same sentence as "on voimassa".
+    """
+    tree = _tree(
+        "Tämä asetus tulee voimaan 1 päivänä lokakuuta 1992. "
+        "Asetus on voimassa 31 päivään joulukuuta 1992."
+    )
+    expiry = _amendment_expiry_date(tree)
+    assert expiry is None, (
+        f"bare-subject follow-on sentence must not set amendment expiry; got {expiry!r}"
+    )
+
+
 def test_temporary_section_expiry_override_parses_direct_source_clause() -> None:
     tree = _tree(
         "Tämä asetus tulee voimaan 19 päivänä lokakuuta 2020. "
