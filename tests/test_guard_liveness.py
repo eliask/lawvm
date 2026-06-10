@@ -244,16 +244,13 @@ def drill_frontend_internal_error_parse_surface() -> None:
     import lawvm.finland.johtolause.surface_resolve as surface_resolve
     from lawvm.finland.johtolause import api
 
-    original = surface_resolve.resolve_surface_clause
+    from unittest.mock import patch as _patch
 
     def raising_resolver(clause):  # noqa: ANN001
         raise RuntimeError("synthetic internal resolver fault for guard-liveness drill")
 
-    surface_resolve.resolve_surface_clause = raising_resolver  # ty: ignore[invalid-assignment]
-    try:
+    with _patch.object(surface_resolve, "resolve_surface_clause", raising_resolver):
         result = api.parse_clause("Muutetaan lain 1 §.")
-    finally:
-        surface_resolve.resolve_surface_clause = original  # ty: ignore[invalid-assignment]
 
     hits = [f for f in result.findings if f.kind == "PARSE.FRONTEND_INTERNAL_ERROR"]
     assert hits, "internal resolver fault did not surface PARSE.FRONTEND_INTERNAL_ERROR"
