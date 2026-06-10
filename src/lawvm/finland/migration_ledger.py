@@ -35,16 +35,25 @@ def _normalize_address(address: LegalAddress) -> LegalAddress:
 
 
 def migration_lower_bound_for_op(op: object) -> str:
-    """Lower-bound effective date for following prefix migrations of *op*'s address.
+    """Lower-bound enactment date for following prefix migrations of *op*'s address.
 
-    Returns the op's own source effective date, used as ``not_before`` so the
+    Returns the op source's *enacted* date, used as ``not_before`` so the
     address does not inherit renumber/move waves that predate its content
-    lineage (slot reuse / container rebirth). Falls back across the resolved
-    source accessor and the raw legal-op source. Empty string disables the
-    bound (legacy behaviour) when no effective date is recoverable.
+    lineage (slot reuse / container rebirth). The anchor is the enactment date,
+    not the effective/commencement date: a section's content lineage begins when
+    it is enacted, and any renumber/move enacted-or-later applies to it even if
+    the section's own commencement is delayed. Anchoring on the (possibly later)
+    commencement date would wrongly drop relabels that land between enactment and
+    a delayed commencement — e.g. a section enacted 2018, recodified 2019, that
+    only commences 2020 must still follow the 2019 relabel. Falls back to the
+    source effective date, then the raw legal-op source. Empty string disables
+    the bound (legacy behaviour) when no date is recoverable.
     """
     resolved_source = getattr(op, "resolved_op_source", None)
     if resolved_source is not None:
+        enacted = getattr(resolved_source, "enacted", "") or ""
+        if enacted:
+            return enacted
         effective = getattr(resolved_source, "effective", "") or ""
         if effective:
             return effective
@@ -52,6 +61,9 @@ def migration_lower_bound_for_op(op: object) -> str:
     if op_lo is not None:
         lo_source = getattr(op_lo, "source", None)
         if lo_source is not None:
+            enacted = getattr(lo_source, "enacted", "") or ""
+            if enacted:
+                return enacted
             return getattr(lo_source, "effective", "") or ""
     return ""
 

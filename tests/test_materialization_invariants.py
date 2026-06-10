@@ -290,20 +290,17 @@ class TestNoDuplicatesInPIT:
         dups = _find_duplicates(ir)
         assert not dups, f"Found duplicates in materialized PIT: {dups[:5]}"
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Known replay defect: 2017/228 substitutes the single 40 §:n 2 momentti "
-            "(source XML carries exactly one <subsection> + omission markers), but the "
-            "section-level apply duplicates the new momentti 2 into both subsection:2 and "
-            "subsection:3, overwriting and losing the original momentti 3 "
-            "('Seuraamusmaksua ei voida määrätä...'). Fix belongs in the "
-            "subsection slot-binding / payload-merge path (payload_normalize / "
-            "apply_subsection_dispatch), not a narrow patch. Remove xfail when fixed."
-        ),
-    )
     def test_2008_878_section_40_momentti_not_duplicated(self) -> None:
-        """Laki Finanssivalvonnasta § 40: momentti 2 must not be duplicated, momentti 3 must survive."""
+        """Laki Finanssivalvonnasta § 40: momentti 2 must not be duplicated, momentti 3 must survive.
+
+        2017/228 substitutes the single 40 §:n 2 momentti (source XML carries
+        exactly one <subsection> flanked by omission markers). This previously
+        duplicated the new momentti 2 across subsection:2 and subsection:3,
+        losing the original momentti 3. Bounding the prefix-migration follow to
+        each op's enactment date removed the spurious subsection rebound that
+        drove that duplication, so § 40 now materializes the oracle-faithful
+        shape (one momentti-2 subsection, momentti 3 preserved).
+        """
         ir = _replay("2008/878")
         section_40 = next(
             child
