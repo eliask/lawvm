@@ -10,6 +10,7 @@ import argparse
 import fnmatch
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -825,6 +826,67 @@ def filter_filenames_by_pytest_selectors(filenames: list[str], pytest_args: list
     return selected, unknown
 
 
+def _memcap_wrap_cmd(cmd: list[str]) -> list[str]:
+    """Return cmd wrapped in a systemd memory-capped scope, or cmd unchanged.
+
+    Controlled by LAWVM_CI_MEMCAP (e.g. ``18G``).  When the variable is unset
+    the returned command is byte-identical to the input.  When set but
+    ``systemd-run`` is unavailable or the user scope is not usable, a one-line
+    warning is printed and the original command is returned so the shard still
+    runs uncapped.
+    """
+    memcap = os.environ.get("LAWVM_CI_MEMCAP", "").strip()
+    if not memcap:
+        return cmd
+    if not shutil.which("systemd-run"):
+        print(
+            f"MEMCAP WARNING: systemd-run not found; running shard uncapped"
+            f" (LAWVM_CI_MEMCAP={memcap} ignored)",
+            flush=True,
+        )
+        return cmd
+    # Quick probe: verify a user scope can actually be created before committing
+    # to the real run. This catches "no user session" (e.g. bare containers).
+    probe = subprocess.run(
+        ["systemd-run", "--user", "--scope", "-q", "--", "true"],
+        capture_output=True,
+    )
+    if probe.returncode != 0:
+        probe_err = probe.stderr.decode(errors="replace").strip()
+        print(
+            f"MEMCAP WARNING: systemd-run user scope probe failed"
+            f" (exit {probe.returncode}: {probe_err or '(no stderr)'})"
+            f"; running shard uncapped (LAWVM_CI_MEMCAP={memcap} ignored)",
+            flush=True,
+        )
+        return cmd
+    return [
+        "systemd-run",
+        "--user",
+        "--scope",
+        "-q",
+        "-p", f"MemoryMax={memcap}",
+        "-p", "MemorySwapMax=2G",
+        "--",
+        *cmd,
+    ]
+
+
+def _report_memcap_oom(shard: str, exit_code: int) -> None:
+    """Print a distinct diagnostic block when the cgroup likely OOM-killed the shard."""
+    memcap = os.environ.get("LAWVM_CI_MEMCAP", "").strip()
+    signal_name = {143: "SIGTERM (143)", 137: "SIGKILL (137)"}.get(exit_code, str(exit_code))
+    print(
+        f"\n"
+        f"!!! SHARD KILLED: shard={shard!r} exit={signal_name}"
+        f" — likely cgroup OOM under LAWVM_CI_MEMCAP={memcap}\n"
+        f"!!! To inspect:  journalctl --user | grep -i oom\n"
+        f"!!! To raise cap: export LAWVM_CI_MEMCAP=32G  (current: {memcap})\n"
+        f"!!! To disable:   unset LAWVM_CI_MEMCAP\n",
+        flush=True,
+    )
+
+
 def run_shard(shard: str, *, pytest_args: list[str], timing_jsonl: str | None = None) -> int:
     assignments = shard_assignments()
     if shard == "all":
@@ -874,10 +936,14 @@ def run_shard(shard: str, *, pytest_args: list[str], timing_jsonl: str | None = 
         *(str(TEST_DIR / filename) for filename in filenames),
         *pytest_args,
     ]
+    memcap = os.environ.get("LAWVM_CI_MEMCAP", "").strip()
+    effective_cmd = _memcap_wrap_cmd(cmd)
     print(f"=== shard {shard}: {len(filenames)} files ===", flush=True)
     started = time.perf_counter()
-    exit_code = subprocess.call(cmd, cwd=REPO_ROOT)
+    exit_code = subprocess.call(effective_cmd, cwd=REPO_ROOT)
     elapsed = time.perf_counter() - started
+    if memcap and effective_cmd is not cmd and exit_code in (143, 137):
+        _report_memcap_oom(shard, exit_code)
     record = shard_timing_record(
         shard=shard,
         file_count=len(filenames),
