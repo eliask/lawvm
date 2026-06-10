@@ -10196,6 +10196,40 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="path to provenance graph store (default: data/fi/v1/provenance_graph/)",
     )
 
+    # --- export-transition-graph ---
+    export_tg_p = sub.add_parser(
+        "export-transition-graph",
+        parents=_P,
+        help="export a certified transition graph (SQLite) for a FI statute",
+        description=(
+            "Run the Finland replay engine once for a statute and emit a "
+            "self-contained SQLite database of certified L3 tree transitions, "
+            "per-change-date engine oracle checkpoints, and content blobs. The "
+            "Python engine is the only authority; the export lets a browser "
+            "render and optionally fold certified patches without resolving "
+            "legal targets in JS."
+        ),
+    )
+    export_tg_p.add_argument(
+        "--statute",
+        required=True,
+        metavar="ID",
+        help="statute id, canonical 'num/year' (e.g. 301/2004) or 'year/num'",
+    )
+    export_tg_p.add_argument(
+        "--out",
+        required=True,
+        metavar="PATH",
+        help="output SQLite db path",
+    )
+    export_tg_p.add_argument(
+        "--slice",
+        dest="slice",
+        default="",
+        metavar="ADDRESS_PREFIX",
+        help="optional address-prefix slice (e.g. chapter:11); default = whole act",
+    )
+
     # --- recipes ---
     sub.add_parser(
         "recipes",
@@ -10237,7 +10271,11 @@ def _reject_uk_replay_regime_flags_for_non_uk(args: argparse.Namespace, *, comma
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
-    _reject_pre_1734_fi_command_line_ids(args)
+    # export-transition-graph deliberately takes the canonical säädös id in
+    # 'num/year' form (e.g. 301/2004); its handler normalizes both orderings,
+    # so the year/num-only pre-1734 guard must not reject it.
+    if args.command != "export-transition-graph":
+        _reject_pre_1734_fi_command_line_ids(args)
 
     if args.command == "bisect":
         from lawvm.tools.bisect import main as bisect_main
@@ -11432,6 +11470,11 @@ def main() -> None:
         from lawvm.tools.cmd_recipes import main as recipes_main
 
         recipes_main(args)
+
+    elif args.command == "export-transition-graph":
+        from lawvm.tools.export_transition_graph import main as export_transition_graph_main
+
+        export_transition_graph_main(args)
 
     elif args.command is None:
         parser.print_help()
