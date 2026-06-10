@@ -345,9 +345,29 @@ _VALIDITY_REMAINDER_SENTENCE_BOUNDARY_RE = re.compile(
     r'(?<=[.!?])\s+(?=[A-ZÄÖÅ0-9§])'
 )
 
-# Terminal date forms inside the remainder.
+# Partitive month token, typo-tolerant: "joulukuuta" plus the recurring
+# Finlex source typos "joulukuutta" (doubled t) and the hyphenation artifact
+# "joulukuu-ta". Resolved through _fi_partitive_month, which folds the typo
+# forms before the FI_MONTH_MAP lookup — an unknown month still yields no
+# candidate. "loppuun" likewise tolerates the observed "lopuun" typo via
+# lop?puun in the *_END patterns.
+_MONTH_PARTITIVE_PAT = r'[a-zäöå]+kuu(?:t?ta|-ta)'
+
+# Terminal date forms inside the remainder. (\s* before "päivään" tolerates
+# the observed missing-space typo "31päivään".)
 _VALIDITY_DAY_FIRST_RE = re.compile(
-    r'(\d{1,2})\.?\s+päivään\s+([a-zäöå]+)\s+(\d{4})', flags=re.IGNORECASE
+    r'(\d{1,2})\.?\s*päivään\s+(' + _MONTH_PARTITIVE_PAT + r')\s+(\d{4})',
+    flags=re.IGNORECASE,
+)
+# Essive day form as a validity end ("on voimassa 31 päivänä joulukuuta 2006
+# (saakka)"). In the remainder after "on voimassa" the essive date is the
+# terminal bound; commencement essives live before "on voimassa". The
+# (?!\s+annet) lookahead excludes act-citation dates ("3 päivänä toukokuuta
+# 1927 annettu laki"), which are references, not bounds.
+_VALIDITY_DAY_ESSIVE_RE = re.compile(
+    r'(\d{1,2})\.?\s*päivänä\s+(' + _MONTH_PARTITIVE_PAT + r')\s+(\d{4})'
+    r'(?!\s+annet)',
+    flags=re.IGNORECASE,
 )
 # Dotted numeric, possibly a range; the last date is the terminal bound
 # ("voimassa 1.1.1994-31.12.1994", "voimassa 31.12.1996 saakka").
@@ -356,25 +376,46 @@ _VALIDITY_DOTTED_NUMERIC_RE = re.compile(
 )
 # Day + partitive month + year + saakka ("15 toukokuuta 1992 saakka").
 _VALIDITY_SAAKKA_RE = re.compile(
-    r'(\d{1,2})\.?\s+([a-zäöå]+kuuta)\s+(\d{4})\s+(?:saakka|asti)', flags=re.IGNORECASE
+    r'(\d{1,2})\.?\s+(' + _MONTH_PARTITIVE_PAT + r')\s+(\d{4})\s+(?:saakka|asti)',
+    flags=re.IGNORECASE,
+)
+# Bare day + partitive month + year, no case word ("31 maaliskuuta 2022",
+# "31. joulukuuta 1998"). Checked LAST so the more specific families win
+# position ties (max() keeps the first maximal candidate). The (?!\s+annet)
+# lookahead excludes act-citation dates ("15 toukokuuta 1992 annetun lain").
+_VALIDITY_BARE_DAY_MONTH_RE = re.compile(
+    r'(\d{1,2})\.?\s+(' + _MONTH_PARTITIVE_PAT + r')\s+(\d{4})(?!\s+annet)',
+    flags=re.IGNORECASE,
 )
 # Month-genitive + year + loppuun ("joulukuun 1995 loppuun").
 _VALIDITY_MONTH_YEAR_END_RE = re.compile(
-    r'([a-zäöå]+kuun)\s+(\d{4})\s+loppuun', flags=re.IGNORECASE
+    r'([a-zäöå]+kuun)\s+(\d{4})\s+lop?puun', flags=re.IGNORECASE
 )
 # Old-style month-first genitive: "joulukuun 31 päivään 1917".
 _VALIDITY_MONTH_FIRST_RE = re.compile(
     r'([a-zäöå]+kuun)\s+(\d{1,2})\s+päivään\s+(\d{4})', flags=re.IGNORECASE
 )
+# Genitive month + day + päivän + year + loppuun ("maaliskuun 28 päivän 1992
+# loppuun (saakka)") — end of the named DAY.
+_VALIDITY_MONTH_DAY_GEN_END_RE = re.compile(
+    r'([a-zäöå]+kuun)\s+(\d{1,2})\s+päivän\s+(\d{4})\s+lop?puun',
+    flags=re.IGNORECASE,
+)
+# Day + päivän loppuun + partitive month + year ("31 päivän loppuun
+# joulukuuta 2003 asti") — end of the named DAY, month after.
+_VALIDITY_DAY_END_MONTH_RE = re.compile(
+    r'(\d{1,2})\.?\s*päivän\s+lop?puun\s+(' + _MONTH_PARTITIVE_PAT + r')\s+(\d{4})',
+    flags=re.IGNORECASE,
+)
 _VALIDITY_YEAR_END_RE = re.compile(
-    r'vuoden\s+(\d{4})\s+loppuun', flags=re.IGNORECASE
+    r'vuoden\s+(\d{4})\s+lop?puun', flags=re.IGNORECASE
 )
 # Month-end forms: "vuoden 1989 maaliskuun loppuun" / "joulukuun loppuun 1988".
 _VALIDITY_YEAR_MONTH_END_RE = re.compile(
-    r'vuoden\s+(\d{4})\s+([a-zäöå]+kuun)\s+loppuun', flags=re.IGNORECASE
+    r'vuoden\s+(\d{4})\s+([a-zäöå]+kuun)\s+lop?puun', flags=re.IGNORECASE
 )
 _VALIDITY_MONTH_END_YEAR_RE = re.compile(
-    r'([a-zäöå]+kuun)\s+loppuun\s+(\d{4})', flags=re.IGNORECASE
+    r'([a-zäöå]+kuun)\s+lop?puun\s+(\d{4})', flags=re.IGNORECASE
 )
 # Anaphoric year-end: "sanotun/mainitun vuoden loppuun" — end of the year
 # already named earlier in the sentence ("tulee voimaan ... 1987 ja on
@@ -414,7 +455,11 @@ FI_MONTH_GENITIVE_MAP: dict[str, int] = {
 # Per-grammar-family rule ids carried onto the extracted bound (one id per
 # date-expression family below, plus the anaphoric family).
 RULE_FI_FIXED_TERM_DAY_FIRST = "fi_fixed_term_day_first_paivaan"
+RULE_FI_FIXED_TERM_DAY_ESSIVE = "fi_fixed_term_day_essive"
+RULE_FI_FIXED_TERM_BARE_DAY_MONTH = "fi_fixed_term_bare_day_month"
 RULE_FI_FIXED_TERM_MONTH_FIRST = "fi_fixed_term_month_first_genitive"
+RULE_FI_FIXED_TERM_MONTH_DAY_GEN_END = "fi_fixed_term_month_day_genitive_end"
+RULE_FI_FIXED_TERM_DAY_END_MONTH = "fi_fixed_term_day_end_month"
 RULE_FI_FIXED_TERM_YEAR_END = "fi_fixed_term_year_end"
 RULE_FI_FIXED_TERM_YEAR_MONTH_END = "fi_fixed_term_year_month_end"
 RULE_FI_FIXED_TERM_MONTH_END_YEAR = "fi_fixed_term_month_end_year"
@@ -422,6 +467,17 @@ RULE_FI_FIXED_TERM_MONTH_YEAR_END = "fi_fixed_term_month_year_end"
 RULE_FI_FIXED_TERM_DOTTED_NUMERIC = "fi_fixed_term_dotted_numeric"
 RULE_FI_FIXED_TERM_SAAKKA = "fi_fixed_term_saakka"
 RULE_FI_FIXED_TERM_ANAPHORIC_YEAR_END = "fi_fixed_term_anaphoric_same_sentence_year_end"
+
+
+def _fi_partitive_month(token: str) -> Optional[int]:
+    """FI_MONTH_MAP lookup with folding for the observed source typo forms:
+    doubled t ("joulukuutta") and hyphenation artifacts ("joulukuu-ta").
+    Unknown tokens stay unknown — folding never invents a month."""
+    folded = token.lower().replace("-", "")
+    month = FI_MONTH_MAP.get(folded)
+    if month is None and folded.endswith("kuutta"):
+        month = FI_MONTH_MAP.get(folded[:-3] + "ta")
+    return month
 
 
 @dataclass(frozen=True)
@@ -525,16 +581,34 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
 
     md = _VALIDITY_DAY_FIRST_RE.search(remainder)
     if md:
-        month = FI_MONTH_MAP.get(md.group(2).lower())
+        month = _fi_partitive_month(md.group(2))
         if month is not None:
             _add(md.start(), RULE_FI_FIXED_TERM_DAY_FIRST,
                  int(md.group(3)), month, int(md.group(1)))
+    mde = _VALIDITY_DAY_ESSIVE_RE.search(remainder)
+    if mde:
+        month = _fi_partitive_month(mde.group(2))
+        if month is not None:
+            _add(mde.start(), RULE_FI_FIXED_TERM_DAY_ESSIVE,
+                 int(mde.group(3)), month, int(mde.group(1)))
     mm = _VALIDITY_MONTH_FIRST_RE.search(remainder)
     if mm:
         month = FI_MONTH_GENITIVE_MAP.get(mm.group(1).lower())
         if month is not None:
             _add(mm.start(), RULE_FI_FIXED_TERM_MONTH_FIRST,
                  int(mm.group(3)), month, int(mm.group(2)))
+    mdg = _VALIDITY_MONTH_DAY_GEN_END_RE.search(remainder)
+    if mdg:
+        month = FI_MONTH_GENITIVE_MAP.get(mdg.group(1).lower())
+        if month is not None:
+            _add(mdg.start(), RULE_FI_FIXED_TERM_MONTH_DAY_GEN_END,
+                 int(mdg.group(3)), month, int(mdg.group(2)))
+    mdem = _VALIDITY_DAY_END_MONTH_RE.search(remainder)
+    if mdem:
+        month = _fi_partitive_month(mdem.group(2))
+        if month is not None:
+            _add(mdem.start(), RULE_FI_FIXED_TERM_DAY_END_MONTH,
+                 int(mdem.group(3)), month, int(mdem.group(1)))
     my = _VALIDITY_YEAR_END_RE.search(remainder)
     if my:
         _add(my.start(), RULE_FI_FIXED_TERM_YEAR_END, int(my.group(1)), 12, 31)
@@ -557,7 +631,7 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
              int(mdot.group(3)), int(mdot.group(2)), int(mdot.group(1)))
     ms = _VALIDITY_SAAKKA_RE.search(remainder)
     if ms:
-        month = FI_MONTH_MAP.get(ms.group(2).lower())
+        month = _fi_partitive_month(ms.group(2))
         if month is not None:
             _add(ms.start(), RULE_FI_FIXED_TERM_SAAKKA,
                  int(ms.group(3)), month, int(ms.group(1)))
@@ -568,6 +642,14 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
             year = int(mmye.group(2))
             _add(mmye.start(), RULE_FI_FIXED_TERM_MONTH_YEAR_END,
                  year, month, calendar.monthrange(year, month)[1])
+    # Bare day-month-year LAST: the more specific families above win position
+    # ties because max() keeps the first maximal candidate.
+    mb = _VALIDITY_BARE_DAY_MONTH_RE.search(remainder)
+    if mb:
+        month = _fi_partitive_month(mb.group(2))
+        if month is not None:
+            _add(mb.start(), RULE_FI_FIXED_TERM_BARE_DAY_MONTH,
+                 int(mb.group(3)), month, int(mb.group(1)))
     msaid = _VALIDITY_SAID_YEAR_END_RE.search(remainder)
     if msaid:
         antecedents = _anaphoric_antecedent_years(text, m.start(1) + msaid.start())

@@ -252,6 +252,85 @@ def test_toistaiseksi_with_hard_cap_parses_cap_as_bound() -> None:
     assert bound.earlier_termination_possible is True
 
 
+def test_extended_terminal_date_families_parse() -> None:
+    # Forms observed in the corpus residual: essive, bare day-month, dotted
+    # day, month-day-genitive end, day-end-month.
+    cases = (
+        ("3 § Tämä asetus tulee voimaan 1 päivänä tammikuuta 2005 ja on voimassa "
+         "31 päivänä joulukuuta 2006 saakka.", "2006-12-31", "fi_fixed_term_day_essive"),
+        ("4 § Tämä asetus tulee voimaan 1 päivänä tammikuuta 2010 ja on voimassa "
+         "31 päivänä joulukuuta 2012.", "2012-12-31", "fi_fixed_term_day_essive"),
+        ("5 § Tämä asetus tulee voimaan 1 päivänä huhtikuuta 2021 ja on voimassa "
+         "31 maaliskuuta 2022.", "2022-03-31", "fi_fixed_term_bare_day_month"),
+        ("6 § Tämä päätös tulee voimaan heti ja on voimassa 31. joulukuuta 1998.",
+         "1998-12-31", "fi_fixed_term_bare_day_month"),
+        ("2 § Tämä päätös tulee voimaan heti ja on voimassa 24 päivästä maaliskuuta "
+         "1992 maaliskuun 28 päivän 1992 loppuun saakka.",
+         "1992-03-28", "fi_fixed_term_month_day_genitive_end"),
+        ("7 § Tämä asetus tulee voimaan heti ja on voimassa 31 päivän loppuun "
+         "joulukuuta 2003 asti.", "2003-12-31", "fi_fixed_term_day_end_month"),
+    )
+    for text, expected, expected_rule in cases:
+        timelines = _timelines(
+            [_voimaantulo_version(effective="1990-01-01", enacted="1989-12-01", text=text, source_statute="1990/2")]
+        )
+        extraction = extract_fixed_term_bounds(statute_id="1990/2", timelines=timelines)
+        assert [b.valid_until for b in extraction.bounds] == [expected], text
+        assert extraction.bounds[0].rule_id == expected_rule, text
+
+
+def test_source_typo_forms_fold_and_parse() -> None:
+    # Source typos observed in the corpus: doubled-t month, missing space
+    # before päivään, hyphenated month, single-p lopuun.
+    cases = (
+        ("3 § Tämä laki tulee voimaan heti ja on voimassa 31 päivään joulukuutta 1999.",
+         "1999-12-31"),
+        ("4 § Tämä asetus tulee voimaan heti ja on voimassa 31päivään joulukuuta 2012.",
+         "2012-12-31"),
+        ("5 § Tämä laki tulee voimaan heti ja on voimassa 31 päivään joulukuu-ta 2026.",
+         "2026-12-31"),
+        ("6 § Tämä asetus tulee voimaan heti ja on voimassa vuoden 2002 lopuun.",
+         "2002-12-31"),
+    )
+    for text, expected in cases:
+        timelines = _timelines(
+            [_voimaantulo_version(effective="1990-01-01", enacted="1989-12-01", text=text, source_statute="1990/3")]
+        )
+        extraction = extract_fixed_term_bounds(statute_id="1990/3", timelines=timelines)
+        assert [b.valid_until for b in extraction.bounds] == [expected], text
+
+
+def test_act_citation_dates_are_not_bounds() -> None:
+    # "DD päivänä Xkuuta YYYY annettu laki" inside the validity clause is a
+    # citation, never the bound; with no real date the clause stays blocking.
+    text = (
+        "7 § Tämä laki tulee voimaan heti ja on voimassa niin kauan kuin 3 "
+        "päivänä toukokuuta 1927 annettu tielaki on voimassa."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1954-06-01", enacted="1954-05-01", text=text, source_statute="1954/244")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1954/244", timelines=timelines)
+    assert extraction.bounds == ()
+    assert [d.code for d in extraction.diagnostics] == [FIXED_TERM_EXPIRY_UNPARSEABLE]
+
+
+def test_invalid_calendar_date_stays_blocking() -> None:
+    # 1993/319 states "31 päivään kesäkuuta 1995" — June 31 does not exist.
+    # The source states an impossible date; never guess a nearby real one.
+    text = (
+        "9 § Tämä asetus tulee voimaan 1 päivänä huhtikuuta 1993 ja on voimassa "
+        "31 päivään kesäkuuta 1995."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1993-04-01", enacted="1993-03-01", text=text, source_statute="1993/319")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1993/319", timelines=timelines)
+    assert extraction.bounds == ()
+    assert [d.code for d in extraction.diagnostics] == [FIXED_TERM_EXPIRY_UNPARSEABLE]
+    assert "kesäkuuta 1995" in extraction.diagnostics[0].clause_text
+
+
 def test_per_grammar_family_rule_ids() -> None:
     cases = (
         ("7 § Tämä laki tulee voimaan heti ja on voimassa 31 päivään joulukuuta 2020.",
@@ -735,7 +814,10 @@ def test_temporary_overlay_outliving_statute_yields_statute_expiry(
     assert expired["valid_until"] == "2026-12-31"
 
 
-def test_flag_off_is_noop_identical_hash() -> None:
+def test_flag_off_is_noop_identical_hash(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The rollback path: bounds are default-ON since seam spec 0.2, so the
+    # flag-OFF behavior now requires the explicit opt-out.
+    monkeypatch.setenv(FIXED_TERM_BOUNDS_FLAG, "0")
     timelines = _extension_timelines()
     # With the flag off, a past-term query must be byte-identical to the
     # unmodified default path (no expired status, no expiry block).
