@@ -273,6 +273,7 @@ def _drill_renumber_rop():
         ExecutionContract,
         IntentKind,
         NodeTarget,
+        OccupancyPolicy,
         Relabel,
     )
     from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
@@ -322,7 +323,7 @@ def _drill_renumber_rop():
         kind=IntentKind.RELABEL,
         source=NodeTarget(address=LegalAddress(path=(("chapter", "7"), ("section", "73")))),
         destination=NodeTarget(address=LegalAddress(path=(("chapter", "7"), ("section", "61")))),
-        contract=ExecutionContract(occupancy=None, coverage=CoverageMode.EXACT),
+        contract=ExecutionContract(occupancy=OccupancyPolicy.same_slot_replace(), coverage=CoverageMode.EXACT),
     )
     rop = ResolvedOp.from_amendment_op(
         op,
@@ -704,6 +705,12 @@ def _is_blocking_code(spec: FindingSpec) -> bool:
 # Pruning entries from this allowlist (by writing a fire-drill) is the intended
 # direction of travel.
 NO_FIRE_DRILL_YET: frozenset[str] = frozenset({
+    # Fixed-term expiry blocking diagnostics surface at the provision-state
+    # seam (flag-gated; exercised in test_temporal_fixed_term_expiry.py), not
+    # through the replay PhaseResult lanes this harness drills. Drill when the
+    # semantics flag goes default-on.
+    "TEMPORAL.FIXED_TERM_EXPIRY_AMBIGUOUS",
+    "TEMPORAL.FIXED_TERM_EXPIRY_UNPARSEABLE",
     "APPLY.FALLBACK_WHOLE_SECTION_REPLACE",
     "APPLY.LEGACY_DISPATCH_FALLBACK",
     "APPLY.METADATA_ATTRIBUTION_CORRECTED_BY_ATTESTATION",

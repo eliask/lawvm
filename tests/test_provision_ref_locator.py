@@ -13,6 +13,8 @@ Covers:
 """
 from __future__ import annotations
 
+from unittest import mock
+
 from pathlib import Path
 
 
@@ -152,10 +154,9 @@ def test_provider_section_key_format(tmp_path: Path):
 
     statute_id = "2003/434"
     oracle_xml = _build_statute_with_chapter_sections(statute_id)
-    original = cs_module.get_corpus_store
-
-    cs_module.get_corpus_store = lambda **kw: _make_mock_store(oracle_xml, statute_id)
-    try:
+    with mock.patch.object(
+        cs_module, "get_corpus_store", lambda **kw: _make_mock_store(oracle_xml, statute_id)
+    ):
         provider = FinlexSectionSourceProvider()
         scope = ClaimScope(
             statute_id=statute_id,
@@ -164,8 +165,6 @@ def test_provider_section_key_format(tmp_path: Path):
             valid_at_end=None,
         )
         result = provider.fetch(scope)
-    finally:
-        cs_module.get_corpus_store = original
 
     assert result is not None, "Expected FetchedSource for section:12"
     text = result.bytes_.decode("utf-8", errors="replace")
@@ -180,10 +179,9 @@ def test_provider_provision_ref_serialized_format(tmp_path: Path):
 
     statute_id = "2003/434"
     oracle_xml = _build_statute_with_chapter_sections(statute_id)
-    original = cs_module.get_corpus_store
-
-    cs_module.get_corpus_store = lambda **kw: _make_mock_store(oracle_xml, statute_id)
-    try:
+    with mock.patch.object(
+        cs_module, "get_corpus_store", lambda **kw: _make_mock_store(oracle_xml, statute_id)
+    ):
         provider = FinlexSectionSourceProvider()
         scope = ClaimScope(
             statute_id=statute_id,
@@ -192,8 +190,6 @@ def test_provider_provision_ref_serialized_format(tmp_path: Path):
             valid_at_end=None,
         )
         result = provider.fetch(scope)
-    finally:
-        cs_module.get_corpus_store = original
 
     assert result is not None, (
         "Expected FetchedSource for ProvisionRef.serialized() format '2003/434/12'"
@@ -212,10 +208,9 @@ def test_provider_nonexistent_serialized_ref_returns_none(tmp_path: Path):
 
     statute_id = "2003/434"
     oracle_xml = _build_statute_with_chapter_sections(statute_id)
-    original = cs_module.get_corpus_store
-
-    cs_module.get_corpus_store = lambda **kw: _make_mock_store(oracle_xml, statute_id)
-    try:
+    with mock.patch.object(
+        cs_module, "get_corpus_store", lambda **kw: _make_mock_store(oracle_xml, statute_id)
+    ):
         provider = FinlexSectionSourceProvider()
         scope = ClaimScope(
             statute_id=statute_id,
@@ -224,8 +219,6 @@ def test_provider_nonexistent_serialized_ref_returns_none(tmp_path: Path):
             valid_at_end=None,
         )
         result = provider.fetch(scope)
-    finally:
-        cs_module.get_corpus_store = original
 
     assert result is None, "Expected None for non-existent section via serialized ref"
 
@@ -238,10 +231,9 @@ def test_provider_serialized_ref_statute_level_only_falls_back_to_first_section(
 
     statute_id = "2003/434"
     oracle_xml = _build_statute_with_chapter_sections(statute_id)
-    original = cs_module.get_corpus_store
-
-    cs_module.get_corpus_store = lambda **kw: _make_mock_store(oracle_xml, statute_id)
-    try:
+    with mock.patch.object(
+        cs_module, "get_corpus_store", lambda **kw: _make_mock_store(oracle_xml, statute_id)
+    ):
         provider = FinlexSectionSourceProvider()
         scope = ClaimScope(
             statute_id=statute_id,
@@ -250,8 +242,6 @@ def test_provider_serialized_ref_statute_level_only_falls_back_to_first_section(
             valid_at_end=None,
         )
         result = provider.fetch(scope)
-    finally:
-        cs_module.get_corpus_store = original
 
     assert result is not None, "Expected FetchedSource (first section fallback)"
     text = result.bytes_.decode("utf-8", errors="replace")
