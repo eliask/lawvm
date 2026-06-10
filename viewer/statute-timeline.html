@@ -4,15 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LawVM-katselin — Lain ajantasahistoria | Mitä laki sanoi, milloin, ja mistä muutos tuli</title>
-<meta name="description" content="Selaimessa toimiva katselin LawVM-moottorin varmentamalle muutosgraafille: Suomen säädöksen rakenne minä tahansa voimaantulopäivänä, hash-todennettuna moottoria vastaan.">
+<meta name="description" content="Selaimessa toimiva katselin LawVM-moottorin varmentamalle muutosgraafille: säädöksen rakenne minä tahansa voimaantulopäivänä, hash-todennettuna moottoria vastaan.">
 <link rel="stylesheet" href="statute-timeline.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.13.0/sql-wasm.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/diff_match_patch/20121119/diff_match_patch.js"></script>
 </head>
 <body>
 <header>
   <div class="wrap">
     <h1 class="logo">LawVM-katselin</h1>
-    <p class="tagline">Mitä laki sanoi, milloin, ja mistä muutos tuli.</p>
+    <p class="tagline" id="tagline">Mitä laki sanoi, milloin, ja mistä muutos tuli.</p>
   </div>
 </header>
 
@@ -29,11 +30,11 @@
 
 <footer>
   <div class="wrap">
-    <p>Näkymä lasketaan selaimessa taittamalla LawVM:n varmentamat L3-transitiot, ja todennetaan
-       moottorin checkpoint-hashia (SHA-256) vastaan. Todennus osoittaa: <em>näkymä = moottorin
-       laskema tila</em>. Se ei väitä, että moottori vastaa Finlexin konsolidointia tai voimassa
+    <p id="footer-text">Näkymä lasketaan selaimessa LawVM-moottorin varmentamista muutosaskelista ja todennetaan
+       moottorin tarkistesummaa (SHA-256) vastaan. Todennus osoittaa: näkymä = moottorin
+       laskema tila. Se ei väitä, että moottori vastaa virallista konsolidointia tai voimassa
        olevaa oikeutta. Näkymä on voimassaolon mukainen (laki sellaisena kuin se oli voimassa
-       valittuna päivänä). Tietolähde: Finlex.</p>
+       valittuna päivänä).</p>
   </div>
 </footer>
 
