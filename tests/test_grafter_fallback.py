@@ -9624,6 +9624,11 @@ def test_strict_replay_emits_explicit_source_pathology_rejection_for_1994_1472()
         row for row in replay.projection_rows()
         if row.get("kind") == "APPLY.SOURCE_PATHOLOGY_DETECTED"
     ]
+    # SUBSECTION_TARGET_REBOUND is no longer emitted here: the prefix-migration
+    # follow is now bounded by each op's own establishment date (``not_before``),
+    # so a subsection op no longer chases a renumber wave that predates its
+    # content lineage. This removes a spurious rebound and improves the 1994/1472
+    # replay score; the remaining genuine pathologies are unchanged.
     assert {
         cast(dict, row.get("detail") or {}).get("code")
         for row in rejected
@@ -9631,7 +9636,6 @@ def test_strict_replay_emits_explicit_source_pathology_rejection_for_1994_1472()
             "DESTRUCTIVE_SHAPE_LOSS_RISK",
             "MALFORMED_BROAD_REPLACE_BODY",
             "PARTIAL_WHOLE_SECTION_PAYLOAD",
-            "SUBSECTION_TARGET_REBOUND",
         }
 
 

@@ -44,7 +44,7 @@ from lawvm.finland.apply_events import (
     _resolved_target_path_for_rop_event,
     _target_address_path_for_rop_event,
 )
-from lawvm.finland.migration_ledger import MigrationLedger
+from lawvm.finland.migration_ledger import MigrationLedger, migration_lower_bound_for_op
 
 if TYPE_CHECKING:
     from lawvm.finland.statute import ReplayState, StatuteContext
@@ -289,7 +289,10 @@ def _apply_legacy_dispatch(
         and migration_ledger is not None
         and dispatch_op.lo is not None
     ):
-        migrated = migration_ledger.current_address_with_prefix_migrations(dispatch_op.lo.target)
+        _op_effective = migration_lower_bound_for_op(dispatch_op)
+        migrated = migration_ledger.current_address_with_prefix_migrations(
+            dispatch_op.lo.target, not_before=_op_effective
+        )
         if migrated != dispatch_op.lo.target and migrated.path and migrated.path[-1][0] == "section":
             migration_rebased_target_path = _path_to_tuple(migrated.path)
             source_labels = {kind: label for kind, label in dispatch_op.lo.target.path}

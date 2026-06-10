@@ -47,7 +47,7 @@ from lawvm.finland.apply_ir_ops import (
     _relabel_subsection_ir,
 )
 from lawvm.finland.apply_runtime_support import _find_insert_parent_path
-from lawvm.finland.migration_ledger import MigrationLedger
+from lawvm.finland.migration_ledger import MigrationLedger, migration_lower_bound_for_op
 from lawvm.finland.replay_notices import replay_print
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -331,7 +331,10 @@ def _apply_intent_section_level(
         rop_lo = getattr(rop, "lo", None)
         source_address = rop.resolved_target_address or (rop_lo.target if rop_lo is not None else None)
         if source_address is not None:
-            migrated = migration_ledger.current_address_with_prefix_migrations(source_address)
+            op_effective = migration_lower_bound_for_op(rop)
+            migrated = migration_ledger.current_address_with_prefix_migrations(
+                source_address, not_before=op_effective
+            )
             if migrated != source_address and migrated.path and migrated.path[-1][0] == "section":
                 migration_rebased_target_path = _path_to_tuple(migrated.path)
                 source_labels = {kind: label for kind, label in source_address.path}

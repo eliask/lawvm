@@ -45,6 +45,7 @@ from lawvm.finland.source_pathology import (
     build_temporary_section_rebase_pathology,
 )
 from lawvm.finland.apply_structure_ops import _normalize_subsection_target_hint_ir
+from lawvm.finland.migration_ledger import migration_lower_bound_for_op
 
 if TYPE_CHECKING:
     from lawvm.finland.migration_ledger import MigrationLedger
@@ -151,7 +152,8 @@ def _follow_same_wave_subsection_migration(
     if address is None or not any(kind in {"subsection", "item"} for kind, _label in address.path):
         return rop
 
-    migrated = migration_ledger.current_address_with_prefix_migrations(address)
+    op_effective = migration_lower_bound_for_op(rop)
+    migrated = migration_ledger.current_address_with_prefix_migrations(address, not_before=op_effective)
     if migrated == address:
         return rop
 

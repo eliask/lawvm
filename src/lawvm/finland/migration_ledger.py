@@ -34,16 +34,40 @@ def _normalize_address(address: LegalAddress) -> LegalAddress:
     return LegalAddress(path=normalize_address_path(address.path), special=address.special)
 
 
+def migration_lower_bound_for_op(op: object) -> str:
+    """Lower-bound effective date for following prefix migrations of *op*'s address.
+
+    Returns the op's own source effective date, used as ``not_before`` so the
+    address does not inherit renumber/move waves that predate its content
+    lineage (slot reuse / container rebirth). Falls back across the resolved
+    source accessor and the raw legal-op source. Empty string disables the
+    bound (legacy behaviour) when no effective date is recoverable.
+    """
+    resolved_source = getattr(op, "resolved_op_source", None)
+    if resolved_source is not None:
+        effective = getattr(resolved_source, "effective", "") or ""
+        if effective:
+            return effective
+    op_lo = getattr(op, "lo", None)
+    if op_lo is not None:
+        lo_source = getattr(op_lo, "source", None)
+        if lo_source is not None:
+            return getattr(lo_source, "effective", "") or ""
+    return ""
+
+
 def current_address_with_prefix_migrations_from_events(
     original_address: LegalAddress,
     migration_events: tuple[MigrationEvent, ...],
     as_of_date: str = "",
+    not_before: str = "",
 ) -> LegalAddress:
     """Finland wrapper over the shared prefix/wave migration resolver."""
     return _core_prefix_migrations(
         original_address,
         migration_events,
         as_of_date=as_of_date,
+        not_before=not_before,
         normalize_address_fn=_normalize_address,
     )
 
@@ -150,6 +174,7 @@ class MigrationLedger:
         self,
         original_address: LegalAddress,
         as_of_date: str = "",
+        not_before: str = "",
     ) -> LegalAddress:
         """Follow renumber/move links across any matching address prefix.
 
@@ -159,8 +184,14 @@ class MigrationLedger:
         ``part:III -> part:IV`` and ``part:IV/chapter:2 -> part:IV/chapter:18``
         even if there is no explicit section-level migration event for the full
         descendant path.
+
+        ``not_before`` excludes renumber/move waves that predate this address's
+        own content lineage, so a section born into a renumber-vacated slot does
+        not inherit the prior occupant's stale renumber chain.
         """
-        return current_address_with_prefix_migrations_from_events(original_address, tuple(self._events), as_of_date)
+        return current_address_with_prefix_migrations_from_events(
+            original_address, tuple(self._events), as_of_date, not_before=not_before
+        )
 
     # ------------------------------------------------------------------
     # Accessors

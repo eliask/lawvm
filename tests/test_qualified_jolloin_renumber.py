@@ -54,3 +54,50 @@ def test_1978_38_preserves_shifted_old_chapter_9_after_1990_811() -> None:
 
     assert "8" in chapter_labels
     assert "9" in chapter_labels
+
+
+def _chapter_section_labels(ir, chapter_label: str) -> tuple[str, list[str]]:
+    """Return (heading_text, section_labels) for the named chapter in *ir*."""
+    for chapter in ir.children:
+        if chapter.kind.value != "chapter" or chapter.label != chapter_label:
+            continue
+        heading = ""
+        for child in chapter.children:
+            if child.kind.value == "heading":
+                heading = (child.text or "").strip()
+                break
+        sections = [
+            child.label
+            for child in chapter.children
+            if child.kind.value == "section" and child.label
+        ]
+        return heading, sections
+    raise AssertionError(f"chapter {chapter_label!r} not found")
+
+
+def test_1978_38_consumer_credit_chapter_7_not_mislabelled_as_12() -> None:
+    # Regression: chapter 7 ("Kuluttajaluotot") was fully replaced by 2010/746
+    # ("muutetaan ... 7 luku"). The label 7 had earlier been vacated by a
+    # 1986->...->1997 renumber chain whose final occupant is chapter 12
+    # ("Erinäisiä säännöksiä"). Following that stale renumber chain for the
+    # reborn chapter-7 body misfiled the consumer-credit sections under the
+    # chapter-12 node and left chapter 7 holding only §22.
+    state = pinned_replay("1978/38", mode="finlex_oracle", quiet=True)
+
+    ch7_heading, ch7_sections = _chapter_section_labels(state.ir, "7")
+    ch12_heading, ch12_sections = _chapter_section_labels(state.ir, "12")
+
+    assert ch7_heading == "Kuluttajaluotot"
+    assert ch12_heading == "Erinäisiä säännöksiä"
+
+    # The consumer-credit body lives under chapter 7. These labels are unique to
+    # chapter 7 (chapter 12 only carries §1, §1a–§1f, §2), so they must never
+    # appear under the chapter-12 node.
+    for label in ("11a", "11b", "17a", "35", "49", "50", "51"):
+        assert label in ch7_sections, f"§{label} should be under chapter 7"
+        assert label not in ch12_sections, f"§{label} must not be under chapter 12"
+
+    # Chapter 7 is the substantive consumer-credit chapter, not a §22-only stub.
+    assert len(ch7_sections) > 40
+    # Chapter 12 holds only the miscellaneous final provisions.
+    assert ch12_sections == ["1", "1a", "1b", "1c", "1d", "1e", "1f", "2"]
