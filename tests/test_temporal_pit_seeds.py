@@ -90,48 +90,33 @@ def test_case1_extension_act_2025_368_is_visible() -> None:
     assert "31 päivään joulukuuta 2026" in text, text
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "DEFECT: LawVM does not model fixed-term whole-law expiry. Laki "
-        "482/2024 §7 fixes validity to 31.12.2026, but a provision-state query "
-        "as-of 2027-01-01 returns status='selected', content_state='live', "
-        "expires='' and full text — identical to a pre-expiry query. The "
-        "31.12.2026 bound lives only as prose inside §7 and is never lifted "
-        "into a machine-readable temporal validity bound, so the seam reports "
-        "the law as live after it has expired. A downstream bitemporal proof "
-        "staked on this seam would treat the expired law as in force."
-    ),
-)
-def test_case1_whole_law_expiry_after_term_is_modeled() -> None:
-    """As-of after 31.12.2026, §7 should NOT resolve as a live, selected provision.
+def test_case1_whole_law_expiry_after_term_is_modeled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """As-of after 31.12.2026, §7 resolves as expired, not live.
 
-    Expected-correct shape (currently failing): the seam should signal expiry
-    via the version envelope (e.g. an `expires` bound of 2026-12-31, a
-    non-"live" content_state, or a non-"selected"/absent status) rather than
-    returning the text as live. This xfail pins the defect; flip to plain
-    assertions if/when whole-law fixed-term expiry is modeled.
+    With LAWVM_ENABLE_FIXED_TERM_STATUTE_BOUNDS on, the 31.12.2026 whole-law
+    bound stated in §7's prose is lifted into a machine-readable validity bound:
+    a query as-of 2027-01-01 returns status="expired", content_state="expired",
+    version=None and a top-level expires/valid_until, so a downstream bitemporal
+    proof no longer treats the expired law as in force. (Was an xfail pinning the
+    defect before fixed-term modelling existed.)
     """
+    from lawvm.tools.provision_state import FIXED_TERM_BOUNDS_FLAG
+
+    monkeypatch.setenv(FIXED_TERM_BOUNDS_FLAG, "1")
     before = _state("2024/482", "section:7", "2026-06-01")
     after = _state("2024/482", "section:7", "2027-01-01")
 
-    # Sanity: in force before the term ends.
+    # In force before the term ends.
     assert before["status"] == "selected"
     assert before["version"]["content_state"] == "live"
 
-    after_version = after["version"]
-    # If expiry were modeled, AT LEAST ONE of these would hold after the term.
-    expiry_signalled = (
-        after["status"] != "selected"
-        or after_version["content_state"] != "live"
-        or after_version["expires"] not in ("", None)
-    )
-    assert expiry_signalled, (
-        "Law 482/2024 is valid only to 31.12.2026 (§7), yet as-of 2027-01-01 "
-        f"the seam returned status={after['status']!r}, "
-        f"content_state={after_version['content_state']!r}, "
-        f"expires={after_version['expires']!r} — no expiry signal."
-    )
+    # Expired strictly after the inclusive validity end.
+    assert after["status"] == "expired"
+    assert after["version"] is None
+    assert after["valid_until"] == "2026-12-31"
+    assert after["expires"] == "2027-01-01"
 
 
 # ---------------------------------------------------------------------------
