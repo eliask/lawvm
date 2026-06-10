@@ -1,10 +1,18 @@
-// viewer.js — Standalone viewer for LawVM "certified transition graph" exports.
+// statute-timeline.js — Standalone viewer for LawVM "certified transition graph" exports.
 //
 // Loads a per-statute SQLite DB (schema transition-graph.v1) via sql.js (CDN),
 // folds the certified L3 transitions in the browser to reconstruct the full
 // statute tree at any change-date, and self-verifies by recomputing the
 // reproducible tree hash and asserting it equals checkpoints.tree_hash — the
 // hash authored by the Python LawVM engine. Ported from exp1_certified_reducer.mjs.
+//
+// Two modes:
+//   Oikeustila  — point-in-time structure tree at the selected date.
+//   Muutokset   — amendment-as-ops changelog: what each säädös concretely did.
+//
+// Granularity-agnostic: drives off target_address depth and the node tree, never
+// hardcodes "chapter". The current export records transitions at chapter
+// granularity; a future export may record at section/subsection granularity.
 
 let db = null;          // sql.js Database
 let blobCache = {};     // content_hash -> parsed IRNode (decoded JSON)
@@ -13,6 +21,8 @@ let checkpointByDate = {}; // date -> {tree_hash, active_node_count}
 let changeDates = [];   // sorted ISO date strings
 let sourceById = {};    // source_id -> source_artifacts row
 let selectedAddress = null; // currently selected node address (for detail pane)
+let mode = 'oikeustila';    // 'oikeustila' | 'muutokset'
+let selectedSourceId = null; // amendment selected in Muutokset mode
 const textDecoder = new TextDecoder('utf-8');
 
 // ---- sql.js helpers (mirrors he-viewer q/q1 idiom) ----
@@ -100,7 +110,7 @@ async function reproducibleTreeHash(live) {
 const statuteSel = document.getElementById('statute-select');
 let manifest = [];
 
-fetch('manifest.json').then(r => r.json()).then(m => {
+fetch('statute-timeline-manifest.json').then(r => r.json()).then(m => {
   manifest = m;
   statuteSel.innerHTML = '<option value="">Valitse säädös…</option>';
   for (const s of manifest) {
@@ -128,7 +138,7 @@ async function loadStatute(statuteId) {
     if (!resp.ok) throw new Error(`HTTP ${resp.status} (${entry.db})`);
     const buf = await resp.arrayBuffer();
     db = new SQL.Database(new Uint8Array(buf));
-    blobCache = {}; selectedAddress = null;
+    blobCache = {}; selectedAddress = null; selectedSourceId = null;
 
     // Load core tables into memory
     transitions = q('SELECT * FROM transitions ORDER BY sequence ASC');
@@ -150,13 +160,18 @@ async function loadStatute(statuteId) {
   }
 }
 
-// ---- shell render (scrubber + layout) ----
+// ---- shell render (scrubber + mode toggle + layout) ----
 function renderShell(entry) {
   const titleRow = q1("SELECT value FROM meta WHERE key='title'");
   const title = titleRow ? JSON.parse(titleRow.value) : entry.title;
   const app = document.getElementById('app');
   app.innerHTML = `
-    <div class="scrubber">
+    <div class="mode-bar">
+      <button class="mode-btn" data-mode="oikeustila">Oikeustila</button>
+      <button class="mode-btn" data-mode="muutokset">Muutokset</button>
+      <span class="mode-hint" id="mode-hint"></span>
+    </div>
+    <div class="scrubber" id="scrubber">
       <div class="scrubber-top">
         <div class="oikeustila">Oikeustila <span class="date" id="sel-date">—</span></div>
         <div id="verify-slot"><span class="verify-badge verify-pending">Todennetaan…</span></div>
@@ -170,27 +185,43 @@ function renderShell(entry) {
         <span class="date-meta" id="date-meta"></span>
       </div>
     </div>
-    <div class="layout">
-      <div class="panel">
-        <h2 class="panel-title">Rakenne — ${escHtml(title)}</h2>
-        <div class="tree" id="tree"></div>
-      </div>
-      <div class="panel">
-        <h2 class="panel-title">Versiohistoria</h2>
-        <div id="detail"><p class="detail-empty">Valitse pykälä tai luku rakenteesta nähdäksesi sen muutoshistorian, lähteen ja esitöiden viitteet.</p></div>
-      </div>
-    </div>`;
+    <div class="view" id="view"></div>`;
 
+  for (const b of app.querySelectorAll('.mode-btn')) {
+    b.addEventListener('click', () => setMode(b.dataset.mode));
+  }
   const slider = document.getElementById('date-slider');
   slider.addEventListener('input', () => selectDate(parseInt(slider.value, 10)));
   document.getElementById('prev-date').addEventListener('click', () => selectDate(Math.max(0, curDateIdx - 1)));
   document.getElementById('next-date').addEventListener('click', () => selectDate(Math.min(changeDates.length - 1, curDateIdx + 1)));
   document.getElementById('date-jump').addEventListener('change', (e) => selectDate(parseInt(e.target.value, 10)));
+
+  setMode('oikeustila');
 }
 
-// ---- date selection ----
+function setMode(m) {
+  mode = m;
+  for (const b of document.querySelectorAll('.mode-btn')) {
+    b.classList.toggle('active', b.dataset.mode === m);
+  }
+  const scrubber = document.getElementById('scrubber');
+  const hint = document.getElementById('mode-hint');
+  if (m === 'oikeustila') {
+    scrubber.style.display = '';
+    hint.textContent = 'Lain rakenne valittuna voimaantulopäivänä, hash-todennettuna moottoria vastaan.';
+    renderOikeustila();
+  } else {
+    scrubber.style.display = 'none';
+    hint.textContent = 'Mitä kukin muutossäädös konkreettisesti teki — ennen/jälkeen jokaiselle kohdalle.';
+    renderMuutokset();
+  }
+}
+
+// ---- date selection (Oikeustila mode) ----
 let curDateIdx = -1;
 let curLive = new Map();
+let prevLive = new Map();        // covering set at the previous change-date
+let changedAddrs = new Set();    // chapter-level addresses whose subtree changed
 
 async function selectDate(idx) {
   curDateIdx = idx;
@@ -201,6 +232,14 @@ async function selectDate(idx) {
 
   const { live, failures } = foldAt(date);
   curLive = live;
+  prevLive = idx > 0 ? foldAt(changeDates[idx - 1]).live : new Map();
+  changedAddrs = new Set();
+  for (const [addr, h] of live) {
+    if (prevLive.get(addr) !== h) changedAddrs.add(addr);
+  }
+  for (const addr of prevLive.keys()) {
+    if (!live.has(addr)) changedAddrs.add(addr); // removed
+  }
 
   // Self-verification against the engine oracle
   const cp = checkpointByDate[date];
@@ -218,52 +257,167 @@ async function selectDate(idx) {
   }
 
   const meta = document.getElementById('date-meta');
-  if (meta) meta.textContent = `${live.size} aktiivista lukua · muutospäivä ${idx + 1}/${changeDates.length}`;
+  const changedCount = [...changedAddrs].filter(a => live.has(a)).length;
+  if (meta) {
+    meta.textContent = `${live.size} ${live.size === 1 ? 'ylätason yksikkö' : 'ylätason yksikköä'} · `
+      + (idx === 0 ? 'alkuperäinen säädös' : `${changedCount} muuttunutta tänä päivänä`)
+      + ` · muutospäivä ${idx + 1}/${changeDates.length}`;
+  }
 
-  renderTree(live);
-  if (selectedAddress) renderDetail(selectedAddress); // refresh detail for new date context
+  if (mode === 'oikeustila') renderOikeustila();
 }
 
-// ---- tree render ----
+// =====================================================================
+// Oikeustila (point-in-time structure) view
+// =====================================================================
 const KIND_FI = {
   chapter: 'luku', section: 'pykälä', subsection: 'momentti', paragraph: 'kohta',
   subparagraph: 'alakohta', heading: 'otsikko', crossHeading: 'väliotsikko',
   num: 'numero', content: 'teksti', intro: 'johdanto', wrapUp: 'lopetus',
 };
-const KIND_CLASS = { chapter: 'kind-chapter', section: 'kind-section', subsection: 'kind-subsection' };
 // Address-bearing structural kinds (mirror target_address style chapter:N/section:M/...)
-const ADDR_SEG = { chapter: 'chapter', section: 'section', subsection: 'subsection', paragraph: 'paragraph', subparagraph: 'subparagraph' };
+const ADDR_SEG = {
+  chapter: 'chapter', section: 'section', subsection: 'subsection',
+  paragraph: 'paragraph', subparagraph: 'subparagraph',
+};
+// Kinds that get their own collapsible row / structural badge.
+const CONTAINER_KINDS = new Set(['chapter', 'section', 'subsection']);
 
+function childByKind(node, kind) {
+  return (node.children || []).find(c => c.kind === kind) || null;
+}
 function nodeNum(node) {
-  // First child of kind 'num' carries the printed number like "1 luku" / "3 §"
-  const numChild = (node.children || []).find(c => c.kind === 'num');
-  return numChild && numChild.text ? numChild.text.trim() : '';
+  const n = childByKind(node, 'num');
+  return n && n.text ? n.text.trim() : '';
 }
 function nodeHeading(node) {
-  const h = (node.children || []).find(c => c.kind === 'heading');
+  const h = childByKind(node, 'heading');
   return h && h.text ? h.text.trim() : '';
 }
-// Extract first content snippet under a node (for leaf-ish display)
-function nodeSnippet(node) {
-  if (node.text && node.text.trim()) return node.text.trim();
-  for (const c of (node.children || [])) {
-    if (c.kind === 'content' && c.text) return c.text.trim();
-  }
-  return '';
+
+// Clean per-kind label for a structural node (granularity-agnostic):
+//   chapter   -> "N luku"   (+ heading rendered separately)
+//   section   -> "N §"      (+ heading rendered separately)
+//   subsection-> "N mom."
+//   paragraph -> "N)"
+//   subparagraph -> "N)"
+// `ordinal` is the 1-based position among same-kind siblings (fallback when the
+// printed num child is absent — momentit have no num child).
+function kindLabel(node, ordinal) {
+  const kind = node.kind;
+  const num = nodeNum(node);            // printed form like "3 §", "1)", "1 luku"
+  const lbl = (node.label || '').toString().trim();
+  if (kind === 'chapter') return num || (lbl ? `${lbl} luku` : 'luku');
+  if (kind === 'section') return num || (lbl ? `${lbl} §` : '§');
+  if (kind === 'subsection') return `${lbl || ordinal} mom.`;
+  if (kind === 'paragraph' || kind === 'subparagraph') return num || (lbl ? `${lbl})` : `${ordinal})`);
+  return num || lbl || (KIND_FI[kind] || kind);
 }
 
-function renderTree(live) {
+// Collect the structural (address-bearing) children of a node, assigning each a
+// child address segment and a same-kind ordinal.
+function structChildren(node, addr) {
+  const out = [];
+  const counts = {};
+  for (const c of (node.children || [])) {
+    const seg = ADDR_SEG[c.kind];
+    if (!seg) continue;
+    counts[c.kind] = (counts[c.kind] || 0) + 1;
+    out.push({ child: c, ordinal: counts[c.kind], childAddr: `${addr}/${seg}:${counts[c.kind]}` });
+  }
+  return out;
+}
+
+// Inline non-structural content of a node (intro text, content paragraphs, wrapUp,
+// crossHeading). Returns an array of {kind, text} in document order. Does NOT
+// recurse into structural children (those become their own rows).
+function inlineContent(node) {
+  const out = [];
+  for (const c of (node.children || [])) {
+    if (ADDR_SEG[c.kind]) continue;          // structural -> own row
+    if (c.kind === 'num' || c.kind === 'heading') continue; // shown in the row label
+    const txt = (c.text || '').trim();
+    if (c.kind === 'content' && txt) out.push({ kind: 'content', text: txt });
+    else if (c.kind === 'intro' && txt) out.push({ kind: 'intro', text: txt });
+    else if (c.kind === 'wrapUp' && txt) out.push({ kind: 'wrapUp', text: txt });
+    else if (c.kind === 'crossHeading' && txt) out.push({ kind: 'crossHeading', text: txt });
+    else if (txt) out.push({ kind: c.kind, text: txt });
+  }
+  // a node may itself carry leaf text (rare)
+  if (node.text && node.text.trim()) out.unshift({ kind: node.kind, text: node.text.trim() });
+  return out;
+}
+
+// Canonical text fingerprint of a subtree, used to detect which provisions
+// changed between two dates (granularity-agnostic; works on the node tree, not
+// on stored hashes which only exist at chapter level).
+function subtreeFingerprint(node) {
+  if (!node) return '';
+  const parts = [];
+  (function walk(n) {
+    parts.push(n.kind || '', '|', (n.label || ''), '|', (n.text || '').trim(), '\n');
+    for (const c of (n.children || [])) walk(c);
+  })(node);
+  return parts.join('');
+}
+
+// Map of childAddr -> child node from the previous date's tree, for change marking.
+function prevChildMap(addr) {
+  // addr is a top-level (chapter) address present in prevLive.
+  const top = addr.split('/')[0];
+  const node = prevLive.has(top) ? getBlob(prevLive.get(top)) : null;
+  const map = new Map();
+  if (!node) return map;
+  (function index(n, a) {
+    map.set(a, n);
+    for (const { child, childAddr } of structChildren(n, a)) index(child, childAddr);
+  })(node, top);
+  return map;
+}
+
+let expandState = 'default'; // 'default' | 'all' | 'none' — controls initial collapse
+
+function renderOikeustila() {
+  const view = document.getElementById('view');
+  const titleRow = q1("SELECT value FROM meta WHERE key='title'");
+  const title = titleRow ? JSON.parse(titleRow.value) : (manifest.find(s => s.statute_id) || {}).title || '';
+  view.innerHTML = `
+    <div class="layout">
+      <div class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">Rakenne — ${escHtml(title)}</h2>
+          <div class="tree-tools">
+            <button id="expand-all">Laajenna kaikki</button>
+            <button id="collapse-all">Sulje kaikki</button>
+          </div>
+        </div>
+        <div class="tree-legend"><span class="leg-changed">▍</span> muuttunut edelliseen muutospäivään verrattuna</div>
+        <div class="tree" id="tree"></div>
+      </div>
+      <div class="panel">
+        <h2 class="panel-title">Versiohistoria</h2>
+        <div id="detail"><p class="detail-empty">Valitse pykälä tai luku rakenteesta nähdäksesi sen muutoshistorian, lähteen ja esitöiden viitteet.</p></div>
+      </div>
+    </div>`;
+  document.getElementById('expand-all').addEventListener('click', () => { expandState = 'all'; renderTree(); });
+  document.getElementById('collapse-all').addEventListener('click', () => { expandState = 'none'; renderTree(); });
+  renderTree();
+  if (selectedAddress) renderDetail(selectedAddress);
+}
+
+function renderTree() {
   const treeEl = document.getElementById('tree');
-  const addrs = [...live.keys()].sort((a, b) => {
-    // chapter:N numeric sort
-    const na = parseInt((a.split(':')[1] || '0'), 10), nb = parseInt((b.split(':')[1] || '0'), 10);
-    return na - nb;
-  });
-  let html = '<ul>';
+  if (!treeEl) return;
+  const live = curLive;
+  const addrs = [...live.keys()].sort(addrCompare);
+
+  let html = '<ul class="tree-root">';
   for (const addr of addrs) {
     const node = getBlob(live.get(addr));
     if (!node) continue;
-    html += renderNode(node, addr);
+    const prevMap = prevChildMap(addr);
+    const topChanged = changedAddrs.has(addr);
+    html += renderNode(node, addr, 0, prevMap, topChanged);
   }
   html += '</ul>';
   treeEl.innerHTML = html;
@@ -271,8 +425,9 @@ function renderTree(live) {
   treeEl.querySelectorAll('.node-toggle:not(.leaf)').forEach(t => {
     t.addEventListener('click', (e) => {
       e.stopPropagation();
-      t.closest('.node').classList.toggle('collapsed');
-      t.textContent = t.closest('.node').classList.contains('collapsed') ? '▸' : '▾';
+      const node = t.closest('.node');
+      node.classList.toggle('collapsed');
+      t.textContent = node.classList.contains('collapsed') ? '▸' : '▾';
     });
   });
   treeEl.querySelectorAll('.node-row').forEach(r => {
@@ -285,72 +440,99 @@ function renderTree(live) {
   });
 }
 
-// Render one node and its structural children. `addr` is this node's address
-// (chapter:N/section:M/...). Only structural kinds get their own rows.
-function renderNode(node, addr) {
+function addrCompare(a, b) {
+  const sa = a.split('/'), sb = b.split('/');
+  for (let i = 0; i < Math.max(sa.length, sb.length); i++) {
+    const na = parseInt((sa[i] || '').split(':')[1] || '0', 10);
+    const nb = parseInt((sb[i] || '').split(':')[1] || '0', 10);
+    if (na !== nb) return na - nb;
+  }
+  return 0;
+}
+
+// Whether a container is collapsed by default. Default policy: chapters+sections
+// open, deeper (subsection/momentti) collapsed so text is reachable but not a wall.
+function defaultCollapsed(kind, depth) {
+  if (expandState === 'all') return false;
+  if (expandState === 'none') return depth > 0;
+  return depth >= 2; // depth 0=chapter,1=section open; deeper collapsed
+}
+
+function renderNode(node, addr, depth, prevMap, ancestorChanged) {
   const kind = node.kind;
-  const numTxt = nodeNum(node);
   const heading = nodeHeading(node);
-  const kindFi = KIND_FI[kind] || kind;
-  const kindCls = KIND_CLASS[kind] || '';
+  const children = structChildren(node, addr);
+  const inline = inlineContent(node);
+  const hasChildren = children.length > 0;
+  const isContainer = CONTAINER_KINDS.has(kind);
+  const collapsible = hasChildren || inline.length > 0;
 
-  // Structural children (those that carry an address segment)
-  const structChildren = [];
-  let secCount = 0, subCount = 0, parCount = 0, subParCount = 0;
-  for (const c of (node.children || [])) {
-    const seg = ADDR_SEG[c.kind];
-    if (!seg) continue;
-    let n;
-    if (c.kind === 'section') n = ++secCount;
-    else if (c.kind === 'subsection') n = ++subCount;
-    else if (c.kind === 'paragraph') n = ++parCount;
-    else if (c.kind === 'subparagraph') n = ++subParCount;
-    else n = structChildren.length + 1;
-    structChildren.push({ child: c, childAddr: `${addr}/${seg}:${n}` });
+  // Change detection: compare this subtree's fingerprint vs previous date.
+  const prevNode = prevMap.get(addr);
+  let changed = false;
+  if (curDateIdx > 0) {
+    if (!prevNode) changed = true; // newly present
+    else changed = subtreeFingerprint(node) !== subtreeFingerprint(prevNode);
   }
 
-  const hasChildren = structChildren.length > 0;
-  const collapsedDefault = kind === 'chapter' ? '' : ''; // chapters expanded by default
-  let label = '';
-  if (numTxt) label += `<span class="node-label">${escHtml(numTxt)}</span> `;
-  if (heading) label += `<span class="node-text">${escHtml(heading)}</span>`;
-  if (!numTxt && !heading) {
-    const snip = nodeSnippet(node);
-    label += `<span class="snippet">${escHtml(snip.slice(0, 90))}${snip.length > 90 ? '…' : ''}</span>`;
-  }
+  const kindCls = `kind-${kind}`;
+  const label = kindLabel(node, /*ordinal*/ parseInt((addr.split('/').pop() || '').split(':')[1] || '0', 10));
 
-  let html = `<li class="node ${collapsedDefault}">`;
+  const collapsed = collapsible && defaultCollapsed(kind, depth) ? ' collapsed' : '';
+  const changedCls = changed ? ' changed' : '';
+
+  let html = `<li class="node${collapsed}${changedCls}" data-depth="${depth}">`;
   html += `<div class="node-row" data-addr="${escHtml(addr)}">`;
-  html += `<span class="node-toggle ${hasChildren ? '' : 'leaf'}">${hasChildren ? '▾' : ''}</span>`;
-  html += `<span class="kind-badge ${kindCls}">${escHtml(kindFi)}</span>`;
-  html += `<span>${label || escHtml(addr)}</span>`;
+  html += `<span class="node-toggle ${collapsible ? '' : 'leaf'}">${collapsible ? (collapsed ? '▸' : '▾') : ''}</span>`;
+  if (isContainer || kind === 'paragraph' || kind === 'subparagraph') {
+    html += `<span class="kind-badge ${kindCls}">${escHtml(KIND_FI[kind] || kind)}</span>`;
+  }
+  html += `<span class="node-label">${escHtml(label)}</span>`;
+  if (heading) html += `<span class="node-heading">${escHtml(heading)}</span>`;
+  if (changed) html += `<span class="changed-tag">muuttunut</span>`;
   html += `</div>`;
 
-  if (hasChildren) {
-    html += '<ul>';
-    for (const { child, childAddr } of structChildren) html += renderNode(child, childAddr);
-    html += '</ul>';
+  // body: inline content (full text, no truncation) + structural children
+  if (collapsible) {
+    html += `<div class="node-body">`;
+    for (const seg of inline) {
+      const cls = seg.kind === 'crossHeading' ? 'crossheading'
+        : seg.kind === 'intro' ? 'intro'
+        : seg.kind === 'wrapUp' ? 'wrapup' : 'content';
+      html += `<div class="prov-text ${cls}">${escHtml(seg.text)}</div>`;
+    }
+    if (hasChildren) {
+      html += '<ul>';
+      for (const { child, childAddr } of children) {
+        html += renderNode(child, childAddr, depth + 1, prevMap, ancestorChanged || changed);
+      }
+      html += '</ul>';
+    }
+    html += `</div>`;
   }
   html += '</li>';
   return html;
 }
 
-// ---- detail pane: change history + provenance + before/after ----
+// =====================================================================
+// Versiohistoria detail pane (Oikeustila mode) — provenance + word-diff
+// =====================================================================
 function renderDetail(address) {
   const el = document.getElementById('detail');
-  // The clicked address may be deeper than chapter-level; transitions are recorded
-  // at chapter granularity. Match transitions whose target_address is a prefix of
-  // the clicked address (or vice-versa) so a section click shows its chapter's changes.
-  const chapterAddr = address.split('/')[0]; // e.g. "chapter:4"
+  if (!el) return;
+  // The clicked address may be deeper than the granularity at which transitions
+  // are recorded. Walk up the address until we find recorded transitions.
+  const matchAddr = nearestRecordedAddress(address);
   const hist = transitions
-    .filter(t => t.target_address === chapterAddr)
-    .sort((a, b) => (a.effective_date < b.effective_date ? -1 : a.effective_date > b.effective_date ? 1 : a.sequence - b.sequence));
+    .filter(t => t.target_address === matchAddr)
+    .sort((a, b) => (a.effective_date < b.effective_date ? -1
+      : a.effective_date > b.effective_date ? 1 : a.sequence - b.sequence));
 
   const curDate = changeDates[curDateIdx];
   let html = `<div class="detail-head">${escHtml(prettyAddr(address))}</div>`;
   html += `<div class="detail-addr">${escHtml(address)}</div>`;
-  if (address !== chapterAddr) {
-    html += `<p class="detail-empty" style="margin-top:0.4rem">Muutokset kirjataan luvun tarkkuudella. Näytetään luvun <strong>${escHtml(prettyAddr(chapterAddr))}</strong> muutokset.</p>`;
+  if (matchAddr !== address) {
+    html += `<p class="detail-note">Muutokset on kirjattu osoitteen <strong>${escHtml(prettyAddr(matchAddr))}</strong> tarkkuudella. Näytetään sen muutoshistoria.</p>`;
   }
 
   if (!hist.length) { html += '<p class="detail-empty">Ei kirjattuja muutoksia.</p>'; el.innerHTML = html; return; }
@@ -364,48 +546,45 @@ function renderDetail(address) {
     if (isFuture) html += `<span class="future-tag">tuleva muutos</span>`;
     html += `</div>`;
 
-    if (t.legal_op_kind) {
-      html += `<div class="change-op"><span class="op-kind">${escHtml(t.legal_op_kind)}</span></div>`;
-    }
-    if (t.legal_op_summary) {
-      html += `<div class="change-summary">${escHtml(t.legal_op_summary)}</div>`;
-    }
+    if (t.legal_op_kind) html += `<div class="change-op"><span class="op-kind">${escHtml(t.legal_op_kind)}</span></div>`;
+    if (t.legal_op_summary) html += `<div class="change-summary">${escHtml(t.legal_op_summary)}</div>`;
 
-    // Provenance: amending statute + HE ref + url
-    const src = sourceById[t.source_id];
-    if (src || t.he_ref) {
-      html += `<div class="provenance">`;
-      if (src) {
-        html += `<div><span class="lbl">Lähde / Muutossäädös:</span> `;
-        if (src.url) html += `<a href="${escHtml(src.url)}" target="_blank" rel="noopener">${escHtml(src.title || src.canonical_id || t.source_id)}</a>`;
-        else html += escHtml(src.title || src.canonical_id || t.source_id);
-        if (src.canonical_id) html += ` (${escHtml(src.canonical_id)})`;
-        html += `</div>`;
-      } else if (t.source_id) {
-        html += `<div><span class="lbl">Lähde / Muutossäädös:</span> ${escHtml(t.source_id)}</div>`;
-      }
-      if (t.he_ref) html += `<div><span class="lbl">Esitöiden viite:</span> ${escHtml(t.he_ref)}</div>`;
-      html += `</div>`;
-    }
+    html += provenanceHtml(t);
 
-    // Before/after diff: pre_hash vs payload_hash content
-    if (t.pre_hash || t.payload_hash) {
-      html += renderDiff(t);
-    }
+    if (t.pre_hash || t.payload_hash) html += diffDetails(t.pre_hash, t.payload_hash);
     html += `</div>`;
   }
   el.innerHTML = html;
+  wireDiffDetails(el);
+}
 
-  // wire diff toggles
-  el.querySelectorAll('details.diff').forEach(d => {
-    d.addEventListener('toggle', () => {
-      if (d.open && !d.dataset.rendered) {
-        const body = d.querySelector('.diff-body');
-        body.innerHTML = buildDiff(d.dataset.pre, d.dataset.post);
-        d.dataset.rendered = '1';
-      }
-    });
-  });
+// Find the nearest ancestor (incl. self) of `address` that has recorded transitions.
+function nearestRecordedAddress(address) {
+  const recorded = new Set(transitions.map(t => t.target_address));
+  const segs = address.split('/');
+  for (let i = segs.length; i >= 1; i--) {
+    const a = segs.slice(0, i).join('/');
+    if (recorded.has(a)) return a;
+  }
+  return segs[0];
+}
+
+function provenanceHtml(t) {
+  const src = sourceById[t.source_id];
+  if (!src && !t.he_ref && !t.source_id) return '';
+  let html = `<div class="provenance">`;
+  if (src) {
+    html += `<div><span class="lbl">Lähde / Muutossäädös:</span> `;
+    if (src.url) html += `<a href="${escHtml(src.url)}" target="_blank" rel="noopener">${escHtml(src.title || src.canonical_id || t.source_id)}</a>`;
+    else html += escHtml(src.title || src.canonical_id || t.source_id);
+    if (src.canonical_id) html += ` (${escHtml(src.canonical_id)})`;
+    html += `</div>`;
+  } else if (t.source_id) {
+    html += `<div><span class="lbl">Lähde / Muutossäädös:</span> ${escHtml(t.source_id)}</div>`;
+  }
+  if (t.he_ref) html += `<div><span class="lbl">Esitöiden viite:</span> ${escHtml(t.he_ref)}</div>`;
+  html += `</div>`;
+  return html;
 }
 
 function prettyAddr(addr) {
@@ -416,55 +595,185 @@ function prettyAddr(addr) {
   }).join(' › ');
 }
 
-// Flatten an IRNode subtree into readable plain text (for before/after diff).
+// =====================================================================
+// Muutokset (amendment-as-ops) view
+// =====================================================================
+function amendmentList() {
+  // distinct amending säädökset that appear as transition source_id, ordered by
+  // their first effective_date. Excludes the empty/original-enactment source.
+  const byId = new Map(); // source_id -> {firstDate, opCount, src}
+  for (const t of transitions) {
+    if (!t.source_id) continue;
+    const e = byId.get(t.source_id) || { firstDate: t.effective_date, opCount: 0, src: sourceById[t.source_id] || null };
+    if (t.effective_date < e.firstDate) e.firstDate = t.effective_date;
+    e.opCount += 1;
+    byId.set(t.source_id, e);
+  }
+  return [...byId.entries()]
+    .map(([id, v]) => ({ source_id: id, ...v }))
+    .sort((a, b) => (a.firstDate < b.firstDate ? -1 : a.firstDate > b.firstDate ? 1 : (a.source_id < b.source_id ? -1 : 1)));
+}
+
+function renderMuutokset() {
+  const view = document.getElementById('view');
+  const amendments = amendmentList();
+  if (!selectedSourceId && amendments.length) selectedSourceId = amendments[amendments.length - 1].source_id;
+
+  let listHtml = '<ul class="amend-list">';
+  for (const a of amendments) {
+    const src = a.src;
+    const title = src ? (src.title || src.canonical_id || a.source_id) : a.source_id;
+    const active = a.source_id === selectedSourceId ? ' active' : '';
+    listHtml += `<li class="amend-item${active}" data-src="${escHtml(a.source_id)}">`
+      + `<div class="amend-date">${escHtml(a.firstDate)}</div>`
+      + `<div class="amend-title">${escHtml(title)}</div>`
+      + `<div class="amend-meta">${escHtml(a.source_id)} · ${a.opCount} ${a.opCount === 1 ? 'kohdistus' : 'kohdistusta'}</div>`
+      + `</li>`;
+  }
+  listHtml += '</ul>';
+
+  view.innerHTML = `
+    <div class="layout layout-amend">
+      <div class="panel">
+        <h2 class="panel-title">Muutossäädökset (${amendments.length})</h2>
+        ${listHtml}
+      </div>
+      <div class="panel">
+        <h2 class="panel-title">Mitä tämä säädös teki</h2>
+        <div id="amend-detail"></div>
+      </div>
+    </div>`;
+
+  for (const li of view.querySelectorAll('.amend-item')) {
+    li.addEventListener('click', () => {
+      selectedSourceId = li.dataset.src;
+      for (const x of view.querySelectorAll('.amend-item')) x.classList.toggle('active', x.dataset.src === selectedSourceId);
+      renderAmendDetail(selectedSourceId);
+    });
+  }
+  if (selectedSourceId) renderAmendDetail(selectedSourceId);
+}
+
+function renderAmendDetail(sourceId) {
+  const el = document.getElementById('amend-detail');
+  if (!el) return;
+  const src = sourceById[sourceId];
+  const ops = transitions
+    .filter(t => t.source_id === sourceId)
+    .sort((a, b) => a.sequence - b.sequence);
+
+  const effectiveDates = [...new Set(ops.map(o => o.effective_date))].sort();
+  let html = `<div class="amend-detail-head">`;
+  html += `<div class="amend-detail-title">${escHtml(src ? (src.title || sourceId) : sourceId)}</div>`;
+  html += `<div class="amend-detail-meta">`;
+  html += `<span><span class="lbl">Säädös:</span> ${escHtml(sourceId)}</span>`;
+  if (effectiveDates.length) {
+    html += `<span><span class="lbl">Voimaantulo:</span> `
+      + effectiveDates.map(d => {
+        const i = changeDates.indexOf(d);
+        return i >= 0
+          ? `<a href="#" class="jump-date" data-idx="${i}">${escHtml(d)}</a>`
+          : escHtml(d);
+      }).join(', ')
+      + `</span>`;
+  }
+  const heRef = (ops.find(o => o.he_ref) || {}).he_ref;
+  if (heRef) html += `<span><span class="lbl">Esitöiden viite:</span> ${escHtml(heRef)}</span>`;
+  if (src && src.url) html += `<span><span class="lbl">Lähde:</span> <a href="${escHtml(src.url)}" target="_blank" rel="noopener">Finlex ↗</a></span>`;
+  html += `</div></div>`;
+
+  html += `<div class="op-list">`;
+  for (const t of ops) {
+    html += `<div class="op-row">`;
+    html += `<div class="op-row-head">`;
+    html += `<span class="op-kind">${escHtml(t.legal_op_kind || t.action)}</span>`;
+    html += `<span class="op-addr">${escHtml(prettyAddr(t.target_address))}</span>`;
+    html += `<span class="op-eff">${escHtml(t.effective_date)}</span>`;
+    html += `</div>`;
+    if (t.legal_op_summary) html += `<div class="op-summary">${escHtml(t.legal_op_summary)}</div>`;
+    html += diffDetails(t.pre_hash, t.payload_hash);
+    html += `</div>`;
+  }
+  html += `</div>`;
+  el.innerHTML = html;
+
+  for (const a of el.querySelectorAll('.jump-date')) {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      setMode('oikeustila');
+      selectDate(parseInt(a.dataset.idx, 10));
+    });
+  }
+  wireDiffDetails(el);
+}
+
+// =====================================================================
+// Word-level diff (shared)
+// =====================================================================
+// Flatten an IRNode subtree into readable plain text (document order).
 function nodeToText(node) {
   if (!node) return '';
   const parts = [];
-  function walk(n) {
-    if (n.text && n.text.trim()) parts.push(n.text.trim());
+  (function walk(n) {
+    const num = (n.kind === 'num' && n.text) ? n.text.trim() : '';
+    if (num) parts.push(num);
+    if (n.text && n.text.trim() && n.kind !== 'num') parts.push(n.text.trim());
     for (const c of (n.children || [])) walk(c);
-  }
-  walk(node);
-  return parts.join('\n');
+  })(node);
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
 }
 
-function renderDiff(t) {
-  return `<details class="diff" data-pre="${escHtml(t.pre_hash)}" data-post="${escHtml(t.payload_hash)}">`
+function diffDetails(preHash, postHash) {
+  return `<details class="diff" data-pre="${escHtml(preHash || '')}" data-post="${escHtml(postHash || '')}">`
     + `<summary>Näytä ennen / jälkeen</summary>`
     + `<div class="diff-body"></div></details>`;
 }
 
-function buildDiff(preHash, postHash) {
-  const preNode = preHash ? getBlob(preHash) : null;
-  const postNode = postHash ? getBlob(postHash) : null;
-  const preTxt = nodeToText(preNode);
-  const postTxt = nodeToText(postNode);
-  if (!preTxt && postTxt) {
-    return `<div class="diff-cols"><div class="diff-col"><h5>Ennen</h5><div class="diff-box pre">(uusi sisältö — ei aiempaa versiota)</div></div>`
-      + `<div class="diff-col"><h5>Jälkeen</h5><div class="diff-box post">${wordDiffHtml('', postTxt, true)}</div></div></div>`;
-  }
-  return `<div class="diff-cols">`
-    + `<div class="diff-col"><h5>Ennen</h5><div class="diff-box pre">${wordDiffHtml(preTxt, postTxt, false)}</div></div>`
-    + `<div class="diff-col"><h5>Jälkeen</h5><div class="diff-box post">${wordDiffHtml(postTxt, preTxt, true, true)}</div></div></div>`;
+function wireDiffDetails(root) {
+  root.querySelectorAll('details.diff').forEach(d => {
+    d.addEventListener('toggle', () => {
+      if (d.open && !d.dataset.rendered) {
+        d.querySelector('.diff-body').innerHTML = buildDiff(d.dataset.pre, d.dataset.post);
+        d.dataset.rendered = '1';
+      }
+    });
+  });
 }
 
-// Highlight differing words. side: false=show as "old" (mark deletions),
-// true=show as "new" (mark insertions). Simple LCS word diff.
-function wordDiffHtml(text, other, isNew, swap) {
-  const a = (swap ? other : text);
-  const b = (swap ? text : other);
-  // a = old, b = new
-  const aw = a.split(/\s+/).filter(Boolean), bw = b.split(/\s+/).filter(Boolean);
-  if (aw.length + bw.length > 1600) { // too big for O(nm) LCS; show plain
-    return escHtml(isNew ? b : a);
+function buildDiff(preHash, postHash) {
+  const preTxt = nodeToText(preHash ? getBlob(preHash) : null);
+  const postTxt = nodeToText(postHash ? getBlob(postHash) : null);
+  if (!preTxt && !postTxt) return `<p class="diff-empty">Ei sisältöä vertailtavaksi.</p>`;
+  if (!preTxt) {
+    return `<div class="diff-cols">`
+      + `<div class="diff-col"><h5>Ennen</h5><div class="diff-box pre"><em>(uusi sisältö — ei aiempaa versiota)</em></div></div>`
+      + `<div class="diff-col"><h5>Jälkeen</h5><div class="diff-box post">${wordDiffHtml('', postTxt, 'new')}</div></div></div>`;
+  }
+  if (!postTxt) {
+    return `<div class="diff-cols">`
+      + `<div class="diff-col"><h5>Ennen</h5><div class="diff-box pre">${wordDiffHtml(preTxt, '', 'old')}</div></div>`
+      + `<div class="diff-col"><h5>Jälkeen</h5><div class="diff-box post"><em>(poistettu — ei sisältöä)</em></div></div></div>`;
+  }
+  return `<div class="diff-cols">`
+    + `<div class="diff-col"><h5>Ennen</h5><div class="diff-box pre">${wordDiffHtml(preTxt, postTxt, 'old')}</div></div>`
+    + `<div class="diff-col"><h5>Jälkeen</h5><div class="diff-box post">${wordDiffHtml(preTxt, postTxt, 'new')}</div></div></div>`;
+}
+
+// Render `old`→`new` word diff for one side. side='old' marks deletions,
+// side='new' marks insertions. Standard word-level LCS.
+function wordDiffHtml(oldTxt, newTxt, side) {
+  const aw = oldTxt.split(/\s+/).filter(Boolean);
+  const bw = newTxt.split(/\s+/).filter(Boolean);
+  if (aw.length + bw.length > 4000) { // guard against pathological O(nm)
+    return escHtml(side === 'new' ? newTxt : oldTxt);
   }
   const ops = diffWords(aw, bw);
   let out = '';
   for (const [type, words] of ops) {
     const txt = escHtml(words.join(' '));
     if (type === 0) out += txt + ' ';
-    else if (type === -1) { if (!isNew) out += `<span class="diff-del">${txt}</span> `; }
-    else { if (isNew) out += `<span class="diff-ins">${txt}</span> `; }
+    else if (type === -1) { if (side === 'old') out += `<span class="diff-del">${txt}</span> `; }
+    else { if (side === 'new') out += `<span class="diff-ins">${txt}</span> `; }
   }
   return out.trim();
 }
