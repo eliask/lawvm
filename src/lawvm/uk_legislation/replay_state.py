@@ -438,7 +438,19 @@ class UKReplayStateMixin:
         self,
         key: _RecursiveMatchAllKey,
     ) -> tuple[UKCanonicalNodeMatch, ...] | None:
-        """Return cached all-matches tuple if still valid, or None."""
+        """Return cached all-matches tuple if still valid, or None.
+
+        Defence-in-depth: like ``_cached_recursive_match`` /
+        ``_cached_target_lookup``, every hit re-validates that each cached
+        match is still attached at its recorded location.  This does not rely
+        solely on ``_structure_mutation_serial`` being bumped; if a future
+        mutation path detaches a matched node without bumping the serial (the
+        failure class the class docstring warns about), the entry is dropped
+        and recomputed rather than serving a detached node.  Validation is
+        ``O(matches)`` with the same cheap identity/index checks the sibling
+        caches use — no tree walks.  The whole entry is recomputed on any
+        failure (no partial filtering), matching sibling-cache semantics.
+        """
         entry = self._recursive_match_all_cache.get(key)
         if entry is None:
             return None
@@ -446,7 +458,32 @@ class UKReplayStateMixin:
         if serial != self._structure_mutation_serial:
             self._recursive_match_all_cache.pop(key, None)
             return None
-        return matches
+        revalidated: list[UKCanonicalNodeMatch] = []
+        for match in matches:
+            node, parent, idx = match
+            if node is None or parent is None:
+                # All-matches entries are descendant matches that always carry
+                # a parent; a None node/parent means the entry is unverifiable
+                # by cheap checks, so drop and recompute.
+                self._recursive_match_all_cache.pop(key, None)
+                return None
+            children = parent.children
+            if idx is not None and 0 <= idx < len(children) and children[idx] is node:
+                revalidated.append(match)
+                continue
+            try:
+                current_idx = children.index(node)
+            except ValueError:
+                self._recursive_match_all_cache.pop(key, None)
+                return None
+            revalidated.append(UKCanonicalNodeMatch(node, parent, current_idx))
+        healed = tuple(revalidated)
+        if healed != matches:
+            self._recursive_match_all_cache[key] = (
+                self._structure_mutation_serial,
+                healed,
+            )
+        return healed
 
     def _store_recursive_match_all_cache(
         self,
