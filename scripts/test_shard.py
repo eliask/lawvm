@@ -108,6 +108,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_scan_absent_ajantasa.py",
         "test_scan_annotations.py",
         "test_source_dump.py",
+        "test_statute_id_ordering.py",
         "test_transparent_store.py",
         "test_vts.py",
     ),
