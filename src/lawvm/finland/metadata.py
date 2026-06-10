@@ -289,6 +289,71 @@ def _normalize_johtolause_verbs(text: str) -> str:
 # Amendment and statute date extraction
 # ---------------------------------------------------------------------------
 
+# Finnish month names in partitive (the form used in "N päivään <month> YYYY").
+FI_MONTH_MAP: dict[str, int] = {
+    'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
+    'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
+    'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
+}
+
+# Whole-act day-month-year validity bound ("Tämä laki ... on voimassa N
+# päivään MONTH YYYY"). re.DOTALL is intentionally omitted so the {0,120}
+# window cannot cross a sentence boundary (see _amendment_expiry_date).
+WHOLE_LAW_EXPIRY_DAY_MONTH_YEAR_RE = re.compile(
+    r'Tämä\s+(?:\w+\s+){0,2}(?:laki|asetus|päätös)'
+    r'.{0,120}?\bon\s+voimassa\s+(\d{1,2})\s+päivään\s+([a-zäöå]+)\s+(\d{4})',
+    flags=re.IGNORECASE,
+)
+
+# Whole-act year-end shorthand ("Tämä laki ... on voimassa vuoden YYYY
+# loppuun" → 31 December YYYY). [^.]* stops at the first sentence terminator.
+WHOLE_LAW_EXPIRY_YEAR_END_RE = re.compile(
+    r'Tämä\s+(?:\w+\s+){0,2}(?:laki|asetus|päätös)'
+    r'[^.]*?\bon\s+voimassa\s+vuoden\s+(\d{4})\s+loppuun',
+    flags=re.IGNORECASE,
+)
+
+# Section/chapter-scoped expiry ("Lain X § ovat/on voimassa N päivään MONTH
+# YYYY"). Used only to DETECT a scoped form for diagnostics; v1 does not lift
+# scoped expiry into a statute-level bound.
+SECTION_SCOPED_EXPIRY_RE = re.compile(
+    r'(?:Lain|Asetuksen|Päätöksen)\s+[\d\w\s,–:§]+?'
+    r'\s*§\s+(?:ovat|on)\s+voimassa\s+(\d{1,2})\s+päivään\s+([a-zäöå]+)\s+(\d{4})',
+    flags=re.IGNORECASE,
+)
+
+# Chapter-scoped expiry ("Lain N luku on voimassa ..."). Detection only.
+CHAPTER_SCOPED_EXPIRY_RE = re.compile(
+    r'(?:Lain|Asetuksen|Päätöksen)\s+[\d\w\s,–]+?\bluku\s+(?:ovat|on)\s+voimassa',
+    flags=re.IGNORECASE,
+)
+
+
+def whole_law_expiry_date_from_text(text: str) -> Optional[dt.date]:
+    """Return the whole-law validity bound date stated in ``text``, if any.
+
+    ``text`` must already be normalised with ``_normalize_fi_parse_text``.
+    Recognises the two whole-act forms (day-month-year and year-end shorthand).
+    Returns the inclusive ``valid_until`` date; callers convert to the
+    exclusive cutoff. Section/chapter-scoped forms are intentionally excluded.
+    """
+    m = WHOLE_LAW_EXPIRY_DAY_MONTH_YEAR_RE.search(text)
+    if m:
+        month = FI_MONTH_MAP.get(m.group(2).lower())
+        if month is not None:
+            try:
+                return dt.date(int(m.group(3)), month, int(m.group(1)))
+            except ValueError:
+                pass
+    m3 = WHOLE_LAW_EXPIRY_YEAR_END_RE.search(text)
+    if m3:
+        try:
+            return dt.date(int(m3.group(1)), 12, 31)
+        except ValueError:
+            pass
+    return None
+
+
 def _amendment_effective_date(tree: "etree._Element") -> Optional[dt.date]:
     """Return effective date; delegates to _amendment_effective_date_with_step."""
     date, _step = _amendment_effective_date_with_step(tree)
@@ -348,34 +413,17 @@ def _amendment_expiry_date(tree: "etree._Element") -> Optional[dt.date]:
     else:
         eit_text = full_text
 
-    # Pattern 1: whole-act expiry
-    # NOTE: re.DOTALL intentionally omitted.  Without it, '.' does not match
-    # newlines, preventing the pattern from crossing sentence boundaries and
-    # falsely matching "on voimassa" in a different sentence (e.g. 2009/315
-    # where "Tämä asetus tulee voimaan…\nPuutiaisaivotulehdusrokotusta koskeva
-    # 2 a § on voimassa 31 päivään joulukuuta 2010." was incorrectly matched).
-    m = re.search(
-        r'Tämä\s+(?:\w+\s+){0,2}(?:laki|asetus|päätös).{0,120}?\bon\s+voimassa\s+(\d{1,2})\s+päivään\s+([a-zäöå]+)\s+(\d{4})',
-        eit_text,
-        flags=re.IGNORECASE,
-    )
-    if m:
-        month = month_map.get(m.group(2).lower())
-        if month is not None:
-            try:
-                return dt.date(int(m.group(3)), month, int(m.group(1)))
-            except ValueError:
-                pass
+    # Patterns 1+3 (whole-act day-month-year and year-end shorthand) are
+    # delegated to whole_law_expiry_date_from_text so the statute-level
+    # fixed-term extractor reuses the identical proven regexes.
+    whole_law = whole_law_expiry_date_from_text(eit_text)
+    if whole_law is not None:
+        return whole_law
 
     # Pattern 2: section-scoped expiry
     # After _normalize_fi_parse_text: em-dash → en-dash, spacing variants → space.
     # The character class only needs en-dash (U+2013) and ordinary space now.
-    m2 = re.search(
-        r'(?:Lain|Asetuksen|Päätöksen)\s+[\d\w\s,\u2013:§]+?'
-        r'\s*§\s+(?:ovat|on)\s+voimassa\s+(\d{1,2})\s+päivään\s+([a-zäöå]+)\s+(\d{4})',
-        eit_text,
-        flags=re.IGNORECASE,
-    )
+    m2 = SECTION_SCOPED_EXPIRY_RE.search(eit_text)
     if m2:
         month = month_map.get(m2.group(2).lower())
         if month is not None:
@@ -383,26 +431,6 @@ def _amendment_expiry_date(tree: "etree._Element") -> Optional[dt.date]:
                 return dt.date(int(m2.group(3)), month, int(m2.group(1)))
             except ValueError:
                 pass
-
-    # Pattern 3: whole-act year-end shorthand
-    # "Tämä laki ... on voimassa vuoden 2019 loppuun" → 2019-12-31
-    #
-    # NOTE: [^.]* stops at the first sentence-ending period to prevent cross-sentence
-    # matches where "Tämä laki tulee voimaan DATE. [other sentences.] Laki on voimassa
-    # vuoden YYYY loppuun" incorrectly matches (the second sentence's "Laki" refers to
-    # the TARGET statute, not the amending act itself).  Finnish legal text uses ordinal
-    # words ("1 päivänä") not "1." so periods in commencement clauses are true sentence
-    # terminators and [^.]* is safe to use here.
-    m3 = re.search(
-        r'Tämä\s+(?:\w+\s+){0,2}(?:laki|asetus|päätös)[^.]*?\bon\s+voimassa\s+vuoden\s+(\d{4})\s+loppuun',
-        eit_text,
-        flags=re.IGNORECASE,
-    )
-    if m3:
-        try:
-            return dt.date(int(m3.group(1)), 12, 31)
-        except ValueError:
-            pass
 
     # Pattern 4 (section-scoped "vuoden YYYY loppuun") is intentionally NOT implemented
     # here.  See docstring for the rationale.  When added, it belongs in

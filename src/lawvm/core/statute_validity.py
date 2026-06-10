@@ -1,0 +1,180 @@
+"""Statute-level fixed-term validity bounds and their proof carrier.
+
+Finnish fixed-term laws (määräaikainen laki) state a whole-law validity period
+in the entry-into-force provision (voimaantulosäännös), e.g. 482/2024 §7:
+"Tämä laki ... on voimassa 31 päivään joulukuuta 2026". This is a *law-level*
+validity condition, not a per-provision sunset, so it is modelled here as a
+statute-level fact rather than by mutating every ``ProvisionVersion``.
+
+Ontology (see Pro sign-off, design D′):
+  - One bound fact per version of the entry-into-force provision (extension acts
+    text-replace that provision, so each version carries the then-current bound).
+  - At query time the governing bound is the latest eligible one, and the seam
+    projects an ``expired`` status past the bound.
+
+Inclusive vs exclusive: source prose gives an INCLUSIVE ``valid_until`` (the law
+is in force ON that date); the kernel's existing ``expires`` cutoff is EXCLUSIVE
+(a version drops out once ``as_of >= expires``). Both are stored:
+``expires_on == valid_until + 1 day``. A statute is expired at D iff
+``D >= expires_on`` (equivalently ``D > valid_until``).
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+from dataclasses import dataclass
+from typing import Literal, Optional, Tuple
+
+from lawvm.core.ir import LegalAddress
+
+# v1 supports whole-statute bounds only. Scoped (chapter/section) bounds are
+# detected and diagnosed but not lifted into a bound.
+ValidityScope = Literal["whole_statute"]
+
+FIXED_TERM_WHOLE_STATUTE_RULE_ID = "fi_fixed_term_whole_statute_expiry"
+
+
+def expires_on_from_valid_until(valid_until: dt.date) -> dt.date:
+    """Convert an inclusive source ``valid_until`` to the exclusive cutoff."""
+    return valid_until + dt.timedelta(days=1)
+
+
+@dataclass(frozen=True)
+class FixedTermValidityProof:
+    """Proof object for one governing fixed-term validity decision.
+
+    Part of the certificate/proof surface so the bound is never an unreachable
+    guard: the seam carries this whenever it projects ``expired``.
+    """
+
+    source_text: str
+    source_span: Optional[Tuple[int, int]]
+    source_hash: str
+    rule_id: str
+    valid_until: str
+    expires_on: str
+    governing_bound_id: str
+
+
+@dataclass(frozen=True)
+class StatuteValidityBound:
+    """One stored statute-level validity bound fact.
+
+    A bound is extracted from a single version of the entry-into-force
+    provision. ``effective`` is that provision version's effective date, which
+    drives extension semantics: the governing bound at a query date is the
+    latest one whose ``effective`` is at or before the query date.
+    """
+
+    statute_id: str
+    scope: ValidityScope
+    effective: str
+    enacted: Optional[str]
+    valid_until: str
+    expires_on: str
+    source_provision: LegalAddress
+    source_version_id: str
+    source_hash: str
+    source_span: Optional[Tuple[int, int]]
+    rule_id: str
+    source_text: str
+    source_sequence: int = 0
+
+    def __post_init__(self) -> None:
+        if not self.statute_id:
+            raise ValueError("StatuteValidityBound.statute_id must be non-empty")
+        if self.scope != "whole_statute":
+            raise ValueError(
+                f"StatuteValidityBound.scope must be 'whole_statute'; got {self.scope!r}"
+            )
+        if not self.effective:
+            raise ValueError("StatuteValidityBound.effective must be a non-empty date string")
+        if not self.valid_until:
+            raise ValueError("StatuteValidityBound.valid_until must be a non-empty date string")
+        if not self.expires_on:
+            raise ValueError("StatuteValidityBound.expires_on must be a non-empty date string")
+        if self.expires_on <= self.valid_until:
+            raise ValueError(
+                "StatuteValidityBound.expires_on must be strictly after valid_until "
+                f"(valid_until={self.valid_until!r}, expires_on={self.expires_on!r})"
+            )
+        if not isinstance(self.source_provision, LegalAddress):
+            raise TypeError("StatuteValidityBound.source_provision must be a LegalAddress")
+
+    @property
+    def bound_id(self) -> str:
+        """Stable identifier for this bound: source act + effective date."""
+        return f"{self.source_version_id}@{self.effective}"
+
+    def proof(self) -> FixedTermValidityProof:
+        return FixedTermValidityProof(
+            source_text=self.source_text,
+            source_span=self.source_span,
+            source_hash=self.source_hash,
+            rule_id=self.rule_id,
+            valid_until=self.valid_until,
+            expires_on=self.expires_on,
+            governing_bound_id=self.bound_id,
+        )
+
+
+def _eligible(bound: StatuteValidityBound, as_of: str, query_type: str) -> bool:
+    """A bound is usable at ``as_of`` if it has taken effect (and, for in_force
+    queries, has been enacted)."""
+    if bound.effective > as_of:
+        return False
+    if query_type == "in_force" and bound.enacted and bound.enacted > as_of:
+        return False
+    return True
+
+
+def governing_bound(
+    bounds: Tuple[StatuteValidityBound, ...] | list[StatuteValidityBound],
+    *,
+    as_of: str,
+    query_type: str = "governing",
+) -> Optional[StatuteValidityBound]:
+    """Return the bound that governs at ``as_of``: the latest eligible one.
+
+    Latest is ranked by ``(effective, source_sequence)``; ties on both are
+    surfaced separately as ambiguity (see ``ambiguous_bounds``) rather than
+    silently picked here.
+    """
+    eligible = [b for b in bounds if _eligible(b, as_of, query_type)]
+    if not eligible:
+        return None
+    return max(eligible, key=lambda b: (b.effective, b.source_sequence))
+
+
+def ambiguous_bounds(
+    bounds: Tuple[StatuteValidityBound, ...] | list[StatuteValidityBound],
+) -> bool:
+    """True when two distinct whole-law bounds share an effective date but state
+    different validity ends — an unresolved conflict the seam must block on."""
+    by_effective: dict[str, set[str]] = {}
+    for bound in bounds:
+        by_effective.setdefault(bound.effective, set()).add(bound.valid_until)
+    return any(len(valids) > 1 for valids in by_effective.values())
+
+
+def is_expired_at(bound: StatuteValidityBound, as_of: str) -> bool:
+    """A statute is expired at ``as_of`` iff ``as_of >= expires_on`` (the
+    exclusive cutoff), i.e. ``as_of`` is strictly past the inclusive bound."""
+    return as_of >= bound.expires_on
+
+
+def late_extension_gap(
+    bounds: Tuple[StatuteValidityBound, ...] | list[StatuteValidityBound],
+    governing: StatuteValidityBound,
+) -> bool:
+    """True when ``governing`` took effect only after an earlier bound's term had
+    already lapsed, leaving a deterministic gap-then-revival period.
+
+    Finnish practice is to extend before expiry; this flags the degenerate case
+    for review without changing the deterministic selection result.
+    """
+    earlier = [b for b in bounds if b.effective < governing.effective]
+    if not earlier:
+        return False
+    latest_earlier = max(earlier, key=lambda b: (b.effective, b.source_sequence))
+    return governing.effective > latest_earlier.expires_on
