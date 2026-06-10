@@ -34,7 +34,7 @@ the underlying structural cause is fixed.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Callable, Dict
+from typing import Any, cast, Callable, Dict
 
 import pytest
 
@@ -102,7 +102,7 @@ def _run_replay_fold(process_muutoslaki: Callable[..., PhaseResult]) -> list[Fin
     findings: list[Finding] = []
     execute_replay_plan(
         _drill_replay_plan(),
-        corpus=object(),  # not read by these drills
+        corpus=cast(Any, object()),  # not read by these drills
         process_muutoslaki=process_muutoslaki,
         seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
         pre_scan_repeal_targets=lambda mids, corpus, parent_id, **kwargs: [],
@@ -249,11 +249,11 @@ def drill_frontend_internal_error_parse_surface() -> None:
     def raising_resolver(clause):  # noqa: ANN001
         raise RuntimeError("synthetic internal resolver fault for guard-liveness drill")
 
-    surface_resolve.resolve_surface_clause = raising_resolver
+    setattr(surface_resolve, "resolve_surface_clause", raising_resolver)
     try:
         result = api.parse_clause("Muutetaan lain 1 §.")
     finally:
-        surface_resolve.resolve_surface_clause = original
+        setattr(surface_resolve, "resolve_surface_clause", original)
 
     hits = [f for f in result.findings if f.kind == "PARSE.FRONTEND_INTERNAL_ERROR"]
     assert hits, "internal resolver fault did not surface PARSE.FRONTEND_INTERNAL_ERROR"

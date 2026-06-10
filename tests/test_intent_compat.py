@@ -806,25 +806,31 @@ def test_production_per_action_occupancy_policy_shapes() -> None:
     """Each action's production occupancy policy has the decided shape."""
     from lawvm.core.occupancy import OccupancyClass
 
-    replace_policy = _build_canonical_intent(
+    replace_policy_intent = _build_canonical_intent(
         _production_section_rop("REPLACE")
-    ).contract.occupancy
+    )
+    assert replace_policy_intent is not None
+    replace_policy = replace_policy_intent.contract.occupancy
     assert replace_policy.primary_expected_from == frozenset({OccupancyClass.SUBSTANTIVE})
     assert replace_policy.allowed_from == frozenset(
         {OccupancyClass.SUBSTANTIVE, OccupancyClass.TOMBSTONE}
     )
 
-    insert_policy = _build_canonical_intent(
+    insert_policy_intent = _build_canonical_intent(
         _production_section_rop("INSERT")
-    ).contract.occupancy
+    )
+    assert insert_policy_intent is not None
+    insert_policy = insert_policy_intent.contract.occupancy
     assert insert_policy.primary_expected_from == frozenset({OccupancyClass.ABSENT})
     assert insert_policy.allowed_from == frozenset(
         {OccupancyClass.ABSENT, OccupancyClass.TOMBSTONE, OccupancyClass.SCAFFOLD}
     )
 
-    repeal_policy = _build_canonical_intent(
+    repeal_policy_intent = _build_canonical_intent(
         _production_section_rop("REPEAL")
-    ).contract.occupancy
+    )
+    assert repeal_policy_intent is not None
+    repeal_policy = repeal_policy_intent.contract.occupancy
     assert repeal_policy.primary_expected_from == frozenset({OccupancyClass.SUBSTANTIVE})
     assert repeal_policy.allowed_from == frozenset(
         {OccupancyClass.SUBSTANTIVE, OccupancyClass.TOMBSTONE}

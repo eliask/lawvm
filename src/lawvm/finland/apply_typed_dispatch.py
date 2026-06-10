@@ -253,8 +253,11 @@ def _section_heading_touch_paths(
     after_heading = _section_heading_node(after_sec)
     if after_heading is None:
         return ((), ())
+    base_path = _path_to_tuple(sec_path)
+    if base_path is None:
+        return ((), ())
     if before_heading is None:
-        heading_path = cast(TreePath, _path_to_tuple(sec_path) + (("heading", after_heading.label or ""),))
+        heading_path = cast(TreePath, base_path + (("heading", after_heading.label or ""),))
         return ((heading_path,), ())
     if (
         before_heading.text == after_heading.text
@@ -262,7 +265,7 @@ def _section_heading_touch_paths(
         and (before_heading.label or "") == (after_heading.label or "")
     ):
         return ((), ())
-    heading_path = cast(TreePath, _path_to_tuple(sec_path) + (("heading", after_heading.label or ""),))
+    heading_path = cast(TreePath, base_path + (("heading", after_heading.label or ""),))
     return ((), (heading_path,))
 
 

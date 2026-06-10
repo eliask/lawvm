@@ -9,6 +9,8 @@ the all-matches cache.
 """
 from __future__ import annotations
 
+from typing import Any, cast
+
 from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.uk_legislation.canonicalize import UKCanonicalNodeMatch
@@ -65,7 +67,7 @@ def _executor_with_cached_match() -> tuple[UKReplayExecutor, tuple[int, str, str
     subsection_2a = part.children[0]
 
     key = (id(part), "subsection", "2A")
-    match = UKCanonicalNodeMatch(subsection_2a, part, 0)
+    match = UKCanonicalNodeMatch(cast(Any, subsection_2a), cast(Any, part), 0)
     executor._store_recursive_match_all_cache(key, (match,))
 
     # Sanity: a clean hit returns the stored match verbatim.
@@ -153,8 +155,8 @@ def test_partial_detachment_recomputes_whole_entry() -> None:
     executor._store_recursive_match_all_cache(
         key,
         (
-            UKCanonicalNodeMatch(sub_2a, part, 0),
-            UKCanonicalNodeMatch(sub_2b, part, 1),
+            UKCanonicalNodeMatch(cast(Any, sub_2a), cast(Any, part), 0),
+            UKCanonicalNodeMatch(cast(Any, sub_2b), cast(Any, part), 1),
         ),
     )
 
