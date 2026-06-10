@@ -1611,6 +1611,12 @@ def normalize_and_compile_ops(
         if parse_result_local is None:
             parse_result_local = parse_johtolause_clause(johto, statute_id=parent_id or amendment_id)
         legal_ops = extract_johtolause_legal_ops_from_parse_result(parse_result_local)
+    if parse_result_local is not None:
+        # Conservation across the frontend boundary: parse-layer findings are
+        # part of this phase's output. In particular a blocking parse-layer
+        # violation must not vanish while a fallback-recovered op replays in
+        # its place.
+        frontend_findings_out.extend(parse_result_local.findings)
     if peg_skip_for_sec1_repeal_list:
         frontend_findings_out.append(
             Finding(

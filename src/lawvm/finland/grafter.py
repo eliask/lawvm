@@ -6589,7 +6589,7 @@ def process_muutoslaki(
             _process_findings.extend(
                 finding
                 for finding in _phase2_result.findings()
-                if finding.role == "obligation"
+                if finding.role in ("obligation", "violation")
             )
 
         # Skip ops for chapters that were already seeded from this amendment's

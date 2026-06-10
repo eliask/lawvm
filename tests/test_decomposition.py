@@ -2792,3 +2792,42 @@ class TestSortGroupOpsInsertWithOtsikko:
         ]
         result = sort_group_ops_for_apply(target_ctx, group_ops)
         assert [o.target_item for o in result] == ["5a", "5b", "9", "10"]
+
+
+# ---------------------------------------------------------------------------
+# Parse-layer finding conservation across the frontend boundary
+# ---------------------------------------------------------------------------
+
+
+def test_blocking_parse_violation_carries_through_frontend() -> None:
+    """A blocking parse-layer violation must reach the frontend PhaseResult.
+
+    When the surface resolver crashes, parse_johtolause_clause records a
+    blocking PARSE.FRONTEND_INTERNAL_ERROR violation. The frontend must carry
+    it into its returned finding ledger (has_blocking=True) instead of
+    silently replaying a fallback-recovered op as if the parse were clean.
+    """
+    master = _make_master((_section("3 §", [_subsection("1", "Vanha teksti.")]),))
+    muutos_tree = _make_muutos_tree((_section("3 §", [_subsection("1", "Uusi teksti.")]),))
+
+    with patch(
+        "lawvm.finland.johtolause.surface_resolve.resolve_surface_clause",
+        side_effect=RuntimeError("forced parse failure"),
+    ):
+        result = normalize_and_compile_ops(
+            johto="muutetaan 3 §:n 1 momentti seuraavasti:",
+            muutos_tree=muutos_tree,
+            master=master,
+            amendment_id="2010/100",
+            source_title="Laki muuttamisesta",
+            used_sec1_fallback=False,
+            parent_id="2000/1",
+        )
+
+    violations = [
+        f
+        for f in result.findings()
+        if f.role == "violation" and f.kind == "PARSE.FRONTEND_INTERNAL_ERROR"
+    ]
+    assert violations, "parse-layer violation was dropped at the frontend boundary"
+    assert result.has_blocking
