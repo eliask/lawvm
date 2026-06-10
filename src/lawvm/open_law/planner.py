@@ -71,5 +71,6 @@ def _planning_failure(op: OpenLawOperation, kind: str, message: str) -> OpenLawF
             op_id=op.op_id,
             path=op.path,
             blocking=True,
+            source_pathology=True,
         ),
     )

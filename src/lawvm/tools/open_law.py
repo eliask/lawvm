@@ -310,6 +310,7 @@ def _finding_json(finding: OpenLawFinding) -> dict[str, Any]:
         "op_id": finding.op_id,
         "path": list(finding.path),
         "blocking": finding.blocking,
+        "source_pathology": finding.source_pathology,
     }
 
 

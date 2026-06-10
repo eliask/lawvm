@@ -184,19 +184,31 @@ The `--path-prefix` is explicit carried context for a partial subtree file. It
 does not authorize target search broadening; it only supplies known parent
 labels omitted by the local chapter file.
 
-## 7. Open Questions For Open Law Library
+## 7. Regime Semantics (Publisher-Documented)
 
-- Is `codify:*` the stable operation language or an export artifact?
+The publisher has documented the regime semantics. They are recorded in
+`OPEN_LAW_REGIME.md` and encoded as machine-checked contracts where applicable:
+
+- `codify:*` is a stable operation language, not an export/build artifact;
+  unknown verbs are findings, not silent skips.
+- A failed codification instruction is source pathology (the publisher gets a
+  compile-time error), never a replay-side recovery.
+- `law-xml` is source; `law-xml-codified` and `law-html` are compiled outputs,
+  reproducible from source only when publication metadata declares
+  `reproducible: true`.
+- Annotation authority is jurisdiction-dependent (official code in DC; Maryland
+  unconfirmed); the annotation lane is a per-jurisdiction flag.
+- The effective date is a whole-document property while parts may become
+  applicable earlier/later; expiry yields a jurisdiction-dependent tombstone.
+- A publication branch is the law as known for a slice of observer time;
+  history changes create new branches.
+
+Still open (not yet documented by the publisher):
+
 - Are `codify:*` actions always authored directly, or generated from drafting
   prose and reviewed?
-- What is the intended semantic difference between `law-xml` and
-  `law-xml-codified` beyond build/publication state?
-- Are publication branches complete point-in-time snapshots or build artifacts
-  with additional selection semantics?
 - How should `history="false"` be interpreted legally and operationally?
 - What does `applicability` encode, and is its vocabulary closed?
-- Are operation failures, rejected edits, or draft codification attempts
-  preserved anywhere?
 - Is there a public XML schema for the `library`, `codify`, and `codified`
   namespaces?
 

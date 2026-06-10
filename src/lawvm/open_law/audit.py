@@ -10,7 +10,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.mutation_boundary import TreePath, TreePaths, TreePathStep, build_mutation_boundary_report
 from lawvm.core.tree_ops import insert_sorted_required, replace_at_required, resolve_required
-from lawvm.open_law.models import OpenLawAction, OpenLawFinding, OpenLawOperation
+from lawvm.open_law.models import OpenLawAction, OpenLawAnnotationLane, OpenLawFinding, OpenLawOperation
 
 
 @dataclass(frozen=True)
@@ -60,17 +60,29 @@ def replay_open_law_ops(tree: IRNode, ops: Sequence[OpenLawOperation], *, strict
         if op.action is OpenLawAction.REPLACE_OR_INSERT:
             current = _apply_replace_or_insert(current, op, mutations, findings)
             continue
-        if op.action is not OpenLawAction.REPLACE:
+        if op.action is OpenLawAction.UNSUPPORTED:
             findings.append(
                 OpenLawFinding(
-                    kind="open_law_unsupported_codify_action",
-                    message=f"Open Law codify action is not supported by this frontend layer: {op.raw_action}",
+                    kind="open_law_unknown_codify_action",
+                    message=(
+                        "Open Law codify:* is a stable operation language; "
+                        f"action {op.raw_action!r} is not a recognized codify verb and is treated as a finding, not a silent skip."
+                    ),
                     op_id=op.op_id,
                     path=op.path,
                     blocking=strict,
                 )
             )
             continue
+        findings.append(
+            OpenLawFinding(
+                kind="open_law_unsupported_codify_action",
+                message=f"Open Law codify action is recognized but not yet replayed by this frontend layer: {op.raw_action}",
+                op_id=op.op_id,
+                path=op.path,
+                blocking=strict,
+            )
+        )
     return OpenLawReplayResult(tree=current, mutations=tuple(mutations), findings=tuple(findings))
 
 
@@ -88,6 +100,7 @@ def _apply_replace(
                 op_id=op.op_id,
                 path=op.path,
                 blocking=True,
+                source_pathology=True,
             )
         )
         return current
@@ -126,6 +139,7 @@ def _apply_replace_or_insert(
                 op_id=op.op_id,
                 path=op.path,
                 blocking=True,
+                source_pathology=True,
             )
         )
         return current
@@ -153,6 +167,7 @@ def _apply_replace_or_insert(
                 op_id=op.op_id,
                 path=op.path,
                 blocking=True,
+                source_pathology=True,
             )
         )
         return current
@@ -205,6 +220,7 @@ def _payload_target_mismatch_finding(
         op_id=op.op_id,
         path=op.path,
         blocking=True,
+        source_pathology=True,
     )
 
 
@@ -228,6 +244,7 @@ def _payload_insert_target_mismatch_finding(op: OpenLawOperation) -> OpenLawFind
         op_id=op.op_id,
         path=op.path,
         blocking=True,
+        source_pathology=True,
     )
 
 
@@ -238,6 +255,7 @@ def _target_finding(op: OpenLawOperation, resolved: "OpenLawResolvedPath") -> Op
         op_id=op.op_id,
         path=op.path,
         blocking=True,
+        source_pathology=True,
     )
 
 
@@ -247,13 +265,43 @@ def audit_open_law_snapshot(
     ops: Sequence[OpenLawOperation],
     *,
     strict: bool = False,
+    annotation_lane: OpenLawAnnotationLane | None = None,
 ) -> OpenLawSnapshotAuditResult:
-    """Verify that a publication snapshot follows from declared Open Law ops."""
+    """Verify that a publication snapshot follows from declared Open Law ops.
+
+    ``annotation_lane`` is the per-jurisdiction annotation policy. When it is
+    ``PUBLICATION_METADATA`` annotations are projected out of the legal-text
+    comparison. When it is ``OFFICIAL_CODE`` annotations are compared as legal
+    text. When unset (``None``) the conservative default applies: annotations
+    are compared as potentially-authoritative text and a finding records that
+    the jurisdiction policy is unset.
+    """
 
     replay = replay_open_law_ops(before, ops, strict=strict)
-    annotation_projected_before = _project_annotations_for_snapshot_compare(before)
-    annotation_projected_after = _project_annotations_for_snapshot_compare(after)
-    annotation_projected_replay = _project_annotations_for_snapshot_compare(replay.tree)
+    findings = list(replay.findings)
+    project_annotations = annotation_lane is OpenLawAnnotationLane.PUBLICATION_METADATA
+    if project_annotations:
+        annotation_projected_before = _project_annotations_for_snapshot_compare(before)
+        annotation_projected_after = _project_annotations_for_snapshot_compare(after)
+        annotation_projected_replay = _project_annotations_for_snapshot_compare(replay.tree)
+    else:
+        annotation_projected_before = before
+        annotation_projected_after = after
+        annotation_projected_replay = replay.tree
+    if annotation_lane is None and (
+        _tree_has_annotations(before) or _tree_has_annotations(after) or _tree_has_annotations(replay.tree)
+    ):
+        findings.append(
+            OpenLawFinding(
+                kind="open_law_annotation_lane_policy_unset",
+                message=(
+                    "Open Law annotation lane policy is unset; annotations are jurisdiction-dependent "
+                    "(official code vs publication metadata). Conservatively comparing annotations as "
+                    "potentially-authoritative legal text instead of discarding them."
+                ),
+                blocking=strict,
+            )
+        )
     projected_before = _project_typography_for_snapshot_compare(annotation_projected_before)
     projected_after = _project_typography_for_snapshot_compare(annotation_projected_after)
     projected_replay = _project_typography_for_snapshot_compare(annotation_projected_replay)
@@ -261,7 +309,6 @@ def audit_open_law_snapshot(
     boundary = build_mutation_boundary_report(projected_before, projected_after, allowed_prefixes)
     changed_paths = boundary.changed_paths
     unexplained_paths = boundary.unexplained_changed_paths
-    findings = list(replay.findings)
     if (
         annotation_projected_before != before
         or annotation_projected_after != after
@@ -353,6 +400,12 @@ def _project_typography_for_snapshot_compare(node: IRNode) -> IRNode:
 
 def _is_annotations_node(node: IRNode) -> bool:
     return _kind_str(node.kind) == "hcontainer" and node.label == "annos"
+
+
+def _tree_has_annotations(node: IRNode) -> bool:
+    if _is_annotations_node(node):
+        return True
+    return any(_tree_has_annotations(child) for child in node.children)
 
 
 @dataclass(frozen=True)

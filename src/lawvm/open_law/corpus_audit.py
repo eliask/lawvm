@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Tuple
 
@@ -22,12 +22,13 @@ from lawvm.open_law.audit import (
 )
 from lawvm.open_law.codify import parse_open_law_codify_ops
 from lawvm.open_law.maryland import (
+    MarylandPublicationMetadata,
     build_maryland_inventory,
     maryland_manifest_to_jsonable,
     plan_maryland_publication_transitions,
 )
 from lawvm.open_law.local_git import MarylandLocalRepos
-from lawvm.open_law.models import OpenLawAction, OpenLawFinding, OpenLawOperation
+from lawvm.open_law.models import OpenLawAction, OpenLawAnnotationLane, OpenLawFinding, OpenLawOperation
 from lawvm.open_law.planner import OpenLawFilePlan, plan_maryland_comar_operation
 from lawvm.open_law.xml import parse_open_law_xml, wrap_open_law_body_with_prefix
 
@@ -48,6 +49,7 @@ class OpenLawOperationAuditRow:
     snapshot_matches_replay: bool = False
     changed_path_count: int = 0
     unexplained_path_count: int = 0
+    publication_reproducible: bool = True
     findings: Tuple[OpenLawFinding, ...] = ()
 
 
@@ -66,8 +68,15 @@ def audit_maryland_transition(
     repos: MarylandLocalRepos,
     limit: int | None = None,
     strict: bool = False,
+    annotation_lane: OpenLawAnnotationLane | None = None,
 ) -> OpenLawCorpusAuditReport:
-    """Audit one Maryland publication transition by after-branch included actions."""
+    """Audit one Maryland publication transition by after-branch included actions.
+
+    ``annotation_lane`` is the jurisdiction annotation policy. Maryland's policy
+    is unconfirmed, so it defaults to ``None`` (conservative: annotations are
+    compared as potentially-authoritative text and an unset-policy finding is
+    recorded).
+    """
 
     inventory = build_maryland_inventory(repos)
     metadata_by_branch = {item.branch: item for item in inventory.publication_branches}
@@ -79,10 +88,46 @@ def audit_maryland_transition(
     for action_path in transition_actions:
         action_xml = repos.codified.read_text(after_branch, action_path)
         ops = parse_open_law_codify_ops(action_xml, source_id=action_path)
-        rows.extend(_audit_action_operations(repos, before_branch, after_branch, action_path, ops, strict=strict))
+        rows.extend(
+            _audit_action_operations(
+                repos, before_branch, after_branch, action_path, ops, strict=strict, annotation_lane=annotation_lane
+            )
+        )
         if limit is not None and len(rows) >= limit:
-            return _report(tuple(rows[:limit]))
-    return _report(tuple(rows))
+            return _report(_apply_reproducibility_gate(tuple(rows[:limit]), after_metadata))
+    return _report(_apply_reproducibility_gate(tuple(rows), after_metadata))
+
+
+def _apply_reproducibility_gate(
+    rows: Tuple[OpenLawOperationAuditRow, ...],
+    after_metadata: MarylandPublicationMetadata,
+) -> Tuple[OpenLawOperationAuditRow, ...]:
+    """Mark snapshot comparisons against non-reproducible publications.
+
+    Open Law outputs are reproducible from ``law-xml`` only when the publication
+    metadata declares ``reproducible: true``. When it does not, the replay-vs-
+    publication comparison is observational rather than a reproducibility claim:
+    a non-blocking finding is recorded and the row is marked accordingly. This
+    does not hard-fail the audit.
+    """
+
+    if after_metadata.platform_reproducible:
+        return rows
+    gated: list[OpenLawOperationAuditRow] = []
+    for row in rows:
+        finding = OpenLawFinding(
+            kind="open_law_publication_not_reproducible",
+            message=(
+                "Open Law publication metadata does not declare reproducible=true; "
+                f"replay-vs-publication comparison for {after_metadata.branch!r} is observational, "
+                "not a reproducibility claim."
+            ),
+            op_id=row.op_id,
+            path=row.codify_path,
+            blocking=False,
+        )
+        gated.append(replace(row, publication_reproducible=False, findings=row.findings + (finding,)))
+    return tuple(gated)
 
 
 def audit_maryland_corpus(
@@ -90,6 +135,7 @@ def audit_maryland_corpus(
     repos: MarylandLocalRepos,
     limit: int | None = None,
     strict: bool = False,
+    annotation_lane: OpenLawAnnotationLane | None = None,
 ) -> OpenLawCorpusAuditReport:
     """Audit adjacent publication transitions that introduce new actions."""
 
@@ -102,6 +148,7 @@ def audit_maryland_corpus(
             repos=repos,
             limit=None,
             strict=strict,
+            annotation_lane=annotation_lane,
         )
         rows.extend(report.operation_rows)
         if limit is not None and len(rows) >= limit:
@@ -131,6 +178,7 @@ def write_corpus_report(report: OpenLawCorpusAuditReport, out_dir: Path) -> None
                             "message": finding.message,
                             "path": list(finding.path),
                             "blocking": finding.blocking,
+                            "source_pathology": finding.source_pathology,
                             "evidence_row": _finding_evidence_row(row, finding).to_dict(),
                         },
                         ensure_ascii=False,
@@ -156,6 +204,7 @@ def _audit_one_operation(
     op: OpenLawOperation,
     *,
     strict: bool,
+    annotation_lane: OpenLawAnnotationLane | None = None,
 ) -> OpenLawOperationAuditRow:
     plan = plan_maryland_comar_operation(op)
     if op.action is OpenLawAction.EXPIRE:
@@ -170,7 +219,7 @@ def _audit_one_operation(
     after_xml = _read_snapshot_xml(repos, after_branch, plan.xml_path, before_branch, after_branch, action_path, op)
     if isinstance(after_xml, OpenLawOperationAuditRow):
         return after_xml
-    result = _audit_snapshots(before_xml, after_xml, (op,), plan, strict=strict)
+    result = _audit_snapshots(before_xml, after_xml, (op,), plan, strict=strict, annotation_lane=annotation_lane)
     return _audited_row(before_branch, after_branch, action_path, op, plan, result)
 
 
@@ -182,6 +231,7 @@ def _audit_action_operations(
     ops: Tuple[OpenLawOperation, ...],
     *,
     strict: bool,
+    annotation_lane: OpenLawAnnotationLane | None = None,
 ) -> Tuple[OpenLawOperationAuditRow, ...]:
     rows: list[OpenLawOperationAuditRow] = []
     grouped_ops: dict[tuple[str, Tuple[str, ...]], list[tuple[OpenLawOperation, OpenLawFilePlan]]] = {}
@@ -214,6 +264,7 @@ def _audit_action_operations(
                 tuple(op for op, _plan in body_planned_ops),
                 representative_plan,
                 strict=strict,
+                annotation_lane=annotation_lane,
             )
         for op, plan in body_planned_ops:
             rows.append(_audited_row(before_branch, after_branch, action_path, op, plan, result))
@@ -273,10 +324,11 @@ def _audit_snapshots(
     plan: OpenLawFilePlan,
     *,
     strict: bool,
+    annotation_lane: OpenLawAnnotationLane | None = None,
 ) -> OpenLawSnapshotAuditResult:
     before = wrap_open_law_body_with_prefix(parse_open_law_xml(before_xml), plan.path_prefix)
     after = wrap_open_law_body_with_prefix(parse_open_law_xml(after_xml), plan.path_prefix)
-    return audit_open_law_snapshot(before, after, ops, strict=strict)
+    return audit_open_law_snapshot(before, after, ops, strict=strict, annotation_lane=annotation_lane)
 
 
 def _audit_metadata_operation(
@@ -577,12 +629,14 @@ def _row_jsonable(row: OpenLawOperationAuditRow) -> dict[str, object]:
         "snapshot_matches_replay": row.snapshot_matches_replay,
         "changed_path_count": row.changed_path_count,
         "unexplained_path_count": row.unexplained_path_count,
+        "publication_reproducible": row.publication_reproducible,
         "findings": [
             {
                 "kind": finding.kind,
                 "message": finding.message,
                 "path": list(finding.path),
                 "blocking": finding.blocking,
+                "source_pathology": finding.source_pathology,
             }
             for finding in row.findings
         ],
