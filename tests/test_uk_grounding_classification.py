@@ -268,14 +268,18 @@ def test_grounding_totality_over_real_statute() -> None:
     repo_root = _DB_PATH.resolve().parents[1]
     with Farchive(_DB_PATH) as archive:
         enacted_url = _archive_url_for_statute(statute_id, pit_date=None, enacted=True)
+        enacted_bytes = archive.get(enacted_url)
+        assert enacted_bytes is not None, f"corpus missing {enacted_url}"
         base_ir = parse_uk_statute_ir_bytes(
-            archive.get(enacted_url),
+            enacted_bytes,
             statute_id=statute_id,
             version_label="enacted",
             source_path=enacted_url,
         )
         oracle_url = _archive_url_for_statute(statute_id, pit_date=None, enacted=False)
-        oracle_data = extract_eid_map_bytes(archive.get(oracle_url), pit_date=None)
+        oracle_bytes = archive.get(oracle_url)
+        assert oracle_bytes is not None, f"corpus missing {oracle_url}"
+        oracle_data = extract_eid_map_bytes(oracle_bytes, pit_date=None)
         eid_map = oracle_data.get("eid_map", {})
         text_map = oracle_data.get("text_map", {})
 
