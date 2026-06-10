@@ -98,6 +98,39 @@ def _below_section_suffix_for_rop(rop: ResolvedOp) -> TreePath:
     return path[section_indices[-1] + 1 :]
 
 
+def landed_section_event_path(
+    result_state,
+    *,
+    section_label: str | None,
+    chapter_label: str | None,
+    part_label: str | None,
+) -> TreePath | None:
+    """Resolve a section in the post-apply tree, for mutation-event declaration.
+
+    The nominal compiled address can disagree with the live tree about
+    container shape: a "2 luku 69a §" citation carries no part step, and an
+    address enriched from the consolidated base can carry a part step the live
+    tree does not have (yet). Mutation events must declare the path the write
+    actually landed on, so resolve in the result tree, progressively dropping
+    scope when the scoped lookup finds nothing (a part/chapter label that does
+    not exist in the live tree). A lookup that binds a different same-labeled
+    node than the write touched cannot mask anything: the observed-vs-declared
+    cross-check still fires on the unexplained observed path.
+    """
+    if not section_label:
+        return None
+    scopes: list[tuple[str | None, str | None]] = [(chapter_label, part_label)]
+    if part_label:
+        scopes.append((chapter_label, None))
+    if chapter_label:
+        scopes.append((None, None))
+    for chapter_scope, part_scope in scopes:
+        path = result_state.find_section_path(section_label, chapter_scope, part_scope)
+        if path is not None:
+            return _path_to_tuple(path)
+    return None
+
+
 def _target_address_path_for_rop_event(
     rop: ResolvedOp,
     path_hint: Path | None = None,

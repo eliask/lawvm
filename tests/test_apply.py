@@ -4897,6 +4897,60 @@ class TestApplySubsectionReplace:
         assert result is None
 
 
+def test_apply_op_insert_new_section_declares_part_qualified_event_path() -> None:
+    """INSERT of a not-yet-existing section declares the landed tree path.
+
+    The compiled address of a "2 luku 69a §" citation carries no part step,
+    but the chapter lives under part 1 in the live tree. The mutation event
+    must declare the part-qualified path the write actually landed on, so the
+    observed-vs-declared cross-check can explain the chapter-container touch.
+    """
+    from lawvm.core.mutation_accounting import observed_vs_declared_cross_check
+    from lawvm.core.mutation_boundary import diff_ir_paths_identity_pruned
+
+    part = IRNode(
+        kind=IRNodeKind.PART,
+        label="1",
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="2",
+                children=(
+                    _sec("69", _sub("1", _content("old 69"))),
+                    _sec("70", _sub("1", _content("old 70"))),
+                ),
+            ),
+        ),
+    )
+    state = _make_state(_body(part))
+    op = _op(op_type="INSERT", target_section="69a", target_chapter="2")
+    mutation_events: List[ApplyMutationEvent] = []
+
+    result = apply_op(
+        state,
+        op,
+        _ctx(_body()),
+        muutos_ir=_sec("69a", _sub("1", _content("new 69a"))),
+        mutation_events_out=mutation_events,
+    )
+
+    assert result.find_section("69a") is not None
+    applied = [e for e in mutation_events if e.outcome == "applied"]
+    assert applied and applied[0].helper == "_apply_whole_section_op"
+    assert applied[0].resolved_target_path == (
+        ("part", "1"),
+        ("chapter", "2"),
+        ("section", "69a"),
+    )
+
+    observed = diff_ir_paths_identity_pruned(state.ir, result.ir)
+    assert observed, "insert produced no observable tree diff"
+    cross = observed_vs_declared_cross_check(
+        op.op_id, applied[0].helper, observed, mutation_events
+    )
+    assert cross is None, f"undeclared touch recorded: {cross}"
+
+
 def test_apply_op_section_repeal_removes_non_base_insert_even_in_finlex_oracle() -> None:
     state = _make_state(_body(_sec("2a", _sub("1", _content("inserted later")))))
     op = _op(op_type="REPEAL", target_section="2a")

@@ -43,6 +43,7 @@ from lawvm.finland.apply_events import (
     _resolved_target_path_for_event,
     _resolved_target_path_for_rop_event,
     _target_address_path_for_rop_event,
+    landed_section_event_path,
 )
 from lawvm.finland.migration_ledger import MigrationLedger, migration_lower_bound_for_op
 
@@ -329,6 +330,15 @@ def _apply_legacy_dispatch(
         )
         if migration_rebased_target_path is not None:
             resolved_target_path = migration_rebased_target_path
+        elif sec_path is None and whole_result is not state:
+            landed_path = landed_section_event_path(
+                whole_result,
+                section_label=dispatch_op.target_section,
+                chapter_label=dispatch_op.target_chapter,
+                part_label=dispatch_op.target_part,
+            )
+            if landed_path is not None:
+                resolved_target_path = landed_path
         created_paths = ()
         replaced_paths = ()
         removed_paths = ()
@@ -372,14 +382,24 @@ def _apply_legacy_dispatch(
             source_pathologies_out=source_pathologies_out,
         )
     if mat_result is not None:
+        mat_target_path = (
+            _resolved_target_path_for_rop_event(rop, sec_path)
+            if rop is not None
+            else _resolved_target_path_for_event(dispatch_op, sec_path)
+        )
+        if mat_result is not state:
+            landed_path = landed_section_event_path(
+                mat_result,
+                section_label=dispatch_op.target_section,
+                chapter_label=dispatch_op.target_chapter,
+                part_label=dispatch_op.target_part,
+            )
+            if landed_path is not None:
+                mat_target_path = landed_path
         _emit(
             helper="_apply_materialization",
             outcome="applied" if mat_result is not state else "failed",
-            resolved_target_path=(
-                _resolved_target_path_for_rop_event(rop, sec_path)
-                if rop is not None
-                else _resolved_target_path_for_event(dispatch_op, sec_path)
-            ),
+            resolved_target_path=mat_target_path,
         )
         return mat_result
 

@@ -39,6 +39,7 @@ from lawvm.finland.apply_events import (
     _path_to_tuple,
     _resolved_target_path_for_rop_event,
     _target_address_path_for_rop_event,
+    landed_section_event_path,
 )
 from lawvm.finland.apply_ir_ops import (
     _rebuild_section_with_subsections_ir,
@@ -293,6 +294,16 @@ def _find_scoped_section_insert_parent_path(
     return _find_insert_parent_path(ir, chapter_label)
 
 
+def _post_apply_section_path(result_state: "ReplayState", rop: ResolvedOp) -> TreePath | None:
+    """Resolve the rop's target section in the post-apply tree, for declaration."""
+    return landed_section_event_path(
+        result_state,
+        section_label=rop.resolved_target_label,
+        chapter_label=rop.resolved_target_scope_chapter_label,
+        part_label=rop.resolved_target_scope_part_label,
+    )
+
+
 def _apply_intent_section_level(
     state: "ReplayState",
     rop: ResolvedOp,
@@ -408,6 +419,10 @@ def _apply_intent_section_level(
         resolved_target_path = _resolved_target_path_for_rop_event(rop, sec_path)
         if migration_rebased_target_path is not None:
             resolved_target_path = migration_rebased_target_path
+        elif sec_path is None and whole_result is not state:
+            post_path = _post_apply_section_path(whole_result, rop)
+            if post_path is not None:
+                resolved_target_path = post_path
         parent_path = _parent_path(resolved_target_path)
         rebind_paths = _whole_section_move_rebind_paths(state, rop, muutos_ir, sec_path)
         declared_allowances = _whole_section_move_rebind_allowances(state, rop, muutos_ir, sec_path)
@@ -474,6 +489,10 @@ def _apply_intent_section_level(
         )
         if mat_result is not None:
             resolved_target_path = _resolved_target_path_for_rop_event(rop, sec_path)
+            if mat_result is not state:
+                post_path = _post_apply_section_path(mat_result, rop)
+                if post_path is not None:
+                    resolved_target_path = post_path
             root_move_paths = _materialization_root_move_paths(state, rop, muutos_ir, sec_path)
             _emit_apply_mutation_event_for_rop(
                 mutation_events_out,
