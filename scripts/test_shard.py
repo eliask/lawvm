@@ -104,6 +104,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_audit_verified_finlex_yaml.py",
         "test_backfill_finlex_consolidated_versions.py",
         "test_build_publication_db.py",
+        "test_corpus_archive_guard.py",
         "test_finlex_*.py",
         "test_scan_absent_ajantasa.py",
         "test_scan_annotations.py",

@@ -529,7 +529,15 @@ def main(args: object) -> None:
     _consolidated_zip_raw = getattr(args, "consolidated_zip", None)
     statute_zip = _statute_zip_raw if _statute_zip_raw else None
     consolidated_zip = _consolidated_zip_raw if _consolidated_zip_raw else None
-    dest = Path(getattr(args, "dest", None) or _DEFAULT_FARCHIVE)
+    _dest_arg = getattr(args, "dest", None)
+    if _dest_arg:
+        dest = Path(_dest_arg)
+    else:
+        # Ingest target: resolve through the single chokepoint (worktree /
+        # canonical-data-root aware) instead of a cwd-relative default.
+        from lawvm.corpus_store import resolve_farchive_path
+
+        dest, _rule = resolve_farchive_path("finlex.farchive")
     skip_existing: bool = getattr(args, "skip_existing", False)
     dry_run: bool = getattr(args, "dry_run", False)
     batch_size: int = getattr(args, "batch_size", _DEFAULT_BATCH_SIZE)

@@ -27,18 +27,24 @@ import time
 from pathlib import Path
 from typing import Any, TypedDict
 
-import os
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-_DEFAULT_CACHE = Path(
-    os.environ.get(
-        "LAWVM_FARCHIVE_DB",
-        str(Path(__file__).parent.parent.parent.parent / "data" / "finlex.farchive"),
-    )
-)
+# The consolidated-HTML cache lives in the same finlex corpus archive (under
+# finlex://html/... locators). Path resolution is delegated to the single
+# corpus_store resolver so worktrees / LAWVM_CANONICAL_DATA_ROOT work at
+# runtime; see lawvm.corpus_store.resolve_farchive_path. Exposed as a module
+# constant for back-compat (scripts import it); the runtime fetch path resolves
+# fresh each call so a mid-process env change is honored.
+def _resolve_default_cache() -> Path:
+    from lawvm.corpus_store import resolve_farchive_path
+
+    path, _rule = resolve_farchive_path("finlex.farchive")
+    return path
+
+
+_DEFAULT_CACHE = _resolve_default_cache()
 
 _USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -755,9 +761,25 @@ def fetch_html_oracle(
     Returns:
         Raw HTML bytes, or None on any fetch/cache error.
     """
-    from farchive import Farchive
-    db_path = Path(cache_path) if cache_path is not None else _DEFAULT_CACHE
-    archive = Farchive(db_path)
+    from lawvm.corpus_store import open_corpus_archive
+    if cache_path is not None:
+        # Explicit override path: caller owns the archive lifecycle. The HTML
+        # cache writes into the corpus, so it must already be populated; open
+        # writable through the guard rather than creating a stub.
+        from lawvm.corpus_store import _archive_is_populated
+        from farchive import Farchive
+        from lawvm.corpus_store import CorpusArchiveMissingError
+
+        db_path = Path(cache_path)
+        if not _archive_is_populated(db_path):
+            raise CorpusArchiveMissingError(
+                f"FARCHIVE_EMPTY_CORPUS: finlex HTML cache target '{db_path}' is "
+                f"missing or an empty/stub archive; the HTML cache writes into the "
+                f"populated finlex corpus and will not create a stub."
+            )
+        archive = Farchive(db_path, readonly=False)
+    else:
+        archive, _path, _rule = open_corpus_archive("finlex.farchive", writable=True)
     locator = _html_locator(year, num)
     url = _finlex_html_url(year, num)
 

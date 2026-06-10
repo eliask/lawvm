@@ -9,6 +9,14 @@
 # Safe to run multiple times (idempotent). Safe to run in the main repo
 # (no-ops when not in a worktree, or when already set up).
 #
+# LAWVM_CANONICAL_DATA_ROOT is honored here at link-time AND at runtime: the
+# corpus-archive resolver (lawvm.corpus_store.resolve_farchive_path) reads it
+# directly, so exporting it makes corpus access work even without symlinks.
+# Precedence at runtime: LAWVM_FARCHIVE_DB (explicit file) >
+# $LAWVM_CANONICAL_DATA_ROOT/data/<name> > <repo_root>/data/<name>. A missing
+# or stub corpus now fails loud (CorpusArchiveMissingError) instead of
+# silently creating an empty archive.
+#
 # Usage:
 #   cd /path/to/worktree/book/LawVM && bash scripts/setup_worktree_links.sh
 #   # OR from repo root:
