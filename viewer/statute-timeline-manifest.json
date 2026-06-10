@@ -6,5 +6,37 @@
     "change_count": 94,
     "lang": "fi",
     "jurisdiction": "fi"
+  },
+  {
+    "statute_id": "423/2003",
+    "title": "Kielilaki",
+    "db": "data/423-2003.db",
+    "change_count": 13,
+    "lang": "fi",
+    "jurisdiction": "fi"
+  },
+  {
+    "statute_id": "1086/2003",
+    "title": "Saamen kielilaki",
+    "db": "data/1086-2003.db",
+    "change_count": 9,
+    "lang": "fi",
+    "jurisdiction": "fi"
+  },
+  {
+    "statute_id": "1093/1996",
+    "title": "Metsälaki",
+    "db": "data/1093-1996.db",
+    "change_count": 14,
+    "lang": "fi",
+    "jurisdiction": "fi"
+  },
+  {
+    "statute_id": "527/2014",
+    "title": "Ympäristönsuojelulaki",
+    "db": "data/527-2014.db",
+    "change_count": 40,
+    "lang": "fi",
+    "jurisdiction": "fi"
   }
 ]

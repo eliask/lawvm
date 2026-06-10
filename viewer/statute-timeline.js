@@ -35,6 +35,8 @@ const STR = {
   fi: {
     tagline: 'Mitä laki sanoi, milloin, ja mistä muutos tuli.',
     footer: 'Näkymä lasketaan selaimessa LawVM-moottorin varmentamista muutosaskelista ja todennetaan moottorin tarkistesummaa (SHA-256) vastaan. Todennus osoittaa: näkymä = moottorin laskema tila. Se ei väitä, että moottori vastaa virallista konsolidointia tai voimassa olevaa oikeutta. Näkymä on voimassaolon mukainen (laki sellaisena kuin se oli voimassa valittuna päivänä).',
+    statuteLabel: 'Säädös',
+    langLabel: 'Kieli',
     chooseStatute: 'Valitse säädös…',
     loadingStatute: 'Ladataan säädöstä…',
     manifestFail: 'Manifestia ei voitu ladata',
@@ -147,6 +149,8 @@ const STR = {
   en: {
     tagline: 'What the law said, when, and where the change came from.',
     footer: 'The view is computed in the browser from LawVM-engine-verified change steps and checked against the engine’s checksum (SHA-256). Verification proves: view = engine-computed state. It does not claim the engine matches the official consolidation, nor that either matches the law in force. The view is as-in-force on the selected date.',
+    statuteLabel: 'Statute',
+    langLabel: 'Language',
     chooseStatute: 'Choose a statute…',
     loadingStatute: 'Loading statute…',
     manifestFail: 'Could not load manifest',
@@ -256,6 +260,123 @@ const STR = {
       `\nLawVM tree-hash: ${hash} (verified).`,
     citationActs: (acts) => `Amending acts: ${acts}.`,
   },
+  // Swedish UI (Finnish statutes have official Swedish terminology; the
+  // statute text itself stays in its source language until sv-corpus support
+  // lands engine-side).
+  sv: {
+    tagline: 'Vad lagen sade, när, och varifrån ändringen kom.',
+    footer: 'Vyn beräknas i webbläsaren ur ändringssteg som LawVM-motorn verifierat, och kontrolleras mot motorns kontrollsumma (SHA-256). Verifieringen visar: vyn = det tillstånd motorn beräknat. Den hävdar inte att motorn motsvarar den officiella konsolideringen eller gällande rätt. Vyn visas enligt ikraftträdande (lagen sådan den gällde den valda dagen).',
+    statuteLabel: 'Författning',
+    langLabel: 'Språk',
+    chooseStatute: 'Välj författning…',
+    loadingStatute: 'Laddar författning…',
+    manifestFail: 'Manifestet kunde inte laddas',
+    notInManifest: 'Författningen finns inte i manifestet.',
+    loadFail: 'Fel vid laddning',
+    changeDays: (n) => `${n} ändringsdagar`,
+    modeOikeustila: 'Gällande lydelse',
+    modeMuutokset: 'Ändringar',
+    modeHaku: 'Diakron sökning',
+    modeVertaa: 'Jämför',
+    hintOikeustila: 'Lagens struktur enligt ikraftträdande den valda dagen, hash-verifierad mot motorn.',
+    hintMuutokset: 'Vad varje ändringsförfattning konkret gjorde — före/efter för varje ställe.',
+    hintHaku: 'Sök text i lagens hela historia: när en formulering kom in i lagen och genom vilken ändringsförfattning.',
+    hintVertaa: 'Vad som ändrades i lagen mellan två datum — ställe för ställe.',
+    secJumpPlaceholder: '§ t.ex. 54 a',
+    prevDate: '‹ Föregående',
+    nextDate: 'Följande ›',
+    inForce: 'i kraft',
+    verifyPending: 'Verifierar…',
+    verifyOk: '✓ Vyn motsvarar LawVM-motorn',
+    verifyTip: 'Strukturen som beräknats i webbläsaren motsvarar motorns kontrollsumma (SHA-256). Detta bevisar: vyn = det tillstånd motorn beräknat. Detta hävdar INTE: motorn = officiell konsolidering, eller att någondera = gällande rätt.',
+    verifyInfoAria: 'Vad verifieringen betyder',
+    verifyFail: '✗ Motsvarar inte motorn',
+    verifyFailPre: (n) => `${n} pre/post-avvikelser`,
+    verifyFailHash: 'trädhash ≠ motorns kontrollpunkt',
+    foldFail: '✗ Vikningsfel — renderas inte',
+    citeProofOk: 'citatet verifierat',
+    citeProofFail: 'citatet stämmer INTE',
+    citeProofOkTip: 'Länkens trädhash motsvarar det omräknade tillståndet',
+    topUnits: (n) => `${n} ${n === 1 ? 'enhet på toppnivå' : 'enheter på toppnivå'}`,
+    originalAct: 'ursprunglig författning',
+    changedToday: (n) => `${n} ändrade denna dag`,
+    changeDayOf: (i, n) => `ändringsdag ${i}/${n}`,
+    toc: 'Innehåll',
+    tocFilter: 'Filtrera § / kapitel…',
+    expandAll: 'Expandera alla',
+    collapseAll: 'Stäng alla',
+    legendChanged: 'ändrad jämfört med föregående ändringsdag',
+    legendTomb: 'upphävt/förfallet ställe den valda dagen (visas på sin plats)',
+    stripTip: 'Livscykel: stapel = i kraft (grön) / upphävd (rödaktig) / tidsbegränsning förfallen (gulaktig); lodrätt streck = ändring. Klicka: versionshistorik.',
+    tombstone: '[upphävd]',
+    changedTag: 'ändrad',
+    futureTag: 'kommande ändring',
+    noProvisions: 'Inga gällande bestämmelser denna dag.',
+    historyBtn: 'historik',
+    historyBtnTip: 'Visa versionshistoriken för detta ställe',
+    historyBtnTipN: (n) => `${n} ${n === 1 ? 'ändring' : 'ändringar'} — visa versionshistorik`,
+    historyBtnTipNone: 'Oförändrad sedan den ursprungliga författningen — visa uppgifter',
+    historyTitle: 'Versionshistorik',
+    historyClose: 'Stäng',
+    historyEmpty: 'Inga observerade ändringar för detta ställe.',
+    versionN: (i, n) => `version ${i}/${n}`,
+    currentVersion: 'i kraft den valda dagen',
+    notYetEnacted: 'ännu inte i kraft',
+    repealedWindow: 'upphävd/förfallen under detta intervall',
+    effectiveOn: 'Ikraftträdande',
+    derivedNote: (g) => `Motorn registrerar ändringar på nivån ”${g}”. Versionshistoriken för detta ställe har beräknats genom att jämföra lagtexten från ändringsdag till ändringsdag.`,
+    amendingAct: 'Ändringsförfattning',
+    givenDate: 'utfärdad',
+    sourceLink: 'Källa',
+    opUnknown: 'ändring (typ inte registrerad)',
+    opUnknownTip: 'Ändringstypen är inte registrerad i källan',
+    copyCite: 'Kopiera hänvisning',
+    copyLink: 'Kopiera permanent länk',
+    citeCopied: 'Hänvisning kopierad',
+    linkCopied: 'Länk kopierad',
+    citeVerified: 'verifierad',
+    showDiff: 'Visa ändring',
+    before: 'Före',
+    after: 'Efter',
+    newContent: '(nytt innehåll — ingen tidigare version)',
+    removedContent: '(borttaget — inget innehåll)',
+    nothingToDiff: 'Inget innehåll att jämföra.',
+    wholesale: 'Ersatt i sin helhet — jämförelse på ordnivå är inte meningsfull.',
+    diffTooBig: 'Ändringen är för stor för markering på ordnivå — texten visas utan markeringar.',
+    amendList: (n) => `Ändringsförfattningar (${n})`,
+    amendWhat: 'Vad denna författning gjorde',
+    targetings: (n) => `${n} ${n === 1 ? 'ändringsställe' : 'ändringsställen'}`,
+    effectiveLbl: 'Ikraftträdande',
+    prepWorks: 'Förarbeten',
+    hakuTitle: 'Diakron sökning — när en formulering kom in i lagen och genom vilken författning',
+    hakuPlaceholder: 't.ex. biometris…',
+    hakuBtn: 'Sök',
+    hakuNote: 'Exakt delsträngssökning i lagens hela historia (alla versioner, inte bara den valda dagen). Resultat: ställe, giltighetsperioder, och den ändringsförfattning som <strong>införde</strong> eller <strong>strök</strong> formuleringen. Ingen luddig sökning; skiftläge ignoreras.',
+    hakuGiveQuery: 'Ange sökord.',
+    hakuNone: (p) => `Inga träffar för ”${p}” i lagens hela historia.`,
+    hakuCount: (n, p) => `${n} ${n === 1 ? 'ställe' : 'ställen'} innehöll formuleringen ”${p}” vid någon tidpunkt.`,
+    hakuInForceWith: 'I kraft med formuleringen',
+    hakuIntroduced: 'Införde formuleringen',
+    hakuRemoved: 'Strök formuleringen',
+    vertaaTitle: 'Jämför två tidpunkter',
+    vertaaFrom: 'Startdag',
+    vertaaTo: 'Slutdag',
+    vertaaRun: 'Jämför',
+    vertaaSame: 'Välj två olika dagar.',
+    vertaaNoDiff: 'Inga skillnader mellan de valda dagarna.',
+    vertaaCount: (n, d1, d2) => `${n} ändrade ställen mellan ${d1} → ${d2}.`,
+    vertaaAdded: 'tillagd',
+    vertaaRemovedKind: 'borttagen',
+    vertaaChangedKind: 'ändrad',
+    vertaaActs: 'Ändringsförfattningar däremellan',
+    granChapter: 'kapitel',
+    granSection: 'paragraf',
+    granSubsection: 'moment',
+    citation: (title, id, addr, vStart, vEnd, hash) =>
+      `${title} (${id}), ${addr}, i kraft ${vStart}–${vEnd || '—'}.` +
+      `\nLawVM trädhash: ${hash} (verifierad).`,
+    citationActs: (acts) => `Ändringsförfattningar: ${acts}.`,
+  },
 };
 
 // =====================================================================
@@ -274,13 +395,16 @@ const JURIS = {
       if (kind === 'paragraph' || kind === 'subparagraph') return num || (lbl ? `${lbl})` : `${ordinal})`);
       return num || lbl || kind;
     },
-    // Address segment formatting ("chapter:4/section:54a" pieces).
+    // Address segment formatting ("chapter:4/section:54a" pieces). Finnish
+    // statutes have official Swedish citation terminology — honor a Swedish
+    // UI; § and mom. are shared notation.
     addrSeg(kind, n) {
-      if (kind === 'chapter') return `${n} luku`;
+      const sv = uiLang === 'sv';
+      if (kind === 'chapter') return sv ? `${n} kap.` : `${n} luku`;
       if (kind === 'section') return `${n} §`;
       if (kind === 'subsection') return `${n} mom.`;
-      if (kind === 'paragraph') return `${n} kohta`;
-      if (kind === 'subparagraph') return `${n} alakohta`;
+      if (kind === 'paragraph') return sv ? `${n} punkten` : `${n} kohta`;
+      if (kind === 'subparagraph') return sv ? `${n} underpunkten` : `${n} alakohta`;
       return `${kind} ${n}`;
     },
     opKinds: {
@@ -350,11 +474,42 @@ const JURIS = {
 
 let T = STR.fi;     // active UI strings
 let J = JURIS.fi;   // active jurisdiction profile
+let uiLang = 'fi';  // effective UI language (override > statute default)
+let uiLangOverride = null;
+try { uiLangOverride = localStorage.getItem('lawvm-viewer-lang') || null; } catch (e) { /* storage unavailable */ }
 
 function tr(key, ...args) {
   const v = T[key];
   if (v === undefined) return key;
   return typeof v === 'function' ? v(...args) : v;
+}
+
+// Op-kind vocabulary per UI language. The jurisdiction profile's own table is
+// authoritative when the UI language matches the jurisdiction's (it carries
+// drafting-convention nuance, e.g. UK "substituted/omitted"); otherwise fall
+// back to the UI language's generic legal vocabulary.
+const OP_KINDS_BY_LANG = {
+  fi: {
+    insert: 'lisätty', replace: 'muutettu', repeal: 'kumottu', delete: 'poistettu',
+    move: 'siirretty', substitute: 'korvattu', renumber: 'numeroitu uudelleen',
+    expiry: 'määräaikainen voimassaolo päättyi',
+  },
+  en: {
+    insert: 'inserted', replace: 'amended', repeal: 'repealed', delete: 'deleted',
+    move: 'moved', substitute: 'substituted', renumber: 'renumbered',
+    expiry: 'fixed-term validity expired',
+  },
+  sv: {
+    insert: 'tillagd', replace: 'ändrad', repeal: 'upphävd', delete: 'struken',
+    move: 'flyttad', substitute: 'ersatt', renumber: 'omnumrerad',
+    expiry: 'tidsbegränsad giltighet upphörde',
+  },
+};
+
+function opKindLabel(k) {
+  if (uiLang === J.lang) return J.opKinds[k] || k;
+  const tbl = OP_KINDS_BY_LANG[uiLang] || {};
+  return tbl[k] || J.opKinds[k] || k;
 }
 
 // =====================================================================
@@ -488,15 +643,11 @@ async function reproducibleTreeHash(live) {
 const statuteSel = document.getElementById('statute-select');
 let manifest = [];
 
+applyLocale('fi', 'fi'); // boot locale (honors a stored override) before any data loads
+
 fetch('statute-timeline-manifest.json').then(r => r.json()).then(m => {
   manifest = m;
-  statuteSel.innerHTML = `<option value="">${escHtml(tr('chooseStatute'))}</option>`;
-  for (const s of manifest) {
-    const opt = document.createElement('option');
-    opt.value = s.statute_id;
-    opt.textContent = `${s.statute_id} — ${s.title} (${tr('changeDays', s.change_count)})`;
-    statuteSel.appendChild(opt);
-  }
+  rebuildStatuteOptions();
   const initial = parseHash();
   const wanted = initial && manifest.find(s => s.statute_id === initial.statute) ? initial.statute
     : (manifest.length ? manifest[0].statute_id : null);
@@ -506,15 +657,69 @@ fetch('statute-timeline-manifest.json').then(r => r.json()).then(m => {
 });
 
 statuteSel.addEventListener('change', () => { if (statuteSel.value) loadStatute(statuteSel.value); });
+document.querySelectorAll('#lang-toggle button').forEach(b => {
+  b.addEventListener('click', () => setUiLang(b.dataset.lang));
+});
 
-function applyLocale(lang, juris) {
-  T = STR[lang] || STR.en;
+function applyLocale(statuteLang, juris) {
+  const lang = uiLangOverride || statuteLang || 'fi';
+  uiLang = STR[lang] ? lang : 'en';
+  T = STR[uiLang];
   J = JURIS[juris] || JURIS.generic;
-  document.documentElement.lang = lang || 'en';
+  document.documentElement.lang = uiLang;
   const tg = document.getElementById('tagline');
   if (tg) tg.textContent = tr('tagline');
   const ft = document.getElementById('footer-text');
   if (ft) ft.textContent = tr('footer');
+  const sl = document.getElementById('statute-label');
+  if (sl) sl.textContent = tr('statuteLabel');
+  const ll = document.getElementById('lang-label');
+  if (ll) ll.textContent = tr('langLabel');
+  document.querySelectorAll('#lang-toggle button').forEach(b => {
+    b.classList.toggle('active', b.dataset.lang === uiLang);
+  });
+}
+
+// UI language toggle: override persists across sessions and re-renders the
+// whole app in place (statute data is untouched — source text stays in its
+// source language).
+function setUiLang(lang) {
+  if (lang === uiLang) return;
+  uiLangOverride = lang;
+  try { localStorage.setItem('lawvm-viewer-lang', lang); } catch (e) { /* ignore */ }
+  applyLocale(metaInfo.lang || 'fi', metaInfo.jurisdiction || 'fi');
+  rebuildStatuteOptions();
+  rerenderAll();
+}
+
+function rebuildStatuteOptions() {
+  if (!statuteSel) return;
+  const cur = statuteSel.value;
+  statuteSel.innerHTML = `<option value="">${escHtml(tr('chooseStatute'))}</option>`;
+  for (const s of manifest) {
+    const opt = document.createElement('option');
+    opt.value = s.statute_id;
+    opt.textContent = `${s.statute_id} — ${s.title} (${tr('changeDays', s.change_count)})`;
+    statuteSel.appendChild(opt);
+  }
+  statuteSel.value = cur;
+}
+
+async function rerenderAll() {
+  if (!db || !changeDates.length) return;
+  const m = mode;
+  suppressHashUpdate = true;
+  try {
+    renderShell();
+    setMode(m, /*skipRender*/ true);
+    if (m === 'oikeustila') await selectDate(curDateIdx >= 0 ? curDateIdx : changeDates.length - 1);
+    else if (m === 'muutokset') renderMuutokset();
+    else if (m === 'haku') renderHaku();
+    else renderVertaa();
+  } finally {
+    suppressHashUpdate = false;
+    updateHash();
+  }
 }
 
 function metaValue(key) {
@@ -1042,9 +1247,10 @@ function renderTreeEntry(entry, depth) {
   // Scaffold ancestor (no blob at this address — finer-grained export).
   const [k, n] = entry.addr.split('/').pop().split(':');
   const changed = [...entry.children.values()].some(c => changedAddrs.has(c.addr));
-  let html = `<div class="node scaffold${changed ? ' changed' : ''}" data-depth="${depth}" data-addr="${escAttr(entry.addr)}">`;
-  html += rowHtml(entry.addr, J.addrSeg(k, n), '', changed, true, false);
-  html += `<div class="node-body">`;
+  const collapsed = collapsedAddrs.has(entry.addr);
+  let html = `<div class="node scaffold${changed ? ' changed' : ''}${collapsed ? ' collapsed' : ''}" data-depth="${depth}" data-addr="${escAttr(entry.addr)}">`;
+  html += rowHtml(entry.addr, J.addrSeg(k, n), '', changed, true, collapsed);
+  html += `<div class="node-body"${collapsed ? ' hidden="until-found"' : ''}>`;
   for (const child of sortedEntries(entry.children)) html += renderTreeEntry(child, depth + 1);
   html += `</div></div>`;
   return html;
@@ -1113,17 +1319,13 @@ function renderNode(node, addr, depth, prevMap) {
   const label = kindLabel(node, ordinal);
 
   if (ROW_KINDS.has(kind)) {
-    // Outline row: chapter/section — collapsible, default expanded (reading mode).
-    let html = `<div class="node kind-${kind}${changed ? ' changed' : ''}" data-depth="${depth}" data-addr="${escAttr(addr)}">`;
-    html += rowHtml(addr, label, heading, changed, true, false);
-    html += `<div class="node-body">`;
-    for (const seg of inline) {
-      const cls = seg.kind === 'crossHeading' ? 'crossheading'
-        : seg.kind === 'intro' ? 'intro'
-        : seg.kind === 'wrapUp' ? 'wrapup' : 'content';
-      html += `<p class="prov-text ${cls}">${escHtml(seg.text)}</p>`;
-    }
-    html += childrenWithGhostsHtml(addr, children, depth, prevMap);
+    // Outline row: chapter/section — collapsible, default expanded (reading
+    // mode); collapse state is remembered across date scrubs and re-renders.
+    const collapsed = collapsedAddrs.has(addr);
+    let html = `<div class="node kind-${kind}${changed ? ' changed' : ''}${collapsed ? ' collapsed' : ''}" data-depth="${depth}" data-addr="${escAttr(addr)}">`;
+    html += rowHtml(addr, label, heading, changed, true, collapsed);
+    html += `<div class="node-body"${collapsed ? ' hidden="until-found"' : ''}>`;
+    html += orderedBodyHtml(addr, node, depth, prevMap);
     html += `</div></div>`;
     return html;
   }
@@ -1156,6 +1358,48 @@ function childrenWithGhostsHtml(addr, children, depth, prevMap) {
   return html;
 }
 
+// Body of an outline node in TRUE DOCUMENT ORDER: inline text (väliotsikko
+// crossheadings, intro/wrapup prose) interleaved with structural children as
+// they appear in the source — never "all headings first, then all sections".
+// Ghost tombstones slot in by address order within the structural sequence.
+function orderedBodyHtml(addr, node, depth, prevMap) {
+  const counts = {};
+  const items = [];
+  if (node.text && node.text.trim()) items.push({ type: 'text', kind: node.kind, text: node.text.trim() });
+  for (const c of (node.children || [])) {
+    const seg = ADDR_SEG[c.kind];
+    if (seg) {
+      counts[c.kind] = (counts[c.kind] || 0) + 1;
+      items.push({ type: 'child', child: c, childAddr: `${addr}/${seg}:${addrComponent(c, counts[c.kind])}` });
+    } else if (c.kind === 'num' || c.kind === 'heading') {
+      continue; // rendered in the row label
+    } else if ((c.text || '').trim()) {
+      items.push({ type: 'text', kind: c.kind, text: c.text.trim() });
+    }
+  }
+  const ghosts = [...(ghostMap().get(addr) || [])].sort((a, b) => addrCompare(a.addr, b.addr));
+  let gi = 0;
+  let html = '';
+  const flushGhostsBefore = (childAddr) => {
+    while (gi < ghosts.length && (childAddr === null || addrCompare(ghosts[gi].addr, childAddr) < 0)) {
+      html += ghostHtml(ghosts[gi++]);
+    }
+  };
+  for (const it of items) {
+    if (it.type === 'text') {
+      const cls = it.kind === 'crossHeading' ? 'crossheading'
+        : it.kind === 'intro' ? 'intro'
+        : it.kind === 'wrapUp' ? 'wrapup' : 'content';
+      html += `<p class="prov-text ${cls}">${escHtml(it.text)}</p>`;
+    } else {
+      flushGhostsBefore(it.childAddr);
+      html += renderNode(it.child, it.childAddr, depth + 1, prevMap);
+    }
+  }
+  flushGhostsBefore(null);
+  return html;
+}
+
 function tombstoneHtml(addr, info) {
   const src = info && info.source_id ? sourceById[info.source_id] : null;
   const srcLabel = src ? (src.canonical_id || src.title || info.source_id) : (info ? info.source_id : '');
@@ -1185,10 +1429,15 @@ function wireDoc(docEl) {
   });
 }
 
+// Collapse state survives re-renders (date scrubs, language switches).
+const collapsedAddrs = new Set();
+
 function toggleCollapse(nodeEl, force) {
   if (!nodeEl) return;
   const collapsing = force !== undefined ? force : !nodeEl.classList.contains('collapsed');
   nodeEl.classList.toggle('collapsed', collapsing);
+  const addr = nodeEl.dataset.addr;
+  if (addr) { if (collapsing) collapsedAddrs.add(addr); else collapsedAddrs.delete(addr); }
   const tog = nodeEl.querySelector(':scope > .node-row > .node-toggle');
   if (tog && !tog.classList.contains('leaf')) tog.textContent = collapsing ? '▸' : '▾';
   const body = nodeEl.querySelector(':scope > .node-body');
@@ -1491,8 +1740,8 @@ function changeBadgeHtml(addr) {
     if (e.kind === 'removed') cls = removalReason(addr, e.idx) === 'expiry' ? 'tk-exp' : 'tk-rem';
     if (e.idx > curDateIdx) cls += ' fut';
     const kindTxt = e.kind === 'removed'
-      ? (J.opKinds[removalReason(addr, e.idx) === 'expiry' ? 'expiry' : 'repeal'])
-      : (J.opKinds[e.kind === 'added' ? 'insert' : 'replace']);
+      ? opKindLabel(removalReason(addr, e.idx) === 'expiry' ? 'expiry' : 'repeal')
+      : opKindLabel(e.kind === 'added' ? 'insert' : 'replace');
     tickHtml += `<i class="${cls}" style="left:${fx(e.idx).toFixed(2)}%" title="${escAttr(`${changeDates[e.idx]} — ${kindTxt}`)}"></i>`;
   }
   const cursor = `<u class="strip-cursor" style="left:${fx(curDateIdx).toFixed(2)}%"></u>`;
@@ -1652,7 +1901,7 @@ function historyHtml(addr) {
       // The removal must never be unexplained: show what caused it — a repeal,
       // or a temporary act's scheduled expiry — with the act's provenance.
       const reason = removalReason(addr, v.startIdx);
-      html += `<div class="change-op"><span class="op-kind${reason === 'expiry' ? ' op-exp' : ''}">${escHtml(J.opKinds[reason === 'expiry' ? 'expiry' : 'repeal'])}</span></div>`;
+      html += `<div class="change-op"><span class="op-kind${reason === 'expiry' ? ' op-exp' : ''}">${escHtml(opKindLabel(reason === 'expiry' ? 'expiry' : 'repeal'))}</span></div>`;
       const ts = transitionsFor(addr, startDate);
       const tSrc = ts.find(t => t.source_id) || ts[ts.length - 1];
       if (tSrc) html += provenanceHtml(tSrc);
@@ -1679,7 +1928,7 @@ function historyHtml(addr) {
     // localized diff below shows what actually changed.
     if (v.startIdx > 0) {
       const kind = prevPresentNode ? 'replace' : 'insert';
-      html += `<div class="change-op"><span class="op-kind">${escHtml(J.opKinds[kind])}</span></div>`;
+      html += `<div class="change-op"><span class="op-kind">${escHtml(opKindLabel(kind))}</span></div>`;
     }
     const tSrc = ts.find(t => t.source_id) || ts[ts.length - 1];
     if (tSrc) html += provenanceHtml(tSrc);
@@ -1765,7 +2014,7 @@ function opKindBadges(ts) {
   if (!anyKind) {
     return `<span class="op-kind op-unknown" title="${escAttr(tr('opUnknownTip'))}">${escHtml(tr('opUnknown'))}</span>`;
   }
-  return [...kinds].map(k => `<span class="op-kind">${escHtml(J.opKinds[k] || k)}</span>`).join(' ');
+  return [...kinds].map(k => `<span class="op-kind">${escHtml(opKindLabel(k))}</span>`).join(' ');
 }
 
 function prepWorksHtml(ref) {

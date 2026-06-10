@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LawVM-katselin — Lain ajantasahistoria | Mitä laki sanoi, milloin, ja mistä muutos tuli</title>
-<meta name="description" content="Selaimessa toimiva katselin LawVM-moottorin varmentamalle muutosgraafille: säädöksen rakenne minä tahansa voimaantulopäivänä, hash-todennettuna moottoria vastaan.">
+<title>LawVM-selain — Lain ajantasahistoria | Mitä laki sanoi, milloin, ja mistä muutos tuli</title>
+<meta name="description" content="Selaimessa toimiva LawVM-selain moottorin varmentamalle muutosgraafille: säädöksen rakenne minä tahansa voimaantulopäivänä, hash-todennettuna moottoria vastaan.">
 <link rel="stylesheet" href="statute-timeline.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.13.0/sql-wasm.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/diff_match_patch/20121119/diff_match_patch.js"></script>
@@ -12,7 +12,7 @@
 <body>
 <header>
   <div class="wrap">
-    <h1 class="logo">LawVM-katselin</h1>
+    <h1 class="logo">LawVM-selain</h1>
     <p class="tagline" id="tagline">Mitä laki sanoi, milloin, ja mistä muutos tuli.</p>
   </div>
 </header>
@@ -20,9 +20,17 @@
 <main class="wrap">
   <div class="controls">
     <label class="ctl">
-      <span class="ctl-label">Säädös</span>
+      <span class="ctl-label" id="statute-label">Säädös</span>
       <select id="statute-select"><option value="">Ladataan…</option></select>
     </label>
+    <div class="ctl">
+      <span class="ctl-label" id="lang-label">Kieli</span>
+      <div class="lang-toggle" id="lang-toggle">
+        <button type="button" data-lang="fi">FI</button>
+        <button type="button" data-lang="sv">SV</button>
+        <button type="button" data-lang="en">EN</button>
+      </div>
+    </div>
   </div>
 
   <div id="app"><p class="loading">Valitse säädös.</p></div>

@@ -58,6 +58,16 @@ select {
 }
 #statute-select { min-width: 22rem; }
 
+.lang-toggle { display: flex; gap: 0; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.lang-toggle button {
+  font-size: 0.8rem; font-weight: 600; padding: 0.35rem 0.7rem;
+  border: none; background: var(--card-bg); color: var(--muted); cursor: pointer;
+  border-right: 1px solid var(--border);
+}
+.lang-toggle button:last-child { border-right: none; }
+.lang-toggle button:hover { background: #eef2f6; }
+.lang-toggle button.active { background: var(--accent); color: #fff; }
+
 .loading { color: var(--muted); padding: 2rem 0; }
 
 /* =====================================================================
