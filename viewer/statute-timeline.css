@@ -13,6 +13,10 @@
   --changed: #c77f00;
   --changed-bg: #fdf3e0;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* Statute prose: screen-optimized system serifs (Charter is the legal-text
+     standard; Georgia the universal fallback). UI chrome stays sans — the
+     contrast separates the document from the apparatus. */
+  --font-text: Charter, "Bitstream Charter", "Source Serif 4", "Source Serif Pro", Georgia, Cambria, "Times New Roman", serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --topbar-offset: 7.5rem; /* approximate sticky topbar height for scroll margins */
 }
@@ -237,26 +241,44 @@ select {
 .node-row:hover .hist-btn, .pblock:hover > .hist-btn, .hist-btn.active, .hist-btn:focus-visible { opacity: 1; }
 .hist-btn:hover { background: #eef2f6; color: var(--accent); border-color: var(--accent); }
 .hist-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-/* A block that has EVER changed announces it: chip stays faintly visible. */
-.hist-btn.has-hist { opacity: 0.6; color: var(--accent); border-color: #d4dde6; font-variant-numeric: tabular-nums; }
+/* A block that has EVER changed announces it: chip stays visible, with an
+   OPAQUE background (no text bleed-through) — never translucent over prose. */
+.hist-btn.has-hist {
+  opacity: 1; background: var(--card-bg);
+  color: rgba(43, 92, 138, 0.7); border-color: #dde4ea;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--card-bg);
+}
 
-/* Prose blocks (momentti / kohta / alakohta) */
+/* Prose blocks (momentti / kohta / alakohta). The BLOCK keeps the full column
+   width (so every history chip aligns at the same right edge, scannable as a
+   column); the TEXT measure inside is capped at ~72ch for readability —
+   indented levels naturally get shorter lines. */
 .pblock {
   position: relative;
   margin: 0.3rem 0;
-  padding: 0.05rem 0.3rem 0.05rem 0.45rem;
+  /* No right padding: nested blocks keep the SAME right edge as their
+     ancestors, so every history chip aligns on one vertical line. */
+  padding: 0.05rem 0 0.05rem 0.45rem;
   border-left: 2px solid transparent;
   border-radius: 4px;
   display: flow-root;
   scroll-margin-top: calc(var(--topbar-offset) + 0.5rem);
 }
+/* Hanging indent: continuation lines align past the unit label (standard
+   legal-list typesetting; keeps the label column scannable). */
+.pblock-inner { max-width: 72ch; line-height: 1.62; font-family: var(--font-text); font-size: 0.98rem; display: flex; gap: 0.45rem; align-items: baseline; }
+.pblock-inner .pblock-body { flex: 1; min-width: 0; }
 .pblock.changed { border-left-color: var(--changed); background: #fffcf4; }
 .pblock:hover { background: #f4f6f8; }
 .pblock.changed:hover { background: #fdf6e4; }
 .pblock-num {
+  flex: 0 0 auto;
   font-weight: 700; font-size: 0.72rem; color: var(--muted);
-  margin-right: 0.45rem; user-select: none;
+  user-select: none; font-family: var(--font);
 }
+.mom > .pblock-inner > .pblock-num { min-width: 2.6rem; }
+.kohta > .pblock-inner > .pblock-num, .alakohta > .pblock-inner > .pblock-num { min-width: 1.4rem; }
 .pblock-body { line-height: 1.6; }
 .pblock-text { white-space: pre-wrap; }
 .kohta { margin-left: 1.4rem; }
@@ -266,7 +288,7 @@ select {
 .hist-anchor { outline: 1px dashed #bcd2e8; outline-offset: 2px; }
 
 /* Inline text segments inside outline rows */
-.prov-text { font-size: 0.92rem; line-height: 1.6; margin: 0.3rem 0; color: #23231f; white-space: pre-wrap; }
+.prov-text { font-family: var(--font-text); font-size: 0.98rem; line-height: 1.62; margin: 0.3rem 0; color: #23231f; white-space: pre-wrap; max-width: 72ch; }
 .prov-text.crossheading { font-weight: 700; color: var(--accent); margin-top: 0.5rem; }
 .prov-text.wrapup { font-style: italic; }
 
@@ -363,6 +385,8 @@ select {
 .pblock.ghost-line {
   display: flex; align-items: baseline; gap: 0.5rem;
   opacity: 0.78; margin: 0.25rem 0;
+  /* Match .node-row's right inset so the lifecycle strip column stays flush. */
+  padding-right: 0.3rem;
 }
 .pblock.ghost-line .tomb-label { flex: 0 1 auto; }
 .pblock.ghost-line .chg-badge { margin-left: auto; opacity: 1; }
@@ -374,9 +398,11 @@ select {
 details.diff { margin-top: 0.3rem; }
 details.diff summary { font-size: 0.74rem; color: var(--accent); cursor: pointer; }
 .diff-unified {
-  font-size: 0.82rem; line-height: 1.65; white-space: pre-wrap;
+  font-family: var(--font-text);
+  font-size: 0.9rem; line-height: 1.65; white-space: pre-wrap;
   padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 6px;
   background: #fcfcfb; margin-top: 0.35rem; max-height: 26rem; overflow: auto;
+  max-width: 85ch;
 }
 .diff-ins { background: #c9ecd4; border-radius: 2px; padding: 0 1px; text-decoration: none; }
 .diff-del { background: #f6cdc7; border-radius: 2px; padding: 0 1px; text-decoration: line-through; text-decoration-color: rgba(140,30,20,0.55); }
@@ -390,7 +416,14 @@ details.diff summary { font-size: 0.74rem; color: var(--accent); cursor: pointer
 .sdiff-item { border-left: 2px solid var(--border); padding-left: 0.55rem; }
 .sdiff-head { font-size: 0.78rem; margin-bottom: 0.15rem; }
 .sdiff-addr { font-weight: 600; }
-.diff-box { font-size: 0.8rem; line-height: 1.55; white-space: pre-wrap; padding: 0.4rem 0.55rem; border-radius: 5px; max-height: 18rem; overflow: auto; border: 1px solid var(--border); }
+
+/* Structured prose inside inserted/removed diff boxes */
+.dp-head { font-weight: 700; margin-bottom: 0.25rem; }
+.dp-text { margin: 0.2rem 0; }
+.dp-block { margin: 0.3rem 0 0.3rem 0; padding-left: 0.2rem; }
+.dp-block .dp-block { margin-left: 1.1rem; }
+.dp-lbl { font-weight: 700; font-size: 0.72rem; color: var(--muted); margin-right: 0.3rem; }
+.diff-box { font-family: var(--font-text); font-size: 0.88rem; line-height: 1.58; white-space: pre-wrap; padding: 0.4rem 0.55rem; border-radius: 5px; max-height: 18rem; overflow: auto; border: 1px solid var(--border); }
 .diff-box.pre { background: #fdf6f5; }
 .diff-box.post { background: #f4fbf6; }
 .diff-box .diff-del, .diff-box .diff-ins { background: transparent; text-decoration: none; }
@@ -440,7 +473,8 @@ details.diff summary { font-size: 0.74rem; color: var(--accent); cursor: pointer
 .haku-intervals .lbl, .haku-attr .attr-label { font-weight: 600; color: var(--fg); }
 .haku-attr { font-size: 0.82rem; margin: 0.2rem 0; }
 .haku-attr a { color: var(--accent); }
-.haku-snippet { font-size: 0.8rem; color: #3a3a34; margin-top: 0.3rem; padding: 0.3rem 0.5rem; background: #f4f1ea; border-radius: 5px; line-height: 1.45; }
+.haku-snippet { font-family: var(--font-text); font-size: 0.88rem; color: #3a3a34; margin-top: 0.3rem; padding: 0.3rem 0.5rem; background: #f4f1ea; border-radius: 5px; line-height: 1.5; }
+.haku-snippet mark { background: #ffe9a8; border-radius: 2px; padding: 0 1px; }
 
 /* Vertaa (two-date compare) */
 .vertaa-form { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.7rem; font-size: 0.86rem; }

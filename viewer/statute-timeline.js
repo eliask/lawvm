@@ -1165,7 +1165,7 @@ function nodeAtAddress(live, addr) {
 function renderOikeustila(opts) {
   const view = document.getElementById('view');
   if (!view) return;
-  const remembered = (opts && opts.preserveScroll) ? (spy.current || null) : null;
+  const anchor = (opts && opts.preserveScroll) ? captureScrollAnchor() : null;
   view.innerHTML = `
     <div class="layout2">
       <aside class="col-toc panel" id="toc-panel">
@@ -1197,7 +1197,7 @@ function renderOikeustila(opts) {
   buildToc();
   setupScrollSpy();
   if (selectedAddress) openInlineHistory(selectedAddress, /*scroll*/ false);
-  if (remembered) restoreScrollTo(remembered);
+  if (anchor) restoreScrollAnchor(anchor);
 }
 
 // Virtual render tree: covering units inserted at their address paths; missing
@@ -1281,7 +1281,9 @@ function rowHtml(addr, label, heading, changed, collapsible, collapsed) {
   html += `<span class="node-label">${escHtml(label)}</span>`;
   if (heading) html += `<span class="node-heading">${escHtml(heading)}</span>`;
   if (changed) html += `<span class="changed-tag">${escHtml(tr('changedTag'))}</span>`;
-  if (kind === 'section') html += changeBadgeHtml(addr);
+  // Lifecycle badge cascades to every outline level (part/chapter/section):
+  // an ancestor's strip aggregates all change activity beneath it.
+  if (ROW_KINDS.has(kind)) html += changeBadgeHtml(addr);
   html += historyBtnHtml(addr);
   html += `</div>`;
   return html;
@@ -1334,10 +1336,14 @@ function renderNode(node, addr, depth, prevMap) {
   // rendered as readable statute text, addressable + history-hoverable.
   const blockCls = kind === 'subsection' ? 'mom' : kind === 'paragraph' ? 'kohta' : 'alakohta';
   let html = `<div class="pblock ${blockCls}${changed ? ' changed' : ''}" data-addr="${escAttr(addr)}">`;
+  // Block-level inner wrapper caps the reading measure; the label and text
+  // flow inline within it (an inline-block text body would wrap to its own
+  // line whenever the measure doesn't fit beside the label).
+  html += `<div class="pblock-inner">`;
   html += `<span class="pblock-num" title="${escAttr(prettyAddr(addr))}">${escHtml(label)}</span>`;
   html += `<span class="pblock-body">`;
   for (const seg of inline) html += `<span class="pblock-text">${escHtml(seg.text)} </span>`;
-  html += `</span>`;
+  html += `</span></div>`;
   html += historyBtnHtml(addr, /*showCount*/ true);
   const kidsHtml = childrenWithGhostsHtml(addr, children, depth, prevMap);
   if (kidsHtml) html += `<div class="pblock-children">${kidsHtml}</div>`;
@@ -1535,6 +1541,17 @@ function updateSpyCurrent() {
     const t = el.getBoundingClientRect().top;
     if (t < bestTop) { bestTop = t; best = el; }
   }
+  if (!best) {
+    // No row inside the observer band — the reader is inside a long section
+    // (rows are sparser than the band) or at initial load. The current unit
+    // is the LAST row above the reading line.
+    let lastAbove = null;
+    for (const r of document.querySelectorAll('#doc .node-row.spyable')) {
+      if (r.getBoundingClientRect().top < 140) lastAbove = r;
+      else { if (!lastAbove) lastAbove = r; break; } // before the first row: take it
+    }
+    best = lastAbove;
+  }
   if (!best) return;
   const addr = best.dataset.addr;
   if (addr === spy.current) return;
@@ -1555,13 +1572,37 @@ function updateSpyCurrent() {
   }
 }
 
-function restoreScrollTo(addr) {
-  const el = document.querySelector(`#doc .node-row[data-addr="${cssEsc(addr)}"]`)
-    || document.querySelector(`#doc [data-addr="${cssEsc(addr)}"]`);
-  if (el) {
-    spy.suppressUntil = Date.now() + 800;
-    el.scrollIntoView({ block: 'start' });
+// Pixel-stable scroll anchoring across re-renders (date scrubs): anchor on the
+// topmost visible addressed element and restore its exact viewport offset, so
+// the text the reader is looking at does not move even when content above it
+// is added or removed.
+function captureScrollAnchor() {
+  const doc = document.getElementById('doc');
+  if (!doc) return null;
+  const r = doc.getBoundingClientRect();
+  const topbar = document.getElementById('topbar');
+  const y = Math.max((topbar ? topbar.getBoundingClientRect().bottom : 0) + 10, r.top + 1);
+  if (y > r.bottom) return null; // document entirely above the fold line
+  const x = r.left + Math.min(r.width / 2, 320);
+  let el = document.elementFromPoint(x, y);
+  el = el && el.closest ? el.closest('#doc [data-addr]') : null;
+  if (!el) return null;
+  return { addr: el.dataset.addr, top: el.getBoundingClientRect().top };
+}
+
+function restoreScrollAnchor(anchor) {
+  if (!anchor) return;
+  let el = document.querySelector(`#doc [data-addr="${cssEsc(anchor.addr)}"]`);
+  if (!el) { // the anchored unit no longer exists at this date — nearest ancestor
+    const segs = anchor.addr.split('/');
+    for (let i = segs.length - 1; i >= 1 && !el; i--) {
+      el = document.querySelector(`#doc [data-addr="${cssEsc(segs.slice(0, i).join('/'))}"]`);
+    }
   }
+  if (!el) return;
+  const delta = el.getBoundingClientRect().top - anchor.top;
+  if (delta) window.scrollBy(0, delta);
+  spy.suppressUntil = Date.now() + 600;
 }
 
 function jumpToAddr(addr) {
@@ -1848,17 +1889,48 @@ function structuredDiffHtml(addr, preNode, postNode) {
   if (!changes.length) return diffBlockHtml(nodeToText(preNode), nodeToText(postNode));
   changes.sort((a, b) => addrCompare(a.addr, b.addr));
   if (changes.length === 1 && changes[0].addr === addr) {
-    return diffBlockHtml(nodeToText(changes[0].nodeA), nodeToText(changes[0].nodeB));
+    return changeEntryDiffHtml(changes[0]);
   }
   let html = '<div class="sdiff">';
   for (const c of changes) {
     html += `<div class="sdiff-item">`
       + `<div class="sdiff-head"><span class="op-kind vk-${c.kind}">${escHtml(changeKindLabel(c.kind))}</span> `
       + `<span class="sdiff-addr">${escHtml(prettyAddr(c.addr))}</span></div>`
-      + diffBlockHtml(nodeToText(c.nodeA), nodeToText(c.nodeB))
+      + changeEntryDiffHtml(c)
       + `</div>`;
   }
   html += '</div>';
+  return html;
+}
+
+// Diff body for one localized change entry. Wholly inserted/removed units
+// render as STRUCTURED prose (per-momentti/kohta blocks with labels), never
+// one flat slab of section text; in-place changes get the word diff.
+function changeEntryDiffHtml(c) {
+  if (c.kind === 'added' || c.kind === 'removed') {
+    const node = c.kind === 'added' ? c.nodeB : c.nodeA;
+    const lbl = c.kind === 'added' ? tr('newContent') : tr('removedContent');
+    const cls = c.kind === 'added' ? 'post' : 'pre';
+    return `<div class="diff-stack"><div class="diff-side"><div class="diff-lbl">${escHtml(lbl)}</div>`
+      + `<div class="diff-box ${cls}">${nodeProseHtml(node, c.addr)}</div></div></div>`;
+  }
+  return diffBlockHtml(nodeToText(c.nodeA), nodeToText(c.nodeB));
+}
+
+// Structured prose for a whole unit: own text, then each addressable child
+// as a labelled block, recursively.
+function nodeProseHtml(node, addr) {
+  if (!node) return '';
+  const kids = structChildren(node, addr);
+  const own = inlineContent(node).map(s => escHtml(s.text)).join(' ');
+  if (!kids.length) return own || escHtml(nodeToText(node));
+  const heading = nodeHeading(node);
+  let html = '';
+  if (heading) html += `<div class="dp-head">${escHtml(kindLabel(node, 0))} ${escHtml(heading)}</div>`;
+  if (own) html += `<p class="dp-text">${own}</p>`;
+  for (const { child, childAddr } of kids) {
+    html += `<div class="dp-block"><span class="dp-lbl">${escHtml(kindLabel(child, 0))}</span> ${nodeProseHtml(child, childAddr)}</div>`;
+  }
   return html;
 }
 
@@ -2198,7 +2270,7 @@ function localizedOpChangesHtml(t) {
     html += `<div class="op-change">`
       + `<span class="op-kind vk-${c.kind}">${escHtml(changeKindLabel(c.kind))}</span> `
       + `<a href="#" class="op-change-addr goto-addr" data-addr="${escAttr(c.addr)}" data-date="${escAttr(t.effective_date)}">${escHtml(prettyAddr(c.addr))}</a>`
-      + diffDetailsHtml(nodeToText(c.nodeA), nodeToText(c.nodeB), openAll)
+      + diffNodeDetailsHtml(c.addr, c.nodeA, c.nodeB, openAll)
       + `</div>`;
   }
   html += `</div>`;
@@ -2215,6 +2287,21 @@ function changeKindLabel(kind) {
 // Diachronic phrase search
 // =====================================================================
 let blobTextByHash = {};
+
+// Deepest addressable nodes whose text contains the phrase. A phrase spanning
+// sibling boundaries falls back to their parent (the deepest node that fully
+// contains it).
+function deepMatchAddrs(node, addr, phraseLc, out) {
+  const kids = structChildren(node, addr);
+  let foundDeeper = false;
+  for (const { child, childAddr } of kids) {
+    if (nodeToText(child).toLowerCase().includes(phraseLc)) {
+      foundDeeper = true;
+      deepMatchAddrs(child, childAddr, phraseLc, out);
+    }
+  }
+  if (!foundDeeper && nodeToText(node).toLowerCase().includes(phraseLc)) out.add(addr);
+}
 
 function renderHaku() {
   const view = document.getElementById('view');
@@ -2243,36 +2330,23 @@ function blobText(hash) {
   return txt;
 }
 
-function addressVersionChain(addr, phraseLc) {
-  const ts = transitions.filter(t => t.target_address === addr)
-    .sort((a, b) => (a.effective_date < b.effective_date ? -1
-      : a.effective_date > b.effective_date ? 1 : a.sequence - b.sequence));
-  const chain = [];
-  for (const t of ts) {
-    const post = t.post_hash || '';
-    chain.push({
-      date: t.effective_date, source_id: t.source_id, he_ref: t.he_ref,
-      post_hash: post,
-      hasPhrase: post ? blobText(post).includes(phraseLc) : false,
-      removed: post === '' || t.action === 'delete_subtree' || t.action === 'tombstone',
-    });
-  }
-  return chain;
-}
-
-let phraseLcGlobal = '';
 function runDiachronicSearch(rawQuery) {
   const out = document.getElementById('haku-results');
   const phrase = (rawQuery || '').trim();
   if (!phrase) { out.innerHTML = `<p class="muted-empty">${escHtml(tr('hakuGiveQuery'))}</p>`; return; }
   const phraseLc = phrase.toLowerCase().replace(/\s+/g, ' ');
-  phraseLcGlobal = phraseLc;
   const folds = allFolds();
 
+  // 1) Scan all historical blobs once; localize each match to the DEEPEST
+  //    addressable node containing the phrase — a chapter-level hit address
+  //    is useless to a researcher.
   const matchAddrs = new Set();
   for (const t of transitions) {
     const h = t.post_hash;
-    if (h && blobText(h).includes(phraseLc)) matchAddrs.add(t.target_address);
+    if (h && blobText(h).includes(phraseLc)) {
+      const node = getBlob(h);
+      if (node) deepMatchAddrs(node, t.target_address, phraseLc, matchAddrs);
+    }
   }
   if (!matchAddrs.size) {
     out.innerHTML = `<p class="muted-empty">${tr('hakuNone', escHtml(phrase))}</p>`;
@@ -2282,31 +2356,38 @@ function runDiachronicSearch(rawQuery) {
   let html = `<p class="haku-count">${tr('hakuCount', matchAddrs.size, escHtml(phrase))}</p>`;
   const sorted = [...matchAddrs].sort(addrCompare);
   for (const addr of sorted) {
-    const chain = addressVersionChain(addr, phraseLc);
+    // 2) Per deep address: walk every change date, extract the node from the
+    //    certified fold, and track when the phrase entered / left it.
+    const intervals = [];
     const introduced = [];
     const removed = [];
     let prevHas = false;
-    for (let i = 0; i < chain.length; i++) {
-      const v = chain[i];
-      if (v.hasPhrase && !prevHas) introduced.push(v);
-      if (!v.hasPhrase && prevHas) removed.push(v);
-      prevHas = v.hasPhrase;
+    let open = null;
+    let lastHasNode = null;
+    for (let i = 0; i < changeDates.length; i++) {
+      const d = changeDates[i];
+      const node = nodeAtAddress(folds[d].live, addr);
+      const has = node ? nodeToText(node).toLowerCase().includes(phraseLc) : false;
+      if (has) lastHasNode = node;
+      if (has && !prevHas) { introduced.push(i); open = d; }
+      if (!has && prevHas) { removed.push(i); intervals.push({ start: open, end: d }); open = null; }
+      prevHas = has;
     }
-    const intervals = inForcePhraseIntervals(addr, folds);
+    if (open) intervals.push({ start: open, end: null });
+    if (!introduced.length) continue; // defensive: blob matched but no fold did
 
     html += `<div class="haku-hit">`;
-    html += `<div class="haku-hit-head"><a href="#" class="haku-goto" data-addr="${escAttr(addr)}" data-date="">`
+    html += `<div class="haku-hit-head"><a href="#" class="haku-goto" data-addr="${escAttr(addr)}" data-date="${escAttr(intervals.length ? (intervals[intervals.length - 1].start || '') : '')}">`
       + `${escHtml(prettyAddr(addr))}</a></div>`;
     if (intervals.length) {
       html += `<div class="haku-intervals"><span class="lbl">${escHtml(tr('hakuInForceWith'))}:</span> `
         + intervals.map(iv => `${escHtml(iv.start)}–${escHtml(iv.end || '—')}`).join(', ') + `</div>`;
     }
-    for (const v of introduced) html += attributionRow(tr('hakuIntroduced'), v, addr);
-    for (const v of removed) html += attributionRow(tr('hakuRemoved'), v, addr);
-    const sample = [...chain].reverse().find(v => v.hasPhrase) || introduced[0];
-    if (sample && sample.post_hash) {
-      const snip = snippetAround(blobTextRaw(sample.post_hash), phraseLc);
-      if (snip) html += `<div class="haku-snippet">…${escHtml(snip)}…</div>`;
+    for (const i of introduced) html += attributionRow(tr('hakuIntroduced'), i, addr);
+    for (const i of removed) html += attributionRow(tr('hakuRemoved'), i, addr);
+    if (lastHasNode) {
+      const snip = snippetAround(nodeToText(lastHasNode), phraseLc);
+      if (snip) html += `<div class="haku-snippet">…${highlightPhrase(snip, phrase)}…</div>`;
     }
     html += `</div>`;
   }
@@ -2319,45 +2400,44 @@ function runDiachronicSearch(rawQuery) {
   });
 }
 
-function attributionRow(label, v, addr) {
-  const src = v.source_id ? sourceById[v.source_id] : null;
-  const srcLabel = src ? (src.title || src.canonical_id || v.source_id) : (v.source_id || tr('originalAct'));
-  const idx = changeDates.indexOf(v.date);
-  const dateLink = idx >= 0
-    ? `<a href="#" class="haku-goto" data-addr="${escAttr(addr)}" data-date="${escAttr(v.date)}">${escHtml(v.date)}</a>`
-    : escHtml(v.date);
+// Attribution for a phrase entering/leaving at changeDates[idx]: the amending
+// act(s) effective that day whose certified transition covers this address.
+function attributionRow(label, idx, addr) {
+  const date = changeDates[idx];
+  const ts = transitionsFor(addr, date);
+  const tSrc = ts.find(t => t.source_id) || null;
+  const src = tSrc ? sourceById[tSrc.source_id] : null;
+  const srcLabel = src ? (src.title || src.canonical_id || tSrc.source_id)
+    : (tSrc ? tSrc.source_id : tr('originalAct'));
+  const heRef = (ts.find(t => t.he_ref) || {}).he_ref;
+  const dateLink = `<a href="#" class="haku-goto" data-addr="${escAttr(addr)}" data-date="${escAttr(date)}">${escHtml(date)}</a>`;
   let html = `<div class="haku-attr"><span class="attr-label">${escHtml(label)}:</span> ${dateLink} — ${escHtml(srcLabel)}`;
   if (src && src.canonical_id) html += ` (${escHtml(src.canonical_id)})`;
-  if (v.he_ref) html += ` · ${prepWorksHtml(v.he_ref)}`;
+  if (heRef) html += ` · ${prepWorksHtml(heRef)}`;
   html += `</div>`;
   return html;
 }
 
-function inForcePhraseIntervals(addr, folds) {
-  const intervals = [];
-  let open = null;
-  for (let i = 0; i < changeDates.length; i++) {
-    const d = changeDates[i];
-    const live = folds[d].live;
-    const h = live.get(addr);
-    const present = h ? blobText(h).includes(phraseLcGlobal) : false;
-    if (present && !open) open = d;
-    if (!present && open) { intervals.push({ start: open, end: changeDates[i] }); open = null; }
-  }
-  if (open) intervals.push({ start: open, end: null });
-  return intervals;
-}
-
-function blobTextRaw(hash) {
-  const node = getBlob(hash);
-  return node ? nodeToText(node) : '';
-}
 function snippetAround(text, phraseLc) {
   const lc = text.toLowerCase();
   const i = lc.indexOf(phraseLc);
   if (i < 0) return '';
   const start = Math.max(0, i - 60), end = Math.min(text.length, i + phraseLc.length + 60);
   return text.slice(start, end).replace(/\s+/g, ' ').trim();
+}
+
+// HTML-escape the snippet while wrapping case-insensitive phrase matches in
+// <mark> for visual pinpointing.
+function highlightPhrase(snippet, phrase) {
+  const re = new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+'), 'gi');
+  let outHtml = '';
+  let last = 0;
+  for (const m of snippet.matchAll(re)) {
+    outHtml += escHtml(snippet.slice(last, m.index)) + `<mark>${escHtml(m[0])}</mark>`;
+    last = m.index + m[0].length;
+  }
+  outHtml += escHtml(snippet.slice(last));
+  return outHtml;
 }
 
 function goToAddrAtDate(addr, date) {
@@ -2470,9 +2550,9 @@ function runVertaa() {
     }).join(', ');
     html += `<p class="vertaa-acts"><span class="lbl">${escHtml(tr('vertaaActs'))}:</span> ${links}</p>`;
   }
-  // Expose every change directly (diff visible, no toggle) when the set is
-  // modest; collapse behind <details> only for very large compares.
-  const openAll = changes.length <= 40;
+  // Expose every change directly (diff visible, no toggle); collapse behind
+  // <details> only for very large compares where open-all would be slow.
+  const openAll = changes.length <= 120;
   const chgIdx = changeIndex();
   for (const c of changes) {
     // Compact when/what metadata: the change dates in (D1, D2] that touched
@@ -2490,7 +2570,7 @@ function runVertaa() {
     html += `<span class="op-addr"><a href="#" class="vertaa-goto" data-addr="${escAttr(c.addr)}">${escHtml(prettyAddr(c.addr))}</a></span>`;
     if (metaBits.length) html += `<span class="vertaa-touches">${metaBits.join(' · ')}</span>`;
     html += `</div>`;
-    html += diffDetailsHtml(nodeToText(c.nodeA), nodeToText(c.nodeB), openAll);
+    html += diffNodeDetailsHtml(c.addr, c.nodeA, c.nodeB, openAll);
     html += `</div>`;
   }
   out.innerHTML = html;
@@ -2636,13 +2716,27 @@ function diffBlockHtml(preTxt, postTxt) {
       + diffSideHtml(tr('after'), 'post', escHtml(postTxt))
       + `</div>`;
   }
-  // Unified tracked-changes rendering.
+  // Unified tracked-changes rendering with STREAK COALESCING: alternating
+  // del/ins word runs bridged only by whitespace merge into one deletion
+  // streak followed by one insertion streak — word-by-word red/green
+  // alternation is unreadable (same grouping as the finlex/estonia viewers).
+  const isWs = (s) => !String(s).replace(/\s+/g, '');
   let html = '<div class="diff-unified">';
-  for (const [op, text] of ops) {
-    const t = escHtml(text);
-    if (op === 0) html += t;
-    else if (op === -1) html += `<del class="diff-del">${t}</del>`;
-    else html += `<ins class="diff-ins">${t}</ins>`;
+  let i = 0;
+  while (i < ops.length) {
+    if (ops[i][0] === 0) { html += escHtml(ops[i][1]); i++; continue; }
+    let del = '', ins = '';
+    while (i < ops.length) {
+      const [o, t] = ops[i];
+      if (o === -1) { del += t; i++; }
+      else if (o === 1) { ins += t; i++; }
+      else if (isWs(t) && i + 1 < ops.length && ops[i + 1][0] !== 0) { del += t; ins += t; i++; }
+      else break;
+    }
+    const hasDel = del && !isWs(del), hasIns = ins && !isWs(ins);
+    if (hasDel) html += `<del class="diff-del">${escHtml(del.trim())}</del>`;
+    if (hasDel && hasIns) html += ' ';
+    if (hasIns) html += `<ins class="diff-ins">${escHtml(ins.trim())}</ins>`;
   }
   html += '</div>';
   return html;
