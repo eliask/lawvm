@@ -194,6 +194,128 @@ def test_extracts_one_bound_per_version() -> None:
     assert by_eff["2025-07-01"].source_version_id == "2099/368"
 
 
+def test_old_style_month_first_range_parses() -> None:
+    text = (
+        "2 § Tämä asetus on voimassa tammikuun 1 päivästä joulukuun 31 päivään 1917."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1917-01-01", enacted="1916-12-20", text=text, source_statute="1917/4")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1917/4", timelines=timelines)
+    assert extraction.has_candidate is True
+    assert [b.valid_until for b in extraction.bounds] == ["1917-12-31"]
+    assert not any(d.code == FIXED_TERM_EXPIRY_UNPARSEABLE for d in extraction.diagnostics)
+
+
+def test_year_end_with_intervening_words_parses() -> None:
+    text = "5 § Tämä laki on voimassa julkaisemispäivästä vuoden 1918 loppuun."
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1917-12-01", enacted="1917-11-20", text=text, source_statute="1917/126")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1917/126", timelines=timelines)
+    assert [b.valid_until for b in extraction.bounds] == ["1918-12-31"]
+
+
+def test_bare_toistaiseksi_is_not_a_fixed_term_candidate() -> None:
+    text = (
+        "10 § Tämä päätös astuu voimaan heti kun se on asetuskokoelmassa "
+        "julkaistu ja on voimassa toistaiseksi."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1917-08-01", enacted="1917-07-20", text=text, source_statute="1917/114")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1917/114", timelines=timelines)
+    assert extraction.has_candidate is False
+    assert extraction.bounds == ()
+    assert not any(d.code == FIXED_TERM_EXPIRY_UNPARSEABLE for d in extraction.diagnostics)
+
+
+def test_toistaiseksi_with_hard_cap_parses_cap_as_bound() -> None:
+    text = (
+        "10 § Tämä päätös astuu voimaan heti ja on voimassa toistaiseksi, "
+        "ei kuitenkaan kauvemmin kuin 1 päivään toukokuuta 1918."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1917-08-01", enacted="1917-07-20", text=text, source_statute="1917/114")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1917/114", timelines=timelines)
+    assert extraction.has_candidate is True
+    assert [b.valid_until for b in extraction.bounds] == ["1918-05-01"]
+
+
+def test_month_end_forms_parse_to_last_day_of_month() -> None:
+    year_first = (
+        "2 § Tämä päätös tulee voimaan 1 päivänä huhtikuuta 1988 ja on voimassa "
+        "vuoden 1989 maaliskuun loppuun."
+    )
+    year_after = (
+        "8 § Tämä asetus tulee voimaan 1 päivänä tammikuuta 1988 ja on voimassa "
+        "joulukuun loppuun 1988."
+    )
+    for text, expected in ((year_first, "1989-03-31"), (year_after, "1988-12-31")):
+        timelines = _timelines(
+            [_voimaantulo_version(effective="1988-01-01", enacted="1987-12-01", text=text, source_statute="1988/1")]
+        )
+        extraction = extract_fixed_term_bounds(statute_id="1988/1", timelines=timelines)
+        assert [b.valid_until for b in extraction.bounds] == [expected], text
+
+
+def test_said_year_end_resolves_commencement_year() -> None:
+    text = (
+        "7 § Tämä päätös tulee voimaan 18 päivänä maaliskuuta 1987 ja on "
+        "voimassa sanotun vuoden loppuun."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1987-03-18", enacted="1987-03-01", text=text, source_statute="1987/281")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1987/281", timelines=timelines)
+    assert [b.valid_until for b in extraction.bounds] == ["1987-12-31"]
+
+
+def test_body_text_validity_mention_without_commencement_is_not_candidate() -> None:
+    text = (
+        "5) jos muussa valtiossa on annettu samaa asiaa koskeva päätös ja tämä "
+        "päätös täyttää ne edellytykset, joiden vallitessa päätös on voimassa Suomessa."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1983-05-01", enacted="1983-04-20", text=text, source_statute="1983/370")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1983/370", timelines=timelines)
+    assert extraction.has_candidate is False
+    assert extraction.bounds == ()
+    assert extraction.diagnostics == ()
+
+
+def test_dotted_numeric_range_and_saakka_forms_parse() -> None:
+    cases = (
+        ("10 § Voimassaolo Tämä päätös on voimassa 1.1.1993 - 31.12.1993. Päätös tulee voimaan heti.", "1993-12-31"),
+        ("4 § Tämä päätös tulee voimaan 4.8.1994 ja se on voimassa 31.12.1995 saakka.", "1995-12-31"),
+        ("3§ Tämä päätös tulee voimaan 1 päivänä maaliskuuta 1991 ja on voimassa 15 toukokuuta 1992 saakka.", "1992-05-15"),
+        ("5 § Tämä päätös tulee voimaan 1 päivänä tammikuuta 1991 ja on voimassa joulukuun 1995 loppuun.", "1995-12-31"),
+        ("3 § Tämä päätös tulee voimaan 1 päivänä tammikuuta 1993 ja on voimassa 31. päivään joulukuuta 1993.", "1993-12-31"),
+    )
+    for text, expected in cases:
+        timelines = _timelines(
+            [_voimaantulo_version(effective="1991-01-01", enacted="1990-12-01", text=text, source_statute="1991/1")]
+        )
+        extraction = extract_fixed_term_bounds(statute_id="1991/1", timelines=timelines)
+        assert [b.valid_until for b in extraction.bounds] == [expected], text
+
+
+def test_until_event_clause_stays_unparseable() -> None:
+    text = (
+        "2 § Tämä päätös tulee voimaan 1 päivänä joulukuuta 1992 ja on voimassa "
+        "siihen saakka, kunnes alkuperäilmoituksesta toisin säädetään tai määrätään."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1992-12-01", enacted="1992-11-20", text=text, source_statute="1992/1161")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1992/1161", timelines=timelines)
+    assert extraction.has_candidate is True
+    assert extraction.bounds == ()
+    assert any(d.code == FIXED_TERM_EXPIRY_UNPARSEABLE for d in extraction.diagnostics)
+
+
 def test_unparseable_whole_law_clause_diagnoses() -> None:
     # "vuoden voimaantulosta" is a recognised whole-law expiry clause whose date
     # the proven regex cannot parse.

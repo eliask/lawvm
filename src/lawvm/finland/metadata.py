@@ -6,6 +6,7 @@ XMLStatute dependency.
 """
 from __future__ import annotations
 
+import calendar
 import copy
 import re
 import datetime as dt
@@ -296,23 +297,6 @@ FI_MONTH_MAP: dict[str, int] = {
     'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
 }
 
-# Whole-act day-month-year validity bound ("Tämä laki ... on voimassa N
-# päivään MONTH YYYY"). re.DOTALL is intentionally omitted so the {0,120}
-# window cannot cross a sentence boundary (see _amendment_expiry_date).
-WHOLE_LAW_EXPIRY_DAY_MONTH_YEAR_RE = re.compile(
-    r'Tämä\s+(?:\w+\s+){0,2}(?:laki|asetus|päätös)'
-    r'.{0,120}?\bon\s+voimassa\s+(\d{1,2})\s+päivään\s+([a-zäöå]+)\s+(\d{4})',
-    flags=re.IGNORECASE,
-)
-
-# Whole-act year-end shorthand ("Tämä laki ... on voimassa vuoden YYYY
-# loppuun" → 31 December YYYY). [^.]* stops at the first sentence terminator.
-WHOLE_LAW_EXPIRY_YEAR_END_RE = re.compile(
-    r'Tämä\s+(?:\w+\s+){0,2}(?:laki|asetus|päätös)'
-    r'[^.]*?\bon\s+voimassa\s+vuoden\s+(\d{4})\s+loppuun',
-    flags=re.IGNORECASE,
-)
-
 # Section/chapter-scoped expiry ("Lain X § ovat/on voimassa N päivään MONTH
 # YYYY"). Used only to DETECT a scoped form for diagnostics; v1 does not lift
 # scoped expiry into a statute-level bound.
@@ -329,29 +313,184 @@ CHAPTER_SCOPED_EXPIRY_RE = re.compile(
 )
 
 
+# Sentence remainder after "Tämä laki/asetus/päätös ... on voimassa". The
+# terminal date expression is parsed from this remainder so intervening words
+# survive ("voimassa julkaisemispäivästä vuoden 1918 loppuun", "voimassa
+# tammikuun 1 päivästä joulukuun 31 päivään 1917", "voimassa toistaiseksi,
+# ei kuitenkaan kauvemmin kuin 1 päivään toukokuuta 1918"). [^.] keeps the
+# remainder inside the sentence; quantifiers are bounded.
+WHOLE_LAW_VALIDITY_REMAINDER_RE = re.compile(
+    r'Tämä\s+(?:\w+\s+){0,2}(?:laki|asetus|päätös)'
+    r'.{0,120}?\bon\s+voimassa\s+(.{0,160})',
+    flags=re.IGNORECASE,
+)
+
+# Sentence boundary inside the captured remainder. A bare [^.] window would
+# truncate dotted numeric dates ("1.1.1993"), so cut at period + space +
+# capital/digit instead.
+_VALIDITY_REMAINDER_SENTENCE_BOUNDARY_RE = re.compile(
+    r'(?<=[.!?])\s+(?=[A-ZÄÖÅ0-9§])'
+)
+
+# Terminal date forms inside the remainder.
+_VALIDITY_DAY_FIRST_RE = re.compile(
+    r'(\d{1,2})\.?\s+päivään\s+([a-zäöå]+)\s+(\d{4})', flags=re.IGNORECASE
+)
+# Dotted numeric, possibly a range; the last date is the terminal bound
+# ("voimassa 1.1.1994-31.12.1994", "voimassa 31.12.1996 saakka").
+_VALIDITY_DOTTED_NUMERIC_RE = re.compile(
+    r'\b(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})', flags=re.IGNORECASE
+)
+# Day + partitive month + year + saakka ("15 toukokuuta 1992 saakka").
+_VALIDITY_SAAKKA_RE = re.compile(
+    r'(\d{1,2})\.?\s+([a-zäöå]+kuuta)\s+(\d{4})\s+(?:saakka|asti)', flags=re.IGNORECASE
+)
+# Month-genitive + year + loppuun ("joulukuun 1995 loppuun").
+_VALIDITY_MONTH_YEAR_END_RE = re.compile(
+    r'([a-zäöå]+kuun)\s+(\d{4})\s+loppuun', flags=re.IGNORECASE
+)
+# Old-style month-first genitive: "joulukuun 31 päivään 1917".
+_VALIDITY_MONTH_FIRST_RE = re.compile(
+    r'([a-zäöå]+kuun)\s+(\d{1,2})\s+päivään\s+(\d{4})', flags=re.IGNORECASE
+)
+_VALIDITY_YEAR_END_RE = re.compile(
+    r'vuoden\s+(\d{4})\s+loppuun', flags=re.IGNORECASE
+)
+# Month-end forms: "vuoden 1989 maaliskuun loppuun" / "joulukuun loppuun 1988".
+_VALIDITY_YEAR_MONTH_END_RE = re.compile(
+    r'vuoden\s+(\d{4})\s+([a-zäöå]+kuun)\s+loppuun', flags=re.IGNORECASE
+)
+_VALIDITY_MONTH_END_YEAR_RE = re.compile(
+    r'([a-zäöå]+kuun)\s+loppuun\s+(\d{4})', flags=re.IGNORECASE
+)
+# Anaphoric year-end: "sanotun/mainitun vuoden loppuun" — end of the year
+# already named earlier in the sentence ("tulee voimaan ... 1987 ja on
+# voimassa sanotun vuoden loppuun").
+_VALIDITY_SAID_YEAR_END_RE = re.compile(
+    r'(?:sanotun|mainitun)\s+vuoden\s+loppuun', flags=re.IGNORECASE
+)
+_YEAR_RE = re.compile(r'\b(1[89]\d{2}|20\d{2})\b')
+
+# Genitive month names ("tammikuun") alongside the partitive FI_MONTH_MAP
+# keys ("tammikuuta").
+FI_MONTH_GENITIVE_MAP: dict[str, int] = {
+    partitive[:-2] + "n": number for partitive, number in FI_MONTH_MAP.items()
+}
+
+
 def whole_law_expiry_date_from_text(text: str) -> Optional[dt.date]:
     """Return the whole-law validity bound date stated in ``text``, if any.
 
     ``text`` must already be normalised with ``_normalize_fi_parse_text``.
-    Recognises the two whole-act forms (day-month-year and year-end shorthand).
-    Returns the inclusive ``valid_until`` date; callers convert to the
-    exclusive cutoff. Section/chapter-scoped forms are intentionally excluded.
+    Recognises the whole-act forms: day-month-year ("31 päivään joulukuuta
+    2020"), old-style month-first genitive ("joulukuun 31 päivään 1917"),
+    year-end shorthand ("vuoden YYYY loppuun"), and the toistaiseksi hard-cap
+    form ("toistaiseksi, ei kuitenkaan kau(v)emmin kuin 1 päivään toukokuuta
+    1918"). Bare "toistaiseksi" states no bound and yields None. Returns the
+    inclusive ``valid_until`` date; callers convert to the exclusive cutoff.
+    Section/chapter-scoped forms are intentionally excluded.
     """
-    m = WHOLE_LAW_EXPIRY_DAY_MONTH_YEAR_RE.search(text)
-    if m:
-        month = FI_MONTH_MAP.get(m.group(2).lower())
+    m = WHOLE_LAW_VALIDITY_REMAINDER_RE.search(text)
+    if m is None:
+        return None
+    remainder = _VALIDITY_REMAINDER_SENTENCE_BOUNDARY_RE.split(m.group(1), maxsplit=1)[0]
+
+    candidates: list[tuple[int, dt.date]] = []
+    md = _VALIDITY_DAY_FIRST_RE.search(remainder)
+    if md:
+        month = FI_MONTH_MAP.get(md.group(2).lower())
         if month is not None:
             try:
-                return dt.date(int(m.group(3)), month, int(m.group(1)))
+                candidates.append(
+                    (md.start(), dt.date(int(md.group(3)), month, int(md.group(1))))
+                )
             except ValueError:
                 pass
-    m3 = WHOLE_LAW_EXPIRY_YEAR_END_RE.search(text)
-    if m3:
+    mm = _VALIDITY_MONTH_FIRST_RE.search(remainder)
+    if mm:
+        month = FI_MONTH_GENITIVE_MAP.get(mm.group(1).lower())
+        if month is not None:
+            try:
+                candidates.append(
+                    (mm.start(), dt.date(int(mm.group(3)), month, int(mm.group(2))))
+                )
+            except ValueError:
+                pass
+    my = _VALIDITY_YEAR_END_RE.search(remainder)
+    if my:
         try:
-            return dt.date(int(m3.group(1)), 12, 31)
+            candidates.append((my.start(), dt.date(int(my.group(1)), 12, 31)))
         except ValueError:
             pass
-    return None
+    mym = _VALIDITY_YEAR_MONTH_END_RE.search(remainder)
+    if mym:
+        month = FI_MONTH_GENITIVE_MAP.get(mym.group(2).lower())
+        if month is not None:
+            try:
+                year = int(mym.group(1))
+                candidates.append(
+                    (mym.start(), dt.date(year, month, calendar.monthrange(year, month)[1]))
+                )
+            except ValueError:
+                pass
+    mmy = _VALIDITY_MONTH_END_YEAR_RE.search(remainder)
+    if mmy:
+        month = FI_MONTH_GENITIVE_MAP.get(mmy.group(1).lower())
+        if month is not None:
+            try:
+                year = int(mmy.group(2))
+                candidates.append(
+                    (mmy.start(), dt.date(year, month, calendar.monthrange(year, month)[1]))
+                )
+            except ValueError:
+                pass
+    for mdot in _VALIDITY_DOTTED_NUMERIC_RE.finditer(remainder):
+        try:
+            candidates.append(
+                (
+                    mdot.start(),
+                    dt.date(int(mdot.group(3)), int(mdot.group(2)), int(mdot.group(1))),
+                )
+            )
+        except ValueError:
+            pass
+    ms = _VALIDITY_SAAKKA_RE.search(remainder)
+    if ms:
+        month = FI_MONTH_MAP.get(ms.group(2).lower())
+        if month is not None:
+            try:
+                candidates.append(
+                    (ms.start(), dt.date(int(ms.group(3)), month, int(ms.group(1))))
+                )
+            except ValueError:
+                pass
+    mmye = _VALIDITY_MONTH_YEAR_END_RE.search(remainder)
+    if mmye:
+        month = FI_MONTH_GENITIVE_MAP.get(mmye.group(1).lower())
+        if month is not None:
+            try:
+                year = int(mmye.group(2))
+                candidates.append(
+                    (mmye.start(), dt.date(year, month, calendar.monthrange(year, month)[1]))
+                )
+            except ValueError:
+                pass
+    msaid = _VALIDITY_SAID_YEAR_END_RE.search(remainder)
+    if msaid:
+        # "sanotun vuoden loppuun": the year named earlier in the sentence
+        # (the commencement year). Resolve from the text before the match.
+        prefix = text[: m.start(1) + msaid.start()]
+        years = _YEAR_RE.findall(prefix[-200:])
+        if years:
+            try:
+                candidates.append((msaid.start(), dt.date(int(years[-1]), 12, 31)))
+            except ValueError:
+                pass
+    if not candidates:
+        return None
+    # The latest-positioned date expression is the terminal bound (a start
+    # range like "tammikuun 1 päivästä" precedes it in the sentence).
+    return max(candidates, key=lambda item: item[0])[1]
 
 
 def _amendment_effective_date(tree: "etree._Element") -> Optional[dt.date]:

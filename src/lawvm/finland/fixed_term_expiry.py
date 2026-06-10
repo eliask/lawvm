@@ -19,6 +19,7 @@ blocking obligations, scoped/weak cases are observations).
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from typing import Mapping, Optional
 
@@ -69,6 +70,19 @@ class FixedTermExtraction:
     has_candidate: bool
 
 
+# "on voimassa toistaiseksi" without a hard cap is the permanent-law default
+# ("until further notice"), not a fixed-term form. With a cap ("ei kuitenkaan
+# kau(v)emmin kuin ...", "enintään ...") it states a real outer bound.
+_BARE_TOISTAISEKSI_RE = re.compile(r"\bon\s+voimassa\s+toistaiseksi\b", re.IGNORECASE)
+_TOISTAISEKSI_CAP_RE = re.compile(r"kau[uv]emmin\s+kuin|enintään", re.IGNORECASE)
+
+# Commencement marker expected in a genuine voimaantulosäännös version.
+_COMMENCEMENT_CONTEXT_RE = re.compile(
+    r"(?:tulee|tuli|astuu|astui)\s+voimaan|voimassa\s+.{0,40}?päivästä",
+    re.IGNORECASE,
+)
+
+
 def _has_whole_law_expiry_clause(normalized_text: str) -> bool:
     """True when the typed meta-clause lane classifies ``normalized_text`` as a
     whole-law expiry clause ("Tämä laki ... on voimassa ...")."""
@@ -77,8 +91,13 @@ def _has_whole_law_expiry_clause(normalized_text: str) -> bool:
             continue
         # Restrict to the WHOLE-law form: the clause subject is the act itself
         # ("Tämä laki/asetus/päätös"), not a named section/chapter.
-        if _whole_law_subject_re_search(clause.text):
-            return True
+        if not _whole_law_subject_re_search(clause.text):
+            continue
+        if _BARE_TOISTAISEKSI_RE.search(clause.text) and not _TOISTAISEKSI_CAP_RE.search(
+            clause.text
+        ):
+            continue
+        return True
     return False
 
 
@@ -162,6 +181,15 @@ def extract_fixed_term_bounds(
                 )
                 continue
 
+            valid_until = whole_law_expiry_date_from_text(normalized)
+            if valid_until is None and not _COMMENCEMENT_CONTEXT_RE.search(normalized):
+                # Substantive body text can match the expiry meta-clause shape
+                # ("... ja tämä päätös ... on voimassa Suomessa") without being
+                # a voimaantulosäännös. With neither a parseable date nor a
+                # commencement marker in the carrying version, treat it as a
+                # false positive rather than a blocking unparseable bound.
+                continue
+
             # Whole-law clause recognised — this is a fixed-term candidate.
             has_candidate = True
             depth = len(address.path)
@@ -170,7 +198,6 @@ def extract_fixed_term_bounds(
                 # The same clause already owned by a shallower (or equal) address.
                 continue
 
-            valid_until = whole_law_expiry_date_from_text(normalized)
             if valid_until is None:
                 diagnostics.append(
                     FixedTermDiagnostic(
