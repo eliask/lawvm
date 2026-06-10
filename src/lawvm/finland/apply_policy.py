@@ -434,9 +434,36 @@ def _check_occupancy_policy(
                 )
             )
     elif current not in policy.primary_expected_from:
+        # Allowed but non-primary: e.g. a REPLACE landing on a tombstone
+        # (the legitimate reenactment lane) or an INSERT/REPEAL touching a
+        # slot that is not in its primary expected class. Recorded as an
+        # observation for triage; it is not a rejection.
         logger.debug(
             "  %s → occupancy policy note: §%s is %s (allowed but not primary expected)",
             ctx_label,
             rop.target_norm,
             current.value,
         )
+        if findings_out is not None:
+            findings_out.append(
+                Finding(
+                    kind="APPLY.OCCUPANCY_POLICY_VIOLATION",
+                    role="observation",
+                    stage="apply",
+                    source_statute=rop.resolved_source_statute,
+                    detail={
+                        "ctx_label": ctx_label,
+                        "op_id": rop.op_id,
+                        "legacy_action": rop.resolved_action_type,
+                        "target_label": rop.target_norm,
+                        "current_occupancy": current.value,
+                        "allowed_from": sorted(c.value for c in policy.allowed_from),
+                        "primary_expected_from": sorted(
+                            c.value for c in policy.primary_expected_from
+                        ),
+                        "strict_disposition": "record",
+                        "allowed_non_primary": True,
+                    },
+                    blocking=False,
+                )
+            )

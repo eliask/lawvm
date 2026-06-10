@@ -1800,17 +1800,17 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
     from lawvm.core.unit_registry import validate_intent_target
     from lawvm.finland.unit_registry import FINLAND_REGISTRY
 
-    def _compat_upsert_policy() -> OccupancyPolicy:
+    def _replace_policy() -> OccupancyPolicy:
+        """REPLACE occupancy: a live section is the primary expectation, but a
+        tombstone is permitted as the legitimate reenactment lane (allowed but
+        non-primary).  REPLACE on ABSENT falls outside allowed_from and is
+        recorded as an occupancy policy violation observation.
+        """
         return OccupancyPolicy(
-            primary_expected_from=frozenset(
-                {
-                    OccupancyClass.ABSENT,
-                    OccupancyClass.SUBSTANTIVE,
-                    OccupancyClass.TOMBSTONE,
-                    OccupancyClass.SCAFFOLD,
-                }
+            primary_expected_from=frozenset({OccupancyClass.SUBSTANTIVE}),
+            allowed_from=frozenset(
+                {OccupancyClass.SUBSTANTIVE, OccupancyClass.TOMBSTONE}
             ),
-            allowed_from=frozenset(OccupancyClass),
             result=OccupancyClass.SUBSTANTIVE,
         )
 
@@ -1846,7 +1846,7 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
                     target=target,
                     payload=cast(_IRNodeLike, payload),
                     contract=ExecutionContract(
-                        occupancy=_compat_upsert_policy(),
+                        occupancy=_replace_policy(),
                         coverage=CoverageMode.EXACT,
                     ),
                 )
@@ -1855,14 +1855,15 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
                     kind=IntentKind.REPEAL,
                     target=NodeTarget(address=host),
                     contract=ExecutionContract(
-                        occupancy=_compat_upsert_policy(),
+                        occupancy=OccupancyPolicy.repeal_to_tombstone(),
                         coverage=CoverageMode.EXACT,
                     ),
                 )
             elif op_type == "INSERT":
                 # INSERT otsikko = add a heading to a section that had none.
-                # Use Replace with the upsert occupancy policy which already
-                # allows ABSENT, so this works whether the heading exists or not.
+                # Modelled as a REPLACE so it works whether or not the heading
+                # already exists; tombstone headings are a legitimate reenact
+                # lane (allowed but non-primary).
                 if payload is None:
                     return None
                 return Replace(
@@ -1870,7 +1871,7 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
                     target=target,
                     payload=cast(_IRNodeLike, payload),
                     contract=ExecutionContract(
-                        occupancy=_compat_upsert_policy(),
+                        occupancy=_replace_policy(),
                         coverage=CoverageMode.EXACT,
                     ),
                 )
@@ -1889,7 +1890,7 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
                     target=target,
                     payload=cast(_IRNodeLike, payload),
                     contract=ExecutionContract(
-                        occupancy=_compat_upsert_policy(),
+                        occupancy=_replace_policy(),
                         coverage=CoverageMode.EXACT,
                     ),
                 )
@@ -1898,7 +1899,7 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
                     kind=IntentKind.REPEAL,
                     target=NodeTarget(address=host),
                     contract=ExecutionContract(
-                        occupancy=_compat_upsert_policy(),
+                        occupancy=OccupancyPolicy.repeal_to_tombstone(),
                         coverage=CoverageMode.EXACT,
                     ),
                 )
@@ -1943,7 +1944,7 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
                 target=node_target,
                 payload=cast(_IRNodeLike, payload),
                 contract=ExecutionContract(
-                    occupancy=_compat_upsert_policy(),
+                    occupancy=_replace_policy(),
                     coverage=CoverageMode.EXACT,
                 ),
             )
@@ -1953,7 +1954,7 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
                 kind=IntentKind.REPEAL,
                 target=node_target,
                 contract=ExecutionContract(
-                    occupancy=_compat_upsert_policy(),
+                    occupancy=OccupancyPolicy.repeal_to_tombstone(),
                     coverage=CoverageMode.EXACT,
                 ),
             )
@@ -1965,7 +1966,7 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
                 target=node_target,
                 payload=cast(_IRNodeLike, payload),
                 contract=ExecutionContract(
-                    occupancy=_compat_upsert_policy(),
+                    occupancy=OccupancyPolicy.reenact_insert(),
                     coverage=CoverageMode.EXACT,
                     insert_order=InsertOrder.SORTED_FAMILY,
                 ),
@@ -1995,7 +1996,7 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
                     source=node_target,
                     destination=dest_target,
                     contract=ExecutionContract(
-                        occupancy=_compat_upsert_policy(),
+                        occupancy=OccupancyPolicy.same_slot_replace(),
                         coverage=CoverageMode.EXACT,
                     ),
                 )
