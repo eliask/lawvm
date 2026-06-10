@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -16,10 +17,39 @@ from lawvm.core.ir import IRStatute, LegalAddress, ProvisionTimeline, ProvisionV
 from lawvm.core.ir_helpers import irnode_content_hash, irnode_to_text
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.source_locator import SourceLocator
+from lawvm.core.statute_validity import StatuteValidityBound, is_expired_at
 from lawvm.core.timeline_lineage import lineage_address_chain
 from lawvm.core.timeline_selection import VersionSelectionResult, select_active_version_ex
 
 SCHEMA = "lawvm.provision_state.v1"
+
+# Stage-2 rollback flag (Pro §5). Extraction/diagnostics are always available;
+# only the selection/seam SEMANTICS (flipping status to "expired") are gated.
+FIXED_TERM_BOUNDS_FLAG = "LAWVM_ENABLE_FIXED_TERM_STATUTE_BOUNDS"
+
+
+def _fixed_term_bounds_enabled() -> bool:
+    return os.environ.get(FIXED_TERM_BOUNDS_FLAG, "") not in ("", "0", "false", "False")
+
+
+@dataclass(frozen=True)
+class FixedTermSeamOverlay:
+    """Computed fixed-term outcome for one PIT query, applied at the seam.
+
+    ``kind`` is one of:
+      - "expired": a governing whole-law bound has lapsed at as_of.
+      - "blocked_unparseable": a recognised whole-law expiry clause governs but
+        its date is unparseable — a live answer would be unsafe.
+      - "blocked_ambiguous": conflicting whole-law bounds at the governing
+        effective date.
+    """
+
+    kind: str
+    diagnostic_code: str
+    valid_until: str = ""
+    expires_on: str = ""
+    bound: StatuteValidityBound | None = None
+    late_extension_gap: bool = False
 
 
 @dataclass(frozen=True)
@@ -114,6 +144,13 @@ def build_provision_state_response(
         query_type=query_type,
         territory=territory,
     )
+    overlay = _fixed_term_overlay(
+        timelines=timelines,
+        statute_id=statute_id,
+        selection=selection,
+        as_of=as_of,
+        query_type=query_type,
+    )
     return _selected_response(
         selection=selection,
         resolution=resolution,
@@ -124,6 +161,70 @@ def build_provision_state_response(
         include_ir=include_ir,
         title=title,
         base=base,
+        overlay=overlay,
+    )
+
+
+def _fixed_term_overlay(
+    *,
+    timelines: Mapping[LegalAddress, ProvisionTimeline],
+    statute_id: str,
+    selection: VersionSelectionResult,
+    as_of: str,
+    query_type: str,
+) -> FixedTermSeamOverlay | None:
+    """Compute the statute-level fixed-term outcome for this query, or None.
+
+    Priority rule (Pro §7): ordinary timeline selection runs FIRST; the
+    statute-validity overlay applies ONLY when a LIVE version would otherwise be
+    selected. Repeal/tombstone/absent therefore beats expiry — a non-live
+    selection is left untouched.
+    """
+    if not _fixed_term_bounds_enabled():
+        return None
+    version = selection.version
+    if version is None or version.content is None:
+        # absent / tombstone / repealed — ordinary selection wins.
+        return None
+
+    from lawvm.core.statute_validity import governing_bound, late_extension_gap
+    from lawvm.finland.fixed_term_expiry import (
+        FIXED_TERM_EXPIRY_AMBIGUOUS,
+        extract_fixed_term_bounds,
+        governing_unparseable,
+        has_ambiguity,
+    )
+
+    extraction = extract_fixed_term_bounds(statute_id=statute_id, timelines=timelines)
+    if not extraction.has_candidate:
+        return None
+
+    if has_ambiguity(extraction):
+        return FixedTermSeamOverlay(
+            kind="blocked_ambiguous",
+            diagnostic_code=FIXED_TERM_EXPIRY_AMBIGUOUS,
+        )
+
+    unparseable = governing_unparseable(
+        extraction, as_of=as_of, query_type=query_type
+    )
+    if unparseable is not None:
+        return FixedTermSeamOverlay(
+            kind="blocked_unparseable",
+            diagnostic_code=unparseable.code,
+        )
+
+    bound = governing_bound(extraction.bounds, as_of=as_of, query_type=query_type)
+    if bound is None or not is_expired_at(bound, as_of):
+        return None
+
+    return FixedTermSeamOverlay(
+        kind="expired",
+        diagnostic_code="",
+        valid_until=bound.valid_until,
+        expires_on=bound.expires_on,
+        bound=bound,
+        late_extension_gap=late_extension_gap(extraction.bounds, bound),
     )
 
 
@@ -174,11 +275,23 @@ def _selected_response(
     include_ir: bool,
     title: str,
     base: IRStatute | None,
+    overlay: FixedTermSeamOverlay | None = None,
 ) -> dict[str, Any]:
     address = _require_address(resolution)
     version = selection.version
-    content_hash = _content_hash(version)
-    status = "selected" if version is not None else selection.status
+    # Fixed-term overlay only fires when a live version would otherwise be
+    # selected, so past the bound the seam must not expose live content.
+    expired = overlay is not None and overlay.kind == "expired"
+    blocked = overlay is not None and overlay.kind in ("blocked_unparseable", "blocked_ambiguous")
+    payload_version = None if (expired or blocked) else version
+    content_hash = _content_hash(payload_version)
+    if expired:
+        status = "expired"
+    elif blocked:
+        status = "expiry_unverified"
+    else:
+        status = "selected" if version is not None else selection.status
+    expiry_block = _expiry_block(overlay, statute_id, address)
     lineage = _lineage_payload(
         address=address,
         migration_events=migration_events,
@@ -198,7 +311,7 @@ def _selected_response(
             "mode": "exact" if str(address) == resolution.requested else "unique_suffix",
         },
         "selection": _selection_payload(selection),
-        "version": _version_payload(version),
+        "version": _version_payload(payload_version, content_state_override=("expired" if expired else None)),
         "hashes": _hash_payload(
             status=status,
             statute_id=statute_id,
@@ -206,19 +319,26 @@ def _selected_response(
             query=query,
             address=address,
             lineage=lineage,
-            version=version,
+            version=payload_version,
             content_hash=content_hash,
+            expiry=expiry_block,
+            content_state_override=("expired" if expired else None),
         ),
-        "text": _text_payload(version),
-        "source": _source_payload(version),
+        "text": _text_payload(payload_version),
+        "source": _source_payload(payload_version),
         "source_locator": _source_locator_payload(
             statute_id=statute_id,
             jurisdiction=jurisdiction,
             address=address,
-            version=version,
+            version=payload_version,
         ),
         "engine": _engine_payload(),
     }
+    if expiry_block is not None:
+        if expired:
+            payload["expires"] = overlay.expires_on  # type: ignore[union-attr]
+            payload["valid_until"] = overlay.valid_until  # type: ignore[union-attr]
+        payload["expiry"] = expiry_block
     payload["source_locator_status"] = (
         "canonical_document_locator" if payload["source_locator"] is not None else "unavailable_no_source"
     )
@@ -321,10 +441,53 @@ def _lineage_payload(
     }
 
 
-def _version_payload(version: ProvisionVersion | None) -> dict[str, Any] | None:
+def _expiry_block(
+    overlay: FixedTermSeamOverlay | None,
+    statute_id: str,
+    address: LegalAddress,
+) -> dict[str, Any] | None:
+    """Build the seam ``expiry`` provenance/diagnostic block, or None."""
+    if overlay is None:
+        return None
+    if overlay.kind == "expired":
+        bound = overlay.bound
+        block: dict[str, Any] = {
+            "kind": "fixed_term_statute",
+            "scope": "whole_statute",
+            "source_statute": statute_id,
+            "valid_until": overlay.valid_until,
+            "expires_on": overlay.expires_on,
+        }
+        if bound is not None:
+            block["source_provision"] = str(bound.source_provision)
+            block["source_version_effective"] = bound.effective
+            block["source"] = bound.source_version_id
+            block["source_text"] = bound.source_text
+            block["source_hash"] = bound.source_hash
+            block["rule_id"] = bound.rule_id
+            block["governing_bound_id"] = bound.bound_id
+        if overlay.late_extension_gap:
+            block["diagnostic"] = "TEMPORAL.FIXED_TERM_LATE_EXTENSION_GAP"
+        return block
+    # Blocked (unparseable / ambiguous): expose the blocking diagnostic so the
+    # consumer never reads the answer as confirmed-in-force.
+    return {
+        "kind": "fixed_term_statute_unverified",
+        "scope": "whole_statute",
+        "source_statute": statute_id,
+        "diagnostic": overlay.diagnostic_code,
+        "blocking": True,
+    }
+
+
+def _version_payload(
+    version: ProvisionVersion | None,
+    *,
+    content_state_override: str | None = None,
+) -> dict[str, Any] | None:
     if version is None:
         return None
-    content_state = "tombstone" if version.content is None else "live"
+    content_state = content_state_override or ("tombstone" if version.content is None else "live")
     return {
         "effective": version.effective,
         "enacted": version.enacted,
@@ -359,6 +522,8 @@ def _hash_payload(
     lineage: Mapping[str, Any] | None,
     version: ProvisionVersion | None,
     content_hash: str,
+    expiry: Mapping[str, Any] | None = None,
+    content_state_override: str | None = None,
 ) -> dict[str, str]:
     derived_input = {
         "schema": SCHEMA,
@@ -368,9 +533,13 @@ def _hash_payload(
         "query": query,
         "resolved_address": _address_wire(address) if address is not None else None,
         "lineage": lineage,
-        "version": _version_payload(version),
+        "version": _version_payload(version, content_state_override=content_state_override),
         "content_hash": content_hash,
     }
+    # Only mutate the hashed state when the fixed-term overlay is active, so the
+    # flag-OFF default path remains byte-identical.
+    if expiry is not None:
+        derived_input["expiry"] = expiry
     return {
         "content_hash": content_hash,
         "content_hash_semantics": "sha256(irnode_to_text(content)); text-only; empty for absent/tombstone",
