@@ -233,6 +233,82 @@ def test_ensure_amendment_index_rebuilds_when_farchive_fingerprint_changes(
     assert meta["source"] == amendment_index._corpus_source_fingerprint(corpus)
 
 
+def test_build_amendment_index_reads_oracles_via_index_locators() -> None:
+    oracle_xml = b"""
+    <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <meta>
+        <references>
+          <amendedBy><ref href="/akn/fi/act/statute/1991/806"/></amendedBy>
+        </references>
+      </meta>
+    </act>
+    """
+
+    class _NoPerSidOracleCorpus(_FakeCorpus):
+        def read_locator(self, locator: str) -> bytes | None:
+            if locator.startswith("oracle://"):
+                return self._oracle_map.get(locator.removeprefix("oracle://"))
+            return None
+
+        def read_oracle(self, sid: str) -> bytes | None:
+            raise AssertionError(
+                "per-sid read_oracle() re-scans the locator table; the index "
+                "build must read via oracle_path_index() locators"
+            )
+
+    corpus = _NoPerSidOracleCorpus(
+        oracle_map={"1986/506": oracle_xml},
+        source_map={},
+    )
+
+    edges = build_amendment_index(cs=corpus)
+
+    assert ("1991/806", "1986/506", "oracle_amendedBy") in edges
+
+
+def test_ensure_amendment_index_tolerates_path_representation_change(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    csv_path = tmp_path / "amendment_parents.csv"
+    meta_path = csv_path.with_suffix(".meta.json")
+    db_path = tmp_path / "finlex.farchive"
+    db_path.write_bytes(b"current")
+    corpus = _FakeCorpus(
+        oracle_map={},
+        source_map={},
+        archive=_FakeArchive(db_path),
+    )
+    csv_path.write_text(
+        "amendment_id,parent_id,edge_kind\n1991/806,1986/506,oracle_amendedBy\n",
+        encoding="utf-8",
+    )
+    fingerprint = amendment_index._corpus_source_fingerprint(corpus)
+    assert fingerprint is not None
+    # Same archive recorded under a different path spelling (e.g. a meta
+    # written before path resolution became canonical, or via a symlink).
+    monkeypatch.chdir(tmp_path)
+    stored = dict(fingerprint)
+    stored["path"] = "finlex.farchive"
+    meta_path.write_text(
+        json.dumps(
+            {
+                "schema": ["amendment_id", "parent_id", "edge_kind"],
+                "source": stored,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def fail_build(*args: object, **kwargs: object) -> list[tuple[str, str, str]]:
+        raise AssertionError("path representation change must not force a rebuild")
+
+    monkeypatch.setattr(amendment_index, "build_amendment_index", fail_build)
+
+    ensure_amendment_index(cs=corpus, csv_path=csv_path)
+
+
 def test_ensure_amendment_index_skips_when_farchive_fingerprint_matches(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

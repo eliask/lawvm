@@ -192,18 +192,25 @@ def build_amendment_index(
 
     edges: Set[Tuple[str, str, str]] = set()
 
-    # Use oracle_path_index() to enumerate sids, read_oracle() per stat.
+    # Use oracle_path_index() to enumerate sids, then read each statute via
+    # its already-selected locator. Calling read_oracle(sid) here instead
+    # would re-scan the locator table per statute, making this loop quadratic
+    # over the corpus (~hours on the full Finlex corpus).
     oracle_index = cs.oracle_path_index()
     print(f"Scanning {len(oracle_index)} consolidated statutes for amendment metadata...")
 
-    for sid in sorted(oracle_index):
+    for n, sid in enumerate(sorted(oracle_index), start=1):
+        if n % 5000 == 0:
+            print(f"[amendment_index] consolidated scan {n}/{len(oracle_index)}")
         parts = sid.split("/", 1)
         if len(parts) != 2:
             continue
         year, num_raw = parts
         parent_id = _make_statute_id(year, num_raw)
         try:
-            xml_data = cs.read_oracle(sid)
+            xml_data = cs.read_locator(oracle_index[sid])
+            if xml_data is None:
+                xml_data = cs.read_oracle(sid)
             if xml_data is None:
                 _append_amendment_index_diagnostic(
                     diagnostics_out,
@@ -246,7 +253,10 @@ def build_amendment_index(
     # Supplement from source VTS clauses. These are not represented by
     # consolidated amendedBy metadata when an amendment touches another statute
     # only via entry-into-force prose.
-    for amendment_id in sorted(cs.list_statute_ids()):
+    statute_ids = sorted(cs.list_statute_ids())
+    for n, amendment_id in enumerate(statute_ids, start=1):
+        if n % 5000 == 0:
+            print(f"[amendment_index] source VTS scan {n}/{len(statute_ids)}")
         try:
             xml_data = cs.read_source(amendment_id)
             if xml_data is None:
@@ -318,12 +328,42 @@ def _corpus_source_fingerprint(cs: CorpusStore | None) -> dict[str, object] | No
             return None
         stat = path.stat()
         return {
-            "path": str(path),
+            "path": str(path.resolve()),
             "size": int(stat.st_size),
             "mtime_ns": int(stat.st_mtime_ns),
         }
     except Exception:
         return None
+
+
+def _fingerprints_equivalent(
+    stored: object,
+    current: dict[str, object] | None,
+) -> bool:
+    """True when two source fingerprints identify the same archive state.
+
+    Path strings are compared after resolution so a representation change
+    (relative vs absolute, symlink vs real path) alone never invalidates the
+    cache — only an actual content change (size/mtime) forces the expensive
+    full-corpus rebuild.
+    """
+    if stored == current:
+        return True
+    if not isinstance(stored, dict) or not isinstance(current, dict):
+        return False
+    stored_map = cast(Dict[str, object], stored)
+    if stored_map.get("size") != current.get("size"):
+        return False
+    if stored_map.get("mtime_ns") != current.get("mtime_ns"):
+        return False
+    stored_path = stored_map.get("path")
+    current_path = current.get("path")
+    if not isinstance(stored_path, str) or not isinstance(current_path, str):
+        return False
+    try:
+        return Path(stored_path).resolve() == Path(current_path).resolve()
+    except OSError:
+        return False
 
 
 def _read_csv_header(csv_path: Path) -> list[str]:
@@ -416,7 +456,9 @@ def ensure_amendment_index(
                     _write_cache_meta_atomic(meta_path, source_fingerprint)
                     return
                 meta = _read_cache_meta(meta_path)
-                if meta is not None and meta.get("source") == source_fingerprint:
+                if meta is not None and _fingerprints_equivalent(
+                    meta.get("source"), source_fingerprint
+                ):
                     return
                 print(f"[amendment_index] {csv_path} source fingerprint is stale — rebuilding")
             else:
