@@ -642,12 +642,16 @@ def _emit_section_snapshot(
         chapter_path = state.find("chapter", target_chapter)
         return chapter_path is not None and any(kind == "hcontainer" for kind, _label in _tops._as_path(chapter_path))
 
+    snapshot_not_before = source_effective_date.isoformat() if source_effective_date is not None else ""
+
     def _project_snapshot_path(path: Optional[Path]) -> Optional[Path]:
         if not path:
             return path
         if migration_ledger is not None:
             addr = LegalAddress(path=path)
-            migrated = migration_ledger.current_address_with_prefix_migrations(addr)
+            migrated = migration_ledger.current_address_with_prefix_migrations(
+                addr, not_before=snapshot_not_before
+            )
             if migrated != addr and _tops.resolve(state.ir, migrated.path) is not None:
                 return migrated.path
             return path

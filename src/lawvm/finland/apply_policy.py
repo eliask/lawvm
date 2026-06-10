@@ -24,6 +24,7 @@ from lawvm.finland.ops import (
     runtime_scope_confidence_for_op,
 )
 from lawvm.finland.apply_runtime_support import _valid_target_path_hint
+from lawvm.finland.migration_ledger import migration_lower_bound_for_op
 
 if TYPE_CHECKING:
     from lawvm.finland.statute import ReplayState
@@ -238,7 +239,10 @@ def _resolve_section_path_with_fallbacks(
         and target_address is not None
         and (rop.resolved_action_type != "INSERT" or allows_insert_descendant_follow)
     ):
-        migrated = migration_ledger.current_address_with_prefix_migrations(target_address)
+        op_effective = migration_lower_bound_for_op(rop)
+        migrated = migration_ledger.current_address_with_prefix_migrations(
+            target_address, not_before=op_effective
+        )
         if migrated != target_address:
             migrated_labels = {kind: label for kind, label in migrated.path}
             migrated_section = migrated_labels.get("section")

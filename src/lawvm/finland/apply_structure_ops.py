@@ -54,6 +54,7 @@ from lawvm.finland.apply_runtime_support import (
     _same_norm_label,
     _with_preserved_provision_index,
 )
+from lawvm.finland.migration_ledger import migration_lower_bound_for_op
 
 if TYPE_CHECKING:
     from lawvm.finland.payload_normalize import PayloadCompletenessWitness
@@ -1212,8 +1213,13 @@ def _apply_whole_section_op(
             if rop is not None
             else view.target_address
         )
+        _migration_op_effective = (
+            migration_lower_bound_for_op(rop) if rop is not None else _op_source_effective
+        )
         migrated = (
-            migration_ledger.current_address_with_prefix_migrations(source_address)
+            migration_ledger.current_address_with_prefix_migrations(
+                source_address, not_before=_migration_op_effective
+            )
             if source_address is not None
             else None
         )

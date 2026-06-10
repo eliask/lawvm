@@ -407,6 +407,7 @@ def current_address_with_prefix_migrations_from_events(
     migration_events: tuple[MigrationEvent, ...],
     *,
     as_of_date: str = "",
+    not_before: str = "",
     normalize_address_fn: Callable[[LegalAddress], LegalAddress] | None = None,
 ) -> LegalAddress:
     """Follow renumber/move links across any matching address prefix.
@@ -415,6 +416,14 @@ def current_address_with_prefix_migrations_from_events(
     reference frame, then applied in specificity order. Frontends may supply
     an address normalizer when migration matching needs jurisdiction-local
     label normalization, but the wave/prefix execution semantics are shared.
+
+    ``not_before`` is a lower-bound effective date for the address's own
+    content lineage. Renumber/move waves with ``effective < not_before``
+    happened before this content existed, so they relabeled a *prior* occupant
+    of the slot and must not be followed. This prevents a section born into a
+    label that was earlier vacated by a renumber (slot reuse / chapter rebirth)
+    from inheriting the prior occupant's stale renumber chain. Same-wave
+    follows (``effective == not_before``) remain in scope.
     """
 
     normalize = normalize_address_fn or (lambda address: address)
@@ -423,6 +432,8 @@ def current_address_with_prefix_migrations_from_events(
     waves: dict[tuple[str, str], list[MigrationEvent]] = {}
     for event in migration_events:
         if as_of_date and event.effective and event.effective > as_of_date:
+            continue
+        if not_before and event.effective and event.effective < not_before:
             continue
         source_statute = event.source_statute if event.source_statute is not None else ""
         waves.setdefault((event.effective, source_statute), []).append(event)

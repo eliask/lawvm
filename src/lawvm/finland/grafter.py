@@ -2267,7 +2267,7 @@ from lawvm.core.mutation_boundary import diff_ir_paths_identity_pruned  # noqa: 
 # op's declared mutation-event paths. It only records findings; it never alters
 # replay behavior, so it is safe to leave enabled.
 OBSERVED_MUTATION_CROSS_CHECK_ENABLED = True
-from lawvm.finland.migration_ledger import MigrationLedger  # noqa: E402
+from lawvm.finland.migration_ledger import MigrationLedger, migration_lower_bound_for_op  # noqa: E402
 from lawvm.finland.apply_ir_ops import (  # noqa: E402, F401
     _rewrite_bracketed_single_subsection_replace_ir,
 )
@@ -5307,13 +5307,14 @@ def apply_ops_to_tree(
         )
         if valid_hint is not None:
             return tuple(valid_hint)
+        _hint_op_effective = migration_lower_bound_for_op(rop) if rop is not None else ""
         if rop is not None:
             dest_path = _resolved_destination_path_for_rop(rop)
             if dest_path is not None:
                 dest_path_tuple = tuple(dest_path)
                 if migration_ledger is not None:
                     migrated = migration_ledger.current_address_with_prefix_migrations(
-                        LegalAddress(path=dest_path_tuple)
+                        LegalAddress(path=dest_path_tuple), not_before=_hint_op_effective
                     )
                     migrated_path = migrated.path
                     if _tops.resolve(state.ir, migrated_path) is not None:
@@ -5347,7 +5348,7 @@ def apply_ops_to_tree(
                     raw_path = _unique_global_section_path(target_norm)
             if raw_path is not None and migration_ledger is not None:
                 migrated = migration_ledger.current_address_with_prefix_migrations(
-                    LegalAddress(path=tuple(raw_path))
+                    LegalAddress(path=tuple(raw_path)), not_before=_hint_op_effective
                 )
                 migrated_path = migrated.path
                 if _tops.resolve(state.ir, migrated_path) is not None:

@@ -336,6 +336,73 @@ class TestMigrationLedgerUnit:
             ("section", "12")
         )
 
+    def test_prefix_migrations_not_before_skips_pre_birth_renumber(self) -> None:
+        # Chapter 7 was renumbered to 8 in 1987 (its old occupant), then a NEW
+        # chapter 7 was born later. A section established by the later act must
+        # NOT inherit the 1987 chapter:7->8 renumber: it is a different lineage
+        # occupying the reused label. The not_before lower bound (= the section's
+        # own establishment effective) excludes the pre-birth renumber wave.
+        ledger = MigrationLedger()
+        ledger.record_renumber(
+            _addr(("chapter", "7")),
+            _addr(("chapter", "8")),
+            effective="1987-01-01",
+            source_statute="1986/385",
+        )
+
+        born_section = _addr(("chapter", "7"), ("section", "35"))
+        # Without the bound: the section follows the stale renumber to chapter 8.
+        assert ledger.current_address_with_prefix_migrations(born_section) == _addr(
+            ("chapter", "8"), ("section", "35")
+        )
+        # With not_before at/after the reborn-chapter establishment date: no follow.
+        assert (
+            ledger.current_address_with_prefix_migrations(
+                born_section, not_before="2010-12-01"
+            )
+            == born_section
+        )
+
+    def test_prefix_migrations_not_before_keeps_same_wave_follow(self) -> None:
+        # A same-wave renumber (the relabel and the dependent op share the
+        # amendment's effective date) must still be followed: not_before is
+        # inclusive at equality.
+        ledger = MigrationLedger()
+        ledger.record_renumber(
+            _addr(("chapter", "9")),
+            _addr(("chapter", "11")),
+            effective="1994-01-01",
+            source_statute="1994/16",
+        )
+        addr = _addr(("chapter", "9"), ("section", "1"))
+        assert ledger.current_address_with_prefix_migrations(
+            addr, not_before="1994-01-01"
+        ) == _addr(("chapter", "11"), ("section", "1"))
+
+    def test_migration_lower_bound_for_op_prefers_resolved_source(self) -> None:
+        from lawvm.finland.migration_ledger import migration_lower_bound_for_op
+
+        op = SimpleNamespace(
+            resolved_op_source=SimpleNamespace(effective="2010-12-01"),
+            lo=SimpleNamespace(source=SimpleNamespace(effective="1999-01-01")),
+        )
+        assert migration_lower_bound_for_op(op) == "2010-12-01"
+
+    def test_migration_lower_bound_for_op_falls_back_to_lo_source(self) -> None:
+        from lawvm.finland.migration_ledger import migration_lower_bound_for_op
+
+        op = SimpleNamespace(
+            resolved_op_source=None,
+            lo=SimpleNamespace(source=SimpleNamespace(effective="1999-01-01")),
+        )
+        assert migration_lower_bound_for_op(op) == "1999-01-01"
+
+    def test_migration_lower_bound_for_op_empty_when_unknown(self) -> None:
+        from lawvm.finland.migration_ledger import migration_lower_bound_for_op
+
+        op = SimpleNamespace(resolved_op_source=None, lo=None)
+        assert migration_lower_bound_for_op(op) == ""
+
 
 # ---------------------------------------------------------------------------
 # Integration test: apply_op with Relabel intent emits into ledger
