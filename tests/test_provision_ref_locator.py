@@ -13,14 +13,11 @@ Covers:
 """
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
-from typing import Optional
 
-import pytest
 
 from lawvm.finland.provision_ref_locator import parse_provision_ref_serialized
-from lawvm.core.locator import HierarchicalLocator, LocatorSegment
+from lawvm.core.locator import LocatorSegment
 
 
 # ---------------------------------------------------------------------------

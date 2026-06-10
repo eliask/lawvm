@@ -10,9 +10,7 @@ Covers:
 """
 from __future__ import annotations
 
-import hashlib
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -274,7 +272,6 @@ def test_real_corpus_inline_citations_frontier_nonzero():
     Marked @pytest.mark.slow — requires data/fi/v1/fi_inline_citations.parquet.
     The real corpus has 2,378 NULL canonical_id rows (all old_committee kind).
     """
-    import importlib.util
     from pathlib import Path
 
     parquet_path = Path("data/fi/v1/fi_inline_citations.parquet")
