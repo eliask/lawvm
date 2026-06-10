@@ -82,9 +82,9 @@ def structural_subtree_hash(node: Optional[IRNode]) -> str:
 
 def _subtree_json(node: IRNode) -> bytes:
     """Canonical JSON encoding of an IRNode subtree for content_blobs storage."""
-    return json.dumps(
-        node.to_jsonable_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
+    return json.dumps(node.to_jsonable_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -174,10 +174,7 @@ def covering_units(
     """
     stop_kinds = _GRANULARITY_STOP_KINDS.get(granularity)
     if stop_kinds is None:
-        raise ValueError(
-            f"unknown granularity {granularity!r}; "
-            f"expected one of {sorted(_GRANULARITY_STOP_KINDS)}"
-        )
+        raise ValueError(f"unknown granularity {granularity!r}; expected one of {sorted(_GRANULARITY_STOP_KINDS)}")
     out: List[Tuple[str, IRNode]] = []
 
     def _has_stop_descendant(node: IRNode) -> bool:
@@ -189,9 +186,7 @@ def covering_units(
                 return True
         return False
 
-    def _emit_or_descend(
-        node: IRNode, path: Tuple[Tuple[str, str], ...], addr: str
-    ) -> None:
+    def _emit_or_descend(node: IRNode, path: Tuple[Tuple[str, str], ...], addr: str) -> None:
         """Emit ``node`` as a covering unit, or descend if it is a structural
         ancestor of finer stop-kind units."""
         kind = str(node.kind)
@@ -299,9 +294,24 @@ def _index_ops_by_date(lo_ops: List[Any]) -> Dict[str, List[Any]]:
     return index
 
 
-def _ops_for_covering(
-    ops_on_date: List[Any], covering_address: str
-) -> List[Any]:
+def _index_ops_by_expiry_date(lo_ops: List[Any]) -> Dict[str, List[Any]]:
+    """Map expires-date -> [ops] whose fixed-term validity ends that day.
+
+    A temporary act's scheduled lapse produces a real L3 transition on the
+    expiry date with no op *effective* that day; this index lets the exporter
+    attribute that transition to the act that scheduled the expiry instead of
+    exporting an unexplained deletion/reversion.
+    """
+    index: Dict[str, List[Any]] = {}
+    for op in lo_ops:
+        src = op.source
+        exp = (src.expires if src is not None else "") or ""
+        if exp:
+            index.setdefault(exp, []).append(op)
+    return index
+
+
+def _ops_for_covering(ops_on_date: List[Any], covering_address: str) -> List[Any]:
     """Return ops on a date that provenance-attribute to ``covering_address``.
 
     An op attributes to a changed covering unit when its resolved target is:
@@ -424,9 +434,7 @@ def emit_l2_sidecar(bundle: ReplayBundle, checkpoints: List[Tuple[str, str, str,
                 "effective": (src.effective if src is not None else "") or "",
                 "expires": (src.expires if src is not None else "") or "",
                 "enacted": (src.enacted if src is not None else "") or "",
-                "source_statute": _canonical_statute_id(src.statute_id)
-                if src is not None and src.statute_id
-                else "",
+                "source_statute": _canonical_statute_id(src.statute_id) if src is not None and src.statute_id else "",
                 "variant_kind": _op_variant_kind(op),
                 "group_id": op.group_id or "",
                 "payload": op.payload.to_jsonable_dict() if op.payload is not None else None,
@@ -439,9 +447,7 @@ def emit_l2_sidecar(bundle: ReplayBundle, checkpoints: List[Tuple[str, str, str,
             "from_address": str(me.from_address),
             "to_address": str(me.to_address),
             "effective": me.effective or "",
-            "source_statute": _canonical_statute_id(me.source_statute)
-            if me.source_statute
-            else "",
+            "source_statute": _canonical_statute_id(me.source_statute) if me.source_statute else "",
         }
         for me in bundle.result.products.migration_events
     ]
@@ -454,8 +460,7 @@ def emit_l2_sidecar(bundle: ReplayBundle, checkpoints: List[Tuple[str, str, str,
         "ops": ops_json,
         "migration_events": migrations_json,
         "oracle_checkpoints": [
-            {"date": d, "tree_hash": th, "active_node_count": cnt}
-            for (d, _prefix, th, cnt) in checkpoints
+            {"date": d, "tree_hash": th, "active_node_count": cnt} for (d, _prefix, th, cnt) in checkpoints
         ],
     }
 
@@ -494,11 +499,7 @@ _MAX_PLAUSIBLE_YEAR = 2200
 
 
 def _is_plausible_year(token: str) -> bool:
-    return (
-        len(token) == 4
-        and token.isdigit()
-        and _MIN_PLAUSIBLE_YEAR <= int(token) <= _MAX_PLAUSIBLE_YEAR
-    )
+    return len(token) == 4 and token.isdigit() and _MIN_PLAUSIBLE_YEAR <= int(token) <= _MAX_PLAUSIBLE_YEAR
 
 
 def _split_year_num(statute_id: str) -> Optional[Tuple[str, str]]:
@@ -706,6 +707,7 @@ def export_transition_graph(
         )
 
     ops_by_date = _index_ops_by_date(bundle.lo_ops)
+    expiry_ops_by_date = _index_ops_by_expiry_date(bundle.lo_ops)
 
     conn = sqlite3.connect(str(out_path))
     try:
@@ -760,9 +762,7 @@ def export_transition_graph(
             checkpoint_rows.append((date, slice_prefix, tree_hash, len(cur_state)))
 
             # --- diff prev -> cur into L3 transitions (in document order) ---
-            all_addrs = list(
-                dict.fromkeys(list(prev_state.keys()) + cur_order)
-            )
+            all_addrs = list(dict.fromkeys(list(prev_state.keys()) + cur_order))
             for addr in all_addrs:
                 pre = prev_state.get(addr, "")
                 post = cur_state.get(addr, "")
@@ -780,29 +780,39 @@ def export_transition_graph(
                 payload_hash = post  # the resulting subtree hash
 
                 # L2 annotation for display: any op effective on this date whose
-                # target is at or below this covering address.
+                # target is at or below this covering address — PLUS any op whose
+                # fixed-term validity EXPIRES on this date (a temporary act's
+                # scheduled lapse drives a real state change here, and the
+                # provenance must point at the act that scheduled it, never
+                # render as an unexplained deletion/reversion).
                 ops = _ops_for_covering(ops_by_date.get(date, []), addr)
-                if ops:
-                    legal_op_kind = ",".join(sorted({str(o.action) for o in ops}))
-                    legal_op_summary = " | ".join(_legal_op_summary(o) for o in ops[:3])
-                    src_ids = sorted(
-                        {
-                            _canonical_statute_id(o.source.statute_id)
-                            for o in ops
-                            if o.source is not None and o.source.statute_id
-                        }
+                expiring = _ops_for_covering(expiry_ops_by_date.get(date, []), addr)
+                kind_set = {str(o.action) for o in ops}
+                summaries = [_legal_op_summary(o) for o in ops[:3]]
+                src_ids = {
+                    _canonical_statute_id(o.source.statute_id)
+                    for o in ops
+                    if o.source is not None and o.source.statute_id
+                }
+                if expiring:
+                    kind_set.add("expiry")
+                    summaries.extend(f"expiry of {_legal_op_summary(o)}" for o in expiring[:3])
+                    src_ids.update(
+                        _canonical_statute_id(o.source.statute_id)
+                        for o in expiring
+                        if o.source is not None and o.source.statute_id
                     )
-                    source_id = src_ids[0] if src_ids else ""
-                else:
-                    legal_op_kind = ""
-                    legal_op_summary = ""
-                    source_id = ""
+                legal_op_kind = ",".join(sorted(kind_set))
+                legal_op_summary = " | ".join(summaries[:4])
+                source_id = sorted(src_ids)[0] if src_ids else ""
 
                 flags: Dict[str, Any] = {}
                 if post == "":
                     flags["removed"] = True
                 if pre == "" and post != "":
                     flags["created"] = True
+                if expiring and not ops:
+                    flags["temporary_expiry"] = True
 
                 transition_rows.append(
                     (
@@ -864,28 +874,18 @@ def export_transition_graph(
                 he_ref = ""
             he_by_amendment[canon] = he_ref
             yr, num = engine_amd.split("/") if "/" in engine_amd else ("", "")
-            url = (
-                f"https://www.finlex.fi/fi/laki/alkup/{yr}/{engine_amd.replace('/', '')}"
-                if yr
-                else ""
-            )
+            url = f"https://www.finlex.fi/fi/laki/alkup/{yr}/{engine_amd.replace('/', '')}" if yr else ""
             source_rows.append((canon, "amendment", canon, title, url, "", date))
 
         conn.executemany(
             "INSERT OR REPLACE INTO source_artifacts"
             "(source_id, kind, canonical_id, title, url, content_hash, date) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [
-                (r[0], r[1], r[2], r[3], r[4], r[5], r[6]) if len(r) == 7 else r
-                for r in source_rows
-            ],
+            [(r[0], r[1], r[2], r[3], r[4], r[5], r[6]) if len(r) == 7 else r for r in source_rows],
         )
 
         # backfill he_ref onto transition rows
-        transition_rows = [
-            row[:12] + (he_by_amendment.get(row[11], ""),) + row[13:]
-            for row in transition_rows
-        ]
+        transition_rows = [row[:12] + (he_by_amendment.get(row[11], ""),) + row[13:] for row in transition_rows]
 
         conn.executemany(
             "INSERT INTO transitions"
@@ -896,20 +896,16 @@ def export_transition_graph(
             transition_rows,
         )
         conn.executemany(
-            "INSERT INTO checkpoints(date, address_prefix, tree_hash, active_node_count) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO checkpoints(date, address_prefix, tree_hash, active_node_count) VALUES (?, ?, ?, ?)",
             checkpoint_rows,
         )
         # set transition_id on active_at where a transition occurred at that date+addr
         trans_by_date_addr: Dict[Tuple[str, str], str] = {}
         for row in transition_rows:
             trans_by_date_addr[(row[2], row[5])] = row[0]
-        active_rows = [
-            (d, a, h, trans_by_date_addr.get((d, a), "")) for (d, a, h, _t) in active_rows
-        ]
+        active_rows = [(d, a, h, trans_by_date_addr.get((d, a), "")) for (d, a, h, _t) in active_rows]
         conn.executemany(
-            "INSERT OR REPLACE INTO active_at(date, address, content_hash, transition_id) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO active_at(date, address, content_hash, transition_id) VALUES (?, ?, ?, ?)",
             active_rows,
         )
 
@@ -927,9 +923,7 @@ def export_transition_graph(
                 continue
             kind = "created_by" if flags.get("created") else "amended_by"
             eid += 1
-            edge_rows.append(
-                (f"e{eid:06d}", kind, transition_id, source_id, json.dumps({"address": addr}))
-            )
+            edge_rows.append((f"e{eid:06d}", kind, transition_id, source_id, json.dumps({"address": addr})))
         # supersedes: consecutive transitions at the same address
         by_addr: Dict[str, List[tuple]] = {}
         for row in transition_rows:
@@ -958,6 +952,19 @@ def export_transition_graph(
             "title": bundle.title,
             "slice": slice_prefix or None,
             "granularity": granularity,
+            # Certification vs localization provenance (viewer contract):
+            # transitions are CERTIFIED at the covering-frontier granularity;
+            # any finer-grained change attribution a consumer renders is DERIVED
+            # by diffing the certified pre/post subtrees, and must be labelled
+            # as such, never presented as engine certification.
+            "certification_granularity": granularity,
+            "localization_granularity": "node",
+            "localization_status": "derived_from_certified_subtree_diff",
+            # Node addresses come from engine-exported labels/nums, never from
+            # positional counters in the consumer.
+            "node_address_source": "exported",
+            "jurisdiction": "fi",
+            "lang": "fi",
             "schema_version": SCHEMA_VERSION,
             "change_dates": bundle.change_dates,
             "generated_note": (
@@ -981,9 +988,7 @@ def export_transition_graph(
     # --- L2 sidecar for independent browser-side replay (Exp-2) ---
     sidecar = emit_l2_sidecar(bundle, checkpoint_rows)
     sidecar_path = out_path.with_suffix(out_path.suffix + ".l2.json")
-    sidecar_path.write_text(
-        json.dumps(sidecar, ensure_ascii=False), encoding="utf-8"
-    )
+    sidecar_path.write_text(json.dumps(sidecar, ensure_ascii=False), encoding="utf-8")
 
     db_size = out_path.stat().st_size
     stats = ExportStats(
@@ -1019,15 +1024,13 @@ def main(args: Any) -> None:
     if not statute or not out:
         print("error: --statute and --out are required", flush=True)
         raise SystemExit(2)
-    stats = export_transition_graph(
-        statute, out, slice_prefix, granularity=granularity, quiet=False
-    )
+    stats = export_transition_graph(statute, out, slice_prefix, granularity=granularity, quiet=False)
     print("", flush=True)
     print(f"  statute:          {stats.statute_id}  ({stats.title})", flush=True)
     print(f"  slice:            {stats.slice_prefix or '<whole act>'}", flush=True)
     print(f"  granularity:      {stats.granularity}", flush=True)
     print(f"  db path:          {stats.db_path}", flush=True)
-    print(f"  db size:          {stats.db_size_bytes/1024/1024:.2f} MB", flush=True)
+    print(f"  db size:          {stats.db_size_bytes / 1024 / 1024:.2f} MB", flush=True)
     print(f"  change_dates:     {stats.n_change_dates}", flush=True)
     print(f"  transitions:      {stats.n_transitions}", flush=True)
     print(
