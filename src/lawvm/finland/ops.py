@@ -1814,6 +1814,25 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
             result=OccupancyClass.SUBSTANTIVE,
         )
 
+    def _insert_policy() -> OccupancyPolicy:
+        """INSERT occupancy: a fresh absent slot is the primary expectation;
+        a tombstone/scaffold occupant is the legitimate reenact-insert lane
+        (allowed but non-primary, recorded for triage).  INSERT onto a
+        substantive occupant falls outside allowed_from and is recorded as an
+        occupancy policy violation observation.
+        """
+        return OccupancyPolicy(
+            primary_expected_from=frozenset({OccupancyClass.ABSENT}),
+            allowed_from=frozenset(
+                {
+                    OccupancyClass.ABSENT,
+                    OccupancyClass.TOMBSTONE,
+                    OccupancyClass.SCAFFOLD,
+                }
+            ),
+            result=OccupancyClass.SUBSTANTIVE,
+        )
+
     try:
         # Target identity must already be mirrored onto the late waist.
         address = rop.resolved_target_address
@@ -1966,7 +1985,7 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
                 target=node_target,
                 payload=cast(_IRNodeLike, payload),
                 contract=ExecutionContract(
-                    occupancy=OccupancyPolicy.reenact_insert(),
+                    occupancy=_insert_policy(),
                     coverage=CoverageMode.EXACT,
                     insert_order=InsertOrder.SORTED_FAMILY,
                 ),

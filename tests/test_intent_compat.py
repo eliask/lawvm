@@ -817,7 +817,7 @@ def test_production_per_action_occupancy_policy_shapes() -> None:
     insert_policy = _build_canonical_intent(
         _production_section_rop("INSERT")
     ).contract.occupancy
-    assert insert_policy.primary_expected_from == frozenset({OccupancyClass.TOMBSTONE})
+    assert insert_policy.primary_expected_from == frozenset({OccupancyClass.ABSENT})
     assert insert_policy.allowed_from == frozenset(
         {OccupancyClass.ABSENT, OccupancyClass.TOMBSTONE, OccupancyClass.SCAFFOLD}
     )
