@@ -368,6 +368,26 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         metavar="PATH",
         help="UK farchive path for UK source-parse dumps (default: data/uk_legislation.farchive)",
     )
+    dump_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit a machine-readable lawvm.dump.v1 JSON document for the apply (full "
+        "replay) read: per-section text, content_hash, temporal version pin, and "
+        "amending-act source attribution (FI replay-backed read only)",
+    )
+    dump_p.add_argument(
+        "--hashes",
+        action="store_true",
+        help="append the short per-section content_hash to the human apply (full "
+        "replay) output (display-only; FI replay-backed read only)",
+    )
+    dump_p.add_argument(
+        "--as-of",
+        dest="as_of",
+        metavar="DATE",
+        help="PIT date for --json/--hashes section selection (YYYY-MM-DD; "
+        "default: replay cutoff)",
+    )
 
     # --- source-dump ---
     source_dump_p = sub.add_parser(

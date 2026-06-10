@@ -12,14 +12,16 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from lawvm.corpus_store import statute_url
-from lawvm.core.ir import IRStatute, LegalAddress, ProvisionTimeline, ProvisionVersion
+from lawvm.core.ir import IRNode, IRStatute, LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.ir_helpers import irnode_content_hash, irnode_to_text
 from lawvm.core.provenance import MigrationEvent
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.source_locator import SourceLocator
 from lawvm.core.timeline_lineage import lineage_address_chain
 from lawvm.core.timeline_selection import VersionSelectionResult, select_active_version_ex
 
 SCHEMA = "lawvm.provision_state.v1"
+DUMP_SCHEMA = "lawvm.dump.v1"
 
 
 @dataclass(frozen=True)
@@ -125,6 +127,99 @@ def build_provision_state_response(
         title=title,
         base=base,
     )
+
+
+def build_statute_dump_response(
+    *,
+    timelines: Mapping[LegalAddress, ProvisionTimeline],
+    statute_id: str,
+    jurisdiction: str,
+    as_of: str,
+    title: str = "",
+    query_type: str = "governing",
+    territory: str | None = None,
+    address_filter: str | None = None,
+    flags: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return a full-statute text-state read with per-section content hashes.
+
+    One JSON document over the governing version of every addressable provision
+    at ``as_of``. Per-section ``content_hash`` follows the provision-state seam
+    convention (sha256 of the text-only flattening; empty for absent/tombstone).
+    Source attribution is read off ``ProvisionVersion.source`` (the amending act),
+    never re-derived from johtolause text. Engine identity is excluded from any
+    hash, matching the seam discipline.
+    """
+
+    selected: list[dict[str, Any]] = []
+    filter_addr = _parse_addr(address_filter) if address_filter else None
+    filter_suffix = filter_addr.path if filter_addr is not None else None
+    for address in sorted(timelines, key=str):
+        if filter_suffix is not None and address.path[-len(filter_suffix):] != filter_suffix:
+            continue
+        timeline = timelines[address]
+        selection = select_active_version_ex(
+            timeline,
+            as_of=as_of,
+            query_type=query_type,
+            territory=territory,
+        )
+        version = selection.version
+        if version is None:
+            continue
+        if version.content is None:
+            # Tombstoned at as_of: the provision is not part of the text-state read.
+            continue
+        selected.append(
+            _dump_section_payload(
+                address=address,
+                version=version,
+            )
+        )
+
+    return {
+        "schema": DUMP_SCHEMA,
+        "jurisdiction": jurisdiction,
+        "statute_id": statute_id,
+        "title": title,
+        "as_of": as_of,
+        "query": {
+            "query_type": query_type,
+            "territory": territory,
+            "address_filter": address_filter,
+        },
+        "flags": dict(flags or {}),
+        "section_count": len(selected),
+        "sections": selected,
+        "engine": _engine_payload(),
+    }
+
+
+def _dump_section_payload(
+    *,
+    address: LegalAddress,
+    version: ProvisionVersion,
+) -> dict[str, Any]:
+    content = version.content
+    heading = _heading_text(content) if content is not None else None
+    label = content.label if content is not None and content.label else address.leaf_label()
+    return {
+        "address": _address_wire(address),
+        "label": label,
+        "heading": heading,
+        "text": irnode_to_text(content) if content is not None else "",
+        "content_hash": _content_hash(version),
+        "version": _version_payload(version),
+        "source": _source_payload(version),
+    }
+
+
+def _heading_text(node: IRNode) -> str | None:
+    for child in node.children:
+        if child.kind is IRNodeKind.HEADING:
+            text = irnode_to_text(child).strip()
+            return text or None
+    return None
 
 
 def resolve_address(
