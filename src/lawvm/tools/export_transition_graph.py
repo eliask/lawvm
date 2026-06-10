@@ -44,8 +44,8 @@ _BASE_SENTINEL_DATE = "0000-00-00"
 
 # HE (hallituksen esitys) reference markup in amendment AKN XML:
 #   /akn/fi/doc/government-proposal/YEAR/NUMBER  ... >HE 46/2006</ref>
-_HE_HREF_RE = re.compile(r"/akn/fi/doc/government-proposal/(\d{4})/(\d+(?:-\d+)?)")
-_HE_TEXT_RE = re.compile(r"\bHE\s+(\d+(?:-\d+)?)/(\d{4})\s*vp", re.IGNORECASE)
+_HE_HREF_RE = re.compile(r"/akn/fi/doc/government-proposal/(\d{4})/(\d{1,4}-\d{1,4}|\d{1,4})")
+_HE_TEXT_RE = re.compile(r"\bHE\s{1,4}(\d{1,4}-\d{1,4}|\d{1,4})/(\d{4})\s{0,4}vp", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
