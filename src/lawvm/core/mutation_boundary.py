@@ -225,6 +225,20 @@ def diff_ir_paths(before: IRNode, after: IRNode) -> TreePaths:
     return tuple(_diff_ir_paths(before, after, ()))
 
 
+def diff_ir_paths_identity_pruned(before: IRNode, after: IRNode) -> TreePaths:
+    """Identity-short-circuited variant of :func:`diff_ir_paths`.
+
+    LawVM replay state is persistent: an apply that touches one subtree shares
+    every untouched subtree by identity with the prior state. Pruning recursion
+    at ``before is after`` makes a per-op before/after diff cost proportional to
+    the touched region rather than the whole tree (~0.06ms median per op),
+    which is what makes a passive per-op observed-vs-declared cross-check cheap
+    enough to run on every op in the fold.
+    """
+
+    return tuple(_diff_ir_paths_identity_pruned(before, after, ()))
+
+
 def unexplained_changed_paths(
     changed_paths: Sequence[TreePath],
     allowed_prefixes: Sequence[TreePath],
@@ -306,6 +320,21 @@ def _diff_ir_paths(before: IRNode, after: IRNode, path: TreePath) -> list[TreePa
     out: list[TreePath] = []
     for before_child, after_child, key in zip(before.children, after.children, before_keys, strict=True):
         out.extend(_diff_ir_paths(before_child, after_child, path + (key,)))
+    return out
+
+
+def _diff_ir_paths_identity_pruned(before: IRNode, after: IRNode, path: TreePath) -> list[TreePath]:
+    if before is after:
+        return []
+    if _node_without_children(before) != _node_without_children(after):
+        return [path]
+    before_keys = tuple((_kind_str(child.kind), child.label or "") for child in before.children)
+    after_keys = tuple((_kind_str(child.kind), child.label or "") for child in after.children)
+    if before_keys != after_keys:
+        return [path]
+    out: list[TreePath] = []
+    for before_child, after_child, key in zip(before.children, after.children, before_keys, strict=True):
+        out.extend(_diff_ir_paths_identity_pruned(before_child, after_child, path + (key,)))
     return out
 
 

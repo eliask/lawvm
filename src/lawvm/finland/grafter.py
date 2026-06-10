@@ -2255,6 +2255,18 @@ from lawvm.finland.apply_events import (  # noqa: E402, F401
     check_apply_mutation_invariant_reports,
     check_apply_mutation_accounting,
 )
+from lawvm.core.mutation_accounting import (  # noqa: E402
+    MutationAccountingResult,
+    observed_vs_declared_cross_check,
+)
+from lawvm.core.mutation_boundary import diff_ir_paths_identity_pruned  # noqa: E402
+
+# Stage-0 passive observed-vs-declared tree cross-check. Defaults ON: after each
+# applied op the replay fold computes an identity-pruned structural diff of the
+# before/after IR and verifies every observed changed path is explained by the
+# op's declared mutation-event paths. It only records findings; it never alters
+# replay behavior, so it is safe to leave enabled.
+OBSERVED_MUTATION_CROSS_CHECK_ENABLED = True
 from lawvm.finland.migration_ledger import MigrationLedger  # noqa: E402
 from lawvm.finland.apply_ir_ops import (  # noqa: E402, F401
     _rewrite_bracketed_single_subsection_replace_ir,
@@ -5197,6 +5209,35 @@ def _resolved_op_is_owned_by_restructure_plan(
     return False
 
 
+def _cross_check_observed_vs_declared(
+    prev_state: "ReplayState",
+    new_state: "ReplayState",
+    op_id: str,
+    events: List[ApplyMutationEvent],
+    observed_touch_results_out: Optional[List[MutationAccountingResult]],
+) -> None:
+    """Passively verify the op's observed tree diff against its declared events.
+
+    Computes an identity-pruned structural diff of ``prev_state.ir`` vs
+    ``new_state.ir`` (cheap because untouched subtrees are shared by identity in
+    the persistent fold) and records a REPLAY_UNDECLARED_TREE_TOUCH observation
+    when an observed changed path is not explained by the op's mutation events.
+    Stage-0: it only appends to ``observed_touch_results_out`` and never changes
+    replay state or behavior.
+    """
+    if observed_touch_results_out is None or not OBSERVED_MUTATION_CROSS_CHECK_ENABLED:
+        return
+    if prev_state.ir is new_state.ir:
+        return
+    observed_paths = diff_ir_paths_identity_pruned(prev_state.ir, new_state.ir)
+    if not observed_paths:
+        return
+    helper = events[-1].helper if events else ""
+    result = observed_vs_declared_cross_check(op_id, helper, observed_paths, events)
+    if result is not None:
+        observed_touch_results_out.append(result)
+
+
 def apply_ops_to_tree(
     state: "ReplayState",
     ctx: "StatuteContext",
@@ -5221,6 +5262,7 @@ def apply_ops_to_tree(
     restructure_plans_out: Optional[List[StructuralTransformPlan]] = None,
     observations_out: Optional[List[Dict[str, object]]] = None,
     findings_out: Optional[List[Finding]] = None,
+    observed_touch_results_out: Optional[List[MutationAccountingResult]] = None,
 ) -> "ReplayState":
     """Step 6: Apply resolved operations to IR tree as a pure fold.
 
@@ -5498,6 +5540,8 @@ def apply_ops_to_tree(
         # Apply
         if rop.replay_requires_apply_pass:
             try:
+                _prev_state = state
+                _event_cursor = len(mutation_events_out) if mutation_events_out is not None else 0
                 state = apply_op(
                     state,
                     None,
@@ -5515,6 +5559,14 @@ def apply_ops_to_tree(
                     migration_ledger=migration_ledger,
                     strict_profile=strict_profile,
                 )
+                if mutation_events_out is not None:
+                    _cross_check_observed_vs_declared(
+                        _prev_state,
+                        state,
+                        rop.op_id or "",
+                        mutation_events_out[_event_cursor:],
+                        observed_touch_results_out,
+                    )
                 rop_target_unit_kind, rop_target_norm, rop_target_chapter, rop_target_part = rop.resolved_group_key
                 group_path_hint = _refresh_group_path_hint(
                     rop_target_unit_kind,
@@ -5752,6 +5804,7 @@ def apply_ops_to_tree(
             for _rop in _uncov_rops:
                 try:
                     _prev_state = state
+                    _event_cursor = len(mutation_events_out) if mutation_events_out is not None else 0
                     state = apply_op(
                         state,
                         None,
@@ -5767,6 +5820,14 @@ def apply_ops_to_tree(
                         migration_ledger=migration_ledger,
                         strict_profile=strict_profile,
                     )
+                    if mutation_events_out is not None:
+                        _cross_check_observed_vs_declared(
+                            _prev_state,
+                            state,
+                            _rop.op_id or "",
+                            mutation_events_out[_event_cursor:],
+                            observed_touch_results_out,
+                        )
                 except (NameError, TypeError, AttributeError):
                     raise  # programming bugs — fail loud
                 except Exception as e:
@@ -6827,6 +6888,7 @@ def process_muutoslaki(
                     detail={k: v for k, v in d.items() if k not in ("message", "source_statute")},
                 )
 
+        _observed_touch_results: List[MutationAccountingResult] = []
         _final_state = apply_ops_to_tree(
             state=state,
             ctx=ctx,
@@ -6851,7 +6913,31 @@ def process_muutoslaki(
             restructure_plans_out=_effective_restructure_plans_out,
             observations_out=_compat_elaboration_observations,
             findings_out=_process_findings,
+            observed_touch_results_out=_observed_touch_results,
         )
+        # Stage-0 passive observed-vs-declared cross-check results: surface on
+        # the elaboration-observation rail as non-blocking findings. They never
+        # gate replay; they only record which ops touched tree paths their
+        # mutation events do not declare.
+        if _observed_touch_results and _compat_elaboration_observations is not None:
+            from lawvm.core.mutation_boundary import tree_path_to_diagnostic_string
+            for _otr in _observed_touch_results:
+                _compat_elaboration_observations.append(
+                    {
+                        "kind": "APPLY.REPLAY_UNDECLARED_TREE_TOUCH",
+                        "code": _otr.code,
+                        "source_statute": amendment_id,
+                        "op_id": _otr.op_id,
+                        "helper": _otr.helper,
+                        "undeclared_paths": [
+                            tree_path_to_diagnostic_string(p) for p in _otr.out_of_scope_paths
+                        ],
+                        "declared_paths": [
+                            tree_path_to_diagnostic_string(p) for p in _otr.allowed_paths
+                        ],
+                        "blocking": False,
+                    }
+                )
         if migration_events_out is not None and len(_migration_ledger) > _migration_ledger_initial_len:
             migration_events_out.extend(_migration_ledger.events[_migration_ledger_initial_len:])
         if _migration_ledger:

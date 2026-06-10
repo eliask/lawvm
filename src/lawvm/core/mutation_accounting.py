@@ -12,12 +12,26 @@ from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass
 from typing import Iterable, cast
 
-from lawvm.core.mutation_boundary import TreePath, TreePaths, validate_tree_path
+from lawvm.core.mutation_boundary import (
+    TreePath,
+    TreePaths,
+    dedupe_tree_paths,
+    path_has_prefix,
+    path_is_strict_prefix,
+    validate_tree_path,
+)
 from lawvm.core.mutation_events import (
     MutationEvent,
     build_mutation_event_path_set_report,
+    mutation_event_declared_allowance_paths,
     mutation_event_touched_paths,
 )
+
+# The Finland replay IR is rooted under an unlabeled hcontainer wrapper
+# (``("hcontainer", "")``). Tree-diff paths and resolver-bound event paths both
+# carry this step, while op-nominal addresses (LegalAddress paths) do not.
+# Normalize it away before comparing so the two surfaces align exactly.
+_WRAPPER_ROOT_STEP: TreePath = (("hcontainer", ""),)
 
 MUTATION_ACCOUNTING_HARD_CODES = frozenset(
     {
@@ -31,6 +45,11 @@ MUTATION_ACCOUNTING_HARD_CODES = frozenset(
 MUTATION_ACCOUNTING_RESULT_CODES = MUTATION_ACCOUNTING_HARD_CODES | frozenset(
     {
         "REPLAY_APPLY_BOUNDARY_TOUCH_ALLOWED",
+        # Stage-0 passive observation: the independent observed-vs-declared
+        # tree cross-check saw a changed path the op's mutation events do not
+        # explain. Not a hard code yet — it records findings only and never
+        # changes replay behavior.
+        "REPLAY_UNDECLARED_TREE_TOUCH",
     }
 )
 
@@ -423,3 +442,79 @@ def _event_allowed_roots(
             if path is not None
         )
     return tuple(path for path in (event.resolved_target_path, event.parent_path) if path is not None)
+
+
+def _strip_wrapper_root(path: TreePath) -> TreePath:
+    """Drop a leading unlabeled hcontainer wrapper step if present."""
+    if path[: len(_WRAPPER_ROOT_STEP)] == _WRAPPER_ROOT_STEP:
+        return path[len(_WRAPPER_ROOT_STEP):]
+    return path
+
+
+def declared_paths_for_events(events: Iterable[MutationEvent]) -> TreePaths:
+    """Collect every wrapper-normalized path a set of op events declares touching.
+
+    Pulls the explicit touched paths (consumed/created/removed/replaced/
+    placeholder/renumbered), the resolved target and parent identities, and any
+    declared non-target allowance paths. These are the regions the op's events
+    say it is allowed to change.
+    """
+    declared: list[TreePath] = []
+    for event in events:
+        declared.extend(mutation_event_touched_paths(event))
+        if event.resolved_target_path is not None:
+            declared.append(event.resolved_target_path)
+        if event.parent_path is not None:
+            declared.append(event.parent_path)
+        declared.extend(mutation_event_declared_allowance_paths(event))
+    return dedupe_tree_paths(_strip_wrapper_root(path) for path in declared)
+
+
+def observed_paths_explained_by_declared(
+    observed_path: TreePath,
+    declared_paths: TreePaths,
+) -> bool:
+    """Return whether one observed tree path is accounted for by declared paths.
+
+    An observed path is explained when it lies inside any declared region
+    (declared path is a prefix of it), OR when it is a pure-container ancestor
+    of a declared path (a strict prefix). The latter covers child-list-shape
+    collapse at a container level (chapter/section) produced by an insert or
+    repeal: the parent path shows as changed, and any declared child inside it
+    explains that container-level change.
+    """
+    normalized = _strip_wrapper_root(observed_path)
+    if path_has_prefix(normalized, declared_paths):
+        return True
+    return any(path_is_strict_prefix(normalized, declared) for declared in declared_paths)
+
+
+def observed_vs_declared_cross_check(
+    op_id: str,
+    helper: str,
+    observed_paths: TreePaths,
+    events: Iterable[MutationEvent],
+) -> MutationAccountingResult | None:
+    """Return a passive REPLAY_UNDECLARED_TREE_TOUCH result, or None when clean.
+
+    Independent observed-vs-declared check: every observed changed path must be
+    explained by the op's declared mutation-event paths. Any path that is not
+    is recorded as a Stage-0 observation finding (non-blocking, never alters
+    replay behavior).
+    """
+    declared_paths = declared_paths_for_events(events)
+    undeclared = tuple(
+        _strip_wrapper_root(path)
+        for path in observed_paths
+        if not observed_paths_explained_by_declared(path, declared_paths)
+    )
+    if not undeclared:
+        return None
+    return MutationAccountingResult(
+        code="REPLAY_UNDECLARED_TREE_TOUCH",
+        op_id=op_id,
+        helper=helper,
+        touched_count=len(undeclared),
+        out_of_scope_paths=undeclared,
+        allowed_paths=declared_paths,
+    )
