@@ -25,6 +25,12 @@ from typing import Any
 from lawvm.core.mutation_accounting import build_mutation_invariant_reports
 from lawvm.core.mutation_boundary import tree_path_to_diagnostic_string
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
+from lawvm.uk_legislation.grounding_classification import (
+    GROUNDING_CLASSIFICATIONS,
+    grounding_classification_for_event,
+    is_suppression_event,
+    unclassified_suppression_events,
+)
 from lawvm.uk_legislation.grounding_collateral import (
     grounding_collateral_eids as _shared_grounding_collateral_eids,
     score_with_grounding_collateral_excluded,
@@ -226,6 +232,7 @@ def oracle_check_uk_statute(
     *,
     db_path: Path | None = None,
     max_sample: int = 5,
+    blocking_findings_out: list[str] | None = None,
 ) -> str:
     """Run UK oracle-check for one statute. Returns a human-readable string.
 
@@ -234,6 +241,12 @@ def oracle_check_uk_statute(
       manual_frontier     — requires owned claims (commencement / appropriate-place / etc.)
       oracle_suspect      — replay coherent; oracle appears stale or wrong
       text_diff           — both have the EID but text differs (investigate further)
+
+    Grounding totality: every unmatched (after_eid=None) alignment event must
+    carry exactly one of the four grounding classifications. Any suppression
+    event with no usable classification mechanism is a blocking contract
+    violation — appended to ``blocking_findings_out`` (when supplied) so the
+    caller can fail loud (``main`` exits non-zero).
     """
     from farchive import Farchive
     from lawvm.tools.uk_replay import _archive_url_for_statute
@@ -361,6 +374,24 @@ def oracle_check_uk_statute(
     grounding_collateral_eids = _grounding_collateral_eids(
         replayed_eids, current_eids, alignment_events
     )
+
+    # Grounding totality over the negative space: every unmatched
+    # (after_eid=None) alignment event must carry exactly one of the four
+    # grounding classifications. Tally the buckets and surface any suppression
+    # event that lacks a usable classification mechanism as a blocking finding.
+    grounding_suppression_total = sum(
+        1 for event in alignment_events if is_suppression_event(event)
+    )
+    grounding_classification_counts: dict[str, int] = {
+        value: 0 for value in GROUNDING_CLASSIFICATIONS
+    }
+    for event in alignment_events:
+        classification = grounding_classification_for_event(event)
+        if classification is None:
+            continue
+        if classification in grounding_classification_counts:
+            grounding_classification_counts[classification] += 1
+    grounding_unclassified_events = unclassified_suppression_events(alignment_events)
     collateral_score = score_with_grounding_collateral_excluded(
         replay_compare_eids,
         oracle_compare_eids,
@@ -504,6 +535,19 @@ def oracle_check_uk_statute(
         f"  grounding_collateral: {len(grounding_collateral_eids)}  "
         "(subset of only-replay EIDs minted by oracle-alignment local_fallback, not a source op)",
         "",
+        "GROUNDING CLASSIFICATION TOTALITY:",
+        f"  suppression events (unmatched nodes): {grounding_suppression_total}",
+        f"  source_faithful_oracle_absent : "
+        f"{grounding_classification_counts['source_faithful_oracle_absent']}",
+        f"  parser_structure_desync       : "
+        f"{grounding_classification_counts['parser_structure_desync']}",
+        f"  non_commensurable             : "
+        f"{grounding_classification_counts['non_commensurable']}",
+        f"  unresolved                    : "
+        f"{grounding_classification_counts['unresolved']}  "
+        "(conservative default; numerator-excluded, never folded as source-faithful)",
+        f"  UNCLASSIFIED (contract violation): {len(grounding_unclassified_events)}",
+        "",
     ]
 
     if base_source.status is UKStatuteXmlContentStatus.METADATA_ONLY:
@@ -593,6 +637,33 @@ def oracle_check_uk_statute(
             lines.append(f"  {count:4d}  {rule_id}")
         lines.append("")
 
+    # Fail loud on any unmatched node left structurally unclassified. The
+    # grounding-classification contract is total over the negative space; an
+    # uncovered suppression event is a guard-liveness defect, not legal noise.
+    if grounding_unclassified_events:
+        finding = (
+            f"UK_GROUNDING_CLASSIFICATION_INCOMPLETE: {len(grounding_unclassified_events)} "
+            "suppression event(s) carry no usable grounding classification mechanism "
+            "for statute "
+            f"{statute_id}"
+        )
+        lines.append("BLOCKING FINDING:")
+        lines.append(f"  {finding}")
+        for event in grounding_unclassified_events[:max_sample]:
+            lines.append(
+                "    "
+                f"kind={event.get('kind')!r} label={event.get('label')!r} "
+                f"before_eid={event.get('before_eid')!r} "
+                f"match_method={event.get('match_method')!r}"
+            )
+        if len(grounding_unclassified_events) > max_sample:
+            lines.append(
+                f"    ... ({len(grounding_unclassified_events) - max_sample} more)"
+            )
+        lines.append("")
+        if blocking_findings_out is not None:
+            blocking_findings_out.append(finding)
+
     return "\n".join(lines) + "\n"
 
 
@@ -606,5 +677,12 @@ def main(args: Any) -> None:
         print("ERROR: provide <statute_id>", file=sys.stderr)
         raise SystemExit(1)
 
-    result = oracle_check_uk_statute(sid, db_path=db_path)
+    blocking_findings: list[str] = []
+    result = oracle_check_uk_statute(
+        sid, db_path=db_path, blocking_findings_out=blocking_findings
+    )
     print(result, end="")
+    if blocking_findings:
+        for finding in blocking_findings:
+            print(finding, file=sys.stderr)
+        raise SystemExit(1)

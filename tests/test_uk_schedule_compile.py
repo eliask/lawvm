@@ -59993,6 +59993,7 @@ def test_oracle_grounding_preserves_oracle_canonical_schedule_entry_eid() -> Non
             "after_eid": None,
             "match_method": "local_fallback_suppressed",
             "match_key": "annex-I-paragraph-1-1",
+            "grounding_classification": "unresolved",
         }
     ]
 
@@ -60044,6 +60045,7 @@ def test_oracle_grounding_records_public_schedule_entry_eid_clear() -> None:
             "after_eid": None,
             "match_method": "schedule_entry_public_eid_cleared",
             "match_key": None,
+            "grounding_classification": "unresolved",
         }
     ]
 
