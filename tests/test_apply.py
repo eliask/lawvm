@@ -10761,6 +10761,56 @@ def test_apply_mutation_accounting_flags_successful_out_of_scope_touch() -> None
     ]
 
 
+def test_apply_mutation_accounting_flags_unknown_outcome_label() -> None:
+    event = ApplyMutationEvent(
+        op_id="op-1",
+        source_statute="2024/1",
+        action="replace",
+        helper="_apply_whole_section_op",
+        outcome="freshly_invented_outcome",
+        resolved_target_path=(("chapter", "1"), ("section", "2")),
+        replaced_paths=((("chapter", "1"), ("section", "2")),),
+    )
+
+    violations = check_apply_mutation_accounting([event])
+
+    assert violations == [
+        "REPLAY_UNKNOWN_MUTATION_OUTCOME op_id=op-1 helper=_apply_whole_section_op touched=1"
+    ]
+
+
+def test_apply_mutation_accounting_registers_uk_connector_and_whole_act_patch_outcomes() -> None:
+    # These outcome labels are emitted by live UK helpers; they must route to
+    # the applied family (and through boundary accounting), not to "unknown".
+    for outcome in (
+        "connector_preceding_child_list_entry_inserted",
+        "whole_act_text_patch_applied",
+    ):
+        event = ApplyMutationEvent(
+            op_id="op-1",
+            source_statute="ukpga/2024/1",
+            action="insert",
+            helper="schedule_list_apply",
+            outcome=outcome,
+            resolved_target_path=(("schedule", "1"), ("paragraph", "2")),
+            created_paths=((("schedule", "1"), ("paragraph", "2")),),
+        )
+        assert check_apply_mutation_accounting([event]) == []
+        event_out_of_scope = ApplyMutationEvent(
+            op_id="op-2",
+            source_statute="ukpga/2024/1",
+            action="insert",
+            helper="schedule_list_apply",
+            outcome=outcome,
+            resolved_target_path=(("schedule", "1"), ("paragraph", "2")),
+            created_paths=((("schedule", "9"), ("paragraph", "9")),),
+        )
+        violations = check_apply_mutation_accounting([event_out_of_scope])
+        assert violations == [
+            "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET op_id=op-2 helper=schedule_list_apply touched=1"
+        ]
+
+
 def test_apply_mutation_accounting_reports_typed_boundary_violation_details() -> None:
     event = ApplyMutationEvent(
         op_id="op-1",

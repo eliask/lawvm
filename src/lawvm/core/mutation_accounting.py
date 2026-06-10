@@ -26,6 +26,7 @@ MUTATION_ACCOUNTING_HARD_CODES = frozenset(
         "REPLAY_MISSING_PRIMARY_TARGET_CONSUMPTION",
         "REPLAY_APPLY_BOUNDARY_UNRESOLVED",
         "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET",
+        "REPLAY_UNKNOWN_MUTATION_OUTCOME",
     }
 )
 MUTATION_ACCOUNTING_RESULT_CODES = MUTATION_ACCOUNTING_HARD_CODES | frozenset(
@@ -45,10 +46,12 @@ APPLIED_MUTATION_OUTCOMES = frozenset(
         "schedule_list_entry_inserted",
         "schedule_list_entry_replaced",
         "schedule_table_rows_inserted",
+        "connector_preceding_child_list_entry_inserted",
         "table_column_inserted",
         "table_rows_inserted",
         "table_rows_replaced",
         "whole_act_repealed",
+        "whole_act_text_patch_applied",
     }
 )
 FAILED_MUTATION_OUTCOMES = frozenset({"failed"})
@@ -123,6 +126,7 @@ class MutationAccountingResult:
             "REPLAY_SKIPPED_OP_MUTATED_TREE",
             "REPLAY_FAILED_OP_MUTATED_TREE",
             "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET",
+            "REPLAY_UNKNOWN_MUTATION_OUTCOME",
         }:
             return f"{base} touched={self.touched_count}"
         return base
@@ -262,7 +266,19 @@ def build_mutation_invariant_reports(
         matched_allowance_rule_ids: tuple[str, ...] = ()
         path_set_invariant_holds = True
         outcome_family = mutation_event_outcome_family(event.outcome)
-        if outcome_family == "skipped":
+        if outcome_family == "unknown":
+            # An outcome label missing from the registered outcome sets means
+            # this event's mutations would silently bypass all boundary
+            # accounting. Fail loudly instead of skipping the event.
+            results.append(
+                MutationAccountingResult(
+                    code="REPLAY_UNKNOWN_MUTATION_OUTCOME",
+                    op_id=event.op_id,
+                    helper=event.helper,
+                    touched_count=len(touched_paths),
+                )
+            )
+        elif outcome_family == "skipped":
             if touched_paths:
                 results.append(
                     MutationAccountingResult(
