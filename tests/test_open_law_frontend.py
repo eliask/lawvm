@@ -20,7 +20,7 @@ from lawvm.open_law.corpus_audit import (
 from lawvm.open_law.evidence_pack import _shareable_git_remote_url, write_maryland_evidence_pack
 from lawvm.open_law.codify import parse_open_law_codify_ops
 from lawvm.open_law.local_git import make_maryland_repos
-from lawvm.open_law.models import OpenLawAction, OpenLawFinding
+from lawvm.open_law.models import OpenLawAction, OpenLawAnnotationLane, OpenLawFinding
 from lawvm.open_law.planner import plan_maryland_comar_operation
 from lawvm.open_law.xml import parse_open_law_xml, wrap_open_law_body_with_prefix
 from lawvm.tools.open_law import _print_explain, _print_verify_pack
@@ -367,7 +367,7 @@ def test_snapshot_audit_ignores_annotations_as_text_state_compare_projection() -
     )
     ops = parse_open_law_codify_ops(_REPLACE_XML, source_id="editorial-actions/2026-01-22.xml")
 
-    result = audit_open_law_snapshot(before, after, ops)
+    result = audit_open_law_snapshot(before, after, ops, annotation_lane=OpenLawAnnotationLane.PUBLICATION_METADATA)
 
     assert result.snapshot_matches_replay is True
     assert result.unexplained_paths == ()
@@ -1127,6 +1127,268 @@ def _refresh_pack_manifest_entry(manifest_path, artifact_path) -> None:
     manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
 
 
+def test_unknown_codify_action_is_distinct_finding_not_silent_skip() -> None:
+    tree = parse_open_law_xml(_BASE_XML)
+    xml = _REPLACE_XML.replace("codify:replace", "codify:renumber").replace(
+        "</codify:replace>", "</codify:renumber>"
+    )
+    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/2026-01-22.xml")
+
+    result = replay_open_law_ops(tree, ops)
+
+    assert result.tree == tree
+    assert not result.mutations
+    assert ops[0].action is OpenLawAction.UNSUPPORTED
+    assert ops[0].raw_action == "renumber"
+    assert [finding.kind for finding in result.findings] == ["open_law_unknown_codify_action"]
+    assert "stable operation language" in result.findings[0].message
+    assert result.findings[0].blocking is False
+
+
+def test_unknown_codify_action_blocks_in_strict_mode() -> None:
+    tree = parse_open_law_xml(_BASE_XML)
+    xml = _REPLACE_XML.replace("codify:replace", "codify:renumber").replace(
+        "</codify:replace>", "</codify:renumber>"
+    )
+    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/2026-01-22.xml")
+
+    result = replay_open_law_ops(tree, ops, strict=True)
+
+    assert [finding.kind for finding in result.findings] == ["open_law_unknown_codify_action"]
+    assert result.findings[0].blocking is True
+
+
+def test_recognized_unsupported_action_keeps_its_own_finding() -> None:
+    tree = parse_open_law_xml(_BASE_XML)
+    xml = _REPLACE_XML.replace("codify:replace", "codify:expire").replace("</codify:replace>", "</codify:expire>")
+    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/2026-01-22.xml")
+
+    result = replay_open_law_ops(tree, ops)
+
+    assert ops[0].action is OpenLawAction.EXPIRE
+    assert [finding.kind for finding in result.findings] == ["open_law_unsupported_codify_action"]
+    assert "recognized but not yet replayed" in result.findings[0].message
+
+
+def test_failed_codification_instruction_is_marked_source_pathology() -> None:
+    tree = parse_open_law_xml(_BASE_XML)
+    xml = _REPLACE_XML.replace("10|41|02|.04", "10|41|99|.04")
+    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/2026-01-22.xml")
+
+    result = replay_open_law_ops(tree, ops)
+
+    assert result.tree == tree
+    assert not result.mutations
+    assert [finding.kind for finding in result.findings] == ["open_law_target_missing"]
+    assert result.findings[0].source_pathology is True
+
+
+def test_payload_target_mismatch_is_marked_source_pathology() -> None:
+    tree = parse_open_law_xml(_BASE_XML)
+    xml = _REPLACE_XML.replace("<num>.04</num>", "<num>.05</num>", 1)
+    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/payload-mismatch.xml")
+
+    result = replay_open_law_ops(tree, ops)
+
+    assert [finding.kind for finding in result.findings] == ["open_law_payload_target_mismatch"]
+    assert result.findings[0].source_pathology is True
+
+
+def test_planning_failure_is_marked_source_pathology() -> None:
+    ops = parse_open_law_codify_ops(
+        """
+        <document xmlns="https://open.law/schemas/library" xmlns:codify="https://open.law/schemas/codify">
+          <codify:replace doc="Code of Maryland Regulations" path="10|41"><heading>Too short.</heading></codify:replace>
+        </document>
+        """,
+        source_id="editorial-actions/short-path.xml",
+    )
+
+    plan = plan_maryland_comar_operation(ops[0])
+
+    assert plan.status == "failed"
+    assert plan.finding is not None
+    assert plan.finding.source_pathology is True
+
+
+def test_annotation_lane_unset_compares_annotations_and_flags_policy() -> None:
+    before = parse_open_law_xml(_BASE_XML)
+    after = parse_open_law_xml(
+        _BASE_XML.replace("Old text.", "New text.").replace(
+            "</section>",
+            '<annotations><annotation type="History" display="false"/></annotations></section>',
+        )
+    )
+    ops = parse_open_law_codify_ops(_REPLACE_XML, source_id="editorial-actions/2026-01-22.xml")
+
+    result = audit_open_law_snapshot(before, after, ops)
+
+    # Annotations are not discarded; the unset policy is flagged and the added
+    # annotation surfaces as an unexplained legal-text change.
+    assert result.snapshot_matches_replay is False
+    finding_kinds = [finding.kind for finding in result.findings]
+    assert "open_law_annotation_lane_policy_unset" in finding_kinds
+    assert "open_law_snapshot_annotation_projection" not in finding_kinds
+
+
+def test_annotation_lane_official_code_compares_annotations_as_legal_text() -> None:
+    before = parse_open_law_xml(_BASE_XML)
+    after = parse_open_law_xml(_BASE_XML.replace("Old text.", "New text."))
+    ops = parse_open_law_codify_ops(_REPLACE_XML, source_id="editorial-actions/2026-01-22.xml")
+
+    result = audit_open_law_snapshot(before, after, ops, annotation_lane=OpenLawAnnotationLane.OFFICIAL_CODE)
+
+    # No annotations present, so official-code mode is a clean match with no
+    # projection finding and no policy-unset finding.
+    assert result.snapshot_matches_replay is True
+    assert not result.findings
+
+
+def test_annotation_lane_publication_metadata_projects_annotations() -> None:
+    before = parse_open_law_xml(_BASE_XML)
+    after = parse_open_law_xml(
+        _BASE_XML.replace("Old text.", "New text.").replace(
+            "</section>",
+            '<annotations><annotation type="History" display="false"/></annotations></section>',
+        )
+    )
+    ops = parse_open_law_codify_ops(_REPLACE_XML, source_id="editorial-actions/2026-01-22.xml")
+
+    result = audit_open_law_snapshot(before, after, ops, annotation_lane=OpenLawAnnotationLane.PUBLICATION_METADATA)
+
+    assert result.snapshot_matches_replay is True
+    assert [finding.kind for finding in result.findings] == ["open_law_snapshot_annotation_projection"]
+
+
+def test_corpus_audit_flags_non_reproducible_publication_observationally(tmp_path) -> None:
+    source_repo = tmp_path / "law-xml"
+    codified_repo = tmp_path / "law-xml-codified"
+    _git_init(source_repo)
+    _git_init(codified_repo)
+    _write(source_repo / "editorial-actions" / "old.xml", _REPLACE_XML.replace("New text.", "Ignored old text."))
+    _write(source_repo / "editorial-actions" / "new.xml", _REPLACE_XML)
+    _git_commit_all(source_repo, "source")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/before", ("editorial-actions/old.xml",)))
+    _write(codified_repo / "editorial-actions" / "old.xml", _REPLACE_XML.replace("New text.", "Ignored old text."))
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("Old text."))
+    _git_commit_all(codified_repo, "before")
+    _git_branch(codified_repo, "publication/before")
+
+    _write(
+        codified_repo / "index.xml",
+        _index_xml(
+            "publication/after",
+            ("editorial-actions/old.xml", "editorial-actions/new.xml"),
+            reproducible=False,
+        ),
+    )
+    _write(codified_repo / "editorial-actions" / "new.xml", _REPLACE_XML)
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("New text."))
+    _git_commit_all(codified_repo, "after")
+    _git_branch(codified_repo, "publication/after")
+
+    report = audit_maryland_transition(
+        "publication/before", "publication/after", repos=make_maryland_repos(source_repo, codified_repo)
+    )
+
+    assert report.summary["operation_rows"] == 1
+    # The body comparison still matches; the reproducibility gate is observational.
+    assert report.summary["matched"] == 1
+    row = report.operation_rows[0]
+    assert row.publication_reproducible is False
+    finding_kinds = [finding.kind for finding in row.findings]
+    assert "open_law_publication_not_reproducible" in finding_kinds
+    non_reproducible = next(f for f in row.findings if f.kind == "open_law_publication_not_reproducible")
+    assert non_reproducible.blocking is False
+
+
+def test_corpus_audit_reproducible_publication_has_no_gate_finding(tmp_path) -> None:
+    source_repo = tmp_path / "law-xml"
+    codified_repo = tmp_path / "law-xml-codified"
+    _git_init(source_repo)
+    _git_init(codified_repo)
+    _write(source_repo / "editorial-actions" / "old.xml", _REPLACE_XML.replace("New text.", "Ignored old text."))
+    _write(source_repo / "editorial-actions" / "new.xml", _REPLACE_XML)
+    _git_commit_all(source_repo, "source")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/before", ("editorial-actions/old.xml",)))
+    _write(codified_repo / "editorial-actions" / "old.xml", _REPLACE_XML.replace("New text.", "Ignored old text."))
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("Old text."))
+    _git_commit_all(codified_repo, "before")
+    _git_branch(codified_repo, "publication/before")
+
+    _write(
+        codified_repo / "index.xml",
+        _index_xml("publication/after", ("editorial-actions/old.xml", "editorial-actions/new.xml")),
+    )
+    _write(codified_repo / "editorial-actions" / "new.xml", _REPLACE_XML)
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("New text."))
+    _git_commit_all(codified_repo, "after")
+    _git_branch(codified_repo, "publication/after")
+
+    report = audit_maryland_transition(
+        "publication/before", "publication/after", repos=make_maryland_repos(source_repo, codified_repo)
+    )
+
+    row = report.operation_rows[0]
+    assert row.publication_reproducible is True
+    assert "open_law_publication_not_reproducible" not in [finding.kind for finding in row.findings]
+
+
+def test_corpus_body_lane_projects_annotations_when_action_mixes_body_and_metadata(tmp_path) -> None:
+    # An action that carries both a body replace and a companion annos replace
+    # in the same chapter. The body lane must keep projecting annotations out
+    # (the annos op owns them in the metadata lane); the annotation change must
+    # not surface as an unexplained body mutation.
+    source_repo = tmp_path / "law-xml"
+    codified_repo = tmp_path / "law-xml-codified"
+    _git_init(source_repo)
+    _git_init(codified_repo)
+    action = """
+    <document xmlns="https://open.law/schemas/library" xmlns:codify="https://open.law/schemas/codify">
+      <codify:replace doc="Code of Maryland Regulations" path="10|41|02|.04">
+        <section><prefix>Regulation</prefix><num>.04</num><heading>Special Responsibilities.</heading><para><num>A.</num><text>New text.</text></para></section>
+      </codify:replace>
+      <codify:replace doc="Code of Maryland Regulations" path="10|41|02|annos">
+        <annotations><annotation type="History">New history.</annotation></annotations>
+      </codify:replace>
+    </document>
+    """
+    _write(source_repo / "editorial-actions" / "mixed.xml", action)
+    _git_commit_all(source_repo, "source")
+
+    before_chapter = _chapter_xml("Old text.").replace(
+        "</container>", '<annotations><annotation type="History">Old history.</annotation></annotations></container>'
+    )
+    after_chapter = _chapter_xml("New text.").replace(
+        "</container>", '<annotations><annotation type="History">New history.</annotation></annotations></container>'
+    )
+    _write(codified_repo / "index.xml", _index_xml("publication/before", ()))
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", before_chapter)
+    _git_commit_all(codified_repo, "before")
+    _git_branch(codified_repo, "publication/before")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/after", ("editorial-actions/mixed.xml",)))
+    _write(codified_repo / "editorial-actions" / "mixed.xml", action)
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", after_chapter)
+    _git_commit_all(codified_repo, "after")
+    _git_branch(codified_repo, "publication/after")
+
+    report = audit_maryland_transition(
+        "publication/before", "publication/after", repos=make_maryland_repos(source_repo, codified_repo)
+    )
+
+    body_row = next(row for row in report.operation_rows if row.codify_path[-1] == ".04")
+    metadata_row = next(row for row in report.operation_rows if row.codify_path[-1] == "annos")
+    assert body_row.status == "matched"
+    assert body_row.unexplained_path_count == 0
+    assert "open_law_publication_snapshot_mismatch" not in [finding.kind for finding in body_row.findings]
+    assert "open_law_unexplained_publication_mutation" not in [finding.kind for finding in body_row.findings]
+    assert "open_law_annotation_lane_policy_unset" not in [finding.kind for finding in body_row.findings]
+    assert metadata_row.status == "metadata_matched"
+
+
 def _chapter_xml(text: str) -> str:
     return f"""
     <container xmlns="https://open.law/schemas/library">
@@ -1138,14 +1400,15 @@ def _chapter_xml(text: str) -> str:
     """
 
 
-def _index_xml(publication: str, action_paths: tuple[str, ...]) -> str:
+def _index_xml(publication: str, action_paths: tuple[str, ...], *, reproducible: bool = True) -> str:
     includes = "\n".join(f'<xi:include href="./{path}"/>' for path in action_paths)
+    reproducible_attr = "true" if reproducible else "false"
     return f"""
     <library xmlns="https://open.law/schemas/library" xmlns:xi="http://www.w3.org/2001/XInclude">
       <meta>
         <build>
           <repositories><repository name="maryland-dsd/law-xml" commit="abcdef1"/></repositories>
-          <platform version="test" reproducible="true"/>
+          <platform version="test" reproducible="{reproducible_attr}"/>
           <build-date>2026-01-01</build-date>
           <codified-date>2026-01-01</codified-date>
           <publication>{publication}</publication>

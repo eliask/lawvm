@@ -35,6 +35,7 @@ def parse_open_law_codify_ops(xml_text: str, *, source_id: str = "") -> Tuple[Op
                     op_id=op_id,
                     path=path,
                     blocking=True,
+                    source_pathology=True,
                 ),
             )
         payload_element = payload_elements[0] if len(payload_elements) == 1 and not diagnostics else None
@@ -116,6 +117,7 @@ def _payload_elements_and_diagnostics(
                 op_id=op_id,
                 path=path,
                 blocking=True,
+                source_pathology=True,
             ),
         )
     return tuple(out), diagnostics
