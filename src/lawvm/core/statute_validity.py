@@ -31,6 +31,14 @@ from lawvm.core.ir import LegalAddress
 # detected and diagnosed but not lifted into a bound.
 ValidityScope = Literal["whole_statute"]
 
+# "stated_expiry": the source states the validity end day itself.
+# "upper_cap": the source states an open-ended validity ("toistaiseksi") with
+# a hard outer cap ("ei kuitenkaan kau(v)emmin kuin ..."); the bound is the
+# cap. Expiry projection is identical past the cap — there is no weaker
+# "possibly expired" status — but the law may have been terminated earlier by
+# a separate instrument, which ``earlier_termination_possible`` records.
+BoundKind = Literal["stated_expiry", "upper_cap"]
+
 FIXED_TERM_WHOLE_STATUTE_RULE_ID = "fi_fixed_term_whole_statute_expiry"
 
 
@@ -54,6 +62,8 @@ class FixedTermValidityProof:
     valid_until: str
     expires_on: str
     governing_bound_id: str
+    bound_kind: BoundKind = "stated_expiry"
+    earlier_termination_possible: bool = False
 
 
 @dataclass(frozen=True)
@@ -79,6 +89,16 @@ class StatuteValidityBound:
     rule_id: str
     source_text: str
     source_sequence: int = 0
+    bound_kind: BoundKind = "stated_expiry"
+    # Source phrase family behind an upper_cap classification (e.g.
+    # "toistaiseksi_ei_kauemmin_kuin"); None for plain stated expiry.
+    source_phrase_kind: Optional[str] = None
+    earlier_termination_possible: bool = False
+    # Anaphoric date resolution provenance ("sanotun vuoden loppuun"): the
+    # same-sentence antecedent expression that supplied the year, and its span
+    # in the normalised source text. None for non-anaphoric grammar families.
+    antecedent_text: Optional[str] = None
+    antecedent_span: Optional[Tuple[int, int]] = None
 
     def __post_init__(self) -> None:
         if not self.statute_id:
@@ -86,6 +106,17 @@ class StatuteValidityBound:
         if self.scope != "whole_statute":
             raise ValueError(
                 f"StatuteValidityBound.scope must be 'whole_statute'; got {self.scope!r}"
+            )
+        if self.bound_kind not in ("stated_expiry", "upper_cap"):
+            raise ValueError(
+                f"StatuteValidityBound.bound_kind must be 'stated_expiry' or "
+                f"'upper_cap'; got {self.bound_kind!r}"
+            )
+        if self.bound_kind == "upper_cap" and not self.earlier_termination_possible:
+            raise ValueError(
+                "StatuteValidityBound with bound_kind='upper_cap' must set "
+                "earlier_termination_possible=True (an upper cap bounds an "
+                "otherwise open-ended validity)"
             )
         if not self.effective:
             raise ValueError("StatuteValidityBound.effective must be a non-empty date string")
@@ -115,6 +146,8 @@ class StatuteValidityBound:
             valid_until=self.valid_until,
             expires_on=self.expires_on,
             governing_bound_id=self.bound_id,
+            bound_kind=self.bound_kind,
+            earlier_termination_possible=self.earlier_termination_possible,
         )
 
 

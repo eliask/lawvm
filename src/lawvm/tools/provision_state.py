@@ -561,6 +561,15 @@ def _expiry_block(
             block["source_hash"] = bound.source_hash
             block["rule_id"] = bound.rule_id
             block["governing_bound_id"] = bound.bound_id
+            if bound.bound_kind != "stated_expiry":
+                # Toistaiseksi outer cap: status is still expired past the cap
+                # (no weaker "possibly expired"), but the consumer can see the
+                # bound is a cap and that earlier termination was possible.
+                block["bound_kind"] = bound.bound_kind
+                block["source_phrase_kind"] = bound.source_phrase_kind
+                block["earlier_termination_possible"] = (
+                    bound.earlier_termination_possible
+                )
         if overlay.late_extension_gap:
             block["diagnostic"] = "TEMPORAL.FIXED_TERM_LATE_EXTENSION_GAP"
         return block

@@ -10,7 +10,8 @@ import calendar
 import copy
 import re
 import datetime as dt
-from typing import List, Optional, Set, Tuple, cast
+from dataclasses import dataclass
+from typing import List, Literal, Optional, Set, Tuple, cast
 
 import lxml.etree as etree
 
@@ -317,17 +318,19 @@ CHAPTER_SCOPED_EXPIRY_RE = re.compile(
 # terminal date expression is parsed from this remainder so intervening words
 # survive ("voimassa julkaisemispäivästä vuoden 1918 loppuun", "voimassa
 # tammikuun 1 päivästä joulukuun 31 päivään 1917", "voimassa toistaiseksi,
-# ei kuitenkaan kauvemmin kuin 1 päivään toukokuuta 1918"). [^.] keeps the
-# remainder inside the sentence; quantifiers are bounded.
+# ei kuitenkaan kauvemmin kuin 1 päivään toukokuuta 1918"). This is matched
+# against ONE sentence at a time (see parse_whole_law_validity), never across
+# a sentence boundary: "Tämä laki tulee voimaan X. Lain 3 §:n 1 momentti on
+# voimassa ..." must not bind the whole-law subject to the section-scoped
+# validity clause of the NEXT sentence.
 WHOLE_LAW_VALIDITY_REMAINDER_RE = re.compile(
     r'Tämä\s+(?:\w+\s+){0,2}(?:laki|asetus|päätös)'
     r'.{0,120}?\bon\s+voimassa\s+(.{0,160})',
     flags=re.IGNORECASE,
 )
 
-# Sentence boundary inside the captured remainder. A bare [^.] window would
-# truncate dotted numeric dates ("1.1.1993"), so cut at period + space +
-# capital/digit instead.
+# Sentence boundary. A bare [^.] window would truncate dotted numeric dates
+# ("1.1.1993"), so cut at period + space + capital/digit instead.
 _VALIDITY_REMAINDER_SENTENCE_BOUNDARY_RE = re.compile(
     r'(?<=[.!?])\s+(?=[A-ZÄÖÅ0-9§])'
 )
@@ -369,7 +372,28 @@ _VALIDITY_MONTH_END_YEAR_RE = re.compile(
 _VALIDITY_SAID_YEAR_END_RE = re.compile(
     r'(?:sanotun|mainitun)\s+vuoden\s+loppuun', flags=re.IGNORECASE
 )
-_YEAR_RE = re.compile(r'\b(1[89]\d{2}|20\d{2})\b')
+
+# Anaphora antecedents: a year is plausible ONLY when it terminates a
+# commencement/validity date expression in the same sentence ("1 päivänä
+# maaliskuuta 1987", "vuonna 1987", "1.3.1987"). Statute/HE/section citations
+# ("(123/1986)", "1986/123") are never antecedents and are masked out before
+# this scan.
+_VALIDITY_ANTECEDENT_YEAR_RE = re.compile(
+    r'\d{1,2}\.?\s+päivänä\s+[a-zäöå]+kuuta\s+(\d{4})'
+    r'|vuonna\s+(\d{4})'
+    r'|\b\d{1,2}\.\s?\d{1,2}\.\s?(\d{4})',
+    flags=re.IGNORECASE,
+)
+_STATUTE_CITATION_RE = re.compile(r'\b\d{1,4}/\d{2,4}\b')
+
+# Toistaiseksi hard-cap phrases ("toistaiseksi, ei kuitenkaan kau(v)emmin
+# kuin ..." / "toistaiseksi, enintään ..."). The stated date is an OUTER CAP
+# on an otherwise open-ended validity, not a stated expiry day.
+_VALIDITY_TOISTAISEKSI_RE = re.compile(r'\btoistaiseksi\b', flags=re.IGNORECASE)
+_VALIDITY_CAP_KAUEMMIN_RE = re.compile(
+    r'ei\s+kuitenkaan\s+kau[uv]emmin\s+kuin', flags=re.IGNORECASE
+)
+_VALIDITY_CAP_ENINTAAN_RE = re.compile(r'\benintään\b', flags=re.IGNORECASE)
 
 # Genitive month names ("tammikuun") alongside the partitive FI_MONTH_MAP
 # keys ("tammikuuta").
@@ -377,120 +401,238 @@ FI_MONTH_GENITIVE_MAP: dict[str, int] = {
     partitive[:-2] + "n": number for partitive, number in FI_MONTH_MAP.items()
 }
 
+# Per-grammar-family rule ids carried onto the extracted bound (one id per
+# date-expression family below, plus the anaphoric family).
+RULE_FI_FIXED_TERM_DAY_FIRST = "fi_fixed_term_day_first_paivaan"
+RULE_FI_FIXED_TERM_MONTH_FIRST = "fi_fixed_term_month_first_genitive"
+RULE_FI_FIXED_TERM_YEAR_END = "fi_fixed_term_year_end"
+RULE_FI_FIXED_TERM_YEAR_MONTH_END = "fi_fixed_term_year_month_end"
+RULE_FI_FIXED_TERM_MONTH_END_YEAR = "fi_fixed_term_month_end_year"
+RULE_FI_FIXED_TERM_MONTH_YEAR_END = "fi_fixed_term_month_year_end"
+RULE_FI_FIXED_TERM_DOTTED_NUMERIC = "fi_fixed_term_dotted_numeric"
+RULE_FI_FIXED_TERM_SAAKKA = "fi_fixed_term_saakka"
+RULE_FI_FIXED_TERM_ANAPHORIC_YEAR_END = "fi_fixed_term_anaphoric_same_sentence_year_end"
 
-def whole_law_expiry_date_from_text(text: str) -> Optional[dt.date]:
-    """Return the whole-law validity bound date stated in ``text``, if any.
+
+@dataclass(frozen=True)
+class WholeLawValidityParse:
+    """Structured parse of one whole-law validity clause.
+
+    Either ``valid_until`` is set (the clause states a parseable bound), or
+    ``ambiguous_years`` is non-empty (the anaphoric form matched but more than
+    one same-sentence antecedent year is plausible — the caller must block,
+    never guess). ``bound_kind`` distinguishes a stated expiry day from a
+    toistaiseksi outer cap; an upper_cap bound can be terminated earlier.
+    """
+
+    valid_until: Optional[dt.date]
+    rule_id: str
+    bound_kind: 'Literal["stated_expiry", "upper_cap"]'
+    source_phrase_kind: Optional[str]
+    earlier_termination_possible: bool
+    antecedent_text: Optional[str] = None
+    antecedent_span: Optional[Tuple[int, int]] = None
+    ambiguous_years: Tuple[int, ...] = ()
+
+
+def _anaphoric_antecedent_years(
+    text: str, anaphor_abs_start: int
+) -> list[tuple[int, str, Tuple[int, int]]]:
+    """Return plausible antecedent (year, text, span) triples for an anaphoric
+    "sanotun/mainitun vuoden loppuun" at absolute offset ``anaphor_abs_start``.
+
+    Same-sentence only, and only years that terminate a commencement/validity
+    date expression; statute citations are masked out (span offsets preserved)
+    so "(123/1986)" can never supply the year.
+    """
+    sentence_start = 0
+    for boundary in _VALIDITY_REMAINDER_SENTENCE_BOUNDARY_RE.finditer(
+        text, 0, anaphor_abs_start
+    ):
+        sentence_start = boundary.end()
+    sentence = text[sentence_start:anaphor_abs_start]
+    masked = _STATUTE_CITATION_RE.sub(lambda c: " " * len(c.group(0)), sentence)
+    out: list[tuple[int, str, Tuple[int, int]]] = []
+    for m in _VALIDITY_ANTECEDENT_YEAR_RE.finditer(masked):
+        year = int(next(g for g in m.groups() if g))
+        span = (sentence_start + m.start(), sentence_start + m.end())
+        out.append((year, sentence[m.start() : m.end()], span))
+    return out
+
+
+def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
+    """Parse the whole-law validity bound stated in ``text``, if any.
 
     ``text`` must already be normalised with ``_normalize_fi_parse_text``.
     Recognises the whole-act forms: day-month-year ("31 päivään joulukuuta
     2020"), old-style month-first genitive ("joulukuun 31 päivään 1917"),
-    year-end shorthand ("vuoden YYYY loppuun"), and the toistaiseksi hard-cap
-    form ("toistaiseksi, ei kuitenkaan kau(v)emmin kuin 1 päivään toukokuuta
-    1918"). Bare "toistaiseksi" states no bound and yields None. Returns the
-    inclusive ``valid_until`` date; callers convert to the exclusive cutoff.
-    Section/chapter-scoped forms are intentionally excluded.
+    year-end shorthand ("vuoden YYYY loppuun"), month-end forms, dotted
+    numeric dates/ranges, saakka/asti forms, the anaphoric "sanotun vuoden
+    loppuun" (same-sentence commencement antecedent only), and the
+    toistaiseksi hard-cap form ("toistaiseksi, ei kuitenkaan kau(v)emmin kuin
+    1 päivään toukokuuta 1918" → bound_kind="upper_cap"). Bare "toistaiseksi"
+    states no bound and yields None. ``valid_until`` is the inclusive bound;
+    callers convert to the exclusive cutoff. Section/chapter-scoped forms are
+    intentionally excluded.
     """
-    m = WHOLE_LAW_VALIDITY_REMAINDER_RE.search(text)
+    # Per-sentence matching: the whole-law subject and its validity clause
+    # must live in the SAME sentence (see WHOLE_LAW_VALIDITY_REMAINDER_RE).
+    m = None
+    offset = 0
+    for boundary in _VALIDITY_REMAINDER_SENTENCE_BOUNDARY_RE.finditer(text):
+        m = WHOLE_LAW_VALIDITY_REMAINDER_RE.search(text, offset, boundary.start())
+        if m is not None:
+            break
+        offset = boundary.end()
+    if m is None:
+        m = WHOLE_LAW_VALIDITY_REMAINDER_RE.search(text, offset)
     if m is None:
         return None
-    remainder = _VALIDITY_REMAINDER_SENTENCE_BOUNDARY_RE.split(m.group(1), maxsplit=1)[0]
+    remainder = m.group(1)
 
-    candidates: list[tuple[int, dt.date]] = []
+    # (position-in-remainder, parse) candidates; the latest-positioned date
+    # expression is the terminal bound (a start-range like "tammikuun 1
+    # päivästä" precedes it in the sentence).
+    candidates: list[tuple[int, WholeLawValidityParse]] = []
+
+    def _add(pos: int, rule_id: str, year: int, month: int, day: int) -> None:
+        try:
+            date = dt.date(year, month, day)
+        except ValueError:
+            return
+        candidates.append(
+            (
+                pos,
+                WholeLawValidityParse(
+                    valid_until=date,
+                    rule_id=rule_id,
+                    bound_kind="stated_expiry",
+                    source_phrase_kind=None,
+                    earlier_termination_possible=False,
+                ),
+            )
+        )
+
     md = _VALIDITY_DAY_FIRST_RE.search(remainder)
     if md:
         month = FI_MONTH_MAP.get(md.group(2).lower())
         if month is not None:
-            try:
-                candidates.append(
-                    (md.start(), dt.date(int(md.group(3)), month, int(md.group(1))))
-                )
-            except ValueError:
-                pass
+            _add(md.start(), RULE_FI_FIXED_TERM_DAY_FIRST,
+                 int(md.group(3)), month, int(md.group(1)))
     mm = _VALIDITY_MONTH_FIRST_RE.search(remainder)
     if mm:
         month = FI_MONTH_GENITIVE_MAP.get(mm.group(1).lower())
         if month is not None:
-            try:
-                candidates.append(
-                    (mm.start(), dt.date(int(mm.group(3)), month, int(mm.group(2))))
-                )
-            except ValueError:
-                pass
+            _add(mm.start(), RULE_FI_FIXED_TERM_MONTH_FIRST,
+                 int(mm.group(3)), month, int(mm.group(2)))
     my = _VALIDITY_YEAR_END_RE.search(remainder)
     if my:
-        try:
-            candidates.append((my.start(), dt.date(int(my.group(1)), 12, 31)))
-        except ValueError:
-            pass
+        _add(my.start(), RULE_FI_FIXED_TERM_YEAR_END, int(my.group(1)), 12, 31)
     mym = _VALIDITY_YEAR_MONTH_END_RE.search(remainder)
     if mym:
         month = FI_MONTH_GENITIVE_MAP.get(mym.group(2).lower())
         if month is not None:
-            try:
-                year = int(mym.group(1))
-                candidates.append(
-                    (mym.start(), dt.date(year, month, calendar.monthrange(year, month)[1]))
-                )
-            except ValueError:
-                pass
+            year = int(mym.group(1))
+            _add(mym.start(), RULE_FI_FIXED_TERM_YEAR_MONTH_END,
+                 year, month, calendar.monthrange(year, month)[1])
     mmy = _VALIDITY_MONTH_END_YEAR_RE.search(remainder)
     if mmy:
         month = FI_MONTH_GENITIVE_MAP.get(mmy.group(1).lower())
         if month is not None:
-            try:
-                year = int(mmy.group(2))
-                candidates.append(
-                    (mmy.start(), dt.date(year, month, calendar.monthrange(year, month)[1]))
-                )
-            except ValueError:
-                pass
+            year = int(mmy.group(2))
+            _add(mmy.start(), RULE_FI_FIXED_TERM_MONTH_END_YEAR,
+                 year, month, calendar.monthrange(year, month)[1])
     for mdot in _VALIDITY_DOTTED_NUMERIC_RE.finditer(remainder):
-        try:
-            candidates.append(
-                (
-                    mdot.start(),
-                    dt.date(int(mdot.group(3)), int(mdot.group(2)), int(mdot.group(1))),
-                )
-            )
-        except ValueError:
-            pass
+        _add(mdot.start(), RULE_FI_FIXED_TERM_DOTTED_NUMERIC,
+             int(mdot.group(3)), int(mdot.group(2)), int(mdot.group(1)))
     ms = _VALIDITY_SAAKKA_RE.search(remainder)
     if ms:
         month = FI_MONTH_MAP.get(ms.group(2).lower())
         if month is not None:
-            try:
-                candidates.append(
-                    (ms.start(), dt.date(int(ms.group(3)), month, int(ms.group(1))))
-                )
-            except ValueError:
-                pass
+            _add(ms.start(), RULE_FI_FIXED_TERM_SAAKKA,
+                 int(ms.group(3)), month, int(ms.group(1)))
     mmye = _VALIDITY_MONTH_YEAR_END_RE.search(remainder)
     if mmye:
         month = FI_MONTH_GENITIVE_MAP.get(mmye.group(1).lower())
         if month is not None:
-            try:
-                year = int(mmye.group(2))
-                candidates.append(
-                    (mmye.start(), dt.date(year, month, calendar.monthrange(year, month)[1]))
-                )
-            except ValueError:
-                pass
+            year = int(mmye.group(2))
+            _add(mmye.start(), RULE_FI_FIXED_TERM_MONTH_YEAR_END,
+                 year, month, calendar.monthrange(year, month)[1])
     msaid = _VALIDITY_SAID_YEAR_END_RE.search(remainder)
     if msaid:
-        # "sanotun vuoden loppuun": the year named earlier in the sentence
-        # (the commencement year). Resolve from the text before the match.
-        prefix = text[: m.start(1) + msaid.start()]
-        years = _YEAR_RE.findall(prefix[-200:])
-        if years:
+        antecedents = _anaphoric_antecedent_years(text, m.start(1) + msaid.start())
+        years = sorted({a[0] for a in antecedents})
+        if len(years) == 1:
+            year, antecedent_text, antecedent_span = antecedents[-1]
             try:
-                candidates.append((msaid.start(), dt.date(int(years[-1]), 12, 31)))
+                date = dt.date(year, 12, 31)
             except ValueError:
-                pass
+                date = None
+            if date is not None:
+                candidates.append(
+                    (
+                        msaid.start(),
+                        WholeLawValidityParse(
+                            valid_until=date,
+                            rule_id=RULE_FI_FIXED_TERM_ANAPHORIC_YEAR_END,
+                            bound_kind="stated_expiry",
+                            source_phrase_kind=None,
+                            earlier_termination_possible=False,
+                            antecedent_text=antecedent_text,
+                            antecedent_span=antecedent_span,
+                        ),
+                    )
+                )
+        elif len(years) > 1:
+            candidates.append(
+                (
+                    msaid.start(),
+                    WholeLawValidityParse(
+                        valid_until=None,
+                        rule_id=RULE_FI_FIXED_TERM_ANAPHORIC_YEAR_END,
+                        bound_kind="stated_expiry",
+                        source_phrase_kind=None,
+                        earlier_termination_possible=False,
+                        ambiguous_years=tuple(years),
+                    ),
+                )
+            )
+        # 0 plausible antecedents: the anaphor contributes nothing; the clause
+        # falls through to the blocking-unparseable path unless another date
+        # expression resolves it.
     if not candidates:
         return None
-    # The latest-positioned date expression is the terminal bound (a start
-    # range like "tammikuun 1 päivästä" precedes it in the sentence).
-    return max(candidates, key=lambda item: item[0])[1]
+    parse = max(candidates, key=lambda item: item[0])[1]
+
+    # Toistaiseksi cap classification (V3): "toistaiseksi, ei kuitenkaan
+    # kau(v)emmin kuin <date>" / "toistaiseksi, enintään <date>" makes the
+    # parsed date an OUTER CAP on an open-ended validity, terminable earlier.
+    if parse.valid_until is not None and _VALIDITY_TOISTAISEKSI_RE.search(remainder):
+        phrase_kind: Optional[str] = None
+        if _VALIDITY_CAP_KAUEMMIN_RE.search(remainder):
+            phrase_kind = "toistaiseksi_ei_kauemmin_kuin"
+        elif _VALIDITY_CAP_ENINTAAN_RE.search(remainder):
+            phrase_kind = "toistaiseksi_enintaan"
+        if phrase_kind is not None:
+            parse = WholeLawValidityParse(
+                valid_until=parse.valid_until,
+                rule_id=parse.rule_id,
+                bound_kind="upper_cap",
+                source_phrase_kind=phrase_kind,
+                earlier_termination_possible=True,
+                antecedent_text=parse.antecedent_text,
+                antecedent_span=parse.antecedent_span,
+            )
+    return parse
+
+
+def whole_law_expiry_date_from_text(text: str) -> Optional[dt.date]:
+    """Date-only view of ``parse_whole_law_validity`` (kept for callers that
+    need just the inclusive ``valid_until``)."""
+    parse = parse_whole_law_validity(text)
+    if parse is None:
+        return None
+    return parse.valid_until
 
 
 def _amendment_effective_date(tree: "etree._Element") -> Optional[dt.date]:

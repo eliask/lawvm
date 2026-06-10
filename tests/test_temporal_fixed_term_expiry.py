@@ -25,11 +25,14 @@ from lawvm.core.statute_validity import (
     late_extension_gap,
 )
 from lawvm.finland.fixed_term_expiry import (
+    EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT,
     FIXED_TERM_EXPIRY_AMBIGUOUS,
+    FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS,
     FIXED_TERM_EXPIRY_UNPARSEABLE,
     SCOPED_FIXED_TERM_EXPIRY_UNSUPPORTED,
     build_corpus_report,
     extract_fixed_term_bounds,
+    governing_unparseable,
 )
 from lawvm.tools.provision_state import (
     FIXED_TERM_BOUNDS_FLAG,
@@ -241,6 +244,103 @@ def test_toistaiseksi_with_hard_cap_parses_cap_as_bound() -> None:
     extraction = extract_fixed_term_bounds(statute_id="1917/114", timelines=timelines)
     assert extraction.has_candidate is True
     assert [b.valid_until for b in extraction.bounds] == ["1918-05-01"]
+    bound = extraction.bounds[0]
+    # V3: the date is an OUTER CAP on an open-ended validity, not a stated
+    # expiry day; the distinction is carried on the bound.
+    assert bound.bound_kind == "upper_cap"
+    assert bound.source_phrase_kind == "toistaiseksi_ei_kauemmin_kuin"
+    assert bound.earlier_termination_possible is True
+
+
+def test_per_grammar_family_rule_ids() -> None:
+    cases = (
+        ("7 § Tämä laki tulee voimaan heti ja on voimassa 31 päivään joulukuuta 2020.",
+         "fi_fixed_term_day_first_paivaan"),
+        ("2 § Tämä asetus on voimassa tammikuun 1 päivästä joulukuun 31 päivään 1917.",
+         "fi_fixed_term_month_first_genitive"),
+        ("5 § Tämä laki tulee voimaan heti ja on voimassa vuoden 1918 loppuun.",
+         "fi_fixed_term_year_end"),
+        ("4 § Tämä päätös tulee voimaan 4.8.1994 ja se on voimassa 31.12.1995 saakka.",
+         "fi_fixed_term_dotted_numeric"),
+    )
+    for text, expected_rule in cases:
+        timelines = _timelines(
+            [_voimaantulo_version(effective="1990-01-01", enacted="1989-12-01", text=text, source_statute="1990/1")]
+        )
+        extraction = extract_fixed_term_bounds(statute_id="1990/1", timelines=timelines)
+        assert [b.rule_id for b in extraction.bounds] == [expected_rule], text
+
+
+def test_anaphoric_year_ignores_statute_citation_years() -> None:
+    # The citation year 1986 must never be the antecedent; the commencement
+    # date's 1987 is the only plausible same-sentence year.
+    text = (
+        "7 § Tämä päätös, joka perustuu lakiin (123/1986), tulee voimaan 18 "
+        "päivänä maaliskuuta 1987 ja on voimassa sanotun vuoden loppuun."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1987-03-18", enacted="1987-03-01", text=text, source_statute="1987/281")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1987/281", timelines=timelines)
+    assert [b.valid_until for b in extraction.bounds] == ["1987-12-31"]
+    bound = extraction.bounds[0]
+    assert bound.rule_id == "fi_fixed_term_anaphoric_same_sentence_year_end"
+    # Antecedent provenance is stored on the bound.
+    assert bound.antecedent_text is not None
+    assert "1987" in bound.antecedent_text
+    assert bound.antecedent_span is not None
+
+
+def test_anaphoric_year_with_multiple_antecedents_blocks_as_ambiguous() -> None:
+    text = (
+        "7 § Tämä laki tulee voimaan 1 päivänä tammikuuta 1987, sitä sovelletaan "
+        "vuonna 1988 toimitettavissa vaaleissa ja se on voimassa sanotun vuoden "
+        "loppuun."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1987-01-01", enacted="1986-12-01", text=text, source_statute="1986/999")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1986/999", timelines=timelines)
+    assert extraction.bounds == ()
+    diags = [d for d in extraction.diagnostics if d.code == FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS]
+    assert len(diags) == 1
+    assert "1987" in diags[0].detail and "1988" in diags[0].detail
+    assert "sanotun vuoden loppuun" in diags[0].clause_text
+    # The ambiguity blocks at the seam: it is a governing no-answer, not a skip.
+    blocking = governing_unparseable(extraction, as_of="1987-06-01", query_type="governing")
+    assert blocking is not None
+    assert blocking.code == FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS
+
+
+def test_voimaantulo_heading_overrides_commencement_guard() -> None:
+    # Structurally known voimaantulosäännös (heading) with an unparseable
+    # validity end and no commencement marker: must stay blocking, not be
+    # suppressed as a body-text false positive (Pro V5 structural override).
+    text = (
+        "7 § Voimaantulo Tämä laki on voimassa siihen saakka, kunnes asiasta "
+        "toisin säädetään."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1992-01-01", enacted="1991-12-01", text=text, source_statute="1992/1161")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1992/1161", timelines=timelines)
+    codes = [d.code for d in extraction.diagnostics]
+    assert codes == [FIXED_TERM_EXPIRY_UNPARSEABLE]
+    assert "siihen saakka" in extraction.diagnostics[0].clause_text
+
+
+def test_unparseable_diagnostic_carries_clause_text() -> None:
+    text = (
+        "10 § Tämä laki tulee voimaan heti ja on voimassa kahden vuoden ajan "
+        "sen voimaantulosta."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1992-12-01", enacted="1992-11-01", text=text, source_statute="1992/1239")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1992/1239", timelines=timelines)
+    diags = [d for d in extraction.diagnostics if d.code == FIXED_TERM_EXPIRY_UNPARSEABLE]
+    assert len(diags) == 1
+    assert "kahden vuoden ajan" in diags[0].clause_text
 
 
 def test_month_end_forms_parse_to_last_day_of_month() -> None:
@@ -283,7 +383,11 @@ def test_body_text_validity_mention_without_commencement_is_not_candidate() -> N
     extraction = extract_fixed_term_bounds(statute_id="1983/370", timelines=timelines)
     assert extraction.has_candidate is False
     assert extraction.bounds == ()
-    assert extraction.diagnostics == ()
+    # The suppression is audited, not silent: a non-blocking observation
+    # carries the suppressed clause text.
+    codes = [d.code for d in extraction.diagnostics]
+    assert codes == [EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT]
+    assert "on voimassa Suomessa" in extraction.diagnostics[0].clause_text
 
 
 def test_dotted_numeric_range_and_saakka_forms_parse() -> None:

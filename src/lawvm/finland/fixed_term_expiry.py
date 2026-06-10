@@ -27,7 +27,6 @@ from lawvm.core.ir import LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import MetaClauseKind
 from lawvm.core.statute_validity import (
-    FIXED_TERM_WHOLE_STATUTE_RULE_ID,
     StatuteValidityBound,
     expires_on_from_valid_until,
 )
@@ -36,26 +35,42 @@ from lawvm.finland.metadata import (
     CHAPTER_SCOPED_EXPIRY_RE,
     SECTION_SCOPED_EXPIRY_RE,
     _normalize_fi_parse_text,
-    whole_law_expiry_date_from_text,
+    parse_whole_law_validity,
 )
 
 # Diagnostic codes (registered in observation_registry under role per spec §4).
 FIXED_TERM_EXPIRY_UNPARSEABLE = "TEMPORAL.FIXED_TERM_EXPIRY_UNPARSEABLE"
 FIXED_TERM_EXPIRY_AMBIGUOUS = "TEMPORAL.FIXED_TERM_EXPIRY_AMBIGUOUS"
+FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS = (
+    "TEMPORAL.FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS"
+)
 SCOPED_FIXED_TERM_EXPIRY_UNSUPPORTED = "TEMPORAL.SCOPED_FIXED_TERM_EXPIRY_UNSUPPORTED"
 POSSIBLE_EXPIRY_TEXT_UNSUPPORTED = "TEMPORAL.POSSIBLE_EXPIRY_TEXT_UNSUPPORTED"
 FIXED_TERM_LATE_EXTENSION_GAP = "TEMPORAL.FIXED_TERM_LATE_EXTENSION_GAP"
+EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT = (
+    "TEMPORAL.EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT"
+)
+
+# Diagnostic clause texts are evidence, not logs; keep enough to re-find the
+# clause in the source without ballooning the record.
+_CLAUSE_TEXT_LIMIT = 400
 
 
 @dataclass(frozen=True)
 class FixedTermDiagnostic:
-    """One extraction-time diagnostic about fixed-term validity."""
+    """One extraction-time diagnostic about fixed-term validity.
+
+    ``clause_text`` carries the offending source clause itself (truncated)
+    so the diagnostic is self-evidencing — typing a residual must never
+    require re-running extraction to see what the text said.
+    """
 
     code: str
     statute_id: str
     address: str
     effective: str
     detail: str
+    clause_text: str = ""
 
 
 @dataclass(frozen=True)
@@ -77,15 +92,28 @@ _BARE_TOISTAISEKSI_RE = re.compile(r"\bon\s+voimassa\s+toistaiseksi\b", re.IGNOR
 _TOISTAISEKSI_CAP_RE = re.compile(r"kau[uv]emmin\s+kuin|enintään", re.IGNORECASE)
 
 # Commencement marker expected in a genuine voimaantulosäännös version.
+# (Single bounded gap, not \s+ then .{0,40}: adjacent variable repeats with
+# overlapping starts are a backtracking hazard the regex gate rejects.)
 _COMMENCEMENT_CONTEXT_RE = re.compile(
-    r"(?:tulee|tuli|astuu|astui)\s+voimaan|voimassa\s+.{0,40}?päivästä",
+    r"(?:tulee|tuli|astuu|astui)\s+voimaan|voimassa.{1,41}?päivästä",
+    re.IGNORECASE,
+)
+
+# Structural voimaantulosäännös marker: the carrying section's heading names
+# itself the entry-into-force provision ("7 § Voimaantulo", "Voimaantulo- ja
+# siirtymäsäännökset"). When this is present, the commencement-context guard
+# must NOT suppress — a recognised-but-unparseable clause in a structurally
+# known voimaantulosäännös stays blocking (Pro V5 asymmetry doctrine).
+_VOIMAANTULO_HEADING_RE = re.compile(
+    r"(?:^\s*|§\s+)voimaantulo",
     re.IGNORECASE,
 )
 
 
-def _has_whole_law_expiry_clause(normalized_text: str) -> bool:
-    """True when the typed meta-clause lane classifies ``normalized_text`` as a
-    whole-law expiry clause ("Tämä laki ... on voimassa ...")."""
+def _whole_law_expiry_clause_text(normalized_text: str) -> Optional[str]:
+    """The clause text when the typed meta-clause lane classifies
+    ``normalized_text`` as a whole-law expiry clause ("Tämä laki ... on
+    voimassa ..."), else None."""
     for clause in extract_meta_surface_clauses(normalized_text):
         if clause.kind is not MetaClauseKind.EXPIRY:
             continue
@@ -97,8 +125,8 @@ def _has_whole_law_expiry_clause(normalized_text: str) -> bool:
             clause.text
         ):
             continue
-        return True
-    return False
+        return clause.text
+    return None
 
 
 _WHOLE_LAW_SUBJECT = "tämä "
@@ -159,17 +187,20 @@ def extract_fixed_term_bounds(
                 SECTION_SCOPED_EXPIRY_RE.search(normalized) is not None
                 or CHAPTER_SCOPED_EXPIRY_RE.search(normalized) is not None
             )
-            whole_law_clause = _has_whole_law_expiry_clause(normalized)
+            clause_text = _whole_law_expiry_clause_text(normalized)
 
-            if not whole_law_clause and not scoped_only:
+            if clause_text is None and not scoped_only:
                 continue
 
             source_id = _version_source_id(version, statute_id)
             key = (version.effective, source_id)
 
-            if scoped_only and not whole_law_clause:
+            if scoped_only and clause_text is None:
                 # A scoped (chapter/section) fixed-term form. v1 does not lift it
                 # into a statute-level bound; surface it for review.
+                scoped_match = SECTION_SCOPED_EXPIRY_RE.search(
+                    normalized
+                ) or CHAPTER_SCOPED_EXPIRY_RE.search(normalized)
                 diagnostics.append(
                     FixedTermDiagnostic(
                         code=SCOPED_FIXED_TERM_EXPIRY_UNSUPPORTED,
@@ -177,17 +208,45 @@ def extract_fixed_term_bounds(
                         address=str(address),
                         effective=version.effective,
                         detail="scoped (chapter/section) fixed-term expiry detected; not lifted in v1",
+                        clause_text=(scoped_match.group(0) if scoped_match else "")[
+                            :_CLAUSE_TEXT_LIMIT
+                        ],
                     )
                 )
                 continue
 
-            valid_until = whole_law_expiry_date_from_text(normalized)
-            if valid_until is None and not _COMMENCEMENT_CONTEXT_RE.search(normalized):
+            # Both None-cases of clause_text continued above.
+            assert clause_text is not None
+
+            parse = parse_whole_law_validity(normalized)
+            valid_until = parse.valid_until if parse is not None else None
+            if (
+                valid_until is None
+                and not _COMMENCEMENT_CONTEXT_RE.search(normalized)
+                and not _VOIMAANTULO_HEADING_RE.search(normalized)
+            ):
                 # Substantive body text can match the expiry meta-clause shape
                 # ("... ja tämä päätös ... on voimassa Suomessa") without being
                 # a voimaantulosäännös. With neither a parseable date nor a
                 # commencement marker in the carrying version, treat it as a
-                # false positive rather than a blocking unparseable bound.
+                # false positive rather than a blocking unparseable bound —
+                # but say so on the audit lane instead of suppressing silently.
+                # Structural override: a section whose heading names itself the
+                # voimaantulosäännös never takes this branch and stays blocking.
+                diagnostics.append(
+                    FixedTermDiagnostic(
+                        code=EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT,
+                        statute_id=statute_id,
+                        address=str(address),
+                        effective=version.effective,
+                        detail=(
+                            "expiry-shaped clause without a parseable date or a "
+                            "commencement marker; suppressed as a body-text false "
+                            "positive"
+                        ),
+                        clause_text=clause_text[:_CLAUSE_TEXT_LIMIT],
+                    )
+                )
                 continue
 
             # Whole-law clause recognised — this is a fixed-term candidate.
@@ -199,20 +258,41 @@ def extract_fixed_term_bounds(
                 continue
 
             if valid_until is None:
-                diagnostics.append(
-                    FixedTermDiagnostic(
-                        code=FIXED_TERM_EXPIRY_UNPARSEABLE,
-                        statute_id=statute_id,
-                        address=str(address),
-                        effective=version.effective,
-                        detail="whole-law expiry clause recognised but validity date unparseable",
+                if parse is not None and parse.ambiguous_years:
+                    # Anaphoric "sanotun vuoden loppuun" with more than one
+                    # plausible same-sentence antecedent year: blocking, never
+                    # a guess (Pro V4).
+                    diagnostics.append(
+                        FixedTermDiagnostic(
+                            code=FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS,
+                            statute_id=statute_id,
+                            address=str(address),
+                            effective=version.effective,
+                            detail=(
+                                "anaphoric year-end ('sanotun vuoden loppuun') has "
+                                f"multiple plausible antecedent years: "
+                                f"{list(parse.ambiguous_years)}"
+                            ),
+                            clause_text=clause_text[:_CLAUSE_TEXT_LIMIT],
+                        )
                     )
-                )
+                else:
+                    diagnostics.append(
+                        FixedTermDiagnostic(
+                            code=FIXED_TERM_EXPIRY_UNPARSEABLE,
+                            statute_id=statute_id,
+                            address=str(address),
+                            effective=version.effective,
+                            detail="whole-law expiry clause recognised but validity date unparseable",
+                            clause_text=clause_text[:_CLAUSE_TEXT_LIMIT],
+                        )
+                    )
                 # Do not record a bound; mark the key so deeper duplicates of the
-                # same unparseable clause do not re-diagnose.
+                # same unparseable/ambiguous clause do not re-diagnose.
                 claimed[key] = depth
                 continue
 
+            assert parse is not None  # valid_until is not None ⇒ parse exists
             expires_on = expires_on_from_valid_until(valid_until)
             bound = StatuteValidityBound(
                 statute_id=statute_id,
@@ -225,9 +305,14 @@ def extract_fixed_term_bounds(
                 source_version_id=source_id,
                 source_hash=_content_hash(version),
                 source_span=None,
-                rule_id=FIXED_TERM_WHOLE_STATUTE_RULE_ID,
+                rule_id=parse.rule_id,
                 source_text=normalized[:500],
                 source_sequence=sequence,
+                bound_kind=parse.bound_kind,
+                source_phrase_kind=parse.source_phrase_kind,
+                earlier_termination_possible=parse.earlier_termination_possible,
+                antecedent_text=parse.antecedent_text,
+                antecedent_span=parse.antecedent_span,
             )
             sequence += 1
             # Remove any earlier deeper-address bound for the same key.
@@ -280,6 +365,8 @@ class FixedTermCorpusReport:
     unparseable: int
     ambiguous: int
     affected_statutes: tuple[str, ...]
+    anaphora_ambiguous: int = 0
+    suppressed_non_commencement: int = 0
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -290,6 +377,8 @@ class FixedTermCorpusReport:
             "scoped_unsupported": self.scoped_unsupported,
             "unparseable": self.unparseable,
             "ambiguous": self.ambiguous,
+            "anaphora_ambiguous": self.anaphora_ambiguous,
+            "suppressed_non_commencement": self.suppressed_non_commencement,
             "affected_statutes": list(self.affected_statutes),
         }
 
@@ -307,6 +396,8 @@ def build_corpus_report(
     scoped_unsupported = 0
     unparseable = 0
     ambiguous = 0
+    anaphora_ambiguous = 0
+    suppressed = 0
     affected: list[str] = []
     for extraction in extractions:
         if extraction.has_candidate:
@@ -321,6 +412,10 @@ def build_corpus_report(
                 unparseable += 1
             elif diagnostic.code == FIXED_TERM_EXPIRY_AMBIGUOUS:
                 ambiguous += 1
+            elif diagnostic.code == FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS:
+                anaphora_ambiguous += 1
+            elif diagnostic.code == EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT:
+                suppressed += 1
     return FixedTermCorpusReport(
         statutes_scanned=len(list(extractions)),
         fixed_term_candidates=candidates,
@@ -329,6 +424,8 @@ def build_corpus_report(
         unparseable=unparseable,
         ambiguous=ambiguous,
         affected_statutes=tuple(sorted(set(affected))),
+        anaphora_ambiguous=anaphora_ambiguous,
+        suppressed_non_commencement=suppressed,
     )
 
 
@@ -338,8 +435,9 @@ def governing_unparseable(
     as_of: str,
     query_type: str,
 ) -> Optional[FixedTermDiagnostic]:
-    """Return an UNPARSEABLE diagnostic when the bound that WOULD govern at
-    ``as_of`` is a recognised-but-unparseable whole-law expiry clause.
+    """Return a blocking diagnostic when the bound that WOULD govern at
+    ``as_of`` is a recognised whole-law expiry clause whose date could not be
+    determined (unparseable, or anaphorically ambiguous).
 
     A bound that fails to parse has no ``effective`` recorded in ``bounds``; we
     reconstruct eligibility from the diagnostic's effective date. This is what
@@ -349,7 +447,9 @@ def governing_unparseable(
     candidates = [
         d
         for d in extraction.diagnostics
-        if d.code == FIXED_TERM_EXPIRY_UNPARSEABLE and d.effective <= as_of
+        if d.code
+        in (FIXED_TERM_EXPIRY_UNPARSEABLE, FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS)
+        and d.effective <= as_of
     ]
     if not candidates:
         return None

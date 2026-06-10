@@ -710,6 +710,7 @@ NO_FIRE_DRILL_YET: frozenset[str] = frozenset({
     # through the replay PhaseResult lanes this harness drills. Drill when the
     # semantics flag goes default-on.
     "TEMPORAL.FIXED_TERM_EXPIRY_AMBIGUOUS",
+    "TEMPORAL.FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS",
     "TEMPORAL.FIXED_TERM_EXPIRY_UNPARSEABLE",
     "APPLY.FALLBACK_WHOLE_SECTION_REPLACE",
     "APPLY.LEGACY_DISPATCH_FALLBACK",
