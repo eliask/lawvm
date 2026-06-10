@@ -267,7 +267,9 @@ select {
 }
 /* Hanging indent: continuation lines align past the unit label (standard
    legal-list typesetting; keeps the label column scannable). */
-.pblock-inner { max-width: 72ch; line-height: 1.62; font-family: var(--font-text); font-size: 0.98rem; display: flex; gap: 0.45rem; align-items: baseline; }
+/* Measure capped at 72ch AND guaranteed clear of the absolute history chip
+   (deeply indented alakohta could otherwise still reach under it). */
+.pblock-inner { max-width: min(72ch, calc(100% - 3.4rem)); line-height: 1.62; font-family: var(--font-text); font-size: 0.98rem; display: flex; gap: 0.45rem; align-items: baseline; }
 .pblock-inner .pblock-body { flex: 1; min-width: 0; }
 .pblock.changed { border-left-color: var(--changed); background: #fffcf4; }
 .pblock:hover { background: #f4f6f8; }

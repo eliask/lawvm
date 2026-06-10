@@ -1826,7 +1826,9 @@ function ghostHtml(g) {
     + `<span class="tomb-label">${escHtml(J.addrSeg(k, n))} <em>${escHtml(tr('tombstone'))}</em></span>`
     + `<span class="tomb-meta">${escHtml(date)}${srcLabel ? ' · ' + escHtml(srcLabel) : ''}</span>`
     + changeBadgeHtml(g.addr)
-    + historyBtnHtml(g.addr, /*showCount*/ true)
+    // Row-style button (not the count chip): identical trailing width keeps
+    // the lifecycle-strip column flush with section rows.
+    + historyBtnHtml(g.addr, /*showCount*/ false)
     + `</div>`;
 }
 
