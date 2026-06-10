@@ -18,6 +18,7 @@ from lawvm.uk_legislation.effects import (
 )
 from lawvm.uk_legislation.provision_extractor import (
     _EXTRACTION_CONTEXT_CACHE,
+    _INSTRUCTION_TEXT_CACHE,
     _build_extraction_context,
     _get_id_sequence,
     _match_node,
@@ -203,6 +204,7 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
       - _source_parent_map_cache: values contain root as a parent element
       - _source_ancestor_chain_cache: inner tuples contain root as terminal ancestor
       - _EXTRACTION_CONTEXT_CACHE: UKExtractionContext.parent_map contains root
+      - _INSTRUCTION_TEXT_CACHE: keys are root descendant elements
       - _unique_unnumbered_root_schedule_cache: values may be root descendants
       - source-lane predicate caches: keys are root descendant elements
       - source_fragment_context caches: keys are root descendant elements
@@ -219,9 +221,13 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
     _source_ancestor_chain_cache.pop(root, None)
     _EXTRACTION_CONTEXT_CACHE.pop(root, None)
     _unique_unnumbered_root_schedule_cache.pop(root, None)
+    # _INSTRUCTION_TEXT_CACHE is keyed on arbitrary descendant elements, each
+    # of which pins the whole parsed tree; without this eviction it grows
+    # unbounded across compiles (~5 GB over the uk test shard).
     for cache in (
         _source_parent_table_column_omission_cache,
         _source_broad_repeal_extent_part_cache,
+        _INSTRUCTION_TEXT_CACHE,
     ):
         for el in tuple(cache):
             if el is root or el.getroottree().getroot() is root:
