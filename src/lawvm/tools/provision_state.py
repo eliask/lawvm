@@ -25,13 +25,17 @@ from lawvm.core.timeline_selection import VersionSelectionResult, select_active_
 SCHEMA = "lawvm.provision_state.v1"
 DUMP_SCHEMA = "lawvm.dump.v1"
 
-# Stage-2 rollback flag (Pro §5). Extraction/diagnostics are always available;
-# only the selection/seam SEMANTICS (flipping status to "expired") are gated.
+# Rollback flag (Pro §5). Fixed-term statute bounds are DEFAULT-ON since seam
+# spec 0.2 (corpus soak criteria met: residual blocking statutes well under
+# 0.1%, all typed, zero ambiguous). Set to "0"/"false" to restore the 0.1
+# flag-OFF behavior (no expired/expiry_unverified statuses). Extraction and
+# diagnostics are always available; only the selection/seam SEMANTICS are
+# gated.
 FIXED_TERM_BOUNDS_FLAG = "LAWVM_ENABLE_FIXED_TERM_STATUTE_BOUNDS"
 
 
 def _fixed_term_bounds_enabled() -> bool:
-    return os.environ.get(FIXED_TERM_BOUNDS_FLAG, "") not in ("", "0", "false", "False")
+    return os.environ.get(FIXED_TERM_BOUNDS_FLAG, "1") not in ("0", "false", "False")
 
 
 @dataclass(frozen=True)

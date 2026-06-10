@@ -1,6 +1,6 @@
 ---
 title: LawVM Provision-State Seam — Consumer Contract
-spec_version: 0.1
+spec_version: 0.2
 status: draft
 schema: lawvm.provision_state.v1
 ---
@@ -51,12 +51,16 @@ primary control signal.
 | `ambiguous_address` | Address matched ≥2 timelines by suffix; `address_candidates` lists them. Never a silent pick. |
 | `invalid_address` | The provision string did not parse into any `kind:label` segment. |
 | `unsupported_jurisdiction` | `jurisdiction` not in supported set (`["fi"]`). |
+| `expired` | (since 0.2) A whole-statute fixed-term validity bound has lapsed at `as_of`. `version` is null, `text.available=false`; top-level `valid_until` (inclusive) and `expires` (exclusive) dates plus an `expiry` provenance block are present (§6.1). |
+| `expiry_unverified` | (since 0.2) A whole-law fixed-term expiry clause was recognised on the governing version but its validity end could not be determined (unparseable date, conflicting bounds, or ambiguous anaphoric year). **Blocking**: `version` is null and the `expiry` block carries the blocking diagnostic code. Never read as confirmed-live. |
 
 Consumers MUST treat any status other than `selected` as "no asserted
 text-state". In particular `address_not_found`, `ambiguous_address`, and
 `invalid_address` are *fail-loud* outcomes: the seam resolves an address
 exactly or by a UNIQUE suffix, never by arbitrary order. A near-miss address
 MUST be expected to fail rather than resolve to a different provision.
+`expiry_unverified` is likewise fail-loud: the engine refuses to assert
+either live text or expiry when the stated bound cannot be proven.
 
 ### 2.2 `version` payload (present when `status=selected`)
 
@@ -100,6 +104,12 @@ fields, in this nesting:
 - `version` — `{effective, enacted, expires, variant_kind, content_state,
   applicability}`, or null.
 - `content_hash`
+- `expiry` — (since 0.2) present IFF the fixed-term overlay fired for this
+  query (`status` ∈ `expired | expiry_unverified`): the full `expiry` block
+  (§6.1) including bound provenance (`source_text`, `source_hash`,
+  `rule_id`, `governing_bound_id`) or the blocking diagnostic. Responses on
+  which the overlay does not fire hash EXACTLY as under 0.1 — the member is
+  absent, not null.
 
 Canonical encoding: `json.dumps(..., ensure_ascii=True, sort_keys=True,
 separators=(",", ":"))` then `sha256` of the UTF-8 bytes.
@@ -184,31 +194,44 @@ the de-facto join key between LawVM and downstream corpora. The format is a
 **stable public interface**: any change to it is a breaking change under §7
 regardless of whether hashed fields change.
 
-## 6. KNOWN LIMITATIONS (consumers MUST apply)
+## 6. Fixed-term whole-law expiry and remaining limitations
 
-### 6.1 Fixed-term whole-law expiry is NOT modeled
+### 6.1 Fixed-term whole-law expiry (modeled, default-on since 0.2)
 
-When a statute's validity is bounded only by a fixed-term `voimaantulosäännös`
-(commencement/validity clause) in prose — and that bound is never lifted to a
-machine-readable `expires` on the provision versions — the seam will return
-`status=selected`, `content_state=live`, empty `expires`, and full text PAST the
-prose term (confirmed class: `482/2024`, valid to `31.12.2026` per its final
-section, extended by a later act; queried at `2027-01-01` it returns live text
-byte-identical to mid-validity).
+A Finnish fixed-term statute (määräaikainen laki) states its whole-law
+validity period in the entry-into-force provision's prose. Since 0.2 the seam
+models this as a statute-level validity bound:
 
-Consequence and MANDATORY mitigation: **a `selected`/`CONFIRMED` result on a
-fixed-term law past its term is NOT evidence of in-force.** Consumers MUST treat
-any statute whose final section is a fixed-term `voimaantulosäännös` as
-requiring a manual validity check for any `as_of` past the term.
+- **Lapsed bound** → `status="expired"`: `version` null, `text.available`
+  false, top-level `valid_until` (inclusive) and `expires` (exclusive), and an
+  `expiry` provenance block carrying the source clause text, source hash, the
+  per-grammar-family `rule_id`, and `governing_bound_id`. Extension acts
+  text-replace the entry-into-force provision; the governing bound at `as_of`
+  is the latest eligible one, so an extended statute stays `selected` until
+  its extended term lapses.
+- **Toistaiseksi outer cap** ("voimassa toistaiseksi, ei kuitenkaan kauemmin
+  kuin ...") → still `status="expired"` past the cap (there is NO weaker
+  "possibly expired" status), with `bound_kind="upper_cap"`,
+  `source_phrase_kind`, and `earlier_termination_possible=true` exposed on the
+  `expiry` block so consumers can see the bound is a cap.
+- **Recognised but unprovable bound** (unparseable date, conflicting bounds at
+  one effective date, ambiguous anaphoric year) → blocking
+  `status="expiry_unverified"` with the diagnostic code on the `expiry`
+  block. The seam never converts an unproven bound into either a live or an
+  expired answer.
+- Bare "on voimassa toistaiseksi" (no cap) is the permanent-law default and is
+  NOT a bound.
 
-Status of the fix: statute-level validity bounds are implemented behind the
-`LAWVM_ENABLE_FIXED_TERM_STATUTE_BOUNDS` flag (default OFF; this spec describes
-flag-OFF behavior). With the flag on, a lapsed whole-law bound returns
-`status="expired"` (version null, top-level `expires`/`valid_until`, an
-`expiry` provenance block), and a recognised-but-unparseable or ambiguous bound
-returns the blocking `status="expiry_unverified"` — never a confirmed-live
-answer. When the flag becomes default-on after the corpus soak, this spec bumps
-to 0.2 with those statuses added to §2.1 and the expiry fields added to §3.
+Rollback: setting `LAWVM_ENABLE_FIXED_TERM_STATUTE_BOUNDS=0` restores the 0.1
+flag-OFF behavior (no `expired`/`expiry_unverified`; a lapsed fixed-term law
+reads `selected` with live text). The 0.1 MANDATORY mitigation (manual
+validity check past a prose term) applies whenever the rollback is active.
+
+Residual coverage caveat: a small typed residue of statutes carries
+recognised-but-unprovable bounds (event-bound "kunnes ..." clauses, duration
+forms, source typos stating impossible dates). These return
+`expiry_unverified` rather than a wrong answer; the residue is enumerated,
+typed, and carries the offending clause text in its diagnostics.
 
 ### 6.2 content_hash text-only aliasing
 
@@ -233,6 +256,19 @@ ship under the same `spec_version`. Breaking changes are announced via a
 `spec_version` bump AND will manifest as divergence in the 21-pin regression
 suite (`tests/test_mevm_grounding_pins.py`), which consumers SHOULD also run in
 their own CI. Consumers MUST pin the `spec_version` they validated against.
+
+### 7.1 Changes 0.1 → 0.2
+
+- New statuses `expired` and `expiry_unverified` (§2.1); fixed-term whole-law
+  bounds are modeled and DEFAULT-ON (§6.1). The 0.1 known-limitation 6.1 is
+  retired in favor of the modeled behavior; the rollback flag preserves 0.1
+  semantics.
+- `derived_state_hash` input gains a conditional `expiry` member (§3),
+  present only when the fixed-term overlay fires. **Hash impact:** every
+  response that is NOT a lapsed/blocked fixed-term statute hashes identically
+  to 0.1 (verified by the 21-pin suite passing unchanged across the flip);
+  queries on lapsed or unprovable fixed-term statutes change status and hash
+  — that change is the feature.
 
 <!--
 CODE-VS-NOTES DISAGREEMENTS (code wins, flagged per task instructions):
