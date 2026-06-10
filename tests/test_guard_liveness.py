@@ -25,7 +25,7 @@ This module encodes two things:
    codes must consciously land in one bucket or the other; they cannot be added
    to the registry and quietly skip liveness coverage.
 
-The three ``xfail`` drills document verified, structurally-unsatisfiable guards
+The ``xfail`` drills document verified, structurally-unsatisfiable guards
 (guard-liveness debt). They are ``strict=False`` so they never fail CI; their
 job is to keep the debt visible and to flip to a hard failure (xpass) the day
 the underlying structural cause is fixed.
@@ -47,7 +47,7 @@ from lawvm.core.compile_result import (
 from lawvm.core.ir import IRNode
 from lawvm.core.observation_registry import FINDING_REGISTRY, FindingSpec
 from lawvm.core.phase_result import Finding, PhaseResult
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.tree_ops import check_invariants
 from lawvm.finland.replay_pipeline import (
     ReplayPlan,
@@ -259,6 +259,200 @@ def drill_frontend_internal_error_parse_surface() -> None:
     assert finding.blocking is True
 
 
+def _drill_renumber_rop():
+    """Build a real RENUMBER ResolvedOp + Relabel intent over a small statute.
+
+    Returns ``(state, ctx, op, rop)`` ready for the production ``apply_op`` /
+    ``apply_ops_to_tree`` lane. The op renumbers section 73 -> 61 inside chapter 7,
+    which the production apply genuinely performs (a real ``applied`` mutation
+    event with renumbered paths), so the mutation-accounting and observed-vs-
+    declared guards have a real apply to reason over.
+    """
+    from lawvm.core.canonical_intent import (
+        CoverageMode,
+        ExecutionContract,
+        IntentKind,
+        NodeTarget,
+        Relabel,
+    )
+    from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
+    from lawvm.finland.ops import AmendmentOp, ResolvedOp
+
+    def _num(text: str) -> IRNode:
+        return IRNode(kind=IRNodeKind.NUM, text=text)
+
+    def _sec(label: str, text: str) -> IRNode:
+        return IRNode(
+            kind=IRNodeKind.SECTION,
+            label=label,
+            children=(_num(f"{label} §"), IRNode(kind=IRNodeKind.CONTENT, text=text)),
+        )
+
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="7",
+                children=(_num("7 luku"), _sec("60", "sixty"), _sec("62", "sixty-two"), _sec("73", "old73")),
+            ),
+        ),
+    )
+    state = ReplayState(ir=body)
+    ctx = StatuteContext(id="0/0", title="", base_ir=body, base_xml_bytes=b"<body/>")
+
+    lo = LegalOperation(
+        op_id="renumber_73_to_61",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("chapter", "7"), ("section", "73"))),
+        destination=LegalAddress(path=(("chapter", "7"), ("section", "61"))),
+        source=OperationSource(statute_id="1994/318"),
+    )
+    op = AmendmentOp(
+        op_id="renumber_73_to_61",
+        op_type="RENUMBER",
+        target_section="73",
+        target_unit_kind="section",
+        target_chapter="7",
+        source_statute="1994/318",
+        lo=lo,
+    )
+    intent = Relabel(
+        kind=IntentKind.RELABEL,
+        source=NodeTarget(address=LegalAddress(path=(("chapter", "7"), ("section", "73")))),
+        destination=NodeTarget(address=LegalAddress(path=(("chapter", "7"), ("section", "61")))),
+        contract=ExecutionContract(occupancy=None, coverage=CoverageMode.EXACT),
+    )
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=None,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="73",
+        target_chapter="7",
+    )
+    rop.intent = intent
+    return state, ctx, op, rop
+
+
+def drill_replay_unknown_mutation_outcome_apply_lane() -> None:
+    """REPLAY_UNKNOWN_MUTATION_OUTCOME surfaces from the production apply lane.
+
+    Production lane: ``apply_op`` performs a real RENUMBER and stamps the mutation
+    event via the production helper ``_emit_apply_mutation_event_for_rop``. The
+    drill patches that production stamping helper to force an outcome label that
+    is absent from APPLIED/FAILED/SKIPPED outcome sets, then runs the production
+    mutation-accounting guard ``check_apply_mutation_accounting`` over the real
+    events. An unknown outcome would otherwise silently bypass all boundary
+    accounting; the guard must fail loudly with REPLAY_UNKNOWN_MUTATION_OUTCOME.
+    """
+    from unittest.mock import patch as _patch
+
+    import lawvm.finland.apply_typed_dispatch as apply_typed_dispatch
+    from lawvm.finland.apply import apply_op
+    from lawvm.finland.apply_events import (
+        ApplyMutationEvent,
+        check_apply_mutation_accounting,
+        _emit_apply_mutation_event_for_rop as _real_emit,
+    )
+
+    state, ctx, _op, rop = _drill_renumber_rop()
+    events: list[ApplyMutationEvent] = []
+
+    def _unknown_outcome_emit(mutation_events_out, *, outcome, **kwargs):  # noqa: ANN001
+        # Force an outcome label outside the registered outcome sets while leaving
+        # the rest of the real production event construction intact.
+        return _real_emit(mutation_events_out, outcome="freshly_invented_outcome", **kwargs)
+
+    with _patch.object(apply_typed_dispatch, "_emit_apply_mutation_event_for_rop", _unknown_outcome_emit):
+        apply_op(state, None, ctx, None, rop=rop, replay_mode="legal_pit", mutation_events_out=events)
+
+    assert events, "production apply did not emit a mutation event"
+    assert events[-1].outcome == "freshly_invented_outcome"
+    violations = check_apply_mutation_accounting(events)
+    hits = [v for v in violations if v.split(" ", 1)[0] == "REPLAY_UNKNOWN_MUTATION_OUTCOME"]
+    assert hits, (
+        "unknown mutation outcome label did not surface REPLAY_UNKNOWN_MUTATION_OUTCOME "
+        "from the production mutation-accounting guard"
+    )
+
+
+def drill_replay_undeclared_tree_touch_apply_lane() -> None:
+    """APPLY.REPLAY_UNDECLARED_TREE_TOUCH observes an undeclared touch from production.
+
+    Production lane: ``apply_ops_to_tree`` performs a real RENUMBER and, inside
+    the fold, runs the production passive observed-vs-declared cross-check
+    (``_cross_check_observed_vs_declared``, gated by
+    ``OBSERVED_MUTATION_CROSS_CHECK_ENABLED``) against the op's declared mutation
+    events. The drill patches the production stamping helper to under-declare
+    (drop the renumbered/target/parent paths) so the genuine observed tree change
+    is no longer explained by the declared event paths. The cross-check is
+    passive (observation role, never gates replay); the drill asserts it records
+    a REPLAY_UNDECLARED_TREE_TOUCH result carrying the undeclared path payload.
+    """
+    from unittest.mock import patch as _patch
+
+    from lxml import etree
+
+    import lawvm.finland.apply_typed_dispatch as apply_typed_dispatch
+    import lawvm.finland.grafter as grafter
+    from lawvm.core.mutation_accounting import MutationAccountingResult
+    from lawvm.finland.apply_events import (
+        ApplyMutationEvent,
+        _emit_apply_mutation_event_for_rop as _real_emit,
+    )
+
+    assert grafter.OBSERVED_MUTATION_CROSS_CHECK_ENABLED, (
+        "observed-vs-declared cross-check is disabled; the K1 gate cannot observe"
+    )
+
+    state, ctx, op, rop = _drill_renumber_rop()
+    events: list[ApplyMutationEvent] = []
+    observed: list[MutationAccountingResult] = []
+
+    def _underdeclaring_emit(mutation_events_out, **kwargs):  # noqa: ANN001
+        # Keep the real apply, but emit an event that declares none of the paths
+        # the apply actually touched — the observed diff is then unexplained.
+        kwargs["renumbered_paths"] = ()
+        kwargs["resolved_target_path"] = None
+        kwargs["parent_path"] = None
+        return _real_emit(mutation_events_out, **kwargs)
+
+    muutos_tree = etree.fromstring(b"<body/>")
+    with _patch.object(apply_typed_dispatch, "_emit_apply_mutation_event_for_rop", _underdeclaring_emit):
+        grafter.apply_ops_to_tree(
+            state,
+            ctx,
+            [rop],
+            [op],
+            muutos_tree,
+            "muutetaan",
+            "1994/318",
+            "Laki",
+            None,
+            None,
+            None,
+            "legal_pit",
+            None,
+            None,
+            None,
+            None,
+            True,
+            mutation_events_out=events,
+            observed_touch_results_out=observed,
+        )
+
+    hits = [r for r in observed if r.code == "REPLAY_UNDECLARED_TREE_TOUCH"]
+    assert hits, (
+        "production apply touched an undeclared tree path but the observed-vs-"
+        "declared cross-check did not record REPLAY_UNDECLARED_TREE_TOUCH"
+    )
+    result = hits[0]
+    assert result.out_of_scope_paths, "undeclared-touch observation carried no path payload"
+    assert result.out_of_scope_paths == ((("chapter", "7"),),)
+
+
 # ---------------------------------------------------------------------------
 # xfail drills: verified structurally-unsatisfiable guards (liveness debt)
 # ---------------------------------------------------------------------------
@@ -368,23 +562,72 @@ def drill_replay_product_invariant_violation_cross_act() -> None:
 
 
 def drill_frontend_internal_error_finland_ingress() -> None:
-    """PARSE.FRONTEND_INTERNAL_ERROR should survive to the Finland replay ledger.
+    """PARSE.FRONTEND_INTERNAL_ERROR survives the Finland frontend ingress.
 
-    Structural cause (xfail): although the code is visible in
-    ``parse_clause(...).findings`` (covered by the passing drill above), it is
-    dropped twice on the Finland production replay lane. The frontend ingress
-    ``normalize_and_compile_ops`` never reads ``parse_result.findings``, and the
-    grafter sink projects only ``observation`` and ``obligation`` roles —
-    ``violation`` findings (PARSE.FRONTEND_INTERNAL_ERROR is a violation) are
-    discarded. So a frontend internal error never reaches the replay finding
-    ledger / verdict surface from Finland production.
+    Production lane: the Finland frontend ``normalize_and_compile_ops`` runs the
+    real PEG / clause compile, and ``parse_johtolause_clause`` records a blocking
+    PARSE.FRONTEND_INTERNAL_ERROR violation when the production surface resolver
+    crashes. The fault is injected by making the production resolver raise; the
+    guard, the parse-layer finding, and the frontend ingress finding-conservation
+    are all production code.
+
+    Previously this lane dropped the violation twice: ``normalize_and_compile_ops``
+    never read ``parse_result.findings`` and the grafter sink projected only
+    observation/obligation roles. Both layers now carry the violation, so the
+    code reaches the frontend ``PhaseResult`` ledger with ``has_blocking`` set.
+
+    The frontend-boundary correctness is also asserted by
+    ``test_decomposition.py::test_blocking_parse_violation_carries_through_frontend``;
+    this drill is the guard-liveness surface assertion for the same lane.
     """
-    raise AssertionError(
-        "PARSE.FRONTEND_INTERNAL_ERROR is dropped on the Finland lane: "
-        "normalize_and_compile_ops never reads parse_result.findings, and the "
-        "grafter finding sink keeps only observation/obligation roles, so the "
-        "violation-role internal-error finding never reaches the replay ledger"
+    import copy
+
+    from lxml import etree
+
+    import lawvm.finland.johtolause.surface_resolve as surface_resolve
+    from lawvm.finland.frontend_compile import normalize_and_compile_ops
+    from lawvm.finland.helpers import _fi_label_postprocessor
+
+    from unittest.mock import patch as _patch
+
+    def _statute_xml(date: str) -> bytes:
+        return (
+            "<akomaNtoso><act>"
+            f'<meta><lifecycle><eventRef date="{date}"/></lifecycle></meta>'
+            "<body><section><num>3 §</num>"
+            "<subsection><num>1</num><content><p>Vanha teksti.</p></content></subsection>"
+            "</section></body></act></akomaNtoso>"
+        ).encode()
+
+    ctx = StatuteContext.from_xml(_statute_xml("2000-01-01"), _fi_label_postprocessor)
+    master = ReplayState(ir=copy.deepcopy(ctx.base_ir))
+    muutos_tree = etree.fromstring(_statute_xml("2010-01-01"))
+
+    def raising_resolver(clause):  # noqa: ANN001
+        raise RuntimeError("synthetic internal resolver fault for guard-liveness drill")
+
+    with _patch.object(surface_resolve, "resolve_surface_clause", raising_resolver):
+        result = normalize_and_compile_ops(
+            johto="muutetaan 3 §:n 1 momentti seuraavasti:",
+            muutos_tree=muutos_tree,
+            master=master,
+            amendment_id="2010/100",
+            source_title="Laki muuttamisesta",
+            used_sec1_fallback=False,
+            parent_id="2000/1",
+        )
+
+    hits = [
+        f
+        for f in result.findings()
+        if f.role == "violation" and f.kind == "PARSE.FRONTEND_INTERNAL_ERROR"
+    ]
+    assert hits, (
+        "PARSE.FRONTEND_INTERNAL_ERROR was dropped at the Finland frontend ingress; "
+        "it must reach the frontend PhaseResult finding ledger"
     )
+    assert hits[0].blocking is True
+    assert result.has_blocking
 
 
 # ---------------------------------------------------------------------------
@@ -398,6 +641,7 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "APPLY.FAILED_OPERATION": drill_failed_operation_verdict_barrier,
     "APPLY.SOURCE_PATHOLOGY_DETECTED": drill_source_pathology_detected_verdict_barrier,
     "PARSE.FRONTEND_INTERNAL_ERROR": drill_frontend_internal_error_parse_surface,
+    "REPLAY_UNKNOWN_MUTATION_OUTCOME": drill_replay_unknown_mutation_outcome_apply_lane,
 }
 
 # A second, distinct surface for an already-covered code. Tracked separately so
@@ -407,12 +651,25 @@ SECONDARY_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "APPLY.TREE_INVARIANT_VIOLATION": drill_tree_invariant_violation_verdict_barrier,
 }
 
+# Additional distinct production surfaces for an already-covered code, where a
+# single code is keyed by more than one secondary lane. Tracked here (rather than
+# in SECONDARY_FIRE_DRILLS, which is one-drill-per-code) so each lane still gets
+# its own liveness assertion while the inventory keeps treating the code as
+# covered. The Finland frontend ingress lane is a second surface for
+# PARSE.FRONTEND_INTERNAL_ERROR (the parse surface is in FIRE_DRILLS): the B1 fix
+# made the parse-layer violation survive normalize_and_compile_ops + the grafter
+# sink, so this lane is now reachable and is no longer guard-liveness debt.
+EXTRA_SURFACE_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
+    "PARSE.FRONTEND_INTERNAL_ERROR": drill_frontend_internal_error_finland_ingress,
+}
+
 # Active fire-drills for codes registered as observation (non-blocking) rather
 # than blocking enforcement. They still exercise the production guard lane, but
 # they are tracked separately from FIRE_DRILLS because the blocking-code
 # inventory tests only police blocking codes.
 OBSERVATION_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "APPLY.OCCUPANCY_POLICY_VIOLATION": drill_occupancy_policy_violation_finland_production,
+    "APPLY.REPLAY_UNDECLARED_TREE_TOUCH": drill_replay_undeclared_tree_touch_apply_lane,
 }
 
 # code -> (reason, xfail-drill). These guards are verified structurally
@@ -423,12 +680,6 @@ XFAIL_FIRE_DRILLS: Dict[str, tuple[str, Callable[[], None]]] = {
         "UK same-day ordering group key includes affecting_act_id; cross-act "
         "conflicts are partitioned into different groups and never compared",
         drill_replay_product_invariant_violation_cross_act,
-    ),
-    "PARSE.FRONTEND_INTERNAL_ERROR_FINLAND_INGRESS": (
-        "Finland normalize_and_compile_ops never reads parse_result.findings "
-        "and the grafter sink keeps only observation/obligation roles, so the "
-        "violation-role internal-error finding is dropped before the replay ledger",
-        drill_frontend_internal_error_finland_ingress,
     ),
 }
 
@@ -557,6 +808,12 @@ def test_secondary_fire_drill_reaches_consumer_surface(code: str) -> None:
     SECONDARY_FIRE_DRILLS[code]()
 
 
+@pytest.mark.parametrize("code", sorted(EXTRA_SURFACE_FIRE_DRILLS))
+def test_extra_surface_fire_drill_reaches_consumer_surface(code: str) -> None:
+    """Extra production surfaces for an already-covered code reach their guard surface."""
+    EXTRA_SURFACE_FIRE_DRILLS[code]()
+
+
 @pytest.mark.parametrize("code", sorted(OBSERVATION_FIRE_DRILLS))
 def test_observation_fire_drill_reaches_consumer_surface(code: str) -> None:
     """Non-blocking observation guards still reach their production surface."""
@@ -578,7 +835,7 @@ def test_known_unsatisfiable_guard_is_documented(code: str, request: pytest.Fixt
 
 def test_every_fire_drill_targets_a_registered_blocking_code() -> None:
     """Fire-drills must target real, blocking registry codes (no dead drills)."""
-    drilled = set(FIRE_DRILLS) | set(SECONDARY_FIRE_DRILLS)
+    drilled = set(FIRE_DRILLS) | set(SECONDARY_FIRE_DRILLS) | set(EXTRA_SURFACE_FIRE_DRILLS)
     blocking = _blocking_codes()
     for code in sorted(drilled):
         spec = FINDING_REGISTRY.get(code)
@@ -593,9 +850,9 @@ def test_xfail_drills_name_real_codes_or_synthetic_ingress_markers() -> None:
     """xfail drills must reference a registered finding code (or a documented ingress marker)."""
     # Synthetic markers document a loss point for an already-registered code on a
     # specific lane; they are suffixed and resolve to a real registered code.
-    synthetic_to_real = {
-        "PARSE.FRONTEND_INTERNAL_ERROR_FINLAND_INGRESS": "PARSE.FRONTEND_INTERNAL_ERROR",
-    }
+    # (None active right now: the Finland-ingress marker was retired once the
+    # PARSE.FRONTEND_INTERNAL_ERROR ingress lane became reachable.)
+    synthetic_to_real: Dict[str, str] = {}
     blocking = _blocking_codes()
     for code in sorted(XFAIL_FIRE_DRILLS):
         real_code = synthetic_to_real.get(code, code)
