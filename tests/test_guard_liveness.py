@@ -249,11 +249,11 @@ def drill_frontend_internal_error_parse_surface() -> None:
     def raising_resolver(clause):  # noqa: ANN001
         raise RuntimeError("synthetic internal resolver fault for guard-liveness drill")
 
-    surface_resolve.resolve_surface_clause = raising_resolver
+    setattr(surface_resolve, "resolve_surface_clause", raising_resolver)
     try:
         result = api.parse_clause("Muutetaan lain 1 §.")
     finally:
-        surface_resolve.resolve_surface_clause = original
+        setattr(surface_resolve, "resolve_surface_clause", original)
 
     hits = [f for f in result.findings if f.kind == "PARSE.FRONTEND_INTERNAL_ERROR"]
     assert hits, "internal resolver fault did not surface PARSE.FRONTEND_INTERNAL_ERROR"
