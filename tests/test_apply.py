@@ -11273,8 +11273,50 @@ def test_legacy_subsection_replace_event_records_primary_target_touch() -> None:
     event = mutation_events[0]
     assert event.helper == "_apply_deterministic_subsection_op"
     assert event.outcome == "applied"
-    assert event.replaced_paths == (((("section", "1"), ("subsection", "1"))),)
+    assert event.replaced_paths == (
+        (("section", "1"), ("subsection", "1")),
+        (("section", "1"), ("subsection", "1"), ("content", "")),
+    )
     assert check_apply_mutation_accounting([event]) == []
+
+
+def test_section_subtree_landed_touch_paths_scoped_to_resolved_section() -> None:
+    from lawvm.core import tree_ops as _tops
+    from lawvm.finland.apply_typed_dispatch import _section_subtree_landed_touch_paths
+
+    before_state = _make_state(
+        _body(
+            _sec("1", _sub("1", _content("old"))),
+            _sec("2", _sub("1", _content("neighbour"))),
+        )
+    )
+    after_state = _make_state(
+        _body(
+            _sec("1", _sub("1", _content("new"))),
+            _sec("2", _sub("1", _content("touched outside the resolved section"))),
+        )
+    )
+    sec_path = (("section", "1"),)
+    before_sec = _tops.resolve(before_state.ir, sec_path)
+
+    landed = _section_subtree_landed_touch_paths(before_sec, after_state, sec_path)
+
+    # Only the in-section landed touch is declared; the sibling section's
+    # change stays undeclared, so the observed-vs-declared guard remains live
+    # for any touch outside the resolved section.
+    assert landed == ((("section", "1"), ("subsection", "1"), ("content", "")),)
+
+    # A child-shape change bottoms the diff out at the section root, which is
+    # excluded from the declaration: the container-ancestor rule already
+    # explains the root via the declared nominal child, and declaring the root
+    # would widen the declared region to the whole section.
+    reshaped_state = _make_state(
+        _body(
+            _sec("1", _sub("1", _content("old")), _sub("2", _content("added"))),
+            _sec("2", _sub("1", _content("neighbour"))),
+        )
+    )
+    assert _section_subtree_landed_touch_paths(before_sec, reshaped_state, sec_path) == ()
 
 
 def test_typed_dispatch_unknown_intent_emits_failed_event() -> None:

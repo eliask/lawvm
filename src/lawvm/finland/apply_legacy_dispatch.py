@@ -45,6 +45,10 @@ from lawvm.finland.apply_events import (
     _target_address_path_for_rop_event,
     landed_section_event_path,
 )
+from lawvm.finland.apply_typed_dispatch import (
+    _section_heading_touch_paths,
+    _section_subtree_landed_touch_paths,
+)
 from lawvm.finland.migration_ledger import MigrationLedger, migration_lower_bound_for_op
 
 if TYPE_CHECKING:
@@ -459,9 +463,9 @@ def _apply_legacy_dispatch(
             if rop is not None
             else _resolved_target_path_for_event(dispatch_op, sec_path)
         )
-        consumed_paths = ()
-        created_paths = ()
-        replaced_paths = ()
+        consumed_paths: TreePaths = ()
+        created_paths: TreePaths = ()
+        replaced_paths: TreePaths = ()
         if subsection_result is not state and resolved_target_path is not None:
             action = dispatch_op.op_type.lower()
             if action == "insert":
@@ -470,6 +474,21 @@ def _apply_legacy_dispatch(
                 replaced_paths = (resolved_target_path,)
             else:
                 consumed_paths = (resolved_target_path,)
+        # Mirror the typed-dispatch declaration treatment: the heading
+        # side-effect and the landed section-subtree touches both diverge from
+        # the nominal target path, on this path too.
+        heading_created, heading_replaced = _section_heading_touch_paths(
+            sec_node, subsection_result, sec_path
+        )
+        created_paths = created_paths + heading_created
+        replaced_paths = replaced_paths + heading_replaced
+        already_declared = set(created_paths + replaced_paths + consumed_paths)
+        landed_paths = tuple(
+            path
+            for path in _section_subtree_landed_touch_paths(sec_node, subsection_result, sec_path)
+            if path not in already_declared
+        )
+        replaced_paths = replaced_paths + landed_paths
         _emit(
             helper="_apply_deterministic_subsection_op",
             outcome="applied" if subsection_result is not state else "failed",

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, FrozenSet, List, Optional, cast
 from lawvm.core.compile_result import SourcePathology, StrictProfile
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir import LegalOperation as _LegalOperation
+from lawvm.core.mutation_boundary import diff_ir_paths_identity_pruned
 from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.core import tree_ops as _tops
@@ -268,6 +269,43 @@ def _section_heading_touch_paths(
         return ((), ())
     heading_path = base_path + (("heading", after_heading.label or ""),)
     return ((), (heading_path,))
+
+
+def _section_subtree_landed_touch_paths(
+    before_sec: Optional[IRNode],
+    after_state: "ReplayState",
+    sec_path: Path,
+) -> TreePaths:
+    """Return the section-subtree paths the subsection dispatch actually changed.
+
+    The op's nominal resolved address counts list items as ``subsection:N/item:M``,
+    but the elaboration rails (sparse-slot rebase, single-subsection item
+    fallback) legitimately land the write at a different live subsection index:
+    intro subsections, single-subsection paragraph lists, and leading OMISSION
+    nodes all shift the subsection axis relative to the nominal count. A
+    declaration built from the nominal address alone therefore misses the landed
+    node. Diff the section subtree before vs after dispatch and declare the
+    descendant paths that actually changed — the same before/after treatment as
+    ``_section_heading_touch_paths``, generalised to all section children.
+
+    Scoped on purpose: only paths inside the resolved section are declared, so
+    the observed-vs-declared cross-check stays live for any touch outside the
+    section the op resolved to. The section root itself is excluded — its
+    child-shape change is already explained by the declared children via the
+    container-ancestor rule, and declaring it would widen the declared region
+    to the whole section.
+    """
+    after_sec = _tops.resolve(after_state.ir, sec_path)
+    if before_sec is None or after_sec is None:
+        return ()
+    base_path = _path_to_tuple(sec_path)
+    if base_path is None:
+        return ()
+    return tuple(
+        base_path + rel_path
+        for rel_path in diff_ir_paths_identity_pruned(before_sec, after_sec)
+        if rel_path
+    )
 
 
 def _find_scoped_section_insert_parent_path(
@@ -585,6 +623,17 @@ def _apply_intent_section_level(
         )
         created_paths = created_paths + heading_created
         replaced_paths = replaced_paths + heading_replaced
+        # The nominal subsection:N/item:M suffix can disagree with the live
+        # subsection index the elaboration rails landed on; declare the landed
+        # section-subtree touches so the declaration reflects reality, not the
+        # address' subsection count.
+        already_declared = set(created_paths + replaced_paths + consumed_paths)
+        landed_paths = tuple(
+            path
+            for path in _section_subtree_landed_touch_paths(sec_node, subsection_result, sec_path)
+            if path not in already_declared
+        )
+        replaced_paths = replaced_paths + landed_paths
         _emit_apply_mutation_event_for_rop(
             mutation_events_out,
             rop=rop,
