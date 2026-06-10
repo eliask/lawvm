@@ -54,11 +54,48 @@ def _resolved_target_path_for_rop_event(
     rop: ResolvedOp,
     sec_path: Path | None,
 ) -> TreePath | None:
-    """Resolve mutation-event target identity from late-waist fields."""
-    resolved_address_path = _target_address_path_for_rop_event(rop)
-    if resolved_address_path is not None:
-        return resolved_address_path
-    return _path_to_tuple(sec_path)
+    """Resolve mutation-event target identity from late-waist fields.
+
+    When the resolver bound a concrete section node (``sec_path``), derive the
+    event's declared path from that *resolved* location rather than the op's
+    nominal compiled address.  The nominal address can carry a stale/unqualified
+    chapter (flat-numbered statutes, renumber, hoist) while the bound node lives
+    under a different chapter; preferring ``sec_path`` keeps the declared path
+    fully rooted at the node the write actually landed on.  Any subsection/item/
+    special suffix the nominal address declares below the section is grafted onto
+    the resolved section path so the event path stays fully chapter-qualified.
+    """
+    if sec_path is not None:
+        return _rooted_target_path_from_resolved_section(rop, sec_path)
+    return _target_address_path_for_rop_event(rop)
+
+
+def _rooted_target_path_from_resolved_section(
+    rop: ResolvedOp,
+    sec_path: Path,
+) -> TreePath | None:
+    """Graft the nominal address' below-section suffix onto the resolved section path."""
+    resolved = _path_to_tuple(sec_path)
+    if resolved is None:
+        return None
+    return resolved + _below_section_suffix_for_rop(rop)
+
+
+def _below_section_suffix_for_rop(rop: ResolvedOp) -> TreePath:
+    """Return the subsection/item/special steps below the section level.
+
+    Sourced from the op's resolved target address so the suffix matches what the
+    helper resolved against, but stripped of everything up to and including the
+    section step (the section identity comes from the resolved ``sec_path``).
+    """
+    address = rop.resolved_target_address
+    if address is None or not address.path:
+        return ()
+    path = tuple((str(kind), str(label)) for kind, label in address.path)
+    section_indices = [index for index, (kind, _label) in enumerate(path) if kind == "section"]
+    if not section_indices:
+        return ()
+    return path[section_indices[-1] + 1 :]
 
 
 def _target_address_path_for_rop_event(
@@ -218,6 +255,8 @@ __all__ = [
     "_path_to_tuple",
     "_resolved_target_path_for_event",
     "_resolved_target_path_for_rop_event",
+    "_rooted_target_path_from_resolved_section",
+    "_below_section_suffix_for_rop",
     "_target_address_path_for_rop_event",
     "_emit_apply_mutation_event",
     "_emit_apply_mutation_event_for_rop",

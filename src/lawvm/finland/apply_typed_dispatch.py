@@ -228,6 +228,44 @@ def _parent_path(path: TreePath | None) -> TreePath | None:
     return path[:-1]
 
 
+def _section_heading_node(sec_node: Optional[IRNode]) -> Optional[IRNode]:
+    if sec_node is None:
+        return None
+    return next((c for c in sec_node.children if c.kind is IRNodeKind.HEADING), None)
+
+
+def _section_heading_touch_paths(
+    before_sec: Optional[IRNode],
+    after_state: "ReplayState",
+    sec_path: Path,
+) -> tuple[TreePaths, TreePaths]:
+    """Return (created, replaced) heading paths the subsection dispatch touched.
+
+    The subsection handlers rewrite a section's ``heading`` sibling as a
+    side-effect when the amendment payload carries a differing heading. The
+    diff observes that change at ``<sec_path>/heading:`` but the op's declared
+    paths only cover the subsection/item target. Compare the section's heading
+    node before and after dispatch and declare what actually moved: ``created``
+    when no heading existed before, ``replaced`` when its text/attrs changed.
+    """
+    after_sec = _tops.resolve(after_state.ir, sec_path)
+    before_heading = _section_heading_node(before_sec)
+    after_heading = _section_heading_node(after_sec)
+    if after_heading is None:
+        return ((), ())
+    if before_heading is None:
+        heading_path = cast(TreePath, _path_to_tuple(sec_path) + (("heading", after_heading.label or ""),))
+        return ((heading_path,), ())
+    if (
+        before_heading.text == after_heading.text
+        and dict(before_heading.attrs) == dict(after_heading.attrs)
+        and (before_heading.label or "") == (after_heading.label or "")
+    ):
+        return ((), ())
+    heading_path = cast(TreePath, _path_to_tuple(sec_path) + (("heading", after_heading.label or ""),))
+    return ((), (heading_path,))
+
+
 def _find_scoped_section_insert_parent_path(
     ir: IRNode,
     *,
@@ -502,9 +540,9 @@ def _apply_intent_section_level(
     )
     if subsection_result is not None:
         resolved_target_path = _resolved_target_path_for_rop_event(rop, sec_path)
-        consumed_paths = ()
-        created_paths = ()
-        replaced_paths = ()
+        consumed_paths: TreePaths = ()
+        created_paths: TreePaths = ()
+        replaced_paths: TreePaths = ()
         if subsection_result is not state and resolved_target_path is not None:
             action = rop.resolved_action_type.lower()
             if action == "insert":
@@ -513,6 +551,15 @@ def _apply_intent_section_level(
                 replaced_paths = (resolved_target_path,)
             else:
                 consumed_paths = (resolved_target_path,)
+        # The subsection dispatch updates the section heading as a side-effect
+        # when the amendment payload carries a differing heading
+        # (``_maybe_update_section_heading``). Declare the heading sibling the
+        # helper actually touched so the change is accounted, not undeclared.
+        heading_created, heading_replaced = _section_heading_touch_paths(
+            sec_node, subsection_result, sec_path
+        )
+        created_paths = created_paths + heading_created
+        replaced_paths = replaced_paths + heading_replaced
         _emit_apply_mutation_event_for_rop(
             mutation_events_out,
             rop=rop,
