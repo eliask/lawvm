@@ -53509,6 +53509,52 @@ def test_order_uk_effects_for_replay_uses_source_provision_order_within_same_act
     assert diagnostics[0]["strict_disposition"] == "record"
 
 
+def test_order_uk_effects_for_replay_groups_same_target_despite_differing_modified_dates() -> None:
+    # Same affecting act, same effective date, same affected target, but different
+    # editorial-modification dates. The order-normalization diagnostic must still
+    # fire: grouping is by the affected target provision, not the editorial
+    # "Modified" timestamp.
+    later = _minimal_uk_effect(
+        "key-2995bc9d550cefeee85f3c9f5211ef7c",
+        affecting_provisions="reg. 17(7)(a)(iii)",
+    )
+    later.modified = "2024-12-01"
+    earlier = _minimal_uk_effect(
+        "key-b356d431a25c04a6eff3a8e68a50dfb1",
+        affecting_provisions="reg. 17(7)(a)(ii)",
+    )
+    earlier.modified = "2023-05-09"
+    diagnostics: list[dict[str, Any]] = []
+
+    ordered = _order_uk_effects_for_replay([later, earlier], diagnostics_out=diagnostics)
+
+    assert [effect.effect_id for effect in ordered] == [earlier.effect_id, later.effect_id]
+    assert diagnostics
+    assert diagnostics[0]["rule_id"] == "uk_effect_source_provision_order_normalized"
+    assert diagnostics[0]["affected_target"] == "Sch. 9 para. 129(2)(a)"
+
+
+def test_order_uk_effects_for_replay_does_not_group_different_targets() -> None:
+    # Same affecting act and effective date but different affected targets: the
+    # effects belong to separate single-element groups, so no order-normalization
+    # diagnostic should be recorded.
+    later = _minimal_uk_effect(
+        "key-2995bc9d550cefeee85f3c9f5211ef7c",
+        affecting_provisions="reg. 17(7)(a)(iii)",
+        affected_provisions="Sch. 9 para. 129(2)(a)",
+    )
+    earlier = _minimal_uk_effect(
+        "key-b356d431a25c04a6eff3a8e68a50dfb1",
+        affecting_provisions="reg. 17(7)(a)(ii)",
+        affected_provisions="Sch. 9 para. 130(1)(b)",
+    )
+    diagnostics: list[dict[str, Any]] = []
+
+    _order_uk_effects_for_replay([later, earlier], diagnostics_out=diagnostics)
+
+    assert diagnostics == []
+
+
 def test_order_uk_text_patch_preimage_chains_orders_exact_same_target_chain() -> None:
     target = LegalAddress((("section", "4"), ("subsection", "1")))
     later = LegalOperation(

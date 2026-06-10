@@ -41,7 +41,7 @@ def _uk_ordering_diagnostic(
 
 class _EffectOrderingGroupKey(NamedTuple):
     effective_date: str
-    modified_target: str
+    affected_target: str
     affecting_act_id: str
 
 
@@ -132,7 +132,7 @@ def _order_uk_effects_for_replay(
     for effect in original:
         group_key = _EffectOrderingGroupKey(
             effective_date=_effective_date(effect) or "9999-99-99",
-            modified_target=str(effect.modified or ""),
+            affected_target=str(effect.affected_provisions or ""),
             affecting_act_id=effect.affecting_act_id,
         )
         groups.setdefault(group_key, []).append(effect)
@@ -149,12 +149,13 @@ def _order_uk_effects_for_replay(
         record = _uk_ordering_diagnostic(
             rule_id="uk_effect_source_provision_order_normalized",
             reason=(
-                "UK effects with the same effective date and affecting act "
-                "were ordered by source provision citation rather than opaque effect id"
+                "UK effects with the same effective date, affected target, and "
+                "affecting act were ordered by source provision citation rather "
+                "than opaque effect id"
             ),
             blocking=False,
             effective_date=group_key[0],
-            modified=group_key[1],
+            affected_target=group_key[1],
             affecting_act_id=group_key[2],
             reason_code="same_date_same_affecting_act_source_citation_order",
             original_effect_ids=tuple(old_ids),
