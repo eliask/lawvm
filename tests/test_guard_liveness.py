@@ -268,22 +268,88 @@ def drill_frontend_internal_error_parse_surface() -> None:
 
 
 def drill_occupancy_policy_violation_finland_production() -> None:
-    """APPLY.OCCUPANCY_POLICY_VIOLATION should fire from the Finland apply lane.
+    """APPLY.OCCUPANCY_POLICY_VIOLATION fires from the Finland apply lane.
 
-    Structural cause (xfail): the only live OccupancyPolicy builder on the
-    Finland production lane, ``_compat_upsert_policy`` in finland/ops.py, sets
-    ``allowed_from = frozenset(OccupancyClass)`` — every occupancy class is
-    permitted. The typed occupancy contract therefore never rejects a target,
-    so APPLY.OCCUPANCY_POLICY_VIOLATION is structurally unsatisfiable from
-    production. A real production drill cannot drive the guard into its firing
-    state; hand-building a strict policy would only test the dead guard in
-    isolation, which is exactly the false assurance this suite exists to catch.
+    Production lane: the intent is built by the real ``_build_canonical_intent``
+    (no hand-built policy), so the occupancy contract is the per-action policy
+    the production builder assigns to a REPLACE. The drill puts the target slot
+    into the tombstone occupancy class — the legitimate-but-non-primary
+    reenactment lane — and runs the production ``_check_occupancy_policy``
+    guard, asserting it records the observational finding. (Before the
+    per-action policies, REPLACE carried ``allowed_from = frozenset(
+    OccupancyClass)`` and the guard was structurally unsatisfiable.)
     """
-    raise AssertionError(
-        "no production lane builds an OccupancyPolicy whose allowed_from can "
-        "reject a live target; _compat_upsert_policy permits all OccupancyClass "
-        "values, so APPLY.OCCUPANCY_POLICY_VIOLATION cannot fire from production"
+    from lawvm.core.canonical_intent import NodeTarget, Replace
+    from lawvm.core.ir import IRNode, LegalAddress
+    from lawvm.core.occupancy import OccupancyClass
+    from lawvm.core.semantic_types import IRNodeKind
+    from lawvm.finland.apply_policy import _check_occupancy_policy
+    from lawvm.finland.ops import AmendmentOp, ResolvedOp, _build_canonical_intent
+
+    op = AmendmentOp(
+        op_id="guard-liveness/occupancy",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="1",
+        source_statute="1991/1",
     )
+    rop = ResolvedOp(
+        op=op,
+        muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="1"),
+        cross_ir=None,
+        amend_sub_ir=None,
+        op_id=op.op_id,
+        target_unit_kind="section",
+        target_norm="1",
+        _op_type_seed="REPLACE",
+        _source_statute_override="1991/1",
+        _target_address_override=LegalAddress(path=(("section", "1"),)),
+    )
+
+    intent = _build_canonical_intent(rop)
+    assert isinstance(intent, Replace), (
+        "production builder did not produce a Replace intent for a REPLACE op"
+    )
+    assert isinstance(intent.target, NodeTarget)
+    # Production REPLACE policy must be able to reject some occupancy class;
+    # an all-classes allowed_from is the vacuity bug this drill guards against.
+    assert intent.contract.occupancy.allowed_from != frozenset(OccupancyClass), (
+        "production REPLACE policy permits every occupancy class; the occupancy "
+        "guard would be structurally unsatisfiable again"
+    )
+
+    # Tombstone slot: REPLACE is allowed (reenactment lane) but non-primary, so
+    # the production guard records the observational finding.
+    tombstone = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                attrs={"lawvm_repeal_placeholder": "1"},
+            ),
+        ),
+    )
+    state = ReplayState(ir=tombstone)
+    findings: list[Finding] = []
+    _check_occupancy_policy(
+        state,
+        rop,
+        intent,
+        (("section", "1"),),
+        "guard-liveness/occupancy",
+        findings_out=findings,
+    )
+
+    hits = [f for f in findings if f.kind == "APPLY.OCCUPANCY_POLICY_VIOLATION"]
+    assert hits, (
+        "production REPLACE-on-tombstone did not record an occupancy policy "
+        "observation"
+    )
+    finding = hits[0]
+    assert finding.role == "observation"
+    assert finding.blocking is False
+    assert finding.detail["current_occupancy"] == "tombstone"
 
 
 def drill_replay_product_invariant_violation_cross_act() -> None:
@@ -344,15 +410,18 @@ SECONDARY_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "APPLY.TREE_INVARIANT_VIOLATION": drill_tree_invariant_violation_verdict_barrier,
 }
 
+# Active fire-drills for codes registered as observation (non-blocking) rather
+# than blocking enforcement. They still exercise the production guard lane, but
+# they are tracked separately from FIRE_DRILLS because the blocking-code
+# inventory tests only police blocking codes.
+OBSERVATION_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
+    "APPLY.OCCUPANCY_POLICY_VIOLATION": drill_occupancy_policy_violation_finland_production,
+}
+
 # code -> (reason, xfail-drill). These guards are verified structurally
 # unsatisfiable from the production lane today; the drill raises to document the
 # debt and would xpass (hard-fail) if the structural cause were fixed.
 XFAIL_FIRE_DRILLS: Dict[str, tuple[str, Callable[[], None]]] = {
-    "APPLY.OCCUPANCY_POLICY_VIOLATION": (
-        "Finland _compat_upsert_policy permits all OccupancyClass values "
-        "(allowed_from = frozenset(OccupancyClass)); guard never rejects",
-        drill_occupancy_policy_violation_finland_production,
-    ),
     "APPLY.REPLAY_PRODUCT_INVARIANT_VIOLATION": (
         "UK same-day ordering group key includes affecting_act_id; cross-act "
         "conflicts are partitioned into different groups and never compared",
@@ -491,6 +560,12 @@ def test_secondary_fire_drill_reaches_consumer_surface(code: str) -> None:
     SECONDARY_FIRE_DRILLS[code]()
 
 
+@pytest.mark.parametrize("code", sorted(OBSERVATION_FIRE_DRILLS))
+def test_observation_fire_drill_reaches_consumer_surface(code: str) -> None:
+    """Non-blocking observation guards still reach their production surface."""
+    OBSERVATION_FIRE_DRILLS[code]()
+
+
 @pytest.mark.parametrize("code", sorted(XFAIL_FIRE_DRILLS))
 def test_known_unsatisfiable_guard_is_documented(code: str, request: pytest.FixtureRequest) -> None:
     """Document verified guard-liveness debt.
@@ -518,30 +593,30 @@ def test_every_fire_drill_targets_a_registered_blocking_code() -> None:
 
 
 def test_xfail_drills_name_real_codes_or_synthetic_ingress_markers() -> None:
-    """xfail drills must reference a registered finding code (or a documented ingress marker).
-
-    Most xfail drills name blocking codes. ``APPLY.OCCUPANCY_POLICY_VIOLATION`` is
-    a deliberate exception: it is registered with ``warn`` enforcement /
-    ``observation`` role even though it is named and intended as a contract
-    violation, and the audit flagged it as a guard-liveness problem. Its
-    under-enforcement is itself part of the documented debt, so the drill is
-    allowed to name a non-blocking code as long as the code is real.
-    """
+    """xfail drills must reference a registered finding code (or a documented ingress marker)."""
     # Synthetic markers document a loss point for an already-registered code on a
     # specific lane; they are suffixed and resolve to a real registered code.
     synthetic_to_real = {
         "PARSE.FRONTEND_INTERNAL_ERROR_FINLAND_INGRESS": "PARSE.FRONTEND_INTERNAL_ERROR",
     }
-    # Codes whose registry enforcement is intentionally below "blocking" but are
-    # still legitimate guard-liveness debt (the under-enforcement is the debt).
-    allowed_non_blocking = {"APPLY.OCCUPANCY_POLICY_VIOLATION"}
     blocking = _blocking_codes()
     for code in sorted(XFAIL_FIRE_DRILLS):
         real_code = synthetic_to_real.get(code, code)
         spec = FINDING_REGISTRY.get(real_code)
         assert spec is not None, f"xfail drill references unregistered code: {real_code}"
-        assert real_code in blocking or real_code in allowed_non_blocking, (
+        assert real_code in blocking, (
             f"xfail drill references non-blocking code: {real_code}"
+        )
+
+
+def test_observation_fire_drills_name_real_non_blocking_codes() -> None:
+    """Observation fire-drills must name registered, non-blocking observation codes."""
+    blocking = _blocking_codes()
+    for code in sorted(OBSERVATION_FIRE_DRILLS):
+        spec = FINDING_REGISTRY.get(code)
+        assert spec is not None, f"observation fire-drill references unregistered code: {code}"
+        assert code not in blocking, (
+            f"observation fire-drill {code!r} is a blocking code; move it to FIRE_DRILLS"
         )
 
 

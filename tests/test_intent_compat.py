@@ -43,6 +43,7 @@ from lawvm.finland.ops import (
     AmendmentOp,
     ResolvedOp,
     _assert_intent_compat,
+    _build_canonical_intent,
     intent_compat_stats,
 )
 from lawvm.finland.apply_policy import _check_occupancy_policy
@@ -749,3 +750,155 @@ def test_assert_intent_compat_returns_none_on_match() -> None:
 
     result = _assert_intent_compat(rop, intent, "ctx:return_value_match")
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Tests: production intent builder assigns per-action occupancy policies
+# (no production intent may carry allowed_from == every OccupancyClass).
+# ---------------------------------------------------------------------------
+
+
+def _production_section_rop(op_type: str) -> ResolvedOp:
+    """A lowered, address-bearing ResolvedOp with a real section payload.
+
+    The intent is then built by the production ``_build_canonical_intent``,
+    not hand-assembled, so the occupancy contract is the one the production
+    builder assigns per action.
+    """
+    from lawvm.core.ir import IRNode
+
+    op = AmendmentOp(
+        op_id="prod",
+        op_type=cast(Any, op_type),
+        target_unit_kind="section",
+        target_section="1",
+        source_statute="2020/1",
+    )
+    return ResolvedOp(
+        op=op,
+        muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="1"),
+        cross_ir=None,
+        amend_sub_ir=None,
+        op_id=op.op_id,
+        target_unit_kind="section",
+        target_norm="1",
+        _op_type_seed=op_type,
+        _source_statute_override="2020/1",
+        _target_address_override=LegalAddress(path=(("section", "1"),)),
+    )
+
+
+def test_production_intents_never_allow_all_occupancy_classes() -> None:
+    """No production-built section intent carries allowed_from == all classes."""
+    from lawvm.core.occupancy import OccupancyClass
+
+    all_classes = frozenset(OccupancyClass)
+    for op_type in ("REPLACE", "INSERT", "REPEAL"):
+        intent = _build_canonical_intent(_production_section_rop(op_type))
+        assert intent is not None, f"production builder returned None for {op_type}"
+        policy = intent.contract.occupancy
+        assert policy.allowed_from != all_classes, (
+            f"{op_type} intent permits every occupancy class — vacuous policy"
+        )
+
+
+def test_production_per_action_occupancy_policy_shapes() -> None:
+    """Each action's production occupancy policy has the decided shape."""
+    from lawvm.core.occupancy import OccupancyClass
+
+    replace_policy = _build_canonical_intent(
+        _production_section_rop("REPLACE")
+    ).contract.occupancy
+    assert replace_policy.primary_expected_from == frozenset({OccupancyClass.SUBSTANTIVE})
+    assert replace_policy.allowed_from == frozenset(
+        {OccupancyClass.SUBSTANTIVE, OccupancyClass.TOMBSTONE}
+    )
+
+    insert_policy = _build_canonical_intent(
+        _production_section_rop("INSERT")
+    ).contract.occupancy
+    assert insert_policy.primary_expected_from == frozenset({OccupancyClass.ABSENT})
+    assert insert_policy.allowed_from == frozenset(
+        {OccupancyClass.ABSENT, OccupancyClass.TOMBSTONE, OccupancyClass.SCAFFOLD}
+    )
+
+    repeal_policy = _build_canonical_intent(
+        _production_section_rop("REPEAL")
+    ).contract.occupancy
+    assert repeal_policy.primary_expected_from == frozenset({OccupancyClass.SUBSTANTIVE})
+    assert repeal_policy.allowed_from == frozenset(
+        {OccupancyClass.SUBSTANTIVE, OccupancyClass.TOMBSTONE}
+    )
+
+
+def test_production_lane_replace_on_tombstone_emits_observation() -> None:
+    """A production REPLACE landing on a tombstone records the occupancy note.
+
+    The intent comes from the production builder (REPLACE allows tombstone as
+    the non-primary reenactment lane), and the production occupancy guard
+    records an observational, non-blocking finding for triage.
+    """
+    from lawvm.core.ir import IRNode
+    from lawvm.finland.statute import ReplayState
+
+    rop = _production_section_rop("REPLACE")
+    intent = _build_canonical_intent(rop)
+    assert intent is not None
+
+    tombstone = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                attrs={"lawvm_repeal_placeholder": "1"},
+            ),
+        ),
+    )
+    findings: list = []
+    _check_occupancy_policy(
+        ReplayState(ir=tombstone),
+        rop,
+        intent,
+        (("section", "1"),),
+        "ctx:prod_tombstone_replace",
+        findings_out=findings,
+    )
+
+    hits = [f for f in findings if f.kind == "APPLY.OCCUPANCY_POLICY_VIOLATION"]
+    assert len(hits) == 1
+    finding = hits[0]
+    assert finding.role == "observation"
+    assert finding.blocking is False
+    assert finding.detail["current_occupancy"] == "tombstone"
+    assert finding.detail["allowed_non_primary"] is True
+
+
+def test_production_lane_replace_on_absent_emits_violation() -> None:
+    """A production REPLACE on an absent slot falls outside allowed_from."""
+    from lawvm.core.ir import IRNode
+    from lawvm.finland.statute import ReplayState
+
+    rop = _production_section_rop("REPLACE")
+    intent = _build_canonical_intent(rop)
+    assert intent is not None
+
+    # Empty body: the §1 slot has never existed → ABSENT, outside allowed_from.
+    empty_body = IRNode(kind=IRNodeKind.BODY)
+    findings: list = []
+    _check_occupancy_policy(
+        ReplayState(ir=empty_body),
+        rop,
+        intent,
+        (("section", "1"),),
+        "ctx:prod_absent_replace",
+        findings_out=findings,
+    )
+
+    hits = [f for f in findings if f.kind == "APPLY.OCCUPANCY_POLICY_VIOLATION"]
+    assert len(hits) == 1
+    finding = hits[0]
+    assert finding.role == "observation"
+    assert finding.blocking is False
+    assert finding.detail["current_occupancy"] == "absent"
+    assert "allowed_non_primary" not in finding.detail
