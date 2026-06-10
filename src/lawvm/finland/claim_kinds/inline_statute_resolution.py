@@ -16,6 +16,10 @@ Two deterministic validators:
        b. resolved_statute_id matches NNNN/YYYY shape (after canonicalization).
        c. citation_form parses to a compatible year/number reference via
           known Finnish citation patterns.
+       d. (corpus existence check) resolved_statute_id's canonical year/number
+          exists in data/fi/v1/statutes.parquet as a known Finnish statute.
+          EU regulation IDs like '1210/2010' may pass checks a-c but are NOT
+          Finnish statutes; check d rejects them.
      If citation form is structurally unresolvable → UNVALIDATED + reason.
 
 Canonicalization (pre-1980 legacy form):
@@ -25,6 +29,15 @@ Canonicalization (pre-1980 legacy form):
   _canonicalize_finnish_statute_id() handles this expansion. Callers (propose-claims)
   normalize before validation so stored claims always carry canonical form.
 
+Corpus-existence check (Bug C):
+  Finnish statute IDs in data/fi/v1/statutes.parquet use YYYY/N (year/number)
+  format (e.g. '2003/434' = Hallintolaki, statute 434 of year 2003).
+  Claims carry resolved_statute_id in NNNN/YYYY (number/year) format
+  (e.g. '434/2003'). The check converts before lookup.
+  The known-ID set is loaded once per process via lru_cache.
+  Disable per-instance via check_corpus_existence=False (for synthetic-corpus
+  unit tests).
+
 Design discipline (AGENTS.md §1.11, §1.13):
   - All patterns compiled at module scope.
   - Bounded quantifiers; no adjacent unbounded repeats.
@@ -33,15 +46,94 @@ Design discipline (AGENTS.md §1.11, §1.13):
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import re
-from typing import Optional, Tuple
+from typing import FrozenSet, Optional, Tuple
 
 from lawvm.core.manual_claims.kind_registry import (
     ClaimKindSpec,
     ValidationResult,
     register_claim_kind,
 )
+
+# ---------------------------------------------------------------------------
+# Corpus-existence check helpers (Bug C)
+# ---------------------------------------------------------------------------
+
+# Default path for statutes.parquet; tests override via _corpus_statute_ids_for_test.
+_DEFAULT_STATUTES_PARQUET = "data/fi/v1/statutes.parquet"
+
+
+@functools.lru_cache(maxsize=1)
+def _load_statute_ids_from_parquet(parquet_path: str) -> FrozenSet[str]:
+    """Load the set of known statute_ids from statutes.parquet.
+
+    Cached after first load (one read per process). The parquet stores IDs in
+    YYYY/N format (e.g. '2003/434'); claims carry NNNN/YYYY (e.g. '434/2003').
+    The caller must invert before lookup (see _statute_exists_in_corpus).
+    """
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(parquet_path)
+    if not path.exists():
+        return frozenset()
+
+    has_pyarrow = importlib.util.find_spec("pyarrow") is not None
+    if not has_pyarrow:
+        return frozenset()
+
+    import pyarrow.parquet as pq
+    table = pq.read_table(str(path), columns=["statute_id"])
+    ids = set()
+    for batch in table.to_batches():
+        col = batch.column("statute_id")
+        for i in range(batch.num_rows):
+            v = col[i].as_py()
+            if v:
+                ids.add(v)
+    return frozenset(ids)
+
+
+def _number_year_to_year_number(resolved_id: str) -> Optional[str]:
+    """Convert claim's NNNN/YYYY format to corpus's YYYY/N format.
+
+    Finnish statute IDs in claims: number/year (e.g. '434/2003').
+    Finnish statute IDs in corpus: year/number (e.g. '2003/434').
+    Returns None if the ID doesn't match NNNN/YYYY shape.
+    """
+    m = _STATUTE_ID_RE.match(resolved_id)
+    if not m:
+        return None
+    number, year = m.group(1), m.group(2)
+    return f"{year}/{number}"
+
+
+def _statute_exists_in_corpus(
+    resolved_statute_id: str,
+    *,
+    statutes_parquet: str = _DEFAULT_STATUTES_PARQUET,
+) -> Optional[bool]:
+    """Check if resolved_statute_id maps to a known Finnish statute.
+
+    resolved_statute_id is in NNNN/YYYY (number/year) format.
+    statutes.parquet stores in YYYY/N (year/number) format.
+    Converts before lookup.
+
+    Returns:
+      True   — ID found in corpus.
+      False  — ID not found in corpus (corpus is populated).
+      None   — corpus parquet unavailable; check cannot be performed.
+    """
+    corpus_id = _number_year_to_year_number(resolved_statute_id)
+    if corpus_id is None:
+        return False
+    known_ids = _load_statute_ids_from_parquet(statutes_parquet)
+    if not known_ids:
+        # Parquet absent or empty — cannot verify; return None (inconclusive)
+        return None
+    return corpus_id in known_ids
 
 # ---------------------------------------------------------------------------
 # Module-scope compiled patterns (AGENTS.md §1.11)
@@ -218,13 +310,20 @@ def _validate_entailment(
     resolved_statute_id: str,
     citation_form: str,
     span_text: str,
+    *,
+    check_corpus_existence: bool = False,
+    statutes_parquet: str = _DEFAULT_STATUTES_PARQUET,
 ) -> ValidationResult:
     """Entailment validator: check resolved_statute_id is entailed by citation_form.
 
     Concrete checks:
       a. citation_form substring appears in span_text.
-      b. resolved_statute_id matches YYYY/NNNN shape.
+      b. resolved_statute_id matches NNNN/YYYY shape.
       c. citation_form parses to a year/number compatible with resolved_statute_id.
+      d. (when check_corpus_existence=True) resolved_statute_id's YYYY/N form
+         exists in statutes.parquet.  EU regulation IDs like '1210/2010' pass
+         checks a-c but are NOT Finnish statutes — check d rejects them.
+
     If citation_form is structurally unresolvable → UNVALIDATED (not failure).
 
     Returns a ValidationResult with validator_name='entailment_verified'.
@@ -282,6 +381,25 @@ def _validate_entailment(
             details=None,
         )
 
+    # Check d: corpus existence (rejects EU regs that pattern-match as Finnish IDs)
+    # Returns None when corpus parquet is unavailable — skip check rather than reject.
+    if check_corpus_existence:
+        exists = _statute_exists_in_corpus(
+            resolved_statute_id, statutes_parquet=statutes_parquet
+        )
+        if exists is False:
+            corpus_id = _number_year_to_year_number(resolved_statute_id) or resolved_statute_id
+            return ValidationResult(
+                passed=False,
+                validator_name="entailment_verified",
+                reason=(
+                    f"resolved_statute_id {resolved_statute_id!r} canonicalizes to "
+                    f"{corpus_id!r} but not present in Finnish statute corpus"
+                ),
+                details="not_in_corpus",
+            )
+        # exists is True (found) or None (corpus unavailable — skip check)
+
     return ValidationResult(
         passed=True,
         validator_name="entailment_verified",
@@ -312,58 +430,70 @@ def validate_span(claim: object, source_bytes: bytes) -> ValidationResult:
     )
 
 
-def validate_entailment(claim: object, source_bytes: bytes) -> ValidationResult:
-    """Entailment validator compatible with ClaimKindSpec.entailment_validator.
+def _make_entailment_validator(*, check_corpus_existence: bool = True):
+    """Factory: return an entailment_validator callable with configurable corpus check.
 
-    claim: ManualCompilationClaim (typed as object to avoid circular import).
-    source_bytes: bytes of the cited source artifact (for span text extraction).
-
-    Canonicalizes resolved_statute_id before the shape check so that legacy
-    2-digit-year forms (e.g. '361/72') are accepted and compared correctly.
-    The canonical form is used for entailment checking; callers that need the
-    canonical form stored in the claim should normalize before calling
-    (see cmd_propose_claims.py normalize_fi_statute_resolution_value).
+    check_corpus_existence=True (default): rejects resolved_statute_ids not
+        present in data/fi/v1/statutes.parquet.  Catches EU regulation IDs
+        like '1210/2010' that pattern-match as Finnish statute IDs.
+    check_corpus_existence=False: disables the corpus lookup.  Use in unit
+        tests that work with synthetic corpora where statutes.parquet is absent.
     """
-    cited_span = claim.cited_source_span  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-    start, end = cited_span
+    def _validator(claim: object, source_bytes: bytes) -> ValidationResult:
+        """Entailment validator compatible with ClaimKindSpec.entailment_validator."""
+        cited_span = claim.cited_source_span  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        start, end = cited_span
 
-    if start < 0 or end > len(source_bytes) or start >= end:
-        return ValidationResult(
-            passed=False,
-            validator_name="entailment_verified",
-            reason=f"span ({start}, {end}) out of range — cannot extract span text",
-            details=None,
+        if start < 0 or end > len(source_bytes) or start >= end:
+            return ValidationResult(
+                passed=False,
+                validator_name="entailment_verified",
+                reason=f"span ({start}, {end}) out of range — cannot extract span text",
+                details=None,
+            )
+
+        span_text = source_bytes[start:end].decode("utf-8", errors="replace")
+
+        value_dict = dict(claim.value)  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        raw_statute_id = value_dict.get("resolved_statute_id", "")
+        citation_form = value_dict.get("citation_form", "")
+
+        canonical = _canonicalize_finnish_statute_id(raw_statute_id)
+        if canonical is None:
+            return ValidationResult(
+                passed=False,
+                validator_name="entailment_verified",
+                reason=(
+                    f"resolved_statute_id {raw_statute_id!r} does not parse as "
+                    "Finnish statute citation"
+                ),
+                details=None,
+            )
+        if canonical != raw_statute_id:
+            import logging
+            logging.getLogger(__name__).debug(
+                "canonicalized %s → %s", raw_statute_id, canonical
+            )
+
+        return _validate_entailment(
+            resolved_statute_id=canonical,
+            citation_form=citation_form,
+            span_text=span_text,
+            check_corpus_existence=check_corpus_existence,
         )
 
-    span_text = source_bytes[start:end].decode("utf-8", errors="replace")
+    return _validator
 
-    # Extract value fields from frozen tuple-of-pairs representation
-    value_dict = dict(claim.value)  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-    raw_statute_id = value_dict.get("resolved_statute_id", "")
-    citation_form = value_dict.get("citation_form", "")
 
-    canonical = _canonicalize_finnish_statute_id(raw_statute_id)
-    if canonical is None:
-        return ValidationResult(
-            passed=False,
-            validator_name="entailment_verified",
-            reason=(
-                f"resolved_statute_id {raw_statute_id!r} does not parse as "
-                "Finnish statute citation"
-            ),
-            details=None,
-        )
-    if canonical != raw_statute_id:
-        import logging
-        logging.getLogger(__name__).debug(
-            "canonicalized %s → %s", raw_statute_id, canonical
-        )
+# Default validator — corpus-existence check ON.
+validate_entailment = _make_entailment_validator(check_corpus_existence=True)
+"""Entailment validator for ClaimKindSpec registration.
 
-    return _validate_entailment(
-        resolved_statute_id=canonical,
-        citation_form=citation_form,
-        span_text=span_text,
-    )
+Canonicalizes resolved_statute_id and checks corpus existence by default.
+Callers that need to disable the corpus check (e.g. synthetic-corpus tests)
+should use _make_entailment_validator(check_corpus_existence=False) to build
+a local validator and pass it to a ClaimKindSpec directly.
+"""
 
 
 # ---------------------------------------------------------------------------

@@ -347,7 +347,7 @@ def test_propose_claims_skips_unfetchable_frontier_row(tmp_path: Path, monkeypat
         _make_frontier_row("712/2022"),                  # will be processed
     ]
 
-    def _fake_scan(data_dir, claim_kind):
+    def _fake_scan(data_dir, claim_kind, *, frontier_source=None):
         return rows
 
     monkeypatch.setattr(

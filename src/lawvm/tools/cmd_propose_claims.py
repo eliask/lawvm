@@ -559,14 +559,178 @@ def _process_one_frontier(
 
 
 # ---------------------------------------------------------------------------
-# Frontier scan helpers (preserved from v2.2)
+# Frontier row producers: scan parquet projections for NULL slots
 # ---------------------------------------------------------------------------
 
+_FRONTIER_SOURCE_INLINE_CITATIONS = "inline_citations"
+_FRONTIER_SOURCE_FI_REFS = "fi_refs"
+_FRONTIER_SOURCE_DETERMINISTIC_REFS = "deterministic_refs"
 
-def _scan_frontier_from_parquet(
+
+def _scan_frontier_inline_citations(
     data_dir: str,
     claim_kind: str,
 ) -> List[ExtractionFrontierRow]:
+    """Scan fi_inline_citations.parquet for rows where canonical_id is NULL.
+
+    These are inline-body citations the deterministic extractor recognized
+    structurally but could not resolve to a canonical statute/document ID.
+    The LLM-aided INLINE_STATUTE_RESOLUTION claim kind fills these gaps.
+
+    Each returned ExtractionFrontierRow carries:
+      - statute_id = source_doc_id (the source document containing the citation)
+      - provision_ref = source_provision_ref (where in source; often empty)
+      - citation_text = raw_text (the literal citation phrase for the LLM prompt)
+      - slot = 'canonical_id'
+    """
+    import importlib.util
+
+    frontier_rows: List[ExtractionFrontierRow] = []
+    base = Path(data_dir)
+    parquet_path = base / "fi_inline_citations.parquet"
+    jsonl_path = base / "fi_inline_citations.jsonl"
+
+    def _process_row(row_dict: Dict) -> Optional[ExtractionFrontierRow]:
+        if row_dict.get("canonical_id"):
+            return None  # already resolved by deterministic extractor
+
+        source_doc_id = row_dict.get("source_doc_id", "")
+        if not source_doc_id:
+            return None
+
+        provision_ref = row_dict.get("source_provision_ref") or None
+        raw_text = row_dict.get("raw_text", "") or ""
+
+        frontier_id_src = f"{claim_kind}:{source_doc_id}:{provision_ref or ''}:{raw_text}"
+        frontier_id = hashlib.sha256(frontier_id_src.encode()).hexdigest()
+        return ExtractionFrontierRow(
+            frontier_id=frontier_id,
+            claim_kind=claim_kind,
+            statute_id=source_doc_id,
+            provision_ref=provision_ref,
+            slot="canonical_id",
+            severity="medium",
+            detected_at=datetime.now(tz=timezone.utc),
+            pipeline_run_id="scan_inline_citations",
+            citation_text=raw_text if raw_text else None,
+        )
+
+    has_pyarrow = importlib.util.find_spec("pyarrow") is not None
+
+    if has_pyarrow and parquet_path.exists():
+        import pyarrow.parquet as pq
+        table = pq.read_table(str(parquet_path))
+        for batch in table.to_batches():
+            for i in range(batch.num_rows):
+                row_dict = {col: batch.column(col)[i].as_py() for col in batch.schema.names}
+                fr = _process_row(row_dict)
+                if fr is not None:
+                    frontier_rows.append(fr)
+    elif jsonl_path.exists():
+        with open(jsonl_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                row_dict = json.loads(line)
+                fr = _process_row(row_dict)
+                if fr is not None:
+                    frontier_rows.append(fr)
+    else:
+        print(
+            f"  warning: fi_inline_citations not found at {parquet_path} or {jsonl_path}. "
+            "Run export-fi-inline-citations first to generate the projection.",
+            file=sys.stderr,
+        )
+
+    return frontier_rows
+
+
+def _scan_frontier_fi_refs(
+    data_dir: str,
+    claim_kind: str,
+) -> List[ExtractionFrontierRow]:
+    """Scan fi_refs.parquet for NULL target_statute_id rows.
+
+    NOTE: the deterministic extractor drops unresolvable citations entirely
+    rather than emitting NULL-target rows, so this source typically returns 0
+    rows against a real corpus.  Retained for legacy compatibility and for
+    synthetic fixture testing.  Falls back to JSONL if parquet not available.
+    """
+    import importlib.util
+
+    frontier_rows: List[ExtractionFrontierRow] = []
+    base = Path(data_dir)
+    parquet_path = base / "fi_refs.parquet"
+    jsonl_path = base / "fi_refs.jsonl"
+
+    def _process_row(row_dict: Dict) -> Optional[ExtractionFrontierRow]:
+        target_id = row_dict.get("target_statute_id") or row_dict.get("target_statute_id_str")
+        if target_id:
+            return None
+
+        statute_id = row_dict.get("source_statute_id", "")
+        if not statute_id:
+            return None
+
+        provision_ref = row_dict.get("source_provision_ref_str") or None
+        span_offset = row_dict.get("source_span_byte_offset", 0) or 0
+        span_len = row_dict.get("source_span_len", 0) or 0
+
+        frontier_id_src = f"{claim_kind}:{statute_id}:{provision_ref or ''}:{span_offset}:{span_len}"
+        frontier_id = hashlib.sha256(frontier_id_src.encode()).hexdigest()
+
+        return ExtractionFrontierRow(
+            frontier_id=frontier_id,
+            claim_kind=claim_kind,
+            statute_id=statute_id,
+            provision_ref=provision_ref,
+            slot="target_statute_id",
+            severity="medium",
+            detected_at=datetime.now(tz=timezone.utc),
+            pipeline_run_id="scan_fi_refs",
+        )
+
+    has_pyarrow = importlib.util.find_spec("pyarrow") is not None
+
+    if has_pyarrow and parquet_path.exists():
+        import pyarrow.parquet as pq
+        table = pq.read_table(str(parquet_path))
+        for batch in table.to_batches():
+            for i in range(batch.num_rows):
+                row_dict = {col: batch.column(col)[i].as_py() for col in batch.schema.names}
+                fr = _process_row(row_dict)
+                if fr is not None:
+                    frontier_rows.append(fr)
+    elif jsonl_path.exists():
+        with open(jsonl_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                row_dict = json.loads(line)
+                fr = _process_row(row_dict)
+                if fr is not None:
+                    frontier_rows.append(fr)
+    else:
+        print(
+            f"  warning: fi_refs not found at {parquet_path} or {jsonl_path}. "
+            "Run export-fi-refs first to generate the projection.",
+            file=sys.stderr,
+        )
+
+    return frontier_rows
+
+
+def _scan_frontier_deterministic_refs(
+    data_dir: str,
+    claim_kind: str,
+) -> List[ExtractionFrontierRow]:
+    """Scan fi_refs__deterministic_only.parquet for NULL target_statute_id rows.
+
+    The deterministic-only refs export retains rows the extractor recognized
+    but could not resolve, keyed by source span.
+    """
     import importlib.util
 
     frontier_rows: List[ExtractionFrontierRow] = []
@@ -629,6 +793,39 @@ def _scan_frontier_from_parquet(
     return frontier_rows
 
 
+def _scan_frontier_from_parquet(
+    data_dir: str,
+    claim_kind: str,
+    frontier_source: str = _FRONTIER_SOURCE_INLINE_CITATIONS,
+) -> List[ExtractionFrontierRow]:
+    """Dispatch to the appropriate frontier scanner by source name.
+
+    frontier_source:
+      'inline_citations' (default) — scan fi_inline_citations.parquet for NULL
+          canonical_id rows.  This is the correct source for
+          fi.v1.INLINE_STATUTE_RESOLUTION: the inline-citations projection
+          contains HE-prose / statute-body citations the deterministic extractor
+          recognized structurally but could not resolve to canonical IDs.
+      'fi_refs' — scan fi_refs.parquet for NULL target_statute_id rows.
+          The deterministic extractor drops unresolvable citations entirely
+          rather than emitting NULL rows, so this returns 0 rows against a
+          real corpus.  Retained for legacy and synthetic-fixture use.
+      'deterministic_refs' — scan fi_refs__deterministic_only.parquet, the
+          deterministic-only export that retains unresolved span-keyed rows.
+    """
+    if frontier_source == _FRONTIER_SOURCE_FI_REFS:
+        return _scan_frontier_fi_refs(data_dir, claim_kind)
+    if frontier_source == _FRONTIER_SOURCE_DETERMINISTIC_REFS:
+        return _scan_frontier_deterministic_refs(data_dir, claim_kind)
+    return _scan_frontier_inline_citations(data_dir, claim_kind)
+
+
+# ---------------------------------------------------------------------------
+# Gap discovery: regex scan of HE XML for plain-text citations
+# ---------------------------------------------------------------------------
+
+
+
 def _discover_gaps_from_he(
     he_id: str,
     data_dir: str,
@@ -687,14 +884,18 @@ def cmd_propose_from_frontier(args: object) -> int:
     limit: int = getattr(args, "limit", 100) or 100
     no_cap: bool = getattr(args, "max_claims_no_cap", False)
     backend_name: str = getattr(args, "backend", "mock") or "mock"
+    frontier_source: str = getattr(args, "frontier_source", _FRONTIER_SOURCE_INLINE_CITATIONS) or _FRONTIER_SOURCE_INLINE_CITATIONS
 
     backend = _make_backend(backend_name)
     store = _get_store(graph_store_root)
     store._objects_dir().mkdir(parents=True, exist_ok=True)
 
-    frontier_rows = _scan_frontier_from_parquet(data_dir, kind)
+    frontier_rows = _scan_frontier_from_parquet(data_dir, kind, frontier_source=frontier_source)
     if not frontier_rows:
-        print("no frontier rows found")
+        print(
+            f"no frontier rows found in {frontier_source!r} "
+            "(run rebuild-indexes or export-fi-inline-citations first)"
+        )
         return 0
 
     effective_limit = len(frontier_rows) if no_cap else min(limit, len(frontier_rows))

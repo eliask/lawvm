@@ -88,11 +88,16 @@ class MockProposalBackend:
     inject_bad_statute_id: returns a claim whose resolved_statute_id is NOT
                            present in the cited span, simulating prompt injection
                            where the LLM 'obeys' injected instructions in source.
+    canned_resolved_id:    override the default resolved_statute_id returned by
+                           the default proposal path.  Use when tests need a
+                           specific statute ID (e.g. a real corpus ID for corpus-
+                           existence tests).  When None, defaults to '1234/2020'.
     """
 
     canned_claim: Optional["ProposedClaim"] = None
     canned_parse_error: Optional[str] = None
     inject_bad_statute_id: Optional[str] = None
+    canned_resolved_id: Optional[str] = None
 
     def propose(
         self,
@@ -123,6 +128,9 @@ class MockProposalBackend:
         if self.inject_bad_statute_id is not None:
             resolved_id = self.inject_bad_statute_id
             citation_form = self.inject_bad_statute_id
+        elif self.canned_resolved_id is not None:
+            resolved_id = self.canned_resolved_id
+            citation_form = f"lain {self.canned_resolved_id}"
         else:
             resolved_id = "1234/2020"
             citation_form = "lain 1234/2020"

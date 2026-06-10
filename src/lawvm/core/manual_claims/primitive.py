@@ -294,6 +294,10 @@ class ExtractionFrontierRow:
     """'high' | 'medium' | 'low' — priority for LLM proposal scheduling."""
     detected_at: datetime
     pipeline_run_id: str
+    citation_text: Optional[str] = None
+    """Literal citation text from the source (raw_text from inline_citations parquet).
+    Passed to the LLM backend so it can produce a targeted resolution prompt.
+    None for frontier rows produced from fi_refs parquet (no literal citation text available)."""
 
 
 @dataclass(frozen=True, slots=True)

@@ -197,6 +197,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # proposal/validation backends + lifecycle
         "test_proposal_backend.py",
         "test_propose_claims_cli.py",
+        # frontier scan + corpus existence + provision-ref locator
+        "test_corpus_existence_check.py",
+        "test_frontier_scan_inline_citations.py",
+        "test_provision_ref_locator.py",
         "test_qwen_local_backend.py",
         "test_retraction_lifecycle.py",
         "test_source_provider.py",
