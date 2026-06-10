@@ -512,7 +512,7 @@ _SPEC = ClaimKindSpec(
     target_fields=("statute_id", "section_locator", "mention_span"),
     value_fields=("resolved_statute_id", "citation_form"),
     span_validator=validate_span,  # ty:ignore[invalid-argument-type]
-    entailment_validator=validate_entailment,  # ty:ignore[invalid-argument-type]
+    entailment_validator=validate_entailment,
 )
 
 register_claim_kind(_SPEC)
