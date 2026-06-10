@@ -383,6 +383,75 @@ def dump_apply(sid: str, address: Optional[str] = None, stop_before: str = "") -
     _dump_apply(sid, address, stop_before=stop_before)
 
 
+# Open-ended materialization horizon used by replay; selecting the governing
+# version at this date reproduces the fully-replayed (latest) text-state.
+_DUMP_DEFAULT_AS_OF = "9999-12-31"
+
+
+def _dump_apply_json(
+    sid: str,
+    address: Optional[str],
+    *,
+    stop_before: str = "",
+    as_of: str = "",
+) -> None:
+    """Emit a machine-readable lawvm.dump.v1 document for the apply read."""
+    import json as _json
+
+    from lawvm.tools.provision_state import build_statute_dump_response
+
+    master = replay_xml(sid, stop_before=stop_before, quiet=True)
+    payload = build_statute_dump_response(
+        timelines=master.timelines,
+        statute_id=sid,
+        jurisdiction="fi",
+        as_of=as_of or _DUMP_DEFAULT_AS_OF,
+        title=getattr(master, "title", "") or "",
+        address_filter=address,
+        flags={
+            "after": "apply",
+            "before": stop_before or None,
+            "address": address,
+            "as_of_defaulted": not as_of,
+        },
+    )
+    print(_json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2))
+
+
+def _dump_apply_hashes(
+    sid: str,
+    address: Optional[str],
+    *,
+    stop_before: str = "",
+    as_of: str = "",
+) -> None:
+    """Print the human apply read with a short per-section content_hash appended."""
+    from lawvm.tools.provision_state import build_statute_dump_response
+
+    master = replay_xml(sid, stop_before=stop_before, quiet=True)
+    payload = build_statute_dump_response(
+        timelines=master.timelines,
+        statute_id=sid,
+        jurisdiction="fi",
+        as_of=as_of or _DUMP_DEFAULT_AS_OF,
+        title=getattr(master, "title", "") or "",
+        address_filter=address,
+    )
+    print(f"Statute: {sid}")
+    print("Stage  : APPLY (full replay, per-section content hashes)")
+    if address:
+        print(f"Address: {address}")
+    print()
+    for section in payload["sections"]:
+        addr_text = section["address"]["text"]
+        short = section["content_hash"][:12] if section["content_hash"] else "(empty)"
+        heading = section.get("heading") or ""
+        suffix = f"  {heading}" if heading else ""
+        print(f"{short}  {addr_text}{suffix}")
+    print()
+    print(f"Sections: {payload['section_count']}")
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -416,6 +485,27 @@ def main(args) -> None:
 
     jurisdiction = getattr(args, "jurisdiction", "fi")
     is_uk_dump = jurisdiction == "uk" or is_uk_statute_id(sid)
+    want_json = bool(getattr(args, "json", False))
+    want_hashes = bool(getattr(args, "hashes", False))
+    as_of = getattr(args, "as_of", None) or ""
+
+    if (want_json or want_hashes) and (is_uk_dump or after in ("parse", "extract", "normalize")):
+        flag = "--json" if want_json else "--hashes"
+        print(
+            f"ERROR: `lawvm dump {flag}` is supported only for the Finnish apply "
+            "(full replay) read; it is not available for UK statutes or for "
+            "`--after parse/extract/normalize`.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    if (want_json or want_hashes) and not (is_uk_dump or after in ("parse", "extract", "normalize")):
+        stop_before = getattr(args, "before", "") or ""
+        if want_json:
+            _dump_apply_json(sid, address, stop_before=stop_before, as_of=as_of)
+        else:
+            _dump_apply_hashes(sid, address, stop_before=stop_before, as_of=as_of)
+        return
 
     if after == "parse" or (after is None and is_uk_dump):
         if is_uk_dump:
