@@ -514,12 +514,35 @@ def _load_default_fi_corpus(data_dir: str) -> list:
 
     Projection emitters need full corpus coverage (the curated
     bench_core.csv subset is for replay-benchmark scoring, not graph
-    projections). Defaults to ``corpus="all"`` which enumerates
-    ``store.list_statute_ids()``. The unused ``data_dir`` arg is
-    retained for back-compat with callers.
+    projections), so this enumerates ``store.list_statute_ids()`` over the
+    finlex corpus.
+
+    The corpus is resolved *relative to ``data_dir``* (consistent with how
+    Tier-1 dependency hashes are resolved): if no finlex corpus is present
+    under ``data_dir`` we return an empty list so the caller skips fast,
+    instead of silently reaching past ``data_dir`` to a global default corpus
+    and running a full multi-worker export. This keeps ``--data-dir`` honest
+    (e.g. an empty test data dir does no real work) and avoids the
+    cwd-relative-resolution footgun.
     """
-    from lawvm.tools.export_parquet import _load_corpus
-    return _load_corpus("all")
+    from lawvm.corpus_store import _archive_is_populated
+
+    corpus_path = Path(data_dir) / "finlex.farchive"
+    if not _archive_is_populated(corpus_path):
+        return []
+
+    from farchive import Farchive
+    from lawvm.finland.transparent_store import TransparentCorpusStore
+
+    store = TransparentCorpusStore(
+        archive=Farchive(corpus_path, readonly=True),
+        cache_only=True,
+    )
+    try:
+        ids = list(store.list_statute_ids())
+    finally:
+        store.close()
+    return [(0, sid) for sid in ids]
 
 
 # ---------------------------------------------------------------------------

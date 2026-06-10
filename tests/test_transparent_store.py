@@ -511,6 +511,31 @@ class TestRefreshMethod:
 # get_corpus_store factory
 # ---------------------------------------------------------------------------
 
+def _make_populated_archive(path: Path) -> None:
+    """Create a Farchive whose on-disk size clears the populated-corpus floor.
+
+    The fail-loud guard treats archives below ~1 MB as stubs, so a real test
+    fixture must store enough bytes to exceed that floor. Compression is
+    defeated with random bytes so the SQLite file actually grows.
+
+    Uses a high-entropy blob so the zstd layer cannot shrink it below 1 MB.
+    """
+    import os as _os
+
+    from farchive import Farchive
+
+    archive = Farchive(path, readonly=False)
+    try:
+        archive.store(
+            "finlex://sd/2002/738/fin/main.xml",
+            _os.urandom(2_000_000),
+            storage_class="xml",
+        )
+    finally:
+        archive.close()
+    assert path.stat().st_size >= 1_000_000
+
+
 class TestGetCorpusStoreFactory:
     def test_transparent_mode_returns_transparent_store(
         self, tmp_path: Path, monkeypatch
@@ -518,9 +543,9 @@ class TestGetCorpusStoreFactory:
         """LAWVM_FARCHIVE_DB env var is used for Farchive path."""
         from lawvm.corpus_store import get_corpus_store
 
-        monkeypatch.setenv(
-            "LAWVM_FARCHIVE_DB", str(tmp_path / "transparent.farchive")
-        )
+        archive_path = tmp_path / "transparent.farchive"
+        _make_populated_archive(archive_path)
+        monkeypatch.setenv("LAWVM_FARCHIVE_DB", str(archive_path))
 
         result = get_corpus_store()
         assert isinstance(result, TransparentCorpusStore)
@@ -532,7 +557,9 @@ class TestGetCorpusStoreFactory:
         """Factory always returns TransparentCorpusStore (farchive-backed)."""
         from lawvm.corpus_store import get_corpus_store
 
-        monkeypatch.setenv("LAWVM_FARCHIVE_DB", str(tmp_path / "test.farchive"))
+        archive_path = tmp_path / "test.farchive"
+        _make_populated_archive(archive_path)
+        monkeypatch.setenv("LAWVM_FARCHIVE_DB", str(archive_path))
         result = get_corpus_store()
         assert isinstance(result, TransparentCorpusStore)
 

@@ -1126,7 +1126,17 @@ def acquire_fi_proposals(
     if source is None:
         source = os.environ.get("LAWVM_GOVPROP_ZIP", _DEFAULT_SOURCE)
     if dest is None:
-        dest = os.environ.get("LAWVM_HE_FARCHIVE_DB", _DEFAULT_FARCHIVE)
+        # Route through the single resolver so worktrees / canonical-data-root
+        # resolve correctly at runtime instead of relying on a cwd-relative
+        # default. LAWVM_HE_FARCHIVE_DB stays highest precedence for HE. This is
+        # an ingest path: it legitimately creates the archive on first use.
+        from lawvm.corpus_store import resolve_farchive_path
+
+        dest_path, _rule = resolve_farchive_path(
+            "fi_government_proposal.farchive",
+            explicit_env="LAWVM_HE_FARCHIVE_DB",
+        )
+        dest = str(dest_path)
 
     ingest_timestamp = datetime.now(timezone.utc)
 

@@ -8,10 +8,14 @@ the strict read-only archive adapter for other corpus consumers.
 
 from __future__ import annotations
 
+import os
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from farchive import Farchive
 
 from lawvm.finland.consolidated_artifacts import (
     build_canonical_consolidated_locator,
@@ -309,29 +313,166 @@ class ArchiveCorpusStore(CorpusStore):
 
 
 # ---------------------------------------------------------------------------
+# Path resolution + fail-loud corpus-archive guard
+# ---------------------------------------------------------------------------
+
+# A freshly init_schema'd Farchive is a ~61 KB SQLite stub. The real corpora
+# are hundreds of MB to multiple GB. Anything below this floor is treated as a
+# stub/empty archive even before we open it. (Do not hardcode the exact stub
+# size — it drifts with schema; this is a generous "clearly not a real corpus"
+# floor.)
+_MIN_POPULATED_ARCHIVE_BYTES = 1_000_000
+
+
+class CorpusArchiveMissingError(RuntimeError):
+    """Raised when a read/cache-only open targets a missing or stub corpus.
+
+    The message embeds the literal token ``FARCHIVE_EMPTY_CORPUS`` so the
+    failure is greppable and never silently degrades into "statute not found".
+    """
+
+
+def _repo_root() -> Path:
+    """Repo root derived from this module's location (src/lawvm/corpus_store.py)."""
+    return Path(__file__).resolve().parents[2]
+
+
+def resolve_farchive_path(
+    name: str,
+    *,
+    explicit_env: str = "LAWVM_FARCHIVE_DB",
+) -> tuple[Path, str]:
+    """Resolve a corpus-archive path through a single precedence chokepoint.
+
+    Precedence (highest first):
+        1. ``$<explicit_env>`` — explicit file path override (used as-is).
+           Defaults to ``LAWVM_FARCHIVE_DB`` (the finlex corpus); callers for
+           other corpora pass their own var (e.g. ``LAWVM_HE_FARCHIVE_DB``).
+        2. ``$LAWVM_CANONICAL_DATA_ROOT/data/<name>`` — canonical data checkout,
+           set by scripts/setup_worktree_links.sh in git worktrees.
+        3. ``<repo_root>/data/<name>`` — module-relative repo-root default
+           (replaces the historical cwd-relative ``data/<name>``).
+
+    Returns ``(resolved_path, precedence_rule)`` where ``precedence_rule`` is a
+    short human-readable label naming which rule produced the path (used in the
+    fail-loud diagnostic).
+    """
+    explicit = os.environ.get(explicit_env)
+    if explicit:
+        return Path(explicit), f"{explicit_env} (explicit file override)"
+
+    canonical_root = os.environ.get("LAWVM_CANONICAL_DATA_ROOT")
+    if canonical_root:
+        return (
+            Path(canonical_root) / "data" / name,
+            "LAWVM_CANONICAL_DATA_ROOT/data/" + name,
+        )
+
+    return _repo_root() / "data" / name, "repo-root data/" + name
+
+
+def _archive_is_populated(path: Path) -> bool:
+    """Cheap populated-corpus check: file exists and is above the stub floor.
+
+    The size check is a single ``stat`` and reliably separates GB-scale real
+    corpora from the ~61 KB ``init_schema`` stub without opening SQLite.
+    """
+    try:
+        return path.stat().st_size >= _MIN_POPULATED_ARCHIVE_BYTES
+    except OSError:
+        return False
+
+
+def _missing_corpus_message(name: str, path: Path, rule: str) -> str:
+    resolved = path.resolve() if path.exists() or path.is_symlink() else path
+    return (
+        f"FARCHIVE_EMPTY_CORPUS: corpus archive '{name}' is missing or is an "
+        f"empty/stub archive.\n"
+        f"  resolved path : {resolved}\n"
+        f"  precedence    : {rule}\n"
+        f"  remedy        : in a git worktree, link the corpus with "
+        f"`scripts/setup_worktree_links.sh`, or set LAWVM_CANONICAL_DATA_ROOT "
+        f"to a checkout whose data/ holds the populated corpora "
+        f"(or LAWVM_FARCHIVE_DB to an explicit corpus file)."
+    )
+
+
+def open_corpus_archive(
+    name: str,
+    *,
+    allow_create: bool = False,
+    writable: bool = False,
+    explicit_env: str = "LAWVM_FARCHIVE_DB",
+) -> tuple[Farchive, Path, str]:
+    """Open a corpus archive through the resolver, fail-loud on missing/stub.
+
+    The corpus is always required to already exist and be populated: a missing
+    or stub (below the populated floor) archive raises
+    :class:`CorpusArchiveMissingError` *before* touching Farchive (whose
+    writable constructor would otherwise mkdir + init an empty stub and mask
+    the failure as "statute not found").
+
+    ``writable`` opens an *existing populated* corpus read-write (e.g. explicit
+    live-refresh tooling that updates the corpus in place). It still fails loud
+    on a missing/stub archive — it never creates one.
+
+    ``allow_create`` is the only path that may create a new archive on disk
+    (ingest/import tools). It bypasses the populated-floor guard and opens
+    writable.
+
+    Returns ``(archive, resolved_path, precedence_rule)``.
+    """
+    from farchive import Farchive
+
+    path, rule = resolve_farchive_path(name, explicit_env=explicit_env)
+
+    if allow_create:
+        return Farchive(path, readonly=False), path, rule
+
+    if not _archive_is_populated(path):
+        raise CorpusArchiveMissingError(_missing_corpus_message(name, path, rule))
+
+    return Farchive(path, readonly=not writable), path, rule
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
 def get_corpus_store(*, readonly: bool = False) -> CorpusStore:
-    """Return a Farchive-backed TransparentCorpusStore.
+    """Return a Farchive-backed TransparentCorpusStore over the Finlex corpus.
 
-    Farchive DB is created if absent. This is the Finland pipeline factory.
+    The corpus is expected to already be populated: this factory opens the
+    finlex corpus for reading and NEVER creates it. A missing or stub archive
+    raises :class:`CorpusArchiveMissingError` instead of silently materialising
+    an empty SQLite stub (which previously masqueraded downstream as
+    "statute X not found in corpus"). Ingest happens via the dedicated import
+    tools, not through this factory.
+
+    Path resolution goes through :func:`resolve_farchive_path` (precedence:
+    ``LAWVM_FARCHIVE_DB`` → ``$LAWVM_CANONICAL_DATA_ROOT/data/finlex.farchive``
+    → ``<repo_root>/data/finlex.farchive``).
 
     Environment variables:
-        LAWVM_FARCHIVE_DB=path           — path to Farchive DB (default: data/finlex.farchive)
+        LAWVM_FARCHIVE_DB=path           — explicit Farchive file override
+        LAWVM_CANONICAL_DATA_ROOT=dir    — canonical data checkout (worktrees)
         LAWVM_TRANSPARENT_VERBOSE=1      — enable verbose fetch logging
         LAWVM_TRANSPARENT_CACHE_ONLY=0   — opt into live refresh on explicit tooling paths
+
+    ``readonly`` is retained for caller-intent clarity. When cache-only mode is
+    active (the default) the corpus is opened read-only. The explicit live-
+    refresh path (``LAWVM_TRANSPARENT_CACHE_ONLY=0`` with ``readonly=False``)
+    opens the existing populated corpus writable so refreshed fetches persist —
+    but, like every path here, it fails loud on a missing/stub corpus rather
+    than creating one.
     """
-    import os
-    from farchive import Farchive
     from lawvm.finland.transparent_store import TransparentCorpusStore
 
-    farchive_path = Path(os.environ.get("LAWVM_FARCHIVE_DB", "data/finlex.farchive"))
     verbose = os.environ.get("LAWVM_TRANSPARENT_VERBOSE", "") == "1"
     cache_only = os.environ.get("LAWVM_TRANSPARENT_CACHE_ONLY", "1") != "0"
 
-    archive_readonly = (readonly or cache_only) and farchive_path.exists()
-    archive = Farchive(farchive_path, readonly=archive_readonly)
+    writable = not (readonly or cache_only)
+    archive, _path, _rule = open_corpus_archive("finlex.farchive", writable=writable)
     return TransparentCorpusStore(
         archive=archive,
         cache_only=cache_only,
