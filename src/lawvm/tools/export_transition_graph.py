@@ -121,22 +121,86 @@ def _iter_addressed_nodes(
     return out
 
 
+# Covering-frontier granularity. A covering unit is the deepest labeled node on
+# each root-to-leaf path whose kind is in ``stop_kinds`` (the target depth) OR
+# which has no labeled descendant of a ``stop_kind`` (a shallower leaf-stable
+# unit). Structural ancestors (chapters, sections above a labeled subsection)
+# are traversed through, never emitted, so the frontier still tiles the whole
+# tree with no overlap — only the granularity of the tiling changes.
+#
+# "section" (legacy) tiled at chapter/top-level-section depth; "subsection"
+# (default) descends to the §a:b.c subsection units the per-§ version trail
+# needs, falling back to the section itself when a section has no labeled
+# subsection children. The set of stop kinds is inclusive of everything down to
+# the granularity so that, e.g., a section that is itself the leaf becomes a
+# covering unit rather than being dropped.
+_GRANULARITY_STOP_KINDS: Dict[str, frozenset[str]] = {
+    # Legacy whole-chapter tiling: stop at the shallowest labeled node.
+    "chapter": frozenset(),
+    # Section tiling: descend chapters, stop at sections.
+    "section": frozenset({"section"}),
+    # Subsection tiling (default): descend to labeled subsections; sections with
+    # no labeled subsection child stay whole.
+    "subsection": frozenset({"subsection"}),
+}
+
+DEFAULT_GRANULARITY = "subsection"
+
+
 def covering_units(
     root: IRNode,
     slice_prefix: str = "",
+    granularity: str = DEFAULT_GRANULARITY,
 ) -> List[Tuple[str, IRNode]]:
-    """Return the document-ordered covering set of top-level addressable units.
+    """Return the document-ordered covering set of addressable units.
 
-    The covering set is the shallowest labeled node on each root-to-leaf path:
-    for the body these are the direct labeled children (chapters, top-level
-    sections, the heading). Their full subtrees collectively reconstruct the
-    whole tree with no overlap, so a JS reducer can fold ``set_subtree`` /
-    ``delete_subtree`` over these units and rebuild + hash the entire tree.
+    A covering unit is the deepest labeled node on each root-to-leaf path that is
+    either at the requested ``granularity`` (``stop_kinds``) or is leaf-stable
+    (has no labeled descendant of a stop kind). The covering units' full subtrees
+    collectively reconstruct the whole (sliced) tree with no overlap, so a JS
+    reducer can fold ``set_subtree`` / ``delete_subtree`` over them and rebuild +
+    hash the entire tree.
 
-    When ``slice_prefix`` is set, the covering units are the shallowest labeled
-    nodes at or below that prefix.
+    ``granularity``:
+      * ``"chapter"``  — legacy: shallowest labeled node (chapters / top-level
+        sections / heading). Coarse; one unit per chapter.
+      * ``"section"``  — descend chapters, emit sections.
+      * ``"subsection"`` (default) — descend to labeled subsections; a section
+        with no labeled subsection child is itself the unit. This is what gives
+        the certified graph section/subsection-granular transitions.
+
+    When ``slice_prefix`` is set, only units at or below that prefix are emitted
+    (ancestors of the slice are traversed through to reach it).
     """
+    stop_kinds = _GRANULARITY_STOP_KINDS.get(granularity)
+    if stop_kinds is None:
+        raise ValueError(
+            f"unknown granularity {granularity!r}; "
+            f"expected one of {sorted(_GRANULARITY_STOP_KINDS)}"
+        )
     out: List[Tuple[str, IRNode]] = []
+
+    def _has_stop_descendant(node: IRNode) -> bool:
+        """True if ``node`` has any labeled descendant whose kind is a stop kind."""
+        for child in node.children:
+            if (child.label or "") and str(child.kind) in stop_kinds:
+                return True
+            if _has_stop_descendant(child):
+                return True
+        return False
+
+    def _emit_or_descend(
+        node: IRNode, path: Tuple[Tuple[str, str], ...], addr: str
+    ) -> None:
+        """Emit ``node`` as a covering unit, or descend if it is a structural
+        ancestor of finer stop-kind units."""
+        kind = str(node.kind)
+        # Stop here when this node is itself at the target granularity, or when
+        # nothing deeper reaches the target granularity (leaf-stable unit).
+        if kind in stop_kinds or not _has_stop_descendant(node):
+            out.append((addr, node))
+            return
+        _walk(node, path)
 
     def _walk(node: IRNode, prefix: Tuple[Tuple[str, str], ...]) -> None:
         for child in node.children:
@@ -146,10 +210,10 @@ def covering_units(
                 path = prefix + ((kind, label),)
                 addr = _node_address_string(path)
                 if not slice_prefix:
-                    out.append((addr, child))
+                    _emit_or_descend(child, path, addr)
                     continue
                 if addr == slice_prefix or addr.startswith(slice_prefix + "/"):
-                    out.append((addr, child))
+                    _emit_or_descend(child, path, addr)
                 elif slice_prefix.startswith(addr + "/") or slice_prefix == addr:
                     # ancestor of the slice: descend to reach the slice
                     _walk(child, path)
@@ -238,11 +302,32 @@ def _index_ops_by_date(lo_ops: List[Any]) -> Dict[str, List[Any]]:
 def _ops_for_covering(
     ops_on_date: List[Any], covering_address: str
 ) -> List[Any]:
-    """Return ops on a date whose target is at or below ``covering_address``."""
+    """Return ops on a date that provenance-attribute to ``covering_address``.
+
+    An op attributes to a changed covering unit when its resolved target is:
+
+    * exactly the covering address,
+    * a descendant of it (``target`` startswith ``covering_address + "/"``) —
+      e.g. a §a.2 amendment landing inside a section covering unit, or
+    * an ancestor of it (``covering_address`` startswith ``target + "/"``) —
+      e.g. a whole-section replace whose derived change is observed at the
+      subsection units that tile that section.
+
+    The ancestor case is what carries amendment provenance down to the finer
+    subsection/paragraph transitions: when only the whole section is the op
+    target but the diff materialized at subsection granularity, every changed
+    subsection of that section is attributed to the amending säädös.
+    """
     out: List[Any] = []
     for op in ops_on_date:
         target = str(op.target) if op.target is not None else ""
-        if target == covering_address or target.startswith(covering_address + "/"):
+        if not target:
+            continue
+        if (
+            target == covering_address
+            or target.startswith(covering_address + "/")
+            or covering_address.startswith(target + "/")
+        ):
             out.append(op)
     return out
 
@@ -557,6 +642,7 @@ class ExportStats:
     statute_id: str
     title: str
     slice_prefix: str
+    granularity: str
     n_change_dates: int
     n_transitions: int
     n_content_blobs: int
@@ -587,6 +673,7 @@ def export_transition_graph(
     out_path: str | Path,
     slice_prefix: str = "",
     *,
+    granularity: str = DEFAULT_GRANULARITY,
     quiet: bool = False,
 ) -> ExportStats:
     """Export the certified transition graph for ``statute_id`` to ``out_path``.
@@ -594,6 +681,8 @@ def export_transition_graph(
     ``statute_id`` may be either canonical 'num/year' (e.g. "301/2004") or
     engine 'year/num' (e.g. "2004/301"); both are accepted. ``slice_prefix`` is
     an optional address-prefix filter (e.g. "chapter:11"); empty = whole act.
+    ``granularity`` selects the covering-frontier depth ("subsection" default,
+    "section", or legacy "chapter"); see :func:`covering_units`.
     """
     canonical_id = _canonical_statute_id(statute_id)
     engine_id = _engine_statute_id(canonical_id)
@@ -655,7 +744,7 @@ def export_transition_graph(
 
         for date in bundle.change_dates:
             tree = materialize_oracle_tree(bundle, date)
-            units = covering_units(tree, slice_prefix)
+            units = covering_units(tree, slice_prefix, granularity)
             cur_state = {}
             cur_order = []
             ordered_unit_hashes: List[Tuple[str, str]] = []
@@ -868,6 +957,7 @@ def export_transition_graph(
             "statute_id": canonical_id,
             "title": bundle.title,
             "slice": slice_prefix or None,
+            "granularity": granularity,
             "schema_version": SCHEMA_VERSION,
             "change_dates": bundle.change_dates,
             "generated_note": (
@@ -900,6 +990,7 @@ def export_transition_graph(
         statute_id=canonical_id,
         title=bundle.title,
         slice_prefix=slice_prefix,
+        granularity=granularity,
         n_change_dates=len(bundle.change_dates),
         n_transitions=len(transition_rows),
         n_content_blobs=len(blob_hashes),
@@ -924,13 +1015,17 @@ def main(args: Any) -> None:
     statute = getattr(args, "statute", None)
     out = getattr(args, "out", None)
     slice_prefix = getattr(args, "slice", "") or ""
+    granularity = getattr(args, "granularity", DEFAULT_GRANULARITY) or DEFAULT_GRANULARITY
     if not statute or not out:
         print("error: --statute and --out are required", flush=True)
         raise SystemExit(2)
-    stats = export_transition_graph(statute, out, slice_prefix, quiet=False)
+    stats = export_transition_graph(
+        statute, out, slice_prefix, granularity=granularity, quiet=False
+    )
     print("", flush=True)
     print(f"  statute:          {stats.statute_id}  ({stats.title})", flush=True)
     print(f"  slice:            {stats.slice_prefix or '<whole act>'}", flush=True)
+    print(f"  granularity:      {stats.granularity}", flush=True)
     print(f"  db path:          {stats.db_path}", flush=True)
     print(f"  db size:          {stats.db_size_bytes/1024/1024:.2f} MB", flush=True)
     print(f"  change_dates:     {stats.n_change_dates}", flush=True)
