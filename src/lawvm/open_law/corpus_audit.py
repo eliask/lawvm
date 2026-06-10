@@ -68,15 +68,8 @@ def audit_maryland_transition(
     repos: MarylandLocalRepos,
     limit: int | None = None,
     strict: bool = False,
-    annotation_lane: OpenLawAnnotationLane | None = None,
 ) -> OpenLawCorpusAuditReport:
-    """Audit one Maryland publication transition by after-branch included actions.
-
-    ``annotation_lane`` is the jurisdiction annotation policy. Maryland's policy
-    is unconfirmed, so it defaults to ``None`` (conservative: annotations are
-    compared as potentially-authoritative text and an unset-policy finding is
-    recorded).
-    """
+    """Audit one Maryland publication transition by after-branch included actions."""
 
     inventory = build_maryland_inventory(repos)
     metadata_by_branch = {item.branch: item for item in inventory.publication_branches}
@@ -88,11 +81,7 @@ def audit_maryland_transition(
     for action_path in transition_actions:
         action_xml = repos.codified.read_text(after_branch, action_path)
         ops = parse_open_law_codify_ops(action_xml, source_id=action_path)
-        rows.extend(
-            _audit_action_operations(
-                repos, before_branch, after_branch, action_path, ops, strict=strict, annotation_lane=annotation_lane
-            )
-        )
+        rows.extend(_audit_action_operations(repos, before_branch, after_branch, action_path, ops, strict=strict))
         if limit is not None and len(rows) >= limit:
             return _report(_apply_reproducibility_gate(tuple(rows[:limit]), after_metadata))
     return _report(_apply_reproducibility_gate(tuple(rows), after_metadata))
@@ -135,7 +124,6 @@ def audit_maryland_corpus(
     repos: MarylandLocalRepos,
     limit: int | None = None,
     strict: bool = False,
-    annotation_lane: OpenLawAnnotationLane | None = None,
 ) -> OpenLawCorpusAuditReport:
     """Audit adjacent publication transitions that introduce new actions."""
 
@@ -148,7 +136,6 @@ def audit_maryland_corpus(
             repos=repos,
             limit=None,
             strict=strict,
-            annotation_lane=annotation_lane,
         )
         rows.extend(report.operation_rows)
         if limit is not None and len(rows) >= limit:
@@ -204,7 +191,6 @@ def _audit_one_operation(
     op: OpenLawOperation,
     *,
     strict: bool,
-    annotation_lane: OpenLawAnnotationLane | None = None,
 ) -> OpenLawOperationAuditRow:
     plan = plan_maryland_comar_operation(op)
     if op.action is OpenLawAction.EXPIRE:
@@ -219,7 +205,7 @@ def _audit_one_operation(
     after_xml = _read_snapshot_xml(repos, after_branch, plan.xml_path, before_branch, after_branch, action_path, op)
     if isinstance(after_xml, OpenLawOperationAuditRow):
         return after_xml
-    result = _audit_snapshots(before_xml, after_xml, (op,), plan, strict=strict, annotation_lane=annotation_lane)
+    result = _audit_snapshots(before_xml, after_xml, (op,), plan, strict=strict)
     return _audited_row(before_branch, after_branch, action_path, op, plan, result)
 
 
@@ -231,7 +217,6 @@ def _audit_action_operations(
     ops: Tuple[OpenLawOperation, ...],
     *,
     strict: bool,
-    annotation_lane: OpenLawAnnotationLane | None = None,
 ) -> Tuple[OpenLawOperationAuditRow, ...]:
     rows: list[OpenLawOperationAuditRow] = []
     grouped_ops: dict[tuple[str, Tuple[str, ...]], list[tuple[OpenLawOperation, OpenLawFilePlan]]] = {}
@@ -264,7 +249,6 @@ def _audit_action_operations(
                 tuple(op for op, _plan in body_planned_ops),
                 representative_plan,
                 strict=strict,
-                annotation_lane=annotation_lane,
             )
         for op, plan in body_planned_ops:
             rows.append(_audited_row(before_branch, after_branch, action_path, op, plan, result))
@@ -324,11 +308,17 @@ def _audit_snapshots(
     plan: OpenLawFilePlan,
     *,
     strict: bool,
-    annotation_lane: OpenLawAnnotationLane | None = None,
 ) -> OpenLawSnapshotAuditResult:
     before = wrap_open_law_body_with_prefix(parse_open_law_xml(before_xml), plan.path_prefix)
     after = wrap_open_law_body_with_prefix(parse_open_law_xml(after_xml), plan.path_prefix)
-    return audit_open_law_snapshot(before, after, ops, strict=strict, annotation_lane=annotation_lane)
+    # The corpus auditor splits body ops and `annos` metadata ops into separate
+    # lanes; annotations are adjudicated only in the metadata lane and never by
+    # the body lane. Body snapshot comparison therefore always projects
+    # annotations out, independent of the jurisdiction official-code policy
+    # (which governs the standalone legal-text question in audit_open_law_snapshot).
+    return audit_open_law_snapshot(
+        before, after, ops, strict=strict, annotation_lane=OpenLawAnnotationLane.PUBLICATION_METADATA
+    )
 
 
 def _audit_metadata_operation(

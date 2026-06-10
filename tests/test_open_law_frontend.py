@@ -1336,6 +1336,59 @@ def test_corpus_audit_reproducible_publication_has_no_gate_finding(tmp_path) -> 
     assert "open_law_publication_not_reproducible" not in [finding.kind for finding in row.findings]
 
 
+def test_corpus_body_lane_projects_annotations_when_action_mixes_body_and_metadata(tmp_path) -> None:
+    # An action that carries both a body replace and a companion annos replace
+    # in the same chapter. The body lane must keep projecting annotations out
+    # (the annos op owns them in the metadata lane); the annotation change must
+    # not surface as an unexplained body mutation.
+    source_repo = tmp_path / "law-xml"
+    codified_repo = tmp_path / "law-xml-codified"
+    _git_init(source_repo)
+    _git_init(codified_repo)
+    action = """
+    <document xmlns="https://open.law/schemas/library" xmlns:codify="https://open.law/schemas/codify">
+      <codify:replace doc="Code of Maryland Regulations" path="10|41|02|.04">
+        <section><prefix>Regulation</prefix><num>.04</num><heading>Special Responsibilities.</heading><para><num>A.</num><text>New text.</text></para></section>
+      </codify:replace>
+      <codify:replace doc="Code of Maryland Regulations" path="10|41|02|annos">
+        <annotations><annotation type="History">New history.</annotation></annotations>
+      </codify:replace>
+    </document>
+    """
+    _write(source_repo / "editorial-actions" / "mixed.xml", action)
+    _git_commit_all(source_repo, "source")
+
+    before_chapter = _chapter_xml("Old text.").replace(
+        "</container>", '<annotations><annotation type="History">Old history.</annotation></annotations></container>'
+    )
+    after_chapter = _chapter_xml("New text.").replace(
+        "</container>", '<annotations><annotation type="History">New history.</annotation></annotations></container>'
+    )
+    _write(codified_repo / "index.xml", _index_xml("publication/before", ()))
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", before_chapter)
+    _git_commit_all(codified_repo, "before")
+    _git_branch(codified_repo, "publication/before")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/after", ("editorial-actions/mixed.xml",)))
+    _write(codified_repo / "editorial-actions" / "mixed.xml", action)
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", after_chapter)
+    _git_commit_all(codified_repo, "after")
+    _git_branch(codified_repo, "publication/after")
+
+    report = audit_maryland_transition(
+        "publication/before", "publication/after", repos=make_maryland_repos(source_repo, codified_repo)
+    )
+
+    body_row = next(row for row in report.operation_rows if row.codify_path[-1] == ".04")
+    metadata_row = next(row for row in report.operation_rows if row.codify_path[-1] == "annos")
+    assert body_row.status == "matched"
+    assert body_row.unexplained_path_count == 0
+    assert "open_law_publication_snapshot_mismatch" not in [finding.kind for finding in body_row.findings]
+    assert "open_law_unexplained_publication_mutation" not in [finding.kind for finding in body_row.findings]
+    assert "open_law_annotation_lane_policy_unset" not in [finding.kind for finding in body_row.findings]
+    assert metadata_row.status == "metadata_matched"
+
+
 def _chapter_xml(text: str) -> str:
     return f"""
     <container xmlns="https://open.law/schemas/library">
