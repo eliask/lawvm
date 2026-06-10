@@ -6876,6 +6876,12 @@ def process_muutoslaki(
                 _compat_elaboration_observations.append(dict(_finding.detail))
 
         for _finding in _cao_result.findings():
+            if _finding.role == "violation":
+                # Carry compile-rail violations verbatim; re-wrapping through
+                # _record_process_finding would rewrite their role and lose the
+                # barrier provenance. No other consumer reads this rail.
+                _process_findings.append(_finding)
+                continue
             if _finding.role != "obligation":
                 continue
             if _finding.kind == "ELAB.SPARSE_PAYLOAD_LEFTOVER" and not _finding.blocking:

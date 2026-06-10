@@ -579,6 +579,58 @@ def test_process_muutoslaki_flags_missing_temporal_coverage(monkeypatch) -> None
     )
 
 
+def test_process_muutoslaki_carries_cao_violation_into_findings(monkeypatch) -> None:
+    """A violation-role finding from compile_amendment_ops must survive into the
+    returned PhaseResult ledger. The compile barrier projection emits these;
+    dropping them at the consumer loops hides a blocking barrier from
+    has_blocking — the same conservation failure class as the parse-violation
+    drop at the frontend boundary.
+    """
+    state = _replay_state(IRNode(kind=IRNodeKind.BODY))
+    ctx = _statute_context(state.ir)
+
+    violation = Finding(
+        kind="RUNTIME.VIOLATION",
+        role="violation",
+        stage="compile",
+        detail={"barrier_code": "ELAB.FORCED_TEST_BARRIER", "message": "forced barrier"},
+        source_statute="1996/1261",
+        blocking=True,
+    )
+
+    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult:
+        return PhaseResult(output=[])
+
+    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult:
+        return PhaseResult(
+            output=(SimpleNamespace(resolved_source_statute="1996/1260"),),
+            temporal_events=(),
+            findings=(violation,),
+        )
+
+    def fake_apply_ops_to_tree(*_args, **_kwargs):
+        return state
+
+    monkeypatch.setattr("lawvm.finland.grafter.normalize_and_compile_ops", fake_normalize_and_compile_ops)
+    monkeypatch.setattr("lawvm.finland.grafter.compile_amendment_ops", fake_compile_amendment_ops)
+    monkeypatch.setattr("lawvm.finland.grafter.apply_ops_to_tree", fake_apply_ops_to_tree)
+
+    result = process_muutoslaki(
+        "1996/1261",
+        state,
+        ctx,
+        corpus=_corpus_store({"1996/1261": _base_process_muutoslaki_xml()}),
+    )
+
+    carried = [
+        f
+        for f in result.findings()
+        if f.blocking and f.detail.get("barrier_code") == "ELAB.FORCED_TEST_BARRIER"
+    ]
+    assert carried, "compile-rail violation was dropped before the result ledger"
+    assert result.has_blocking
+
+
 def test_process_muutoslaki_does_not_flag_when_temporal_coverage_matches(monkeypatch) -> None:
     state = _replay_state(IRNode(kind=IRNodeKind.BODY))
     ctx = _statute_context(state.ir)
