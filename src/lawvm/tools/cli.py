@@ -10229,6 +10229,17 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         metavar="ADDRESS_PREFIX",
         help="optional address-prefix slice (e.g. chapter:11); default = whole act",
     )
+    export_tg_p.add_argument(
+        "--granularity",
+        dest="granularity",
+        default="subsection",
+        choices=["subsection", "section", "chapter"],
+        help=(
+            "covering-frontier depth for transitions: 'subsection' (default) "
+            "emits section/subsection-granular transitions; 'section' tiles at "
+            "section depth; 'chapter' is the legacy whole-chapter fallback"
+        ),
+    )
 
     # --- recipes ---
     sub.add_parser(

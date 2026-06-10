@@ -56,6 +56,60 @@ _TREES_BY_DATE: Dict[str, IRNode] = {
 _CHANGE_DATES = sorted(_TREES_BY_DATE)
 
 
+# ---------------------------------------------------------------------------
+# Subsection-granular fixture: a chapter/section/subsection tree where a single
+# subsection changes, so the exporter must emit transitions at
+# ``chapter:N/section:M/subsection:K`` granularity rather than whole-chapter.
+# ---------------------------------------------------------------------------
+
+
+def _subsection(label: str, text: str) -> IRNode:
+    return IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label=label,
+        children=(IRNode(kind=IRNodeKind.CONTENT, text=text),),
+    )
+
+
+def _section_with_subs(label: str, subs: List[IRNode]) -> IRNode:
+    return IRNode(kind=IRNodeKind.SECTION, label=label, children=tuple(subs))
+
+
+def _chapter(label: str, sections: List[IRNode]) -> IRNode:
+    return IRNode(kind=IRNodeKind.CHAPTER, label=label, children=tuple(sections))
+
+
+def _deep_tree(s1_sub2_text: str, s2_present: bool) -> IRNode:
+    """chapter:1 with section:1 (two subsections) and section:2 (one subsection).
+
+    ``s1_sub2_text`` varies the text of chapter:1/section:1/subsection:2 only;
+    ``s2_present`` toggles whether chapter:1/section:2 exists at all.
+    """
+    sections = [
+        _section_with_subs(
+            "1",
+            [_subsection("1", "s1-sub1-const"), _subsection("2", s1_sub2_text)],
+        ),
+    ]
+    if s2_present:
+        sections.append(
+            _section_with_subs("2", [_subsection("1", "s2-sub1-const")])
+        )
+    return _body([_chapter("1", sections)])
+
+
+# Three dates: only chapter:1/section:1/subsection:2 changes between D1 and D2;
+# chapter:1/section:2 is removed at D3. A correct subsection-granular diff emits
+# exactly one transition at chapter:1/section:1/subsection:2 (D2) and one
+# delete at chapter:1/section:2/subsection:1 (D3) — never whole-chapter churn.
+_DEEP_TREES_BY_DATE: Dict[str, IRNode] = {
+    "2011-01-01": _deep_tree("v1", True),
+    "2016-01-01": _deep_tree("v2", True),
+    "2021-01-01": _deep_tree("v2", False),
+}
+_DEEP_CHANGE_DATES = sorted(_DEEP_TREES_BY_DATE)
+
+
 def _fake_op(action: StructuralAction, target: str, eff: str, expires: str, src: str, seq: int) -> Any:
     source = SimpleNamespace(
         statute_id=src, title=f"Laki {src}", enacted=eff, effective=eff, expires=expires
@@ -147,6 +201,120 @@ def patched_engine(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+def _make_deep_bundle() -> etg.ReplayBundle:
+    class _Addr:
+        def __init__(self, s: str) -> None:
+            self._s = s
+
+        def __str__(self) -> str:
+            return self._s
+
+    def op(action: StructuralAction, target: str, eff: str, src: str, seq: int) -> Any:
+        source = SimpleNamespace(
+            statute_id=src, title=f"Laki {src}", enacted=eff, effective=eff, expires=""
+        )
+        return SimpleNamespace(
+            op_id=f"op_{target}_{eff}",
+            sequence=seq,
+            action=action,
+            target=_Addr(target),
+            anchor=None,
+            destination=None,
+            source=source,
+            payload=None,
+            text_patch=None,
+            group_id="",
+        )
+
+    # The whole-section replace at 2016-01-01 must attribute provenance down to
+    # the changed subsection (ancestor-of-covering-address case); the section
+    # repeal at 2021-01-01 attributes to its subsection delete.
+    lo_ops = [
+        op(StructuralAction.REPLACE, "chapter:1/section:1", "2016-01-01", "55/2016", 0),
+        op(StructuralAction.REPEAL, "chapter:1/section:2", "2021-01-01", "77/2021", 1),
+    ]
+    base_body = _DEEP_TREES_BY_DATE["2011-01-01"]
+    ctx = SimpleNamespace(id="200/2011", title="Syvälaki", base_ir=base_body)
+    products = SimpleNamespace(
+        replay_fold_state=None,
+        materialized_state=None,
+        temporal_events=(),
+        migration_events=(),
+    )
+    result = SimpleNamespace(ctx=ctx, products=products, title="Syvälaki")
+    return etg.ReplayBundle(
+        statute_id="200/2011",
+        engine_id="2011/200",
+        title="Syvälaki",
+        result=result,
+        lo_ops=lo_ops,
+        timelines={},
+        change_dates=list(_DEEP_CHANGE_DATES),
+    )
+
+
+@pytest.fixture()
+def patched_deep_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    bundle = _make_deep_bundle()
+
+    def fake_run_engine_replay(_statute_id: str) -> etg.ReplayBundle:
+        return bundle
+
+    def fake_materialize(_bundle: etg.ReplayBundle, as_of: str) -> IRNode:
+        return _DEEP_TREES_BY_DATE[as_of]
+
+    class _FakeCorpus:
+        def read_amendment(self, _engine_id: str) -> bytes:
+            return b""
+
+    monkeypatch.setattr(etg, "run_engine_replay", fake_run_engine_replay)
+    monkeypatch.setattr(etg, "materialize_oracle_tree", fake_materialize)
+    monkeypatch.setattr(
+        "lawvm.finland.corpus._get_corpus_store", lambda: _FakeCorpus()
+    )
+
+
+def _fold_certifies_checkpoints(db_path: Path) -> None:
+    """Python port of exp1_certified_reducer.mjs.
+
+    Folds ``transitions`` in sequence into a live covering set (address ->
+    subtree_hash), asserting pre/post hashes per transition, and at every
+    change-date recomputes the reproducible tree hash over the live covering set
+    and asserts it equals ``checkpoints.tree_hash``. This is the certification
+    contract a browser-side JS reducer relies on: the finer subsection/section
+    transitions MUST still fold back to every engine checkpoint exactly.
+    """
+    conn = sqlite3.connect(str(db_path))
+    try:
+        transitions = conn.execute(
+            "SELECT transition_id, effective_date, target_address, action, "
+            "pre_hash, post_hash FROM transitions ORDER BY sequence ASC"
+        ).fetchall()
+        checkpoints = conn.execute(
+            "SELECT date, tree_hash FROM checkpoints ORDER BY date ASC"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    live: Dict[str, str] = {}
+    ti = 0
+    for date, expected_hash in checkpoints:
+        while ti < len(transitions) and transitions[ti][1] == date:
+            _tid, _d, addr, action, pre, post = transitions[ti]
+            cur = live.get(addr, "")
+            assert cur == pre, f"pre_hash mismatch at {addr} on {date}"
+            if action == "delete_subtree" or post == "":
+                live.pop(addr, None)
+            else:
+                live[addr] = post
+            now = live.get(addr, "")
+            assert now == post, f"post_hash mismatch at {addr} on {date}"
+            ti += 1
+        got = etg.reproducible_tree_hash(list(live.items()))
+        assert got == expected_hash, f"checkpoint mismatch on {date}"
+    assert ti == len(transitions), "not all transitions consumed"
+
+
 # ---------------------------------------------------------------------------
 # Hermetic exporter tests
 # ---------------------------------------------------------------------------
@@ -231,6 +399,131 @@ def test_export_captures_insert_and_expiry_transitions(
         assert any(fl.get("removed") for fl in del_flags)
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Section/subsection-granularity tests
+# ---------------------------------------------------------------------------
+
+
+def test_default_granularity_emits_subsection_targets(
+    patched_deep_engine: None, tmp_path: Path
+) -> None:
+    """Default export targets deeper-than-chapter addresses (section/subsection),
+    not whole chapters, and emits MINIMAL subtrees for an isolated change."""
+    out = tmp_path / "deep.db"
+    stats = etg.export_transition_graph("200/2011", out, quiet=True)
+    assert stats.granularity == "subsection"
+
+    conn = sqlite3.connect(str(out))
+    try:
+        addrs = [
+            r[0]
+            for r in conn.execute("SELECT target_address FROM transitions").fetchall()
+        ]
+        assert addrs, "expected at least one transition"
+
+        # No transition is a bare whole-chapter address; every target is deeper
+        # than chapter (has a section, and subsection components present).
+        for a in addrs:
+            depth = a.count("/") + 1
+            assert depth >= 3, f"expected section/subsection depth, got {a!r}"
+        assert any("subsection:" in a for a in addrs), "expected subsection targets"
+        assert all("chapter:" in a and "section:" in a for a in addrs)
+
+        # The single subsection text change (D2) lands EXACTLY on
+        # chapter:1/section:1/subsection:2 — not on the whole chapter/section,
+        # and the unchanged sibling subsection is not re-emitted.
+        d2 = conn.execute(
+            "SELECT target_address, action FROM transitions "
+            "WHERE effective_date='2016-01-01'"
+        ).fetchall()
+        d2_addrs = {a for (a, _act) in d2}
+        assert d2_addrs == {"chapter:1/section:1/subsection:2"}
+
+        # The section:2 removal at D3 surfaces at its subsection address.
+        d3 = conn.execute(
+            "SELECT target_address, action FROM transitions "
+            "WHERE effective_date='2021-01-01'"
+        ).fetchall()
+        assert ("chapter:1/section:2/subsection:1", "delete_subtree") in {
+            (a, act) for (a, act) in d3
+        }
+    finally:
+        conn.close()
+
+
+def test_subsection_provenance_attributed_from_section_op(
+    patched_deep_engine: None, tmp_path: Path
+) -> None:
+    """A whole-section amendment op carries its provenance (source_id/op kind)
+    down to the finer subsection transition it produced."""
+    out = tmp_path / "deep_prov.db"
+    etg.export_transition_graph("200/2011", out, quiet=True)
+    conn = sqlite3.connect(str(out))
+    try:
+        row = conn.execute(
+            "SELECT source_id, legal_op_kind FROM transitions "
+            "WHERE target_address='chapter:1/section:1/subsection:2' "
+            "AND effective_date='2016-01-01'"
+        ).fetchone()
+        assert row is not None
+        source_id, legal_op_kind = row
+        # provenance backpropagated from the chapter:1/section:1 replace op
+        assert source_id == "55/2016"
+        assert "replace" in legal_op_kind
+    finally:
+        conn.close()
+
+
+def test_certified_reducer_reproduces_checkpoints_subsection(
+    patched_deep_engine: None, tmp_path: Path
+) -> None:
+    """The certified L3 fold of the finer subsection transitions reproduces every
+    engine checkpoint tree-hash exactly (Exp-1 reducer contract)."""
+    out = tmp_path / "deep_cert.db"
+    etg.export_transition_graph("200/2011", out, quiet=True)
+    _fold_certifies_checkpoints(out)
+
+
+def test_certified_reducer_reproduces_checkpoints_flat(
+    patched_engine: None, tmp_path: Path
+) -> None:
+    """Certification also holds for the flat section fixture under the default
+    subsection granularity (sections with no labeled subsection stay whole)."""
+    out = tmp_path / "flat_cert.db"
+    etg.export_transition_graph("100/2010", out, quiet=True)
+    _fold_certifies_checkpoints(out)
+
+
+def test_chapter_granularity_fallback(
+    patched_deep_engine: None, tmp_path: Path
+) -> None:
+    """The legacy chapter granularity still tiles at whole-chapter depth and
+    remains certified."""
+    out = tmp_path / "chapter.db"
+    stats = etg.export_transition_graph(
+        "200/2011", out, granularity="chapter", quiet=True
+    )
+    assert stats.granularity == "chapter"
+    conn = sqlite3.connect(str(out))
+    try:
+        addrs = {
+            r[0]
+            for r in conn.execute("SELECT DISTINCT address FROM active_at").fetchall()
+        }
+        # whole-chapter covering: only chapter:1 (no deeper addresses)
+        assert addrs == {"chapter:1"}
+    finally:
+        conn.close()
+    _fold_certifies_checkpoints(out)
+
+
+def test_unknown_granularity_rejected(patched_deep_engine: None, tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="unknown granularity"):
+        etg.export_transition_graph(
+            "200/2011", tmp_path / "bad.db", granularity="nonsense", quiet=True
+        )
 
 
 def test_l2_sidecar_emitted(patched_engine: None, tmp_path: Path) -> None:
