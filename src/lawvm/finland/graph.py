@@ -34,6 +34,13 @@ async def build_statute_graph_fi(sid: str) -> StatuteGraph:
     from lawvm.finland.cross_refs import extract_cross_refs
     from lawvm.finland.delegation import extract_delegations
     from lawvm.finland.grafter import get_corpus, replay_xml, _fi_label_postprocessor
+    from lawvm.finland.statute_id import engine_statute_id
+
+    # Normalize the säädös id to engine 'year/num' form at this boundary so the
+    # corpus read, the amendment-index lookup, and replay all key off the same
+    # id. A canonical 'num/year' id would otherwise read no base or, worse,
+    # silently resolve to an empty amendment chain (base-only degradation).
+    sid = engine_statute_id(sid)
 
     # 1. Replay amendments, collect LegalOperations
     lo_ops_out: list = []
@@ -112,6 +119,11 @@ async def build_statute_graph_fi_lightweight(sid: str) -> StatuteGraph:
     from lawvm.finland.cross_refs import extract_cross_refs, extract_eu_refs
     from lawvm.finland.delegation import extract_delegations
     from lawvm.finland.grafter import get_corpus
+    from lawvm.finland.statute_id import engine_statute_id
+
+    # Normalize to engine 'year/num' form so corpus read and amendment-index
+    # lookup agree (see build_statute_graph_fi).
+    sid = engine_statute_id(sid)
 
     # Read base statute XML bytes (KeyError propagates to caller for skip)
     cs = get_corpus()

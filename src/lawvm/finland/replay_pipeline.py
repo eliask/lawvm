@@ -13,6 +13,7 @@ from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
 from lawvm.finland.vts import VtsSkippedTarget, VtsSourceDiagnostic
 
 from lawvm.finland.statute import ReplayState, StatuteContext, _serialize_text_node as _serialize_text
+from lawvm.finland.statute_id import engine_statute_id, looks_like_statute_id
 
 
 @dataclass(frozen=True)
@@ -85,10 +86,40 @@ def prepare_replay_plan(
     get_consolidated_oracle_suspect: Callable[..., Optional[str]],
     extract_inline_corrections: Callable[[bytes, str], tuple[list[Any], bytes]],
 ) -> ReplayPlan:
-    """Build the typed replay plan and initial state for one statute."""
-    orig_bytes = corpus.read_source(parent_id)
+    """Build the typed replay plan and initial state for one statute.
+
+    The incoming ``parent_id`` is normalized to the engine ``year/num`` form at
+    this single boundary so that the corpus (keyed ``finlex://sd/{year}/{num}``)
+    and the amendment index (keyed ``year/num``) agree. Without this, a
+    canonical ``num/year`` säädös id (e.g. ``"301/2004"``) would read no base —
+    or, on any path that supplied base IR independently, resolve to an *empty*
+    amendment set and silently degrade to a base-only materialization.
+    """
+    requested_id = parent_id
+    normalized_id = engine_statute_id(parent_id)
+    orig_bytes = corpus.read_source(normalized_id)
+    if orig_bytes is None and normalized_id != requested_id:
+        # The normalizer reordered the id but it still does not resolve — fall
+        # back to the literal id only to produce a precise diagnostic below.
+        orig_bytes = corpus.read_source(requested_id)
+        if orig_bytes is not None:
+            normalized_id = requested_id
     if orig_bytes is None:
-        raise FileNotFoundError(f"Statute {parent_id} not found in corpus")
+        hint = ""
+        if looks_like_statute_id(requested_id):
+            hint = (
+                f" Normalized engine id {normalized_id!r} (year/num) was tried; "
+                "neither ordering resolves a base statute."
+            )
+        raise RuntimeError(
+            "FI_STATUTE_ID_UNRESOLVED: säädös id "
+            f"{requested_id!r} did not resolve to a base statute in the corpus."
+            f"{hint} An id that does not resolve must NOT silently degrade to a "
+            "base-only materialization; check the id ordering (canonical "
+            "'num/year' vs engine 'year/num'), for typos, and that the corpus "
+            "(LAWVM_FARCHIVE_DB) actually contains this statute."
+        )
+    parent_id = normalized_id
 
     corr_gate = strict_profile is None or strict_profile.allows_source_correction_rules
     if corr_gate:
