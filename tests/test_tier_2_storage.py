@@ -743,12 +743,37 @@ class TestPerformanceGate:
     only calls the emitter for 1 stale projection; full calls all N emitters.
     """
 
-    def test_incremental_calls_fewer_emitters_than_full(self, tmp_path: Path) -> None:
+    @staticmethod
+    def _install_counting_dispatch(monkeypatch: pytest.MonkeyPatch) -> list:
+        """Replace _dispatch_projection with a call-counting stub.
+
+        The gate measures dispatch DECISIONS (skip vs rebuild), not emitter
+        work. The real dispatchers resolve the statute corpus via the default
+        cwd-relative store — NOT this test's tmp data_dir — so calling them
+        for real silently runs a full corpus export whenever a populated
+        farchive is reachable from cwd (and tests nothing when it is not).
+        """
+        from lawvm.tools import rebuild_indexes as ri
+
+        calls: list = []
+
+        def _counting_dispatch(*, spec, **kwargs):
+            calls.append(spec.name)
+            return 1
+
+        monkeypatch.setattr(ri, "_dispatch_projection", _counting_dispatch)
+        return calls
+
+    def test_incremental_calls_fewer_emitters_than_full(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Incremental rebuild of 1 stale + (N-1) fresh = 1 emitter call.
         Full rebuild = N emitter calls.
         Ratio = N : 1 >> 10 for our fi projection count (~11 projections).
         """
         from lawvm.tools.rebuild_indexes import _projections_for, rebuild_indexes
+
+        calls = self._install_counting_dispatch(monkeypatch)
 
         data_dir = str(tmp_path / "data")
         jurisdiction = "fi"
@@ -778,8 +803,9 @@ class TestPerformanceGate:
         )
         inc_rebuilt = len(result_inc["rebuilt"])
         inc_skipped = len(result_inc["skipped"])
+        assert calls == [], "Incremental with all-fresh state must dispatch nothing"
 
-        # Full: all projections are rebuilt (emitters may fail if farchive absent)
+        # Full: every projection goes through the (stubbed) dispatcher
         result_full = rebuild_indexes(
             jurisdiction=jurisdiction,
             incremental=False,
@@ -787,8 +813,9 @@ class TestPerformanceGate:
             schema_version=sv,
         )
         full_attempted = len(result_full["rebuilt"]) + len(result_full["errors"])
+        assert len(calls) == n_projections, "Full rebuild must dispatch every projection"
 
-        # Incremental skipped everything (no farchive = no changes)
+        # Incremental skipped everything (fresh state = no changes)
         assert inc_rebuilt == 0
         assert inc_skipped == n_projections
 
@@ -802,9 +829,13 @@ class TestPerformanceGate:
             f"full attempted {full_attempted}, ratio={ratio:.1f} (need >=10)"
         )
 
-    def test_single_stale_projection_only_rebuilds_one(self, tmp_path: Path) -> None:
+    def test_single_stale_projection_only_rebuilds_one(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """With 1 stale projection in N, incremental rebuilds exactly 1."""
         from lawvm.tools.rebuild_indexes import _projections_for, rebuild_indexes
+
+        calls = self._install_counting_dispatch(monkeypatch)
 
         data_dir = str(tmp_path / "data")
         jurisdiction = "fi"
@@ -838,10 +869,10 @@ class TestPerformanceGate:
             schema_version=sv,
         )
 
-        # Exactly 1 projection attempted to rebuild (may error due to missing farchive;
-        # that's fine — the point is only 1 was dispatched, not skipped)
+        # Exactly 1 projection dispatched, the rest skipped as fresh
         attempted = len(result["rebuilt"]) + len(result["errors"])
         skipped = len(result["skipped"])
+        assert calls == [stale_name], "Only the stale projection may be dispatched"
 
         assert attempted == 1, (
             f"Expected 1 attempted, got {attempted}. "
