@@ -290,6 +290,45 @@ class TestNoDuplicatesInPIT:
         dups = _find_duplicates(ir)
         assert not dups, f"Found duplicates in materialized PIT: {dups[:5]}"
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "Known replay defect: 2017/228 substitutes the single 40 §:n 2 momentti "
+            "(source XML carries exactly one <subsection> + omission markers), but the "
+            "section-level apply duplicates the new momentti 2 into both subsection:2 and "
+            "subsection:3, overwriting and losing the original momentti 3 "
+            "('Seuraamusmaksua ei voida määrätä...'). Fix belongs in the "
+            "subsection slot-binding / payload-merge path (payload_normalize / "
+            "apply_subsection_dispatch), not a narrow patch. Remove xfail when fixed."
+        ),
+    )
+    def test_2008_878_section_40_momentti_not_duplicated(self) -> None:
+        """Laki Finanssivalvonnasta § 40: momentti 2 must not be duplicated, momentti 3 must survive."""
+        ir = _replay("2008/878")
+        section_40 = next(
+            child
+            for chapter in ir.children
+            if chapter.kind is IRNodeKind.CHAPTER
+            for child in chapter.children
+            if child.kind is IRNodeKind.SECTION
+            and (child.label or "").strip().rstrip("§").strip() == "40"
+        )
+        subsections = [c for c in section_40.children if c.kind is IRNodeKind.SUBSECTION]
+        momentti_2_intro = "Seuraamusmaksu määrätään myös sille, joka tahallaan"
+        momentti_3_lead = "Seuraamusmaksua ei voida määrätä luonnolliselle henkilölle teosta"
+        item_list_subsections = [
+            s
+            for s in subsections
+            if " ".join(irnode_to_text(s).split()).startswith(momentti_2_intro)
+        ]
+        # The item-list momentti (2 mom) is a single subsection in the Finlex oracle.
+        assert len(item_list_subsections) == 1, (
+            "momentti 2 item list duplicated across "
+            f"{[s.label for s in item_list_subsections]}"
+        )
+        section_text = " ".join(irnode_to_text(section_40).split())
+        assert momentti_3_lead in section_text, "original momentti 3 was lost during replay"
+
     def test_1976_673_section_13_no_duplicate_subsection(self) -> None:
         """The 1976/673 replay must not duplicate subsection 3 in section 13."""
         ir, replay_meta = _replay_ir_and_meta("1976/673")
