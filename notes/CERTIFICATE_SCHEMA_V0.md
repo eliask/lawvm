@@ -670,12 +670,16 @@ Typed diagnostic codes are REQUIRED, not decorative:
   `certificate_status=blocked` (§5.2) and is INVALID inside a clean or
   qualified one.
 - `kind=expiry_unverified` rows MUST carry one of the registered fixed-term
-  diagnostic codes —
+  blocking diagnostic codes —
 
   ```text
   TEMPORAL.FIXED_TERM_EXPIRY_UNPARSEABLE
   TEMPORAL.FIXED_TERM_EXPIRY_AMBIGUOUS
   TEMPORAL.FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS
+  TEMPORAL.DURATION_ARITHMETIC_AUTHORITY_MISSING
+  TEMPORAL.EVENT_BOUND_RESOLVER_MISSING
+  TEMPORAL.EVENT_BOUND_OUT_OF_DOCTRINE
+  TEMPORAL.SOURCE_IMPOSSIBLE_DATE
   ```
 
   — plus the offending `source_text` (self-evidencing: typing a residual
@@ -684,6 +688,15 @@ Typed diagnostic codes are REQUIRED, not decorative:
   duration forms, source-impossible dates, ambiguous anaphora) into one
   untyped `expiry_unverified` bucket loses exactly the honesty the
   fail-loud expiry design bought.
+- Recognised validity prose that is NOT a whole-law expiry bound is typed by
+  the non-blocking observation-role codes
+  `TEMPORAL.DECREE_SET_COMMENCEMENT_UNRESOLVED`,
+  `TEMPORAL.START_ONLY_NOT_EXPIRY_BOUND`, and
+  `TEMPORAL.NON_VALIDITY_VOIMASSA_SUPPRESSED`. These are audited
+  observations, never `expiry_unverified` residuals; a residual carrying one
+  of them with `blocking=true` is INVALID. The registered code set lives in
+  the observation registry and MAY widen within v0; an emitter MUST use the
+  registered code matching the failure class, never a coarser one.
 - `kind=unsupported_scoped_expiry` rows carry
   `TEMPORAL.SCOPED_FIXED_TERM_EXPIRY_UNSUPPORTED`;
   `kind=source_anchor_unavailable` rows carry the transition identity they
@@ -1010,6 +1023,15 @@ uncheckable bundle is a checked bundle".
 3. Bundle writer for ONE Finnish statute/slice.
 4. Checker v0 per §7, with corrupted-bundle fire-drills.
 ```
+
+Transition-leaf provenance (normative for the bundle writer): the
+CanonicalTransition leaves and their pre/post hashes MUST be produced from
+the landed write footprint of the apply step (write receipts), never
+reconstructed from the operation's nominal target after the fact. The
+binding the engine resolved, the write it landed, and the address the leaf
+declares are one and the same; a bundle writer that re-derives transitions
+from nominal targets can certify a write that never happened where it
+claims.
 
 ## 11. Change policy
 

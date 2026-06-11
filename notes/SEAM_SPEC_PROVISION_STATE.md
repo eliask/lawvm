@@ -270,6 +270,42 @@ their own CI. Consumers MUST pin the `spec_version` they validated against.
   queries on lapsed or unprovable fixed-term statutes change status and hash
   — that change is the feature.
 
+### 7.2 Changes within 0.2: expiry diagnostic vocabulary widened
+
+Non-breaking under §7 (status enumeration, hash member set, eligibility
+predicate, and resolution rules unchanged). Consumers branching on `status`
+are unaffected.
+
+- The `expiry.diagnostic` code vocabulary on `expiry_unverified` responses is
+  WIDENED: recognised-but-unresolved whole-law validity clauses are typed by
+  what is missing instead of collapsing into
+  `TEMPORAL.FIXED_TERM_EXPIRY_UNPARSEABLE`. The blocking codes are now:
+
+  ```text
+  TEMPORAL.FIXED_TERM_EXPIRY_UNPARSEABLE
+  TEMPORAL.FIXED_TERM_EXPIRY_AMBIGUOUS
+  TEMPORAL.FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS
+  TEMPORAL.DURATION_ARITHMETIC_AUTHORITY_MISSING   (duration form awaiting the
+                                                    pinned arithmetic rule)
+  TEMPORAL.EVENT_BOUND_RESOLVER_MISSING            (säädöskokoelma-discernible
+                                                    event bound, resolver not
+                                                    yet built)
+  TEMPORAL.EVENT_BOUND_OUT_OF_DOCTRINE             (substantive event bound)
+  TEMPORAL.SOURCE_IMPOSSIBLE_DATE                  (source states a calendar-
+                                                    impossible date)
+  ```
+
+  Consumers MUST treat the diagnostic-code set as OPEN within a spec version:
+  new codes refine the typing of already-blocking responses; they never
+  change `status` semantics.
+- Three recognised clause shapes that are NOT whole-law expiry bounds left
+  the blocking lane as audited non-candidates (decree-set commencement,
+  start-only validity statements, voimassa-text that never predicates
+  validity of the act itself). Statutes previously blocked on those shapes
+  now answer `selected` with live text — for those statutes the response
+  status and hash change; that change is a fail-loud false positive being
+  retired, not a semantics change.
+
 <!--
 CODE-VS-NOTES DISAGREEMENTS (code wins, flagged per task instructions):
 
