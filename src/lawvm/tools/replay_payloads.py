@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Mapping
 
-from lawvm.core.agreement_residual import AgreementResidual
+from lawvm.core.agreement_residual import (
+    AgreementResidual,
+    AgreementResidualFamily,
+    AgreementResidualStatus,
+)
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.adjudication_evidence import (
@@ -186,8 +190,8 @@ def _uk_replay_adjudication_agreement_residual(
         residual_id=f"uk-replay-adjudication:{source_statute}:{suffix}",
         jurisdiction="uk",
         agreement_surface="replay_adjudication",
-        family=_uk_replay_adjudication_residual_family(bucket),  # ty:ignore[invalid-argument-type]
-        status=_uk_replay_adjudication_residual_status(bucket),  # ty:ignore[invalid-argument-type]
+        family=_uk_replay_adjudication_residual_family(bucket),
+        status=_uk_replay_adjudication_residual_status(bucket),
         owner_phase=owner_phase,
         rule_id=f"uk_replay_adjudication_{bucket or 'unknown'}",
         source_artifact_id=source_statute,
@@ -209,7 +213,7 @@ def _uk_replay_adjudication_agreement_residual(
     )
 
 
-def _uk_replay_adjudication_residual_family(bucket: str) -> str:
+def _uk_replay_adjudication_residual_family(bucket: str) -> AgreementResidualFamily:
     if bucket == "replay_bug":
         return "replay_bug"
     if bucket == "source_shape":
@@ -221,7 +225,7 @@ def _uk_replay_adjudication_residual_family(bucket: str) -> str:
     return "unknown"
 
 
-def _uk_replay_adjudication_residual_status(bucket: str) -> str:
+def _uk_replay_adjudication_residual_status(bucket: str) -> AgreementResidualStatus:
     if bucket == "nonblocking_observation":
         return "frontier"
     return "residual"
