@@ -45,6 +45,8 @@ def test_load_strict_run_reads_source_pathology_codes(tmp_path, monkeypatch) -> 
     assert rows[0]["ownership_closure_failed_gates"] == []
     assert rows[0]["candidate_set_statuses"] == []
     assert rows[0]["candidate_set_blockers"] == []
+    assert rows[0]["source_completeness_issue_kinds"] == []
+    assert rows[0]["source_completeness_issue_reasons"] == []
 
 
 def test_load_strict_run_ignores_legacy_adjudication_kinds_column(tmp_path, monkeypatch) -> None:
@@ -130,6 +132,8 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                     }
                 ],
                 "source_pathology_diagnostic_reasons": ["partial_body_only"],
+                "source_completeness_issue_kinds": ["APPLY.SOURCE_INCOMPLETE"],
+                "source_completeness_issue_reasons": ["2020/1 eff 2020-02-01 > cutoff 2020-01-01"],
                 "html_noncommensurable_reason": "oracle_extra_scoped_labels:chapter:15/section:1",
                 "contingent_effective_sources": [],
                 "fail_reasons": ["APPLY.SOURCE_PATHOLOGY_DETECTED"],
@@ -159,12 +163,16 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert "source_pathology_codes" in text
     assert "source_pathology_rows_json" in text
     assert "source_pathology_diagnostic_reasons" in text
+    assert "source_completeness_issue_kinds" in text
+    assert "source_completeness_issue_reasons" in text
     assert "html_noncommensurable_reason" in text
     assert "ownership_closure_failed_gates" in text
     assert "candidate_set_statuses" in text
     assert "candidate_set_blockers" in text
     assert "DESTRUCTIVE_SHAPE_LOSS_RISK" in text
     assert "partial_body_only" in text
+    assert "APPLY.SOURCE_INCOMPLETE" in text
+    assert "2020/1 eff 2020-02-01 > cutoff 2020-01-01" in text
     assert "candidate_set_fi_strict_report_operation_cue_coverage_partial" in text
     assert "fi_strict_report_operation_cue_coverage:partial" in text
     assert "fi_strict_report_operation_cue_coverage:operation_cue_coverage_gap" in text
@@ -240,6 +248,8 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                 "projection_kinds": ["ELAB.SOURCE_PATHOLOGY", "ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY"],
                 "source_pathology_codes": ["MALFORMED_BROAD_REPLACE_BODY", "DESTRUCTIVE_SHAPE_LOSS_RISK"],
                 "source_pathology_diagnostic_reasons": ["live_body_dominates_amend_body", "partial_body_only"],
+                "source_completeness_issue_kinds": ["APPLY.SOURCE_INCOMPLETE"],
+                "source_completeness_issue_reasons": ["2020/1 eff 2020-02-01 > cutoff 2020-01-01"],
                 "html_noncommensurable_reason": "oracle_extra_scoped_labels:chapter:15/section:1",
                 "contingent_effective_sources": ["2005/544"],
                 "fail_reasons": ["APPLY.SOURCE_PATHOLOGY_DETECTED"],
@@ -267,6 +277,10 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
     assert "Source pathology diagnostic reasons" in out
     assert "live_body_dominates_amend_body" in out
     assert "partial_body_only" in out
+    assert "Source completeness issue kinds" in out
+    assert "APPLY.SOURCE_INCOMPLETE" in out
+    assert "Source completeness issue reasons" in out
+    assert "2020/1 eff 2020-02-01 > cutoff 2020-01-01" in out
     assert "HTML/XML noncommensurable reasons" in out
     assert "oracle_extra_scoped_labels:chapter:15/section:1" in out
     assert "Contingent effective-date sources" in out
@@ -387,6 +401,42 @@ def test_to_json_preserves_projection_row_detail() -> None:
     assert payload["projection_rows"][0]["detail"]["collapse_kind"] == "destinationless_move_relabel"
     assert payload["projection_rows"][0]["detail"]["destination_missing"] is True
     assert payload["source_pathologies"] == []
+
+
+def test_format_report_surfaces_source_completeness_issue_reason() -> None:
+    cr = {
+        "statute_id": "2001/1234",
+        "profile": FINLAND_INGESTION_V1,
+        "canonical_ops": [],
+        "failed_ops": [],
+        "projection_rows": [
+            {
+                "kind": "APPLY.SOURCE_INCOMPLETE",
+                "message": "Oracle/source lineage appears incomplete or suspect.",
+                "source": "",
+                "detail": {
+                    "oracle_suspect": "2020/1 eff 2020-02-01 > cutoff 2020-01-01",
+                    "message": "Oracle/source lineage appears incomplete or suspect.",
+                },
+            }
+        ],
+        "source_pathologies": [],
+        "strict_fail_reasons": ["APPLY.SOURCE_INCOMPLETE"],
+        "source_adjudication": SimpleNamespace(
+            lineage=({"included": True, "effective_date": "2020-01-01"},),
+        ),
+    }
+
+    out = strict_report._format_report(cr, verbose=False)
+    payload = strict_report._to_json(cr)
+
+    assert "source_available : 1  (100%)" in out
+    assert "APPLY.SOURCE_INCOMPLETE[2020/1 eff 2020-02-01 > cutoff 2020-01-01]" in out
+    assert payload["source_completeness_issues"][0]["kind"] == "APPLY.SOURCE_INCOMPLETE"
+    assert (
+        payload["source_completeness_issues"][0]["detail"]["oracle_suspect"]
+        == "2020/1 eff 2020-02-01 > cutoff 2020-01-01"
+    )
 
 
 def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
