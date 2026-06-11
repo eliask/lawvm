@@ -136,6 +136,40 @@ CURATED_CASES = [
         "features": {"verb_muuttaa", "section_ref", "sub_ref_otsikko"},
     },
     {
+        # "otsake" = older drafting synonym for otsikko (1970s acts). The
+        # chapter-heading target must not swallow the section enumeration
+        # that follows it (1972/66 <- 1975/592).
+        "name": "chapter otsake (older synonym) keeps section enumeration alive",
+        "text": "muutetaan 25 §, 4 luvun otsake, 27―39, 43 ja 44 §,",
+        "expected": [
+            "M P 25",
+            "M L 4 o",
+            "M P L:4 27",
+            "M P L:4 28",
+            "M P L:4 29",
+            "M P L:4 30",
+            "M P L:4 31",
+            "M P L:4 32",
+            "M P L:4 33",
+            "M P L:4 34",
+            "M P L:4 35",
+            "M P L:4 36",
+            "M P L:4 37",
+            "M P L:4 38",
+            "M P L:4 39",
+            "M P L:4 43",
+            "M P L:4 44",
+        ],
+        "features": {
+            "verb_muuttaa",
+            "section_ref",
+            "sub_ref_otsikko",
+            "chapter_ref",
+            "range_expansion",
+            "conj_target_list",
+        },
+    },
+    {
         "name": "section_ref sub_ref_johd",
         "text": "muutetaan 15 §:n johdantokappale",
         "expected": ["M P 15 j"],

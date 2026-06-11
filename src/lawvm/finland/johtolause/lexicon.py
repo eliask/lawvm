@@ -142,6 +142,14 @@ _v("otsikko", "otsikko", "OTSIKKO", "NOM")
 _v("otsikon", "otsikko", "OTSIKKO", "GEN")
 _v("otsikkoa", "otsikko", "OTSIKKO", "NOM")
 _v("otsikot", "otsikko", "OTSIKKO", "NOM")  # plural nominative
+# "otsake" — older drafting synonym for otsikko (1970s acts, e.g. 1975/592
+# "muutetaan ... 4 luvun otsake, 27―39, 43 ja 44 §"). Without it the chapter
+# ref degrades to a whole-chapter replace and the rest of the enumeration is
+# dropped on the floor.
+_v("otsake", "otsikko", "OTSIKKO", "NOM")
+_v("otsakkeen", "otsikko", "OTSIKKO", "GEN")
+_v("otsaketta", "otsikko", "OTSIKKO", "NOM")  # partitive
+_v("otsakkeet", "otsikko", "OTSIKKO", "NOM")  # plural nominative
 
 # Intro paragraph
 for _form in (
