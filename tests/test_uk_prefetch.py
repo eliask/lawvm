@@ -563,7 +563,7 @@ def test_fetch_missing_for_statute_skips_unsupported_commencement_rows(monkeypat
         lambda _sid, _archive, **_kwargs: [_make_commencement_effect(act_id)],
     )
 
-    def fail_if_source_checked(_act_id, _archive):  # noqa: ANN001
+    def fail_if_source_checked(_act_id: str, _archive: object) -> None:
         raise AssertionError("commencement rows should not be checked for affecting XML")
 
     monkeypatch.setattr(

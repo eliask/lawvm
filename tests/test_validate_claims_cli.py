@@ -5,10 +5,11 @@ Mandatory acceptance criterion:
 """
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 
-import lawvm.finland.claim_kinds  # noqa: F401
+importlib.import_module("lawvm.finland.claim_kinds")
 
 from lawvm.core.provenance_graph import Producer
 from lawvm.core.provenance_graph_storage import GraphStore

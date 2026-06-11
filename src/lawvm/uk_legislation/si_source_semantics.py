@@ -693,7 +693,7 @@ def _bounded_child_texts(el: ET._Element, local_name: str, *, limit: int = 12) -
 
 
 def _text(el: ET._Element) -> str:
-    return _WS_RE.sub(" ", " ".join(part for part in el.itertext() if part)).strip()  # ty:ignore[no-matching-overload]
+    return _WS_RE.sub(" ", " ".join(str(part) for part in el.itertext() if part)).strip()
 
 
 def _preview(text: str, *, limit: int = 240) -> str:
