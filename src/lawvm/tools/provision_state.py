@@ -144,8 +144,9 @@ def build_provision_state_response(
             "source_locator_status": "unavailable_unresolved_provision",
         }
 
+    assert resolution.timeline is not None
     selection = select_active_version_ex(
-        resolution.timeline,  # ty:ignore[invalid-argument-type]
+        resolution.timeline,
         as_of=as_of,
         query_type=query_type,
         territory=territory,
@@ -435,8 +436,9 @@ def _selected_response(
     }
     if expiry_block is not None:
         if expired:
-            payload["expires"] = overlay.expires_on  # type: ignore[union-attr]
-            payload["valid_until"] = overlay.valid_until  # type: ignore[union-attr]
+            assert overlay is not None
+            payload["expires"] = overlay.expires_on
+            payload["valid_until"] = overlay.valid_until
         payload["expiry"] = expiry_block
     payload["source_locator_status"] = (
         "canonical_document_locator" if payload["source_locator"] is not None else "unavailable_no_source"

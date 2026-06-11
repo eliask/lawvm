@@ -20,6 +20,8 @@ Usage:
 from __future__ import annotations
 
 import csv
+import importlib
+import importlib.util
 import logging
 import re
 import sys
@@ -28,7 +30,7 @@ import urllib.request
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Protocol, cast
 
 from lxml import etree
 
@@ -48,6 +50,28 @@ _UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
+
+
+class _FetchLatestPitXML(Protocol):
+    def __call__(self, year: str, num: str) -> tuple[bytes | None, str]: ...
+
+
+class _HTMLSectionCount(Protocol):
+    def __call__(self, year: str, num: str) -> int | None: ...
+
+
+def _load_fetch_latest_pit_xml() -> _FetchLatestPitXML | None:
+    if importlib.util.find_spec("lawvm.finland.finlex_api") is None:
+        return None
+    mod = importlib.import_module("lawvm.finland.finlex_api")
+    return cast(_FetchLatestPitXML, mod.fetch_latest_pit_xml)
+
+
+def _load_html_section_count() -> _HTMLSectionCount | None:
+    if importlib.util.find_spec("lawvm.finland.finlex_html") is None:
+        return None
+    mod = importlib.import_module("lawvm.finland.finlex_html")
+    return cast(_HTMLSectionCount, mod.html_section_count)
 
 
 # ---------------------------------------------------------------------------
@@ -143,12 +167,7 @@ def _zip_section_count(sid: str) -> tuple[int, str]:
 # PIT version discovery and API fetch
 # ---------------------------------------------------------------------------
 
-# Graceful degradation if finlex_api module not yet built by another agent.
-try:
-    from lawvm.finland.finlex_api import fetch_latest_pit_xml as _fetch_latest_pit_xml_api  # type: ignore[import]
-    _HAS_FINLEX_API = True
-except ImportError:
-    _HAS_FINLEX_API = False
+_fetch_latest_pit_xml_api = _load_fetch_latest_pit_xml()
 
 
 def _discover_pit_versions_fallback(year: str, num: str) -> list[str]:
@@ -199,7 +218,7 @@ def _api_section_count(sid: str) -> tuple[int, str, str]:
     """
     year, num = sid.split("/", 1)
 
-    if _HAS_FINLEX_API:
+    if _fetch_latest_pit_xml_api is not None:
         try:
             data, pit_version = _fetch_latest_pit_xml_api(year, num)
             if data is None:
@@ -224,12 +243,7 @@ def _api_section_count(sid: str) -> tuple[int, str, str]:
 # HTML section counting
 # ---------------------------------------------------------------------------
 
-# Graceful degradation if finlex_html module not yet built by another agent.
-try:
-    from lawvm.finland.finlex_html import html_section_count as _html_section_count_mod  # type: ignore[import]
-    _HAS_FINLEX_HTML = True
-except ImportError:
-    _HAS_FINLEX_HTML = False
+_html_section_count_mod = _load_html_section_count()
 
 
 def _finlex_html_url(sid: str) -> str:
@@ -260,7 +274,7 @@ def _html_section_count_fallback(sid: str) -> tuple[int, str]:
         return -1, "fetch_failed"
 
     # Try finlex_html module first
-    if _HAS_FINLEX_HTML:
+    if _html_section_count_mod is not None:
         try:
             year, num = sid.split("/")
             n = _html_section_count_mod(year, num)
@@ -272,7 +286,6 @@ def _html_section_count_fallback(sid: str) -> tuple[int, str]:
 
     # Fall back to scripts/html_section_extractor
     try:
-        import importlib.util
         extractor_path = _LAWVM_DIR / "scripts" / "html_section_extractor.py"
         spec = importlib.util.spec_from_file_location(
             "html_section_extractor", extractor_path
@@ -280,7 +293,7 @@ def _html_section_count_fallback(sid: str) -> tuple[int, str]:
         if spec is None or spec.loader is None:
             raise ImportError("could not load html_section_extractor")
         mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        spec.loader.exec_module(mod)
         sections = mod.extract_sections_from_html(raw)
         return len(sections), ""
     except Exception as exc:
