@@ -45,8 +45,13 @@ class SourceLocator:
         object.__setattr__(self, "xpath", str(self.xpath or ""))
         object.__setattr__(self, "char_span", _optional_span("char_span", self.char_span))
         object.__setattr__(self, "byte_span", _optional_span("byte_span", self.byte_span))
-        object.__setattr__(self, "artifact_digest", str(self.artifact_digest or ""))
-        object.__setattr__(self, "artifact_digest_algorithm", str(self.artifact_digest_algorithm or ""))
+        artifact_digest = str(self.artifact_digest or "")
+        artifact_digest_algorithm = _artifact_digest_algorithm(
+            artifact_digest=artifact_digest,
+            algorithm=str(self.artifact_digest_algorithm or ""),
+        )
+        object.__setattr__(self, "artifact_digest", artifact_digest)
+        object.__setattr__(self, "artifact_digest_algorithm", artifact_digest_algorithm)
         object.__setattr__(self, "quote_hash", str(self.quote_hash or ""))
         object.__setattr__(self, "normalization_policy", str(self.normalization_policy or ""))
         object.__setattr__(self, "statute_id", str(self.statute_id or ""))
@@ -129,8 +134,10 @@ def source_ref_from_locator(
 ) -> SourceRef:
     """Convert a shared locator into provenance-graph ``SourceRef`` footing."""
 
+    digest = artifact_digest or locator.artifact_digest
+    _validate_sha256_digest("artifact_digest", digest)
     return SourceRef(
-        artifact_digest=_required_string("artifact_digest", artifact_digest or locator.artifact_digest),
+        artifact_digest=_required_string("artifact_digest", digest),
         structural_locator=_structural_locator(locator),
         bounded_quote_hash=bounded_quote_hash or locator.quote_hash,
         normalization_policy_id=locator.normalization_policy or "source_locator.v1",
@@ -174,6 +181,26 @@ def _optional_span(field_name: str, value: tuple[int, int] | None) -> tuple[int,
     if not isinstance(start, int) or not isinstance(end, int) or start < 0 or end < start:
         raise ValueError(f"SourceLocator.{field_name} must satisfy 0 <= start <= end")
     return (start, end)
+
+
+def _artifact_digest_algorithm(*, artifact_digest: str, algorithm: str) -> str:
+    if not artifact_digest:
+        if algorithm:
+            raise ValueError("SourceLocator.artifact_digest_algorithm requires artifact_digest")
+        return ""
+    if not algorithm:
+        algorithm = "sha256"
+    if algorithm != "sha256":
+        raise ValueError("SourceLocator.artifact_digest_algorithm must be sha256")
+    _validate_sha256_digest("artifact_digest", artifact_digest)
+    return algorithm
+
+
+def _validate_sha256_digest(field_name: str, value: str) -> None:
+    if not value:
+        raise ValueError(f"SourceLocator.{field_name} is required")
+    if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+        raise ValueError(f"SourceLocator.{field_name} must be a lowercase sha256 digest")
 
 
 def _plain_jsonable(value: Any) -> Any:

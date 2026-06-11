@@ -93,6 +93,7 @@ from lawvm.core.source_pathology import (
     source_pathology_evidence_report,
     source_pathology_projection,
 )
+from lawvm.core.source_locator import SourceLocator, source_ref_from_locator
 from lawvm.core.source_witness import (
     DigestWitness,
     nested_source_witness_digest_coverage_counts,
@@ -1483,6 +1484,65 @@ def test_source_witness_normalizes_digest_and_preserves_wire_fields() -> None:
     assert data["digest"] == "abc123"
     assert data["source_sha256"] == "abc123"
     assert data["source_status"] == "available"
+
+
+def test_source_locator_digest_defaults_to_sha256_and_feeds_source_ref() -> None:
+    digest = "a" * 64
+    locator = SourceLocator(
+        jurisdiction="fi",
+        artifact_kind="finlex_akn",
+        source_id="finlex:2024/1",
+        structural_path="section:1",
+        artifact_digest=digest,
+    )
+
+    data = locator.to_dict()
+    source_ref = source_ref_from_locator(locator)
+
+    assert data["artifact_digest"] == digest
+    assert data["artifact_digest_algorithm"] == "sha256"
+    assert source_ref.artifact_digest == digest
+    assert source_ref.structural_locator == "section:1"
+
+
+def test_source_locator_rejects_malformed_artifact_digest() -> None:
+    with pytest.raises(ValueError, match="artifact_digest must be a lowercase sha256 digest"):
+        SourceLocator(
+            jurisdiction="fi",
+            artifact_kind="finlex_akn",
+            source_id="finlex:2024/1",
+            artifact_digest="abc123",
+        )
+
+
+def test_source_locator_rejects_unsupported_or_unpaired_digest_algorithm() -> None:
+    with pytest.raises(ValueError, match="artifact_digest_algorithm must be sha256"):
+        SourceLocator(
+            jurisdiction="fi",
+            artifact_kind="finlex_akn",
+            source_id="finlex:2024/1",
+            artifact_digest="a" * 64,
+            artifact_digest_algorithm="sha512",
+        )
+    with pytest.raises(ValueError, match="artifact_digest_algorithm requires artifact_digest"):
+        SourceLocator(
+            jurisdiction="fi",
+            artifact_kind="finlex_akn",
+            source_id="finlex:2024/1",
+            artifact_digest_algorithm="sha256",
+        )
+
+
+def test_source_ref_from_locator_validates_explicit_artifact_digest() -> None:
+    locator = SourceLocator(
+        jurisdiction="fi",
+        artifact_kind="finlex_akn",
+        source_id="finlex:2024/1",
+        structural_path="section:1",
+    )
+
+    with pytest.raises(ValueError, match="artifact_digest must be a lowercase sha256 digest"):
+        source_ref_from_locator(locator, artifact_digest="abc123")
 
 
 def test_source_witness_computes_preview_digest() -> None:
