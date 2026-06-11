@@ -21,6 +21,7 @@ from lawvm.core.compile_result import StrictProfile
 from lawvm.core.evidence_policy import EvidencePolicyRegistry
 from lawvm.core.provenance_graph import (
     GraphBuilder,
+    ProvenanceGraph,
     attestation_kind_registry_hash,
 )
 
@@ -42,7 +43,7 @@ def _make_registry() -> EvidencePolicyRegistry:
     )
 
 
-def _make_empty_graph() -> object:
+def _make_empty_graph() -> ProvenanceGraph:
     """Build a minimal empty ProvenanceGraph."""
     builder = GraphBuilder(attestation_kind_registry_hash())
     return builder.finalize()
@@ -198,7 +199,7 @@ def test_build_compile_metadata_from_graph_profile_policy() -> None:
         build_timestamp=datetime(2026, 6, 4, 0, 0, 0, tzinfo=timezone.utc),
     )
 
-    assert meta.provenance_graph_hash == graph.snapshot_hash  # ty:ignore[unresolved-attribute]
+    assert meta.provenance_graph_hash == graph.snapshot_hash
     assert meta.strict_profile_fingerprint == compute_strict_profile_fingerprint(profile)
     assert meta.evidence_policy_fingerprint == registry.registry_hash
     assert meta.source_bundle_hash == "s" * 64

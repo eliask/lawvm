@@ -49,6 +49,7 @@ from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.duplicate_child_classification import (
     classify_duplicate_child_family,
     collect_duplicate_child_findings,
+    DuplicateChildClassification,
     DuplicateChildFinding,
     timeline_issue_kind_for_duplicate_classification,
 )
@@ -2687,6 +2688,11 @@ def test_duplicate_child_classifier_marks_explicit_temporal_overlay() -> None:
 _VALID_PARENT = LegalAddress(path=(("chapter", "1"),))
 
 
+def _invalid_duplicate_child_classification() -> DuplicateChildClassification:
+    """Deliberately bypass the static Literal type to test runtime validation."""
+    return cast(DuplicateChildClassification, "not_a_real_status")
+
+
 def test_duplicate_child_finding_rejects_empty_child_kind() -> None:
     with pytest.raises(ValueError, match="child_kind"):
         DuplicateChildFinding(
@@ -2730,7 +2736,7 @@ def test_duplicate_child_finding_rejects_unknown_classification() -> None:
             child_kind="section",
             child_label="5",
             child_count=2,
-            classification="not_a_real_status",  # ty: ignore[invalid-argument-type]
+            classification=_invalid_duplicate_child_classification(),
             reason="x",
         )
 
@@ -2742,7 +2748,7 @@ def test_duplicate_child_finding_unknown_classification_error_lists_supported() 
             child_kind="section",
             child_label="5",
             child_count=2,
-            classification="not_a_real_status",  # ty: ignore[invalid-argument-type]
+            classification=_invalid_duplicate_child_classification(),
             reason="x",
         )
 
@@ -2761,12 +2767,12 @@ def test_duplicate_child_finding_rejects_empty_reason() -> None:
 
 def test_timeline_issue_kind_for_duplicate_classification_raises_value_error_for_unknown() -> None:
     with pytest.raises(ValueError, match="not_a_real_status"):
-        timeline_issue_kind_for_duplicate_classification("not_a_real_status")  # ty: ignore[invalid-argument-type]
+        timeline_issue_kind_for_duplicate_classification(_invalid_duplicate_child_classification())
 
 
 def test_timeline_issue_kind_for_duplicate_classification_error_lists_supported() -> None:
     with pytest.raises(ValueError, match="valid_temporal_overlay"):
-        timeline_issue_kind_for_duplicate_classification("not_a_real_status")  # ty: ignore[invalid-argument-type]
+        timeline_issue_kind_for_duplicate_classification(_invalid_duplicate_child_classification())
 
 
 def test_materialize_pit_preserves_duplicate_selected_children_in_timeline_versions() -> None:

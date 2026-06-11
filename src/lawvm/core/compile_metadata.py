@@ -19,9 +19,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import datetime
-from typing import Mapping, Optional
+from typing import TYPE_CHECKING, Mapping, Optional
+
+from lawvm.core.provenance_graph import attestation_kind_registry_hash
+
+if TYPE_CHECKING:
+    from lawvm.core.compile_result import StrictProfile
+    from lawvm.core.evidence_policy import EvidencePolicyRegistry
+    from lawvm.core.provenance_graph import ProvenanceGraph
 
 
 # ---------------------------------------------------------------------------
@@ -173,17 +180,15 @@ class CompileMetadata:
 # ---------------------------------------------------------------------------
 
 
-def compute_strict_profile_fingerprint(profile: "StrictProfile") -> str:  # type: ignore[name-defined]  # noqa: F821  # ty: ignore[unresolved-reference]
+def compute_strict_profile_fingerprint(profile: "StrictProfile") -> str:
     """Return sha256 over canonical serialization of all StrictProfile fields.
 
     Deterministic field ordering: sorted by field name. Same profile object
     on any process → identical fingerprint.
     """
-    import dataclasses  # noqa: PLC0415
-
     fields_dict = {
         f.name: getattr(profile, f.name)
-        for f in dataclasses.fields(profile)
+        for f in fields(profile)
     }
     return _sha256(_canonical_json(fields_dict))
 
@@ -195,9 +200,9 @@ def compute_strict_profile_fingerprint(profile: "StrictProfile") -> str:  # type
 
 def build_compile_metadata(
     *,
-    graph: "ProvenanceGraph",  # type: ignore[name-defined]  # noqa: F821  # ty: ignore[unresolved-reference]
-    profile: "StrictProfile",  # type: ignore[name-defined]  # noqa: F821  # ty: ignore[unresolved-reference]
-    evidence_policy: "EvidencePolicyRegistry",  # type: ignore[name-defined]  # noqa: F821  # ty: ignore[unresolved-reference]
+    graph: "ProvenanceGraph",
+    profile: "StrictProfile",
+    evidence_policy: "EvidencePolicyRegistry",
     source_bundle_hash: str,
     interpretation_policy_fingerprint: Optional[str] = None,
     build_id: str = "",
@@ -218,8 +223,6 @@ def build_compile_metadata(
         build_id:                         Opaque build identifier (e.g. CI run ID).
         build_timestamp:                  Caller-provided build timestamp or None.
     """
-    from lawvm.core.provenance_graph import attestation_kind_registry_hash  # noqa: PLC0415
-
     return CompileMetadata(
         provenance_graph_hash=graph.snapshot_hash,
         strict_profile_fingerprint=compute_strict_profile_fingerprint(profile),

@@ -187,43 +187,43 @@ def _parse_table_subsection(
 
 
 # Backward-compat re-export: calls the registry implementation in profile.normalize.
-def _recover_embedded_numbered_paragraphs(children):  # type: ignore[return]
+def _recover_embedded_numbered_paragraphs(children: List[IRNode]) -> List[IRNode]:
     return _apply_recover_embedded_numbered_paragraphs(children)
 
 # Backward-compat re-export: calls the registry implementation in profile.normalize.
-def _recover_intro_labeled_paragraphs(children):  # type: ignore[return]
+def _recover_intro_labeled_paragraphs(children: List[IRNode]) -> List[IRNode]:
     return _apply_recover_intro_labeled_paragraphs(children)
 
 # Backward-compat re-export: calls the registry implementation in profile.normalize.
-def _nest_lettered_subparagraphs(children):  # type: ignore[return]
+def _nest_lettered_subparagraphs(children: List[IRNode]) -> List[IRNode]:
     return _apply_nest_lettered_subparagraphs(children)
 
 # Backward-compat re-export: calls the registry implementation in profile.normalize.
-def _nest_repeated_alpha_subparagraphs_under_alpha_parents(children):  # type: ignore[return]
+def _nest_repeated_alpha_subparagraphs_under_alpha_parents(children: List[IRNode]) -> List[IRNode]:
     return _apply_nest_repeated_alpha_subparagraphs_under_alpha_parents(children)
 
 # Backward-compat re-export: calls the registry implementation in profile.normalize.
-def _nest_repeated_digit_subparagraphs(children):  # type: ignore[return]
+def _nest_repeated_digit_subparagraphs(children: List[IRNode]) -> List[IRNode]:
     return _apply_nest_repeated_digit_subparagraphs(children)
 
 # Backward-compat re-export: calls the registry implementation in profile.normalize.
-def _fi_renest_flat_digit_item_subsections(children):  # type: ignore[return]
+def _fi_renest_flat_digit_item_subsections(children: List[IRNode]) -> List[IRNode]:
     return _apply_fi_renest_flat_digit_item_subsections(children)
 
 # Backward-compat re-export: calls the registry implementation in profile.normalize.
-def _fi_renest_flat_dash_item_subsections(children):  # type: ignore[return]
+def _fi_renest_flat_dash_item_subsections(children: List[IRNode]) -> List[IRNode]:
     return _apply_fi_renest_flat_dash_item_subsections(children)
 
 # Backward-compat re-export: calls the registry implementation in profile.normalize.
-def _fi_renest_flat_dot_item_subsections(children):  # type: ignore[return]
+def _fi_renest_flat_dot_item_subsections(children: List[IRNode]) -> List[IRNode]:
     return _apply_fi_renest_flat_dot_item_subsections(children)
 
 # Backward-compat re-export: calls the registry implementation in profile.normalize.
-def _hoist_trailing_wrapup_paragraph(children):  # type: ignore[return]
+def _hoist_trailing_wrapup_paragraph(children: List[IRNode]) -> List[IRNode]:
     return _apply_hoist_trailing_wrapup_paragraph(children)
 
 # Backward-compat re-export: calls the registry implementation in profile.normalize.
-def _split_trailing_content_only_paragraphs_into_subsections(children):  # type: ignore[return]
+def _split_trailing_content_only_paragraphs_into_subsections(children: List[IRNode]) -> List[IRNode]:
     return _apply_split_trailing_content_only_paragraphs_into_subsections(children)
 
 # _subsection_leaf_text is imported from lawvm.finland.profile.normalize above.
@@ -231,19 +231,19 @@ def _split_trailing_content_only_paragraphs_into_subsections(children):  # type:
 # _subsection_has_structured_children is imported from lawvm.finland.profile.normalize above.
 
 # Backward-compat re-export: calls the registry implementation in profile.normalize.
-def _fi_merge_split_intro_item_subsections(children):  # type: ignore[return]
+def _fi_merge_split_intro_item_subsections(children: List[IRNode]) -> List[IRNode]:
     return _apply_fi_merge_split_intro_item_subsections(children)
 
 # Backward-compat re-export: calls the registry implementation in profile.normalize.
-def _fi_split_inner_omission_paragraph_subsections(children):  # type: ignore[return]
+def _fi_split_inner_omission_paragraph_subsections(children: List[IRNode]) -> List[IRNode]:
     return _apply_fi_split_inner_omission_paragraph_subsections(children)
 
 # Backward-compat re-export: calls the registry implementation in profile.normalize.
-def _fi_split_subsection_at_numbered_list_restart(children):  # type: ignore[return]
+def _fi_split_subsection_at_numbered_list_restart(children: List[IRNode]) -> List[IRNode]:
     return _apply_fi_split_subsection_at_numbered_list_restart(children)
 
 # Backward-compat re-export: calls the registry implementation in profile.normalize.
-def _hoist_inline_content_omissions(children):  # type: ignore[return]
+def _hoist_inline_content_omissions(children: List[IRNode]) -> List[IRNode]:
     return _apply_hoist_inline_content_omissions(children)
 
 def fi_xml_to_ir_node(

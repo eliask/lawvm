@@ -9,6 +9,12 @@ from lawvm.core.selector import (
 )
 
 
+def _parsed_selector(text: str) -> ParsedSelector:
+    selector = parse_section_selector(text)
+    assert selector is not None
+    return selector
+
+
 class TestParseSectionSelector:
     def test_chapter_section(self):
         p = parse_section_selector("§3:1")
@@ -39,11 +45,11 @@ class TestParseSectionSelector:
         assert p.kohta == "3"
 
     def test_without_leading_sign(self):
-        assert parse_section_selector("3:1").locator == "chapter:3/section:1"  # ty: ignore[unresolved-attribute]
+        assert _parsed_selector("3:1").locator == "chapter:3/section:1"
 
     def test_lettered_label(self):
-        assert parse_section_selector("§14 b").locator == "section:14 b"  # ty: ignore[unresolved-attribute]
-        assert parse_section_selector("§14b").locator == "section:14 b"  # ty: ignore[unresolved-attribute]
+        assert _parsed_selector("§14 b").locator == "section:14 b"
+        assert _parsed_selector("§14b").locator == "section:14 b"
 
     def test_chapter_section_with_lettered_momentti(self):
         # uncommon but allowed: momentti label normalization
@@ -58,7 +64,7 @@ class TestParseSectionSelector:
         assert parse_section_selector("garbage text here") is None
 
     def test_whitespace_tolerated(self):
-        assert parse_section_selector("  §3:1  ").locator == "chapter:3/section:1"  # ty: ignore[unresolved-attribute]
+        assert _parsed_selector("  §3:1  ").locator == "chapter:3/section:1"
 
 
 class TestToLocatorString:

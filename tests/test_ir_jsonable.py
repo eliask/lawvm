@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pickle
+from operator import setitem
 from typing import Any, cast
 
 import pytest
@@ -46,11 +47,12 @@ def test_irnode_freezes_nested_attrs_recursively() -> None:
     assert isinstance(meta["items"][1]["inner"], tuple)
     assert isinstance(meta["tags"], frozenset)
     with pytest.raises(TypeError):
-        meta["items"] += ("d",)  # type: ignore[operator]
+        setitem(meta, "items", cast(tuple[Any, ...], meta["items"]) + ("d",))
     with pytest.raises(TypeError):
-        meta["items"][1]["inner"] += ("d",)  # type: ignore[operator]
+        inner = cast(FrozenDict, cast(tuple[Any, ...], meta["items"])[1])
+        setitem(inner, "inner", cast(tuple[Any, ...], inner["inner"]) + ("d",))
     with pytest.raises(AttributeError):
-        meta["tags"].add("z")  # type: ignore[attr-defined]
+        cast(Any, meta["tags"]).add("z")
 
     nested_list.append("mutated")
     nested_set.add("z")
@@ -86,9 +88,9 @@ def test_frozen_dict_round_trips_through_pickle_without_losing_immutability() ->
     assert restored == original
     assert isinstance(restored["items"][0], FrozenDict)
     with pytest.raises(TypeError):
-        restored["items"] = ()  # type: ignore[index]
+        setitem(restored, "items", ())
     with pytest.raises(TypeError):
-        restored["items"][0]["inner"] = ()  # type: ignore[index]
+        setitem(restored["items"][0], "inner", ())
 
 
 def test_irnode_to_jsonable_dict_rejects_non_jsonable_values() -> None:

@@ -21,6 +21,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from lawvm.core.compile_metadata import CompileMetadata
+from lawvm.core.compile_result import StrictProfile
+from lawvm.core.evidence_policy import EvidencePolicyRegistry
+from lawvm.core.provenance_graph import attestation_kind_registry_hash
+
 
 def build_default_compile_metadata(
     *,
@@ -28,10 +33,10 @@ def build_default_compile_metadata(
     source_bundle_hash: str,
     build_id: str,
     build_timestamp: Optional[datetime] = None,
-    strict_profile: object = None,
-    evidence_policy: object = None,
+    strict_profile: Optional[StrictProfile] = None,
+    evidence_policy: Optional[EvidencePolicyRegistry] = None,
     graph_store_root: Optional[Path] = None,
-) -> object:
+) -> CompileMetadata:
     """Construct CompileMetadata using jurisdiction defaults.
 
     Args:
@@ -52,11 +57,7 @@ def build_default_compile_metadata(
     Returns:
         CompileMetadata with all 5 required fields populated.
     """
-    from lawvm.core.compile_metadata import (
-        CompileMetadata,
-        compute_strict_profile_fingerprint,
-    )
-    from lawvm.core.provenance_graph import attestation_kind_registry_hash
+    from lawvm.core.compile_metadata import compute_strict_profile_fingerprint
 
     # --- strict_profile ---
     if strict_profile is None:
@@ -78,7 +79,7 @@ def build_default_compile_metadata(
     return CompileMetadata(
         provenance_graph_hash=provenance_graph_hash,
         strict_profile_fingerprint=compute_strict_profile_fingerprint(strict_profile),
-        evidence_policy_fingerprint=evidence_policy.registry_hash,  # ty:ignore[unresolved-attribute]
+        evidence_policy_fingerprint=evidence_policy.registry_hash,
         source_bundle_hash=source_bundle_hash,
         attestation_kind_registry_hash=attestation_kind_registry_hash(),
         build_id=build_id,
@@ -91,7 +92,7 @@ def build_default_compile_metadata(
 # ---------------------------------------------------------------------------
 
 
-def _default_strict_profile(jurisdiction: str) -> object:
+def _default_strict_profile(jurisdiction: str) -> StrictProfile:
     """Return the canonical strict profile for the given jurisdiction."""
     if jurisdiction == "fi":
         from lawvm.finland.strict_profile import default_finland_strict_profile
@@ -105,14 +106,12 @@ def _default_evidence_policy(
     *,
     jurisdiction: str,
     graph_store_root: Optional[Path],
-) -> object:
+) -> EvidencePolicyRegistry:
     """Return the evidence policy for the jurisdiction.
 
     Tries to load the canonical policy JSON from disk; falls back to a
     minimal empty registry when no policy file exists.
     """
-    from lawvm.core.evidence_policy import EvidencePolicyRegistry
-
     if graph_store_root is None:
         graph_store_root = Path("data") / jurisdiction
 
