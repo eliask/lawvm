@@ -17,6 +17,8 @@ Per JURISDICTION_CLI_TOOLING_CONTRACT.md §4: common flags
 """
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -33,11 +35,7 @@ def _default_data_dir() -> str:
 
 
 def _check_duckdb() -> bool:
-    try:
-        import duckdb  # noqa: F401
-        return True
-    except ImportError:
-        return False
+    return importlib.util.find_spec("duckdb") is not None
 
 
 def _find_source(data_dir: str, table_name: str) -> Optional[Path]:
@@ -215,7 +213,7 @@ def run_fi_proposal_show(
         )
         sys.exit(1)
 
-    import duckdb
+    duckdb = importlib.import_module("duckdb")
 
     he_id_norm = _normalise_he_id(he_id)
 

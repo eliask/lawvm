@@ -5,6 +5,8 @@ avoid duplication across query modules (AGENTS.md §1.9 typed contracts, DRY).
 """
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -17,11 +19,7 @@ from typing import Any, Optional
 
 def check_duckdb() -> bool:
     """Return True if duckdb is importable."""
-    try:
-        import duckdb  # noqa: F401
-        return True
-    except ImportError:
-        return False
+    return importlib.util.find_spec("duckdb") is not None
 
 
 def require_duckdb() -> Any:
@@ -34,8 +32,7 @@ def require_duckdb() -> Any:
             file=sys.stderr,
         )
         sys.exit(1)
-    import duckdb
-    return duckdb
+    return importlib.import_module("duckdb")
 
 
 # ---------------------------------------------------------------------------
