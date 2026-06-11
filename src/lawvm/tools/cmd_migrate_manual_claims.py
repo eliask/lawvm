@@ -50,6 +50,7 @@ _V2_MANUAL_CLAIMS_SUBDIR = "manual_claims"
 _V3_PROVENANCE_SUBDIR = "provenance_graph"
 
 GraphProducerKind = Literal["human", "llm", "service", "script", "institution"]
+_MIGRATION_FALLBACK_TIMESTAMP = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 def _normalize_graph_producer_kind(raw_kind: object) -> GraphProducerKind:
@@ -68,6 +69,48 @@ def _normalize_graph_producer_kind(raw_kind: object) -> GraphProducerKind:
         return kind_map[kind]
     except KeyError as exc:
         raise ValueError(f"unsupported v2.2 producer_kind {kind!r}") from exc
+
+
+def _parse_v2_timestamp(raw_timestamp: object) -> tuple[datetime, bool]:
+    """Return a deterministic timestamp plus whether the source was missing."""
+
+    if raw_timestamp:
+        return datetime.fromisoformat(str(raw_timestamp).replace("Z", "+00:00")), False
+    return _MIGRATION_FALLBACK_TIMESTAMP, True
+
+
+def _producer_from_v2(raw_producer: object) -> tuple[Producer, bool]:
+    """Convert a v2.2 producer payload into a v3 graph producer."""
+
+    if not isinstance(raw_producer, dict):
+        return (
+            Producer(
+                producer_id="unknown",
+                producer_kind="human",
+                public_key=None,
+                metadata={
+                    "migrated_from": "v2.2",
+                    "producer_payload_missing": True,
+                },
+            ),
+            True,
+        )
+
+    producer_dict: dict[str, Any] = {str(k): v for k, v in raw_producer.items()}
+    raw_kind = producer_dict.get("producer_kind", "human")
+    producer = Producer(
+        producer_id=str(producer_dict.get("handle") or producer_dict.get("model_id") or "unknown"),
+        producer_kind=_normalize_graph_producer_kind(raw_kind),
+        public_key=None,
+        metadata={
+            "migrated_from": "v2.2",
+            "original_producer_kind": str(raw_kind),
+            "original_handle": str(producer_dict.get("handle") or ""),
+            "original_model_id": str(producer_dict.get("model_id") or ""),
+            "original_environment": str(producer_dict.get("environment") or ""),
+        },
+    )
+    return producer, False
 
 
 # ---------------------------------------------------------------------------
@@ -201,27 +244,17 @@ def _make_attestation_from_event(
     event_kind = str(event_dict.get("event_kind", "proposed"))
     attestation_kind = _EVENT_KIND_TO_ATTESTATION_KIND.get(event_kind, "transparency_logged")
 
-    ts_raw = event_dict.get("timestamp", "")
-    produced_at = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00")) if ts_raw else datetime.now(tz=timezone.utc)
-
-    producer_raw = event_dict.get("producer", {})
-    raw_kind: object = "human"
-    if isinstance(producer_raw, dict):
-        producer_id = str(producer_raw.get("handle") or producer_raw.get("model_id") or "unknown")
-        raw_kind = producer_raw.get("producer_kind", "human")
-        producer_kind = _normalize_graph_producer_kind(raw_kind)
-    else:
-        producer_id = "unknown"
-        producer_kind = "human"
-
+    produced_at, timestamp_missing = _parse_v2_timestamp(event_dict.get("timestamp", ""))
+    producer, producer_missing = _producer_from_v2(event_dict.get("producer", {}))
     producer = Producer(
-        producer_id=producer_id,
-        producer_kind=producer_kind,
-        public_key=None,
+        producer_id=producer.producer_id,
+        producer_kind=producer.producer_kind,
+        public_key=producer.public_key,
         metadata={
-            "migrated_from": "v2.2",
+            **dict(producer.metadata),
             "original_event_kind": event_kind,
-            "original_producer_kind": str(raw_kind),
+            "timestamp_missing": timestamp_missing,
+            "event_producer_payload_missing": producer_missing,
         },
     )
 
@@ -263,6 +296,66 @@ def _make_attestation_from_event(
     )
 
 
+def _make_submission_attestation_from_claim(
+    claim_dict: dict[str, Any],
+    assertion: ProvenanceAssertion,
+) -> ProvenanceAttestation:
+    """Preserve v2.2 claim-object authorship as a graph submission attestation."""
+
+    producer, producer_missing = _producer_from_v2(claim_dict.get("producer", {}))
+    produced_at, timestamp_missing = _parse_v2_timestamp(
+        claim_dict.get("produced_at")
+        or claim_dict.get("created_at")
+        or (
+            claim_dict.get("producer", {}).get("timestamp")
+            if isinstance(claim_dict.get("producer"), dict)
+            else ""
+        )
+    )
+    producer = Producer(
+        producer_id=producer.producer_id,
+        producer_kind=producer.producer_kind,
+        public_key=producer.public_key,
+        metadata={
+            **dict(producer.metadata),
+            "original_event_kind": "claim_object_submission",
+            "timestamp_missing": timestamp_missing,
+            "claim_producer_payload_missing": producer_missing,
+        },
+    )
+    subject_ref = ArtifactRef(
+        artifact_type="assertion",
+        artifact_id=assertion.assertion_id,
+        content_hash=assertion.assertion_id,
+    )
+    payload: dict[str, object] = {
+        "action": "claim_submitted",
+        "assertion_kind": assertion.kind,
+        "jurisdiction": assertion.jurisdiction,
+        "migrated_from_claim_object": True,
+        "v2_claim_id": str(claim_dict.get("claim_id", "")),
+    }
+    temp = ProvenanceAttestation(
+        attestation_id="__placeholder__",
+        attestation_kind="claim_submitted",
+        subject=subject_ref,
+        materials=assertion.source_refs,
+        producer=producer,
+        produced_at=produced_at,
+        payload=payload,
+    )
+    attest_id = _sha256(attestation_canonical_payload(temp))
+    return ProvenanceAttestation(
+        attestation_id=attest_id,
+        attestation_kind="claim_submitted",
+        subject=subject_ref,
+        materials=assertion.source_refs,
+        producer=producer,
+        produced_at=produced_at,
+        payload=payload,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Migration main function
 # ---------------------------------------------------------------------------
@@ -298,6 +391,7 @@ def migrate_manual_claims_to_graph(
     # Phase 1: migrate assertions from objects/sha256/
     objects_dir = manual_claims_dir / "objects" / "sha256"
     assertion_id_map: dict[str, str] = {}  # v2_claim_id → v3_assertion_id
+    migrated_claims: list[tuple[str, dict[str, Any], ProvenanceAssertion]] = []
     assertions: list[ProvenanceAssertion] = []
 
     if objects_dir.exists():
@@ -306,6 +400,7 @@ def migrate_manual_claims_to_graph(
             v2_claim_id = str(claim_dict.get("claim_id", claim_path.stem))
             assertion = _make_assertion_from_claim(claim_dict)
             assertion_id_map[v2_claim_id] = assertion.assertion_id
+            migrated_claims.append((v2_claim_id, claim_dict, assertion))
             assertions.append(assertion)
             dest_path = graph_store._objects_dir() / f"{assertion.assertion_id}.json"
             if dest_path.exists():
@@ -318,6 +413,7 @@ def migrate_manual_claims_to_graph(
     # Phase 2: migrate attestations from events.jsonl
     events_path = manual_claims_dir / "events.jsonl"
     attestations: list[ProvenanceAttestation] = []
+    submitted_event_claim_ids: set[str] = set()
 
     if events_path.exists():
         with open(events_path, encoding="utf-8") as f:
@@ -329,6 +425,8 @@ def migrate_manual_claims_to_graph(
                 attest = _make_attestation_from_event(event_dict, assertion_id_map)
                 if attest is None:
                     continue
+                if attest.attestation_kind == "claim_submitted":
+                    submitted_event_claim_ids.add(str(event_dict.get("claim_id", "")))
                 attestations.append(attest)
                 dest_path = graph_store._objects_dir() / f"{attest.attestation_id}.json"
                 if dest_path.exists():
@@ -337,6 +435,19 @@ def migrate_manual_claims_to_graph(
                     if not dry_run:
                         graph_store.write_attestation(attest)
                     summary["attestations_migrated"] += 1
+
+    for v2_claim_id, claim_dict, assertion in migrated_claims:
+        if v2_claim_id in submitted_event_claim_ids:
+            continue
+        attest = _make_submission_attestation_from_claim(claim_dict, assertion)
+        attestations.append(attest)
+        dest_path = graph_store._objects_dir() / f"{attest.attestation_id}.json"
+        if dest_path.exists():
+            summary["attestations_existing"] += 1
+        else:
+            if not dry_run:
+                graph_store.write_attestation(attest)
+            summary["attestations_migrated"] += 1
 
     # Phase 3: emit initial evidence policy registry if absent
     evidence_policy_dir = jur_v1 / "evidence_policy"

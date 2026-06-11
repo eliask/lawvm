@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-
+from typing import Any
 
 
 def _make_fake_v2_claims(base_dir: Path, n: int = 2) -> list[str]:
@@ -63,6 +63,14 @@ def _make_fake_v2_claims(base_dir: Path, n: int = 2) -> list[str]:
         for e in events:
             f.write(json.dumps(e) + "\n")
     return claim_ids
+
+
+def _load_graph_objects(tmp_path: Path) -> list[dict[str, Any]]:
+    object_dir = tmp_path / "fi" / "v1" / "provenance_graph" / "objects" / "sha256"
+    return [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted(object_dir.glob("*.json"))
+    ]
 
 
 def test_migration_migrates_claims_to_graph(tmp_path):
@@ -145,3 +153,56 @@ def test_migration_graph_snapshot_readable_after_migration(tmp_path):
     graph = store.read_graph(snap_hash)
     # Should have at least assertion nodes + attestation nodes
     assert len(graph.nodes) >= 2
+
+
+def test_migration_preserves_claim_object_producer_when_event_log_missing(tmp_path):
+    from lawvm.tools.cmd_migrate_manual_claims import migrate_manual_claims_to_graph
+
+    objects_dir = tmp_path / "fi" / "v1" / "manual_claims" / "objects" / "sha256"
+    objects_dir.mkdir(parents=True)
+    claim = {
+        "claim_id": "claim-no-event",
+        "schema_version": "v1",
+        "jurisdiction": "fi",
+        "claim_kind": "fi.v1.INLINE_STATUTE_RESOLUTION",
+        "claim_layer": "extraction",
+        "claim_scope": {"statute_id": "100/2024", "provision_ref": "section:1"},
+        "target": [["ref", "section:1"]],
+        "value": [["resolution", "laki 100/2024"]],
+        "cited_source_hash": "e" * 64,
+        "cited_source_locator": {"structural_locator": "section:1"},
+        "cited_source_span": [0, 10],
+        "valid_at": ["2024-01-01", None],
+        "producer": {
+            "producer_kind": "operator",
+            "handle": "legacy.operator",
+            "timestamp": "2024-02-03T04:05:06+00:00",
+            "environment": "legacy-test",
+        },
+        "rationale": "source-backed manual claim",
+    }
+    (objects_dir / "claim-no-event.json").write_text(json.dumps(claim), encoding="utf-8")
+
+    summary = migrate_manual_claims_to_graph("fi", data_dir=str(tmp_path))
+
+    assert summary["assertions_migrated"] == 1
+    assert summary["attestations_migrated"] == 1
+    attestations = [
+        obj for obj in _load_graph_objects(tmp_path)
+        if obj.get("attestation_kind") == "claim_submitted"
+    ]
+    assert len(attestations) == 1
+    attestation = attestations[0]
+    assert attestation["producer"]["producer_id"] == "legacy.operator"
+    assert attestation["producer"]["producer_kind"] == "human"
+    assert attestation["producer"]["metadata"]["original_producer_kind"] == "operator"
+    assert attestation["producer"]["metadata"]["original_environment"] == "legacy-test"
+    assert attestation["produced_at"] == "2024-02-03T04:05:06+00:00"
+    assert attestation["payload"]["migrated_from_claim_object"] is True
+    assert attestation["payload"]["v2_claim_id"] == "claim-no-event"
+    assert attestation["materials"][0]["structural_locator"] == "section:1"
+
+    second = migrate_manual_claims_to_graph("fi", data_dir=str(tmp_path))
+    assert second["assertions_existing"] == 1
+    assert second["attestations_existing"] == 1
+    assert second["attestations_migrated"] == 0
