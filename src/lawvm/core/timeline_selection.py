@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime as dt
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -14,6 +16,37 @@ _VERSION_SELECTION_STATUSES = frozenset({"selected", "absent", "ambiguous_missin
 _VERSION_SELECTION_RAILS = frozenset(
     {"overlay", "background", "absent", "ambiguous_missing_scope"}
 )
+_QUERY_TYPES = frozenset({"governing", "in_force"})
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_BASE_SENTINEL_DATE = "0000-00-00"
+
+
+def _validate_query_type(query_type: str) -> None:
+    if not isinstance(query_type, str) or query_type not in _QUERY_TYPES:
+        raise ValueError(f"query_type must be one of {sorted(_QUERY_TYPES)!r}")
+
+
+def _validate_query_date(value: str, *, field: str) -> None:
+    if value == _BASE_SENTINEL_DATE:
+        return
+    if not isinstance(value, str) or not _ISO_DATE_RE.fullmatch(value):
+        raise ValueError(f"{field} must be an exact YYYY-MM-DD date")
+    try:
+        dt.date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"{field} must be a real calendar date") from exc
+
+
+def _validate_selection_query(
+    *,
+    as_of: str,
+    query_type: str,
+    expires_as_of: str = "",
+) -> None:
+    _validate_query_date(as_of, field="as_of")
+    if expires_as_of:
+        _validate_query_date(expires_as_of, field="expires_as_of")
+    _validate_query_type(query_type)
 
 
 @dataclass(frozen=True)
@@ -223,6 +256,11 @@ def equal_rank_same_source_conflicts(
     deterministic winner. This helper exposes cases where that winner still
     depends on equal-rank candidates rather than a proved legal precedence rule.
     """
+    _validate_selection_query(
+        as_of=as_of,
+        query_type=query_type,
+        expires_as_of=expires_as_of,
+    )
 
     eligible_versions = [
         version
@@ -291,6 +329,11 @@ def required_scope_dimensions(
     expires_as_of: str = "",
 ) -> tuple[str, ...]:
     """Return required scope dimensions for active candidates at `as_of`."""
+    _validate_selection_query(
+        as_of=as_of,
+        query_type=query_type,
+        expires_as_of=expires_as_of,
+    )
     dims: set[str] = set()
     for version in timeline.versions:
         if not eligible(version, as_of, query_type, expires_as_of=expires_as_of):
@@ -308,6 +351,11 @@ def select_background_version(
     expires_as_of: str = "",
 ) -> Optional[ProvisionVersion]:
     """Select the best non-temporary (permanent/background) version at as_of."""
+    _validate_selection_query(
+        as_of=as_of,
+        query_type=query_type,
+        expires_as_of=expires_as_of,
+    )
     expiry_horizon = expires_as_of or as_of
     if any(
         (
@@ -347,6 +395,11 @@ def select_temporary_version(
     expires_as_of: str = "",
 ) -> Optional[ProvisionVersion]:
     """Select the best temporary overlay version active at as_of."""
+    _validate_selection_query(
+        as_of=as_of,
+        query_type=query_type,
+        expires_as_of=expires_as_of,
+    )
     return pick_latest(
         [
             v
@@ -369,8 +422,11 @@ def select_active_version_ex(
     expires_as_of: str = "",
 ) -> VersionSelectionResult:
     """Return an explicit active-version selection result."""
-    if not as_of:
-        raise ValueError("as_of must be non-empty")
+    _validate_selection_query(
+        as_of=as_of,
+        query_type=query_type,
+        expires_as_of=expires_as_of,
+    )
     eligible_versions = [
         version
         for version in timeline.versions
@@ -488,8 +544,6 @@ def select_active_version(
     territory: Optional[str] = None,
 ) -> Optional[ProvisionVersion]:
     """Return the most recent active ProvisionVersion at date as_of."""
-    if not as_of:
-        raise ValueError("as_of must be non-empty")
     selection = select_active_version_ex(
         timeline,
         as_of,

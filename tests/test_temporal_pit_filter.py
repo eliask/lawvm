@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+import pytest
+
 from lawvm.core.ir import (
     IRNode,
     IRStatute,
@@ -34,6 +36,7 @@ from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.compile_result import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.timeline import compile_timelines, materialize_pit, select_active_version_ex
 from lawvm.core.timeline import select_background_version
+from lawvm.core.timeline import select_temporary_version
 from lawvm.core.timeline_results import TimelineIssue
 
 
@@ -102,8 +105,6 @@ def _section_text(statute: IRStatute, chapter: str, section: str) -> str:
 
 
 def test_select_active_version_rejects_empty_as_of() -> None:
-    import pytest
-
     timeline = ProvisionTimeline(
         address=LegalAddress(path=(("section", "1"),)),
         versions=[
@@ -117,6 +118,79 @@ def test_select_active_version_rejects_empty_as_of() -> None:
 
     with pytest.raises(Exception, match="as_of must be non-empty"):
         select_active_version_ex(timeline, "")
+
+
+def test_timeline_selection_rejects_malformed_as_of_queries() -> None:
+    timeline = ProvisionTimeline(
+        address=LegalAddress(path=(("section", "1"),)),
+        versions=[
+            ProvisionVersion(
+                effective="2000-01-01",
+                enacted="2000-01-01",
+                content=IRNode(kind=IRNodeKind.SECTION, label="1", text="Base"),
+            ),
+        ],
+    )
+
+    for malformed in (" 2021-01-01 ", "2021-1-1", "not-a-date"):
+        with pytest.raises(ValueError, match="as_of must be an exact YYYY-MM-DD date"):
+            select_active_version_ex(timeline, malformed)
+
+    with pytest.raises(ValueError, match="as_of must be a real calendar date"):
+        select_active_version_ex(timeline, "2021-02-29")
+
+
+def test_timeline_selection_preserves_base_date_sentinel() -> None:
+    timeline = ProvisionTimeline(
+        address=LegalAddress(path=(("section", "1"),)),
+        versions=[
+            ProvisionVersion(
+                effective="0000-00-00",
+                enacted="0000-00-00",
+                content=IRNode(kind=IRNodeKind.SECTION, label="1", text="Base"),
+            ),
+        ],
+    )
+
+    selected = select_active_version_ex(timeline, "0000-00-00")
+
+    assert selected.status == "selected"
+    assert selected.version is not None
+    assert selected.version.effective == "0000-00-00"
+
+
+def test_timeline_selection_rejects_malformed_expires_horizon() -> None:
+    timeline = ProvisionTimeline(
+        address=LegalAddress(path=(("section", "1"),)),
+        versions=[
+            ProvisionVersion(
+                effective="2000-01-01",
+                enacted="2000-01-01",
+                expires="2022-01-01",
+                content=IRNode(kind=IRNodeKind.SECTION, label="1", text="Base"),
+            ),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="expires_as_of must be an exact YYYY-MM-DD date"):
+        select_active_version_ex(timeline, "2023-01-01", expires_as_of=" 2022-01-01 ")
+
+
+def test_timeline_selection_rejects_unknown_query_type() -> None:
+    timeline = ProvisionTimeline(
+        address=LegalAddress(path=(("section", "1"),)),
+        versions=[
+            ProvisionVersion(
+                effective="2000-01-01",
+                enacted="2000-01-01",
+                content=IRNode(kind=IRNodeKind.SECTION, label="1", text="Base"),
+            ),
+        ],
+    )
+
+    for selector in (select_active_version_ex, select_background_version, select_temporary_version):
+        with pytest.raises(ValueError, match="query_type must be one of"):
+            selector(timeline, "2021-01-01", query_type=cast(Any, "commenced"))
 
 
 def test_standalone_expire_event_expires_existing_section() -> None:
