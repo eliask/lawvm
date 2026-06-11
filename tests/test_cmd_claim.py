@@ -7,11 +7,12 @@ Covers:
 """
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 
 
-import lawvm.finland.claim_kinds  # noqa: F401
+importlib.import_module("lawvm.finland.claim_kinds")
 
 
 
@@ -71,7 +72,7 @@ def _load_assertions(tmp_path: Path) -> list[dict]:
     ]
 
 
-def _propose_and_get_id(tmp_path: Path, d: dict = None) -> str:  # ty:ignore[invalid-parameter-default]
+def _propose_and_get_id(tmp_path: Path, d: dict | None = None) -> str:
     from lawvm.tools.cmd_claim import cmd_propose
     if d is None:
         d = _make_assertion_dict()
