@@ -4,6 +4,7 @@ Storage layout under data/{jurisdiction}/v{N}/provenance_graph/:
 
     objects/sha256/{assertion_id}.json      — ProvenanceAssertion objects
     objects/sha256/{attestation_id}.json    — ProvenanceAttestation objects
+    builds/sha256/{record_hash}.json        — BuildRecord objects
     nodes/sha256/{node_id}.json             — GraphNode objects
     edges/sha256/{edge_id}.json             — GraphEdge objects
     snapshots/{snapshot_hash}.json          — graph snapshot index
@@ -25,6 +26,12 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from lawvm.core.build_consumption import (
+    BuildRecord,
+    build_record_content_hash,
+    build_record_from_dict,
+    build_record_to_dict,
+)
 from lawvm.core.provenance_graph import (
     ArtifactRef,
     GraphEdge,
@@ -356,6 +363,47 @@ class GraphStore:
                 f"file may be tampered. Recomputed: {recomputed!r}"
             )
         return a
+
+    # --- build record ---
+
+    def _builds_dir(self) -> Path:
+        return self._root / "builds" / "sha256"
+
+    def write_build_record(self, record: BuildRecord) -> None:
+        """Persist a BuildRecord, content-addressed by its record hash."""
+        record_hash = build_record_content_hash(record)
+        path = self._builds_dir() / f"{record_hash}.json"
+        data = build_record_to_dict(record)
+        data["_content_hash"] = record_hash
+        self._write_json(path, data)
+
+    def load_build_record_index(self) -> dict[str, BuildRecord]:
+        """Load all BuildRecords, keyed by build_id.  Hard-fails on hash mismatch."""
+        builds_dir = self._builds_dir()
+        index: dict[str, BuildRecord] = {}
+        if not builds_dir.exists():
+            return index
+        for path in sorted(builds_dir.glob("*.json")):
+            d = self._read_json(path)
+            record = build_record_from_dict(d)
+            recomputed = build_record_content_hash(record)
+            if recomputed != path.stem:
+                raise RuntimeError(
+                    f"GraphStore: build record hash mismatch for {path.name!r}; "
+                    f"file may be tampered. Recomputed: {recomputed!r}"
+                )
+            index[record.build_id] = record
+        return index
+
+    def load_all_edges(self) -> list[GraphEdge]:
+        """Load every persisted GraphEdge (append-only edge object store)."""
+        edges_dir = self._edges_dir()
+        if not edges_dir.exists():
+            return []
+        return [
+            _deserialize_edge(self._read_json(path))
+            for path in sorted(edges_dir.glob("*.json"))
+        ]
 
     # --- node ---
 

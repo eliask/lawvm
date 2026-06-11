@@ -476,6 +476,7 @@ def compute_certificate_status(
 class BundleWriteResult:
     bundle_dir: str
     certificate_id: str
+    build_id: str
     certificate_status: str
     statute_id: str
     title: str
@@ -603,12 +604,23 @@ def build_certificate_bundle(
     *,
     granularity: str = DEFAULT_GRANULARITY,
     quiet: bool = True,
+    graph_store_root: str | Path | None = None,
 ) -> BundleWriteResult:
     """Write an EXPERIMENTAL certificate bundle for one Finnish statute.
 
     ``statute_id`` accepts canonical 'num/year' (482/2024) or engine
     'year/num' (2024/482). The bundle is a local schema-pressure fixture —
     see the module docstring for the §11.3 boundary.
+
+    Emission registers the bundle as a taint-checkable build in the
+    provenance graph store (``graph_store_root``, defaulting to
+    ``$LAWVM_GRAPH_STORE_ROOT`` then ``data/fi/v1/provenance_graph``): a
+    build node keyed by ``cert:lawvm.certificate.v{spec}:{certificate_root}``
+    plus one consumed_by_build edge per consumed ProvenanceAssertion (currently the
+    writer consumes none, so the record carries
+    ``consumption_instrumented=True, consumed_subject_count=0``).  If the
+    recorder fails, the emission fails — bundle files already on disk are
+    NOT considered published (no BundleWriteResult is returned).
     """
     if granularity not in ("subsection", "section"):
         raise BundleSpecError(
@@ -1363,6 +1375,40 @@ def build_certificate_bundle(
     # files independently. Not a checker; raises on writer inconsistency.
     verify_bundle(out_path)
 
+    # Register the bundle as a taint-checkable build (consumed_by_build
+    # contract): the edges/record live in the persistent provenance graph,
+    # AFTER artifact emission, never inside the certificate root (no
+    # certificate_root <-> graph cycle).  Recorder failure propagates and
+    # fails the emission — the artifact is then not considered published.
+    import os
+
+    from lawvm.core.build_consumption import record_build_in_store
+    from lawvm.core.provenance_graph import ArtifactRef
+    from lawvm.core.provenance_graph_storage import GraphStore
+
+    resolved_graph_root = Path(
+        graph_store_root
+        or os.environ.get("LAWVM_GRAPH_STORE_ROOT")
+        or "data/fi/v1/provenance_graph"
+    )
+    build_ref = record_build_in_store(
+        GraphStore(resolved_graph_root),
+        artifact_ref=ArtifactRef(
+            artifact_type="certificate_bundle",
+            artifact_id=certificate_id,
+            content_hash=certificate_root,
+        ),
+        build_kind="cert",
+        # Versioned schema string: "lawvm.certificate.v" + spec version
+        # (CERTIFICATE_SCHEMA's bare major "v0" is subsumed by "v0.4.1").
+        build_schema=f"lawvm.certificate.v{CERTIFICATE_SPEC_VERSION}",
+        consumed_assertion_ids=(),  # the experimental writer admits no manual-claim assertions
+        profile_fingerprint=profile_hash,
+        source_bundle_hash=source_bundle_root,
+        scope={"jurisdiction": "fi", "work_id": f"fi:act:{canonical_id}", "kind": "whole_work"},
+        time_scope=dict(time_scope),
+    )
+
     if not quiet:
         for note in notes:
             print(f"[certificate-bundle] note: {note}", flush=True)
@@ -1370,6 +1416,7 @@ def build_certificate_bundle(
     return BundleWriteResult(
         bundle_dir=str(out_path),
         certificate_id=certificate_id,
+        build_id=build_ref.build_id,
         certificate_status=certificate_status,
         statute_id=canonical_id,
         title=bundle.title,
@@ -1797,7 +1844,13 @@ def main(args: Any) -> None:
     if not out:
         print("error: --out is required", flush=True)
         raise SystemExit(2)
-    result = build_certificate_bundle(statute, out, granularity=granularity, quiet=False)
+    result = build_certificate_bundle(
+        statute,
+        out,
+        granularity=granularity,
+        quiet=False,
+        graph_store_root=getattr(args, "graph_store_root", None),
+    )
     print("", flush=True)
     print("  EXPERIMENTAL schema-pressure fixture — NOT a checked certificate.", flush=True)
     print("  No checker exists; do not publish or present as a verified claim.", flush=True)
@@ -1805,6 +1858,7 @@ def main(args: Any) -> None:
     print(f"  statute:            {result.statute_id}  ({result.title})", flush=True)
     print(f"  bundle dir:         {result.bundle_dir}", flush=True)
     print(f"  certificate_id:     {result.certificate_id}", flush=True)
+    print(f"  build_id:           {result.build_id}", flush=True)
     print(f"  certificate_status: {result.certificate_status}", flush=True)
     print(f"  boundary dates:     {', '.join(result.boundary_dates)}", flush=True)
     print(f"  transitions:        {result.transition_count}", flush=True)

@@ -206,7 +206,6 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_qwen_local_backend.py",
         "test_retraction_lifecycle.py",
         "test_source_provider.py",
-        "test_taint_report.py",
         "test_validate_claims_cli.py",
     ),
     "evidence_claims": (
@@ -214,6 +213,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # v3 evidence policy + kernel
         "test_evidence_policy.py",
         "test_evidence_kernel.py",
+        # build-consumption recorder + retraction-taint projection
+        "test_build_consumption.py",
     ),
     "evidence_core": (
         "test_adjudication_evidence.py",
