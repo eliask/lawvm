@@ -128,6 +128,18 @@ def test_patch_table_preserves_unsupported_table_corrections(tmp_path: Path, mon
     assert len(table._unsupported_patches) == 1
     assert table._unsupported_patches[0]["reason"] == "FINLAND.CORRIGENDUM_TABLE_UNSUPPORTED"
     assert table._unsupported_patches[0]["correction_type"] == "table"
+    assert table.unsupported_patches() == (
+        {
+            "reason": "FINLAND.CORRIGENDUM_TABLE_UNSUPPORTED",
+            "amendment_id": "2016/442",
+            "source_amendment_id": "442/2016",
+            "statute_id": "2013/23",
+            "correction_type": "table",
+            "location_desc": "Sivu 2, taulukko 1",
+            "wrong_text": "1 | old",
+            "correct_text": "1 | new",
+        },
+    )
 
 
 def test_load_from_source_routes_prose_johtolause_location_to_johtolause_patch(

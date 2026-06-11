@@ -2538,6 +2538,194 @@ def _corrigendum_open_manual_frontier_work_item(
     )
 
 
+def finland_corrigendum_unsupported_patch_frontier_item(
+    *,
+    patch: Mapping[str, Any] | object,
+    source_witness: Mapping[str, Any] | None = None,
+) -> FrontierWorkItem:
+    """Project an unsupported corrigendum patch as non-executable frontier work."""
+
+    row = _unsupported_corrigendum_patch_row(patch)
+    amendment_id = str(row.get("amendment_id") or "unknown")
+    sequence = _positive_int(row.get("sequence"))
+    correction_kind = str(row.get("correction_kind") or "unsupported")
+    reason = str(row.get("reason") or "FINLAND.CORRIGENDUM_UNSUPPORTED_PATCH")
+    location = str(row.get("location") or "")
+    target = str(row.get("target") or "")
+    source_statute = str(row.get("source_statute") or f"corr/{amendment_id}")
+    witness = dict(source_witness or {})
+    source_artifact_id = str(witness.get("artifact_id") or witness.get("locator") or source_statute)
+    source_unit_id = str(
+        witness.get("source_unit_id")
+        or f"{amendment_id}#unsupported-corrigendum-{sequence or 'unknown'}"
+    )
+    digest = hashlib.sha256(
+        json.dumps(
+            {
+                "amendment_id": amendment_id,
+                "sequence": sequence,
+                "correction_kind": correction_kind,
+                "reason": reason,
+                "location": location,
+                "target": target,
+                "wrong_text": str(row.get("wrong_text") or ""),
+                "correct_text": str(row.get("correct_text") or ""),
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()[:16]
+    return FrontierWorkItem(
+        work_item_id=f"fi:{amendment_id}:corrigendum-unsupported-patch:{digest}",
+        jurisdiction="fi",
+        source_artifact_id=source_artifact_id,
+        source_unit_id=source_unit_id,
+        source_witness=witness,
+        target_witness={
+            "target": target,
+            "location": location,
+            "correction_kind": correction_kind,
+        },
+        owner_phase="corrigendum_payload_extraction",
+        frontier_family=f"fi_corrigendum_{correction_kind.lower()}_unsupported",
+        frontier_status="unsupported_corrigendum_patch_frontier",
+        candidate_operation_family="corrigendum_patch_support",
+        candidate_targets=(target or amendment_id,),
+        guidance_refs=("lawvm_corrigendum_unsupported_patch_review",),
+        required_claim_kind="fi.v1.CORRIGENDUM_UNSUPPORTED_PATCH_RESOLUTION",
+        required_validator_checks=(
+            "manual_corrigendum_claim_review",
+            "unsupported_patch_parser_support_review",
+            "source_xml_non_verification_review",
+            "mutation_boundary_check_before_replay",
+        ),
+        required_proofs=(
+            "corrigendum_source_correction_claim",
+            "unsupported_patch_shape_resolution",
+            "source_corrigendum_witness_review",
+            "targeted_source_xml_non_verification_review",
+            "mutation_boundary_proof_before_replay_promotion",
+        ),
+        safe_default="do_not_apply_unsupported_corrigendum_patch_without_manual_claim_or_parser_support",
+        forbidden_shortcuts=(
+            "unsupported_corrigendum_patch_as_replay_authorization",
+            "unsupported_corrigendum_patch_as_manual_claim",
+            "correct_text_as_insert_payload_without_boundary_proof",
+            "source_witness_as_patch_application",
+        ),
+        executable=False,
+        replay_authorized=False,
+        authorization_status="blocked_unsupported_corrigendum_patch",
+        detail={
+            "amendment_id": amendment_id,
+            "sequence": sequence,
+            "correction_kind": correction_kind,
+            "reason": reason,
+            "location": location,
+            "source_statute": source_statute,
+            "wrong_text_preview": str(row.get("wrong_text") or "")[:160],
+            "correct_text_preview": str(row.get("correct_text") or "")[:160],
+        },
+    )
+
+
+def finland_corrigendum_unsupported_patch_evidence_surface(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Wrap unsupported corrigendum patches in a passive evidence envelope."""
+
+    patches = tuple(
+        _unsupported_corrigendum_patch_row(patch)
+        for patch in _object_sequence(payload.get("patches"))
+    )
+    source_witnesses = _mapping_sequence(payload.get("source_witnesses"))
+    default_source_witness = source_witnesses[0] if source_witnesses else None
+    frontier_items = tuple(
+        finland_corrigendum_unsupported_patch_frontier_item(
+            patch=patch,
+            source_witness=default_source_witness,
+        ).to_dict()
+        for patch in patches
+    )
+    rows = tuple(
+        (
+            *({**dict(row), "surface": "corrigendum_source_witness"} for row in source_witnesses),
+            *(
+                {**dict(row), "surface": "corrigendum_unsupported_patch_frontier_work_item"}
+                for row in frontier_items
+            ),
+            *({**dict(row), "surface": "corrigendum_unsupported_patch"} for row in patches),
+        )
+    )
+    summary = {
+        "unsupported_patch_count": len(patches),
+        "frontier_work_item_count": len(frontier_items),
+        "source_witness_count": len(source_witnesses),
+        "source_witness_digest_coverage_counts": source_witness_digest_coverage_counts(source_witnesses),
+        "reason_counts": _count_by_field(patches, "reason"),
+        "correction_kind_counts": _count_by_field(patches, "correction_kind"),
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction="fi",
+        report_kind="finland_corrigendum_unsupported_patch",
+        schema="lawvm.finland_corrigendum_unsupported_patch.v1",
+        truth_claim="finland_corrigendum_unsupported_patch_frontier_listing",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={
+            "amendment_id": str(payload.get("amendment_id") or ""),
+        },
+        filtered_summary=summary,
+        rows=rows,
+        rows_truncated=False,
+        detail={
+            "safe_default": "treat_unsupported_corrigendum_patches_as_frontier_work_not_replay_authority",
+            "forbidden_shortcuts": (
+                "unsupported_corrigendum_patch_as_replay_authorization",
+                "unsupported_corrigendum_patch_as_manual_claim",
+                "corrigendum_source_witness_as_patch_application",
+                "unsupported_patch_count_as_source_text_repair",
+            ),
+            "included_surfaces": (
+                "corrigendum_source_witness",
+                "corrigendum_unsupported_patch_frontier_work_item",
+                "corrigendum_unsupported_patch",
+            ),
+        },
+    ).to_dict()
+
+
+def _unsupported_corrigendum_patch_row(patch: Mapping[str, Any] | object) -> Mapping[str, Any]:
+    target = _field(patch, "target", None)
+    return {
+        "amendment_id": str(_field(patch, "amendment_id", "") or ""),
+        "sequence": _positive_int(_field(patch, "sequence", 0)),
+        "correction_kind": str(
+            _field(patch, "correction_kind", "")
+            or _field(patch, "correction_type", "")
+            or "unsupported"
+        ),
+        "location": str(_field(patch, "location", "") or _field(patch, "location_desc", "")),
+        "target": str(target) if target is not None else "",
+        "correct_text": str(_field(patch, "correct_text", "") or ""),
+        "wrong_text": str(_field(patch, "wrong_text", "") or ""),
+        "reason": str(_field(patch, "reason", "") or "FINLAND.CORRIGENDUM_UNSUPPORTED_PATCH"),
+        "source_statute": str(_field(patch, "source_statute", "") or ""),
+    }
+
+
+def _object_sequence(value: Any) -> tuple[Mapping[str, Any] | object, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, list | tuple):
+        return tuple(value)
+    return (value,)
+
+
 def finland_corrigendum_manual_template_frontier_item(
     *,
     amendment_id: str,

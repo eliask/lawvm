@@ -1759,6 +1759,10 @@ class CorrigendumPatchTable:
     def body_patch_count(self) -> int:
         return sum(len(v) for v in self._body_patches.values())
 
+    def unsupported_patches(self) -> tuple[dict[str, object], ...]:
+        """Return non-executable corrigendum rows preserved for frontier reporting."""
+        return tuple(dict(row) for row in self._unsupported_patches)
+
     @classmethod
     def load_from_source(cls, source_path: Optional[Path] = None) -> "CorrigendumPatchTable":
         """Load all classified corrections from the repo text corpus."""

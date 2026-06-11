@@ -21,6 +21,8 @@ from lawvm.finland.proof_surfaces import (
     finland_corrigendum_open_manual_evidence_surface,
     finland_corrigendum_overview_evidence_surface,
     finland_corrigendum_provenance_evidence_surface,
+    finland_corrigendum_unsupported_patch_evidence_surface,
+    finland_corrigendum_unsupported_patch_frontier_item,
     corrigendum_source_witness,
     finland_corrigendum_sources_evidence_surface,
     finlex_html_topology_source_witness,
@@ -657,6 +659,96 @@ def test_finland_corrigendum_manual_template_projects_frontier_work_item() -> No
     assert item["authorization_status"] == "blocked_manual_claim_required"
     assert item["source_witness"]["digest"] == "c" * 64
     assert "manual_template_entry_as_manual_claim" in item["forbidden_shortcuts"]
+
+
+def test_finland_corrigendum_unsupported_patch_projects_frontier_work_item() -> None:
+    witness = corrigendum_source_witness(
+        {
+            "source_pdf": "akn/fi/act/statute-consolidated/2013/23/media/corrigenda/sk20160442_1.pdf",
+            "pdf_name": "sk20160442_1.pdf",
+            "statute_id": "2013/23",
+            "amendment_id": "442/2016",
+            "date_published": "2016-06-01",
+            "correction_item_count": 1,
+            "sha256": "e" * 64,
+        }
+    ).to_dict()
+    patch = {
+        "amendment_id": "2016/442",
+        "sequence": 1,
+        "correction_kind": "ADD",
+        "location": "Sivulla 1, johtolauseesta puuttuu virke, joka kuuluu",
+        "target": "preamble:formula",
+        "correct_text": "lisätty teksti",
+        "reason": "FINLAND.CORRIGENDUM_ADD_UNSUPPORTED",
+        "source_statute": "corr/442/2016",
+    }
+
+    item = finland_corrigendum_unsupported_patch_frontier_item(
+        patch=patch,
+        source_witness=witness,
+    ).to_dict()
+
+    assert item["jurisdiction"] == "fi"
+    assert item["frontier_family"] == "fi_corrigendum_add_unsupported"
+    assert item["frontier_status"] == "unsupported_corrigendum_patch_frontier"
+    assert item["required_claim_kind"] == "fi.v1.CORRIGENDUM_UNSUPPORTED_PATCH_RESOLUTION"
+    assert item["executable"] is False
+    assert item["replay_authorized"] is False
+    assert item["authorization_status"] == "blocked_unsupported_corrigendum_patch"
+    assert item["source_witness"]["digest"] == "e" * 64
+    assert item["target_witness"]["target"] == "preamble:formula"
+    assert "unsupported_corrigendum_patch_as_manual_claim" in item["forbidden_shortcuts"]
+
+
+def test_finland_corrigendum_unsupported_patch_evidence_surface_projects_frontier_envelope() -> None:
+    witness = corrigendum_source_witness(
+        {
+            "source_pdf": "akn/fi/act/statute-consolidated/2013/23/media/corrigenda/sk20160442_1.pdf",
+            "pdf_name": "sk20160442_1.pdf",
+            "statute_id": "2013/23",
+            "amendment_id": "442/2016",
+            "date_published": "2016-06-01",
+            "correction_item_count": 1,
+            "sha256": "f" * 64,
+        }
+    ).to_dict()
+    patch = {
+        "amendment_id": "2016/442",
+        "correction_type": "table",
+        "location_desc": "Sivu 2, taulukko 1",
+        "wrong_text": "1 | old",
+        "correct_text": "1 | new",
+        "reason": "FINLAND.CORRIGENDUM_TABLE_UNSUPPORTED",
+    }
+
+    report = finland_corrigendum_unsupported_patch_evidence_surface(
+        {
+            "amendment_id": "2016/442",
+            "patches": [patch],
+            "source_witnesses": [witness],
+        }
+    )
+
+    assert report["jurisdiction"] == "fi"
+    assert report["report_kind"] == "finland_corrigendum_unsupported_patch"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is False
+    assert report["summary"]["unsupported_patch_count"] == 1
+    assert report["summary"]["frontier_work_item_count"] == 1
+    assert report["summary"]["source_witness_digest_coverage_counts"] == {
+        "artifact_and_preview_digest": 1
+    }
+    assert report["summary"]["reason_counts"] == {"FINLAND.CORRIGENDUM_TABLE_UNSUPPORTED": 1}
+    assert {row["surface"] for row in report["rows"]} == {
+        "corrigendum_source_witness",
+        "corrigendum_unsupported_patch",
+        "corrigendum_unsupported_patch_frontier_work_item",
+    }
+    assert "unsupported_corrigendum_patch_as_replay_authorization" in report["forbidden_shortcuts"]
 
 
 def test_finland_corrigendum_manual_template_projects_frontier_envelope() -> None:
