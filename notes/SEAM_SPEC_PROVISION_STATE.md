@@ -112,10 +112,26 @@ either live text or expiry when the stated bound cannot be proven.
 For Finland base-statute versions, `source_locator.xpath` MAY contain a
 deterministic Finlex AKN structural XPath candidate derived from the resolved
 `LegalAddress`. The corresponding status is
-`detail.xpath_status="finlex_structural_xpath_candidate"`. This is a structural
-locator, not a byte-span proof: `byte_span` remains absent and
-`detail.byte_span_status="unavailable_initial_surface"` until an exact source
-offset is available.
+`detail.xpath_status="finlex_structural_xpath_candidate"`.
+
+Since 0.2.x, base-statute rows MAY also include top-level
+`source_locator.char_span` and `source_locator.byte_span` when LawVM can anchor
+the selected element in the raw UTF-8 Finlex source XML. In that case:
+
+- `detail.source_xml_span_status="available"`;
+- `detail.char_span_status="finlex_raw_xml_eid_element_scan"`;
+- `detail.byte_span_status="finlex_raw_xml_eid_element_scan_utf8"`;
+- `detail.source_xml_span_match_basis` is either `xpath_candidate` or
+  `fallback_eid`;
+- `detail.source_xml_eid` and `detail.source_xml_local_tag` identify the raw
+  XML element that was scanned.
+
+The `fallback_eid` basis means the structural XPath candidate did not match
+exactly one raw XML element, but the Finlex `eId` derived from the resolved
+address did. This is common when the public XML contains wrapper containers
+such as `hcontainer` between `body` and `section`. If no exact raw element can
+be anchored, `byte_span` remains absent and the detail status explains the
+reason, e.g. `unavailable_xpath_match_count_not_one`.
 
 For Finland operation-source versions, the cited document is the amending act,
 not the amended target provision. The target address is still exposed as
