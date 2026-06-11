@@ -390,6 +390,7 @@ def test_manual_claim_frontier_closure_report_matches_authorized_claim_without_r
         jurisdiction="fi",
     )
     data = report.to_dict()
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
 
     assert result.authorized is True
     assert data["report_kind"] == "manual_claim_frontier_closure"
@@ -403,6 +404,12 @@ def test_manual_claim_frontier_closure_report_matches_authorized_claim_without_r
     assert data["rows"][0]["assertion_id"] == assertion_id
     assert data["rows"][0]["policy_authorized"] is True
     assert data["rows"][0]["replay_authorized"] is False
+    assert proof_surface["rows"][0]["row_kind"] == "frontier_work_item_claim_closure"
+    assert proof_surface["rows"][0]["assertion_refs"] == [assertion_id]
+    assert proof_surface["rows"][0]["authorization_ref"] == (
+        "fi.v1.INLINE_STATUTE_RESOLUTION.strict"
+    )
+    assert proof_surface["rows"][0]["frontier_ref"] == "fi-frontier-inline-ref"
 
 
 # ---------------------------------------------------------------------------

@@ -187,9 +187,14 @@ def _proof_surface_row_from_mapping(
         status=_row_status(row),
         source_refs=_source_refs(row),
         witness_refs=_refs(row, ("witness_ref", "witness_refs")),
-        assertion_refs=_refs(row, ("assertion_ref", "assertion_refs")),
+        assertion_refs=_refs(row, ("assertion_ref", "assertion_refs", "assertion_id")),
         proof_refs=_refs(row, ("proof_ref", "proof_refs", "proof_id")),
-        authorization_ref=str(row.get("authorization_ref") or row.get("authorization_rule_id") or ""),
+        authorization_ref=str(
+            row.get("authorization_ref")
+            or row.get("authorization_rule_id")
+            or row.get("policy_id")
+            or ""
+        ),
         residual_refs=_refs(row, ("residual_ref", "residual_refs", "residual_id")),
         frontier_ref=str(row.get("frontier_ref") or row.get("work_item_id") or ""),
         detail=row,

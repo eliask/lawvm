@@ -1535,16 +1535,18 @@ def test_frontier_work_item_claim_closure_report_keeps_phase_gate_closed() -> No
         item,
         assertion=assertion,
         authorization_result=result,
-    ).to_dict()
+    )
+    data = report.to_dict()
+    surface = proof_surface_from_evidence_report(report).to_dict()
 
-    assert report["schema"] == "lawvm.frontier_work_item_claim_closure_report.v1"
-    assert report["replay_claims"] is False
-    assert report["summary"]["closure_status_counts"] == {
+    assert data["schema"] == "lawvm.frontier_work_item_claim_closure_report.v1"
+    assert data["replay_claims"] is False
+    assert data["summary"]["closure_status_counts"] == {
         "evidence_policy_satisfied_phase_gate_required": 1
     }
-    assert report["summary"]["phase_gate_required_count"] == 1
-    assert report["summary"]["replay_authorized_count"] == 0
-    row = report["rows"][0]
+    assert data["summary"]["phase_gate_required_count"] == 1
+    assert data["summary"]["replay_authorized_count"] == 0
+    row = data["rows"][0]
     assert row["policy_authorized"] is True
     assert row["claim_kind_matches"] is True
     assert row["frontier_ref_matches"] is True
@@ -1557,6 +1559,12 @@ def test_frontier_work_item_claim_closure_report_keeps_phase_gate_closed() -> No
         "phase_local_replay_authorization",
     ]
     assert "frontier_claim_closure_as_replay_authorization" in row["forbidden_shortcuts"]
+    assert surface["rows"][0]["row_kind"] == "frontier_work_item_claim_closure"
+    assert surface["rows"][0]["assertion_refs"] == ["claim-1"]
+    assert surface["rows"][0]["authorization_ref"] == (
+        "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION.strict"
+    )
+    assert surface["rows"][0]["frontier_ref"] == "fi-frontier-claim-closure"
 
 
 def test_frontier_work_item_claim_closure_report_exposes_mismatched_claim() -> None:
