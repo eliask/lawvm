@@ -10,13 +10,14 @@ run it manually after any viewer change.
 
 from typing_extensions import override
 import glob
+import importlib
 import os
 import sys
 import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-from playwright.sync_api import sync_playwright
+sync_playwright = importlib.import_module("playwright.sync_api").sync_playwright
 
 VIEWER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

@@ -340,11 +340,15 @@ def _print_stats(ag: ArtifactGraph) -> None:
     print(f"\nCitations: {len(ag.citations)} total  "
           f"({fi_cites} FI→FI, {eu_cites} FI→EU)")
     # Top 10 most cited
-    top = Counter(c.get("target_statute_id") for c in ag.citations
-                  if not (c.get("target_statute_id") or "").startswith("eu/"))
+    top = Counter(
+        target
+        for c in ag.citations
+        if (target := c.get("target_statute_id")) and not target.startswith("eu/")
+    )
     print("Top 10 most cited statutes:")
     for sid, cnt in top.most_common(10):
-        title = ag.statute_meta.get(sid, {}).get("title", "")[:50]
+        meta = ag.statute_meta.get(sid)
+        title = (meta.get("title", "") if meta is not None else "")[:50]
         print(f"  {cnt:>5}  {sid}  {title}")
 
 
