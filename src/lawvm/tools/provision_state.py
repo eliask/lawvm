@@ -1864,6 +1864,13 @@ def _operation_source_xml_quote_span(
     match_count = text.count(raw_text)
     first = text.find(raw_text)
     if match_count == 0:
+        container_span = _operation_source_xml_text_container_span(
+            xml_bytes,
+            raw_xml_text=text,
+            raw_source_text=raw_text,
+        )
+        if container_span is not None:
+            return container_span
         return {
             "char_span": None,
             "byte_span": None,
@@ -1921,6 +1928,183 @@ def _operation_source_xml_quote_span(
     }
 
 
+def _operation_source_xml_text_container_span(
+    xml_bytes: bytes,
+    *,
+    raw_xml_text: str,
+    raw_source_text: str,
+) -> dict[str, Any] | None:
+    """Anchor an operation quote to the smallest unique XML text container.
+
+    Finlex operation-source raw text is extracted from rendered XML text, so the
+    exact quote can cross inline markup boundaries. This fallback is deliberately
+    coarser than ``operation_source_raw_xml_quote_scan``: the span covers the
+    containing XML element, not exact quote bytes.
+    """
+    from lxml import etree
+
+    normalized_quote = _normalize_xml_text_for_span_match(raw_source_text)
+    if not normalized_quote:
+        return None
+    try:
+        root = etree.fromstring(xml_bytes)
+    except etree.XMLSyntaxError:
+        return _unavailable_operation_source_container_span(
+            "unavailable_operation_source_xml_parse_failed",
+            match_count=0,
+        )
+    candidates: list[Any] = []
+    for element in root.iter():
+        if not isinstance(element, etree._Element):
+            continue
+        normalized_text = _normalize_xml_text_for_span_match(
+            "".join(str(part) for part in element.itertext())
+        )
+        if normalized_quote in normalized_text:
+            candidates.append(element)
+    if not candidates:
+        return None
+    smallest = [
+        element
+        for element in candidates
+        if not any(other is not element and _xml_element_is_ancestor(element, other) for other in candidates)
+    ]
+    if len(smallest) != 1:
+        return _unavailable_operation_source_container_span(
+            "unavailable_operation_source_text_container_not_unique",
+            match_count=len(smallest),
+            candidate_count=len(candidates),
+        )
+    smallest_element = smallest[0]
+    element = smallest_element
+    ancestor_steps = 0
+    while element is not None and not str(element.get("eId") or ""):
+        element = element.getparent()
+        ancestor_steps += 1
+    if element is None:
+        smallest_tag = etree.QName(smallest_element).localname
+        sourceline = int(getattr(smallest_element, "sourceline", 0) or 0)
+        char_span = _raw_xml_sourceline_element_char_span(
+            raw_xml_text,
+            local_tag=smallest_tag,
+            sourceline=sourceline,
+            attrs=_raw_xml_stable_attrs(smallest_element),
+        )
+        eid = ""
+        tag = smallest_tag
+        span_status = "operation_source_raw_xml_text_container_sourceline_scan"
+        span_basis_detail = "source_line_and_stable_attrs"
+        if char_span is None:
+            return _unavailable_operation_source_container_span(
+                "unavailable_operation_source_text_container_missing_eid",
+                match_count=1,
+                candidate_count=len(candidates),
+                local_tag=smallest_tag,
+                sourceline=sourceline,
+            )
+    else:
+        eid = str(element.get("eId") or "")
+        tag = etree.QName(element).localname
+        char_span = _raw_xml_eid_element_char_span(raw_xml_text, local_tag=tag, eid=eid)
+        span_status = "operation_source_raw_xml_text_container_scan"
+        span_basis_detail = "eid_or_nearest_eid_ancestor"
+        if char_span is None:
+            return _unavailable_operation_source_container_span(
+                "unavailable_operation_source_text_container_raw_xml_scan_failed",
+                match_count=1,
+                candidate_count=len(candidates),
+                eid=eid,
+                local_tag=tag,
+            )
+    byte_span = (
+        len(raw_xml_text[: char_span[0]].encode("utf-8")),
+        len(raw_xml_text[: char_span[1]].encode("utf-8")),
+    )
+    basis = (
+        "Raw Finlex operation-source XML decoded as UTF-8; exact raw quote did "
+        "not occur, but normalized OperationSource.raw_text was contained in "
+        "exactly one smallest XML element text surface. Span covers that "
+        "containing XML element, or its nearest eId ancestor when the text "
+        "container itself has no eId; when no eId ancestor exists, the span is "
+        "balanced from the element source line and stable raw XML attributes. "
+        "It does not cover exact quote bytes."
+    )
+    detail = {
+        "char_span": list(char_span),
+        "char_span_status": span_status,
+        "char_span_basis": basis,
+        "byte_span": list(byte_span),
+        "byte_span_status": f"{span_status}_utf8",
+        "byte_span_basis": "UTF-8 byte offsets derived from raw XML containing-element character span.",
+        "operation_source_xml_span_status": "available",
+        "operation_source_xml_quote_match_count": 0,
+        "operation_source_xml_text_container_match_count": 1,
+        "operation_source_xml_text_container_candidate_count": len(candidates),
+        "operation_source_xml_text_container_local_tag": tag,
+        "operation_source_xml_text_container_ancestor_steps": ancestor_steps,
+        "operation_source_xml_text_container_span_basis": span_basis_detail,
+    }
+    if eid:
+        detail["operation_source_xml_text_container_eid"] = eid
+    return {
+        "char_span": char_span,
+        "byte_span": byte_span,
+        "detail": detail,
+        "source_witness_detail": {
+            "artifact_char_span": list(char_span),
+            "artifact_byte_span": list(byte_span),
+            "artifact_span_status": span_status,
+            "artifact_span_basis": basis,
+            "artifact_span_match_count": 1,
+        },
+    }
+
+
+def _normalize_xml_text_for_span_match(value: str) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _xml_element_is_ancestor(candidate_ancestor: Any, candidate_child: Any) -> bool:
+    parent = candidate_child.getparent()
+    while parent is not None:
+        if parent is candidate_ancestor:
+            return True
+        parent = parent.getparent()
+    return False
+
+
+def _unavailable_operation_source_container_span(
+    status: str,
+    *,
+    match_count: int,
+    candidate_count: int = 0,
+    eid: str = "",
+    local_tag: str = "",
+    sourceline: int = 0,
+) -> dict[str, Any]:
+    detail: dict[str, Any] = {
+        "operation_source_xml_span_status": status,
+        "operation_source_xml_quote_match_count": 0,
+        "operation_source_xml_text_container_match_count": match_count,
+        "operation_source_xml_text_container_candidate_count": candidate_count,
+    }
+    if eid:
+        detail["operation_source_xml_text_container_eid"] = eid
+    if local_tag:
+        detail["operation_source_xml_text_container_local_tag"] = local_tag
+    if sourceline:
+        detail["operation_source_xml_text_container_sourceline"] = sourceline
+    return {
+        "char_span": None,
+        "byte_span": None,
+        "detail": detail,
+        "source_witness_detail": {
+            "artifact_span_status": status,
+            "artifact_span_match_count": match_count,
+        },
+    }
+
+
 def _finlex_span_basis(match_basis: str) -> str:
     if match_basis == "xpath_candidate":
         return (
@@ -1964,6 +2148,15 @@ def _raw_xml_eid_element_char_span(
     start = _raw_xml_eid_start(text, local_tag=local_tag, eid=eid)
     if start is None:
         return None
+    return _raw_xml_local_tag_element_char_span_from_start(text, local_tag=local_tag, start=start)
+
+
+def _raw_xml_local_tag_element_char_span_from_start(
+    text: str,
+    *,
+    local_tag: str,
+    start: int,
+) -> tuple[int, int] | None:
     tag_re = re.compile(rf"</?(?:[A-Za-z_][\w.-]*:)?{re.escape(local_tag)}\b[^>]*>")
     depth = 0
     for match in tag_re.finditer(text, start):
@@ -1979,6 +2172,63 @@ def _raw_xml_eid_element_char_span(
         elif match.start() == start:
             return (start, match.end())
     return None
+
+
+def _raw_xml_sourceline_element_char_span(
+    text: str,
+    *,
+    local_tag: str,
+    sourceline: int,
+    attrs: Mapping[str, str],
+) -> tuple[int, int] | None:
+    if sourceline <= 0:
+        return None
+    line_start = _line_start_offset(text, sourceline)
+    if line_start is None:
+        return None
+    line_end = text.find("\n", line_start)
+    if line_end < 0:
+        line_end = len(text)
+    start_tag_re = re.compile(rf"<(?:[A-Za-z_][\w.-]*:)?{re.escape(local_tag)}\b[^>]*>")
+    for match in start_tag_re.finditer(text, line_start, line_end):
+        start_tag = match.group(0)
+        if _raw_xml_start_tag_has_attrs(start_tag, attrs):
+            return _raw_xml_local_tag_element_char_span_from_start(
+                text,
+                local_tag=local_tag,
+                start=match.start(),
+            )
+    return None
+
+
+def _line_start_offset(text: str, line_number: int) -> int | None:
+    if line_number == 1:
+        return 0
+    current_line = 1
+    offset = 0
+    while current_line < line_number:
+        newline = text.find("\n", offset)
+        if newline < 0:
+            return None
+        offset = newline + 1
+        current_line += 1
+    return offset
+
+
+def _raw_xml_stable_attrs(element: Any) -> dict[str, str]:
+    attrs: dict[str, str] = {}
+    for name in ("eId", "name"):
+        value = str(element.get(name) or "")
+        if value:
+            attrs[name] = value
+    return attrs
+
+
+def _raw_xml_start_tag_has_attrs(start_tag: str, attrs: Mapping[str, str]) -> bool:
+    for name, value in attrs.items():
+        if f'{name}="{value}"' not in start_tag and f"{name}='{value}'" not in start_tag:
+            return False
+    return True
 
 
 def _raw_xml_eid_start(text: str, *, local_tag: str, eid: str) -> int | None:

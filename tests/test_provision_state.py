@@ -229,6 +229,130 @@ def test_operation_source_locator_anchors_exact_raw_quote_in_source_xml() -> Non
     assert payload["hashes"]["derived_state_hash"] == without_span["hashes"]["derived_state_hash"]
 
 
+def test_operation_source_locator_anchors_markup_split_quote_to_xml_text_container() -> None:
+    source_xml = (
+        b"""
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act><body><section eId="sec_1"><p eId="p_1">Section <b>1</b> is replaced with a new duty.</p></section></body></act>
+        </akomaNtoso>
+        """
+    )
+    source_text = source_xml.decode("utf-8")
+    expected_start = source_text.index('<p eId="p_1">')
+    expected_end = source_text.index("</p>", expected_start) + len("</p>")
+    expected_char_span = [expected_start, expected_end]
+    expected_byte_span = [
+        len(source_text[:expected_start].encode("utf-8")),
+        len(source_text[:expected_end].encode("utf-8")),
+    ]
+    without_span = build_provision_state_response(
+        timelines=_timeline(),
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="section:1",
+        as_of="2021-01-01",
+    )
+
+    payload = build_provision_state_response(
+        timelines=_timeline(),
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="section:1",
+        as_of="2021-01-01",
+        source_xml_provider=lambda sid: source_xml if sid == "2019/1" else None,
+    )
+
+    locator = payload["source_locator"]
+    witness = locator["detail"]["source_witness"]
+    assert locator["char_span"] == expected_char_span
+    assert locator["byte_span"] == expected_byte_span
+    assert locator["detail"]["operation_source_xml_span_status"] == "available"
+    assert locator["detail"]["operation_source_xml_quote_match_count"] == 0
+    assert locator["detail"]["operation_source_xml_text_container_match_count"] == 1
+    assert locator["detail"]["operation_source_xml_text_container_eid"] == "p_1"
+    assert locator["detail"]["operation_source_xml_text_container_local_tag"] == "p"
+    assert locator["detail"]["char_span_status"] == "operation_source_raw_xml_text_container_scan"
+    assert locator["detail"]["byte_span_status"] == "operation_source_raw_xml_text_container_scan_utf8"
+    assert witness["artifact_char_span"] == expected_char_span
+    assert witness["artifact_byte_span"] == expected_byte_span
+    assert witness["artifact_span_status"] == "operation_source_raw_xml_text_container_scan"
+    assert witness["artifact_span_match_count"] == 1
+    assert source_witness_digest_coverage(witness) == "artifact_and_preview_digest"
+    assert payload["hashes"]["content_hash"] == without_span["hashes"]["content_hash"]
+    assert payload["hashes"]["derived_state_hash"] == without_span["hashes"]["derived_state_hash"]
+
+
+def test_operation_source_locator_uses_nearest_eid_ancestor_for_split_quote_container() -> None:
+    source_xml = (
+        b"""
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act><body><section eId="sec_1"><p>Section <b>1</b> is replaced with a new duty.</p></section></body></act>
+        </akomaNtoso>
+        """
+    )
+    source_text = source_xml.decode("utf-8")
+    expected_start = source_text.index('<section eId="sec_1">')
+    expected_end = source_text.index("</section>", expected_start) + len("</section>")
+
+    payload = build_provision_state_response(
+        timelines=_timeline(),
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="section:1",
+        as_of="2021-01-01",
+        source_xml_provider=lambda sid: source_xml if sid == "2019/1" else None,
+    )
+
+    locator = payload["source_locator"]
+    assert locator["char_span"] == [expected_start, expected_end]
+    assert locator["detail"]["operation_source_xml_span_status"] == "available"
+    assert locator["detail"]["operation_source_xml_text_container_eid"] == "sec_1"
+    assert locator["detail"]["operation_source_xml_text_container_local_tag"] == "section"
+    assert locator["detail"]["operation_source_xml_text_container_ancestor_steps"] == 1
+    assert locator["detail"]["source_witness"]["artifact_span_status"] == (
+        "operation_source_raw_xml_text_container_scan"
+    )
+
+
+def test_operation_source_locator_uses_sourceline_for_unique_no_eid_split_quote_container() -> None:
+    source_xml = (
+        b"""
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act><preamble><formula><blockContainer>
+            <block name="insertions">Section <b>1</b> is replaced with a new duty.</block>
+          </blockContainer></formula></preamble></act>
+        </akomaNtoso>
+        """
+    )
+    source_text = source_xml.decode("utf-8")
+    expected_start = source_text.index('<block name="insertions">')
+    expected_end = source_text.index("</block>", expected_start) + len("</block>")
+
+    payload = build_provision_state_response(
+        timelines=_timeline(),
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="section:1",
+        as_of="2021-01-01",
+        source_xml_provider=lambda sid: source_xml if sid == "2019/1" else None,
+    )
+
+    locator = payload["source_locator"]
+    assert locator["char_span"] == [expected_start, expected_end]
+    assert locator["detail"]["operation_source_xml_span_status"] == "available"
+    assert "operation_source_xml_text_container_eid" not in locator["detail"]
+    assert locator["detail"]["operation_source_xml_text_container_local_tag"] == "block"
+    assert locator["detail"]["operation_source_xml_text_container_span_basis"] == (
+        "source_line_and_stable_attrs"
+    )
+    assert locator["detail"]["char_span_status"] == (
+        "operation_source_raw_xml_text_container_sourceline_scan"
+    )
+    assert locator["detail"]["source_witness"]["artifact_span_status"] == (
+        "operation_source_raw_xml_text_container_sourceline_scan"
+    )
+
+
 def test_operation_source_locator_rejects_duplicate_raw_quote_xml_span() -> None:
     quote = "Section 1 is replaced with a new duty."
     source_xml = f"""
@@ -259,6 +383,43 @@ def test_operation_source_locator_rejects_duplicate_raw_quote_xml_span() -> None
     assert witness["artifact_span_status"] == "unavailable_operation_source_quote_not_unique"
     assert witness["artifact_span_match_count"] == 2
     assert witness["digest"] == locator["artifact_digest"]
+    assert source_witness_digest_coverage(witness) == "artifact_and_preview_digest"
+
+
+def test_operation_source_locator_rejects_duplicate_markup_split_quote_containers() -> None:
+    source_xml = (
+        b"""
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act><body><section eId="sec_1">
+            <p eId="p_1">Section <b>1</b> is replaced with a new duty.</p>
+            <p eId="p_2">Section <b>1</b> is replaced with a new duty.</p>
+          </section></body></act>
+        </akomaNtoso>
+        """
+    )
+
+    payload = build_provision_state_response(
+        timelines=_timeline(),
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="section:1",
+        as_of="2021-01-01",
+        source_xml_provider=lambda sid: source_xml if sid == "2019/1" else None,
+    )
+
+    locator = payload["source_locator"]
+    witness = locator["detail"]["source_witness"]
+    assert "char_span" not in locator
+    assert "byte_span" not in locator
+    assert locator["detail"]["operation_source_xml_span_status"] == (
+        "unavailable_operation_source_text_container_not_unique"
+    )
+    assert locator["detail"]["operation_source_xml_quote_match_count"] == 0
+    assert locator["detail"]["operation_source_xml_text_container_match_count"] == 2
+    assert witness["artifact_span_status"] == (
+        "unavailable_operation_source_text_container_not_unique"
+    )
+    assert witness["artifact_span_match_count"] == 2
     assert source_witness_digest_coverage(witness) == "artifact_and_preview_digest"
 
 
