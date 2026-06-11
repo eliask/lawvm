@@ -28,10 +28,13 @@ from lawvm.core.ir import IRNode, LegalOperation, OperationSource
 # Provision address walker
 # ---------------------------------------------------------------------------
 
-def _walk_provisions(node: IRNode, path: tuple = ()) -> List[tuple]:
+AddressPath = tuple[tuple[str, str], ...]
+
+
+def _walk_provisions(node: IRNode, path: AddressPath = ()) -> List[tuple[AddressPath, IRNode]]:
     """Walk the IRNode tree, yielding (address_tuple, node) for leaf provisions."""
     results = []
-    current_path = path + ((node.kind, node.label or ""),) if node.label else path
+    current_path = path + ((str(node.kind), str(node.label or "")),) if node.label else path
     if node.kind in ("section", "subsection", "item") and node.label:
         results.append((current_path, node))
     for child in node.children:
@@ -39,12 +42,12 @@ def _walk_provisions(node: IRNode, path: tuple = ()) -> List[tuple]:
     return results
 
 
-def _addr_str(path: tuple) -> str:
+def _addr_str(path: AddressPath) -> str:
     """Format address tuple as 'chapter:7/section:50/subsection:1'."""
     return "/".join(f"{k}:{v}" for k, v in path if k not in ("body",))
 
 
-def _addr_key(path: tuple) -> str:
+def _addr_key(path: AddressPath) -> str:
     """Short key for blame_map lookup (matches what apply_ee_ops records)."""
     return "/".join(f"{k}:{v}" for k, v in path if k not in ("body", "chapter", "division", "part"))
 
@@ -152,7 +155,7 @@ def run_ee_blame(
         amend_ops_by_id[ref.aktViide] = ops
 
     # ── Apply with blame tracking ─────────────────────────────────────────────
-    blame_map: dict = {}
+    blame_map: dict[str, LegalOperation] = {}
     replayed = apply_ee_ops(base, all_ops, blame_map=blame_map)
 
     # ── Output: per-provision blame ───────────────────────────────────────────
@@ -182,8 +185,9 @@ def run_ee_blame(
             src = op.source
             src_id = src.statute_id.replace("ee/", "") if src else "?"
             eff = src.effective if src else "?"
-            title = (src.title or "")[:40]
-            blamed.append((addr_display, node, src_id, eff, title, op.sequence, op.action.upper()))
+            title = (src.title if src is not None else "")[:40]
+            action = op.action.value if hasattr(op.action, "value") else str(op.action)
+            blamed.append((addr_display, node, src_id, eff, title, op.sequence, action.upper()))
 
     for addr, node, src_id, eff, title, seq, action in blamed:
         print(f"  {addr:<{col_w}}  {src_id}  [{seq:>4}] {action:<12}  eff={eff}")

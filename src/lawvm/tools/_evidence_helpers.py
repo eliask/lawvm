@@ -464,12 +464,12 @@ def _section_key_from_path(path) -> str:
 
 def _normalize_observation_streams(
     *,
-    elaboration_observations: Optional[Iterable] = None,
-    sparse_slot_bindings: Optional[Iterable] = None,
-    sparse_leftovers: Optional[Iterable] = None,
-    apply_mutation_events: Optional[Iterable] = None,
-    apply_mutation_invariant_reports: Optional[Iterable] = None,
-) -> List[Dict]:
+    elaboration_observations: Optional[Iterable[Any]] = None,
+    sparse_slot_bindings: Optional[Iterable[Any]] = None,
+    sparse_leftovers: Optional[Iterable[Any]] = None,
+    apply_mutation_events: Optional[Iterable[Any]] = None,
+    apply_mutation_invariant_reports: Optional[Iterable[Any]] = None,
+) -> List[Dict[str, Any]]:
     apply_mutation_events = tuple(apply_mutation_events or ())
     apply_mutation_invariant_reports = tuple(apply_mutation_invariant_reports or ())
     normalized: List[Dict] = []

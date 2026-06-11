@@ -25,6 +25,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from typing import Any
 
 from lawvm.core.manual_claims.native import (
     attest,
@@ -40,6 +41,7 @@ from lawvm.core.provenance_graph import (
     Interval,
     Producer,
     ProvenanceAssertion,
+    ProvenanceAttestation,
     SourceRef,
     ArtifactRef,
     assertion_canonical_payload,
@@ -126,7 +128,7 @@ def _load_assertion_from_file(path: Path) -> ProvenanceAssertion:
     return _assertion_from_dict(d)
 
 
-def _assertion_from_dict(d: dict) -> ProvenanceAssertion:
+def _assertion_from_dict(d: dict[str, Any]) -> ProvenanceAssertion:
     """Build ProvenanceAssertion from JSON dict, recomputing assertion_id."""
     from datetime import date
 
@@ -248,7 +250,7 @@ def _read_assertion_from_store(store: GraphStore, assertion_id: str) -> Optional
     return _deserialize_assertion(d)
 
 
-def _read_all_attestations_for(store: GraphStore, assertion_id: str) -> list:
+def _read_all_attestations_for(store: GraphStore, assertion_id: str) -> list[ProvenanceAttestation]:
     objects_dir = store._objects_dir()
     if not objects_dir.exists():
         return []
@@ -262,7 +264,7 @@ def _read_all_attestations_for(store: GraphStore, assertion_id: str) -> list:
     return result
 
 
-def _load_all_assertions(store: GraphStore) -> list:
+def _load_all_assertions(store: GraphStore) -> list[ProvenanceAssertion]:
     objects_dir = store._objects_dir()
     if not objects_dir.exists():
         return []
@@ -274,7 +276,7 @@ def _load_all_assertions(store: GraphStore) -> list:
     return result
 
 
-def _load_all_attestations(store: GraphStore) -> dict:
+def _load_all_attestations(store: GraphStore) -> dict[str, ProvenanceAttestation]:
     """Returns dict: attestation_id -> ProvenanceAttestation."""
     objects_dir = store._objects_dir()
     if not objects_dir.exists():
@@ -652,10 +654,11 @@ def cmd_disputes(args: object) -> int:
     ]
 
     pairs = []
-    seen: set = set()
+    seen: set[tuple[str, str]] = set()
     for a in assertions:
         for disputed_id in a.disputes:
-            key = tuple(sorted([a.assertion_id, disputed_id]))
+            left, right = sorted((a.assertion_id, disputed_id))
+            key = (left, right)
             if key not in seen:
                 seen.add(key)
                 pairs.append((a.assertion_id, disputed_id))

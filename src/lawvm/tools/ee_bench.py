@@ -47,7 +47,7 @@ _CORPUS_CSV = (
 
 # Module-level state for worker processes (set before spawning ProcessPoolExecutor).
 _WORKER_DB_PATH: str = ""
-_WORKER_META: dict = {}
+_WORKER_META: dict[str, tuple[int, str]] = {}
 
 # Schemas considered "law" (Riigikogu acts)
 _LAW_SCHEMAS = frozenset(["tyviseadus", "muutmisseadus"])
@@ -107,9 +107,9 @@ def _load_corpus_csv(
 @dataclass
 class _GroupInfo:
     grupi_id: str
-    terviktekst_with_body: list  # [(aktViide, size), ...]
+    terviktekst_with_body: list[tuple[str, int, str]]  # [(aktViide, size, effective-start), ...]
     n_amendments: int = 0
-    schemas: set = field(default_factory=set)
+    schemas: set[str] = field(default_factory=set)
     title: str = ""
 
 
@@ -375,7 +375,7 @@ def _score_one_pair(gid: str, base_id: str, oracle_id: str, title: str, archive:
         )
 
 
-def _score_one_pair_worker(item: tuple) -> _BenchResult:
+def _score_one_pair_worker(item: tuple[str, str, str]) -> _BenchResult:
     """Top-level picklable wrapper for parallel execution.
 
     Opens its own Farchive per worker process using module-level globals
@@ -393,7 +393,7 @@ def _score_one_pair_worker(item: tuple) -> _BenchResult:
 
 def _run_bench(
     pairs: list[tuple[str, str, str]],
-    meta: dict,
+    meta: dict[str, tuple[int, str]],
     archive: Any,
     workers: int = 1,
 ) -> list[_BenchResult]:
