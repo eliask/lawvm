@@ -1335,6 +1335,39 @@ def test_frontier_work_item_report_rejects_invalid_mapping_rows() -> None:
         )
 
 
+def test_frontier_work_item_report_enforces_canonical_report_edge_fields() -> None:
+    report = frontier_work_item_evidence_report(
+        {
+            "surface": "caller_supplied_surface",
+            "row_id": "caller-row",
+            "subject_id": "caller-subject",
+            "status": "caller-status",
+            "frontier_ref": "caller-frontier",
+            "work_item_id": "fi-frontier-canonical",
+            "jurisdiction": "fi",
+            "source_artifact_id": "2020/1",
+            "source_unit_id": "section:2",
+            "owner_phase": "typed_elaboration",
+            "frontier_family": "fi_sparse_item_body_missing",
+            "frontier_status": "manual_claim_needed",
+            "required_claim_kind": "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+            "safe_default": "block",
+            "required_proofs": ["mutation_boundary_proof"],
+            "forbidden_shortcuts": ["manual_claim_as_replay_authorization"],
+            "executable": False,
+            "replay_authorized": False,
+            "authorization_status": "blocked_manual_claim_required",
+        }
+    ).to_dict()
+
+    row = report["rows"][0]
+    assert row["surface"] == "frontier_work_item"
+    assert row["row_id"] == "fi-frontier-canonical"
+    assert row["subject_id"] == "2020/1"
+    assert row["status"] == "manual_claim_needed"
+    assert row["frontier_ref"] == "fi-frontier-canonical"
+
+
 def test_frontier_work_item_report_projects_to_proof_surface_frontier_ref() -> None:
     report = frontier_work_item_evidence_report(
         FrontierWorkItem(

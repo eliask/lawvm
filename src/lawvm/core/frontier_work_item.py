@@ -283,12 +283,12 @@ def _frontier_mapping(value: FrontierWorkItem | Mapping[str, Any]) -> Mapping[st
 
 def _frontier_report_row(row: Mapping[str, Any]) -> dict[str, Any]:
     return {
+        **dict(row),
         "surface": "frontier_work_item",
         "row_id": str(row.get("work_item_id") or ""),
         "subject_id": str(row.get("source_artifact_id") or ""),
         "status": str(row.get("frontier_status") or ""),
         "frontier_ref": str(row.get("work_item_id") or ""),
-        **dict(row),
         "forbidden_shortcuts": tuple(
             dict.fromkeys(
                 (
