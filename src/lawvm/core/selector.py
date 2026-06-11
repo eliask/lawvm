@@ -123,6 +123,21 @@ _LEGACY_EID_RE = re.compile(r"^(?:part_|chp_|sec_|chapter_).*", re.IGNORECASE)
 _BARE_SECTION_LABEL_RE = re.compile(r"^\(?\s*\d+\s*[a-z]?\s*§\s*\)?$", re.IGNORECASE)
 
 
+def _normalize_locator_segment(segment: str) -> str:
+    if ":" not in segment:
+        return segment
+    kind, label = segment.split(":", 1)
+    kind = kind.strip()
+    label = label.strip()
+    if kind.lower() == "section":
+        label = _norm_label(label)
+    return f"{kind}:{label}"
+
+
+def _normalize_legacy_locator(locator: str) -> str:
+    return "/".join(_normalize_locator_segment(part) for part in locator.split("/"))
+
+
 def _bare_section_label_to_locator(value: str) -> str | None:
     if not _BARE_SECTION_LABEL_RE.fullmatch(value):
         return None
@@ -139,19 +154,19 @@ def to_locator_string(s: str) -> str:
 
     Accepts, in priority order:
       1. the canonical ``§a:b.c.d`` form  → lowered to ``chapter:/section:/...``
-      2. an existing ``kind:label/...`` locator → returned unchanged
+      2. an existing ``kind:label/...`` locator → normalized for compact section labels
       3. an eId like ``chp_3__sec_1`` → returned unchanged
       4. a bare ``N §`` label → lowered to ``section:N``
 
-    The string is returned UNCHANGED when it is already a legacy form, so this
-    is safe to call unconditionally before handing a selector to any engine.
+    Non-section legacy labels and eIds are returned unchanged, so this is safe
+    to call unconditionally before handing a selector to any engine.
     """
     if not s:
         return s
     stripped = s.strip()
     # Already a structured locator (chapter:.., section:.., ...) — pass through.
     if _LEGACY_LOCATOR_RE.match(stripped) and "§" not in stripped:
-        return stripped
+        return _normalize_legacy_locator(stripped)
     # eId form — pass through.
     if "__" in stripped or stripped.lower().startswith(("chp_", "sec_", "part_")):
         return stripped

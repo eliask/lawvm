@@ -79,6 +79,17 @@ class TestToLocatorString:
             == "chapter:1/section:4/subsection:2"
         )
 
+    def test_legacy_lettered_section_locator_normalized(self):
+        assert to_locator_string("section:14 b") == "section:14b"
+        assert (
+            to_locator_string("chapter:3/section:14 b/subsection:2")
+            == "chapter:3/section:14b/subsection:2"
+        )
+        assert (
+            to_locator_string("chapter:2 a/section:14 b")
+            == "chapter:2 a/section:14b"
+        )
+
     def test_eid_passthrough(self):
         assert to_locator_string("chp_3__sec_1") == "chp_3__sec_1"
         assert to_locator_string("chp_2__sec_7v20221023") == "chp_2__sec_7v20221023"
@@ -106,6 +117,10 @@ class TestSectionScope:
         assert (
             section_scope_locator("chapter:3/section:1/subsection:2")
             == "chapter:3/section:1"
+        )
+        assert (
+            section_scope_locator("chapter:3/section:14 b/subsection:2")
+            == "chapter:3/section:14b"
         )
         assert section_scope_locator("section:7/paragraph:1") == "section:7"
 
