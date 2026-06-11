@@ -23,6 +23,14 @@ from lawvm.finland.corpus import (
 
 
 _DEFAULT_SUSPECT_MODE = "cache-only"
+_SOURCE_COMPLETENESS_ORACLE_SUSPECT_FAMILIES = frozenset({
+    "oracle_version_effective_after_cutoff",
+    "oracle_version_expired_before_cutoff",
+    "oracle_missing_version_pin",
+})
+_SOURCE_COMPLETENESS_PENDING_FAMILIES = frozenset({
+    "pending_future_effect_after_cutoff",
+})
 
 
 def _lawvm_dir() -> Path:
@@ -153,6 +161,20 @@ def _format_source_pathology_detail(
     return "|".join(parts)
 
 
+def _format_source_completeness_detail(
+    families: List[str],
+    reasons: List[str],
+) -> str:
+    parts: List[str] = []
+    for family in families:
+        if family:
+            parts.append(str(family))
+    for reason in reasons:
+        if reason:
+            parts.append(str(reason))
+    return "|".join(parts)
+
+
 def _load_strict_signals(path: Path) -> Dict[str, Dict[str, Any]]:
     signals: Dict[str, Dict[str, Any]] = {}
     with path.open(newline="", encoding="utf-8") as f:
@@ -165,7 +187,29 @@ def _load_strict_signals(path: Path) -> Dict[str, Dict[str, Any]]:
                 str(row.get("source_pathology_rows_json", "") or "")
             )
             fail_reasons = set(_parse_string_listish(row.get("fail_reasons", "")))
+            source_completeness_issue_families = _parse_string_listish(
+                row.get("source_completeness_issue_families", "")
+            )
+            source_completeness_issue_reasons = _parse_string_listish(
+                row.get("source_completeness_issue_reasons", "")
+            )
+            source_completeness_oracle_suspect = any(
+                family in _SOURCE_COMPLETENESS_ORACLE_SUSPECT_FAMILIES
+                for family in source_completeness_issue_families
+            )
+            source_completeness_pending = any(
+                family in _SOURCE_COMPLETENESS_PENDING_FAMILIES
+                for family in source_completeness_issue_families
+            )
             signals[sid] = {
+                "source_completeness_oracle_suspect": source_completeness_oracle_suspect,
+                "source_completeness_pending": source_completeness_pending,
+                "source_completeness_issue_families": source_completeness_issue_families,
+                "source_completeness_issue_reasons": source_completeness_issue_reasons,
+                "source_completeness_issue_detail": _format_source_completeness_detail(
+                    source_completeness_issue_families,
+                    source_completeness_issue_reasons,
+                ),
                 "source_pathology": (
                     bool(source_pathology_codes)
                     or bool(source_pathology_rows)
@@ -240,7 +284,15 @@ def main(args) -> None:
             detail = last_status
         else:
             strict_signal = strict_signals.get(sid, {})
-            if strict_signal.get("source_pathology"):
+            if strict_signal.get("source_completeness_oracle_suspect"):
+                bucket = "suspect"
+                reason = "oracle_suspect"
+                detail = str(strict_signal.get("source_completeness_issue_detail", "") or "")
+            elif strict_signal.get("source_completeness_pending"):
+                bucket = "pending"
+                reason = "oracle_version_check_pending"
+                detail = str(strict_signal.get("source_completeness_issue_detail", "") or "")
+            elif strict_signal.get("source_pathology"):
                 bucket = "suspect"
                 reason = "source_pathology"
                 detail = str(strict_signal.get("source_pathology_detail", "") or "")

@@ -77,6 +77,99 @@ def test_bench_curate_partitions_source_pathology_from_strict_run(tmp_path):
     assert "DESTRUCTIVE_SHAPE_LOSS_RISK" in audit
 
 
+def test_bench_curate_partitions_oracle_drift_family_from_strict_run(tmp_path):
+    corpus = tmp_path / "bench_corpus.csv"
+    corpus.write_text("1,1925/34\n", encoding="utf-8")
+
+    strict_run = tmp_path / "strict.csv"
+    strict_run.write_text(
+        "\n".join(
+            [
+                (
+                    "statute_id,n_canonical,n_failed,n_projection_rows,n_source_pathologies,"
+                    "source_pathology_codes,source_completeness_issue_families,"
+                    "source_completeness_issue_reasons,fail_reasons,source_incomplete,"
+                    "chain_length,source_available,elapsed_s,error"
+                ),
+                (
+                    "1925/34,4,0,10,0,,oracle_version_effective_after_cutoff,"
+                    "1976/954 eff 1977-01-01 > cutoff 1976-12-10,"
+                    "APPLY.SOURCE_INCOMPLETE,1,1,1,0.50,"
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    args = SimpleNamespace(
+        corpus=str(corpus),
+        output_dir=str(tmp_path),
+        run=None,
+        strict_run=[str(strict_run)],
+        oracle_suspect_check="off",
+    )
+    bench_curate.main(args)
+
+    core = (tmp_path / "bench_core.csv").read_text(encoding="utf-8").strip()
+    suspect = (tmp_path / "bench_suspect.csv").read_text(encoding="utf-8").strip()
+    pending = (tmp_path / "bench_pending.csv").read_text(encoding="utf-8").strip()
+    audit = (tmp_path / "bench_partition_audit.csv").read_text(encoding="utf-8")
+
+    assert core == ""
+    assert suspect == "1,1925/34"
+    assert pending == ""
+    assert "oracle_suspect" in audit
+    assert "oracle_version_effective_after_cutoff" in audit
+    assert "1976/954 eff 1977-01-01 > cutoff 1976-12-10" in audit
+
+
+def test_bench_curate_partitions_pending_source_completeness_family_from_strict_run(tmp_path):
+    corpus = tmp_path / "bench_corpus.csv"
+    corpus.write_text("1,1925/34\n", encoding="utf-8")
+
+    strict_run = tmp_path / "strict.csv"
+    strict_run.write_text(
+        "\n".join(
+            [
+                (
+                    "statute_id,n_canonical,n_failed,n_projection_rows,n_source_pathologies,"
+                    "source_pathology_codes,source_completeness_issue_families,"
+                    "source_completeness_issue_reasons,fail_reasons,source_incomplete,"
+                    "chain_length,source_available,elapsed_s,error"
+                ),
+                (
+                    "1925/34,4,0,10,0,,pending_future_effect_after_cutoff,"
+                    "pending: 1976/954 eff 1977-01-01 > cutoff 1976-12-10,"
+                    "APPLY.SOURCE_INCOMPLETE,1,1,1,0.50,"
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    args = SimpleNamespace(
+        corpus=str(corpus),
+        output_dir=str(tmp_path),
+        run=None,
+        strict_run=[str(strict_run)],
+        oracle_suspect_check="off",
+    )
+    bench_curate.main(args)
+
+    core = (tmp_path / "bench_core.csv").read_text(encoding="utf-8").strip()
+    suspect = (tmp_path / "bench_suspect.csv").read_text(encoding="utf-8").strip()
+    pending = (tmp_path / "bench_pending.csv").read_text(encoding="utf-8").strip()
+    audit = (tmp_path / "bench_partition_audit.csv").read_text(encoding="utf-8")
+
+    assert core == ""
+    assert suspect == ""
+    assert pending == "1,1925/34"
+    assert "oracle_version_check_pending" in audit
+    assert "pending_future_effect_after_cutoff" in audit
+
+
 def test_bench_curate_partitions_source_pathology_from_structured_rows_when_codes_missing(tmp_path):
     corpus = tmp_path / "bench_corpus.csv"
     corpus.write_text("43,1994/1472\n", encoding="utf-8")
