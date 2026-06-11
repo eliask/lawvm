@@ -23,6 +23,9 @@ from lawvm.core.ir import IRNode, IRStatute, LegalOperation
 from lawvm.core.ir_helpers import ir_statute_from_dict
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
 from lawvm.core.source_lane import SourceLaneSelectionEvidence, source_lane_attempt_from_mapping
+
+JsonObject = dict[str, Any]
+JsonObjectList = list[JsonObject]
 from lawvm.core import tree_ops
 from lawvm.core.adjudication_evidence import adjudication_finding_evidence_rows
 from lawvm.replay_adjudication import CompileAdjudication
@@ -441,7 +444,7 @@ def se_source_bundle_to_dict(bundle: SESourceBundle) -> dict[str, Any]:
     }
 
 
-def _curl_json_post(url: str, *, headers: list[str], payload: dict) -> Optional[bytes]:
+def _curl_json_post(url: str, *, headers: list[str], payload: JsonObject) -> Optional[bytes]:
     result = subprocess.run(
         [
             "curl",
@@ -1140,7 +1143,7 @@ def _record_se_rk_current_diagnostic(
 
 
 def build_se_source_bundle(
-    payload: bytes | str | dict,
+    payload: bytes | str | JsonObject,
     *,
     doc_html: bytes | str | None = None,
 ) -> SESourceBundle:
@@ -1157,7 +1160,7 @@ def build_se_source_bundle(
 
 
 def archive_se_source_bundle(
-    payload: bytes | str | dict,
+    payload: bytes | str | JsonObject,
     archive: _ArchiveLike,
     *,
     doc_html: bytes | str | None = None,
@@ -1203,7 +1206,7 @@ def archive_se_source_bundle(
     return bundle
 
 
-def _read_json_locator(archive: _ArchiveLike, locator: str) -> Optional[dict]:
+def _read_json_locator(archive: _ArchiveLike, locator: str) -> Optional[JsonObject]:
     raw = archive.get(locator)
     if raw is None:
         return None
@@ -1213,51 +1216,51 @@ def _read_json_locator(archive: _ArchiveLike, locator: str) -> Optional[dict]:
     return data
 
 
-def load_se_source_record_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[dict]:
+def load_se_source_record_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[JsonObject]:
     return _read_json_locator(archive, se_source_record_locator(sfs_id))
 
 
-def load_se_current_ir_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[dict]:
+def load_se_current_ir_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[JsonObject]:
     return _read_json_locator(archive, se_current_ir_locator(sfs_id))
 
 
-def load_se_bundle_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[dict]:
+def load_se_bundle_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[JsonObject]:
     return _read_json_locator(archive, se_bundle_manifest_locator(sfs_id))
 
 
-def load_se_official_act_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[dict]:
+def load_se_official_act_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[JsonObject]:
     return _read_json_locator(archive, se_official_act_locator(sfs_id))
 
 
-def load_se_official_base_ir_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[dict]:
+def load_se_official_base_ir_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[JsonObject]:
     return _read_json_locator(archive, se_official_base_ir_locator(sfs_id))
 
 
-def load_se_official_clause_surface_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[dict]:
+def load_se_official_clause_surface_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[JsonObject]:
     return _read_json_locator(archive, se_official_clause_surface_locator(sfs_id))
 
 
-def load_se_official_payload_surface_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[dict]:
+def load_se_official_payload_surface_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[JsonObject]:
     return _read_json_locator(archive, se_official_payload_surface_locator(sfs_id))
 
 
-def load_se_official_elaboration_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[dict]:
+def load_se_official_elaboration_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[JsonObject]:
     return _read_json_locator(archive, se_official_elaboration_locator(sfs_id))
 
 
-def load_se_official_effects_plan_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[dict]:
+def load_se_official_effects_plan_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[JsonObject]:
     return _read_json_locator(archive, se_official_effects_plan_locator(sfs_id))
 
 
-def load_se_backfill_official_checkpoint_from_archive(archive: _ArchiveLike) -> Optional[dict]:
+def load_se_backfill_official_checkpoint_from_archive(archive: _ArchiveLike) -> Optional[JsonObject]:
     return _read_json_locator(archive, se_backfill_official_checkpoint_locator())
 
 
-def load_se_backfill_official_status_from_archive(archive: _ArchiveLike) -> Optional[dict]:
+def load_se_backfill_official_status_from_archive(archive: _ArchiveLike) -> Optional[JsonObject]:
     return _read_json_locator(archive, se_backfill_official_status_locator())
 
 
-def load_se_backfill_official_history_from_archive(archive: _ArchiveLike) -> Optional[list[dict]]:
+def load_se_backfill_official_history_from_archive(archive: _ArchiveLike) -> Optional[JsonObjectList]:
     raw = archive.get(se_backfill_official_history_locator())
     if raw is None:
         return None
@@ -1273,19 +1276,19 @@ def load_se_backfill_official_history_from_archive(archive: _ArchiveLike) -> Opt
     return data
 
 
-def load_se_backfill_official_completeness_from_archive(archive: _ArchiveLike) -> Optional[dict]:
+def load_se_backfill_official_completeness_from_archive(archive: _ArchiveLike) -> Optional[JsonObject]:
     return _read_json_locator(archive, se_backfill_official_completeness_locator())
 
 
-def load_se_backfill_official_gap_report_from_archive(archive: _ArchiveLike) -> Optional[dict]:
+def load_se_backfill_official_gap_report_from_archive(archive: _ArchiveLike) -> Optional[JsonObject]:
     return _read_json_locator(archive, se_backfill_official_gap_report_locator())
 
 
-def load_se_backfill_official_chunk_plan_from_archive(archive: _ArchiveLike) -> Optional[dict]:
+def load_se_backfill_official_chunk_plan_from_archive(archive: _ArchiveLike) -> Optional[JsonObject]:
     return _read_json_locator(archive, se_backfill_official_chunk_plan_locator())
 
 
-def compile_se_official_ops_to_archive(archive: _ArchiveLike, sfs_id: str) -> list[dict]:
+def compile_se_official_ops_to_archive(archive: _ArchiveLike, sfs_id: str) -> JsonObjectList:
     act = load_se_official_act_from_archive(archive, sfs_id)
     if act is None:
         raise FileNotFoundError(f"no archived official act surface for {sfs_id}")
@@ -1384,7 +1387,7 @@ def archive_se_backfill_official_chunk_plan(archive: _ArchiveLike, chunk_plan: d
     )
 
 
-def load_se_official_ops_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[list[dict]]:
+def load_se_official_ops_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[JsonObjectList]:
     raw = archive.get(se_official_ops_locator(sfs_id))
     if raw is None:
         return None
@@ -1404,7 +1407,7 @@ def load_se_official_ops_from_archive(archive: _ArchiveLike, sfs_id: str) -> Opt
     return data
 
 
-def load_se_official_ops_adjudications_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[list[dict]]:
+def load_se_official_ops_adjudications_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[JsonObjectList]:
     raw = archive.get(se_official_ops_adjudications_locator(sfs_id))
     if raw is None:
         return None
@@ -2524,7 +2527,7 @@ def check_se_official_replay(
     baseline_typed_invariant_messages = {
         violation.message for violation in se_statute_invariant_violation_records(replay_base_statute)
     }
-    replay_adjudications: list = []
+    replay_adjudications: list[CompileAdjudication] = []
     replayed = apply_se_ops(replay_base_statute, ops, adjudications_out=replay_adjudications)
     skipped_op_ids = {item.op_id for item in replay_adjudications if item.op_id}
     finding_rows = adjudication_finding_evidence_rows(
@@ -2754,7 +2757,7 @@ def hydrate_se_bundle_live(
     return attach_official_artifacts_to_bundle(bundle, official)
 
 
-def _coerce_payload_to_dict(payload: bytes | str | dict) -> dict:
+def _coerce_payload_to_dict(payload: bytes | str | JsonObject) -> JsonObject:
     if isinstance(payload, dict):
         return payload
     if isinstance(payload, bytes):
