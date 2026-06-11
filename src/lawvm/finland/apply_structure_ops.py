@@ -1821,8 +1821,26 @@ def _apply_whole_section_op(
                     if local_ch_path is not None:
                         ch_path = part_path + local_ch_path
             else:
-                _idx = state.provision_index
-                ch_path = _tops.find(state.ir, "chapter", _target_chapter, label_index=_idx)
+                # A bare chapter-label lookup binds the first same-labeled
+                # chapter in document order, which is the wrong one in
+                # multi-part codes that reuse chapter numbers. When the
+                # resolver already bound the target section, the landing
+                # chapter must live in that section's part.
+                if sec_path is not None:
+                    part_hint = next(
+                        (label for kind, label in _tops._as_path(sec_path) if kind == "part"),
+                        None,
+                    )
+                    if part_hint:
+                        part_path = _find_direct_body_part_path(state.ir, part_hint) or state.find("part", part_hint)
+                        part_node = _tops.resolve(state.ir, part_path) if part_path is not None else None
+                        if part_path is not None and part_node is not None:
+                            local_ch_path = _tops.find(part_node, "chapter", _target_chapter)
+                            if local_ch_path is not None:
+                                ch_path = part_path + local_ch_path
+                if ch_path is None:
+                    _idx = state.provision_index
+                    ch_path = _tops.find(state.ir, "chapter", _target_chapter, label_index=_idx)
             if ch_path is not None:
                 ch_node = _tops.resolve(state.ir, ch_path)
                 assert ch_node is not None, f"resolve failed for chapter {_target_chapter}"
