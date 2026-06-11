@@ -227,7 +227,7 @@ def _collect_failures(
             if need_masters and failed:
                 masters_by_sid[sid] = master
                 with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-                    result = _classify_statute(sid, "finlex_oracle")
+                    result = _classify_statute(sid, "official_consolidation")
                 pathologies_by_sid[sid] = {
                     (str(p.get("source_statute", "")), str(p.get("code", "")), str(p.get("target_label", "")))
                     for p in (getattr(result, "source_pathologies", []) or [])

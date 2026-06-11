@@ -60,7 +60,7 @@ from tests.corpus_pin_helpers import pinned_replay
 
 _DATE = dt.date(2020, 1, 1)
 _LEGAL_PIT = get_replay_profile("legal_pit")
-_FINLEX_ORACLE = get_replay_profile("finlex_oracle")
+_FINLEX_ORACLE = get_replay_profile("official_consolidation")
 
 
 def _content(text: str) -> IRNode:
@@ -1516,7 +1516,7 @@ def test_1992_110_2017_48_reinstatement_chain_compiles_insert_13_and_materialize
         for op in phase.output
     ), "Expected compile output to include INSERT 13 § for 1992/110 <- 2017/48."
 
-    replay = pinned_replay(statute_id, mode="finlex_oracle", quiet=True)
+    replay = pinned_replay(statute_id, mode="official_consolidation", quiet=True)
     assert replay.materialized_state.find_section("13") is not None, (
         "Expected final replay for 1992/110 to materialize 13 § after the 2017/48 reinstatement chain."
     )
@@ -1540,7 +1540,7 @@ def test_1994_201_2018_253_does_not_false_repeal_section_3_via_voimaantulo_extra
         for op in ops
     ), "Expected 2018/253 not to emit a false-positive REPEAL 3 § against 1994/201."
 
-    replay = pinned_replay(statute_id, mode="finlex_oracle", quiet=True)
+    replay = pinned_replay(statute_id, mode="official_consolidation", quiet=True)
     sec3 = replay.materialized_state.find_section("3", "2")
     assert sec3 is not None, "Expected chapter:2/section:3 to exist in final replay."
     child_kinds = [child.kind.value for child in sec3.children]
@@ -1553,7 +1553,7 @@ def test_2015_1141_2023_1250_keeps_explicit_chunk_insert_sections_in_their_own_c
     """Real corpus anchor for the explicit-chunk insert retarget hijack family."""
     from lawvm.tools.section_keys import extract_ir_sections
 
-    replay = pinned_replay("2015/1141", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("2015/1141", mode="official_consolidation", quiet=True)
     sections = extract_ir_sections(replay.products.materialized_state.ir)
 
     for wrong_path in (
@@ -1580,7 +1580,7 @@ def test_2002_197_2011_535_inserted_chapter3a_does_not_keep_shadowed_sections_20
     """Real corpus anchor for inserted-chapter shadowed-section retention."""
     from lawvm.tools.section_keys import extract_ir_sections
 
-    replay = pinned_replay("2002/197", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("2002/197", mode="official_consolidation", quiet=True)
     sections = extract_ir_sections(replay.products.materialized_state.ir)
 
     assert "chapter:3a/section:20" not in sections
@@ -1593,7 +1593,7 @@ def test_1994_719_2001_124_does_not_keep_or_misroute_16a_17a_cluster() -> None:
     """Real corpus anchor for inserted 3a chapter shadow-retention plus misrouting."""
     from lawvm.tools.section_keys import extract_ir_sections
 
-    replay = pinned_replay("1994/719", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("1994/719", mode="official_consolidation", quiet=True)
     sections = extract_ir_sections(replay.products.materialized_state.ir)
 
     assert "chapter:5/section:16a" in sections
@@ -1611,7 +1611,7 @@ def test_2006_1280_2022_1031_keeps_section42_items_4_and_5() -> None:
     """Real corpus anchor for the sparse-slot item-drop family in 42 §."""
     from lawvm.core.ir import IRNodeKind
 
-    replay = pinned_replay("2006/1280", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("2006/1280", mode="official_consolidation", quiet=True)
     sec42 = replay.find_section("42", "5", "3")
     assert sec42 is not None, "section part:3/chapter:5/section:42 must exist"
 
@@ -1790,20 +1790,20 @@ def test_stabilize_chapter_relabel_order_three_op_chain() -> None:
 
 class TestValiaikainenChapterScaffoldReplace:
     """Innovation: container INSERT targeting a chapter that exists in state.ir
-    but NOT in base_ir must REPLACE (not MERGE) in finlex_oracle mode.
+    but NOT in base_ir must REPLACE (not MERGE) in official_consolidation mode.
 
     Regression scenario (1982/710):
     - 1992/1657 VÄLIAIKAINEN creates chapter '3a' with §38a–§38f (expired 1997-12-31).
     - Raw IR still holds chapter '3a' with those expired sections (no filtering in raw IR).
     - 2003/1310 INSERT permanent chapter '3a' with §29a–§29g.
-    - In finlex_oracle mode, `path` is non-None (ch:3a is in state.ir) and
+    - In official_consolidation mode, `path` is non-None (ch:3a is in state.ir) and
       `base_path` is None (ch:3a is absent from the original base law).
     - Without the fix: MERGE resurrects §38a–§38f alongside §29a–§29g.
     - With the fix: REPLACE wins; chapter '3a' contains only §29a–§29g.
     """
 
     def test_non_base_chapter_scaffold_is_replaced_not_merged(self) -> None:
-        """finlex_oracle INSERT of ch:3a that is absent from base_ir must REPLACE."""
+        """official_consolidation INSERT of ch:3a that is absent from base_ir must REPLACE."""
         # Base law: chapter 3 only, no chapter 3a.
         base_body = _body(
             _chapter("3", _sec("1", _sub("1", _content("original §1")))),
@@ -1878,7 +1878,7 @@ class TestValiaikainenChapterScaffoldReplace:
         )
 
     def test_base_chapter_insert_still_merges(self) -> None:
-        """finlex_oracle INSERT of a chapter that IS in base_ir must still MERGE,
+        """official_consolidation INSERT of a chapter that IS in base_ir must still MERGE,
         not replace (pre-existing behaviour must be preserved)."""
         # Base law: chapter 3 already present.
         base_body = _body(

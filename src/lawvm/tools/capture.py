@@ -316,7 +316,7 @@ def _bundle_for_amendment(
 def build_capture(
     statute_id: str,
     *,
-    replay_mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle",
+    replay_mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     source_filter: str = "",
 ) -> CapturePayload:
     from lawvm.finland.grafter import get_corpus, replay_xml

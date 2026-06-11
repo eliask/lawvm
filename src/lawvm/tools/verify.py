@@ -146,7 +146,7 @@ def _phase_finding_to_visibility_issue(finding, context: str) -> Issue:
 
 def _build_verify_facade(
     *,
-    replay_mode: Literal["finlex_oracle", "legal_pit"],
+    replay_mode: Literal["official_consolidation", "legal_pit"],
     structural_ops: List,
     phase_results: List,
 ) -> CompileFacade:
@@ -360,7 +360,7 @@ def verify_extract(sid: str, source_amendment_id: str) -> List[Issue]:
 # Verify: full pipeline (PARSE + EXTRACT per amendment + APPLY per amendment)
 # ---------------------------------------------------------------------------
 
-def _verify_full(sid: str, mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle") -> List[Issue]:
+def _verify_full(sid: str, mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation") -> List[Issue]:
     cs = get_corpus()
     xml_bytes = cs.read_source(sid)
     if xml_bytes is None:
@@ -446,7 +446,7 @@ def _verify_full(sid: str, mode: Literal["finlex_oracle", "legal_pit"] = "finlex
     return all_issues
 
 
-def verify_full(sid: str, mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle") -> List[Issue]:
+def verify_full(sid: str, mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation") -> List[Issue]:
     return _verify_full(sid, mode)
 
 
@@ -456,7 +456,7 @@ def verify_full(sid: str, mode: Literal["finlex_oracle", "legal_pit"] = "finlex_
 
 def verify_observations(
     sid: str,
-    mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle",
+    mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     *,
     show_facade: bool = False,
 ) -> List[Issue]:
@@ -557,7 +557,7 @@ def _print_facade_from_phase_results(
     phase_results: List,
     *,
     sid: str,
-    replay_mode: Literal["finlex_oracle", "legal_pit"],
+    replay_mode: Literal["official_consolidation", "legal_pit"],
 ) -> None:
     """Merge a list of PhaseResults and print a CompileFacade summary.
 
@@ -655,7 +655,7 @@ def _report(
     stage: Optional[str],
     *,
     json_output: bool = False,
-    mode: str = "finlex_oracle",
+    mode: str = "official_consolidation",
 ) -> int:
     errors = [i for i in issues if i.severity == "error"]
     warnings = [i for i in issues if i.severity == "warning"]
@@ -694,7 +694,7 @@ def main(args) -> None:
     sid = args.statute_id
     stage = getattr(args, "stage", None)
     source = getattr(args, "source", None)
-    mode = getattr(args, "mode", "finlex_oracle")
+    mode = getattr(args, "mode", "official_consolidation")
     show_facade = getattr(args, "facade", False)
     json_output = getattr(args, "json", False)
 

@@ -965,7 +965,7 @@ class TestReplayOccupancyModel:
         )
         ctx = cast(StatuteContext, SimpleNamespace(base_ir=body))
 
-        result = apply_op(state, op, ctx, muutos_ir=None, replay_mode="finlex_oracle")
+        result = apply_op(state, op, ctx, muutos_ir=None, replay_mode="official_consolidation")
 
         sec5 = result.find_section("5")
         assert sec5 is not None

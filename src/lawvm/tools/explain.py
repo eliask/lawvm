@@ -284,7 +284,7 @@ def _lookup_blame_op(blame_map: Dict[str, dict], key: str) -> dict:
 def _get_pre_blame_sections(
     sid: str,
     blame_source: str,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     oracle_selector: ConsolidatedArtifactSelector | None = None,
 ) -> Dict[str, Any]:
     from lawvm.finland.grafter import (
@@ -646,7 +646,7 @@ def _explain_sync(
     sid: str,
     section_filter: Optional[str],
     threshold: float,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     oracle_selector: ConsolidatedArtifactSelector | None = None,
     show_compile_summary: bool = False,
     strict_profile: Optional["StrictProfile"] = None,
@@ -1170,7 +1170,7 @@ def _explain_sync(
 def main(args) -> None:
     section_filter = getattr(args, "section", None)
     threshold = getattr(args, "threshold", 1.0)
-    mode: Literal["finlex_oracle", "legal_pit"] = getattr(args, "mode", "finlex_oracle")
+    mode: Literal["official_consolidation", "legal_pit"] = getattr(args, "mode", "official_consolidation")
     oracle_selector_mode = getattr(args, "oracle_selector_mode", "latest_cached_editorial")
     oracle_version_amendment_id = getattr(args, "oracle_version_amendment_id", "")
     oracle_selector = _oracle_selector_from_args(

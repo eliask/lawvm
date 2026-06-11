@@ -21,7 +21,7 @@ class ReplayPlan:
     """Typed plan for replaying one Finnish parent statute."""
 
     parent_id: str
-    replay_mode: Literal["finlex_oracle", "legal_pit"]
+    replay_mode: Literal["official_consolidation", "legal_pit"]
     replay_profile: Any
     ctx: StatuteContext
     initial_state: ReplayState
@@ -76,7 +76,7 @@ def _dedupe_consecutive_amendment_records(
 def prepare_replay_plan(
     parent_id: str,
     *,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     strict_profile: Any,
     corpus: CorpusStore,
     stop_before: str,

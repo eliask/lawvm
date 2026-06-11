@@ -3293,12 +3293,12 @@ from tests.corpus_pin_helpers import pinned_replay
 
 @pytest.fixture(scope="module")
 def replay_1990_845_finlex_oracle():
-    return pinned_replay("1990/845", mode="finlex_oracle", quiet=True)
+    return pinned_replay("1990/845", mode="official_consolidation", quiet=True)
 
 
 @pytest.fixture(scope="module")
 def replay_1992_480_finlex_oracle():
-    return pinned_replay("1992/480", mode="finlex_oracle", quiet=True, build_full_products=False)
+    return pinned_replay("1992/480", mode="official_consolidation", quiet=True, build_full_products=False)
 
 
 @pytest.fixture(scope="module")
@@ -3329,7 +3329,7 @@ def test_omnibus_repeal_sec1_fallback_does_not_skip_parent_repeal(replay_1992_48
 
 def test_generic_preamble_sec1_repeal_recovers_shared_section_sign_list() -> None:
     """sec_1 kumotaan fallback should still recover the targeted section labels."""
-    master = pinned_replay("1990/1039", mode="finlex_oracle")
+    master = pinned_replay("1990/1039", mode="official_consolidation")
     secs = _extract_sections_ir(master.ir)
 
     assert "1" in secs
@@ -3340,7 +3340,7 @@ def test_generic_preamble_sec1_repeal_recovers_shared_section_sign_list() -> Non
 
 def test_generic_preamble_sec1_repeal_keeps_inserted_chapter_live_before_repeal() -> None:
     """Detached-horizon oracle replay keeps inserted chapter content live pre-repeal."""
-    master = pinned_replay("1990/1247", mode="finlex_oracle")
+    master = pinned_replay("1990/1247", mode="official_consolidation")
     secs = _extract_sections_ir(master.ir)
 
     assert sorted(secs) == ["2", "3", "4", "5", "7", "8", "9"]
@@ -3394,7 +3394,7 @@ def test_omission_bracketed_replace_drops_stale_predecessor_moment(replay_1992_4
 
 def test_intro_list_subsection_replace_keeps_embedded_items() -> None:
     """First-moment replacements must keep adjacent amendment item subtrees."""
-    master = pinned_replay("2015/242", mode="finlex_oracle")
+    master = pinned_replay("2015/242", mode="official_consolidation")
     sec2 = _extract_sections_ir(master.ir)["2"]
     labels = [child.label for child in sec2.children if child.kind == IRNodeKind.SUBSECTION]
     text = irnode_to_text(sec2)
@@ -3409,7 +3409,7 @@ def test_intro_list_subsection_replace_keeps_embedded_items() -> None:
 
 def test_snapshot_fallback_keeps_placeholder_for_missing_repealed_section() -> None:
     """Whole-section repeals should emit placeholders even if the live section is absent."""
-    master = pinned_replay("2009/1672", mode="finlex_oracle")
+    master = pinned_replay("2009/1672", mode="official_consolidation")
     sec14b = master.find_section("14b", "7")
 
     assert sec14b is None or sec14b.attrs.get("lawvm_repeal_placeholder") == "1"
@@ -3667,11 +3667,11 @@ def test_item_insert_renumbers_numeric_suffix_in_same_subsection() -> None:
     assert orig is not None
     ctx = StatuteContext.from_xml(orig, _fi_label_postprocessor)
     state = ReplayState(ir=copy.deepcopy(ctx.base_ir))
-    records, _, _ = _resolve_applicable_amendment_records(parent_id, "finlex_oracle")
+    records, _, _ = _resolve_applicable_amendment_records(parent_id, "official_consolidation")
     for rec in records:
         amendment_id = str(rec["statute_id"])
         state = process_muutoslaki(
-            amendment_id, state, ctx, replay_mode="finlex_oracle", parent_id=parent_id
+            amendment_id, state, ctx, replay_mode="official_consolidation", parent_id=parent_id
         ).output
         if amendment_id == "2016/1419":
             sec = _extract_sections_ir(state.ir)["6"]
@@ -3697,7 +3697,7 @@ def test_repealed_amendment_act_does_not_delete_parent_section() -> None:
 
 def test_partial_internal_list_update_does_not_collapse_entire_section() -> None:
     """`1 §:ssä olevaa ... luetteloa I` is not a safe whole-section replace."""
-    master = pinned_replay("1993/1709", mode="finlex_oracle", stop_before="2001/201")
+    master = pinned_replay("1993/1709", mode="official_consolidation", stop_before="2001/201")
     sec = _extract_sections_ir(master.ir)["1"]
     text = irnode_to_text(sec)
 
@@ -3713,7 +3713,7 @@ def test_shifted_subsection_insert_preserves_earlier_moment() -> None:
     content is lost.  The INSERT + latest REPLACE of mom 2 are correct.
     This is a known P1 trade-off (~0.17% for this statute vs net +0.05pp corpus).
     """
-    master = pinned_replay("1947/625", mode="finlex_oracle")
+    master = pinned_replay("1947/625", mode="official_consolidation")
     sec = _extract_sections_ir(master.ir)["3"]
     text = irnode_to_text(sec)
 
@@ -3723,7 +3723,7 @@ def test_shifted_subsection_insert_preserves_earlier_moment() -> None:
 
 def test_malformed_embedded_letter_section_is_split_for_replace_and_insert() -> None:
     """Malformed `3 § ... 3 a §` blobs should not leak section 3a into section 3."""
-    master = pinned_replay("1959/324", mode="finlex_oracle", stop_before="1999/310")
+    master = pinned_replay("1959/324", mode="official_consolidation", stop_before="1999/310")
     sections = _extract_sections_ir(master.ir)
 
     sec3 = irnode_to_text(sections["3"])
@@ -3736,7 +3736,7 @@ def test_malformed_embedded_letter_section_is_split_for_replace_and_insert() -> 
 
 def test_sec1_repeal_subsection_range_is_applied() -> None:
     """Pure repeal clauses encoded in section 1 should still repeal subsection ranges."""
-    master = pinned_replay("1959/324", mode="finlex_oracle")
+    master = pinned_replay("1959/324", mode="official_consolidation")
     sec = _extract_sections_ir(master.ir)["9"]
     text = irnode_to_text(sec)
 
@@ -3889,7 +3889,7 @@ def test_embedded_paragraph_number_in_base_source_is_preserved_for_2007_508() ->
 
 def test_mixed_subsection_insert_replace_chains_keep_pre_shift_targeting() -> None:
     """Mixed insert+replace chains must still target the pre-shift moment."""
-    master = pinned_replay("1969/327", mode="finlex_oracle")
+    master = pinned_replay("1969/327", mode="official_consolidation")
     sec = _extract_sections_ir(master.ir)["4"]
     text = irnode_to_text(sec)
 
@@ -3902,7 +3902,7 @@ def test_shift_retargeted_mixed_subsection_insert_replace_chains_can_apply_ascen
 
     NOTE: Same P1 jolloin trade-off as above — shifted subsection content lost.
     """
-    master = pinned_replay("1947/625", mode="finlex_oracle")
+    master = pinned_replay("1947/625", mode="official_consolidation")
     sec = _extract_sections_ir(master.ir)["3"]
     text = irnode_to_text(sec)
 
@@ -3911,7 +3911,7 @@ def test_shift_retargeted_mixed_subsection_insert_replace_chains_can_apply_ascen
 
 def test_sec1_mixed_repeal_and_replace_clause_is_applied() -> None:
     """Mixed sec_1 clauses should recover both subsection repeal and section updates."""
-    master = pinned_replay("2007/636", mode="finlex_oracle")
+    master = pinned_replay("2007/636", mode="official_consolidation")
     secs = _extract_sections_ir(master.ir)
 
     text1 = irnode_to_text(secs["1"])
@@ -3927,7 +3927,7 @@ def test_sec1_mixed_repeal_and_replace_clause_is_applied() -> None:
 
 def test_parent_scoped_sec1_repeals_are_applied() -> None:
     """Parent-restricted sec_1 fallback should handle generic-preamble and multi-parent repeals."""
-    master = pinned_replay("1983/607", mode="finlex_oracle")
+    master = pinned_replay("1983/607", mode="official_consolidation")
     secs = _extract_sections_ir(master.ir)
 
     text9 = irnode_to_text(secs["9"])
@@ -3944,7 +3944,7 @@ def test_parent_scoped_sec1_repeals_are_applied() -> None:
 
 def test_sparse_list_section_replace_merges_changed_items_in_place() -> None:
     """Sparse section payloads should not collapse untouched intro-list siblings."""
-    master = pinned_replay("1997/746", mode="finlex_oracle", stop_before="2000/1170")
+    master = pinned_replay("1997/746", mode="official_consolidation", stop_before="2000/1170")
     sec = _extract_sections_ir(master.ir)["1"]
     sub = next(c for c in sec.children if c.kind == IRNodeKind.SUBSECTION)
     labels = [c.label for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]
@@ -4259,7 +4259,7 @@ def test_uk_compile_timelines_from_snapshots() -> None:
 
 def test_sparse_list_section_replace_allows_later_item_updates() -> None:
     """A later item-level amendment should still apply after sparse section merge."""
-    master = pinned_replay("1997/746", mode="finlex_oracle")
+    master = pinned_replay("1997/746", mode="official_consolidation")
     sec = _extract_sections_ir(master.ir)["1"]
     sub = next(c for c in sec.children if c.kind == IRNodeKind.SUBSECTION)
     labels = [c.label for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]
@@ -4273,7 +4273,7 @@ def test_sparse_list_section_replace_allows_later_item_updates() -> None:
 
 def test_generic_preamble_sec1_repealer_is_not_skipped() -> None:
     """Generic enabling-clause preambles should still recover the targeted section."""
-    master = pinned_replay("1992/1282", mode="finlex_oracle")
+    master = pinned_replay("1992/1282", mode="official_consolidation")
     secs = _extract_sections_ir(master.ir)
 
     assert "18" not in secs
@@ -4281,7 +4281,7 @@ def test_generic_preamble_sec1_repealer_is_not_skipped() -> None:
 
 def test_full_list_section_replace_does_not_preserve_old_tail_items() -> None:
     """Contiguous whole-list replacements must drop stale tail items instead of sparse-merging."""
-    master = pinned_replay("2016/866", mode="finlex_oracle")
+    master = pinned_replay("2016/866", mode="official_consolidation")
     sec = _extract_sections_ir(master.ir)["1"]
     text = irnode_to_text(sec)
 
@@ -4301,7 +4301,7 @@ def test_whole_subsection_replace_does_not_splice_stale_items_from_trailing_omis
     meaning "the old content ends here" — it must NOT cause the merger to
     splice back the old kohta 3.
     """
-    master = pinned_replay("2002/973", mode="finlex_oracle")
+    master = pinned_replay("2002/973", mode="official_consolidation")
     sec9 = _extract_sections_ir(master.ir)["9"]
     subsec1 = next((c for c in sec9.children if c.kind == IRNodeKind.SUBSECTION and c.label == "1"), None)
     assert subsec1 is not None, "§9 mom 1 not found"
@@ -4322,7 +4322,7 @@ def test_whole_subsection_replace_does_not_splice_stale_items_from_trailing_omis
 
 def test_sparse_middle_subsection_replaces_follow_explicit_target_moments() -> None:
     """Sparse middle-block moment replacements must not flip the live target order."""
-    master = pinned_replay("2017/445", mode="finlex_oracle")
+    master = pinned_replay("2017/445", mode="official_consolidation")
     sec = _extract_sections_ir(master.ir)["5"]
     text = irnode_to_text(sec)
 

@@ -222,7 +222,7 @@ def _run_single(
             failed_ops: list[Any] = []
             master = replay_xml(
                 statute_id,
-                mode="finlex_oracle",
+                mode="official_consolidation",
                 compiled_ops_out=compiled_ops,
                 replay_meta_out=replay_meta,
                 lo_ops_out=canonical_ops,
@@ -273,7 +273,7 @@ def _run_single(
     # Amendment count from lineage
     source_adjudication = _effective_source_adjudication(
         statute_id=statute_id,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         replay_result=master,
         replay_meta=replay_meta,
     )

@@ -47,7 +47,7 @@ def test_compile_facade_with_metadata_factory() -> None:
     facade = CompileFacade.with_metadata(
         bundle=CanonicalBundle(),
         finding_ledger=(),
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         graph=graph,  # ty:ignore[invalid-argument-type]
         strict_profile=profile,
         evidence_policy=registry,
@@ -69,7 +69,7 @@ def test_compile_facade_without_metadata_is_backward_compatible() -> None:
     facade = CompileFacade(
         bundle=CanonicalBundle(),
         finding_ledger=(),
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
     )
     assert facade.compile_metadata is None
 
@@ -79,7 +79,7 @@ def test_compile_facade_from_phase_result_backward_compatible() -> None:
     from lawvm.core.phase_result import PhaseResult
 
     pr = PhaseResult(output=CanonicalBundle())
-    facade = CompileFacade.from_phase_result(pr, replay_mode="finlex_oracle")
+    facade = CompileFacade.from_phase_result(pr, replay_mode="official_consolidation")
     assert facade.compile_metadata is None
 
 

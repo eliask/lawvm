@@ -522,7 +522,7 @@ def _diff_sync(
     address_filter: Optional[Tuple[str, str]],
     threshold: float,
     show_all: bool,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     show_compile_summary: bool = False,
     strict_profile: Optional["StrictProfile"] = None,
     show_text: bool = False,
@@ -636,7 +636,7 @@ def main(args) -> None:
     address_filter = _parse_address(getattr(args, "address", None))
     threshold = getattr(args, "threshold", 1.0)  # default: only show imperfect
     show_all = getattr(args, "all", False)
-    mode = getattr(args, "mode", "finlex_oracle")
+    mode = getattr(args, "mode", "official_consolidation")
     show_compile_summary = getattr(args, "compile_summary", False)
     use_strict = getattr(args, "strict", False)
     strict_profile = FINLAND_INGESTION_V1 if use_strict else None

@@ -101,7 +101,7 @@ class CompileFacade:
 
     replay_mode
         The materialization axis used.  Frontends own the vocabulary: Finland
-        uses ``"finlex_oracle"`` and ``"legal_pit"``; other jurisdictions use
+        uses ``"official_consolidation"`` and ``"legal_pit"``; other jurisdictions use
         whatever non-empty string their frontend declares.  Core does not
         interpret or validate the mode string — each frontend is responsible
         for validating its own mode values before constructing CompileFacade.
@@ -427,7 +427,7 @@ class CompileFacade:
 
         Args:
             pr: The top-level PhaseResult from the compilation pipeline.
-            replay_mode: The materialization axis (``"finlex_oracle"`` or
+            replay_mode: The materialization axis (``"official_consolidation"`` or
                 ``"legal_pit"``).
             strict_profile_name: Optional name of the StrictProfile applied
                 during compilation.  Stored for traceability only.

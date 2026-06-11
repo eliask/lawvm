@@ -187,7 +187,7 @@ def _replay_result_stub(
 def _compile_facade_with_replay(
     parent_id: str,
     *,
-    replay_mode: Literal["finlex_oracle", "legal_pit"] = "legal_pit",
+    replay_mode: Literal["official_consolidation", "legal_pit"] = "legal_pit",
     compile_mode: str = "strict",
     strict_profile: StrictProfile | None = None,
 ) -> tuple[ReplayResult, Any]:
@@ -220,7 +220,7 @@ def _compile_facade_with_replay(
 
 @pytest.fixture(scope="module")
 def replay_1987_990_finlex_oracle() -> ReplayResult:
-    return cast(ReplayResult, pinned_replay("1987/990", mode="finlex_oracle", quiet=True))
+    return cast(ReplayResult, pinned_replay("1987/990", mode="official_consolidation", quiet=True))
 
 
 @pytest.fixture(scope="module")
@@ -589,7 +589,7 @@ def test_compile_fi_facade_uses_publication_metadata_fallback_for_2025_78() -> N
                 message=r"compile_timelines: skipping op from 2025/78 .*",
                 category=UserWarning,
             )
-            facade = compile_fi_facade("2015/1480", replay_mode="finlex_oracle")
+            facade = compile_fi_facade("2015/1480", replay_mode="official_consolidation")
     except (OSError, RuntimeError) as exc:
         pytest.skip(f"Finlex archive unavailable in this environment: {exc}")
 
@@ -598,7 +598,7 @@ def test_compile_fi_facade_uses_publication_metadata_fallback_for_2025_78() -> N
 
 def test_replay_xml_preserves_letter_suffix_item_spacing_for_2014_346() -> None:
     try:
-        replay = pinned_replay("2014/346", mode="finlex_oracle", quiet=True)
+        replay = pinned_replay("2014/346", mode="official_consolidation", quiet=True)
     except (OSError, RuntimeError) as exc:
         pytest.skip(f"Finlex archive unavailable in this environment: {exc}")
     section = extract_ir_sections(replay.materialized_state.ir)["section:1"]
@@ -650,7 +650,7 @@ def test_replay_xml_keeps_2008_342_section_21_sparse_tail_unreattached_without_a
 
 
 def test_replay_xml_keeps_1967_550_section_2_sparse_insert_on_fifth_moment() -> None:
-    replay = pinned_replay("1967/550", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("1967/550", mode="official_consolidation", quiet=True)
     section = extract_ir_sections(replay.materialized_state.ir)["chapter:1/section:2"]
 
     subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
@@ -668,7 +668,7 @@ def test_replay_xml_places_2019_371_section_159_in_final_container_frame() -> No
     """2019/371 preserves §159 text under the final replay and materialized frame."""
     replay = pinned_replay(
         "2017/320",
-        mode="finlex_oracle",
+        mode="official_consolidation",
         quiet=True,
         strict_johto_temporal=False,
     )
@@ -1370,7 +1370,7 @@ def test_compile_fi_facade_returns_native_finland_facade(monkeypatch) -> None:
 def test_compile_fi_facade_routes_warn_projection_rows_to_observations(monkeypatch) -> None:
     source_adjudication = SimpleNamespace(
         statute_id="2009/205",
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         cutoff_date="",
         oracle_version_amendment_id="",
         oracle_suspect="",
@@ -1383,7 +1383,7 @@ def test_compile_fi_facade_routes_warn_projection_rows_to_observations(monkeypat
     def fake_replay_xml(
         parent_id: str,
         *,
-        mode: str = "finlex_oracle",
+        mode: str = "official_consolidation",
         compiled_ops_out=None,
         replay_meta_out=None,
         lo_ops_out=None,
@@ -1420,7 +1420,7 @@ def test_compile_fi_facade_routes_warn_projection_rows_to_observations(monkeypat
         fake_compile_artifacts_from_replay,
     )
 
-    facade = compile_fi_facade("2009/205", replay_mode="finlex_oracle")
+    facade = compile_fi_facade("2009/205", replay_mode="official_consolidation")
 
     assert [finding.kind for finding in facade.finding_ledger if finding.role == "observation"] == [
         "text_duplication_warning"
@@ -2209,7 +2209,7 @@ def test_replay_xml_exposes_replay_time_projection_rows_without_explicit_sink() 
 
 def test_replay_xml_1974_16_keeps_sparse_override_without_prior_law_tail_repair() -> None:
     """Current replay keeps the sparse override text instead of inferring prior-law tail repair."""
-    replay = pinned_replay("1974/16", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("1974/16", mode="official_consolidation", quiet=True)
     replay_text = replay.serialize_text()
 
     assert "vähintään yhden hehtaarin peltoa käsittävällä tilalla" not in replay_text
@@ -2217,7 +2217,7 @@ def test_replay_xml_1974_16_keeps_sparse_override_without_prior_law_tail_repair(
 
 
 def test_replay_xml_matches_current_oracle_order_for_1987_990_section_55_second_moment() -> None:
-    replay = pinned_replay("1987/990", mode="finlex_oracle", quiet=True, strict_johto_temporal=False)
+    replay = pinned_replay("1987/990", mode="official_consolidation", quiet=True, strict_johto_temporal=False)
     section = extract_ir_sections(replay.materialized_state.ir)["chapter:8/section:55"]
 
     subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
@@ -2273,7 +2273,7 @@ def test_replay_xml_matches_current_oracle_text_for_1987_990_section_73(
 
 
 def test_replay_xml_preserves_2010_1020_johdanto_order() -> None:
-    replay = pinned_replay("1998/28", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("1998/28", mode="official_consolidation", quiet=True)
     sections = extract_ir_sections(replay.materialized_state.ir)
     section_20_text = irnode_to_text(sections["chapter:3/section:20"])
 
@@ -2292,7 +2292,7 @@ def test_replay_xml_preserves_2010_1020_johdanto_order() -> None:
 
 def test_compile_amendment_ops_leaves_1977_18_sparse_payload_unrepaired_before_lowering() -> None:
     """Sparse tail normalization is not applied as pre-lowering authority here."""
-    before = pinned_replay("1974/16", stop_before="1977/18", mode="finlex_oracle", quiet=True)
+    before = pinned_replay("1974/16", stop_before="1977/18", mode="official_consolidation", quiet=True)
     corpus = get_corpus_store()
     xml = corpus.read_source("1977/18")
     assert xml is not None
@@ -2317,7 +2317,7 @@ def test_compile_amendment_ops_leaves_1977_18_sparse_payload_unrepaired_before_l
         sec2_ops,
         muutos_tree,
         johto,
-        "finlex_oracle",
+        "official_consolidation",
         source_ref="1977/18",
         target_statute="1974/16",
     )
@@ -2332,7 +2332,7 @@ def test_compile_amendment_ops_leaves_1977_18_sparse_payload_unrepaired_before_l
 
 
 def test_normalize_and_compile_ops_parses_1980_1037_spaced_pykala_genitive_as_momentti_target() -> None:
-    before = pinned_replay("1974/16", stop_before="1980/1037", mode="finlex_oracle", quiet=True)
+    before = pinned_replay("1974/16", stop_before="1980/1037", mode="official_consolidation", quiet=True)
     corpus = get_corpus_store()
     xml = corpus.read_source("1980/1037")
     assert xml is not None
@@ -2356,7 +2356,7 @@ def test_normalize_and_compile_ops_parses_1980_1037_spaced_pykala_genitive_as_mo
 
 
 def test_normalize_and_compile_ops_parses_1979_1032_reinstated_subsection_insert() -> None:
-    before = pinned_replay("1974/16", stop_before="1979/1032", mode="finlex_oracle", quiet=True)
+    before = pinned_replay("1974/16", stop_before="1979/1032", mode="official_consolidation", quiet=True)
     corpus = get_corpus_store()
     xml = corpus.read_source("1979/1032")
     assert xml is not None
@@ -2383,7 +2383,7 @@ def test_normalize_and_compile_ops_parses_1979_1032_reinstated_subsection_insert
 
 
 def test_normalize_and_compile_ops_2017_571_keeps_doc_ill_subsection_insert_target() -> None:
-    before = pinned_replay("2002/1244", stop_before="2017/571", mode="finlex_oracle", quiet=True)
+    before = pinned_replay("2002/1244", stop_before="2017/571", mode="official_consolidation", quiet=True)
     corpus = get_corpus_store()
     xml = corpus.read_source("2017/571")
     assert xml is not None
@@ -2407,7 +2407,7 @@ def test_normalize_and_compile_ops_2017_571_keeps_doc_ill_subsection_insert_targ
 
 
 def test_normalize_and_compile_ops_2018_1330_keeps_late_grouped_insert_targets() -> None:
-    before = pinned_replay("2009/1599", stop_before="2018/1330", mode="finlex_oracle", quiet=True)
+    before = pinned_replay("2009/1599", stop_before="2018/1330", mode="official_consolidation", quiet=True)
     corpus = get_corpus_store()
     xml = corpus.read_source("2018/1330")
     assert xml is not None
@@ -2441,7 +2441,7 @@ def test_normalize_and_compile_ops_2018_1330_keeps_late_grouped_insert_targets()
 
 
 def test_replay_2009_1599_keeps_section_31_heading_despite_2023_280_sparse_payload() -> None:
-    replay = pinned_replay("2009/1599", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("2009/1599", mode="official_consolidation", quiet=True)
     sec31 = replay.state.find_section("31", "6")
     assert sec31 is not None
 
@@ -2633,7 +2633,7 @@ def test_strip_impossible_chapter_scope_for_bare_body_section_op_keeps_real_chap
 
 
 def test_normalize_and_compile_ops_1996_627_does_not_leak_parent_title_chapter_scope() -> None:
-    before = pinned_replay("1996/627", stop_before="2023/674", mode="finlex_oracle", quiet=True)
+    before = pinned_replay("1996/627", stop_before="2023/674", mode="official_consolidation", quiet=True)
     corpus = get_corpus_store()
     xml = corpus.read_source("2023/674")
     assert xml is not None
@@ -3636,5 +3636,5 @@ def test_compute_verdict_from_registry_uses_registry_descriptions() -> None:
 
 def test_replay_xml_2002_1290_does_not_crash_on_registered_item_like_normalization() -> None:
     """Replay should classify 2002/1290 without tripping unregistered payload-normalization findings."""
-    result = pinned_replay("2002/1290", mode="finlex_oracle", quiet=True, build_full_products=False)
+    result = pinned_replay("2002/1290", mode="official_consolidation", quiet=True, build_full_products=False)
     assert result is not None

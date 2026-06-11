@@ -919,7 +919,7 @@ def _rewrite_lo_op_source_expiry(
     an amendment amends only the *voimaantulosäännös* of the parent statute to
     extend all temporary sections' validity.
 
-    In ``finlex_oracle`` mode the parent-statute fallback clears the expires field
+    In ``official_consolidation`` mode the parent-statute fallback clears the expires field
     entirely (rather than updating it to the new date) so that oracle materialization
     stays anchored at the consolidation cutoff instead of reviving future text.
     """
@@ -957,17 +957,17 @@ def _rewrite_lo_op_source_expiry(
     # earlier than the new one.  This covers the case where all lo_ops carry
     # amendment IDs (not the parent statute ID) as their source.
     if parent_statute_id is not None and target_source_statute == parent_statute_id:
-        # In finlex_oracle mode clear the expires field so sections with extended
+        # In official_consolidation mode clear the expires field so sections with extended
         # validity appear at the 9999-12-31 materialization horizon.  In legal_pit
         # mode keep the real expiry date so point-in-time queries remain accurate.
-        new_expires = "" if replay_mode == "finlex_oracle" else expiry_iso
+        new_expires = "" if replay_mode == "official_consolidation" else expiry_iso
         for i, lo in enumerate(lo_ops_out):
             src = lo.source
             if src is None or not src.expires:
                 continue
             if _expiry_date_precedes_effective_date(expiry_date, src.effective):
                 continue
-            if replay_mode != "finlex_oracle" and src.expires >= expiry_iso:
+            if replay_mode != "official_consolidation" and src.expires >= expiry_iso:
                 continue
             target_path = list(lo.target.path)
             sec_label = next((v for k, v in reversed(target_path) if k == "section"), "")
@@ -1224,7 +1224,7 @@ def _rewrite_temporal_event_expiry(
     if parent_statute_id is None or target_source_statute != parent_statute_id:
         return False
 
-    new_expires = "" if replay_mode == "finlex_oracle" else expiry_iso
+    new_expires = "" if replay_mode == "official_consolidation" else expiry_iso
     for i, event in enumerate(temporal_events):
         source = event.source
         if source is None:
@@ -1232,7 +1232,7 @@ def _rewrite_temporal_event_expiry(
         event_expires = event.expires or source.expires
         if not event_expires:
             continue
-        if replay_mode != "finlex_oracle" and event_expires >= expiry_iso:
+        if replay_mode != "official_consolidation" and event_expires >= expiry_iso:
             continue
         if not _scope_matches(event):
             continue
@@ -2768,7 +2768,7 @@ from lawvm.finland.metadata import (  # noqa: E402
 
 def _resolve_applicable_amendment_records(
     parent_id: str,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     corpus: Optional[CorpusStore] = None,
     selector: ConsolidatedArtifactSelector | None = None,
 ) -> Tuple[List[Dict[str, object]], Optional[dt.date], Optional[str]]:
@@ -2803,7 +2803,7 @@ def _resolve_applicable_amendment_records(
         return eff_date or issue_date or min_date
 
     if mode == "legal_pit":
-        # Use oracle-version filtering (same amendment set as finlex_oracle)
+        # Use oracle-version filtering (same amendment set as official_consolidation)
         # but sort chronologically by effective date.  Derive PIT cutoff from
         # the oracle version's effective date — dateConsolidated (cutoff_date) can be
         # the ZIP packaging date, years after the actual oracle content PIT.
@@ -2846,7 +2846,7 @@ def _resolve_applicable_amendment_records(
                 _statute_id_sort_key(item[0]),
             ),
         )
-    elif mode == "finlex_oracle":
+    elif mode == "official_consolidation":
         applicable = dated_muutoslait
         if oracle_version_amendment_id is not None:
             version_key = _oracle_mode_sort_key(oracle_version_amendment_id)
@@ -4720,7 +4720,7 @@ def compile_amendment_ops(
     ops: List[AmendmentOp],
     muutos_tree: etree._Element,
     johto: str,
-    replay_mode: Literal["finlex_oracle", "legal_pit"],
+    replay_mode: Literal["official_consolidation", "legal_pit"],
     compiled_ops_out: Optional[List[Dict[str, object]]] = None,
     strict_profile: Optional[StrictProfile] = None,
     *,
@@ -5250,7 +5250,7 @@ def apply_ops_to_tree(
     amendment_issue_date: Optional[dt.date],
     amendment_effective_date: Optional[dt.date],
     amendment_expiry_date: Optional[dt.date],
-    replay_mode: Literal["finlex_oracle", "legal_pit"],
+    replay_mode: Literal["official_consolidation", "legal_pit"],
     lo_ops_out: Optional[List[_LegalOperation]],
     failed_ops_out: Optional[List[FailedOp]],
     source_pathologies_out: Optional[List[SourcePathology]],
@@ -5960,7 +5960,7 @@ def process_muutoslaki(
     amendment_id: str,
     state: "ReplayState",
     ctx: "StatuteContext",
-    replay_mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle",
+    replay_mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     compiled_ops_out: Optional[List[Dict[str, object]]] = None,
     lo_ops_out: Optional[List[_LegalOperation]] = None,
     parent_id: str = "",
@@ -7268,7 +7268,7 @@ from lawvm.finland.post_process import post_process_tree  # noqa: E402  (re-expo
 
 def replay_xml(
     parent_id: str,
-    mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle",
+    mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     compiled_ops_out: Optional[List[Dict[str, object]]] = None,
     replay_meta_out: Optional[Dict[str, object]] = None,
     lo_ops_out: Optional[List[_LegalOperation]] = None,
@@ -7288,7 +7288,7 @@ def replay_xml(
 
     `mode` controls the meaning of "applicable":
 
-    - `finlex_oracle`: try to reproduce Finlex consolidated XML for benchmarking.
+    - `official_consolidation`: try to reproduce Finlex consolidated XML for benchmarking.
       Amendment inclusion is based on the consolidated artifact/version conventions.
     - `legal_pit`: apply a strict point-in-time rule based on legal effective dates.
 
@@ -7698,7 +7698,7 @@ def replay_xml(
             lineage=plan.amendment_records,
         )
         oracle_materialize_as_of: Optional[str] = None
-        if mode == "finlex_oracle":
+        if mode == "official_consolidation":
             # oracle_cutoff_iso is the ordering_date of the oracle version
             # (effective_date if present, else issue_date).  It represents the
             # date up to which the oracle XML was consolidated.
@@ -7762,7 +7762,7 @@ def replay_xml(
                 # amendment itself is a pure future-effective repeal-only act,
                 # Finlex may still expose the future repeal merely as editorial
                 # notice at the consolidated cutoff instead of applying it in
-                # the selected XML. In that family, keep finlex_oracle
+                # the selected XML. In that family, keep official_consolidation
                 # materialization anchored to the cutoff rather than the later
                 # effective date (e.g. 2022/213 <- 2026/45).
                 if (
@@ -7838,15 +7838,15 @@ def replay_xml(
             materialize_as_of = as_of
         elif mode == "legal_pit" and plan.cutoff_date is not None:
             materialize_as_of = plan.cutoff_date.isoformat()
-        elif mode == "finlex_oracle" and oracle_materialize_as_of is not None:
+        elif mode == "official_consolidation" and oracle_materialize_as_of is not None:
             materialize_as_of = oracle_materialize_as_of
-        elif mode == "finlex_oracle" and plan.cutoff_date is not None:
+        elif mode == "official_consolidation" and plan.cutoff_date is not None:
             materialize_as_of = plan.cutoff_date.isoformat()
         else:
             materialize_as_of = "9999-12-31"
         expires_as_of = ""
-        if mode == "finlex_oracle":
-            # finlex_oracle expiry horizon tracks oracle_materialize_as_of (which
+        if mode == "official_consolidation":
+            # official_consolidation expiry horizon tracks oracle_materialize_as_of (which
             # may have been extended to cover future kumotaan REPEAL dates).
             # Both as_of and expires_as_of use the same extended date so that
             # temporary sections expiring at or before the oracle date are

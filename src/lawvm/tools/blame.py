@@ -96,7 +96,7 @@ def _blame_sync(
     sid: str,
     address_filter: Optional[Tuple[str, str]],
     source_filter: Optional[str],
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
 ) -> None:
     compiled_ops: list = []
     master = replay_xml(sid, mode=mode, quiet=True, compiled_ops_out=compiled_ops)
@@ -160,7 +160,7 @@ def _parse_address(address: Optional[str]) -> Optional[Tuple[str, str]]:
 def main(args) -> None:
     address_filter = _parse_address(getattr(args, "address", None))
     source_filter = getattr(args, "source", None)
-    mode = getattr(args, "mode", "finlex_oracle")
+    mode = getattr(args, "mode", "official_consolidation")
 
     _blame_sync(
         sid=args.statute_id,

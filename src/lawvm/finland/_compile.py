@@ -224,7 +224,7 @@ def _detail_with_internal_replay_scope(
 def _effective_source_adjudication(
     *,
     parent_id: str,
-    replay_mode: Literal["finlex_oracle", "legal_pit"],
+    replay_mode: Literal["official_consolidation", "legal_pit"],
     replay_result: ReplayResult,
     replay_meta: Dict[str, object],
 ) -> SourceAdjudication | None:
@@ -704,7 +704,7 @@ def _compile_artifacts_from_replay(
     *,
     parent_id: str,
     replay_result: ReplayResult,
-    replay_mode: Literal["finlex_oracle", "legal_pit"] = "legal_pit",
+    replay_mode: Literal["official_consolidation", "legal_pit"] = "legal_pit",
     compile_mode: Literal["strict", "quirks"] = "strict",
     strict_profile: Optional[StrictProfile] = None,
     compiled_ops: Optional[List[Dict[str, object]]] = None,
@@ -826,7 +826,7 @@ def compile_fi_facade_from_replay(
     *,
     parent_id: str,
     replay_result: ReplayResult,
-    replay_mode: Literal["finlex_oracle", "legal_pit"],
+    replay_mode: Literal["official_consolidation", "legal_pit"],
     compile_mode: Literal["strict", "quirks"] = "strict",
     strict_profile: Optional[StrictProfile] = None,
     compiled_ops: List[Dict[str, object]],
@@ -877,7 +877,7 @@ def compile_fi_facade_from_replay(
 def compile_fi_facade(
     parent_id: str,
     *,
-    replay_mode: Literal["finlex_oracle", "legal_pit"] = "legal_pit",
+    replay_mode: Literal["official_consolidation", "legal_pit"] = "legal_pit",
     compile_mode: Literal["strict", "quirks"] = "strict",
     strict_profile: Optional[StrictProfile] = None,
 ):

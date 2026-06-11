@@ -33,7 +33,7 @@ def _render_tree(node: Any, *, depth: int = 0) -> list[str]:
 def build_replay_inspect_bundle(
     statute_id: str,
     section: str,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     *,
     chapter: Optional[str] = None,
     part: Optional[str] = None,

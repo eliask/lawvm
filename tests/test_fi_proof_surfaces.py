@@ -121,7 +121,7 @@ def test_finland_bench_run_evidence_surface_declares_agreement_only_boundary() -
         {
             "label": "demo",
             "timestamp": "2026-06-06T12:00",
-            "mode": "finlex_oracle",
+            "mode": "official_consolidation",
             "corpus_path": "data/finland/bench_corpus.csv",
             "run_path": "data/bench_runs/demo.csv",
             "history_path": "data/benchmark_history.csv",

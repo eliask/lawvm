@@ -113,7 +113,7 @@ def _section_diff_failed_finding(statute_id: str, exc: Exception) -> Dict[str, A
 def _project_one_statute(
     statute_id: str,
     amendment_count: int,
-    mode: str = "finlex_oracle",
+    mode: str = "official_consolidation",
 ) -> Dict[str, Any]:
     """Compute all projection rows for one statute.
 
@@ -144,7 +144,7 @@ def _project_one_statute(
     try:
         master = replay_xml(
             statute_id,
-            mode=cast(Literal["finlex_oracle", "legal_pit"], mode),
+            mode=cast(Literal["official_consolidation", "legal_pit"], mode),
             quiet=True,
             compiled_ops_out=compiled_ops,
             build_full_products=True,
@@ -422,7 +422,7 @@ def export_projections(
     corpus_path: Optional[str] = None,
     data_dir: str = ".tmp/projections",
     workers: int = 0,
-    mode: str = "finlex_oracle",
+    mode: str = "official_consolidation",
     limit: Optional[int] = None,
     use_parquet: bool = True,
     include_refs: bool = False,
@@ -648,7 +648,7 @@ def main(args: Any) -> None:
         corpus_path=getattr(args, "corpus", None),
         data_dir=getattr(args, "data_dir", ".tmp/projections"),
         workers=getattr(args, "workers", 0),
-        mode=getattr(args, "mode", "finlex_oracle"),
+        mode=getattr(args, "mode", "official_consolidation"),
         limit=getattr(args, "limit", None),
         include_refs=getattr(args, "include_refs", False),
         include_actors=getattr(args, "include_actors", False),

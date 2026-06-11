@@ -1013,7 +1013,7 @@ def materialize_pit_ex(
         expires_as_of: Separate expiry horizon for the ``v.expires`` check.
                       When empty, uses ``as_of``.
                       Use to split effective-date and expiry-date filtering —
-                      e.g. ``finlex_oracle`` mode uses effective=``9999-12-31``
+                      e.g. ``official_consolidation`` mode uses effective=``9999-12-31``
                       but expiry=oracle-PIT so temporary sections active at the
                       oracle snapshot date are correctly included.
         migration_events: Explicit lineage migrations to apply when projecting

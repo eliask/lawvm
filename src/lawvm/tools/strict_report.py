@@ -559,7 +559,7 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
         facade = compile_fi_facade_from_replay(
             parent_id=sid,
             replay_result=master,
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
             compiled_ops=compiled_ops,
             replay_meta=replay_meta,
             canonical_ops=canonical_ops,
@@ -569,7 +569,7 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
         elapsed = time.time() - t0
         source_adjudication = _effective_source_adjudication(
             statute_id=sid,
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
             replay_result=master,
             replay_meta=replay_meta,
         )
@@ -950,7 +950,7 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
 def _build_facade_for_statute(
     statute_id: str,
     *,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
 ) -> "Any":
     """Build a CompileFacade for one statute via Finland's native facade API."""
     from lawvm.finland.compile import compile_fi_facade
@@ -1086,7 +1086,7 @@ def main(args: Any) -> None:
         print(f"Run saved : {run_path}")
         return
 
-    mode = getattr(args, "mode", "finlex_oracle")
+    mode = getattr(args, "mode", "official_consolidation")
     show_facade = getattr(args, "facade", False)
     from lawvm.finland.compile import compile_fi_facade_from_replay
     from lawvm.finland.grafter import replay_xml

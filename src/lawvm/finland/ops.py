@@ -1508,7 +1508,7 @@ class ResolvedTargetScopeView:
 class ReplayProfile:
     """Immutable replay configuration for a single amendment pass."""
 
-    mode: Literal["finlex_oracle", "legal_pit"]
+    mode: Literal["official_consolidation", "legal_pit"]
     synthesize_repeal_placeholders: bool
     replace_same_numbered_section_insert: bool
     replace_same_numbered_container_insert: bool
@@ -1517,14 +1517,14 @@ class ReplayProfile:
 
 
 def get_replay_profile(
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     strict_profile: StrictProfile | None = None,
 ) -> ReplayProfile:
     """Return the canonical ReplayProfile for a given mode."""
     allows_context_dependent_anchor_resolution = (
         True if strict_profile is None else strict_profile.allows_context_dependent_anchor_resolution
     )
-    if mode == "finlex_oracle":
+    if mode == "official_consolidation":
         return ReplayProfile(
             mode=mode,
             synthesize_repeal_placeholders=True,
