@@ -675,7 +675,10 @@ def _load_multiple_choice_manifest_candidate_urls(
     if not archive.has(locator):
         return ()
     try:
-        payload = json.loads(archive.get(locator).decode("utf-8"))  # ty:ignore[unresolved-attribute]
+        raw = archive.get(locator)
+        if raw is None:
+            return ()
+        payload = json.loads(raw.decode("utf-8"))
     except (AttributeError, json.JSONDecodeError):
         return ()
     values = payload.get("candidate_urls") if isinstance(payload, dict) else None
