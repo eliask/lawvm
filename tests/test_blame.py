@@ -408,9 +408,11 @@ def test_specimen_blame_2014_1429_section_30_attributes_amendment(capsys) -> Non
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
-def test_specimen_status_2014_1429_section_30_op_unapplied(capsys) -> None:
-    """Live: §30 is op-attributed (2025/1382) under a statute break at 2025/1382
-    → terminal status op_unapplied_or_engine_error, attributed op still listed."""
+def test_specimen_status_2014_1429_section_30_modified_by_op(capsys) -> None:
+    """Live: 2014/1429 replays clean since the move-rider occupancy fix, so §30
+    is op-attributed (2025/1382 REPLACE) with no break — modified_by_op. This
+    pins both the healed timeline and the JSON attribution; break precedence
+    is covered by the synthetic tests above."""
     blame.main(
         Namespace(
             statute_id="2014/1429",
@@ -421,9 +423,10 @@ def test_specimen_status_2014_1429_section_30_op_unapplied(capsys) -> None:
         )
     )
     payload = _json.loads(capsys.readouterr().out)
+    assert payload["timeline_breaks"] == []
     [row] = payload["provisions"]
-    assert row["status"] == "op_unapplied_or_engine_error"
-    assert row["broken_at"] == "2025/1382"
+    assert row["status"] == "modified_by_op"
+    assert "broken_at" not in row
     assert row["last_op"]["source_statute"] == "2025/1382"
 
 
