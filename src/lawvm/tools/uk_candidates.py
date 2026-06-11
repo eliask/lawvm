@@ -4294,6 +4294,7 @@ def main(args: "argparse.Namespace") -> None:
                     residual_lowering_rejections: list[dict[str, Any]] = []
                     residual_authority_rejections: list[dict[str, Any]] = []
                     residual_execution_observations: list[dict[str, Any]] = []
+                    status = "residual comparison execution unavailable"
                     if residual_analysis_skipped:
                         status = "residual analysis budget skipped"
                     elif context.enacted_ir is not None and context.oracle_eids:

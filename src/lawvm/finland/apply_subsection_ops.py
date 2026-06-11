@@ -82,6 +82,7 @@ def _subsection_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _SubsectionAp
         is_temporary = temporary_signal_for_op(op)
         op_type = op.resolved_action_type
         target_section = _legacy_target_section_for_scope(scope, op.target_unit_kind)
+        target_paragraph = scope.target_paragraph
         target_item = scope.target_item
         target_special = _legacy_target_special_for_scope(scope, op.effective_target_special)
         mapped = op.slot_assignment.for_stable_op_id(op.op_id) if op.slot_assignment is not None else None
@@ -103,12 +104,13 @@ def _subsection_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _SubsectionAp
         has_exact_bound_payload = op.has_exact_bound_payload
         op_type = op.op_type
         target_section = op.target_section or ""
+        target_paragraph = op.target_paragraph
         target_item = op.target_item
         target_special = op.target_special
     return _SubsectionApplyView(
         op_type=op_type,
         target_section=target_section,
-        target_paragraph=scope.target_paragraph if isinstance(op, ResolvedOp) else op.target_paragraph,
+        target_paragraph=target_paragraph,
         target_item=target_item,
         target_special=target_special,
         legacy_source_statute_id=legacy_source_statute_id,

@@ -236,7 +236,6 @@ def extract_inline_corrections(
         return [], xml_bytes
 
     try:
-        from lxml import etree
         root = etree.fromstring(xml_bytes)
     except etree.XMLSyntaxError:
         return [], xml_bytes

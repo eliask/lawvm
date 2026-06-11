@@ -6096,6 +6096,7 @@ def extract_ee_ops(
             raw_new_text,
         )
         rewrite_witness = None
+        text_patch = None
         if action == "text_replace" and old_text and new_text:
             executable_new_text = new_text
             if re.search(r"\btäiendatakse\b", clean, re.IGNORECASE):
@@ -6116,6 +6117,7 @@ def extract_ee_ops(
                 executable_new_text,
                 source_family=_EE_NORMITEHNILINE_MARKUS_INSERT_AFTER_RULE,
             )
+            text_patch = _typed_text_replace_patch(old_text, executable_new_text)
             if old_text.startswith("(EL) "):
                 payload = replace(
                     payload,
@@ -6130,9 +6132,7 @@ def extract_ee_ops(
             action=_to_structural_action(action),
             target=LegalAddress(path=()),
             payload=payload,
-            text_patch=_typed_text_replace_patch(old_text, executable_new_text)
-            if action == "text_replace" and old_text and new_text
-            else None,
+            text_patch=text_patch,
             source=source,
             provenance_tags=(
                 clean[:200],
@@ -7396,8 +7396,7 @@ def extract_ee_ops(
             ))
             seen_sub_paths.add(sub_path)
             seq += 1
-        if companion_subsection_repeals:
-            from lawvm.estonia.ee_instruction_waist import make_subsection_selection_meta
+        from lawvm.estonia.ee_instruction_waist import make_subsection_selection_meta
 
         for extra_sect, extra_sub in companion_subsection_repeals:
             sub_path = (("section", extra_sect), ("subsection", extra_sub))

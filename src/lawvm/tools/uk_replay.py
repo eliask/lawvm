@@ -687,12 +687,10 @@ def main(args: "argparse.Namespace") -> None:
         print(f"error: archive not found at {db_path}", file=sys.stderr)
         sys.exit(1)
 
-    if fetch_missing:
-        from lawvm.uk_legislation.uk_prefetch import fetch_missing_for_statute
-
     n_provisions = 0
     timelines = {}
     n_ops = 0
+    ops: Sequence[object] = ()
     similarity: Optional[float] = None
     replay_compare_eid_count: int | None = None
     oracle_compare_eid_count: int | None = None
@@ -744,6 +742,8 @@ def main(args: "argparse.Namespace") -> None:
 
     with Farchive(db_path) as archive:
         if fetch_missing:
+            from lawvm.uk_legislation.uk_prefetch import fetch_missing_for_statute
+
             prefetch_report = fetch_missing_for_statute(
                 statute_id,
                 archive,

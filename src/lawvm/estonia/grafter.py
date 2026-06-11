@@ -8485,6 +8485,7 @@ def _ee_apply_op(
                     return tree_ops.replace_at(body, full_path, new_node)
                 # For section-level replacements, parse the payload into
                 # structured title + subsections to match oracle format.
+                sibling_subsection_nodes: list[IRNode] = []
                 if target_node.kind == IRNodeKind.SECTION:
                     note_text = _op_instruction_note_text(op)
                     from lawvm.estonia.ee_instruction_waist import (
@@ -8627,7 +8628,6 @@ def _ee_apply_op(
                     # Also strip \x01 bold-boundary sentinel from heading-only
                     # bold blocks that leaked through parse_html_op_items.
                     raw_text = payload.text.replace("\x01", "")
-                    sibling_subsection_nodes: list[IRNode] = []
                     inline_subsection_item_children: list[IRNode] = []
                     selected_item_payload_by_label = False
                     if (

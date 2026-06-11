@@ -85,19 +85,16 @@ def _load_refs_for_node(
     # We match on both columns to be permissive.
     safe_ref = node_ref.replace("'", "''")
     conditions: List[str] = []
-
-    if direction in ("forward", "both"):
-        fwd_cond = (
-            f"(source_statute_id = '{safe_ref}' OR "
-            f"source_provision_ref_str = '{safe_ref}' OR "
-            f"source_provision_ref_str LIKE '{safe_ref}/%')"
-        )
-    if direction in ("reverse", "both"):
-        rev_cond = (
-            f"(target_statute_id = '{safe_ref}' OR "
-            f"target_provision_ref_str = '{safe_ref}' OR "
-            f"target_provision_ref_str LIKE '{safe_ref}/%')"
-        )
+    fwd_cond = (
+        f"(source_statute_id = '{safe_ref}' OR "
+        f"source_provision_ref_str = '{safe_ref}' OR "
+        f"source_provision_ref_str LIKE '{safe_ref}/%')"
+    )
+    rev_cond = (
+        f"(target_statute_id = '{safe_ref}' OR "
+        f"target_provision_ref_str = '{safe_ref}' OR "
+        f"target_provision_ref_str LIKE '{safe_ref}/%')"
+    )
 
     if direction == "forward":
         conditions.append(fwd_cond)

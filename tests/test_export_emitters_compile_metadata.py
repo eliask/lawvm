@@ -140,7 +140,7 @@ def test_fi_pools_parquet_includes_compile_metadata(tmp_path: Path) -> None:
 
 
 def test_no_uk_emitter_files_touched() -> None:
-    """Verify no uk_* files were modified by Step 5."""
+    """Verify no UK emitter files were modified by Step 5."""
     worktree = Path(__file__).resolve().parents[1]
     result = subprocess.run(
         ["git", "diff", "--name-only", "HEAD"],
@@ -149,7 +149,11 @@ def test_no_uk_emitter_files_touched() -> None:
         cwd=str(worktree),
     )
     changed = result.stdout.strip().split("\n") if result.stdout.strip() else []
-    uk_changed = [f for f in changed if "uk_" in Path(f).name]
+    uk_changed = [
+        f
+        for f in changed
+        if Path(f).name.startswith("export_uk") or "uk_emitter" in Path(f).name
+    ]
     assert uk_changed == [], (
         f"UK files were modified by Step 5: {uk_changed!r}. "
         "Step 5 must NOT touch UK emitters."

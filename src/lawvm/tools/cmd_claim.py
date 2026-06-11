@@ -570,6 +570,8 @@ def cmd_list(args: object) -> int:
         for attest_obj in _load_all_attestations(store).values():
             subj = attest_obj.subject.artifact_id
             attestations_by_subject.setdefault(subj, []).append(attest_obj.attestation_kind)
+    else:
+        attestations_by_subject = {}
 
     rows = []
     for assertion in assertions:

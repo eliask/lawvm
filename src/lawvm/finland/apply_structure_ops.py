@@ -685,6 +685,7 @@ def _structure_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _StructureAppl
         target_address = op.resolved_target_address or (op_lo.target if op_lo is not None else None)
         source_effective = op_lo.source.effective if op_lo is not None and op_lo.source is not None else ""
         target_section = _legacy_target_section_for_scope(scope, op.target_unit_kind)
+        target_paragraph = scope.target_paragraph
         target_item = scope.target_item
         target_special = _legacy_target_special_for_scope(scope, op.effective_target_special)
         target_chapter = op.resolved_target_scope_chapter_label
@@ -697,6 +698,7 @@ def _structure_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _StructureAppl
         target_address = op.lo.target if op.lo is not None else None
         source_effective = op.lo.source.effective if op.lo is not None and op.lo.source is not None else ""
         target_section = op.target_section or ""
+        target_paragraph = op.target_paragraph
         target_item = op.target_item
         target_special = op.target_special
         target_chapter = op.target_chapter
@@ -706,7 +708,7 @@ def _structure_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _StructureAppl
         target_section=target_section,
         op_type=op_type,
         uncovered_body_recovery=op.uses_uncovered_body_recovery if isinstance(op, ResolvedOp) else op.uncovered_body_recovery,
-        target_paragraph=scope.target_paragraph if isinstance(op, ResolvedOp) else op.target_paragraph,
+        target_paragraph=target_paragraph,
         target_item=target_item,
         target_special=target_special,
         target_chapter=target_chapter,

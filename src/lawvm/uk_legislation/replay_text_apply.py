@@ -1418,7 +1418,7 @@ def _rewrite_after_anchor_to_end_text(
             break
         start = idx + len(anchor)
     else:
-        anchor_end = idx + len(anchor)
+        anchor_end = start
         joiner = (
             ""
             if text[:anchor_end].endswith((" ", "\t", "\n", "\r"))
@@ -4416,6 +4416,7 @@ class UKReplayTextApplyMixin:
                         start_idx = 0
                         start_len = 0
                     end_idx = -1
+                    end_end = -1
                     if start_idx != -1:
                         if end_occurrence > 0:
                             end_matches, used_word_end = _range_anchor_matches(full_text, end_text)

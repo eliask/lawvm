@@ -250,8 +250,8 @@ def _audit_action_operations(
                 representative_plan,
                 strict=strict,
             )
-        for op, plan in body_planned_ops:
-            rows.append(_audited_row(before_branch, after_branch, action_path, op, plan, result))
+            for op, plan in body_planned_ops:
+                rows.append(_audited_row(before_branch, after_branch, action_path, op, plan, result))
         companion_ops = tuple(op for op, _plan in planned_ops)
         for op, plan in metadata_planned_ops:
             rows.append(

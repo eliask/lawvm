@@ -88,12 +88,14 @@ def _item_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _ItemApplyView:
         source_statute = op.resolved_source_statute
         op_type = op.resolved_action_type
         target_section = _legacy_target_section_for_scope(scope, op.target_unit_kind)
+        target_paragraph = scope.target_paragraph
         target_item = scope.target_item
         target_special = _legacy_target_special_for_scope(scope, op.effective_target_special)
     else:
         source_statute = op.source_statute or ""
         op_type = op.op_type
         target_section = op.target_section or ""
+        target_paragraph = op.target_paragraph
         target_item = op.target_item
         target_special = op.target_special
     return _ItemApplyView(
@@ -101,7 +103,7 @@ def _item_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _ItemApplyView:
         source_statute=source_statute,
         target_unit_kind=op.target_unit_kind,
         target_section=target_section,
-        target_paragraph=scope.target_paragraph if isinstance(op, ResolvedOp) else op.target_paragraph,
+        target_paragraph=target_paragraph,
         target_item=target_item,
         target_special=target_special,
         post_repeal_item_shift_label=(

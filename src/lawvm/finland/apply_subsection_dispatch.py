@@ -77,6 +77,7 @@ def _prepare_subsection_routing(
     muutos_ir: Optional[IRNode],
     slot_assignment: "SubsectionSlotAssignmentResult | None",
 ) -> _SubsectionRoutingView:
+    raw_dispatch_op = dispatch_op.op if isinstance(dispatch_op, ResolvedOp) else dispatch_op
     if rop is not None:
         resolved_dispatch_op = rop
         scope = rop.resolved_target_scope_view
@@ -87,7 +88,6 @@ def _prepare_subsection_routing(
         subsection_view = _subsection_apply_view_for_op(rop)
         item_view = _item_apply_view_for_op(rop)
     else:
-        raw_dispatch_op = dispatch_op.op if isinstance(dispatch_op, ResolvedOp) else dispatch_op
         resolved_dispatch_op = raw_dispatch_op
         target_item = raw_dispatch_op.target_item
         target_section = raw_dispatch_op.target_section or ""

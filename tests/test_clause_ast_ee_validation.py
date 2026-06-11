@@ -253,12 +253,12 @@ class TestEEParserIntegration:
 
         for text in samples:
             ops = extract_ee_ops(text, src)
-        for op in ops:
-            node = legal_op_to_clause_node(op)
-            rt = clause_node_to_legal_operation(node, sequence=op.sequence)
-            assert rt is not None
-            assert rt.action == cast(Any, node).action, f"Action mismatch for {text[:40]}"
-            assert rt.target.path == op.target.path, f"Target mismatch for {text[:40]}"
+            for op in ops:
+                node = legal_op_to_clause_node(op)
+                rt = clause_node_to_legal_operation(node, sequence=op.sequence)
+                assert rt is not None
+                assert rt.action == cast(Any, node).action, f"Action mismatch for {text[:40]}"
+                assert rt.target.path == op.target.path, f"Target mismatch for {text[:40]}"
 
     def test_ee_text_replace_round_trip(self):
         """EE text_replace ops produce TextAmend nodes in ClauseAST."""

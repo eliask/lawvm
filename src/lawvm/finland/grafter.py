@@ -6511,6 +6511,8 @@ def process_muutoslaki(
         # not the sec1 fallback — see route_amendment docstring for rationale.
         _should_apply = acquisition.decision.should_apply
         _route_reason = acquisition.decision.route_reason
+        ops: list[AmendmentOp] = []
+        _vts_ops_enrich_done = False
         if not _should_apply:
             if _route_reason == "num_collision_skip":
                 _replay_print(
