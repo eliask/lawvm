@@ -1,7 +1,7 @@
 ---
 title: LawVM Certificate Schema v0 — Temporal Dossier and Checker Contract
 schema: lawvm.certificate.v0
-spec_version: 0.4
+spec_version: 0.4.1
 status: normative draft (spec-first; bundle writer and checker v0 follow it)
 ---
 
@@ -188,9 +188,29 @@ temporal-event dates (revive / commence / suspend) where materialized
 
 A fixed-term statute's lapse date is a real state boundary; a
 `change_dates_root` built only from amendment effective dates would let a
-projection silently miss the expired interval. The root is `SetRoot` (§3.1.1)
-over the ISO date strings. `min_date`/`max_date` are the extremes of that
-set and MUST lie inside `time_scope`.
+projection silently miss the expired interval. The root is
+
+```text
+change_dates_root = SetRoot("lawvm.change_dates.v0", <ISO date strings>)
+```
+
+— a **value set**: the set members are the raw `YYYY-MM-DD` strings
+themselves, NOT `LeafHash` digests. This is the one named exception to
+§3.1.1's digest-member rule: dates are atomic canonical values, an
+intermediate per-date `LeafHash` adds nothing, and the domain tag plus the
+fixed date format keep the members disjoint from every rendered-digest set
+(`sha256:` values can never be ISO dates). Duplicate dates are structurally
+impossible in a set. `min_date`/`max_date` are the extremes of that set and
+MUST lie inside `time_scope`.
+
+Descriptive note (checker authors — do not "fix" this): in the FI trace
+family a base act's own commencement is NOT a materialized change date.
+Base versions carry the `0000-00-00` sentinel (excluded above), the trace
+starts from an EMPTY base tree (trace spec §3), and the dossier's first
+committed boundary is the first materialized change date. The "enactment /
+commencement gate dates where materialized" line is therefore currently
+vacuous for this family — that is the engine's honest shape, not a missing
+boundary.
 
 ## 3. Hash discipline
 
@@ -247,7 +267,9 @@ SetRoot(domain, leaf_hashes) =
 ```
 
 where `ordered_leaf_hashes` / `leaf_hashes` are JSON arrays of rendered
-digest strings (`"sha256:..."`).
+digest strings (`"sha256:..."`) — except the explicitly named value sets
+(`change_dates_root`, §2.1), whose members are raw canonical value strings
+under their own domain tag.
 
 Rules:
 
@@ -281,7 +303,29 @@ findings.jsonl                SetRoot("lawvm.finding_ledger.v0", finding leaf ha
 source_unit_coverage.jsonl    SetRoot("lawvm.source_unit_coverage.v0", row leaf hashes)
 potential_operation_coverage  SetRoot("lawvm.potential_operation_coverage.v0", row leaf hashes)
 profile / policy manifests    LeafHash over the manifest object (§3.5)
+time_axis.change_dates_root   SetRoot("lawvm.change_dates.v0", ISO date strings)
+                              (value set, §2.1)
 ```
+
+Row-leaf domain rule (normative): where a leaf domain is not named
+explicitly (transition leaves §3.2, content-blob and state-root leaves in
+the companion spec, source-artifact leaves §3.2, projection-payload leaves
+§3.4), a row leaf of artifact family F uses F's schema id as its `LeafHash`
+domain — finding rows hash under `lawvm.finding_ledger.v0`, residual rows
+under `lawvm.residual_ledger.v0`, coverage rows under their artifact's
+schema id. The `:list`/`:set` suffixes keep the family's row leaves and its
+root in disjoint domains even though they share the schema-id string.
+
+Row-id rule (normative): content-derived row ids (`finding_id`,
+`residual_id`) are
+
+```text
+row_id = LeafHash("<artifact schema id>.id", row WITHOUT the id member)
+```
+
+computed before the id member is added; the ledger leaf then hashes the
+complete row INCLUDING its id. The `.id` sub-domain keeps id preimages
+disjoint from ledger leaves.
 
 Composite roots:
 
@@ -407,14 +451,41 @@ projection_payload   the consumer-facing seam/dump/viewer/packet row, exactly
 projection_wrapper   { projection_payload, certificate: <parentage block> }
 ```
 
-Only the payload is hashed:
+Only the payload is hashed, and the hash input is the payload's **hash
+view** — the payload minus its declared run-provenance members:
 
 ```text
-projection_hash            = LeafHash("lawvm.projection_payload.v0",
-                                      projection_payload)
-<family>_projection_root   = SetRoot("lawvm.projection.<family>.v0",
-                                     projection_hashes)
+hash_view(payload, family)  = payload with the family's declared
+                              hash_excluded_members (top-level) removed
+projection_hash             = LeafHash("lawvm.projection_payload.v0",
+                                       hash_view(projection_payload, family))
+<family>_projection_root    = SetRoot("lawvm.projection.<family>.v0",
+                                      projection_hashes)
 ```
+
+Run-provenance normalization rules:
+
+- Each projection family declares its `hash_excluded_members` — the
+  top-level payload member names removed before hashing — in the
+  projection-spec manifest (§3.5). For the seam family
+  (`lawvm.provision_state.v1` / 0.2) the list is normatively `["engine"]`:
+  the seam's `engine` block (`producer`, `build_id`, `git_commit`,
+  `git_dirty`, `repository`, `interface`) is run-environment provenance the
+  seam spec §3.1 itself deliberately excludes from `derived_state_hash`. A
+  projection hash that committed to it would churn `projection_hash`,
+  `projection_root`, and hence `certificate_root` on every engine commit or
+  dirty-state change without any semantic difference in the claim.
+- ONLY run-environment provenance may be excluded — members describing the
+  producing build/checkout/host, never a field that carries or scopes
+  asserted state. An emitter excluding a load-bearing member is INVALID.
+- Excluded members stay VISIBLE in the emitted artifact row: provenance
+  belongs in the envelope of the artifact, not in the claim hash. Like trace
+  display annotation (companion spec §5.1), excluded members are
+  uncommitted — drift in them never invalidates a bundle, and consumers
+  MUST NOT treat them as certified content.
+- The checker recomputes `projection_hash` from the bundle's own pinned
+  `hash_excluded_members` list (the manifest is committed under
+  `certificate_root`), never from a hardcoded per-family table.
 
 Projection-row order is not semantically meaningful in v0; all projection
 families use set roots.
@@ -451,9 +522,11 @@ Rules:
   §3 defines it. Certificate parentage MUST NOT change `derived_state_hash`
   — parentage is not among the seam's hashed fields, and adding it would be a
   breaking seam change. The projection payload is the full seam response
-  (including the `expiry` block on `expired`/`expiry_unverified` rows);
-  `derived_state_hash` stays the seam's internal commitment while
-  `projection_hash` commits to the whole payload.
+  (including the `expiry` block on `expired`/`expiry_unverified` rows and
+  the visible-but-unhashed `engine` block); `derived_state_hash` stays the
+  seam's internal commitment while `projection_hash` commits to the
+  payload's hash view (everything except the declared run-provenance
+  members).
 - In v0, `inclusion_path` MAY be a simple explicit path inside the bundle
   rather than an optimized Merkle proof. The contract — every projection is
   traceable to exactly one certificate root — is what is frozen, not the
@@ -473,9 +546,28 @@ policy_hash  = LeafHash("lawvm.interpretation_policy.v0",
 ```
 
 The projection-spec manifest (`policy/projection_specs.json`) lists, per
-projection kind, the `{schema, spec_version, spec_hash}` triple of §3.4. The
-checker contract manifest (`policy/checker_contract.json`) restates the
-envelope's `checker_contract` for bundle-local inspection.
+projection kind, the `{schema, spec_version, spec_hash,
+hash_excluded_members}` tuple of §3.4 — `hash_excluded_members` is the
+family's pinned run-provenance exclusion list and is REQUIRED (an empty
+array when nothing is excluded). The checker contract manifest
+(`policy/checker_contract.json`) restates the envelope's `checker_contract`
+for bundle-local inspection.
+
+Policy-manifest minimum (normative while the engine lacks a reified
+interpretation-policy object): the interpretation-policy manifest MUST
+contain `schema`, `policy_id`, and a `parameters` object pinning every
+interpretation-affecting parameter the emitter actually ran under
+(jurisdiction, query type, granularity, doctrine toggles such as fixed-term
+bounds, the version-selection rule). The profile manifest MUST bind the
+engine profile's field values plus the engine's profile fingerprint. A
+manifest that names a policy id without pinning its parameters is
+decorative and INVALID. Engine-side policy reification is an explicit
+checker-v0 NON-goal: checker v0 treats the pinned manifest as the
+authoritative declaration of what the policy meant for this bundle and
+verifies its hash integrity only — re-deriving rows under the policy is the
+job of the §7.2 family verifiers, keyed by (schema, spec_version), not of a
+reified policy object. Reification remains a v1+ candidate for emitters that
+want the manifest machine-generated rather than emitter-curated.
 
 The diagnostic registry manifest (`policy/diagnostic_registry.json`,
 `lawvm.diagnostic_registry.v0`) pins the registered diagnostic-code set the
@@ -515,10 +607,48 @@ A code rename is hash-affecting wherever the code appears in a hashed
 residual/projection row, so old bundles are checked under their own pinned
 registry — they are never rewritten.
 
+Bundle-local code registration (normative): the registry manifest is
+emitted from the engine's observation registry, but a bundle MAY also
+register **bundle-local codes** — codes with no engine-registry
+counterpart — when a spec-required residual kind has no engine code to
+carry it (the registered set MAY widen within v0). Rules:
+
+- A bundle-local code is a first-class registry row: full §3.5 row shape,
+  `role`, `allowed_residual_kinds`, and a `profile_disposition` entry for
+  the certificate's profile. No abbreviated form exists.
+- Certificate-layer codes use the `CERT.` namespace, keeping them disjoint
+  from engine lanes (`TEMPORAL.`, `TRACE.`, `PARSE.`, ...). The first
+  registered member is `CERT.SOURCE_ANCHOR_UNAVAILABLE` (role
+  `obligation`, allowed kind `source_anchor_unavailable`, disposition
+  `qualifies` under `fi.strict.current`): trace spec §7 and §5.4 REQUIRE
+  `kind=source_anchor_unavailable` residuals, and an anchor gap qualifies
+  the asserted state — it never reads as clean and never silently passes.
+- "Registered" still means registered in THIS bundle's manifest (above);
+  bundle-local codes are checkable exactly like engine codes.
+
+Registry-role exclusion (normative): the engine observation registry also
+carries `barrier` rows — strictness-taxonomy metadata that can never appear
+on a runtime Finding, and therefore never on a finding or residual row. The
+§3.5 `role` enum is exactly `observation | obligation | violation`; codes
+whose engine role cannot produce a runtime finding MUST NOT be registered
+in the manifest (they would be dead rows with no derivable disposition). A
+residual or finding row citing an excluded code is unregistered by
+definition and forces `blocked` (§5.4).
+
+Disposition authority (normative): the manifest's `profile_disposition`
+table is the ONLY authority the checker consults for a
+(diagnostic_code, profile_id) disposition. The emitter derives the table
+from engine policy at emission time (there is no general engine-side
+(code, profile) composer to call); the checker MUST NOT recompute
+dispositions from engine code, a live registry, or its own defaults — old
+bundles are checked under their own pinned table, exactly as for code
+registration.
+
 The checker verifies, per residual row: the `diagnostic_code` is registered
 here; the row's `kind` is in the code's `allowed_residual_kinds`; and the
 row's effect is the registry-derived one (§5.4 — `profile_effect` is
-derived, never author-set).
+derived, never author-set, where "registry-derived" means derived from THIS
+manifest's `profile_disposition` table).
 
 ## 4. Bundle layout
 
@@ -526,6 +656,7 @@ derived, never author-set).
 certificate.json
 sources/
   <raw_source_hash>.bin
+  source_artifacts.json
 policy/
   strict_profile.json
   interpretation_policy.json
@@ -564,6 +695,11 @@ projection family or optional artifact that is not emitted is an explicit
       "root": "sha256:...",
       "locator": "sources/"
     },
+    "source_artifact_index": {
+      "schema": "lawvm.source_artifact_index.v0",
+      "root": "sha256:...",
+      "locator": "sources/source_artifacts.json"
+    },
     "profile_manifest": {
       "schema": "lawvm.strict_profile.v0",
       "root": "sha256:...",
@@ -583,6 +719,11 @@ projection family or optional artifact that is not emitted is an explicit
       "schema": "lawvm.diagnostic_registry.v0",
       "root": "sha256:...",
       "locator": "policy/diagnostic_registry.json"
+    },
+    "checker_contract_manifest": {
+      "schema": "lawvm.checker_contract.v0",
+      "root": "sha256:...",
+      "locator": "policy/checker_contract.json"
     },
     "base_tree": {
       "schema": "lawvm.base_tree.v0",
@@ -640,6 +781,17 @@ preimage (§3.1.1), and the corresponding `projection_coverage` entry (§5.5)
 MUST be absent or zero-universe. Manifest `root` values MUST equal the
 corresponding `roots` members where both exist.
 
+The source-artifact index (`sources/source_artifacts.json`,
+`lawvm.source_artifact_index.v0`) is REQUIRED: it carries the §3.2
+SourceArtifact identity objects, sorted by `source_artifact_id`. Without it
+the bundle has no artifact from which checker step 2 can recompute the
+identity-object leaves — `source_bundle_root` commits to identity leaves,
+not raw bytes alone, and raw `.bin` blobs cannot reconstruct roles or
+locators. The index introduces NO new root: its manifest `root` IS
+`source_bundle_root` (the SetRoot over its rows' `LeafHash`
+("lawvm.source_artifact.v0", ...) leaves), so index and source bundle can
+never drift apart.
+
 ### 4.1 Coverage artifacts
 
 `coverage/` declares which source units were enumerated and which
@@ -661,6 +813,17 @@ A frontend that never emitted a candidate for a missed amendment is therefore
 still not caught by checker v0 — but it can no longer be hidden behind
 coverage files that claim otherwise, because the claimed coverage is itself
 committed and checkable for integrity.
+
+Granularity note (descriptive): declared coverage MAY be
+document-granularity — one `source_unit` row per source artifact with a
+whole-file byte anchor (`span = [0, len(bytes))`, `quote_hash` over the full
+file). That is an honest declared-coverage claim under this section's
+boundary: it commits to WHICH documents were enumerated, not to
+intra-document completeness. Intra-document unit enumeration is not yet an
+engine query surface; when it becomes one, emitters can narrow rows without
+a schema change (the row shape of §5.7 already carries sub-document
+anchors). Checker authors MUST treat unit granularity as emitter-declared,
+never inferred.
 
 ## 5. Residue honesty
 
@@ -792,10 +955,19 @@ Typed diagnostic codes are REQUIRED, not decorative:
 
   — plus the offending `source_text` (self-evidencing: typing a residual
   must never require re-running extraction) and the grammar-family
-  `rule_id`. Collapsing distinct failure classes (event-bound clauses,
-  duration forms, source-impossible dates, ambiguous anaphora) into one
-  untyped `expiry_unverified` bucket loses exactly the honesty the
-  fail-loud expiry design bought.
+  `rule_id` WHERE THE PRODUCING SURFACE CARRIES ONE. `rule_id` attribution
+  exists for successfully parsed bounds; a blocking diagnostic often fails
+  BEFORE a grammar family is selected (unparseable prose has no rule), and
+  the engine's fixed-term diagnostics accordingly carry no rule_id. The
+  field is then the empty string `""`, with fixed semantics: the producing
+  diagnostic surface carries no grammar-family attribution — NEVER a
+  placeholder for an omitted known value. `diagnostic_code` + `source_text`
+  remain the self-evidencing minimum; an empty `rule_id` next to an empty
+  `source_text` is still INVALID on `expiry_unverified` rows. Collapsing
+  distinct failure classes (event-bound clauses, duration forms,
+  source-impossible dates, ambiguous anaphora) into one untyped
+  `expiry_unverified` bucket loses exactly the honesty the fail-loud expiry
+  design bought.
 - Recognised prose that is NOT a whole-law expiry bound MUST NOT be emitted
   as `kind=expiry_unverified`. In the fixed-term-expiry lane, decree-set
   commencement (`TEMPORAL.DECREE_SET_COMMENCEMENT_UNRESOLVED`), start-only
@@ -812,8 +984,17 @@ Typed diagnostic codes are REQUIRED, not decorative:
   registered code matching the failure class, never a coarser one.
 - `kind=unsupported_scoped_expiry` rows carry
   `TEMPORAL.SCOPED_FIXED_TERM_EXPIRY_UNSUPPORTED`;
-  `kind=source_anchor_unavailable` rows carry the transition identity they
-  excuse (companion spec §7).
+  `kind=source_anchor_unavailable` rows carry
+  `CERT.SOURCE_ANCHOR_UNAVAILABLE` (a bundle-local certificate-layer code,
+  §3.5) plus the transition identity and uncovered source_ref they excuse
+  (companion spec §7).
+- Blocking ambiguity findings OUTSIDE the fixed-term-expiry lane (e.g.
+  `TIME.TRIGGER_COVERAGE_INCOMPLETE`, engine family `ambiguity`) map to
+  `kind=manual_frontier`: the engine cannot decide from the committed
+  sources and resolution awaits external/manual input — which is exactly
+  what `manual_frontier` names. They MUST NOT borrow `expiry_unverified`
+  (that kind is the fixed-term lane's) and no per-lane ambiguity kind is
+  minted until a second lane demonstrates a distinct semantics for one.
 - `profile_effect` is DERIVED, never author-set. The authoritative
   disposition for a (diagnostic_code, profile_id) pair is the
   `profile_disposition` table of the pinned diagnostic registry manifest
@@ -894,12 +1075,31 @@ names a derivation the checker recomputes from committed artifacts:
 all_address_interval_states   the universe is { (address, interval) :
                               address ∈ the covering state at any committed
                               change date (folded from the certified trace),
-                              interval ∈ consecutive committed boundary-date
-                              pairs intersecting time_scope, address active
-                              in that interval }
+                              interval ∈ the committed interval list below
+                              intersecting time_scope, address active in
+                              that interval }
 explicit_address_set          the universe is the certificate scope's
                               declared address list × the same intervals
 ```
+
+The interval list over the committed boundary dates `b₁ < ... < bₙ` is
+(normative):
+
+```text
+[bᵢ, bᵢ₊₁)  for i < n      (consecutive pairs, half-open)
+[bₙ, time_scope.to]        (terminal interval, closed at the declared
+                            scope end)
+```
+
+— n intervals, not n−1. Consecutive pairs alone would leave the state on
+and after the LAST boundary outside every row: for a fixed-term work whose
+`expires_on` is the last committed boundary, the expired state itself —
+the very state the boundary exists to mark — would have no universe member
+and a "full coverage" claim would silently exclude it. The terminal
+interval closes that hole; it never extends past `time_scope.to` (outside
+`time_scope` there is no claim, §1). In emitted universe encodings the
+terminal interval's end MAY be encoded as JSON `null`, which here means
+"through time_scope.to" — bounded by the declared scope, NEVER unbounded.
 
 The checker recomputes the universe size from the folded trace and the
 committed change-date set; `row_count + omitted_row_count` MUST equal the
@@ -1408,3 +1608,73 @@ for every checker MUST.
   all source bytes bundled, dump/graph projections inclusion-verified only
   unless verifier details exist, artifacts are "bundle writer fixtures" —
   never "checked certificates" — until checker v0 exists.
+
+### 11.4 Changes 0.4 → 0.4.1 (first-emission round)
+
+Resolutions of the spec-vs-engine mismatches the experimental bundle writer
+surfaced on its first real emission. Only experimental local fixtures exist
+— nothing has shipped externally — so this round MAY still change hash
+inputs (the writer changes in the same commit series and determinism holds);
+AFTER 0.4.1 the hash-input grammar is treated as frozen per §6.
+
+- Projection-payload hashing normalized (§3.4): `projection_hash` is the
+  `LeafHash` of the payload's HASH VIEW — the payload minus its family's
+  declared `hash_excluded_members` (run-environment provenance only; seam =
+  `["engine"]`, mirroring seam spec §3.1). Hashing the seam's engine block
+  (git_commit/git_dirty/repository) churned every `projection_hash` and
+  hence `certificate_root` per engine commit or dirty-state change with no
+  semantic difference. Excluded members stay visible in the artifact row
+  and are uncommitted; the exclusion list is pinned per family in the
+  projection-spec manifest, which gains the REQUIRED
+  `hash_excluded_members` member (§3.5).
+- Source-artifact index added (§4): `sources/source_artifacts.json`
+  (`lawvm.source_artifact_index.v0`) is REQUIRED, carries the §3.2 identity
+  objects sorted by `source_artifact_id`, and its manifest root IS
+  `source_bundle_root` (no new root; index and source bundle cannot drift).
+  The §4 manifest example also gains the `checker_contract_manifest` entry
+  the layout and §3.5 already required.
+- `change_dates_root` conflict resolved (§2.1, §3.1.1): a value set —
+  `SetRoot("lawvm.change_dates.v0", <raw ISO date strings>)` — the one
+  named exception to the digest-member rule. §2.1 also gains the
+  descriptive note that a base act's own commencement is not a
+  materialized change date in the FI trace family (0000-00-00 base
+  sentinel; dossiers start at the first materialized change date), so the
+  "commencement gate dates where materialized" line is currently vacuous
+  there by design.
+- Bundle-local diagnostic-code registration defined (§3.5): full-shape
+  registry rows, `CERT.` namespace for certificate-layer codes; first
+  member `CERT.SOURCE_ANCHOR_UNAVAILABLE` (obligation, kind
+  `source_anchor_unavailable`, qualifies) carried by §5.4
+  source-anchor-unavailable residuals.
+- Registry `barrier` exclusion stated (§3.5): engine registry rows whose
+  role can never produce a runtime finding MUST NOT be registered; the
+  §3.5 role enum stays observation/obligation/violation.
+- Disposition authority pinned (§3.5): the manifest's
+  `profile_disposition` table is the checker's ONLY disposition authority;
+  no engine-side recomputation.
+- Policy-manifest minimum stated (§3.5): without a reified engine policy
+  object the manifest MUST pin `policy_id` + the actual interpretation
+  parameters; engine reification is an explicit checker-v0 non-goal
+  (verifier dispatch is keyed by (schema, spec_version), §7.2).
+- Projection universe interval list pinned (§5.5): consecutive boundary
+  pairs PLUS the terminal `[bₙ, time_scope.to]` interval (n intervals, not
+  n−1) — the state on/after the last boundary, including fixed-term
+  expired state on `expires_on`, is inside the universe. Terminal end MAY
+  encode as `null` = "through time_scope.to", never unbounded.
+- `rule_id` semantics on `expiry_unverified` residuals fixed (§5.4):
+  required where the producing surface carries one; empty string `""` has
+  the fixed meaning "no grammar-family attribution exists" (diagnostics
+  often fail before a family is selected). `diagnostic_code` +
+  `source_text` remain the self-evidencing minimum.
+- Non-expiry blocking ambiguity findings map to `kind=manual_frontier`
+  (§5.4); no new ambiguity kind is minted on first occurrence.
+- Row-leaf domain and row-id rules made explicit (§3.1.1): family rows
+  hash under their artifact schema id; `finding_id`/`residual_id` =
+  `LeafHash("<schema>.id", row-without-id)`.
+- Declared coverage MAY be document-granularity (§4.1 note):
+  whole-file byte anchors are an honest declared-coverage claim;
+  intra-document unit enumeration is not yet an engine query surface and
+  unit granularity is emitter-declared.
+- Confirmed (no change): the §5.4 typed fixed-term blocking list already
+  carries `TEMPORAL.DURATION_COMMENCEMENT_UNRESOLVED` (added with the
+  duration-code split), matching seam spec 0.2 §6.1.

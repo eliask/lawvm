@@ -20,6 +20,7 @@ import pytest
 
 from lawvm.tools.certificate_bundle import (
     PROFILE_ID,
+    SEAM_HASH_EXCLUDED_MEMBERS,
     SOURCE_ANCHOR_UNAVAILABLE_CODE,
     BundleSelfCheckError,
     BundleSpecError,
@@ -29,6 +30,8 @@ from lawvm.tools.certificate_bundle import (
     compute_certificate_status,
     leaf_hash,
     list_root,
+    projection_hash_view,
+    projection_payload_hash,
     set_root,
     verify_bundle,
 )
@@ -75,6 +78,53 @@ def test_duplicate_leaves_forbidden() -> None:
         set_root("lawvm.x.v0", [a, a])
     with pytest.raises(BundleSpecError):
         list_root("lawvm.x.v0", [a, a])
+
+
+# ---------------------------------------------------------------------------
+# §3.4 projection-hash run-provenance normalization
+# ---------------------------------------------------------------------------
+
+
+def _seam_payloadish(engine: dict) -> dict:
+    return {
+        "schema": "lawvm.provision_state.v1",
+        "status": "selected",
+        "statute_id": "482/2024",
+        "hashes": {"derived_state_hash": "abc", "content_hash": "def"},
+        "engine": engine,
+    }
+
+
+def test_projection_hash_invariant_to_engine_provenance() -> None:
+    # §3.4: a commit/dirty-state change in the engine block MUST NOT move
+    # the projection leaf hash (and hence certificate_root).
+    clean = _seam_payloadish(
+        {"producer": "lawvm", "git_commit": "a" * 40, "git_dirty": "false", "repository": "LawVM"}
+    )
+    dirty = _seam_payloadish(
+        {"producer": "lawvm", "git_commit": "b" * 40, "git_dirty": "true", "repository": "wt"}
+    )
+    assert projection_payload_hash(clean, SEAM_HASH_EXCLUDED_MEMBERS) == projection_payload_hash(
+        dirty, SEAM_HASH_EXCLUDED_MEMBERS
+    )
+
+
+def test_projection_hash_sensitive_to_semantic_members() -> None:
+    payload = _seam_payloadish({"git_commit": "a" * 40})
+    changed = dict(payload, status="expired")
+    assert projection_payload_hash(payload, SEAM_HASH_EXCLUDED_MEMBERS) != projection_payload_hash(
+        changed, SEAM_HASH_EXCLUDED_MEMBERS
+    )
+
+
+def test_projection_hash_view_drops_only_excluded_members() -> None:
+    payload = _seam_payloadish({"git_commit": "a" * 40})
+    view = projection_hash_view(payload, SEAM_HASH_EXCLUDED_MEMBERS)
+    assert "engine" not in view
+    assert set(view) == set(payload) - {"engine"}
+    # The view is a hash input only; the original payload keeps the engine
+    # block visible (§3.4: provenance stays in the artifact, not the hash).
+    assert "engine" in payload
 
 
 # ---------------------------------------------------------------------------
@@ -387,16 +437,22 @@ def test_seam_rows_carry_parentage_and_payload_only_hash(bundle_482: Path) -> No
         for line in (bundle_482 / "projections/seam_rows.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+    specs = json.loads((bundle_482 / "policy/projection_specs.json").read_text(encoding="utf-8"))
+    excluded = specs["projections"]["seam"]["hash_excluded_members"]
+    assert excluded == ["engine"]
     for wrapper in wrappers:
         parentage = wrapper["certificate"]
         assert parentage["certificate_id"] == envelope["certificate_id"]
         assert parentage["projection_schema"] == "lawvm.provision_state.v1"
         assert parentage["projection_spec_version"] == "0.2"
-        # §3.4: only the payload is hashed; parentage never feeds the hash.
-        assert parentage["projection_hash"] == leaf_hash(
-            "lawvm.projection_payload.v0", wrapper["projection_payload"]
+        # §3.4: only the payload's hash view is hashed; parentage and the
+        # run-provenance engine block never feed the hash.
+        assert parentage["projection_hash"] == projection_payload_hash(
+            wrapper["projection_payload"], excluded
         )
         assert "certificate" not in wrapper["projection_payload"]
+        # The engine block stays VISIBLE on the emitted payload (§3.4).
+        assert "engine" in wrapper["projection_payload"]
         assert wrapper["certification_status"] in (
             "confirmed",
             "qualified",
