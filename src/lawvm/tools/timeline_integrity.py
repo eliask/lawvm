@@ -30,19 +30,17 @@ This module is the single classifier from replay findings to typed
     * ``APPLY.FAILED_OPERATION`` (a compiled op could not be applied; its
       target's post-amendment state is missing from the timeline).
 
-- ``scope="window"`` — interim fail-loud guard for a known-but-unmaterialized
-  temporary-twin window. The document-order compile fold never materializes a
-  temporary gap-filler's text inside its own in-force window (its slot is held
-  by a deferred-commencement twin), so a PIT query landing inside that window
-  would otherwise serve silently-wrong text (the permanent twin's, or absent).
-  Blocks queries on a matching address whose ``as_of`` falls INSIDE the window
-  (start-inclusive, end-exclusive — the kernel ``expires`` convention); other
-  addresses and other ``as_of`` are untouched (byte-identical). Classified
-  cause:
+- ``scope="window"`` — discovery/fallback evidence for a temporary-twin
+  window. The document-order compile fold may omit a temporary gap-filler's
+  text inside its own in-force window (its slot is held by a
+  deferred-commencement twin). ``provision-state`` first attempts to
+  materialize a proved legal-time interval from the compiled operation stream;
+  if that proof boundary is missing, this break blocks queries on a matching
+  address whose ``as_of`` falls INSIDE the window (start-inclusive,
+  end-exclusive — the kernel ``expires`` convention). Other addresses and
+  other ``as_of`` are untouched. Classified cause:
     * ``APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT`` → diagnostic code
-      ``TEMPORAL.WINDOW_UNMATERIALIZED``. This scope is EXPECTED TO BE
-      SHORT-LIVED: it is replaced by real legal-time window materialization;
-      consumers must not build logic on its permanence.
+      ``TEMPORAL.WINDOW_UNMATERIALIZED``.
 
 Deliberately NOT classified as breaks (recorded obligations whose effect is
 present and adjudicated): ``APPLY.RELABEL_SKIPPED`` (governed skip),
@@ -148,13 +146,12 @@ def timeline_breaks_from_findings(findings: Iterable[Any]) -> tuple[TimelineBrea
                 )
             )
         elif kind == DISJOINT_INSERT_KIND:
-            # Interim fail-loud guard for an unmaterialized temporary-twin
-            # window. The temporary gap-filler's text is never folded into its
-            # own in-force window (a deferred-commencement twin holds the slot
-            # in document order), so an in-window PIT query would silently serve
-            # the wrong text. Block exactly the window+address, not the statute.
+            # Discovery/fallback evidence for a temporary-twin window. The
+            # provision-state scheduler may consume this break by proving the
+            # exact temporary op payload/bounds/occupant; otherwise it remains
+            # a fail-loud window+address block.
             # ``effective`` is seeded to the window start so the break sorts
-            # and dedups like any other; window blocking uses the closed
+            # and dedups like any other; window blocking uses the half-open
             # interval below, not this one-sided date.
             window_start = str(detail.get("incoming_effective") or "")
             breaks.append(

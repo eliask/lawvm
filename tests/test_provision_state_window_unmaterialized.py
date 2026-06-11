@@ -1,18 +1,11 @@
-"""Window-unmaterialized seam guard (TEMPORAL.WINDOW_UNMATERIALIZED).
+"""Temporary-twin window scheduler and fallback guard.
 
-Interim fail-loud guard for known-but-unmaterialized temporary-twin windows.
-A Finnish twin-law split inserts the SAME section twice: a permanent law with a
-deferred-commencement and a temporary gap-filler for the gap window. The
-document-order compile fold never materializes the temporary twin's text inside
-its own window (the deferred twin holds the slot), so an in-window PIT query
-would otherwise serve silently-wrong text. The apply layer records this as a
-non-blocking ``APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT`` finding; the seam
-classifies it into a ``scope="window"`` TimelineBreak and blocks queries that
-land on the affected address INSIDE the closed window with status
-``timeline_unverified``.
-
-This guard is expected to be SHORT-LIVED (replaced by real window
-materialization); consumers must not build logic on its permanence.
+Finnish twin laws can insert the same section twice: a permanent law with a
+deferred commencement and a temporary gap-filler for the interim window. Stage 0
+classified the apply observation as ``TEMPORAL.WINDOW_UNMATERIALIZED`` and
+blocked in-window reads. Stage 1 keeps that as the fallback when proof is
+missing, but materializes a temporary ``ProvisionVersion`` when the compiled op,
+window bounds, and deferred occupant agree exactly.
 """
 
 from __future__ import annotations
@@ -362,6 +355,34 @@ def test_live_twin_window_query_is_materialized(provision, as_of, window_source)
     assert schedule["scheduler"] == "temporal_write_interval_stage_1"
     assert schedule["deltas"][0]["diagnostic_code"] == WINDOW_UNMATERIALIZED_CODE
     assert schedule["deltas"][0]["interval"]["source_work_id"] == window_source
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_live_78c_twin_window_boundaries() -> None:
+    from lawvm.provision_state import resolve_provision_state
+
+    cases = [
+        ("2022-12-31", "absent", None, None, False),
+        ("2023-01-01", "selected", "temporary", "2022/1282", True),
+        ("2023-06-30", "selected", "temporary", "2022/1282", True),
+        ("2023-07-01", "selected", "permanent", "2022/1281", False),
+    ]
+    for as_of, status, variant_kind, source_statute, has_schedule in cases:
+        payload = resolve_provision_state(
+            statute_id="2010/1326",
+            provision="section:78c",
+            as_of=as_of,
+            query_type="in_force",
+        )
+        assert payload["status"] == status, as_of
+        if variant_kind is None:
+            assert payload["version"] is None
+            assert payload["source"] is None
+        else:
+            assert payload["version"]["variant_kind"] == variant_kind, as_of
+            assert payload["source"]["statute_id"] == source_statute, as_of
+        assert ("temporal_schedule" in payload) is has_schedule, as_of
+        assert "timeline_integrity" not in payload, as_of
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")

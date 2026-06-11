@@ -68,7 +68,7 @@ def test_provision_state_response_exposes_text_hash_and_temporal_pin() -> None:
     )
 
     assert payload["schema"] == "lawvm.provision_state.v1"
-    assert payload["spec_version"] == "0.2"
+    assert payload["spec_version"] == "0.3"
     assert payload["status"] == "selected"
     assert payload["resolved_address"]["text"] == "chapter:1/section:1"
     assert payload["address_match"]["mode"] == "unique_suffix"
@@ -625,7 +625,7 @@ def test_public_resolve_provision_state_reports_unsupported_jurisdiction_without
     )
 
     assert payload["schema"] == "lawvm.provision_state.v1"
-    assert payload["spec_version"] == "0.2"
+    assert payload["spec_version"] == "0.3"
     assert payload["status"] == "unsupported_jurisdiction"
     assert payload["supported_jurisdictions"] == ["fi"]
 
@@ -692,7 +692,7 @@ def test_public_resolve_provision_state_rejects_finnish_prose_selector_before_re
     )
 
     assert payload["status"] == "invalid_address"
-    assert payload["spec_version"] == "0.2"
+    assert payload["spec_version"] == "0.3"
     assert payload["diagnostic"]["code"] == "FI_PROVISION_SELECTOR_UNSUPPORTED_PROSE_NOTATION"
     assert payload["diagnostic"]["suggestions"] == ["section:127a"]
     assert payload["source_locator_status"] == "unavailable_invalid_provision"

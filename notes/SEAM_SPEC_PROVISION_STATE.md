@@ -1,6 +1,6 @@
 ---
 title: LawVM Provision-State Seam — Consumer Contract
-spec_version: 0.2
+spec_version: 0.3
 status: draft
 schema: lawvm.provision_state.v1
 ---
@@ -42,7 +42,7 @@ NOT:
 
 Every response is a JSON object carrying `schema`, `spec_version`,
 `jurisdiction`, `statute_id`, `status`, and the echoed `query`. The
-`spec_version` field is the seam contract version (`"0.2"` for this document).
+`spec_version` field is the seam contract version (`"0.3"` for this document).
 The `status` field is the primary control signal.
 
 ### 2.1 Top-level statuses
@@ -59,7 +59,7 @@ The `status` field is the primary control signal.
 | `unsupported_jurisdiction` | `jurisdiction` not in supported set (`["fi"]`). |
 | `expired` | (since 0.2) A whole-statute fixed-term validity bound has lapsed at `as_of`. `version` is null, `text.available=false`; top-level `valid_until` (inclusive) and `expires` (exclusive) dates plus an `expiry` provenance block are present (§6.1). |
 | `expiry_unverified` | (since 0.2) A whole-law fixed-term expiry clause was recognised on the governing version but its validity end could not be determined (unparseable date, conflicting bounds, or ambiguous anaphoric year). **Blocking**: `version` is null and the `expiry` block carries the blocking diagnostic code. Never read as confirmed-live. |
-| `timeline_unverified` | (since 0.2.x, §7.3/§7.4) The replayed timeline this query runs over carries break evidence governing at `as_of` — e.g. an occupancy-contract violation at amendment X, a failed op targeting the queried provision, or an unmaterialized temporary-twin window (`TEMPORAL.WINDOW_UNMATERIALIZED`, §7.4). **Blocking**: `version` is null, `text.available=false`; top-level `timeline_broken_at` `{amendment_id, diagnostic_code}` plus a `timeline_integrity` block enumerate the typed breaks. Never read as a legal fact — neither presence NOR absence of the provision is asserted. |
+| `timeline_unverified` | (since 0.2.x, §7.3; narrowed in 0.3 for proved temporary-twin windows, §7.4) The replayed timeline this query runs over carries break evidence governing at `as_of` — e.g. an occupancy-contract violation at amendment X, a failed op targeting the queried provision, or a temporary-twin window whose payload, bounds, or deferred occupant cannot be proved. **Blocking**: `version` is null, `text.available=false`; top-level `timeline_broken_at` `{amendment_id, diagnostic_code}` plus a `timeline_integrity` block enumerate the typed breaks. Never read as a legal fact — neither presence NOR absence of the provision is asserted. |
 
 Consumers MUST treat any status other than `selected` as "no asserted
 text-state". In particular `address_not_found`, `ambiguous_address`, and
@@ -210,6 +210,10 @@ fields, in this nesting:
   must notice that the statute's timeline is broken even when the pre-break
   answer is servable. Responses without relevant break evidence hash EXACTLY
   as before — the members are absent, not null.
+- `temporal_schedule` — (since 0.3, §7.4) present IFF a proved legal-time
+  scheduler interval was materialized for the selected version. It is an
+  evidence/control block and is excluded from `derived_state_hash`; the
+  selected version metadata and `content_hash` carry the hashed state change.
 
 Canonical encoding: `json.dumps(..., ensure_ascii=True, sort_keys=True,
 separators=(",", ":"))` then `sha256` of the UTF-8 bytes.
@@ -511,7 +515,7 @@ as a semantic output change for those rows (canary diffs), exactly like the
 behavior; responses for statutes without break evidence are byte-identical
 either way.
 
-### 7.4 Changes within 0.2: window-unmaterialized guard (`TEMPORAL.WINDOW_UNMATERIALIZED`)
+### 7.4 Changes 0.2 → 0.3: temporary-twin legal-time scheduler
 
 Finnish twin laws split a reform into a permanent law with a deferred section
 commencement and a temporary gap-filler law that inserts the SAME section for
@@ -524,47 +528,52 @@ situation and records a non-blocking observation
 (`APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT`,
 `rule_id="temporally_disjoint_twin_insert"`).
 
-Since 0.2.x that observation is classified into a third TimelineBreak scope:
+In 0.2.x that observation was exposed as a fail-loud
+`TEMPORAL.WINDOW_UNMATERIALIZED` break. In 0.3 the seam keeps the same
+diagnostic as a discovery signal, but attempts a narrow legal-time scheduler
+splice before answering:
 
-- **window scope** (`APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT` → diagnostic
-  code `TEMPORAL.WINDOW_UNMATERIALIZED`): blocks queries whose target matches
-  the temporary insert's address AND whose `as_of` falls INSIDE the temporary
-  window. Blocked queries return `status="timeline_unverified"` with the typed
-  `timeline_broken_at`/`timeline_integrity` members, exactly like the other
-  scopes (`version` null, `text.available=false`). **Semantics:** neither
-  presence nor absence of the provision is asserted inside an unmaterialized
-  window — the seam refuses to answer rather than serve the wrong twin's text.
+- **Proved scheduler path.** If the compiled `LegalOperation` stream contains
+  exactly one same-slot operation from the temporary act, with an `IRNode`
+  payload, matching `effective` and `expires` bounds, and the existing timeline
+  contains the deferred permanent occupant at `occupant_effective`, the seam
+  appends a `variant_kind="temporary"` `ProvisionVersion` for the half-open
+  interval. In-window PIT queries then return `status="selected"` with the
+  temporary text.
 
-- **Scoping.** This is window+address-scoped, NOT a statute-wide break: only
-  the affected address inside its window is blocked. Queries on other addresses
-  of the same statute, or on the same address OUTSIDE the window, hash
-  byte-identically to the no-break baseline. Unlike statute/address breaks
-  (whose warning marker stays visible for non-governing `as_of`), a window
-  break is a localized claim about a single bounded interval and drops out
-  entirely outside its window — surfacing a non-governing window marker would
-  be a false positive.
+- **Fail-loud fallback.** If target exactness, source id, payload, bounds, or
+  deferred occupant agreement is missing or ambiguous, the scheduler refuses to
+  splice. The original window break remains and the query returns
+  `status="timeline_unverified"` with `timeline_broken_at` /
+  `timeline_integrity`, exactly as under 0.2.x. The seam never invents a
+  temporary version from the diagnostic alone.
+
+- **Scoping.** The scheduler is window+address-scoped, NOT statute-wide. Queries
+  on other addresses of the same statute, or on the same address outside the
+  half-open window, remain byte/hash-identical to the no-scheduler baseline
+  except for the global `spec_version` contract marker. Outside-window window
+  diagnostics still drop out entirely.
 
 - **Bounds are start-inclusive, end-exclusive** (`incoming_effective <= as_of
   < incoming_expires`), matching the kernel `expires` convention (§2.2: a
   version is inactive ON its expiry date). On `incoming_expires` itself the
-  deferred twin commences and the fold-materialized permanent text is correct,
-  so the guard lifts exactly there.
+  deferred twin commences and the fold-materialized permanent text is selected.
 
-- **Self-evidencing.** The `timeline_integrity` break record carries a `window`
-  object (`start`, `end`, `bounds: "start_inclusive_end_exclusive"`,
-  `source_statute` = the temporary act, `occupant_source_statute` +
-  `occupant_effective` = the deferred twin holding the slot, `rule_id`) so a
-  consumer knows WHICH temporary act's window is unmaterialized without
-  reading our code.
+- **Self-evidencing.** Selected in-window responses include top-level
+  `temporal_schedule` with `scheduler="temporal_write_interval_stage_1"`,
+  `hash_role="excluded_from_derived_state_hash"`, and one or more typed
+  `TemporalScheduleDelta` rows. Each delta carries the diagnostic code,
+  occupant source/effective date, and an interval with `write_id`, `op_id`,
+  `fold_sequence`, `target_address`, `action`, `effective`, `expires`,
+  `enacted`, `variant_kind`, `payload_hash`, `source_work_id`,
+  `source_locator`, `receipt_id`, `origin_rule_id`, and
+  `provenance_findings`.
 
-- **Expected to be SHORT-LIVED.** This is an interim fail-loud guard. It is
-  replaced by real legal-time window materialization (a scheduler that folds
-  the temporary twin's text into its own window); once that lands, in-window
-  queries serve the correct temporary text and this status disappears.
-  Consumers MUST NOT build logic on the permanence of
-  `TEMPORAL.WINDOW_UNMATERIALIZED` — treat it, like every non-`selected`
-  status, as "no asserted text-state". Rollback is the same flag,
-  `LAWVM_ENABLE_TIMELINE_INTEGRITY_SURFACING=0`.
+- **Versioning.** This is `spec_version=0.3` because affected rows changed from
+  fail-loud `timeline_unverified` to `selected` text-state when the proof
+  boundary is satisfied. Consumers that pinned 0.2.x window rows must rerun
+  their canaries. The diagnostic code remains visible inside
+  `temporal_schedule.deltas[*].diagnostic_code` for traceability.
 
 <!--
 CODE-VS-NOTES DISAGREEMENTS (code wins, flagged per task instructions):

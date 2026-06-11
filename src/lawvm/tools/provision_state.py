@@ -35,7 +35,7 @@ from lawvm.tools.timeline_integrity import (
 )
 
 SCHEMA = "lawvm.provision_state.v1"
-SPEC_VERSION = "0.2"
+SPEC_VERSION = "0.3"
 DUMP_SCHEMA = "lawvm.dump.v1"
 
 _FI_PROSE_SECTION_RE = re.compile(r"^\s*(?P<number>\d+)\s*(?P<letter>[A-Za-z])?\s*§\s*$")
