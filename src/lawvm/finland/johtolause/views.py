@@ -51,7 +51,7 @@ _HIDDEN_KINDS: frozenset[str] = frozenset({"qualifier", "punct"})
 # (sentinel_cat is stored in detail["sentinel_cat"])
 
 
-def _sentinel_token_for(kind: str, detail: dict | None = None) -> Token | None:
+def _sentinel_token_for(kind: str, detail: dict[str, object] | None = None) -> Token | None:
     """Create a sentinel Token for an annotation kind, or None for hidden kinds."""
     if kind in _HIDDEN_KINDS:
         return None

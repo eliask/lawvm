@@ -226,7 +226,7 @@ def build_amendment_index(
                 )
                 continue
             root = etree.fromstring(xml_data)
-            for ref_elem in cast(list, root.xpath('.//*[local-name()="amendedBy"]//*[local-name()="ref"]')):
+            for ref_elem in cast(list[etree._Element], root.xpath('.//*[local-name()="amendedBy"]//*[local-name()="ref"]')):
                 href = ref_elem.get('href', '')
                 m = REF_PATTERN.search(href)
                 if m:

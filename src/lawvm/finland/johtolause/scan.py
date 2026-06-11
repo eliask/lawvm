@@ -80,7 +80,7 @@ class Annotation:
     kind: str
     span: Span
     sentinel_cat: str
-    detail: Optional[dict] = None
+    detail: Optional[dict[str, object]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -1418,7 +1418,23 @@ def apply_annotations_with_jolloin_pairs(
             if jm_ann_idx < len(jolloin_anns_v):
                 ann = jolloin_anns_v[jm_ann_idx]
                 if ann.detail and ann.detail.get("renumber_pairs"):
-                    jolloin_pair_map[pos] = ann.detail["renumber_pairs"]
+                    pairs_raw = ann.detail["renumber_pairs"]
+                    if isinstance(pairs_raw, list):
+                        pairs: list[tuple[str, str, str]] = []
+                        for item in pairs_raw:
+                            if isinstance(item, tuple) and len(item) == 3:
+                                old_label = item[0]
+                                new_label = item[1]
+                                target_label = item[2]
+                                if not (
+                                    isinstance(old_label, str)
+                                    and isinstance(new_label, str)
+                                    and isinstance(target_label, str)
+                                ):
+                                    continue
+                                pairs.append((old_label, new_label, target_label))
+                        if pairs:
+                            jolloin_pair_map[pos] = pairs
             jm_ann_idx += 1
 
     return filtered_tokens, jolloin_pair_map

@@ -1517,7 +1517,7 @@ def normalize_and_compile_ops(
     parent_id: str = "",
     strict_profile: Optional[StrictProfile] = None,
     parse_result: "ClauseParseResult | None" = None,
-) -> "PhaseResult":
+) -> "PhaseResult[List[AmendmentOp]]":
     """Normalize PEG output and compile to AmendmentOps.
 
     Extracted from the ``if not _vts_ops_enrich_done:`` block in

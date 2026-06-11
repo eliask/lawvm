@@ -25,6 +25,7 @@ from lawvm.finland.projection_rows import projection_rows as _projection_rows
 if TYPE_CHECKING:
     from lawvm.core.compile_facade import CompileFacade
     from lawvm.core.semantic_types import SourceNormalizationFact
+    from lawvm.core.timeline import Timelines
     from lawvm.finland.replay_products import ReplayProducts
     from lawvm.replay_adjudication import SourceAdjudication
     from lawvm.finland.payload_normalize import ElaborationObservation
@@ -509,7 +510,7 @@ class ReplayResult:
         return source_pathology_rows_from_findings(self.findings)
 
     @property
-    def timelines(self) -> Optional[dict]:
+    def timelines(self) -> Optional["Timelines"]:
         """Compiled provision timelines."""
         return self.products.timelines
 

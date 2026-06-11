@@ -1878,7 +1878,7 @@ def run_curated_tests(nlp=None, verbose: bool = False) -> bool:
     failed = 0
     xfailed = 0  # expected failures
     xpassed = 0  # unexpected passes (xfail that passed)
-    feature_hits: set = set()
+    feature_hits: set[str] = set()
 
     for tc in CURATED_CASES:
         tc_text = str(tc["text"])

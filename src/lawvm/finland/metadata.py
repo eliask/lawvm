@@ -101,7 +101,7 @@ _VERB_NORM_TABLE: List[Tuple[str, str]] = [
     (r'lisänn?(?:yt|eet)', 'lisätään'),
     (r'siirtän(?:yt|eet)', 'siirretään'),
 ]
-_VERB_NORM_PATTERNS: List[Tuple[re.Pattern, str]] = []
+_VERB_NORM_PATTERNS: List[Tuple[re.Pattern[str], str]] = []
 for _part, _pres in _VERB_NORM_TABLE:
     # 5 positions: "on/ovat X", start-of-line, ", X", "sekä X", "ja X"
     _VERB_NORM_PATTERNS.append((re.compile(rf'\b(?:on|ovat)\s+{_part}\b', re.I), _pres))

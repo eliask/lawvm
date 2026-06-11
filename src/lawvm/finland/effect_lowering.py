@@ -170,7 +170,7 @@ def _unsupported_meta_clause_record(clause: MetaClause) -> UnsupportedMetaClause
     )
 
 
-_META_SENTENCE_PATTERNS: List[tuple[MetaClauseKind, re.Pattern]] = [
+_META_SENTENCE_PATTERNS: List[tuple[MetaClauseKind, re.Pattern[str]]] = [
     (
         MetaClauseKind.TRANSITION,
         re.compile(

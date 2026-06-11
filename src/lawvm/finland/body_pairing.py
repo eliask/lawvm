@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import List, Literal, Optional, Union
+from typing import Any, List, Literal, Optional, Union
 
 import lxml.etree as etree
 
@@ -1192,7 +1192,7 @@ class AmendmentPairingResult:
     def has_anomalies(self) -> bool:
         return bool(self.findings) or self.repeal_blocked > 0
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "statute_id": self.statute_id,
             "amendment_id": self.amendment_id,
