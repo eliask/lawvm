@@ -30,6 +30,7 @@ from lawvm.core.authority import (
 )
 from lawvm.core.branch_projection import BranchImpactProjection, branch_impact_projection_from_edges
 from lawvm.core.candidate_set_certificate import (
+    CANDIDATE_SET_COMPLETE,
     CANDIDATE_SET_PARTIAL,
     CANDIDATE_SET_UNAVAILABLE,
     CandidateSetCertificate,
@@ -1075,6 +1076,9 @@ def finland_strict_report_evidence_surface(
         statute_id=str(payload.get("statute_id") or ""),
     )
     strict_report_candidate_sets = _mapping_sequence(payload.get("strict_report_candidate_set_certificates"))
+    strict_report_candidate_set_authorizations = _mapping_sequence(
+        payload.get("strict_report_candidate_set_execution_authorizations")
+    )
     ownership_closure = _mapping_or_empty(payload.get("ownership_closure_certificate"))
     ownership_closure_report = _mapping_or_empty(payload.get("ownership_closure_report"))
     ownership_closure_rows = _mapping_sequence(ownership_closure_report.get("rows"))
@@ -1111,6 +1115,10 @@ def finland_strict_report_evidence_surface(
             *({"surface": "temporal_resolution_evidence", **dict(row)} for row in temporal_resolution_rows),
             *({"surface": "recovery_execution_authorization", **dict(row)} for row in recovery_authorization_rows),
             *({"surface": "strict_report_candidate_set_certificate", **dict(row)} for row in strict_report_candidate_sets),
+            *(
+                {"surface": "strict_report_candidate_set_execution_authorization", **dict(row)}
+                for row in strict_report_candidate_set_authorizations
+            ),
             *({"surface": "ownership_closure_certificate", **dict(row)} for row in ownership_closure_rows),
         )
     )
@@ -1157,6 +1165,13 @@ def finland_strict_report_evidence_surface(
         "strict_report_candidate_set_kind_counts": _count_by_field(
             strict_report_candidate_sets,
             "candidate_set_kind",
+        ),
+        "strict_report_candidate_set_execution_authorization_count": len(
+            strict_report_candidate_set_authorizations
+        ),
+        "strict_report_candidate_set_execution_authorization_status_counts": _count_by_field(
+            strict_report_candidate_set_authorizations,
+            "authorization_status",
         ),
         "ownership_closure_certificate_count": len(ownership_closure_rows),
         "ownership_closure_status": str(ownership_closure.get("closure_status") or ""),
@@ -1348,6 +1363,63 @@ def finland_strict_report_candidate_set_certificates(
     ]
 
 
+def finland_strict_report_candidate_set_execution_authorizations(
+    payload: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Replay-authorization boundary rows for strict-report candidate sets."""
+
+    rows = _mapping_sequence(payload.get("strict_report_candidate_set_certificates"))
+    authorizations: list[dict[str, Any]] = []
+    for row in rows:
+        candidate_set_kind = str(row.get("candidate_set_kind") or "unknown")
+        completeness_status = str(row.get("completeness_status") or "unknown")
+        complete = completeness_status == CANDIDATE_SET_COMPLETE
+        required_proofs = _string_sequence(row.get("next_promotion_requires")) or (
+            "candidate_set_completion_proof",
+            "execution_authorization",
+        )
+        authorization = ExecutionAuthorization(
+            executable=False,
+            replay_authorized=False,
+            authorization_status=(
+                "candidate_set_complete_not_replay_authority"
+                if complete
+                else "candidate_set_incomplete_not_replay_authority"
+            ),
+            authorization_rule_id=f"fi_strict_report_candidate_set_{_kind_slug(candidate_set_kind)}",
+            owner_phase=str(row.get("phase") or "strict_report_projection"),
+            strict_disposition="record" if complete else "block",
+            quirks_disposition="record",
+            validator_status=(
+                "candidate_set_complete_requires_separate_execution_authorization"
+                if complete
+                else "candidate_set_incomplete_requires_missing_coverage_proofs"
+            ),
+            required_proofs=required_proofs,
+            safe_default="do_not_treat_candidate_set_certificate_as_replay_authorization",
+            forbidden_shortcuts=(
+                "candidate_set_certificate_as_replay_authorization",
+                "visible_candidate_set_as_source_cue_exhaustiveness_proof",
+                "partial_candidate_set_as_target_uniqueness_proof",
+            ),
+            detail={
+                "jurisdiction": "fi",
+                "candidate_set_kind": candidate_set_kind,
+                "completeness_status": completeness_status,
+                "scope_id": str(row.get("scope_id") or ""),
+                "candidate_count": int(row.get("candidate_count") or 0),
+                "missing_candidate_count": int(row.get("missing_candidate_count") or 0),
+                "blocker_counts": dict(row.get("blocker_counts") or {}),
+                "projection_only": True,
+            },
+        ).to_dict()
+        authorization["candidate_set_kind"] = candidate_set_kind
+        authorization["completeness_status"] = completeness_status
+        authorization["scope_id"] = str(row.get("scope_id") or "")
+        authorizations.append(authorization)
+    return authorizations
+
+
 def finland_strict_report_ownership_closure_certificate(
     payload: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -1372,6 +1444,7 @@ def finland_strict_report_ownership_closure_certificate(
     agreement_residuals = _mapping_sequence(payload.get("agreement_residuals"))
     mutation_boundary_proofs = _mapping_sequence(payload.get("mutation_boundary_proofs"))
     candidate_set_certificates = _mapping_sequence(payload.get("strict_report_candidate_set_certificates"))
+    candidate_set_authorizations = _mapping_sequence(payload.get("strict_report_candidate_set_execution_authorizations"))
     source_completeness = _mapping_or_empty(payload.get("source_completeness"))
     temporal_rows = temporal_resolution_evidence_rows_from_projection_rows(
         projection_rows,
@@ -1436,6 +1509,7 @@ def finland_strict_report_ownership_closure_certificate(
         "temporal_resolution_evidence_rows": len(temporal_rows),
         "recovery_authorization_rows": len(recovery_authorizations),
         "strict_report_candidate_set_certificates": len(candidate_set_certificates),
+        "strict_report_candidate_set_authorizations": len(candidate_set_authorizations),
     }
     certificate = OwnershipClosureCertificate(
         certificate_id=_strict_report_id("ownership-closure", statute_id, payload),
@@ -1479,6 +1553,11 @@ def finland_strict_report_ownership_closure_certificate(
                 "strict-report-candidate-sets",
                 statute_id,
                 candidate_set_certificates,
+            ),
+            "strict_report_candidate_set_authorizations": _strict_report_id(
+                "strict-report-candidate-set-authorizations",
+                statute_id,
+                candidate_set_authorizations,
             ),
         },
         closed=False,
@@ -3171,6 +3250,7 @@ def _strict_report_closure_graph_payload(payload: Mapping[str, Any]) -> Mapping[
         "agreement_residuals",
         "mutation_boundary_proofs",
         "strict_report_candidate_set_certificates",
+        "strict_report_candidate_set_execution_authorizations",
         "strict_fail_reasons",
         "projection_rows",
         "failed_ops",

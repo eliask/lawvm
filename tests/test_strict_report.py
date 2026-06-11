@@ -575,6 +575,18 @@ def test_to_json_exports_open_ownership_closure_certificate_without_replay_claim
         "operation_cue_classification_report",
         "parser_gap_frontier_items_for_unclassified_cues",
     ]
+    candidate_set_authorizations = payload["strict_report_candidate_set_execution_authorizations"]
+    assert len(candidate_set_authorizations) == 4
+    assert {
+        row["candidate_set_kind"]: row["authorization_status"]
+        for row in candidate_set_authorizations
+    } == {
+        "fi_strict_report_visible_operation_rows": "candidate_set_incomplete_not_replay_authority",
+        "fi_strict_report_source_lineage_units": "candidate_set_incomplete_not_replay_authority",
+        "fi_strict_report_source_unit_enumeration": "candidate_set_incomplete_not_replay_authority",
+        "fi_strict_report_operation_cue_coverage": "candidate_set_incomplete_not_replay_authority",
+    }
+    assert all(row["replay_authorized"] is False for row in candidate_set_authorizations)
     assert report["report_kind"] == "finland_strict_report_ownership_closure"
     assert report["replay_claims"] is False
     assert report["canonical_effect_claims"] is False
@@ -583,6 +595,10 @@ def test_to_json_exports_open_ownership_closure_certificate_without_replay_claim
         "partial": 2,
         "unavailable": 2,
     }
+    assert surface["summary"]["strict_report_candidate_set_execution_authorization_count"] == 4
+    assert surface["summary"][
+        "strict_report_candidate_set_execution_authorization_status_counts"
+    ] == {"candidate_set_incomplete_not_replay_authority": 4}
     assert surface["summary"]["ownership_closure_certificate_count"] == 1
     assert surface["summary"]["ownership_closure_status"] == "open"
     assert surface["summary"]["ownership_closure_failed_gate_counts"] == {
@@ -715,6 +731,10 @@ def test_to_json_exports_source_adjudication_agreement_residual() -> None:
         "strict_report_candidate_set_certificate",
         "strict_report_candidate_set_certificate",
         "strict_report_candidate_set_certificate",
+        "strict_report_candidate_set_execution_authorization",
+        "strict_report_candidate_set_execution_authorization",
+        "strict_report_candidate_set_execution_authorization",
+        "strict_report_candidate_set_execution_authorization",
         "ownership_closure_certificate",
     ]
 
