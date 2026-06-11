@@ -32,6 +32,7 @@ from lawvm.core.compile_result import (
 )
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.core.observation_registry import get_finding_spec
+from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.statute_validity import expires_on_from_valid_until
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import build_text_duplication_findings
@@ -342,6 +343,10 @@ def _serialize_apply_mutation_invariant_report(
     report: "ApplyMutationInvariantReport",
 ) -> dict[str, object]:
     return asdict(report)
+
+
+def _serialize_observed_write_audit(audit: ObservedWriteAudit) -> dict[str, object]:
+    return asdict(audit)
 
 
 def _structural_dedup_applied_finding(
@@ -5283,6 +5288,7 @@ def apply_ops_to_tree(
     observations_out: Optional[List[Dict[str, object]]] = None,
     findings_out: Optional[List[Finding]] = None,
     observed_touch_results_out: Optional[List[MutationAccountingResult]] = None,
+    write_audits_out: Optional[List[ObservedWriteAudit]] = None,
 ) -> "ReplayState":
     """Step 6: Apply resolved operations to IR tree as a pure fold.
 
@@ -5579,6 +5585,7 @@ def apply_ops_to_tree(
                     standalone_section_targets=_standalone_section_targets,
                     migration_ledger=migration_ledger,
                     strict_profile=strict_profile,
+                    write_audits_out=write_audits_out,
                 )
                 if mutation_events_out is not None:
                     _cross_check_observed_vs_declared(
@@ -5846,6 +5853,7 @@ def apply_ops_to_tree(
                         replay_history_ops=lo_ops_out,
                         migration_ledger=migration_ledger,
                         strict_profile=strict_profile,
+                        write_audits_out=write_audits_out,
                     )
                     if mutation_events_out is not None:
                         _cross_check_observed_vs_declared(
@@ -6002,6 +6010,7 @@ def process_muutoslaki(
     commencement_expiry_overrides_out: Optional[List[Dict[str, object]]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
     mutation_invariant_reports_out: Optional[List[ApplyMutationInvariantReport]] = None,
+    write_audits_out: Optional[List[ObservedWriteAudit]] = None,
     migration_events_out: Optional[List["MigrationEvent"]] = None,
     prior_migration_events: Optional[Iterable["MigrationEvent"]] = None,
     restructure_plans_out: Optional[List[StructuralTransformPlan]] = None,
@@ -6952,6 +6961,7 @@ def process_muutoslaki(
             observations_out=_compat_elaboration_observations,
             findings_out=_process_findings,
             observed_touch_results_out=_observed_touch_results,
+            write_audits_out=write_audits_out,
         )
         # Stage-0 passive observed-vs-declared cross-check results: surface on
         # the elaboration-observation rail as non-blocking findings. They never
@@ -7394,6 +7404,7 @@ def replay_xml(
         commencement_expiry_overrides: List[Dict[str, object]] = []
         replay_findings: List[Finding] = []
         mutation_events: List[ApplyMutationEvent] = []
+        write_audits: List[ObservedWriteAudit] = []
         migration_events: List["MigrationEvent"] = []
         temporal_events: List[Any] = []
         _restructure_plans: List[StructuralTransformPlan] = []
@@ -7474,6 +7485,7 @@ def replay_xml(
             sparse_leftovers_out=sparse_leftovers,
             commencement_expiry_overrides_out=commencement_expiry_overrides,
             mutation_events_out=mutation_events,
+            write_audits_out=write_audits,
             migration_events_out=migration_events,
             temporal_events_out=temporal_events,
             strict_profile=strict_profile,
@@ -7640,6 +7652,10 @@ def replay_xml(
             replay_meta_out["sparse_leftovers"] = list(sparse_leftovers)
         if replay_meta_out is not None and commencement_expiry_overrides:
             replay_meta_out["commencement_expiry_overrides"] = list(commencement_expiry_overrides)
+        if replay_meta_out is not None and write_audits:
+            replay_meta_out["apply_write_audits"] = [
+                _serialize_observed_write_audit(audit) for audit in write_audits
+            ]
         mutation_invariant_reports: tuple[ApplyMutationInvariantReport, ...] = ()
         if replay_meta_out is not None and mutation_events:
             mutation_invariant_reports = build_apply_mutation_invariant_reports(mutation_events)

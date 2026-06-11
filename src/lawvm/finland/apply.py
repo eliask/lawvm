@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, FrozenSet, List, Literal, Optional
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalOperation as _LegalOperation
+from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.phase_result import Finding
 from lawvm.core.tree_ops import Path
 from lawvm.finland.ops import (
@@ -137,6 +138,7 @@ def apply_op(
     migration_ledger: Optional[MigrationLedger] = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
     strict_profile: Optional[StrictProfile] = None,
+    write_audits_out: Optional[List[ObservedWriteAudit]] = None,
 ) -> ReplayState:
     """Apply one amendment operation. Pure: state in → state out, no mutation.
 
@@ -185,6 +187,7 @@ def apply_op(
             standalone_section_targets=standalone_section_targets,
             migration_ledger=migration_ledger,
             strict_profile=strict_profile,
+            write_audits_out=write_audits_out,
         )
 
     if rop is not None and intent_required_for_apply(rop):

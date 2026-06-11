@@ -407,6 +407,7 @@ def test_apply_op_typed_section_relabel_relabels_and_resorts_within_chapter() ->
     )
     rop.intent = intent
     mutation_events: List[ApplyMutationEvent] = []
+    write_audits = []
 
     result = apply_op(
         state,
@@ -416,6 +417,7 @@ def test_apply_op_typed_section_relabel_relabels_and_resorts_within_chapter() ->
         rop=rop,
         replay_mode="legal_pit",
         mutation_events_out=mutation_events,
+        write_audits_out=write_audits,
     )
 
     chapter = next(child for child in result.ir.children if child.kind == IRNodeKind.CHAPTER and child.label == "7")
@@ -441,6 +443,13 @@ def test_apply_op_typed_section_relabel_relabels_and_resorts_within_chapter() ->
             rule_id="section_relabel_renumber",
         ),
     )
+    assert len(write_audits) == 1
+    audit = write_audits[0]
+    assert audit.op_id == "renumber_73_to_61"
+    assert audit.status == "qualified"
+    assert audit.undeclared_paths == ()
+    assert audit.unobserved_declared_paths == ()
+    assert audit.matched_rule_ids == ("section_relabel_renumber",)
 
 
 def test_apply_op_typed_section_relabel_keeps_part_scoped_parent_when_multiple_parts_share_chapter_label() -> None:

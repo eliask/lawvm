@@ -296,10 +296,13 @@ Implementation state: `lawvm.core.observed_write_audit.ObservedWriteAudit`
 and `build_observed_write_audit(...)` exist. The first implementation is
 passive and relation-aware: exact observed/declared path equality is `clean`,
 ancestor/descendant granularity differences with named receipt rules are
-`qualified`, and unrelated observed or declared paths are `violation`. Tests
-cover clean writes, relabel-style parent/child granularity, declared-but-
-unobserved writes, observed-outside-receipt writes, and an actual Finland
-container-insert receipt. The audit is not yet wired as a replay blocker.
+`qualified`, and unrelated observed or declared paths are `violation`. Finland
+receipt-enabled typed apply branches append passive audits through
+`write_audits_out`; replay metadata serializes them as `apply_write_audits`.
+Tests cover clean writes, relabel-style parent/child granularity,
+declared-but-unobserved writes, observed-outside-receipt writes, an actual
+Finland container-insert receipt, and a section relabel audit emitted through
+`apply_op`. The audit is not yet wired as a replay blocker.
 
 ## 6. Occupancy transition contract
 

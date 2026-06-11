@@ -16,6 +16,7 @@ from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.ir_helpers import structural_subtree_hash
 from lawvm.core.mutation_boundary import diff_ir_paths_identity_pruned
+from lawvm.core.observed_write_audit import ObservedWriteAudit, build_observed_write_audit
 from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.core import tree_ops as _tops
@@ -146,6 +147,18 @@ def _build_relabel_write_receipt(
             landed_addr: structural_subtree_hash(landed_node),
         },
     )
+
+
+def _append_observed_write_audit(
+    write_audits_out: Optional[List[ObservedWriteAudit]],
+    *,
+    before_ir: IRNode,
+    after_ir: IRNode,
+    receipt: WriteReceipt,
+) -> None:
+    if write_audits_out is None:
+        return
+    write_audits_out.append(build_observed_write_audit(before_ir, after_ir, receipt))
 
 
 def _container_relabel_migration_rule_id(kind: str) -> str:
@@ -796,6 +809,7 @@ def _apply_intent_container(
     path_hint: Optional[Path] = None,
     standalone_section_targets: Optional[FrozenSet] = None,
     migration_ledger: Optional[MigrationLedger] = None,
+    write_audits_out: Optional[List[ObservedWriteAudit]] = None,
 ) -> "ReplayState":
     base_ir = ctx.base_ir
     structure_view = _structure_apply_view_for_op(rop)
@@ -826,10 +840,17 @@ def _apply_intent_container(
         # family — the mutation event is DERIVED from the landed footprint,
         # never re-assembled from the nominal target address.
         if write_receipts and container_result is not state:
+            receipt = write_receipts[-1]
+            _append_observed_write_audit(
+                write_audits_out,
+                before_ir=state.ir,
+                after_ir=container_result.ir,
+                receipt=receipt,
+            )
             _emit_apply_mutation_event_from_receipt(
                 mutation_events_out,
                 rop=rop,
-                receipt=write_receipts[-1],
+                receipt=receipt,
                 outcome="applied",
             )
             return container_result
@@ -881,6 +902,7 @@ def _apply_intent_replace(
     standalone_section_targets: Optional[FrozenSet] = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
     migration_ledger: Optional[MigrationLedger] = None,
+    write_audits_out: Optional[List[ObservedWriteAudit]] = None,
 ) -> "ReplayState":
     from lawvm.core.canonical_intent import FacetTarget, NodeTarget
 
@@ -899,6 +921,7 @@ def _apply_intent_replace(
                 path_hint=path_hint,
                 standalone_section_targets=standalone_section_targets,
                 migration_ledger=migration_ledger,
+                write_audits_out=write_audits_out,
             )
         case FacetTarget(facet=FacetKind.HEADING | FacetKind.INTRO):
             return _apply_intent_section_level(
@@ -967,6 +990,7 @@ def _apply_intent_replace(
                 path_hint=path_hint,
                 standalone_section_targets=standalone_section_targets,
                 migration_ledger=migration_ledger,
+                write_audits_out=write_audits_out,
             )
         case _:
             reason = f"unhandled Replace target: {type(intent.target).__name__}"
@@ -1014,6 +1038,7 @@ def _apply_intent_insert(
     standalone_section_targets: Optional[FrozenSet] = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
     migration_ledger: Optional[MigrationLedger] = None,
+    write_audits_out: Optional[List[ObservedWriteAudit]] = None,
 ) -> "ReplayState":
     from lawvm.core.canonical_intent import NodeTarget
 
@@ -1067,6 +1092,8 @@ def _apply_intent_insert(
                 mutation_events_out=mutation_events_out,
                 path_hint=path_hint,
                 standalone_section_targets=standalone_section_targets,
+                migration_ledger=migration_ledger,
+                write_audits_out=write_audits_out,
             )
         case _:
             reason = f"unhandled Insert target: {type(intent.target).__name__}"
@@ -1112,6 +1139,7 @@ def _apply_intent_repeal(
     path_hint: Optional[Path] = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
     migration_ledger: Optional[MigrationLedger] = None,
+    write_audits_out: Optional[List[ObservedWriteAudit]] = None,
 ) -> "ReplayState":
     from lawvm.core.canonical_intent import NodeTarget
 
@@ -1163,6 +1191,7 @@ def _apply_intent_repeal(
                 mutation_events_out=mutation_events_out,
                 path_hint=path_hint,
                 migration_ledger=migration_ledger,
+                write_audits_out=write_audits_out,
             )
         case _:
             reason = f"unhandled Repeal target: {type(intent.target).__name__}"
@@ -1205,6 +1234,7 @@ def _apply_intent_relabel(
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
     path_hint: Optional[Path] = None,
     migration_ledger: Optional[MigrationLedger] = None,
+    write_audits_out: Optional[List[ObservedWriteAudit]] = None,
 ) -> "ReplayState":
     def _emit_relabel_skip(
         *,
@@ -1292,6 +1322,12 @@ def _apply_intent_relabel(
                     source_node=node,
                     landed_node=landed_node,
                     migration_rule_id=_container_relabel_migration_rule_id(source_unit_kind),
+                )
+                _append_observed_write_audit(
+                    write_audits_out,
+                    before_ir=state.ir,
+                    after_ir=new_ir,
+                    receipt=receipt,
                 )
                 _emit_apply_mutation_event_from_receipt(
                     mutation_events_out,
@@ -1384,6 +1420,12 @@ def _apply_intent_relabel(
                     source_node=node,
                     landed_node=landed_node,
                     migration_rule_id=_SECTION_RELABEL_MIGRATION_RULE_ID,
+                )
+                _append_observed_write_audit(
+                    write_audits_out,
+                    before_ir=state.ir,
+                    after_ir=new_ir,
+                    receipt=receipt,
                 )
                 _emit_apply_mutation_event_from_receipt(
                     mutation_events_out,
@@ -1486,6 +1528,13 @@ def _apply_intent_relabel(
             landed_node=landed_subsection_node,
             migration_rule_id=_SUBSECTION_RELABEL_MIGRATION_RULE_ID,
         )
+        new_ir = _tops.replace_at(state.ir, section_path, rebuilt_section)
+        _append_observed_write_audit(
+            write_audits_out,
+            before_ir=state.ir,
+            after_ir=new_ir,
+            receipt=receipt,
+        )
         _emit_apply_mutation_event_from_receipt(
             mutation_events_out,
             receipt=receipt,
@@ -1503,7 +1552,7 @@ def _apply_intent_relabel(
                 effective=effective,
                 source_statute=rop.resolved_source_statute,
             )
-        return state.with_ir(_tops.replace_at(state.ir, section_path, rebuilt_section))
+        return state.with_ir(new_ir)
 
     logger.warning(
         "RELABEL_UNHANDLED: %s %s — Relabel target kind %r not yet implemented",
@@ -1668,6 +1717,7 @@ def _apply_canonical_intent(
     migration_ledger: Optional[MigrationLedger] = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
     strict_profile: Optional[StrictProfile] = None,
+    write_audits_out: Optional[List[ObservedWriteAudit]] = None,
 ) -> "ReplayState":
     from lawvm.core.canonical_intent import Replace, Insert, Repeal, Relabel, Move, TextPatch
 
@@ -1735,6 +1785,7 @@ def _apply_canonical_intent(
                 replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
                 strict_profile=strict_profile,
+                write_audits_out=write_audits_out,
             )
         case Insert() as it:
             logger.debug("  %s → canonical dispatch: Insert(%s)", ctx_label, type(it.target).__name__)
@@ -1755,6 +1806,7 @@ def _apply_canonical_intent(
                 replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
                 strict_profile=strict_profile,
+                write_audits_out=write_audits_out,
             )
         case Repeal() as it:
             logger.debug("  %s → canonical dispatch: Repeal(%s)", ctx_label, type(it.target).__name__)
@@ -1773,6 +1825,7 @@ def _apply_canonical_intent(
                 path_hint=path_hint,
                 replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
+                write_audits_out=write_audits_out,
             )
         case Relabel() as it:
             logger.debug("  %s → canonical dispatch: Relabel(%s)", ctx_label, type(it.source).__name__)
@@ -1788,6 +1841,7 @@ def _apply_canonical_intent(
                 mutation_events_out=mutation_events_out,
                 path_hint=path_hint,
                 migration_ledger=migration_ledger,
+                write_audits_out=write_audits_out,
             )
         case Move() as move_intent:
             logger.debug(
