@@ -1751,6 +1751,79 @@ def test_proof_surface_from_evidence_report_preserves_report_rows_as_read_model(
     ]
 
 
+def test_proof_surface_extracts_refs_from_flat_source_witness_rows() -> None:
+    report = EvidenceSurfaceReport(
+        jurisdiction="fi",
+        report_kind="finland_strict_report",
+        schema="lawvm.finland_strict_report.v1",
+        truth_claim="strict diagnostics only",
+        replay_claims=False,
+        canonical_effect_claims=True,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        rows=(
+            {
+                "surface": "source_lineage_source_witness",
+                "source_role": "finland_source_lineage_amendment",
+                "artifact_id": "2020/1",
+                "source_unit_id": "2020/1",
+                "locator": "finlex://2020/1",
+                "source_path": "finlex://2020/1/source.xml",
+                "status": "reported",
+            },
+        ),
+    )
+
+    surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert surface["rows"][0]["row_kind"] == "source_lineage_source_witness"
+    assert surface["rows"][0]["source_refs"] == [
+        "2020/1",
+        "finlex://2020/1",
+        "finlex://2020/1/source.xml",
+    ]
+
+
+def test_proof_surface_extracts_refs_from_role_keyed_source_witnesses() -> None:
+    report = EvidenceSurfaceReport(
+        jurisdiction="uk",
+        report_kind="uk_broad_baseline",
+        schema="lawvm.uk_broad_baseline.v1",
+        truth_claim="uk replay diagnostics only",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=True,
+        rows=(
+            {
+                "surface": "agreement_residual",
+                "residual_id": "residual-1",
+                "status": "residual",
+                "base_source_witness": {
+                    "source_role": "uk_broad_base_source",
+                    "artifact_id": "ukpga/2000/1",
+                    "locator": "https://www.legislation.gov.uk/ukpga/2000/1/enacted/data.xml",
+                },
+                "oracle_source_witness": {
+                    "source_role": "uk_broad_oracle_source",
+                    "artifact_id": "ukpga/2000/1",
+                    "locator": "https://www.legislation.gov.uk/ukpga/2000/1/data.xml",
+                },
+            },
+        ),
+    )
+
+    surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert surface["rows"][0]["source_refs"] == [
+        "ukpga/2000/1",
+        "https://www.legislation.gov.uk/ukpga/2000/1/enacted/data.xml",
+        "https://www.legislation.gov.uk/ukpga/2000/1/data.xml",
+    ]
+
+
 def test_evidence_surface_report_requires_claim_flags() -> None:
     with pytest.raises(ValueError, match="replay_claims"):
         EvidenceSurfaceReport(

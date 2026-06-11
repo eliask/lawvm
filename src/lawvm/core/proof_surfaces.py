@@ -225,12 +225,41 @@ def _row_status(row: Mapping[str, Any]) -> str:
 
 def _source_refs(row: Mapping[str, Any]) -> tuple[str, ...]:
     refs = list(_refs(row, ("source_ref", "source_refs", "source", "source_statute")))
-    source_witness = row.get("source_witness")
-    if isinstance(source_witness, Mapping):
-        for key in ("artifact_id", "source_unit_id", "locator", "source_path"):
-            value = str(source_witness.get(key) or "")
-            if value:
-                refs.append(value)
+    if _is_source_witness_mapping(row):
+        refs.extend(_source_witness_refs(row))
+    for witness in _nested_source_witnesses(row):
+        refs.extend(_source_witness_refs(witness))
+    return tuple(dict.fromkeys(refs))
+
+
+def _nested_source_witnesses(row: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    """Return nested source witnesses carried by common report-edge row shapes."""
+
+    witnesses: list[Mapping[str, Any]] = []
+    for key, value in row.items():
+        if key.endswith("source_witness") and isinstance(value, Mapping):
+            witnesses.append(value)
+    source_witnesses = row.get("source_witnesses")
+    if isinstance(source_witnesses, (list, tuple)):
+        witnesses.extend(item for item in source_witnesses if isinstance(item, Mapping))
+    return tuple(witnesses)
+
+
+def _is_source_witness_mapping(row: Mapping[str, Any]) -> bool:
+    """Identify rows that are already flattened ``SourceWitness`` mappings."""
+
+    if row.get("source_role"):
+        return True
+    surface = str(row.get("surface") or row.get("row_kind") or "")
+    return surface.endswith("source_witness") or surface == "source_witness"
+
+
+def _source_witness_refs(witness: Mapping[str, Any]) -> tuple[str, ...]:
+    refs: list[str] = []
+    for key in ("artifact_id", "source_unit_id", "locator", "source_path"):
+        value = str(witness.get(key) or "")
+        if value:
+            refs.append(value)
     return tuple(dict.fromkeys(refs))
 
 
