@@ -16,7 +16,7 @@ from __future__ import annotations
 import importlib
 import json
 from pathlib import Path
-from typing import Optional, cast
+from typing import Any, Optional, cast
 
 import pytest
 
@@ -50,13 +50,15 @@ from lawvm.core.retraction_taint_projection import (
     render_retraction_taint,
 )
 
+JsonObj = dict[str, Any]
+
 
 # ---------------------------------------------------------------------------
 # Helpers (graph-store CLI fixtures, mirroring test_cmd_claim_v3)
 # ---------------------------------------------------------------------------
 
 
-def _make_assertion_dict(resolved: str = "1234/2020") -> dict:
+def _make_assertion_dict(resolved: str = "1234/2020") -> JsonObj:
     return {
         "kind": "fi.v1.INLINE_STATUTE_RESOLUTION",
         "layer": "extraction",
@@ -86,7 +88,7 @@ class _Args:
     pass
 
 
-def _make_args(**kwargs):
+def _make_args(**kwargs: Any) -> _Args:
     a = _Args()
     for k, v in kwargs.items():
         setattr(a, k, v)
@@ -101,7 +103,7 @@ def _store(tmp_path: Path) -> GraphStore:
     return GraphStore(Path(_graph_root(tmp_path)))
 
 
-def _propose_assertion(tmp_path: Path, d: Optional[dict] = None) -> str:
+def _propose_assertion(tmp_path: Path, d: Optional[JsonObj] = None) -> str:
     from lawvm.tools.cmd_claim import cmd_propose
 
     if d is None:
@@ -139,8 +141,8 @@ def _record_build(
     seed: str,
     consumed: tuple[str, ...],
     *,
-    time_scope: Optional[dict] = None,
-    scope: Optional[dict] = None,
+    time_scope: Optional[JsonObj] = None,
+    scope: Optional[JsonObj] = None,
 ) -> BuildRef:
     """Register a build through the PRODUCTION recorder."""
     return record_build_in_store(
