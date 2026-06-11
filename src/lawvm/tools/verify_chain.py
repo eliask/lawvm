@@ -711,7 +711,7 @@ def _print_blame_matrix(result: ChainVerificationResult) -> None:
     # --- Per-section blame matrix ---
     # Collect all section eIds seen across all checkpoints
     all_eids: List[str] = []
-    seen: set = set()
+    seen: set[str] = set()
     for am in result.amendment_results:
         for eid in sorted(am.sections.keys(), key=_eid_sort_key):
             if eid not in seen:
@@ -728,7 +728,7 @@ def _print_blame_matrix(result: ChainVerificationResult) -> None:
         for eid, sr in am.sections.items():
             if sr.pit_text is not None:
                 _last_pit_text[eid] = sr.pit_text
-    kumottu_eids: set = {
+    kumottu_eids: set[str] = {
         eid for eid, txt in _last_pit_text.items() if _is_kumottu(txt)
     }
 
@@ -831,7 +831,7 @@ def _short_amid(amid: str) -> str:
 # JSON output
 # ---------------------------------------------------------------------------
 
-def _result_to_json(result: ChainVerificationResult) -> dict:
+def _result_to_json(result: ChainVerificationResult) -> dict[str, object]:
     """Serialize ChainVerificationResult to a JSON-compatible dict."""
     amendments_list = []
     for am in result.amendment_results:

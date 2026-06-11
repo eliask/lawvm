@@ -48,7 +48,7 @@ from lawvm.finland.projection_rows import projection_row_from_finding
 from lawvm.tools._section_debug import summarize_node
 
 
-def _serialize_source_normalization_fact(fact: Any) -> dict:
+def _serialize_source_normalization_fact(fact: Any) -> dict[str, Any]:
     return {
         "statute_id": fact.statute_id,
         "kind": fact.kind_value,
@@ -93,7 +93,7 @@ def _scope_bundle(
     }
 
 
-def _serialize_pathology(pathology: Any) -> dict:
+def _serialize_pathology(pathology: Any) -> dict[str, Any]:
     scope_detail = dict(pathology.scope_detail() or {})
     scope = _scope_bundle(
         target_unit_kind=str(scope_detail.get("target_unit_kind") or pathology.target_unit_kind or ""),
@@ -145,7 +145,7 @@ def _present_bundle_for_output(bundle: Dict[str, Any]) -> Dict[str, Any]:
     return presented
 
 
-def _serialize_observation(observation: Any) -> dict:
+def _serialize_observation(observation: Any) -> dict[str, Any]:
     return {
         "kind": observation.kind,
         "stage": observation.stage,

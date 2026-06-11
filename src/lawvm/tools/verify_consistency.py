@@ -25,7 +25,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from lawvm.tools.ee_reporting import (
     build_ee_benchmark_reporting_summary,
@@ -74,7 +74,7 @@ def _resolve_ee_gid_pair_as_of(args: "argparse.Namespace") -> str:
     return extract_effective_date(oracle_xml) or "0000-00-00"
 
 
-def _build_ee_replay_consistency_payload(args: "argparse.Namespace") -> dict:
+def _build_ee_replay_consistency_payload(args: "argparse.Namespace") -> dict[str, Any]:
     from lawvm.core.adjudication_evidence import (
         adjudication_finding_evidence_rows,
         adjudication_kind_counts,
@@ -193,7 +193,7 @@ def _build_ee_replay_consistency_payload(args: "argparse.Namespace") -> dict:
     return payload
 
 
-def _build_ee_consistency_payload(args: "argparse.Namespace") -> dict:
+def _build_ee_consistency_payload(args: "argparse.Namespace") -> dict[str, Any]:
     from lawvm.estonia.compare import irnode_to_ee_comparison_text, normalize_ee_comparison_text
     from lawvm.estonia.grafter import parse_ee_statute
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
@@ -292,7 +292,7 @@ def _build_ee_consistency_payload(args: "argparse.Namespace") -> dict:
     return payload
 
 
-def _print_ee_consistency_payload(payload: dict, *, verbose: bool) -> None:
+def _print_ee_consistency_payload(payload: dict[str, Any], *, verbose: bool) -> None:
     print(
         f"\n=== Consistency Report: {payload['base_id']} → {payload['consolidated_id']} ==="
     )

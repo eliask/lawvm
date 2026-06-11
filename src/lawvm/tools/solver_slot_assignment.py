@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Any, Callable, Literal
 
 from ortools.sat.python import cp_model
 
@@ -400,7 +400,7 @@ def diagnose_assignment(
     heuristic_assignment: dict[int, int],
     *,
     label_normalizer: Callable[[str], str] | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Run solver and compare with heuristic result.
 
     Parameters
@@ -477,7 +477,7 @@ def cli_solver_diag(args: object) -> None:
     # Replay and capture binding data
     from lawvm.finland.grafter import replay_xml
 
-    replay_meta: dict = {}
+    replay_meta: dict[str, Any] = {}
     try:
         replay_xml(sid, replay_meta_out=replay_meta, quiet=True)
     except Exception as exc:
@@ -491,7 +491,7 @@ def cli_solver_diag(args: object) -> None:
 
     # Group bindings by (source_statute, target_norm) -- each group is one
     # call to _assign_subsection_slots during replay.
-    groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for b in bindings:
         key = (str(b.get("source_statute", "")), str(b.get("target_norm", "")))
         groups[key].append(b)

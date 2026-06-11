@@ -228,7 +228,7 @@ def _apply_null_slot_fills(
     # Index rows by (statute_id, provision_ref_str, span_start, span_end)
     # The fi_refs row has source_statute_id, source_provision_ref_str,
     # source_span_byte_offset, source_span_len
-    def _row_key(row: Dict[str, Any]) -> tuple:
+    def _row_key(row: Dict[str, Any]) -> tuple[object, object, object, object]:
         return (
             row.get("source_statute_id", ""),
             row.get("source_provision_ref_str", ""),
@@ -236,7 +236,9 @@ def _apply_null_slot_fills(
             row.get("source_span_len"),
         )
 
-    row_index: Dict[tuple, int] = {_row_key(r): i for i, r in enumerate(mention_rows)}
+    row_index: Dict[tuple[object, object, object, object], int] = {
+        _row_key(r): i for i, r in enumerate(mention_rows)
+    }
     updated = list(mention_rows)
     ambiguous_findings: List[AmbiguousClaimSet] = []
 
@@ -545,7 +547,7 @@ def export_fi_refs(
 # ---------------------------------------------------------------------------
 
 
-def _hash_row(row: dict) -> str:
+def _hash_row(row: dict[str, Any]) -> str:
     """Stable hash for a projection row (for taint-report row tracking)."""
     import hashlib
     serialized = json.dumps(
