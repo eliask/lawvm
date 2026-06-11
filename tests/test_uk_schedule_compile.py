@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from lxml import etree as ET
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -147,6 +147,23 @@ from lawvm.uk_legislation.uk_grafter import parse_uk_statute_ir_bytes
 _AVAILABLE_XML_BYTES = b"<Legislation>" + (b"x" * 128) + b"</Legislation>"
 
 
+def _xml_text(element: ET._Element) -> str:
+    return "".join(str(part) for part in element.itertext())
+
+
+def _xml_text_with_spaces(element: ET._Element) -> str:
+    return " ".join(str(part) for part in element.itertext())
+
+
+def _xpath_one(root: ET._Element, expression: str) -> ET._Element:
+    matches = root.xpath(expression)
+    assert isinstance(matches, list)
+    assert matches
+    match = matches[0]
+    assert isinstance(match, ET._Element)
+    return match
+
+
 def _required_payload(op: LegalOperation) -> IRNode:
     assert op.payload is not None
     return op.payload
@@ -219,7 +236,7 @@ def test_first_component_matches_preserves_document_order_with_number_index() ->
     matches = _first_component_matches(root, "section", "7")
 
     assert [element.tag for element in matches] == ["P1", "Section", "P1group"]
-    assert [" ".join(element.itertext()).strip() for element in matches] == [  # type: ignore[arg-type]  # ty: ignore[no-matching-overload]
+    assert [" ".join(_xml_text_with_spaces(element).split()).strip() for element in matches] == [
         "7 first section-like node",
         "7 second section-like node",
         "7 third section-like node",
@@ -7330,7 +7347,7 @@ def test_extract_provision_bytes_keeps_block_substitution_instruction_context() 
 
     assert extracted is not None
     assert extracted.tag.split("}")[-1] == "P2"
-    extracted_text = "".join(extracted.itertext())  # type: ignore[arg-type]  # ty: ignore[no-matching-overload]
+    extracted_text = _xml_text(extracted)
     assert 'for "with" to the end substitute' in extracted_text
     assert "£2,000,000" in extracted_text
 
@@ -7398,7 +7415,7 @@ def test_extract_provision_bytes_keeps_descendant_block_insert_instruction_conte
 
     assert extracted is not None
     assert extracted.tag.split("}")[-1] == "P2"
-    extracted_text = "".join(extracted.itertext())  # type: ignore[arg-type]  # ty: ignore[no-matching-overload]
+    extracted_text = _xml_text(extracted)
     assert 'after the definition of "2013 Act" insert-' in extracted_text
     assert "corporate joint committee" in extracted_text
 
@@ -12315,7 +12332,7 @@ def test_compile_at_end_add_insert_scopes_definition_target() -> None:
 
 
 def test_compile_source_parent_carried_after_word_ordinal_insert() -> None:
-    extracted_el = ET.fromstring(
+    source_root = ET.fromstring(
         f"""
         <P1 xmlns="{_LEG_NS}" id="schedule-paragraph-22">
           <Pnumber>22</Pnumber>
@@ -12328,7 +12345,8 @@ def test_compile_source_parent_carried_after_word_ordinal_insert() -> None:
           </P1para>
         </P1>
         """
-    ).xpath(".//*[local-name()='P3']")[0]  # ty: ignore[not-subscriptable]
+    )
+    extracted_el = _xpath_one(source_root, ".//*[local-name()='P3']")
     effect = UKEffectRecord(
         effect_id="uk_test_source_parent_carried_after_word_ordinal_insert",
         effect_type="words inserted",
@@ -12352,7 +12370,7 @@ def test_compile_source_parent_carried_after_word_ordinal_insert() -> None:
 
     ops = compile_effect_to_ir_ops(
         effect,
-        extracted_el,  # ty:ignore[invalid-argument-type]
+        extracted_el,
         sequence=0,
         lowering_rejections_out=lowering_records,
     )
@@ -13131,7 +13149,7 @@ def test_compile_grouped_anchor_place_substitution_uses_parent_source_context() 
         </Legislation>
         """
     )
-    effect_base = dict(
+    effect_base: dict[str, Any] = dict(
         applied=True,
         requires_applied=True,
         modified="2013-04-01",
@@ -13154,7 +13172,7 @@ def test_compile_grouped_anchor_place_substitution_uses_parent_source_context() 
                 effect_id="uk_test_grouped_anchor_first_place_substitution",
                 effect_type="words substituted",
                 affecting_provisions="Sch. 9 para. 12(a)",
-                **effect_base,  # ty:ignore[invalid-argument-type]
+                **effect_base,
             ),
             1,
             "FCA and, if the society is a PRA-authorised person, the PRA",
@@ -13165,7 +13183,7 @@ def test_compile_grouped_anchor_place_substitution_uses_parent_source_context() 
                 effect_id="uk_test_grouped_anchor_second_place_substitution",
                 effect_type="word substituted",
                 affecting_provisions="Sch. 9 para. 12(b)",
-                **effect_base,  # ty:ignore[invalid-argument-type]
+                **effect_base,
             ),
             2,
             "FCA",
@@ -19252,7 +19270,7 @@ def test_compile_source_carried_between_paragraphs_substitution_refines_to_first
         </P1>
         """
     )
-    extracted_el = source_root.xpath('//*[@id="schedule-19-paragraph-52-d"]')[0]  # ty: ignore[not-subscriptable]
+    extracted_el = _xpath_one(source_root, '//*[@id="schedule-19-paragraph-52-d"]')
     effect = UKEffectRecord(
         effect_id="key-05d0458a776bede3c7452fa48382fb00",
         effect_type="word substituted",
@@ -19276,7 +19294,7 @@ def test_compile_source_carried_between_paragraphs_substitution_refines_to_first
 
     ops = compile_effect_to_ir_ops(
         effect,
-        extracted_el,  # ty:ignore[invalid-argument-type]
+        extracted_el,
         sequence=0,
         lowering_rejections_out=lowering_records,
         source_root=source_root,
@@ -19349,7 +19367,7 @@ def test_compile_source_carried_between_paragraphs_substitution_requires_anteced
         </P1>
         """
     )
-    extracted_el = source_root.xpath('//*[@id="schedule-19-paragraph-52-d"]')[0]  # ty: ignore[not-subscriptable]
+    extracted_el = _xpath_one(source_root, '//*[@id="schedule-19-paragraph-52-d"]')
     effect = UKEffectRecord(
         effect_id="key-between-paragraphs-no-antecedent",
         effect_type="word substituted",
@@ -19373,7 +19391,7 @@ def test_compile_source_carried_between_paragraphs_substitution_requires_anteced
 
     ops = compile_effect_to_ir_ops(
         effect,
-        extracted_el,  # ty:ignore[invalid-argument-type]
+        extracted_el,
         sequence=0,
         lowering_rejections_out=lowering_records,
         source_root=source_root,
@@ -20661,7 +20679,7 @@ def test_compile_source_parent_final_column_table_entry_paragraph_text_patch() -
         </P1>
         """
     )
-    extracted_el = source_root.xpath('//*[@id="schedule-4-paragraph-8-a"]')[0]  # ty: ignore[not-subscriptable]
+    extracted_el = _xpath_one(source_root, '//*[@id="schedule-4-paragraph-8-a"]')
     effect = UKEffectRecord(
         effect_id="key-db35c35db5cd161469da356981ff192e",
         effect_type="words substituted",
@@ -20685,7 +20703,7 @@ def test_compile_source_parent_final_column_table_entry_paragraph_text_patch() -
 
     ops = compile_effect_to_ir_ops(
         effect,
-        extracted_el,  # ty:ignore[invalid-argument-type]
+        extracted_el,
         sequence=0,
         lowering_rejections_out=lowering_records,
         source_root=source_root,
@@ -22475,8 +22493,8 @@ def test_table_column_entry_omission_skips_non_omission_sources(
         extracted_text="in the second column of the Table after the entry insert text",
         source_root=None,
         sequence=0,
-        effect_witness=object(),  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
-        extraction_witness=object(),  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+        effect_witness=cast(Any, object()),
+        extraction_witness=cast(Any, object()),
         original_targets_str=["s. 98"],
         lowering_rejections_out=[],
     )
@@ -48835,7 +48853,7 @@ def test_parse_schedule_group_note_target_rejects_multi_child_surface() -> None:
 def test_match_schedule_group_note_carriers_without_fake_paragraphs() -> None:
     group = UKMutableNode(kind=IRNodeKind.CHAPTER, label="Group 6— Education")
     different_group = UKMutableNode(kind=IRNodeKind.CHAPTER, label="Group 60— Health")
-    notes = UKMutableNode(kind="p1group", text="Notes:")  # ty:ignore[invalid-argument-type]
+    notes = UKMutableNode(kind=IRNodeKind.P1GROUP, text="Notes:")
 
     assert uk_match_kind_label(group, "chapter", "group 6")
     assert not uk_match_kind_label(different_group, "chapter", "group 6")
@@ -52918,7 +52936,7 @@ def test_pipeline_excludes_temporally_qualified_ceases_to_have_effect_repeal_ops
         effect_type=effect.effect_type,
         source_pathology="",
         extracted_tag="P2",
-        extracted_text=" ".join(extracted_el.itertext()),  # ty:ignore[no-matching-overload]
+        extracted_text=" ".join(_xml_text(extracted_el).split()),
         lowering_rejections=(),
         compiled_op_count=len(ops),
         replay_applicable=True,
