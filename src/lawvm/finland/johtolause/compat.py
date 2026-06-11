@@ -5,7 +5,13 @@ The canonical implementation now lives in api.py.  All existing
 to work.  New code should import from api.py directly.
 """
 
-from lawvm.finland.johtolause.api import (  # noqa: F401
+from lawvm.finland.johtolause.api import (
+    ClauseParseResult,
+    derive_features,
+    parse_clause,
+)
+
+_COMPAT_EXPORTS = (
     ClauseParseResult,
     derive_features,
     parse_clause,

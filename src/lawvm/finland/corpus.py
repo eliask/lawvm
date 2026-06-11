@@ -5,6 +5,7 @@ Depends on CorpusStore/Farchive and metadata helpers only.
 """
 from __future__ import annotations
 
+import importlib
 import re
 from functools import lru_cache
 import datetime as dt
@@ -23,7 +24,7 @@ from lawvm.finland.consolidated_store import select_cached_consolidated_path_ind
 from lawvm.finland.consolidated_store import select_cached_consolidated_artifact
 from lawvm.finland.helpers import _parse_iso_date
 from lawvm.tools.editorial_hygiene import normalize_finlex_oracle_comparison_text
-import lawvm.finland.inline_repeal_stub as _fi_stub_register  # noqa: F401 — registers detector
+importlib.import_module("lawvm.finland.inline_repeal_stub")
 from lawvm.finland.metadata import (
     _amendment_effective_date,
     _amendment_expiry_date,

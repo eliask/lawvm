@@ -35,6 +35,7 @@ Schema additions (Slice 3):
 """
 from __future__ import annotations
 
+import importlib
 import json
 import sys
 import time
@@ -181,7 +182,7 @@ def _load_accepted_inline_statute_claims(
     Returns [] if no claims directory or no claims present.
     """
     # Activate Finland claim kinds for registry
-    import lawvm.finland.claim_kinds  # noqa: F401
+    importlib.import_module("lawvm.finland.claim_kinds")
 
     kind_name = "fi.v1.INLINE_STATUTE_RESOLUTION"
     by_kind_dir = claims_base_dir / "by-kind" / kind_name

@@ -18,13 +18,14 @@ Usage:
 from __future__ import annotations
 
 import datetime
+import importlib
 import json
 import os
 import re
 import sys
 from typing import Any, Dict, List, Optional
 
-import lawvm.finland.section_resolver  # noqa: F401 — registers FI section resolver at import time
+importlib.import_module("lawvm.finland.section_resolver")
 
 # Once-per-process gate for Task-N discovery hint (stateless: no files, no session state).
 _HINT_EMITTED: bool = False

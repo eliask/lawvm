@@ -78,6 +78,7 @@ This module therefore provides two entry points:
 """
 from __future__ import annotations
 
+import importlib
 import re
 from typing import Any, Optional, TYPE_CHECKING
 
@@ -413,7 +414,7 @@ def collect_and_cross_check(
     """
     from lxml import etree
     # Ensure the Finland stub detector is registered before dispatching.
-    import lawvm.finland.inline_repeal_stub as _  # noqa: F401
+    importlib.import_module("lawvm.finland.inline_repeal_stub")
     from lawvm.semantic.projection import _detect_inline_repeal_stub
 
     if not isinstance(oracle_xml_node, etree._Element):

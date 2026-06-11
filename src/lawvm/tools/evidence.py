@@ -46,7 +46,7 @@ from lawvm.tools.oracle_check import _classify_statute
 from lawvm.finland.transparent_store import is_known_missing_source
 
 
-from lawvm.tools._evidence_helpers import (  # noqa: E402
+from lawvm.tools._evidence_helpers import (
     _MANUAL_DATASET,
     _ORACLE_INCORRECT_DIAGNOSES,
     _PRIMARY_TIER_ORDER,
@@ -62,7 +62,7 @@ from lawvm.tools._evidence_helpers import (  # noqa: E402
     _section_label_from_key,
     _section_similarity,
 )
-from lawvm.tools.bisect_support import _section_bisect_support  # noqa: E402
+from lawvm.tools.bisect_support import _section_bisect_support
 
 _EVIDENCE_BUNDLE_CACHE_VERSION = "evidence-bundle-v53"
 _DEFAULT_ORACLE_CORPUS_BUNDLE_CACHE_DIR = ".tmp/evidence_bundle_cache"
@@ -762,18 +762,23 @@ def _compiler_observation_summary(
     }
 
 
-from lawvm.tools.evidence_claims import (  # noqa: E402
-    _build_section_claims,  # noqa: F401 — re-exported for test compatibility
-    _build_proof_claims,  # noqa: F401 — re-exported for test compatibility; kept as legacy fallback
+from lawvm.tools.evidence_claims import (
+    _build_section_claims,
+    _build_proof_claims,
     _primary_proof_tier,
 )
-from lawvm.tools.evidence_render import (  # noqa: E402
+from lawvm.tools.evidence_render import (
     _render_markdown_bundle,
     _write_bundle_output,
     _write_markdown_output,
     _print_evidence_bundle,
     _print_oracle_proof_bundle,
     _print_review_summary,
+)
+
+_EVIDENCE_COMPAT_EXPORTS = (
+    _build_section_claims,
+    _build_proof_claims,
 )
 
 
