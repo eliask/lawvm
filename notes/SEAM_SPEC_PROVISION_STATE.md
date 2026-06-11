@@ -117,7 +117,13 @@ not the amended target provision. The target address is still exposed as
 `detail.target_xpath_candidate`, but top-level `source_locator.xpath` remains
 absent and `detail.xpath_status` is
 `unavailable_operation_source_target_not_xml_anchored`. Operation-source footing
-comes from the bounded `OperationSource.raw_text` witness when available.
+comes from the bounded `OperationSource.raw_text` witness when available. That
+nested `detail.source_witness` object MAY include `quote_char_span` and
+`full_raw_text_char_span` over the stored `OperationSource.raw_text` string
+after boundary-whitespace trimming. Those are not original XML byte spans:
+top-level `source_locator.byte_span` remains absent and
+`detail.byte_span_status="unavailable_initial_surface"` until exact source
+artifact offsets are retained.
 
 ## 3. derived_state_hash
 

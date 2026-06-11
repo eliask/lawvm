@@ -35,6 +35,7 @@ def _timeline_with_content(
     content: IRNode,
     *,
     expires: str = "",
+    raw_text: str = "Section 1 is replaced with a new duty.",
 ) -> dict[LegalAddress, ProvisionTimeline]:
     address = LegalAddress(path=(("chapter", "1"), ("section", "1")))
     version = ProvisionVersion(
@@ -47,7 +48,7 @@ def _timeline_with_content(
             title="Amending Act",
             enacted="2019-12-01",
             effective="2020-01-01",
-            raw_text="Section 1 is replaced with a new duty.",
+            raw_text=raw_text,
         ),
         content_hash=irnode_content_hash(content),
     )
@@ -116,6 +117,14 @@ def test_provision_state_response_exposes_text_hash_and_temporal_pin() -> None:
         "Section 1 is replaced with a new duty."
     )
     assert payload["source_locator"]["detail"]["source_witness"]["quote_truncated"] is False
+    assert payload["source_locator"]["detail"]["source_witness"]["quote_char_span"] == [0, 38]
+    assert payload["source_locator"]["detail"]["source_witness"]["full_raw_text_char_span"] == [0, 38]
+    assert payload["source_locator"]["detail"]["source_witness"]["char_span_status"] == (
+        "operation_source_raw_text_char_span"
+    )
+    assert payload["source_locator"]["detail"]["source_witness"]["char_span_basis"] == (
+        "OperationSource.raw_text after boundary whitespace trimming"
+    )
     assert payload["lineage"]["status"] == "self_only"
     assert payload["lineage"]["address_chain"] == [payload["resolved_address"]]
     assert payload["engine"]["producer"] == "lawvm"
@@ -164,6 +173,25 @@ def test_lawvm_code_identity_marks_tracked_changes_dirty(monkeypatch) -> None:
 
     assert identity["git_dirty"] == "true"
     assert identity["build_id"] == "git:" + "b" * 40 + "+dirty"
+
+
+def test_operation_source_witness_char_span_uses_raw_text_boundary_trim() -> None:
+    payload = build_provision_state_response(
+        timelines=_timeline_with_content(
+            _section("A provision duty."),
+            raw_text="\n  Section 1 is replaced with a new duty.  \n",
+        ),
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="section:1",
+        as_of="2021-01-01",
+    )
+
+    witness = payload["source_locator"]["detail"]["source_witness"]
+    assert witness["quote"] == "Section 1 is replaced with a new duty."
+    assert witness["quote_char_span"] == [3, 41]
+    assert witness["full_raw_text_char_span"] == [3, 41]
+    assert witness["quote_hash_semantics"] == "sha256(trimmed full OperationSource.raw_text)"
 
 
 def test_derived_state_hash_changes_when_temporal_metadata_changes_without_text_change() -> None:

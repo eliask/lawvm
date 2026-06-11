@@ -1370,16 +1370,26 @@ def _xpath_literal(value: str) -> str:
 def _source_quote_payload(version: ProvisionVersion | None) -> dict[str, Any] | None:
     if version is None or version.source is None:
         return None
-    raw_text = str(version.source.raw_text or "").strip()
+    raw_source_text = str(version.source.raw_text or "")
+    raw_text = raw_source_text.strip()
     if not raw_text:
         return None
+    start = raw_source_text.find(raw_text)
+    if start < 0:
+        start = 0
     bounded = raw_text[:1000]
+    quote_end = start + len(bounded)
+    full_end = start + len(raw_text)
     return {
         "kind": "operation_source_raw_text",
         "quote": bounded,
         "quote_hash": _sha256_text(raw_text),
-        "quote_hash_semantics": "sha256(full OperationSource.raw_text)",
+        "quote_hash_semantics": "sha256(trimmed full OperationSource.raw_text)",
         "quote_truncated": len(raw_text) > len(bounded),
+        "quote_char_span": [start, quote_end],
+        "full_raw_text_char_span": [start, full_end],
+        "char_span_basis": "OperationSource.raw_text after boundary whitespace trimming",
+        "char_span_status": "operation_source_raw_text_char_span",
         "precision": "bounded_source_quote",
     }
 
