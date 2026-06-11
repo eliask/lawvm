@@ -320,10 +320,15 @@ def test_source_completeness_status_is_passive_authorization_row() -> None:
     data = status.to_dict()
 
     assert data["status"] == "incomplete"
+    assert data["row_id"] == "fi:2001/1234:source-completeness"
+    assert data["subject_id"] == "2001/1234"
     assert data["counts"]["missing_sources"] == 1
     assert data["counts"]["missing_dates"] == 0
     assert data["executable"] is False
     assert data["replay_authorized"] is False
+    assert data["authorization_ref"] == (
+        "fi:2001/1234:source-completeness:source-chain-completeness"
+    )
     assert data["execution_authorization"]["replay_authorized"] is False
     assert data["execution_authorization"]["strict_disposition"] == "block"
     assert (
@@ -357,6 +362,10 @@ def test_source_completeness_report_projects_proof_surface_rows() -> None:
     assert report_data["rows"][0]["replay_authorized"] is False
     assert proof_surface["surface_kind"] == "source_completeness_status"
     assert proof_surface["rows"][0]["row_kind"] == "source_completeness_status"
+    assert proof_surface["rows"][0]["subject_id"] == "2001/1234"
+    assert proof_surface["rows"][0]["authorization_ref"] == (
+        "fi:2001/1234:source-completeness:source-chain-completeness"
+    )
 
 
 def test_current_text_verification_matrix_marks_email_safe_candidate() -> None:

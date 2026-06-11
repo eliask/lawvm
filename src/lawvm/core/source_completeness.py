@@ -161,8 +161,10 @@ class SourceCompletenessStatus:
 
     def to_dict(self) -> dict[str, Any]:
         authorization = self.to_execution_authorization().to_dict()
+        authorization_ref = str(authorization["authorization_rule_id"])
         return {
             "row_id": self.row_id,
+            "subject_id": self.statute_id or self.row_id,
             "jurisdiction": self.jurisdiction,
             "statute_id": self.statute_id,
             "status": self.status,
@@ -171,6 +173,7 @@ class SourceCompletenessStatus:
             "executable": False,
             "replay_authorized": False,
             "authorization_status": authorization["authorization_status"],
+            "authorization_ref": authorization_ref,
             "execution_authorization": authorization,
             "safe_default": self.safe_default,
             "forbidden_shortcuts": list(self.forbidden_shortcuts),
