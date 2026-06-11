@@ -5,7 +5,7 @@ import csv
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from lawvm.estonia.fetch import extract_effective_date, fetch_rt_xml, open_rt_archive
 from lawvm.estonia.pair_planning import plan_ee_oracle_pair
@@ -182,7 +182,7 @@ def build_frontier_payload(
     *,
     top: int = 20,
     include_adjudicated: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     path = _resolve_run_path(label_or_path)
     rows = _load_rows(path)
     needs_source_basis = any(not row.source_basis for row in rows)

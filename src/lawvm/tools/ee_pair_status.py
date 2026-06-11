@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from lawvm.estonia.fetch import extract_effective_date, fetch_rt_xml, open_rt_archive
 from lawvm.estonia.pair_planning import plan_ee_oracle_pair
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     import argparse
 
 
-def build_pair_status_payload(base_id: str, oracle_id: str, title: str = "") -> dict:
+def build_pair_status_payload(base_id: str, oracle_id: str, title: str = "") -> dict[str, Any]:
     """Build one EE pair-status payload using the same scoring path as ee-bench."""
     archive = open_rt_archive(Path(_DEFAULT_DB))
     try:

@@ -307,7 +307,7 @@ def run_sweep(
 # ---------------------------------------------------------------------------
 
 
-def _severity_key(r: StatuteSweepResult) -> tuple:
+def _severity_key(r: StatuteSweepResult) -> tuple[int, int, int, int, int]:
     """Rank statutes worst-first.
 
     Order: data-defect (replay couldn't run) first, then by raw divergence

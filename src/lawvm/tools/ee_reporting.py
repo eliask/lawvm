@@ -25,7 +25,7 @@ _NONCORE_COMPARISON_CLASSES = {
 }
 
 
-def build_ee_comparison_policy_summary() -> dict:
+def build_ee_comparison_policy_summary() -> dict[str, object]:
     """Summarize the bounded non-silent EE comparison policy surface."""
     from lawvm.estonia.compare import (
         get_ee_comparison_non_silent_normalization_rule_classes,

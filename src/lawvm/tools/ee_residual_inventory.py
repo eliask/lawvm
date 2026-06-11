@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from lawvm.estonia.residual_inventory import (
     get_ee_residual_inventory,
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     import argparse
 
 
-def _inventory_payload(base_id: str | None = None, oracle_id: str | None = None) -> dict:
+def _inventory_payload(base_id: str | None = None, oracle_id: str | None = None) -> dict[str, Any]:
     if base_id is not None and oracle_id is not None:
         inventories = []
         inventory = get_ee_residual_inventory(base_id, oracle_id)

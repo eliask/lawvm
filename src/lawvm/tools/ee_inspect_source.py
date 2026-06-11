@@ -42,7 +42,7 @@ def _build_ee_source_sections(xml_bytes: bytes, *, target_title: str = "") -> li
     if "}" in root.tag:
         root_ns = root.tag.split("}")[0].lstrip("{")
 
-    def _first_descendant_tavatekst_text(para: ET.Element) -> str:
+    def _first_descendant_tavatekst_text(para: ET.Element[str]) -> str:
         for tavatekst in para.iter(_ns(root_ns, "tavatekst")):
             text = " ".join(str(chunk) for chunk in tavatekst.itertext()).replace("\xa0", " ")
             text = " ".join(text.split()).strip()
