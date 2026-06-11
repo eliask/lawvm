@@ -429,6 +429,7 @@ def test_format_report_surfaces_source_completeness_issue_reason() -> None:
 
     out = strict_report._format_report(cr, verbose=False)
     payload = strict_report._to_json(cr)
+    evidence = payload["evidence_surface_report"]
 
     assert "source_available : 1  (100%)" in out
     assert "APPLY.SOURCE_INCOMPLETE[2020/1 eff 2020-02-01 > cutoff 2020-01-01]" in out
@@ -436,6 +437,16 @@ def test_format_report_surfaces_source_completeness_issue_reason() -> None:
     assert (
         payload["source_completeness_issues"][0]["detail"]["oracle_suspect"]
         == "2020/1 eff 2020-02-01 > cutoff 2020-01-01"
+    )
+    assert evidence["summary"]["source_completeness_issue_count"] == 1
+    assert evidence["summary"]["source_completeness_issue_kind_counts"] == {
+        "APPLY.SOURCE_INCOMPLETE": 1
+    }
+    issue_rows = [
+        row for row in evidence["rows"] if row["surface"] == "source_completeness_issue"
+    ]
+    assert issue_rows[0]["detail"]["oracle_suspect"] == (
+        "2020/1 eff 2020-02-01 > cutoff 2020-01-01"
     )
 
 

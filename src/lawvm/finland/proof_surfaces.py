@@ -1066,6 +1066,7 @@ def finland_strict_report_evidence_surface(
     failed_ops = _mapping_sequence(payload.get("failed_ops"))
     strict_fail_reasons = _string_sequence(payload.get("strict_fail_reasons"))
     source_completeness_row = source_completeness_status_row(payload)
+    source_completeness_issues = _mapping_sequence(payload.get("source_completeness_issues"))
     temporal_resolution_rows = temporal_resolution_evidence_rows_from_projection_rows(
         projection_rows,
         strict_fail_reasons=strict_fail_reasons,
@@ -1112,6 +1113,7 @@ def finland_strict_report_evidence_surface(
             *({"surface": "agreement_residual", **dict(row)} for row in agreement_report_rows),
             *({"surface": "mutation_boundary_proof", **dict(row)} for row in mutation_boundary_proofs),
             *(({"surface": "source_completeness_status", **source_completeness_row},) if source_completeness_row else ()),
+            *({"surface": "source_completeness_issue", **dict(row)} for row in source_completeness_issues),
             *({"surface": "temporal_resolution_evidence", **dict(row)} for row in temporal_resolution_rows),
             *({"surface": "recovery_execution_authorization", **dict(row)} for row in recovery_authorization_rows),
             *({"surface": "strict_report_candidate_set_certificate", **dict(row)} for row in strict_report_candidate_sets),
@@ -1155,6 +1157,11 @@ def finland_strict_report_evidence_surface(
         "mutation_boundary_proof_count": len(mutation_boundary_proofs),
         "source_completeness_status_count": 1 if source_completeness_row else 0,
         "source_completeness": source_completeness_row.get("counts", {}) if source_completeness_row else {},
+        "source_completeness_issue_count": len(source_completeness_issues),
+        "source_completeness_issue_kind_counts": _count_by_field(
+            source_completeness_issues,
+            "kind",
+        ),
         "temporal_resolution_evidence_count": len(temporal_resolution_rows),
         "recovery_execution_authorization_count": len(recovery_authorization_rows),
         "strict_report_candidate_set_certificate_count": len(strict_report_candidate_sets),
