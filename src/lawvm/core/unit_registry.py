@@ -69,12 +69,13 @@ class UnitSpec:
         How the unit's identity is established and maintained:
         - "stable_label": explicit label (e.g. "5 §", "3 luku"); insertions use
           a-suffix ("1 a §"); repeal leaves a gap, never compacts siblings.
-          Applies to: osa, luku, pykälä, kohta, alakohta, liite.
+          Applies to: part (osa), chapter (luku), section (pykälä), paragraph
+          (kohta), subparagraph (alakohta), annex (liite).
         - "implicit_ordinal": ordinal position is the identity, not a printed
-          label (e.g. momentti is typically unlabelled in text but cited by
-          ordinal "3 momentti"). Insertion CAN shift later ordinals; repeal does
-          NOT compact later ordinals.
-          Applies to: momentti, rivi.
+          label (e.g. subsection (momentti) is typically unlabelled in text but
+          cited by ordinal "3 momentti"). Insertion CAN shift later ordinals;
+          repeal does NOT compact later ordinals.
+          Applies to: subsection (momentti), line (rivi).
         - "facet": identity inherited from host unit; no independent label
           lifecycle.
           Applies to: heading, intro, wrapUp, document_title.

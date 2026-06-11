@@ -88,7 +88,7 @@ class RefAmend:
     source_tokens: Optional[Tuple[int, int]] = None  # (start, end) in filtered stream
     witness_rule_id: Optional[str] = None  # construction rule that produced this op (diagnostic)
     resolution_kind: Optional[str] = None  # how the target was resolved (e.g. "backref_singular", "pass_through")
-    resolution_detail: Optional[str] = None  # antecedent label/chapter for backref/valiotsikko resolutions
+    resolution_detail: Optional[str] = None  # antecedent label/chapter for backref/intermediate-heading (väliotsikko) resolutions
 
     def __post_init__(self) -> None:
         if self.action not in {
@@ -134,7 +134,7 @@ class TextAmend:
 class LabelAmend:
     """Label, heading, or renumber/move change.
 
-    Covers verb=S (renumber/move) and special="otsikko" (heading replace).
+    Covers verb=S (renumber/move) and special="otsikko" (heading (otsikko) replace).
 
     Move semantics (from → to):
       target:      the SOURCE address — where the provision currently lives.
@@ -150,7 +150,7 @@ class LabelAmend:
 
     ParsedOp mapping:
       verb=S                    → action="renumber"
-      special="otsikko"         → action="heading_replace"
+      special="otsikko"         → action="heading_replace"  # heading (otsikko)
       number/chapter/etc.       → target (source address from ParsedOp fields)
       renumber_dest/etc.        → destination (built from dest fields)
       new_label: the leaf label of the destination
@@ -164,7 +164,7 @@ class LabelAmend:
     source_tokens: Optional[Tuple[int, int]] = None
     witness_rule_id: Optional[str] = None  # construction rule that produced this op (diagnostic)
     resolution_kind: Optional[str] = None  # how the target was resolved (e.g. "backref_singular", "pass_through")
-    resolution_detail: Optional[str] = None  # antecedent label/chapter for backref/valiotsikko resolutions
+    resolution_detail: Optional[str] = None  # antecedent label/chapter for backref/intermediate-heading (väliotsikko) resolutions
 
     def __post_init__(self) -> None:
         if not self.target.path:
