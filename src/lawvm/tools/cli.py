@@ -239,7 +239,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
   lawvm refs --to 2007/571          # what provisions cite this statute (reverse citation graph)
   lawvm cite 2009/738               # outgoing refs of a statute
   lawvm topic --topic kadmium       # full-text search across in-force sections
-  lawvm oracle-text 1992/734 --section section:7 a   # consolidated section text at current version
+  lawvm oracle-text 1992/734 --section section:7a    # consolidated section text at current version
 """
 
     _EPILOG = (

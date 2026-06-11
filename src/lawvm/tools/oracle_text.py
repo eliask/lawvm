@@ -418,10 +418,15 @@ def _normalize_section_label(label: str) -> str:
     return re.sub(r"[\s§.*]", "", label).lower()
 
 
+def _compact_section_label(label: str) -> str:
+    return re.sub(r"^(\d+)\s+([A-Za-zÄÖÅäöå])$", r"\1\2", label)
+
+
 def _num_text_to_canonical_selector(num_text: str) -> str:
-    """Convert AKN num-text like '7 §' or '14 b §' to canonical 'section:7' / 'section:14 b'."""
+    """Convert AKN num-text like '7 §' or '14 b §' to compact LawVM selectors."""
     # Strip trailing § (with optional surrounding whitespace) and any trailing dots/spaces
     label = re.sub(r"\s*§\s*$", "", num_text).strip().rstrip(".")
+    label = _compact_section_label(label)
     return f"section:{label}" if label else ""
 
 
@@ -469,7 +474,7 @@ def _collect_section_info(oracle_root: Any) -> List[Dict[str, str]]:
     """Collect (canonical_selector, eid, num_text) for every <section> in the oracle XML.
 
     Returns list of dicts with keys: canonical, eid, num_text.
-    canonical is the --section-accepted form, e.g. 'section:7 a'.
+    canonical is the compact LawVM selector form, e.g. 'section:7a'.
     """
     items = []
     for sec in oracle_root.findall(".//{*}section"):
@@ -479,6 +484,12 @@ def _collect_section_info(oracle_root: Any) -> List[Dict[str, str]]:
         canonical = _num_text_to_canonical_selector(num_text) if num_text else ""
         items.append({"canonical": canonical, "eid": eid, "num_text": num_text})
     return items
+
+
+def _section_el_canonical_selector(section_el: Any) -> str:
+    num_el = section_el.find(".//{*}num")
+    num_text = (num_el.text or "").strip() if num_el is not None else ""
+    return _num_text_to_canonical_selector(num_text) if num_text else ""
 
 
 def _find_nearby_sections(
@@ -663,6 +674,7 @@ def build_oracle_text_bundle(
         }
 
     full_text = _el_to_text(section_el)
+    resolved_section = _section_el_canonical_selector(section_el) or section_filter
     subsections: List[Dict[str, Any]] = []
     if show_subsections:
         for i, ss in enumerate(section_el.findall(".//{*}subsection"), start=1):
@@ -686,6 +698,7 @@ def build_oracle_text_bundle(
         "locator": locator,
         "at_amendment": at_amendment,
         "section_filter": section_filter,
+        "resolved_section": resolved_section,
         "found": True,
         "full_text": full_text,
         "full_text_length": len(full_text),
@@ -727,7 +740,10 @@ def _format_text(bundle: Dict[str, Any]) -> str:
     ]
     if bundle.get("at_amendment"):
         lines.append(f"Version  : @{_amendment_id_to_version_tag(bundle['at_amendment'])} (amendment {bundle['at_amendment']})")
-    lines.append(f"Section  : {bundle['section_filter']}")
+    resolved_section = bundle.get("resolved_section") or bundle["section_filter"]
+    lines.append(f"Section  : {resolved_section}")
+    if resolved_section != bundle["section_filter"]:
+        lines.append(f"Query    : {bundle['section_filter']}")
 
     # Listing mode
     section_labels = bundle.get("section_labels")

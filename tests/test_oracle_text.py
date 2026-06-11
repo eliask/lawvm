@@ -10,8 +10,10 @@ from lawvm.tools.oracle_text import (
     _el_to_text,
     _find_nearby_sections,
     _find_section_el,
+    _format_text,
     _format_temporal_span,
     _num_text_to_canonical_selector,
+    _section_el_canonical_selector,
     _section_has_temporal_markers,
     _STALE_SNAPSHOT_YEARS,
     build_temporal_spans,
@@ -73,7 +75,7 @@ def test_num_text_to_canonical_selector_plain() -> None:
 
 
 def test_num_text_to_canonical_selector_lettered() -> None:
-    assert _num_text_to_canonical_selector("14 b \xa7") == "section:14 b"
+    assert _num_text_to_canonical_selector("14 b \xa7") == "section:14b"
 
 
 def test_num_text_to_canonical_selector_empty() -> None:
@@ -85,9 +87,17 @@ def test_collect_section_info_returns_canonical_form() -> None:
     info = _collect_section_info(root)
     canonicals = [i["canonical"] for i in info]
     assert "section:7" in canonicals
-    assert "section:7 a" in canonicals
+    assert "section:7a" in canonicals
     assert "section:127" in canonicals
-    assert "section:127 a" in canonicals
+    assert "section:127a" in canonicals
+
+
+def test_section_el_canonical_selector_returns_compact_form() -> None:
+    root = etree.fromstring(_STATUTE_XML)
+    section = _find_section_el(root, "section:7 a")
+
+    assert section is not None
+    assert _section_el_canonical_selector(section) == "section:7a"
 
 
 def test_listing_canonical_token_round_trips_via_find_section_el() -> None:
@@ -100,6 +110,36 @@ def test_listing_canonical_token_round_trips_via_find_section_el() -> None:
             continue
         el = _find_section_el(root, canon)
         assert el is not None, f"canonical selector {canon!r} was not accepted by _find_section_el"
+
+
+def test_find_section_el_still_accepts_legacy_spaced_lettered_selector() -> None:
+    root = etree.fromstring(_STATUTE_XML)
+
+    section = _find_section_el(root, "section:7 a")
+
+    assert section is not None
+    assert "seven-a" in _el_to_text(section)
+
+
+def test_format_text_prints_resolved_compact_section_before_legacy_query() -> None:
+    text = _format_text(
+        {
+            "statute_id": "2021/728",
+            "locator": "finlex://example",
+            "at_amendment": "",
+            "section_filter": "section:2 d",
+            "resolved_section": "section:2d",
+            "found": True,
+            "full_text": "2 d § Text",
+            "full_text_length": 10,
+            "subsection_count": 1,
+            "total_section_count": 1,
+            "subsections": [],
+        }
+    )
+
+    assert "Section  : section:2d" in text
+    assert "Query    : section:2 d" in text
 
 
 def test_find_section_el_accepts_eid_directly() -> None:
