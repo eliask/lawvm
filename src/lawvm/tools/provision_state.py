@@ -970,6 +970,12 @@ def _content_hash(version: ProvisionVersion | None) -> str:
     return irnode_content_hash(version.content)
 
 
+def _structured_content_hash(version: ProvisionVersion | None) -> str:
+    if version is None or version.content is None:
+        return ""
+    return _sha256_canonical(version.content.to_jsonable_dict())
+
+
 def _hash_payload(
     *,
     status: str,
@@ -985,6 +991,7 @@ def _hash_payload(
     timeline_broken_at: Mapping[str, Any] | None = None,
     timeline_integrity: Mapping[str, Any] | None = None,
 ) -> dict[str, str]:
+    structured_content_hash = _structured_content_hash(version)
     derived_input = {
         "schema": SCHEMA,
         "status": status,
@@ -1008,6 +1015,11 @@ def _hash_payload(
     return {
         "content_hash": content_hash,
         "content_hash_semantics": "sha256(irnode_to_text(content)); text-only; empty for absent/tombstone",
+        "structured_content_hash": structured_content_hash,
+        "structured_content_hash_semantics": (
+            "sha256(canonical IRNode.to_jsonable_dict(content)); structure+attrs+labels+text; "
+            "empty for absent/tombstone; excluded from derived_state_hash"
+        ),
         "derived_state_hash": _sha256_canonical(derived_input),
         "derived_state_hash_semantics": (
             "sha256(canonical lawvm.provision_state.v1 state: status, query, "
