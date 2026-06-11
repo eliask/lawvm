@@ -28,6 +28,42 @@ _SOURCE_COMPLETENESS_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
 _SOURCE_COMPLETENESS_SAFE_DEFAULT = (
     "treat_source_completeness_as_diagnostic_not_replay_authorization"
 )
+SOURCE_COMPLETENESS_ORACLE_SUSPECT_FAMILIES = frozenset({
+    "oracle_version_effective_after_cutoff",
+    "oracle_version_expired_before_cutoff",
+    "oracle_missing_version_pin",
+})
+SOURCE_COMPLETENESS_PENDING_FAMILIES = frozenset({
+    "pending_future_effect_after_cutoff",
+})
+
+
+def format_source_completeness_issue_detail(
+    families: tuple[str, ...] | list[str],
+    reasons: tuple[str, ...] | list[str],
+) -> str:
+    """Compact report detail for source-completeness issue-family columns."""
+
+    parts: list[str] = []
+    for family in families:
+        if family:
+            parts.append(str(family))
+    for reason in reasons:
+        if reason:
+            parts.append(str(reason))
+    return "|".join(parts)
+
+
+def source_completeness_has_oracle_suspect_family(families: tuple[str, ...] | list[str]) -> bool:
+    """Return whether issue families describe oracle-version drift, not missing source XML."""
+
+    return any(family in SOURCE_COMPLETENESS_ORACLE_SUSPECT_FAMILIES for family in families)
+
+
+def source_completeness_has_pending_family(families: tuple[str, ...] | list[str]) -> bool:
+    """Return whether issue families require a later oracle-version check."""
+
+    return any(family in SOURCE_COMPLETENESS_PENDING_FAMILIES for family in families)
 
 
 @dataclass(frozen=True, slots=True)

@@ -536,6 +536,96 @@ def test_build_frontier_excludes_source_pathology_rows_when_requested() -> None:
     assert [row["statute_id"] for row in rows] == ["1992/1702"]
 
 
+def test_build_frontier_marks_source_completeness_oracle_drift_rows_suspect() -> None:
+    rows = _build_frontier(
+        bench_data=[
+            {"statute_id": "1925/34", "similarity": 0.705, "amendments": 43},
+            {"statute_id": "1992/1702", "similarity": 0.781, "amendments": 12},
+        ],
+        oracle_checks={
+            "1925/34": {
+                "total_divergences": 2,
+                "suspect_fraction": 0.0,
+                "top_diagnosis": "REPLAY_MISSING",
+                "replay_bug_count": 2,
+                "replay_bug_unblamed_count": 0,
+                "replay_bug_unblamed_fraction": 0.0,
+            },
+            "1992/1702": {
+                "total_divergences": 8,
+                "suspect_fraction": 0.0,
+                "top_diagnosis": "REPLAY_MISSING",
+                "replay_bug_count": 8,
+                "replay_bug_unblamed_count": 1,
+                "replay_bug_unblamed_fraction": 0.125,
+            },
+        },
+        version_gates={},
+        strict_data={
+            "1925/34": {
+                "projection_kinds": ["APPLY.SOURCE_INCOMPLETE"],
+                "source_pathology_codes": [],
+                "source_incomplete": True,
+                "source_completeness_issue_families": ["oracle_version_effective_after_cutoff"],
+                "source_completeness_issue_reasons": ["1976/954 eff 1977-01-01 > cutoff 1976-12-10"],
+                "fail_reasons": ["APPLY.SOURCE_INCOMPLETE"],
+            },
+        },
+        score_threshold=0.95,
+        top=10,
+        exclude_suspect=False,
+    )
+
+    by_sid = {row["statute_id"]: row for row in rows}
+    assert by_sid["1925/34"]["is_suspect"] is True
+    assert by_sid["1925/34"]["bucket"] == "oracle_version_suspect"
+    assert by_sid["1925/34"]["source_completeness_issue_families"] == "oracle_version_effective_after_cutoff"
+    assert "1976/954 eff 1977-01-01 > cutoff 1976-12-10" in by_sid["1925/34"]["top_diagnosis"]
+
+
+def test_build_frontier_excludes_source_completeness_pending_rows_when_requested() -> None:
+    rows = _build_frontier(
+        bench_data=[
+            {"statute_id": "1925/34", "similarity": 0.705, "amendments": 43},
+            {"statute_id": "1992/1702", "similarity": 0.781, "amendments": 12},
+        ],
+        oracle_checks={
+            "1925/34": {
+                "total_divergences": 2,
+                "suspect_fraction": 0.0,
+                "top_diagnosis": "REPLAY_MISSING",
+                "replay_bug_count": 2,
+                "replay_bug_unblamed_count": 0,
+                "replay_bug_unblamed_fraction": 0.0,
+            },
+            "1992/1702": {
+                "total_divergences": 8,
+                "suspect_fraction": 0.0,
+                "top_diagnosis": "REPLAY_MISSING",
+                "replay_bug_count": 8,
+                "replay_bug_unblamed_count": 1,
+                "replay_bug_unblamed_fraction": 0.125,
+            },
+        },
+        version_gates={},
+        strict_data={
+            "1925/34": {
+                "projection_kinds": ["APPLY.SOURCE_INCOMPLETE"],
+                "source_pathology_codes": [],
+                "source_incomplete": True,
+                "source_completeness_issue_families": ["pending_future_effect_after_cutoff"],
+                "source_completeness_issue_reasons": ["pending:1976/954 eff 1977-01-01 > cutoff 1976-12-10"],
+                "fail_reasons": ["APPLY.SOURCE_INCOMPLETE"],
+            },
+        },
+        score_threshold=0.95,
+        top=10,
+        exclude_suspect=True,
+    )
+
+    assert [row["statute_id"] for row in rows] == ["1992/1702"]
+
+
 def test_source_pathology_signal_unions_live_and_strict_codes() -> None:
     signaled, codes = _source_pathology_signal(
         {
@@ -1030,6 +1120,58 @@ def test_summarize_low_scoring_rows_counts_contingent_effective_date_separately(
     }
 
 
+def test_summarize_low_scoring_rows_counts_source_completeness_oracle_drift_as_version_suspect() -> None:
+    summary = _summarize_low_scoring_rows(
+        low_scoring=[
+            {"statute_id": "1925/34", "similarity": 0.826, "amendments": 9},
+            {"statute_id": "1992/1702", "similarity": 0.781, "amendments": 12},
+        ],
+        oracle_checks={
+            "1925/34": {
+                "total_divergences": 3,
+                "suspect_fraction": 0.0,
+                "top_diagnosis": "REPLAY_MISSING",
+                "replay_bug_count": 3,
+                "replay_bug_unblamed_count": 0,
+                "replay_bug_unblamed_fraction": 0.0,
+            },
+            "1992/1702": {
+                "total_divergences": 8,
+                "suspect_fraction": 0.0,
+                "top_diagnosis": "REPLAY_MISSING",
+                "replay_bug_count": 8,
+                "replay_bug_unblamed_count": 1,
+                "replay_bug_unblamed_fraction": 0.125,
+            },
+        },
+        version_gates={},
+        strict_data={
+            "1925/34": {
+                "projection_kinds": ["APPLY.SOURCE_INCOMPLETE"],
+                "source_pathology_codes": [],
+                "source_incomplete": True,
+                "source_completeness_issue_families": ["oracle_version_effective_after_cutoff"],
+                "source_completeness_issue_reasons": ["1976/954 eff 1977-01-01 > cutoff 1976-12-10"],
+                "fail_reasons": ["APPLY.SOURCE_INCOMPLETE"],
+            },
+        },
+    )
+
+    assert summary == {
+        "total_low": 2,
+        "resolved_after_refresh": 0,
+        "oracle_version_suspect": 1,
+        "no_oracle_check": 0,
+        "source_pathology": 0,
+        "html_noncommensurable": 0,
+        "html_topology": 0,
+        "contingent_effective_date": 0,
+        "base_drift": 0,
+        "other_suspect": 0,
+        "candidate": 1,
+    }
+
+
 def test_summarize_low_scoring_rows_counts_html_topology_separately() -> None:
     summary = _summarize_low_scoring_rows(
         low_scoring=[
@@ -1309,6 +1451,38 @@ def test_load_strict_run_reads_contingent_effective_sources_column(tmp_path, mon
         "2005/544",
         "2006/1322",
     ]
+
+
+def test_load_strict_run_reads_source_completeness_issue_columns(tmp_path, monkeypatch) -> None:
+    strict_dir = tmp_path / "strict_runs"
+    strict_dir.mkdir()
+    run = strict_dir / "20260328T0000_demo.csv"
+    run.write_text(
+        "\n".join(
+            [
+                "statute_id,n_canonical,n_failed,n_projection_rows,projection_kinds,source_completeness_issue_families,source_completeness_issue_reasons,fail_reasons,source_incomplete,chain_length,source_available,elapsed_s,error",
+                "1925/34,0,0,2,APPLY.SOURCE_INCOMPLETE,oracle_version_effective_after_cutoff,1976/954 eff 1977-01-01 > cutoff 1976-12-10,APPLY.SOURCE_INCOMPLETE,1,43,43,1.00,",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("lawvm.tools.frontier._strict_runs_dir", lambda: strict_dir)
+
+    rows = _load_strict_run("demo")
+
+    assert rows is not None
+    assert rows["1925/34"]["source_completeness_issue_families"] == [
+        "oracle_version_effective_after_cutoff"
+    ]
+    assert rows["1925/34"]["source_completeness_issue_reasons"] == [
+        "1976/954 eff 1977-01-01 > cutoff 1976-12-10"
+    ]
+    assert (
+        rows["1925/34"]["source_completeness_issue_detail"]
+        == "oracle_version_effective_after_cutoff|1976/954 eff 1977-01-01 > cutoff 1976-12-10"
+    )
 
 
 def test_load_oracle_check_cache_reads_statute_level_signals(tmp_path) -> None:

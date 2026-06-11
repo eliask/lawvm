@@ -28,6 +28,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from lawvm.core.source_completeness import (
+    format_source_completeness_issue_detail,
+    source_completeness_has_oracle_suspect_family,
+    source_completeness_has_pending_family,
+)
 from lawvm.finland.corpus import get_consolidated_oracle_suspect_cache_only
 from lawvm.finland.proof_surfaces import finland_frontier_proof_evidence_surface
 from lawvm.tools._evidence_helpers import _run_quietly
@@ -455,6 +460,12 @@ def _load_strict_run(label: str) -> Optional[Dict[str, Dict]]:
             projection_kinds = _parse_string_listish(row.get("projection_kinds", ""))
             fail_reasons = _parse_string_listish(row.get("fail_reasons", ""))
             source_pathology_codes = _parse_string_listish(row.get("source_pathology_codes", ""))
+            source_completeness_issue_families = _parse_string_listish(
+                row.get("source_completeness_issue_families", "")
+            )
+            source_completeness_issue_reasons = _parse_string_listish(
+                row.get("source_completeness_issue_reasons", "")
+            )
             source_pathology_rows: list[dict[str, Any]] = []
             raw_rows = str(row.get("source_pathology_rows_json", "") or "")
             if raw_rows:
@@ -469,6 +480,12 @@ def _load_strict_run(label: str) -> Optional[Dict[str, Dict]]:
                 "projection_kinds": projection_kinds,
                 "source_pathology_codes": source_pathology_codes,
                 "source_pathology_rows": source_pathology_rows,
+                "source_completeness_issue_families": source_completeness_issue_families,
+                "source_completeness_issue_reasons": source_completeness_issue_reasons,
+                "source_completeness_issue_detail": format_source_completeness_issue_detail(
+                    source_completeness_issue_families,
+                    source_completeness_issue_reasons,
+                ),
                 "contingent_effective_sources": _parse_string_listish(row.get("contingent_effective_sources", "")),
                 "source_incomplete": row.get("source_incomplete", "0") in ("1", "True", "true"),
                 "fail_reasons": fail_reasons,
@@ -506,6 +523,23 @@ def _strict_marks_contingent_effective_date(strict_row: Dict) -> bool:
     fail_reasons = {str(v) for v in strict_row.get("fail_reasons", [])}
     contingent_effective_sources = {str(v) for v in strict_row.get("contingent_effective_sources", []) if str(v)}
     return "TIME.CONTINGENT_EFFECTIVE_DATE" in fail_reasons or bool(contingent_effective_sources)
+
+
+def _source_completeness_issue_signal(strict_row: Optional[Dict]) -> tuple[bool, bool, str, List[str], List[str]]:
+    if not strict_row:
+        return False, False, "", [], []
+    families = [str(v) for v in strict_row.get("source_completeness_issue_families", []) if str(v)]
+    reasons = [str(v) for v in strict_row.get("source_completeness_issue_reasons", []) if str(v)]
+    detail = str(strict_row.get("source_completeness_issue_detail") or "").strip()
+    if not detail:
+        detail = format_source_completeness_issue_detail(families, reasons)
+    return (
+        source_completeness_has_oracle_suspect_family(families),
+        source_completeness_has_pending_family(families),
+        detail,
+        families,
+        reasons,
+    )
 
 
 def _source_pathology_signal(
@@ -666,6 +700,8 @@ def _bucket_frontier_row(
     similarity: float,
     amendments: int,
     source_pathology: bool,
+    source_completeness_oracle_suspect: bool = False,
+    source_completeness_pending: bool = False,
     html_noncommensurable: bool,
     html_topology_mismatch: bool,
     contingent_effective_date: bool,
@@ -680,9 +716,10 @@ def _bucket_frontier_row(
     )
     oracle_or_version = bool(version_gate) or (
         oracle_info is not None and float(oracle_info.get("suspect_fraction", 0.0) or 0.0) > 0.5
-    )
+    ) or source_completeness_oracle_suspect or source_completeness_pending
     final_suspect = (
         base_suspect or source_pathology or html_noncommensurable or html_topology_mismatch or contingent_effective_date
+        or source_completeness_oracle_suspect or source_completeness_pending
     )
 
     if oracle_or_version:
@@ -739,6 +776,13 @@ def _build_frontier(
             strict_row = strict_data.get(sid, {})
             projection_kinds = strict_row.get("projection_kinds", [])
             source_incomplete = strict_row.get("source_incomplete", False)
+        (
+            source_completeness_oracle_suspect,
+            source_completeness_pending,
+            source_completeness_detail,
+            source_completeness_families,
+            source_completeness_reasons,
+        ) = _source_completeness_issue_signal(strict_row)
         source_pathology, source_pathology_codes = _source_pathology_signal(
             oracle_info,
             strict_row,
@@ -752,7 +796,23 @@ def _build_frontier(
             strict_row,
         )
 
-        if source_pathology:
+        if source_completeness_oracle_suspect:
+            fixability *= 0.05
+            is_suspect = True
+            top_diag = (
+                f"SOURCE_COMPLETENESS_ORACLE_SUSPECT:{source_completeness_detail}"
+                if source_completeness_detail
+                else "SOURCE_COMPLETENESS_ORACLE_SUSPECT"
+            )
+        elif source_completeness_pending:
+            fixability *= 0.2
+            is_suspect = True
+            top_diag = (
+                f"SOURCE_COMPLETENESS_PENDING:{source_completeness_detail}"
+                if source_completeness_detail
+                else "SOURCE_COMPLETENESS_PENDING"
+            )
+        elif source_pathology:
             fixability *= 0.1
             is_suspect = True
             top_diag = (
@@ -785,6 +845,8 @@ def _build_frontier(
             similarity=sim,
             amendments=amendments,
             source_pathology=source_pathology,
+            source_completeness_oracle_suspect=source_completeness_oracle_suspect,
+            source_completeness_pending=source_completeness_pending,
             html_noncommensurable=bool(html_noncommensurable_reason),
             html_topology_mismatch=html_topology_mismatch,
             contingent_effective_date=contingent_effective_date,
@@ -800,6 +862,9 @@ def _build_frontier(
                 "top_diagnosis": top_diag,
                 "amendments": amendments,
                 "source_incomplete": source_incomplete,
+                "source_completeness_issue_families": "|".join(source_completeness_families),
+                "source_completeness_issue_reasons": "|".join(source_completeness_reasons),
+                "source_completeness_issue_detail": source_completeness_detail,
                 "source_pathology": source_pathology,
                 "source_pathology_codes": "|".join(source_pathology_codes) if source_pathology_codes else "",
                 "html_noncommensurable_reason": html_noncommensurable_reason,
@@ -849,6 +914,13 @@ def _summarize_low_scoring_rows(
             continue
         version_gate = version_gates.get(sid)
         strict_row = strict_data.get(sid, {}) if strict_data else None
+        (
+            source_completeness_oracle_suspect,
+            source_completeness_pending,
+            _,
+            _families,
+            _reasons,
+        ) = _source_completeness_issue_signal(strict_row)
         source_pathology, _ = _source_pathology_signal(oracle_info, strict_row)
         html_noncommensurable_reason = _html_noncommensurable_signal(oracle_info)
         html_topology_mismatch, _, _ = _html_topology_signal(oracle_info)
@@ -863,6 +935,8 @@ def _summarize_low_scoring_rows(
             similarity=row["similarity"],
             amendments=row["amendments"],
             source_pathology=source_pathology,
+            source_completeness_oracle_suspect=source_completeness_oracle_suspect,
+            source_completeness_pending=source_completeness_pending,
             html_noncommensurable=bool(html_noncommensurable_reason),
             html_topology_mismatch=html_topology_mismatch,
             contingent_effective_date=contingent_effective_date,
@@ -1153,6 +1227,7 @@ def _print_frontier(rows: List[Dict], label: str, exclude_suspect: bool, mode: s
         if suspect_frac is not None and row["is_suspect"]:
             suspect_str = f"yes({suspect_frac:.0%})"
         projection = row["projection_kinds"]
+        source_completeness_detail = row.get("source_completeness_issue_detail", "")
         path_codes = row["source_pathology_codes"]
         path_detail = row.get("source_pathology_detail", "")
         diag = row["top_diagnosis"]
@@ -1160,16 +1235,22 @@ def _print_frontier(rows: List[Dict], label: str, exclude_suspect: bool, mode: s
         html_detail = row["html_missing_from_xml"] or row["html_extra_in_xml"]
         html_noncomm = row["html_noncommensurable_reason"]
         detail = (
-            path_detail
-            if path_detail
+            source_completeness_detail
+            if source_completeness_detail
             else (
-                path_codes
-                if path_codes
+                path_detail
+                if path_detail
                 else (
-                    html_noncomm
-                    if html_noncomm
+                    path_codes
+                    if path_codes
                     else (
-                        html_detail if html_detail else (cont_src if cont_src else (projection if projection else diag))
+                        html_noncomm
+                        if html_noncomm
+                        else (
+                            html_detail
+                            if html_detail
+                            else (cont_src if cont_src else (projection if projection else diag))
+                        )
                     )
                 )
             )
@@ -1198,7 +1279,9 @@ def _print_bucket_report(rows: List[Dict], top: int, label: str, mode: str) -> N
         print(f"[{bucket}] {len(bucket_rows)} statute(s)")
         for i, row in enumerate(bucket_rows[:top], 1):
             detail = row["top_diagnosis"]
-            if row.get("source_pathology_detail"):
+            if row.get("source_completeness_issue_detail"):
+                detail = row["source_completeness_issue_detail"]
+            elif row.get("source_pathology_detail"):
                 detail = row["source_pathology_detail"]
             elif row.get("source_pathology_codes"):
                 detail = row["source_pathology_codes"]
@@ -1296,6 +1379,9 @@ def _save_frontier_csv(rows: List[Dict], label: str) -> Path:
                 "suspect_fraction",
                 "amendments",
                 "source_incomplete",
+                "source_completeness_issue_families",
+                "source_completeness_issue_reasons",
+                "source_completeness_issue_detail",
                 "source_pathology",
                 "source_pathology_codes",
                 "html_noncommensurable_reason",
@@ -1321,6 +1407,9 @@ def _save_frontier_csv(rows: List[Dict], label: str) -> Path:
                     f"{row['suspect_fraction']:.4f}" if row["suspect_fraction"] is not None else "",
                     row["amendments"],
                     "1" if row["source_incomplete"] else "0",
+                    row.get("source_completeness_issue_families", ""),
+                    row.get("source_completeness_issue_reasons", ""),
+                    row.get("source_completeness_issue_detail", ""),
                     "1" if row["source_pathology"] else "0",
                     row["source_pathology_codes"],
                     row["html_noncommensurable_reason"],
