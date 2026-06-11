@@ -32,6 +32,7 @@ import sys
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -42,6 +43,10 @@ _REPO_ROOT = _SCRIPT_DIR.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from scripts.legacy_fetch_archive import FetchArchive
+
+ActRecord = dict[str, Any]
+MetricReport = dict[str, Any]
+IntMetricReport = dict[int, MetricReport]
 
 # ---------------------------------------------------------------------------
 # Regex patterns — applied to raw bytes (b"...") for speed
@@ -72,7 +77,7 @@ _RE_VIIDE_ID_FIELD = re.compile(rb"[&?]id=([^&\s]+)")
 # Record extraction
 # ---------------------------------------------------------------------------
 
-def _parse_date_year(m: re.Match | None) -> int | None:
+def _parse_date_year(m: re.Match[bytes] | None) -> int | None:
     """Return year from a regex match with group(1)=YYYY.
 
     Rejects implausible years (RT data has some '0199-02-14' typos).
@@ -86,7 +91,7 @@ def _parse_date_year(m: re.Match | None) -> int | None:
         return None
 
 
-def _parse_act(url: str, raw: bytes) -> dict | None:
+def _parse_act(url: str, raw: bytes) -> ActRecord | None:
     """Extract all census-relevant fields from a single act's raw XML bytes.
 
     Returns None if the act is not a proper act XML (e.g. feed XML).
@@ -176,7 +181,7 @@ def _read_corpus(
     db_path: Path,
     quick: bool = False,
     progress_every: int = 2000,
-) -> list[dict]:
+) -> list[ActRecord]:
     """Read and parse all act XMLs from the archive. Returns list of act dicts."""
     import zstandard as zstd
 
@@ -214,7 +219,7 @@ def _read_corpus(
     # GROUP BY url with MAX(last_seen) to get the most recent version.
     # Process in batches of 5000 to avoid huge memory allocations.
     BATCH = 5000
-    acts: list[dict] = []
+    acts: list[ActRecord] = []
     t_start = time.time()
 
     n_total = len(all_urls)
@@ -295,7 +300,7 @@ def _read_corpus(
 # Metric computation
 # ---------------------------------------------------------------------------
 
-def compute_corpus_composition(acts: list[dict]) -> dict:
+def compute_corpus_composition(acts: list[ActRecord]) -> MetricReport:
     """Annual and decadal counts by dokumentLiik and tekstiliik.
 
     Returns {
@@ -304,7 +309,7 @@ def compute_corpus_composition(acts: list[dict]) -> dict:
         'total_by_type': {'seadus': N, ...},
     }
     """
-    by_year: dict[int, Counter] = defaultdict(Counter)
+    by_year: defaultdict[int, Counter[str]] = defaultdict(Counter)
 
     for act in acts:
         y = act["enacted_year"]
@@ -324,13 +329,13 @@ def compute_corpus_composition(acts: list[dict]) -> dict:
         by_year[y][typ] += 1
         by_year[y]["total"] += 1
 
-    by_decade: dict[int, Counter] = defaultdict(Counter)
+    by_decade: defaultdict[int, Counter[str]] = defaultdict(Counter)
     for y, c in by_year.items():
         decade = (y // 10) * 10
         for k, v in c.items():
             by_decade[decade][k] += v
 
-    total_by_type: Counter = Counter()
+    total_by_type: Counter[str] = Counter()
     for y, c in by_year.items():
         for k, v in c.items():
             total_by_type[k] += v
@@ -342,7 +347,7 @@ def compute_corpus_composition(acts: list[dict]) -> dict:
     }
 
 
-def compute_amendment_density(acts: list[dict]) -> dict:
+def compute_amendment_density(acts: list[ActRecord]) -> MetricReport:
     """Amendment density over time.
 
     For terviktekst acts (which carry the complete muutmismarge list),
@@ -365,7 +370,7 @@ def compute_amendment_density(acts: list[dict]) -> dict:
         decade = (act["enacted_year"] // 10) * 10
         by_decade[decade].append(act["amendment_count"])
 
-    decade_stats: dict[int, dict] = {}
+    decade_stats: dict[int, MetricReport] = {}
     for decade, counts in sorted(by_decade.items()):
         if not counts:
             continue
@@ -382,7 +387,7 @@ def compute_amendment_density(acts: list[dict]) -> dict:
 
     # Annual churn: for each amendment event (from muutmismarge joustumine),
     # count how many amendments become effective in that year
-    churn_by_year: Counter = Counter()
+    churn_by_year: Counter[int] = Counter()
     for act in terviktekst_acts:
         for yr in act["amendment_years"]:
             churn_by_year[yr] += 1
@@ -397,7 +402,7 @@ def compute_amendment_density(acts: list[dict]) -> dict:
     }
 
 
-def compute_statute_stock(acts: list[dict]) -> dict:
+def compute_statute_stock(acts: list[ActRecord]) -> MetricReport:
     """Approximate statute stock over time.
 
     A statute is considered "alive" if it has a terviktekst in our corpus.
@@ -418,7 +423,7 @@ def compute_statute_stock(acts: list[dict]) -> dict:
     """
     # Deduplicate by grupi_id: keep only terviktekst versions
     # (each grupi_id = one logical statute; multiple tervikteksts = revisions)
-    terviktekst_by_grupi: dict[str, dict] = {}
+    terviktekst_by_grupi: dict[str, ActRecord] = {}
     for act in acts:
         if "terviktekst" not in act["tekstiliik"]:
             continue
@@ -435,8 +440,8 @@ def compute_statute_stock(acts: list[dict]) -> dict:
 
     statutes = list(terviktekst_by_grupi.values())
 
-    enacted_by_year: Counter = Counter()
-    repealed_by_year: Counter = Counter()
+    enacted_by_year: Counter[int] = Counter()
+    repealed_by_year: Counter[int] = Counter()
     for s in statutes:
         enacted_by_year[s["enacted_year"]] += 1
         if s["kehtivus_lopp_year"]:
@@ -463,7 +468,7 @@ def compute_statute_stock(acts: list[dict]) -> dict:
     }
 
 
-def compute_citation_network(acts: list[dict]) -> dict:
+def compute_citation_network(acts: list[ActRecord]) -> MetricReport:
     """Citation network from viideURI cross-references.
 
     Only terviktekst acts carry structured viideURI elements.
@@ -478,8 +483,8 @@ def compute_citation_network(acts: list[dict]) -> dict:
         'top_cited': [(globaal_id, count), ...],  # top 20
     }
     """
-    in_degree: Counter = Counter()
-    out_degree: Counter = Counter()
+    in_degree: Counter[str] = Counter()
+    out_degree: Counter[str] = Counter()
     total_edges = 0
     acts_with_citations = 0
 
@@ -499,7 +504,7 @@ def compute_citation_network(acts: list[dict]) -> dict:
             total_edges += 1
 
     # In-degree distribution
-    degree_dist: Counter = Counter(in_degree.values())
+    degree_dist: Counter[int] = Counter(in_degree.values())
 
     # Power-law exponent (Clauset MLE, same as legal_entropy.py)
     alpha = _fit_power_law(degree_dist)
@@ -517,7 +522,7 @@ def compute_citation_network(acts: list[dict]) -> dict:
     }
 
 
-def compute_amendment_halflife(acts: list[dict]) -> dict:
+def compute_amendment_halflife(acts: list[ActRecord]) -> IntMetricReport:
     """Time from enactment to first amendment, by decade.
 
     Uses terviktekst acts which carry the complete amendment history.
@@ -537,7 +542,7 @@ def compute_amendment_halflife(acts: list[dict]) -> dict:
             decade = (enacted // 10) * 10
             first_amend_delay[decade].append(delay)
 
-    result: dict[int, dict] = {}
+    result: IntMetricReport = {}
     for decade, delays in sorted(first_amend_delay.items()):
         delays.sort()
         n = len(delays)
@@ -557,7 +562,7 @@ def compute_amendment_halflife(acts: list[dict]) -> dict:
 # Power-law fit
 # ---------------------------------------------------------------------------
 
-def _fit_power_law(deg_dist: dict) -> float:
+def _fit_power_law(deg_dist: dict[int, int]) -> float:
     """MLE power-law exponent (Clauset et al 2009). Returns alpha."""
     x_min = 1
     n = sum(cnt for deg, cnt in deg_dist.items() if deg >= x_min)
@@ -576,9 +581,9 @@ def _fit_power_law(deg_dist: dict) -> float:
 # ---------------------------------------------------------------------------
 
 def write_csv(
-    composition: dict,
-    stock: dict,
-    amendment_density: dict,
+    composition: MetricReport,
+    stock: MetricReport,
+    amendment_density: MetricReport,
     output_dir: Path,
 ) -> None:
     """Write ee_census_summary.csv with annual and decadal metrics."""
@@ -619,12 +624,12 @@ def write_csv(
 # ---------------------------------------------------------------------------
 
 def write_report(
-    acts: list[dict],
-    composition: dict,
-    stock: dict,
-    amendment_density: dict,
-    citation_net: dict,
-    halflife: dict,
+    acts: list[ActRecord],
+    composition: MetricReport,
+    stock: MetricReport,
+    amendment_density: MetricReport,
+    citation_net: MetricReport,
+    halflife: IntMetricReport,
     output_dir: Path,
 ) -> None:
     outpath = output_dir / "ee_census_report.md"
@@ -848,12 +853,12 @@ def write_report(
 # ---------------------------------------------------------------------------
 
 def print_key_findings(
-    acts: list[dict],
-    composition: dict,
-    stock: dict,
-    amendment_density: dict,
-    citation_net: dict,
-    halflife: dict,
+    acts: list[ActRecord],
+    composition: MetricReport,
+    stock: MetricReport,
+    amendment_density: MetricReport,
+    citation_net: MetricReport,
+    halflife: IntMetricReport,
 ) -> None:
     """Print key findings to stdout."""
     print("\n" + "=" * 70)
