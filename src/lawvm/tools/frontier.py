@@ -978,16 +978,32 @@ _PREEXISTING_ONLY_SECTION_CLAIM_KINDS = {
 }
 
 
+def _frontier_live_compile_metadata() -> Any:
+    """Build the explicit metadata required for live frontier evidence reports."""
+    from lawvm.core.compile_metadata_default import build_default_compile_metadata
+
+    return build_default_compile_metadata(
+        jurisdiction="fi",
+        source_bundle_hash="sha256:live-review",
+        build_id="cli.frontier.fi",
+    )
+
+
 def _build_proof_report_rows(rows: List[Dict], mode: str) -> List[Dict]:
     """Attach live statute-level proof summaries to frontier rows."""
     from lawvm.tools.evidence import build_evidence_bundle
 
+    compile_metadata = _frontier_live_compile_metadata()
     proof_rows: List[Dict] = []
     for row in rows:
         sid = str(row.get("statute_id") or "")
         if not sid:
             continue
-        bundle = build_evidence_bundle(sid, mode=mode)
+        bundle = build_evidence_bundle(
+            sid,
+            mode=mode,
+            compile_metadata=compile_metadata,
+        )
         proof_kinds = [
             str(item.get("kind") or "") for item in bundle.get("proof_claims", []) if str(item.get("kind") or "")
         ]
@@ -1141,12 +1157,17 @@ def _build_evidence_bundles(rows: List[Dict], mode: str) -> List[Dict]:
     """Build full live evidence bundles for the displayed frontier rows."""
     from lawvm.tools.evidence import build_evidence_bundle
 
+    compile_metadata = _frontier_live_compile_metadata()
     bundles: List[Dict] = []
     for row in rows:
         sid = str(row.get("statute_id") or "")
         if not sid:
             continue
-        bundle = build_evidence_bundle(sid, mode=mode)
+        bundle = build_evidence_bundle(
+            sid,
+            mode=mode,
+            compile_metadata=compile_metadata,
+        )
         bundles.append(bundle)
     return bundles
 
@@ -1631,7 +1652,7 @@ def main(args) -> None:
         version_gates=version_gates,
         strict_data=strict_data,
         score_threshold=score_threshold,
-        top=max(top, len(low_scoring)) if (bucket_filter or bucket_report or proof_report) else top,
+        top=max(top, len(low_scoring)) if (bucket_filter or bucket_report) else top,
         exclude_suspect=exclude_suspect,
     )
 
@@ -1643,20 +1664,26 @@ def main(args) -> None:
         strict_data,
     )
 
-    proof_payload = _build_proof_report_rows(frontier, mode) if proof_report else []
-    if proof_payload:
-        summary = _apply_proof_rebucketing_to_summary(summary, frontier, proof_payload)
-        frontier, proof_payload = _apply_proof_rebucketing(
-            frontier,
-            proof_payload,
-            exclude_suspect=exclude_suspect,
-        )
-
     if bucket_filter:
         frontier = [row for row in frontier if row["bucket"] == bucket_filter][:top]
-        if proof_payload:
-            proof_payload = [row for row in proof_payload if row["bucket"] == bucket_filter][:top]
         status(f"Bucket filter: {bucket_filter} -> {len(frontier)} row(s)")
+
+    proof_payload: List[Dict] = []
+    if proof_report:
+        proof_scope_rows = frontier[:top]
+        proof_payload = _build_proof_report_rows(proof_scope_rows, mode)
+        if proof_payload:
+            summary = _apply_proof_rebucketing_to_summary(
+                summary,
+                proof_scope_rows,
+                proof_payload,
+            )
+            proof_frontier, proof_payload = _apply_proof_rebucketing(
+                proof_scope_rows,
+                proof_payload,
+                exclude_suspect=exclude_suspect,
+            )
+            frontier = proof_frontier + frontier[len(proof_scope_rows) :]
 
     total_low = summary["total_low"]
     if not json_output:

@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 import sqlite3
 import json
+from typing import Any
 
 from lawvm.tools.frontier import (
     FRESH_ORACLE_CHECK_LIMIT,
@@ -2013,9 +2014,24 @@ def test_frontier_main_json_output_emits_clean_payload(monkeypatch, capsys) -> N
 
 
 def test_build_proof_report_rows_reads_live_evidence_bundle(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "lawvm.tools.evidence.build_evidence_bundle",
-        lambda statute_id, mode="legal_pit": {
+    calls: list[dict[str, object]] = []
+
+    def fake_build_evidence_bundle(
+        statute_id: str,
+        *,
+        mode: str = "legal_pit",
+        compile_metadata: Any | None = None,
+    ) -> dict[str, object]:
+        calls.append(
+            {
+                "statute_id": statute_id,
+                "mode": mode,
+                "compile_metadata": compile_metadata,
+            }
+        )
+        assert compile_metadata is not None
+        assert compile_metadata.build_id == "cli.frontier.fi"
+        return {
             "primary_proof_tier": "PROVED_ORACLE_INCORRECT",
             "proof_tiers": ["PROVED_ORACLE_INCORRECT", "PROVED_SOURCE_PATHOLOGY"],
             "proof_claims": [
@@ -2042,7 +2058,11 @@ def test_build_proof_report_rows_reads_live_evidence_bundle(monkeypatch) -> None
                 },
             ],
             "strict_fail_reasons": ["TIME.CONTINGENT_EFFECTIVE_DATE"],
-        },
+        }
+
+    monkeypatch.setattr(
+        "lawvm.tools.evidence.build_evidence_bundle",
+        fake_build_evidence_bundle,
     )
 
     rows = _build_proof_report_rows(
@@ -2050,6 +2070,7 @@ def test_build_proof_report_rows_reads_live_evidence_bundle(monkeypatch) -> None
         mode="legal_pit",
     )
 
+    assert len(calls) == 1
     assert rows == [
         {
             "statute_id": "1991/1707",
@@ -2481,13 +2502,32 @@ def test_summarize_proof_rows_counts_tiers_and_kinds() -> None:
 
 
 def test_build_evidence_bundles_reads_live_evidence(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "lawvm.tools.evidence.build_evidence_bundle",
-        lambda statute_id, mode="legal_pit": {
+    calls: list[dict[str, object]] = []
+
+    def fake_build_evidence_bundle(
+        statute_id: str,
+        *,
+        mode: str = "legal_pit",
+        compile_metadata: Any | None = None,
+    ) -> dict[str, object]:
+        calls.append(
+            {
+                "statute_id": statute_id,
+                "mode": mode,
+                "compile_metadata": compile_metadata,
+            }
+        )
+        assert compile_metadata is not None
+        assert compile_metadata.build_id == "cli.frontier.fi"
+        return {
             "statute_id": statute_id,
             "mode": mode,
             "primary_proof_tier": "PROVED_REPLAY_BUG",
-        },
+        }
+
+    monkeypatch.setattr(
+        "lawvm.tools.evidence.build_evidence_bundle",
+        fake_build_evidence_bundle,
     )
 
     bundles = _build_evidence_bundles(
@@ -2499,6 +2539,7 @@ def test_build_evidence_bundles_reads_live_evidence(monkeypatch) -> None:
         {"statute_id": "1995/1556", "mode": "legal_pit", "primary_proof_tier": "PROVED_REPLAY_BUG"},
         {"statute_id": "1991/1707", "mode": "legal_pit", "primary_proof_tier": "PROVED_REPLAY_BUG"},
     ]
+    assert len(calls) == 2
 
 
 def test_frontier_main_json_output_includes_proof_rows(monkeypatch, capsys) -> None:
@@ -2680,6 +2721,120 @@ def test_frontier_main_json_output_includes_proof_rows(monkeypatch, capsys) -> N
     }
     assert payload["saved_proof_jsonl"] == ""
     assert payload["saved_evidence_jsonl"] == ""
+
+
+def test_frontier_main_proof_report_honors_top_boundary(monkeypatch, capsys) -> None:
+    bench_rows = [
+        {"statute_id": f"2000/{i}", "similarity": 0.70, "amendments": 1}
+        for i in range(10)
+    ]
+    frontier_rows: list[dict[str, Any]] = [
+        {
+            "statute_id": f"2000/{i}",
+            "score": 0.70,
+            "replay_loss": 0.30,
+            "fixability": 0.5,
+            "is_suspect": False,
+            "top_diagnosis": "REPLAY_EXTRA",
+            "amendments": 1,
+            "source_incomplete": False,
+            "source_pathology": False,
+            "source_pathology_codes": "",
+            "html_noncommensurable_reason": "",
+            "html_topology_mismatch": False,
+            "html_missing_from_xml": "",
+            "html_extra_in_xml": "",
+            "contingent_effective_date": False,
+            "contingent_effective_sources": "",
+            "projection_kinds": "",
+            "suspect_fraction": 0.0,
+            "oracle_version_suspect": "",
+            "oracle_version_pending": "",
+            "bucket": "candidate",
+        }
+        for i in range(10)
+    ]
+    build_frontier_calls: list[dict[str, object]] = []
+    proof_row_counts: list[int] = []
+
+    def fake_build_frontier(**kwargs: object) -> list[dict[str, Any]]:
+        build_frontier_calls.append(dict(kwargs))
+        return frontier_rows
+
+    def fake_build_proof_report_rows(
+        rows: list[dict[str, Any]],
+        mode: str,
+    ) -> list[dict[str, Any]]:
+        proof_row_counts.append(len(rows))
+        return [
+            {
+                "statute_id": str(row["statute_id"]),
+                "bucket": str(row["bucket"]),
+                "score": float(row["score"]),
+                "primary_proof_tier": "PROVED_REPLAY_BUG",
+            }
+            for row in rows
+        ]
+
+    monkeypatch.setattr("lawvm.tools.frontier._load_bench_run", lambda label: bench_rows)
+    monkeypatch.setattr("lawvm.tools.frontier._load_oracle_check_cache", lambda path: {})
+    monkeypatch.setattr(
+        "lawvm.tools.frontier.get_consolidated_oracle_suspect_cache_only",
+        lambda sid: ("", ""),
+    )
+    monkeypatch.setattr("lawvm.tools.frontier._should_refresh_all_low_scoring", lambda rows: False)
+    monkeypatch.setattr("lawvm.tools.frontier._should_refresh_all_low_scoring_scores", lambda rows: False)
+    monkeypatch.setattr("lawvm.tools.frontier._select_provisional_candidate_refresh_sids", lambda **kwargs: [])
+    monkeypatch.setattr("lawvm.tools.frontier._build_frontier", fake_build_frontier)
+    monkeypatch.setattr(
+        "lawvm.tools.frontier._summarize_low_scoring_rows",
+        lambda *args, **kwargs: {
+            "total_low": 10,
+            "resolved_after_refresh": 0,
+            "oracle_version_suspect": 0,
+            "no_oracle_check": 0,
+            "source_pathology": 0,
+            "html_noncommensurable": 0,
+            "html_topology": 0,
+            "contingent_effective_date": 0,
+            "base_drift": 0,
+            "other_suspect": 0,
+            "candidate": 10,
+        },
+    )
+    monkeypatch.setattr(
+        "lawvm.tools.frontier._build_proof_report_rows",
+        fake_build_proof_report_rows,
+    )
+
+    main(
+        SimpleNamespace(
+            label="demo",
+            mode="legal_pit",
+            top=2,
+            exclude_suspect=False,
+            strict_label=None,
+            corpus=None,
+            export_low_corpus=None,
+            db=None,
+            threshold=0.95,
+            parallel=1,
+            no_save=True,
+            refresh_all_oracle_check=False,
+            refresh_all_scores=False,
+            bucket=None,
+            bucket_report=False,
+            proof_report=True,
+            proof_summary=False,
+            json_output=True,
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert build_frontier_calls[0]["top"] == 2
+    assert proof_row_counts == [2]
+    assert len(payload["proof_rows"]) == 2
+    assert [row["statute_id"] for row in payload["rows"]] == ["2000/0", "2000/1"]
 
 
 def test_frontier_main_json_output_demotes_proof_rejected_candidates(monkeypatch, capsys) -> None:
