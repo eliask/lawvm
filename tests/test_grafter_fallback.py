@@ -1,4 +1,5 @@
 import datetime as dt
+import logging
 from contextlib import redirect_stdout
 from io import StringIO
 from types import SimpleNamespace
@@ -36,6 +37,7 @@ from lawvm.finland.ops import _build_canonical_intent
 from lawvm.finland.ops import _lo_with_path_update
 from lawvm.finland.ops import get_replay_profile
 from lawvm.finland.ops import ScopeConfidence
+from lawvm.finland.replay_notices import reset_replay_verbose, set_replay_verbose
 from lawvm.finland.payload_normalize import (
     _container_pruning_is_expected_heading_only,
     _prune_container_payload_sections_shadowed_by_standalone_targets as _prune_container_payload_sections_shadowed_by_standalone_targets_impl,
@@ -11235,6 +11237,53 @@ def test_recover_uncovered_body_ops_emits_high_uncovered_observation() -> None:
     assert len(degraded_findings) == 1
     assert degraded_findings[0].blocking is True
     assert degraded_findings[0].source_statute == "2002/1244"
+
+
+def test_recover_uncovered_body_ops_quiet_replay_suppresses_high_uncovered_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
+    ctx = _statute_context(state.ir)
+    muutos_tree = etree.fromstring(_make_many_section_muutos_xml(12))
+    ops = [
+        AmendmentOp(
+            op_id="",
+            op_type="INSERT",
+            target_kind=TargetKind.CHAPTER,
+            target_section="3",
+        )
+    ]
+    observations_out: list[dict[str, Any]] = []
+    findings_out: list[Finding] = []
+
+    token = set_replay_verbose(False)
+    try:
+        with caplog.at_level(logging.WARNING, logger="lawvm.finland.grafter_uncovered"):
+            _recover_uncovered_body_ops(
+                state,
+                ctx,
+                ops,
+                muutos_tree,
+                "2002/1244",
+                failed_ops_out=[],
+                observations_out=observations_out,
+                findings_out=findings_out,
+            )
+    finally:
+        reset_replay_verbose(token)
+
+    assert any(
+        row.get("kind") == "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED"
+        for row in observations_out
+    )
+    assert any(
+        finding.kind == "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED"
+        for finding in findings_out
+    )
+    assert not any(
+        "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED" in record.message
+        for record in caplog.records
+    )
 
 
 def test_recover_uncovered_body_ops_deduplicates_identical_restructure_plan_output() -> None:

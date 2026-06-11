@@ -69,6 +69,7 @@ from lawvm.finland.restructure_plan import (
     RestructureSignal,
     StructuralTransformPlan,
 )
+from lawvm.finland.replay_notices import replay_verbose_enabled
 from lawvm.finland.merge import (
     _has_section_omissions_ir,
     _merge_section_with_omission_ir,
@@ -715,13 +716,14 @@ def _recover_uncovered_body_ops(
                         signals=[s.value for s in _restructure_plan.signals],
                     )
                 )
-            logger.warning(
-                "  [%s] COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED: "
-                "%d/%d units uncovered (ratio=%.2f, confidence=%.2f) — "
-                "chapter-level INSERT plan proceeding with degraded confidence",
-                amendment_id, _cov_report.uncovered_count, _total_units,
-                _uncov_ratio, _restructure_plan.confidence,
-            )
+            if replay_verbose_enabled():
+                logger.warning(
+                    "  [%s] COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED: "
+                    "%d/%d units uncovered (ratio=%.2f, confidence=%.2f) — "
+                    "chapter-level INSERT plan proceeding with degraded confidence",
+                    amendment_id, _cov_report.uncovered_count, _total_units,
+                    _uncov_ratio, _restructure_plan.confidence,
+                )
     # --- end restructure signal detection + plan ---
     # --- end typed coverage analysis ---
 
