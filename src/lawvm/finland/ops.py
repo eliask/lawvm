@@ -138,6 +138,24 @@ class SectionPathResolution:
         }
 
 
+@dataclass(frozen=True)
+class ContainerPathResolution:
+    """Typed result for apply-time chapter/part container target resolution.
+
+    The container family (chapter/part targets) is the first family whose
+    apply path CONSUMES its ResolverBinding instead of resolving ad hoc
+    (apply contract §3 step 3). ``rung_id`` names the ladder rung in the
+    lawvm.core.resolver_binding vocabulary. ``candidate_count`` is the
+    number of same-kind/same-label container nodes visible across the whole
+    work — recorded so a first-match bind over a duplicated label is visible
+    in provenance instead of silent.
+    """
+
+    path: Path | None
+    rung_id: str | None = None
+    candidate_count: int | None = None
+
+
 def scope_confidence_from_tags(
     tags: Iterable[str],
     *,

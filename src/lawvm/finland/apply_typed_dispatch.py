@@ -35,12 +35,14 @@ from lawvm.finland.apply_subsection_dispatch import (
     _apply_deterministic_subsection_op,
     _normalize_subsection_dispatch_inputs,
 )
+from lawvm.core.write_receipt import WriteReceipt
 from lawvm.finland.apply_events import (
     ApplyMutationEvent,
     DeclaredMutationAllowance,
     TreePath,
     TreePaths,
     _emit_apply_mutation_event_for_rop,
+    _emit_apply_mutation_event_from_receipt,
     _path_to_tuple,
     _resolved_target_path_for_rop_event,
     _target_address_path_for_rop_event,
@@ -754,6 +756,7 @@ def _apply_intent_container(
         and structure_view.target_special is None
         and any(binding.op_type == "INSERT" for binding in rop.slot_assignment.sparse_slot_bindings)
     )
+    write_receipts: List[WriteReceipt] = []
     container_result = _apply_container_op(
         state,
         structure_view,
@@ -765,8 +768,21 @@ def _apply_intent_container(
         mixed_sparse_insert=mixed_sparse_insert,
         source_pathologies_out=source_pathologies_out,
         migration_ledger=migration_ledger,
+        write_receipts_out=write_receipts,
     )
     if container_result is not None:
+        # Receipt-first declaration (apply contract §4): when the container
+        # helper produced a WriteReceipt — currently the chapter/part INSERT
+        # family — the mutation event is DERIVED from the landed footprint,
+        # never re-assembled from the nominal target address.
+        if write_receipts and container_result is not state:
+            _emit_apply_mutation_event_from_receipt(
+                mutation_events_out,
+                rop=rop,
+                receipt=write_receipts[-1],
+                outcome="applied",
+            )
+            return container_result
         resolved_target_path = _target_address_path_for_rop_event(rop, path_hint)
         _emit_apply_mutation_event_for_rop(
             mutation_events_out,

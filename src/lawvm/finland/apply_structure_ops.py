@@ -19,14 +19,20 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path, default_label_sort_key, normalized_label_key
 
+from lawvm.core.ir_helpers import _kind_str, structural_subtree_hash
+from lawvm.core.resolver_binding import RUNG_SCOPED_FIND, ResolverBinding
+from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
+
 from lawvm.finland.ops import (
     AmendmentOp,
+    ContainerPathResolution,
     ReplayProfile,
     ResolvedOp,
     _lo_with_path_update,
     _rebind_resolved_target_address,
     runtime_scope_confidence_for_op,
 )
+from lawvm.finland.apply_policy import container_resolver_binding
 from lawvm.finland.helpers import _norm_num_token, _roman_label_to_arabic
 from lawvm.finland.replay_notices import replay_print
 from lawvm.finland.source_pathology import (
@@ -436,12 +442,18 @@ def _create_part_and_move_siblings(
     migration_ledger=None,
     effective: str = "",
     source_statute: str = "",
+    created_part_path_out: Optional[List[Path]] = None,
+    moved_chapter_paths_out: Optional[List[tuple[Path, Path]]] = None,
 ) -> IRNode:
     """Create a new PART, move the named sibling chapters into it, return updated IR.
 
     Used when a chapter INSERT carries a ``lawvm_amendment_part_hint`` for a part
     that does not yet exist in the statute.  The new part is inserted immediately
     before the part currently containing the first (sorted) sibling chapter.
+
+    ``created_part_path_out`` / ``moved_chapter_paths_out`` report the landed
+    scaffold footprint (full tree paths) so the caller's WriteReceipt can
+    declare the part creation and sibling moves this write actually performed.
     """
     provisions_parent_path = _tops.find_provisions_parent(ir) or ()
 
@@ -499,8 +511,19 @@ def _create_part_and_move_siblings(
     else:
         ir = _tops.insert_sorted(ir, provisions_parent_path, new_part)
 
+    new_part_path = provisions_parent_path + (("part", part_label),)
+    if created_part_path_out is not None:
+        created_part_path_out.append(new_part_path)
+    if moved_chapter_paths_out is not None:
+        for ch_path, ch_node in chapters_to_move:
+            chapter_label = ch_node.label or ""
+            if not chapter_label:
+                continue
+            moved_chapter_paths_out.append(
+                (ch_path, new_part_path + (("chapter", chapter_label),))
+            )
+
     if migration_ledger is not None:
-        new_part_path = provisions_parent_path + (("part", part_label),)
         for ch_path, ch_node in chapters_to_move:
             chapter_label = ch_node.label or ""
             if not chapter_label:
@@ -642,6 +665,7 @@ class _StructureApplyView:
     target_address: LegalAddress | None = None
     source_effective: str = ""
     payload_completeness: "PayloadCompletenessWitness | None" = None
+    op_id: str = ""
 
 
 def _coerce_structure_apply_view(op: "_StructureApplyView | AmendmentOp | ResolvedOp") -> _StructureApplyView:
@@ -693,6 +717,7 @@ def _structure_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _StructureAppl
         target_address=target_address,
         source_effective=source_effective,
         payload_completeness=op.payload_completeness if isinstance(op, ResolvedOp) else None,
+        op_id=op.op_id or "",
     )
 
 
@@ -723,6 +748,37 @@ def _find_container_path_with_part_scope(
     return _tops._as_path(found) if found is not None else None
 
 
+def _resolve_container_target(
+    state,
+    *,
+    kind: str,
+    label: str,
+    target_part: str | None,
+) -> ContainerPathResolution:
+    """Resolve a chapter/part container target with binding provenance.
+
+    The load-bearing path is exactly ``_find_container_path_with_part_scope``
+    — this wrapper adds rung provenance and the work-wide candidate count so
+    a first-match bind over a duplicated container label is visible in the
+    ResolverBinding instead of silent. There is no widening rung: a declared
+    part scope either resolves within that part or the target is not found.
+    """
+    path = _find_container_path_with_part_scope(
+        state.ir,
+        kind=kind,
+        label=label,
+        target_part=target_part,
+    )
+    candidate_count = len(
+        _tops.find_all(state.ir, kind, label, label_index=state.provision_index)
+    )
+    return ContainerPathResolution(
+        path=path,
+        rung_id=RUNG_SCOPED_FIND if path is not None else None,
+        candidate_count=candidate_count,
+    )
+
+
 def _apply_container_op(
     state,
     op: "_StructureApplyView | AmendmentOp | ResolvedOp",
@@ -734,6 +790,8 @@ def _apply_container_op(
     mixed_sparse_insert: bool = False,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     migration_ledger=None,
+    resolver_bindings_out: Optional[List[ResolverBinding]] = None,
+    write_receipts_out: Optional[List[WriteReceipt]] = None,
 ):
     """Apply container (chapter/part) operation via tree_ops."""
     def _normalized_standalone_targets() -> list[tuple[str | None, str | None, str]]:
@@ -786,12 +844,148 @@ def _apply_container_op(
         arabic = _roman_label_to_arabic(section_label.lower())
         if arabic is not None:
             section_label = arabic
-    path = _find_container_path_with_part_scope(
-        state.ir,
+    container_resolution = _resolve_container_target(
+        state,
         kind=kind,
         label=section_label,
         target_part=_target_part,
     )
+    # The container family CONSUMES its ResolverBinding (apply contract §3
+    # step 3): the write target below comes from the binding, not from an
+    # ad-hoc lookup. A binding contract violation here is a mapping bug in
+    # the binding projector, never a replay failure — surface it loudly
+    # under its own tag and fall back to the ladder path (identical by
+    # construction), so the failure is visible but replay is not rerouted.
+    container_binding: Optional[ResolverBinding]
+    try:
+        container_binding = container_resolver_binding(
+            kind=kind,
+            label=section_label,
+            target_part=_target_part,
+            resolution=container_resolution,
+            ctx_label=ctx_label,
+        )
+    except ValueError as exc:
+        container_binding = None
+        logger.warning(
+            "  %s → APPLY.RESOLVER_BINDING_CONTRACT_ERROR: %s", ctx_label, exc
+        )
+    if container_binding is not None:
+        if resolver_bindings_out is not None:
+            resolver_bindings_out.append(container_binding)
+        logger.debug(
+            "  %s → container resolver binding %s rung=%s status=%s candidates=%s",
+            ctx_label,
+            container_binding.binding_id,
+            container_binding.rung_id,
+            container_binding.status,
+            container_binding.candidate_count,
+        )
+    path = (
+        container_binding.target_path
+        if container_binding is not None
+        else container_resolution.path
+    )
+
+    def _receipt_path(p: Path) -> tuple[tuple[str, str], ...]:
+        return tuple((str(step_kind), str(step_label)) for step_kind, step_label in p)
+
+    def _emit_container_insert_receipt(
+        post_ir: IRNode,
+        *,
+        landed_primary_path: Path | None,
+        created_paths: tuple[Path, ...] = (),
+        replaced_paths: tuple[Path, ...] = (),
+        removed_paths: tuple[Path, ...] = (),
+        renumbered_paths: tuple[tuple[Path, Path], ...] = (),
+        placeholder_consumed_paths: tuple[Path, ...] = (),
+        recovery_rule_ids: tuple[str, ...] = (),
+        migration_rule_ids: tuple[str, ...] = (),
+        pre_subtrees: tuple[tuple[Path, Optional[IRNode]], ...] = (),
+    ) -> None:
+        """Record what this container INSERT actually landed (contract §4).
+
+        The receipt is produced AT the write, from landed reality: post
+        hashes are computed from the result tree, and a declared write that
+        is not observable there surfaces loudly under its own tag — never
+        silently.
+        """
+        if write_receipts_out is None:
+            return
+        pre_hashes = {
+            receipt_address_string(_receipt_path(p)): structural_subtree_hash(n)
+            for p, n in pre_subtrees
+        }
+        post_hashes: dict[str, str] = {}
+        present_after = dict.fromkeys(
+            (
+                *created_paths,
+                *replaced_paths,
+                *(to_path for _from_path, to_path in renumbered_paths),
+                *((landed_primary_path,) if landed_primary_path is not None else ()),
+            )
+        )
+        for p in present_after:
+            landed_node = _tops.resolve(post_ir, p)
+            if landed_node is None:
+                logger.warning(
+                    "  %s → APPLY.WRITE_RECEIPT_LANDED_PATH_UNRESOLVED: declared write at %s is not present in the result tree",
+                    ctx_label,
+                    receipt_address_string(_receipt_path(p)),
+                )
+            post_hashes[receipt_address_string(_receipt_path(p))] = structural_subtree_hash(landed_node)
+        absent_after = dict.fromkeys(
+            (
+                *removed_paths,
+                *placeholder_consumed_paths,
+                *(from_path for from_path, _to_path in renumbered_paths),
+            )
+        )
+        for p in absent_after:
+            addr = receipt_address_string(_receipt_path(p))
+            if addr in post_hashes:
+                continue
+            if _tops.resolve(post_ir, p) is not None:
+                logger.warning(
+                    "  %s → APPLY.WRITE_RECEIPT_DECLARED_REMOVAL_STILL_PRESENT: %s declared removed but still resolves in the result tree",
+                    ctx_label,
+                    addr,
+                )
+            post_hashes[addr] = ""
+        receipt = WriteReceipt(
+            op_id=view.op_id,
+            helper="_apply_container_op",
+            action="insert",
+            bound_target_path=_receipt_path(path) if path is not None else None,
+            landed_primary_path=(
+                _receipt_path(landed_primary_path) if landed_primary_path is not None else None
+            ),
+            created_paths=tuple(_receipt_path(p) for p in created_paths),
+            replaced_paths=tuple(_receipt_path(p) for p in replaced_paths),
+            removed_paths=tuple(_receipt_path(p) for p in removed_paths),
+            renumbered_paths=tuple(
+                (_receipt_path(from_path), _receipt_path(to_path))
+                for from_path, to_path in renumbered_paths
+            ),
+            placeholder_consumed_paths=tuple(
+                _receipt_path(p) for p in placeholder_consumed_paths
+            ),
+            recovery_rule_ids=recovery_rule_ids,
+            migration_rule_ids=migration_rule_ids,
+            pre_hashes=pre_hashes,
+            post_hashes=post_hashes,
+        )
+        if not receipt.divergence_explained:
+            logger.warning(
+                "  %s → APPLY.WRITE_RECEIPT_UNEXPLAINED_DIVERGENCE: bound=%s landed=%s with no named rule",
+                ctx_label,
+                receipt.bound_target_path,
+                receipt.landed_primary_path,
+            )
+        write_receipts_out.append(receipt)
+
+    def _payload_leaf(payload: IRNode) -> tuple[str, str]:
+        return (_kind_str(payload.kind), payload.label or "")
 
     if path is None and _op_type not in ("INSERT", "REPLACE"):
         replay_print(f"  {ctx_label} → FAILED (master {kind}:{section_label} not found)")
@@ -986,11 +1180,24 @@ def _apply_container_op(
                         )
                     )
                 new_ir = _tops.replace_at(state.ir, path, muutos_ir)
-                if _same_norm_label(node.label, muutos_ir.label):
+                landed_path = path[:-1] + (_payload_leaf(muutos_ir),)
+                same_label = _same_norm_label(node.label, muutos_ir.label)
+                _emit_container_insert_receipt(
+                    new_ir,
+                    landed_primary_path=landed_path,
+                    replaced_paths=(landed_path,) if same_label else (),
+                    created_paths=() if same_label else (landed_path,),
+                    removed_paths=() if same_label else (path,),
+                    recovery_rule_ids=("container_insert_non_base_scaffold_consume",),
+                    pre_subtrees=((path, node),),
+                )
+                if same_label:
                     return _with_preserved_provision_index(state, new_ir)
                 return state.with_ir(new_ir)
             merged = _merge_same_numbered_container_insert_ir(node, muutos_ir)
+            merge_rule = "container_insert_base_chapter_merge"
             if merged is None:
+                merge_rule = "container_insert_base_chapter_merge_duplicate_labels"
                 merged = _preserve_live_container_on_merge_duplicate(
                     source_pathologies_out=source_pathologies_out,
                     source_statute=view.source_statute or "",
@@ -1012,7 +1219,16 @@ def _apply_container_op(
                         payload_sibling_count=len([c for c in muutos_ir.children if c.kind is IRNodeKind.SECTION]),
                     )
                 )
-            return state.with_ir(_tops.replace_at(state.ir, path, merged))
+            new_ir = _tops.replace_at(state.ir, path, merged)
+            landed_path = path[:-1] + (_payload_leaf(merged),)
+            _emit_container_insert_receipt(
+                new_ir,
+                landed_primary_path=landed_path,
+                replaced_paths=(landed_path,),
+                recovery_rule_ids=(merge_rule,),
+                pre_subtrees=((path, node),),
+            )
+            return state.with_ir(new_ir)
         if not profile.replace_same_numbered_container_insert and path is not None:
             existing_node = _tops.resolve(state.ir, path)
             assert existing_node is not None, f"resolve failed for {path}"
@@ -1038,7 +1254,18 @@ def _apply_container_op(
                         )
                     )
                 new_ir = _tops.replace_at(state.ir, path, muutos_ir)
-                if _same_norm_label(existing_node.label, muutos_ir.label):
+                landed_path = path[:-1] + (_payload_leaf(muutos_ir),)
+                same_label = _same_norm_label(existing_node.label, muutos_ir.label)
+                _emit_container_insert_receipt(
+                    new_ir,
+                    landed_primary_path=landed_path,
+                    replaced_paths=(landed_path,) if same_label else (),
+                    created_paths=() if same_label else (landed_path,),
+                    removed_paths=() if same_label else (path,),
+                    recovery_rule_ids=("container_insert_non_base_scaffold_consume",),
+                    pre_subtrees=((path, existing_node),),
+                )
+                if same_label:
                     return _with_preserved_provision_index(state, new_ir)
                 return state.with_ir(new_ir)
             else:
@@ -1049,7 +1276,9 @@ def _apply_container_op(
                 # X luvun" where the compiler emits INSERT rather than REPLACE
                 # because the whole-chapter form is used.
                 merged = _merge_same_numbered_container_insert_ir(existing_node, muutos_ir)
+                merge_rule = "container_insert_base_chapter_merge"
                 if merged is None:
+                    merge_rule = "container_insert_base_chapter_merge_duplicate_labels"
                     merged = _preserve_live_container_on_merge_duplicate(
                         source_pathologies_out=source_pathologies_out,
                         source_statute=view.source_statute or "",
@@ -1071,7 +1300,16 @@ def _apply_container_op(
                             payload_sibling_count=len([c for c in muutos_ir.children if c.kind is IRNodeKind.SECTION]),
                         )
                     )
-                return state.with_ir(_tops.replace_at(state.ir, path, merged))
+                new_ir = _tops.replace_at(state.ir, path, merged)
+                landed_path = path[:-1] + (_payload_leaf(merged),)
+                _emit_container_insert_receipt(
+                    new_ir,
+                    landed_primary_path=landed_path,
+                    replaced_paths=(landed_path,),
+                    recovery_rule_ids=(merge_rule,),
+                    pre_subtrees=((path, existing_node),),
+                )
+                return state.with_ir(new_ir)
         placeholder_labels_to_remove: list[str] = []
         if _target_unit_kind == "chapter" and muutos_ir.kind is IRNodeKind.CHAPTER:
             normalized_standalone_targets = _normalized_standalone_targets()
@@ -1120,6 +1358,9 @@ def _apply_container_op(
                 new_ch_children.append(child)
             muutos_ir = _tops._with_children(muutos_ir, new_ch_children)
 
+        created_part_paths: List[Path] = []
+        moved_chapter_paths: List[tuple[Path, Path]] = []
+        pre_scaffold_ir = state.ir
         if path is None and muutos_ir.kind is IRNodeKind.CHAPTER and muutos_ir.label:
             _ch_part_hint = muutos_ir.attrs.get("lawvm_amendment_part_hint")
             _routing_part_hint = str(_ch_part_hint) if _ch_part_hint is not None else (_target_part or None)
@@ -1140,6 +1381,8 @@ def _apply_container_op(
                         migration_ledger=migration_ledger,
                         effective=_op_source_effective,
                         source_statute=view.source_statute or "",
+                        created_part_path_out=created_part_paths,
+                        moved_chapter_paths_out=moved_chapter_paths,
                     )
                 )
             parent_path = _tops._as_path(
@@ -1150,6 +1393,7 @@ def _apply_container_op(
         logger.debug("  %s → container insert (sorted)", ctx_label)
         new_ir = _tops.insert_sorted(state.ir, parent_path or (), muutos_ir)
 
+        placeholder_consumed: List[tuple[Path, Optional[IRNode]]] = []
         for lbl in placeholder_labels_to_remove:
             _ph_path = state.find_section_path(lbl)
             ph_path = _tops._as_path(_ph_path) if _ph_path is not None else None
@@ -1157,7 +1401,34 @@ def _apply_container_op(
                 ph_node = _tops.resolve(new_ir, ph_path)
                 if ph_node is not None and ph_node.attrs.get("lawvm_repeal_placeholder") == "1":
                     new_ir = _tops.remove_at(new_ir, ph_path)
+                    placeholder_consumed.append((ph_path, ph_node))
 
+        landed_path = (parent_path or ()) + (_payload_leaf(muutos_ir),)
+        fresh_recovery_rules = ("container_insert_parent_placement",)
+        if placeholder_consumed:
+            fresh_recovery_rules = fresh_recovery_rules + (
+                "container_insert_placeholder_section_consume",
+            )
+        _emit_container_insert_receipt(
+            new_ir,
+            landed_primary_path=landed_path,
+            created_paths=(landed_path, *created_part_paths),
+            renumbered_paths=tuple(moved_chapter_paths),
+            placeholder_consumed_paths=tuple(p for p, _node in placeholder_consumed),
+            recovery_rule_ids=fresh_recovery_rules,
+            migration_rule_ids=(
+                ("container_insert_part_hint_scaffold",) if created_part_paths else ()
+            ),
+            pre_subtrees=(
+                (landed_path, None),
+                *((p, None) for p in created_part_paths),
+                *(
+                    (from_path, _tops.resolve(pre_scaffold_ir, from_path))
+                    for from_path, _to_path in moved_chapter_paths
+                ),
+                *placeholder_consumed,
+            ),
+        )
         return state.with_ir(new_ir)
 
     replay_print(f"  {ctx_label} → FAILED (unhandled non-section op)")
