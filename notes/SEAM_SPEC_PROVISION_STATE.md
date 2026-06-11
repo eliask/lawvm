@@ -141,10 +141,26 @@ absent and `detail.xpath_status` is
 comes from the bounded `OperationSource.raw_text` witness when available. That
 nested `detail.source_witness` object MAY include `quote_char_span` and
 `full_raw_text_char_span` over the stored `OperationSource.raw_text` string
-after boundary-whitespace trimming. Those are not original XML byte spans:
-top-level `source_locator.byte_span` remains absent and
-`detail.byte_span_status="unavailable_initial_surface"` until exact source
-artifact offsets are retained.
+after boundary-whitespace trimming. Those spans are over the stored witness
+string, not the source artifact.
+
+Since 0.2.x, operation-source rows MAY also include top-level
+`source_locator.char_span` and `source_locator.byte_span`, plus nested
+`detail.source_witness.artifact_char_span` and `artifact_byte_span`, when the
+trimmed `OperationSource.raw_text` appears exactly once in the raw UTF-8
+amending-source XML. In that case:
+
+- `detail.operation_source_xml_span_status="available"`;
+- `detail.char_span_status="operation_source_raw_xml_quote_scan"`;
+- `detail.byte_span_status="operation_source_raw_xml_quote_scan_utf8"`;
+- `detail.source_witness.artifact_span_status="operation_source_raw_xml_quote_scan"`;
+- `detail.source_witness.artifact_span_match_count=1`.
+
+If the quote is absent, duplicated, unavailable, or not UTF-8-decodable, the
+top-level spans remain absent and `operation_source_xml_span_status` plus the
+nested `artifact_span_status` explain why. This is quote-footing only: it does
+not identify the amended target provision inside the amending act, and it does
+not authorize replay.
 
 ## 3. derived_state_hash
 

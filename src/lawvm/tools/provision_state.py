@@ -1439,7 +1439,21 @@ def _source_locator_payload(
             fallback_eid=_finlex_eid_candidate(address),
         )
         detail.update(span["detail"])
+    elif (
+        artifact_kind == "operation_source_statute_xml"
+        and source_quote is not None
+        and version is not None
+        and version.source is not None
+        and source_xml_provider is not None
+    ):
+        span = _operation_source_xml_quote_span(
+            source_xml_provider(source_sid),
+            raw_source_text=version.source.raw_text,
+        )
+        detail.update(span["detail"])
     if source_quote is not None:
+        if span is not None and span.get("source_witness_detail"):
+            source_quote.update(span["source_witness_detail"])
         detail["source_witness"] = source_quote
         detail["source_witness_status"] = "operation_source_raw_text_available"
     else:
@@ -1594,6 +1608,107 @@ def _finlex_source_xml_element_span(
             "source_xml_xpath_match_count": xpath_match_count,
             "source_xml_eid": eid,
             "source_xml_local_tag": tag,
+        },
+    }
+
+
+def _operation_source_xml_quote_span(
+    xml_bytes: bytes | None,
+    *,
+    raw_source_text: str,
+) -> dict[str, Any]:
+    raw_text = str(raw_source_text or "").strip()
+    if not raw_text:
+        return {
+            "char_span": None,
+            "byte_span": None,
+            "detail": {
+                "operation_source_xml_span_status": "unavailable_empty_operation_source_raw_text",
+            },
+            "source_witness_detail": {
+                "artifact_span_status": "unavailable_empty_operation_source_raw_text",
+            },
+        }
+    if not xml_bytes:
+        return {
+            "char_span": None,
+            "byte_span": None,
+            "detail": {
+                "operation_source_xml_span_status": "unavailable_source_xml_not_loaded",
+            },
+            "source_witness_detail": {
+                "artifact_span_status": "unavailable_source_xml_not_loaded",
+            },
+        }
+    try:
+        text = xml_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return {
+            "char_span": None,
+            "byte_span": None,
+            "detail": {
+                "operation_source_xml_span_status": "unavailable_source_xml_not_utf8",
+            },
+            "source_witness_detail": {
+                "artifact_span_status": "unavailable_source_xml_not_utf8",
+            },
+        }
+    match_count = text.count(raw_text)
+    first = text.find(raw_text)
+    if match_count == 0:
+        return {
+            "char_span": None,
+            "byte_span": None,
+            "detail": {
+                "operation_source_xml_span_status": "unavailable_operation_source_quote_not_found",
+                "operation_source_xml_quote_match_count": 0,
+            },
+            "source_witness_detail": {
+                "artifact_span_status": "unavailable_operation_source_quote_not_found",
+                "artifact_span_match_count": 0,
+            },
+        }
+    if match_count != 1:
+        return {
+            "char_span": None,
+            "byte_span": None,
+            "detail": {
+                "operation_source_xml_span_status": "unavailable_operation_source_quote_not_unique",
+                "operation_source_xml_quote_match_count": match_count,
+            },
+            "source_witness_detail": {
+                "artifact_span_status": "unavailable_operation_source_quote_not_unique",
+                "artifact_span_match_count": match_count,
+            },
+        }
+    char_span = (first, first + len(raw_text))
+    byte_span = (
+        len(text[: char_span[0]].encode("utf-8")),
+        len(text[: char_span[1]].encode("utf-8")),
+    )
+    detail = {
+        "char_span": list(char_span),
+        "char_span_status": "operation_source_raw_xml_quote_scan",
+        "char_span_basis": (
+            "Raw Finlex operation-source XML decoded as UTF-8; trimmed "
+            "OperationSource.raw_text matched exactly once."
+        ),
+        "byte_span": list(byte_span),
+        "byte_span_status": "operation_source_raw_xml_quote_scan_utf8",
+        "byte_span_basis": "UTF-8 byte offsets derived from exact raw XML quote character span.",
+        "operation_source_xml_span_status": "available",
+        "operation_source_xml_quote_match_count": 1,
+    }
+    return {
+        "char_span": char_span,
+        "byte_span": byte_span,
+        "detail": detail,
+        "source_witness_detail": {
+            "artifact_char_span": list(char_span),
+            "artifact_byte_span": list(byte_span),
+            "artifact_span_status": "operation_source_raw_xml_quote_scan",
+            "artifact_span_basis": detail["char_span_basis"],
+            "artifact_span_match_count": 1,
         },
     }
 
