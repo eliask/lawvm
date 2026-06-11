@@ -450,6 +450,40 @@ def test_public_resolve_provision_state_rejects_finnish_suffix_as_subsection() -
     assert payload["diagnostic"]["suggestions"] == ["section:127a"]
 
 
+def test_build_provision_state_response_rejects_noncanonical_selector_whitespace() -> None:
+    payload = build_provision_state_response(
+        timelines=_timeline(),
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision=" section: 1 ",
+        as_of="2021-01-01",
+    )
+
+    assert payload["status"] == "invalid_address"
+    assert payload["diagnostic"]["code"] == (
+        "LAWVM_PROVISION_SELECTOR_NON_CANONICAL_WHITESPACE"
+    )
+    assert payload["diagnostic"]["suggestions"] == ["section:1"]
+    assert payload["selection"] is None
+    assert "text" not in payload
+
+
+def test_public_resolve_provision_state_rejects_noncanonical_selector_before_replay() -> None:
+    payload = resolve_provision_state(
+        statute_id="2023/703",
+        jurisdiction="fi",
+        provision="chapter:2 /section:9",
+        as_of="2026-06-02",
+    )
+
+    assert payload["status"] == "invalid_address"
+    assert payload["diagnostic"]["code"] == (
+        "LAWVM_PROVISION_SELECTOR_NON_CANONICAL_WHITESPACE"
+    )
+    assert payload["diagnostic"]["suggestions"] == ["chapter:2/section:9"]
+    assert payload["source_locator_status"] == "unavailable_invalid_provision"
+
+
 def test_provision_state_cli_invalid_selector_prints_diagnostic_and_exits_2(capsys) -> None:
     args = SimpleNamespace(
         statute_id="1992/1535",
@@ -471,6 +505,31 @@ def test_provision_state_cli_invalid_selector_prints_diagnostic_and_exits_2(caps
     payload = json.loads(captured.out)
     assert payload["status"] == "invalid_address"
     assert payload["diagnostic"]["code"] == "FI_PROVISION_SELECTOR_MALFORMED_HYBRID"
+
+
+def test_provision_state_cli_noncanonical_selector_prints_suggestion_and_exits_2(capsys) -> None:
+    args = SimpleNamespace(
+        statute_id="2023/703",
+        jurisdiction="fi",
+        provision="section: 9",
+        as_of="2026-06-02",
+        query_type="governing",
+        territory=None,
+        include_ir=False,
+    )
+
+    with pytest.raises(SystemExit) as raised:
+        main(args)
+
+    captured = capsys.readouterr()
+    assert raised.value.code == 2
+    assert "ERROR: invalid --provision 'section: 9'" in captured.err
+    assert "help: try 'section:9'" in captured.err
+    payload = json.loads(captured.out)
+    assert payload["status"] == "invalid_address"
+    assert payload["diagnostic"]["code"] == (
+        "LAWVM_PROVISION_SELECTOR_NON_CANONICAL_WHITESPACE"
+    )
 
 
 def test_provision_state_cli_invalid_as_of_prints_diagnostic_and_exits_2(capsys) -> None:

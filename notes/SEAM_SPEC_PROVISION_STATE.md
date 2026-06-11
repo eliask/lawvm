@@ -19,8 +19,11 @@ provision of one statute as of one date?** A query is the tuple:
 - `statute_id` — jurisdiction-local statute identifier (e.g. `273/2009`).
 - `jurisdiction` — currently `fi` only; other values return
   `status=unsupported_jurisdiction`.
-- `provision` — a `LegalAddress` string, slash-joined `kind:label` segments
-  (e.g. `section:6a`, `chapter:4a/section:30a`).
+- `provision` — a canonical `LegalAddress` string, slash-joined
+  `kind:label` segments (e.g. `section:6a`,
+  `chapter:4a/section:30a`). The string MUST NOT contain whitespace around
+  segment separators, kind names, or labels; non-canonical selector
+  whitespace is `invalid_address` with a canonical suggestion.
 - `as_of` — exact ISO date string (`YYYY-MM-DD`); MUST be non-empty and
   MUST NOT contain leading or trailing whitespace.
 - `query_type` — `governing` (default) or `in_force` (see §5).

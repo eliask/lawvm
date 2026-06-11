@@ -202,6 +202,20 @@ def build_provision_state_response(
             territory=territory,
             diagnostic=query_diagnostic,
         )
+    selector_diagnostic = provision_selector_diagnostic(
+        jurisdiction=jurisdiction,
+        provision=provision,
+    )
+    if selector_diagnostic is not None:
+        return invalid_provision_selector_payload(
+            jurisdiction=jurisdiction,
+            statute_id=statute_id,
+            provision=provision,
+            as_of=as_of,
+            query_type=query_type,
+            territory=territory,
+            diagnostic=selector_diagnostic,
+        )
 
     resolution = resolve_address(timelines, provision)
     query = _query_payload(
@@ -362,7 +376,28 @@ def provision_selector_diagnostic(
             "suggestions": [],
             "malformed_segments": malformed_parts,
         }
+    canonical = _canonical_address_selector(text)
+    if canonical is not None and canonical != text:
+        return {
+            "code": "LAWVM_PROVISION_SELECTOR_NON_CANONICAL_WHITESPACE",
+            "message": "LawVM legal-address selectors must not contain whitespace around path separators, kinds, or labels",
+            "suggestions": [canonical],
+        }
     return None
+
+
+def _canonical_address_selector(value: str) -> str | None:
+    parts: list[str] = []
+    for part in value.split("/"):
+        if ":" not in part:
+            return None
+        kind, label = part.split(":", 1)
+        kind = kind.strip()
+        label = label.strip()
+        if not kind or not label:
+            return None
+        parts.append(f"{kind}:{label}")
+    return "/".join(parts)
 
 
 def provision_query_diagnostic(
