@@ -450,6 +450,40 @@ def test_public_resolve_provision_state_rejects_finnish_suffix_as_subsection() -
     assert payload["diagnostic"]["suggestions"] == ["section:127a"]
 
 
+def test_public_resolve_provision_state_rejects_spaced_finnish_section_label() -> None:
+    payload = resolve_provision_state(
+        statute_id="2021/728",
+        jurisdiction="fi",
+        provision="section:2 d",
+        as_of="2026-01-02",
+        query_type="in_force",
+    )
+
+    assert payload["status"] == "invalid_address"
+    assert payload["diagnostic"]["code"] == (
+        "FI_PROVISION_SELECTOR_NON_CANONICAL_SECTION_LABEL"
+    )
+    assert payload["diagnostic"]["suggestions"] == ["section:2d"]
+    assert payload["source_locator_status"] == "unavailable_invalid_provision"
+
+
+def test_build_provision_state_response_rejects_spaced_section_label_in_path() -> None:
+    payload = build_provision_state_response(
+        timelines=_timeline(),
+        statute_id="2021/728",
+        jurisdiction="fi",
+        provision="chapter:1/section:2 d",
+        as_of="2026-01-02",
+        query_type="in_force",
+    )
+
+    assert payload["status"] == "invalid_address"
+    assert payload["diagnostic"]["code"] == (
+        "FI_PROVISION_SELECTOR_NON_CANONICAL_SECTION_LABEL"
+    )
+    assert payload["diagnostic"]["suggestions"] == ["section:2d"]
+
+
 def test_build_provision_state_response_rejects_noncanonical_selector_whitespace() -> None:
     payload = build_provision_state_response(
         timelines=_timeline(),
@@ -529,6 +563,31 @@ def test_provision_state_cli_noncanonical_selector_prints_suggestion_and_exits_2
     assert payload["status"] == "invalid_address"
     assert payload["diagnostic"]["code"] == (
         "LAWVM_PROVISION_SELECTOR_NON_CANONICAL_WHITESPACE"
+    )
+
+
+def test_provision_state_cli_spaced_section_label_exits_2(capsys) -> None:
+    args = SimpleNamespace(
+        statute_id="2021/728",
+        jurisdiction="fi",
+        provision="section:2 d",
+        as_of="2026-01-02",
+        query_type="in_force",
+        territory=None,
+        include_ir=False,
+    )
+
+    with pytest.raises(SystemExit) as raised:
+        main(args)
+
+    captured = capsys.readouterr()
+    assert raised.value.code == 2
+    assert "ERROR: invalid --provision 'section:2 d'" in captured.err
+    assert "help: try 'section:2d'" in captured.err
+    payload = json.loads(captured.out)
+    assert payload["status"] == "invalid_address"
+    assert payload["diagnostic"]["code"] == (
+        "FI_PROVISION_SELECTOR_NON_CANONICAL_SECTION_LABEL"
     )
 
 

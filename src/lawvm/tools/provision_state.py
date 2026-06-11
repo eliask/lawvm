@@ -43,6 +43,7 @@ _FI_HYBRID_SECTION_RE = re.compile(
 _FI_SUFFIX_AS_SUBSECTION_RE = re.compile(
     r"^\s*section\s*:\s*(?P<number>\d+)\s*/\s*subsection\s*:\s*(?P<letter>[A-Za-z])\s*$"
 )
+_FI_SPACED_SECTION_LABEL_RE = re.compile(r"^(?P<number>\d+)\s+(?P<letter>[A-Za-z])$")
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _QUERY_TYPES = frozenset({"governing", "in_force"})
 
@@ -376,6 +377,22 @@ def provision_selector_diagnostic(
             "suggestions": [],
             "malformed_segments": malformed_parts,
         }
+    for part in text.split("/"):
+        kind, label = (piece.strip() for piece in part.split(":", 1))
+        spaced_section = _FI_SPACED_SECTION_LABEL_RE.fullmatch(label)
+        if kind == "section" and spaced_section is not None:
+            suggestion = _fi_section_suggestion(
+                spaced_section.group("number"),
+                spaced_section.group("letter"),
+            )
+            return {
+                "code": "FI_PROVISION_SELECTOR_NON_CANONICAL_SECTION_LABEL",
+                "message": (
+                    "Finnish letter-suffixed section labels must use compact "
+                    "canonical LawVM form"
+                ),
+                "suggestions": [suggestion],
+            }
     canonical = _canonical_address_selector(text)
     if canonical is not None and canonical != text:
         return {
