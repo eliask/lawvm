@@ -1,7 +1,7 @@
 ---
 title: LawVM Certificate Schema v0 — Temporal Dossier and Checker Contract
 schema: lawvm.certificate.v0
-spec_version: 0.3
+spec_version: 0.4
 status: normative draft (spec-first; bundle writer and checker v0 follow it)
 ---
 
@@ -9,7 +9,7 @@ status: normative draft (spec-first; bundle writer and checker v0 follow it)
 
 The certificate is the artifact that converts "trust the LawVM pipeline" into
 "check this bundle". It commits, under one root hash, to everything a
-text-state claim depends on: source bytes, the canonical transition trace,
+text-state claim depends on: source bytes, the certified tree-transition trace,
 materialization roots, the projections consumers actually read, and — first
 class, never elided — the typed residue of what could NOT be proven.
 
@@ -21,7 +21,7 @@ Incompleteness is explicit and blocks clean assertions.
 ```
 
 Normative keywords MUST/SHOULD/MAY follow RFC 2119. Companion specs:
-[CANONICAL_TRANSITION_TRACE_V0.md](CANONICAL_TRANSITION_TRACE_V0.md) (the
+[CERTIFIED_TREE_TRANSITION_TRACE_V0.md](CERTIFIED_TREE_TRANSITION_TRACE_V0.md) (the
 replayable transition grammar, base-tree schema, content blobs, and
 state-root/checkpoint semantics the checker folds),
 [SEAM_SPEC_PROVISION_STATE.md](SEAM_SPEC_PROVISION_STATE.md) (the seam, now a
@@ -102,7 +102,7 @@ Leaf units (the five kinds every artifact in the bundle reduces to):
 ```text
 1. SourceArtifact leaf      — identity metadata + hash of exact bytes
                               observed at a named locator (§3.2)
-2. CanonicalTransition leaf — one certified TREE transition (a state patch
+2. CertifiedTreeTransition leaf — one certified TREE transition (a state patch
                               with pre/post hashes — never a legal-operation
                               claim; companion spec)
 3. ProvisionState leaf      — one (address, date-interval) text-state
@@ -146,7 +146,7 @@ cannot honestly claim the PIT state of a statute).
   "roots": {
     "source_bundle_root": "sha256:...",
     "base_tree_root": "sha256:...",
-    "canonical_transition_root": "sha256:...",
+    "certified_tree_transition_root": "sha256:...",
     "content_blobs_root": "sha256:...",
     "materialization_root": "sha256:...",
     "projection_root": "sha256:...",
@@ -201,7 +201,7 @@ projection hashes:
 certificate_root  (over the whole envelope minus certificate_id, §3.3)
 ├── source_bundle_root
 ├── base_tree_root
-├── canonical_transition_root
+├── certified_tree_transition_root
 ├── content_blobs_root
 ├── materialization_root
 ├── projection_root
@@ -261,13 +261,13 @@ Rules:
 - **Two non-JSON hash recipes are frozen as-is** because the engine already
   emits them: the canonical structural subtree hash and the covering-state
   (checkpoint) hash. Both are byte-stream recipes defined exactly in the
-  companion spec ([CANONICAL_TRANSITION_TRACE_V0.md](CANONICAL_TRANSITION_TRACE_V0.md)
+  companion spec ([CERTIFIED_TREE_TRANSITION_TRACE_V0.md](CERTIFIED_TREE_TRANSITION_TRACE_V0.md)
   §2.2, §8.1); the certificate consumes their outputs as leaf values.
 
 Per-artifact root rules:
 
 ```text
-canonical_transitions.jsonl   ListRoot("lawvm.canonical_transition_trace.v0", ...)
+certified_tree_transitions.jsonl   ListRoot("lawvm.certified_tree_transition_trace.v0", ...)
                               ordered by transition sequence; duplicates forbidden
 source bundle                 SetRoot("lawvm.source_bundle.v0", source_artifact_hash leaves)
 base_tree.json                LeafHash("lawvm.base_tree.v0", base tree object)
@@ -314,7 +314,7 @@ structure_hash          canonical structural subtree hash (companion spec §2.2)
 provision_state_hash    LeafHash("lawvm.provision_state_leaf.v0", leaf)
 seam_derived_state_hash existing seam hash, preserved as a projection-payload
                         member exactly as seam spec 0.2 §3 defines it
-transition_hash         LeafHash("lawvm.canonical_transition.v0", certified
+transition_hash         LeafHash("lawvm.certified_tree_transition.v0", certified
                         core fields; companion spec §5.3)
 raw_source_hash         sha256(raw source bytes)
 source_artifact_hash    LeafHash("lawvm.source_artifact.v0", identity object
@@ -485,12 +485,35 @@ or old bundles stop being checkable. One row per code:
 
 ```json
 {
-  "diagnostic_code": "TEMPORAL.DURATION_ARITHMETIC_AUTHORITY_MISSING",
+  "code": "TEMPORAL.NON_EXPIRY_VALIDITY_TEXT_SUPPRESSED",
+  "canonical_semantic_code": "TEMPORAL.NON_EXPIRY_VALIDITY_TEXT_SUPPRESSED",
+  "deprecated_aliases": ["TEMPORAL.NON_VALIDITY_VOIMASSA_SUPPRESSED"],
+  "introduced_in": "lawvm.certificate.v0.4",
+  "deprecated_in": null,
   "role": "observation | obligation | violation",
-  "allowed_residual_kinds": ["expiry_unverified"],
-  "profile_disposition": { "fi.strict.current": "blocks", "fi.quirks.current": "qualifies" }
+  "allowed_residual_kinds": [],
+  "profile_disposition": { "fi.strict.current": "permits" },
+  "jurisdiction_scope": ["fi"],
+  "doctrine_scope": ["fi.fixed_term_expiry.v1"],
+  "surface_language": "fi",
+  "surface_lexemes": ["voimassa"]
 }
 ```
+
+Code NAMES are universal-shaped: the diagnostic concept (validity-looking
+text that does not predicate a whole-work expiry bound) is
+cross-jurisdictional even when its current implementation is one
+jurisdiction's doctrine layer. Surface lexemes, doctrine ids, and
+jurisdiction scope are registry METADATA, never part of the code name. A
+lane-scoped namespace is introduced only if a diagnostic concept turns out
+to have no stable cross-jurisdictional semantics.
+
+Code rename/migration rule: never rename by editing history. New bundles
+MUST emit the canonical code; a checker MAY accept a deprecated alias ONLY
+when the bundle's own pinned registry maps alias → canonical_semantic_code.
+A code rename is hash-affecting wherever the code appears in a hashed
+residual/projection row, so old bundles are checked under their own pinned
+registry — they are never rewritten.
 
 The checker verifies, per residual row: the `diagnostic_code` is registered
 here; the row's `kind` is in the code's `allowed_residual_kinds`; and the
@@ -510,8 +533,8 @@ policy/
   diagnostic_registry.json
   checker_contract.json
 trace/
-  canonical_transitions.jsonl
-  canonical_transitions.root
+  certified_tree_transitions.jsonl
+  certified_tree_transitions.root
 materialization/
   base_tree.json
   content_blobs.jsonl
@@ -566,10 +589,10 @@ projection family or optional artifact that is not emitted is an explicit
       "root": "sha256:...",
       "locator": "materialization/base_tree.json"
     },
-    "canonical_transition_trace": {
-      "schema": "lawvm.canonical_transition_trace.v0",
+    "certified_tree_transition_trace": {
+      "schema": "lawvm.certified_tree_transition_trace.v0",
       "root": "sha256:...",
-      "locator": "trace/canonical_transitions.jsonl"
+      "locator": "trace/certified_tree_transitions.jsonl"
     },
     "content_blobs": {
       "schema": "lawvm.content_blobs.v0",
@@ -776,7 +799,7 @@ Typed diagnostic codes are REQUIRED, not decorative:
   as `kind=expiry_unverified`. In the fixed-term-expiry lane, decree-set
   commencement (`TEMPORAL.DECREE_SET_COMMENCEMENT_UNRESOLVED`), start-only
   clauses (`TEMPORAL.START_ONLY_NOT_EXPIRY_BOUND`), and non-validity
-  voimassa text (`TEMPORAL.NON_VALIDITY_VOIMASSA_SUPPRESSED`) are
+  voimassa text (`TEMPORAL.NON_EXPIRY_VALIDITY_TEXT_SUPPRESSED`) are
   non-blocking observations; an `expiry_unverified` residual carrying one of
   these non-expiry codes is INVALID. This does NOT prohibit a different
   temporal lane — e.g. a future commencement resolver — from emitting a
@@ -963,7 +986,7 @@ Schema family:
 
 ```text
 lawvm.certificate.v0            lawvm.source_bundle.v0
-lawvm.canonical_transition_trace.v0
+lawvm.certified_tree_transition_trace.v0
 lawvm.base_tree.v0              lawvm.content_blobs.v0
 lawvm.materialization_index.v0  lawvm.residual_ledger.v0
 lawvm.finding_ledger.v0
@@ -1031,13 +1054,13 @@ artifact (SQLite meta or JSONL projection rows):
 
 ## 7. Checker v0 contract
 
-Checker v0 verifies **source anchoring + canonical transition replay +
+Checker v0 verifies **source anchoring + certified tree-transition replay +
 projection inclusion + residue honesty**. It does NOT re-parse legal source
 language — and the independence boundary MUST be stated wherever the checker
 is described.
 
 Inputs: the bundle (§4) — certificate.json plus every manifest artifact,
-including bundled source bytes, base tree, canonical transition trace,
+including bundled source bytes, base tree, certified tree-transition trace,
 content blobs, materialization index, residual/finding ledgers, projection
 rows, coverage rows, and the profile/policy/projection-spec manifests.
 
@@ -1067,12 +1090,12 @@ Procedure:
  2. Recompute raw_source_hash for every source blob; recompute SourceArtifact
     leaves and source_bundle_root.
  3. Verify source anchoring per transition (companion spec §7): every
-    source_ref of every CanonicalTransition resolves into the source bundle
+    source_ref of every CertifiedTreeTransition resolves into the source bundle
     and is covered by at least one source_anchors entry whose byte span
     exists in the artifact's raw bytes and whose quote_hash matches, or by a
     kind=source_anchor_unavailable residual mapped to this transition and
     ref. Missing anchors are NEVER silent.
- 4. Recompute canonical_transition_root from the trace (ordering + duplicate
+ 4. Recompute certified_tree_transition_root from the trace (ordering + duplicate
     rules of §3.1.1).
  5. Validate each transition row against the companion-spec grammar:
     certified-core fields present, sequence strictly increasing,
@@ -1229,7 +1252,7 @@ uncheckable bundle is a checked bundle".
 
 ```text
 1. This spec + the companion transition-trace spec
-   (CANONICAL_TRANSITION_TRACE_V0.md) — keep both ahead of the emitters.
+   (CERTIFIED_TREE_TRANSITION_TRACE_V0.md) — keep both ahead of the emitters.
 2. certificate_root/projection parentage fields into seam + dump outputs
    (§3.4), even before the checker exists.
 3. Bundle writer for ONE Finnish statute/slice.
@@ -1237,7 +1260,7 @@ uncheckable bundle is a checked bundle".
 ```
 
 Transition-leaf provenance (normative for the bundle writer): the
-CanonicalTransition leaves and their pre/post hashes MUST be produced from
+CertifiedTreeTransition leaves and their pre/post hashes MUST be produced from
 the landed write footprint of the apply step (a WriteReceipt or equivalent
 landed-footprint producer), never reconstructed from the operation's
 nominal target after the fact — a bundle writer that re-derives transitions
@@ -1307,7 +1330,7 @@ contract freezes tight rather than loose.
   universes so partial emission cannot read as all-provision clean (§4,
   §5.5).
 - Transition semantics moved to the normative companion spec
-  ([CANONICAL_TRANSITION_TRACE_V0.md](CANONICAL_TRANSITION_TRACE_V0.md)):
+  ([CERTIFIED_TREE_TRANSITION_TRACE_V0.md](CERTIFIED_TREE_TRANSITION_TRACE_V0.md)):
   base-tree representation, content blobs, transition grammar and action
   semantics, and materialization state-root/checkpoint semantics. The
   certificate spec consumes those roots; the companion defines them.
@@ -1352,3 +1375,35 @@ fixture; public emitters and the checker freeze only after these hold.
   projection keeps `statute_id` (its frozen public join key); jurisdiction
   species are values and display labels, never core field names (frozen
   rule, §6).
+
+### 11.3 Changes 0.3 → 0.4 (freeze round)
+
+Freeze edits for the experimental one-work bundle writer. Public
+emitter/checker freeze remains gated on (1) dump/transition-graph
+projection-verifier details before those families are advertised as
+derivation-verified, (2) the apply-resolution-and-receipt contract with
+receipt-produced transition leaves, (3) corrupted-bundle fire-drill tests
+for every checker MUST.
+
+- Transition schema/domain ids renamed BEFORE first emission (domain tags
+  are hash inputs; this rename is free now and breaking after the first
+  public bundle): `lawvm.canonical_transition.v0` →
+  `lawvm.certified_tree_transition.v0`,
+  `lawvm.canonical_transition_trace.v0` →
+  `lawvm.certified_tree_transition_trace.v0`,
+  `canonical_transition_root` → `certified_tree_transition_root`,
+  `trace/canonical_transitions.jsonl` →
+  `trace/certified_tree_transitions.jsonl`. "Canonical" suggested canonical
+  LEGAL meaning; checker v0 replays tree patches. The three-level
+  terminology is fixed: SourceInstruction (L1) / CanonicalLegalOperation
+  (L2) / CertifiedTreeTransition (L3).
+- Diagnostic code `TEMPORAL.NON_VALIDITY_VOIMASSA_SUPPRESSED` renamed to
+  the universal-shaped `TEMPORAL.NON_EXPIRY_VALIDITY_TEXT_SUPPRESSED`
+  (surface lexeme out of the code name). Registry rows gain
+  canonical_semantic_code / deprecated_aliases / jurisdiction_scope /
+  doctrine_scope / surface_language / surface_lexemes, and the
+  alias-migration rule is normative (§3.5).
+- Experimental-writer boundary restated: closed_interval only, one work,
+  all source bytes bundled, dump/graph projections inclusion-verified only
+  unless verifier details exist, artifacts are "bundle writer fixtures" —
+  never "checked certificates" — until checker v0 exists.

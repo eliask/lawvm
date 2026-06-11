@@ -61,7 +61,7 @@ EVENT_BOUND_OUT_OF_DOCTRINE = "TEMPORAL.EVENT_BOUND_OUT_OF_DOCTRINE"
 DECREE_SET_COMMENCEMENT_UNRESOLVED = "TEMPORAL.DECREE_SET_COMMENCEMENT_UNRESOLVED"
 SOURCE_IMPOSSIBLE_DATE = "TEMPORAL.SOURCE_IMPOSSIBLE_DATE"
 START_ONLY_NOT_EXPIRY_BOUND = "TEMPORAL.START_ONLY_NOT_EXPIRY_BOUND"
-NON_VALIDITY_VOIMASSA_SUPPRESSED = "TEMPORAL.NON_VALIDITY_VOIMASSA_SUPPRESSED"
+NON_EXPIRY_VALIDITY_TEXT_SUPPRESSED = "TEMPORAL.NON_EXPIRY_VALIDITY_TEXT_SUPPRESSED"
 
 # Blocking residue family: a recognised whole-law validity clause whose end the
 # extractor must not guess. These keep the seam fail-loud (expiry_unverified).
@@ -240,14 +240,14 @@ def _classify_unresolved_validity_clause(clause_text: str) -> tuple[str, str, bo
             )
     if not _subject_voimassa_same_sentence(clause_text):
         return (
-            NON_VALIDITY_VOIMASSA_SUPPRESSED,
+            NON_EXPIRY_VALIDITY_TEXT_SUPPRESSED,
             "no sentence predicates 'voimassa' of the act itself; the "
             "voimassa-shaped text is about another subject",
             False,
         )
     if _REFERENTIAL_VOIMASSA_RE.search(clause_text):
         return (
-            NON_VALIDITY_VOIMASSA_SUPPRESSED,
+            NON_EXPIRY_VALIDITY_TEXT_SUPPRESSED,
             "referential/qualifying 'voimassa' (incorporation by reference or "
             "'sikäli kuin' qualifier), not a whole-law validity bound",
             False,

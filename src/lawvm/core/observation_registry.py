@@ -553,7 +553,7 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "audit", "info", "fixed_term_expiry",
                 "start-only validity statement (voimassa N päivästä ...) with no end marker; a commencement fact, not an expiry bound",
                 ("temporal_selection",), role="observation"),
-    FindingSpec("TEMPORAL.NON_VALIDITY_VOIMASSA_SUPPRESSED", "fixed_term_expiry",
+    FindingSpec("TEMPORAL.NON_EXPIRY_VALIDITY_TEXT_SUPPRESSED", "fixed_term_expiry",
                 "audit", "info", "fixed_term_expiry",
                 "voimassa-shaped text does not predicate validity of the act itself (referential incorporation, qualifier, or another subject); suppressed as a non-candidate with audit trail",
                 ("temporal_selection",), role="observation"),

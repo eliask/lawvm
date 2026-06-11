@@ -50,7 +50,8 @@ the architecture, keep it explanatory.
 - [LEGAL_BRANCH_AND_AUTHORITY_AXIS.md](LEGAL_BRANCH_AND_AUTHORITY_AXIS.md)
 - [SEAM_SPEC_PROVISION_STATE.md](SEAM_SPEC_PROVISION_STATE.md)
 - [CERTIFICATE_SCHEMA_V0.md](CERTIFICATE_SCHEMA_V0.md) — temporal-dossier certificate, hash hierarchy, residue honesty, checker v0 contract
-- [CANONICAL_TRANSITION_TRACE_V0.md](CANONICAL_TRANSITION_TRACE_V0.md) — replayable transition grammar: base tree, content blobs, action semantics, state-root/checkpoint semantics
+- [CERTIFIED_TREE_TRANSITION_TRACE_V0.md](CERTIFIED_TREE_TRANSITION_TRACE_V0.md) — replayable transition grammar: base tree, content blobs, action semantics, state-root/checkpoint semantics
+- [APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md](APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md) — the semantic apply waist: ScopedTargetResolver/ResolverBinding, fallback rungs, WriteReceipt, ObservedWriteAudit, occupancy contract, transition-leaf production
 
 ## Finland Reference Frontend
 

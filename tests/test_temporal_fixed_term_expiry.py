@@ -33,7 +33,7 @@ from lawvm.finland.fixed_term_expiry import (
     FIXED_TERM_EXPIRY_AMBIGUOUS,
     FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS,
     FIXED_TERM_EXPIRY_UNPARSEABLE,
-    NON_VALIDITY_VOIMASSA_SUPPRESSED,
+    NON_EXPIRY_VALIDITY_TEXT_SUPPRESSED,
     SCOPED_FIXED_TERM_EXPIRY_UNSUPPORTED,
     SOURCE_IMPOSSIBLE_DATE,
     START_ONLY_NOT_EXPIRY_BOUND,
@@ -500,7 +500,7 @@ def test_referential_voimassa_is_suppressed_non_candidate() -> None:
     extraction = extract_fixed_term_bounds(statute_id="1954/243", timelines=timelines)
     assert extraction.bounds == ()
     codes = [d.code for d in extraction.diagnostics]
-    assert NON_VALIDITY_VOIMASSA_SUPPRESSED in codes
+    assert NON_EXPIRY_VALIDITY_TEXT_SUPPRESSED in codes
     assert governing_unparseable(extraction, as_of="1960-01-01", query_type="governing") is None
 
 
@@ -521,7 +521,7 @@ def test_other_subject_voimassa_in_aggregate_text_is_suppressed() -> None:
     extraction = extract_fixed_term_bounds(statute_id="2015/1442", timelines=timelines)
     assert extraction.bounds == ()
     codes = [d.code for d in extraction.diagnostics]
-    assert NON_VALIDITY_VOIMASSA_SUPPRESSED in codes
+    assert NON_EXPIRY_VALIDITY_TEXT_SUPPRESSED in codes
     assert governing_unparseable(extraction, as_of="2020-01-01", query_type="governing") is None
 
 
