@@ -132,6 +132,44 @@ def test_dump_response_excludes_not_yet_effective_section_at_as_of() -> None:
     assert payload["section_count"] == 1
 
 
+def test_dump_response_excludes_repeal_placeholder_sections() -> None:
+    live_timelines = _two_section_timelines()
+    placeholder_addr = LegalAddress(path=(("chapter", "1"), ("section", "3")))
+    placeholder = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="3",
+        attrs={"lawvm_repeal_placeholder": "1"},
+    )
+    live_timelines[placeholder_addr] = ProvisionTimeline(
+        address=placeholder_addr,
+        versions=[
+            ProvisionVersion(
+                effective="2020-01-01",
+                enacted="2020-01-01",
+                content=placeholder,
+                source=OperationSource(
+                    statute_id="2020/10",
+                    title="Repeal Act",
+                    enacted="2020-01-01",
+                    effective="2020-01-01",
+                    raw_text="3 § kumotaan.",
+                ),
+            )
+        ],
+    )
+
+    payload = build_statute_dump_response(
+        timelines=live_timelines,
+        statute_id="2000/1",
+        jurisdiction="fi",
+        as_of="2022-01-01",
+    )
+
+    addrs = {section["address"]["text"] for section in payload["sections"]}
+    assert addrs == {"chapter:1/section:1", "chapter:1/section:2"}
+    assert payload["section_count"] == 2
+
+
 def test_dump_response_address_filter_selects_one_section() -> None:
     payload = build_statute_dump_response(
         timelines=_two_section_timelines(),
