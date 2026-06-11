@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from lawvm.finland.corpus import get_consolidated_oracle_suspect_cache_only
 from lawvm.finland.proof_surfaces import finland_frontier_proof_evidence_surface
+from lawvm.tools.replay_mode_arg import replay_mode_argument
 
 FRESH_ORACLE_CHECK_LIMIT = 100
 FRESH_SCORE_REFRESH_LIMIT = 100
@@ -138,7 +139,7 @@ ORACLE_SUSPECT_CATEGORIES = {"ORACLE_STALE", "EDITORIAL_CONVENTION", "CORRIGENDU
 REPLAY_BUG_CATEGORIES = {"REPLAY_EXTRA", "REPLAY_MISSING", "UNKNOWN", "MISSING", "EXTRA"}
 
 
-def _classify_one_sync(sid: str, mode: str = "finlex_oracle"):
+def _classify_one_sync(sid: str, mode: str = "official_consolidation"):
     """Run oracle_check._classify_statute for one statute. Used for fresh runs.
 
     Strip non-picklable fields (lxml elements in oracle_sections / replay_result)
@@ -157,7 +158,7 @@ def _classify_one_sync(sid: str, mode: str = "finlex_oracle"):
     return r
 
 
-def _score_one_sync(sid: str, mode: str = "finlex_oracle") -> Tuple[str, float, str]:
+def _score_one_sync(sid: str, mode: str = "official_consolidation") -> Tuple[str, float, str]:
     """Run the current full-text score for one statute."""
     from lawvm.tools.bench import _score_one
 
@@ -262,7 +263,7 @@ def _load_oracle_check_cache(db_path: Path) -> Dict[str, Dict]:
 def _run_oracle_checks_parallel(
     sids: List[str],
     workers: int,
-    mode: str = "finlex_oracle",
+    mode: str = "official_consolidation",
     progress: bool = True,
 ) -> Dict[str, Dict]:
     """Run fresh oracle-check classification for a list of statutes."""
@@ -381,7 +382,7 @@ def _select_provisional_candidate_refresh_sids(
 def _run_score_refresh_parallel(
     sids: List[str],
     workers: int,
-    mode: str = "finlex_oracle",
+    mode: str = "official_consolidation",
     progress: bool = True,
 ) -> Dict[str, Dict]:
     """Run fresh benchmark scoring for a list of statutes."""
@@ -1366,7 +1367,7 @@ def _save_evidence_bundles_jsonl(bundles: List[Dict], label: str, path: Optional
 
 def main(args) -> None:
     label = getattr(args, "label", None)
-    mode = getattr(args, "mode", "finlex_oracle")
+    mode = getattr(args, "mode", "official_consolidation")
     top = getattr(args, "top", 30)
     exclude_suspect = getattr(args, "exclude_suspect", False)
     strict_label = getattr(args, "strict_label", None)
@@ -1680,9 +1681,9 @@ def register_cli(sub: Any) -> None:
     )
     frontier_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode for fresh oracle-check and score refresh (default: finlex_oracle)",
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode for fresh oracle-check and score refresh (default: official_consolidation; legacy alias: finlex_oracle)",
     )
     frontier_p.add_argument(
         "--top",

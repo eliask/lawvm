@@ -27,22 +27,35 @@ Each site has:
 """
 from __future__ import annotations
 
+import re
 import time
+from typing import cast
+
+import lawvm.sweden.grafter as se_grafter
+import lawvm.uk_legislation.source_parent_payloads as uk_source_parent_payloads
 
 _CEILING_MS = 100  # generous ceiling; old patterns: >1 s on adversarial inputs
+
+_SE_REPLACE_CLAUSE_RE = cast(re.Pattern[str], vars(se_grafter)["_SE_REPLACE_CLAUSE_RE"])
+_SE_REPEAL_CLAUSE_RE = cast(re.Pattern[str], vars(se_grafter)["_SE_REPEAL_CLAUSE_RE"])
+_SE_RENUMBER_CLAUSE_RE = cast(re.Pattern[str], vars(se_grafter)["_SE_RENUMBER_CLAUSE_RE"])
+_APPENDIX_RE = cast(re.Pattern[str], vars(se_grafter)["_APPENDIX_RE"])
+_CHAPTER_RE = cast(re.Pattern[str], vars(se_grafter)["_CHAPTER_RE"])
+_ITEM_RE = cast(re.Pattern[str], vars(se_grafter)["_ITEM_RE"])
+_UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RE = cast(
+    re.Pattern[str],
+    vars(uk_source_parent_payloads)["_UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RE"],
+)
+_UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_PARENT_RE = cast(
+    re.Pattern[str],
+    vars(uk_source_parent_payloads)["_UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_PARENT_RE"],
+)
 
 
 # ---------------------------------------------------------------------------
 # SE-3 — grafter._SE_REPLACE_CLAUSE_RE / _SE_REPEAL_CLAUSE_RE
 # (highest risk: nested quantifier in lookahead + outer unbounded gap)
 # ---------------------------------------------------------------------------
-
-from lawvm.sweden.grafter import (  # type: ignore[attr-defined]
-    _SE_REPLACE_CLAUSE_RE,
-    _SE_REPEAL_CLAUSE_RE,
-    _SE_RENUMBER_CLAUSE_RE,
-)
-
 
 def test_se_replace_clause_positive() -> None:
     text = "dels att 3 § ska ha följande lydelse"
@@ -141,9 +154,6 @@ def test_se_renumber_clause_adversarial_long_no_betecknas_is_fast() -> None:
 # (BRANCH ordering: star variant tried before empty)
 # ---------------------------------------------------------------------------
 
-from lawvm.sweden.grafter import _APPENDIX_RE  # type: ignore[attr-defined]
-
-
 def test_appendix_re_simple_positive() -> None:
     text = "Bilaga 1 Förordning om avgifter"
     m = _APPENDIX_RE.match(text)
@@ -186,9 +196,6 @@ def test_appendix_re_adversarial_long_no_bilaga_is_fast() -> None:
 # ---------------------------------------------------------------------------
 # SE-1 — grafter._CHAPTER_RE / _ITEM_RE
 # ---------------------------------------------------------------------------
-
-from lawvm.sweden.grafter import _CHAPTER_RE, _ITEM_RE  # type: ignore[attr-defined]
-
 
 def test_chapter_re_positive() -> None:
     text = "1 kap. Allmänna bestämmelser"
@@ -243,11 +250,6 @@ def test_item_re_negative_no_separator() -> None:
 # ---------------------------------------------------------------------------
 # UK-1 — source_parent_payloads._UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RE
 # ---------------------------------------------------------------------------
-
-from lawvm.uk_legislation.source_parent_payloads import (  # type: ignore[attr-defined]
-    _UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RE,
-)
-
 
 def test_uk_quoted_child_sub_positive_with_space_before_dash() -> None:
     """Canonical case from failing test: 'substitute - a where...'."""
@@ -313,11 +315,6 @@ def test_uk_quoted_child_sub_adversarial_long_of_context_is_fast() -> None:
 # UK-2 — source_parent_payloads._UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_PARENT_RE
 # (covers long 'of section N of the YEAR Act (description)' contexts)
 # ---------------------------------------------------------------------------
-
-from lawvm.uk_legislation.source_parent_payloads import (  # type: ignore[attr-defined]
-    _UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_PARENT_RE,
-)
-
 
 def test_uk_structured_tail_parent_simple_positive() -> None:
     text = (

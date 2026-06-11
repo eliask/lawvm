@@ -50,6 +50,9 @@ _SCOPE_PROVENANCE_TAGS = frozenset(
     {
         "grouped_chapter_scope",
         "grouped_part_scope",
+        "chapter_scope_from_preamble",
+        # Legacy spelling kept for read compatibility with rows produced before
+        # the preamble vocabulary migration.
         "chapter_scope_from_johtolause",
         "chapter_scope_from_explicit_chunk",
         "chapter_scope_carry_forward",
@@ -67,7 +70,7 @@ _TARGET_GUESSING_PROVENANCE_TAGS = frozenset(
 
 ScopeResolutionConfidence = Literal["explicit", "inferred", "rewritten"]
 ScopeResolutionSource = Literal[
-    "johtolause",
+    "preamble",
     "explicit_chunk",
     "carry_forward",
     "grouped_part",
@@ -190,10 +193,12 @@ def scope_confidence_from_tags(
             confidence="inferred",
             resolved_chapter=resolved_chapter,
         )
-    if "chapter_scope_from_johtolause" in normalized:
+    # Legacy "chapter_scope_from_johtolause" normalizes to the canonical
+    # preamble vocabulary on read (mirrors the pipeline_capture shim).
+    if "chapter_scope_from_preamble" in normalized or "chapter_scope_from_johtolause" in normalized:
         return ScopeConfidence(
-            tag="chapter_scope_from_johtolause",
-            source="johtolause",
+            tag="chapter_scope_from_preamble",
+            source="preamble",
             confidence="inferred",
             resolved_chapter=resolved_chapter,
         )
@@ -1531,7 +1536,7 @@ class ResolvedTargetScopeView:
 class ReplayProfile:
     """Immutable replay configuration for a single amendment pass."""
 
-    mode: Literal["finlex_oracle", "legal_pit"]
+    mode: Literal["official_consolidation", "legal_pit"]
     synthesize_repeal_placeholders: bool
     replace_same_numbered_section_insert: bool
     replace_same_numbered_container_insert: bool
@@ -1540,14 +1545,14 @@ class ReplayProfile:
 
 
 def get_replay_profile(
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     strict_profile: StrictProfile | None = None,
 ) -> ReplayProfile:
     """Return the canonical ReplayProfile for a given mode."""
     allows_context_dependent_anchor_resolution = (
         True if strict_profile is None else strict_profile.allows_context_dependent_anchor_resolution
     )
-    if mode == "finlex_oracle":
+    if mode == "official_consolidation":
         return ReplayProfile(
             mode=mode,
             synthesize_repeal_placeholders=True,

@@ -56,7 +56,7 @@ def _target_matches_lo(lo: Any, target_path: str) -> bool:
 def build_snapshot_debug_bundle(
     statute_id: str,
     source_id: str,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     target_path: str = "",
 ) -> Dict[str, Any]:
     """Capture lo_ops from process_muutoslaki and filter to the target address."""

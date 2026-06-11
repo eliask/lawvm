@@ -38,6 +38,7 @@ Additional cases:
 """
 from __future__ import annotations
 
+from typing import Any, cast
 
 import pytest
 
@@ -546,7 +547,7 @@ class TestSchemaStability:
         result = classify_telos_section(section, "1", "2024/schema6")
         assert result.borderline_candidate is not None
         with pytest.raises((AttributeError, TypeError)):
-            result.borderline_candidate.rule_id = "mutated"  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+            cast(Any, result.borderline_candidate).rule_id = "mutated"
 
     def test_result_is_frozen(self) -> None:
         """TelosExtractionResult is frozen (immutable)."""
@@ -555,7 +556,7 @@ class TestSchemaStability:
         )
         result = classify_telos_section(section, "1", "2024/schema7")
         with pytest.raises((AttributeError, TypeError)):
-            result.is_purpose_section = False  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+            cast(Any, result).is_purpose_section = False
 
 
 # ---------------------------------------------------------------------------

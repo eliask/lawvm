@@ -17,14 +17,15 @@ Covers all 12 mandatory acceptance criteria from the Slice 3 spec:
 from __future__ import annotations
 
 import json
+import importlib
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, cast, Dict
 
 import pytest
 
 # Activate Finland claim kinds
-import lawvm.finland.claim_kinds  # noqa: F401
+importlib.import_module("lawvm.finland.claim_kinds")
 
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.manual_claims.composer import (
@@ -825,4 +826,4 @@ def test_is_semantic_compilation_false_for_inline_statute():
 
 # Expose _minimal_precedence_registry from precedence module for test import
 from lawvm.core.manual_claims import precedence as _prec_mod
-_prec_mod._minimal_precedence_registry = _minimal_precedence_registry  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+cast(Any, _prec_mod)._minimal_precedence_registry = _minimal_precedence_registry

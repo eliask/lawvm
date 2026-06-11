@@ -30,7 +30,7 @@ import warnings
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple, TypeAlias
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +105,10 @@ def __getattr__(name: str) -> "type[_ProfileTagDeprecated]":
         )
         return _ProfileTagDeprecated
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+if TYPE_CHECKING:
+    ProfileTag: TypeAlias = _ProfileTagDeprecated
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +206,7 @@ class ManualCompilationClaim:
     disputes: Tuple[str, ...]
     """claim_ids this claim disputes."""
 
-    requested_profiles: Tuple[ProfileTag, ...]  # noqa: F821  # ty: ignore[unresolved-reference]
+    requested_profiles: Tuple[ProfileTag, ...]
     """Profile membership request — NOT assertion. Composer decides eligibility."""
     rationale: str
 
@@ -260,7 +264,7 @@ class ClaimCompositionDecision:
 
     claim_id: str
     build_id: str
-    profile: ProfileTag  # noqa: F821  # ty: ignore[unresolved-reference]
+    profile: ProfileTag
     authorized: bool
     reason_code: str
     """e.g. 'extraction_layer_null_slot_filled' | 'rejected_replay_authorized_false'"""

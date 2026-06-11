@@ -21,7 +21,7 @@ from lawvm.tools._evidence_helpers import (
 
 def _section_bisect_support(
     statute_id: str,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     section_results: Iterable[Dict],
     *,
     oracle_root: Optional[Any] = None,

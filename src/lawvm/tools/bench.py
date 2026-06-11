@@ -46,6 +46,7 @@ from lawvm.tools.editorial_hygiene import (
 )
 from lawvm.tools.frontier import _run_oracle_checks_parallel
 from lawvm.tools.uk_replay_regime import add_uk_replay_regime_arguments
+from lawvm.tools.replay_mode_arg import replay_mode_argument
 
 # ---------------------------------------------------------------------------
 # Live-filter helper (skip contentAbsent-oracle statutes)
@@ -139,7 +140,7 @@ def _summarize_bench_warning_diagnostics(
 def _run_replay_with_bench_warning_capture(
     sid: str,
     *,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     diagnostic_replay: bool,
     replay_kwargs: Dict[str, Any],
 ) -> Tuple[Any, Counter[str]]:
@@ -542,7 +543,7 @@ def _structural_sim(sid: str, master: Any) -> tuple[float, Counter[str]]:
 
 def _score_one(
     sid: str,
-    mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle",
+    mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     *,
     diagnostic_replay: bool = False,
 ) -> Tuple[str, float, str]:
@@ -571,7 +572,7 @@ def _score_one(
 
 def _score_one_with_warning_summary(
     sid: str,
-    mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle",
+    mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     *,
     diagnostic_replay: bool = False,
     fast: bool = False,
@@ -637,7 +638,7 @@ def _section_score(
 
         master, _warning_counts = _run_replay_with_bench_warning_capture(
             sid,
-            mode="finlex_oracle",
+            mode="official_consolidation",
             diagnostic_replay=diagnostic_replay,
             replay_kwargs={
                 "quiet": not diagnostic_replay,
@@ -712,7 +713,7 @@ def _section_score_with_warning_summary(
 
         master, warning_counts = _run_replay_with_bench_warning_capture(
             sid,
-            mode="finlex_oracle",
+            mode="official_consolidation",
             diagnostic_replay=diagnostic_replay,
             replay_kwargs={
                 "quiet": not diagnostic_replay,
@@ -875,7 +876,7 @@ def _oracle_stale_adjusted_stats(
     results: List[Tuple[int, str, float, str, float]],
     *,
     workers: int,
-    mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle",
+    mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
 ) -> Optional[Dict[str, Any]]:
     """Compute an oracle-stale-aware headline mean over the current bench rows.
 
@@ -943,7 +944,7 @@ def _score_one_with_meta(args: Tuple) -> Tuple[int, str, float, str, float, str,
     return (count, sid, sim, status, elapsed, _format_bench_warning_summary(warning_counts), lev_sim)
 
 
-def _score_one_with_meta_section(args: Tuple[int, str, bool, Literal["finlex_oracle", "legal_pit"]]) -> Tuple[int, str, float, float, str, float, str]:
+def _score_one_with_meta_section(args: Tuple[int, str, bool, Literal["official_consolidation", "legal_pit"]]) -> Tuple[int, str, float, float, str, float, str]:
     """Wrapper for parallel execution with --section-score.
 
     Takes (count, sid, diagnostic_replay, mode); returns
@@ -964,7 +965,7 @@ def _run_benchmark_section(
     verbose: bool = True,
     workers: int = 1,
     diagnostic_replay: bool = False,
-    mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle",
+    mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     diagnostic_summaries_out: Optional[Dict[str, str]] = None,
 ) -> List[Tuple[int, str, float, float, str, float]]:
     """Run benchmark with section-level scoring.
@@ -1031,7 +1032,7 @@ def _run_benchmark(
     verbose: bool = True,
     workers: int = 1,
     diagnostic_replay: bool = False,
-    mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle",
+    mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     fast: bool = False,
     diagnostic_summaries_out: Optional[Dict[str, str]] = None,
 ) -> Tuple[List[Tuple[int, str, float, str, float]], Dict[str, float]]:
@@ -2284,7 +2285,7 @@ def main(args) -> None:
 
     section_score_mode = getattr(args, "section_score", False)
     fast_mode = getattr(args, "fast", False)
-    bench_mode = getattr(args, "mode", "finlex_oracle") or "finlex_oracle"
+    bench_mode = getattr(args, "mode", "official_consolidation") or "official_consolidation"
     oracle_stale_headline = getattr(args, "oracle_aware_headline", False)
 
     print(
@@ -2428,10 +2429,10 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
     )
     bench_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
         help=(
-            "replay mode: finlex_oracle (default) compares against the Finlex consolidated XML; "
+            "replay mode: official_consolidation (default; legacy alias: finlex_oracle) compares against the Finlex consolidated XML; "
             "legal_pit applies date-cutoff PIT materialization (excludes future-dated amendments "
             "and corrigendum patches, giving a cleaner accuracy signal against the legal record)"
         ),

@@ -12,6 +12,7 @@ from lawvm.core.compile_result import CanonicalBundle, StrictProfile
 from lawvm.core.evidence_policy import EvidencePolicyRegistry
 from lawvm.core.provenance_graph import (
     GraphBuilder,
+    ProvenanceGraph,
     attestation_kind_registry_hash,
 )
 
@@ -21,7 +22,7 @@ from lawvm.core.provenance_graph import (
 # ---------------------------------------------------------------------------
 
 
-def _make_empty_graph() -> object:
+def _make_empty_graph() -> ProvenanceGraph:
     builder = GraphBuilder(attestation_kind_registry_hash())
     return builder.finalize()
 
@@ -47,8 +48,8 @@ def test_compile_facade_with_metadata_factory() -> None:
     facade = CompileFacade.with_metadata(
         bundle=CanonicalBundle(),
         finding_ledger=(),
-        replay_mode="finlex_oracle",
-        graph=graph,  # ty:ignore[invalid-argument-type]
+        replay_mode="official_consolidation",
+        graph=graph,
         strict_profile=profile,
         evidence_policy=registry,
         source_bundle_hash="s" * 64,
@@ -56,7 +57,7 @@ def test_compile_facade_with_metadata_factory() -> None:
     )
 
     assert facade.compile_metadata is not None
-    assert facade.compile_metadata.provenance_graph_hash == graph.snapshot_hash  # ty:ignore[unresolved-attribute]
+    assert facade.compile_metadata.provenance_graph_hash == graph.snapshot_hash
     assert facade.compile_metadata.strict_profile_fingerprint == compute_strict_profile_fingerprint(profile)
     assert facade.compile_metadata.evidence_policy_fingerprint == registry.registry_hash
     assert facade.compile_metadata.source_bundle_hash == "s" * 64
@@ -69,7 +70,7 @@ def test_compile_facade_without_metadata_is_backward_compatible() -> None:
     facade = CompileFacade(
         bundle=CanonicalBundle(),
         finding_ledger=(),
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
     )
     assert facade.compile_metadata is None
 
@@ -79,7 +80,7 @@ def test_compile_facade_from_phase_result_backward_compatible() -> None:
     from lawvm.core.phase_result import PhaseResult
 
     pr = PhaseResult(output=CanonicalBundle())
-    facade = CompileFacade.from_phase_result(pr, replay_mode="finlex_oracle")
+    facade = CompileFacade.from_phase_result(pr, replay_mode="official_consolidation")
     assert facade.compile_metadata is None
 
 
@@ -92,7 +93,7 @@ def test_compile_facade_with_metadata_replay_mode_preserved() -> None:
         bundle=CanonicalBundle(),
         finding_ledger=(),
         replay_mode="legal_pit",
-        graph=graph,  # ty:ignore[invalid-argument-type]
+        graph=graph,
         strict_profile=profile,
         evidence_policy=registry,
         source_bundle_hash="s" * 64,

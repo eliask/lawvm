@@ -549,7 +549,7 @@ def test_amendment_expiry_date_vuoden_loppuun_not_matched_from_body_content() ->
 
     Before the fix, Pattern 3 matched the body content and returned 2012-12-31 as
     2009/1362's own expiry, incorrectly tagging it as a temporary amendment.  This
-    caused its replayed ops to be reverted at 2012-12-31 in finlex_oracle mode,
+    caused its replayed ops to be reverted at 2012-12-31 in official_consolidation mode,
     producing a regression in statutes that include 2009/1362 in their chain.
 
     The fix: Patterns 3 and 4 must search ONLY the <hcontainer name="entryIntoForce">

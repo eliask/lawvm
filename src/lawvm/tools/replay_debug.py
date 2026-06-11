@@ -123,7 +123,7 @@ def _load_source_blocks(source_id: str) -> list[dict[str, str]]:
 
 def build_replay_debug_bundle(
     statute_id: str,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     *,
     source: Optional[str] = None,
     target: Optional[str] = None,
@@ -374,7 +374,7 @@ def _format_text(bundle: Dict[str, Any]) -> str:
 def main(args) -> None:
     bundle = build_replay_debug_bundle(
         statute_id=args.statute_id,
-        mode=getattr(args, "mode", "finlex_oracle"),
+        mode=getattr(args, "mode", "official_consolidation"),
         source=getattr(args, "source", None),
         target=getattr(args, "target", None),
         show_clause_text=getattr(args, "show_clause_text", False),

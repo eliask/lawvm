@@ -17,7 +17,7 @@ import csv
 import re
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     import argparse
@@ -37,7 +37,7 @@ def census_1_1(citations: list, amendment_index: dict) -> tuple[list, dict]:
         if years:
             latest_amend_year[parent_id] = max(years)
 
-    rows = []
+    rows: list[dict[str, Any]] = []
     total_fi = 0
     for cite in citations:
         if cite.get('edge_type') != 'CITES':
@@ -64,7 +64,7 @@ def census_1_1(citations: list, amendment_index: dict) -> tuple[list, dict]:
             })
 
     rows.sort(key=lambda r: -r['staleness_years'])
-    stats = {
+    stats: dict[str, Any] = {
         'stale': len(rows),
         'total_fi_cites': total_fi,
         'pct': len(rows) / total_fi * 100 if total_fi > 0 else 0.0,
@@ -117,18 +117,18 @@ def census_1_2(citations: list, delegations: list) -> tuple[list, dict]:
             'trigger_word': trigger.get(sid, '') if not exercised else '',
         })
 
-    total_clauses = sum(r['delegation_clauses'] for r in rows)
-    unexercised_total = sum(r['unexercised_clauses'] for r in rows)
+    total_clauses = sum(int(r['delegation_clauses']) for r in rows)
+    unexercised_total = sum(int(r['unexercised_clauses']) for r in rows)
     stats = {
         'total_clauses': total_clauses,
         'total_statutes': len(rows),
         'statutes_with_child': len(has_child),
         'unexercised_clauses': unexercised_total,
-        'unexercised_pct': unexercised_total / total_clauses * 100 if total_clauses > 0 else 0.0,  # ty:ignore[division-by-zero]
-        'mandatory_unexercised': sum(r['mandatory_unexercised'] for r in rows),
+        'unexercised_pct': unexercised_total / total_clauses * 100 if total_clauses > 0 else 0.0,
+        'mandatory_unexercised': sum(int(r['mandatory_unexercised']) for r in rows),
     }
     # Return only rows with unexercised clauses
-    return [r for r in rows if r['unexercised_clauses'] > 0], stats  # ty:ignore[unsupported-operator]
+    return [r for r in rows if int(r['unexercised_clauses']) > 0], stats
 
 
 # ---------------------------------------------------------------------------

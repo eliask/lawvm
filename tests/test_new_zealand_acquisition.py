@@ -440,13 +440,13 @@ def test_urllib_nz_transport_uses_explicit_timeout(monkeypatch: Any) -> None:
     seen: dict[str, Any] = {}
 
     class FakeHeaders(dict[str, str]):
-        def items(self):  # noqa: ANN201
+        def items(self) -> Any:
             return super().items()
 
     class FakeResponse:
         headers = FakeHeaders({"Content-Type": "application/json"})
 
-        def __enter__(self):  # noqa: ANN204
+        def __enter__(self) -> "FakeResponse":
             return self
 
         def __exit__(self, *_args: object) -> None:

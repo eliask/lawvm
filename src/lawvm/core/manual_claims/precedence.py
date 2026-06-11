@@ -17,9 +17,10 @@ Design: fail loud on missing or malformed file (AGENTS.md §1.10: no broad try/e
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple, cast
 
 import yaml  # operator-authored config boundary
 
@@ -211,14 +212,15 @@ def load_precedence_registry(yaml_path: Path) -> PrecedenceRegistry:
     for i, item in enumerate(parsed):
         if not isinstance(item, dict):
             raise ValueError(f"Rule at index {i} must be a YAML dict, got {type(item).__name__!r}")
+        rule_item = cast(Mapping[object, object], item)
         required = ("layer", "rule", "rationale")
-        missing = [k for k in required if k not in item]
+        missing = [k for k in required if k not in rule_item]
         if missing:
             raise ValueError(f"Rule at index {i} missing required keys: {missing!r}")
         rules.append(LayerPrecedenceRule(
-            layer=str(item["layer"]),  # ty:ignore[invalid-argument-type]
-            rule=str(item["rule"]),  # ty:ignore[invalid-argument-type]
-            rationale=str(item["rationale"]),  # ty:ignore[invalid-argument-type]
+            layer=str(rule_item["layer"]),
+            rule=str(rule_item["rule"]),
+            rationale=str(rule_item["rationale"]),
         ))
 
     return PrecedenceRegistry(

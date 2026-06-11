@@ -472,7 +472,7 @@ def _diagnose(
 
 
 def _batch_pre_blame_sections(
-    sid: str, blame_sources: List[str], mode: Literal["finlex_oracle", "legal_pit"]
+    sid: str, blame_sources: List[str], mode: Literal["official_consolidation", "legal_pit"]
 ) -> Dict[str, tuple]:
     """Replay sid once, snapshotting IR at each blame stop point.
 
@@ -519,7 +519,7 @@ def _batch_pre_blame_sections(
 
 
 def _get_pre_blame_sections(
-    sid: str, stop_before_source: str, mode: Literal["finlex_oracle", "legal_pit"]
+    sid: str, stop_before_source: str, mode: Literal["official_consolidation", "legal_pit"]
 ) -> tuple:
     """Replay sid stopping before the given source amendment.
 
@@ -537,7 +537,7 @@ def _get_pre_blame_sections(
 
 def _classify_statute(
     sid: str,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     *,
     replay_result: Optional[Any] = None,
     precomputed_compiled_ops: Optional[List] = None,
@@ -1377,12 +1377,12 @@ def _sort_sids_by_chain_length(sids: List[str]) -> List[str]:
     return sorted(sids, key=lambda s: len(children.get(s, ())), reverse=True)
 
 
-def _classify_statute_sync(sid: str, mode: Literal["finlex_oracle", "legal_pit"]) -> Optional[ClassifyResult]:
+def _classify_statute_sync(sid: str, mode: Literal["official_consolidation", "legal_pit"]) -> Optional[ClassifyResult]:
     """Sync wrapper so ProcessPoolExecutor can run each statute in its own process."""
     return _classify_statute(sid, mode)
 
 
-def _run_corpus(sids: List[str], mode: Literal["finlex_oracle", "legal_pit"], parallel: int) -> List[ClassifyResult]:
+def _run_corpus(sids: List[str], mode: Literal["official_consolidation", "legal_pit"], parallel: int) -> List[ClassifyResult]:
     total = len(sids)
     done = 0
     results: List[ClassifyResult] = []
@@ -1413,7 +1413,7 @@ def main(args) -> None:
     corpus_full = getattr(args, "corpus_full", False)
     save = getattr(args, "save", False)
     db_path = getattr(args, "db", None)
-    mode = getattr(args, "mode", "finlex_oracle")
+    mode = getattr(args, "mode", "official_consolidation")
     import os as _os
     _par = getattr(args, "parallel", None)
     parallel = _par if _par is not None else max(8, _os.cpu_count() or 4)
