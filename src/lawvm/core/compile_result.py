@@ -788,22 +788,6 @@ class CompileVerdict:
         return tuple(messages)
 
 
-# Migrate legacy frontend-specific scope vocabulary emitted by older compiled-op
-# rows (mirrors the johtolause_raw -> preamble_raw shim in pipeline_capture).
-# Only these known legacy values normalize; unrecognized values pass through
-# unchanged so they keep failing downstream exactly as before.
-_LEGACY_SCOPE_SOURCE_VALUES = {"johtolause": "preamble"}
-_LEGACY_SCOPE_TAG_VALUES = {"chapter_scope_from_johtolause": "chapter_scope_from_preamble"}
-
-
-def _normalize_scope_source_value(value: str) -> str:
-    return _LEGACY_SCOPE_SOURCE_VALUES.get(value, value)
-
-
-def _normalize_scope_tag_value(value: str) -> str:
-    return _LEGACY_SCOPE_TAG_VALUES.get(value, value)
-
-
 def _compiled_op_provenance_tag_sets(
     compiled_ops: Iterable[dict[str, Any]],
 ) -> CompiledOpProvenanceTags:
@@ -832,11 +816,11 @@ def _compiled_op_provenance_tag_sets(
         scope_tags = row.get("scope_provenance_tags")
         if isinstance(scope_tags, list):
             compiled_scope_tags.update(
-                _normalize_scope_tag_value(str(part).strip()) for part in scope_tags if str(part).strip()
+                str(part).strip() for part in scope_tags if str(part).strip()
             )
         scope_source = row.get("scope_source")
         if isinstance(scope_source, str) and scope_source.strip():
-            compiled_scope_sources.add(_normalize_scope_source_value(scope_source.strip()))
+            compiled_scope_sources.add(scope_source.strip())
         scope_confidence = row.get("scope_confidence")
         if isinstance(scope_confidence, str) and scope_confidence.strip():
             compiled_scope_confidences.add(scope_confidence.strip())
@@ -875,13 +859,12 @@ def _compiled_op_scope_witness(row: Mapping[str, Any]) -> CompiledOpScopeWitness
     scope_confidence = row.get("scope_confidence")
     scope_tags = row.get("scope_provenance_tags")
     scope_tag_list = (
-        [_normalize_scope_tag_value(str(part).strip()) for part in scope_tags if str(part).strip()]
+        [str(part).strip() for part in scope_tags if str(part).strip()]
         if isinstance(scope_tags, list)
         else []
     )
 
     source_value = str(scope_source).strip() if isinstance(scope_source, str) else ""
-    source_value = _normalize_scope_source_value(source_value)
     confidence_value = str(scope_confidence).strip() if isinstance(scope_confidence, str) else ""
     if source_value and confidence_value:
         if source_value in {"carry_forward", "preamble", "grouped_part", "grouped_chapter"}:
