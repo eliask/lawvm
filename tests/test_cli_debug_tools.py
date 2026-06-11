@@ -239,6 +239,19 @@ def test_cli_parser_accepts_new_debug_commands(cli_parser) -> None:
 
     args = cli_parser.parse_args(
         [
+            "provision-state",
+            "2009/953",
+            "--address",
+            "section:4",
+            "--as-of",
+            "2024-01-01",
+        ]
+    )
+    assert args.command == "provision-state"
+    assert args.provision == "section:4"
+
+    args = cli_parser.parse_args(
+        [
             "dump",
             "ukpga/2002/30",
             "--after",

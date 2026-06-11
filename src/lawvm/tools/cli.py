@@ -3447,9 +3447,14 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     provision_state_p.add_argument("statute_id", help="statute ID, e.g. 2009/953")
     provision_state_p.add_argument(
         "--provision",
+        "--address",
+        dest="provision",
         required=True,
         metavar="ADDR",
-        help="provision address, e.g. 'section:4' or 'chapter:1/section:4'",
+        help=(
+            "provision address, e.g. 'section:4' or 'chapter:1/section:4' "
+            "(--address is an alias)"
+        ),
     )
     provision_state_p.add_argument(
         "--as-of",
