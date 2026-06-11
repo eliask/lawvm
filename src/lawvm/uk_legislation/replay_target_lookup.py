@@ -408,7 +408,7 @@ class UKReplayTargetLookupMixin:
                                 else:
                                     per_node: list[UKCanonicalNodeMatch] = []
                                     uk_recursive_kind_match_all(
-                                        cast(IRNode, curr_node),  # ty:ignore[redundant-cast]
+                                        curr_node,
                                         kind=str(p_kind),
                                         label=str(p_label),
                                         match_kind_label=uk_match_kind_label,
@@ -485,7 +485,7 @@ class UKReplayTargetLookupMixin:
                                 next_cands.append(
                                     UKCanonicalNodeMatch(
                                         cast(IRNode, res_node),
-                                        cast(Optional[IRNode], res_p),  # ty:ignore[redundant-cast]
+                                        res_p,
                                         res_i,
                                     )
                                 )
@@ -499,7 +499,7 @@ class UKReplayTargetLookupMixin:
                                         target=(
                                             _target_resolution_address_for_node(
                                                 self.statute,
-                                                cast(IRNode, match[0]),  # ty:ignore[redundant-cast]
+                                                match[0],
                                                 path_resolver=self._tree_path_for_mutable_node,
                                             )
                                             or (

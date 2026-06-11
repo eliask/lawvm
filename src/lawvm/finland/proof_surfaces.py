@@ -19,6 +19,7 @@ from lawvm.core.agreement_residual import (
 )
 from lawvm.core.authority import (
     UNKNOWN_STATUS,
+    BranchEdgeKind,
     WOULD_AMEND_EDGE,
     WOULD_INSERT_EDGE,
     WOULD_REPEAL_EDGE,
@@ -58,6 +59,7 @@ from lawvm.core.temporal_resolution import (
     TEMPORAL_RECOVERY_FAMILY,
     TEMPORAL_UNRESOLVED_CONTINGENT,
     TEMPORAL_UNKNOWN_EFFECTIVE_DATE,
+    TemporalResolutionStatus,
     TemporalResolutionEvidence,
 )
 from lawvm.finland.consolidated_artifacts import artifact_record
@@ -1073,13 +1075,14 @@ def temporal_resolution_evidence_rows_from_projection_rows(
             "TIME.CONTINGENT_EFFECTIVE_DATE",
         }:
             continue
-        detail = row.get("detail") if isinstance(row.get("detail"), Mapping) else {}
+        detail_raw = row.get("detail")
+        detail: Mapping[str, Any] = detail_raw if isinstance(detail_raw, Mapping) else {}
         rows.append(
             TemporalResolutionEvidence(
                 rule_id=_temporal_resolution_rule_id(kind),
                 phase="temporal_elaboration",
                 reason=str(row.get("message") or _temporal_resolution_reason(kind)),
-                status=_temporal_resolution_status(kind),  # ty:ignore[invalid-argument-type]
+                status=_temporal_resolution_status(kind),
                 family=TEMPORAL_RECOVERY_FAMILY,
                 blocking=kind in fail_reason_set,
                 source_locator=str(row.get("source") or ""),
@@ -1087,7 +1090,7 @@ def temporal_resolution_evidence_rows_from_projection_rows(
                 quirks_disposition="record",
                 detail={
                     "finding_kind": kind,
-                    "step": str(detail.get("step") or ""),  # ty:ignore[unresolved-attribute]
+                    "step": str(detail.get("step") or ""),
                     "source_statute": str(row.get("source") or ""),
                 },
             ).to_diagnostic_detail()
@@ -1111,8 +1114,9 @@ def recovery_execution_authorization_rows_from_projection_rows(
         rule = _RECOVERY_AUTHORIZATION_RULES.get(kind)
         if rule is None:
             continue
-        detail = row.get("detail") if isinstance(row.get("detail"), Mapping) else {}
-        source_statute = str(row.get("source") or detail.get("source_statute") or detail.get("amendment_id") or "")  # ty:ignore[unresolved-attribute]
+        detail_raw = row.get("detail")
+        detail: Mapping[str, Any] = detail_raw if isinstance(detail_raw, Mapping) else {}
+        source_statute = str(row.get("source") or detail.get("source_statute") or detail.get("amendment_id") or "")
         message = str(row.get("message") or "")
         key = (kind, source_statute, message)
         if key in seen:
@@ -1140,7 +1144,7 @@ def recovery_execution_authorization_rows_from_projection_rows(
                 "message": message,
                 "strict_fail_reason_present": kind in fail_reason_set,
                 "projection_only": True,
-                "projection_detail": dict(detail),  # ty:ignore[no-matching-overload]
+                "projection_detail": dict(detail),
             },
         ).to_dict()
         authorization["row_id"] = _recovery_authorization_row_id(
@@ -1164,7 +1168,7 @@ def _temporal_resolution_rule_id(kind: str) -> str:
     return "fi_time_estimated_effective_date"
 
 
-def _temporal_resolution_status(kind: str) -> str:
+def _temporal_resolution_status(kind: str) -> TemporalResolutionStatus:
     if kind == "TIME.CONTINGENT_EFFECTIVE_DATE":
         return TEMPORAL_UNRESOLVED_CONTINGENT
     return TEMPORAL_UNKNOWN_EFFECTIVE_DATE
@@ -2596,7 +2600,7 @@ def _he_branch_graph_edge(*, branch: LegalBranch, op: Any) -> BranchGraphEdge | 
     op_index = _nonnegative_int(_field(op, "op_index", 0))
     return BranchGraphEdge(
         branch_id=branch.branch_id,
-        edge_kind=_he_branch_edge_kind(str(_field(op, "operation_kind", ""))),  # ty:ignore[invalid-argument-type]
+        edge_kind=_he_branch_edge_kind(str(_field(op, "operation_kind", ""))),
         scenario_id=branch.scenario_id,
         source_artifact_id=str(_field(op, "source_he_id", branch.source_artifact_id)),
         source_statute_id=str(_field(op, "source_he_id", branch.source_artifact_id)),
@@ -2609,7 +2613,7 @@ def _he_branch_graph_edge(*, branch: LegalBranch, op: Any) -> BranchGraphEdge | 
     )
 
 
-def _he_branch_edge_kind(operation_kind: str) -> str:
+def _he_branch_edge_kind(operation_kind: str) -> BranchEdgeKind:
     normalized = operation_kind.strip().lower()
     if normalized == "insert":
         return WOULD_INSERT_EDGE
