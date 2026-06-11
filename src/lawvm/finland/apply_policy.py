@@ -504,6 +504,45 @@ def _move_rider_origin_path(
     return origin
 
 
+def _occupant_installer_effective(
+    replay_history_ops,
+    target_address: LegalAddress | None,
+) -> tuple[str, str] | None:
+    """Return (effective, source_statute) of the latest prior write to the slot.
+
+    Scans the fold-order replay history for the most recent INSERT/REPLACE
+    LegalOperation whose target is the same exact slot. This is the typed
+    evidence for the staggered twin-law family: the document-order fold can
+    place a LATER-commencing occupant in the slot before an earlier-window
+    temporary insert is applied.
+    """
+    if not replay_history_ops or target_address is None:
+        return None
+    target_key = tuple(
+        (kind, normalized_label_key(label)) for kind, label in target_address.path
+    )
+    if not target_key or target_key[-1][0] != "section":
+        return None
+    for lo in reversed(replay_history_ops):
+        action = getattr(lo.action, "value", lo.action)
+        if action not in ("insert", "replace"):
+            continue
+        if lo.target is None or not lo.target.path:
+            continue
+        if lo.target.special is not None:
+            continue
+        lo_key = tuple(
+            (kind, normalized_label_key(label)) for kind, label in lo.target.path
+        )
+        if lo_key != target_key:
+            continue
+        source = lo.source
+        if source is None or not source.effective:
+            return None
+        return source.effective, source.statute_id
+    return None
+
+
 def _check_occupancy_policy(
     state: "ReplayState",
     rop: ResolvedOp,
@@ -512,6 +551,7 @@ def _check_occupancy_policy(
     ctx_label: str,
     *,
     findings_out: list[Finding] | None = None,
+    replay_history_ops=None,
 ) -> None:
     """Observational occupancy policy check against the typed contract."""
     from lawvm.core.canonical_intent import Replace, Insert, Repeal, NodeTarget
@@ -548,6 +588,62 @@ def _check_occupancy_policy(
                 LegalAddress(path=origin_path),
             )
     policy = intent.contract.occupancy
+    if (
+        current is OccupancyClass.SUBSTANTIVE
+        and isinstance(intent, Insert)
+        and rop.resolved_action_type == "INSERT"
+        and current not in policy.allowed_from
+    ):
+        # Typed staggered-twin lane: a temporary gap-filler INSERT
+        # ("lisätään väliaikaisesti uusi X §", in force until D) whose slot
+        # is occupied in the document-order fold by a deferred-commencement
+        # twin that only enters force ON or AFTER the gap-filler expires
+        # ("X § tulee kuitenkin voimaan vasta ..."). The two occupancies are
+        # disjoint in legal time; the collision exists only in fold order.
+        incoming = rop.resolved_op_source
+        occupant = _occupant_installer_effective(
+            replay_history_ops, rop.resolved_target_address
+        )
+        if (
+            incoming is not None
+            and incoming.effective
+            and incoming.expires
+            and occupant is not None
+            and incoming.effective < occupant[0]
+            and incoming.expires < occupant[0]
+        ):
+            occupant_effective, occupant_statute = occupant
+            logger.debug(
+                "  %s → temporally disjoint twin insert: window %s..%s precedes "
+                "occupant %s effective %s",
+                ctx_label,
+                incoming.effective,
+                incoming.expires,
+                occupant_statute,
+                occupant_effective,
+            )
+            if findings_out is not None:
+                findings_out.append(
+                    Finding(
+                        kind="APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT",
+                        role="observation",
+                        stage="apply",
+                        source_statute=rop.resolved_source_statute,
+                        detail={
+                            "ctx_label": ctx_label,
+                            "op_id": rop.op_id,
+                            "legacy_action": rop.resolved_action_type,
+                            "target_label": rop.target_norm,
+                            "incoming_effective": incoming.effective,
+                            "incoming_expires": incoming.expires,
+                            "occupant_effective": occupant_effective,
+                            "occupant_source_statute": occupant_statute,
+                            "rule_id": "temporally_disjoint_twin_insert",
+                        },
+                        blocking=False,
+                    )
+                )
+            return
     if current not in policy.allowed_from:
         allowed_from = sorted(c.value for c in policy.allowed_from)
         logger.warning(

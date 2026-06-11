@@ -544,6 +544,109 @@ def drill_occupancy_policy_violation_finland_production() -> None:
     assert finding.detail["current_occupancy"] == "tombstone"
 
 
+def drill_occupancy_temporally_disjoint_insert_finland_production() -> None:
+    """APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT fires from the Finland apply lane.
+
+    Production lane: a temporary gap-filler INSERT (window 2023-01-01..
+    2023-06-30) whose exact slot is occupied in fold order by a
+    deferred-commencement twin effective 2023-07-01 (the 2010/1326 ←
+    2022/1281 + 2022/1282 staggered twin-law family). The production
+    ``_check_occupancy_policy`` guard must record the typed disjoint-window
+    observation INSTEAD of an occupancy policy violation.
+    """
+    from lawvm.core.canonical_intent import Insert
+    from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource
+    from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+    from lawvm.finland.apply_policy import _check_occupancy_policy
+    from lawvm.finland.ops import AmendmentOp, ResolvedOp, _build_canonical_intent
+
+    op = AmendmentOp(
+        op_id="guard-liveness/occupancy-disjoint",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="78c",
+        target_chapter="8",
+        source_statute="2022/1282",
+    )
+    rop = ResolvedOp(
+        op=op,
+        muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="78c"),
+        cross_ir=None,
+        amend_sub_ir=None,
+        op_id=op.op_id,
+        target_unit_kind="section",
+        target_norm="78c",
+        _op_type_seed="INSERT",
+        _source_statute_override="2022/1282",
+        _target_address_override=LegalAddress(
+            path=(("chapter", "8"), ("section", "78c"))
+        ),
+        _op_source_override=OperationSource(
+            statute_id="2022/1282",
+            title="väliaikainen",
+            effective="2023-01-01",
+            expires="2023-06-30",
+        ),
+    )
+
+    intent = _build_canonical_intent(rop)
+    assert isinstance(intent, Insert), (
+        "production builder did not produce an Insert intent for an INSERT op"
+    )
+
+    live = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="8",
+                children=(IRNode(kind=IRNodeKind.SECTION, label="78c"),),
+            ),
+        ),
+    )
+    history = [
+        LegalOperation(
+            op_id="guard-liveness/occupancy-disjoint-occupant",
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "8"), ("section", "78c"))),
+            source=OperationSource(
+                statute_id="2022/1281",
+                title="pysyvä",
+                effective="2023-07-01",
+            ),
+        )
+    ]
+    state = ReplayState(ir=live)
+    findings: list[Finding] = []
+    _check_occupancy_policy(
+        state,
+        rop,
+        intent,
+        (("chapter", "8"), ("section", "78c")),
+        "guard-liveness/occupancy-disjoint",
+        findings_out=findings,
+        replay_history_ops=history,
+    )
+
+    violations = [f for f in findings if f.kind == "APPLY.OCCUPANCY_POLICY_VIOLATION"]
+    assert not violations, (
+        "temporally disjoint twin insert was still recorded as an occupancy "
+        "policy violation"
+    )
+    hits = [
+        f for f in findings if f.kind == "APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT"
+    ]
+    assert hits, (
+        "temporally disjoint twin insert did not record the typed "
+        "disjoint-window observation"
+    )
+    finding = hits[0]
+    assert finding.role == "observation"
+    assert finding.blocking is False
+    assert finding.detail["occupant_effective"] == "2023-07-01"
+
+
 def drill_replay_product_invariant_violation_cross_act() -> None:
     """APPLY.REPLAY_PRODUCT_INVARIANT_VIOLATION cross-act conflict surface.
 
@@ -670,6 +773,7 @@ EXTRA_SURFACE_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
 # inventory tests only police blocking codes.
 OBSERVATION_FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "APPLY.OCCUPANCY_POLICY_VIOLATION": drill_occupancy_policy_violation_finland_production,
+    "APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT": drill_occupancy_temporally_disjoint_insert_finland_production,
     "APPLY.REPLAY_UNDECLARED_TREE_TOUCH": drill_replay_undeclared_tree_touch_apply_lane,
 }
 

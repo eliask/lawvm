@@ -279,8 +279,8 @@ wait:
   insert consume absent/tombstone/substantive state. The receipt's
   placeholder/consumed path fields are the inputs.
 
-One NAMED evaluation lane refines which slot the policy evaluates;
-it does not widen any `allowed_from` set:
+Two NAMED evaluation lanes refine which slot/time the policy evaluates;
+neither widens any `allowed_from` set:
 
 - `section_move_replace_destination_rebind` (move-rider REPLACE): a
   johtolause move rider ("X §, joka samalla siirretään Y lukuun") resolves
@@ -289,6 +289,14 @@ it does not widen any `allowed_from` set:
   present and a unique live origin elsewhere, occupancy is evaluated against
   the ORIGIN slot (the slot the move+replace recovery consumes). Without a
   live origin the REPLACE-on-absent violation stands.
+- `temporally_disjoint_twin_insert` (staggered twin laws): a temporary
+  gap-filler INSERT ("lisätään väliaikaisesti uusi X §", expires D) whose
+  slot is occupied in document-fold order by a deferred-commencement twin
+  effective strictly after D. The occupancies are disjoint in legal time;
+  the collision exists only in fold order. Recorded as the typed
+  `APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT` observation (evidence: the
+  occupant installer's op-level effective date from replay history), not as
+  a violation. Overlapping windows still violate.
 
 ## 7. Relationship to ExecutionAuthorization
 

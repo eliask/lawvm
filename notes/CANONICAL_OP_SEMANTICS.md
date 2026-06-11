@@ -269,6 +269,12 @@ exact slot.
 
 - the exact slot already has a substantive occupant
 
+Typed exception (Finland staggered twin laws): a temporary gap-filler
+`insert` whose in-force window ends strictly before the fold-order
+occupant's deferred commencement begins is temporally disjoint, not an
+occupancy conflict. See APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §6,
+`temporally_disjoint_twin_insert`.
+
 ### 6.2 `replace`
 
 `replace` is valid when:
