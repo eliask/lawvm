@@ -21,6 +21,12 @@ from lawvm.core.source_locator import SourceLocator
 from lawvm.core.statute_validity import StatuteValidityBound, is_expired_at
 from lawvm.core.timeline_lineage import lineage_address_chain
 from lawvm.core.timeline_selection import VersionSelectionResult, select_active_version_ex
+from lawvm.tools.timeline_integrity import (
+    TimelineBreak,
+    break_governs_as_of,
+    break_matches_section,
+    sorted_breaks,
+)
 
 SCHEMA = "lawvm.provision_state.v1"
 DUMP_SCHEMA = "lawvm.dump.v1"
@@ -36,6 +42,18 @@ FIXED_TERM_BOUNDS_FLAG = "LAWVM_ENABLE_FIXED_TERM_STATUTE_BOUNDS"
 
 def _fixed_term_bounds_enabled() -> bool:
     return os.environ.get(FIXED_TERM_BOUNDS_FLAG, "1") not in ("0", "false", "False")
+
+
+# Rollback flag for timeline-integrity surfacing. When a replayed timeline
+# carries break evidence (see lawvm.tools.timeline_integrity), the seam marks
+# the response instead of serving a clean-looking answer. Default ON; set to
+# "0"/"false" to restore the prior (dishonest) behavior. Responses for
+# statutes WITHOUT break evidence are byte-identical either way.
+TIMELINE_INTEGRITY_FLAG = "LAWVM_ENABLE_TIMELINE_INTEGRITY_SURFACING"
+
+
+def _timeline_integrity_enabled() -> bool:
+    return os.environ.get(TIMELINE_INTEGRITY_FLAG, "1") not in ("0", "false", "False")
 
 
 @dataclass(frozen=True)
@@ -102,6 +120,7 @@ def build_provision_state_response(
     include_ir: bool = False,
     title: str = "",
     base: IRStatute | None = None,
+    timeline_breaks: tuple[TimelineBreak, ...] = (),
 ) -> dict[str, Any]:
     """Return a stable provision-state response for one PIT address query."""
 
@@ -113,13 +132,27 @@ def build_provision_state_response(
         query_type=query_type,
         territory=territory,
     )
+    if not _timeline_integrity_enabled():
+        timeline_breaks = ()
+    relevant_breaks = _relevant_timeline_breaks(
+        timeline_breaks,
+        address=resolution.address,
+        requested=provision,
+    )
+    tl_marker, tl_block, tl_blocking = _timeline_integrity_payloads(relevant_breaks, as_of)
     if resolution.status != "resolved":
-        return {
+        status = "timeline_unverified" if tl_blocking else resolution.status
+        if tl_block is not None:
+            # Preserve the resolution outcome as data: a blocking break means
+            # even "address_not_found" is unprovable (the breaking amendment
+            # could have created or renumbered the address).
+            tl_block = {**tl_block, "resolution_status": resolution.status}
+        payload: dict[str, Any] = {
             "schema": SCHEMA,
             "jurisdiction": jurisdiction,
             "statute_id": statute_id,
             "title": title,
-            "status": resolution.status,
+            "status": status,
             "query": query,
             "resolved_address": None,
             "lineage": _lineage_payload(
@@ -130,7 +163,7 @@ def build_provision_state_response(
             "address_candidates": [_address_wire(candidate) for candidate in resolution.candidates],
             "selection": None,
             "hashes": _hash_payload(
-                status=resolution.status,
+                status=status,
                 statute_id=statute_id,
                 jurisdiction=jurisdiction,
                 query=query,
@@ -138,11 +171,17 @@ def build_provision_state_response(
                 lineage=None,
                 version=None,
                 content_hash="",
+                timeline_broken_at=tl_marker,
+                timeline_integrity=tl_block,
             ),
             "engine": _engine_payload(),
             "source_locator": None,
             "source_locator_status": "unavailable_unresolved_provision",
         }
+        if tl_block is not None:
+            payload["timeline_broken_at"] = tl_marker
+            payload["timeline_integrity"] = tl_block
+        return payload
 
     selection = select_active_version_ex(
         resolution.timeline,  # ty:ignore[invalid-argument-type]
@@ -150,12 +189,16 @@ def build_provision_state_response(
         query_type=query_type,
         territory=territory,
     )
-    overlay = _fixed_term_overlay(
-        timelines=timelines,
-        statute_id=statute_id,
-        selection=selection,
-        as_of=as_of,
-        query_type=query_type,
+    overlay = (
+        None
+        if tl_blocking
+        else _fixed_term_overlay(
+            timelines=timelines,
+            statute_id=statute_id,
+            selection=selection,
+            as_of=as_of,
+            query_type=query_type,
+        )
     )
     return _selected_response(
         selection=selection,
@@ -168,7 +211,74 @@ def build_provision_state_response(
         title=title,
         base=base,
         overlay=overlay,
+        timeline_broken_at=tl_marker,
+        timeline_integrity=tl_block,
+        timeline_blocking=tl_blocking,
     )
+
+
+def _relevant_timeline_breaks(
+    timeline_breaks: tuple[TimelineBreak, ...],
+    *,
+    address: LegalAddress | None,
+    requested: str,
+) -> tuple[TimelineBreak, ...]:
+    """Statute-scoped breaks always apply; address-scoped only on target match."""
+    if not timeline_breaks:
+        return ()
+    section_label, chapter_label = _query_section_labels(address, requested)
+    relevant = []
+    for item in timeline_breaks:
+        if item.scope == "statute":
+            relevant.append(item)
+        elif break_matches_section(
+            item, section_label=section_label, chapter_label=chapter_label
+        ):
+            relevant.append(item)
+    return sorted_breaks(relevant)
+
+
+def _query_section_labels(
+    address: LegalAddress | None,
+    requested: str,
+) -> tuple[str, str]:
+    """Extract (section_label, chapter_label) from the resolved or requested address."""
+    target = address if address is not None else _parse_addr(requested)
+    if target is None:
+        return "", ""
+    section_label = ""
+    chapter_label = ""
+    for kind, label in target.path:
+        if kind == "section":
+            section_label = label
+        elif kind == "chapter":
+            chapter_label = label
+    return section_label, chapter_label
+
+
+def _timeline_integrity_payloads(
+    relevant_breaks: tuple[TimelineBreak, ...],
+    as_of: str,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, bool]:
+    """Build (timeline_broken_at marker, timeline_integrity block, blocking)."""
+    if not relevant_breaks:
+        return None, None, False
+    governing = tuple(
+        item for item in relevant_breaks if break_governs_as_of(item, as_of)
+    )
+    blocking = bool(governing)
+    anchor = governing[0] if governing else relevant_breaks[0]
+    marker = {
+        "amendment_id": anchor.amendment_id,
+        "diagnostic_code": anchor.diagnostic_code,
+    }
+    block: dict[str, Any] = {
+        "status": "timeline_broken",
+        "blocking": blocking,
+        "broken_at": anchor.to_wire(),
+        "breaks": [item.to_wire() for item in relevant_breaks],
+    }
+    return marker, block, blocking
 
 
 def _fixed_term_overlay(
@@ -375,6 +485,9 @@ def _selected_response(
     title: str,
     base: IRStatute | None,
     overlay: FixedTermSeamOverlay | None = None,
+    timeline_broken_at: dict[str, Any] | None = None,
+    timeline_integrity: dict[str, Any] | None = None,
+    timeline_blocking: bool = False,
 ) -> dict[str, Any]:
     address = _require_address(resolution)
     version = selection.version
@@ -382,9 +495,14 @@ def _selected_response(
     # selected, so past the bound the seam must not expose live content.
     expired = overlay is not None and overlay.kind == "expired"
     blocked = overlay is not None and overlay.kind in ("blocked_unparseable", "blocked_ambiguous")
-    payload_version = None if (expired or blocked) else version
+    payload_version = None if (expired or blocked or timeline_blocking) else version
     content_hash = _content_hash(payload_version)
-    if expired:
+    if timeline_blocking:
+        # A governing timeline break makes ANY selection outcome unprovable —
+        # the compiled timeline this selection ran over is itself unproven at
+        # as_of. Never read as a legal fact.
+        status = "timeline_unverified"
+    elif expired:
         status = "expired"
     elif blocked:
         status = "expiry_unverified"
@@ -422,6 +540,8 @@ def _selected_response(
             content_hash=content_hash,
             expiry=expiry_block,
             content_state_override=("expired" if expired else None),
+            timeline_broken_at=timeline_broken_at,
+            timeline_integrity=timeline_integrity,
         ),
         "text": _text_payload(payload_version),
         "source": _source_payload(payload_version),
@@ -438,6 +558,9 @@ def _selected_response(
             payload["expires"] = overlay.expires_on  # type: ignore[union-attr]
             payload["valid_until"] = overlay.valid_until  # type: ignore[union-attr]
         payload["expiry"] = expiry_block
+    if timeline_integrity is not None:
+        payload["timeline_broken_at"] = timeline_broken_at
+        payload["timeline_integrity"] = timeline_integrity
     payload["source_locator_status"] = (
         "canonical_document_locator" if payload["source_locator"] is not None else "unavailable_no_source"
     )
@@ -647,6 +770,8 @@ def _hash_payload(
     content_hash: str,
     expiry: Mapping[str, Any] | None = None,
     content_state_override: str | None = None,
+    timeline_broken_at: Mapping[str, Any] | None = None,
+    timeline_integrity: Mapping[str, Any] | None = None,
 ) -> dict[str, str]:
     derived_input = {
         "schema": SCHEMA,
@@ -663,6 +788,11 @@ def _hash_payload(
     # flag-OFF default path remains byte-identical.
     if expiry is not None:
         derived_input["expiry"] = expiry
+    # Same conditional-member discipline for timeline-integrity surfacing:
+    # responses without break evidence hash byte-identically.
+    if timeline_integrity is not None:
+        derived_input["timeline_broken_at"] = timeline_broken_at
+        derived_input["timeline_integrity"] = timeline_integrity
     return {
         "content_hash": content_hash,
         "content_hash_semantics": "sha256(irnode_to_text(content)); text-only; empty for absent/tombstone",

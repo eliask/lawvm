@@ -34,14 +34,23 @@ def resolve_provision_state(
         )
 
     from lawvm.finland.grafter import replay_xml  # noqa: PLC0415
+    from lawvm.tools.timeline_integrity import (  # noqa: PLC0415
+        attach_effective_dates,
+        timeline_breaks_from_findings,
+    )
 
     if status_stream is not None:
         print(f"Replaying {statute_id}...", file=status_stream)
-    master = replay_xml(statute_id, quiet=True)
+    replay_meta: dict[str, Any] = {}
+    master = replay_xml(statute_id, quiet=True, replay_meta_out=replay_meta)
     base_ir = IRStatute(
         statute_id=statute_id,
         title=master.title,
         body=master.ctx.base_ir,
+    )
+    timeline_breaks = attach_effective_dates(
+        timeline_breaks_from_findings(getattr(master, "findings", ()) or ()),
+        replay_meta.get("lineage") or (),
     )
     return build_provision_state_response(
         timelines=master.timelines,
@@ -55,4 +64,5 @@ def resolve_provision_state(
         include_ir=include_ir,
         title=master.title,
         base=base_ir,
+        timeline_breaks=timeline_breaks,
     )
