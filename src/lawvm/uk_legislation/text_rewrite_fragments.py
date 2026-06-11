@@ -290,7 +290,7 @@ def _multi_quoted_word_repeal_fragments(
     )
 
 
-def _fragment_substitution(op: LegalOperation) -> Optional[list]:
+def _fragment_substitution(op: LegalOperation) -> Optional[list[dict[str, str]]]:
     """Return typed fragment-substitution data from the lowered witness."""
     witness = _witness_for_op(op)
     text_rewrite_witness = witness.text_rewrite_witness if witness is not None else None
@@ -348,7 +348,7 @@ def _text_rewrite_rule_ids_for_op(op: LegalOperation) -> tuple[str, ...]:
     return tuple(rule_ids)
 
 
-def _fragment_rule_ids(fragment_subs: Optional[list]) -> tuple[str, ...]:
+def _fragment_rule_ids(fragment_subs: Optional[list[dict[str, Any]]]) -> tuple[str, ...]:
     if not fragment_subs:
         return ()
     rule_ids: list[str] = []
@@ -3220,7 +3220,7 @@ def lower_labeled_child_end_range_selector(
 
 
 def _separate_definition_repeal_fragments(
-    fragment_subs: Optional[list],
+    fragment_subs: Optional[list[dict[str, Any]]],
 ) -> tuple[dict[str, str], ...]:
     if not fragment_subs or len(fragment_subs) <= 1:
         return ()
@@ -3246,7 +3246,7 @@ def _separate_definition_repeal_fragments(
 
 
 def _separate_occurrence_text_replace_fragments(
-    fragment_subs: Optional[list],
+    fragment_subs: Optional[list[dict[str, Any]]],
 ) -> tuple[dict[str, str], ...]:
     if not fragment_subs or len(fragment_subs) <= 1:
         return ()
@@ -3278,7 +3278,7 @@ def _separate_occurrence_text_replace_fragments(
 
 
 def _separate_source_range_definition_entry_insert_fragments(
-    fragment_subs: Optional[list],
+    fragment_subs: Optional[list[dict[str, Any]]],
 ) -> tuple[dict[str, str], ...]:
     if not fragment_subs or len(fragment_subs) <= 1:
         return ()
@@ -3313,7 +3313,7 @@ def _separate_source_range_definition_entry_insert_fragments(
 
 
 def _separate_compound_lettered_text_replace_fragments(
-    fragment_subs: Optional[list],
+    fragment_subs: Optional[list[dict[str, Any]]],
 ) -> tuple[dict[str, str], ...]:
     if not fragment_subs or len(fragment_subs) <= 1:
         return ()
@@ -3339,7 +3339,7 @@ def _separate_compound_lettered_text_replace_fragments(
 
 
 def _separate_all_occurrences_text_replace_fragments(
-    fragment_subs: Optional[list],
+    fragment_subs: Optional[list[dict[str, Any]]],
 ) -> tuple[dict[str, str], ...]:
     if not fragment_subs or len(fragment_subs) <= 1:
         return ()
@@ -3361,7 +3361,7 @@ def _separate_all_occurrences_text_replace_fragments(
 
 
 def _separate_referent_qualified_text_replace_fragments(
-    fragment_subs: Optional[list],
+    fragment_subs: Optional[list[dict[str, Any]]],
 ) -> tuple[dict[str, str], ...]:
     if not fragment_subs or len(fragment_subs) <= 1:
         return ()
@@ -3387,7 +3387,7 @@ def _separate_referent_qualified_text_replace_fragments(
 
 
 def _separate_multi_quoted_word_repeal_fragments(
-    fragment_subs: Optional[list],
+    fragment_subs: Optional[list[dict[str, Any]]],
 ) -> tuple[dict[str, str], ...]:
     if not fragment_subs or len(fragment_subs) <= 1:
         return ()
@@ -3418,7 +3418,7 @@ def _separate_multi_quoted_word_repeal_fragments(
 
 
 def _separate_listed_word_and_range_to_end_repeal_fragments(
-    fragment_subs: Optional[list],
+    fragment_subs: Optional[list[dict[str, Any]]],
 ) -> tuple[dict[str, str], ...]:
     if not fragment_subs or len(fragment_subs) <= 1:
         return ()
@@ -3444,7 +3444,7 @@ def _separate_listed_word_and_range_to_end_repeal_fragments(
 
 
 def _separate_definition_child_repeal_fragments(
-    fragment_subs: Optional[list],
+    fragment_subs: Optional[list[dict[str, Any]]],
 ) -> tuple[dict[str, str], ...]:
     if not fragment_subs or len(fragment_subs) <= 1:
         return ()
