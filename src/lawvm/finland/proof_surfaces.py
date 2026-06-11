@@ -8,6 +8,7 @@ not authorize replay and do not change Finnish lowering or apply semantics.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Mapping, cast
@@ -38,7 +39,10 @@ from lawvm.core.candidate_set_certificate import (
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.execution_authorization import ExecutionAuthorization
-from lawvm.core.frontier_work_item import FrontierWorkItem
+from lawvm.core.frontier_work_item import (
+    FrontierWorkItem,
+    frontier_work_item_with_claim_template,
+)
 from lawvm.core.mutation_accounting import MutationAccountingResult, MutationInvariantReport
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.core.source_completeness import (
@@ -386,6 +390,11 @@ def source_pathology_proof_rule(code: str) -> FinlandSourcePathologyProofRule:
     )
 
 
+def _with_finland_claim_template(item: FrontierWorkItem) -> FrontierWorkItem:
+    importlib.import_module("lawvm.finland.claim_kinds")
+    return frontier_work_item_with_claim_template(item)
+
+
 def source_pathology_execution_authorization(
     pathology: SourcePathology | Mapping[str, Any],
 ) -> ExecutionAuthorization:
@@ -445,7 +454,7 @@ def source_pathology_frontier_work_item(
             "detail": dict(row.get("detail") or {}),
         },
     )
-    return FrontierWorkItem(
+    return _with_finland_claim_template(FrontierWorkItem(
         work_item_id=_pathology_work_item_id(row, statute_id=statute_id),
         jurisdiction="fi",
         source_artifact_id=source_statute,
@@ -474,7 +483,7 @@ def source_pathology_frontier_work_item(
             "source_pathology": row,
             "proof_surface_projection_only": True,
         },
-    )
+    ))
 
 
 def source_pathology_proof_surface_rows(
@@ -559,7 +568,7 @@ def failed_operation_frontier_work_item(
             "reason": row.get("reason", ""),
         },
     )
-    return FrontierWorkItem(
+    return _with_finland_claim_template(FrontierWorkItem(
         work_item_id=_failed_operation_work_item_id(row, statute_id=statute_id, index=index),
         jurisdiction="fi",
         source_artifact_id=source_statute,
@@ -596,7 +605,7 @@ def failed_operation_frontier_work_item(
             "failed_operation": row,
             "proof_surface_projection_only": True,
         },
-    )
+    ))
 
 
 def failed_operation_proof_surface_rows(
@@ -2492,7 +2501,7 @@ def _corrigendum_open_manual_frontier_work_item(
             sort_keys=True,
         ).encode("utf-8")
     ).hexdigest()[:16]
-    return FrontierWorkItem(
+    return _with_finland_claim_template(FrontierWorkItem(
         work_item_id=f"fi:{amendment_id}:corrigendum-open-manual:{digest}",
         jurisdiction="fi",
         source_artifact_id=amendment_id,
@@ -2535,7 +2544,7 @@ def _corrigendum_open_manual_frontier_work_item(
             "attachment_only_rows": int(candidate.get("attachment_only_rows") or 0),
             "manual_entry_count": int(candidate.get("manual_entry_count") or 0),
         },
-    )
+    ))
 
 
 def finland_corrigendum_unsupported_patch_frontier_item(
@@ -2575,7 +2584,7 @@ def finland_corrigendum_unsupported_patch_frontier_item(
             sort_keys=True,
         ).encode("utf-8")
     ).hexdigest()[:16]
-    return FrontierWorkItem(
+    return _with_finland_claim_template(FrontierWorkItem(
         work_item_id=f"fi:{amendment_id}:corrigendum-unsupported-patch:{digest}",
         jurisdiction="fi",
         source_artifact_id=source_artifact_id,
@@ -2626,7 +2635,7 @@ def finland_corrigendum_unsupported_patch_frontier_item(
             "wrong_text_preview": str(row.get("wrong_text") or "")[:160],
             "correct_text_preview": str(row.get("correct_text") or "")[:160],
         },
-    )
+    ))
 
 
 def finland_corrigendum_unsupported_patch_evidence_surface(
@@ -2754,7 +2763,7 @@ def finland_corrigendum_manual_template_frontier_item(
             sort_keys=True,
         ).encode("utf-8")
     ).hexdigest()[:16]
-    return FrontierWorkItem(
+    return _with_finland_claim_template(FrontierWorkItem(
         work_item_id=f"fi:{amendment_id}:corrigendum-manual-template:{digest}",
         jurisdiction="fi",
         source_artifact_id=source_artifact_id,
@@ -2796,7 +2805,7 @@ def finland_corrigendum_manual_template_frontier_item(
             "correct_text_preview": correct_text[:160],
             "notes": str(entry.get("notes") or ""),
         },
-    )
+    ))
 
 
 def finland_corrigendum_manual_template_evidence_surface(

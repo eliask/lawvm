@@ -50,7 +50,10 @@ from lawvm.core.frontend_phase_surface import (
 )
 from lawvm.core.frontier_work_item import (
     FrontierWorkItem,
+    frontier_work_item_claim_template,
+    frontier_work_item_claim_template_status,
     frontier_work_item_evidence_report,
+    frontier_work_item_with_claim_template,
     validate_frontier_work_item,
 )
 from lawvm.core.frozen_values import FrozenDict
@@ -1393,6 +1396,84 @@ def test_frontier_work_item_evidence_report_is_passive_shared_surface() -> None:
     assert row["executable"] is False
     assert row["replay_authorized"] is False
     assert "frontier_work_item_as_replay_authorization" in row["forbidden_shortcuts"]
+
+
+def test_frontier_work_item_claim_template_is_passive_review_scaffold() -> None:
+    item = FrontierWorkItem(
+        work_item_id="fi-frontier-template-demo",
+        jurisdiction="fi",
+        source_artifact_id="2020/1",
+        source_unit_id="section:2",
+        source_witness={"source_role": "finlex_xml", "artifact_id": "2020/1"},
+        target_witness={"candidate_targets": ["section:2"]},
+        owner_phase="typed_elaboration",
+        frontier_family="fi_sparse_item_body_missing",
+        frontier_status="manual_claim_needed",
+        candidate_operation_family="sparse_item_payload_resolution",
+        candidate_targets=("section:2",),
+        required_claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        required_validator_checks=("validate_sparse_slot_payload_claim",),
+        required_proofs=("payload_identity_proof", "mutation_boundary_proof"),
+        safe_default="block_until_validated_claim_authorizes_replay",
+        forbidden_shortcuts=("manual_claim_as_replay_authorization",),
+        authorization_status="blocked_manual_claim_required",
+    )
+
+    import lawvm.finland.claim_kinds as fi_claim_kinds
+
+    assert fi_claim_kinds is not None
+
+    template = frontier_work_item_claim_template(item)
+
+    assert template["schema"] == "lawvm.frontier_work_item_claim_template.v1"
+    assert template["frontier_ref"] == "fi-frontier-template-demo"
+    assert template["claim_kind"] == "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION"
+    assert template["registered_claim_kind"] is True
+    assert template["semantic_compilation_claim"] is True
+    assert template["required_target_fields"] == [
+        "source_statute",
+        "affected_target",
+        "source_pathology_code",
+    ]
+    assert template["required_value_fields"] == [
+        "source_quote",
+        "candidate_slots",
+        "selected_slot",
+        "old_text_precondition",
+    ]
+    assert template["executable"] is False
+    assert template["replay_authorized"] is False
+    assert "frontier_claim_template_as_replay_authorization" in template["forbidden_shortcuts"]
+    assert frontier_work_item_claim_template_status(template) == "available"
+
+
+def test_frontier_work_item_with_claim_template_attaches_available_template() -> None:
+    import lawvm.finland.claim_kinds as fi_claim_kinds
+
+    assert fi_claim_kinds is not None
+
+    item = frontier_work_item_with_claim_template(
+        FrontierWorkItem(
+            work_item_id="fi-frontier-template-attached",
+            jurisdiction="fi",
+            source_artifact_id="2020/1",
+            source_unit_id="section:2",
+            owner_phase="replay_apply",
+            frontier_family="fi_failed_operation_resolution",
+            frontier_status="failed_operation_frontier",
+            required_claim_kind="fi.v1.FAILED_OPERATION_RESOLUTION",
+            required_validator_checks=("validate_failed_operation_resolution_claim",),
+            required_proofs=("mutation_boundary_proof",),
+            safe_default="block_until_validated_claim_authorizes_replay",
+            forbidden_shortcuts=("failed_operation_as_replay_authorization",),
+            authorization_status="failed_operation_not_replay_authority",
+        )
+    ).to_dict()
+
+    assert item["suggested_claim_template_status"] == "available"
+    assert item["suggested_claim_template"]["claim_kind"] == "fi.v1.FAILED_OPERATION_RESOLUTION"
+    assert item["suggested_claim_template"]["executable"] is False
+    assert item["suggested_claim_template"]["replay_authorized"] is False
 
 
 def test_frontier_work_item_report_rejects_invalid_mapping_rows() -> None:

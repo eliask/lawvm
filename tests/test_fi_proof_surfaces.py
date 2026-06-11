@@ -8,7 +8,7 @@ from lawvm.core.candidate_set_certificate import CANDIDATE_SET_COMPLETE, Candida
 from lawvm.core.manual_claims.kind_registry import list_registered_kinds
 from lawvm.core.mutation_accounting import MutationInvariantReport
 from lawvm.core.source_witness import source_witness_digest_coverage
-import lawvm.finland.claim_kinds  # noqa: F401  # registers fi.v1.* claim kinds
+import lawvm.finland.claim_kinds as fi_claim_kinds
 from lawvm.finland.he_branch_parser import (
     BranchParseRecovery,
     BranchProposedOp,
@@ -52,6 +52,7 @@ from lawvm.finland.proof_surfaces import (
 
 
 def test_finland_proof_surface_required_claim_kinds_are_registered() -> None:
+    assert fi_claim_kinds is not None
     proof_surface_path = Path("src/lawvm/finland/proof_surfaces.py")
     tree = ast.parse(proof_surface_path.read_text(encoding="utf-8"))
     required = {
@@ -719,6 +720,17 @@ def test_finland_corrigendum_unsupported_patch_projects_frontier_work_item() -> 
     assert item["source_witness"]["digest"] == "e" * 64
     assert item["target_witness"]["target"] == "preamble:formula"
     assert "unsupported_corrigendum_patch_as_manual_claim" in item["forbidden_shortcuts"]
+    assert item["suggested_claim_template_status"] == "available"
+    assert item["suggested_claim_template"]["claim_kind"] == (
+        "fi.v1.CORRIGENDUM_UNSUPPORTED_PATCH_RESOLUTION"
+    )
+    assert item["suggested_claim_template"]["required_target_fields"] == [
+        "source_statute",
+        "affected_target",
+        "unsupported_reason_code",
+    ]
+    assert item["suggested_claim_template"]["executable"] is False
+    assert item["suggested_claim_template"]["replay_authorized"] is False
 
 
 def test_finland_corrigendum_unsupported_patch_evidence_surface_projects_frontier_envelope() -> None:
@@ -1027,6 +1039,16 @@ def test_source_pathology_frontier_work_item_is_non_executable() -> None:
     assert item["target_witness"]["target_label"] == "section 5 subsection 2 item 3"
     assert "validate_source_pathology_resolution_claim" in item["required_validator_checks"]
     assert item["detail"]["execution_authorization"]["replay_authorized"] is False
+    assert item["suggested_claim_template_status"] == "available"
+    assert item["suggested_claim_template"]["claim_kind"] == "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION"
+    assert item["suggested_claim_template"]["required_value_fields"] == [
+        "source_quote",
+        "candidate_slots",
+        "selected_slot",
+        "old_text_precondition",
+    ]
+    assert item["suggested_claim_template"]["executable"] is False
+    assert item["suggested_claim_template"]["replay_authorized"] is False
 
 
 def test_source_pathology_proof_surface_rows_bundle_authorization_and_frontier() -> None:

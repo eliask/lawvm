@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Mapping, cast
 
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
@@ -13,6 +13,12 @@ _FRONTIER_WORK_ITEM_REPORT_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
     "frontier_work_item_as_replay_authorization",
     "frontier_work_item_as_canonical_operation",
     "frontier_work_item_as_mutation_boundary_proof",
+)
+
+_FRONTIER_CLAIM_TEMPLATE_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
+    "frontier_claim_template_as_replay_authorization",
+    "frontier_claim_template_as_canonical_operation",
+    "frontier_claim_template_as_validator_result",
 )
 
 
@@ -41,6 +47,8 @@ class FrontierWorkItem:
     executable: bool = False
     replay_authorized: bool = False
     authorization_status: str = ""
+    suggested_claim_template_status: str = ""
+    suggested_claim_template: Mapping[str, Any] = field(default_factory=dict)
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -56,6 +64,7 @@ class FrontierWorkItem:
             "safe_default",
             "candidate_operation_family",
             "authorization_status",
+            "suggested_claim_template_status",
         ):
             object.__setattr__(
                 self,
@@ -93,6 +102,8 @@ class FrontierWorkItem:
             raise ValueError("FrontierWorkItem.target_witness must be a mapping")
         if not isinstance(self.compare_witness, Mapping):
             raise ValueError("FrontierWorkItem.compare_witness must be a mapping")
+        if not isinstance(self.suggested_claim_template, Mapping):
+            raise ValueError("FrontierWorkItem.suggested_claim_template must be a mapping")
         if not isinstance(self.detail, Mapping):
             raise ValueError("FrontierWorkItem.detail must be a mapping")
         object.__setattr__(self, "source_witness", freeze_mapping(self.source_witness))
@@ -101,6 +112,11 @@ class FrontierWorkItem:
             self,
             "compare_witness",
             freeze_mapping(self.compare_witness),
+        )
+        object.__setattr__(
+            self,
+            "suggested_claim_template",
+            freeze_mapping(self.suggested_claim_template),
         )
         object.__setattr__(self, "detail", freeze_mapping(self.detail))
         issues = validate_frontier_work_item(self.to_dict())
@@ -130,6 +146,8 @@ class FrontierWorkItem:
             "executable": self.executable,
             "replay_authorized": self.replay_authorized,
             "authorization_status": self.authorization_status,
+            "suggested_claim_template_status": self.suggested_claim_template_status,
+            "suggested_claim_template": _plain_jsonable(self.suggested_claim_template),
             "detail": _plain_jsonable(self.detail),
         }
 
@@ -158,6 +176,17 @@ def validate_frontier_work_item(row: Mapping[str, Any]) -> tuple[str, ...]:
     for key in ("source_witness", "target_witness", "compare_witness"):
         if not isinstance(row.get(key, {}), Mapping):
             issues.append(f"{key} must be a mapping")
+    if not isinstance(row.get("suggested_claim_template", {}), Mapping):
+        issues.append("suggested_claim_template must be a mapping")
+    template_status = str(row.get("suggested_claim_template_status") or "")
+    template = row.get("suggested_claim_template") or {}
+    if template_status == "available" and not template:
+        issues.append("available suggested_claim_template_status requires suggested_claim_template")
+    if isinstance(template, Mapping):
+        if template.get("executable") is True:
+            issues.append("suggested_claim_template must be non-executable")
+        if template.get("replay_authorized") is True:
+            issues.append("suggested_claim_template must not authorize replay")
     for key in (
         "candidate_targets",
         "guidance_refs",
@@ -176,6 +205,95 @@ def validate_frontier_work_item(row: Mapping[str, Any]) -> tuple[str, ...]:
     if not isinstance(row.get("detail", {}), Mapping):
         issues.append("detail must be a mapping")
     return tuple(issues)
+
+
+def frontier_work_item_claim_template(
+    work_item: FrontierWorkItem | Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return a passive manual-claim template for a frontier work item.
+
+    The template is review scaffolding only.  It names the claim kind, target
+    and value fields, witnesses, validator checks, and proof obligations that a
+    future claim must satisfy, without validating the claim or authorizing
+    replay.
+    """
+
+    row = _frontier_mapping(work_item)
+    claim_kind = str(row.get("required_claim_kind") or "")
+    spec = _registered_claim_kind_spec(claim_kind)
+    target_fields = tuple(getattr(spec, "target_fields", ()) or ())
+    value_fields = tuple(getattr(spec, "value_fields", ()) or ())
+    layer = str(getattr(spec, "layer", "") or "")
+    description = str(getattr(spec, "description", "") or "")
+    semantic = bool(getattr(spec, "is_semantic_compilation_claim", False))
+    forbidden_shortcuts = tuple(
+        dict.fromkeys(
+            (
+                *tuple(str(item) for item in _sequence(row.get("forbidden_shortcuts"))),
+                *_FRONTIER_CLAIM_TEMPLATE_FORBIDDEN_SHORTCUTS,
+            )
+        )
+    )
+    return {
+        "schema": "lawvm.frontier_work_item_claim_template.v1",
+        "template_id": f"{row.get('work_item_id')}:claim-template",
+        "frontier_ref": str(row.get("work_item_id") or ""),
+        "jurisdiction": str(row.get("jurisdiction") or ""),
+        "claim_kind": claim_kind,
+        "claim_layer": layer,
+        "claim_description": description,
+        "registered_claim_kind": spec is not None,
+        "semantic_compilation_claim": semantic,
+        "source_witness": _plain_jsonable(row.get("source_witness") or {}),
+        "target_witness": _plain_jsonable(row.get("target_witness") or {}),
+        "compare_witness": _plain_jsonable(row.get("compare_witness") or {}),
+        "candidate_operation_family": str(row.get("candidate_operation_family") or ""),
+        "candidate_targets": list(_sequence(row.get("candidate_targets"))),
+        "required_target_fields": list(target_fields),
+        "required_value_fields": list(value_fields),
+        "required_validator_checks": list(_sequence(row.get("required_validator_checks"))),
+        "required_proofs": list(_sequence(row.get("required_proofs"))),
+        "safe_default": str(row.get("safe_default") or ""),
+        "forbidden_shortcuts": list(forbidden_shortcuts),
+        "executable": False,
+        "replay_authorized": False,
+        "authorization_status": "claim_template_not_replay_authority",
+        "detail": {
+            "frontier_family": str(row.get("frontier_family") or ""),
+            "frontier_status": str(row.get("frontier_status") or ""),
+            "owner_phase": str(row.get("owner_phase") or ""),
+            "source_artifact_id": str(row.get("source_artifact_id") or ""),
+            "source_unit_id": str(row.get("source_unit_id") or ""),
+        },
+    }
+
+
+def frontier_work_item_claim_template_status(
+    template: Mapping[str, Any],
+) -> str:
+    """Return availability status for a passive frontier claim template."""
+
+    if not template:
+        return "not_available"
+    if template.get("registered_claim_kind") is True:
+        return "available"
+    return "unregistered_claim_kind"
+
+
+def frontier_work_item_with_claim_template(
+    work_item: FrontierWorkItem | Mapping[str, Any],
+) -> FrontierWorkItem:
+    """Attach a passive claim template to a frontier work item."""
+
+    row = dict(_frontier_mapping(work_item))
+    template = frontier_work_item_claim_template(row)
+    status = frontier_work_item_claim_template_status(template)
+    row["suggested_claim_template_status"] = status
+    row["suggested_claim_template"] = template
+    field_names = {item.name for item in fields(FrontierWorkItem)}
+    return FrontierWorkItem(
+        **{key: value for key, value in row.items() if key in field_names}
+    )
 
 
 def frontier_work_item_evidence_report(
@@ -317,6 +435,14 @@ def _sequence(value: Any) -> tuple[Any, ...]:
     if isinstance(value, list | tuple):
         return tuple(value)
     return ()
+
+
+def _registered_claim_kind_spec(claim_kind: str) -> Any:
+    if not claim_kind:
+        return None
+    from lawvm.core.manual_claims.kind_registry import get_claim_kind_spec
+
+    return get_claim_kind_spec(claim_kind)
 
 
 def _counts(values: Any) -> dict[str, int]:
