@@ -24,7 +24,7 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 if TYPE_CHECKING:
     from lawvm.core.ir import IRNode
@@ -76,6 +76,11 @@ from lawvm.tools._worker_pool import managed_executor
 _LATEST_CONSOLIDATED_SELECTOR = ConsolidatedArtifactSelector.latest_cached_editorial()
 get_consolidated_meta = _get_consolidated_meta
 
+BlameRow = dict[str, Any]
+CompiledOpRow = Any
+PreBlameSnapshot = tuple[dict[str, Any], str | None]
+SectionResultRow = dict[str, Any]
+
 
 # ---------------------------------------------------------------------------
 # Shared helpers (from explain.py — kept independent)
@@ -107,7 +112,7 @@ def _clean(text: str) -> str:
     return re.sub(r'[^a-z0-9äöå]', '', text.lower())
 
 
-def _extract_sections(root: etree._Element) -> Dict[str, etree._Element]:
+def _extract_sections(root: etree._Element) -> dict[str, etree._Element]:
     # Oracle check needs kumottu tombstones to classify EDITORIAL_CONVENTION
     # (replay repeal-placeholder vs oracle kumottu notice → same legal state).
     return extract_oracle_sections(root, exclude_kumottu_stubs=False)
@@ -279,7 +284,7 @@ def _raw_master_source_lacks_section(
         return False
 
     target_label = norm_section_label(_section_label_text_from_key(section_key))
-    section_els = cast(List[etree._Element], source_tree.xpath('.//*[local-name()="section"]'))
+    section_els = cast(list[etree._Element], source_tree.xpath('.//*[local-name()="section"]'))
     for section_el in section_els:
         num_el = section_el.find('{*}num')
         if num_el is None:
@@ -289,9 +294,9 @@ def _raw_master_source_lacks_section(
     return True
 
 
-def _extract_attachment_info(root: etree._Element) -> tuple:
+def _extract_attachment_info(root: etree._Element) -> tuple[int, list[str]]:
     """Return (count, [title_str]) of individual attachment hcontainers."""
-    atts = cast(List[etree._Element], root.xpath('.//*[local-name()="hcontainer" and @name="attachment"]'))
+    atts = cast(list[etree._Element], root.xpath('.//*[local-name()="hcontainer" and @name="attachment"]'))
     titles = []
     for att in atts:
         h = att.find(".//{*}heading")
@@ -303,9 +308,9 @@ def _extract_attachment_info(root: etree._Element) -> tuple:
     return len(atts), titles
 
 
-def _extract_attachment_info_ir(body: "IRNode") -> "Tuple[int, List[str]]":
+def _extract_attachment_info_ir(body: "IRNode") -> tuple[int, list[str]]:
     """Return (count, [title_str]) of attachment hcontainers from an IRNode tree."""
-    def _collect(node: IRNode, results: list) -> None:
+    def _collect(node: IRNode, results: list[str]) -> None:
         if node.kind == "hcontainer" and node.attrs.get("name") == "attachment":
             title = ""
             for child in node.children:
@@ -327,7 +332,7 @@ def _extract_attachment_info_ir(body: "IRNode") -> "Tuple[int, List[str]]":
         for child in node.children:
             _collect(child, results)
 
-    titles: List[str] = []
+    titles: list[str] = []
     _collect(body, titles)
     return len(titles), titles
 
@@ -358,8 +363,8 @@ def _score_pair(r_el: etree._Element, o_el: etree._Element) -> float:
     return Levenshtein.ratio(r, o)
 
 
-def _build_blame_map(compiled_ops: list) -> Dict[str, dict]:
-    blame: Dict[str, dict] = {}
+def _build_blame_map(compiled_ops: list[CompiledOpRow]) -> dict[str, CompiledOpRow]:
+    blame: dict[str, CompiledOpRow] = {}
     for op in compiled_ops:
         key = section_key_from_compiled_scope_row(op)
         if key:
@@ -367,9 +372,9 @@ def _build_blame_map(compiled_ops: list) -> Dict[str, dict]:
     return blame
 
 
-def _lookup_blame_op(blame_map: Dict[str, dict], key: str) -> dict:
+def _lookup_blame_op(blame_map: dict[str, CompiledOpRow], key: str) -> BlameRow:
     exact = blame_map.get(key)
-    if exact is not None:
+    if isinstance(exact, dict):
         return exact
     if "/" not in key:
         return {}
@@ -380,7 +385,8 @@ def _lookup_blame_op(blame_map: Dict[str, dict], key: str) -> dict:
         if blame_key == suffix or blame_key.endswith("/" + suffix)
     ]
     if len(matches) == 1:
-        return matches[0]
+        match = matches[0]
+        return match if isinstance(match, dict) else {}
     return {}
 
 
@@ -412,7 +418,7 @@ def _oracle_suspect_value(master: object) -> str:
 def _diagnose(
     r_text: str,
     o_text: str,
-    blame_op: Optional[dict],
+    blame_op: BlameRow | None,
     *,
     oracle_selector_mode: str = "latest_cached_editorial",
 ) -> str:
@@ -472,8 +478,8 @@ def _diagnose(
 
 
 def _batch_pre_blame_sections(
-    sid: str, blame_sources: List[str], mode: Literal["official_consolidation", "legal_pit"]
-) -> Dict[str, tuple]:
+    sid: str, blame_sources: list[str], mode: Literal["official_consolidation", "legal_pit"]
+) -> dict[str, PreBlameSnapshot]:
     """Replay sid once, snapshotting IR at each blame stop point.
 
     Returns {blame_source: (sections_dict, last_amendment_id_applied)} for all
@@ -490,13 +496,13 @@ def _batch_pre_blame_sections(
     amendment_records, _, _ = _resolve_applicable_amendment_records(sid, mode)
 
     wanted = set(blame_sources)
-    result: Dict[str, tuple] = {}
-    last_amendment_id: Optional[str] = None
+    result: dict[str, PreBlameSnapshot] = {}
+    last_amendment_id: str | None = None
     # Accumulate the LO history across the chain like the main replay does:
     # apply-time policies (occupancy temporal-disjointness, same-wave
     # migration follows) read replay history as typed evidence and would
     # produce spurious diagnostics in a history-less blame replay.
-    blame_lo_ops: list = []
+    blame_lo_ops: list[Any] = []
     for rec in amendment_records:
         amendment_id = str(rec["statute_id"])
         if amendment_id in wanted:
@@ -526,7 +532,7 @@ def _batch_pre_blame_sections(
 
 def _get_pre_blame_sections(
     sid: str, stop_before_source: str, mode: Literal["official_consolidation", "legal_pit"]
-) -> tuple:
+) -> PreBlameSnapshot:
     """Replay sid stopping before the given source amendment.
 
     Returns (sections_dict, last_amendment_id_applied) where last_amendment_id_applied is the
@@ -545,11 +551,11 @@ def _classify_statute(
     sid: str,
     mode: Literal["official_consolidation", "legal_pit"],
     *,
-    replay_result: Optional[Any] = None,
-    precomputed_compiled_ops: Optional[List] = None,
-    oracle_root: Optional[Any] = None,
-    html_audit_result: Optional[Any] = None,
-) -> Optional[ClassifyResult]:
+    replay_result: Any | None = None,
+    precomputed_compiled_ops: list[CompiledOpRow] | None = None,
+    oracle_root: Any | None = None,
+    html_audit_result: Any | None = None,
+) -> ClassifyResult | None:
     """Classify all divergences for one statute. Returns a ClassifyResult.
 
     Optional pre-computed parameters avoid redundant replay/fetch calls
@@ -561,9 +567,9 @@ def _classify_statute(
         if replay_result is not None:
             master = replay_result
             compiled_ops = precomputed_compiled_ops if precomputed_compiled_ops is not None else []
-            failed_ops: list = []
+            failed_ops: list[Any] = []
         else:
-            compiled_ops: list = precomputed_compiled_ops if precomputed_compiled_ops is not None else []
+            compiled_ops: list[CompiledOpRow] = precomputed_compiled_ops if precomputed_compiled_ops is not None else []
             failed_ops = []
             master = replay_xml(
                 sid,
@@ -673,7 +679,7 @@ def _classify_statute(
         replay_secs = replay_secs_ir  # for key iteration
         section_score = Levenshtein.ratio(r_sec_text, o_sec_text) if r_sec_text and o_sec_text else 0.0
 
-        section_results: List[Dict] = []
+        section_results: list[SectionResultRow] = []
         for key in set(replay_secs) | set(oracle_secs):
             r_node = replay_secs.get(key)
             o_el = oracle_secs.get(key)
@@ -833,7 +839,7 @@ def _classify_statute(
                     sec["diagnosis"] = "ORACLE_STALE"
                     sec["oracle_version_amendment_id"] = oracle_version_amendment_id or ""
 
-        missing_from_xml = cast(List[str], (html_topology or {}).get("missing_from_xml") or [])
+        missing_from_xml = cast(list[str], (html_topology or {}).get("missing_from_xml") or [])
         missing_from_xml_keys = {
             norm_section_label(str(label or ""))
             for label in missing_from_xml
@@ -874,7 +880,7 @@ def _classify_statute(
                 ):
                     sec["diagnosis"] = "CORRIGENDUM_APPLIED"
 
-        candidates: Dict[str, List[Dict]] = defaultdict(list)
+        candidates: dict[str, list[SectionResultRow]] = defaultdict(list)
         for sec in section_results:
             if sec["diagnosis"] in ("REPLAY_EXTRA", "REPLAY_MISSING", "UNKNOWN", "MISSING") and sec["blame_source"]:
                 candidates[sec["blame_source"]].append(sec)
@@ -882,7 +888,7 @@ def _classify_statute(
         # Batch pre-blame replays: sort blame sources in amendment order,
         # replay incrementally, cache IR snapshots at each stop point.
         # This turns O(B × A) into O(A) where B=blame sources, A=amendments.
-        _pre_blame_cache: Dict[str, tuple] = {}
+        _pre_blame_cache: dict[str, PreBlameSnapshot] = {}
         if candidates:
             _pre_blame_cache = _batch_pre_blame_sections(sid, list(candidates.keys()), mode)
 
@@ -984,16 +990,16 @@ def _classify_statute(
             if sec["diagnosis"] in ("MISSING", "REPLAY_MISSING", "UNKNOWN", "EXTRA")
             and str(sec.get("blame_source") or "")
         }
-        raw_master_gap_pre_blame_cache: Dict[str, tuple] = {}
+        raw_master_gap_pre_blame_cache: dict[str, PreBlameSnapshot] = {}
         if raw_master_gap_sources:
             raw_master_gap_pre_blame_cache = _batch_pre_blame_sections(
                 sid,
                 list(raw_master_gap_sources),
                 mode,
             )
-        empty_body_origin_cache: Dict[Tuple[str, str], bool] = {}
-        raw_master_missing_cache: Dict[str, bool] = {}
-        pre_blame_absent_cache: Dict[Tuple[str, str], bool] = {}
+        empty_body_origin_cache: dict[tuple[str, str], bool] = {}
+        raw_master_missing_cache: dict[str, bool] = {}
+        pre_blame_absent_cache: dict[tuple[str, str], bool] = {}
         for sec in section_results:
             if sec["diagnosis"] not in (
                 "REPLAY_EXTRA",
@@ -1111,7 +1117,7 @@ def _print_statute_summary(result: ClassifyResult) -> None:
     if not sections:
         print(f"  {sid}: {score:.1%}  (no divergences)")
         return
-    counts: Dict[str, int] = defaultdict(int)
+    counts: dict[str, int] = defaultdict(int)
     for sec in sections:
         counts[sec["diagnosis"]] += 1
     parts = "  ".join(f"{k}={v}" for k, v in sorted(counts.items()))
@@ -1141,13 +1147,13 @@ def _print_statute_summary(result: ClassifyResult) -> None:
         print(f"    contingent-effective-date: {', '.join(contingent_sources)}")
 
 
-def _print_corpus_summary(results: List[ClassifyResult], save_path: Optional[str]) -> None:
+def _print_corpus_summary(results: list[ClassifyResult], save_path: str | None) -> None:
     # Aggregate
     total_statutes = len(results)
     errors = [r for r in results if r.error]
     ok_results = [r for r in results if not r.error]
 
-    all_section_diags: Dict[str, List[str]] = defaultdict(list)  # diag → [sid]
+    all_section_diags: dict[str, list[str]] = defaultdict(list)  # diag → [sid]
     scores = []
     adjusted_scores = []
     source_pathology_statutes = 0
@@ -1258,7 +1264,7 @@ def _corpus_selection_detail(full: bool) -> str:
     return detail
 
 
-def _write_db(results: List[ClassifyResult], db_path: str) -> None:
+def _write_db(results: list[ClassifyResult], db_path: str) -> None:
     con = sqlite3.connect(db_path)
     con.executescript('''
         DROP TABLE IF EXISTS corpus_stats;
@@ -1370,7 +1376,7 @@ def _write_db(results: List[ClassifyResult], db_path: str) -> None:
     print(f"\n  Saved DB: {db_path} ({size_mb:.1f} MB, {len(rows)} diverging sections)")
 
 
-def _sort_sids_by_chain_length(sids: List[str]) -> List[str]:
+def _sort_sids_by_chain_length(sids: list[str]) -> list[str]:
     """Sort statute IDs longest-amendment-chain-first.
 
     Replay time scales with amendment count, so submitting the longest chains
@@ -1383,15 +1389,15 @@ def _sort_sids_by_chain_length(sids: List[str]) -> List[str]:
     return sorted(sids, key=lambda s: len(children.get(s, ())), reverse=True)
 
 
-def _classify_statute_sync(sid: str, mode: Literal["official_consolidation", "legal_pit"]) -> Optional[ClassifyResult]:
+def _classify_statute_sync(sid: str, mode: Literal["official_consolidation", "legal_pit"]) -> ClassifyResult | None:
     """Sync wrapper so ProcessPoolExecutor can run each statute in its own process."""
     return _classify_statute(sid, mode)
 
 
-def _run_corpus(sids: List[str], mode: Literal["official_consolidation", "legal_pit"], parallel: int) -> List[ClassifyResult]:
+def _run_corpus(sids: list[str], mode: Literal["official_consolidation", "legal_pit"], parallel: int) -> list[ClassifyResult]:
     total = len(sids)
     done = 0
-    results: List[ClassifyResult] = []
+    results: list[ClassifyResult] = []
 
     with managed_executor(parallel) as executor:
         try:
@@ -1455,7 +1461,7 @@ def main(args) -> None:
             _print_statute_summary(result)
             sections = result.section_results
             if sections:
-                counts: Dict[str, int] = defaultdict(int)
+                counts: dict[str, int] = defaultdict(int)
                 for sec in sections:
                     counts[sec["diagnosis"]] += 1
                 print()
