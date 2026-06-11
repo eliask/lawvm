@@ -35,6 +35,7 @@ from lawvm.core.manual_claims.native import (
     submit_assertion,
 )
 from lawvm.core.retraction_taint_projection import (
+    filter_retraction_taint_projection_by_build,
     project_retraction_taint,
     render_retraction_taint,
 )
@@ -719,8 +720,9 @@ def cmd_disputes(args: object) -> int:
 
 def cmd_taint_report(args: object) -> int:
     """Compute retraction taint at query time (not from stored taint)."""
-    assertion_id: Optional[str] = getattr(args, "claim_id", None) or getattr(args, "assertion_id", None)
+    assertion_id = _arg_optional_str(args, "claim_id") or _arg_optional_str(args, "assertion_id")
     list_all = _arg_bool(args, "list", default=False)
+    build_filter = _arg_optional_str(args, "build")
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
@@ -728,7 +730,7 @@ def cmd_taint_report(args: object) -> int:
     attestation_index = _load_all_attestations(store)
     build_record_index = store.load_build_record_index()
 
-    if list_all:
+    if list_all or (build_filter is not None and assertion_id is None):
         retracted_ids = [
             a.subject.artifact_id
             for a in attestation_index.values()
@@ -737,28 +739,49 @@ def cmd_taint_report(args: object) -> int:
         if not retracted_ids:
             print("no retracted assertions found")
             return 0
-        print(f"{len(retracted_ids)} retracted assertion(s):")
-        for rid in sorted(set(retracted_ids)):
+        unique_retracted_ids = tuple(sorted(set(retracted_ids)))
+        rows: list[tuple[str, int]] = []
+        for rid in unique_retracted_ids:
             projection = project_retraction_taint(
                 graph, (rid,), attestation_index, build_record_index
             )
+            if build_filter is not None:
+                projection = filter_retraction_taint_projection_by_build(
+                    projection,
+                    build_filter,
+                )
+                if not projection.builds:
+                    continue
             taint_count = sum(
                 1
                 for b in projection.builds
                 for f in b.status_finding.findings
                 if f.retracted_assertion_id == rid
             )
+            rows.append((rid, taint_count))
+        if build_filter is not None and not rows:
+            print(f"no retracted assertions affect build {build_filter!r}")
+            return 0
+        if build_filter is not None:
+            print(f"{len(rows)} retracted assertion(s) affecting build {build_filter!r}:")
+        else:
+            print(f"{len(unique_retracted_ids)} retracted assertion(s):")
+        for rid, taint_count in rows:
             print(f"  {rid[:32]}...  taint_count={taint_count}")
         return 0
 
     if assertion_id is None:
-        print("error: provide ASSERTION_ID or --list", file=sys.stderr)
+        print("error: provide ASSERTION_ID, --list, or --build", file=sys.stderr)
         return 1
 
     projection = project_retraction_taint(
         graph, (assertion_id,), attestation_index, build_record_index
     )
-    print(f"taint report for {assertion_id[:32]}...")
+    if build_filter is not None:
+        projection = filter_retraction_taint_projection_by_build(projection, build_filter)
+        print(f"taint report for {assertion_id[:32]}... affecting build {build_filter!r}")
+    else:
+        print(f"taint report for {assertion_id[:32]}...")
     print(render_retraction_taint(projection))
     return 0
 

@@ -95,6 +95,22 @@ def project_retraction_taint(
     )
 
 
+def filter_retraction_taint_projection_by_build(
+    projection: RetractionTaintProjection,
+    build_id: str,
+) -> RetractionTaintProjection:
+    """Return a projection narrowed to one consuming build id."""
+
+    return RetractionTaintProjection(
+        retracted_assertion_ids=projection.retracted_assertion_ids,
+        builds=tuple(
+            build
+            for build in projection.builds
+            if build.status_finding.build_id == build_id
+        ),
+    )
+
+
 def render_retraction_taint(projection: RetractionTaintProjection) -> str:
     """Human-readable CLI rendering of the projection."""
     tainted = [

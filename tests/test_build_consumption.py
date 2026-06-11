@@ -380,6 +380,55 @@ def test_taint_report_cli_renders(tmp_path: Path, capsys) -> None:
     assert "taint_count=1" in out
 
 
+def test_taint_report_cli_filters_by_build(tmp_path: Path, capsys) -> None:
+    from lawvm.tools.cmd_claim import cmd_taint_report
+
+    assertion_id = _propose_assertion(tmp_path)
+    kept_build = _record_build(tmp_path, "build-filter-kept", (assertion_id,))
+    other_build = _record_build(tmp_path, "build-filter-other", (assertion_id,))
+    _retract(tmp_path, assertion_id, capsys)
+
+    rc = cmd_taint_report(
+        _make_args(
+            assertion_id=assertion_id,
+            list=False,
+            build=kept_build.build_id,
+            graph_store_root=_graph_root(tmp_path),
+        )
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert kept_build.build_id in out
+    assert other_build.build_id not in out
+    assert "status: tainted" in out
+
+    rc = cmd_taint_report(
+        _make_args(
+            assertion_id=None,
+            list=False,
+            build=kept_build.build_id,
+            graph_store_root=_graph_root(tmp_path),
+        )
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert f"affecting build {kept_build.build_id!r}" in out
+    assert assertion_id[:32] in out
+    assert "taint_count=1" in out
+
+    rc = cmd_taint_report(
+        _make_args(
+            assertion_id=None,
+            list=False,
+            build="missing-build",
+            graph_store_root=_graph_root(tmp_path),
+        )
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "no retracted assertions affect build 'missing-build'" in out
+
+
 # ---------------------------------------------------------------------------
 # Guard liveness: declared consumption without edges is never clean
 # ---------------------------------------------------------------------------
