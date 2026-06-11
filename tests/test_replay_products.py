@@ -1129,7 +1129,9 @@ def test_replay_xml_expires_2020_292_temporary_99a_section() -> None:
 
     assert replay.timelines is not None
     assert addr in replay.timelines
-    assert replay.timelines[addr].versions[-1].expires == "2021-05-31"
+    # Prose: "on voimassa 31 päivään toukokuuta 2021" (in force THROUGH May 31)
+    # → kernel exclusive cutoff June 1.
+    assert replay.timelines[addr].versions[-1].expires == "2021-06-01"
     assert select_active_version(replay.timelines[addr], "2025-01-01") is None
     assert replay.replay_fold_state.find_section("99a", "12", "5") is not None
     assert replay.materialized_state.find_section("99a", "12", "5") is None

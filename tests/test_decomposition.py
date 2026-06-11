@@ -1381,7 +1381,9 @@ class TestNormalizeAndCompileOps:
         assert op.is_temporary
         assert op.lo is not None and op.lo.source is not None
         assert op.lo.source.effective == "1983-01-01"
-        assert op.lo.source.expires == "1983-12-31"
+        # Inferred tax-year sunset: in force THROUGH 1983-12-31 (inclusive
+        # prose), stamped as the kernel's exclusive cutoff 1984-01-01.
+        assert op.lo.source.expires == "1984-01-01"
 
         assert any(
             event.kind == "commence"
@@ -1392,7 +1394,7 @@ class TestNormalizeAndCompileOps:
         assert any(
             event.kind == "expire"
             and event.group_id == "1982/1035"
-            and event.expires == "1983-12-31"
+            and event.expires == "1984-01-01"
             for event in phase.temporal_events
         )
 

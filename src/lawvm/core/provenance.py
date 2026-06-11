@@ -42,6 +42,9 @@ class OperationSource:
     title: str = ""
     enacted: str = ""  # when the amending act was created
     effective: str = ""  # source-side effective date carried into lowering
+    # Both expiry fields use the kernel's EXCLUSIVE cutoff convention (first day
+    # NOT in force = prose-inclusive valid_until + 1 day), same as
+    # ProvisionVersion.expires; writers convert prose dates at the stamp site.
     expires: str = ""  # source-side expiry provenance carried into lowering
     expires_original: str = ""  # original temporary-act expiry before extensions
     expiry_chain: Tuple[ExpiryOverride, ...] = ()  # audit trail of expiry overrides

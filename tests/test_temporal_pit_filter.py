@@ -975,3 +975,102 @@ class TestTemporaryWithoutExpiry:
         pit = materialize_pit(timelines, "9999-12-31", base=base, expires_as_of="2025-01-01")
         labels = [c.label for c in pit.body.children]
         assert "2" in labels, "missing-expiry provenance should not be treated as executable temporal authority"
+
+
+class TestProseInclusiveExpiryBoundary:
+    """The kernel `expires` cutoff is EXCLUSIVE; prose gives the INCLUSIVE last day.
+
+    Legal truth: "on voimassa 30 päivään kesäkuuta 2023" means the provision is
+    in force THROUGH June 30 and out of force FROM July 1. The Finland frontend
+    must therefore stamp `expires = prose date + 1 day`
+    (``expires_on_from_valid_until``); selection then keeps the version eligible
+    ON its legally last valid day and drops it the day after.
+    """
+
+    def test_whole_act_prose_expiry_stamped_as_exclusive_cutoff(self) -> None:
+        """The real stamping path converts the parsed inclusive date to +1 day."""
+        import lxml.etree as etree
+
+        from lawvm.finland.frontend_compile import _enrich_ops_from_amendment_tree
+        from lawvm.finland.ops import AmendmentOp
+
+        tree = etree.fromstring(
+            "<doc>Tämä laki tulee voimaan 1 päivänä tammikuuta 2023 ja on "
+            "voimassa 30 päivään kesäkuuta 2023.</doc>".encode("utf-8")
+        )
+        op = AmendmentOp(
+            op_id="temp-insert",
+            op_type="INSERT",
+            target_section="78c",
+            target_unit_kind="section",
+            lo=LegalOperation(
+                op_id="temp-insert",
+                sequence=1,
+                action=StructuralAction.INSERT,
+                target=LegalAddress(path=(("section", "78c"),)),
+                payload=None,
+            ),
+        )
+        enriched = _enrich_ops_from_amendment_tree([op], "2022/1282", tree)
+        lo = enriched[0].lo
+        assert lo is not None
+        source = lo.source
+        assert source is not None
+        assert source.effective == "2023-01-01"
+        assert source.expires == "2023-07-01", (
+            "prose 'voimassa 30 päivään kesäkuuta 2023' (in force THROUGH "
+            "June 30) must stamp the exclusive kernel cutoff July 1"
+        )
+
+    def test_section_scoped_prose_expiry_stamped_as_exclusive_cutoff(self) -> None:
+        """Section-scoped sunsets ('Lain X § ovat voimassa ...') convert too."""
+        import lxml.etree as etree
+
+        from lawvm.finland.frontend_compile import _enrich_ops_from_amendment_tree
+        from lawvm.finland.ops import AmendmentOp
+
+        tree = etree.fromstring(
+            "<doc>Tämä laki tulee voimaan 1 päivänä tammikuuta 2023. "
+            "Lain 78 c § on voimassa 30 päivään kesäkuuta 2023.</doc>".encode("utf-8")
+        )
+        op = AmendmentOp(
+            op_id="temp-insert",
+            op_type="INSERT",
+            target_section="78c",
+            target_unit_kind="section",
+            lo=LegalOperation(
+                op_id="temp-insert",
+                sequence=1,
+                action=StructuralAction.INSERT,
+                target=LegalAddress(path=(("section", "78c"),)),
+                payload=None,
+            ),
+        )
+        enriched = _enrich_ops_from_amendment_tree([op], "2022/1282", tree)
+        lo = enriched[0].lo
+        assert lo is not None
+        source = lo.source
+        assert source is not None
+        assert source.expires == "2023-07-01"
+
+    def test_temporary_section_eligible_on_last_valid_day_not_after(self) -> None:
+        """End-to-end legal truth at the selection layer: in force ON D, out on D+1."""
+        import datetime as dt
+
+        from lawvm.core.statute_validity import expires_on_from_valid_until
+        from lawvm.core.timeline_selection import eligible
+
+        prose_valid_until = dt.date(2023, 6, 30)  # "voimassa 30 päivään kesäkuuta 2023"
+        version = ProvisionVersion(
+            effective="2023-01-01",
+            enacted="2022-12-29",
+            expires=expires_on_from_valid_until(prose_valid_until).isoformat(),
+            variant_kind="temporary",
+            content=None,
+        )
+        assert eligible(version, "2023-06-30", "governing"), (
+            "the provision is legally in force THROUGH its prose valid_until day"
+        )
+        assert not eligible(version, "2023-07-01", "governing"), (
+            "the provision is out of force the day after its prose valid_until day"
+        )

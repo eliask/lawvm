@@ -34,6 +34,7 @@ from lawvm.core.ir import LegalOperation, OperationSource
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.phase_result import Finding
+from lawvm.core.statute_validity import expires_on_from_valid_until
 from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.ops import FailedOp
@@ -839,7 +840,13 @@ def _enrich_ops_from_amendment_tree(
         title=source_title,
         enacted=source_issue_date.isoformat() if source_issue_date else "",
         effective=eff_date.isoformat() if eff_date else "",
-        expires="" if _section_scoped_expiry else (expiry_date.isoformat() if expiry_date else ""),
+        # _amendment_expiry_date returns the prose-inclusive last in-force day;
+        # the kernel `expires` field is an exclusive cutoff, so convert here.
+        expires=(
+            ""
+            if _section_scoped_expiry
+            else (expires_on_from_valid_until(expiry_date).isoformat() if expiry_date else "")
+        ),
     )
     enriched = []
     for op in ops:
@@ -1015,7 +1022,12 @@ def _enrich_ops_from_amendment_tree(
                         op,
                         lo=dc_replace(
                             op.lo,
-                            source=dc_replace(op.lo.source, expires=section_expiry.isoformat()),
+                            # section_expiry is the prose-inclusive last in-force
+                            # day; kernel `expires` is exclusive — convert here.
+                            source=dc_replace(
+                                op.lo.source,
+                                expires=expires_on_from_valid_until(section_expiry).isoformat(),
+                            ),
                         ),
                     )
                 )
@@ -1182,7 +1194,12 @@ def _apply_inferred_payload_expiry_to_temporary_ops(
                         op,
                         lo=dc_replace(
                             lo,
-                            source=dc_replace(source, expires=inferred.isoformat()),
+                            # inferred tax-year sunset is the inclusive Dec 31 of
+                            # the latest named year; kernel `expires` is exclusive.
+                            source=dc_replace(
+                                source,
+                                expires=expires_on_from_valid_until(inferred).isoformat(),
+                            ),
                         ),
                     )
                 )

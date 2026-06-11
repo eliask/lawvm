@@ -754,6 +754,11 @@ def _amendment_expiry_date(tree: "etree._Element") -> Optional[dt.date]:
     that function is extended to cover the year-end shorthand.
 
     Returns the expiry date if any whole-act form is found, otherwise None.
+
+    Date convention: the returned date is the prose-INCLUSIVE last in-force day
+    ("on voimassa 30 päivään kesäkuuta 2023" = in force THROUGH June 30). Stamp
+    sites writing kernel ``expires`` fields must convert via
+    ``expires_on_from_valid_until``.
     """
     full_text = _normalize_fi_parse_text(
         etree.tostring(tree, method="text", encoding="unicode")
@@ -935,6 +940,13 @@ def _temporary_section_expiry_overrides(
 
     Real compile/replay paths should consume this plural form so multiple scoped
     sunset clauses in one amendment are not truncated.
+
+    Date convention: every returned expiry is the prose-INCLUSIVE last in-force
+    day ("ovat voimassa 30 päivään kesäkuuta 2023" = in force THROUGH June 30).
+    Stamp sites must convert to the kernel's exclusive ``expires`` cutoff via
+    ``expires_on_from_valid_until`` (the ``lakkaa olemasta voimassa, kun tämä
+    laki tulee muilta osin voimaan`` branch subtracts one day below to honour
+    this contract, because that clause names the first day NOT in force).
     """
     tree_bytes = etree.tostring(tree, method="xml")
     cache_key = (id(tree), source_statute_id, hash(tree_bytes))
@@ -1055,9 +1067,15 @@ def _temporary_section_expiry_overrides(
         full_text,
         flags=re.IGNORECASE,
     ):
-        expiry = _amendment_effective_date(tree)
-        if expiry is None:
+        cessation_date = _amendment_effective_date(tree)
+        if cessation_date is None:
             continue
+        # "lakkaa olemasta voimassa, kun tämä laki tulee muilta osin voimaan":
+        # the section ceases to be in force ON the act's effective date, so that
+        # date is the first day NOT in force (an exclusive cutoff). The override
+        # contract carries the INCLUSIVE last in-force day, so subtract one day;
+        # the stamp-site conversion (+1) then restores the cessation date.
+        expiry = cessation_date - dt.timedelta(days=1)
         labels = _parse_section_list_labels(m_lakkaa.group(1))
         _append_override(source_statute_id, labels, expiry)
 
@@ -1212,6 +1230,9 @@ def _infer_expiry_date_from_temporary_payload_text(text: str) -> Optional[dt.dat
     sunset for PIT materialization: the provision is not current after the end
     of that year even though the source omitted a formal ``on voimassa``
     clause.
+
+    Date convention: returns the INCLUSIVE last in-force day (Dec 31 of the
+    latest named year); stamp sites convert via ``expires_on_from_valid_until``.
     """
     normalized = " ".join(_normalize_fi_parse_text(text).split())
     if not normalized:
@@ -1286,6 +1307,9 @@ def _commencement_expiry_override(
     returned label set contains those sections. Otherwise ``labels`` is ``None``
     and callers should treat the override as applying to all provisions emitted
     from the target source statute.
+
+    Date convention: the returned expiry is the prose-INCLUSIVE last in-force
+    day; stamp sites convert via ``expires_on_from_valid_until``.
     """
     scoped = _temporary_section_expiry_override(tree, source_statute_id)
     if scoped is not None and scoped[0] != source_statute_id:
@@ -1319,6 +1343,10 @@ def _chapter_expiry_from_base(
     Matches patterns like:
       "Lain 9 luku on voimassa 31 päivään joulukuuta 2013."
     These appear in the voimaantulo section of the *base* statute (not amendments).
+
+    Date convention: the returned date is the prose-INCLUSIVE last in-force
+    day; any stamp site writing a kernel ``expires`` field must convert via
+    ``expires_on_from_valid_until``.
     """
     full_text = _normalize_fi_parse_text(
         etree.tostring(tree, method="text", encoding="unicode")

@@ -281,7 +281,11 @@ def test_temporary_section_expiry_override_parses_lakkaa_olemasta_voimassa_claus
     target_mid, labels, expiry = override
     assert target_mid == "2021/984"
     assert labels == {"21b"}
-    assert expiry.isoformat() == "2022-01-31"
+    # The clause names the cessation day (2022-01-31 = first day NOT in force).
+    # The override contract carries the INCLUSIVE last in-force day, so the
+    # branch returns the preceding day; the stamp-site conversion (+1) restores
+    # the cessation day as the kernel's exclusive cutoff.
+    assert expiry.isoformat() == "2022-01-30"
 
 
 def test_temporary_section_expiry_override_uses_title_scoped_temporary_target_in_mixed_amendment() -> None:
@@ -391,7 +395,10 @@ def test_temporary_section_expiry_override_real_2021_984_clause_only_expires_21b
     target_mid, labels, expiry = override
     assert target_mid == "2021/984"
     assert labels == {"21b"}
-    assert expiry.isoformat() == "2022-01-31"
+    # 2022-01-31 is the cessation day (first day NOT in force); the override
+    # contract carries the INCLUSIVE last in-force day (see the lakkaa branch
+    # in _temporary_section_expiry_overrides), so the day before is returned.
+    assert expiry.isoformat() == "2022-01-30"
 
 
 def test_section_commencement_effective_override_ignores_subsection_targets_and_keeps_whole_section() -> None:

@@ -343,6 +343,10 @@ def extract_expiry_date_from_meta_clauses(
     Returns the first expiry date found, or empty string if none present.
     This extracts the "on voimassa ... päivään" date from expiry sentences
     so it can be attached to the live TemporalEvent emitted for a temporary op.
+
+    Date convention: the returned ISO date is the prose-INCLUSIVE last
+    in-force day; any consumer stamping a kernel ``expires`` field must
+    convert via ``expires_on_from_valid_until`` first.
     """
     for clause in meta_clauses:
         if clause.kind != MetaClauseKind.EXPIRY:
