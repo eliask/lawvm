@@ -53,15 +53,15 @@ class ProjectionSpec:
     """
 
     name: str
-    tier_1_deps: tuple      # e.g. ("finlex.farchive",)
-    tier_2_deps: tuple      # e.g. ("fi_refs",)
+    tier_1_deps: tuple[str, ...]      # e.g. ("finlex.farchive",)
+    tier_2_deps: tuple[str, ...]      # e.g. ("fi_refs",)
     description: str
 
 
 # Registry of all known Finland Tier 2 projections.
 # Each entry here causes rebuild-indexes to regenerate that projection.
 # Out-of-scope projections are left untouched.
-_FI_PROJECTIONS: tuple = (
+_FI_PROJECTIONS: tuple[ProjectionSpec, ...] = (
     ProjectionSpec(
         name="fi_refs",
         tier_1_deps=("finlex.farchive",),
@@ -154,12 +154,12 @@ _FI_PROJECTIONS: tuple = (
     ),
 )
 
-_PROJECTIONS_BY_JURISDICTION: Dict[str, tuple] = {
+_PROJECTIONS_BY_JURISDICTION: Dict[str, tuple[ProjectionSpec, ...]] = {
     "fi": _FI_PROJECTIONS,
 }
 
 
-def _projections_for(jurisdiction: str) -> tuple:
+def _projections_for(jurisdiction: str) -> tuple[ProjectionSpec, ...]:
     return _PROJECTIONS_BY_JURISDICTION.get(jurisdiction, ())
 
 
@@ -566,7 +566,7 @@ def _rebuild_core_projections(
     return counts.get(name, 0)
 
 
-def _load_default_fi_corpus(data_dir: str) -> list:
+def _load_default_fi_corpus(data_dir: str) -> list[tuple[int, str]]:
     """Load the full Finnish farchive statute ID list for projection.
 
     Projection emitters need full corpus coverage (the curated

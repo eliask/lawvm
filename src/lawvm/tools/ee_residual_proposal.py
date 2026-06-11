@@ -16,12 +16,14 @@ import csv
 import json
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import argparse
 
 _BENCH_DIR = Path(__file__).parent.parent.parent.parent / "data" / "ee_bench_runs"
+
+ResidualProposalRow = dict[str, Any]
 
 
 def _find_latest_bench_csv() -> Path:
@@ -38,12 +40,12 @@ def _find_bench_csv(label: str) -> Path:
     return matches[-1]
 
 
-def _load_bench_rows(csv_path: Path) -> list[dict]:
+def _load_bench_rows(csv_path: Path) -> list[dict[str, str]]:
     with open(csv_path, newline="", encoding="utf-8") as f:
         return list(csv.DictReader(f))
 
 
-def _propose_for_pair(base_id: str, oracle_id: str, title: str = "") -> dict:
+def _propose_for_pair(base_id: str, oracle_id: str, title: str = "") -> ResidualProposalRow:
     """Run replay on one pair and propose residual inventory entries."""
     from lawvm.estonia.replay import replay_ee_to_pit
     from lawvm.estonia.fetch import extract_effective_date, fetch_rt_xml, open_rt_archive
@@ -115,7 +117,7 @@ def _propose_for_pair(base_id: str, oracle_id: str, title: str = "") -> dict:
     }
 
 
-def _run_from_label(label: str, top: int = 10) -> list[dict]:
+def _run_from_label(label: str, top: int = 10) -> list[ResidualProposalRow]:
     """Run proposals for top open rows from a bench run."""
     csv_path = _find_bench_csv(label)
     rows = _load_bench_rows(csv_path)
@@ -147,13 +149,13 @@ def _run_from_label(label: str, top: int = 10) -> list[dict]:
     return results
 
 
-def _run_single_pair(base_id: str, oracle_id: str, title: str = "") -> list[dict]:
+def _run_single_pair(base_id: str, oracle_id: str, title: str = "") -> list[ResidualProposalRow]:
     """Run proposal for a single pair."""
     result = _propose_for_pair(base_id, oracle_id, title)
     return [result]
 
 
-def _format_python(results: list[dict]) -> str:
+def _format_python(results: list[ResidualProposalRow]) -> str:
     """Format proposals as Python code for residual_inventory.py."""
     lines = []
     for r in results:
@@ -184,7 +186,7 @@ def _format_python(results: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _format_text(results: list[dict]) -> str:
+def _format_text(results: list[ResidualProposalRow]) -> str:
     """Format proposals as human-readable text."""
     lines = []
     for r in results:
