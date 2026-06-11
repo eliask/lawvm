@@ -36,8 +36,9 @@ This module is the single classifier from replay findings to typed
   by a deferred-commencement twin), so a PIT query landing inside that window
   would otherwise serve silently-wrong text (the permanent twin's, or absent).
   Blocks queries on a matching address whose ``as_of`` falls INSIDE the window
-  (inclusive both ends); other addresses and other ``as_of`` are untouched
-  (byte-identical). Classified cause:
+  (start-inclusive, end-exclusive — the kernel ``expires`` convention); other
+  addresses and other ``as_of`` are untouched (byte-identical). Classified
+  cause:
     * ``APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT`` → diagnostic code
       ``TEMPORAL.WINDOW_UNMATERIALIZED``. This scope is EXPECTED TO BE
       SHORT-LIVED: it is replaced by real legal-time window materialization;
@@ -77,13 +78,13 @@ class TimelineBreak:
     effective: str = ""  # ISO date of the breaking amendment; "" = unknown
     reason: str = ""
     # Window-scoped fields (only set for scope="window"). The break governs
-    # exactly the closed interval [window_start, window_end] for the target
-    # address. occupant_* identify the deferred-commencement twin holding the
-    # slot in document order; rule_id names the apply-policy lane that detected
-    # the disjoint insert. Self-evidencing: a consumer can see WHICH temporary
+    # exactly the interval [window_start, window_end) for the target address.
+    # occupant_* identify the deferred-commencement twin holding the slot in
+    # document order; rule_id names the apply-policy lane that detected the
+    # disjoint insert. Self-evidencing: a consumer can see WHICH temporary
     # act's window is unmaterialized without reading our code.
-    window_start: str = ""  # incoming_effective (inclusive)
-    window_end: str = ""  # incoming_expires (inclusive)
+    window_start: str = ""  # incoming_effective (inclusive first in-force day)
+    window_end: str = ""  # incoming_expires (EXCLUSIVE kernel cutoff: first day not in force)
     occupant_source_statute: str = ""
     occupant_effective: str = ""
     rule_id: str = ""
@@ -103,7 +104,7 @@ class TimelineBreak:
             wire["window"] = {
                 "start": self.window_start,
                 "end": self.window_end,
-                "bounds": "inclusive",
+                "bounds": "start_inclusive_end_exclusive",
                 "source_statute": self.amendment_id,
                 "occupant_source_statute": self.occupant_source_statute,
                 "occupant_effective": self.occupant_effective,
@@ -216,19 +217,19 @@ def break_governs_as_of(item: TimelineBreak, as_of: str) -> bool:
     """True when ``as_of`` is governed by the break.
 
     Statute/address breaks govern every ``as_of`` at/after their effective date
-    (and undatable breaks govern always). Window breaks govern ONLY inside the
-    closed interval ``[window_start, window_end]`` — outside the window the
-    timeline is materialized normally and the answer is provable.
+    (and undatable breaks govern always). Window breaks govern ONLY inside
+    ``[window_start, window_end)`` — outside the window the timeline is
+    materialized normally and the answer is provable.
     """
     if item.scope == "window":
-        # Inclusive on BOTH ends. The repo is mid-migration on expiry-date
-        # conventions (inclusive prose dates vs exclusive cutoffs); treating
-        # window_end as inclusive over-blocks by at most one day at the upper
-        # boundary, which is the safe direction for a fail-loud guard. An
-        # undatable window (missing either bound) governs always (conservative).
+        # window_end carries the kernel's EXCLUSIVE expires cutoff (first day
+        # NOT in force): on window_end itself the deferred twin commences and
+        # the fold-materialized permanent text is correct, so the guard lifts
+        # exactly there. An undatable window (missing either bound) governs
+        # always (conservative).
         if not item.window_start or not item.window_end:
             return True
-        return item.window_start <= as_of <= item.window_end
+        return item.window_start <= as_of < item.window_end
     if not item.effective:
         return True
     return item.effective <= as_of

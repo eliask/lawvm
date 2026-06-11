@@ -59,7 +59,7 @@ def _disjoint_finding(
     *,
     target_label: str = "1",
     incoming_effective: str = "2021-01-01",
-    incoming_expires: str = "2021-06-30",
+    incoming_expires: str = "2021-07-01",
     source_statute: str = "2020/900",
     occupant_effective: str = "2021-07-01",
     occupant_source_statute: str = "2020/901",
@@ -102,7 +102,7 @@ def test_disjoint_insert_is_classified_window_scoped_and_self_evidencing() -> No
     assert item.amendment_id == "2020/900"
     assert item.target_section == "1"
     assert item.window_start == "2021-01-01"
-    assert item.window_end == "2021-06-30"
+    assert item.window_end == "2021-07-01"
     assert item.occupant_source_statute == "2020/901"
     assert item.occupant_effective == "2021-07-01"
     assert item.rule_id == "temporally_disjoint_twin_insert"
@@ -110,8 +110,8 @@ def test_disjoint_insert_is_classified_window_scoped_and_self_evidencing() -> No
     wire = item.to_wire()
     assert wire["window"] == {
         "start": "2021-01-01",
-        "end": "2021-06-30",
-        "bounds": "inclusive",
+        "end": "2021-07-01",
+        "bounds": "start_inclusive_end_exclusive",
         "source_statute": "2020/900",
         "occupant_source_statute": "2020/901",
         "occupant_effective": "2021-07-01",
@@ -119,13 +119,13 @@ def test_disjoint_insert_is_classified_window_scoped_and_self_evidencing() -> No
     }
 
 
-def test_window_break_governs_only_inside_closed_interval() -> None:
+def test_window_break_governs_only_inside_half_open_interval() -> None:
     item = _window_break()
     assert break_governs_as_of(item, "2020-12-31") is False  # day before
     assert break_governs_as_of(item, "2021-01-01") is True  # start (inclusive)
     assert break_governs_as_of(item, "2021-03-15") is True  # interior
-    assert break_governs_as_of(item, "2021-06-30") is True  # end (inclusive)
-    assert break_governs_as_of(item, "2021-07-01") is False  # day after
+    assert break_governs_as_of(item, "2021-06-30") is True  # last in-force day
+    assert break_governs_as_of(item, "2021-07-01") is False  # exclusive cutoff = twin commencement
 
 
 def test_window_break_with_missing_bound_is_conservatively_governing() -> None:
@@ -164,14 +164,14 @@ def test_in_window_query_on_target_address_is_blocked() -> None:
     block = payload["timeline_integrity"]
     assert block["blocking"] is True
     assert block["broken_at"]["window"]["start"] == "2021-01-01"
-    assert block["broken_at"]["window"]["end"] == "2021-06-30"
+    assert block["broken_at"]["window"]["end"] == "2021-07-01"
     # Content withheld: neither presence nor absence is asserted in the window.
     assert payload["version"] is None
     assert payload["text"]["available"] is False
     assert payload["hashes"]["content_hash"] == ""
 
 
-def test_window_boundaries_are_inclusive_both_ends() -> None:
+def test_window_blocks_start_day_and_last_in_force_day() -> None:
     for as_of in ("2021-01-01", "2021-06-30"):
         payload = build_provision_state_response(
             timelines=_timeline(),
@@ -190,7 +190,7 @@ def test_outside_window_is_byte_identical_to_no_break_baseline() -> None:
         statute_id="2000/1",
         jurisdiction="fi",
         provision="chapter:1/section:1",
-        as_of="2021-07-01",  # day after window end
+        as_of="2021-07-01",  # exclusive cutoff: twin commencement day, not blocked
     )
     # A window break is a localized claim: outside the window it must not even
     # leave a (non-blocking) warning marker — unlike statute/address breaks.

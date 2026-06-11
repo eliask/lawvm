@@ -235,7 +235,7 @@ def _relevant_timeline_breaks(
         if item.scope == "statute":
             relevant.append(item)
         elif item.scope == "window":
-            # A window break is a localized claim about a single closed
+            # A window break is a localized claim about a single bounded
             # interval, not a permanent defect: outside the window the timeline
             # IS materialized correctly, so surfacing a non-governing window
             # marker would be a false positive. Unlike statute/address breaks

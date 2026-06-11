@@ -440,21 +440,22 @@ Since 0.2.x that observation is classified into a third TimelineBreak scope:
   of the same statute, or on the same address OUTSIDE the window, hash
   byte-identically to the no-break baseline. Unlike statute/address breaks
   (whose warning marker stays visible for non-governing `as_of`), a window
-  break is a localized claim about a single closed interval and drops out
+  break is a localized claim about a single bounded interval and drops out
   entirely outside its window — surfacing a non-governing window marker would
   be a false positive.
 
-- **Bounds are INCLUSIVE on both ends** (`incoming_effective <= as_of <=
-  incoming_expires`). The repo is mid-migration on expiry-date conventions
-  (inclusive prose dates vs exclusive cutoffs); inclusive-both-ends over-blocks
-  by at most one day at the upper boundary, which is the safe direction for a
-  fail-loud guard.
+- **Bounds are start-inclusive, end-exclusive** (`incoming_effective <= as_of
+  < incoming_expires`), matching the kernel `expires` convention (§2.2: a
+  version is inactive ON its expiry date). On `incoming_expires` itself the
+  deferred twin commences and the fold-materialized permanent text is correct,
+  so the guard lifts exactly there.
 
 - **Self-evidencing.** The `timeline_integrity` break record carries a `window`
-  object (`start`, `end`, `bounds: "inclusive"`, `source_statute` = the
-  temporary act, `occupant_source_statute` + `occupant_effective` = the
-  deferred twin holding the slot, `rule_id`) so a consumer knows WHICH
-  temporary act's window is unmaterialized without reading our code.
+  object (`start`, `end`, `bounds: "start_inclusive_end_exclusive"`,
+  `source_statute` = the temporary act, `occupant_source_statute` +
+  `occupant_effective` = the deferred twin holding the slot, `rule_id`) so a
+  consumer knows WHICH temporary act's window is unmaterialized without
+  reading our code.
 
 - **Expected to be SHORT-LIVED.** This is an interim fail-loud guard. It is
   replaced by real legal-time window materialization (a scheduler that folds
