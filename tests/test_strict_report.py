@@ -46,6 +46,7 @@ def test_load_strict_run_reads_source_pathology_codes(tmp_path, monkeypatch) -> 
     assert rows[0]["candidate_set_statuses"] == []
     assert rows[0]["candidate_set_blockers"] == []
     assert rows[0]["source_completeness_issue_kinds"] == []
+    assert rows[0]["source_completeness_issue_families"] == []
     assert rows[0]["source_completeness_issue_reasons"] == []
 
 
@@ -133,6 +134,7 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                 ],
                 "source_pathology_diagnostic_reasons": ["partial_body_only"],
                 "source_completeness_issue_kinds": ["APPLY.SOURCE_INCOMPLETE"],
+                "source_completeness_issue_families": ["oracle_version_effective_after_cutoff"],
                 "source_completeness_issue_reasons": ["2020/1 eff 2020-02-01 > cutoff 2020-01-01"],
                 "html_noncommensurable_reason": "oracle_extra_scoped_labels:chapter:15/section:1",
                 "contingent_effective_sources": [],
@@ -164,6 +166,7 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert "source_pathology_rows_json" in text
     assert "source_pathology_diagnostic_reasons" in text
     assert "source_completeness_issue_kinds" in text
+    assert "source_completeness_issue_families" in text
     assert "source_completeness_issue_reasons" in text
     assert "html_noncommensurable_reason" in text
     assert "ownership_closure_failed_gates" in text
@@ -172,6 +175,7 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert "DESTRUCTIVE_SHAPE_LOSS_RISK" in text
     assert "partial_body_only" in text
     assert "APPLY.SOURCE_INCOMPLETE" in text
+    assert "oracle_version_effective_after_cutoff" in text
     assert "2020/1 eff 2020-02-01 > cutoff 2020-01-01" in text
     assert "candidate_set_fi_strict_report_operation_cue_coverage_partial" in text
     assert "fi_strict_report_operation_cue_coverage:partial" in text
@@ -249,6 +253,7 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                 "source_pathology_codes": ["MALFORMED_BROAD_REPLACE_BODY", "DESTRUCTIVE_SHAPE_LOSS_RISK"],
                 "source_pathology_diagnostic_reasons": ["live_body_dominates_amend_body", "partial_body_only"],
                 "source_completeness_issue_kinds": ["APPLY.SOURCE_INCOMPLETE"],
+                "source_completeness_issue_families": ["oracle_version_effective_after_cutoff"],
                 "source_completeness_issue_reasons": ["2020/1 eff 2020-02-01 > cutoff 2020-01-01"],
                 "html_noncommensurable_reason": "oracle_extra_scoped_labels:chapter:15/section:1",
                 "contingent_effective_sources": ["2005/544"],
@@ -279,6 +284,8 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
     assert "partial_body_only" in out
     assert "Source completeness issue kinds" in out
     assert "APPLY.SOURCE_INCOMPLETE" in out
+    assert "Source completeness issue families" in out
+    assert "oracle_version_effective_after_cutoff" in out
     assert "Source completeness issue reasons" in out
     assert "2020/1 eff 2020-02-01 > cutoff 2020-01-01" in out
     assert "HTML/XML noncommensurable reasons" in out
@@ -432,8 +439,15 @@ def test_format_report_surfaces_source_completeness_issue_reason() -> None:
     evidence = payload["evidence_surface_report"]
 
     assert "source_available : 1  (100%)" in out
-    assert "APPLY.SOURCE_INCOMPLETE[2020/1 eff 2020-02-01 > cutoff 2020-01-01]" in out
+    assert (
+        "APPLY.SOURCE_INCOMPLETE[oracle_version_effective_after_cutoff: "
+        "2020/1 eff 2020-02-01 > cutoff 2020-01-01]"
+    ) in out
     assert payload["source_completeness_issues"][0]["kind"] == "APPLY.SOURCE_INCOMPLETE"
+    assert (
+        payload["source_completeness_issues"][0]["issue_family"]
+        == "oracle_version_effective_after_cutoff"
+    )
     assert (
         payload["source_completeness_issues"][0]["detail"]["oracle_suspect"]
         == "2020/1 eff 2020-02-01 > cutoff 2020-01-01"
@@ -441,6 +455,9 @@ def test_format_report_surfaces_source_completeness_issue_reason() -> None:
     assert evidence["summary"]["source_completeness_issue_count"] == 1
     assert evidence["summary"]["source_completeness_issue_kind_counts"] == {
         "APPLY.SOURCE_INCOMPLETE": 1
+    }
+    assert evidence["summary"]["source_completeness_issue_family_counts"] == {
+        "oracle_version_effective_after_cutoff": 1
     }
     issue_rows = [
         row for row in evidence["rows"] if row["surface"] == "source_completeness_issue"

@@ -269,14 +269,14 @@ def _source_completeness_issue_rows(record: Any) -> list[dict[str, Any]]:
         if kind not in _SOURCE_COMPLETENESS_ISSUE_KINDS:
             continue
         detail = row.get("detail")
-        rows.append(
-            {
-                "kind": kind,
-                "message": str(row.get("message") or ""),
-                "source": str(row.get("source") or ""),
-                "detail": dict(detail) if isinstance(detail, dict) else {},
-            }
-        )
+        issue_row = {
+            "kind": kind,
+            "message": str(row.get("message") or ""),
+            "source": str(row.get("source") or ""),
+            "detail": dict(detail) if isinstance(detail, dict) else {},
+        }
+        issue_row["issue_family"] = _source_completeness_issue_family(issue_row)
+        rows.append(issue_row)
     return rows
 
 
@@ -297,6 +297,22 @@ def _source_completeness_issue_reason(row: dict[str, Any]) -> str:
         if value:
             return value
     return str(row.get("message") or "").strip()
+
+
+def _source_completeness_issue_family(row: dict[str, Any]) -> str:
+    reason = _source_completeness_issue_reason(row)
+    if " eff " in reason and " > cutoff " in reason:
+        return "oracle_version_effective_after_cutoff"
+    if " expires " in reason and " < cutoff " in reason:
+        return "oracle_version_expired_before_cutoff"
+    if reason.startswith("oracle_missing_version_pin"):
+        return "oracle_missing_version_pin"
+    if reason.startswith("pending:") and " eff " in reason and " > cutoff " in reason:
+        return "pending_future_effect_after_cutoff"
+    kind = str(row.get("kind") or "")
+    if kind in {"ELAB.SOURCE_PATHOLOGY", "APPLY.SOURCE_PATHOLOGY_DETECTED"}:
+        return "source_pathology"
+    return "source_completeness_issue"
 
 
 def _format_count_map(counts: Any) -> str:
@@ -393,7 +409,7 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
         lines.append(
             "  issues           : "
             + ", ".join(
-                f"{row['kind']}[{_source_completeness_issue_reason(row)}]"
+                f"{row['kind']}[{row.get('issue_family', '')}: {_source_completeness_issue_reason(row)}]"
                 for row in source_completeness_issues
             )
         )
@@ -668,6 +684,7 @@ _STRICT_RUN_HEADER = [
     "source_pathology_rows_json",
     "source_pathology_diagnostic_reasons",
     "source_completeness_issue_kinds",
+    "source_completeness_issue_families",
     "source_completeness_issue_reasons",
     "html_noncommensurable_reason",
     "contingent_effective_sources",
@@ -755,6 +772,13 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
         source_completeness_issue_kinds = sorted(
             {str(row.get("kind") or "") for row in source_completeness_issues if str(row.get("kind") or "")}
         )
+        source_completeness_issue_families = sorted(
+            {
+                str(row.get("issue_family") or "")
+                for row in source_completeness_issues
+                if str(row.get("issue_family") or "")
+            }
+        )
         source_completeness_issue_reasons = sorted(
             {
                 _source_completeness_issue_reason(row)
@@ -813,6 +837,7 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "source_pathology_rows": source_pathologies,
             "source_pathology_diagnostic_reasons": source_pathology_diagnostic_reasons,
             "source_completeness_issue_kinds": source_completeness_issue_kinds,
+            "source_completeness_issue_families": source_completeness_issue_families,
             "source_completeness_issue_reasons": source_completeness_issue_reasons,
             "html_noncommensurable_reason": (
                 str(source_adjudication.html_noncommensurable_reason or "") if source_adjudication is not None else ""
@@ -843,6 +868,7 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "source_pathology_rows": [],
             "source_pathology_diagnostic_reasons": [],
             "source_completeness_issue_kinds": [],
+            "source_completeness_issue_families": [],
             "source_completeness_issue_reasons": [],
             "html_noncommensurable_reason": "",
             "contingent_effective_sources": [],
@@ -926,6 +952,7 @@ def _save_strict_run(results: list[dict[str, Any]], label: str, timestamp: str) 
                     json.dumps(rec.get("source_pathology_rows", []), ensure_ascii=True, sort_keys=True),
                     "|".join(rec.get("source_pathology_diagnostic_reasons", [])),
                     "|".join(rec.get("source_completeness_issue_kinds", [])),
+                    "|".join(rec.get("source_completeness_issue_families", [])),
                     "|".join(rec.get("source_completeness_issue_reasons", [])),
                     str(rec.get("html_noncommensurable_reason", "") or ""),
                     "|".join(rec["contingent_effective_sources"]),
@@ -973,6 +1000,9 @@ def _load_strict_run(label: str) -> list[dict[str, Any]] | None:
             ]
             row["source_completeness_issue_kinds"] = [
                 k for k in row.get("source_completeness_issue_kinds", "").split("|") if k
+            ]
+            row["source_completeness_issue_families"] = [
+                k for k in row.get("source_completeness_issue_families", "").split("|") if k
             ]
             row["source_completeness_issue_reasons"] = [
                 k for k in row.get("source_completeness_issue_reasons", "").split("|") if k
@@ -1059,10 +1089,13 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
             source_pathology_diagnostic_counter[reason] += 1
 
     source_completeness_issue_counter: Counter[str] = Counter()
+    source_completeness_family_counter: Counter[str] = Counter()
     source_completeness_reason_counter: Counter[str] = Counter()
     for r in valid:
         for kind in r.get("source_completeness_issue_kinds", []):
             source_completeness_issue_counter[kind] += 1
+        for family in r.get("source_completeness_issue_families", []):
+            source_completeness_family_counter[family] += 1
         for reason in r.get("source_completeness_issue_reasons", []):
             source_completeness_reason_counter[reason] += 1
 
@@ -1160,7 +1193,16 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
         print("       (none)")
     print()
 
-    print("  5d. Source completeness issue reasons:")
+    print("  5d. Source completeness issue families:")
+    if source_completeness_family_counter:
+        for family, cnt in source_completeness_family_counter.most_common():
+            pct = 100 * cnt / n_valid
+            print(f"       {family:<50s} {cnt:5d}  ({pct:.1f}%)")
+    else:
+        print("       (none)")
+    print()
+
+    print("  5e. Source completeness issue reasons:")
     if source_completeness_reason_counter:
         for reason, cnt in source_completeness_reason_counter.most_common():
             pct = 100 * cnt / n_valid
@@ -1169,7 +1211,7 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
         print("       (none)")
     print()
 
-    print("  5e. Contingent effective-date sources:")
+    print("  5f. Contingent effective-date sources:")
     if contingent_counter:
         for sid, cnt in contingent_counter.most_common():
             pct = 100 * cnt / n_valid
@@ -1178,7 +1220,7 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
         print("       (none)")
     print()
 
-    print("  5f. HTML/XML noncommensurable reasons:")
+    print("  5g. HTML/XML noncommensurable reasons:")
     if html_noncomm_counter:
         for reason, cnt in html_noncomm_counter.most_common():
             pct = 100 * cnt / n_valid
@@ -1187,7 +1229,7 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
         print("       (none)")
     print()
 
-    print("  5g. Ownership closure failed gates:")
+    print("  5h. Ownership closure failed gates:")
     if ownership_gate_counter:
         for gate, cnt in ownership_gate_counter.most_common():
             pct = 100 * cnt / n_valid
@@ -1196,7 +1238,7 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
         print("       (none)")
     print()
 
-    print("  5h. Candidate-set statuses:")
+    print("  5i. Candidate-set statuses:")
     if candidate_set_status_counter:
         for status, cnt in candidate_set_status_counter.most_common():
             pct = 100 * cnt / n_valid
@@ -1205,7 +1247,7 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
         print("       (none)")
     print()
 
-    print("  5i. Candidate-set blockers:")
+    print("  5j. Candidate-set blockers:")
     if candidate_set_blocker_counter:
         for blocker, cnt in candidate_set_blocker_counter.most_common():
             pct = 100 * cnt / n_valid
@@ -1214,7 +1256,7 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
         print("       (none)")
     print()
 
-    print("  5j. Strict vs canonical fraction (correlation proxy):")
+    print("  5k. Strict vs canonical fraction (correlation proxy):")
     print(
         f"       strict=YES        mean canonical fraction: {_mean(strict_yes_canonical):.3f}"
         f"  (N={len(strict_yes_canonical)})"

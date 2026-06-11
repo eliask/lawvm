@@ -1162,6 +1162,10 @@ def finland_strict_report_evidence_surface(
             source_completeness_issues,
             "kind",
         ),
+        "source_completeness_issue_family_counts": _count_by_field(
+            source_completeness_issues,
+            "issue_family",
+        ),
         "temporal_resolution_evidence_count": len(temporal_resolution_rows),
         "recovery_execution_authorization_count": len(recovery_authorization_rows),
         "strict_report_candidate_set_certificate_count": len(strict_report_candidate_sets),
