@@ -6323,7 +6323,7 @@ def test_resolver_binding_contract_validators_reject_malformed_bindings() -> Non
         ResolverBinding,
     )
 
-    common = dict(
+    common: dict[str, Any] = dict(
         binding_id="rb:test",
         op_label="[t] REPLACE 1 §",
         target_text="section:1",
