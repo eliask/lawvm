@@ -16,6 +16,7 @@ import csv
 import subprocess
 import sys
 import time
+from argparse import Namespace
 from pathlib import Path
 
 import aiohttp
@@ -24,6 +25,10 @@ LLM_URL = "http://localhost:8080/v1/chat/completions"
 DEFAULT_CORPUS = ".tmp/diff_triage_corpus.txt"
 OUTPUT_FILE = ".tmp/diff_classifications.csv"
 MAX_PROMPT_CHARS = 30_000  # max total chars sent to LLM per request; sections are chunked to fit
+
+DumpSection = dict[str, str]
+ClassificationRow = dict[str, str]
+OutputRow = dict[str, str | int]
 
 SYSTEM_PROMPT = """Olet Suomen lainsäädännön rakenneanalyytiikko. Luokittelet LawVM-järjestelmän ja Finlexin ajantasatekstin väliset erot tarkasti ja yksityiskohtaisesti."""
 
@@ -140,7 +145,7 @@ def _get_dump(sid: str) -> str:
     return result.stdout
 
 
-def _parse_dump_sections(dump: str) -> list[dict]:
+def _parse_dump_sections(dump: str) -> list[DumpSection]:
     """Parse dump output into per-section diff summaries."""
     sections = []
     current = None
@@ -166,7 +171,7 @@ def _parse_dump_sections(dump: str) -> list[dict]:
     return sections
 
 
-def _format_diffs_compact(sections: list[dict]) -> str:
+def _format_diffs_compact(sections: list[DumpSection]) -> str:
     """Format sections into LLM-consumable text. No truncation."""
     parts = []
     for sec in sections:
@@ -237,7 +242,7 @@ def _extract_main_category(cat: str) -> str:
     return cat
 
 
-def _parse_classifications(raw: str) -> list[dict]:
+def _parse_classifications(raw: str) -> list[ClassificationRow]:
     """Parse LLM classification output into structured rows."""
     rows = []
     for line in raw.strip().splitlines():
@@ -284,7 +289,7 @@ async def _process_statute(
     session: aiohttp.ClientSession,
     sid: str,
     sem: asyncio.Semaphore,
-) -> list[dict]:
+) -> list[OutputRow]:
     """Process one statute: dump diffs, classify via LLM.
 
     If the full diff text exceeds MAX_PROMPT_CHARS, sections are split
@@ -305,8 +310,8 @@ async def _process_statute(
         # Split sections into chunks that fit within prompt char limit.
         # The prompt template adds ~1500 chars of instructions around the diffs.
         max_diff_chars = MAX_PROMPT_CHARS - 2000
-        chunks: list[list[dict]] = []
-        current_chunk: list[dict] = []
+        chunks: list[list[DumpSection]] = []
+        current_chunk: list[DumpSection] = []
         current_len = 0
 
         for sec in sections:
@@ -361,7 +366,7 @@ async def _process_statute(
         return results
 
 
-async def _run(args):
+async def _run(args: Namespace) -> None:
     corpus_path = Path(args.corpus)
     if not corpus_path.exists():
         print(f"ERROR: {corpus_path} not found", file=sys.stderr)
