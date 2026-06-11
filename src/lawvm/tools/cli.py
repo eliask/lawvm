@@ -9586,13 +9586,14 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         ),
         parents=_P,
     )
-    ri_p.add_argument(
+    ri_mode = ri_p.add_mutually_exclusive_group()
+    ri_mode.add_argument(
         "--incremental",
         action="store_true",
         default=False,
         help="only regenerate stale projections (default behaviour)",
     )
-    ri_p.add_argument(
+    ri_mode.add_argument(
         "--full",
         action="store_true",
         default=False,

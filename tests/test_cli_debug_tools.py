@@ -391,6 +391,19 @@ def test_cli_parser_accepts_new_debug_commands(cli_parser) -> None:
     assert args.command == "import-zip"
     assert args.dry_run is True
 
+    incremental_args = cli_parser.parse_args(["rebuild-indexes", "--incremental"])
+    assert incremental_args.command == "rebuild-indexes"
+    assert incremental_args.incremental is True
+    assert incremental_args.full is False
+
+    full_args = cli_parser.parse_args(["rebuild-indexes", "--full"])
+    assert full_args.command == "rebuild-indexes"
+    assert full_args.full is True
+    assert full_args.incremental is False
+
+    with pytest.raises(SystemExit):
+        cli_parser.parse_args(["rebuild-indexes", "--incremental", "--full"])
+
     eu_replay_args = cli_parser.parse_args(["eu-replay", "32016R0679", "--pit-date", "2026-01-01"])
     assert eu_replay_args.command == "eu-replay"
     assert eu_replay_args.celex == "32016R0679"

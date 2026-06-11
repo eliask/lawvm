@@ -775,7 +775,6 @@ def main(args: Any) -> None:
     """CLI entry point for lawvm rebuild-indexes."""
     jurisdiction = getattr(args, "jurisdiction", "fi") or "fi"
     full = getattr(args, "full", False)
-    _incremental_flag = getattr(args, "incremental", False)  # PENDING: --incremental flag wiring; incremental = not full for now
     # Default: incremental (unless --full is specified)
     incremental = not full
     workers_raw = getattr(args, "workers", 0)
