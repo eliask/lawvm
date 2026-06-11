@@ -2328,14 +2328,14 @@ def _corrigendum_open_manual_frontier_work_item(
         candidate_operation_family="corrigendum_source_repair",
         candidate_targets=(amendment_id,),
         guidance_refs=("lawvm_corrigendum_open_manual_review",),
-        required_claim_kind="finland_corrigendum_manual_override",
+        required_claim_kind="fi.v1.CORRIGENDUM_SOURCE_CORRECTION",
         required_validator_checks=(
             "manual_corrigendum_claim_review",
             "source_xml_non_verification_review",
             "mutation_boundary_check_before_replay",
         ),
         required_proofs=(
-            "manual_corrigendum_override_claim",
+            "corrigendum_source_correction_claim",
             "source_corrigendum_witness_review",
             "targeted_source_xml_non_verification_review",
             "mutation_boundary_proof_before_replay_promotion",
@@ -2403,14 +2403,14 @@ def finland_corrigendum_manual_template_frontier_item(
         candidate_operation_family="corrigendum_source_repair",
         candidate_targets=(amendment_id,),
         guidance_refs=("lawvm_corrigendum_manual_template",),
-        required_claim_kind="finland_corrigendum_manual_override",
+        required_claim_kind="fi.v1.CORRIGENDUM_SOURCE_CORRECTION",
         required_validator_checks=(
             "manual_corrigendum_claim_review",
             "source_xml_non_verification_review",
             "mutation_boundary_check_before_replay",
         ),
         required_proofs=(
-            "manual_corrigendum_override_claim",
+            "corrigendum_source_correction_claim",
             "source_corrigendum_witness_review",
             "targeted_source_xml_non_verification_review",
             "mutation_boundary_proof_before_replay_promotion",

@@ -187,7 +187,7 @@ def test_finland_corrigendum_open_manual_evidence_surface_is_frontier_listing_on
     frontier = rows_by_surface["corrigendum_open_manual_frontier_work_item"]
     assert frontier["frontier_family"] == "fi_corrigendum_open_manual_candidate"
     assert frontier["frontier_status"] == "manual_claim_needed"
-    assert frontier["required_claim_kind"] == "finland_corrigendum_manual_override"
+    assert frontier["required_claim_kind"] == "fi.v1.CORRIGENDUM_SOURCE_CORRECTION"
     assert frontier["executable"] is False
     assert frontier["replay_authorized"] is False
     assert frontier["authorization_status"] == "blocked_manual_claim_required"
@@ -649,7 +649,7 @@ def test_finland_corrigendum_manual_template_projects_frontier_work_item() -> No
     assert item["jurisdiction"] == "fi"
     assert item["frontier_family"] == "fi_corrigendum_manual_override"
     assert item["frontier_status"] == "manual_claim_needed"
-    assert item["required_claim_kind"] == "finland_corrigendum_manual_override"
+    assert item["required_claim_kind"] == "fi.v1.CORRIGENDUM_SOURCE_CORRECTION"
     assert item["executable"] is False
     assert item["replay_authorized"] is False
     assert item["authorization_status"] == "blocked_manual_claim_required"
