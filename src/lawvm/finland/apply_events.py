@@ -8,7 +8,7 @@ not read live replay state or mutate IR.
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from lawvm.core.mutation_accounting import (
     MutationAccountingResult as ApplyMutationAccountingResult,
@@ -25,6 +25,7 @@ from lawvm.core.mutation_events import (
     MutationEvent as ApplyMutationEvent,
 )
 from lawvm.core.tree_ops import Path
+from lawvm.core.write_receipt import WriteReceipt
 from lawvm.finland.ops import AmendmentOp, ResolvedOp
 
 
@@ -249,6 +250,56 @@ def _emit_apply_mutation_event_for_rop(
     )
 
 
+def _emit_apply_mutation_event_from_receipt(
+    mutation_events_out: Optional[List[ApplyMutationEvent]],
+    *,
+    receipt: WriteReceipt,
+    outcome: str,
+    rop: ResolvedOp | None = None,
+    op: AmendmentOp | None = None,
+    used_fallback_tags: tuple[str, ...] = (),
+) -> None:
+    """Derive the op's mutation event from its WriteReceipt.
+
+    Contract §4: ApplyMutationEvent rows are DERIVED from the receipt, not
+    assembled independently — one producer, many projections. The declared
+    paths therefore reflect the landed footprint the helper recorded at the
+    write, and every named recovery/migration rule on the receipt becomes a
+    declared allowance covering that footprint.
+    """
+    if rop is None and op is None:
+        raise ValueError("receipt-derived mutation event requires rop or op identity")
+    footprint = receipt.declared_footprint
+    declared_allowances = tuple(
+        DeclaredMutationAllowance(kind="recovery_path", paths=footprint, rule_id=rule_id)
+        for rule_id in receipt.recovery_rule_ids
+    ) + tuple(
+        DeclaredMutationAllowance(kind="migration_path", paths=footprint, rule_id=rule_id)
+        for rule_id in receipt.migration_rule_ids
+    )
+    landed = receipt.landed_primary_path
+    shared_fields: dict[str, Any] = dict(
+        helper=receipt.helper,
+        outcome=outcome,
+        resolved_target_path=landed,
+        parent_path=(landed[:-1] if landed else None),
+        declared_allowances=declared_allowances,
+        consumed_paths=receipt.consumed_paths,
+        created_paths=receipt.created_paths,
+        removed_paths=receipt.removed_paths,
+        replaced_paths=receipt.replaced_paths,
+        renumbered_paths=receipt.renumbered_paths,
+        placeholder_created_paths=receipt.placeholder_created_paths,
+        placeholder_consumed_paths=receipt.placeholder_consumed_paths,
+        used_fallback_tags=used_fallback_tags,
+    )
+    if rop is not None:
+        _emit_apply_mutation_event_for_rop(mutation_events_out, rop=rop, **shared_fields)
+        return
+    assert op is not None
+    _emit_apply_mutation_event(mutation_events_out, op=op, **shared_fields)
+
+
 def _emit_legacy_dispatch_fallback_event(
     mutation_events_out: Optional[List[ApplyMutationEvent]],
     *,
@@ -293,5 +344,6 @@ __all__ = [
     "_target_address_path_for_rop_event",
     "_emit_apply_mutation_event",
     "_emit_apply_mutation_event_for_rop",
+    "_emit_apply_mutation_event_from_receipt",
     "_emit_legacy_dispatch_fallback_event",
 ]

@@ -4217,6 +4217,195 @@ class TestApplyContainerInsert:
         chapter_2 = next(child for child in part_4.children if child.kind is IRNodeKind.CHAPTER and child.label == "2")
         assert [child.label for child in chapter_2.children if child.kind is IRNodeKind.SECTION] == ["1", "2"]
 
+    def test_fresh_chapter_insert_write_receipt_records_landed_footprint_and_hashes(self):
+        """Contract §4: the receipt records the landed write, with §2.2 hashes computed at the write."""
+        from lawvm.core import tree_ops as _tops
+        from lawvm.core.ir_helpers import structural_subtree_hash
+        from lawvm.core.write_receipt import WriteReceipt
+
+        state = self._dup_chapter_label_state()
+        op = AmendmentOp(
+            op_id="insert_part5_chapter2",
+            op_type="INSERT",
+            target_unit_kind="chapter",
+            target_section="2",
+            target_part="5",
+            source_statute="2018/301",
+        )
+        muutos_ir = IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="2 luku"),
+                _sec("1", _content("new part 5 chapter 2")),
+            ),
+        )
+        receipts: List[WriteReceipt] = []
+
+        result = _apply_container_op(
+            state,
+            op,
+            muutos_ir,
+            _LEGAL_PIT,
+            "[2018/301] INSERT V osan 2 luku",
+            write_receipts_out=receipts,
+        )
+
+        result = _modified(state, result)
+        assert len(receipts) == 1
+        receipt = receipts[0]
+        assert receipt.op_id == "insert_part5_chapter2"
+        assert receipt.helper == "_apply_container_op"
+        assert receipt.action == "insert"
+        assert receipt.bound_target_path is None  # target was absent: fresh insert
+        landed = receipt.landed_primary_path
+        assert landed == (("part", "5"), ("chapter", "2"))
+        assert receipt.created_paths == (landed,)
+        assert receipt.recovery_rule_ids == ("container_insert_parent_placement",)
+        assert receipt.divergence_explained  # bound!=landed covered by named rule
+        addr = "part:5/chapter:2"
+        assert receipt.pre_hashes[addr] == ""  # absent before the write
+        landed_node = _tops.resolve(result.ir, landed)
+        assert receipt.post_hashes[addr] == structural_subtree_hash(landed_node)
+        assert receipt.post_hashes[addr] != ""
+
+    def test_part_scaffold_chapter_insert_receipt_declares_part_creation_and_sibling_moves(self):
+        from lawvm.core.write_receipt import WriteReceipt
+
+        state = _make_state(
+            _body(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="5",
+                    children=(
+                        IRNode(kind=IRNodeKind.CHAPTER, label="20", children=(_sec("1", _content("chapter 20")),)),
+                        IRNode(kind=IRNodeKind.CHAPTER, label="21", children=(_sec("1", _content("chapter 21")),)),
+                    ),
+                ),
+            )
+        )
+        op = AmendmentOp(
+            op_id="insert_chapter_19a_under_new_part",
+            op_type="INSERT",
+            target_unit_kind="chapter",
+            target_section="19a",
+            source_statute="2019/209",
+        )
+        muutos_ir = IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="19a",
+            attrs={
+                "lawvm_amendment_part_hint": "iva",
+                "lawvm_amendment_part_sibling_chapters": ("20", "21"),
+            },
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="19 a luku"),
+                _sec("1", _content("new chapter 19a")),
+            ),
+        )
+        receipts: List[WriteReceipt] = []
+
+        result = _apply_container_op(
+            state,
+            op,
+            muutos_ir,
+            _LEGAL_PIT,
+            "[2019/209] INSERT 19a luku",
+            write_receipts_out=receipts,
+        )
+
+        result = _modified(state, result)
+        assert len(receipts) == 1
+        receipt = receipts[0]
+        assert receipt.landed_primary_path == (("part", "iva"), ("chapter", "19a"))
+        assert receipt.created_paths == (
+            (("part", "iva"), ("chapter", "19a")),
+            (("part", "iva"),),
+        )
+        assert receipt.renumbered_paths == (
+            ((("part", "5"), ("chapter", "20")), (("part", "iva"), ("chapter", "20"))),
+            ((("part", "5"), ("chapter", "21")), (("part", "iva"), ("chapter", "21"))),
+        )
+        assert receipt.migration_rule_ids == ("container_insert_part_hint_scaffold",)
+        # Moved subtrees are content-identical: pre hash at the from-path
+        # equals post hash at the to-path, and the vacated from-path is gone.
+        assert receipt.pre_hashes["part:5/chapter:20"] == receipt.post_hashes["part:iva/chapter:20"]
+        assert receipt.post_hashes["part:5/chapter:20"] == ""
+        assert receipt.pre_hashes["part:5/chapter:20"] != ""
+
+    def test_container_insert_merge_receipt_records_replaced_target_with_named_rule(self):
+        from lawvm.core import tree_ops as _tops
+        from lawvm.core.ir_helpers import structural_subtree_hash
+        from lawvm.core.write_receipt import WriteReceipt
+
+        state = self._dup_chapter_label_state()
+        base_ir = state.ir
+        op = AmendmentOp(
+            op_id="insert_part4_chapter2",
+            op_type="INSERT",
+            target_unit_kind="chapter",
+            target_section="2",
+            target_part="4",
+            source_statute="2018/301",
+        )
+        muutos_ir = IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="2 luku"),
+                _sec("2", _content("merged into part 4 chapter 2")),
+            ),
+        )
+        receipts: List[WriteReceipt] = []
+        pre_node = _tops.resolve(state.ir, (("part", "4"), ("chapter", "2")))
+
+        result = _apply_container_op(
+            state,
+            op,
+            muutos_ir,
+            _LEGAL_PIT,
+            "[2018/301] INSERT IV osan 2 luku",
+            base_ir=base_ir,
+            write_receipts_out=receipts,
+        )
+
+        result = _modified(state, result)
+        assert len(receipts) == 1
+        receipt = receipts[0]
+        landed = (("part", "4"), ("chapter", "2"))
+        assert receipt.bound_target_path == landed
+        assert receipt.landed_primary_path == landed
+        assert receipt.replaced_paths == (landed,)
+        assert receipt.created_paths == ()
+        assert receipt.recovery_rule_ids == ("container_insert_base_chapter_merge",)
+        assert receipt.divergence_explained
+        addr = "part:4/chapter:2"
+        assert receipt.pre_hashes[addr] == structural_subtree_hash(pre_node)
+        assert receipt.post_hashes[addr] == structural_subtree_hash(_tops.resolve(result.ir, landed))
+        assert receipt.pre_hashes[addr] != receipt.post_hashes[addr]
+
+    def test_write_receipt_unexplained_divergence_is_visible_not_silent(self):
+        """A bound!=landed receipt with no named rule must self-report as unexplained."""
+        from lawvm.core.write_receipt import WriteReceipt
+
+        receipt = WriteReceipt(
+            op_id="op",
+            helper="_apply_container_op",
+            action="insert",
+            bound_target_path=(("chapter", "2"),),
+            landed_primary_path=(("chapter", "3"),),
+        )
+        assert receipt.divergence_explained is False
+        explained = WriteReceipt(
+            op_id="op",
+            helper="_apply_container_op",
+            action="insert",
+            bound_target_path=(("chapter", "2"),),
+            landed_primary_path=(("chapter", "3"),),
+            recovery_rule_ids=("some_named_rule",),
+        )
+        assert explained.divergence_explained is True
+
     def test_insert_chapter_keeps_child_when_shadow_target_exists_only_in_other_part(self):
         state = _make_state(
             _body(

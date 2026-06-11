@@ -53,31 +53,11 @@ _HE_TEXT_RE = re.compile(r"\bHE\s{1,4}(\d{1,4}-\d{1,4}|\d{1,4})/(\d{4})\s{0,4}vp
 # ---------------------------------------------------------------------------
 
 
-def structural_subtree_hash(node: Optional[IRNode]) -> str:
-    """Return a sha256 over kind/label/text/structure of an IRNode subtree.
-
-    Unlike ``irnode_content_hash`` (text-only), this hash is sensitive to
-    structure, labels, and ordering so that renumbers, insertions, deletions,
-    and reorderings are all visible in the certified transition graph. Returns
-    "" for ``None`` (a tombstoned / absent provision).
-    """
-    if node is None:
-        return ""
-    h = hashlib.sha256()
-
-    def _rec(n: IRNode) -> None:
-        h.update(str(n.kind).encode("utf-8"))
-        h.update(b"\x00")
-        h.update((n.label or "").encode("utf-8"))
-        h.update(b"\x00")
-        h.update((n.text or "").encode("utf-8"))
-        h.update(b"\x01")
-        for child in n.children:
-            _rec(child)
-        h.update(b"\x02")
-
-    _rec(node)
-    return h.hexdigest()
+# Canonical implementation lives in lawvm.core.ir_helpers so the apply-time
+# WriteReceipt producer and this exporter share the single frozen recipe
+# (CERTIFIED_TREE_TRANSITION_TRACE_V0.md §2.2). Re-exported here because this
+# module historically owned it.
+from lawvm.core.ir_helpers import structural_subtree_hash as structural_subtree_hash  # noqa: E402
 
 
 def _subtree_json(node: IRNode) -> bytes:
