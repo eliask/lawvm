@@ -107,10 +107,15 @@ def _matches_target(op: dict[str, Any], target_filter: str) -> bool:
     kind = kind.strip().lower()
     label = label.strip().lower()
 
-    address = _fmt_compiled_target(op)
     label_norm = label.replace(" ", "").replace("§", "")
     wanted_prefix = f"{kind}:{label_norm}"
-    return wanted_prefix in address.casefold().replace(" ", "")
+    address = _fmt_compiled_target(op)
+    segments = tuple(
+        segment.strip().casefold().replace(" ", "")
+        for segment in address.split("/")
+        if segment.strip()
+    )
+    return wanted_prefix in segments
 
 
 def _address_matches_filter(address: str, target_filter: str) -> bool:

@@ -65,11 +65,21 @@ def test_ops_formats_flat_finland_compiled_targets() -> None:
         "target_item": "",
         "target_special": "",
     }
+    section_70_row = {
+        "target_unit_kind": "section",
+        "target_norm": "70",
+        "target_chapter": "",
+        "target_part": "",
+        "target_paragraph": "",
+        "target_item": "",
+        "target_special": "",
+    }
 
     assert ops._fmt_compiled_target(subsection_row) == "section:7 / subsection:2"
     assert ops._fmt_compiled_target(section_row) == "section:8"
     assert ops._matches_target(subsection_row, "section:7")
     assert ops._matches_target(subsection_row, "subsection:2")
+    assert not ops._matches_target(section_70_row, "section:7")
 
 
 @pytest.mark.skipif(not _corpus_available(), reason="corpus archive not available")
