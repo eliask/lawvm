@@ -36,6 +36,12 @@ CASE 2 — version selection across amendment boundaries (hankintalaki
     §163 boundary 2021-07-01 (amendment 2021/656): heading
       "Valitusperusteeseen perustuva muutoksenhakukielto" -> "Muutoksenhakukielto",
       body gains a reference to hyvinvointialueesta annetun lain (611/2021).
+
+CASE 3 — subsection-scoped deferred commencement (vanhuspalvelulaki
+  980/2012). Verified correct: amendment 2022/876 has a mixed commencement
+  sentence where 3 a §:n 1 momentti and 14 §:n 1 momentti start only on
+  2028-01-01, while nearby sibling provisions start earlier. The public seam
+  must not expose the 2022/876 subsection text before that boundary.
 """
 from __future__ import annotations
 
@@ -195,3 +201,54 @@ def test_case2_section163_boundary_2021_07_01() -> None:
     # New reference introduced by the hyvinvointialue reform.
     assert "611/2021" not in before_text
     assert "611/2021" in on_text
+
+
+# ---------------------------------------------------------------------------
+# CASE 3 — subsection-scoped deferred commencement (vanhuspalvelulaki 980/2012)
+# ---------------------------------------------------------------------------
+
+_VANHUSPALVELULAKI = "2012/980"
+
+
+@pytest.mark.parametrize(
+    "provision,before_source,before_phrase,on_phrase,removed_phrase",
+    [
+        (
+            "chapter:1/section:3a/subsection:1",
+            "2020/565",
+            "tehostetussa palveluasumisessa",
+            "ympärivuorokautisessa palveluasumisessa",
+            "tehostetussa palveluasumisessa",
+        ),
+        (
+            "chapter:3/section:14/subsection:1",
+            "2022/604",
+            "ensisijaisesti hänen kotiinsa",
+            "ensisijaisesti hänen kotiinsa",
+            "Hoito ja huolenpito voidaan toteuttaa pitkäaikaisena laitoshoitona",
+        ),
+    ],
+)
+def test_case3_2022_876_subsection_commencement_boundary(
+    provision: str,
+    before_source: str,
+    before_phrase: str,
+    on_phrase: str,
+    removed_phrase: str,
+) -> None:
+    before = _state(_VANHUSPALVELULAKI, provision, "2027-12-31")
+    on = _state(_VANHUSPALVELULAKI, provision, "2028-01-01")
+
+    assert before["status"] == "selected"
+    assert on["status"] == "selected"
+
+    assert before["version"]["effective"] < "2028-01-01"
+    assert before_source in before["source_locator"]["document_uri"]
+    assert before_phrase in before["text"]["rendered"]
+    assert removed_phrase in before["text"]["rendered"]
+
+    assert on["version"]["effective"] == "2028-01-01"
+    assert on["version"]["enacted"] == "2022-10-28"
+    assert "2022/876" in on["source_locator"]["document_uri"]
+    assert on_phrase in on["text"]["rendered"]
+    assert removed_phrase not in on["text"]["rendered"]

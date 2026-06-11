@@ -15,6 +15,7 @@ from typing import List, Literal, Optional, Set, Tuple, cast
 
 import lxml.etree as etree
 
+from lawvm.core.ir import LegalAddress
 from lawvm.core.unicode_folds import CF_FORMAT_CPS, ZS_NON_ASCII_SPACE_CPS
 from lawvm.finland.helpers import _norm_num_token, _parse_iso_date
 
@@ -154,6 +155,38 @@ _OPERATIVE_KEYWORD_PAT = re.compile(
     r"\b(?:kumotaan|muutetaan|lisätään|poistetaan|siirretään)\b",
     re.IGNORECASE,
 )
+_FI_MONTH_GENITIVE_TO_NUMBER: dict[str, int] = {
+    "tammikuuta": 1,
+    "helmikuuta": 2,
+    "maaliskuuta": 3,
+    "huhtikuuta": 4,
+    "toukokuuta": 5,
+    "kesäkuuta": 6,
+    "heinäkuuta": 7,
+    "elokuuta": 8,
+    "syyskuuta": 9,
+    "lokakuuta": 10,
+    "marraskuuta": 11,
+    "joulukuuta": 12,
+}
+_SCOPED_COMMENCEMENT_RE = re.compile(
+    r"(?:Tämän\s+lain|Lain|Asetuksen|Päätöksen|Sen)\s+(.+?)\s+"
+    r"tule(?:vat|e)\s+kuitenkin\s+voimaan(?:\s+(?:jo|vasta))?\s+"
+    r"(\d{1,2})\s+päivänä\s+([a-zäöå]+)\s+(\d{4})",
+    re.IGNORECASE,
+)
+_COMMENCEMENT_SUBSECTION_REF_RE = re.compile(
+    r"(?:(?P<chapter>\d+\s*[a-z]?)\s+luvun\s+)?"
+    r"(?P<section>\d+\s*[a-z]?)\s*§\s*:\s*n\s+"
+    r"(?P<subsections>\d+(?:\s*(?:\u2013|-)\s*\d+)?"
+    r"(?:\s*(?:,|ja|sekä)\s*\d+(?:\s*(?:\u2013|-)\s*\d+)?)*)"
+    r"\s+moment",
+    re.IGNORECASE,
+)
+_COMMENCEMENT_SUBSECTION_LIST_SPLIT_RE = re.compile(r"\s*(?:,|ja|sekä)\s*")
+_COMMENCEMENT_SUBSECTION_RANGE_RE = re.compile(r"(\d+)\s*(?:\u2013|-)\s*(\d+)")
+_COMMENCEMENT_SUBSECTION_LABEL_RE = re.compile(r"\d+")
+_WHITESPACE_RE = re.compile(r"\s+")
 
 
 def _strip_cross_law_description(text: str) -> str:
@@ -1158,22 +1191,11 @@ def _section_commencement_effective_override(
     else:
         eit_text = full_text
 
-    month_map = {
-        'tammikuuta': 1, 'helmikuuta': 2, 'maaliskuuta': 3, 'huhtikuuta': 4,
-        'toukokuuta': 5, 'kesäkuuta': 6, 'heinäkuuta': 7, 'elokuuta': 8,
-        'syyskuuta': 9, 'lokakuuta': 10, 'marraskuuta': 11, 'joulukuuta': 12,
-    }
-    match = re.search(
-        r'(?:Tämän\s+lain|Lain|Asetuksen|Päätöksen|Sen)\s+(.+?)\s+'
-        r'tule(?:vat|e)\s+kuitenkin\s+voimaan(?:\s+(?:jo|vasta))?\s+'
-        r'(\d{1,2})\s+päivänä\s+([a-zäöå]+)\s+(\d{4})',
-        eit_text,
-        flags=re.IGNORECASE,
-    )
+    match = _SCOPED_COMMENCEMENT_RE.search(eit_text)
     if match is None:
         return None
 
-    month = month_map.get(match.group(3).lower())
+    month = _FI_MONTH_GENITIVE_TO_NUMBER.get(match.group(3).lower())
     if month is None:
         return None
     try:
@@ -1213,6 +1235,78 @@ def _section_commencement_effective_override(
     if not chapter_section_map:
         return None
     return source_statute_id, chapter_section_map, effective
+
+
+def _section_subsection_commencement_effective_override(
+    tree: "etree._Element",
+    source_statute_id: str,
+) -> Optional[Tuple[str, tuple[LegalAddress, ...], dt.date]]:
+    """Return subsection-granular commencement overrides from voimaantulo text."""
+
+    full_text = _normalize_fi_parse_text(
+        etree.tostring(tree, method="text", encoding="unicode")
+    )
+    eit_els = tree.findall('.//{*}hcontainer[@name="entryIntoForce"]')
+    if eit_els:
+        eit_text = _normalize_fi_parse_text(
+            " ".join(
+                etree.tostring(el, method="text", encoding="unicode")
+                for el in eit_els
+            )
+        )
+    else:
+        eit_text = full_text
+
+    match = _SCOPED_COMMENCEMENT_RE.search(eit_text)
+    if match is None:
+        return None
+
+    month = _FI_MONTH_GENITIVE_TO_NUMBER.get(match.group(3).lower())
+    if month is None:
+        return None
+    try:
+        effective = dt.date(int(match.group(4)), month, int(match.group(2)))
+    except ValueError:
+        return None
+
+    addresses: list[LegalAddress] = []
+    seen: set[tuple[tuple[str, str], ...]] = set()
+    for ref in _COMMENCEMENT_SUBSECTION_REF_RE.finditer(match.group(1)):
+        section = _WHITESPACE_RE.sub('', ref.group("section")).lower()
+        chapter_raw = ref.group("chapter")
+        chapter = _WHITESPACE_RE.sub('', chapter_raw).lower() if chapter_raw else ""
+        for subsection in _expand_commencement_subsection_labels(ref.group("subsections")):
+            path: list[tuple[str, str]] = []
+            if chapter:
+                path.append(("chapter", chapter))
+            path.extend((("section", section), ("subsection", subsection)))
+            path_tuple = tuple(path)
+            if path_tuple in seen:
+                continue
+            seen.add(path_tuple)
+            addresses.append(LegalAddress(path=path_tuple))
+
+    if not addresses:
+        return None
+    return source_statute_id, tuple(addresses), effective
+
+
+def _expand_commencement_subsection_labels(text: str) -> tuple[str, ...]:
+    labels: list[str] = []
+    for part in _COMMENCEMENT_SUBSECTION_LIST_SPLIT_RE.split(text):
+        part = part.strip()
+        if not part:
+            continue
+        range_match = _COMMENCEMENT_SUBSECTION_RANGE_RE.fullmatch(part)
+        if range_match is not None:
+            start = int(range_match.group(1))
+            end = int(range_match.group(2))
+            if start <= end:
+                labels.extend(str(value) for value in range(start, end + 1))
+            continue
+        if _COMMENCEMENT_SUBSECTION_LABEL_RE.fullmatch(part) is not None:
+            labels.append(part)
+    return tuple(labels)
 
 
 def _infer_expiry_date_from_temporary_payload_text(text: str) -> Optional[dt.date]:

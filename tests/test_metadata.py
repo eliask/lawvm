@@ -12,6 +12,7 @@ from lawvm.finland.metadata import (
     _infer_expiry_date_from_temporary_payload_text,
     _normalize_fi_parse_text,
     _section_commencement_effective_override,
+    _section_subsection_commencement_effective_override,
     _temporary_section_expiry_overrides,
     _temporary_section_expiry_override,
 )
@@ -699,3 +700,40 @@ def test_section_commencement_effective_override_single_section_unchanged() -> N
     _target_mid, chapter_section_map, effective = override
     assert chapter_section_map == {None: {"78c"}}
     assert effective.isoformat() == "2023-07-01"
+
+
+def test_subsection_commencement_effective_override_mixed_enumeration() -> None:
+    tree = _tree(
+        "Tämä laki tulee voimaan 1 päivänä tammikuuta 2023. "
+        "Lain 3 a §:n 1 momentti, 14 §:n 1 momentti sekä 14 a ja 15 b § "
+        "tulevat kuitenkin voimaan vasta 1 päivänä tammikuuta 2028."
+    )
+
+    override = _section_subsection_commencement_effective_override(tree, "2022/876")
+
+    assert override is not None
+    target_mid, addresses, effective = override
+    assert target_mid == "2022/876"
+    assert {str(address) for address in addresses} == {
+        "section:3a/subsection:1",
+        "section:14/subsection:1",
+    }
+    assert effective.isoformat() == "2028-01-01"
+
+
+def test_subsection_commencement_effective_override_chapter_range() -> None:
+    tree = _tree(
+        "Tämä laki tulee voimaan 10 päivänä kesäkuuta 2019. "
+        "Sen 15 luvun 2 §:n 1 ja 5 momentti sekä 16 luvun 1 § tulevat kuitenkin "
+        "voimaan vasta 22 päivänä heinäkuuta 2019."
+    )
+
+    override = _section_subsection_commencement_effective_override(tree, "2019/511")
+
+    assert override is not None
+    _target_mid, addresses, effective = override
+    assert {str(address) for address in addresses} == {
+        "chapter:15/section:2/subsection:1",
+        "chapter:15/section:2/subsection:5",
+    }
+    assert effective.isoformat() == "2019-07-22"

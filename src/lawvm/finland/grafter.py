@@ -1072,6 +1072,85 @@ def _rewrite_lo_op_group_id(
     return tuple(touched)
 
 
+def _rewrite_lo_op_source_effective_for_address_suffixes(
+    lo_ops_out: Optional[List[_LegalOperation]],
+    target_source_statute: str,
+    effective_date: dt.date,
+    *,
+    address_suffixes: tuple[LegalAddress, ...],
+    new_group_id: str,
+) -> tuple[LegalAddress, ...]:
+    """Update exact child-address effective dates from scoped commencement text."""
+    if lo_ops_out is None or not address_suffixes:
+        return ()
+    effective_iso = effective_date.isoformat()
+    touched: list[LegalAddress] = []
+    for i, lo in enumerate(lo_ops_out):
+        src = lo.source
+        if src is None or src.statute_id != target_source_statute:
+            continue
+        if not any(_address_has_suffix(lo.target, suffix) for suffix in address_suffixes):
+            continue
+        lo_ops_out[i] = dc_replace(
+            lo,
+            source=dc_replace(src, effective=effective_iso),
+            group_id=new_group_id,
+        )
+        if lo.target not in touched:
+            touched.append(lo.target)
+    return tuple(touched)
+
+
+def _rewrite_compiled_op_activation_rule_effective_for_address_suffixes(
+    compiled_ops_out: Optional[List[Dict[str, object]]],
+    target_source_statute: str,
+    effective_date: dt.date,
+    *,
+    address_suffixes: tuple[LegalAddress, ...],
+) -> bool:
+    """Update compiled activation rules for subsection-scoped commencement."""
+    if compiled_ops_out is None or not address_suffixes:
+        return False
+    effective_iso = effective_date.isoformat()
+    updated = False
+    for op in compiled_ops_out:
+        if op.get("source_statute") != target_source_statute:
+            continue
+        target_address = _compiled_op_address_suffix(op)
+        if target_address is None:
+            continue
+        if not any(_address_has_suffix(target_address, suffix) for suffix in address_suffixes):
+            continue
+        op["activation_rule"] = {
+            "kind": "fixed_date",
+            "effective_date": effective_iso,
+            "condition_ref": "",
+        }
+        op["is_contingent"] = False
+        updated = True
+    return updated
+
+
+def _compiled_op_address_suffix(op: Dict[str, object]) -> Optional[LegalAddress]:
+    target_norm = str(op.get("target_norm") or "").strip()
+    if not target_norm:
+        return None
+    path: list[tuple[str, str]] = [("section", target_norm)]
+    target_paragraph = str(op.get("target_paragraph") or "").strip()
+    if target_paragraph:
+        path.append(("subsection", target_paragraph))
+    target_item = str(op.get("target_item") or "").strip()
+    if target_item:
+        path.append(("paragraph", target_item))
+    return LegalAddress(path=tuple(path))
+
+
+def _address_has_suffix(address: LegalAddress, suffix: LegalAddress) -> bool:
+    if len(suffix.path) > len(address.path):
+        return False
+    return address.path[-len(suffix.path):] == suffix.path
+
+
 def _rewrite_compiled_op_activation_rule_effective(
     compiled_ops_out: Optional[List[Dict[str, object]]],
     target_source_statute: str,
@@ -2774,6 +2853,7 @@ from lawvm.finland.metadata import (
     _commencement_expiry_override,
     _expiry_date_precedes_effective_date,
     _section_commencement_effective_override,
+    _section_subsection_commencement_effective_override,
     _temporary_section_expiry_overrides,
     _statute_issue_date,
     _statute_id_sort_key,
@@ -7148,6 +7228,65 @@ def process_muutoslaki(
                         "labels": _scope_eff,
                         "effective": _effective_eff.isoformat(),
                         "context": "accepted_section_commencement",
+                    }
+                )
+
+        _subsection_commencement_override = _section_subsection_commencement_effective_override(
+            muutos_tree,
+            amendment_id,
+        )
+        if _subsection_commencement_override is not None:
+            _target_mid_sub_eff, _address_suffixes_eff, _effective_sub_eff = _subsection_commencement_override
+            _scoped_sub_group_id = f"finland-johto:{amendment_id}:subsection_commencement"
+            _scoped_sub_addresses = _rewrite_lo_op_source_effective_for_address_suffixes(
+                lo_ops_out,
+                _target_mid_sub_eff,
+                _effective_sub_eff,
+                address_suffixes=_address_suffixes_eff,
+                new_group_id=_scoped_sub_group_id,
+            )
+            _compiled_sub_updated = _rewrite_compiled_op_activation_rule_effective_for_address_suffixes(
+                compiled_ops_out,
+                _target_mid_sub_eff,
+                _effective_sub_eff,
+                address_suffixes=_address_suffixes_eff,
+            )
+            if _scoped_sub_addresses:
+                _amendment_temporal_events.append(
+                    TemporalEvent(
+                        event_id=f"fi-temporal:{_scoped_sub_group_id}",
+                        kind="commence",
+                        scope=TemporalScope(
+                            target_statute=parent_id or ctx.id,
+                            exact_addresses=_scoped_sub_addresses,
+                        ),
+                        effective=_effective_sub_eff.isoformat(),
+                        source=OperationSource(
+                            statute_id=amendment_id,
+                            title=source_title,
+                            enacted=amendment_issue_date.isoformat() if amendment_issue_date else "",
+                            effective=_effective_sub_eff.isoformat(),
+                        ),
+                        activation_rule=ActivationRule(
+                            kind="fixed_date",
+                            effective_date=_effective_sub_eff.isoformat(),
+                        ),
+                        group_id=_scoped_sub_group_id,
+                    )
+                )
+            if _scoped_sub_addresses or _compiled_sub_updated:
+                _scope_sub_eff = sorted(str(address) for address in _scoped_sub_addresses)
+                _replay_print(
+                    f"  [{amendment_id}] subsection_commencement_effective_override (accepted): "
+                    f"{_target_mid_sub_eff} {_scope_sub_eff} -> {_effective_sub_eff.isoformat()}"
+                )
+                _commencement_expiry_override_notes.append(
+                    {
+                        "source_statute": amendment_id,
+                        "target_statute": _target_mid_sub_eff,
+                        "labels": _scope_sub_eff,
+                        "effective": _effective_sub_eff.isoformat(),
+                        "context": "accepted_subsection_commencement",
                     }
                 )
 

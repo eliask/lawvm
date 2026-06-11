@@ -5850,6 +5850,89 @@ def test_compile_timelines_temporal_events_honor_exact_addresses_after_target_re
     assert active_2011.content.text == "Base text"
 
 
+def test_compile_timelines_temporal_events_honor_declared_future_descendant_target() -> None:
+    """Temporal matching must not depend only on addresses present in the base tree.
+
+    A parent op can introduce a child address before a separately deferred child
+    op executes.  The child op's exact temporal carrier is still scoped to the
+    declared child target, even though that child timeline did not exist when
+    compile_timelines sorted the operation stream.
+    """
+    statute_id = "test/temporal-future-descendant"
+    section = LegalAddress(path=(("section", "3a"),))
+    child = LegalAddress(path=(("section", "3a"), ("subsection", "1")))
+    base = IRStatute(
+        statute_id=statute_id,
+        title="Temporal future descendant test",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+    )
+
+    timelines = compile_timelines(
+        base,
+        [
+            LegalOperation(
+                op_id="insert_section_3a",
+                sequence=1,
+                action=StructuralAction.INSERT,
+                target=section,
+                payload=IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="3a",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="Parent-carried child",
+                        ),
+                    ),
+                ),
+                group_id="g:parent",
+                source=OperationSource(statute_id="2010/1", enacted="2010-01-01"),
+            ),
+            LegalOperation(
+                op_id="replace_section_3a_subsection_1",
+                sequence=2,
+                action=StructuralAction.REPLACE,
+                target=child,
+                payload=IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    text="Deferred child",
+                ),
+                group_id="g:child",
+                source=OperationSource(statute_id="2010/2", enacted="2010-01-02"),
+            ),
+        ],
+        base_date="2000-01-01",
+        temporal_events=(
+            TemporalEvent(
+                event_id="ev:parent",
+                group_id="g:parent",
+                kind="commence",
+                activation_rule=ActivationRule(kind="fixed_date", effective_date="2010-01-01"),
+                scope=TemporalScope(target_statute=statute_id, exact_addresses=(section,)),
+            ),
+            TemporalEvent(
+                event_id="ev:child",
+                group_id="g:child",
+                kind="commence",
+                activation_rule=ActivationRule(kind="fixed_date", effective_date="2015-01-01"),
+                scope=TemporalScope(target_statute=statute_id, exact_addresses=(child,)),
+            ),
+        ),
+    )
+
+    before = select_active_version(timelines[child], "2014-12-31")
+    assert before is None
+
+    after = select_active_version(timelines[child], "2015-01-01")
+    assert after is not None
+    assert after.content is not None
+    assert after.content.text == "Deferred child"
+    assert after.source is not None
+    assert after.source.statute_id == "2010/2"
+
+
 def test_compile_timelines_temporal_events_honor_address_prefixes_after_target_resolution() -> None:
     """Prefix-scoped temporal events should match canonical resolved touched addresses."""
     base = IRStatute(

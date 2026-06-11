@@ -489,11 +489,10 @@ def compile_timelines(
     # Step 2: apply operations in explicit temporal-carrier order
     def _resolved_touched_addresses(op: LegalOperation) -> Tuple[LegalAddress, ...]:
         addresses: list[LegalAddress] = []
+        addresses.append(op.target)
         resolved_target = _resolve_target(op.target)
-        if resolved_target is not None:
+        if resolved_target is not None and resolved_target not in addresses:
             addresses.append(resolved_target)
-        elif op.action is StructuralAction.INSERT:
-            addresses.append(op.target)
         if op.destination is not None:
             resolved_destination = _resolve_target(op.destination)
             destination = resolved_destination if resolved_destination is not None else op.destination
