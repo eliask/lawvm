@@ -28,9 +28,9 @@ if TYPE_CHECKING:
 _DEFAULT_CORPUS = Path(".tmp/batch_test_list.csv")
 
 
-def _read_corpus(csv_path: Path) -> list:
+def _read_corpus(csv_path: Path) -> list[str]:
     """Read statute IDs from corpus CSV (format: N,YYYY/NNN)."""
-    ids = []
+    ids: list[str] = []
     with open(csv_path, newline="", encoding="utf-8") as f:
         for row in csv.reader(f):
             if len(row) >= 2 and re.match(r'^\d{4}/\d+$', row[1]):

@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 def main(args: "argparse.Namespace") -> None:
     from lawvm.finland.cross_refs import extract_cross_refs, extract_eu_refs
+    from lawvm.finland.cross_refs import CrossRefEdge
     from lawvm.finland.grafter import get_corpus
 
     sid = args.statute_id
@@ -33,7 +34,7 @@ def main(args: "argparse.Namespace") -> None:
         edges = [e for e in edges if e.edge_type in wanted]
 
     # Group by edge type
-    by_type: dict[str, list] = {}
+    by_type: dict[str, list[CrossRefEdge]] = {}
     for e in edges:
         by_type.setdefault(e.edge_type, []).append(e)
 

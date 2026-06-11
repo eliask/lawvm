@@ -86,7 +86,7 @@ class ConsistencyResult:
             return "INTERNAL_DRIFT"
         return "ORACLE_ONLY"   # only oracle divergence, timelines internally consistent
 
-    def to_phase_result(self) -> "PhaseResult":
+    def to_phase_result(self) -> "PhaseResult[Any]":
         """Convert this ConsistencyResult into a PhaseResult carrying Findings.
 
         Internal consistency issues (SECTION_NO_TIMELINE, TIMELINE_NO_SECTION,

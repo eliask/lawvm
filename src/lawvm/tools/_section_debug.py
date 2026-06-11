@@ -26,7 +26,7 @@ def render_node_text(node: Any) -> str:
     return str(node)
 
 
-def summarize_node(node: Any, max_chars: int = 240) -> Optional[dict]:
+def summarize_node(node: Any, max_chars: int = 240) -> Optional[dict[str, object]]:
     if node is None:
         return None
     text = " ".join(render_node_text(node).split())

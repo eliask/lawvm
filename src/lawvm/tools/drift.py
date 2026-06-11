@@ -212,7 +212,7 @@ def _print_corpus_summary(
     print()
 
     # Per-decade breakdown
-    decade_buckets: dict[str, dict] = {}
+    decade_buckets: dict[str, Any] = {}
     for r in untouched:
         d = _decade(r.year)
         if d not in decade_buckets:

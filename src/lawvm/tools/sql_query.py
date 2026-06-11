@@ -79,7 +79,7 @@ def _print_table_info(con: Any, table_names: list[str]) -> None:
             print(f"    (error describing: {exc})")
 
 
-def _format_results(columns: list[str], rows: list[tuple], max_width: int = 120) -> str:
+def _format_results(columns: list[str], rows: list[tuple[Any, ...]], max_width: int = 120) -> str:
     """Format query results as an aligned text table."""
     if not rows:
         return "(0 rows)"

@@ -71,7 +71,7 @@ def _body_shape(xml_bytes: bytes) -> CaptureBodyShapeView:
     def _num_texts(tag: str) -> list[str]:
         out: list[str] = []
         seen: set[str] = set()
-        for el in cast(list, body.xpath(f'.//*[local-name()="{tag}"]')):
+        for el in cast(list[etree._Element], body.xpath(f'.//*[local-name()="{tag}"]')):
             num = _first(el, "{*}num")
             txt = _collapse_ws(" ".join(str(_t) for _t in num.itertext()) if num is not None else "")
             if txt and txt not in seen:

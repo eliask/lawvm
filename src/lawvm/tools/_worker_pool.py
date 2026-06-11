@@ -18,7 +18,7 @@ from typing import Any, Callable, Iterator, Optional, cast
 def managed_executor(
     workers: int,
     initializer: Optional[Any] = None,
-    initargs: tuple = (),
+    initargs: tuple[Any, ...] = (),
 ) -> Iterator[ProcessPoolExecutor]:
     """Context manager wrapping ProcessPoolExecutor with guaranteed cleanup.
 
