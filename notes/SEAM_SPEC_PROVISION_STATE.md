@@ -53,7 +53,7 @@ primary control signal.
 | `unsupported_jurisdiction` | `jurisdiction` not in supported set (`["fi"]`). |
 | `expired` | (since 0.2) A whole-statute fixed-term validity bound has lapsed at `as_of`. `version` is null, `text.available=false`; top-level `valid_until` (inclusive) and `expires` (exclusive) dates plus an `expiry` provenance block are present (§6.1). |
 | `expiry_unverified` | (since 0.2) A whole-law fixed-term expiry clause was recognised on the governing version but its validity end could not be determined (unparseable date, conflicting bounds, or ambiguous anaphoric year). **Blocking**: `version` is null and the `expiry` block carries the blocking diagnostic code. Never read as confirmed-live. |
-| `timeline_unverified` | (since 0.2.x, §7.3) The replayed timeline this query runs over carries break evidence (e.g. an occupancy-contract violation at amendment X, or a failed op targeting the queried provision) governing at `as_of`. **Blocking**: `version` is null, `text.available=false`; top-level `timeline_broken_at` `{amendment_id, diagnostic_code}` plus a `timeline_integrity` block enumerate the typed breaks. Never read as a legal fact — neither presence NOR absence of the provision is asserted. |
+| `timeline_unverified` | (since 0.2.x, §7.3/§7.4) The replayed timeline this query runs over carries break evidence governing at `as_of` — e.g. an occupancy-contract violation at amendment X, a failed op targeting the queried provision, or an unmaterialized temporary-twin window (`TEMPORAL.WINDOW_UNMATERIALIZED`, §7.4). **Blocking**: `version` is null, `text.available=false`; top-level `timeline_broken_at` `{amendment_id, diagnostic_code}` plus a `timeline_integrity` block enumerate the typed breaks. Never read as a legal fact — neither presence NOR absence of the provision is asserted. |
 
 Consumers MUST treat any status other than `selected` as "no asserted
 text-state". In particular `address_not_found`, `ambiguous_address`, and
@@ -410,6 +410,60 @@ as a semantic output change for those rows (canary diffs), exactly like the
 `LAWVM_ENABLE_TIMELINE_INTEGRITY_SURFACING=0` restores the prior (dishonest)
 behavior; responses for statutes without break evidence are byte-identical
 either way.
+
+### 7.4 Changes within 0.2: window-unmaterialized guard (`TEMPORAL.WINDOW_UNMATERIALIZED`)
+
+Finnish twin laws split a reform into a permanent law with a deferred section
+commencement and a temporary gap-filler law that inserts the SAME section for
+the gap window. The compile fold applies ops in document order, so the
+temporary twin's text is never materialized inside its own in-force window —
+the deferred-commencement twin holds the slot in fold order. A PIT query
+landing inside that window would otherwise serve silently-wrong text (the
+permanent twin's, or absent). The apply layer already detects this exact
+situation and records a non-blocking observation
+(`APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT`,
+`rule_id="temporally_disjoint_twin_insert"`).
+
+Since 0.2.x that observation is classified into a third TimelineBreak scope:
+
+- **window scope** (`APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT` → diagnostic
+  code `TEMPORAL.WINDOW_UNMATERIALIZED`): blocks queries whose target matches
+  the temporary insert's address AND whose `as_of` falls INSIDE the temporary
+  window. Blocked queries return `status="timeline_unverified"` with the typed
+  `timeline_broken_at`/`timeline_integrity` members, exactly like the other
+  scopes (`version` null, `text.available=false`). **Semantics:** neither
+  presence nor absence of the provision is asserted inside an unmaterialized
+  window — the seam refuses to answer rather than serve the wrong twin's text.
+
+- **Scoping.** This is window+address-scoped, NOT a statute-wide break: only
+  the affected address inside its window is blocked. Queries on other addresses
+  of the same statute, or on the same address OUTSIDE the window, hash
+  byte-identically to the no-break baseline. Unlike statute/address breaks
+  (whose warning marker stays visible for non-governing `as_of`), a window
+  break is a localized claim about a single closed interval and drops out
+  entirely outside its window — surfacing a non-governing window marker would
+  be a false positive.
+
+- **Bounds are INCLUSIVE on both ends** (`incoming_effective <= as_of <=
+  incoming_expires`). The repo is mid-migration on expiry-date conventions
+  (inclusive prose dates vs exclusive cutoffs); inclusive-both-ends over-blocks
+  by at most one day at the upper boundary, which is the safe direction for a
+  fail-loud guard.
+
+- **Self-evidencing.** The `timeline_integrity` break record carries a `window`
+  object (`start`, `end`, `bounds: "inclusive"`, `source_statute` = the
+  temporary act, `occupant_source_statute` + `occupant_effective` = the
+  deferred twin holding the slot, `rule_id`) so a consumer knows WHICH
+  temporary act's window is unmaterialized without reading our code.
+
+- **Expected to be SHORT-LIVED.** This is an interim fail-loud guard. It is
+  replaced by real legal-time window materialization (a scheduler that folds
+  the temporary twin's text into its own window); once that lands, in-window
+  queries serve the correct temporary text and this status disappears.
+  Consumers MUST NOT build logic on the permanence of
+  `TEMPORAL.WINDOW_UNMATERIALIZED` — treat it, like every non-`selected`
+  status, as "no asserted text-state". Rollback is the same flag,
+  `LAWVM_ENABLE_TIMELINE_INTEGRITY_SURFACING=0`.
 
 <!--
 CODE-VS-NOTES DISAGREEMENTS (code wins, flagged per task instructions):

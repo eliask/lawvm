@@ -370,6 +370,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_dump_json_hashes.py",
         "test_freshness_tool.py",
         "test_provision_state.py",
+        "test_provision_state_window_unmaterialized.py",
         "test_read_provision.py",
         "test_reconcile.py",
         "test_reconcile_sweep.py",

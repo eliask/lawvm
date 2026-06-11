@@ -138,6 +138,7 @@ def build_provision_state_response(
         timeline_breaks,
         address=resolution.address,
         requested=provision,
+        as_of=as_of,
     )
     tl_marker, tl_block, tl_blocking = _timeline_integrity_payloads(relevant_breaks, as_of)
     if resolution.status != "resolved":
@@ -223,6 +224,7 @@ def _relevant_timeline_breaks(
     *,
     address: LegalAddress | None,
     requested: str,
+    as_of: str,
 ) -> tuple[TimelineBreak, ...]:
     """Statute-scoped breaks always apply; address-scoped only on target match."""
     if not timeline_breaks:
@@ -232,6 +234,18 @@ def _relevant_timeline_breaks(
     for item in timeline_breaks:
         if item.scope == "statute":
             relevant.append(item)
+        elif item.scope == "window":
+            # A window break is a localized claim about a single closed
+            # interval, not a permanent defect: outside the window the timeline
+            # IS materialized correctly, so surfacing a non-governing window
+            # marker would be a false positive. Unlike statute/address breaks
+            # (whose warning marker stays visible for non-governing as_of), a
+            # window break drops out entirely outside its window — keeping
+            # outside-window responses byte-identical to the no-break baseline.
+            if break_matches_section(
+                item, section_label=section_label, chapter_label=chapter_label
+            ) and break_governs_as_of(item, as_of):
+                relevant.append(item)
         elif break_matches_section(
             item, section_label=section_label, chapter_label=chapter_label
         ):

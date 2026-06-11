@@ -30,6 +30,19 @@ This module is the single classifier from replay findings to typed
     * ``APPLY.FAILED_OPERATION`` (a compiled op could not be applied; its
       target's post-amendment state is missing from the timeline).
 
+- ``scope="window"`` — interim fail-loud guard for a known-but-unmaterialized
+  temporary-twin window. The document-order compile fold never materializes a
+  temporary gap-filler's text inside its own in-force window (its slot is held
+  by a deferred-commencement twin), so a PIT query landing inside that window
+  would otherwise serve silently-wrong text (the permanent twin's, or absent).
+  Blocks queries on a matching address whose ``as_of`` falls INSIDE the window
+  (inclusive both ends); other addresses and other ``as_of`` are untouched
+  (byte-identical). Classified cause:
+    * ``APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT`` → diagnostic code
+      ``TEMPORAL.WINDOW_UNMATERIALIZED``. This scope is EXPECTED TO BE
+      SHORT-LIVED: it is replaced by real legal-time window materialization;
+      consumers must not build logic on its permanence.
+
 Deliberately NOT classified as breaks (recorded obligations whose effect is
 present and adjudicated): ``APPLY.RELABEL_SKIPPED`` (governed skip),
 ``APPLY.FALLBACK_WHOLE_SECTION_REPLACE`` (unproven-but-applied fallback),
@@ -47,6 +60,8 @@ from lawvm.tools.section_keys import norm_section_label
 
 OCCUPANCY_VIOLATION_KIND = "APPLY.OCCUPANCY_POLICY_VIOLATION"
 FAILED_OPERATION_KIND = "APPLY.FAILED_OPERATION"
+DISJOINT_INSERT_KIND = "APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT"
+WINDOW_UNMATERIALIZED_CODE = "TEMPORAL.WINDOW_UNMATERIALIZED"
 
 
 @dataclass(frozen=True)
@@ -55,15 +70,26 @@ class TimelineBreak:
 
     amendment_id: str
     diagnostic_code: str
-    scope: str  # "statute" | "address"
+    scope: str  # "statute" | "address" | "window"
     target_unit_kind: str = ""
     target_section: str = ""
     target_chapter: str = ""
     effective: str = ""  # ISO date of the breaking amendment; "" = unknown
     reason: str = ""
+    # Window-scoped fields (only set for scope="window"). The break governs
+    # exactly the closed interval [window_start, window_end] for the target
+    # address. occupant_* identify the deferred-commencement twin holding the
+    # slot in document order; rule_id names the apply-policy lane that detected
+    # the disjoint insert. Self-evidencing: a consumer can see WHICH temporary
+    # act's window is unmaterialized without reading our code.
+    window_start: str = ""  # incoming_effective (inclusive)
+    window_end: str = ""  # incoming_expires (inclusive)
+    occupant_source_statute: str = ""
+    occupant_effective: str = ""
+    rule_id: str = ""
 
     def to_wire(self) -> dict[str, Any]:
-        return {
+        wire: dict[str, Any] = {
             "amendment_id": self.amendment_id,
             "diagnostic_code": self.diagnostic_code,
             "scope": self.scope,
@@ -73,6 +99,17 @@ class TimelineBreak:
             "effective": self.effective,
             "reason": self.reason,
         }
+        if self.scope == "window":
+            wire["window"] = {
+                "start": self.window_start,
+                "end": self.window_end,
+                "bounds": "inclusive",
+                "source_statute": self.amendment_id,
+                "occupant_source_statute": self.occupant_source_statute,
+                "occupant_effective": self.occupant_effective,
+                "rule_id": self.rule_id,
+            }
+        return wire
 
 
 def timeline_breaks_from_findings(findings: Iterable[Any]) -> tuple[TimelineBreak, ...]:
@@ -107,6 +144,32 @@ def timeline_breaks_from_findings(findings: Iterable[Any]) -> tuple[TimelineBrea
                     target_section=str(detail.get("target_section") or ""),
                     target_chapter=str(detail.get("target_chapter") or ""),
                     reason=str(detail.get("reason_code") or ""),
+                )
+            )
+        elif kind == DISJOINT_INSERT_KIND:
+            # Interim fail-loud guard for an unmaterialized temporary-twin
+            # window. The temporary gap-filler's text is never folded into its
+            # own in-force window (a deferred-commencement twin holds the slot
+            # in document order), so an in-window PIT query would silently serve
+            # the wrong text. Block exactly the window+address, not the statute.
+            # ``effective`` is seeded to the window start so the break sorts
+            # and dedups like any other; window blocking uses the closed
+            # interval below, not this one-sided date.
+            window_start = str(detail.get("incoming_effective") or "")
+            breaks.append(
+                TimelineBreak(
+                    amendment_id=source_statute,
+                    diagnostic_code=WINDOW_UNMATERIALIZED_CODE,
+                    scope="window",
+                    target_unit_kind="section",
+                    target_section=str(detail.get("target_label") or ""),
+                    effective=window_start,
+                    reason=str(detail.get("rule_id") or ""),
+                    window_start=window_start,
+                    window_end=str(detail.get("incoming_expires") or ""),
+                    occupant_source_statute=str(detail.get("occupant_source_statute") or ""),
+                    occupant_effective=str(detail.get("occupant_effective") or ""),
+                    rule_id=str(detail.get("rule_id") or ""),
                 )
             )
         elif detail.get("timeline_fatal") is True:
@@ -150,7 +213,22 @@ def sorted_breaks(breaks: Iterable[TimelineBreak]) -> tuple[TimelineBreak, ...]:
 
 
 def break_governs_as_of(item: TimelineBreak, as_of: str) -> bool:
-    """True when ``as_of`` is at/after the break (or the break is undatable)."""
+    """True when ``as_of`` is governed by the break.
+
+    Statute/address breaks govern every ``as_of`` at/after their effective date
+    (and undatable breaks govern always). Window breaks govern ONLY inside the
+    closed interval ``[window_start, window_end]`` — outside the window the
+    timeline is materialized normally and the answer is provable.
+    """
+    if item.scope == "window":
+        # Inclusive on BOTH ends. The repo is mid-migration on expiry-date
+        # conventions (inclusive prose dates vs exclusive cutoffs); treating
+        # window_end as inclusive over-blocks by at most one day at the upper
+        # boundary, which is the safe direction for a fail-loud guard. An
+        # undatable window (missing either bound) governs always (conservative).
+        if not item.window_start or not item.window_end:
+            return True
+        return item.window_start <= as_of <= item.window_end
     if not item.effective:
         return True
     return item.effective <= as_of
@@ -162,8 +240,8 @@ def break_matches_section(
     section_label: str,
     chapter_label: str = "",
 ) -> bool:
-    """True when an address-scoped break targets the queried section."""
-    if item.scope != "address":
+    """True when an address/window-scoped break targets the queried section."""
+    if item.scope not in ("address", "window"):
         return False
     if item.target_unit_kind in ("chapter", "part"):
         # Container-scoped failed op: match when the queried chapter is the
@@ -185,6 +263,8 @@ def break_matches_section(
 
 __all__ = [
     "TimelineBreak",
+    "WINDOW_UNMATERIALIZED_CODE",
+    "DISJOINT_INSERT_KIND",
     "timeline_breaks_from_findings",
     "attach_effective_dates",
     "sorted_breaks",
