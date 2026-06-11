@@ -220,6 +220,7 @@ def _row_status(row: Mapping[str, Any]) -> str:
         row,
         (
             "status",
+            "closure_status",
             "authorization_status",
             "frontier_status",
             "completeness_status",

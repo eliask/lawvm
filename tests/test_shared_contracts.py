@@ -1560,6 +1560,7 @@ def test_frontier_work_item_claim_closure_report_keeps_phase_gate_closed() -> No
     ]
     assert "frontier_claim_closure_as_replay_authorization" in row["forbidden_shortcuts"]
     assert surface["rows"][0]["row_kind"] == "frontier_work_item_claim_closure"
+    assert surface["rows"][0]["status"] == "evidence_policy_satisfied_phase_gate_required"
     assert surface["rows"][0]["assertion_refs"] == ["claim-1"]
     assert surface["rows"][0]["authorization_ref"] == (
         "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION.strict"
