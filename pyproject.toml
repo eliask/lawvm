@@ -38,8 +38,8 @@ lawvm-fi-amendments = "lawvm.finland.amendment_index:main"
 requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
-#[tool.uv]
-#exclude-newer = "7 days"
+[tool.uv]
+exclude-newer = "7 days"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
