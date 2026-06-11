@@ -65,7 +65,7 @@ def _load_classifications() -> dict[str, dict[str, Any]]:
     return result
 
 
-def _save_classification(key: str, classification: str, note: str, events: list[dict]) -> None:
+def _save_classification(key: str, classification: str, note: str, events: list[dict[str, Any]]) -> None:
     """Append a classification to the review file."""
     _REVIEW_FILE.parent.mkdir(parents=True, exist_ok=True)
     entry = {
@@ -79,7 +79,7 @@ def _save_classification(key: str, classification: str, note: str, events: list[
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-def _format_event(event: dict) -> str:
+def _format_event(event: dict[str, Any]) -> str:
     """Format a semantic diff event for terminal display."""
     kind = event.get("kind", "?")
     path = event.get("semantic_path", "")
@@ -163,7 +163,7 @@ def _section_context_lines(sec_data: dict[str, Any], sd: dict[str, Any]) -> list
     return lines
 
 
-def _sections_with_diffs(data: dict) -> list[tuple[str, dict, list[dict]]]:
+def _sections_with_diffs(data: dict[str, Any]) -> list[tuple[str, dict[str, Any], list[dict[str, Any]]]]:
     """Extract sections with non-trivial diffs from a live computation result."""
     sections = data.get("sections", {})
     results = []
@@ -844,7 +844,7 @@ def compute_statute_section_diffs(
     return sections, False
 
 
-def _compute_live(statute_id: str, *, oracle_selector_mode: str = "bench_comparable") -> dict | None:
+def _compute_live(statute_id: str, *, oracle_selector_mode: str = "bench_comparable") -> dict[str, Any] | None:
     """Compute structural diff live for one statute."""
     sections, oracle_content_absent = compute_statute_section_diffs(
         statute_id,
@@ -956,7 +956,7 @@ def review_sections(
     print(f"Reviewed: {reviewed}, Skipped (already classified): {skipped}, Total with diffs: {total_diffs}")
 
 
-def _load_scan_results() -> list[dict]:
+def _load_scan_results() -> list[dict[str, Any]]:
     """Load corpus scan results from the JSON file produced by --corpus-scan."""
     if not _SCAN_RESULT.exists():
         print(f"No scan results at {_SCAN_RESULT}. Run --corpus-scan first.")
