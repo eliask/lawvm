@@ -101,7 +101,7 @@ _MODAL_CONTEXT_WINDOW = 120  # chars to look at after the actor phrase
 
 # The recognizer runs patterns in PRIORITY ORDER.
 # First match wins. Each pattern has a guard string + compiled regex.
-_MODAL_PATTERNS: Tuple[Tuple[str, ActorModalKind, re.Pattern], ...] = (
+_MODAL_PATTERNS: Tuple[Tuple[str, ActorModalKind, re.Pattern[str]], ...] = (
     # PROHIBITION: 'ei saa' (must precede PERMISSION check)
     (
         "ei saa",
@@ -215,7 +215,7 @@ class ActorExtractionResult:
 # ---------------------------------------------------------------------------
 
 
-def _extract_tlc_org_id(element: ET.Element) -> Optional[str]:
+def _extract_tlc_org_id(element: ET.Element[str]) -> Optional[str]:
     """Extract AKN ontology organization ID from a TLCOrganization element.
 
     Tries href first, then eId as fallback.
@@ -264,7 +264,7 @@ def _match_tlc_id_to_registry(
 
 
 def _pass1_tlc_organizations(
-    root: ET.Element,
+    root: ET.Element[str],
     statute_id: str,
     valid_at_interval: Tuple[Optional[date], Optional[date]],
 ) -> Tuple[List[ActorMention], List[LifecycleActorObservation]]:
@@ -333,7 +333,7 @@ def _pass1_tlc_organizations(
 # ---------------------------------------------------------------------------
 
 
-def _text_of(element: ET.Element) -> str:
+def _text_of(element: ET.Element[str]) -> str:
     """Collect all text content from an element and its descendants."""
     parts: List[str] = []
     if element.text:
@@ -345,7 +345,7 @@ def _text_of(element: ET.Element) -> str:
     return "".join(parts)
 
 
-def _section_provision_ref(section_el: ET.Element, statute_id: str) -> str:
+def _section_provision_ref(section_el: ET.Element[str], statute_id: str) -> str:
     """Build a provision_ref string from a <section> element and statute_id."""
     ns_num = f"{{{_AKN_NS}}}num"
     num_el = section_el.find(ns_num)
@@ -357,10 +357,10 @@ def _section_provision_ref(section_el: ET.Element, statute_id: str) -> str:
 
 
 def _pass2_prose_scan(
-    root: ET.Element,
+    root: ET.Element[str],
     statute_id: str,
     valid_at_interval: Tuple[Optional[date], Optional[date]],
-    seen_tlc_phrases: frozenset,
+    seen_tlc_phrases: frozenset[str],
 ) -> Tuple[
     List[ActorMention],
     List[AmbiguousActorMention],

@@ -158,7 +158,7 @@ def _parse_oj_date(s: str) -> Optional[date]:
 
 # CELEX type character → kind.  "R" = Regulation, "L" = Directive, "D" = Decision.
 # Unknown CELEX types fall back to EU_REGULATION for forward-compat.
-_CELEX_TYPE_TO_KIND: dict = {
+_CELEX_TYPE_TO_KIND: dict[str, PreparatoryReferenceKind] = {
     "R": PreparatoryReferenceKind.EU_REGULATION,
     "L": PreparatoryReferenceKind.EU_DIRECTIVE,
     "D": PreparatoryReferenceKind.EU_DECISION,
@@ -240,7 +240,7 @@ class PreparatoryRefRecognizer:
     # Maps historical abbreviation → (current_canonical_id, lifecycle_event).
     # Deliberately small for now — extend as corpus evidence grows.
     # Per AGENTS.md §1.6.
-    _LIFECYCLE_COMMITTEES: dict = {
+    _LIFECYCLE_COMMITTEES: dict[str, tuple[str, str]] = {
         # TyVM became TyVL? No — "TyVM" = "Työ- ja tasa-arvoasiain valiokunnan mietintö"
         # is still active. This map is for truly renamed/dissolved committees.
         # Placeholder: empty until corpus evidence warrants an entry.
@@ -629,14 +629,14 @@ class PrepRefExtractionResult:
 # ---------------------------------------------------------------------------
 
 
-def _iter_preliminary_work_blocks(root: ET.Element):
+def _iter_preliminary_work_blocks(root: ET.Element[str]):
     """Yield all <hcontainer name="preliminaryWork"> elements in the XML tree.
 
     Also matches hcontainers with finlex:outline="Esityöt" as a fallback
     (handles older Finlex AKN variants where name attribute may differ).
     Both attributes may co-occur on the same element (no double-emit).
     """
-    seen_ids: set = set()
+    seen_ids: set[int] = set()
     for hc in root.iter(f"{_AKN}hcontainer"):
         name = hc.get("name", "")
         outline = hc.get(f"{_FINLEX}outline", "")
@@ -651,7 +651,7 @@ def _iter_preliminary_work_blocks(root: ET.Element):
                 yield hc
 
 
-def _get_element_text(elem: ET.Element) -> str:
+def _get_element_text(elem: ET.Element[str]) -> str:
     """Get all text content from an element (including tail text of children)."""
     parts = []
     if elem.text:
@@ -665,7 +665,7 @@ def _get_element_text(elem: ET.Element) -> str:
 
 
 def _extract_he_ref_from_element(
-    p_elem: ET.Element,
+    p_elem: ET.Element[str],
     statute_id: str,
     valid_at: Tuple[Optional[date], Optional[date]],
 ) -> Optional[PreparatoryReference]:
@@ -713,7 +713,7 @@ def _extract_he_ref_from_element(
     return None
 
 
-def _p_contains_he_ref(p_elem: ET.Element) -> bool:
+def _p_contains_he_ref(p_elem: ET.Element[str]) -> bool:
     """Fast check: does this <p> contain an AKN <ref> to a government-proposal?"""
     for ref_el in p_elem.iter(f"{_AKN}ref"):
         href = ref_el.get("href", "")
