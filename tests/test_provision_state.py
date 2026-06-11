@@ -355,6 +355,41 @@ def test_public_resolve_provision_state_reports_unsupported_jurisdiction_without
     assert payload["supported_jurisdictions"] == ["fi"]
 
 
+def test_build_provision_state_response_rejects_invalid_as_of() -> None:
+    payload = build_provision_state_response(
+        timelines=_timeline(),
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="section:1",
+        as_of="not-a-date",
+    )
+
+    assert payload["status"] == "invalid_query"
+    assert payload["diagnostic"]["code"] == "LAWVM_PROVISION_AS_OF_INVALID"
+    assert payload["diagnostic"]["field"] == "as_of"
+    assert payload["source_locator_status"] == "unavailable_invalid_query"
+    assert payload["selection"] is None
+    assert payload["resolved_address"] is None
+    assert len(payload["hashes"]["derived_state_hash"]) == 64
+
+
+def test_public_resolve_provision_state_rejects_invalid_as_of_before_replay() -> None:
+    payload = resolve_provision_state(
+        statute_id="2023/703",
+        jurisdiction="fi",
+        provision="section:9",
+        as_of="2026-99-99",
+    )
+
+    assert payload["status"] == "invalid_query"
+    assert payload["diagnostic"]["code"] == "LAWVM_PROVISION_AS_OF_INVALID"
+    assert payload["diagnostic"]["message"] == (
+        "as_of must be a real calendar date in YYYY-MM-DD form"
+    )
+    assert "text" not in payload
+    assert payload["source_locator_status"] == "unavailable_invalid_query"
+
+
 def test_public_resolve_provision_state_rejects_finnish_prose_selector_before_replay() -> None:
     payload = resolve_provision_state(
         statute_id="1992/1535",
@@ -418,6 +453,28 @@ def test_provision_state_cli_invalid_selector_prints_diagnostic_and_exits_2(caps
     payload = json.loads(captured.out)
     assert payload["status"] == "invalid_address"
     assert payload["diagnostic"]["code"] == "FI_PROVISION_SELECTOR_MALFORMED_HYBRID"
+
+
+def test_provision_state_cli_invalid_as_of_prints_diagnostic_and_exits_2(capsys) -> None:
+    args = SimpleNamespace(
+        statute_id="2023/703",
+        jurisdiction="fi",
+        provision="section:9",
+        as_of="not-a-date",
+        query_type="governing",
+        territory=None,
+        include_ir=False,
+    )
+
+    with pytest.raises(SystemExit) as raised:
+        main(args)
+
+    captured = capsys.readouterr()
+    assert raised.value.code == 2
+    assert "ERROR: invalid --as-of: as_of must be an ISO date" in captured.err
+    payload = json.loads(captured.out)
+    assert payload["status"] == "invalid_query"
+    assert payload["diagnostic"]["code"] == "LAWVM_PROVISION_AS_OF_INVALID"
 
 
 def test_provision_state_cli_address_not_found_prints_nearby_help(

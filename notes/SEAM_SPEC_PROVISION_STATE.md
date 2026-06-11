@@ -51,6 +51,7 @@ The `status` field is the primary control signal.
 | `address_not_found` | No exact and no unique-suffix address match. **Safe failure.** |
 | `ambiguous_address` | Address matched ≥2 timelines by suffix; `address_candidates` lists them. Never a silent pick. |
 | `invalid_address` | The provision string did not parse into any `kind:label` segment. |
+| `invalid_query` | The PIT query itself is malformed, e.g. `as_of` is missing/not a real `YYYY-MM-DD` date, or `query_type` is not recognised. **Safe failure.** No replay is run. |
 | `unsupported_jurisdiction` | `jurisdiction` not in supported set (`["fi"]`). |
 | `expired` | (since 0.2) A whole-statute fixed-term validity bound has lapsed at `as_of`. `version` is null, `text.available=false`; top-level `valid_until` (inclusive) and `expires` (exclusive) dates plus an `expiry` provenance block are present (§6.1). |
 | `expiry_unverified` | (since 0.2) A whole-law fixed-term expiry clause was recognised on the governing version but its validity end could not be determined (unparseable date, conflicting bounds, or ambiguous anaphoric year). **Blocking**: `version` is null and the `expiry` block carries the blocking diagnostic code. Never read as confirmed-live. |
@@ -58,7 +59,7 @@ The `status` field is the primary control signal.
 
 Consumers MUST treat any status other than `selected` as "no asserted
 text-state". In particular `address_not_found`, `ambiguous_address`, and
-`invalid_address` are *fail-loud* outcomes: the seam resolves an address
+`invalid_address`/`invalid_query` are *fail-loud* outcomes: the seam resolves an address
 exactly or by a UNIQUE suffix, never by arbitrary order. A near-miss address
 MUST be expected to fail rather than resolve to a different provision.
 `expiry_unverified` is likewise fail-loud: the engine refuses to assert

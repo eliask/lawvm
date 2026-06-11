@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import hashlib
 import json
 import os
@@ -42,6 +43,8 @@ _FI_HYBRID_SECTION_RE = re.compile(
 _FI_SUFFIX_AS_SUBSECTION_RE = re.compile(
     r"^\s*section\s*:\s*(?P<number>\d+)\s*/\s*subsection\s*:\s*(?P<letter>[A-Za-z])\s*$"
 )
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_QUERY_TYPES = frozenset({"governing", "in_force"})
 
 # Rollback flag (Pro §5). Fixed-term statute bounds are DEFAULT-ON since seam
 # spec 0.2 (corpus soak criteria met: residual blocking statutes well under
@@ -119,7 +122,7 @@ async def _main(args: Any) -> None:
     )
     _emit_cli_diagnostic(payload, stream=sys.stderr)
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2))
-    if payload.get("status") == "invalid_address":
+    if payload.get("status") in {"invalid_address", "invalid_query"}:
         raise SystemExit(2)
 
 
@@ -142,6 +145,10 @@ def _emit_cli_diagnostic(payload: Mapping[str, Any], *, stream: Any) -> None:
     target = f" {provision!r}" if provision else ""
     if status == "invalid_address":
         print(f"ERROR: invalid --provision{target}: {message}", file=stream)
+    elif status == "invalid_query":
+        field = str(diagnostic.get("field") or "query")
+        option = f"--{field.replace('_', '-')}"
+        print(f"ERROR: invalid {option}: {message}", file=stream)
     elif status == "address_not_found":
         print(f"note: --provision{target} was not found: {message}", file=stream)
     else:
@@ -183,6 +190,18 @@ def build_provision_state_response(
     findings: tuple[Finding, ...] = (),
 ) -> dict[str, Any]:
     """Return a stable provision-state response for one PIT address query."""
+
+    query_diagnostic = provision_query_diagnostic(as_of=as_of, query_type=query_type)
+    if query_diagnostic is not None:
+        return invalid_query_payload(
+            jurisdiction=jurisdiction,
+            statute_id=statute_id,
+            provision=provision,
+            as_of=as_of,
+            query_type=query_type,
+            territory=territory,
+            diagnostic=query_diagnostic,
+        )
 
     resolution = resolve_address(timelines, provision)
     query = _query_payload(
@@ -346,6 +365,49 @@ def provision_selector_diagnostic(
     return None
 
 
+def provision_query_diagnostic(
+    *,
+    as_of: str,
+    query_type: str,
+) -> dict[str, Any] | None:
+    """Return an early diagnostic for definitely malformed PIT query fields."""
+
+    if query_type not in _QUERY_TYPES:
+        return {
+            "code": "LAWVM_PROVISION_QUERY_TYPE_INVALID",
+            "field": "query_type",
+            "message": "query_type must be one of: governing, in_force",
+            "allowed_values": sorted(_QUERY_TYPES),
+        }
+    text = str(as_of or "").strip()
+    if not text:
+        return {
+            "code": "LAWVM_PROVISION_AS_OF_EMPTY",
+            "field": "as_of",
+            "message": "as_of must be a non-empty ISO date in YYYY-MM-DD form",
+            "expected_format": "YYYY-MM-DD",
+        }
+    if _ISO_DATE_RE.fullmatch(text) is None:
+        return {
+            "code": "LAWVM_PROVISION_AS_OF_INVALID",
+            "field": "as_of",
+            "message": "as_of must be an ISO date in YYYY-MM-DD form",
+            "expected_format": "YYYY-MM-DD",
+            "received": as_of,
+        }
+    try:
+        dt.date.fromisoformat(text)
+    except ValueError:
+        return {
+            "code": "LAWVM_PROVISION_AS_OF_INVALID",
+            "field": "as_of",
+            "message": "as_of must be a real calendar date in YYYY-MM-DD form",
+            "expected_format": "YYYY-MM-DD",
+            "received": as_of,
+        }
+    return None
+
+
 def invalid_provision_selector_payload(
     *,
     jurisdiction: str,
@@ -390,6 +452,54 @@ def invalid_provision_selector_payload(
         "engine": _engine_payload(),
         "source_locator": None,
         "source_locator_status": "unavailable_invalid_provision",
+        "diagnostic": dict(diagnostic),
+    }
+
+
+def invalid_query_payload(
+    *,
+    jurisdiction: str,
+    statute_id: str,
+    provision: str,
+    as_of: str,
+    query_type: str = "governing",
+    territory: str | None = None,
+    diagnostic: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return a stable invalid-query seam payload without running replay."""
+
+    query = _query_payload(
+        statute_id=statute_id,
+        provision=provision,
+        as_of=as_of,
+        query_type=query_type,
+        territory=territory,
+    )
+    return {
+        "schema": SCHEMA,
+        "spec_version": SPEC_VERSION,
+        "jurisdiction": jurisdiction,
+        "statute_id": statute_id,
+        "title": "",
+        "status": "invalid_query",
+        "query": query,
+        "resolved_address": None,
+        "lineage": _lineage_payload(address=None, migration_events=(), as_of=as_of),
+        "address_candidates": [],
+        "selection": None,
+        "hashes": _hash_payload(
+            status="invalid_query",
+            statute_id=statute_id,
+            jurisdiction=jurisdiction,
+            query=query,
+            address=None,
+            lineage=None,
+            version=None,
+            content_hash="",
+        ),
+        "engine": _engine_payload(),
+        "source_locator": None,
+        "source_locator_status": "unavailable_invalid_query",
         "diagnostic": dict(diagnostic),
     }
 
