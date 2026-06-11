@@ -424,10 +424,7 @@ def _diagnose(
 ) -> str:
     o_without_temporary = strip_temporary_residue_annotations(o_text)
     if o_without_temporary != o_text:
-        if (
-            oracle_selector_mode == "bench_comparable"
-            and oracle_text_reduces_to_bare_section_stub(o_text)
-        ):
+        if oracle_text_reduces_to_bare_section_stub(o_text):
             return "EDITORIAL_CONVENTION"
         if Levenshtein.ratio(_clean(r_text), _clean(o_without_temporary)) >= 0.95:
             return "ORACLE_STALE"

@@ -461,6 +461,17 @@ def test_diagnose_treats_bench_comparable_temporary_residue_stub_as_editorial() 
     ) == "EDITORIAL_CONVENTION"
 
 
+def test_diagnose_treats_temporary_stub_over_substantive_replay_as_editorial() -> None:
+    replay = (
+        "13 a § Vanhusten ja muiden asiakasryhmien tarpeita vastaavien "
+        "sosiaali- ja terveydenhuollon palvelukokonaisuuksien muodostamiseksi "
+        "kunta voi kokeilla tehtävien järjestämistä."
+    )
+    oracle = "13 a § 13 a § oli väliaikaisesti voimassa 1.1.2005-31.12.2022 L:lla 1429/2004."
+
+    assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
 def test_strip_editorial_annotations_strips_temporary_residue_without_case_suffix() -> None:
     text = "21 b § 21 b § oli väliaikaisesti voimassa 24.11.2021–30.1.2022 L 984/2021."
 
