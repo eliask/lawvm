@@ -638,3 +638,57 @@ def test_commencement_expiry_override_parses_whole_act_target() -> None:
     assert target_mid == "2004/1428"
     assert labels is None
     assert expiry.isoformat() == "2014-12-31"
+
+
+def test_section_commencement_effective_override_enumerated_sections_share_terminal_sign() -> None:
+    """An enumerated whole-section list shares one terminal § sign.
+
+    Regression (2010/1326 ← 2023/116): "Lain 51 a ja 51 b § tulevat kuitenkin
+    voimaan 1 päivänä marraskuuta 2024." defers BOTH 51 a and 51 b. The
+    previous parser required § directly after each label and captured only
+    51 b, leaving 51 a stamped with the amendment-wide date — which made the
+    temporary twin 2023/117's gap-filler INSERT look like an occupancy
+    violation against a same-day substantive occupant.
+    """
+    tree = _tree(
+        "Tämä laki tulee voimaan 1 päivänä syyskuuta 2023. "
+        "Lain 51 a ja 51 b § tulevat kuitenkin voimaan 1 päivänä marraskuuta 2024."
+    )
+
+    override = _section_commencement_effective_override(tree, "2023/116")
+
+    assert override is not None
+    target_mid, chapter_section_map, effective = override
+    assert target_mid == "2023/116"
+    assert chapter_section_map == {None: {"51a", "51b"}}
+    assert effective.isoformat() == "2024-11-01"
+
+
+def test_section_commencement_effective_override_comma_enumeration() -> None:
+    """Comma+ja enumerations defer every listed whole-section label."""
+    tree = _tree(
+        "Tämä laki tulee voimaan 1 päivänä tammikuuta 2025. "
+        "Lain 5, 7 ja 9 § tulevat kuitenkin voimaan vasta 1 päivänä maaliskuuta 2025."
+    )
+
+    override = _section_commencement_effective_override(tree, "2025/1")
+
+    assert override is not None
+    _target_mid, chapter_section_map, effective = override
+    assert chapter_section_map == {None: {"5", "7", "9"}}
+    assert effective.isoformat() == "2025-03-01"
+
+
+def test_section_commencement_effective_override_single_section_unchanged() -> None:
+    """The single-section form (2022/1281: 'Sen 78 c §') keeps working."""
+    tree = _tree(
+        "Tämä laki tulee voimaan 1 päivänä tammikuuta 2023. "
+        "Sen 78 c § tulee kuitenkin voimaan vasta 1 päivänä heinäkuuta 2023."
+    )
+
+    override = _section_commencement_effective_override(tree, "2022/1281")
+
+    assert override is not None
+    _target_mid, chapter_section_map, effective = override
+    assert chapter_section_map == {None: {"78c"}}
+    assert effective.isoformat() == "2023-07-01"

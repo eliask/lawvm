@@ -492,6 +492,11 @@ def _batch_pre_blame_sections(
     wanted = set(blame_sources)
     result: Dict[str, tuple] = {}
     last_amendment_id: Optional[str] = None
+    # Accumulate the LO history across the chain like the main replay does:
+    # apply-time policies (occupancy temporal-disjointness, same-wave
+    # migration follows) read replay history as typed evidence and would
+    # produce spurious diagnostics in a history-less blame replay.
+    blame_lo_ops: list = []
     for rec in amendment_records:
         amendment_id = str(rec["statute_id"])
         if amendment_id in wanted:
@@ -507,6 +512,7 @@ def _batch_pre_blame_sections(
                 state,
                 ctx,
                 replay_mode=mode,
+                lo_ops_out=blame_lo_ops,
                 parent_id=sid,
             ).output
         last_amendment_id = amendment_id

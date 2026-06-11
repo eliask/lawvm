@@ -11354,9 +11354,49 @@ def test_resolved_op_restructure_plan_helper_rejects_same_leaf_labels_in_differe
 
 
 def test_resolved_op_canonical_intent_uses_typed_move_clause_destination_fields() -> None:
-    """Canonical intent move destinations must follow late-waist chapter/part fields."""
+    """Canonical intent move destinations must follow late-waist chapter/part fields.
+
+    The Move lane is payload-less by contract: ``_apply_intent_move`` rehomes
+    the existing node unchanged, so only payload-free ops (pure moves) may
+    lower to a Move intent. A payload-bearing move rider stays a
+    destination-scoped Replace (see the companion test below).
+    """
     op = AmendmentOp(
         op_id="move-typed-1",
+        op_type="RENUMBER",
+        target_section="33",
+        target_unit_kind="section",
+        target_chapter="9",
+        move_clause_target_unit_kind="chapter",
+    )
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=None,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="33",
+        target_chapter="6",
+    )
+
+    assert rop.op.target_chapter == "9"
+    rop.move_clause_target_chapter = "5"
+    intent = _build_canonical_intent(rop)
+    assert intent is not None
+    assert isinstance(intent, Move)
+    assert intent.destination_parent.path == (("chapter", "5"),)
+
+
+def test_resolved_op_canonical_intent_payload_bearing_move_rider_stays_replace() -> None:
+    """A payload-bearing move rider must NOT lower to a payload-less Move.
+
+    "muutetaan 33 §, joka samalla siirretään 5 lukuun" both rehomes the
+    section AND replaces its text. ``_apply_intent_move`` cannot land a
+    payload, so lowering this to Move would silently drop the replacement
+    text. It stays a Replace; the apply layer's section move+replace
+    recovery performs the rehoming.
+    """
+    op = AmendmentOp(
+        op_id="move-typed-2",
         op_type="REPLACE",
         target_section="33",
         target_unit_kind="section",
@@ -11372,12 +11412,10 @@ def test_resolved_op_canonical_intent_uses_typed_move_clause_destination_fields(
         target_chapter="6",
     )
 
-    assert rop.op.target_chapter == "9"
     rop.move_clause_target_chapter = "5"
     intent = _build_canonical_intent(rop)
     assert intent is not None
-    assert isinstance(intent, Move)
-    assert intent.destination_parent.path == (("chapter", "5"),)
+    assert not isinstance(intent, Move)
 
 
 def test_recover_uncovered_body_ops_no_observation_when_observations_out_is_none() -> None:

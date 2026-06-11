@@ -506,6 +506,82 @@ def container_resolver_binding(
         fallback_used=False,
         fallback_rule_id=None,
     )
+def _move_rider_origin_path(
+    state: "ReplayState",
+    rop: ResolvedOp,
+) -> Path | None:
+    """Resolve the unique move ORIGIN slot for a destination-scoped move rider.
+
+    A johtolause move rider ("29 e §, joka samalla siirretään 5 b lukuun")
+    resolves the target scope to the DESTINATION chapter/part at parse time,
+    so the destination slot is legitimately absent before the move lands.
+    The slot the op consumes is the ORIGIN: the unique live same-label
+    section in a different chapter (or part). Mirrors the candidate
+    selection of the section move+replace recovery in
+    ``_apply_whole_section_op`` (recovery rule
+    ``section_move_replace_destination_rebind``).
+    """
+    target_norm, target_chapter, target_part = rop.resolved_section_lookup_scope
+    if not target_norm:
+        return None
+    label_norm = normalized_label_key(target_norm)
+    matches = [
+        _tops._as_path(path)
+        for path in state.provision_index.get(("section", label_norm), [])
+    ]
+    if len(matches) != 1:
+        return None
+    origin = matches[0]
+    origin_chapter = _chapter_from_section_path(origin)
+    origin_part = _part_from_section_path(origin)
+    if rop.move_clause_target_unit_kind == "chapter":
+        if not target_chapter or origin_chapter == target_chapter:
+            return None
+    elif rop.move_clause_target_unit_kind == "part":
+        if not target_part or origin_part == target_part:
+            return None
+    else:
+        return None
+    return origin
+
+
+def _occupant_installer_effective(
+    replay_history_ops,
+    target_address: LegalAddress | None,
+) -> tuple[str, str] | None:
+    """Return (effective, source_statute) of the latest prior write to the slot.
+
+    Scans the fold-order replay history for the most recent INSERT/REPLACE
+    LegalOperation whose target is the same exact slot. This is the typed
+    evidence for the staggered twin-law family: the document-order fold can
+    place a LATER-commencing occupant in the slot before an earlier-window
+    temporary insert is applied.
+    """
+    if not replay_history_ops or target_address is None:
+        return None
+    target_key = tuple(
+        (kind, normalized_label_key(label)) for kind, label in target_address.path
+    )
+    if not target_key or target_key[-1][0] != "section":
+        return None
+    for lo in reversed(replay_history_ops):
+        action = getattr(lo.action, "value", lo.action)
+        if action not in ("insert", "replace"):
+            continue
+        if lo.target is None or not lo.target.path:
+            continue
+        if lo.target.special is not None:
+            continue
+        lo_key = tuple(
+            (kind, normalized_label_key(label)) for kind, label in lo.target.path
+        )
+        if lo_key != target_key:
+            continue
+        source = lo.source
+        if source is None or not source.effective:
+            return None
+        return source.effective, source.statute_id
+    return None
 
 
 def _check_occupancy_policy(
@@ -516,6 +592,7 @@ def _check_occupancy_policy(
     ctx_label: str,
     *,
     findings_out: list[Finding] | None = None,
+    replay_history_ops=None,
 ) -> None:
     """Observational occupancy policy check against the typed contract."""
     from lawvm.core.canonical_intent import Replace, Insert, Repeal, NodeTarget
@@ -532,7 +609,82 @@ def _check_occupancy_policy(
             return
 
     current = _section_occupancy(state, sec_path)
+    if (
+        current is OccupancyClass.ABSENT
+        and sec_path is None
+        and isinstance(intent, Replace)
+        and rop.resolved_action_type == "REPLACE"
+        and rop.move_clause_target_unit_kind in ("chapter", "part")
+    ):
+        # Typed move-rider lane: the REPLACE targets the move DESTINATION
+        # (absent by definition until the move lands); the slot it consumes
+        # is the unique live origin. Evaluate occupancy against the origin
+        # so a legitimate move arrival is not reported as REPLACE-on-absent.
+        origin_path = _move_rider_origin_path(state, rop)
+        if origin_path is not None:
+            current = _section_occupancy(state, origin_path)
+            logger.debug(
+                "  %s → occupancy evaluated at move-rider origin %s (rule: section_move_replace_destination_rebind)",
+                ctx_label,
+                LegalAddress(path=origin_path),
+            )
     policy = intent.contract.occupancy
+    if (
+        current is OccupancyClass.SUBSTANTIVE
+        and isinstance(intent, Insert)
+        and rop.resolved_action_type == "INSERT"
+        and current not in policy.allowed_from
+    ):
+        # Typed staggered-twin lane: a temporary gap-filler INSERT
+        # ("lisätään väliaikaisesti uusi X §", in force until D) whose slot
+        # is occupied in the document-order fold by a deferred-commencement
+        # twin that only enters force ON or AFTER the gap-filler expires
+        # ("X § tulee kuitenkin voimaan vasta ..."). The two occupancies are
+        # disjoint in legal time; the collision exists only in fold order.
+        incoming = rop.resolved_op_source
+        occupant = _occupant_installer_effective(
+            replay_history_ops, rop.resolved_target_address
+        )
+        if (
+            incoming is not None
+            and incoming.effective
+            and incoming.expires
+            and occupant is not None
+            and incoming.effective < occupant[0]
+            and incoming.expires < occupant[0]
+        ):
+            occupant_effective, occupant_statute = occupant
+            logger.debug(
+                "  %s → temporally disjoint twin insert: window %s..%s precedes "
+                "occupant %s effective %s",
+                ctx_label,
+                incoming.effective,
+                incoming.expires,
+                occupant_statute,
+                occupant_effective,
+            )
+            if findings_out is not None:
+                findings_out.append(
+                    Finding(
+                        kind="APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT",
+                        role="observation",
+                        stage="apply",
+                        source_statute=rop.resolved_source_statute,
+                        detail={
+                            "ctx_label": ctx_label,
+                            "op_id": rop.op_id,
+                            "legacy_action": rop.resolved_action_type,
+                            "target_label": rop.target_norm,
+                            "incoming_effective": incoming.effective,
+                            "incoming_expires": incoming.expires,
+                            "occupant_effective": occupant_effective,
+                            "occupant_source_statute": occupant_statute,
+                            "rule_id": "temporally_disjoint_twin_insert",
+                        },
+                        blocking=False,
+                    )
+                )
+            return
     if current not in policy.allowed_from:
         allowed_from = sorted(c.value for c in policy.allowed_from)
         logger.warning(

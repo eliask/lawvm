@@ -269,6 +269,12 @@ exact slot.
 
 - the exact slot already has a substantive occupant
 
+Typed exception (Finland staggered twin laws): a temporary gap-filler
+`insert` whose in-force window ends strictly before the fold-order
+occupant's deferred commencement begins is temporally disjoint, not an
+occupancy conflict. See APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §6,
+`temporally_disjoint_twin_insert`.
+
 ### 6.2 `replace`
 
 `replace` is valid when:
@@ -282,6 +288,13 @@ exact slot.
 
 Jurisdiction-specific "replace into absent slot" behavior must be explicit and
 non-default.
+
+Typed exception (Finland move riders): "muutetaan X §, joka samalla
+siirretään Y lukuun" compiles to a `replace` scoped to the move DESTINATION,
+which is absent until the move lands. With the typed move-rider evidence the
+occupancy of such a `replace` is evaluated against the unique live ORIGIN
+slot. See APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §6,
+`section_move_replace_destination_rebind`.
 
 ### 6.3 `repeal`
 

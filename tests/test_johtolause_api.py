@@ -588,3 +588,51 @@ def test_supplementary_clauses_pipeline_still_produces_ast_nodes() -> None:
     assert any(isinstance(n, TextAmend) for n in all_nodes_ta), (
         "TextAmend must still appear in ClauseAST even when supplementary_clauses is populated"
     )
+
+
+# ---------------------------------------------------------------------------
+# Move-rider carriage ("X §, joka samalla siirretään Y lukuun")
+# ---------------------------------------------------------------------------
+
+
+def test_extract_legal_ops_carries_move_rider_kind_through_clause_ast() -> None:
+    """The johtolause move rider must survive the ClauseAST bridge.
+
+    Regression (2014/1429 ← 2025/1382): "29 e §, joka samalla siirretään
+    5 b lukuun" parses with the DESTINATION chapter rewritten onto the
+    target, but the typed ``move_clause_target_unit_kind`` stamp was dropped
+    at surface→ClauseAST lowering, so apply saw a bare destination-scoped
+    REPLACE and the occupancy policy reported a false REPLACE-on-absent
+    violation at the destination slot.
+    """
+    from lawvm.finland.johtolause import extract_legal_ops
+
+    text = (
+        "muutetaan energiatehokkuuslain (1429/2014) 5 a luvun otsikko, "
+        "29 a–29 d §, 29 e §, joka samalla siirretään 5 b lukuun, "
+        "sekä 29 g ja 30–32 § seuraavasti:"
+    )
+    ops = extract_legal_ops(text)
+
+    by_target = {str(lo.target): lo for lo in ops}
+    moved = by_target["chapter:5b/section:29e"]
+    assert getattr(moved, "move_clause_target_unit_kind", None) == "chapter"
+
+    # The rider is scoped to the moved section only — siblings stay unstamped.
+    for target_str, lo in by_target.items():
+        if target_str == "chapter:5b/section:29e":
+            continue
+        assert getattr(lo, "move_clause_target_unit_kind", None) is None, target_str
+
+
+def test_extract_legal_ops_move_rider_flows_into_amendment_op() -> None:
+    """AmendmentOp.from_lo reads the Finland-local move-rider carrier."""
+    from lawvm.finland.johtolause import extract_legal_ops
+    from lawvm.finland.ops import AmendmentOp
+
+    text = "muutetaan 29 e §, joka samalla siirretään 5 b lukuun, seuraavasti:"
+    ops = extract_legal_ops(text)
+    (moved_lo,) = [lo for lo in ops if str(lo.target) == "chapter:5b/section:29e"]
+
+    (am_op,) = AmendmentOp.from_lo(moved_lo, 0)
+    assert am_op.move_clause_target_unit_kind == "chapter"
