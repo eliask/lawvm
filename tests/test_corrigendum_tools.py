@@ -1203,7 +1203,7 @@ def test_corrigendum_verify_updates_adjudication_text_corpus(
     ]
 
 
-def test_classify_corrigendum_locators_parses_current_and_legacy_schemes() -> None:
+def test_classify_corrigendum_locators_parses_finlex_scheme_and_rejects_legacy() -> None:
     finnish, swedish, other, unparsed = corr_tools._classify_corrigendum_locators(
         [
             # Current finlex://sd-cons scheme; same PDF cached under two versions
@@ -1212,7 +1212,7 @@ def test_classify_corrigendum_locators_parses_current_and_legacy_schemes() -> No
             "finlex://sd-cons/1734/4-000/fin@20190812/media/corrigenda/sk20090135_1.pdf",
             # Swedish fs* series under the same statute — reported distinctly.
             "finlex://sd-cons/1734/4-000/swe@20230451/media/corrigenda/fs20090135_1.pdf",
-            # Legacy akn scheme still parses.
+            # Legacy akn scheme is no longer accepted — lands in unparsed.
             "akn/fi/act/statute-consolidated/2013/23/media/corrigenda/sk20160442_1.pdf",
             # Unrecognized filename series.
             "finlex://sd-cons/2002/1248/fin@20200101/media/corrigenda/zz20200001_1.pdf",
@@ -1223,13 +1223,13 @@ def test_classify_corrigendum_locators_parses_current_and_legacy_schemes() -> No
         ]
     )
 
-    assert finnish == {
-        "1734/4-000": {"sk20090135_1.pdf"},
-        "2013/23": {"sk20160442_1.pdf"},
-    }
+    assert finnish == {"1734/4-000": {"sk20090135_1.pdf"}}
     assert swedish == {"1734/4-000": {"fs20090135_1.pdf"}}
     assert other == {"2002/1248": {"zz20200001_1.pdf"}}
-    assert unparsed == ["finlex://bogus/media/corrigenda/sk20210001_1.pdf"]
+    assert unparsed == [
+        "akn/fi/act/statute-consolidated/2013/23/media/corrigenda/sk20160442_1.pdf",
+        "finlex://bogus/media/corrigenda/sk20210001_1.pdf",
+    ]
 
 
 def test_status_corpus_reports_counts_and_loud_diagnostics(capsys, monkeypatch) -> None:
