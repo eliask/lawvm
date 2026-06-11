@@ -499,7 +499,7 @@ def _uk_bench_exception_observation(statute_id: str, exc: Exception) -> dict[str
 
 
 def _bench_exception_result(
-    entry: dict,
+    entry: dict[str, Any],
     exc: Exception,
     *,
     allow_metadata_backfill: bool = True,
@@ -792,7 +792,7 @@ def _uk_source_metadata_statute_id(
 def _build_corpus_index(
     archive: Farchive,
     types: Optional[frozenset[str]] = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Enumerate statutes in the archive that have both enacted and current XML.
 
     Returns list of dicts: {statute_id, type, year, has_enacted, has_consolidated,
@@ -1658,7 +1658,7 @@ def _load_effect_row_counts(
 
 
 def _score_statute(
-    entry: dict,
+    entry: dict[str, Any],
     archive: Farchive,
     do_replay: bool = False,
     repo_root: Optional[Path] = None,
@@ -2600,7 +2600,7 @@ def _score_statute(
 # ---------------------------------------------------------------------------
 
 
-def _score_statute_worker(entry: dict) -> _BenchResult:
+def _score_statute_worker(entry: dict[str, Any]) -> _BenchResult:
     """Top-level picklable wrapper for parallel execution.
 
     Opens its own Farchive per worker process using module-level globals
@@ -3147,7 +3147,7 @@ def _get_score_witness_dict_rows(r: _BenchResult, label: str) -> list[dict[str, 
 
 
 def _run_bench_parallel_entries(
-    entries: Sequence[dict],
+    entries: Sequence[dict[str, Any]],
     archive: Farchive,
     *,
     do_replay: bool,
@@ -3196,7 +3196,7 @@ def _run_bench_parallel_entries(
         pool = ProcessPoolExecutor(max_workers=workers)
 
     with pool:
-        future_to_entry: dict[Future[_BenchResult], dict] = {}
+        future_to_entry: dict[Future[_BenchResult], dict[str, Any]] = {}
         submission_order = sorted(
             entries,
             key=_uk_bench_parallel_submission_cost,
@@ -3266,7 +3266,7 @@ def _run_bench_parallel_entries(
 
 
 def _run_bench(
-    corpus: list[dict],
+    corpus: list[dict[str, Any]],
     archive: Farchive,
     do_replay: bool = False,
     repo_root: Optional[Path] = None,
@@ -4651,7 +4651,7 @@ def _format_file_size(path: Path) -> str:
 def _save_score_witness_rows(results: list[_BenchResult], label: str) -> int:
     out_path = _score_witness_path(label)
     handle = None
-    writer: csv.DictWriter | None = None
+    writer: csv.DictWriter[str] | None = None
     count = 0
     for result in results:
         for row in _get_score_witness_dict_rows(result, label):
@@ -7097,7 +7097,7 @@ def _load_corpus_csv(
     types: Optional[frozenset[str]] = None,
     archive: Optional[Farchive] = None,
     corpus_csv: Optional[Path] = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Load bench corpus from CSV.
 
     The default UK corpus can be built from the archive. A custom corpus is an
