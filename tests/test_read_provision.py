@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
 from lawvm.tools import read_provision as rp
 
 
@@ -115,3 +117,51 @@ class TestJsonPassthrough:
         assert "display_selector" not in parsed
         assert parsed["schema"] == "lawvm.provision_state.v1"
         assert parsed["text"]["rendered"] == "1 § some in-force text"
+
+    def test_json_invalid_selector_preserves_payload_and_exits_2(self, monkeypatch, capsys):
+        payload = {
+            "schema": "lawvm.provision_state.v1",
+            "status": "invalid_address",
+            "statute_id": "1992/1535",
+            "query": {"provision": "section:127 a §"},
+            "diagnostic": {
+                "code": "FI_PROVISION_SELECTOR_MALFORMED_HYBRID",
+                "message": "LawVM legal-address selectors are kind:label paths without the Finnish § sign",
+                "suggestions": ["section:127a"],
+            },
+        }
+        _patch_replay(monkeypatch, payload)
+
+        with pytest.raises(SystemExit) as raised:
+            rp.main(_Args(statute_id="1992/1535", selector="section:127 a §", json=True))
+
+        captured = capsys.readouterr()
+        assert raised.value.code == 2
+        parsed = json.loads(captured.out)
+        assert parsed == payload
+        assert "ERROR: invalid --provision 'section:127 a §'" in captured.err
+        assert "help: try 'section:127a'" in captured.err
+
+    def test_human_invalid_selector_exits_2_with_diagnostic(self, monkeypatch, capsys):
+        payload = {
+            "schema": "lawvm.provision_state.v1",
+            "status": "invalid_address",
+            "statute_id": "1992/1535",
+            "title": "",
+            "query": {"provision": "section:127 a §", "as_of": "2024-06-01"},
+            "diagnostic": {
+                "code": "FI_PROVISION_SELECTOR_MALFORMED_HYBRID",
+                "message": "LawVM legal-address selectors are kind:label paths without the Finnish § sign",
+                "suggestions": ["section:127a"],
+            },
+            "address_candidates": [],
+        }
+        _patch_replay(monkeypatch, payload)
+
+        with pytest.raises(SystemExit) as raised:
+            rp.main(_Args(statute_id="1992/1535", selector="section:127 a §", json=False))
+
+        captured = capsys.readouterr()
+        assert raised.value.code == 2
+        assert "[invalid_address]" in captured.out
+        assert "ERROR: invalid --provision 'section:127 a §'" in captured.err

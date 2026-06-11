@@ -109,6 +109,16 @@ def _resolve_replay_l1(args: Any, locator: str) -> dict[str, Any]:
     )
 
 
+def _provision_state_is_invalid(payload: dict[str, Any]) -> bool:
+    return payload.get("status") in {"invalid_address", "invalid_query"}
+
+
+def _emit_invalid_provision_state_diagnostic(payload: dict[str, Any]) -> None:
+    from lawvm.tools.provision_state import _emit_cli_diagnostic
+
+    _emit_cli_diagnostic(payload, stream=sys.stderr)
+
+
 def _run_raw(args: Any, selector: str) -> None:
     """Drill down to L0 consolidated prose (oracle-text) at the same selector."""
     from lawvm.tools.oracle_text import build_oracle_text_bundle, _format_text
@@ -225,13 +235,20 @@ def main(args: Any) -> None:
     # Provision scope → replay-L1 via provision-state.
     locator = to_locator_string(selector)
     payload = _resolve_replay_l1(args, locator)
+    invalid = _provision_state_is_invalid(payload)
+    if invalid:
+        _emit_invalid_provision_state_diagnostic(payload)
     if getattr(args, "json", False):
         # Byte-identical to provision-state --json (the MeVM contract).
         # NOTE: display_selector is NOT injected here — JSON stays the pin.
         print(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2))
+        if invalid:
+            raise SystemExit(2)
         return
     # Human render only: carry the typed selector for the header, without
     # touching the JSON pin shape.
     payload_for_render = dict(payload)
     payload_for_render["display_selector"] = selector
     print(_render_provision_human(payload_for_render))
+    if invalid:
+        raise SystemExit(2)
