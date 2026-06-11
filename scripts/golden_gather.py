@@ -27,7 +27,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from lxml import etree
 from lawvm.corpus_store import statute_url
@@ -47,6 +47,12 @@ _OUTPUT_DIR = _LAWVM_DIR / ".tmp" / "golden_gathered"
 
 class _ArchiveGet(Protocol):
     def get(self, locator: str) -> bytes | None: ...
+
+
+DivergenceRow = dict[str, Any]
+CorrigendumPatchRow = dict[str, Any]
+SectionEvidence = dict[str, Any]
+StatuteEvidence = dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +171,7 @@ def _run_lawvm(*args: str, cwd: Path | None = None) -> str:
 # Divergences DB
 # ---------------------------------------------------------------------------
 
-def _query_divergences(statute_id: str) -> list[dict]:
+def _query_divergences(statute_id: str) -> list[DivergenceRow]:
     """Return all divergence rows for a statute from divergences.db."""
     if not _DIVERGENCES_DB.exists():
         return []
@@ -207,7 +213,7 @@ def _to_corrigendum_id(amendment_id: str) -> str:
     return amendment_id
 
 
-def _query_corrigendum_patches(amendment_id: str) -> list[dict]:
+def _query_corrigendum_patches(amendment_id: str) -> list[CorrigendumPatchRow]:
     """Return official Finnish corrigendum items for an amendment from the text corpus.
 
     Accepts both YEAR/NUM and NUM/YEAR formats; normalises to the corpus' NUM/YEAR.
@@ -279,12 +285,12 @@ def _parse_ops_for_amendment(ops_output: str, amendment_id: str) -> list[str]:
 def _gather_section_evidence(
     statute_id: str,
     section_key: str,
-    div_row: dict,
+    div_row: DivergenceRow,
     blame_amendments: list[str],
     ops_output: str,
     base_root: etree._Element | None,
     archive: _ArchiveGet,
-) -> dict:
+) -> SectionEvidence:
     """Build the evidence record for one diverging section."""
 
     # --- Replay and oracle text from divergences.db ---
@@ -345,7 +351,7 @@ def _gather_section_evidence(
 # Main gather function for one statute
 # ---------------------------------------------------------------------------
 
-def gather_statute(statute_id: str) -> dict:
+def gather_statute(statute_id: str) -> StatuteEvidence:
     """Gather all Phase 1 evidence for statute_id. Returns the evidence dict."""
     print(f'  Gathering {statute_id}...', flush=True)
 
@@ -382,7 +388,7 @@ def gather_statute(statute_id: str) -> dict:
             base_root = _load_xml_from_farchive(statute_id, archive)
 
         # Build sections dict
-        sections: dict[str, dict] = {}
+        sections: dict[str, SectionEvidence] = {}
         for row in div_rows:
             section_key = str(row.get('section') or '')
             if not section_key:
@@ -442,7 +448,7 @@ def _normalize_id(statute_id: str) -> str:
     return statute_id.replace('/', '_')
 
 
-def _write_output(data: dict) -> Path:
+def _write_output(data: StatuteEvidence) -> Path:
     _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out_path = _OUTPUT_DIR / f"{_normalize_id(data['statute_id'])}.json"
     with open(out_path, 'w', encoding='utf-8') as f:
