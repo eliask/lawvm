@@ -85,9 +85,12 @@ either live text or expiry when the stated bound cannot be proven.
 - `resolved_address` — `{path:[{kind,label}], special, text}` for the resolved
   timeline. Null on non-resolution. `address_match.mode` is `exact` or
   `unique_suffix`.
-- `lineage` — `{status, address_chain, migration_event_count_considered}`.
-  `status` ∈ `self_only | migration_chain | unresolved_address`. The
-  `address_chain` traces renumbering/migration history considered at `as_of`.
+- `lineage` — `{status, address_chain, migration_event_count_considered,
+  fingerprint, fingerprint_algorithm, fingerprint_semantics}`. `status` ∈
+  `self_only | migration_chain | unresolved_address`. The `address_chain`
+  traces renumbering/migration history considered at `as_of`. `fingerprint` is
+  a compact SHA-256 handle over jurisdiction, statute id, status, address
+  chain, and migration count; it is excluded from `derived_state_hash`.
 - `selection` — `{status, required_dimensions, certificate}` explaining the
   version-selection decision (rail, candidate count, selected dates).
 - `text` — `{rendered, available}`; `available=false` for tombstone/absent.
@@ -189,6 +192,8 @@ fields, in this nesting:
   requested provision string), `as_of`, `query_type`, `territory`.
 - `resolved_address` — `{path, special, text}`, or null.
 - `lineage` — `{status, address_chain, migration_event_count_considered}`.
+  The emitted `lineage.fingerprint*` fields are derived from these fields plus
+  jurisdiction/statute id and are excluded from this hash input.
 - `version` — `{effective, enacted, expires, variant_kind, content_state,
   applicability}`, or null.
 - `content_hash`

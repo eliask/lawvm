@@ -16,6 +16,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.source_witness import source_witness_digest_coverage
 from lawvm.provision_state import resolve_provision_state
 from lawvm.tools.provision_state import (
+    _hash_payload,
     _lawvm_code_identity,
     build_provision_state_response,
     main,
@@ -405,6 +406,37 @@ def test_provision_state_response_exposes_lineage_chain_from_migration_events() 
         "chapter:1/section:2",
     ]
     assert payload["lineage"]["migration_event_count_considered"] == 1
+    assert len(payload["lineage"]["fingerprint"]) == 64
+    assert payload["lineage"]["fingerprint_algorithm"] == "sha256"
+    assert "excluded from derived_state_hash" in payload["lineage"]["fingerprint_semantics"]
+
+    address = LegalAddress(path=(("chapter", "1"), ("section", "1")))
+    legacy_lineage = {
+        "status": payload["lineage"]["status"],
+        "address_chain": payload["lineage"]["address_chain"],
+        "migration_event_count_considered": payload["lineage"]["migration_event_count_considered"],
+    }
+    with_fingerprint = _hash_payload(
+        status="selected",
+        statute_id="2000/1",
+        jurisdiction="fi",
+        query=payload["query"],
+        address=address,
+        lineage=payload["lineage"],
+        version=None,
+        content_hash="",
+    )
+    without_fingerprint = _hash_payload(
+        status="selected",
+        statute_id="2000/1",
+        jurisdiction="fi",
+        query=payload["query"],
+        address=address,
+        lineage=legacy_lineage,
+        version=None,
+        content_hash="",
+    )
+    assert with_fingerprint["derived_state_hash"] == without_fingerprint["derived_state_hash"]
 
 
 def test_provision_state_response_uses_base_source_locator_for_sourceless_base_version() -> None:

@@ -254,6 +254,8 @@ def build_provision_state_response(
             "query": query,
             "resolved_address": None,
             "lineage": _lineage_payload(
+                jurisdiction=jurisdiction,
+                statute_id=statute_id,
                 address=None,
                 migration_events=migration_events,
                 as_of=as_of,
@@ -491,7 +493,13 @@ def invalid_provision_selector_payload(
         "status": "invalid_address",
         "query": query,
         "resolved_address": None,
-        "lineage": _lineage_payload(address=None, migration_events=(), as_of=as_of),
+        "lineage": _lineage_payload(
+            jurisdiction=jurisdiction,
+            statute_id=statute_id,
+            address=None,
+            migration_events=(),
+            as_of=as_of,
+        ),
         "address_candidates": [],
         "selection": None,
         "hashes": _hash_payload(
@@ -539,7 +547,13 @@ def invalid_query_payload(
         "status": "invalid_query",
         "query": query,
         "resolved_address": None,
-        "lineage": _lineage_payload(address=None, migration_events=(), as_of=as_of),
+        "lineage": _lineage_payload(
+            jurisdiction=jurisdiction,
+            statute_id=statute_id,
+            address=None,
+            migration_events=(),
+            as_of=as_of,
+        ),
         "address_candidates": [],
         "selection": None,
         "hashes": _hash_payload(
@@ -871,6 +885,8 @@ def _selected_response(
         status = "selected" if version is not None else selection.status
     expiry_block = _expiry_block(overlay, statute_id, address)
     lineage = _lineage_payload(
+        jurisdiction=jurisdiction,
+        statute_id=statute_id,
         address=address,
         migration_events=migration_events,
         as_of=query["as_of"],
@@ -1177,16 +1193,23 @@ def _selection_payload(selection: VersionSelectionResult) -> dict[str, Any]:
 
 def _lineage_payload(
     *,
+    jurisdiction: str,
+    statute_id: str,
     address: LegalAddress | None,
     migration_events: tuple[MigrationEvent, ...],
     as_of: str,
 ) -> dict[str, Any]:
     if address is None:
-        return {
+        payload = {
             "status": "unresolved_address",
             "address_chain": [],
             "migration_event_count_considered": len(migration_events),
         }
+        return _lineage_payload_with_fingerprint(
+            payload,
+            jurisdiction=jurisdiction,
+            statute_id=statute_id,
+        )
     chain = lineage_address_chain(
         address,
         migration_events,
@@ -1194,10 +1217,48 @@ def _lineage_payload(
         address_prefix_matches=lambda current, prefix: current.has_prefix(prefix),
     )
     status = "migration_chain" if len(chain) > 1 else "self_only"
-    return {
+    payload = {
         "status": status,
         "address_chain": [_address_wire(chain_address) for chain_address in chain],
         "migration_event_count_considered": len(migration_events),
+    }
+    return _lineage_payload_with_fingerprint(
+        payload,
+        jurisdiction=jurisdiction,
+        statute_id=statute_id,
+    )
+
+
+def _lineage_payload_with_fingerprint(
+    lineage: Mapping[str, Any],
+    *,
+    jurisdiction: str,
+    statute_id: str,
+) -> dict[str, Any]:
+    payload = dict(lineage)
+    fingerprint_input = {
+        "schema": "lawvm.provision_state.lineage.v1",
+        "jurisdiction": jurisdiction,
+        "statute_id": statute_id,
+        "lineage": _lineage_hash_input(lineage),
+    }
+    payload["fingerprint"] = _sha256_canonical(fingerprint_input)
+    payload["fingerprint_algorithm"] = "sha256"
+    payload["fingerprint_semantics"] = (
+        "sha256(canonical lawvm.provision_state.lineage.v1: jurisdiction, "
+        "statute_id, status, address_chain, migration_event_count_considered); "
+        "excluded from derived_state_hash"
+    )
+    return payload
+
+
+def _lineage_hash_input(lineage: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if lineage is None:
+        return None
+    return {
+        "status": lineage.get("status"),
+        "address_chain": lineage.get("address_chain", []),
+        "migration_event_count_considered": lineage.get("migration_event_count_considered", 0),
     }
 
 
@@ -1325,7 +1386,7 @@ def _hash_payload(
         "statute_id": statute_id,
         "query": query,
         "resolved_address": _address_wire(address) if address is not None else None,
-        "lineage": lineage,
+        "lineage": _lineage_hash_input(lineage),
         "version": _version_payload(version, content_state_override=content_state_override),
         "content_hash": content_hash,
     }
