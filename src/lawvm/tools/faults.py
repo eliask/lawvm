@@ -32,6 +32,7 @@ import sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from lxml import etree
 
 # ---------------------------------------------------------------------------
@@ -130,7 +131,7 @@ def _query_faults(
 ) -> list[sqlite3.Row]:
     """Return divergence rows that qualify as faults matching filters."""
     clauses = []
-    params: list = []
+    params: list[object] = []
 
     # Filter to known-fault diagnoses (exclude oracle/editorial)
     fault_diag_list = ", ".join(f"'{d}'" for d in _FAULT_DIAGNOSES)
@@ -196,13 +197,13 @@ def _load_amendment_xml(amendment_id: str) -> "etree._Element | None":
 def _extract_amendment_info(
     root: etree._Element,
     section_key: str,
-) -> dict:
+) -> dict[str, Any]:
     """Extract title, preamble (johtolause), section body text from amendment XML.
 
     section_key is the normalized section number (e.g. '3', '12a').
     Returns a dict with keys: title, preamble, body_text, section_found.
     """
-    result: dict = {
+    result: dict[str, Any] = {
         "title": "",
         "preamble": "",
         "body_text": "",
@@ -305,7 +306,7 @@ _REPLAY_BEHIND_DIAGNOSES = frozenset({"REPLAY_MISSING", "MISSING"})
 # Evidence bundle builder
 # ---------------------------------------------------------------------------
 
-def _build_evidence_bundle(row: sqlite3.Row) -> dict:
+def _build_evidence_bundle(row: sqlite3.Row) -> dict[str, Any]:
     """Build the 4-step proof bundle for one divergent section."""
     statute_id = row["statute_id"]
     section = row["section"]
@@ -320,7 +321,7 @@ def _build_evidence_bundle(row: sqlite3.Row) -> dict:
     fault_type = _fault_type_label(diagnosis)
 
     # Amendment info
-    amend_info: dict = {}
+    amend_info: dict[str, Any] = {}
     if blame_source:
         root = _load_amendment_xml(blame_source)
         if root is not None:
@@ -407,7 +408,7 @@ def _build_evidence_bundle(row: sqlite3.Row) -> dict:
             f"Onko ero oikeudellisesti merkittävä?"
         )
 
-    bundle: dict = {
+    bundle: dict[str, Any] = {
         "statute_id": statute_id,
         "section": section,
         "fault_type": fault_type,
@@ -661,10 +662,10 @@ def _cmd_summary(args: argparse.Namespace) -> None:
     unknown_rows = [r for r in fault_rows if r["diagnosis"] not in _FINLEX_BEHIND_DIAGNOSES
                     and r["diagnosis"] not in _REPLAY_BEHIND_DIAGNOSES]
 
-    fault_type_counts: Counter = Counter()
-    sev_counts: Counter = Counter()
-    statutes_affected: set = set()
-    finlex_statutes: set = set()
+    fault_type_counts: Counter[str] = Counter()
+    sev_counts: Counter[int] = Counter()
+    statutes_affected: set[str] = set()
+    finlex_statutes: set[str] = set()
 
     for r in fault_rows:
         ft = _fault_type_label(r["diagnosis"])
@@ -676,7 +677,7 @@ def _cmd_summary(args: argparse.Namespace) -> None:
             finlex_statutes.add(r["statute_id"])
 
     # Non-fault breakdown
-    non_fault_type_counts: Counter = Counter()
+    non_fault_type_counts: Counter[str] = Counter()
     for r in non_fault_rows:
         non_fault_type_counts[r["diagnosis"]] += 1
 
