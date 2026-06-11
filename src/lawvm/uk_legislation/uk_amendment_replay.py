@@ -24,9 +24,9 @@ Current status:
 from __future__ import annotations
 
 from enum import Enum
-import json as json  # noqa: F401
+import json as json
 import time
-from lxml import etree as ET  # noqa: F401
+from lxml import etree as ET
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -36,13 +36,13 @@ from lawvm.core.ir import (
 )
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.uk_legislation.uk_grafter import _LEG_NS as _LEG_NS  # noqa: F401
+from lawvm.uk_legislation.uk_grafter import _LEG_NS as _LEG_NS
 from lawvm.uk_legislation.effects import (
     UKEffectRecord,
     get_affecting_act_enacted_xml_from_archive,
     get_affecting_act_xml_from_archive,
     load_effects_for_statute_from_archive,
-    uk_effect_requires_affecting_source_for_replay,  # noqa: F401
+    uk_effect_requires_affecting_source_for_replay,
 )
 from lawvm.uk_legislation.effect_temporal import (
     resolve_uk_effective_date_overrides_for_replay,
@@ -60,10 +60,10 @@ from lawvm.uk_legislation.authority_filter import (
 from lawvm.uk_legislation.compiled_effect_facts import uk_compiled_effect_facts
 from lawvm.uk_legislation.effect_compiler import compile_effect_to_ir_ops
 from lawvm.uk_legislation.effect_source_selection import (
-    EffectSourceSelection as _EffectSourceSelection,  # noqa: F401
+    EffectSourceSelection as _EffectSourceSelection,
     extracted_tag_and_text as _extracted_tag_and_text,
     select_source_for_effect as _select_source_for_effect,
-    source_context_for_effect as _source_context_for_effect,  # noqa: F401
+    source_context_for_effect as _source_context_for_effect,
 )
 from lawvm.uk_legislation.lowering_records import (
     append_manual_compile_frontier_diagnostic,
@@ -102,20 +102,20 @@ from lawvm.uk_legislation.replay_executor import (
 
 # Backward-compatible re-exports for older tools/tests that imported UK helper
 # internals from this historical facade while the implementation moved out.
-from lawvm.uk_legislation.authority_filter import (  # noqa: F401
+from lawvm.uk_legislation.authority_filter import (
     _uk_op_allowed_by_authority_mode as _uk_op_allowed_by_authority_mode,
 )
-from lawvm.uk_legislation.commencement import commencement_eid_set as commencement_eid_set  # noqa: F401
-from lawvm.uk_legislation.effects import (  # noqa: F401
+from lawvm.uk_legislation.commencement import commencement_eid_set as commencement_eid_set
+from lawvm.uk_legislation.effects import (
     load_effects_for_statute as load_effects_for_statute,
     parse_effects_from_bytes as parse_effects_from_bytes,
     parse_effects_from_feeds as parse_effects_from_feeds,
     parse_effects_from_metadata as parse_effects_from_metadata,
 )
-from lawvm.uk_legislation.ordering import (  # noqa: F401
+from lawvm.uk_legislation.ordering import (
     _uk_source_provision_order_key as _uk_source_provision_order_key,
 )
-from lawvm.uk_legislation.provenance_notes import (  # noqa: F401
+from lawvm.uk_legislation.provenance_notes import (
     NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR as _NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR,
     NOTE_FRAGMENT_SUB as _NOTE_FRAGMENT_SUB,
     NOTE_METADATA_SOURCE_FALLBACK as _NOTE_METADATA_SOURCE_FALLBACK,
@@ -129,31 +129,73 @@ from lawvm.uk_legislation.provenance_notes import (  # noqa: F401
     NOTE_TABLE_ROW_REPLACE_SELECTOR as _NOTE_TABLE_ROW_REPLACE_SELECTOR,
     NOTE_TEXT_REWRITE_RULE as _NOTE_TEXT_REWRITE_RULE,
 )
-from lawvm.uk_legislation.provision_extractor import (  # noqa: F401
+from lawvm.uk_legislation.provision_extractor import (
     extract_provision_element_from_bytes as extract_provision_element_from_bytes,
     _parse_ref as _parse_ref,
 )
-from lawvm.uk_legislation.replay_executor import replay_uk_ops as replay_uk_ops  # noqa: F401
-from lawvm.uk_legislation.source_context import (  # noqa: F401
+from lawvm.uk_legislation.replay_executor import replay_uk_ops as replay_uk_ops
+from lawvm.uk_legislation.source_context import (
     _build_affecting_source_context as _build_affecting_source_context,
     _extract_from_affecting_source_context as _extract_from_affecting_source_context,
     _extract_from_affecting_source_context_with_observations as _extract_from_affecting_source_context_with_observations,
     _select_enacted_source_for_current_shell as _select_enacted_source_for_current_shell,
 )
-from lawvm.uk_legislation.substitution_metadata import (  # noqa: F401
+from lawvm.uk_legislation.substitution_metadata import (
     _repeal_tail_for_substituted_series_replacement as _repeal_tail_for_substituted_series_replacement,
     _retarget_substituted_series_to_replaced_anchor as _retarget_substituted_series_to_replaced_anchor,
 )
-from lawvm.uk_legislation.target_parser import (  # noqa: F401
+from lawvm.uk_legislation.target_parser import (
     _split_metadata_provisions as _split_metadata_provisions,
     _parse_affected_target as _parse_affected_target,
 )
-from lawvm.uk_legislation.text_rewrite_fragments import (  # noqa: F401
+from lawvm.uk_legislation.text_rewrite_fragments import (
     _fragment_substitution as _fragment_substitution,
 )
-from lawvm.uk_legislation.xml_helpers import (  # noqa: F401
+from lawvm.uk_legislation.xml_helpers import (
     _tag as _tag,
     _text_content as _text_content,
+)
+
+_UK_AMENDMENT_REPLAY_COMPAT_EXPORTS = (
+    json,
+    ET,
+    _LEG_NS,
+    uk_effect_requires_affecting_source_for_replay,
+    _EffectSourceSelection,
+    _source_context_for_effect,
+    _uk_op_allowed_by_authority_mode,
+    commencement_eid_set,
+    load_effects_for_statute,
+    parse_effects_from_bytes,
+    parse_effects_from_feeds,
+    parse_effects_from_metadata,
+    _uk_source_provision_order_key,
+    _NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR,
+    _NOTE_FRAGMENT_SUB,
+    _NOTE_METADATA_SOURCE_FALLBACK,
+    _NOTE_PRECEDING_EID,
+    _NOTE_REWRITE_WITNESS,
+    _NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR,
+    _NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR,
+    _NOTE_TABLE_CELL_SELECTOR,
+    _NOTE_TABLE_COLUMN_INSERT_SELECTOR,
+    _NOTE_TABLE_ROW_INSERT_SELECTOR,
+    _NOTE_TABLE_ROW_REPLACE_SELECTOR,
+    _NOTE_TEXT_REWRITE_RULE,
+    extract_provision_element_from_bytes,
+    _parse_ref,
+    replay_uk_ops,
+    _build_affecting_source_context,
+    _extract_from_affecting_source_context,
+    _extract_from_affecting_source_context_with_observations,
+    _select_enacted_source_for_current_shell,
+    _repeal_tail_for_substituted_series_replacement,
+    _retarget_substituted_series_to_replaced_anchor,
+    _split_metadata_provisions,
+    _parse_affected_target,
+    _fragment_substitution,
+    _tag,
+    _text_content,
 )
 
 # ---------------------------------------------------------------------------

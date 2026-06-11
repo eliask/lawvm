@@ -47,7 +47,7 @@ from lawvm.core.elaboration_context import (
     snapshot_target_context,
 )
 from lawvm.finland.source_normalize import normalize_source_ir
-from lawvm.finland.ops import (  # noqa: E402, F401  (moved here; re-exported for backward compat)
+from lawvm.finland.ops import (
     OpType,
     TargetKind,
     AmendmentOp,
@@ -67,7 +67,7 @@ from lawvm.finland.ops import (  # noqa: E402, F401  (moved here; re-exported fo
     normalize_scope_confidence,
     projection_scope_confidence,
 )
-from lawvm.finland.normalize import (  # noqa: E402, F401  (moved here; re-exported for backward compat)
+from lawvm.finland.normalize import (
     _extract_grouped_container_targets,
     _sec1_fallback_peg_skip_required,
     _extract_insert_section_ops_fallback,
@@ -82,7 +82,7 @@ from lawvm.finland.normalize import (  # noqa: E402, F401  (moved here; re-expor
     parse_ops_title_fallback,
 )
 from lawvm.finland.johtolause import (
-    extract_legal_ops as extract_johtolause_legal_ops,  # noqa: F401  (re-exported; tests import from grafter)
+    extract_legal_ops as extract_johtolause_legal_ops,
     extract_law_level_text_patch_los as _extract_law_level_patch_los,
     parse_clause as _parse_johtolause_clause,
 )
@@ -487,7 +487,7 @@ def _emit_structural_dedup_warning(
 # ---------------------------------------------------------------------------
 # Uncovered body recovery cluster (moved to grafter_uncovered.py; re-exported)
 # ---------------------------------------------------------------------------
-from lawvm.finland.grafter_uncovered import (  # noqa: E402, F401
+from lawvm.finland.grafter_uncovered import (
     _recover_uncovered_body_ops,
     _apply_uncovered_kumotaan,
     _pre_scan_repeal_targets,
@@ -495,14 +495,14 @@ from lawvm.finland.grafter_uncovered import (  # noqa: E402, F401
     _strict_rejected_uncovered_body_finding,
 )
 
-from lawvm.finland.citation_routing import (  # noqa: E402
+from lawvm.finland.citation_routing import (
     OP_KEYWORDS,
-    _johtolause_references_parent,  # noqa: F401  (re-exported)
+    _johtolause_references_parent,
     _looks_like_fi_meta_repeal,
     _title_explicitly_targets_other_statute,
-    route_amendment,  # noqa: F401  (re-exported)
+    route_amendment,
 )
-from lawvm.finland.acquisition import (  # noqa: E402
+from lawvm.finland.acquisition import (
     build_amendment_acquisition_result,
     should_use_sec1_fallback_pre_routing as _should_use_sec1_fallback_pre_routing_impl,
     should_use_sec1_fallback_post_routing as _should_use_sec1_fallback_post_routing_impl,
@@ -512,7 +512,7 @@ from lawvm.finland.acquisition import (  # noqa: E402
 # ---------------------------------------------------------------------------
 # Johtolause supplement/tagging (moved to johtolause_supplements.py; re-exported)
 # ---------------------------------------------------------------------------
-from lawvm.finland.johtolause_supplements import (  # noqa: E402, F401
+from lawvm.finland.johtolause_supplements import (
     _tag_explicit_item_shift_after_repeal_hints,
     _supplement_missing_repeals_after_item_shift_clause,
     _supplement_named_table_row_mixed_clause_ops,
@@ -522,11 +522,11 @@ from lawvm.finland.johtolause_supplements import (  # noqa: E402, F401
 # ---------------------------------------------------------------------------
 # Body pairing (assign_body_units re-exported for tests that import from grafter)
 # ---------------------------------------------------------------------------
-from lawvm.finland.body_pairing import (  # noqa: E402
-    assign_body_units,  # noqa: F401  (re-exported for tests that import from grafter)
+from lawvm.finland.body_pairing import (
+    assign_body_units,
     build_observed_body_inventory as _build_observed_body_inventory,
 )
-from lawvm.finland.restructure_plan import (  # noqa: E402
+from lawvm.finland.restructure_plan import (
     build_restructure_plan,
     deferred_plan_op_finding,
     execute_restructure_plan,
@@ -541,7 +541,7 @@ from lawvm.finland.restructure_plan import (  # noqa: E402
 # ---------------------------------------------------------------------------
 # Corpus store + oracle access (moved to lawvm.finland.corpus; re-exported)
 # ---------------------------------------------------------------------------
-from lawvm.finland.corpus import (  # noqa: E402, F401
+from lawvm.finland.corpus import (
     _get_corpus_store,
     get_corpus,
     _latest_consolidated_path_by_statute,
@@ -557,7 +557,7 @@ from lawvm.finland.corpus import (  # noqa: E402, F401
     get_ground_truth_tree,
 )
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
-from lawvm.finland.consolidated_store import (  # noqa: E402
+from lawvm.finland.consolidated_store import (
     select_cached_consolidated_artifact_with_info as _select_artifact_with_info,
 )
 
@@ -583,7 +583,7 @@ def _source_normalization_fact_finding_kind(kind_value: str) -> str | None:
 # ---------------------------------------------------------------------------
 # Pure helpers (moved to helpers.py; re-exported here for backward compat)
 # ---------------------------------------------------------------------------
-from lawvm.finland.helpers import (  # noqa: E402, F401
+from lawvm.finland.helpers import (
     _norm_num_token,
     _roman_label_to_arabic,
     _section_sort_key,
@@ -829,7 +829,7 @@ def _normalize_item_like_target(
 # ---------------------------------------------------------------------------
 # IRNode merge / omission-resolution functions (moved to finland/merge.py)
 # ---------------------------------------------------------------------------
-from lawvm.finland.merge import (  # noqa: E402, F401  (moved here; re-exported for backward compat)
+from lawvm.finland.merge import (
     _has_section_omissions_ir,
     _merge_subsection_with_omission_ir,
     _merge_subsection_accumulate_inner_omission_ir,
@@ -852,7 +852,7 @@ from lawvm.finland.merge import (  # noqa: E402, F401  (moved here; re-exported 
 )
 
 
-from lawvm.finland.frontend_compile import (  # noqa: E402, F401  (moved here; re-exported for backward compat)
+from lawvm.finland.frontend_compile import (
     _tree_title,
     _enrich_ops_from_amendment_tree,
     normalize_and_compile_ops,
@@ -2183,7 +2183,7 @@ def _coalesce_same_target_mixed_scope_section_groups(
 # ---------------------------------------------------------------------------
 # Constraint predicates + filter (moved to lawvm.finland.constraints; re-exported)
 # ---------------------------------------------------------------------------
-from lawvm.finland.constraints import (  # noqa: E402, F401
+from lawvm.finland.constraints import (
     _find_muutos_node,
     _is_language_variant_only_johtolause,
     _johtolause_mentions_section,
@@ -2202,7 +2202,7 @@ from lawvm.finland.constraints import (  # noqa: E402, F401
 # ---------------------------------------------------------------------------
 # Pure IR surgery helpers (moved to lawvm.finland.apply_ir_ops; re-exported)
 # ---------------------------------------------------------------------------
-from lawvm.finland.apply_ir_ops import (  # noqa: E402, F401
+from lawvm.finland.apply_ir_ops import (
     _kumottu_attribution,
     _build_repeal_placeholder_ir,
     _build_repeal_placeholder_from_label_ir,
@@ -2218,7 +2218,7 @@ from lawvm.finland.apply_ir_ops import (  # noqa: E402, F401
 # ---------------------------------------------------------------------------
 # Amend-payload helpers (moved to lawvm.finland.apply_payload_ops; re-exported)
 # ---------------------------------------------------------------------------
-from lawvm.finland.apply_payload_ops import (  # noqa: E402, F401
+from lawvm.finland.apply_payload_ops import (
     _find_amend_paragraph,
     _find_amend_intro,
     _flattened_item_paragraph_from_subsection_ir,
@@ -2231,7 +2231,7 @@ from lawvm.finland.apply_payload_ops import (  # noqa: E402, F401
 # ---------------------------------------------------------------------------
 # Runtime-support helpers (moved to lawvm.finland.apply_runtime_support)
 # ---------------------------------------------------------------------------
-from lawvm.finland.apply_runtime_support import (  # noqa: E402, F401
+from lawvm.finland.apply_runtime_support import (
     _snapshot_op_source,
     _emit_section_snapshot,
     _prefer_unique_substantive_section_path_over_placeholder,
@@ -2244,10 +2244,10 @@ from lawvm.finland.apply_runtime_support import (  # noqa: E402, F401
 # ---------------------------------------------------------------------------
 # Apply-cluster entrypoints and executor helpers
 # ---------------------------------------------------------------------------
-from lawvm.finland.apply import (  # noqa: E402, F401
+from lawvm.finland.apply import (
     apply_op,
 )
-from lawvm.finland.apply_events import (  # noqa: E402, F401
+from lawvm.finland.apply_events import (
     ApplyMutationAccountingResult,
     ApplyMutationEvent,
     ApplyMutationInvariantReport,
@@ -2255,11 +2255,11 @@ from lawvm.finland.apply_events import (  # noqa: E402, F401
     check_apply_mutation_invariant_reports,
     check_apply_mutation_accounting,
 )
-from lawvm.core.mutation_accounting import (  # noqa: E402
+from lawvm.core.mutation_accounting import (
     MutationAccountingResult,
     observed_vs_declared_cross_check,
 )
-from lawvm.core.mutation_boundary import diff_ir_paths_identity_pruned  # noqa: E402
+from lawvm.core.mutation_boundary import diff_ir_paths_identity_pruned
 
 # Stage-0 passive observed-vs-declared tree cross-check. Defaults ON: after each
 # applied op the replay fold computes an identity-pruned structural diff of the
@@ -2267,20 +2267,20 @@ from lawvm.core.mutation_boundary import diff_ir_paths_identity_pruned  # noqa: 
 # op's declared mutation-event paths. It only records findings; it never alters
 # replay behavior, so it is safe to leave enabled.
 OBSERVED_MUTATION_CROSS_CHECK_ENABLED = True
-from lawvm.finland.migration_ledger import MigrationLedger, migration_lower_bound_for_op  # noqa: E402
-from lawvm.finland.apply_ir_ops import (  # noqa: E402, F401
+from lawvm.finland.migration_ledger import MigrationLedger, migration_lower_bound_for_op
+from lawvm.finland.apply_ir_ops import (
     _rewrite_bracketed_single_subsection_replace_ir,
 )
-from lawvm.finland.apply_subsection_dispatch import (  # noqa: E402, F401
+from lawvm.finland.apply_subsection_dispatch import (
     _apply_deterministic_subsection_op,
 )
-from lawvm.finland.apply_structure_ops import (  # noqa: E402, F401
+from lawvm.finland.apply_structure_ops import (
     _apply_container_op,
     _apply_whole_section_op,
     _apply_materialization,
     _normalize_subsection_target_hint_ir,
 )
-from lawvm.finland.payload_normalize import (  # noqa: E402, F401
+from lawvm.finland.payload_normalize import (
     GroupPayloadNormalizationResult,
     prepare_payload_surface,
     elaborate_payload_against_live,
@@ -2320,7 +2320,7 @@ from lawvm.finland.group_ops import (
 
 
 # Moved to lawvm.finland.post_process; re-exported here for backward compat.
-from lawvm.finland.post_process import (  # noqa: E402, F401
+from lawvm.finland.post_process import (
     _consolidate_kumottu_range,
     _KUMOTTU_PLACEHOLDER_RE,
     _SECTION_KUMOTTU_PLACEHOLDER_RE,
@@ -2493,7 +2493,7 @@ def _pre_create_pseudo_marker_chapters(
 
 
 # Moved to lawvm.finland.metadata; re-exported here for backward compat.
-from lawvm.finland.metadata import (  # noqa: E402, F401
+from lawvm.finland.metadata import (
     _normalize_johtolause_verbs,
 )
 
@@ -2512,7 +2512,7 @@ def _restrict_sec1_fallback_to_parent(sec1_text: str, parent_id: str) -> str:
 # Body-driven chapter seeding for partial-base statutes
 # (moved to lawvm.finland.chapter_seed; re-exported here for backward compat)
 # ---------------------------------------------------------------------------
-from lawvm.finland.chapter_seed import (  # noqa: E402, F401
+from lawvm.finland.chapter_seed import (
     seed_missing_chapters as _seed_missing_chapters,
     _find_chapter_containers_with_omissions,
     _last_chapter_label,
@@ -2739,7 +2739,7 @@ def serialize_text(ir: IRNode) -> str:
 # ---------------------------------------------------------------------------
 # StatuteContext + ReplayState (moved to lawvm.finland.statute; re-exported)
 # ---------------------------------------------------------------------------
-from lawvm.finland.statute import StatuteContext, ReplayState, ReplayResult, OracleSelectorInfo  # noqa: E402
+from lawvm.finland.statute import StatuteContext, ReplayState, ReplayResult, OracleSelectorInfo
 
 
 class _ContainerLookupShim(Protocol):
@@ -2750,7 +2750,7 @@ class _ContainerLookupShim(Protocol):
 # ---------------------------------------------------------------------------
 # Metadata helpers (moved to lawvm.finland.metadata; re-exported for compat)
 # ---------------------------------------------------------------------------
-from lawvm.finland.metadata import (  # noqa: E402
+from lawvm.finland.metadata import (
     get_johtolause,
     get_operative_body_repeal_candidate,
     _amendment_effective_date,
@@ -2905,7 +2905,7 @@ def _resolve_applicable_amendment_records(
 # ---------------------------------------------------------------------------
 # VTS repeal extraction (moved to lawvm.finland.vts; re-exported for compat)
 # ---------------------------------------------------------------------------
-from lawvm.finland.vts import (  # noqa: E402, F401
+from lawvm.finland.vts import (
     _voimaantulo_repeal_fragment_for_parent,
     _vts_extract_after_citation,
     _expand_section_range_vts,
@@ -2917,7 +2917,7 @@ from lawvm.finland.vts import (  # noqa: E402, F401
 
 
 # Moved to lawvm.finland.kumotaan; re-exported here for backward compat.
-from lawvm.finland.kumotaan import (  # noqa: E402, F401
+from lawvm.finland.kumotaan import (
     _extract_kumotaan_section_refs,
     _extract_kumotaan_chapter_section_map,
     _extract_kumotaan_container_refs,
@@ -4851,10 +4851,10 @@ def compile_amendment_ops(
         # Extract SurfaceMetaClause objects from the johto text and derive
         # typed ActivationRules.  These coexist with the existing EffectIntent
         # and TemporalEvent pipelines.
-        from lawvm.finland.johtolause.meta_parse import (  # noqa: PLC0415
+        from lawvm.finland.johtolause.meta_parse import (
             extract_meta_surface_clauses as _extract_meta_surface_clauses,
         )
-        from lawvm.finland.temporal_lowering import (  # noqa: PLC0415
+        from lawvm.finland.temporal_lowering import (
             activation_rules_from_meta_clauses_with_findings as _activation_rules_from_meta_clauses,
             classify_contingent as _classify_contingent,
             default_activation_rule as _default_activation_rule,
@@ -4961,7 +4961,7 @@ def _group_shadow_pruning_foreign_scoped_section_targets(
 
 # normalize_and_compile_ops moved to lawvm.finland.frontend_compile; re-exported above.
 
-from lawvm.finland.frontend_observations import (  # noqa: E402, F401  (moved here; re-exported for backward compat)
+from lawvm.finland.frontend_observations import (
     _duplicate_frontend_target_observations,
     _semantic_collapse_move_or_renumber_observations,
     _scope_anchor_dependence_observations,
@@ -6707,10 +6707,10 @@ def process_muutoslaki(
         # This runs BEFORE projection-row emission so that classify_contingent()
         # is the execution authority for contingent detection, replacing the
         # legacy _eff_step == "contingent_text" boolean check.
-        from lawvm.finland.johtolause.meta_parse import (  # noqa: PLC0415
+        from lawvm.finland.johtolause.meta_parse import (
             extract_meta_surface_clauses as _extract_meta_sc,
         )
-        from lawvm.finland.temporal_lowering import (  # noqa: PLC0415
+        from lawvm.finland.temporal_lowering import (
             activation_rules_from_meta_clauses as _arules_from_mc,
             classify_contingent as _classify_cont,
             default_activation_rule as _default_arule,
@@ -7263,7 +7263,7 @@ def process_muutoslaki(
         return _build_result(state)
 
 
-from lawvm.finland.post_process import post_process_tree  # noqa: E402  (re-export for backward compat)
+from lawvm.finland.post_process import post_process_tree
 
 
 def replay_xml(
@@ -8046,6 +8046,117 @@ def replay_xml(
     finally:
         _reset_replay_verbose(verbose_token)
 
+
+_GRAFTER_COMPAT_EXPORTS = (
+    OpType,
+    TargetKind,
+    LawLevelTextPatch,
+    _PATH_KINDS,
+    _lo_target_fields,
+    _lo_path_dict,
+    _build_canonical_intent,
+    _extract_grouped_container_targets,
+    _sec1_fallback_peg_skip_required,
+    _extract_insert_section_ops_fallback,
+    _extract_insert_subsection_ops_fallback,
+    _extract_insert_container_ops_fallback,
+    _extract_root_insert_ops_fallback,
+    _extract_root_replace_ops_from_body_fallback,
+    _dedupe_fallback_ops_ir,
+    _extract_replace_ops_from_muutetaan_tail,
+    _expand_numeric_section_list_ir,
+    parse_ops_fallback_heuristic,
+    parse_ops_title_fallback,
+    extract_johtolause_legal_ops,
+    _uncovered_body_recovery_finding,
+    _johtolause_references_parent,
+    route_amendment,
+    _tag_explicit_item_shift_after_repeal_hints,
+    _supplement_missing_repeals_after_item_shift_clause,
+    _supplement_named_table_row_mixed_clause_ops,
+    _tag_named_table_row_single_clause_ops,
+    assign_body_units,
+    get_corpus,
+    _latest_consolidated_path_by_statute,
+    get_oracle_path,
+    _consolidated_oracle_version_amendment_id,
+    get_consolidated_oracle_context,
+    _oracle_version_label,
+    get_ground_truth,
+    get_ground_truth_tree,
+    _section_sort_key,
+    _previous_item_token,
+    _parse_iso_date,
+    _expand_section_range,
+    _has_section_omissions_ir,
+    _merge_subsection_with_omission_ir,
+    _merge_subsection_accumulate_inner_omission_ir,
+    _merge_section_inner_subsection_omission_ir,
+    _merge_section_with_omission_ir,
+    _merge_same_numbered_container_insert_ir,
+    _paragraph_signatures_ir,
+    _single_subsection_paragraph_map_ir,
+    _item_label_from_intro_like_ir,
+    _sparse_section_item_update_map_ir,
+    _sparse_item_section_replace_merge_ir,
+    _paragraph_to_subparagraph_ir,
+    _merge_sparse_alakohta_insert_ir,
+    _merge_sparse_alakohta_replace_ir,
+    _merge_letter_item_into_content_only_subsection_ir,
+    _merge_letter_item_from_content_subsection_ir,
+    _is_suspicious_partial_section_replace_ir,
+    _drop_suspicious_partial_whole_section_replaces,
+    _pre_resolve_omissions,
+    _is_language_variant_only_johtolause,
+    _johtolause_mentions_section,
+    _c_language_variant,
+    _c_false_positive_reference,
+    _c_no_source_payload,
+    _c_no_heading_payload,
+    _c_whole_section_subsumes_children,
+    _c_replace_when_insert_same_paragraph,
+    _c_phantom_subsection,
+    _OP_CONSTRAINTS,
+    _kumottu_attribution,
+    _build_repeal_placeholder_ir,
+    _build_repeal_placeholder_from_label_ir,
+    _relabel_section_ir,
+    _relabel_paragraph_ir,
+    _insert_item_with_suffix_renumber_ir,
+    _rebuild_section_with_subsections_ir,
+    _insert_subsection_with_renumber_ir,
+    _find_amend_paragraph,
+    _find_amend_intro,
+    _flattened_item_paragraph_from_subsection_ir,
+    _has_single_intro_numbered_item_list_ir,
+    _collapse_intro_list_amend_subsection_ir,
+    _make_item_repeal_placeholder_ir,
+    _has_intro_list_moment_shape_ir,
+    _find_insert_parent_path,
+    _rewrite_bracketed_single_subsection_replace_ir,
+    _apply_deterministic_subsection_op,
+    _apply_container_op,
+    _apply_whole_section_op,
+    _apply_materialization,
+    _normalize_subsection_target_hint_ir,
+    GroupPayloadNormalizationResult,
+    _KUMOTTU_PLACEHOLDER_RE,
+    _SECTION_KUMOTTU_PLACEHOLDER_RE,
+    _normalize_johtolause_verbs,
+    _find_chapter_containers_with_omissions,
+    _last_chapter_label,
+    _next_chapter_label,
+    _chapters_in_gap,
+    _rebuild_at_path,
+    _voimaantulo_repeal_fragment_for_parent,
+    _vts_extract_after_citation,
+    _expand_section_range_vts,
+    extract_voimaantulo_repeals,
+    _extract_kumotaan_container_refs,
+    _duplicate_frontend_target_observations,
+    _semantic_collapse_move_or_renumber_observations,
+    _scope_anchor_dependence_observations,
+)
 
 # _oracle_version_label, get_ground_truth, get_ground_truth_tree
 # re-exported via the corpus import block near the top of this file.
