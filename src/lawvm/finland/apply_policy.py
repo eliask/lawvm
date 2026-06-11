@@ -37,6 +37,7 @@ from lawvm.finland.ops import (
 )
 from lawvm.finland.apply_runtime_support import _valid_target_path_hint
 from lawvm.finland.migration_ledger import migration_lower_bound_for_op
+from lawvm.finland.replay_notices import replay_verbose_enabled
 
 if TYPE_CHECKING:
     from lawvm.finland.statute import ReplayState
@@ -691,13 +692,14 @@ def _check_occupancy_policy(
             return
     if current not in policy.allowed_from:
         allowed_from = sorted(c.value for c in policy.allowed_from)
-        logger.warning(
-            "  %s → occupancy policy violation: §%s is %s, not in allowed_from %s",
-            ctx_label,
-            rop.target_norm,
-            current.value,
-            set(allowed_from),
-        )
+        if replay_verbose_enabled():
+            logger.warning(
+                "  %s → occupancy policy violation: §%s is %s, not in allowed_from %s",
+                ctx_label,
+                rop.target_norm,
+                current.value,
+                set(allowed_from),
+            )
         if findings_out is not None:
             findings_out.append(
                 Finding(

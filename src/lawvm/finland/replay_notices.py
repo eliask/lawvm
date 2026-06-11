@@ -17,6 +17,10 @@ def reset_replay_verbose(token) -> None:
     _REPLAY_VERBOSE.reset(token)
 
 
+def replay_verbose_enabled() -> bool:
+    return _REPLAY_VERBOSE.get()
+
+
 def replay_print(*args, **kwargs) -> None:
-    if _REPLAY_VERBOSE.get():
+    if replay_verbose_enabled():
         print(*args, **kwargs)

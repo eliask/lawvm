@@ -500,25 +500,31 @@ def _batch_pre_blame_sections(
     # migration follows) read replay history as typed evidence and would
     # produce spurious diagnostics in a history-less blame replay.
     blame_lo_ops: list[Any] = []
-    for rec in amendment_records:
-        amendment_id = str(rec["statute_id"])
-        if amendment_id in wanted:
-            # Snapshot IR before applying this amendment
-            result[amendment_id] = (extract_ir_sections(state.ir), last_amendment_id)
-            wanted.discard(amendment_id)
-            if not wanted:
-                break
-        _null = io.StringIO()
-        with contextlib.redirect_stdout(_null):
-            state = process_muutoslaki(
-                amendment_id,
-                state,
-                ctx,
-                replay_mode=mode,
-                lo_ops_out=blame_lo_ops,
-                parent_id=sid,
-            ).output
-        last_amendment_id = amendment_id
+    from lawvm.finland.replay_notices import reset_replay_verbose, set_replay_verbose
+
+    verbose_token = set_replay_verbose(False)
+    try:
+        for rec in amendment_records:
+            amendment_id = str(rec["statute_id"])
+            if amendment_id in wanted:
+                # Snapshot IR before applying this amendment
+                result[amendment_id] = (extract_ir_sections(state.ir), last_amendment_id)
+                wanted.discard(amendment_id)
+                if not wanted:
+                    break
+            _null = io.StringIO()
+            with contextlib.redirect_stdout(_null):
+                state = process_muutoslaki(
+                    amendment_id,
+                    state,
+                    ctx,
+                    replay_mode=mode,
+                    lo_ops_out=blame_lo_ops,
+                    parent_id=sid,
+                ).output
+            last_amendment_id = amendment_id
+    finally:
+        reset_replay_verbose(verbose_token)
 
     # Any blame sources not found in amendment chain get empty result
     for src in blame_sources:

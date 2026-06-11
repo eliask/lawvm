@@ -684,6 +684,45 @@ def test_occupancy_policy_violation_emits_finding() -> None:
     assert finding.detail["strict_disposition"] == "record"
 
 
+def test_occupancy_policy_violation_quiet_replay_suppresses_warning(caplog) -> None:
+    from lawvm.core.occupancy import OccupancyClass
+    from lawvm.finland.replay_notices import reset_replay_verbose, set_replay_verbose
+
+    op = _op(op_type="REPLACE", target_unit_kind="section")
+    rop = _rop(op)
+    intent = Replace(
+        kind=IntentKind.REPLACE,
+        target=_node_target("section", ("section", "1")),
+        payload=_payload(),
+        contract=ExecutionContract(
+            occupancy=OccupancyPolicy(
+                primary_expected_from=frozenset({OccupancyClass.SUBSTANTIVE}),
+                allowed_from=frozenset({OccupancyClass.SUBSTANTIVE}),
+                result=OccupancyClass.SUBSTANTIVE,
+            ),
+            coverage=CoverageMode.EXACT,
+        ),
+    )
+    findings = []
+
+    token = set_replay_verbose(False)
+    try:
+        with caplog.at_level(logging.WARNING, logger="lawvm.finland.apply_policy"):
+            _check_occupancy_policy(
+                cast(Any, SimpleNamespace(ir=None)),
+                rop,
+                intent,
+                None,
+                "ctx:absent_replace",
+                findings_out=findings,
+            )
+    finally:
+        reset_replay_verbose(token)
+
+    assert [finding.kind for finding in findings] == ["APPLY.OCCUPANCY_POLICY_VIOLATION"]
+    assert not any("occupancy policy violation" in record.message for record in caplog.records)
+
+
 # ---------------------------------------------------------------------------
 # Tests: counter accumulation is additive across multiple mismatches
 # ---------------------------------------------------------------------------
