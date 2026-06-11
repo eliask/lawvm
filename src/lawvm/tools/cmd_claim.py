@@ -28,9 +28,12 @@ from typing import Optional
 
 from lawvm.core.manual_claims.native import (
     attest,
-    query_retraction_taint,
     query_state_from_store,
     submit_assertion,
+)
+from lawvm.core.retraction_taint_projection import (
+    project_retraction_taint,
+    render_retraction_taint,
 )
 from lawvm.core.provenance_graph import (
     GraphBuilder,
@@ -206,20 +209,25 @@ def _assertion_from_dict(d: dict) -> ProvenanceAssertion:
 
 
 def _build_live_snapshot(store: GraphStore):
-    """Build a ProvenanceGraph from all objects on disk."""
+    """Build a ProvenanceGraph from all persisted objects, builds, and edges."""
+    from lawvm.core.build_consumption import build_node_for_record
+
     reg_hash = attestation_kind_registry_hash()
     builder = GraphBuilder(attestation_kind_registry_hash_val=reg_hash)
     objects_dir = store._objects_dir()
-    if not objects_dir.exists():
-        return builder.finalize()
-    for f in sorted(objects_dir.glob("*.json")):
-        d = json.loads(f.read_text(encoding="utf-8"))
-        if "assertion_id" in d and "kind" in d:
-            a = _deserialize_assertion(d)
-            builder.add_assertion(a)
-        elif "attestation_id" in d and "attestation_kind" in d:
-            a = _deserialize_attestation(d)
-            builder.add_attestation(a)
+    if objects_dir.exists():
+        for f in sorted(objects_dir.glob("*.json")):
+            d = json.loads(f.read_text(encoding="utf-8"))
+            if "assertion_id" in d and "kind" in d:
+                a = _deserialize_assertion(d)
+                builder.add_assertion(a)
+            elif "attestation_id" in d and "attestation_kind" in d:
+                a = _deserialize_attestation(d)
+                builder.add_attestation(a)
+    for record in store.load_build_record_index().values():
+        builder.add_node(build_node_for_record(record))
+    for edge in store.load_all_edges():
+        builder.add_edge(edge)
     return builder.finalize()
 
 
@@ -379,7 +387,14 @@ def cmd_reject(args: object) -> int:
 
 
 def cmd_retract(args: object) -> int:
-    """Emit retracted attestation; render retraction taint report."""
+    """Emit retracted attestation; render the query-time retraction taint projection.
+
+    Per-build states (computed from the build node + consumed_by_build edges):
+      - no build node in graph            -> build_unknown (not clean)
+      - record.consumption_instrumented=F -> build_consumption_uninstrumented (not clean)
+      - consumed_subject_count == 0       -> clean
+      - consumed_subject_count > 0        -> edge query (tainted / clean / invalid)
+    """
     assertion_id = _claim_id_arg(args)
     reason = _arg_str(args, "reason")
     graph_store_root = _resolve_graph_store_root(args)
@@ -396,16 +411,11 @@ def cmd_retract(args: object) -> int:
 
     graph = store.read_graph(snapshot_hash)
     attestation_index = _load_all_attestations(store)
-    findings = query_retraction_taint(graph, (assertion_id,), attestation_index)
-
-    if findings:
-        print(f"\ntaint report: {len(findings)} tainted build(s)")
-        for f in findings:
-            print(f"  build: {f.build_id}")
-            print(f"  retracted assertion: {f.retracted_assertion_id[:32]}...")
-            print(f"  retraction attestation: {f.retraction_attestation_id[:32]}...")
-    else:
-        print("taint report: no builds tainted (assertion not consumed by any build)")
+    projection = project_retraction_taint(
+        graph, (assertion_id,), attestation_index, store.load_build_record_index()
+    )
+    print()
+    print(render_retraction_taint(projection))
     return 0
 
 
@@ -672,6 +682,7 @@ def cmd_taint_report(args: object) -> int:
 
     graph = _build_live_snapshot(store)
     attestation_index = _load_all_attestations(store)
+    build_record_index = store.load_build_record_index()
 
     if list_all:
         retracted_ids = [
@@ -684,8 +695,15 @@ def cmd_taint_report(args: object) -> int:
             return 0
         print(f"{len(retracted_ids)} retracted assertion(s):")
         for rid in sorted(set(retracted_ids)):
-            findings = query_retraction_taint(graph, (rid,), attestation_index)
-            taint_count = len(findings)
+            projection = project_retraction_taint(
+                graph, (rid,), attestation_index, build_record_index
+            )
+            taint_count = sum(
+                1
+                for b in projection.builds
+                for f in b.status_finding.findings
+                if f.retracted_assertion_id == rid
+            )
             print(f"  {rid[:32]}...  taint_count={taint_count}")
         return 0
 
@@ -693,16 +711,11 @@ def cmd_taint_report(args: object) -> int:
         print("error: provide ASSERTION_ID or --list", file=sys.stderr)
         return 1
 
-    findings = query_retraction_taint(graph, (assertion_id,), attestation_index)
-    if not findings:
-        print(f"taint report for {assertion_id[:32]}...: no builds tainted")
-        return 0
-
-    print(f"taint report for {assertion_id[:32]}...  ({len(findings)} finding(s))")
-    for f in findings:
-        print(f"  build: {f.build_id}")
-        print(f"  retracted_assertion: {f.retracted_assertion_id[:32]}...")
-        print(f"  retraction_attestation: {f.retraction_attestation_id[:32]}...")
+    projection = project_retraction_taint(
+        graph, (assertion_id,), attestation_index, build_record_index
+    )
+    print(f"taint report for {assertion_id[:32]}...")
+    print(render_retraction_taint(projection))
     return 0
 
 

@@ -10321,6 +10321,16 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         choices=["subsection", "section"],
         help="covering-frontier depth (experimental boundary: subsection or section)",
     )
+    cert_bundle_p.add_argument(
+        "--graph-store-root",
+        dest="graph_store_root",
+        default=None,
+        metavar="DIR",
+        help=(
+            "provenance graph store for the build-consumption record "
+            "(default: $LAWVM_GRAPH_STORE_ROOT, then data/fi/v1/provenance_graph)"
+        ),
+    )
 
     # --- recipes ---
     sub.add_parser(

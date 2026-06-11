@@ -335,8 +335,9 @@ def test_registry_rows_shape_and_invariants() -> None:
 def bundle_482(tmp_path_factory: pytest.TempPathFactory) -> Path:
     from lawvm.tools.certificate_bundle import build_certificate_bundle
 
-    out = tmp_path_factory.mktemp("certbundle") / "482_2024"
-    build_certificate_bundle("482/2024", out)
+    root = tmp_path_factory.mktemp("certbundle")
+    out = root / "482_2024"
+    build_certificate_bundle("482/2024", out, graph_store_root=root / "provenance_graph")
     return out
 
 
@@ -542,7 +543,7 @@ def test_two_runs_byte_identical(bundle_482: Path, tmp_path: Path) -> None:
     from lawvm.tools.certificate_bundle import build_certificate_bundle
 
     second = tmp_path / "second"
-    build_certificate_bundle("482/2024", second)
+    build_certificate_bundle("482/2024", second, graph_store_root=tmp_path / "graph")
     first_files = sorted(p.relative_to(bundle_482) for p in bundle_482.rglob("*") if p.is_file())
     second_files = sorted(p.relative_to(second) for p in second.rglob("*") if p.is_file())
     assert first_files == second_files
@@ -552,3 +553,59 @@ def test_two_runs_byte_identical(bundle_482: Path, tmp_path: Path) -> None:
         if not filecmp.cmp(bundle_482 / rel, second / rel, shallow=False)
     ]
     assert mismatched == []
+
+
+# ---------------------------------------------------------------------------
+# Build-consumption registration (taint-checkable build liveness slice)
+# ---------------------------------------------------------------------------
+
+
+@_corpus_skip
+def test_bundle_emission_registers_taint_checkable_build(bundle_482: Path) -> None:
+    """Emission writes a BuildRecord keyed by the certificate root.
+
+    The writer consumes no manual-claim assertions today, so the record must
+    still exist with consumption_instrumented=True and count=0 — that is what
+    distinguishes a clean build from an uninstrumented one.
+    """
+    from lawvm.core.build_consumption import (
+        BuildConsumptionStatus,
+        BuildRef,
+        query_retraction_taint_for_build_refs,
+    )
+    from lawvm.core.provenance_graph import ArtifactRef
+    from lawvm.core.provenance_graph_storage import GraphStore
+
+    envelope = _envelope(bundle_482)
+    certificate_root = envelope["certificate_id"]
+    expected_build_id = f"cert:lawvm.certificate.v0.4.1:{certificate_root}"
+
+    store = GraphStore(bundle_482.parent / "provenance_graph")
+    index = store.load_build_record_index()
+    assert expected_build_id in index
+    record = index[expected_build_id]
+    assert record.consumption_instrumented is True
+    assert record.consumed_subject_count == 0
+    assert record.artifact_ref.content_hash == certificate_root
+
+    # The persisted graph snapshot carries the build node; the four-state
+    # query reports the build CLEAN (known + instrumented + zero consumption).
+    snapshots = sorted((store._root / "snapshots").glob("*.json"))
+    assert snapshots
+    graph = store.read_graph(snapshots[-1].stem)
+    build_ref = BuildRef.mint(
+        build_kind="cert",
+        schema="lawvm.certificate.v0.4.1",
+        content_hash=certificate_root,
+        artifact_ref=ArtifactRef(
+            artifact_type="certificate_bundle",
+            artifact_id=certificate_root,
+            content_hash=certificate_root,
+        ),
+    )
+    (finding,) = query_retraction_taint_for_build_refs(graph, (build_ref,), {}, index)
+    assert finding.status == BuildConsumptionStatus.CLEAN
+
+    # Cert-root cycle guard: the consumption record is an emission sidecar,
+    # never inside the bundle (else certificate_root <-> graph cycle).
+    assert not list(bundle_482.rglob("*consumed_by_build*"))
