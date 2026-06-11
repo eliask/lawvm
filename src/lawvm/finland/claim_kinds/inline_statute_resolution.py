@@ -49,13 +49,29 @@ from __future__ import annotations
 import functools
 import hashlib
 import re
-from typing import FrozenSet, Optional, Tuple
+from typing import FrozenSet, Optional, Protocol, Tuple, runtime_checkable
 
 from lawvm.core.manual_claims.kind_registry import (
     ClaimKindSpec,
     ValidationResult,
     register_claim_kind,
 )
+
+
+@runtime_checkable
+class _InlineStatuteResolutionClaim(Protocol):
+    cited_source_span: Tuple[int, int]
+    cited_source_hash: str
+    value: Tuple[Tuple[str, object], ...]
+
+
+def _as_inline_statute_resolution_claim(claim: object) -> _InlineStatuteResolutionClaim:
+    if not isinstance(claim, _InlineStatuteResolutionClaim):
+        raise TypeError(
+            "fi.v1.INLINE_STATUTE_RESOLUTION validators require a claim with "
+            "cited_source_span, cited_source_hash, and value fields"
+        )
+    return claim
 
 # ---------------------------------------------------------------------------
 # Corpus-existence check helpers (Bug C)
@@ -413,14 +429,22 @@ def _validate_entailment(
 # ---------------------------------------------------------------------------
 
 
-def validate_span(claim: object, source_bytes: bytes) -> ValidationResult:
+def validate_span(claim: object, source_bytes: object) -> ValidationResult:
     """Span validator compatible with ClaimKindSpec.span_validator signature.
 
     claim: ManualCompilationClaim (typed as object to avoid circular import).
     source_bytes: bytes of the cited source artifact.
     """
-    cited_span = claim.cited_source_span  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-    cited_hash = claim.cited_source_hash  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    typed_claim = _as_inline_statute_resolution_claim(claim)
+    if not isinstance(source_bytes, bytes):
+        return ValidationResult(
+            passed=False,
+            validator_name="span_verified",
+            reason="source_bytes must be bytes",
+            details=None,
+        )
+    cited_span = typed_claim.cited_source_span
+    cited_hash = typed_claim.cited_source_hash
     return _validate_span(
         claim_target=None,
         claim_value=None,
@@ -441,7 +465,8 @@ def _make_entailment_validator(*, check_corpus_existence: bool = True):
     """
     def _validator(claim: object, source_bytes: bytes) -> ValidationResult:
         """Entailment validator compatible with ClaimKindSpec.entailment_validator."""
-        cited_span = claim.cited_source_span  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        typed_claim = _as_inline_statute_resolution_claim(claim)
+        cited_span = typed_claim.cited_source_span
         start, end = cited_span
 
         if start < 0 or end > len(source_bytes) or start >= end:
@@ -454,9 +479,16 @@ def _make_entailment_validator(*, check_corpus_existence: bool = True):
 
         span_text = source_bytes[start:end].decode("utf-8", errors="replace")
 
-        value_dict = dict(claim.value)  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        value_dict = dict(typed_claim.value)
         raw_statute_id = value_dict.get("resolved_statute_id", "")
         citation_form = value_dict.get("citation_form", "")
+        if not isinstance(raw_statute_id, str) or not isinstance(citation_form, str):
+            return ValidationResult(
+                passed=False,
+                validator_name="entailment_verified",
+                reason="resolved_statute_id and citation_form must be strings",
+                details=None,
+            )
 
         canonical = _canonicalize_finnish_statute_id(raw_statute_id)
         if canonical is None:
@@ -511,7 +543,7 @@ _SPEC = ClaimKindSpec(
     ),
     target_fields=("statute_id", "section_locator", "mention_span"),
     value_fields=("resolved_statute_id", "citation_form"),
-    span_validator=validate_span,  # ty:ignore[invalid-argument-type]
+    span_validator=validate_span,
     entailment_validator=validate_entailment,
 )
 
