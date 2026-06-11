@@ -55,6 +55,10 @@ from lawvm.core.frozen_values import FrozenDict
 from lawvm.core.mutation_accounting import build_mutation_invariant_reports
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.core.mutation_events import MutationEvent
+from lawvm.core.ownership_closure import (
+    OwnershipClosureCertificate,
+    ownership_closure_evidence_report,
+)
 from lawvm.core.payload_elaboration import (
     PayloadCompletenessWitness,
     PayloadElaborationResult,
@@ -130,6 +134,93 @@ def test_execution_authorization_allows_explicit_replay_authorized_rows() -> Non
     assert data["replay_authorized"] is True
     assert data["required_proofs"] == []
     assert validate_execution_authorization(data) == ()
+
+
+def test_ownership_closure_certificate_closes_only_zero_unowned_slice() -> None:
+    certificate = OwnershipClosureCertificate(
+        certificate_id="closure-fi-demo",
+        corpus_slice_id="fi-demo-slice",
+        source_bundle_hash="sha256:source",
+        profile_id="strict",
+        interpretation_policy_id="fi-policy",
+        graph_snapshot_hash="sha256:graph",
+        phase_report_ids={
+            "source_artifact_coverage": "report-source",
+            "execution_authorization": "report-auth",
+            "agreement_residual": "report-residual",
+        },
+        closed=True,
+        unowned_counts={
+            "unclassified_source_units": 0,
+            "potential_ops_without_status": 0,
+            "candidates_without_authorization": 0,
+        },
+        owned_counts={"replay_authorized_operations": 3},
+    )
+
+    data = certificate.to_dict()
+    report = ownership_closure_evidence_report(certificate, jurisdiction="fi").to_dict()
+
+    assert data["schema"] == "lawvm.ownership_closure_certificate.v1"
+    assert data["closure_status"] == "closed"
+    assert data["phase_report_ids"]["execution_authorization"] == "report-auth"
+    assert report["replay_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["summary"]["closed_count"] == 1
+    assert report["summary"]["unowned_counts"]["candidates_without_authorization"] == 0
+    assert report["rows"][0]["closed"] is True
+
+
+def test_ownership_closure_certificate_rejects_false_closed_claims() -> None:
+    with pytest.raises(ValueError, match="all unowned_counts to be zero"):
+        OwnershipClosureCertificate(
+            certificate_id="closure-fi-open",
+            corpus_slice_id="fi-demo-slice",
+            source_bundle_hash="sha256:source",
+            profile_id="strict",
+            interpretation_policy_id="fi-policy",
+            graph_snapshot_hash="sha256:graph",
+            phase_report_ids={"potential_operation_coverage": "report-potentials"},
+            closed=True,
+            unowned_counts={"potential_ops_without_status": 1},
+        )
+
+    with pytest.raises(ValueError, match="requires no failed_gates"):
+        OwnershipClosureCertificate(
+            certificate_id="closure-fi-open",
+            corpus_slice_id="fi-demo-slice",
+            source_bundle_hash="sha256:source",
+            profile_id="strict",
+            interpretation_policy_id="fi-policy",
+            graph_snapshot_hash="sha256:graph",
+            phase_report_ids={"potential_operation_coverage": "report-potentials"},
+            closed=True,
+            failed_gates=("potential_operation_coverage",),
+        )
+
+
+def test_ownership_closure_report_summarizes_open_slices_without_replay_claims() -> None:
+    certificate = OwnershipClosureCertificate(
+        certificate_id="closure-fi-open",
+        corpus_slice_id="fi-demo-slice",
+        source_bundle_hash="sha256:source",
+        profile_id="strict",
+        interpretation_policy_id="fi-policy",
+        graph_snapshot_hash="sha256:graph",
+        phase_report_ids={"potential_operation_coverage": "report-potentials"},
+        closed=False,
+        failed_gates=("potential_operation_coverage",),
+        unowned_counts={"potential_ops_without_status": 2},
+    )
+
+    report = ownership_closure_evidence_report(certificate, jurisdiction="fi").to_dict()
+
+    assert report["truth_claim"] == "bounded ownership accounting closure"
+    assert report["replay_claims"] is False
+    assert report["summary"]["open_count"] == 1
+    assert report["summary"]["failed_gate_counts"] == {"potential_operation_coverage": 1}
+    assert report["summary"]["unowned_counts"] == {"potential_ops_without_status": 2}
+    assert report["rows"][0]["closure_status"] == "open"
 
 
 def test_source_pathology_projection_is_passive_proof_surface_row() -> None:
