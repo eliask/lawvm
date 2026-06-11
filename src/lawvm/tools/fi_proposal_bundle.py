@@ -484,7 +484,7 @@ def _query_replay_status(
     con: Any,
     statutes_expr: str,
     target_statute_ids: List[str],
-) -> Optional[List[tuple]]:
+) -> Optional[List[tuple[Any, ...]]]:
     """Query replay status for the target statutes from statutes.parquet.
 
     Returns None on query error.  Returns [] if no rows match.

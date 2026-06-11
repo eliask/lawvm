@@ -208,7 +208,7 @@ def project_he_branch_ops(
         # get(locator); span metadata (if any) lives on the resolved StateSpan's
         # last_metadata. (Older resolve()/read(span)/meta(span) API is gone.)
         blob: Optional[bytes] = None
-        metadata: dict = {}
+        metadata: dict[str, Any] = {}
         try:
             blob = farchive.get(loc)
             span = farchive.resolve(loc)

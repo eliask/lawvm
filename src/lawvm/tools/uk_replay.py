@@ -703,7 +703,7 @@ def main(args: "argparse.Namespace") -> None:
     oracle_compare_eids: set[str] = set()
     commenced_replayed: set[str] = set()
     commenced_oracle_for_replay: set[str] = set()
-    replay_adjudications: list = []
+    replay_adjudications: list[Any] = []
     oracle_alignment_events: list[dict[str, Any]] = []
     source_parse_rejections: list[dict[str, object]] = []
     effect_feed_parse_rejections: list[dict[str, object]] = []

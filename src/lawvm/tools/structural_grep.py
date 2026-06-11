@@ -360,7 +360,7 @@ def _extract_section_ops(statute_id: str) -> dict[str, set[str]]:
     try:
         from lawvm.finland.grafter import replay_xml
 
-        compiled_ops: list[dict] = []
+        compiled_ops: list[dict[str, Any]] = []
         replay_xml(
             statute_id,
             mode="official_consolidation",

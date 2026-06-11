@@ -156,7 +156,7 @@ def build_uk_invariant_bisect_bundle(
             seen_mid.add(mid)
 
     # Group ops by source amendment (list of lists, in amendment_ids order)
-    groups: dict[str, list] = {mid: [] for mid in amendment_ids}
+    groups: dict[str, list[Any]] = {mid: [] for mid in amendment_ids}
     for op in all_ops:
         mid = op.source.statute_id if op.source is not None else "__no_source__"
         groups[mid].append(op)

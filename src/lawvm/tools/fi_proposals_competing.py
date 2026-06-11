@@ -224,7 +224,7 @@ def run_fi_proposals_competing(
             all_provision_to_hes.setdefault(p, []).append(he_id)
 
     # conflict_provisions for a given HE = provisions where multiple HEs overlap
-    rows_with_overlap: List[tuple] = []
+    rows_with_overlap: List[tuple[Any, ...]] = []
     for row in he_rows:
         he_id = str(row[he_id_idx])
         my_provs = he_to_provisions.get(he_id, set())
