@@ -15,6 +15,7 @@ import filecmp
 import json
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -41,6 +42,8 @@ _corpus_skip = pytest.mark.skipif(
     not _CORPUS.exists(),
     reason="data/finlex.farchive not present; skipping real-corpus bundle tests",
 )
+
+JsonObj = dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +88,7 @@ def test_duplicate_leaves_forbidden() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _seam_payloadish(engine: dict) -> dict:
+def _seam_payloadish(engine: JsonObj) -> JsonObj:
     return {
         "schema": "lawvm.provision_state.v1",
         "status": "selected",
@@ -132,7 +135,12 @@ def test_projection_hash_view_drops_only_excluded_members() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _residual(effect: str, *, code: str = "TIME.TRIGGER_COVERAGE_INCOMPLETE", **scope: object) -> dict:
+def _residual(
+    effect: str,
+    *,
+    code: str = "TIME.TRIGGER_COVERAGE_INCOMPLETE",
+    **scope: object,
+) -> JsonObj:
     return {
         "diagnostic_code": code,
         "kind": "manual_frontier",
@@ -341,7 +349,7 @@ def bundle_482(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return out
 
 
-def _envelope(bundle_dir: Path) -> dict:
+def _envelope(bundle_dir: Path) -> JsonObj:
     return json.loads((bundle_dir / "certificate.json").read_text(encoding="utf-8"))
 
 
@@ -410,7 +418,7 @@ def test_projection_universe_reconciles(bundle_482: Path) -> None:
     ]
     state: set[str] = set()
     universe = 0
-    by_date: dict[str, list[dict]] = {}
+    by_date: dict[str, list[JsonObj]] = {}
     for row in transitions:
         by_date.setdefault(row["effective_date"], []).append(row)
     for checkpoint in checkpoints:
