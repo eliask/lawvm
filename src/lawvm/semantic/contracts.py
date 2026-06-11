@@ -5,6 +5,7 @@ from typing import Any
 
 from lawvm.semantic.align import align_semantic_trees
 from lawvm.semantic.diff import semantic_diff, semantic_diff_events
+from lawvm.semantic.model import SemanticDiffEvent
 from lawvm.semantic.normalize_structure import normalize_structure_for_viewer
 
 
@@ -23,11 +24,10 @@ _ORACLE_ANNOTATABLE_KINDS = frozenset({
 
 
 def _annotate_events_with_oracle_diagnosis(
-    events: tuple,
+    events: tuple[SemanticDiffEvent, ...],
     diagnosis: str,
-) -> tuple:
+) -> tuple[SemanticDiffEvent, ...]:
     """Stamp oracle_diagnosis onto events where it adds classification value."""
-    from lawvm.semantic.model import SemanticDiffEvent
     return tuple(
         SemanticDiffEvent(
             kind=e.kind,
