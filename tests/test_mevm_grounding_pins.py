@@ -130,6 +130,31 @@ def _resolve_hash(statute_id: str, provision: str, as_of: str, query_type: str) 
     return payload["status"], hashes["derived_state_hash"], hashes["content_hash"]
 
 
+def _assert_source_locator_span(payload: dict) -> None:
+    """MeVM pins need source footing, not only a stable derived state hash."""
+    locator = payload.get("source_locator") or {}
+    detail = locator.get("detail") or {}
+    assert payload.get("source_locator_status") == "canonical_document_locator"
+    assert locator.get("artifact_digest")
+    assert locator.get("artifact_digest_algorithm") == "sha256"
+    assert locator.get("char_span"), "source_locator must expose an XML character span"
+    assert locator.get("byte_span"), "source_locator must expose an XML byte span"
+    assert detail.get("hash_role") == "excluded_from_derived_state_hash"
+    artifact_kind = locator.get("artifact_kind")
+    if artifact_kind == "base_statute_xml":
+        assert detail.get("source_xml_span_status") == "available"
+        assert detail.get("char_span_status") == "finlex_raw_xml_eid_element_scan"
+    elif artifact_kind == "operation_source_statute_xml":
+        assert detail.get("operation_source_xml_span_status") == "available"
+        assert str(detail.get("char_span_status") or "").startswith("operation_source_raw_xml_")
+        witness = detail.get("source_witness") or {}
+        assert witness.get("artifact_span_status") == detail.get("char_span_status")
+        assert witness.get("artifact_char_span") == locator.get("char_span")
+        assert witness.get("artifact_byte_span") == locator.get("byte_span")
+    else:
+        raise AssertionError(f"unexpected source locator artifact_kind: {artifact_kind!r}")
+
+
 @pytest.mark.parametrize(
     "statute_id,provision,as_of,query_type,pinned_hash",
     _PINS,
@@ -139,11 +164,23 @@ def test_mevm_grounding_pin_reproduces(
     statute_id: str, provision: str, as_of: str, query_type: str, pinned_hash: str
 ) -> None:
     """A CONFIRMED MeVM pin must reproduce its derived_state_hash on the current build."""
-    status, derived_hash, _content_hash = _resolve_hash(statute_id, provision, as_of, query_type)
+    from lawvm.provision_state import resolve_provision_state
+
+    payload = resolve_provision_state(
+        statute_id=statute_id,
+        provision=provision,
+        as_of=as_of,
+        query_type=query_type,
+        jurisdiction="fi",
+    )
+    hashes = payload["hashes"]
+    status = payload["status"]
+    derived_hash = hashes["derived_state_hash"]
     # The consumer only mints CONFIRMED from a resolved/selected state.
     assert status == "selected", (
         f"{statute_id} {provision}: expected status 'selected' (CONFIRMED-eligible), got {status!r}"
     )
+    _assert_source_locator_span(payload)
     assert derived_hash == pinned_hash, (
         f"{statute_id} {provision} @{as_of}/{query_type}: derived_state_hash DIVERGED.\n"
         f"  pinned : {pinned_hash}\n"
