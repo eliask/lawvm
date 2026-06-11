@@ -4,6 +4,7 @@ from argparse import Namespace
 import hashlib
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -519,10 +520,11 @@ def test_build_open_manual_bundle_exports_evidence_surface(monkeypatch) -> None:
     bundle = corr_tools.build_open_manual_bundle(limit=5)
 
     assert bundle["row_count"] == 1
-    report = bundle["evidence_surface_report"]
-    assert report["report_kind"] == "finland_corrigendum_open_manual"  # ty:ignore[not-subscriptable]
-    assert report["summary"]["candidate_count"] == 1  # ty:ignore[not-subscriptable]
-    assert report["replay_claims"] is False  # ty:ignore[not-subscriptable]
+    report = cast("dict[str, object]", bundle["evidence_surface_report"])
+    assert report["report_kind"] == "finland_corrigendum_open_manual"
+    summary = cast("dict[str, object]", report["summary"])
+    assert summary["candidate_count"] == 1
+    assert report["replay_claims"] is False
 
 
 def test_corrigendum_provenance_prints_summary(capsys, monkeypatch) -> None:

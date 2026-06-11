@@ -11,6 +11,7 @@ Required tests (per task spec):
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,7 +19,7 @@ from typing import Optional
 
 import pytest
 
-import lawvm.finland.claim_kinds  # noqa: F401
+importlib.import_module("lawvm.finland.claim_kinds")
 
 from lawvm.core.manual_claims.primitive import ClaimScope, SourceLocator
 from lawvm.core.manual_claims.source_provider import (
@@ -183,7 +184,7 @@ def test_source_provider_registry():
 # ---------------------------------------------------------------------------
 
 
-def test_finlex_section_provider_happy_path(tmp_path: Path):
+def test_finlex_section_provider_happy_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Fixture statute + known section → bytes returned, hash computed."""
     from lawvm.finland.source_providers.finlex_section import FinlexSectionSourceProvider
 
@@ -197,18 +198,14 @@ def test_finlex_section_provider_happy_path(tmp_path: Path):
 
     # Patch get_corpus_store to return our mock store
     import lawvm.corpus_store as cs_module
-    original = cs_module.get_corpus_store
 
     def _mock_get_store(**kwargs):
         return _MockStore()
 
-    cs_module.get_corpus_store = _mock_get_store  # ty:ignore[invalid-assignment]
-    try:
-        provider = FinlexSectionSourceProvider()
-        scope = _make_scope(statute_id=statute_id, provision_ref="section:1")
-        result = provider.fetch(scope)
-    finally:
-        cs_module.get_corpus_store = original
+    monkeypatch.setattr(cs_module, "get_corpus_store", _mock_get_store)
+    provider = FinlexSectionSourceProvider()
+    scope = _make_scope(statute_id=statute_id, provision_ref="section:1")
+    result = provider.fetch(scope)
 
     assert result is not None, "Expected FetchedSource for known statute + section"
     assert len(result.bytes_) > 0, "bytes_ must be non-empty"
@@ -232,7 +229,7 @@ def test_finlex_section_provider_happy_path(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
-def test_finlex_section_provider_missing_statute_returns_none():
+def test_finlex_section_provider_missing_statute_returns_none(monkeypatch: pytest.MonkeyPatch):
     """No exception raised; returns None when statute not in corpus."""
     from lawvm.finland.source_providers.finlex_section import FinlexSectionSourceProvider
 
@@ -241,18 +238,14 @@ def test_finlex_section_provider_missing_statute_returns_none():
             return None  # nothing in corpus
 
     import lawvm.corpus_store as cs_module
-    original = cs_module.get_corpus_store
 
     def _mock_get_store(**kwargs):
         return _EmptyStore()
 
-    cs_module.get_corpus_store = _mock_get_store  # ty:ignore[invalid-assignment]
-    try:
-        provider = FinlexSectionSourceProvider()
-        scope = _make_scope(statute_id="9999/9999", provision_ref="section:1")
-        result = provider.fetch(scope)
-    finally:
-        cs_module.get_corpus_store = original
+    monkeypatch.setattr(cs_module, "get_corpus_store", _mock_get_store)
+    provider = FinlexSectionSourceProvider()
+    scope = _make_scope(statute_id="9999/9999", provision_ref="section:1")
+    result = provider.fetch(scope)
 
     assert result is None, "Expected None — statute not in corpus"
 
