@@ -36,13 +36,14 @@ import re
 from dataclasses import dataclass, replace as _dc_replace
 from typing import Optional, Tuple, Union
 
-from lawvm.core.clause_ast import ItemShiftClause, NamedRowClause
+from lawvm.core.clause_ast import ClauseNode, ItemShiftClause, NamedRowClause
 from lawvm.core.semantic_types import FacetKind
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.finland.johtolause.clause_patterns import (
     parse_named_table_row_mixed_clauses,
     parse_named_table_row_single_clauses,
 )
+from lawvm.finland.johtolause.lexicon import Token
 from lawvm.finland.johtolause.parsed_op_clause_ast import parsed_op_to_clause_node
 from lawvm.finland.johtolause.surface_model import TargetKind
 from lawvm.finland.johtolause.types import ParsedOp
@@ -579,12 +580,12 @@ def lower_to_ast(clause: SurfaceClause):
     return ClauseAST(source_text=clause.source_text, verb_groups=tuple(verb_groups))
 
 
-def _group_ops_by_chapter_for_ast(ops: list[ParsedOp]) -> list:
+def _group_ops_by_chapter_for_ast(ops: list[ParsedOp]) -> list["ClauseNode"]:
     """Group consecutive ops by chapter into ScopedBlocks / bare nodes.
 
     Mirrors clause_ast._group_by_chapter but operates on ParsedOps directly.
     """
-    from lawvm.core.clause_ast import ScopedBlock, ClauseNode
+    from lawvm.core.clause_ast import ScopedBlock
     from lawvm.core.ir import LegalAddress
 
     result: list[ClauseNode] = []
@@ -624,7 +625,7 @@ def _group_ops_by_chapter_for_ast(ops: list[ParsedOp]) -> list:
 # ---------------------------------------------------------------------------
 
 
-def parse_surface(tokens: list) -> SurfaceClause:
+def parse_surface(tokens: list[Token]) -> SurfaceClause:
     """Parse tokens into a SurfaceClause with unresolved references.
 
     Converts surface_model node types to clause_surface node types:

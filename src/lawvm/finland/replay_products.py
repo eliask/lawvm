@@ -22,6 +22,7 @@ from lawvm.core.timeline_lineage import (
 from lawvm.core.timeline_results import (
     MaterializationLineageDecision,
     MaterializationLineagePlan,
+    Timelines,
 )
 from lawvm.core.timeline_addresses import _retarget_version_content
 from lawvm.core.tree_ops import check_invariants, resort_children as _resort_children
@@ -84,7 +85,7 @@ class ReplayProducts:
 
     replay_fold_state: "ReplayState"
     materialized_state: "ReplayState"
-    timelines: Optional[dict]
+    timelines: Optional[Timelines]
     temporal_events: tuple[TemporalEvent, ...] = ()
     migration_events: tuple[MigrationEvent, ...] = ()
     materialization_spec: Optional[MaterializationSpec] = None
@@ -474,7 +475,7 @@ def build_replay_products(
     ctx: "StatuteContext",
     statute_id: str,
     replay_fold_state: "ReplayState",
-    lo_ops_out: Optional[list],
+    lo_ops_out: Optional[list[LegalOperation]],
     source_adjudication: Optional[SourceAdjudication] = None,
     as_of: str = "9999-12-31",
     query_type: Literal["governing", "in_force"] = "governing",

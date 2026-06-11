@@ -441,7 +441,7 @@ def _has_section_omissions_ir(sec: IRNode) -> bool:
     return any(_check(c) for c in sec.children)
 
 
-def _pre_omission_is_context_carried(pre_omission_children: tuple) -> bool:
+def _pre_omission_is_context_carried(pre_omission_children: tuple[IRNode, ...]) -> bool:
     """Return True if the pre-omission slice is johdantokappale context (CONTEXT_CARRIED).
 
     Per drafting-guide rules (Lainkirjoittajan opas §14-5), when items of a
@@ -604,7 +604,7 @@ def _merge_subsection_accumulate_inner_omission_ir(master_sub: IRNode, amend_sub
 
 def _mark_targeted_subsections_in_place(
     section: IRNode,
-    target_paragraphs: set,
+    target_paragraphs: set[int],
 ) -> IRNode:
     """Return *section* with each targeted subsection tagged lawvm_in_place_merge="1".
 

@@ -350,7 +350,7 @@ class PoolExtractionResult:
 # ---------------------------------------------------------------------------
 
 
-def _text_of(element: ET.Element) -> str:
+def _text_of(element: ET.Element[str]) -> str:
     """Collect all text content from an element and its descendants."""
     parts: List[str] = []
     if element.text:
@@ -362,7 +362,7 @@ def _text_of(element: ET.Element) -> str:
     return "".join(parts)
 
 
-def _section_provision_ref(section_el: ET.Element, statute_id: str) -> str:
+def _section_provision_ref(section_el: ET.Element[str], statute_id: str) -> str:
     """Build a provision_ref string from a <section> element and statute_id."""
     ns_num = f"{{{_AKN_NS}}}num"
     num_el = section_el.find(ns_num)

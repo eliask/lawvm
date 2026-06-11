@@ -27,7 +27,7 @@ async def build_statute_graph_fi(sid: str) -> StatuteGraph:
     """
     from lxml import etree
 
-    from lawvm.core.ir import IRStatute
+    from lawvm.core.ir import IRStatute, LegalOperation
     from lawvm.xml_ingest import xml_to_ir_node
     from lawvm.core.timeline import compile_timelines
     from lawvm.finland.amendment_index import get_amendment_children
@@ -43,7 +43,7 @@ async def build_statute_graph_fi(sid: str) -> StatuteGraph:
     sid = engine_statute_id(sid)
 
     # 1. Replay amendments, collect LegalOperations
-    lo_ops_out: list = []
+    lo_ops_out: list[LegalOperation] = []
     master = replay_xml(sid, lo_ops_out=lo_ops_out)
 
     # 2. Build base IRStatute from original (unamended) XML
@@ -172,7 +172,7 @@ async def build_statute_graph_fi_lightweight(sid: str) -> StatuteGraph:
         if auth_edges:
             # Build map: parent_statute_id → list of parent_section values
             from collections import defaultdict
-            auth_map: dict = defaultdict(list)
+            auth_map: dict[str, list[str]] = defaultdict(list)
             for ae in auth_edges:
                 if ae.parent_section:
                     auth_map[ae.parent_statute_id].append(ae.parent_section)
