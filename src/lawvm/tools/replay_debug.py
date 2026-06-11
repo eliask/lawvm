@@ -236,7 +236,7 @@ def build_replay_debug_bundle(
         source_bundle = build_amendment_bundle(statute_id, source, mode)
         report["source_title"] = source_bundle.get("source_title", "")
         if show_clause_text:
-            report["source_clause_text"] = source_bundle.get("johtolause", "")
+            report["source_clause_text"] = source_bundle.get("preamble", "")
         if show_source_blocks:
             report["source_blocks"] = _load_source_blocks(source)
         report["source_route"] = dict(source_bundle.get("route", {}) or {})

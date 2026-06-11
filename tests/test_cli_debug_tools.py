@@ -873,7 +873,7 @@ def test_inspect_amendment_main_prints_group_details(capsys, monkeypatch) -> Non
             "source_title": "Test title",
             "route": {"should_apply": True, "reason": "ok"},
             "used_sec1_fallback": False,
-            "johtolause": "Muutetaan 4 §",
+            "preamble": "Muutetaan 4 §",
             "source_payload": {
                 "raw_ir": {"kind": "section", "label": "4", "children": 1, "text": "raw source"},
                 "normalized_ir": {"kind": "section", "label": "4", "children": 1, "text": "normalized source"},
@@ -993,7 +993,7 @@ def test_inspect_amendment_main_stage_source_omits_group_details(capsys, monkeyp
             "source_title": "Test title",
             "route": {"should_apply": True, "reason": "ok"},
             "used_sec1_fallback": False,
-            "johtolause": "Muutetaan 4 §",
+            "preamble": "Muutetaan 4 §",
             "source_payload": {
                 "raw_ir": {"kind": "section", "label": "4", "children": 1, "text": "raw source"},
                 "normalized_ir": {"kind": "section", "label": "4", "children": 1, "text": "normalized source"},
@@ -1220,7 +1220,7 @@ def test_replay_debug_main_prints_clause_text_and_filtered_ops(capsys, monkeypat
         "build_amendment_bundle",
         lambda statute_id, source_id, mode: {
             "source_title": "Source title",
-            "johtolause": "Muutetaan 4 §",
+            "preamble": "Muutetaan 4 §",
             "route": {"should_apply": True, "reason": "ok"},
             "used_sec1_fallback": False,
         },
