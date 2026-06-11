@@ -1,9 +1,10 @@
 ---
 title: LawVM Apply Resolution and Receipt Contract — the Semantic Apply Waist
 status: normative draft; vertical slice landed for the chapter/part INSERT
-  family (binding consumption §3 step 3 + WriteReceipt §4 with receipt-derived
-  mutation events). ObservedWriteAudit (§5), occupancy enforcement (§6) and
-  certificate-leaf production (§9) remain spec-only.
+  family and Finland typed relabel family (binding consumption §3 step 3 +
+  WriteReceipt §4 with receipt-derived mutation events). ObservedWriteAudit
+  (§5), occupancy enforcement (§6) and certificate-leaf production (§9) remain
+  spec-only.
 ---
 
 # Apply Resolution and Receipt Contract
@@ -170,7 +171,8 @@ transition leaf), then expand.
    binding.target_path. The container ladder has a single scoped-find
    rung — no widening fallback exists for this family. Conversion covers
    ALL container target ops (the resolution site is shared); receipts
-   (§4) cover the INSERT family only.
+   (§4) cover the INSERT family and the implemented Finland typed relabel
+   branches (chapter, part, section, subsection).
 4. Convert _find_scoped_section_insert_parent_path AND its duplicate
    same-name sibling (one in apply_structure_ops, one in
    apply_typed_dispatch) — the duplication itself is part of the bug class.
@@ -201,14 +203,17 @@ the PRODUCER contract. The receipt is the helper's record of what actually
 landed — not what it intended.
 
 Implementation state: `lawvm.core.write_receipt.WriteReceipt` exists and is
-produced by `_apply_container_op` for the chapter/part whole-container
-INSERT lane (scaffold consume, base-chapter merge, fresh placement with
-part-hint scaffolding and placeholder consumption — each divergence carries
-its named rule id). Both dispatch sites derive the op's ApplyMutationEvent
-from the receipt (`_emit_apply_mutation_event_from_receipt`). Pre/post
-structural hashes use the frozen §2.2 recipe
-(`lawvm.core.ir_helpers.structural_subtree_hash`), computed at the write.
-Not yet: the container child-section INSERT sub-lane, other op families,
+produced by `_apply_container_op` for the chapter/part whole-container INSERT
+lane (scaffold consume, base-chapter merge, fresh placement with part-hint
+scaffolding and placeholder consumption — each divergence carries its named
+rule id). Finland typed relabel execution also produces receipts for chapter,
+part, section, and subsection relabel/renumber writes; the old address is the
+bound target, the new address is the landed primary path, and the migration
+rule id explains that divergence. Both dispatch sites derive the op's
+ApplyMutationEvent from the receipt (`_emit_apply_mutation_event_from_receipt`).
+Pre/post structural hashes use the frozen §2.2 recipe
+(`lawvm.core.ir_helpers.structural_subtree_hash`), computed at the write. Not
+yet: the container child-section INSERT sub-lane, non-relabel op families,
 receipt persistence, and the independent ObservedWriteAudit (§5).
 
 ```python
