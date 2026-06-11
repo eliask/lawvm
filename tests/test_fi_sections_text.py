@@ -479,7 +479,7 @@ class TestNoLeak:
             "__test__/9999/synthetic",
         )
         for row in [section_text_to_row(s) for s in result.sections]:
-            assert "__test__" in row["statute_id"], (
+            assert "__test__" in str(row["statute_id"]), (
                 "statute_id should carry through as-is (synthetic marker preserved "
                 "in the row but must not be auto-injected into production runs)"
             )

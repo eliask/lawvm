@@ -253,7 +253,7 @@ class InlineCitationPatternMatch:
 # ---------------------------------------------------------------------------
 
 
-def inline_citation_to_row(citation: InlineCitation) -> dict:
+def inline_citation_to_row(citation: InlineCitation) -> dict[str, object]:
     """Serialize an InlineCitation to a flat dict for Parquet/JSONL output.
 
     Column names are stable per the feature brief's schema spec

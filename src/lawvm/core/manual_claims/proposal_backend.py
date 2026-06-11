@@ -43,7 +43,7 @@ class ClaimSchema:
 
     claim_kind: str
     required_value_fields: Tuple[str, ...]
-    json_schema_dict: Optional[dict]
+    json_schema_dict: Optional[dict[str, object]]
     natural_language_description: str
 
 

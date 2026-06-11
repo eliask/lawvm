@@ -230,7 +230,7 @@ class BudgetLineRenumberingObservation:
 # ---------------------------------------------------------------------------
 
 
-def pool_mention_to_row(mention: PoolMention) -> dict:
+def pool_mention_to_row(mention: PoolMention) -> dict[str, object]:
     """Serialize a PoolMention to a flat dict for Parquet/JSONL output.
 
     Column names are stable per the brief's schema spec

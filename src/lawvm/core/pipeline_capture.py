@@ -35,7 +35,7 @@ import os
 import sqlite3
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -51,7 +51,7 @@ class AmendmentCapture:
     used_sec1_fallback: bool = False
 
     # Step 2: op extraction
-    peg_ops: list[dict] = field(default_factory=list)  # from PEG
+    peg_ops: list[dict[str, object]] = field(default_factory=list)  # from PEG
     extraction_path: str = ""  # "peg" | "fallback_heuristic" | "title_fallback" | "sec1"
 
     # Step 3: citation routing
@@ -59,8 +59,8 @@ class AmendmentCapture:
     citation_action: str = ""      # "pass" | "skip_num_collision" | "skip_citation_mismatch"
 
     # Step 4: op normalization
-    resolved_ops: list[dict] = field(default_factory=list)  # after compile_amendment_ops
-    failed_ops: list[dict] = field(default_factory=list)
+    resolved_ops: list[dict[str, object]] = field(default_factory=list)  # after compile_amendment_ops
+    failed_ops: list[dict[str, object]] = field(default_factory=list)
 
     # Step 5: body content
     body_section_labels: list[str] = field(default_factory=list)
@@ -168,7 +168,7 @@ class CaptureStore:
             "SELECT DISTINCT statute_id FROM pipeline_captures ORDER BY statute_id"
         ).fetchall()]
 
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, Any]:
         total = self._conn.execute("SELECT COUNT(*) FROM pipeline_captures").fetchone()[0]
         statutes = self._conn.execute("SELECT COUNT(DISTINCT statute_id) FROM pipeline_captures").fetchone()[0]
         return {"total_amendments": total, "statutes": statutes}

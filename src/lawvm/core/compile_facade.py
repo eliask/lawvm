@@ -40,7 +40,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Callable, Literal, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Tuple
 
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
 from lawvm.core.authority import DEFAULT_ENACTED_CONTEXT
@@ -70,7 +70,7 @@ if TYPE_CHECKING:
     from lawvm.core.timeline_results import TimelineCompilationResult
 
 
-def _finding_sort_key(finding: Finding) -> tuple:
+def _finding_sort_key(finding: Finding) -> tuple[object, ...]:
     """Canonical ordering key for persisted/projected findings."""
     return (
         finding.role,
@@ -407,7 +407,7 @@ class CompileFacade:
     @classmethod
     def from_phase_result(
         cls,
-        pr: PhaseResult,
+        pr: PhaseResult[Any],
         replay_mode: str,
         *,
         strict_profile_name: Optional[str] = None,

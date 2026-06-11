@@ -79,12 +79,12 @@ async def build_corpus_graph(
         failed_statutes=sum(1 for _sid, sg, _err in results if sg is None),
     )
 
-    failure_rows = sorted(
-        (
+    failure_rows: list[dict[str, object]] = sorted(
+        [
             {"statute_id": sid, "error": error or ""}
             for sid, sg, error in results
             if sg is None
-        ),
+        ],
         key=lambda row: (row["statute_id"], row["error"]),
     )
     status = ProcessingStatus(

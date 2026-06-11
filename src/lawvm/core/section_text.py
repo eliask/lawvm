@@ -50,7 +50,7 @@ class SectionText:
     valid_at_end: Optional[date]
 
 
-def section_text_to_row(st: SectionText) -> dict:
+def section_text_to_row(st: SectionText) -> dict[str, object]:
     """Serialize a SectionText to a flat dict for Parquet/JSONL emission."""
     return {
         "statute_id": st.statute_id,

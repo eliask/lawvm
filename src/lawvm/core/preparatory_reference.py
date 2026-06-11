@@ -288,7 +288,7 @@ class CommitteeLifecycleObservation:
 # ---------------------------------------------------------------------------
 
 
-def preparatory_reference_to_row(ref: PreparatoryReference) -> dict:
+def preparatory_reference_to_row(ref: PreparatoryReference) -> dict[str, object]:
     """Serialize a PreparatoryReference to a flat dict for Parquet/JSONL output.
 
     Column names are stable per the feature brief's schema spec

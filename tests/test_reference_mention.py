@@ -564,8 +564,8 @@ class TestNoLeak:
             edge_subtype="CITES",
         )
         row = reference_mention_to_row(mention)
-        assert "__test__" not in row["source_statute_id"]
-        assert "__test__" not in (row["target_statute_id"] or "")
+        assert "__test__" not in str(row["source_statute_id"])
+        assert "__test__" not in str(row["target_statute_id"] or "")
 
 
 # ===========================================================================

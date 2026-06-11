@@ -767,7 +767,7 @@ class TestNoLeak:
             valid_at_end=None,
         )
         row = pool_mention_to_row(mention)
-        assert "__test__" not in (row["pool_canonical_id"] or "")
+        assert "__test__" not in str(row["pool_canonical_id"] or "")
 
 
 # ===========================================================================

@@ -299,7 +299,7 @@ def snapshot_replay_lookups(master: _ReplayLookupStateLike) -> ReplayLookups:
     section_path_lists: Dict[Tuple[str, Optional[str]], List[Path]] = {}
     chapter_members: Dict[str, FrozenSet[str]] = {}
     part_members: Dict[str, FrozenSet[str]] = {}
-    all_section_labels_set: set = set()
+    all_section_labels_set: set[str] = set()
 
     def _walk(
         node: IRNode,

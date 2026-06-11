@@ -60,7 +60,13 @@ def _capture_id(c: AmendmentCapture) -> str:
 
 
 def _expected_peg_ops(cap: AmendmentCapture) -> list[tuple[str, str]]:
-    exp = [(o["action"], o["target"]) for o in cap.peg_ops]
+    exp: list[tuple[str, str]] = []
+    for op in cap.peg_ops:
+        action = op["action"]
+        target = op["target"]
+        if not isinstance(action, str) or not isinstance(target, str):
+            raise TypeError("captured PEG op action and target must be strings")
+        exp.append((action, target))
     if cap.statute_id == "1734/3-000" and cap.amendment_id == "2010/752":
         return [
             ("renumber", "chapter:10/section:2/subsection:4"),

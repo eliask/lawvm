@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 
-from lawvm.core.graph import StatuteGraph
+from lawvm.core.graph import CitationEdgeLike, DelegationEdgeLike, StatuteGraph
 
 
 async def build_statute_graph_fi(sid: str) -> StatuteGraph:
@@ -77,18 +77,18 @@ async def build_statute_graph_fi(sid: str) -> StatuteGraph:
         )
 
     # 4. Delegation + citation edges from consolidated ZIP
-    delegations: list = []
-    citations: list = []
+    delegations: list[DelegationEdgeLike] = []
+    citations: list[CitationEdgeLike] = []
     con_xml = cs.read_oracle(sid)
     if con_xml is not None:
         try:
-            delegations = extract_delegations(con_xml, sid)
+            delegations = list(extract_delegations(con_xml, sid))
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception:
             pass
         try:
-            citations = extract_cross_refs(con_xml, sid)
+            citations = list(extract_cross_refs(con_xml, sid))
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception:
@@ -145,19 +145,19 @@ async def build_statute_graph_fi_lightweight(sid: str) -> StatuteGraph:
         statute_type = m2.group(1).decode("utf-8", errors="replace")
 
     # Delegation + citation edges from consolidated ZIP
-    delegations: list = []
-    citations: list = []
+    delegations: list[DelegationEdgeLike] = []
+    citations: list[CitationEdgeLike] = []
     con_xml = cs.read_oracle(sid)
     if con_xml is not None:
         try:
-            delegations = extract_delegations(con_xml, sid)
+            delegations = list(extract_delegations(con_xml, sid))
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception:
             pass
         try:
-            citations = extract_cross_refs(con_xml, sid)
-            citations += extract_eu_refs(base_xml, sid)
+            citations = list(extract_cross_refs(con_xml, sid))
+            citations.extend(extract_eu_refs(base_xml, sid))
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception:

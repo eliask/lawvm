@@ -45,7 +45,7 @@ class CitationEdgeLike(Protocol):
     target_stat_hash: str
 
 
-def _delegation_sort_key(edge: DelegationEdgeLike) -> tuple:
+def _delegation_sort_key(edge: DelegationEdgeLike) -> tuple[object, ...]:
     """Canonical sort key for delegation-like edge rows."""
     return (
         edge.statute_id,
@@ -57,7 +57,7 @@ def _delegation_sort_key(edge: DelegationEdgeLike) -> tuple:
     )
 
 
-def _citation_sort_key(edge: CitationEdgeLike) -> tuple:
+def _citation_sort_key(edge: CitationEdgeLike) -> tuple[object, ...]:
     """Canonical sort key for citation-like edge rows."""
     return (
         edge.source_statute_id,
@@ -97,8 +97,8 @@ class StatuteGraph:
     """
     statute_id: str
     timelines: Timelines = field(default_factory=dict)
-    delegations: list = field(default_factory=list)    # List[DelegationEdge]
-    citations: list = field(default_factory=list)      # List[CrossRefEdge]
+    delegations: Sequence[DelegationEdgeLike] = field(default_factory=tuple)
+    citations: Sequence[CitationEdgeLike] = field(default_factory=tuple)
     branches: Sequence[LegalBranch] = field(default_factory=tuple)
     branch_edges: Sequence[BranchGraphEdge] = field(default_factory=tuple)
     branch_lifecycle_events: Sequence[BranchLifecycleEvent] = field(default_factory=tuple)
@@ -118,14 +118,14 @@ class CorpusGraph:
     statute_meta    — {statute_id: {title, statute_type}} for all loaded statutes
     """
     timelines: Dict[str, Timelines] = field(default_factory=dict)
-    delegations: list = field(default_factory=list)    # List[DelegationEdge]
-    citations: list = field(default_factory=list)      # List[CrossRefEdge]
+    delegations: list[DelegationEdgeLike] = field(default_factory=list)
+    citations: list[CitationEdgeLike] = field(default_factory=list)
     branches: List[LegalBranch] = field(default_factory=list)
     branch_edges: List[BranchGraphEdge] = field(default_factory=list)
     branch_lifecycle_events: List[BranchLifecycleEvent] = field(default_factory=list)
     amendment_index: Dict[str, List[str]] = field(default_factory=dict)
-    statute_meta: Dict[str, dict] = field(default_factory=dict)
-    build_failures: List[dict] = field(default_factory=list)
+    statute_meta: Dict[str, dict[str, object]] = field(default_factory=dict)
+    build_failures: List[dict[str, object]] = field(default_factory=list)
     build_meta: Optional[BuildMeta] = None
     processing_status: ProcessingStatus = field(
         default_factory=lambda: ProcessingStatus(kind="complete")
@@ -281,8 +281,8 @@ class CorpusGraph:
             branch_edges=self.branch_edges_for_statute(sid),
             branch_lifecycle_events=self.branch_lifecycle_events_for_statute(sid),
             amendment_chain=sorted(self.amendment_index.get(sid, [])),
-            title=meta.get("title", ""),
-            statute_type=meta.get("statute_type", ""),
+            title=str(meta.get("title", "") or ""),
+            statute_type=str(meta.get("statute_type", "") or ""),
         )
 
     @property
@@ -290,7 +290,7 @@ class CorpusGraph:
         """True when one or more requested statutes failed during graph build."""
         return self.processing_status.kind == "partial"
 
-    def reverse_citations(self, sid: str) -> list:
+    def reverse_citations(self, sid: str) -> list[CitationEdgeLike]:
         """Return all CrossRefEdges whose target is sid (what cites this statute?)."""
         return sorted(
             [c for c in self.citations if c.target_statute_id == sid],
@@ -301,7 +301,7 @@ class CorpusGraph:
         """Return statute IDs that have amended sid."""
         return sorted(self.amendment_index.get(sid, []))
 
-    def delegation_chain(self, sid: str, section: str = "") -> list:
+    def delegation_chain(self, sid: str, section: str = "") -> list[DelegationEdgeLike]:
         """Return DelegationEdges from sid, optionally filtered to a source section."""
         edges = [d for d in self.delegations if d.statute_id == sid]
         if section:
@@ -353,7 +353,7 @@ class CorpusGraph:
         sid: str,
         target_section: str = "",
         as_of: str = "",
-    ) -> List[dict]:
+    ) -> List[dict[str, object]]:
         """Return provisions that cite sid and may have been silently affected.
 
         Finds all CITES edges targeting sid (optionally filtered to provisions that
@@ -385,7 +385,7 @@ class CorpusGraph:
         if target_section:
             edges = [e for e in edges if target_section in (e.target_section or "")]
 
-        results = []
+        results: list[dict[str, object]] = []
         for e in edges:
             active_at_date = None
             selection_status = "absent"
@@ -426,22 +426,34 @@ class CorpusGraph:
                 "active_at_date": active_at_date,
                 "selection_status": selection_status,
             })
-        return sorted(
-            results,
-            key=lambda row: (
+
+        def _row_count(row: dict[str, object]) -> int:
+            value = row.get("count", 0)
+            if isinstance(value, int):
+                return value
+            if isinstance(value, str):
+                return int(value)
+            return 0
+
+        def _breakage_sort_key(row: dict[str, object]) -> tuple[str, str, str, int, str]:
+            return (
                 str(row.get("citing_statute", "") or ""),
                 str(row.get("citing_section", "") or ""),
                 str(row.get("target_section", "") or ""),
-                int(row.get("count", 0) or 0),
+                _row_count(row),
                 "" if row.get("active_at_date") is None else str(row.get("active_at_date")),
-            ),
+            )
+
+        return sorted(
+            results,
+            key=_breakage_sort_key,
         )
 
     def breakage_report(
         self,
         changed_statutes: List[str],
         as_of: str = "",
-    ) -> List[dict]:
+    ) -> List[dict[str, object]]:
         """Push-based breakage detection: given a set of recently-changed statutes,
         return all citation edges that may have been silently invalidated.
 
@@ -466,7 +478,7 @@ class CorpusGraph:
                 count            — number of cross-reference occurrences
                 active_at_date   — True/False if timelines loaded, None otherwise
         """
-        results: List[dict] = []
+        results: List[dict[str, object]] = []
         for sid in changed_statutes:
             for row in self.silent_breakage(sid, as_of=as_of):
                 results.append({"changed_statute": sid, **row})

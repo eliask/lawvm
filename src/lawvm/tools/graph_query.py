@@ -119,7 +119,9 @@ async def _run(args: "argparse.Namespace") -> None:
         for r in results_sorted:
             src = f"§{r['citing_section']} " if r["citing_section"] else ""
             tgt = f"#{r['target_section']}" if r["target_section"] else ""
-            cnt = f" x{r['count']}" if r["count"] > 1 else ""
+            count_raw = r["count"]
+            count = count_raw if isinstance(count_raw, int) else int(str(count_raw))
+            cnt = f" x{count}" if count > 1 else ""
             active = (
                 "" if r["active_at_date"] is None
                 else (" [active]" if r["active_at_date"] else " [REPEALED]")

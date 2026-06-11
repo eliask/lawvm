@@ -222,7 +222,7 @@ class LifecycleActorObservation:
 # ---------------------------------------------------------------------------
 
 
-def actor_mention_to_row(mention: ActorMention) -> dict:
+def actor_mention_to_row(mention: ActorMention) -> dict[str, object]:
     """Serialize an ActorMention to a flat dict for Parquet/JSONL output.
 
     Column names are stable per the brief's schema spec

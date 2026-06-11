@@ -347,7 +347,7 @@ def build_payload_surface(
         source_shape = PayloadSourceShape.WHOLE_SECTION
 
     # Build tags
-    tags: set = set()
+    tags: set[str] = set()
     if has_table:
         tags.add("has_table")
     if has_liite:

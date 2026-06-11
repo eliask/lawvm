@@ -755,7 +755,7 @@ class TestNoLeak:
             valid_at_end=None,
         )
         row = actor_mention_to_row(mention)
-        assert "__test__" not in (row["actor_canonical_id"] or "")
+        assert "__test__" not in str(row["actor_canonical_id"] or "")
 
 
 # ===========================================================================

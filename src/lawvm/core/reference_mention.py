@@ -320,7 +320,7 @@ class ApproximateReferenceFinding:
 # ---------------------------------------------------------------------------
 
 
-def reference_mention_to_row(mention: ReferenceMention) -> dict:
+def reference_mention_to_row(mention: ReferenceMention) -> dict[str, object]:
     """Serialize a ReferenceMention to a flat dict for Parquet/JSONL output.
 
     Column names are stable per the brief's schema spec (REFERENCE_MENTION_EXTRACTION.md).
