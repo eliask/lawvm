@@ -560,12 +560,13 @@ def drill_occupancy_policy_violation_finland_production() -> None:
 def drill_occupancy_temporally_disjoint_insert_finland_production() -> None:
     """APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT fires from the Finland apply lane.
 
-    Production lane: a temporary gap-filler INSERT (window 2023-01-01..
-    2023-06-30) whose exact slot is occupied in fold order by a
-    deferred-commencement twin effective 2023-07-01 (the 2010/1326 ←
-    2022/1281 + 2022/1282 staggered twin-law family). The production
-    ``_check_occupancy_policy`` guard must record the typed disjoint-window
-    observation INSTEAD of an occupancy policy violation.
+    Production lane: a temporary gap-filler INSERT in force 2023-01-01 through
+    2023-06-30 (exclusive kernel cutoff expires=2023-07-01) whose exact slot is
+    occupied in fold order by a deferred-commencement twin effective 2023-07-01
+    (the 2010/1326 ← 2022/1281 + 2022/1282 staggered twin-law family). The
+    windows share the boundary day's midnight but are disjoint in legal time;
+    the production ``_check_occupancy_policy`` guard must record the typed
+    disjoint-window observation INSTEAD of an occupancy policy violation.
     """
     from lawvm.core.canonical_intent import Insert
     from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource
@@ -598,7 +599,8 @@ def drill_occupancy_temporally_disjoint_insert_finland_production() -> None:
             statute_id="2022/1282",
             title="väliaikainen",
             effective="2023-01-01",
-            expires="2023-06-30",
+            # Exclusive kernel cutoff: prose "voimassa 30.6.2023" ⇒ 2023-07-01.
+            expires="2023-07-01",
         ),
     )
 

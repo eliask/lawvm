@@ -58,7 +58,17 @@ FIXED_TERM_WHOLE_STATUTE_RULE_ID = "fi_fixed_term_whole_statute_expiry"
 
 
 def expires_on_from_valid_until(valid_until: dt.date) -> dt.date:
-    """Convert an inclusive source ``valid_until`` to the exclusive cutoff."""
+    """Convert a source-prose inclusive last-valid day to the kernel's exclusive expires cutoff.
+
+    The kernel-wide convention is that ``expires`` is an EXCLUSIVE cutoff: a
+    version is in force on ``[effective, expires)`` and selection treats it as
+    inactive ON its ``expires`` date (``eligible()`` uses
+    ``expires > horizon``). Finnish prose states the INCLUSIVE last in-force
+    day ("on voimassa 30 päivään kesäkuuta 2023" = in force THROUGH June 30),
+    so every prose-derived expiry must pass through this helper before being
+    stamped into a kernel ``expires`` field: ``expires = valid_until + 1 day``.
+    This is the single conversion waist for that off-by-one.
+    """
     return valid_until + dt.timedelta(days=1)
 
 

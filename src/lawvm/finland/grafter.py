@@ -32,6 +32,7 @@ from lawvm.core.compile_result import (
 )
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.core.observation_registry import get_finding_spec
+from lawvm.core.statute_validity import expires_on_from_valid_until
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import build_text_duplication_findings
 
@@ -909,6 +910,8 @@ def _rewrite_lo_op_source_expiry(
     parent_statute_id: Optional[str] = None,
     replay_mode: str = "legal_pit",
     chapter_section_map: Optional[Dict[Optional[str], Set[str]]] = None,
+    *,
+    expiry_convention: Literal["inclusive_prose", "exclusive_cutoff"],
 ) -> bool:
     """Update expires on lo_ops whose source matches ``target_source_statute``.
 
@@ -922,10 +925,21 @@ def _rewrite_lo_op_source_expiry(
     In ``official_consolidation`` mode the parent-statute fallback clears the expires field
     entirely (rather than updating it to the new date) so that oracle materialization
     stays anchored at the consolidation cutoff instead of reviving future text.
+
+    ``expiry_convention`` declares what ``expiry_date`` means so each caller
+    must audit its source. ``"inclusive_prose"``: the prose-inclusive last
+    in-force day ("on voimassa N päivään ...") — converted here to the kernel's
+    exclusive cutoff before stamping. ``"exclusive_cutoff"``: already the first
+    day NOT in force (e.g. a kumotaan repeal's effective date) — stamped as is.
+    The born-expired guard always runs in the caller-supplied domain.
     """
     if lo_ops_out is None:
         return False
-    expiry_iso = expiry_date.isoformat()
+    expiry_iso = (
+        expires_on_from_valid_until(expiry_date).isoformat()
+        if expiry_convention == "inclusive_prose"
+        else expiry_date.isoformat()
+    )
     updated = False
     for i, lo in enumerate(lo_ops_out):
         src = lo.source
@@ -1191,9 +1205,19 @@ def _rewrite_temporal_event_expiry(
     parent_statute_id: Optional[str] = None,
     replay_mode: str = "legal_pit",
     chapter_section_map: Optional[Dict[Optional[str], Set[str]]] = None,
+    expiry_convention: Literal["inclusive_prose", "exclusive_cutoff"],
 ) -> bool:
-    """Rewrite emitted TemporalEvents when Finland expiry overrides retarget time."""
-    expiry_iso = expiry_date.isoformat()
+    """Rewrite emitted TemporalEvents when Finland expiry overrides retarget time.
+
+    ``expiry_convention`` has the same meaning as on
+    ``_rewrite_lo_op_source_expiry``: prose-inclusive dates are converted to the
+    kernel's exclusive ``expires`` cutoff before stamping.
+    """
+    expiry_iso = (
+        expires_on_from_valid_until(expiry_date).isoformat()
+        if expiry_convention == "inclusive_prose"
+        else expiry_date.isoformat()
+    )
     updated = False
 
     def _scope_matches(event: TemporalEvent) -> bool:
@@ -5638,7 +5662,13 @@ def apply_ops_to_tree(
                 title=source_title,
                 effective=amendment_effective_date.isoformat() if amendment_effective_date else "",
                 enacted=amendment_issue_date.isoformat() if amendment_issue_date else "",
-                expires=amendment_expiry_date.isoformat() if amendment_expiry_date else "",
+                # _amendment_expiry_date is the prose-inclusive last in-force
+                # day; the kernel `expires` field is an exclusive cutoff.
+                expires=(
+                    expires_on_from_valid_until(amendment_expiry_date).isoformat()
+                    if amendment_expiry_date
+                    else ""
+                ),
             )
         else:
             _uncov_src = None
@@ -6532,6 +6562,9 @@ def process_muutoslaki(
                 if _target_mid != amendment_id and _rewrite_lo_op_source_expiry(
                     lo_ops_out, _target_mid, _labels, _expiry,
                     parent_statute_id=parent_id, replay_mode=replay_mode,
+                    # _commencement_expiry_override returns the prose-inclusive
+                    # last in-force day.
+                    expiry_convention="inclusive_prose",
                 ):
                     _scope = sorted(_labels) if _labels else ["*"]
                     _replay_print(
@@ -6994,6 +7027,9 @@ def process_muutoslaki(
             if _target_mid_acc != amendment_id and _rewrite_lo_op_source_expiry(
                 lo_ops_out, _target_mid_acc, _labels_acc, _expiry_acc,
                 parent_statute_id=parent_id, replay_mode=replay_mode,
+                # _commencement_expiry_override returns the prose-inclusive
+                # last in-force day.
+                expiry_convention="inclusive_prose",
             ):
                 _scope_acc = sorted(_labels_acc) if _labels_acc else ["*"]
                 _replay_print(
@@ -7020,6 +7056,9 @@ def process_muutoslaki(
                 _expiry_sec,
                 parent_statute_id=parent_id,
                 replay_mode=replay_mode,
+                # _temporary_section_expiry_overrides returns prose-inclusive
+                # last in-force days.
+                expiry_convention="inclusive_prose",
             ):
                 _scope_sec = sorted(_labels_sec) if _labels_sec else ["*"]
                 _replay_print(
@@ -7200,6 +7239,9 @@ def process_muutoslaki(
                 parent_statute_id=parent_id,
                 replay_mode=replay_mode,
                 chapter_section_map=_chap_map_sets,
+                # A kumotaan repeal takes effect ON its effective date: that day
+                # is already the first day NOT in force (exclusive cutoff).
+                expiry_convention="exclusive_cutoff",
             ):
                 _scope_kumotaan = sorted(set(_kumotaan_labels))
                 _replay_print(
@@ -7859,15 +7901,21 @@ def replay_xml(
         if mode == "official_consolidation":
             # official_consolidation expiry horizon tracks oracle_materialize_as_of (which
             # may have been extended to cover future kumotaan REPEAL dates).
-            # Both as_of and expires_as_of use the same extended date so that
-            # temporary sections expiring at or before the oracle date are
-            # correctly treated as expired.
+            # Finlex consolidations show the state AFTER the anchor day ends:
+            # a temporary provision in force THROUGH the anchor day (kernel
+            # exclusive ``expires == anchor + 1``) is already dropped from the
+            # consolidation keyed to that day. The expiry horizon is therefore
+            # end-of-anchor-day (anchor + 1), while commencement eligibility
+            # stays anchored to the day itself (``effective <= as_of``).
             if oracle_materialize_as_of is not None:
-                expires_as_of = oracle_materialize_as_of
+                _expiry_anchor = oracle_materialize_as_of
             elif plan.cutoff_date is not None:
-                expires_as_of = plan.cutoff_date.isoformat()
+                _expiry_anchor = plan.cutoff_date.isoformat()
             else:
-                expires_as_of = dt.date.today().isoformat()
+                _expiry_anchor = dt.date.today().isoformat()
+            expires_as_of = (
+                dt.date.fromisoformat(_expiry_anchor) + dt.timedelta(days=1)
+            ).isoformat()
 
         # Detect chapter-scoped expiry from base statute voimaantulo.
         base_tree = etree.fromstring(plan.ctx.base_xml_bytes)

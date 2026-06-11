@@ -1068,7 +1068,8 @@ def test_production_lane_temporally_disjoint_twin_insert_is_not_a_violation() ->
             statute_id="2022/1282",
             title="väliaikainen",
             effective="2023-01-01",
-            expires="2023-06-30",
+            # Exclusive kernel cutoff: prose "voimassa 30.6.2023" ⇒ 2023-07-01.
+            expires="2023-07-01",
         ),
     )
     intent = _build_canonical_intent(rop)
@@ -1118,7 +1119,7 @@ def test_production_lane_temporally_disjoint_twin_insert_is_not_a_violation() ->
     note = notes[0]
     assert note.blocking is False
     assert note.detail["incoming_effective"] == "2023-01-01"
-    assert note.detail["incoming_expires"] == "2023-06-30"
+    assert note.detail["incoming_expires"] == "2023-07-01"
     assert note.detail["occupant_effective"] == "2023-07-01"
     assert note.detail["occupant_source_statute"] == "2022/1281"
 

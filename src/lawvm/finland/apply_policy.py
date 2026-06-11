@@ -641,6 +641,10 @@ def _check_occupancy_policy(
         # twin that only enters force ON or AFTER the gap-filler expires
         # ("X § tulee kuitenkin voimaan vasta ..."). The two occupancies are
         # disjoint in legal time; the collision exists only in fold order.
+        # incoming.expires is the kernel's EXCLUSIVE cutoff (first day NOT in
+        # force), so the canonical hand-off — temporary law valid through
+        # June 30 (expires == 2023-07-01), permanent twin effective July 1 —
+        # gives expires == occupant_effective and is disjoint: hence <=.
         incoming = rop.resolved_op_source
         occupant = _occupant_installer_effective(
             replay_history_ops, rop.resolved_target_address
@@ -651,7 +655,7 @@ def _check_occupancy_policy(
             and incoming.expires
             and occupant is not None
             and incoming.effective < occupant[0]
-            and incoming.expires < occupant[0]
+            and incoming.expires <= occupant[0]
         ):
             occupant_effective, occupant_statute = occupant
             logger.debug(

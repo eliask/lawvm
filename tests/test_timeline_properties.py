@@ -3544,8 +3544,9 @@ def test_1982_710_temporary_12c_section_expires_after_commencement_override(repl
     Chapter 2a was eventually repealed (2022/588 eff 2023-01-01), so the
     legal_pit PIT body no longer contains section 12c.  The test verifies the
     property via the compiled timelines: section 12c must have an active
-    version at 2016-05-01 (before its expiry of 2016-12-31), and the last
-    timeline version must carry that expiry date.
+    version at 2016-05-01 (within its validity, which runs THROUGH
+    2016-12-31), and the last timeline version must carry the kernel's
+    exclusive cutoff 2017-01-01 for that prose-inclusive expiry.
     """
     master = replay_1982_710_legal_pit
 
@@ -3558,8 +3559,9 @@ def test_1982_710_temporary_12c_section_expires_after_commencement_override(repl
             break
 
     assert target_tl is not None, "timeline for chapter:2a/section:12c must exist"
-    # The voimaantulosäännös chain must have propagated expiry 2016-12-31
-    assert target_tl.versions[-1].expires == "2016-12-31"
+    # The voimaantulosäännös chain must have propagated the prose expiry
+    # "voimassa 31.12.2016 asti" as the exclusive kernel cutoff 2017-01-01.
+    assert target_tl.versions[-1].expires == "2017-01-01"
     # Section was still active at 2016-05-01 (before its expiry)
     active_at_pit = select_active_version(target_tl, "2016-05-01")
     assert active_at_pit is not None, "section 12c must be active at 2016-05-01"

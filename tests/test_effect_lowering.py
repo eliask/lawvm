@@ -362,7 +362,9 @@ def test_temporal_event_from_effect_intent_expiry_uses_explicit_end_payload() ->
     )
 
     assert event.kind == "expire"
-    assert event.expires == "2026-12-31"
+    # Expiry.expiry_date is the prose-inclusive last in-force day (Dec 31);
+    # TemporalEvent.expires is the kernel's exclusive cutoff (Jan 1).
+    assert event.expires == "2027-01-01"
     assert event.source is not None
     assert event.source.expires == ""
 
@@ -390,7 +392,8 @@ def test_lower_effect_intents_to_temporal_events_projects_multiple_variants() ->
     assert all(event.source is not None and event.source.enacted == "2024-01-01" for event in events)
     assert all(event.source is not None and event.source.effective == "2024-02-01" for event in events)
     assert events[0].effective == "2025-01-01"
-    assert events[1].expires == "2026-12-31"
+    # Inclusive prose Dec 31 → exclusive kernel cutoff Jan 1.
+    assert events[1].expires == "2027-01-01"
 
 
 def test_effect_intent_carriers_reject_wrong_discriminants() -> None:

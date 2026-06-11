@@ -102,13 +102,17 @@ class Commencement:
 
 @dataclass(frozen=True)
 class Expiry:
-    """The amendment (or provision) expires on ``expiry_date``.
+    """The amendment (or provision) is in force through ``expiry_date``.
 
     Corresponds to fixed-expiry clauses that set an explicit end-of-force date.
 
     expiry_date
-        The date on which the amendment ceases to be in force.  None when the
-        expiry date cannot be determined from the clause text.
+        The prose-INCLUSIVE last day on which the amendment is in force, as
+        parsed from clauses like "on voimassa 30 päivään kesäkuuta 2023"
+        (in force THROUGH June 30).  None when the expiry date cannot be
+        determined from the clause text.  Lowering converts this to the
+        kernel's exclusive ``TemporalEvent.expires`` cutoff
+        (``expiry_date + 1 day``) via ``expires_on_from_valid_until``.
 
     raw_text
         The source clause text for traceability.

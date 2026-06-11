@@ -21,6 +21,7 @@ import datetime as dt
 from typing import Iterable, List
 
 from lawvm.core.ir import OperationSource, ScopePredicate
+from lawvm.core.statute_validity import expires_on_from_valid_until
 from lawvm.core.temporal import (
     FIXED_DATE_KIND,
     IMMEDIATE_KIND,
@@ -134,7 +135,13 @@ def temporal_event_from_effect_intent(
             event_id=common_event_id,
             kind="expire",
             scope=common_scope,
-            expires=intent.expiry_date.isoformat() if intent.expiry_date is not None else "",
+            # Expiry.expiry_date is the prose-inclusive last in-force day;
+            # TemporalEvent.expires is the kernel's exclusive cutoff.
+            expires=(
+                expires_on_from_valid_until(intent.expiry_date).isoformat()
+                if intent.expiry_date is not None
+                else ""
+            ),
             source=source,
             group_id=common_group_id,
             derived_from_effect_intent=common_derived,
