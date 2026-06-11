@@ -39,23 +39,35 @@ module over ``compile_result`` for top-level compile products.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Callable, Literal, Optional, Tuple
 
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
+from lawvm.core.authority import DEFAULT_ENACTED_CONTEXT
+from lawvm.core.compile_metadata import build_compile_metadata
 from lawvm.core.compile_result import (
     CanonicalBundle,
     strict_fail_reasons_from_findings_and_verdict,
 )
+from lawvm.core.ir import IRStatute
 from lawvm.core.phase_result import Finding, PhaseResult
+from lawvm.core.timeline import (
+    compile_timelines_ex as _compile_timelines_ex,
+    materialize_pit_ex as _materialize_pit_ex,
+)
+from lawvm.core.timeline_results import (
+    MaterializationResult,
+    timeline_issues_to_findings,
+)
 
 if TYPE_CHECKING:
     from lawvm.core.authority import BranchContext
     from lawvm.core.compile_metadata import CompileMetadata
     from lawvm.core.compile_result import CompileVerdict, StrictProfile
     from lawvm.core.evidence_policy import EvidencePolicyRegistry
-    from lawvm.core.ir import IRStatute, ProvisionTimeline, ProvisionVersion, LegalAddress
+    from lawvm.core.ir import ProvisionTimeline, ProvisionVersion, LegalAddress
     from lawvm.core.provenance_graph import ProvenanceGraph
-    from lawvm.core.timeline_results import MaterializationResult, TimelineCompilationResult
+    from lawvm.core.timeline_results import TimelineCompilationResult
 
 
 def _finding_sort_key(finding: Finding) -> tuple:
@@ -197,10 +209,7 @@ class CompileFacade:
         authority_context: "BranchContext | None" = None,
     ) -> "TimelineCompilationResult":
         """Compile timelines and preserve typed timeline issues on the facade."""
-        from lawvm.core.authority import DEFAULT_ENACTED_CONTEXT  # noqa: PLC0415
-        from lawvm.core.timeline import compile_timelines_ex  # noqa: PLC0415
-
-        return compile_timelines_ex(
+        return _compile_timelines_ex(
             base,
             list(self.bundle.structural_ops),
             base_date=base_date,
@@ -222,8 +231,6 @@ class CompileFacade:
         ``finding_ledger`` because timeline execution is a query over the bundle,
         not part of the stored compile dossier.
         """
-        from lawvm.core.timeline_results import timeline_issues_to_findings  # noqa: PLC0415
-
         return timeline_issues_to_findings(
             self.compile_timelines_ex(
                 base,
@@ -248,16 +255,13 @@ class CompileFacade:
         timelines are compiled from the bundle, then materialized through the
         authoritative explicit-result PIT API.
         """
-        from lawvm.core.timeline import materialize_pit_ex  # noqa: PLC0415
-
         compiled = self.compile_timelines_ex(
             base,
             base_date=base_date,
             label_norm=label_norm,
         )
-        from lawvm.core.timeline_results import MaterializationResult  # noqa: PLC0415
 
-        result = materialize_pit_ex(
+        result = _materialize_pit_ex(
             compiled.timelines,
             as_of,
             base=base,
@@ -270,8 +274,6 @@ class CompileFacade:
             status = result.status
             statute = result.statute
             if status == "materialized" and any(issue.blocking for issue in combined_issues):
-                from lawvm.core.ir import IRStatute  # noqa: PLC0415
-
                 status = "degraded_timeline_issues"
                 metadata = dict(statute.metadata)
                 metadata["materialization_status"] = status
@@ -306,8 +308,6 @@ class CompileFacade:
         territory: Optional[str] = None,
     ) -> tuple[Finding, ...]:
         """Project PIT materialization issues into governed findings."""
-        from lawvm.core.timeline_results import timeline_issues_to_findings  # noqa: PLC0415
-
         return timeline_issues_to_findings(
             self.materialize_pit_ex(
                 base,
@@ -485,7 +485,7 @@ class CompileFacade:
         evidence_policy: "EvidencePolicyRegistry",
         source_bundle_hash: str,
         build_id: str = "",
-        build_timestamp: "Optional[__import__('datetime').datetime]" = None,  # ty:ignore[invalid-type-form]
+        build_timestamp: Optional[datetime] = None,
     ) -> "CompileFacade":
         """Build a CompileFacade with CompileMetadata derived from graph + profile + policy.
 
@@ -494,8 +494,6 @@ class CompileFacade:
         the build invocation context so the same inputs always produce the same
         fingerprints.
         """
-        from lawvm.core.compile_metadata import build_compile_metadata  # noqa: PLC0415
-
         meta = build_compile_metadata(
             graph=graph,
             profile=strict_profile,
