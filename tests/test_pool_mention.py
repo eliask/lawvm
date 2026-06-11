@@ -19,7 +19,7 @@ Module coverage:
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 import pytest
 
@@ -70,6 +70,19 @@ def _assert_mention_matches(actual: PoolMention, expected: Dict[str, Any]) -> No
             f"mention key {key!r}: expected {val!r}, got {row.get(key)!r}\n"
             f"Full row: {row}"
         )
+
+
+def _set_runtime_attr(obj: object, name: str, value: object) -> None:
+    setattr(obj, name, value)
+
+
+def _runtime_candidate_canonical_ids(values: list[str]) -> tuple[str, ...]:
+    return cast(tuple[str, ...], values)
+
+
+def _required_str(value: str | None) -> str:
+    assert value is not None
+    return value
 
 
 # ===========================================================================
@@ -172,7 +185,7 @@ class TestPoolMentionConstruction:
             valid_at_end=None,
         )
         with pytest.raises((TypeError, AttributeError)):
-            mention.quantity_kind = QuantityKind.FISCAL_POOL  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+            _set_runtime_attr(mention, "quantity_kind", QuantityKind.FISCAL_POOL)
 
     def test_capacity_cap_with_numeric_and_unit(self) -> None:
         """CAPACITY_CAP with numeric value and unit stores correctly."""
@@ -344,7 +357,7 @@ class TestCanonicalBudgetLineRegistry:
         if lines:
             bl = lines[0]
             with pytest.raises((TypeError, AttributeError)):
-                bl.paaluokka = 99  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+                _set_runtime_attr(bl, "paaluokka", 99)
 
 
 # ===========================================================================
@@ -364,7 +377,7 @@ class TestBudgetLineRecognizer:
         candidates = self.recognizer.recognize(text)
         bl = [c for c in candidates if c.inferred_kind == QuantityKind.BUDGET_LINE]
         assert len(bl) >= 1
-        assert "28.91.50" in bl[0].momentti_code  # ty:ignore[unsupported-operator]
+        assert "28.91.50" in _required_str(bl[0].momentti_code)
 
     def test_recognize_bare_momentti_code(self) -> None:
         """Bare '29.20.30' without 'momentilla' keyword recognized as BUDGET_LINE."""
@@ -527,7 +540,9 @@ class TestFindingObservation:
             source_statute_id="711/2022",
             source_provision_ref="711/2022/3",
             quantity_phrase="28.91.50",
-            candidate_canonical_ids=["fi.budget.28.91.50", "fi.budget.28.91.51"],  # ty:ignore[invalid-argument-type]
+            candidate_canonical_ids=_runtime_candidate_canonical_ids(
+                ["fi.budget.28.91.50", "fi.budget.28.91.51"]
+            ),
             reason="Momentti code maps to 2 entries.",
         )
         assert isinstance(finding.candidate_canonical_ids, tuple)
