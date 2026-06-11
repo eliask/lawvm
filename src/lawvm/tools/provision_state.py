@@ -873,14 +873,22 @@ def _source_locator_payload(
         return None
     detail: dict[str, Any] = {
         "locator_status": locator_status,
+        "document_locator_status": "canonical_finlex_document_uri",
         "selected_target_address": str(address),
         "precision": "document_plus_resolved_target_legal_address",
         "target_legal_address_kind": "lawvm_resolved_target",
+        "target_address_authority": "resolved_replay_timeline_address",
         "xpath": "unavailable",
+        "xpath_status": "unavailable_initial_surface",
         "byte_span": "unavailable",
+        "byte_span_status": "unavailable_initial_surface",
+        "hash_role": "excluded_from_derived_state_hash",
     }
     if source_quote is not None:
         detail["source_witness"] = source_quote
+        detail["source_witness_status"] = "operation_source_raw_text_available"
+    else:
+        detail["source_witness_status"] = "unavailable_no_operation_source_raw_text"
     locator = SourceLocator(
         jurisdiction=jurisdiction,
         artifact_kind=artifact_kind,

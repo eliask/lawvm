@@ -55,9 +55,19 @@ def test_provision_state_response_exposes_text_hash_and_temporal_pin() -> None:
     assert payload["source_locator"]["artifact_kind"] == "operation_source_statute_xml"
     assert payload["source_locator"]["document_uri"] == "finlex://sd/2019/1/fin/main.xml"
     assert payload["source_locator"]["structural_path"] == "lawvm-target:chapter:1/section:1"
+    assert payload["source_locator"]["detail"]["document_locator_status"] == "canonical_finlex_document_uri"
     assert payload["source_locator"]["detail"]["precision"] == "document_plus_resolved_target_legal_address"
     assert payload["source_locator"]["detail"]["target_legal_address_kind"] == "lawvm_resolved_target"
+    assert payload["source_locator"]["detail"]["target_address_authority"] == (
+        "resolved_replay_timeline_address"
+    )
+    assert payload["source_locator"]["detail"]["xpath_status"] == "unavailable_initial_surface"
+    assert payload["source_locator"]["detail"]["byte_span_status"] == "unavailable_initial_surface"
+    assert payload["source_locator"]["detail"]["hash_role"] == "excluded_from_derived_state_hash"
     assert payload["source_locator"]["quote_hash"]
+    assert payload["source_locator"]["detail"]["source_witness_status"] == (
+        "operation_source_raw_text_available"
+    )
     assert payload["source_locator"]["detail"]["source_witness"]["kind"] == "operation_source_raw_text"
     assert payload["source_locator"]["detail"]["source_witness"]["quote"] == (
         "Section 1 is replaced with a new duty."
@@ -165,6 +175,9 @@ def test_provision_state_response_uses_base_source_locator_for_sourceless_base_v
     assert payload["source_locator"]["artifact_kind"] == "base_statute_xml"
     assert payload["source_locator"]["document_uri"] == "finlex://sd/2000/1/fin/main.xml"
     assert payload["source_locator"]["structural_path"] == "lawvm-target:section:1"
+    assert payload["source_locator"]["detail"]["source_witness_status"] == (
+        "unavailable_no_operation_source_raw_text"
+    )
     assert "source_witness" not in payload["source_locator"]["detail"]
 
 
