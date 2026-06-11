@@ -72,6 +72,7 @@ def resolve_provision_state(
         print(f"Replaying {statute_id}...", file=status_stream)
     replay_meta: dict[str, Any] = {}
     master = replay_xml(statute_id, quiet=True, replay_meta_out=replay_meta)
+    source_xml_provider = _source_xml_provider()
     base_ir = IRStatute(
         statute_id=statute_id,
         title=master.title,
@@ -95,4 +96,12 @@ def resolve_provision_state(
         base=base_ir,
         timeline_breaks=timeline_breaks,
         findings=tuple(getattr(master, "findings", ()) or ()),
+        source_xml_provider=source_xml_provider,
     )
+
+
+def _source_xml_provider():
+    from lawvm.corpus_store import get_corpus_store
+
+    corpus = get_corpus_store(readonly=True)
+    return corpus.read_source

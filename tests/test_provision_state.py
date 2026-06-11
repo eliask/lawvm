@@ -303,6 +303,21 @@ def test_provision_state_response_uses_base_source_locator_for_sourceless_base_v
             ],
         )
     }
+    source_xml = (
+        b"""
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act><body><section eId="sec_1"><num>1 \xc2\xa7</num><content>Base duty.</content></section></body></act>
+        </akomaNtoso>
+        """
+    )
+    source_text = source_xml.decode("utf-8")
+    expected_start = source_text.index('<section eId="sec_1">')
+    expected_end = source_text.index("</section>", expected_start) + len("</section>")
+    expected_char_span = [expected_start, expected_end]
+    expected_byte_span = [
+        len(source_text[:expected_start].encode("utf-8")),
+        len(source_text[:expected_end].encode("utf-8")),
+    ]
 
     payload = build_provision_state_response(
         timelines=timelines,
@@ -310,6 +325,7 @@ def test_provision_state_response_uses_base_source_locator_for_sourceless_base_v
         jurisdiction="fi",
         provision="section:1",
         as_of="2021-01-01",
+        source_xml_provider=lambda sid: source_xml if sid == "2000/1" else None,
     )
 
     assert payload["source"] is None
@@ -318,13 +334,7 @@ def test_provision_state_response_uses_base_source_locator_for_sourceless_base_v
     assert payload["source_locator"]["document_uri"] == "finlex://sd/2000/1/fin/main.xml"
     assert payload["source_locator"]["structural_path"] == "lawvm-target:section:1"
     assert payload["source_locator"]["xpath"].startswith("//*[local-name()='body']")
-    xml = etree.fromstring(
-        b"""
-        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
-          <act><body><section><num>1 \xc2\xa7</num><content>Base duty.</content></section></body></act>
-        </akomaNtoso>
-        """
-    )
+    xml = etree.fromstring(source_xml)
     matches = xml.xpath(payload["source_locator"]["xpath"])
     assert isinstance(matches, list)
     assert len(matches) == 1
@@ -334,11 +344,68 @@ def test_provision_state_response_uses_base_source_locator_for_sourceless_base_v
     assert payload["source_locator"]["detail"]["target_xpath_candidate_status"] == (
         "finlex_structural_xpath_candidate"
     )
-    assert payload["source_locator"]["detail"]["byte_span_status"] == "unavailable_initial_surface"
+    assert payload["source_locator"]["char_span"] == expected_char_span
+    assert payload["source_locator"]["byte_span"] == expected_byte_span
+    assert payload["source_locator"]["detail"]["char_span"] == expected_char_span
+    assert payload["source_locator"]["detail"]["char_span_status"] == (
+        "finlex_raw_xml_eid_element_scan"
+    )
+    assert payload["source_locator"]["detail"]["byte_span"] == expected_byte_span
+    assert payload["source_locator"]["detail"]["byte_span_status"] == (
+        "finlex_raw_xml_eid_element_scan_utf8"
+    )
+    assert payload["source_locator"]["detail"]["source_xml_span_status"] == "available"
+    assert payload["source_locator"]["detail"]["source_xml_eid"] == "sec_1"
+    assert payload["source_locator"]["detail"]["source_xml_local_tag"] == "section"
     assert payload["source_locator"]["detail"]["source_witness_status"] == (
         "unavailable_no_operation_source_raw_text"
     )
     assert "source_witness" not in payload["source_locator"]["detail"]
+
+
+def test_base_source_locator_char_span_falls_back_to_finlex_eid() -> None:
+    address = LegalAddress(path=(("section", "1"),))
+    content = _section("Base duty.")
+    timelines = {
+        address: ProvisionTimeline(
+            address=address,
+            versions=[
+                ProvisionVersion(
+                    effective="2000-01-01",
+                    enacted="2000-01-01",
+                    content=content,
+                    content_hash=irnode_content_hash(content),
+                )
+            ],
+        )
+    }
+    source_xml = (
+        b"""
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act><body><hcontainer eId="container_1"><section eId="sec_1"><num>1 \xc2\xa7</num><content>Base duty.</content></section></hcontainer></body></act>
+        </akomaNtoso>
+        """
+    )
+    source_text = source_xml.decode("utf-8")
+    expected_start = source_text.index('<section eId="sec_1">')
+    expected_end = source_text.index("</section>", expected_start) + len("</section>")
+
+    payload = build_provision_state_response(
+        timelines=timelines,
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="section:1",
+        as_of="2021-01-01",
+        source_xml_provider=lambda sid: source_xml if sid == "2000/1" else None,
+    )
+
+    locator = payload["source_locator"]
+    assert locator["char_span"] == [expected_start, expected_end]
+    assert locator["detail"]["source_xml_span_status"] == "available"
+    assert locator["detail"]["source_xml_span_match_basis"] == "fallback_eid"
+    assert locator["detail"]["source_xml_xpath_match_count"] == 0
+    assert locator["detail"]["source_xml_eid"] == "sec_1"
+    assert "fallback eId matched one element" in locator["detail"]["char_span_basis"]
 
 
 def test_public_resolve_provision_state_reports_unsupported_jurisdiction_without_replay() -> None:

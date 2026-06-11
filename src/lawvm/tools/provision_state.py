@@ -12,7 +12,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from lawvm.corpus_store import statute_url
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, ProvisionTimeline, ProvisionVersion
@@ -189,6 +189,7 @@ def build_provision_state_response(
     base: IRStatute | None = None,
     timeline_breaks: tuple[TimelineBreak, ...] = (),
     findings: tuple[Finding, ...] = (),
+    source_xml_provider: Callable[[str], bytes | None] | None = None,
 ) -> dict[str, Any]:
     """Return a stable provision-state response for one PIT address query."""
 
@@ -315,6 +316,7 @@ def build_provision_state_response(
         timeline_integrity=tl_block,
         timeline_blocking=tl_blocking,
         findings=findings,
+        source_xml_provider=source_xml_provider,
     )
 
 
@@ -845,6 +847,7 @@ def _selected_response(
     timeline_integrity: dict[str, Any] | None = None,
     timeline_blocking: bool = False,
     findings: tuple[Finding, ...] = (),
+    source_xml_provider: Callable[[str], bytes | None] | None = None,
 ) -> dict[str, Any]:
     address = _require_address(resolution)
     version = selection.version
@@ -908,6 +911,7 @@ def _selected_response(
             jurisdiction=jurisdiction,
             address=address,
             version=payload_version,
+            source_xml_provider=source_xml_provider,
         ),
         "engine": _engine_payload(),
     }
@@ -1389,6 +1393,7 @@ def _source_locator_payload(
     jurisdiction: str,
     address: LegalAddress,
     version: ProvisionVersion | None,
+    source_xml_provider: Callable[[str], bytes | None] | None = None,
 ) -> dict[str, Any] | None:
     source_sid = statute_id
     artifact_kind = "base_statute_xml"
@@ -1426,6 +1431,14 @@ def _source_locator_payload(
         "byte_span_status": "unavailable_initial_surface",
         "hash_role": "excluded_from_derived_state_hash",
     }
+    span = None
+    if artifact_kind == "base_statute_xml" and source_xpath and source_xml_provider is not None:
+        span = _finlex_source_xml_element_span(
+            source_xml_provider(source_sid),
+            xpath=source_xpath,
+            fallback_eid=_finlex_eid_candidate(address),
+        )
+        detail.update(span["detail"])
     if source_quote is not None:
         detail["source_witness"] = source_quote
         detail["source_witness_status"] = "operation_source_raw_text_available"
@@ -1438,6 +1451,8 @@ def _source_locator_payload(
         document_uri=statute_url(source_sid),
         structural_path=f"lawvm-target:{address}",
         xpath=source_xpath,
+        char_span=span["char_span"] if span is not None else None,
+        byte_span=span["byte_span"] if span is not None else None,
         quote_hash=source_quote["quote_hash"] if source_quote is not None else "",
         statute_id=source_sid,
         normalization_policy="finlex_statute_document_locator.v1",
@@ -1475,6 +1490,190 @@ def _finlex_target_xpath_candidate(address: LegalAddress) -> str:
             return ""
         parts.append(f"/*[local-name()={_xpath_literal(tag)}][{_finlex_num_predicate(kind, tag, label)}]")
     return "".join(parts)
+
+
+def _finlex_source_xml_element_span(
+    xml_bytes: bytes | None,
+    *,
+    xpath: str,
+    fallback_eid: str = "",
+) -> dict[str, Any]:
+    if not xml_bytes:
+        return {
+            "char_span": None,
+            "byte_span": None,
+            "detail": {
+                "source_xml_span_status": "unavailable_source_xml_not_loaded",
+            },
+        }
+    from lxml import etree
+
+    try:
+        text = xml_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return {
+            "char_span": None,
+            "byte_span": None,
+            "detail": {
+                "source_xml_span_status": "unavailable_source_xml_not_utf8",
+            },
+        }
+    try:
+        root = etree.fromstring(xml_bytes)
+    except etree.XMLSyntaxError:
+        return {
+            "char_span": None,
+            "byte_span": None,
+            "detail": {
+                "source_xml_span_status": "unavailable_source_xml_parse_failed",
+            },
+        }
+    matches = root.xpath(xpath)
+    match_basis = "xpath_candidate"
+    xpath_match_count = len(matches) if isinstance(matches, list) else 0
+    if (not isinstance(matches, list) or len(matches) != 1) and fallback_eid:
+        matches = root.xpath(f"//*[@eId={_xpath_literal(fallback_eid)}]")
+        match_basis = "fallback_eid"
+    if not isinstance(matches, list) or len(matches) != 1:
+        return {
+            "char_span": None,
+            "byte_span": None,
+            "detail": {
+                "source_xml_span_status": "unavailable_xpath_match_count_not_one",
+                "source_xml_xpath_match_count": xpath_match_count,
+                "source_xml_fallback_eid": fallback_eid,
+                "source_xml_fallback_match_count": len(matches) if isinstance(matches, list) else 0,
+            },
+        }
+    element = matches[0]
+    if not isinstance(element, etree._Element):
+        return {
+            "char_span": None,
+            "byte_span": None,
+            "detail": {
+                "source_xml_span_status": "unavailable_xpath_match_not_element",
+            },
+        }
+    eid = str(element.get("eId") or "")
+    if not eid:
+        return {
+            "char_span": None,
+            "byte_span": None,
+            "detail": {
+                "source_xml_span_status": "unavailable_xpath_match_missing_eid",
+            },
+        }
+    tag = etree.QName(element).localname
+    char_span = _raw_xml_eid_element_char_span(text, local_tag=tag, eid=eid)
+    if char_span is None:
+        return {
+            "char_span": None,
+            "byte_span": None,
+            "detail": {
+                "source_xml_span_status": "unavailable_raw_xml_eid_scan_failed",
+                "source_xml_eid": eid,
+                "source_xml_local_tag": tag,
+            },
+        }
+    byte_span = (
+        len(text[: char_span[0]].encode("utf-8")),
+        len(text[: char_span[1]].encode("utf-8")),
+    )
+    return {
+        "char_span": char_span,
+        "byte_span": byte_span,
+        "detail": {
+            "char_span": list(char_span),
+            "char_span_status": "finlex_raw_xml_eid_element_scan",
+            "char_span_basis": _finlex_span_basis(match_basis),
+            "byte_span": list(byte_span),
+            "byte_span_status": "finlex_raw_xml_eid_element_scan_utf8",
+            "byte_span_basis": "UTF-8 byte offsets derived from exact raw XML character span.",
+            "source_xml_span_status": "available",
+            "source_xml_span_match_basis": match_basis,
+            "source_xml_xpath_match_count": xpath_match_count,
+            "source_xml_eid": eid,
+            "source_xml_local_tag": tag,
+        },
+    }
+
+
+def _finlex_span_basis(match_basis: str) -> str:
+    if match_basis == "xpath_candidate":
+        return (
+            "Raw Finlex source XML decoded as UTF-8; XPath candidate matched "
+            "one element with eId; raw scan balanced the matching element tag."
+        )
+    return (
+        "Raw Finlex source XML decoded as UTF-8; XPath candidate did not "
+        "match exactly one element; fallback eId matched one element; raw "
+        "scan balanced the matching element tag."
+    )
+
+
+def _finlex_eid_candidate(address: LegalAddress) -> str:
+    segments: list[str] = []
+    for kind, label in address.path:
+        prefix = _FINLEX_EID_SEGMENT_PREFIX.get(kind)
+        if not prefix:
+            return ""
+        segments.append(f"{prefix}_{label}")
+    return "__".join(segments)
+
+
+_FINLEX_EID_SEGMENT_PREFIX = {
+    "part": "part",
+    "chapter": "chp",
+    "section": "sec",
+    "subsection": "subsec",
+    "paragraph": "para",
+    "subparagraph": "subpara",
+    "item": "item",
+}
+
+
+def _raw_xml_eid_element_char_span(
+    text: str,
+    *,
+    local_tag: str,
+    eid: str,
+) -> tuple[int, int] | None:
+    start = _raw_xml_eid_start(text, local_tag=local_tag, eid=eid)
+    if start is None:
+        return None
+    tag_re = re.compile(rf"</?(?:[A-Za-z_][\w.-]*:)?{re.escape(local_tag)}\b[^>]*>")
+    depth = 0
+    for match in tag_re.finditer(text, start):
+        token = match.group(0)
+        closing = token.startswith("</")
+        self_closing = token.rstrip().endswith("/>")
+        if closing:
+            depth -= 1
+            if depth == 0:
+                return (start, match.end())
+        elif not self_closing:
+            depth += 1
+        elif match.start() == start:
+            return (start, match.end())
+    return None
+
+
+def _raw_xml_eid_start(text: str, *, local_tag: str, eid: str) -> int | None:
+    for quote in ("\"", "'"):
+        needle = f"eId={quote}{eid}{quote}"
+        search_at = 0
+        while True:
+            attr_index = text.find(needle, search_at)
+            if attr_index < 0:
+                break
+            start = text.rfind("<", 0, attr_index)
+            end = text.find(">", attr_index)
+            if start >= 0 and end >= 0:
+                start_tag = text[start : end + 1]
+                if re.match(rf"<(?:[A-Za-z_][\w.-]*:)?{re.escape(local_tag)}\b", start_tag):
+                    return start
+            search_at = attr_index + len(needle)
+    return None
 
 
 def _finlex_num_predicate(kind: str, tag: str, label: str) -> str:
