@@ -36,8 +36,13 @@ import html as _html
 import re
 from dataclasses import dataclass, replace
 from functools import lru_cache
-from typing import AbstractSet, Any, List, Literal, Optional, Sequence, cast
+from typing import TYPE_CHECKING, AbstractSet, Any, List, Literal, Optional, Sequence, cast
 import xml.etree.ElementTree as ET
+
+if TYPE_CHECKING:
+    XmlElement = ET.Element[str]
+else:
+    XmlElement = ET.Element
 
 from lawvm.core.ir import (
     TextPatchKindEnum,
@@ -419,7 +424,7 @@ def _section_from_header_text(header_text: str) -> Optional[str]:
     return _tr_old_format_section_from_header_text(header_text)
 
 
-def _first_tavatekst_text(para: ET.Element, ns_str: str) -> str:
+def _first_tavatekst_text(para: XmlElement, ns_str: str) -> str:
     """Return the first tavatekst block from a paragrahv, normalized to plain text."""
     for st in para.iter(_ns(ns_str, "sisuTekst")):
         for t in st.findall(_ns(ns_str, "tavatekst")):
@@ -461,7 +466,7 @@ def _ns(ns_str: str, tag: str) -> str:
     return f"{{{ns_str}}}{tag}"
 
 
-def _find(el: ET.Element, ns_str: str, *tags: str) -> Optional[ET.Element]:
+def _find(el: XmlElement, ns_str: str, *tags: str) -> Optional[XmlElement]:
     """Traverse a sequence of namespace-qualified tags from el."""
     cur = el
     for tag in tags:
@@ -471,7 +476,7 @@ def _find(el: ET.Element, ns_str: str, *tags: str) -> Optional[ET.Element]:
     return cur
 
 
-def _text(el: Optional[ET.Element]) -> str:
+def _text(el: Optional[XmlElement]) -> str:
     """Return stripped text content of an element, or empty string.
 
     Normalizes non-breaking spaces (\xa0) to regular spaces so that
@@ -483,7 +488,7 @@ def _text(el: Optional[ET.Element]) -> str:
     return (el.text or "").replace("\xa0", " ").strip()
 
 
-def _title_text(el: Optional[ET.Element]) -> str:
+def _title_text(el: Optional[XmlElement]) -> str:
     """Extract full section title text, including text inside inline child tags.
 
     <paragrahvPealkiri> elements often contain <sup>/<sub> children for
@@ -543,11 +548,11 @@ def _normalize_ee_statute_surface_text(text: str) -> str:
     return text
 
 
-def _element_text_with_bold_section_boundaries(el: ET.Element) -> str:
+def _element_text_with_bold_section_boundaries(el: XmlElement) -> str:
     """Extract element text while preserving bold whole-section title boundaries."""
     parts: list[str] = []
 
-    def _walk(node: ET.Element) -> None:
+    def _walk(node: XmlElement) -> None:
         tag = node.tag.split("}")[-1] if "}" in node.tag else node.tag
         if tag in {"b", "strong"}:
             inner = " ".join(str(text) for text in node.itertext())
@@ -570,7 +575,7 @@ def _element_text_with_bold_section_boundaries(el: ET.Element) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _tavatekst_text(t: ET.Element, ns_str: str) -> str:
+def _tavatekst_text(t: XmlElement, ns_str: str) -> str:
     """Extract text from a tavatekst element, including inline formatting children.
 
     Captures text from inline elements (<i>, <b>, <em>, <u>, <sup>, <sub>) which
@@ -635,7 +640,7 @@ def _tavatekst_text(t: ET.Element, ns_str: str) -> str:
     return result
 
 
-def _sisuTekst_text(st: ET.Element, ns_str: str) -> str:
+def _sisuTekst_text(st: XmlElement, ns_str: str) -> str:
     """Extract concatenated text from a sisuTekst element in document order.
 
     Handles two text-bearing child types:
@@ -690,7 +695,7 @@ def _appendix_html_payload_text(fragment: str) -> str:
     return plain
 
 
-def _section_html_table_text(st: ET.Element, ns_str: str) -> str:
+def _section_html_table_text(st: XmlElement, ns_str: str) -> str:
     """Return meaningful non-appendix table text from one section-level sisuTekst."""
     parts: list[str] = []
     for child in st:
@@ -714,7 +719,7 @@ def _extract_appendix_marker(fragment: str) -> str:
     return match.group(0) if match else ""
 
 
-def _leading_appendix_marker(st: ET.Element) -> str:
+def _leading_appendix_marker(st: XmlElement) -> str:
     """Return the leading appendix marker for a sisuTekst, if it starts one."""
     for child in st:
         local = child.tag.split("}")[1] if "}" in child.tag else child.tag
@@ -732,7 +737,7 @@ def _leading_appendix_marker(st: ET.Element) -> str:
     return ""
 
 
-def _subsection_uses_appendix_html(el: ET.Element, ns_str: str) -> bool:
+def _subsection_uses_appendix_html(el: XmlElement, ns_str: str) -> bool:
     """True when subsection text should preserve appendix-style HTML payload text."""
     for st in el.findall(_ns(ns_str, "sisuTekst")):
         for child in st:
@@ -796,7 +801,7 @@ _EE_MINISTRY_SECTION_REF_RE = re.compile(
 )
 
 
-def _element_has_kehtetu_marker(el: ET.Element, ns_str: str) -> bool:
+def _element_has_kehtetu_marker(el: XmlElement, ns_str: str) -> bool:
     for mm in el.findall(_ns(ns_str, "muutmismarge")):
         for text_el in mm.findall(_ns(ns_str, "tavatekst")):
             marker = " ".join(str(part) for part in text_el.itertext()).strip().lower()
@@ -815,7 +820,7 @@ def _is_repealed_range_residue_text(text: str) -> bool:
     )
 
 
-def _section_level_sisutekst_text(el: ET.Element, ns_str: str) -> str:
+def _section_level_sisutekst_text(el: XmlElement, ns_str: str) -> str:
     """Return direct section-level text that precedes explicit subsections."""
     parts: list[str] = []
     for st in el.findall(_ns(ns_str, "sisuTekst")):
@@ -879,7 +884,7 @@ def _extract_numbered_html_table_row_items(html_text: str) -> list[IRNode]:
     return items
 
 
-def _extract_html_table_item_children(el: ET.Element, ns_str: str) -> list[IRNode]:
+def _extract_html_table_item_children(el: XmlElement, ns_str: str) -> list[IRNode]:
     """Materialize numbered HTML table rows as item children when the labels are explicit."""
     children: list[IRNode] = []
     for st in el.findall(_ns(ns_str, "sisuTekst")):
@@ -915,7 +920,7 @@ def _extract_html_table_item_children(el: ET.Element, ns_str: str) -> list[IRNod
     return children
 
 
-def _extract_numbered_html_paragraph_item_children(el: ET.Element, ns_str: str) -> tuple[str, list[IRNode]]:
+def _extract_numbered_html_paragraph_item_children(el: XmlElement, ns_str: str) -> tuple[str, list[IRNode]]:
     """Materialize ``HTMLKonteiner`` paragraphs that encode numbered item lists.
 
     Some RT consolidated-current XML surfaces keep the same provisions that old
@@ -968,7 +973,7 @@ def _extract_numbered_html_paragraph_item_children(el: ET.Element, ns_str: str) 
 
 
 def _sisuTekst_text_with_appendix_markers(
-    st: ET.Element,
+    st: XmlElement,
     ns_str: str,
     *,
     drop_first_appendix_marker: bool = False,
@@ -1003,7 +1008,7 @@ def _sisuTekst_text_with_appendix_markers(
     return result
 
 
-def _collect_text(el: ET.Element, ns_str: str) -> str:
+def _collect_text(el: XmlElement, ns_str: str) -> str:
     """Concatenate all tavatekst descendants of el.
 
     Normalizes \xa0 (non-breaking space) to regular space for consistency
@@ -1017,7 +1022,7 @@ def _collect_text(el: ET.Element, ns_str: str) -> str:
     return " ".join(parts)
 
 
-def _parse_item(el: ET.Element, ns_str: str) -> IRNode:
+def _parse_item(el: XmlElement, ns_str: str) -> IRNode:
     """Parse an alampunkt (item) element → IRNode(kind=IRNodeKind.ITEM)."""
     nr = (
         _extract_superscript_label(el, ns_str)
@@ -1051,7 +1056,7 @@ def _parse_item(el: ET.Element, ns_str: str) -> IRNode:
     return IRNode(kind=IRNodeKind.ITEM, label=nr, text=item_text, children=tuple(children))
 
 
-def _extract_reavahetus_items(el: ET.Element, ns_str: str) -> List[IRNode]:
+def _extract_reavahetus_items(el: XmlElement, ns_str: str) -> List[IRNode]:
     """Extract list items from <tavatekst> elements whose items are separated
     by <reavahetus/> line-break elements (old tyviseadus format).
 
@@ -1072,7 +1077,7 @@ def _extract_reavahetus_items(el: ET.Element, ns_str: str) -> List[IRNode]:
     Returns an empty list if no <reavahetus/> children with numbered-item tails
     are found (i.e., the subsection uses <alampunkt> XML items, handled elsewhere).
     """
-    def _segments(st: ET.Element) -> list[str]:
+    def _segments(st: XmlElement) -> list[str]:
         segments = [""]
 
         def add_text(text: str | None, *, prefix_space: bool = False) -> None:
@@ -1083,7 +1088,7 @@ def _extract_reavahetus_items(el: ET.Element, ns_str: str) -> List[IRNode]:
                 cleaned = " " + cleaned
             segments[-1] += cleaned
 
-        def walk(node: ET.Element) -> None:
+        def walk(node: XmlElement) -> None:
             local = node.tag.split("}")[1] if "}" in node.tag else node.tag
             if local == "reavahetus":
                 segments.append("")
@@ -1137,11 +1142,11 @@ def _extract_reavahetus_items(el: ET.Element, ns_str: str) -> List[IRNode]:
     return items
 
 
-def _extract_reavahetus_intro_text(el: ET.Element, ns_str: str) -> str:
+def _extract_reavahetus_intro_text(el: XmlElement, ns_str: str) -> str:
     """Return text before the first reavahetus item list in an element."""
     intro_parts: list[str] = []
 
-    def _tavatekst_prefix_before_item_list(tavatekst: ET.Element) -> tuple[str, bool]:
+    def _tavatekst_prefix_before_item_list(tavatekst: XmlElement) -> tuple[str, bool]:
         parts: list[str] = []
         if _looks_like_reavahetus_item_tail(tavatekst.text or ""):
             return "", True
@@ -1182,7 +1187,7 @@ def _extract_reavahetus_intro_text(el: ET.Element, ns_str: str) -> str:
     return " ".join(part for part in intro_parts if part).strip()
 
 
-def _parse_subsection(el: ET.Element, ns_str: str, default_nr: int = 1) -> IRNode:
+def _parse_subsection(el: XmlElement, ns_str: str, default_nr: int = 1) -> IRNode:
     """Parse a loige (subsection) element → IRNode(kind=IRNodeKind.SUBSECTION)."""
     nr = _extract_superscript_label(el, ns_str) or _text(_find(el, ns_str, "loigeNr")) or str(default_nr)
 
@@ -1264,7 +1269,7 @@ def _parse_subsection(el: ET.Element, ns_str: str, default_nr: int = 1) -> IRNod
     return IRNode(kind=IRNodeKind.SUBSECTION, label=nr, text=sub_text, attrs=attrs, children=tuple(children))
 
 
-def _loige_has_explicit_label(el: ET.Element, ns_str: str) -> bool:
+def _loige_has_explicit_label(el: XmlElement, ns_str: str) -> bool:
     """Return whether an RT ``loige`` carries its own displayed/legal label."""
     return bool(_extract_superscript_label(el, ns_str) or _text(_find(el, ns_str, "loigeNr")))
 
@@ -1293,7 +1298,7 @@ def _attach_unlabeled_loige_continuation(previous: IRNode, continuation: IRNode)
     )
 
 
-def _parse_subsection_nodes(el: ET.Element, ns_str: str, default_nr: int = 1) -> List[IRNode]:
+def _parse_subsection_nodes(el: XmlElement, ns_str: str, default_nr: int = 1) -> List[IRNode]:
     """Parse one loige into one or more subsection nodes.
 
     Old EE source sometimes embeds appendix material inside a single subsection:
@@ -1358,7 +1363,7 @@ def _parse_subsection_nodes(el: ET.Element, ns_str: str, default_nr: int = 1) ->
     ]
 
 
-def _extract_superscript_label(el: ET.Element, ns_str: str) -> Optional[str]:
+def _extract_superscript_label(el: XmlElement, ns_str: str) -> Optional[str]:
     """Extract label from kuvatavNr, handling <sup> superscript suffixes.
 
     Works for sections, subsections, and items.
@@ -1382,7 +1387,7 @@ def _extract_superscript_label(el: ET.Element, ns_str: str) -> Optional[str]:
     return None
 
 
-def _build_phantom_set(sisu_el: ET.Element, ns_str: str) -> "set[ET.Element]":
+def _build_phantom_set(sisu_el: XmlElement, ns_str: str) -> set[XmlElement]:
     """Return the set of paragrahv elements that are phantom placeholder sections.
 
     A paragrahv is a phantom placeholder iff:
@@ -1400,7 +1405,7 @@ def _build_phantom_set(sisu_el: ET.Element, ns_str: str) -> "set[ET.Element]":
     test `child_el in phantom_set` using lxml element identity (not Python id()).
     """
     # First pass: collect all nr → list[el] and note which have visible nr
-    nr_to_els: dict = {}
+    nr_to_els: dict[str, list[XmlElement]] = {}
     for para in sisu_el.iter(_ns(ns_str, "paragrahv")):
         nr_el = para.find(_ns(ns_str, "paragrahvNr"))
         nr = (nr_el.text or "").strip() if nr_el is not None else ""
@@ -1408,13 +1413,14 @@ def _build_phantom_set(sisu_el: ET.Element, ns_str: str) -> "set[ET.Element]":
             continue
         nr_to_els.setdefault(nr, []).append(para)
 
-    phantoms: list = []
+    phantoms: list[XmlElement] = []
     for nr, els in nr_to_els.items():
         if len(els) < 2:
             continue  # only one element with this nr — keep it regardless
         # Multiple elements share this nr.  Mark blank-kuvatavNr + empty ones.
         has_real = any(
-            ((e.find(_ns(ns_str, "kuvatavNr")) is not None) and ((e.find(_ns(ns_str, "kuvatavNr")).text or "").strip()))
+            (kn := e.find(_ns(ns_str, "kuvatavNr"))) is not None
+            and bool((kn.text or "").strip())
             for e in els
         )
         if not has_real:
@@ -1441,7 +1447,7 @@ def _build_phantom_set(sisu_el: ET.Element, ns_str: str) -> "set[ET.Element]":
     return set(phantoms)
 
 
-def _parse_section(el: ET.Element, ns_str: str) -> IRNode:
+def _parse_section(el: XmlElement, ns_str: str) -> IRNode:
     """Parse a paragrahv (section §) element → IRNode(kind=IRNodeKind.SECTION)."""
     # Use kuvatavNr with <sup> suffix when available (paragrahvNr loses
     # superscript, causing label collisions: §1, §1¹, §1² all become "1").
@@ -1569,7 +1575,7 @@ def _parse_section(el: ET.Element, ns_str: str) -> IRNode:
     # no body content.  RT tervikteksts preserve the original title of such sections
     # without applying subsequent global text-replacements to it.  We mark these
     # with attrs={'kehtetu': True} so _ee_global_text_replace can skip their title.
-    attrs: dict = {}
+    attrs: dict[str, object] = {}
     if dropped_repealed_residues:
         attrs["source_cleanup_rules"] = (_EE_DROP_REPEALED_RANGE_RESIDUE_RULE,)
         attrs["dropped_repealed_residues"] = tuple(dropped_repealed_residues)
@@ -1605,13 +1611,13 @@ def _canonicalize_singleton_empty_section_label(children: tuple[IRNode, ...]) ->
     return (replace(section, label="1", attrs=attrs),)
 
 
-def _parse_division(el: ET.Element, ns_str: str, phantoms: AbstractSet = frozenset()) -> IRNode:
+def _parse_division(el: XmlElement, ns_str: str, phantoms: AbstractSet[XmlElement] = frozenset()) -> IRNode:
     """Parse a jagu (division) element → IRNode(kind=IRNodeKind.DIVISION)."""
     nr = _extract_superscript_label(el, ns_str) or _text(_find(el, ns_str, "jaguNr"))
     title = _text(_find(el, ns_str, "jaguPealkiri"))
     children: List[IRNode] = []
 
-    def _append_section(para_el: ET.Element, *, jaotis_label: str = "", alljaotis_label: str = "") -> None:
+    def _append_section(para_el: XmlElement, *, jaotis_label: str = "", alljaotis_label: str = "") -> None:
         if para_el in phantoms:
             return
         section = _parse_section(para_el, ns_str)
@@ -1649,7 +1655,7 @@ def _parse_division(el: ET.Element, ns_str: str, phantoms: AbstractSet = frozens
     return IRNode(kind=IRNodeKind.DIVISION, label=nr, text=title, children=tuple(children))
 
 
-def _parse_chapter(el: ET.Element, ns_str: str, phantoms: AbstractSet = frozenset()) -> IRNode:
+def _parse_chapter(el: XmlElement, ns_str: str, phantoms: AbstractSet[XmlElement] = frozenset()) -> IRNode:
     """Parse a peatykk (chapter) element → IRNode(kind=IRNodeKind.CHAPTER)."""
     nr = _extract_superscript_label(el, ns_str) or _text(_find(el, ns_str, "peatykkNr"))
     title = _title_text(_find(el, ns_str, "peatykkPealkiri"))
@@ -1703,7 +1709,7 @@ def _expand_range_sections(children: List[IRNode]) -> List[IRNode]:
     return result
 
 
-def _detect_ns(root: ET.Element) -> str:
+def _detect_ns(root: XmlElement) -> str:
     """Detect namespace from root element tag. Handles tyviseadus, maarus, juurakt."""
     if "}" in root.tag:
         return root.tag.split("}")[0].lstrip("{")
@@ -1769,7 +1775,7 @@ def parse_ee_statute(xml_bytes: bytes, statute_id: str = "") -> IRStatute:
 
     # Metadata
     meta_el = root.find(_ns(ns_str, "metaandmed"))
-    metadata: dict = {}
+    metadata: dict[str, str] = {}
     if meta_el is not None:
         for tag_name in ("lyhend", "dokumentLiik", "tekstiliik", "metaandmedVersioon"):
             el = meta_el.find(_ns(ns_str, tag_name))
@@ -2599,7 +2605,7 @@ def _ee_cross_act_repeal_re(target_title: str) -> "re.Pattern[str] | None":
 
 
 def _parse_cross_act_transitional_section_repeals(
-    root: ET.Element,
+    root: XmlElement,
     *,
     source_id: str,
     target_title: str,
@@ -2677,7 +2683,7 @@ def _parse_constitutional_review_ops(
 
 
 def _parse_preambul_single_target_ops(
-    root: ET.Element,
+    root: XmlElement,
     source_id: str,
     ns_str: str,
     target_title: str,
@@ -2685,7 +2691,7 @@ def _parse_preambul_single_target_ops(
 ) -> List[LegalOperation]:
     """Handle single-target amendment acts expressed as preambul + one content block."""
     def _parse_synthetic_preambul_target(
-        synthetic_root: ET.Element,
+        synthetic_root: XmlElement,
         synthetic_source_id: str,
         synthetic_ns_str: str,
         synthetic_target_title: str,
@@ -2774,7 +2780,7 @@ def _parse_preambul_single_target_ops(
 
 
 def _parse_parenthesized_target_html_block_ops(
-    root: ET.Element,
+    root: XmlElement,
     source_id: str,
     target_title: str,
 ) -> List[LegalOperation]:
@@ -3152,7 +3158,7 @@ def _matches_target_statute_header(target_title: str, para_title: str) -> bool:
 
 
 def _para_contains_direct_target_clause(
-    para: ET.Element,
+    para: XmlElement,
     ns_str: str,
     target_title: str,
 ) -> bool:
@@ -3166,7 +3172,7 @@ def _para_contains_direct_target_clause(
     )
 
 
-def _is_omnibus_amendment(root: ET.Element, ns_str: str, target_title: str) -> bool:
+def _is_omnibus_amendment(root: XmlElement, ns_str: str, target_title: str) -> bool:
     """Return True if this amendment act contains paragrahvs targeting DIFFERENT statutes.
 
     An omnibus act has paragrahvs like "Kohtute seaduse muutmine", "Notariaadiseaduse
@@ -3183,7 +3189,7 @@ def _is_omnibus_amendment(root: ET.Element, ns_str: str, target_title: str) -> b
 
 
 def _parse_muutmisseadus_ops(
-    root: ET.Element,
+    root: XmlElement,
     source_id: str,
     ns_str: str = "",
     target_title: str = "",
@@ -3225,14 +3231,14 @@ def _parse_muutmisseadus_ops(
 
 
 def _parse_muutmisseadus_plain_paragraph_item_ops(
-    root: ET.Element, source_id: str, ns_str: str = "", target_title: str = ""
+    root: XmlElement, source_id: str, ns_str: str = "", target_title: str = ""
 ) -> List[LegalOperation]:
     """Recover explicit new-format HTML amendment items written as plain <p>N)</p> paragraphs."""
     ns_str = ns_str or NS_AMEND
 
     def _collect_op_texts_with_plain_items(
         *,
-        para: ET.Element,
+        para: XmlElement,
         ns_str: str,
         embedded_target_sections: Sequence[str],
     ) -> list[str]:
@@ -3281,7 +3287,7 @@ def _parse_muutmisseadus_plain_paragraph_item_ops(
 
 
 def _parse_flat_html_plain_paragraph_item_ops(
-    root: ET.Element, source_id: str, target_title: str = ""
+    root: XmlElement, source_id: str, target_title: str = ""
 ) -> List[LegalOperation]:
     """Recover direct single-target amendment HTML written as plain <p>N)</p> items."""
     if not target_title:
@@ -3348,7 +3354,7 @@ def _parse_flat_html_plain_paragraph_item_ops(
 
 
 def _parse_old_format_direct_title_unnumbered_text_replace_ops(
-    root: ET.Element,
+    root: XmlElement,
     source_id: str,
     target_title: str,
 ) -> List[LegalOperation]:
@@ -3478,7 +3484,7 @@ def _parse_old_format_direct_title_unnumbered_text_replace_ops(
 
 
 def _parse_old_format_amendment_ops(
-    root: ET.Element,
+    root: XmlElement,
     source_id: str,
     target_title: str = "",
     ref_effective: str = "",
@@ -3823,7 +3829,7 @@ def _parse_old_format_amendment_ops(
         if not target_title:
             return []
 
-        def _candidate_title_from_para(para: ET.Element) -> tuple[str, str, str]:
+        def _candidate_title_from_para(para: XmlElement) -> tuple[str, str, str]:
             para_nr = ""
             para_title = ""
             first_tava = ""
@@ -4230,7 +4236,7 @@ def _old_format_html_commencement_blocks(text: str) -> tuple[str, ...]:
 
 
 def _extract_old_format_commencement_effects(
-    root: ET.Element,
+    root: XmlElement,
     *,
     fallback_effective: str = "",
 ) -> tuple[dict[tuple[str, str], str], dict[str, str], str]:
@@ -4396,7 +4402,7 @@ def _old_format_target_has_ref_owned_slice(
 
 
 def _extract_old_format_target_section_labels(
-    root: ET.Element,
+    root: XmlElement,
     target_title: str,
 ) -> tuple[str, ...]:
     """Find old-format amendment-act paragraph numbers targeting ``target_title``."""
@@ -4468,7 +4474,7 @@ _EE_OLD_FORMAT_COMMENCEMENT_WHOLE_ACT_DEFAULT_RULE = "ee_old_format_commencement
 
 
 def _apply_old_format_commencement_effects(
-    root: ET.Element,
+    root: XmlElement,
     ops: List[LegalOperation],
     *,
     target_section_labels: tuple[str, ...] = (),
@@ -4523,7 +4529,7 @@ def _apply_old_format_commencement_effects(
 
 
 def _extract_new_format_default_slice_ownership(
-    root: ET.Element,
+    root: XmlElement,
 ) -> tuple[str, set[tuple[str, str]], set[str]]:
     """Read new-format whole-act default commencement plus general-order exceptions."""
     whole_act_effective = ""
@@ -4587,7 +4593,7 @@ def _extract_new_format_default_slice_ownership(
 
 
 def _apply_new_format_default_slice_effects(
-    root: ET.Element,
+    root: XmlElement,
     ops: List[LegalOperation],
     *,
     fallback_effective: str = "",
@@ -10002,8 +10008,8 @@ def _ee_text_replace_run_sort_key(op: LegalOperation) -> tuple[int, int, int, in
 def apply_ee_ops(
     statute: IRStatute,
     ops: List[LegalOperation],
-    blame_map: Optional[dict] = None,
-    lo_ops_out: Optional[list] = None,
+    blame_map: Optional[dict[str, LegalOperation]] = None,
+    lo_ops_out: Optional[list[LegalOperation]] = None,
     adjudications_out: Optional[list[CompileAdjudication]] = None,
 ) -> IRStatute:
     """Apply LegalOperations to an Estonian IRStatute, returning an updated copy.
