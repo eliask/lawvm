@@ -12,7 +12,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from lawvm.core.agreement_residual import AgreementResidual
+from lawvm.core.agreement_residual import (
+    AgreementResidual,
+    AgreementResidualFamily,
+    AgreementResidualStatus,
+)
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 
 
@@ -219,7 +223,7 @@ def _agreement_residual(
     )
 
 
-def _agreement_residual_family(review_status: str) -> str:
+def _agreement_residual_family(review_status: str) -> AgreementResidualFamily:
     if review_status == "insufficient_standalone_evidence":
         return "source_footing_gap"
     if review_status == "plausible_true_divergence":
@@ -231,7 +235,7 @@ def _agreement_residual_family(review_status: str) -> str:
     return "oracle_editorial_pathology"
 
 
-def _agreement_residual_status(review_status: str) -> str:
+def _agreement_residual_status(review_status: str) -> AgreementResidualStatus:
     if review_status in {
         "plausible_true_divergence",
         "partially_plausible_true_divergence",

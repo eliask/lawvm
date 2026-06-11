@@ -534,7 +534,7 @@ def _emit_tsv(candidates: Sequence[UKOracleSuspectCandidate]) -> str:
         "oracle_only_samples",
         "missing_proofs",
     )
-    rows = ["\t".join(header)]
+    rows: list[str] = ["\t".join(header)]
     for candidate in candidates:
         rows.append(
             "\t".join(

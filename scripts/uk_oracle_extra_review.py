@@ -14,7 +14,11 @@ from typing import Any, Mapping, Sequence
 
 from lxml import etree as ET
 
-from lawvm.core.agreement_residual import AgreementResidual
+from lawvm.core.agreement_residual import (
+    AgreementResidual,
+    AgreementResidualFamily,
+    AgreementResidualStatus,
+)
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.roman import arabic_to_roman
 
@@ -232,7 +236,7 @@ def _agreement_residual(
     )
 
 
-def _residual_family(review_status: str) -> str:
+def _residual_family(review_status: str) -> AgreementResidualFamily:
     if review_status == "likely_topology_wrapper_residual":
         return "topology_granularity_mismatch"
     if review_status in {
@@ -256,7 +260,7 @@ def _residual_family(review_status: str) -> str:
     return "source_footing_gap"
 
 
-def _residual_status(review_status: str) -> str:
+def _residual_status(review_status: str) -> AgreementResidualStatus:
     if review_status == "manual_review_candidate":
         return "residual"
     return "frontier"
@@ -403,12 +407,14 @@ def _parse_xml(xml: bytes | None) -> ET._Element:
 def _find_id(root: ET._Element | None, target: str) -> ET._Element | None:
     if root is None:
         return None
-    found = root.xpath(
+    found = _xpath_elements(
+        root,
         "//*[@id=$target or @eId=$target or @shortId=$target]", target=target
     )
     if not found:
         lowered = target.lower()
-        found = root.xpath(
+        found = _xpath_elements(
+            root,
             "//*[translate(@id, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')=$target "
             "or translate(@eId, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')=$target "
             "or translate(@shortId, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')=$target]",
@@ -429,7 +435,7 @@ def _base_text_witness_present(
     needle = _materialization_witness_needle(text_preview)
     if not needle:
         return False
-    haystack = _normalize_materialization_witness(" ".join(root.itertext()))
+    haystack = _normalize_materialization_witness(_element_text(root))
     if needle in haystack:
         return True
     heading_needle = _materialization_heading_needle(text_preview)
@@ -543,7 +549,7 @@ def _change_ids(el: ET._Element | None) -> tuple[str, ...]:
     if el is None:
         return ()
     out: list[str] = []
-    for value in el.xpath(".//@ChangeId"):
+    for value in _xpath_strings(el, ".//@ChangeId"):
         text = str(value)
         if text and text not in out:
             out.append(text)
@@ -558,7 +564,7 @@ def _commentary_refs(el: ET._Element | None) -> tuple[str, ...]:
         './/*[local-name()="CommentaryRef"]/@Ref | .//@CommentaryRef',
         ".//@ChangeId",
     ):
-        for value in el.xpath(query):
+        for value in _xpath_strings(el, query):
             text = str(value)
             if text and text not in refs:
                 refs.append(text)
@@ -568,8 +574,8 @@ def _commentary_refs(el: ET._Element | None) -> tuple[str, ...]:
 def _commentaries_for_refs(root: ET._Element, refs: Sequence[str]) -> tuple[str, ...]:
     out: list[str] = []
     for ref in refs:
-        for comment in root.xpath('//*[local-name()="Commentary" and @id=$ref]', ref=ref):
-            text = _squash(" ".join(comment.itertext()))
+        for comment in _xpath_elements(root, '//*[local-name()="Commentary" and @id=$ref]', ref=ref):
+            text = _squash(_element_text(comment))
             if text and text not in out:
                 out.append(text)
     return tuple(out[:3])
@@ -578,7 +584,25 @@ def _commentaries_for_refs(root: ET._Element, refs: Sequence[str]) -> tuple[str,
 def _text_preview(el: ET._Element | None) -> str:
     if el is None:
         return ""
-    return _squash(" ".join(el.itertext()))[:500]
+    return _squash(_element_text(el))[:500]
+
+
+def _element_text(el: ET._Element) -> str:
+    return " ".join(str(part) for part in el.itertext())
+
+
+def _xpath_elements(el: ET._Element, query: str, **kwargs: Any) -> list[ET._Element]:
+    values = el.xpath(query, **kwargs)
+    if not isinstance(values, list):
+        return []
+    return [value for value in values if isinstance(value, ET._Element)]
+
+
+def _xpath_strings(el: ET._Element, query: str, **kwargs: Any) -> list[str]:
+    values = el.xpath(query, **kwargs)
+    if not isinstance(values, list):
+        return []
+    return [str(value) for value in values]
 
 
 def _squash(text: str) -> str:

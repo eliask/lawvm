@@ -15,11 +15,15 @@ import re
 from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence, cast
 
 from lxml import etree as ET
 
-from lawvm.core.agreement_residual import AgreementResidual
+from lawvm.core.agreement_residual import (
+    AgreementResidual,
+    AgreementResidualFamily,
+    AgreementResidualStatus,
+)
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.uk_legislation.effect_source_selection import (
     extracted_tag_and_text,
@@ -970,7 +974,7 @@ def _agreement_residual(
     )
 
 
-def _residual_family(review_status: str) -> str:
+def _residual_family(review_status: str) -> AgreementResidualFamily:
     if review_status in {
         "needs_public_review_no_obvious_current_marker",
         "needs_public_review_removed_phrase_still_present",
@@ -978,10 +982,10 @@ def _residual_family(review_status: str) -> str:
         return "oracle_editorial_pathology"
     if review_status == "current_xml_unavailable_frontier":
         return "source_footing_gap"
-    return "non_commensurable_surface"
+    return cast(AgreementResidualFamily, "non_commensurable_surface")
 
 
-def _residual_status(review_status: str) -> str:
+def _residual_status(review_status: str) -> AgreementResidualStatus:
     if review_status in {
         "needs_public_review_no_obvious_current_marker",
         "needs_public_review_removed_phrase_still_present",

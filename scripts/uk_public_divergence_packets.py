@@ -16,7 +16,7 @@ import urllib.request
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence, cast
 
 
 _LEG_BASE = "https://www.legislation.gov.uk"
@@ -203,7 +203,7 @@ def _load_supplements(path: Path) -> dict[str, Mapping[str, Any]]:
                 _current_url_for_target(statute_id, target)
                 for target in _target_tuple(row)
             )
-    return supplements
+    return cast(dict[str, Mapping[str, Any]], supplements)
 
 
 def _packet_from_candidate(
@@ -783,7 +783,7 @@ def _fetch_url(url: str) -> tuple[str, int, str, bytes]:
 def _http_error_response(exc: urllib.error.HTTPError) -> tuple[str, int, str, bytes]:
     body = exc.read()
     content_type = str(exc.headers.get("Content-Type") or "")
-    return exc.geturl(), int(exc.code), content_type, body
+    return exc.url, int(exc.code), content_type, body
 
 
 def _missing_standalone_evidence(

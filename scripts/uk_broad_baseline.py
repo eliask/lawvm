@@ -55,7 +55,11 @@ from typing import Any, Optional
 
 from lxml import etree as ET
 
-from lawvm.core.agreement_residual import AgreementResidual
+from lawvm.core.agreement_residual import (
+    AgreementResidual,
+    AgreementResidualFamily,
+    AgreementResidualStatus,
+)
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frontier_work_item import FrontierWorkItem
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
@@ -1921,7 +1925,7 @@ def _agreement_residual_for_row(row: dict[str, Any]) -> AgreementResidual:
     )
 
 
-def _agreement_residual_family(bucket: str) -> str:
+def _agreement_residual_family(bucket: str) -> AgreementResidualFamily:
     if bucket == "error":
         return "error"
     if bucket.startswith("source_frontier:"):
@@ -1969,7 +1973,7 @@ def _agreement_residual_family(bucket: str) -> str:
     return "unknown"
 
 
-def _agreement_residual_status(bucket: str, row: dict[str, Any]) -> str:
+def _agreement_residual_status(bucket: str, row: dict[str, Any]) -> AgreementResidualStatus:
     if bucket == "error":
         return "error"
     if bucket.startswith("source_frontier:") or bucket.endswith("_frontier"):

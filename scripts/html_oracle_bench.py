@@ -11,15 +11,28 @@ Usage:
     uv run python scripts/html_oracle_bench.py --worst 50   # worst ZIP-bench performers
     uv run python scripts/html_oracle_bench.py --sids 2018/1121 2019/906
 """
+from __future__ import annotations
+
 import argparse
 import csv
 import re
 import sys
 import time
 from pathlib import Path
+from typing import TypedDict
 
 LAWVM_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(LAWVM_DIR / "src"))
+
+
+class BenchResult(TypedDict):
+    statute_id: str
+    zip_bench: float
+    html_jaccard: float
+    replay_sections: int
+    zip_sections: int
+    html_sections: int
+    classification: str
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +172,7 @@ def _load_corpus() -> list[str]:
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="HTML oracle section-label bench")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--sample", type=int, help="random sample of N statutes")
@@ -187,7 +200,7 @@ def main():
     print(f"{'SID':<14} {'ZIP-bench':>9} {'HTML-J':>7} {'R-sec':>6} {'Z-sec':>6} {'H-sec':>6}  Classification")
     print("-" * 85)
 
-    results = []
+    results: list[BenchResult] = []
     for i, sid in enumerate(sids, 1):
         zip_score = bench_scores.get(sid, -1.0)
 
@@ -224,7 +237,7 @@ def main():
             else:
                 classification = "PARTIAL"
 
-        row = {
+        row: BenchResult = {
             "statute_id": sid,
             "zip_bench": zip_score,
             "html_jaccard": html_jaccard,

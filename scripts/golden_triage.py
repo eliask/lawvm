@@ -22,6 +22,7 @@ import sqlite3
 import sys
 from collections import defaultdict
 from pathlib import Path
+from typing import TypedDict, cast
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -63,6 +64,49 @@ CORE_STATUTES = {
 
 # Diagnoses that indicate Finlex is behind (potential Finlex errors)
 _FINLEX_BEHIND_DIAGNOSES = frozenset({"REPLAY_EXTRA", "EXTRA"})
+
+
+class ScoreBreakdown(TypedDict):
+    base: int
+    simplicity: int
+    recency: int
+    impact: int
+    ambiguity: int
+
+
+class CandidateFilters(TypedDict):
+    pre_1990: bool
+    vailiaikainen: bool
+    high_chain_depth: bool
+    low_divergence: bool
+
+
+class GoldenCandidate(TypedDict):
+    statute_id: str
+    section: str
+    score: int
+    chain_depth: int
+    blame_amendment: str | None
+    blame_year: int | None
+    fault_type: str
+    diagnosis: str
+    section_score: float
+    severity: int
+    statute_title: str
+    filters: CandidateFilters
+    filtered_out: bool
+    score_breakdown: ScoreBreakdown
+
+
+class StatuteRecord(TypedDict):
+    statute_id: str
+    statute_title: str
+    n_sections: int
+    max_score: int
+    total_score: int
+    avg_score: float
+    sections: list[str]
+    top_blame: str | None
 
 # ---------------------------------------------------------------------------
 # Graph data loaders
@@ -178,7 +222,7 @@ def _score(
     chain_depth: int,
     citation_counts: dict[str, int],
     high_cites_threshold: int = 100,
-) -> tuple[int, dict]:
+) -> tuple[int, ScoreBreakdown]:
     """Compute priority score per spec. Returns (score, score_breakdown_dict)."""
     statute_id = row["statute_id"]
     section_score = row["section_score"] or 0.0
@@ -223,7 +267,7 @@ def _score(
 
     total = base + simplicity + recency + impact + ambiguity  # ambiguity is negative
 
-    breakdown = {
+    breakdown: ScoreBreakdown = {
         "base": base,
         "simplicity": simplicity,
         "recency": recency,
@@ -280,15 +324,17 @@ def run_triage(
         "low_divergence": 0,
     }
 
-    candidates = []
+    candidates: list[GoldenCandidate] = []
     for row in finlex_rows:
-        statute_id = row["statute_id"]
-        section = row["section"]
-        section_score = row["section_score"] or 0.0
-        blame = row["blame_source"] or ""
-        blame_title = row["blame_title"] or ""
+        statute_id = cast(str, row["statute_id"])
+        section = cast(str, row["section"])
+        section_score = cast(float, row["section_score"] or 0.0)
+        blame = cast(str, row["blame_source"] or "")
+        blame_title = cast(str, row["blame_title"] or "")
+        diagnosis = cast(str, row["diagnosis"])
+        statute_title = cast(str, row["title"] or "")
 
-        filters = {
+        filters: CandidateFilters = {
             "pre_1990": False,
             "vailiaikainen": False,
             "high_chain_depth": False,
@@ -323,11 +369,11 @@ def run_triage(
             "REPLAY_EXTRA": "AMENDMENT_NOT_APPLIED",
             "EXTRA": "SECTION_ABSENT_IN_ORACLE",
         }
-        fault_type = fault_type_map.get(row["diagnosis"], row["diagnosis"])
+        fault_type = fault_type_map.get(diagnosis, diagnosis)
 
         by = _blame_year(blame)
 
-        candidate = {
+        candidate: GoldenCandidate = {
             "statute_id": statute_id,
             "section": section,
             "score": score,
@@ -335,10 +381,10 @@ def run_triage(
             "blame_amendment": blame if blame else None,
             "blame_year": by if by else None,
             "fault_type": fault_type,
-            "diagnosis": row["diagnosis"],
+            "diagnosis": diagnosis,
             "section_score": round(section_score, 6),
             "severity": 3,  # all REPLAY_EXTRA/EXTRA are sev=3 per faults.py
-            "statute_title": row["title"] or "",
+            "statute_title": statute_title,
             "filters": filters,
             "filtered_out": any_filtered,
             "score_breakdown": breakdown,
@@ -359,11 +405,11 @@ def run_triage(
             f.write("\n")
 
     # Group by statute → golden_statutes_ranked
-    statute_groups: dict[str, list[dict]] = defaultdict(list)
+    statute_groups: dict[str, list[GoldenCandidate]] = defaultdict(list)
     for c in passing:
         statute_groups[c["statute_id"]].append(c)
 
-    statute_records = []
+    statute_records: list[StatuteRecord] = []
     for sid, secs in statute_groups.items():
         secs_sorted = sorted(secs, key=lambda x: x["score"], reverse=True)
         statute_records.append({

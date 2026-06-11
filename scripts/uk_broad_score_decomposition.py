@@ -196,7 +196,7 @@ def _emit_tsv(payload: Mapping[str, Any]) -> str:
         "n_manual_frontier_records",
         "n_blocking_compile_rejections",
     )
-    lines = ["\t".join(header)]
+    lines: list[str] = ["\t".join(header)]
     for bucket in payload["buckets"]:
         mean_aligned = bucket["mean_aligned"]
         loss_points = bucket["loss_points_vs_reference"]

@@ -1273,7 +1273,7 @@ def _emit_tsv(payload: Mapping[str, Any]) -> str:
         "top_missing_proofs",
         "sample_statutes",
     )
-    lines = ["\t".join(header)]
+    lines: list[str] = ["\t".join(header)]
     for lane in payload["lanes"]:
         lines.append(
             "\t".join(
