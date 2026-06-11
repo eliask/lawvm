@@ -143,11 +143,6 @@ class CaptureStore:
         result = []
         for (data_json,) in rows:
             d = json.loads(data_json)
-            # Migrate legacy frontend-specific field names produced by older captures.
-            if "johtolause_raw" in d and "preamble_raw" not in d:
-                d["preamble_raw"] = d.pop("johtolause_raw")
-            if "johtolause_normalized" in d and "preamble_normalized" not in d:
-                d["preamble_normalized"] = d.pop("johtolause_normalized")
             result.append(AmendmentCapture(**{
                 k: v for k, v in d.items()
                 if k in AmendmentCapture.__dataclass_fields__
@@ -163,11 +158,6 @@ class CaptureStore:
         if not row:
             return None
         d = json.loads(row[0])
-        # Migrate legacy frontend-specific field names (see load() for rationale).
-        if "johtolause_raw" in d and "preamble_raw" not in d:
-            d["preamble_raw"] = d.pop("johtolause_raw")
-        if "johtolause_normalized" in d and "preamble_normalized" not in d:
-            d["preamble_normalized"] = d.pop("johtolause_normalized")
         return AmendmentCapture(**{
             k: v for k, v in d.items()
             if k in AmendmentCapture.__dataclass_fields__

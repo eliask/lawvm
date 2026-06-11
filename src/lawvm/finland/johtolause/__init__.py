@@ -17,6 +17,8 @@ Op-code string format:
 import re
 from typing import List
 
+from lawvm.core.elaboration_context import TargetUnitKind
+
 from lawvm.finland.johtolause.types import ParsedOp
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource, TextPatchSpec, TextSelector
 from lawvm.core.clause_ast import clause_ast_to_legal_ops
@@ -38,7 +40,11 @@ from lawvm.finland.johtolause.surface_resolve import (
     ResolvedTargetRef,
     ResolutionKind,
 )
-from lawvm.finland.ops import ScopeConfidence, lo_with_scope_confidence
+from lawvm.finland.ops import (
+    ScopeConfidence,
+    lo_with_move_clause_target_unit_kind,
+    lo_with_scope_confidence,
+)
 from lawvm.finland.johtolause.parsed_op_clause_ast import (
     build_clause_ast,
     parsed_op_to_clause_node,
@@ -122,6 +128,72 @@ def _resolved_node_scope_confidences(node: ResolvedNode) -> list[ScopeConfidence
     return []
 
 
+def _move_clause_kind_for_target(target: ResolvedTargetRef) -> TargetUnitKind | None:
+    """Return the move-rider destination kind for one whole-section target ref.
+
+    Mirrors the surface-lowering stamping conditions: only a SECTION target
+    whose sub-reference is the empty whole-section slot carries the rider.
+    Facet/subsection/item arms never receive move-rider semantics.
+    """
+    kind = target.move_clause_target_unit_kind
+    if kind not in ("chapter", "part"):
+        return None
+    if target.kind.value != "P":
+        return None
+    return kind
+
+
+def _resolved_node_move_clause_kinds(node: ResolvedNode) -> list[TargetUnitKind | None]:
+    """Per-op move-rider destination kinds, 1:1 with the scope-confidence walk.
+
+    The surface parser resolves "X §, joka samalla siirretään Y lukuun" by
+    rewriting the target chapter to the DESTINATION and stamping
+    ``move_clause_target_unit_kind`` on the resolved surface ref. The native
+    ClauseAST lowering intentionally keeps core nodes field-free, so the rider
+    must be re-attached at this Finland bridge or it is silently dropped
+    before compile (the bug class: a destination-scoped REPLACE whose move
+    semantics are invisible to apply).
+    """
+    if isinstance(node, ResolvedTargetRef):
+        per_subref: list[TargetUnitKind | None] = []
+        sub_refs = node.sub_refs or (None,)
+        for sr in sub_refs:
+            whole_section = sr is None or (
+                not sr.momentti and not sr.item and sr.facet is None
+            )
+            per_subref.append(_move_clause_kind_for_target(node) if whole_section else None)
+        return per_subref
+    if isinstance(node, ResolvedInsertion):
+        return [None]
+    if isinstance(node, ResolvedHeadingPlacement):
+        return [None]
+    if isinstance(node, ResolvedScopeBlock):
+        out: list[TargetUnitKind | None] = []
+        for target in node.targets:
+            if not isinstance(target, ResolvedTargetRef):
+                continue
+            sub_refs = target.sub_refs or (None,)
+            for sr in sub_refs:
+                whole_section = sr is None or (
+                    not sr.momentti and not sr.item and sr.facet is None
+                )
+                out.append(_move_clause_kind_for_target(target) if whole_section else None)
+        return out
+    if isinstance(node, ResolvedDescendantCoordination):
+        return [None] * len(node.arms)
+    return []
+
+
+def _resolved_move_clause_kinds(resolved: ResolvedSurfaceClause | None) -> list[TargetUnitKind | None]:
+    if resolved is None:
+        return []
+    out: list[TargetUnitKind | None] = []
+    for verb_group in resolved.verb_groups:
+        for node in verb_group.nodes:
+            out.extend(_resolved_node_move_clause_kinds(node))
+    return out
+
+
 def _resolved_scope_confidences(resolved: ResolvedSurfaceClause | None) -> list[ScopeConfidence | None]:
     if resolved is None:
         return []
@@ -150,6 +222,17 @@ def extract_legal_ops_from_parse_result(result: ClauseParseResult) -> List[Legal
         ops = [
             lo_with_scope_confidence(op, scope_confidence) if scope_confidence is not None else op
             for op, scope_confidence in zip(ops, scope_confidences, strict=True)
+        ]
+    move_clause_kinds = _resolved_move_clause_kinds(result.resolved)
+    if move_clause_kinds:
+        if len(move_clause_kinds) != len(ops):
+            raise RuntimeError(
+                "extract_legal_ops_from_parse_result move-clause carrier length mismatch: "
+                f"{len(move_clause_kinds)} resolved structural nodes vs {len(ops)} legal ops"
+            )
+        ops = [
+            lo_with_move_clause_target_unit_kind(op, kind) if kind is not None else op
+            for op, kind in zip(ops, move_clause_kinds, strict=True)
         ]
     return ops
 

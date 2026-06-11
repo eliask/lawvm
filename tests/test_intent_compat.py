@@ -908,3 +908,293 @@ def test_production_lane_replace_on_absent_emits_violation() -> None:
     assert finding.blocking is False
     assert finding.detail["current_occupancy"] == "absent"
     assert "allowed_non_primary" not in finding.detail
+
+
+def test_production_lane_move_rider_replace_evaluates_origin_occupancy() -> None:
+    """A destination-scoped REPLACE with a typed move rider is not a violation.
+
+    Regression (2014/1429 ← 2025/1382): "29 e §, joka samalla siirretään
+    5 b lukuun" compiles to REPLACE targeted at the DESTINATION chapter 5b
+    where §29e is absent until the move lands. With the typed
+    ``move_clause_target_unit_kind`` rider present and a unique live origin
+    (§29e in chapter 5a), the occupancy policy must evaluate the ORIGIN slot
+    (substantive → primary REPLACE expectation) instead of reporting
+    REPLACE-on-absent at the destination.
+    """
+    from lawvm.core.ir import IRNode
+    from lawvm.finland.statute import ReplayState
+
+    op = AmendmentOp(
+        op_id="prod",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="29e",
+        target_chapter="5b",
+        source_statute="2025/1382",
+        move_clause_target_unit_kind="chapter",
+    )
+    from lawvm.core.semantic_types import IRNodeKind as _K
+
+    rop = ResolvedOp(
+        op=op,
+        muutos_ir=IRNode(kind=_K.SECTION, label="29e"),
+        cross_ir=None,
+        amend_sub_ir=None,
+        op_id=op.op_id,
+        target_unit_kind="section",
+        target_norm="29e",
+        _op_type_seed="REPLACE",
+        move_clause_target_unit_kind="chapter",
+        _source_statute_override="2025/1382",
+        _target_address_override=LegalAddress(
+            path=(("chapter", "5b"), ("section", "29e"))
+        ),
+    )
+    intent = _build_canonical_intent(rop)
+    assert intent is not None
+    assert isinstance(intent, Replace)
+
+    # Live state: §29e lives in chapter 5a (the move origin); 5b is empty.
+    live = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="5a",
+                children=(IRNode(kind=IRNodeKind.SECTION, label="29e"),),
+            ),
+            IRNode(kind=IRNodeKind.CHAPTER, label="5b"),
+        ),
+    )
+    findings: list = []
+    _check_occupancy_policy(
+        ReplayState(ir=live),
+        rop,
+        intent,
+        None,
+        "ctx:move_rider_replace",
+        findings_out=findings,
+    )
+
+    assert findings == [], [f.detail for f in findings]
+
+
+def test_production_lane_move_rider_replace_without_origin_still_violates() -> None:
+    """A move rider with no live origin anywhere is still REPLACE-on-absent."""
+    from lawvm.core.ir import IRNode
+    from lawvm.finland.statute import ReplayState
+
+    op = AmendmentOp(
+        op_id="prod",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="29e",
+        target_chapter="5b",
+        source_statute="2025/1382",
+        move_clause_target_unit_kind="chapter",
+    )
+    from lawvm.core.semantic_types import IRNodeKind as _K
+
+    rop = ResolvedOp(
+        op=op,
+        muutos_ir=IRNode(kind=_K.SECTION, label="29e"),
+        cross_ir=None,
+        amend_sub_ir=None,
+        op_id=op.op_id,
+        target_unit_kind="section",
+        target_norm="29e",
+        _op_type_seed="REPLACE",
+        move_clause_target_unit_kind="chapter",
+        _source_statute_override="2025/1382",
+        _target_address_override=LegalAddress(
+            path=(("chapter", "5b"), ("section", "29e"))
+        ),
+    )
+    intent = _build_canonical_intent(rop)
+    assert intent is not None
+
+    empty_body = IRNode(kind=IRNodeKind.BODY)
+    findings: list = []
+    _check_occupancy_policy(
+        ReplayState(ir=empty_body),
+        rop,
+        intent,
+        None,
+        "ctx:move_rider_no_origin",
+        findings_out=findings,
+    )
+
+    hits = [f for f in findings if f.kind == "APPLY.OCCUPANCY_POLICY_VIOLATION"]
+    assert len(hits) == 1
+    assert hits[0].detail["current_occupancy"] == "absent"
+
+
+def test_production_lane_temporally_disjoint_twin_insert_is_not_a_violation() -> None:
+    """A temporary gap-filler INSERT under a later-effective occupant is typed.
+
+    Regression (2010/1326 ← 2022/1281 + 2022/1282): the permanent twin's
+    §78c is deferred ("tulee kuitenkin voimaan vasta 1.7.2023") but lands in
+    the document-order fold before the temporary twin's INSERT (in force
+    1.1.2023–30.6.2023). The two occupancies are disjoint in legal time, so
+    the INSERT must record the typed disjoint-window observation instead of
+    an occupancy policy violation.
+    """
+    from lawvm.core.ir import IRNode, LegalOperation, OperationSource
+    from lawvm.core.semantic_types import IRNodeKind as _K, StructuralAction
+    from lawvm.finland.statute import ReplayState
+
+    op = AmendmentOp(
+        op_id="twin",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="78c",
+        target_chapter="8",
+        source_statute="2022/1282",
+    )
+    rop = ResolvedOp(
+        op=op,
+        muutos_ir=IRNode(kind=_K.SECTION, label="78c"),
+        cross_ir=None,
+        amend_sub_ir=None,
+        op_id=op.op_id,
+        target_unit_kind="section",
+        target_norm="78c",
+        _op_type_seed="INSERT",
+        _source_statute_override="2022/1282",
+        _target_address_override=LegalAddress(
+            path=(("chapter", "8"), ("section", "78c"))
+        ),
+        _op_source_override=OperationSource(
+            statute_id="2022/1282",
+            title="väliaikainen",
+            effective="2023-01-01",
+            expires="2023-06-30",
+        ),
+    )
+    intent = _build_canonical_intent(rop)
+    assert intent is not None
+    assert isinstance(intent, Insert)
+
+    live = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="8",
+                children=(IRNode(kind=IRNodeKind.SECTION, label="78c"),),
+            ),
+        ),
+    )
+    history = [
+        LegalOperation(
+            op_id="perm",
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "8"), ("section", "78c"))),
+            source=OperationSource(
+                statute_id="2022/1281",
+                title="pysyvä",
+                effective="2023-07-01",
+            ),
+        )
+    ]
+    findings: list = []
+    _check_occupancy_policy(
+        ReplayState(ir=live),
+        rop,
+        intent,
+        (("chapter", "8"), ("section", "78c")),
+        "ctx:twin_insert",
+        findings_out=findings,
+        replay_history_ops=history,
+    )
+
+    violations = [f for f in findings if f.kind == "APPLY.OCCUPANCY_POLICY_VIOLATION"]
+    assert violations == [], [f.detail for f in violations]
+    notes = [
+        f for f in findings if f.kind == "APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT"
+    ]
+    assert len(notes) == 1
+    note = notes[0]
+    assert note.blocking is False
+    assert note.detail["incoming_effective"] == "2023-01-01"
+    assert note.detail["incoming_expires"] == "2023-06-30"
+    assert note.detail["occupant_effective"] == "2023-07-01"
+    assert note.detail["occupant_source_statute"] == "2022/1281"
+
+
+def test_production_lane_overlapping_twin_insert_still_violates() -> None:
+    """An INSERT whose window overlaps the occupant's in-force period stays a violation."""
+    from lawvm.core.ir import IRNode, LegalOperation, OperationSource
+    from lawvm.core.semantic_types import IRNodeKind as _K, StructuralAction
+    from lawvm.finland.statute import ReplayState
+
+    op = AmendmentOp(
+        op_id="twin",
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="78c",
+        target_chapter="8",
+        source_statute="2022/1282",
+    )
+    rop = ResolvedOp(
+        op=op,
+        muutos_ir=IRNode(kind=_K.SECTION, label="78c"),
+        cross_ir=None,
+        amend_sub_ir=None,
+        op_id=op.op_id,
+        target_unit_kind="section",
+        target_norm="78c",
+        _op_type_seed="INSERT",
+        _source_statute_override="2022/1282",
+        _target_address_override=LegalAddress(
+            path=(("chapter", "8"), ("section", "78c"))
+        ),
+        # Expires AFTER the occupant becomes effective → real overlap.
+        _op_source_override=OperationSource(
+            statute_id="2022/1282",
+            title="väliaikainen",
+            effective="2023-01-01",
+            expires="2023-08-31",
+        ),
+    )
+    intent = _build_canonical_intent(rop)
+    assert intent is not None
+
+    live = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="8",
+                children=(IRNode(kind=IRNodeKind.SECTION, label="78c"),),
+            ),
+        ),
+    )
+    history = [
+        LegalOperation(
+            op_id="perm",
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "8"), ("section", "78c"))),
+            source=OperationSource(
+                statute_id="2022/1281",
+                title="pysyvä",
+                effective="2023-07-01",
+            ),
+        )
+    ]
+    findings: list = []
+    _check_occupancy_policy(
+        ReplayState(ir=live),
+        rop,
+        intent,
+        (("chapter", "8"), ("section", "78c")),
+        "ctx:overlapping_insert",
+        findings_out=findings,
+        replay_history_ops=history,
+    )
+
+    violations = [f for f in findings if f.kind == "APPLY.OCCUPANCY_POLICY_VIOLATION"]
+    assert len(violations) == 1
+    assert violations[0].detail["current_occupancy"] == "substantive"

@@ -1165,22 +1165,32 @@ def _section_commencement_effective_override(
 
     refs_text = match.group(1)
     chapter_section_map: dict[Optional[str], Set[str]] = {}
+    # A Finnish whole-section enumeration shares one terminal § sign:
+    # "51 a ja 51 b §" defers BOTH 51 a and 51 b, not just the label
+    # adjacent to the sign. Match the §-terminated label chain first, then
+    # split out every label inside it. Subsection-scoped refs ("2 §:n
+    # 1 momentti") stay excluded via the §-colon lookahead; range chains
+    # ("27 a–27 c §") do not parse as enumerations and keep the previous
+    # last-label behavior.
     for ref in re.finditer(
         r'(?:(?P<chapter>\d+\s*[a-z]?)\s+luvun\s+)?'
-        r'(?P<section>\d+\s*[a-z]?)\s*§'
+        r'(?P<sections>\d+\s*[a-z]?(?:\s*(?:,|ja|sekä)\s+\d+\s*[a-z]?)*)\s*§'
         r'(?!\s*:)',
         refs_text,
         flags=re.IGNORECASE,
     ):
         chapter_raw = ref.group("chapter")
-        section_raw = ref.group("section")
-        if not section_raw:
+        sections_raw = ref.group("sections")
+        if not sections_raw:
             continue
         chapter = re.sub(r'\s+', '', chapter_raw).lower() if chapter_raw else None
-        section = re.sub(r'\s+', '', section_raw).lower()
-        if not section:
-            continue
-        chapter_section_map.setdefault(chapter, set()).add(section)
+        for label_match in re.finditer(
+            r'\d+(?:\s*[a-z](?![a-zåäö]))?', sections_raw, flags=re.IGNORECASE
+        ):
+            section = re.sub(r'\s+', '', label_match.group(0)).lower()
+            if not section:
+                continue
+            chapter_section_map.setdefault(chapter, set()).add(section)
 
     if not chapter_section_map:
         return None
