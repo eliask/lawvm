@@ -117,7 +117,7 @@ def _eid_to_section_key(eid: str) -> str:
     return f"section:{sec_num}"
 
 
-def _element_body_text(section_el: ET.Element) -> str:
+def _element_body_text(section_el: ET.Element[str]) -> str:
     """Extract clean body text from a <section> element.
 
     Walks the parsed XML tree to collect all visible text — equivalent to
@@ -133,7 +133,7 @@ def _element_body_text(section_el: ET.Element) -> str:
     """
     parts: List[str] = []
 
-    def _collect(el: ET.Element, skip_tags: frozenset) -> None:
+    def _collect(el: ET.Element[str], skip_tags: frozenset[str]) -> None:
         local = el.tag.split("}")[-1] if "}" in el.tag else el.tag
         if local in skip_tags:
             return
@@ -173,7 +173,7 @@ def _parse_date(date_str: str) -> Optional[date]:
     return date(int(year_s), int(mon_s), int(day_s))
 
 
-def _read_consolidated_date(tree: ET.Element) -> Optional[date]:
+def _read_consolidated_date(tree: ET.Element[str]) -> Optional[date]:
     """Extract dateConsolidated from the FRBR metadata, or None."""
     for el in tree.iter(_TAG_FRBR_DATE):
         if el.get("name") == "dateConsolidated":
@@ -181,7 +181,7 @@ def _read_consolidated_date(tree: ET.Element) -> Optional[date]:
     return None
 
 
-def _frbr_subtype(tree: ET.Element) -> str:
+def _frbr_subtype(tree: ET.Element[str]) -> str:
     """Return FRBRsubtype value from the document, or '' if absent."""
     el = tree.find(f".//{_TAG_FRBR_SUBTYPE}")
     return el.get("value", "") if el is not None else ""
@@ -223,7 +223,7 @@ def extract_sections_text(
         )
 
     # XML parse boundary (AGENTS.md §1.10: single bounded except)
-    tree: ET.Element
+    tree: ET.Element[str]
     try:
         tree = ET.fromstring(xml_bytes)
     except ET.ParseError as exc:

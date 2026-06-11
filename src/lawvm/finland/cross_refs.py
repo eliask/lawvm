@@ -129,7 +129,7 @@ def _make_statute_id(year: str, num_raw: str) -> str:
         return f"{year}/{num_raw}"
 
 
-def _parse_ref_href(href: str) -> Optional[tuple]:
+def _parse_ref_href(href: str) -> Optional[tuple[str, str]]:
     """Parse an AKN ref href → (statute_id, provision_path) or None.
 
     Handles two AKN URI families:
@@ -147,7 +147,10 @@ def _parse_ref_href(href: str) -> Optional[tuple]:
     return None
 
 
-def _find_section_ancestor(elem: ET.Element, parent_map: dict) -> str:
+def _find_section_ancestor(
+    elem: ET.Element[str],
+    parent_map: dict[ET.Element[str], ET.Element[str]],
+) -> str:
     """Return the num text of the nearest AKN section ancestor, or ''."""
     current = parent_map.get(elem)
     while current is not None:
@@ -191,7 +194,7 @@ def _record_self_reference_skip(
 
 
 def _refs_from(
-    root: ET.Element,
+    root: ET.Element[str],
     xpath: str,
     *,
     source_statute_id: str = "",
@@ -272,7 +275,7 @@ def extract_cross_refs(
         body = root.find('.//body')
 
     # Phase 9.0: provision-level CITES — one edge per (src_sec, target_id, tgt_sec) triple.
-    cite_counts: dict[tuple, int] = {}  # (src_sec, target_id, prov_path) → count
+    cite_counts: dict[tuple[str, str, str], int] = {}  # (src_sec, target_id, prov_path) → count
     if body is not None:
         parent_map = {child: parent for parent in root.iter() for child in parent}
         for ref_elem in body.iter(f'{{{_AKN_NS}}}ref'):
@@ -442,7 +445,7 @@ def extract_eu_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
         # errors="replace" makes this unreachable in practice, but guard defensively.
         return []
 
-    seen: dict[tuple, int] = {}  # (src_sec, target_id) → count
+    seen: dict[tuple[str, str], int] = {}  # (src_sec, target_id) → count
     # We don't have element-level section context for text patterns;
     # use empty string for source_section (provision-level tracking is not
     # feasible from plain text without full DOM traversal).

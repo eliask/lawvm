@@ -198,7 +198,7 @@ class PlainTextStatuteCitationRecognizer:
         - Bounded quantifiers; no adjacent unbounded repeats.
     """
 
-    def _collect_non_ref_text(self, p_el: ET.Element) -> str:
+    def _collect_non_ref_text(self, p_el: ET.Element[str]) -> str:
         """Collect text of <p> element excluding text inside <ref> children.
 
         Returns the concatenated text content of:
@@ -242,7 +242,7 @@ class PlainTextStatuteCitationRecognizer:
 
     def scan(
         self,
-        p_el: ET.Element,
+        p_el: ET.Element[str],
     ) -> List[Tuple[str, str]]:
         """Scan a <p> element for plain-text Finnish statute citations.
 
@@ -634,7 +634,7 @@ def extract_plain_text_statute_mentions(
     statute_id: str,
     *,
     valid_at_interval: Tuple[Optional[date], Optional[date]] = (None, None),
-    ref_covered_statute_ids: Optional[set] = None,
+    ref_covered_statute_ids: Optional[set[str]] = None,
 ) -> ExtractionResult:
     """Extract plain-text Finnish statute citations NOT covered by <ref> markup.
 
@@ -681,7 +681,7 @@ def extract_plain_text_statute_mentions(
         # return empty result rather than double-reporting.
         return result
 
-    covered: set = ref_covered_statute_ids or set()
+    covered: set[str] = ref_covered_statute_ids or set()
     valid_start, valid_end = valid_at_interval
 
     # Walk <p> elements in the body
@@ -689,7 +689,7 @@ def extract_plain_text_statute_mentions(
     # Also accept bare <p> (some test fixtures omit the namespace on p)
     _bare_p = "p"
 
-    p_elements: List[ET.Element] = []
+    p_elements: List[ET.Element[str]] = []
     for el in root.iter():
         local = el.tag.split("}")[-1] if "}" in el.tag else el.tag
         if local == "p":
@@ -764,7 +764,7 @@ def extract_all_reference_mentions(
 
     # Build the set of statute IDs already covered by <ref>-element extraction
     # to pass as the dedup guard to the plain-text pass.
-    ref_covered: set = {
+    ref_covered: set[str] = {
         m.target_provision_ref.statute_id
         for m in domestic.mentions
         if m.target_provision_ref is not None and m.edge_subtype == "CITES"
