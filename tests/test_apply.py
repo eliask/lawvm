@@ -6209,6 +6209,176 @@ def test_resolve_section_path_with_fallbacks_prefers_unique_substantive_over_rep
     assert resolution.reason_code == "live_unique_substantive_over_placeholder"
 
 
+def test_section_ladder_rung_provenance_scoped_find_and_binding() -> None:
+    from lawvm.finland.apply_policy import section_resolver_binding
+
+    state = _make_state(_body(_sec("4", _sub("1", _content("plain section")))))
+    op = _op(op_type="REPLACE", target_section="4")
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=_sec("4", _content("replacement")),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="4",
+        target_chapter=None,
+    )
+
+    resolution = _resolve_section_path_with_fallbacks(
+        state, rop, rop.muutos_ir, None, "[2020/1] REPLACE 4 §"
+    )
+
+    assert resolution.path is not None
+    assert resolution.rung_id == "scoped_find"
+
+    binding = section_resolver_binding(rop, resolution, "[2020/1] REPLACE 4 §")
+    assert binding.status == "resolved"
+    assert binding.rung_id == "scoped_find"
+    assert binding.fallback_used is False
+    assert binding.fallback_rule_id is None
+    assert binding.target_path == resolution.path
+    assert binding.binding_id.startswith("rb:")
+
+
+def test_section_ladder_rung_provenance_not_found_binding() -> None:
+    from lawvm.finland.apply_policy import section_resolver_binding
+
+    state = _make_state(_body(_sec("4", _sub("1", _content("plain section")))))
+    op = _op(op_type="REPEAL", target_section="99")
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=None,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="99",
+        target_chapter=None,
+    )
+
+    resolution = _resolve_section_path_with_fallbacks(
+        state, rop, None, None, "[2020/1] REPEAL 99 §"
+    )
+
+    assert resolution.path is None
+    assert resolution.rung_id is None
+
+    binding = section_resolver_binding(rop, resolution, "[2020/1] REPEAL 99 §")
+    assert binding.status == "not_found"
+    assert binding.target_path is None
+    assert binding.fallback_used is False
+
+
+def test_section_ladder_rung_provenance_placeholder_shadow_is_named_widening_fallback() -> None:
+    from lawvm.finland.apply_policy import section_resolver_binding
+
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="8",
+                        attrs={"lawvm_repeal_placeholder": "1"},
+                        children=(_sub("1", _content("repealed old section")),),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="2a",
+                children=(_sec("8", _sub("1", _content("live substantive section"))),),
+            ),
+        )
+    )
+    op = _op(op_type="REPLACE", target_section="8")
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=_sec("8", _content("replacement section payload")),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="8",
+        target_chapter=None,
+    )
+
+    resolution = _resolve_section_path_with_fallbacks(
+        state, rop, rop.muutos_ir, None, "[2018/1313] REPLACE 8 §"
+    )
+
+    assert resolution.rung_id == "placeholder_shadow_fallback"
+    assert resolution.global_candidate_count == 2
+
+    binding = section_resolver_binding(rop, resolution, "[2018/1313] REPLACE 8 §")
+    assert binding.status == "resolved"
+    assert binding.fallback_used is True
+    assert binding.fallback_rule_id == "live_unique_substantive_over_placeholder"
+    assert binding.candidate_count == 2
+
+
+def test_resolver_binding_contract_validators_reject_malformed_bindings() -> None:
+    import pytest as _pytest
+
+    from lawvm.core.resolver_binding import (
+        RUNG_SCOPED_FIND,
+        RUNG_UNIQUE_GLOBAL_FALLBACK,
+        ResolverBinding,
+    )
+
+    common = dict(
+        binding_id="rb:test",
+        op_label="[t] REPLACE 1 §",
+        target_text="section:1",
+        policy_id="fi.section_ladder.v0",
+    )
+    with _pytest.raises(ValueError, match="not a known rung"):
+        ResolverBinding(
+            **common, target_path=None, status="not_found", rung_id="bogus_rung"
+        )
+    with _pytest.raises(ValueError, match="requires a target_path"):
+        ResolverBinding(
+            **common, target_path=None, status="resolved", rung_id=RUNG_SCOPED_FIND
+        )
+    with _pytest.raises(ValueError, match="named fallback_rule_id"):
+        ResolverBinding(
+            **common,
+            target_path=(("section", "1"),),
+            status="resolved",
+            rung_id=RUNG_UNIQUE_GLOBAL_FALLBACK,
+        )
+    with _pytest.raises(ValueError, match="must not carry a target_path"):
+        ResolverBinding(
+            **common,
+            target_path=(("section", "1"),),
+            status="not_found",
+            rung_id=RUNG_SCOPED_FIND,
+        )
+
+
+def test_section_ladder_uncovered_ambiguity_maps_to_ambiguous_binding() -> None:
+    from lawvm.core.resolver_binding import RUNG_UNCOVERED_BODY_AMBIGUITY
+    from lawvm.finland.apply_policy import section_resolver_binding
+    from lawvm.finland.ops import SectionPathResolution
+
+    op = _op(op_type="REPLACE", target_section="7")
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=None,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="7",
+        target_chapter=None,
+    )
+    resolution = SectionPathResolution(
+        path=None, rung_id=RUNG_UNCOVERED_BODY_AMBIGUITY
+    )
+
+    binding = section_resolver_binding(rop, resolution, "[2020/2] REPLACE 7 §")
+    assert binding.status == "ambiguous"
+    assert binding.rejection_reasons == (
+        "duplicate_section_label_across_chapters",
+    )
+    assert binding.target_path is None
+
+
 def test_resolve_section_path_with_fallbacks_follows_same_wave_section_migration_for_descendant_replace() -> None:
     state = _make_state(
         _body(

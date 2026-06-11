@@ -112,10 +112,20 @@ class ScopeAuthorityParity:
 
 @dataclass(frozen=True)
 class SectionPathResolution:
-    """Typed result for late apply-time section path resolution."""
+    """Typed result for late apply-time section path resolution.
+
+    ``rung_id`` names the fallback-ladder rung that produced (or rejected)
+    the path, in the lawvm.core.resolver_binding vocabulary; it is binding
+    provenance for the passive ResolverBinding rollout and never changes
+    which path is returned. ``global_candidate_count`` is the number of
+    same-label section candidates in the provision index when the taken
+    branch consulted it (None otherwise).
+    """
 
     path: Path | None
     reason_code: SectionPathResolutionReason | None = None
+    rung_id: str | None = None
+    global_candidate_count: int | None = None
 
     @property
     def used_live_unique_global_fallback(self) -> bool:

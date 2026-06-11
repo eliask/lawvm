@@ -20,7 +20,11 @@ from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path, default_label_sort_key, normalized_label_key
 from lawvm.finland.ops import FailedOp, ReplayProfile, ResolvedOp, _assert_intent_compat
-from lawvm.finland.apply_policy import _resolve_section_path_with_fallbacks, _check_occupancy_policy
+from lawvm.finland.apply_policy import (
+    _check_occupancy_policy,
+    _resolve_section_path_with_fallbacks,
+    section_resolver_binding,
+)
 from lawvm.finland.apply_structure_ops import (
     _structure_apply_view_for_op,
     _apply_container_op,
@@ -419,6 +423,24 @@ def _apply_intent_section_level(
         ctx_label,
         migration_ledger=migration_ledger,
     )
+    # Passive binding provenance (apply contract vertical rollout, step 1-2):
+    # record which ladder rung bound the target. A contract violation here is
+    # a mapping bug in our instrumentation, never a replay failure — surface
+    # it loudly under its own tag instead of crashing the apply lane.
+    try:
+        _binding = section_resolver_binding(rop, section_resolution, ctx_label)
+        logger.debug(
+            "  %s → resolver binding %s rung=%s status=%s candidates=%s",
+            ctx_label,
+            _binding.binding_id,
+            _binding.rung_id,
+            _binding.status,
+            _binding.candidate_count,
+        )
+    except ValueError as exc:
+        logger.warning(
+            "  %s → APPLY.RESOLVER_BINDING_CONTRACT_ERROR: %s", ctx_label, exc
+        )
     sec_path = section_resolution.path
     if section_resolution.used_live_unique_global_fallback:
         used_fallback_tags = (

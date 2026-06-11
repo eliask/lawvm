@@ -15,6 +15,17 @@ from lawvm.core.occupancy import (
     validate_transition,
 )
 from lawvm.core.phase_result import Finding
+from lawvm.core.resolver_binding import (
+    RUNG_MIGRATION_LEDGER_FOLLOW,
+    RUNG_PATH_HINT_VALIDATED,
+    RUNG_PLACEHOLDER_SHADOW_FALLBACK,
+    RUNG_SCOPED_FIND,
+    RUNG_UNCOVERED_BODY_AMBIGUITY,
+    RUNG_UNIQUE_GLOBAL_FALLBACK,
+    WIDENING_RUNG_IDS,
+    ResolverBinding,
+    binding_id_for,
+)
 
 from lawvm.finland.ops import (
     AmendmentOp,
@@ -212,6 +223,7 @@ def _resolve_section_path_with_fallbacks(
     target_norm, _target_chapter, _target_part = rop.resolved_section_lookup_scope
     _target_section = rop.resolved_target_label
     _move_clause_target_unit_kind = rop.move_clause_target_unit_kind
+    taken_rung: str | None = None
     sec_path = _valid_target_path_hint(
         state,
         target_unit_kind=rop.target_unit_kind,
@@ -220,8 +232,12 @@ def _resolve_section_path_with_fallbacks(
         target_part=_target_part,
         path_hint=path_hint,
     )
-    if sec_path is None:
+    if sec_path is not None:
+        taken_rung = RUNG_PATH_HINT_VALIDATED
+    else:
         sec_path = state.find_section_path(target_norm, _target_chapter, _target_part)
+        if sec_path is not None:
+            taken_rung = RUNG_SCOPED_FIND
     sec_path = _tops._as_path(sec_path) if sec_path is not None else None
 
     # Same-wave relabels can make later old-address section/subsection ops
@@ -265,6 +281,7 @@ def _resolve_section_path_with_fallbacks(
                     return SectionPathResolution(
                         path=migrated_path,
                         reason_code="follow_same_wave_migration",
+                        rung_id=RUNG_MIGRATION_LEDGER_FOLLOW,
                     )
 
     if (
@@ -286,6 +303,12 @@ def _resolve_section_path_with_fallbacks(
                 return SectionPathResolution(
                     path=substantive_path,
                     reason_code=cast(SectionPathResolutionReason, fallback_reason),
+                    rung_id=RUNG_PLACEHOLDER_SHADOW_FALLBACK,
+                    global_candidate_count=len(
+                        state.provision_index.get(
+                            ("section", normalized_label_key(target_norm)), []
+                        )
+                    ),
                 )
 
     # Pattern E guard: when an UNCOVERED BODY RECOVERY op has no chapter
@@ -309,6 +332,7 @@ def _resolve_section_path_with_fallbacks(
             target_norm,
         )
         sec_path = None
+        taken_rung = RUNG_UNCOVERED_BODY_AMBIGUITY
 
     allow_unique_global_fallback = (
         rop.resolved_action_type != "INSERT"
@@ -344,6 +368,8 @@ def _resolve_section_path_with_fallbacks(
                     return SectionPathResolution(
                         path=global_path,
                         reason_code="live_unique_global_fallback",
+                        rung_id=RUNG_UNIQUE_GLOBAL_FALLBACK,
+                        global_candidate_count=n_matches,
                     )
                 # Cross-chapter and root-level fallbacks are deferred to the
                 # move+replace mechanism in _apply_whole_section_op.  Returning
@@ -378,9 +404,65 @@ def _resolve_section_path_with_fallbacks(
                         if scope_reason == "inferred_from_live_unique"
                         else None
                     ),
+                    rung_id=RUNG_UNIQUE_GLOBAL_FALLBACK if sec_path is not None else taken_rung,
+                    global_candidate_count=n_matches,
                 )
 
-    return SectionPathResolution(path=sec_path)
+    return SectionPathResolution(path=sec_path, rung_id=taken_rung)
+
+
+SECTION_LADDER_POLICY_ID = "fi.section_ladder.v0"
+
+
+def section_resolver_binding(
+    rop: ResolvedOp,
+    resolution: SectionPathResolution,
+    ctx_label: str,
+) -> ResolverBinding:
+    """Project the section ladder's outcome into a passive ResolverBinding.
+
+    Binding provenance only: the binding records which rung produced the
+    path the legacy ladder returned; it does not (yet) drive the write.
+    Promotion to the binding-as-authority step happens per the apply
+    contract's vertical rollout, not here.
+    """
+    target_address = rop.resolved_target_address
+    target_text = (
+        str(target_address) if target_address is not None else (rop.target_norm or "")
+    )
+    rung_id = resolution.rung_id
+    if resolution.path is not None:
+        status = "resolved"
+    elif rung_id == RUNG_UNCOVERED_BODY_AMBIGUITY:
+        status = "ambiguous"
+    else:
+        status = "not_found"
+    widening = resolution.path is not None and rung_id in WIDENING_RUNG_IDS
+    fallback_rule_id = (
+        (resolution.reason_code or rung_id) if widening else None
+    )
+    return ResolverBinding(
+        binding_id=binding_id_for(
+            op_label=ctx_label,
+            target_text=target_text,
+            rung_id=rung_id,
+            target_path=resolution.path,
+        ),
+        op_label=ctx_label,
+        target_text=target_text,
+        target_path=resolution.path,
+        status=status,
+        policy_id=SECTION_LADDER_POLICY_ID,
+        rung_id=rung_id,
+        candidate_count=resolution.global_candidate_count,
+        fallback_used=widening,
+        fallback_rule_id=fallback_rule_id,
+        rejection_reasons=(
+            ("duplicate_section_label_across_chapters",)
+            if rung_id == RUNG_UNCOVERED_BODY_AMBIGUITY
+            else ()
+        ),
+    )
 
 
 def _check_occupancy_policy(
