@@ -31,6 +31,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+JsonRow = dict[str, Any]
+ErrorRow = dict[str, Any]
+
 from lxml import etree
 from farchive._compression import decompress_blob, decompress_delta
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
@@ -806,7 +809,7 @@ def _compute_section_map_worker(
 
 
 def _attach_section_structures(
-    statute_errors: dict[str, list[dict]],
+    statute_errors: dict[str, list[ErrorRow]],
     statute_modes: dict[str, str],
     *,
     section_cache_dir: Path,
@@ -1095,7 +1098,7 @@ def _select_all_bundles_latest(cache_dir: Path, allowed_statute_ids: set[str]) -
 # ---------------------------------------------------------------------------
 
 
-def _check_repealed(data: dict) -> bool:
+def _check_repealed(data: JsonRow) -> bool:
     html_topo = data.get("html_topology", {})
     if isinstance(html_topo, dict):
         html_text = html_topo.get("html_snippet", "") or ""
@@ -1713,7 +1716,7 @@ def _extract_cross_chapter_errors(
 
 def _extract_corrigendum_errors(
     allowed_statute_ids: set[str],
-) -> dict[str, tuple[str, str, list[dict]]]:
+) -> dict[str, tuple[str, str, list[JsonRow]]]:
     """Extract verified corrigendum records from the LawVM corrigendum pipeline."""
     try:
         from lawvm.finland.corrigendum_records import load_patch_records
@@ -1724,14 +1727,14 @@ def _extract_corrigendum_errors(
     records = load_patch_records()
     verified = [r for r in records if r.get("verified_in_source") == 1]
 
-    by_statute: dict[str, list[dict]] = {}
+    by_statute: dict[str, list[JsonRow]] = {}
     for rec in verified:
         sid = rec.get("statute_id", "")
         if not sid or not _is_finnish_statute_id(str(sid)) or str(sid) not in allowed_statute_ids:
             continue
         by_statute.setdefault(sid, []).append(rec)
 
-    result: dict[str, tuple[str, str, list[dict]]] = {}
+    result: dict[str, tuple[str, str, list[JsonRow]]] = {}
     for sid, recs in by_statute.items():
         consolidated_url = finlex_ajantasa_url(sid)
         rows = []
@@ -2147,8 +2150,8 @@ def build(
     }
 
     # Track per-statute error rows from all sources
-    statute_errors: dict[str, list[dict]] = {}
-    statute_meta: dict[str, dict] = {}  # statute_id -> {title, url, tier, families, ...}
+    statute_errors: dict[str, list[ErrorRow]] = {}
+    statute_meta: dict[str, JsonRow] = {}  # statute_id -> {title, url, tier, families, ...}
     statute_modes: dict[str, str] = {}
     taxonomy_by_category: Counter[str] = Counter()
     taxonomy_by_fixability: Counter[str] = Counter()
@@ -2179,7 +2182,7 @@ def build(
         consolidated_url = vlinks.get("consolidated_url") or finlex_ajantasa_url(statute_id)
         is_repealed = 1 if _check_repealed(data) else 0
 
-        error_rows: list[dict] = []
+        error_rows: list[ErrorRow] = []
 
         # --- Section-level structural errors ---
         for sr in data.get("section_results", []):
