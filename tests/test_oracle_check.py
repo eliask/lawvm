@@ -23,6 +23,7 @@ from lawvm.tools.divergence_heuristics import (
 from lawvm.tools.editorial_hygiene import (
     normalize_finlex_oracle_comparison_text,
     strip_editorial_annotations,
+    strip_temporary_residue_annotations,
 )
 from lawvm.tools.classify_result import ClassifyResult
 from lawvm.tools.oracle_check import (
@@ -488,6 +489,20 @@ def test_strip_editorial_annotations_strips_temporary_residue_without_valiaikais
 
     assert stripped.strip() == "3 b §"
     assert looks_like_bare_section_stub(stripped)
+
+
+def test_diagnose_treats_repealed_temporary_residue_stub_as_editorial() -> None:
+    replay = ""
+    oracle = (
+        "13 h § 13 h § on kumottu L:lla "
+        "9.8.2019/931, väliaikaisesti voimassa 1.1.2005–31.12.2019 "
+        "L:lla 1429/2004, 1106/2008, 1315/2010, 1219/2014, 1080/2016, 1300/2018."
+    )
+
+    stripped = strip_temporary_residue_annotations(oracle)
+
+    assert stripped.strip() == "13 h §"
+    assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
 
 
 def test_future_repeal_overlay_detection_matches_future_effective_repeal_banner() -> None:

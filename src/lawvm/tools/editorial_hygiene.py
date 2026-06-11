@@ -110,9 +110,16 @@ _FINLEX_ORACLE_COMPARISON_RULES = (
 _KUMOTTU_BYTE_PATTERNS = (b"kumottu L:lla", b"kumottu A:lla")
 
 _TEMPORARY_RESIDUE_RE = re.compile(
+    rf'(?:'
     rf'(?:\d+\s*[a-zäöå]?\s*§|\d+\s+(?:mome?ntti|mom\.?|kohta))\s+(?:oli|on\s+ollut)\s+(?:väliaikaisesti\s+)?voimassa\s+'
     r'\d{1,2}\.\d{1,2}\.\d{4}\s*[–—\-]\s*\d{1,2}\.\d{1,2}\.\d{4}'
-    rf'(?:\s+{_REPEAL_CITATION_RE})?\.{{0,3}}\s*',
+    rf'(?:\s+{_REPEAL_CITATION_RE})?'
+    rf'|'
+    rf'\d+\s*[a-zäöå]?\s*§\s+on\s+kumottu\s+{_REPEAL_CITATION_RE}\s*,\s*'
+    rf'väliaikaisesti\s+voimassa\s+'
+    r'\d{1,2}\.\d{1,2}\.\d{4}\s*[–—\-]\s*\d{1,2}\.\d{1,2}\.\d{4}'
+    r'(?:\s+[^.]{0,500})?'
+    rf')\.{{0,3}}\s*',
     re.DOTALL | re.IGNORECASE,
 )
 
@@ -140,7 +147,7 @@ def strip_temporary_residue_annotations(text: str) -> str:
 
 def strip_editorial_annotations(text: str) -> str:
     return strip_aiempi_sanamuoto_blocks(
-        strip_temporary_residue_annotations(_EDITORIAL_RE.sub('', text))
+        strip_temporary_residue_annotations(_EDITORIAL_RE.sub('', strip_temporary_residue_annotations(text)))
     )
 
 
