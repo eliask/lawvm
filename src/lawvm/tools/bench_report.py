@@ -36,13 +36,15 @@ def _first_present_column(
 def _float_or_zero(value: str | None) -> float:
     if value in {None, ""}:
         return 0.0
-    return float(value)  # ty:ignore[invalid-argument-type]
+    assert value is not None
+    return float(value)
 
 
 def _int_or_zero(value: str | None) -> int:
     if value in {None, ""}:
         return 0
-    return int(float(value))  # ty:ignore[invalid-argument-type]
+    assert value is not None
+    return int(float(value))
 
 
 def _load_rows(run_arg: str) -> tuple[Path, list[dict[str, str]]]:
