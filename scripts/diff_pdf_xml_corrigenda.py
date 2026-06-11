@@ -24,7 +24,10 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
+
+PatchRow = dict[str, Any]
+DiffResultRow = dict[str, Any]
 
 from lawvm.finland.corrigendum_records import load_patch_records
 
@@ -186,7 +189,7 @@ def _amendment_id_to_zip_paths(amendment_id: str) -> tuple[str, str]:
 # Corrigendum corpus queries
 # ---------------------------------------------------------------------------
 
-def _load_patches(records_path: Path) -> dict[str, list[dict]]:
+def _load_patches(records_path: Path) -> dict[str, list[PatchRow]]:
     """Load all official Finnish corrigendum items keyed by amendment_id (NUM/YEAR).
 
     Returns: {amendment_id: [{"correction_type": ..., "wrong_text": ...,
@@ -196,7 +199,7 @@ def _load_patches(records_path: Path) -> dict[str, list[dict]]:
         return {}
     rows = load_patch_records(records_path)
 
-    result: dict[str, list[dict]] = {}
+    result: dict[str, list[PatchRow]] = {}
     for row in rows:
         amid = str(row.get("amendment_id") or "").strip()
         if not amid or str(row.get("lang") or "fi").strip() != "fi":
@@ -222,7 +225,7 @@ def _get_distinct_amendment_ids(records_path: Path) -> list[str]:
 def _check_patch_match(
     pdf_text: str,
     xml_text: str,
-    patches: list[dict],
+    patches: list[PatchRow],
 ) -> tuple[bool, Optional[str], Optional[str], Optional[str]]:
     """Check whether a PDF↔XML diff is explained by known patches.
 
@@ -290,8 +293,8 @@ def _compute_diff_summary(pdf_text: str, xml_text: str) -> Optional[str]:
 def _process_amendment(
     amendment_id: str,
     zip_ref: zipfile.ZipFile,
-    patches_for_amendment: list[dict],
-) -> dict:
+    patches_for_amendment: list[PatchRow],
+) -> DiffResultRow:
     """Process one amendment: extract PDF+XML texts, diff them, match against patches.
 
     Returns a result dict suitable for JSONL output.
@@ -360,8 +363,8 @@ def _process_amendment(
 def _process_amendment_threadsafe(
     amendment_id: str,
     zip_path: Path,
-    patches_for_amendment: list[dict],
-) -> dict:
+    patches_for_amendment: list[PatchRow],
+) -> DiffResultRow:
     """Open the zip independently per thread (ZipFile is not thread-safe)."""
     try:
         with zipfile.ZipFile(zip_path) as zf:
