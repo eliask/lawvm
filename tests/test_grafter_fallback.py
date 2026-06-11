@@ -1698,7 +1698,7 @@ def test_allow_unscoped_live_section_retarget_requires_carry_forward_scope() -> 
         target_section="159",
         target_unit_kind="section",
         target_chapter="2",
-        scope_provenance_tags=("chapter_scope_from_johtolause",),
+        scope_provenance_tags=("chapter_scope_from_preamble",),
         source_statute="2019/371",
     )
     carry_forward_scoped = AmendmentOp(
@@ -6354,7 +6354,7 @@ def test_append_compiled_group_ops_serializes_resolved_scope_confidence() -> Non
         target_kind=TargetKind.SECTION,
         target_section="4",
         target_chapter="5",
-        scope_provenance_tags=("chapter_scope_from_johtolause",),
+        scope_provenance_tags=("chapter_scope_from_preamble",),
     )
     rop = ResolvedOp.from_amendment_op(
         op,
@@ -6375,7 +6375,7 @@ def test_append_compiled_group_ops_serializes_resolved_scope_confidence() -> Non
             "source_title": None,
             "extraction_provenance_tags": [],
             "target_guessing_provenance_tags": [],
-            "scope_provenance_tags": ["chapter_scope_from_johtolause"],
+            "scope_provenance_tags": ["chapter_scope_from_preamble"],
             "witness_rule_id": None,
             "target_unit_kind": "section",
             "target_norm": "4",
@@ -6384,7 +6384,7 @@ def test_append_compiled_group_ops_serializes_resolved_scope_confidence() -> Non
             "target_paragraph": "",
             "target_item": "",
             "target_special": "",
-            "scope_source": "johtolause",
+            "scope_source": "preamble",
             "scope_confidence": "inferred",
         }
     ]
@@ -6833,7 +6833,7 @@ def test_scope_anchor_dependence_observations_flag_heuristic_scope_tags() -> Non
             target_section="34",
             target_kind=TargetKind.SECTION,
             target_chapter="5",
-            scope_provenance_tags=("grouped_chapter_scope", "chapter_scope_from_johtolause"),
+            scope_provenance_tags=("grouped_chapter_scope", "chapter_scope_from_preamble"),
         ),
         AmendmentOp(
             op_id="",
@@ -6876,8 +6876,8 @@ def test_scope_anchor_dependence_observations_flag_heuristic_scope_tags() -> Non
                 "target_unit_kind": "section",
                 "target_norm": "34",
                 "target_chapter": "5",
-                "tag": "chapter_scope_from_johtolause",
-                "scope_source": "johtolause",
+                "tag": "chapter_scope_from_preamble",
+                "scope_source": "preamble",
                 "scope_confidence": "inferred",
                 "op_type": "REPLACE",
                 "target_paragraph": None,

@@ -50,6 +50,9 @@ _SCOPE_PROVENANCE_TAGS = frozenset(
     {
         "grouped_chapter_scope",
         "grouped_part_scope",
+        "chapter_scope_from_preamble",
+        # Legacy spelling kept for read compatibility with rows produced before
+        # the preamble vocabulary migration.
         "chapter_scope_from_johtolause",
         "chapter_scope_from_explicit_chunk",
         "chapter_scope_carry_forward",
@@ -67,7 +70,7 @@ _TARGET_GUESSING_PROVENANCE_TAGS = frozenset(
 
 ScopeResolutionConfidence = Literal["explicit", "inferred", "rewritten"]
 ScopeResolutionSource = Literal[
-    "johtolause",
+    "preamble",
     "explicit_chunk",
     "carry_forward",
     "grouped_part",
@@ -162,10 +165,12 @@ def scope_confidence_from_tags(
             confidence="inferred",
             resolved_chapter=resolved_chapter,
         )
-    if "chapter_scope_from_johtolause" in normalized:
+    # Legacy "chapter_scope_from_johtolause" normalizes to the canonical
+    # preamble vocabulary on read (mirrors the pipeline_capture shim).
+    if "chapter_scope_from_preamble" in normalized or "chapter_scope_from_johtolause" in normalized:
         return ScopeConfidence(
-            tag="chapter_scope_from_johtolause",
-            source="johtolause",
+            tag="chapter_scope_from_preamble",
+            source="preamble",
             confidence="inferred",
             resolved_chapter=resolved_chapter,
         )

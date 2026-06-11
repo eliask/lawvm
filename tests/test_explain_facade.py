@@ -377,7 +377,7 @@ class TestPrintCompileSummary:
                     detail={
                         "message": "Compilation required context-dependent anchor resolution.",
                         "source_statute": "2020/1",
-                        "tag": "chapter_scope_from_johtolause",
+                        "tag": "chapter_scope_from_preamble",
                         "target_unit_kind": "section",
                         "target_norm": "35",
                         "target_chapter": "5",
@@ -400,7 +400,7 @@ class TestPrintCompileSummary:
                     "message": "Compilation required context-dependent anchor resolution.",
                     "source": "2020/1",
                     "detail": {
-                        "tag": "chapter_scope_from_johtolause",
+                        "tag": "chapter_scope_from_preamble",
                         "target_unit_kind": "section",
                         "target_norm": "35",
                         "target_chapter": "5",
@@ -414,7 +414,7 @@ class TestPrintCompileSummary:
 
         assert "Projection rows: LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION" in out
         assert (
-            "- LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION  [target(kind=P, norm=35, chapter=5); tag=chapter_scope_from_johtolause]"
+            "- LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION  [target(kind=P, norm=35, chapter=5); tag=chapter_scope_from_preamble]"
             in out
         )
 

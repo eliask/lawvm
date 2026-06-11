@@ -169,7 +169,7 @@ def test_scope_anchor_kinds_are_registered() -> None:
     ops = [
         _make_op(scope_provenance_tags=("grouped_chapter_scope",)),
         _make_op(scope_provenance_tags=("chapter_scope_carry_forward",)),
-        _make_op(scope_provenance_tags=("chapter_scope_from_johtolause",)),
+        _make_op(scope_provenance_tags=("chapter_scope_from_preamble",)),
         _make_op(scope_provenance_tags=("chapter_scope_from_explicit_chunk",)),
         _make_op(scope_provenance_tags=("grouped_part_scope",)),
         _make_op(scope_provenance_tags=("chapter_scope_stripped_unique_section",)),

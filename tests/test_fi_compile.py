@@ -252,7 +252,7 @@ def test_strict_fail_reasons_detect_known_recovery_paths() -> None:
     reasons = strict_fail_reasons_from_finding_ledger(
         profile,
         compiled_ops=[{
-            "scope_provenance_tags": ["chapter_scope_from_johtolause"],
+            "scope_provenance_tags": ["chapter_scope_from_preamble"],
             "extraction_provenance_tags": ["extraction_fallback_heuristic"],
         }],
         canonical_ops=recovered,
@@ -1339,7 +1339,7 @@ def test_compile_fi_facade_returns_native_finland_facade(monkeypatch) -> None:
                     stage="lower",
                     detail={
                         "message": "Compilation required context-dependent anchor resolution.",
-                        "tag": "chapter_scope_from_johtolause",
+                        "tag": "chapter_scope_from_preamble",
                     },
                     source_statute="2020/1",
                     blocking=True,
@@ -1920,7 +1920,7 @@ def test_compile_fi_surfaces_registered_provenance_projection_kinds(
                     },
                     {
                         "source_statute": "1993/805",
-                        "scope_provenance_tags": ["chapter_scope_from_johtolause"],
+                        "scope_provenance_tags": ["chapter_scope_from_preamble"],
                     },
                 ]
             )
@@ -1941,9 +1941,9 @@ def test_compile_fi_surfaces_registered_provenance_projection_kinds(
     target_guessing = next(a for a in _projection_rows(facade) if a["kind"] == "PARSE.TARGET_GUESSING")
     anchor = next(a for a in _projection_rows(facade) if a["kind"] == "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION")
     assert cast(dict[str, Any], target_guessing["detail"])["tag"] == "normalize_item_like_target"
-    assert cast(dict[str, Any], anchor["detail"])["tag"] == "chapter_scope_from_johtolause"
+    assert cast(dict[str, Any], anchor["detail"])["tag"] == "chapter_scope_from_preamble"
     assert cast(dict[str, Any], anchor["detail"])["scope_confidence"] == "inferred"
-    assert cast(dict[str, Any], anchor["detail"])["scope_source"] == "johtolause"
+    assert cast(dict[str, Any], anchor["detail"])["scope_source"] == "preamble"
 
 
 def test_compile_fi_keeps_registered_provenance_projection_rows_target_scoped(
@@ -1971,14 +1971,14 @@ def test_compile_fi_keeps_registered_provenance_projection_rows_target_scoped(
                         "target_unit_kind": "section",
                         "target_norm": "35",
                         "target_chapter": "5",
-                        "scope_provenance_tags": ["chapter_scope_from_johtolause"],
+                        "scope_provenance_tags": ["chapter_scope_from_preamble"],
                     },
                     {
                         "source_statute": "1993/805",
                         "target_unit_kind": "section",
                         "target_norm": "36",
                         "target_chapter": "5",
-                        "scope_provenance_tags": ["chapter_scope_from_johtolause"],
+                        "scope_provenance_tags": ["chapter_scope_from_preamble"],
                     },
                 ]
             )
@@ -2013,7 +2013,7 @@ def test_compile_fi_keeps_registered_provenance_projection_rows_target_scoped(
         )
         for a in anchors
     } == {
-        ("inferred", "johtolause"),
+        ("inferred", "preamble"),
     }
 
 
@@ -2039,7 +2039,7 @@ def test_compile_fi_extracts_provenance_target_scope_from_flat_compiled_op_scope
                 [
                     {
                         "source_statute": "2004/1313",
-                        "scope_provenance_tags": ["chapter_scope_from_johtolause"],
+                        "scope_provenance_tags": ["chapter_scope_from_preamble"],
                         "target_unit_kind": "section",
                         "target_norm": "1",
                         "target_chapter": "5a",
@@ -2058,12 +2058,12 @@ def test_compile_fi_extracts_provenance_target_scope_from_flat_compiled_op_scope
     facade = compile_fi_facade("1990/1295", replay_mode="legal_pit")
 
     anchor = next(a for a in _projection_rows(facade) if a["kind"] == "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION")
-    assert cast(dict[str, Any], anchor["detail"])["tag"] == "chapter_scope_from_johtolause"
+    assert cast(dict[str, Any], anchor["detail"])["tag"] == "chapter_scope_from_preamble"
     assert cast(dict[str, Any], anchor["detail"])["target_unit_kind"] == "section"
     assert cast(dict[str, Any], anchor["detail"])["target_norm"] == "1"
     assert cast(dict[str, Any], anchor["detail"])["target_chapter"] == "5a"
     assert cast(dict[str, Any], anchor["detail"])["scope_confidence"] == "inferred"
-    assert cast(dict[str, Any], anchor["detail"])["scope_source"] == "johtolause"
+    assert cast(dict[str, Any], anchor["detail"])["scope_source"] == "preamble"
 
 
 def test_compile_fi_surfaces_sparse_leftovers_as_projection_rows(
@@ -3230,7 +3230,7 @@ def test_strict_fail_reasons_from_finding_ledger_detect_known_recovery() -> None
             target_section="14",
         )
     ]
-    compiled_ops: list[dict[str, Any]] = [{"scope_provenance_tags": ["chapter_scope_from_johtolause"]}]
+    compiled_ops: list[dict[str, Any]] = [{"scope_provenance_tags": ["chapter_scope_from_preamble"]}]
     canonical_ops: list[LegalOperation] = recovered
     compile_failures: list[CompileFailure] = failures
     finding_rows: list[Finding] = [
@@ -3280,7 +3280,7 @@ def test_strict_fail_reasons_from_finding_ledger_accept_structured_scope_confide
     reasons = strict_fail_reasons_from_finding_ledger(
         profile,
         compiled_ops=[
-            {"scope_source": "johtolause", "scope_confidence": "inferred"},
+            {"scope_source": "preamble", "scope_confidence": "inferred"},
             {"scope_source": "explicit_chunk", "scope_confidence": "explicit"},
             {"scope_source": "explicit_scope_rewrite", "scope_confidence": "rewritten"},
         ],
@@ -3301,7 +3301,7 @@ def test_strict_fail_reasons_from_finding_ledger_prefers_structured_scope_witnes
         profile,
         compiled_ops=[
             {
-                "scope_source": "johtolause",
+                "scope_source": "preamble",
                 "scope_confidence": "inferred",
                 "scope_provenance_tags": ["chapter_scope_stripped_unique_section"],
             },
@@ -3322,7 +3322,7 @@ def test_strict_fail_reasons_from_finding_ledger_keeps_legacy_scope_fallback_per
         profile,
         compiled_ops=[
             {
-                "scope_source": "johtolause",
+                "scope_source": "preamble",
                 "scope_confidence": "inferred",
             },
             {
@@ -3508,7 +3508,7 @@ def test_strict_fail_reasons_from_finding_ledger_respects_profile_gates() -> Non
         relaxed,
         compiled_ops=[{
             "scope_provenance_tags": [
-                "chapter_scope_from_johtolause",
+                "chapter_scope_from_preamble",
             ],
             "target_guessing_provenance_tags": [
                 "normalize_item_like_target",

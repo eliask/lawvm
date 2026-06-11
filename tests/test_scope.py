@@ -402,7 +402,7 @@ def test_assign_chapter_scope_from_explicit_chunk_for_unique_sections() -> None:
 
     for lo in scoped:
         assert ("chapter", "3") in lo.target.path
-        assert "chapter_scope_from_johtolause" not in lo.provenance_tags
+        assert "chapter_scope_from_preamble" not in lo.provenance_tags
     explicit_chunk_ids = {lo.op_id for lo in scoped if "chapter_scope_from_explicit_chunk" in lo.provenance_tags}
     carry_forward_ids = {lo.op_id for lo in scoped if "chapter_scope_carry_forward" in lo.provenance_tags}
     assert explicit_chunk_ids == {"op1", "op2", "op3", "op5", "op6", "op7", "op8"}
@@ -471,11 +471,24 @@ def test_assign_chapter_scope_from_johtolause_respects_part_scope() -> None:
     )
 
     assert scoped[0].target.path == (("part", "II"), ("chapter", "1"), ("section", "3"))
-    assert "chapter_scope_from_johtolause" in scoped[0].provenance_tags
+    assert "chapter_scope_from_preamble" in scoped[0].provenance_tags
     scope_confidence = cast(Any, scoped[0]).scope_confidence
     assert scope_confidence.resolved_chapter == "1"
-    assert scope_confidence.source == "johtolause"
+    assert scope_confidence.source == "preamble"
     assert scope_confidence.confidence == "inferred"
+
+
+def test_scope_confidence_from_tags_normalizes_legacy_johtolause_tag() -> None:
+    """Legacy stored tags spelled with the Finnish vocabulary normalize on read."""
+    from lawvm.finland.ops import scope_confidence_from_tags
+
+    witness = scope_confidence_from_tags(["chapter_scope_from_johtolause"])
+    assert witness is not None
+    assert witness.tag == "chapter_scope_from_preamble"
+    assert witness.source == "preamble"
+    assert witness.confidence == "inferred"
+    # Unknown tags stay unrecognized — the shim covers only the known legacy value.
+    assert scope_confidence_from_tags(["chapter_scope_from_mystery"]) is None
 
 
 def test_strip_scope_keeps_explicit_chunk_whole_section_target_for_later_body_backed_rewrite() -> None:
@@ -610,7 +623,7 @@ def test_assign_chapter_scope_prefers_plain_section_chunk_over_subsection_mentio
     scoped = assign_chapter_scope_from_johtolause(legal_ops, text, cast(Any, master))
 
     assert dict(scoped[1].target.path).get("chapter") == "2"
-    assert "chapter_scope_from_johtolause" in scoped[1].provenance_tags
+    assert "chapter_scope_from_preamble" in scoped[1].provenance_tags
     assert dict(scoped[2].target.path).get("chapter") == "2"
 
 
@@ -655,7 +668,7 @@ def test_assign_chapter_scope_does_not_bind_plain_section_to_subsection_only_gen
     scoped = assign_chapter_scope_from_johtolause(legal_ops, text, cast(Any, master))
 
     assert dict(scoped[1].target.path).get("chapter") == "2"
-    assert "chapter_scope_from_johtolause" in scoped[1].provenance_tags
+    assert "chapter_scope_from_preamble" in scoped[1].provenance_tags
 
 
 def test_assign_scope_from_renumber_destinations_carries_section_scope() -> None:
