@@ -244,6 +244,7 @@ def frontier_work_item_claim_template(
         "schema": "lawvm.frontier_work_item_claim_template.v1",
         "template_id": f"{row.get('work_item_id')}:claim-template",
         "frontier_ref": str(row.get("work_item_id") or ""),
+        "claim_target_seed": {"frontier_ref": str(row.get("work_item_id") or "")},
         "jurisdiction": str(row.get("jurisdiction") or ""),
         "claim_kind": claim_kind,
         "claim_layer": layer,
