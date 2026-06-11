@@ -10273,6 +10273,43 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         ),
     )
 
+    # --- certificate-bundle (EXPERIMENTAL) ---
+    cert_bundle_p = sub.add_parser(
+        "certificate-bundle",
+        parents=_P,
+        help="EXPERIMENTAL: emit a one-statute certificate bundle fixture (FI)",
+        description=(
+            "EXPERIMENTAL schema-pressure fixture, NOT a checked certificate. "
+            "Run the Finland replay engine once for a statute and emit a "
+            "lawvm.certificate.v0 bundle directory (envelope, bundled source "
+            "bytes, policy manifests, certified tree-transition trace, "
+            "materialization roots, seam projection rows, residual/finding "
+            "ledgers, declared coverage). Transitions are derived from "
+            "observed state diffs (cert spec section 10 carve-out); no checker "
+            "exists, so the output must never be presented as a verified or "
+            "checkable public claim."
+        ),
+    )
+    cert_bundle_p.add_argument(
+        "--statute",
+        default="482/2024",
+        metavar="ID",
+        help="statute id, canonical 'num/year' (default 482/2024) or 'year/num'",
+    )
+    cert_bundle_p.add_argument(
+        "--out",
+        required=True,
+        metavar="DIR",
+        help="output bundle directory",
+    )
+    cert_bundle_p.add_argument(
+        "--granularity",
+        dest="granularity",
+        default="subsection",
+        choices=["subsection", "section"],
+        help="covering-frontier depth (experimental boundary: subsection or section)",
+    )
+
     # --- recipes ---
     sub.add_parser(
         "recipes",
@@ -10314,10 +10351,11 @@ def _reject_uk_replay_regime_flags_for_non_uk(args: argparse.Namespace, *, comma
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
-    # export-transition-graph deliberately takes the canonical säädös id in
-    # 'num/year' form (e.g. 301/2004); its handler normalizes both orderings,
-    # so the year/num-only pre-1734 guard must not reject it.
-    if args.command != "export-transition-graph":
+    # export-transition-graph and certificate-bundle deliberately take the
+    # canonical säädös id in 'num/year' form (e.g. 301/2004); their handlers
+    # normalize both orderings, so the year/num-only pre-1734 guard must not
+    # reject them.
+    if args.command not in ("export-transition-graph", "certificate-bundle"):
         _reject_pre_1734_fi_command_line_ids(args)
 
     if args.command == "bisect":
@@ -11518,6 +11556,11 @@ def main() -> None:
         from lawvm.tools.export_transition_graph import main as export_transition_graph_main
 
         export_transition_graph_main(args)
+
+    elif args.command == "certificate-bundle":
+        from lawvm.tools.certificate_bundle import main as certificate_bundle_main
+
+        certificate_bundle_main(args)
 
     elif args.command is None:
         parser.print_help()
