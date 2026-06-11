@@ -715,6 +715,7 @@ NO_FIRE_DRILL_YET: frozenset[str] = frozenset({
     # Typed residue subclasses of the same seam-surfaced blocking family
     # (governing_unparseable); exercised in test_temporal_fixed_term_expiry.py.
     "TEMPORAL.DURATION_ARITHMETIC_AUTHORITY_MISSING",
+    "TEMPORAL.DURATION_COMMENCEMENT_UNRESOLVED",
     "TEMPORAL.EVENT_BOUND_RESOLVER_MISSING",
     "TEMPORAL.EVENT_BOUND_OUT_OF_DOCTRINE",
     "TEMPORAL.SOURCE_IMPOSSIBLE_DATE",

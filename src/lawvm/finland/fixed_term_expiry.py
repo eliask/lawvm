@@ -19,15 +19,18 @@ blocking obligations, scoped/weak cases are observations).
 from __future__ import annotations
 
 import calendar
+import datetime as dt
 import hashlib
 import re
 from dataclasses import dataclass
-from typing import Mapping, Optional
+from typing import Callable, Mapping, Optional, Union
 
 from lawvm.core.ir import LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import MetaClauseKind
 from lawvm.core.statute_validity import (
+    BoundKind,
+    EpistemicStatus,
     StatuteValidityBound,
     expires_on_from_valid_until,
 )
@@ -38,6 +41,10 @@ from lawvm.finland.metadata import (
     SECTION_SCOPED_EXPIRY_RE,
     _normalize_fi_parse_text,
     parse_whole_law_validity,
+)
+from lawvm.finland.temporal_arithmetic import (
+    RULE_FI_ELIDED_YEAR_END,
+    duration_validity_end,
 )
 
 # Diagnostic codes (registered in observation_registry under role per spec §4).
@@ -56,6 +63,7 @@ EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT = (
 # names the missing authority or the reason the clause is not a bound at all,
 # instead of collapsing every failure into the generic unparseable bucket.
 DURATION_ARITHMETIC_AUTHORITY_MISSING = "TEMPORAL.DURATION_ARITHMETIC_AUTHORITY_MISSING"
+DURATION_COMMENCEMENT_UNRESOLVED = "TEMPORAL.DURATION_COMMENCEMENT_UNRESOLVED"
 EVENT_BOUND_RESOLVER_MISSING = "TEMPORAL.EVENT_BOUND_RESOLVER_MISSING"
 EVENT_BOUND_OUT_OF_DOCTRINE = "TEMPORAL.EVENT_BOUND_OUT_OF_DOCTRINE"
 DECREE_SET_COMMENCEMENT_UNRESOLVED = "TEMPORAL.DECREE_SET_COMMENCEMENT_UNRESOLVED"
@@ -70,6 +78,7 @@ BLOCKING_UNRESOLVED_EXPIRY_CODES = frozenset(
         FIXED_TERM_EXPIRY_UNPARSEABLE,
         FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS,
         DURATION_ARITHMETIC_AUTHORITY_MISSING,
+        DURATION_COMMENCEMENT_UNRESOLVED,
         EVENT_BOUND_RESOLVER_MISSING,
         EVENT_BOUND_OUT_OF_DOCTRINE,
         SOURCE_IMPOSSIBLE_DATE,
@@ -214,11 +223,268 @@ def _subject_voimassa_same_sentence(text: str) -> bool:
     return False
 
 
-def _classify_unresolved_validity_clause(clause_text: str) -> tuple[str, str, bool]:
-    """Type a recognised clause whose validity end did not parse.
+# ---------------------------------------------------------------------------
+# Duration-form resolution under the pinned 150/1930 arithmetic rule
+# ---------------------------------------------------------------------------
 
-    Returns ``(code, detail, blocking)``. Blocking classes name the missing
-    authority (the seam stays fail-loud); non-blocking classes are audited
+# Finnish period numerals as they appear before "vuoden/vuotta/kuukauden/
+# kuukautta" (nominative and genitive, 1–12). Unknown numerals stay residue —
+# the map never guesses.
+_FI_PERIOD_NUM_WORDS: dict[str, int] = {
+    "yhden": 1, "yksi": 1,
+    "kahden": 2, "kaksi": 2,
+    "kolmen": 3, "kolme": 3,
+    "neljän": 4, "neljä": 4,
+    "viiden": 5, "viisi": 5,
+    "kuuden": 6, "kuusi": 6,
+    "seitsemän": 7,
+    "kahdeksan": 8,
+    "yhdeksän": 9,
+    "kymmenen": 10,
+    "yhdentoista": 11, "yksitoista": 11,
+    "kahdentoista": 12, "kaksitoista": 12,
+}
+# Longest-first so a prefix word ("yhden") never shadows a longer numeral
+# ("yhdentoista") in the alternation.
+_FI_PERIOD_NUM_ALT = "|".join(sorted(_FI_PERIOD_NUM_WORDS, key=len, reverse=True))
+
+# "voimassa <N> vuotta/vuoden/kuukautta/kuukauden ..." — the year/month
+# duration family computable under 150/1930 §3.
+_DURATION_SPEC_RE = re.compile(
+    r"voimassa\s+(" + _FI_PERIOD_NUM_ALT + r"|\d{1,3})\s+"
+    r"(vuoden|vuotta|kuukauden|kuukautta)\b",
+    re.IGNORECASE,
+)
+# Bare "voimassa vuoden voimaantulosta" (no numeral) = one year from
+# commencement. The mandatory voimaantulo tail keeps this from matching the
+# elided year-end idiom ("voimassa vuoden loppuun"). The owner words are an
+# enumerated flat alternation (not nested optional groups) for the regex gate.
+_BARE_YEAR_DURATION_RE = re.compile(
+    r"voimassa\s+vuoden\s+(?:voimaantulo|sen\s+voimaantulo|lain\s+voimaantulo"
+    r"|tämän\s+lain\s+voimaantulo|asetuksen\s+voimaantulo|päätöksen\s+voimaantulo)",
+    re.IGNORECASE,
+)
+# Concrete commencement date stated in a sentence ("tulee voimaan 15 päivänä
+# joulukuuta 1992" / "tulee voimaan 1.3.2015").
+_COMMENCEMENT_DATE_ESSIVE_RE = re.compile(
+    r"(?:tulee|tuli|astuu|astui)\s+voimaan\s+(\d{1,2})\.?\s*päivänä\s+"
+    r"([a-zäöå]+kuuta)\s+(\d{4})",
+    re.IGNORECASE,
+)
+_COMMENCEMENT_DATE_DOTTED_RE = re.compile(
+    r"(?:tulee|tuli|astuu|astui)\s+voimaan\s+(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class _ComputedClauseBound:
+    """A duration/elided-year validity end computed with full provenance."""
+
+    valid_until: dt.date
+    expires_on: dt.date
+    rule_id: str
+    bound_kind: BoundKind
+    epistemic_status: EpistemicStatus
+    arithmetic_authority: Optional[str]
+    authority_scope_caveat: Optional[str]
+    commencement_date: str
+    commencement_source_kind: str
+    duration_spec: Optional[str]
+
+
+def _sentence_containing(text: str, pos: int) -> str:
+    """The sentence of ``text`` that contains character offset ``pos``."""
+    start = 0
+    for boundary in _SENTENCE_SPLIT_RE.finditer(text):
+        if boundary.end() > pos:
+            return text[start : boundary.start() + 1]
+        start = boundary.end()
+    return text[start:]
+
+
+def _parse_commencement_date(sentence: str) -> Optional[dt.date]:
+    """A concrete commencement date stated in ``sentence``, or None."""
+    m = _COMMENCEMENT_DATE_ESSIVE_RE.search(sentence)
+    if m is not None:
+        month = FI_MONTH_MAP.get(m.group(2).lower())
+        if month is not None:
+            try:
+                return dt.date(int(m.group(3)), month, int(m.group(1)))
+            except ValueError:
+                return None
+    md = _COMMENCEMENT_DATE_DOTTED_RE.search(sentence)
+    if md is not None:
+        try:
+            return dt.date(int(md.group(3)), int(md.group(2)), int(md.group(1)))
+        except ValueError:
+            return None
+    return None
+
+
+def _scan_statute_commencements(
+    timelines: Mapping[LegalAddress, ProvisionTimeline],
+) -> tuple[str, ...]:
+    """Distinct concrete whole-law commencement dates stated in this statute.
+
+    Scans every version sentence for a whole-law subject ("Tämä laki/asetus/
+    päätös ... tulee voimaan <date>") and collects the distinct concrete
+    dates. Used only when a duration clause lacks a same-sentence
+    commencement; more than one distinct date never resolves anything.
+    """
+    found: set[str] = set()
+    for timeline in timelines.values():
+        for version in timeline.versions:
+            if version.content is None:
+                continue
+            normalized = _normalize_fi_parse_text(irnode_to_text(version.content))
+            for sentence in _SENTENCE_SPLIT_RE.split(normalized):
+                if not _whole_law_subject_re_search(sentence):
+                    continue
+                date = _parse_commencement_date(sentence)
+                if date is not None:
+                    found.add(date.isoformat())
+    return tuple(sorted(found))
+
+
+def _resolve_duration_form(
+    clause_text: str,
+    statute_commencements: Callable[[], tuple[str, ...]],
+) -> "Union[_ComputedClauseBound, tuple[str, str, bool]]":
+    """Resolve a duration/elided-year validity clause to a computed bound.
+
+    Returns a ``_ComputedClauseBound`` when the end is computable under the
+    pinned rules, else ``(code, detail, blocking)``. Resolving the arithmetic
+    authority never resolves missing commencement FACTS: a clause whose
+    commencement is decree-set, unstated, or ambiguous stays blocked.
+    """
+    # Elided year-end ("on voimassa vuoden loppuun"): ONLY the narrow
+    # same-sentence form "tulee voimaan ... <year> ... ja on voimassa vuoden
+    # loppuun" resolves (end of the commencement year). A high-confidence
+    # inference, never a grammar fact (the opas idiom always names the year).
+    elided = _ELIDED_YEAR_END_RE.search(clause_text)
+    if elided is not None:
+        sentence = _sentence_containing(clause_text, elided.start())
+        commencement = _parse_commencement_date(sentence)
+        if commencement is None:
+            return (
+                DURATION_COMMENCEMENT_UNRESOLVED,
+                "elided-year validity end ('voimassa vuoden loppuun') without a "
+                "same-sentence concrete commencement; the narrow "
+                "commencement-year inference rule does not apply",
+                True,
+            )
+        valid_until = dt.date(commencement.year, 12, 31)
+        return _ComputedClauseBound(
+            valid_until=valid_until,
+            expires_on=expires_on_from_valid_until(valid_until),
+            rule_id=RULE_FI_ELIDED_YEAR_END,
+            bound_kind="stated_expiry",
+            epistemic_status="high_confidence_inference",
+            arithmetic_authority=None,
+            authority_scope_caveat=None,
+            commencement_date=commencement.isoformat(),
+            commencement_source_kind="same_sentence",
+            duration_spec=None,
+        )
+
+    # Year/month duration from commencement, computed under 150/1930 §3.
+    years = 0
+    months = 0
+    spec_match = _DURATION_SPEC_RE.search(clause_text)
+    if spec_match is not None:
+        token = spec_match.group(1).lower()
+        count = _FI_PERIOD_NUM_WORDS.get(token)
+        if count is None:
+            count = int(token)
+        if spec_match.group(2).lower().startswith("vuo"):
+            years = count
+        else:
+            months = count
+    else:
+        bare = _BARE_YEAR_DURATION_RE.search(clause_text)
+        if bare is None:
+            return (
+                DURATION_ARITHMETIC_AUTHORITY_MISSING,
+                "duration-form validity recognised but the period is outside "
+                "the pinned 150/1930 §3 year/month rule's input domain "
+                "(unsupported unit or unparseable period); the end is never "
+                "computed ad hoc",
+                True,
+            )
+        spec_match = bare
+        years = 1
+    anchor_pos = spec_match.start()
+    sentence = _sentence_containing(clause_text, anchor_pos)
+    if "voimaantulo" not in sentence.lower():
+        return (
+            DURATION_ARITHMETIC_AUTHORITY_MISSING,
+            "duration-form validity whose period is not anchored to the "
+            "law's own commencement (no voimaantulo anchor in the clause "
+            "sentence); outside the pinned duration_from_commencement rule",
+            True,
+        )
+    if _TOISTAISEKSI_CAP_RE.search(sentence):
+        # "enintään / ei kauemmin kuin <duration>": an OUTER CAP on an
+        # otherwise open-ended validity, not a stated duration end. The
+        # cap-as-duration combination is not modeled; never compute it as a
+        # plain duration bound.
+        return (
+            DURATION_ARITHMETIC_AUTHORITY_MISSING,
+            "duration-form validity stated as an outer cap ('enintään' / "
+            "'ei kauemmin kuin'); cap-form durations are not modeled as "
+            "computed duration bounds",
+            True,
+        )
+    commencement = _parse_commencement_date(sentence)
+    source_kind = "same_sentence"
+    if commencement is None:
+        if _DECREE_SET_COMMENCEMENT_RE.search(clause_text):
+            return (
+                DURATION_COMMENCEMENT_UNRESOLVED,
+                "duration-form validity runs from a decree-set commencement "
+                "('asetuksella säädettävänä ajankohtana'); the arithmetic "
+                "authority is pinned but the commencement fact is unresolved",
+                True,
+            )
+        candidates = statute_commencements()
+        if len(candidates) == 1:
+            commencement = dt.date.fromisoformat(candidates[0])
+            source_kind = "same_statute_commencement_clause"
+        else:
+            return (
+                DURATION_COMMENCEMENT_UNRESOLVED,
+                "duration-form validity without a concrete commencement date "
+                f"({len(candidates)} distinct whole-law commencement dates "
+                "found in the statute); the end cannot be computed",
+                True,
+            )
+    computed = duration_validity_end(commencement, years=years, months=months)
+    rule = computed.rule
+    return _ComputedClauseBound(
+        valid_until=computed.valid_until,
+        expires_on=computed.expires_on,
+        rule_id=rule.rule_id,
+        bound_kind="duration_from_commencement",
+        epistemic_status="computed_under_pinned_authority",
+        arithmetic_authority=rule.authority,
+        authority_scope_caveat=rule.scope_caveat,
+        commencement_date=commencement.isoformat(),
+        commencement_source_kind=source_kind,
+        duration_spec=computed.duration_spec,
+    )
+
+
+def _classify_unresolved_validity_clause(
+    clause_text: str,
+    statute_commencements: Callable[[], tuple[str, ...]],
+) -> "Union[_ComputedClauseBound, tuple[str, str, bool]]":
+    """Type a recognised clause whose validity end did not parse directly.
+
+    Returns ``(code, detail, blocking)``, or a ``_ComputedClauseBound`` when
+    the clause is a duration/elided-year form whose end is computable under
+    the pinned 150/1930 rule. Blocking classes name the missing authority or
+    fact (the seam stays fail-loud); non-blocking classes are audited
     non-candidates (the clause is not a whole-law expiry bound at all).
     Ordered most-specific first; the generic unparseable code is the fallback.
     """
@@ -253,6 +519,14 @@ def _classify_unresolved_validity_clause(clause_text: str) -> tuple[str, str, bo
             False,
         )
     if _DECREE_SET_COMMENCEMENT_RE.search(clause_text):
+        if _DURATION_FORM_RE.search(clause_text) or _ELIDED_YEAR_END_RE.search(
+            clause_text
+        ):
+            # The clause ALSO states a duration validity end that runs from
+            # the (unresolved) decree-set commencement: a real expiry bound
+            # that cannot be computed — blocking, not a mere commencement
+            # frontier.
+            return _resolve_duration_form(clause_text, statute_commencements)
         return (
             DECREE_SET_COMMENCEMENT_UNRESOLVED,
             "commencement is decree-set ('asetuksella säädettävänä "
@@ -278,12 +552,7 @@ def _classify_unresolved_validity_clause(clause_text: str) -> tuple[str, str, bo
             True,
         )
     if _DURATION_FORM_RE.search(clause_text) or _ELIDED_YEAR_END_RE.search(clause_text):
-        return (
-            DURATION_ARITHMETIC_AUTHORITY_MISSING,
-            "duration-form validity (period from commencement); computing the "
-            "end date requires the pinned 150/1930 arithmetic rule",
-            True,
-        )
+        return _resolve_duration_form(clause_text, statute_commencements)
     if _START_ONLY_RE.search(clause_text) and not _END_MARKER_RE.search(clause_text):
         return (
             START_ONLY_NOT_EXPIRY_BOUND,
@@ -328,6 +597,17 @@ def extract_fixed_term_bounds(
     bounds: list[StatuteValidityBound] = []
     diagnostics: list[FixedTermDiagnostic] = []
     has_candidate = False
+
+    # Lazy statute-wide whole-law commencement scan, shared across duration
+    # clauses (only computed when a duration form lacks a same-sentence
+    # commencement date).
+    scanned_commencements: Optional[tuple[str, ...]] = None
+
+    def statute_commencements() -> tuple[str, ...]:
+        nonlocal scanned_commencements
+        if scanned_commencements is None:
+            scanned_commencements = _scan_statute_commencements(timelines)
+        return scanned_commencements
 
     # (effective, source_id) -> shallowest carrying address depth seen so far.
     claimed: dict[tuple[str, str], int] = {}
@@ -414,6 +694,7 @@ def extract_fixed_term_bounds(
                 # The same clause already owned by a shallower (or equal) address.
                 continue
 
+            computed: Optional[_ComputedClauseBound] = None
             if valid_until is None:
                 if parse is not None and parse.ambiguous_years:
                     # Anaphoric "sanotun vuoden loppuun" with more than one
@@ -433,10 +714,13 @@ def extract_fixed_term_bounds(
                             clause_text=clause_text[:_CLAUSE_TEXT_LIMIT],
                         )
                     )
-                else:
-                    code, detail, _blocking = _classify_unresolved_validity_clause(
-                        clause_text
-                    )
+                    claimed[key] = depth
+                    continue
+                resolution = _classify_unresolved_validity_clause(
+                    clause_text, statute_commencements
+                )
+                if not isinstance(resolution, _ComputedClauseBound):
+                    code, detail, _blocking = resolution
                     diagnostics.append(
                         FixedTermDiagnostic(
                             code=code,
@@ -447,33 +731,65 @@ def extract_fixed_term_bounds(
                             clause_text=clause_text[:_CLAUSE_TEXT_LIMIT],
                         )
                     )
-                # Do not record a bound; mark the key so deeper duplicates of the
-                # same unparseable/ambiguous clause do not re-diagnose.
-                claimed[key] = depth
-                continue
+                    # Do not record a bound; mark the key so deeper duplicates of
+                    # the same unparseable/ambiguous clause do not re-diagnose.
+                    claimed[key] = depth
+                    continue
+                # Duration/elided-year end computed under a named, pinned rule:
+                # lift it into a bound carrying its arithmetic provenance.
+                computed = resolution
 
-            assert parse is not None  # valid_until is not None ⇒ parse exists
-            expires_on = expires_on_from_valid_until(valid_until)
-            bound = StatuteValidityBound(
-                statute_id=statute_id,
-                scope="whole_statute",
-                effective=version.effective,
-                enacted=version.enacted or None,
-                valid_until=valid_until.isoformat(),
-                expires_on=expires_on.isoformat(),
-                source_provision=address,
-                source_version_id=source_id,
-                source_hash=_content_hash(version),
-                source_span=None,
-                rule_id=parse.rule_id,
-                source_text=normalized[:500],
-                source_sequence=sequence,
-                bound_kind=parse.bound_kind,
-                source_phrase_kind=parse.source_phrase_kind,
-                earlier_termination_possible=parse.earlier_termination_possible,
-                antecedent_text=parse.antecedent_text,
-                antecedent_span=parse.antecedent_span,
-            )
+            if computed is not None:
+                bound = StatuteValidityBound(
+                    statute_id=statute_id,
+                    scope="whole_statute",
+                    effective=version.effective,
+                    enacted=version.enacted or None,
+                    valid_until=computed.valid_until.isoformat(),
+                    expires_on=computed.expires_on.isoformat(),
+                    source_provision=address,
+                    source_version_id=source_id,
+                    source_hash=_content_hash(version),
+                    source_span=None,
+                    rule_id=computed.rule_id,
+                    source_text=normalized[:500],
+                    source_sequence=sequence,
+                    bound_kind=computed.bound_kind,
+                    source_phrase_kind=None,
+                    earlier_termination_possible=False,
+                    antecedent_text=None,
+                    antecedent_span=None,
+                    epistemic_status=computed.epistemic_status,
+                    arithmetic_authority=computed.arithmetic_authority,
+                    authority_scope_caveat=computed.authority_scope_caveat,
+                    commencement_date=computed.commencement_date,
+                    commencement_source_kind=computed.commencement_source_kind,
+                    duration_spec=computed.duration_spec,
+                )
+            else:
+                assert parse is not None  # valid_until is not None ⇒ parse exists
+                assert valid_until is not None
+                expires_on = expires_on_from_valid_until(valid_until)
+                bound = StatuteValidityBound(
+                    statute_id=statute_id,
+                    scope="whole_statute",
+                    effective=version.effective,
+                    enacted=version.enacted or None,
+                    valid_until=valid_until.isoformat(),
+                    expires_on=expires_on.isoformat(),
+                    source_provision=address,
+                    source_version_id=source_id,
+                    source_hash=_content_hash(version),
+                    source_span=None,
+                    rule_id=parse.rule_id,
+                    source_text=normalized[:500],
+                    source_sequence=sequence,
+                    bound_kind=parse.bound_kind,
+                    source_phrase_kind=parse.source_phrase_kind,
+                    earlier_termination_possible=parse.earlier_termination_possible,
+                    antecedent_text=parse.antecedent_text,
+                    antecedent_span=parse.antecedent_span,
+                )
             sequence += 1
             # Remove any earlier deeper-address bound for the same key.
             if prior_depth is not None:

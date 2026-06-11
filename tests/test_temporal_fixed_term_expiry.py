@@ -27,6 +27,7 @@ from lawvm.core.statute_validity import (
 from lawvm.finland.fixed_term_expiry import (
     DECREE_SET_COMMENCEMENT_UNRESOLVED,
     DURATION_ARITHMETIC_AUTHORITY_MISSING,
+    DURATION_COMMENCEMENT_UNRESOLVED,
     EVENT_BOUND_OUT_OF_DOCTRINE,
     EVENT_BOUND_RESOLVER_MISSING,
     EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT,
@@ -417,7 +418,10 @@ def test_voimaantulo_heading_overrides_commencement_guard() -> None:
     assert "siihen saakka" in extraction.diagnostics[0].clause_text
 
 
-def test_unparseable_diagnostic_carries_clause_text() -> None:
+def test_duration_without_concrete_commencement_blocks_with_clause_text() -> None:
+    # "tulee voimaan heti": the duration is computable in principle but the
+    # commencement is not a concrete date anywhere in the statute — the
+    # pinned arithmetic authority cannot supply missing commencement facts.
     text = (
         "10 § Tämä laki tulee voimaan heti ja on voimassa kahden vuoden ajan "
         "sen voimaantulosta."
@@ -426,9 +430,11 @@ def test_unparseable_diagnostic_carries_clause_text() -> None:
         [_voimaantulo_version(effective="1992-12-01", enacted="1992-11-01", text=text, source_statute="1992/1239")]
     )
     extraction = extract_fixed_term_bounds(statute_id="1992/1239", timelines=timelines)
-    diags = [d for d in extraction.diagnostics if d.code == DURATION_ARITHMETIC_AUTHORITY_MISSING]
+    assert extraction.bounds == ()
+    diags = [d for d in extraction.diagnostics if d.code == DURATION_COMMENCEMENT_UNRESOLVED]
     assert len(diags) == 1
     assert "kahden vuoden ajan" in diags[0].clause_text
+    assert governing_unparseable(extraction, as_of="1995-01-01", query_type="governing") is not None
 
 
 def test_start_only_clause_is_nonblocking_non_candidate() -> None:
@@ -602,17 +608,374 @@ def test_until_event_clause_stays_unparseable() -> None:
     assert any(d.code == EVENT_BOUND_RESOLVER_MISSING for d in extraction.diagnostics)
 
 
-def test_unparseable_whole_law_clause_diagnoses() -> None:
-    # "vuoden voimaantulosta" is a recognised whole-law expiry clause whose date
-    # the proven regex cannot parse.
+def test_bare_year_duration_computes_under_pinned_rule() -> None:
+    # "voimassa vuoden voimaantulosta" with a same-sentence concrete
+    # commencement: one year under the 150/1930 §3 corresponding-day rule.
+    # Corresponding day C = 2025-01-01; the law is in force ON its
+    # commencement day, so it lapses at the start of C: valid_until = C - 1.
     text = "7 § Voimaantulo Tämä laki tulee voimaan 1 päivänä tammikuuta 2024 ja on voimassa vuoden voimaantulosta."
     timelines = _timelines(
         [_voimaantulo_version(effective="2024-01-01", enacted="2023-12-01", text=text, source_statute="2099/1")]
     )
     extraction = extract_fixed_term_bounds(statute_id="2099/1", timelines=timelines)
     assert extraction.has_candidate is True
+    assert [(b.valid_until, b.expires_on) for b in extraction.bounds] == [
+        ("2024-12-31", "2025-01-01")
+    ]
+    bound = extraction.bounds[0]
+    assert bound.bound_kind == "duration_from_commencement"
+    assert bound.rule_id == "fi_duration_year_month_corresponding_day"
+    assert bound.arithmetic_authority == "fi/150/1930"
+    assert bound.epistemic_status == "computed_under_pinned_authority"
+    # 150/1930 §1 scope caveat must be recorded on every computed bound.
+    assert bound.authority_scope_caveat is not None
+    assert "150/1930 §1" in bound.authority_scope_caveat
+    assert bound.commencement_date == "2024-01-01"
+    assert bound.commencement_source_kind == "same_sentence"
+    assert bound.duration_spec == "P1Y"
+    assert not any(d.code in (DURATION_ARITHMETIC_AUTHORITY_MISSING,
+                              DURATION_COMMENCEMENT_UNRESOLVED)
+                   for d in extraction.diagnostics)
+
+
+# ---------------------------------------------------------------------------
+# Duration-form arithmetic under the pinned 150/1930 authority (EV4)
+# ---------------------------------------------------------------------------
+
+
+def test_corresponding_day_rule_unit_edges() -> None:
+    import datetime as dt
+
+    from lawvm.finland.temporal_arithmetic import duration_validity_end
+
+    # Plain corresponding day: 2 years from 15 Dec 1992 → C = 15 Dec 1994.
+    two_years = duration_validity_end(dt.date(1992, 12, 15), years=2)
+    assert two_years.valid_until == dt.date(1994, 12, 14)
+    assert two_years.expires_on == dt.date(1994, 12, 15)
+    assert two_years.duration_spec == "P2Y"
+    assert two_years.rule.authority == "fi/150/1930"
+    assert two_years.rule.rule_id == "fi_duration_year_month_corresponding_day"
+    # 12 months into a leap year: C = 1 Mar 2016, valid through 29 Feb 2016.
+    leap = duration_validity_end(dt.date(2015, 3, 1), months=12)
+    assert leap.valid_until == dt.date(2016, 2, 29)
+    assert leap.expires_on == dt.date(2016, 3, 1)
+    # §3 month-end fallback: 6 months from 31 Aug 2020 → Feb 2021 has no
+    # day 31, so C = last day of the terminal month (28 Feb 2021).
+    fallback = duration_validity_end(dt.date(2020, 8, 31), months=6)
+    assert fallback.expires_on == dt.date(2021, 2, 28)
+    assert fallback.valid_until == dt.date(2021, 2, 27)
+    # Leap-day commencement: 1 year from 29 Feb 2020 → Feb 2021 has no day
+    # 29, so C = 28 Feb 2021.
+    leap_day = duration_validity_end(dt.date(2020, 2, 29), years=1)
+    assert leap_day.expires_on == dt.date(2021, 2, 28)
+    assert leap_day.valid_until == dt.date(2021, 2, 27)
+    with pytest.raises(ValueError):
+        duration_validity_end(dt.date(2020, 1, 1))
+
+
+def test_duration_years_genitive_form_computes() -> None:
+    # 1992/1239 §7 shape: genitive numeral + "vuoden ajan sen voimaantulosta".
+    text = (
+        "7 § Tämä laki tulee voimaan 15 päivänä joulukuuta 1992 ja on "
+        "voimassa kahden vuoden ajan sen voimaantulosta."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1992-12-15", enacted="1992-12-04", text=text, source_statute="1992/1239")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1992/1239", timelines=timelines)
+    assert [(b.valid_until, b.expires_on) for b in extraction.bounds] == [
+        ("1994-12-14", "1994-12-15")
+    ]
+    assert extraction.bounds[0].duration_spec == "P2Y"
+    assert governing_unparseable(extraction, as_of="1995-01-01", query_type="governing") is None
+
+
+def test_duration_months_computes_into_leap_year() -> None:
+    # 2014/1212 §9 shape: "12 kuukautta lain voimaantulopäivästä lukien".
+    # C = 2016-03-01; 2016 is a leap year, so the inclusive end is 29 Feb.
+    text = (
+        "9 § Voimaantulo Tämä laki tulee voimaan 1 päivänä maaliskuuta 2015 "
+        "ja on voimassa 12 kuukautta lain voimaantulopäivästä lukien."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="2015-03-01", enacted="2014-12-19", text=text, source_statute="2014/1212")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="2014/1212", timelines=timelines)
+    assert [(b.valid_until, b.expires_on) for b in extraction.bounds] == [
+        ("2016-02-29", "2016-03-01")
+    ]
+    assert extraction.bounds[0].duration_spec == "P12M"
+
+
+def test_duration_commencement_from_other_provision_of_same_statute() -> None:
+    # 1997/230 shape: the duration clause (§3) names no date; the statute's
+    # own commencement clause (§5) supplies the unique concrete date.
+    addr_3 = LegalAddress(path=(("section", "3"),))
+    addr_5 = LegalAddress(path=(("section", "5"),))
+    v3 = ProvisionVersion(
+        effective="0000-00-00",
+        enacted="1997-03-13",
+        content=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="3",
+            text=(
+                "3 § Kiellon päättyminen Tämä päätös on voimassa viisi vuotta "
+                "voimaantulopäivästä lukien."
+            ),
+        ),
+        source=OperationSource(statute_id="1997/230"),
+    )
+    v5 = ProvisionVersion(
+        effective="0000-00-00",
+        enacted="1997-03-13",
+        content=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="5",
+            text="5 § Voimaantulo Tämä päätös tulee voimaan 1 päivänä huhtikuuta 1997.",
+        ),
+        source=OperationSource(statute_id="1997/230"),
+    )
+    timelines = {
+        addr_3: ProvisionTimeline(address=addr_3, versions=[v3]),
+        addr_5: ProvisionTimeline(address=addr_5, versions=[v5]),
+    }
+    extraction = extract_fixed_term_bounds(statute_id="1997/230", timelines=timelines)
+    assert [(b.valid_until, b.expires_on) for b in extraction.bounds] == [
+        ("2002-03-31", "2002-04-01")
+    ]
+    bound = extraction.bounds[0]
+    assert bound.commencement_date == "1997-04-01"
+    assert bound.commencement_source_kind == "same_statute_commencement_clause"
+    assert bound.duration_spec == "P5Y"
+
+
+def test_duration_with_ambiguous_statute_commencements_blocks() -> None:
+    # Two distinct whole-law commencement dates in the statute: the scan must
+    # never pick one — the row stays blocked.
+    addr_3 = LegalAddress(path=(("section", "3"),))
+    addr_5 = LegalAddress(path=(("section", "5"),))
+    addr_6 = LegalAddress(path=(("section", "6"),))
+    v3 = ProvisionVersion(
+        effective="0000-00-00",
+        enacted="1997-03-13",
+        content=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="3",
+            text="3 § Tämä päätös on voimassa viisi vuotta voimaantulopäivästä lukien.",
+        ),
+    )
+    v5 = ProvisionVersion(
+        effective="0000-00-00",
+        enacted="1997-03-13",
+        content=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="5",
+            text="5 § Tämä päätös tulee voimaan 1 päivänä huhtikuuta 1997.",
+        ),
+    )
+    v6 = ProvisionVersion(
+        effective="0000-00-00",
+        enacted="1997-03-13",
+        content=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="6",
+            text="6 § Tämä päätös tulee voimaan 1 päivänä kesäkuuta 1997.",
+        ),
+    )
+    timelines = {
+        addr_3: ProvisionTimeline(address=addr_3, versions=[v3]),
+        addr_5: ProvisionTimeline(address=addr_5, versions=[v5]),
+        addr_6: ProvisionTimeline(address=addr_6, versions=[v6]),
+    }
+    extraction = extract_fixed_term_bounds(statute_id="1997/230", timelines=timelines)
     assert extraction.bounds == ()
-    assert any(d.code == DURATION_ARITHMETIC_AUTHORITY_MISSING for d in extraction.diagnostics)
+    diags = [d for d in extraction.diagnostics if d.code == DURATION_COMMENCEMENT_UNRESOLVED]
+    assert len(diags) == 1
+    assert "viisi vuotta" in diags[0].clause_text
+
+
+def test_elided_year_end_resolves_from_same_sentence_commencement() -> None:
+    # 1997/7 §3 shape: "tulee voimaan ... 1997 ja on voimassa vuoden loppuun"
+    # → end of the commencement year. Recorded as a high-confidence
+    # inference under its own rule id, never as a grammar fact.
+    text = (
+        "3 § Voimaantulo Tämä päätös tulee voimaan 1 päivänä tammikuuta 1997 "
+        "ja on voimassa vuoden loppuun."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1997-01-01", enacted="1996-12-20", text=text, source_statute="1997/7")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1997/7", timelines=timelines)
+    assert [(b.valid_until, b.expires_on) for b in extraction.bounds] == [
+        ("1997-12-31", "1998-01-01")
+    ]
+    bound = extraction.bounds[0]
+    assert bound.rule_id == "fi_elided_year_end_from_same_sentence_commencement_year"
+    assert bound.epistemic_status == "high_confidence_inference"
+    assert bound.arithmetic_authority is None
+    assert bound.commencement_date == "1997-01-01"
+    assert bound.commencement_source_kind == "same_sentence"
+
+
+def test_elided_year_end_without_same_sentence_commencement_blocks() -> None:
+    # The narrow inference rule requires the commencement year in the SAME
+    # sentence; a bare "on voimassa vuoden loppuun" stays blocked even when
+    # another provision states the commencement.
+    addr_3 = LegalAddress(path=(("section", "3"),))
+    addr_5 = LegalAddress(path=(("section", "5"),))
+    v3 = ProvisionVersion(
+        effective="0000-00-00",
+        enacted="1996-12-20",
+        content=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="3",
+            # Structural Voimaantulo heading keeps the clause in the blocking
+            # lane (it cannot be suppressed as a body-text false positive).
+            text="3 § Voimaantulo Tämä päätös on voimassa vuoden loppuun.",
+        ),
+    )
+    v5 = ProvisionVersion(
+        effective="0000-00-00",
+        enacted="1996-12-20",
+        content=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="5",
+            text="5 § Voimaantulo Tämä päätös tulee voimaan 1 päivänä tammikuuta 1997.",
+        ),
+    )
+    timelines = {
+        addr_3: ProvisionTimeline(address=addr_3, versions=[v3]),
+        addr_5: ProvisionTimeline(address=addr_5, versions=[v5]),
+    }
+    extraction = extract_fixed_term_bounds(statute_id="1997/7", timelines=timelines)
+    assert extraction.bounds == ()
+    diags = [d for d in extraction.diagnostics if d.code == DURATION_COMMENCEMENT_UNRESOLVED]
+    assert len(diags) == 1
+    assert "vuoden loppuun" in diags[0].clause_text
+
+
+def test_decree_set_commencement_with_duration_bound_blocks() -> None:
+    # Decree-set commencement + duration validity end: a REAL expiry bound
+    # that cannot be computed (resolving the arithmetic authority does not
+    # resolve missing commencement facts) — blocking, unlike the plain
+    # decree-set commencement frontier.
+    text = (
+        "7 § Voimaantulo Tämä laki tulee voimaan valtioneuvoston asetuksella "
+        "säädettävänä ajankohtana ja on voimassa kaksi vuotta sen "
+        "voimaantulosta."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="2004-05-01", enacted="2004-04-30", text=text, source_statute="2004/999")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="2004/999", timelines=timelines)
+    assert extraction.bounds == ()
+    diags = [d for d in extraction.diagnostics if d.code == DURATION_COMMENCEMENT_UNRESOLVED]
+    assert len(diags) == 1
+    assert "asetuksella" in diags[0].clause_text
+    assert governing_unparseable(extraction, as_of="2010-01-01", query_type="governing") is not None
+
+
+def test_non_commencement_anchored_duration_stays_residue() -> None:
+    # A duration anchored to something other than the law's own commencement
+    # is outside the pinned duration_from_commencement rule's input domain.
+    text = (
+        "7 § Tämä laki tulee voimaan 1 päivänä tammikuuta 2020. Tämä laki on "
+        "voimassa kaksi vuotta siitä päivästä, jona sopimus allekirjoitetaan."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="2020-01-01", enacted="2019-12-01", text=text, source_statute="2099/5")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="2099/5", timelines=timelines)
+    assert extraction.bounds == ()
+    diags = [d for d in extraction.diagnostics if d.code == DURATION_ARITHMETIC_AUTHORITY_MISSING]
+    assert len(diags) == 1
+    assert "kaksi vuotta" in diags[0].clause_text
+
+
+def test_cap_form_duration_is_never_computed_as_plain_bound() -> None:
+    # "enintään <duration>" is an outer cap on an open-ended validity, not a
+    # stated duration end; it must stay typed residue, never a computed bound.
+    text = (
+        "7 § Voimaantulo Tämä laki tulee voimaan 1 päivänä tammikuuta 2020 "
+        "ja on voimassa enintään kaksi vuotta sen voimaantulosta."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="2020-01-01", enacted="2019-12-01", text=text, source_statute="2099/6")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="2099/6", timelines=timelines)
+    assert extraction.bounds == ()
+    diags = [d for d in extraction.diagnostics if d.code == DURATION_ARITHMETIC_AUTHORITY_MISSING]
+    assert len(diags) == 1
+    assert "enintään" in diags[0].clause_text
+
+
+def test_inclusive_end_convention_fixtures(monkeypatch: pytest.MonkeyPatch) -> None:
+    # CONVENTION PIN (Pro temporal-doctrine ruling). Two cutoff conventions
+    # coexist and must not drift:
+    #   1. Duration-computed ends and explicit dative calendar dates
+    #      ("31 päivään joulukuuta") are INCLUSIVE ends: the law is in force
+    #      ON valid_until and expired ON expires_on = valid_until + 1.
+    #   2. Future event-bound resolution (NOT built here) is EXCLUSIVE at the
+    #      resolver date: "voimassa päivään, jona X tulee voimaan" sets
+    #      expires_on = resolver_commencement_date (NOT + 1 day) so the old
+    #      state is not live on the day the resolving instrument enters
+    #      force. This asymmetry is deliberate; these fixtures pin convention
+    #      (1) so any future event-bound work cannot silently bend it.
+    _enable_flag(monkeypatch)
+    # 1a. Explicit dative date: in force ON 31 Dec, expired ON 1 Jan.
+    dative = _timelines(
+        [_voimaantulo_version(effective="2024-01-01", enacted="2023-12-01", text=_OLD_TEXT, source_statute="2099/1")]
+    )
+    assert _state(dative, as_of="2025-12-31")["status"] == "selected"
+    expired = _state(dative, as_of="2026-01-01")
+    assert expired["status"] == "expired"
+    assert expired["valid_until"] == "2025-12-31"
+    assert expired["expires"] == "2026-01-01"
+    # 1b. Duration-computed end: same inclusive convention. Commencement
+    # 15 Dec 1992 + 2 years → corresponding day C = 15 Dec 1994; in force
+    # through 14 Dec 1994 (inclusive), expired ON 15 Dec 1994.
+    duration = _timelines(
+        [
+            _voimaantulo_version(
+                effective="1992-12-15",
+                enacted="1992-12-04",
+                text=(
+                    "7 § Tämä laki tulee voimaan 15 päivänä joulukuuta 1992 ja "
+                    "on voimassa kahden vuoden ajan sen voimaantulosta."
+                ),
+                source_statute="1992/1239",
+            )
+        ]
+    )
+    assert _state(duration, as_of="1994-12-14")["status"] == "selected"
+    expired_duration = _state(duration, as_of="1994-12-15")
+    assert expired_duration["status"] == "expired"
+    assert expired_duration["valid_until"] == "1994-12-14"
+    assert expired_duration["expires"] == "1994-12-15"
+
+
+def test_seam_duration_expired_carries_arithmetic_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_flag(monkeypatch)
+    text = (
+        "7 § Tämä laki tulee voimaan 15 päivänä joulukuuta 1992 ja on "
+        "voimassa kahden vuoden ajan sen voimaantulosta."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1992-12-15", enacted="1992-12-04", text=text, source_statute="1992/1239")]
+    )
+    state = _state(timelines, as_of="1995-01-01", statute_id="1992/1239")
+    assert state["status"] == "expired"
+    block = state["expiry"]
+    assert block["rule_id"] == "fi_duration_year_month_corresponding_day"
+    assert block["bound_kind"] == "duration_from_commencement"
+    assert block["arithmetic_authority"] == "fi/150/1930"
+    assert "150/1930 §1" in block["authority_scope_caveat"]
+    assert block["epistemic_status"] == "computed_under_pinned_authority"
+    assert block["commencement_date"] == "1992-12-15"
+    assert block["commencement_source_kind"] == "same_sentence"
+    assert block["duration_spec"] == "P2Y"
 
 
 def test_scoped_chapter_form_unsupported_diagnostic() -> None:
@@ -785,14 +1148,14 @@ def test_seam_late_extension_gap_revival(monkeypatch: pytest.MonkeyPatch) -> Non
 
 def test_seam_unparseable_governing_bound_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
     _enable_flag(monkeypatch)
-    text = "7 § Voimaantulo Tämä laki tulee voimaan 1 päivänä tammikuuta 2024 ja on voimassa vuoden voimaantulosta."
+    text = "7 § Voimaantulo Tämä laki tulee voimaan heti ja on voimassa vuoden voimaantulosta."
     timelines = _timelines(
         [_voimaantulo_version(effective="2024-01-01", enacted="2023-12-01", text=text, source_statute="2099/1")]
     )
     state = _state(timelines, as_of="2024-06-01")
     assert state["status"] == "expiry_unverified"
     assert state["version"] is None
-    assert state["expiry"]["diagnostic"] == DURATION_ARITHMETIC_AUTHORITY_MISSING
+    assert state["expiry"]["diagnostic"] == DURATION_COMMENCEMENT_UNRESOLVED
     assert state["expiry"]["blocking"] is True
 
 
