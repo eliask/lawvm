@@ -4,9 +4,18 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable as IterableABC
+from typing import Any, Iterable, Mapping, Sequence
 
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
+
+
+_SOURCE_WITNESS_REPORT_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
+    "source_witness_as_replay_authorization",
+    "digest_match_as_legal_meaning_proof",
+    "preview_digest_as_full_artifact_digest",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +196,115 @@ def nested_source_witness_digest_coverage_counts(
     return dict(sorted(counts.items()))
 
 
+def source_witness_evidence_report(
+    witnesses: SourceWitness | Mapping[str, Any] | Sequence[SourceWitness | Mapping[str, Any]],
+    *,
+    jurisdiction: str,
+    report_kind: str = "source_witness",
+    default_role: str = "source_witness",
+) -> EvidenceSurfaceReport:
+    """Project source witnesses into a shared passive report envelope."""
+
+    rows = tuple(
+        _source_witness_mapping(row, default_role=default_role)
+        for row in _witness_sequence(witnesses)
+    )
+    report_rows = tuple(
+        _source_witness_report_row(row, index=index)
+        for index, row in enumerate(rows, start=1)
+    )
+    summary = {
+        "source_witness_count": len(rows),
+        "source_role_counts": _counts(str(row.get("source_role") or "") for row in rows),
+        "source_lane_counts": _counts(
+            str(row.get("source_lane") or "__blank__") for row in rows
+        ),
+        "digest_coverage_counts": source_witness_digest_coverage_counts(rows),
+        "artifact_count": len(
+            {
+                str(row.get("artifact_id") or "")
+                for row in rows
+                if row.get("artifact_id")
+            }
+        ),
+        "claim_flags": {
+            "replay_claims": False,
+            "canonical_effect_claims": False,
+            "candidate_effect_claims": False,
+            "dry_run_claims": False,
+            "agreement_claims": False,
+        },
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction=jurisdiction,
+        report_kind=report_kind,
+        schema="lawvm.source_witness_report.v1",
+        truth_claim="passive source witness identity and digest projections",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={"report_kind": report_kind},
+        filtered_summary=summary,
+        rows=report_rows,
+        detail={
+            "safe_default": "treat_source_witnesses_as_footing_not_replay_authority",
+            "forbidden_shortcuts": _SOURCE_WITNESS_REPORT_FORBIDDEN_SHORTCUTS,
+            "included_surfaces": ("source_witness",),
+        },
+    )
+
+
+def _witness_sequence(value: Any) -> tuple[SourceWitness | Mapping[str, Any], ...]:
+    if isinstance(value, SourceWitness) or isinstance(value, Mapping):
+        return (value,)
+    if isinstance(value, str | bytes):
+        raise ValueError("source witness report requires witness mappings")
+    if not isinstance(value, IterableABC):
+        raise ValueError("source witness report requires witness mappings")
+    items = tuple(value)
+    if not all(isinstance(item, SourceWitness) or isinstance(item, Mapping) for item in items):
+        raise ValueError("source witness report requires witness mappings")
+    return items
+
+
+def _source_witness_mapping(
+    value: SourceWitness | Mapping[str, Any],
+    *,
+    default_role: str,
+) -> Mapping[str, Any]:
+    if isinstance(value, SourceWitness):
+        return value.to_dict()
+    return source_witness_from_mapping(value, default_role=default_role).to_dict()
+
+
+def _source_witness_report_row(row: Mapping[str, Any], *, index: int) -> dict[str, Any]:
+    row_id = _source_witness_row_id(row, index=index)
+    return {
+        **dict(row),
+        "surface": "source_witness",
+        "row_id": row_id,
+        "subject_id": str(row.get("artifact_id") or row_id),
+        "status": source_witness_digest_coverage(row),
+        "witness_ref": row_id,
+        "forbidden_shortcuts": _SOURCE_WITNESS_REPORT_FORBIDDEN_SHORTCUTS,
+    }
+
+
+def _source_witness_row_id(row: Mapping[str, Any], *, index: int) -> str:
+    parts = [
+        str(row.get("source_role") or "source_witness"),
+        str(row.get("artifact_id") or "unknown_artifact"),
+        str(row.get("source_unit_id") or index),
+    ]
+    digest = _mapping_digest(row, ("digest", "source_sha256"), "digest_witness")
+    if digest:
+        parts.append(digest[:12])
+    return ":".join(part.replace(":", "_").replace("/", "_") for part in parts if part)
+
+
 def _digest_witness(row: Mapping[str, Any]) -> DigestWitness | None:
     digest = str(row.get("digest") or row.get("source_sha256") or "")
     if not digest:
@@ -222,6 +340,14 @@ def _mapping_digest(
     if isinstance(witness, Mapping):
         return str(witness.get("digest") or "")
     return ""
+
+
+def _counts(values: Iterable[Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = str(value or "__blank__")
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _plain_jsonable(value: Any) -> Any:

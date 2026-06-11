@@ -103,6 +103,7 @@ from lawvm.core.source_witness import (
     SourceWitness,
     source_witness_digest_coverage,
     source_witness_digest_coverage_counts,
+    source_witness_evidence_report,
     source_witness_from_mapping,
     source_witness_role_key,
 )
@@ -1928,6 +1929,99 @@ def test_source_witness_requires_role_and_digest_witness_requires_digest() -> No
         SourceWitness(source_role="")
     with pytest.raises(ValueError, match="digest"):
         DigestWitness(digest_algorithm="sha256", digest="")
+
+
+def test_source_witness_evidence_report_is_passive_shared_surface() -> None:
+    report = source_witness_evidence_report(
+        (
+            SourceWitness(
+                source_role="affecting_source",
+                artifact_id="ukpga/2025/1",
+                source_unit_id="section:2",
+                locator="https://example.test/ukpga/2025/1/section/2/data.xml",
+                digest=DigestWitness(digest_algorithm="sha256", digest="a" * 64),
+                bounded_preview="omit section 3",
+                preview_digest=DigestWitness(
+                    digest_algorithm="sha256",
+                    digest="b" * 64,
+                ),
+                source_lane="archive_xml",
+            ),
+            {
+                "source_role": "effect_feed_row",
+                "artifact_id": "ukpga/2025/1",
+                "source_unit_id": "effect-1",
+                "text_preview": "effect feed row",
+                "source_lane": "effect_feed",
+            },
+        ),
+        jurisdiction="uk",
+    )
+
+    data = report.to_dict()
+
+    assert data["schema"] == "lawvm.source_witness_report.v1"
+    assert data["replay_claims"] is False
+    assert data["canonical_effect_claims"] is False
+    assert data["candidate_effect_claims"] is False
+    assert data["dry_run_claims"] is False
+    assert data["agreement_claims"] is False
+    assert data["summary"]["source_witness_count"] == 2
+    assert data["summary"]["source_role_counts"] == {
+        "affecting_source": 1,
+        "effect_feed_row": 1,
+    }
+    assert data["summary"]["digest_coverage_counts"] == {
+        "artifact_and_preview_digest": 1,
+        "preview_digest": 1,
+    }
+    assert data["rows"][0]["surface"] == "source_witness"
+    assert data["rows"][0]["row_id"].startswith(
+        "affecting_source:ukpga_2025_1:section_2:"
+    )
+    assert data["rows"][0]["subject_id"] == "ukpga/2025/1"
+    assert data["rows"][0]["status"] == "artifact_and_preview_digest"
+    assert data["rows"][0]["witness_ref"] == data["rows"][0]["row_id"]
+    assert "source_witness_as_replay_authorization" in data["forbidden_shortcuts"]
+
+
+def test_source_witness_evidence_report_projects_to_proof_surface() -> None:
+    report = source_witness_evidence_report(
+        SourceWitness(
+            source_role="base_source",
+            artifact_id="fi:2024/1",
+            source_unit_id="section:1",
+            locator="finlex://2024/1/section/1",
+            digest=DigestWitness(digest_algorithm="sha256", digest="c" * 64),
+        ),
+        jurisdiction="fi",
+    )
+
+    surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert surface["claim_flags"] == {
+        "agreement_claims": False,
+        "canonical_effect_claims": False,
+        "candidate_effect_claims": False,
+        "dry_run_claims": False,
+        "replay_claims": False,
+    }
+    assert surface["rows"][0]["row_kind"] == "source_witness"
+    assert surface["rows"][0]["status"] == "artifact_digest"
+    assert surface["rows"][0]["source_refs"] == [
+        "fi:2024/1",
+        "section:1",
+        "finlex://2024/1/section/1",
+    ]
+
+
+def test_source_witness_evidence_report_rejects_non_witness_inputs() -> None:
+    with pytest.raises(ValueError, match="source witness report"):
+        source_witness_evidence_report(cast(Any, 7), jurisdiction="fi")
+    with pytest.raises(ValueError, match="source witness report"):
+        source_witness_evidence_report(cast(Any, "not-a-witness"), jurisdiction="fi")
+    with pytest.raises(ValueError, match="source witness report"):
+        source_witness_evidence_report(cast(Any, [{"source_role": "ok"}, 7]), jurisdiction="fi")
 
 
 def test_evidence_surface_report_declares_non_replay_claims() -> None:
