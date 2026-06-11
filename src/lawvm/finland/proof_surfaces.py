@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping, cast
 
 from lawvm.core.agreement_residual import (
     AgreementResidual,
@@ -730,7 +730,8 @@ def mutation_boundary_proof_rows(
         row = proof.to_dict()
         source_statute = ""
         if isinstance(report_like, Mapping):
-            source_statute = str(report_like.get("source_statute") or "")
+            report_mapping = cast("Mapping[str, Any]", report_like)
+            source_statute = str(report_mapping.get("source_statute") or "")
         if source_statute:
             row["source_artifact_id"] = source_statute
         rows.append(row)

@@ -3461,9 +3461,10 @@ def build_evidence_bundle(
                     continue
                 if not _cop.get("is_contingent"):
                     continue
-                _ar_raw = _cop.get("activation_rule")
-                if not isinstance(_ar_raw, dict):
+                _ar_value = _cop.get("activation_rule")
+                if not isinstance(_ar_value, dict):
                     continue
+                _ar_raw = cast(Dict[str, Any], _ar_value)
                 _amendment_id = str(_cop.get("source_statute") or _cop.get("source") or "")
                 if _amendment_id not in contingent_effective_sources:
                     continue
