@@ -6323,30 +6323,27 @@ def test_resolver_binding_contract_validators_reject_malformed_bindings() -> Non
         ResolverBinding,
     )
 
-    common = dict(
-        binding_id="rb:test",
-        op_label="[t] REPLACE 1 §",
-        target_text="section:1",
-        policy_id="fi.section_ladder.v0",
-    )
+    def _binding(**kwargs):
+        return ResolverBinding(
+            binding_id="rb:test",
+            op_label="[t] REPLACE 1 §",
+            target_text="section:1",
+            policy_id="fi.section_ladder.v0",
+            **kwargs,
+        )
+
     with _pytest.raises(ValueError, match="not a known rung"):
-        ResolverBinding(
-            **common, target_path=None, status="not_found", rung_id="bogus_rung"
-        )
+        _binding(target_path=None, status="not_found", rung_id="bogus_rung")
     with _pytest.raises(ValueError, match="requires a target_path"):
-        ResolverBinding(
-            **common, target_path=None, status="resolved", rung_id=RUNG_SCOPED_FIND
-        )
+        _binding(target_path=None, status="resolved", rung_id=RUNG_SCOPED_FIND)
     with _pytest.raises(ValueError, match="named fallback_rule_id"):
-        ResolverBinding(
-            **common,
+        _binding(
             target_path=(("section", "1"),),
             status="resolved",
             rung_id=RUNG_UNIQUE_GLOBAL_FALLBACK,
         )
     with _pytest.raises(ValueError, match="must not carry a target_path"):
-        ResolverBinding(
-            **common,
+        _binding(
             target_path=(("section", "1"),),
             status="not_found",
             rung_id=RUNG_SCOPED_FIND,
