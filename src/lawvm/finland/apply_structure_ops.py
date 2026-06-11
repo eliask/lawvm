@@ -2188,6 +2188,7 @@ def _apply_materialization(
     *,
     migration_ledger=None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
+    landed_paths_out: Optional[List[Path]] = None,
 ):
     """Materialize missing sections only for scoped or child-target recovery.
 
@@ -2195,6 +2196,11 @@ def _apply_materialization(
     place a missing section deterministically, such as chapter-scoped recovery
     or paragraph/item-targeted section reconstruction. A bare root-level whole-
     section REPLACE must not silently turn into an INSERT.
+
+    ``landed_paths_out`` receives the path the payload was actually written to.
+    The op's nominal target label can be a pre-renumber label under a
+    restructure plan, so re-resolving it after the fact binds an unrelated
+    same-labeled node; the declaration must come from the write itself.
     """
     view = _coerce_structure_apply_view(op)
     rop = op if isinstance(op, ResolvedOp) else None
@@ -2343,6 +2349,10 @@ def _apply_materialization(
                     ),
                     source_statute=view.source_statute or "",
                 )
+            if landed_paths_out is not None:
+                landed_paths_out.append(
+                    moved_parent_path + (("section", moved_section_ir.label or ""),)
+                )
             return state.with_ir(moved_ir)
 
     parent_path = _tops._as_path(_find_insert_parent_path(state.ir, _target_chapter, label_index=state.provision_index))
@@ -2376,6 +2386,8 @@ def _apply_materialization(
                 view=view,
             )
     new_ir, replaced = _insert_or_replace_same_labeled_child(state.ir, parent_path, muutos_ir)
+    if landed_paths_out is not None:
+        landed_paths_out.append(parent_path + (("section", muutos_ir.label or ""),))
     if replaced and source_pathologies_out is not None:
         parent_node = _tops.resolve(new_ir, parent_path)
         source_pathologies_out.append(

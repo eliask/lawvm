@@ -376,6 +376,7 @@ def _apply_legacy_dispatch(
         return whole_result
 
     mat_result = None
+    mat_landed_paths: List[Path] = []
     if not blocked_scoped_whole_section_replace_recovery:
         mat_result = _apply_materialization(
             state,
@@ -384,6 +385,7 @@ def _apply_legacy_dispatch(
             ctx_label,
             migration_ledger=migration_ledger,
             source_pathologies_out=source_pathologies_out,
+            landed_paths_out=mat_landed_paths,
         )
     if mat_result is not None:
         mat_target_path = (
@@ -392,14 +394,21 @@ def _apply_legacy_dispatch(
             else _resolved_target_path_for_event(dispatch_op, sec_path)
         )
         if mat_result is not state:
-            landed_path = landed_section_event_path(
-                mat_result,
-                section_label=dispatch_op.target_section,
-                chapter_label=dispatch_op.target_chapter,
-                part_label=dispatch_op.target_part,
-            )
-            if landed_path is not None:
-                mat_target_path = landed_path
+            # Prefer the path the materialization actually wrote; the nominal
+            # target label can be a pre-renumber label whose re-resolution
+            # binds an unrelated same-labeled section.
+            written_path = _path_to_tuple(mat_landed_paths[0]) if mat_landed_paths else None
+            if written_path is not None:
+                mat_target_path = written_path
+            else:
+                landed_path = landed_section_event_path(
+                    mat_result,
+                    section_label=dispatch_op.target_section,
+                    chapter_label=dispatch_op.target_chapter,
+                    part_label=dispatch_op.target_part,
+                )
+                if landed_path is not None:
+                    mat_target_path = landed_path
         _emit(
             helper="_apply_materialization",
             outcome="applied" if mat_result is not state else "failed",

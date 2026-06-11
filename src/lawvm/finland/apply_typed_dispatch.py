@@ -157,6 +157,28 @@ def _whole_section_move_rebind_paths(
     ]
     candidate_paths = root_matches if len(root_matches) == 1 else ([_tops._as_path(matches[0])] if len(matches) == 1 else [])
     if not candidate_paths:
+        # Same-labeled sections in several parts make the unscoped lookup
+        # ambiguous, but the op's part scope can still single out the move
+        # source: the only same-labeled section in the target part that sits
+        # under a different chapter is the node this write vacates. Mirrors
+        # the part-scoped disambiguation in
+        # _find_scoped_section_insert_parent_path.
+        part_label = str(rop.resolved_target_scope_part_label or "").strip()
+        if part_label:
+            part_key = normalized_label_key(part_label)
+            part_scoped = [
+                path
+                for path in (_tops._as_path(match) for match in matches)
+                if any(
+                    kind == "part" and normalized_label_key(str(label)) == part_key
+                    for kind, label in path
+                )
+                and next((str(label) for kind, label in path if kind == "chapter"), None)
+                not in (None, target_chapter)
+            ]
+            if len(part_scoped) == 1:
+                candidate_paths = part_scoped
+    if not candidate_paths:
         return ()
     existing_path = candidate_paths[0]
     existing_chapter = next((label for kind, label in existing_path if kind == "chapter"), None)
@@ -517,6 +539,7 @@ def _apply_intent_section_level(
         return whole_result
 
     if sec_path is None:
+        mat_landed_paths: List[Path] = []
         mat_result = _apply_materialization(
             state,
             rop,
@@ -524,13 +547,22 @@ def _apply_intent_section_level(
             ctx_label,
             migration_ledger=migration_ledger,
             source_pathologies_out=source_pathologies_out,
+            landed_paths_out=mat_landed_paths,
         )
         if mat_result is not None:
             resolved_target_path = _resolved_target_path_for_rop_event(rop, sec_path)
             if mat_result is not state:
-                post_path = _post_apply_section_path(mat_result, rop)
-                if post_path is not None:
-                    resolved_target_path = post_path
+                # Declare the path the materialization actually wrote to. The
+                # nominal target label can be a pre-renumber label under a
+                # restructure plan, and re-resolving it post-apply can bind an
+                # unrelated same-labeled section via the global fallback.
+                landed_path = _path_to_tuple(mat_landed_paths[0]) if mat_landed_paths else None
+                if landed_path is not None:
+                    resolved_target_path = landed_path
+                else:
+                    post_path = _post_apply_section_path(mat_result, rop)
+                    if post_path is not None:
+                        resolved_target_path = post_path
             root_move_paths = _materialization_root_move_paths(state, rop, muutos_ir, sec_path)
             _emit_apply_mutation_event_for_rop(
                 mutation_events_out,
