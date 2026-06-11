@@ -38,6 +38,8 @@ from lawvm.core.compile_views import (
 )
 from lawvm.finland.proof_surfaces import (
     finland_strict_report_evidence_surface,
+    finland_strict_report_ownership_closure_certificate,
+    finland_strict_report_ownership_closure_report,
     mutation_boundary_proof_rows,
     source_adjudication_lineage_source_witness_rows,
     source_pathology_proof_surface_rows,
@@ -459,6 +461,11 @@ def _to_json(cr: Any) -> dict[str, Any]:
         ],
         "failed_ops": [_failed_op_to_jsonable(f) for f in failed_ops],
     }
+    closure_certificate = finland_strict_report_ownership_closure_certificate(payload)
+    payload["ownership_closure_certificate"] = closure_certificate
+    payload["ownership_closure_report"] = finland_strict_report_ownership_closure_report(
+        closure_certificate
+    )
     payload["evidence_surface_report"] = finland_strict_report_evidence_surface(payload)
     return payload
 

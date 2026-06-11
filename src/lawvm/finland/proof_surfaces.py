@@ -40,6 +40,10 @@ from lawvm.core.source_completeness import (
     SourceCompletenessStatus,
     source_completeness_status_from_mapping,
 )
+from lawvm.core.ownership_closure import (
+    OwnershipClosureCertificate,
+    ownership_closure_evidence_report,
+)
 from lawvm.core.source_acquisition import (
     SourceAcquisitionAssertion,
     SourceBundlePolicy,
@@ -925,6 +929,10 @@ def finland_strict_report_evidence_surface(
         strict_fail_reasons=strict_fail_reasons,
         statute_id=str(payload.get("statute_id") or ""),
     )
+    ownership_closure = _mapping_or_empty(payload.get("ownership_closure_certificate"))
+    ownership_closure_report = _mapping_or_empty(payload.get("ownership_closure_report"))
+    ownership_closure_rows = _mapping_sequence(ownership_closure_report.get("rows"))
+    ownership_closure_summary = dict(ownership_closure_report.get("summary") or {})
     ops = payload.get("ops")
     ops_summary = dict(ops) if isinstance(ops, Mapping) else {}
     rows = tuple(
@@ -948,6 +956,7 @@ def finland_strict_report_evidence_surface(
             *(({"surface": "source_completeness_status", **source_completeness_row},) if source_completeness_row else ()),
             *({"surface": "temporal_resolution_evidence", **dict(row)} for row in temporal_resolution_rows),
             *({"surface": "recovery_execution_authorization", **dict(row)} for row in recovery_authorization_rows),
+            *({"surface": "ownership_closure_certificate", **dict(row)} for row in ownership_closure_rows),
         )
     )
     summary = {
@@ -983,6 +992,14 @@ def finland_strict_report_evidence_surface(
         "source_completeness": source_completeness_row.get("counts", {}) if source_completeness_row else {},
         "temporal_resolution_evidence_count": len(temporal_resolution_rows),
         "recovery_execution_authorization_count": len(recovery_authorization_rows),
+        "ownership_closure_certificate_count": len(ownership_closure_rows),
+        "ownership_closure_status": str(ownership_closure.get("closure_status") or ""),
+        "ownership_closure_failed_gate_counts": dict(
+            ownership_closure_summary.get("failed_gate_counts") or {}
+        ),
+        "ownership_closure_unowned_counts": dict(
+            ownership_closure_summary.get("unowned_counts") or {}
+        ),
         "source_pathology_frontier_source_witness_digest_coverage_counts": (
             nested_source_witness_digest_coverage_counts(source_pathology_frontier_items)
         ),
@@ -1022,8 +1039,153 @@ def finland_strict_report_evidence_surface(
                 "source_completeness_status_as_replay_authorization",
                 "temporal_resolution_evidence_as_unconditional_commencement_proof",
                 "recovery_projection_as_replay_authorization",
+                "ownership_closure_certificate_as_full_corpus_omniscience",
             ),
         },
+    ).to_dict()
+
+
+def finland_strict_report_ownership_closure_certificate(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build a passive ownership-closure certificate for strict-report facts.
+
+    This certificate is deliberately scoped to the strict-report proof surfaces.
+    It stays open until source-unit enumeration and operation-candidate coverage
+    are backed by real certificates; those missing proof boundaries are not
+    papered over by a green strict-report row.
+    """
+
+    statute_id = str(payload.get("statute_id") or "unknown")
+    profile_id = str(payload.get("profile") or "unknown_profile")
+    projection_rows = _mapping_sequence(payload.get("projection_rows"))
+    failed_ops = _mapping_sequence(payload.get("failed_ops"))
+    strict_fail_reasons = _string_sequence(payload.get("strict_fail_reasons"))
+    source_pathologies = _mapping_sequence(payload.get("source_pathologies"))
+    source_pathology_frontier_items = _mapping_sequence(payload.get("source_pathology_frontier_work_items"))
+    sparse_certificates = _mapping_sequence(payload.get("sparse_slot_candidate_set_certificates"))
+    source_lineage_witnesses = _mapping_sequence(payload.get("source_lineage_source_witnesses"))
+    agreement_residuals = _mapping_sequence(payload.get("agreement_residuals"))
+    mutation_boundary_proofs = _mapping_sequence(payload.get("mutation_boundary_proofs"))
+    source_completeness = _mapping_or_empty(payload.get("source_completeness"))
+    temporal_rows = temporal_resolution_evidence_rows_from_projection_rows(
+        projection_rows,
+        strict_fail_reasons=strict_fail_reasons,
+    )
+    recovery_authorizations = recovery_execution_authorization_rows_from_projection_rows(
+        projection_rows,
+        strict_fail_reasons=strict_fail_reasons,
+        statute_id=statute_id,
+    )
+    unproved_mutation_boundaries = tuple(
+        row for row in mutation_boundary_proofs if str(row.get("status") or "") != "proved"
+    )
+    failed_gates = (
+        "source_unit_enumeration_closure_unverified",
+        "operation_candidate_coverage_unverified",
+        *(() if not failed_ops else ("failed_ops_present",)),
+        *(() if not strict_fail_reasons else ("strict_fail_reasons_present",)),
+        *(() if not unproved_mutation_boundaries else ("unproved_mutation_boundary_present",)),
+    )
+    unowned_counts = {
+        "source_units_without_enumeration_certificate": 1,
+        "operation_cues_without_candidate_coverage_certificate": 1,
+        "failed_ops_without_frontier_work_item": len(failed_ops),
+        "strict_fail_reasons_without_closure": len(strict_fail_reasons),
+        "unproved_mutation_boundary_proofs": len(unproved_mutation_boundaries),
+    }
+    owned_counts = {
+        "canonical_ops": _ops_count(payload, "canonical"),
+        "failed_ops_visible": len(failed_ops),
+        "projection_rows_visible": len(projection_rows),
+        "source_pathology_frontier_items": len(source_pathology_frontier_items),
+        "source_pathologies_visible": len(source_pathologies),
+        "sparse_slot_candidate_certificates": len(sparse_certificates),
+        "source_lineage_witnesses": len(source_lineage_witnesses),
+        "agreement_residuals": len(agreement_residuals),
+        "mutation_boundary_proofs": len(mutation_boundary_proofs),
+        "temporal_resolution_evidence_rows": len(temporal_rows),
+        "recovery_authorization_rows": len(recovery_authorizations),
+    }
+    certificate = OwnershipClosureCertificate(
+        certificate_id=_strict_report_id("ownership-closure", statute_id, payload),
+        corpus_slice_id=f"fi:{statute_id}:strict-report-visible-surfaces",
+        source_bundle_hash=_strict_report_digest(
+            "source-bundle",
+            {
+                "source_completeness": source_completeness,
+                "source_lineage_source_witnesses": source_lineage_witnesses,
+            },
+        ),
+        profile_id=profile_id,
+        interpretation_policy_id="fi.strict_report.visible_surfaces.v1",
+        graph_snapshot_hash=_strict_report_digest(
+            "strict-report-graph",
+            _strict_report_closure_graph_payload(payload),
+        ),
+        phase_report_ids={
+            "strict_report": _strict_report_id("strict-report", statute_id, payload),
+            "source_lineage_witnesses": _strict_report_id(
+                "source-lineage",
+                statute_id,
+                source_lineage_witnesses,
+            ),
+            "source_pathology_frontiers": _strict_report_id(
+                "source-pathology-frontiers",
+                statute_id,
+                source_pathology_frontier_items,
+            ),
+            "mutation_boundary_proofs": _strict_report_id(
+                "mutation-boundary",
+                statute_id,
+                mutation_boundary_proofs,
+            ),
+        },
+        closed=False,
+        failed_gates=tuple(failed_gates),
+        unowned_counts=unowned_counts,
+        owned_counts=owned_counts,
+        detail={
+            "scope": "strict_report_visible_surfaces_only",
+            "does_not_claim": (
+                "full_finland_corpus_closure",
+                "source_unit_enumeration_closure",
+                "operation_candidate_coverage_closure",
+                "replay_authorization",
+            ),
+            "safe_default": "treat_open_certificate_as_accounting_gap_not_replay_failure",
+            "missing_required_certificates": (
+                "source_unit_enumeration_certificate",
+                "operation_candidate_coverage_certificate",
+            ),
+        },
+    )
+    return certificate.to_dict()
+
+
+def finland_strict_report_ownership_closure_report(
+    certificate: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Wrap one strict-report closure certificate in a passive evidence report."""
+
+    cert = OwnershipClosureCertificate(
+        certificate_id=str(certificate.get("certificate_id") or ""),
+        corpus_slice_id=str(certificate.get("corpus_slice_id") or ""),
+        source_bundle_hash=str(certificate.get("source_bundle_hash") or ""),
+        profile_id=str(certificate.get("profile_id") or ""),
+        interpretation_policy_id=str(certificate.get("interpretation_policy_id") or ""),
+        graph_snapshot_hash=str(certificate.get("graph_snapshot_hash") or ""),
+        phase_report_ids=_mapping_str_str(certificate.get("phase_report_ids")),
+        closed=bool(certificate.get("closed")),
+        failed_gates=tuple(str(item) for item in certificate.get("failed_gates", ()) or ()),
+        unowned_counts=_mapping_str_int(certificate.get("unowned_counts")),
+        owned_counts=_mapping_str_int(certificate.get("owned_counts")),
+        detail=_mapping_or_empty(certificate.get("detail")),
+    )
+    return ownership_closure_evidence_report(
+        cert,
+        jurisdiction="fi",
+        report_kind="finland_strict_report_ownership_closure",
     ).to_dict()
 
 
@@ -2451,10 +2613,81 @@ def _string_sequence(value: Any) -> tuple[str, ...]:
     return ()
 
 
+def _mapping_or_empty(value: Any) -> Mapping[str, Any]:
+    if isinstance(value, Mapping):
+        return value
+    return {}
+
+
+def _mapping_str_str(value: Any) -> Mapping[str, str]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {str(key): str(item) for key, item in value.items() if str(key) and str(item)}
+
+
+def _mapping_str_int(value: Any) -> Mapping[str, int]:
+    if not isinstance(value, Mapping):
+        return {}
+    out: dict[str, int] = {}
+    for key, item in value.items():
+        if isinstance(item, bool):
+            continue
+        if isinstance(item, int):
+            out[str(key)] = item
+            continue
+        text = str(item or "").strip()
+        if text.isdigit():
+            out[str(key)] = int(text)
+    return out
+
+
 def _mapping_sequence(value: Any) -> tuple[Mapping[str, Any], ...]:
     if not isinstance(value, list | tuple):
         return ()
     return tuple(item for item in value if isinstance(item, Mapping))
+
+
+def _ops_count(payload: Mapping[str, Any], name: str) -> int:
+    ops = payload.get("ops")
+    if not isinstance(ops, Mapping):
+        return 0
+    value = ops.get(name)
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return max(value, 0)
+    text = str(value or "").strip()
+    return int(text) if text.isdigit() else 0
+
+
+def _strict_report_digest(prefix: str, payload: Any) -> str:
+    encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, default=str).encode("utf-8")
+    return f"sha256:{hashlib.sha256(prefix.encode('utf-8') + b':' + encoded).hexdigest()}"
+
+
+def _strict_report_id(prefix: str, statute_id: str, payload: Any) -> str:
+    digest = _strict_report_digest(prefix, payload).split(":", 1)[1][:16]
+    return f"fi:{statute_id or 'unknown'}:{prefix}:{digest}"
+
+
+def _strict_report_closure_graph_payload(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    keys = (
+        "statute_id",
+        "profile",
+        "ops",
+        "source_completeness",
+        "source_pathologies",
+        "source_pathology_execution_authorizations",
+        "source_pathology_frontier_work_items",
+        "sparse_slot_candidate_set_certificates",
+        "source_lineage_source_witnesses",
+        "agreement_residuals",
+        "mutation_boundary_proofs",
+        "strict_fail_reasons",
+        "projection_rows",
+        "failed_ops",
+    )
+    return {key: payload.get(key) for key in keys if key in payload}
 
 
 def _preview_digest_witness(text: str) -> DigestWitness | None:

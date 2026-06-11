@@ -494,6 +494,58 @@ def test_to_json_preserves_source_pathology_target_unit_kind() -> None:
     ] == {"preview_digest": 1}
 
 
+def test_to_json_exports_open_ownership_closure_certificate_without_replay_claims() -> None:
+    payload = strict_report._to_json(
+        {
+            "statute_id": "2001/1234",
+            "profile": FINLAND_INGESTION_V1,
+            "canonical_ops": [],
+            "failed_ops": [],
+            "projection_rows": [],
+            "source_pathologies": [],
+            "strict_fail_reasons": [],
+        }
+    )
+
+    certificate = payload["ownership_closure_certificate"]
+    report = payload["ownership_closure_report"]
+    surface = payload["evidence_surface_report"]
+
+    assert certificate["schema"] == "lawvm.ownership_closure_certificate.v1"
+    assert certificate["closure_status"] == "open"
+    assert certificate["closed"] is False
+    assert certificate["corpus_slice_id"] == "fi:2001/1234:strict-report-visible-surfaces"
+    assert certificate["source_bundle_hash"].startswith("sha256:")
+    assert certificate["graph_snapshot_hash"].startswith("sha256:")
+    assert certificate["failed_gates"] == [
+        "source_unit_enumeration_closure_unverified",
+        "operation_candidate_coverage_unverified",
+    ]
+    assert certificate["unowned_counts"] == {
+        "failed_ops_without_frontier_work_item": 0,
+        "operation_cues_without_candidate_coverage_certificate": 1,
+        "source_units_without_enumeration_certificate": 1,
+        "strict_fail_reasons_without_closure": 0,
+        "unproved_mutation_boundary_proofs": 0,
+    }
+    assert report["report_kind"] == "finland_strict_report_ownership_closure"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert surface["summary"]["ownership_closure_certificate_count"] == 1
+    assert surface["summary"]["ownership_closure_status"] == "open"
+    assert surface["summary"]["ownership_closure_failed_gate_counts"] == {
+        "operation_candidate_coverage_unverified": 1,
+        "source_unit_enumeration_closure_unverified": 1,
+    }
+    closure_rows = [
+        row
+        for row in surface["rows"]
+        if row["surface"] == "ownership_closure_certificate"
+    ]
+    assert len(closure_rows) == 1
+    assert closure_rows[0]["closed"] is False
+
+
 def test_to_json_exports_sparse_slot_candidate_certificates() -> None:
     payload = strict_report._to_json(
         {
@@ -605,6 +657,7 @@ def test_to_json_exports_source_adjudication_agreement_residual() -> None:
         "source_lineage_source_witness",
         "agreement_residual",
         "source_completeness_status",
+        "ownership_closure_certificate",
     ]
 
 
