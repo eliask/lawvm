@@ -18,6 +18,7 @@ from lawvm.core.manual_claims.native import (
     attest,
     build_claim_subgraph,
     manual_claim_authorization_evidence_report,
+    manual_claim_frontier_closure_report,
     query_state,
     query_state_from_store,
     submit_assertion,
@@ -330,6 +331,78 @@ def test_manual_claim_authorization_report_is_not_replay_authority(tmp_path):
     assert proof_surface["surface_kind"] == "manual_claim_authorization"
     assert proof_surface["rows"][0]["row_kind"] == "execution_authorization"
     assert proof_surface["rows"][0]["authorization_ref"] == "test.manual_claim.policy"
+
+
+def test_manual_claim_frontier_closure_report_matches_authorized_claim_without_replay(
+    tmp_path,
+):
+    """Manual-claim namespace exposes frontier closure as a passive read model."""
+    store = _make_store(tmp_path)
+    producer = _make_producer()
+    assertion = _make_test_assertion(kind="fi.v1.INLINE_STATUTE_RESOLUTION")
+
+    assertion_id = submit_assertion(store, assertion, producer)
+    attest_id = attest(store, assertion_id, "span_verified", {}, producer)
+
+    reg_hash = attestation_kind_registry_hash()
+    builder = GraphBuilder(attestation_kind_registry_hash_val=reg_hash)
+    builder.add_assertion(store.read_assertion(assertion_id))
+    builder.add_attestation(store.read_attestation(attest_id))
+    graph = builder.finalize()
+    store.write_graph(graph)
+
+    result = query_state_from_store(
+        graph_store=store,
+        snapshot_hash=graph.snapshot_hash,
+        subject_id=assertion_id,
+        policy=EvidenceGraphPredicate(
+            predicate_id="fi.v1.INLINE_STATUTE_RESOLUTION.strict",
+            claim_kind="fi.v1.INLINE_STATUTE_RESOLUTION",
+            required=(exists("span_verified"),),
+        ),
+        profile=StrictProfile(name="fi_strict"),
+        at=datetime.now(tz=timezone.utc),
+    )
+    report = manual_claim_frontier_closure_report(
+        frontier_work_item={
+            "work_item_id": "fi-frontier-inline-ref",
+            "jurisdiction": "fi",
+            "source_artifact_id": "555/2024",
+            "source_unit_id": "chapter:1/section:2",
+            "owner_phase": "surface_extraction",
+            "frontier_family": "fi_inline_statute_resolution",
+            "frontier_status": "manual_claim_needed",
+            "required_claim_kind": "fi.v1.INLINE_STATUTE_RESOLUTION",
+            "required_proofs": ["phase_local_replay_authorization"],
+            "safe_default": "do_not_use_reference_claim_as_replay_authority",
+            "forbidden_shortcuts": ["manual_claim_as_replay_authorization"],
+            "executable": False,
+            "replay_authorized": False,
+            "authorization_status": "blocked_manual_claim_required",
+        },
+        assertion={
+            "assertion_id": assertion_id,
+            "jurisdiction": assertion.jurisdiction,
+            "kind": assertion.kind,
+            "target": {"frontier_ref": "fi-frontier-inline-ref"},
+        },
+        authorization_result=result,
+        jurisdiction="fi",
+    )
+    data = report.to_dict()
+
+    assert result.authorized is True
+    assert data["report_kind"] == "manual_claim_frontier_closure"
+    assert data["replay_claims"] is False
+    assert data["summary"]["closure_status_counts"] == {
+        "evidence_policy_satisfied_phase_gate_required": 1
+    }
+    assert data["summary"]["phase_gate_required_count"] == 1
+    assert data["summary"]["replay_authorized_count"] == 0
+    assert data["rows"][0]["frontier_ref"] == "fi-frontier-inline-ref"
+    assert data["rows"][0]["assertion_id"] == assertion_id
+    assert data["rows"][0]["policy_authorized"] is True
+    assert data["rows"][0]["replay_authorized"] is False
 
 
 # ---------------------------------------------------------------------------

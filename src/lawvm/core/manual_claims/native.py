@@ -37,6 +37,10 @@ from lawvm.core.execution_authorization import (
     execution_authorization_evidence_report,
     execution_authorization_from_kernel_result,
 )
+from lawvm.core.frontier_work_item import (
+    FrontierWorkItem,
+    frontier_work_item_claim_closure_report,
+)
 from lawvm.core.provenance_graph import (
     ArtifactRef,
     GraphBuilder,
@@ -341,6 +345,30 @@ def manual_claim_authorization_evidence_report(
             "forbidden_shortcuts": _MANUAL_CLAIM_AUTHORIZATION_FORBIDDEN_SHORTCUTS,
             "included_surfaces": ("execution_authorization",),
         },
+    )
+
+
+def manual_claim_frontier_closure_report(
+    *,
+    frontier_work_item: FrontierWorkItem | Mapping[str, object],
+    assertion: object,
+    authorization_result: AuthorizationResult,
+    jurisdiction: str = "",
+    report_kind: str = "manual_claim_frontier_closure",
+) -> EvidenceSurfaceReport:
+    """Match a graph-native manual claim authorization to a frontier item.
+
+    This is a convenience wrapper over the shared frontier closure report.  It
+    remains a passive read model: policy success plus frontier matching still
+    requires a separate phase-local replay gate.
+    """
+
+    return frontier_work_item_claim_closure_report(
+        frontier_work_item,
+        assertion=assertion,
+        authorization_result=authorization_result,
+        jurisdiction=jurisdiction,
+        report_kind=report_kind,
     )
 
 
