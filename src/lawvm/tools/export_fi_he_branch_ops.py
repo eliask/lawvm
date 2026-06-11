@@ -36,12 +36,14 @@ Phase: Emit evidence (§6 phase 11).
 """
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Mapping, Optional, Tuple
 
 from lawvm.finland.he_branch_parser import (
     HEParseStatus,
@@ -74,11 +76,7 @@ class HEBranchProjectionRun:
     not_applicable_count: int = 0
     pdf_wrapper_skipped: int = 0
     elapsed_sec: float = 0.0
-    failures: List[Dict[str, Any]] = None  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
-
-    def __post_init__(self) -> None:
-        if self.failures is None:
-            self.failures = []
+    failures: list[dict[str, Any]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -120,10 +118,7 @@ def project_he_branch_ops(
     -------
     HEBranchProjectionRun with provenance + counts.
     """
-    try:
-        import pyarrow as pa  # type: ignore[import]  # noqa: F401
-        import pyarrow.parquet as pq  # type: ignore[import]  # noqa: F401
-    except ImportError:
+    if importlib.util.find_spec("pyarrow") is None:
         print(
             "ERROR: pyarrow not installed; run: uv pip install 'lawvm[analytics]'",
             file=sys.stderr,
@@ -131,10 +126,11 @@ def project_he_branch_ops(
         sys.exit(1)
 
     try:
-        from farchive import Farchive  # type: ignore[import]
+        farchive_mod = importlib.import_module("farchive")
     except ImportError:
         print("ERROR: farchive package not available", file=sys.stderr)
         sys.exit(1)
+    Farchive = farchive_mod.Farchive
 
     started_at = datetime.now(timezone.utc)
     run = HEBranchProjectionRun(
@@ -217,7 +213,8 @@ def project_he_branch_ops(
             blob = farchive.get(loc)
             span = farchive.resolve(loc)
             if span is not None and getattr(span, "last_metadata", None):
-                metadata = dict(span.last_metadata) or {}  # ty:ignore[no-matching-overload]
+                raw_metadata = span.last_metadata
+                metadata = dict(raw_metadata) if isinstance(raw_metadata, Mapping) else {}
         except Exception as exc:
             run.failures.append({
                 "loc": loc,
@@ -305,8 +302,8 @@ def _write_parquet(
     compile_metadata: Optional[Any] = None,
 ) -> None:
     """Write rows to fi_he_branch_ops.parquet under data_dir."""
-    import pyarrow as pa
-    import pyarrow.parquet as pq
+    pa = importlib.import_module("pyarrow")
+    pq = importlib.import_module("pyarrow.parquet")
 
     if compile_metadata is None:
         raise ValueError(
