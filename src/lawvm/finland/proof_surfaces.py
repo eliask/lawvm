@@ -728,7 +728,7 @@ def mutation_boundary_proof_rows(
         row = proof.to_dict()
         source_statute = ""
         if isinstance(report_like, Mapping):
-            source_statute = str(report_like.get("source_statute") or "")  # ty:ignore[invalid-argument-type]
+            source_statute = str(report_like.get("source_statute") or "")
         if source_statute:
             row["source_artifact_id"] = source_statute
         rows.append(row)

@@ -145,7 +145,7 @@ def _snippet(text: str, length: int = _SNIPPET_LEN) -> str:
 def _build_norm_to_raw(raw_eids: set[str]) -> dict[str, str]:
     """Build {normalized_eid -> raw_eid} map using _normalize_uk_source_container_eid."""
     from lawvm.uk_legislation.source_adjudication import (
-        _normalize_uk_source_container_eid,  # type: ignore[attr-defined]
+        _normalize_uk_source_container_eid,
     )
     norm_to_raw: dict[str, str] = {}
     for raw_eid in raw_eids:
@@ -165,7 +165,7 @@ def _build_oracle_norm_text_map(
     re-key it by normalized EID so it lines up with the normalized compare sets.
     """
     from lawvm.uk_legislation.source_adjudication import (
-        _normalize_uk_source_container_eid,  # type: ignore[attr-defined]
+        _normalize_uk_source_container_eid,
     )
     result: dict[str, str] = {}
     for raw_eid, norm_text in text_map.items():

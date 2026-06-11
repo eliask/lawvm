@@ -3775,7 +3775,7 @@ def _cmd_reextract(args) -> None:
                 continue
             parts = item["op_id"].split("/")  # ty:ignore[unresolved-attribute]
             idx = int(parts[3])
-            stable_id = _stable_id(pdf_map.get(item["op_id"], ""), idx)  # ty:ignore[no-matching-overload]
+            stable_id = _stable_id(pdf_map.get(item["op_id"], ""), idx)
             row = updated_by_id.get(stable_id)
             if row is None:
                 continue

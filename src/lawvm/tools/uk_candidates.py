@@ -3393,7 +3393,7 @@ def _attach_evidence_jsonl_report(
     report["evidence_jsonl"] = evidence_jsonl
     path = str(payload.get("path") or "")
     if path:
-        written_paths = list(report.get("written_paths") or ())
+        written_paths = [str(item) for item in report.get("written_paths") or ()]
         if path not in written_paths:
             written_paths.append(path)
         report["written_paths"] = written_paths
