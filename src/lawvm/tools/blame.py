@@ -109,7 +109,7 @@ def _display_section(num: str) -> str:
 # Build blame map from compiled_ops
 # ---------------------------------------------------------------------------
 
-def _build_blame_map(compiled_ops: list) -> Dict[str, dict]:
+def _build_blame_map(compiled_ops: list[dict[str, Any]]) -> Dict[str, dict[str, Any]]:
     """Build {norm_section_num: last_op_dict} from compiled ops list.
 
     Later ops overwrite earlier ops for the same section, giving us
@@ -119,7 +119,7 @@ def _build_blame_map(compiled_ops: list) -> Dict[str, dict]:
     ``target_chapter`` fields); the legacy nested ``target`` dict shape is
     still accepted for older callers.
     """
-    blame: Dict[str, dict] = {}
+    blame: Dict[str, dict[str, Any]] = {}
 
     for op in compiled_ops:
         key = section_key_from_target_dict(op.get("target") or {})
@@ -157,7 +157,7 @@ class BlameRow:
 
     address: str
     status: BlameStatus
-    last_op: Optional[dict] = None
+    last_op: Optional[dict[str, Any]] = None
     broken_at: str = ""
 
     def to_wire(self) -> Dict[str, Any]:
@@ -178,7 +178,7 @@ class BlameRow:
 def _classify_status(
     *,
     resolved: bool,
-    op: Optional[dict],
+    op: Optional[dict[str, Any]],
     statute_break: Optional[TimelineBreak],
     address_break: Optional[TimelineBreak],
 ) -> Tuple[BlameStatus, str]:
@@ -203,7 +203,7 @@ def _classify_status(
 # Display
 # ---------------------------------------------------------------------------
 
-def _fmt_source(op: dict) -> str:
+def _fmt_source(op: dict[str, Any]) -> str:
     src = op.get("source_statute", "?")
     title = op.get("source_title", "")[:40]
     seq = op.get("sequence", "?")
@@ -225,9 +225,9 @@ def _key_labels(key: str) -> Tuple[str, str]:
 
 def _op_for_section_key(
     key: str,
-    blame_map: Dict[str, dict],
-    all_section_keys: list,
-) -> Optional[dict]:
+    blame_map: Dict[str, dict[str, Any]],
+    all_section_keys: list[str],
+) -> Optional[dict[str, Any]]:
     """Look up the blame op for one IR section key.
 
     Exact key match first. Compiled ops whose target carries no container
@@ -262,7 +262,7 @@ def _print_timeline_breaks(
     statute_breaks: Tuple[TimelineBreak, ...],
     address_breaks: Tuple[TimelineBreak, ...],
 ) -> None:
-    seen: set = set()
+    seen: set[tuple[str, str, str]] = set()
     for item in statute_breaks:
         display_key = (item.amendment_id, item.diagnostic_code, item.effective)
         if display_key in seen:
@@ -309,8 +309,8 @@ def _build_blame_result(
     source_filter: Optional[str],
     mode: Literal["official_consolidation", "legal_pit"],
 ) -> Tuple[str, "_BlameResult"]:
-    compiled_ops: list = []
-    replay_meta: dict = {}
+    compiled_ops: list[dict[str, Any]] = []
+    replay_meta: dict[str, Any] = {}
     master = replay_xml(
         sid,
         mode=mode,
