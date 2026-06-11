@@ -173,7 +173,7 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         quirks_disposition="record",
         frontier_family="fi_partial_whole_section_payload",
         frontier_status="source_pathology_frontier",
-        required_claim_kind="payload_completeness_resolution",
+        required_claim_kind="fi.v1.PAYLOAD_COMPLETENESS_RESOLUTION",
     ),
     "MALFORMED_BROAD_REPLACE_BODY": FinlandSourcePathologyProofRule(
         code="MALFORMED_BROAD_REPLACE_BODY",
@@ -183,7 +183,7 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         quirks_disposition="record",
         frontier_family="fi_malformed_broad_replace_body",
         frontier_status="source_pathology_frontier",
-        required_claim_kind="payload_completeness_resolution",
+        required_claim_kind="fi.v1.PAYLOAD_COMPLETENESS_RESOLUTION",
     ),
     "CONTAINER_MEMBERSHIP_MISMATCH": FinlandSourcePathologyProofRule(
         code="CONTAINER_MEMBERSHIP_MISMATCH",
@@ -193,7 +193,7 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         quirks_disposition="record",
         frontier_family="fi_container_membership_mismatch",
         frontier_status="source_pathology_frontier",
-        required_claim_kind="container_membership_resolution",
+        required_claim_kind="fi.v1.CONTAINER_MEMBERSHIP_RESOLUTION",
     ),
     "SPARSE_ITEM_BODY_MISSING": FinlandSourcePathologyProofRule(
         code="SPARSE_ITEM_BODY_MISSING",
@@ -203,7 +203,7 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         quirks_disposition="record",
         frontier_family="fi_sparse_item_body_missing",
         frontier_status="source_pathology_frontier",
-        required_claim_kind="sparse_slot_payload_resolution",
+        required_claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
     ),
     "BASE_MISSING_CHAPTER_SPAN": FinlandSourcePathologyProofRule(
         code="BASE_MISSING_CHAPTER_SPAN",
@@ -213,7 +213,7 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         quirks_disposition="record",
         frontier_family="fi_missing_base_chapter_span",
         frontier_status="source_chain_frontier",
-        required_claim_kind="base_source_chain_resolution",
+        required_claim_kind="fi.v1.SOURCE_CHAIN_RESOLUTION",
     ),
     "RECODIFICATION_SOURCE_CHAIN_GAP": FinlandSourcePathologyProofRule(
         code="RECODIFICATION_SOURCE_CHAIN_GAP",
@@ -223,7 +223,7 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         quirks_disposition="record",
         frontier_family="fi_recodification_source_chain_gap",
         frontier_status="source_chain_frontier",
-        required_claim_kind="recodification_source_chain_resolution",
+        required_claim_kind="fi.v1.SOURCE_CHAIN_RESOLUTION",
     ),
     "TEMPORARY_SECTION_REBASE": FinlandSourcePathologyProofRule(
         code="TEMPORARY_SECTION_REBASE",
@@ -233,7 +233,7 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         quirks_disposition="record",
         frontier_family="fi_temporary_section_rebase",
         frontier_status="temporal_frontier",
-        required_claim_kind="temporal_base_selection_resolution",
+        required_claim_kind="fi.v1.TEMPORAL_BASE_SELECTION_RESOLUTION",
         required_proofs=(
             "source_identity_proof",
             "target_identity_proof",
@@ -249,7 +249,7 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         quirks_disposition="record",
         frontier_family="fi_destructive_shape_loss_risk",
         frontier_status="mutation_boundary_frontier",
-        required_claim_kind="mutation_boundary_resolution",
+        required_claim_kind="fi.v1.MUTATION_BOUNDARY_RESOLUTION",
     ),
 }
 

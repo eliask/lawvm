@@ -474,6 +474,7 @@ def test_to_json_preserves_source_pathology_target_unit_kind() -> None:
     assert frontier_item["jurisdiction"] == "fi"
     assert frontier_item["executable"] is False
     assert frontier_item["replay_authorized"] is False
+    assert frontier_item["required_claim_kind"] == "fi.v1.MUTATION_BOUNDARY_RESOLUTION"
     assert frontier_item["source_witness"]["preview_digest_algorithm"] == "sha256"
     assert frontier_item["source_witness"]["preview_digest"]
     assert frontier_item["detail"]["execution_authorization"]["replay_authorized"] is False
