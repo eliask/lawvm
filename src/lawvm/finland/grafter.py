@@ -6407,6 +6407,147 @@ def process_muutoslaki(
                 blocking=False,
             )
 
+    def _govern_repealed_section_insert_occupancy_by_timeline_snapshots() -> None:
+        """Move stale insert-occupancy notes behind repealed-section snapshots.
+
+        Finland source sometimes says "add a new section in place of a repealed
+        section". If the replay fold still carries the old section because the
+        earlier repeal source chain was incomplete, the insert precondition sees
+        a substantive occupant and emits an occupancy violation.
+        The PIT rail is nevertheless owned when this amendment emits an exact
+        same-source whole-section snapshot for that target. Govern only that
+        narrow source-authorized family; ordinary insert-over-substantive
+        collisions must remain timeline-fatal.
+        """
+        if not _process_findings or not lo_ops_out:
+            return
+        johto_text = johto.lower()
+        if "kumotun" not in johto_text or "tilalle uusi" not in johto_text:
+            return
+
+        pathology_details: list[dict[str, object]] = [
+            dict(pathology.as_detail())
+            for pathology in _compat_source_pathologies
+            if pathology.source_statute == amendment_id
+        ]
+        for finding in _process_findings:
+            if finding.kind != "ELAB.SOURCE_PATHOLOGY" or str(finding.source_statute or "") != amendment_id:
+                continue
+            pathology_details.append(dict(finding.detail))
+
+        def _has_shape_loss_pathology(section_label: str) -> bool:
+            for detail in pathology_details:
+                if detail.get("code") != "DESTRUCTIVE_SHAPE_LOSS_RISK":
+                    continue
+                if detail.get("recovery_kind") != "section_insert_chapter_merge_absorb":
+                    continue
+                if detail.get("target_unit_kind") != "section":
+                    continue
+                target_label = _norm_num_token(
+                    re.sub(r"\s*§.*$", "", str(detail.get("target_label") or "")).strip()
+                )
+                if target_label == section_label:
+                    return True
+            return False
+
+        def _resolved_op_for_finding(finding: Finding) -> ResolvedOp | None:
+            detail = finding.detail
+            op_id = str(detail.get("op_id") or "")
+            if not op_id:
+                return None
+            for rop in resolved:
+                if rop.op_id == op_id:
+                    return rop
+            return None
+
+        def _snapshot_matches_rop(lo: _LegalOperation, rop: ResolvedOp) -> bool:
+            if not lo.op_id.startswith("snapshot_section_"):
+                return False
+            if lo.action is not StructuralAction.REPLACE:
+                return False
+            if lo.payload is None or lo.source is None:
+                return False
+            if lo.source.statute_id != amendment_id:
+                return False
+            if rop.target_unit_kind != "section":
+                return False
+            if not lo.target.path or lo.target.path[-1][0] != "section":
+                return False
+            labels = {kind: label for kind, label in lo.target.path if label}
+            if _norm_num_token(labels.get("section", "")) != _norm_num_token(rop.resolved_target_label):
+                return False
+            rop_chapter = _norm_num_token(rop.resolved_target_scope_chapter_label or "")
+            if rop_chapter and _norm_num_token(labels.get("chapter", "")) != rop_chapter:
+                return False
+            rop_part = _norm_num_token(rop.resolved_target_scope_part_label or "")
+            if rop_part and _norm_num_token(labels.get("part", "")) != rop_part:
+                return False
+            return True
+
+        kept: list[Finding] = []
+        governed: list[tuple[Finding, ResolvedOp, _LegalOperation]] = []
+        for finding in _process_findings:
+            if finding.kind != "APPLY.OCCUPANCY_POLICY_VIOLATION":
+                kept.append(finding)
+                continue
+            if str(finding.source_statute or "") != amendment_id:
+                kept.append(finding)
+                continue
+            detail = finding.detail
+            if detail.get("legacy_action") != "INSERT":
+                kept.append(finding)
+                continue
+            if detail.get("current_occupancy") != "substantive":
+                kept.append(finding)
+                continue
+            rop = _resolved_op_for_finding(finding)
+            if rop is None:
+                kept.append(finding)
+                continue
+            section_label = _norm_num_token(rop.resolved_target_label)
+            if not _has_shape_loss_pathology(section_label):
+                kept.append(finding)
+                continue
+            snapshot = next(
+                (lo for lo in lo_ops_out if _snapshot_matches_rop(lo, rop)),
+                None,
+            )
+            if snapshot is None:
+                kept.append(finding)
+                continue
+            governed.append((finding, rop, snapshot))
+
+        if not governed:
+            return
+        _process_findings[:] = kept
+        for finding, rop, snapshot in governed:
+            _record_process_finding(
+                kind="APPLY.OCCUPANCY_POLICY_GOVERNED_BY_TIMELINE_SNAPSHOT",
+                message=(
+                    "Insert occupancy violation is governed by repealed-section "
+                    "source text and an exact same-source timeline snapshot."
+                ),
+                source_statute=amendment_id,
+                detail={
+                    "governed_kind": finding.kind,
+                    "ctx_label": str(finding.detail.get("ctx_label") or ""),
+                    "op_id": str(finding.detail.get("op_id") or ""),
+                    "legacy_action": str(finding.detail.get("legacy_action") or ""),
+                    "current_occupancy": str(finding.detail.get("current_occupancy") or ""),
+                    "target_part": rop.resolved_target_scope_part_label or "",
+                    "target_chapter": rop.resolved_target_scope_chapter_label or "",
+                    "target_section": rop.resolved_target_label,
+                    "source_phrase_family": "kumotun_tilalle_uusi_section",
+                    "source_pathology_code": "DESTRUCTIVE_SHAPE_LOSS_RISK",
+                    "source_pathology_recovery_kind": "section_insert_chapter_merge_absorb",
+                    "snapshot_op_id": snapshot.op_id,
+                    "snapshot_target": str(snapshot.target),
+                    "snapshot_source_statute": snapshot.source.statute_id if snapshot.source else "",
+                },
+                role="observation",
+                blocking=False,
+            )
+
     def _project_compat_sinks() -> None:
         """Project local compatibility capture to caller sinks at the boundary."""
         if failed_ops_out is not None:
@@ -7531,6 +7672,7 @@ def process_muutoslaki(
         _govern_failed_ops_by_recodification_source_chain_gap()
         _govern_failed_ops_by_same_wave_migration(_final_state)
         _govern_failed_ops_by_timeline_snapshots()
+        _govern_repealed_section_insert_occupancy_by_timeline_snapshots()
         return _build_result(_final_state)
 
     except KeyError:

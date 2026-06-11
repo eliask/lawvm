@@ -1075,12 +1075,53 @@ def _statute_break(effective: str = "2020-06-01") -> TimelineBreak:
     )
 
 
-def test_timeline_break_classifier_occupancy_violation_is_statute_scoped() -> None:
+def test_timeline_break_classifier_known_occupancy_violation_is_address_scoped() -> None:
     breaks = timeline_breaks_from_findings([_occupancy_finding()])
     assert len(breaks) == 1
-    assert breaks[0].scope == "statute"
+    assert breaks[0].scope == "address"
     assert breaks[0].amendment_id == "2025/1382"
     assert breaks[0].diagnostic_code == "APPLY.OCCUPANCY_POLICY_VIOLATION"
+    assert breaks[0].target_section == "29e"
+
+
+def test_timeline_break_classifier_targetless_occupancy_violation_is_statute_scoped() -> None:
+    finding = _occupancy_finding()
+    finding = Finding(
+        kind=finding.kind,
+        role=finding.role,
+        stage=finding.stage,
+        source_statute=finding.source_statute,
+        detail={
+            key: value
+            for key, value in finding.detail.items()
+            if key != "target_label"
+        },
+        blocking=finding.blocking,
+    )
+
+    breaks = timeline_breaks_from_findings([finding])
+
+    assert len(breaks) == 1
+    assert breaks[0].scope == "statute"
+    assert breaks[0].target_section == ""
+
+
+def test_timeline_break_classifier_occupancy_extracts_chapter_from_context_label() -> None:
+    base = _occupancy_finding()
+    finding = Finding(
+        kind=base.kind,
+        role=base.role,
+        stage=base.stage,
+        source_statute=base.source_statute,
+        detail={**base.detail, "ctx_label": "[2022/86] INSERT 11 luku 4b §"},
+        blocking=base.blocking,
+    )
+
+    breaks = timeline_breaks_from_findings([finding])
+
+    assert len(breaks) == 1
+    assert breaks[0].scope == "address"
+    assert breaks[0].target_chapter == "11"
     assert breaks[0].target_section == "29e"
 
 
@@ -1667,3 +1708,53 @@ def test_specimen_2014_938_section_51_failed_apply_is_governed_by_snapshot() -> 
     assert payload["status"] == "selected"
     assert "timeline_integrity" not in payload
     assert payload["source"]["statute_id"] == "2024/910"
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_2002_1290_repealed_section_insert_occupancy_is_governed_by_snapshot() -> None:
+    from lawvm.finland.grafter import replay_xml
+
+    master = replay_xml("2002/1290", quiet=True)
+    governed = [
+        finding
+        for finding in master.findings
+        if finding.kind == "APPLY.OCCUPANCY_POLICY_GOVERNED_BY_TIMELINE_SNAPSHOT"
+        and finding.source_statute == "2011/509"
+        and finding.detail.get("target_chapter") == "4"
+        and finding.detail.get("target_section") == "6"
+    ]
+
+    assert governed
+    assert not [
+        finding
+        for finding in master.findings
+        if finding.kind == "APPLY.OCCUPANCY_POLICY_VIOLATION"
+        and finding.source_statute == "2011/509"
+        and finding.detail.get("target_label") == "6"
+    ]
+    assert not [
+        item
+        for item in timeline_breaks_from_findings(master.findings)
+        if item.diagnostic_code == "APPLY.OCCUPANCY_POLICY_VIOLATION"
+        and item.amendment_id == "2011/509"
+        and item.target_section == "6"
+    ]
+    assert [
+        item
+        for item in timeline_breaks_from_findings(master.findings)
+        if item.diagnostic_code == "APPLY.OCCUPANCY_POLICY_VIOLATION"
+        and item.amendment_id == "2021/861"
+        and item.target_chapter == "11"
+        and item.target_section == "4c"
+    ]
+
+    payload = resolve_provision_state(
+        statute_id="2002/1290",
+        jurisdiction="fi",
+        provision="chapter:6/section:6",
+        as_of="2026-06-11",
+        query_type="in_force",
+    )
+
+    assert payload["status"] in ("selected", "absent")
+    assert "timeline_integrity" not in payload

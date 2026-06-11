@@ -14,10 +14,8 @@ This module is the single classifier from replay findings to typed
   the breaking amendment onward. Every query with ``as_of`` at/after the
   break's effective date is unprovable; earlier queries are servable with a
   warning. Classified causes:
-    * ``APPLY.OCCUPANCY_POLICY_VIOLATION`` true violations (the op's occupancy
-      precondition contradicted the actual slot state; the op was still
-      applied, so the fold continued on unproven state). The soft
-      ``allowed_non_primary`` observation is NOT a break.
+    * Targetless ``APPLY.OCCUPANCY_POLICY_VIOLATION`` true violations. Known
+      section-target occupancy violations are address-scoped below.
     * any finding whose detail carries ``timeline_fatal: True`` — the
       forward-compatible hook for future timeline-fatal diagnostic classes
       (e.g. a recorded mid-timeline abort). Emitters mark the class once;
@@ -27,6 +25,9 @@ This module is the single classifier from replay findings to typed
   rest of the fold is unaffected. Queries on a matching address at/after the
   break are unprovable; other addresses are untouched (their responses must
   stay byte-identical). Classified causes:
+    * ``APPLY.OCCUPANCY_POLICY_VIOLATION`` true violations with a known section
+      target (the op's occupancy precondition contradicted that slot state).
+      The soft ``allowed_non_primary`` observation is NOT a break.
     * ``APPLY.FAILED_OPERATION`` (a compiled op could not be applied; its
       target's post-amendment state is missing from the timeline).
 
@@ -123,13 +124,18 @@ def timeline_breaks_from_findings(findings: Iterable[Any]) -> tuple[TimelineBrea
                 # Allowed-but-non-primary occupancy note: legitimate lane
                 # (e.g. reenactment onto a tombstone), not a break.
                 continue
+            target_section = str(detail.get("target_label") or "")
+            target_chapter = str(detail.get("target_chapter") or "")
+            if not target_chapter:
+                target_chapter = _chapter_from_ctx_label(str(detail.get("ctx_label") or ""))
             breaks.append(
                 TimelineBreak(
                     amendment_id=source_statute,
                     diagnostic_code=kind,
-                    scope="statute",
+                    scope="address" if target_section else "statute",
                     target_unit_kind="section",
-                    target_section=str(detail.get("target_label") or ""),
+                    target_section=target_section,
+                    target_chapter=target_chapter,
                     reason=str(detail.get("current_occupancy") or ""),
                 )
             )
@@ -180,6 +186,16 @@ def timeline_breaks_from_findings(findings: Iterable[Any]) -> tuple[TimelineBrea
                 )
             )
     return tuple(breaks)
+
+
+def _chapter_from_ctx_label(ctx_label: str) -> str:
+    """Extract a Finnish ``N luku`` chapter from an apply-policy context label."""
+    if " luku " not in ctx_label:
+        return ""
+    prefix = ctx_label.split(" luku ", 1)[0].strip()
+    if not prefix:
+        return ""
+    return prefix.rsplit(maxsplit=1)[-1].strip()
 
 
 def attach_effective_dates(
