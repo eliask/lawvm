@@ -109,7 +109,7 @@ _SELLAISENA_KUIN_PATTERNS = (
 )
 
 
-def _classify_tags(el: etree._Element, kind: str) -> frozenset:
+def _classify_tags(el: etree._Element, kind: str) -> frozenset[str]:
     """Return a frozenset of classification tags for a body element.
 
     Heuristics applied:
@@ -117,7 +117,7 @@ def _classify_tags(el: etree._Element, kind: str) -> frozenset:
       carry transitional/commencement material by heading convention.
     - ``'provenance'`` — sellaisena-kuin blocks that record prior form.
     """
-    tags = set()
+    tags: set[str] = set()
     heading = _heading_lower(el)
     for prefix in _NONOPERATIVE_HEADING_PREFIXES:
         if heading.startswith(prefix):
@@ -178,7 +178,7 @@ def extract_body_coverage(
         return []
 
     units: List[CoverageUnit] = []
-    seen_ids: set = set()
+    seen_ids: set[str] = set()
 
     def _append_unit(kind: str, observed_label: str, parent_label: Optional[str], el: etree._Element) -> None:
         base_id = f"{kind}_{observed_label}"
@@ -436,7 +436,7 @@ def analyze_coverage(
        - Otherwise             → ``'supplemental_candidate'``
     """
     # Build covered set: unit_ids directly referenced by claims
-    directly_covered: set = set()
+    directly_covered: set[str] = set()
     for claim in claims:
         directly_covered.update(claim.covered_unit_ids)
 
@@ -447,7 +447,7 @@ def analyze_coverage(
     # live in new sub-chapters (e.g. "2a luku / 17 §") when a PEG op covers
     # the same label in an unrelated chapter (e.g. "2 luku / 17 §").
     # Format: "<kind>_<label>"  (without parent prefix) — only from chapter-free claims.
-    label_only_covered: set = set()
+    label_only_covered: set[str] = set()
     for unit_id in directly_covered:
         parts = unit_id.split("_")
         if len(parts) == 2:
@@ -469,7 +469,7 @@ def analyze_coverage(
         # Unit is unclaimed — classify disposition
         if "nonoperative" in unit.tags or "provenance" in unit.tags:
             disposition = "ignore_nonoperative"
-            evidence: tuple = ("tag:nonoperative" if "nonoperative" in unit.tags else "tag:provenance",)
+            evidence: tuple[str, ...] = ("tag:nonoperative" if "nonoperative" in unit.tags else "tag:provenance",)
         else:
             disposition = "supplemental_candidate"
             evidence = (f"unit_id={unit.unit_id}", "no_matching_claim")

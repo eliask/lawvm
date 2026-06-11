@@ -336,12 +336,12 @@ def cat_not_case(category: str, excluded_case: str) -> Parser[Token]:
     return tok(lambda t: t.cat == category and t.case != excluded_case)
 
 
-def seq(*parsers: Parser) -> Parser[tuple]:
+def seq(*parsers: Parser[Any]) -> Parser[tuple[Any, ...]]:
     """Match a sequence of parsers. Returns tuple of results."""
 
-    def _parse(s: Stream):
+    def _parse(s: Stream) -> Optional[tuple[Any, ...]]:
         saved = s.save()
-        results = []
+        results: list[Any] = []
         for p in parsers:
             r = p(s)
             if r is None:
@@ -353,10 +353,10 @@ def seq(*parsers: Parser) -> Parser[tuple]:
     return _parse
 
 
-def alt(*parsers: Parser) -> Parser:
+def alt(*parsers: Parser[Any]) -> Parser[Any]:
     """Try each parser in order, return first success."""
 
-    def _parse(s: Stream):
+    def _parse(s: Stream) -> Any | None:
         for p in parsers:
             r = p(s)
             if r is not None:
@@ -366,21 +366,21 @@ def alt(*parsers: Parser) -> Parser:
     return _parse
 
 
-def opt(parser: Parser, default=None) -> Parser:
+def opt(parser: Parser[Any], default: Any = None) -> Parser[Any]:
     """Optional: try parser, return default if it fails."""
 
-    def _parse(s: Stream):
+    def _parse(s: Stream) -> Any:
         r = parser(s)
         return r if r is not None else default
 
     return _parse
 
 
-def many(parser: Parser) -> Parser[list]:
+def many(parser: Parser[T]) -> Parser[list[T]]:
     """Zero or more matches."""
 
-    def _parse(s: Stream) -> list:
-        results = []
+    def _parse(s: Stream) -> list[T]:
+        results: list[T] = []
         while True:
             r = parser(s)
             if r is None:
@@ -391,10 +391,10 @@ def many(parser: Parser) -> Parser[list]:
     return _parse
 
 
-def sep_by1(item: Parser, sep: Parser) -> Parser[list]:
+def sep_by1(item: Parser[T], sep: Parser[Any]) -> Parser[list[T]]:
     """One or more items separated by sep."""
 
-    def _parse(s: Stream) -> Optional[list]:
+    def _parse(s: Stream) -> Optional[list[T]]:
         first = item(s)
         if first is None:
             return None
@@ -413,7 +413,7 @@ def sep_by1(item: Parser, sep: Parser) -> Parser[list]:
     return _parse
 
 
-def action(parser: Parser[T], fn: Callable[[T], Any]) -> Parser:
+def action(parser: Parser[T], fn: Callable[[T], Any]) -> Parser[Any]:
     """Apply a function to the parser's result."""
 
     def _parse(s: Stream):
