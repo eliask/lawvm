@@ -19,14 +19,18 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path, default_label_sort_key, normalized_label_key
 
+from lawvm.core.resolver_binding import RUNG_SCOPED_FIND, ResolverBinding
+
 from lawvm.finland.ops import (
     AmendmentOp,
+    ContainerPathResolution,
     ReplayProfile,
     ResolvedOp,
     _lo_with_path_update,
     _rebind_resolved_target_address,
     runtime_scope_confidence_for_op,
 )
+from lawvm.finland.apply_policy import container_resolver_binding
 from lawvm.finland.helpers import _norm_num_token, _roman_label_to_arabic
 from lawvm.finland.replay_notices import replay_print
 from lawvm.finland.source_pathology import (
@@ -723,6 +727,37 @@ def _find_container_path_with_part_scope(
     return _tops._as_path(found) if found is not None else None
 
 
+def _resolve_container_target(
+    state,
+    *,
+    kind: str,
+    label: str,
+    target_part: str | None,
+) -> ContainerPathResolution:
+    """Resolve a chapter/part container target with binding provenance.
+
+    The load-bearing path is exactly ``_find_container_path_with_part_scope``
+    — this wrapper adds rung provenance and the work-wide candidate count so
+    a first-match bind over a duplicated container label is visible in the
+    ResolverBinding instead of silent. There is no widening rung: a declared
+    part scope either resolves within that part or the target is not found.
+    """
+    path = _find_container_path_with_part_scope(
+        state.ir,
+        kind=kind,
+        label=label,
+        target_part=target_part,
+    )
+    candidate_count = len(
+        _tops.find_all(state.ir, kind, label, label_index=state.provision_index)
+    )
+    return ContainerPathResolution(
+        path=path,
+        rung_id=RUNG_SCOPED_FIND if path is not None else None,
+        candidate_count=candidate_count,
+    )
+
+
 def _apply_container_op(
     state,
     op: "_StructureApplyView | AmendmentOp | ResolvedOp",
@@ -734,6 +769,7 @@ def _apply_container_op(
     mixed_sparse_insert: bool = False,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     migration_ledger=None,
+    resolver_bindings_out: Optional[List[ResolverBinding]] = None,
 ):
     """Apply container (chapter/part) operation via tree_ops."""
     def _normalized_standalone_targets() -> list[tuple[str | None, str | None, str]]:
@@ -786,11 +822,47 @@ def _apply_container_op(
         arabic = _roman_label_to_arabic(section_label.lower())
         if arabic is not None:
             section_label = arabic
-    path = _find_container_path_with_part_scope(
-        state.ir,
+    container_resolution = _resolve_container_target(
+        state,
         kind=kind,
         label=section_label,
         target_part=_target_part,
+    )
+    # The container family CONSUMES its ResolverBinding (apply contract §3
+    # step 3): the write target below comes from the binding, not from an
+    # ad-hoc lookup. A binding contract violation here is a mapping bug in
+    # the binding projector, never a replay failure — surface it loudly
+    # under its own tag and fall back to the ladder path (identical by
+    # construction), so the failure is visible but replay is not rerouted.
+    container_binding: Optional[ResolverBinding]
+    try:
+        container_binding = container_resolver_binding(
+            kind=kind,
+            label=section_label,
+            target_part=_target_part,
+            resolution=container_resolution,
+            ctx_label=ctx_label,
+        )
+    except ValueError as exc:
+        container_binding = None
+        logger.warning(
+            "  %s → APPLY.RESOLVER_BINDING_CONTRACT_ERROR: %s", ctx_label, exc
+        )
+    if container_binding is not None:
+        if resolver_bindings_out is not None:
+            resolver_bindings_out.append(container_binding)
+        logger.debug(
+            "  %s → container resolver binding %s rung=%s status=%s candidates=%s",
+            ctx_label,
+            container_binding.binding_id,
+            container_binding.rung_id,
+            container_binding.status,
+            container_binding.candidate_count,
+        )
+    path = (
+        container_binding.target_path
+        if container_binding is not None
+        else container_resolution.path
     )
 
     if path is None and _op_type not in ("INSERT", "REPLACE"):

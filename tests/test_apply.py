@@ -4083,6 +4083,140 @@ class TestApplyContainerInsert:
         chapter_2 = next(child for child in part_5.children if child.kind is IRNodeKind.CHAPTER and child.label == "2")
         assert [child.label for child in chapter_2.children if child.kind is IRNodeKind.SECTION] == ["1"]
 
+    def _dup_chapter_label_state(self):
+        return _make_state(
+            _body(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="4",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CHAPTER,
+                            label="2",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="2 luku"),
+                                _sec("1", _content("part 4 chapter 2")),
+                            ),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="5",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CHAPTER,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="1 luku"),
+                                _sec("1", _content("part 5 chapter 1")),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        )
+
+    def test_container_insert_binding_not_found_when_part_scope_excludes_global_duplicate(self):
+        """Bare top-level find would bind part 4's chapter 2; the part-scoped binding must not.
+
+        Contract §3 fixture "bare top-level find would pick the wrong part":
+        the chapter/part INSERT family consumes its ResolverBinding, so the
+        binding must report not_found (fresh insert into part 5) instead of
+        silently widening to the same-labeled chapter in part 4.
+        """
+        from lawvm.core.resolver_binding import ResolverBinding
+
+        state = self._dup_chapter_label_state()
+        op = AmendmentOp(
+            op_id="insert_part5_chapter2",
+            op_type="INSERT",
+            target_unit_kind="chapter",
+            target_section="2",
+            target_part="5",
+            source_statute="2018/301",
+        )
+        muutos_ir = IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="2 luku"),
+                _sec("1", _content("new part 5 chapter 2")),
+            ),
+        )
+        bindings: List[ResolverBinding] = []
+
+        result = _apply_container_op(
+            state,
+            op,
+            muutos_ir,
+            _LEGAL_PIT,
+            "[2018/301] INSERT V osan 2 luku",
+            resolver_bindings_out=bindings,
+        )
+
+        assert len(bindings) == 1
+        binding = bindings[0]
+        assert binding.policy_id == "fi.container_target.v0"
+        assert binding.status == "not_found"
+        assert binding.target_path is None
+        assert binding.rung_id is None
+        assert binding.candidate_count == 1  # part 4's chapter 2 is visible but out of scope
+        assert binding.fallback_used is False
+        assert binding.target_text == "part:5/chapter:2"
+
+        result = _modified(state, result)
+        part_4 = next(child for child in result.ir.children if child.kind is IRNodeKind.PART and child.label == "4")
+        part_5 = next(child for child in result.ir.children if child.kind is IRNodeKind.PART and child.label == "5")
+        assert [child.label for child in part_4.children if child.kind is IRNodeKind.CHAPTER] == ["2"]
+        assert [child.label for child in part_5.children if child.kind is IRNodeKind.CHAPTER] == ["1", "2"]
+
+    def test_container_insert_binding_resolved_within_declared_part_scope(self):
+        """The consumed binding resolves the part-scoped chapter and records candidates."""
+        from lawvm.core.resolver_binding import ResolverBinding
+
+        state = self._dup_chapter_label_state()
+        op = AmendmentOp(
+            op_id="insert_part4_chapter2",
+            op_type="INSERT",
+            target_unit_kind="chapter",
+            target_section="2",
+            target_part="4",
+            source_statute="2018/301",
+        )
+        muutos_ir = IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="2 luku"),
+                _sec("2", _content("inserted into part 4 chapter 2")),
+            ),
+        )
+        bindings: List[ResolverBinding] = []
+
+        result = _apply_container_op(
+            state,
+            op,
+            muutos_ir,
+            _LEGAL_PIT,
+            "[2018/301] INSERT IV osan 2 luku",
+            base_ir=state.ir,
+            resolver_bindings_out=bindings,
+        )
+
+        assert len(bindings) == 1
+        binding = bindings[0]
+        assert binding.status == "resolved"
+        assert binding.rung_id == "scoped_find"
+        assert binding.target_path == (("part", "4"), ("chapter", "2"))
+        assert binding.candidate_count == 1
+        assert binding.binding_id.startswith("rb:")
+
+        result = _modified(state, result)
+        part_4 = next(child for child in result.ir.children if child.kind is IRNodeKind.PART and child.label == "4")
+        chapter_2 = next(child for child in part_4.children if child.kind is IRNodeKind.CHAPTER and child.label == "2")
+        assert [child.label for child in chapter_2.children if child.kind is IRNodeKind.SECTION] == ["1", "2"]
+
     def test_insert_chapter_keeps_child_when_shadow_target_exists_only_in_other_part(self):
         state = _make_state(
             _body(
@@ -6323,7 +6457,7 @@ def test_resolver_binding_contract_validators_reject_malformed_bindings() -> Non
         ResolverBinding,
     )
 
-    common = dict(
+    common: dict[str, Any] = dict(
         binding_id="rb:test",
         op_label="[t] REPLACE 1 §",
         target_text="section:1",

@@ -29,6 +29,7 @@ from lawvm.core.resolver_binding import (
 
 from lawvm.finland.ops import (
     AmendmentOp,
+    ContainerPathResolution,
     ResolvedOp,
     SectionPathResolution,
     SectionPathResolutionReason,
@@ -462,6 +463,48 @@ def section_resolver_binding(
             if rung_id == RUNG_UNCOVERED_BODY_AMBIGUITY
             else ()
         ),
+    )
+
+
+CONTAINER_TARGET_POLICY_ID = "fi.container_target.v0"
+
+
+def container_resolver_binding(
+    *,
+    kind: str,
+    label: str,
+    target_part: str | None,
+    resolution: ContainerPathResolution,
+    ctx_label: str,
+) -> ResolverBinding:
+    """Project a container (chapter/part) target resolution into its binding.
+
+    Unlike the section ladder's passive projection, the container family
+    CONSUMES this binding: ``_apply_container_op`` takes its target path from
+    ``binding.target_path`` (apply contract §3 step 3). The container ladder
+    has a single scoped-find rung — there is no widening fallback: a declared
+    part scope either resolves within that part or the binding is not_found.
+    """
+    scope_prefix = f"part:{target_part}/" if target_part else ""
+    target_text = f"{scope_prefix}{kind}:{label}"
+    rung_id = resolution.rung_id
+    status = "resolved" if resolution.path is not None else "not_found"
+    return ResolverBinding(
+        binding_id=binding_id_for(
+            op_label=ctx_label,
+            target_text=target_text,
+            rung_id=rung_id,
+            target_path=resolution.path,
+        ),
+        op_label=ctx_label,
+        target_text=target_text,
+        target_path=resolution.path,
+        status=status,
+        policy_id=CONTAINER_TARGET_POLICY_ID,
+        rung_id=rung_id,
+        candidate_count=resolution.candidate_count,
+        fallback_used=False,
+        fallback_rule_id=None,
     )
 
 
