@@ -12,7 +12,7 @@ Stable reporting contract. Keep additive where possible.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, cast
 
 from lawvm.core.frozen_values import freeze_mapping
 
@@ -328,4 +328,4 @@ def _current_text_gate_status(field_name: str, value: Any) -> CurrentTextGateSta
             f"CurrentTextVerificationMatrix.{field_name} must be one of "
             f"{sorted(CURRENT_TEXT_GATE_STATUSES)}"
         )
-    return text  # ty:ignore[invalid-return-type]
+    return cast(CurrentTextGateStatus, text)

@@ -9,7 +9,7 @@ mutation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.execution_authorization import ExecutionAuthorization
@@ -400,9 +400,9 @@ def _plain_jsonable(value: Any) -> Any:
     return value
 
 
-def _count_by(values: object) -> dict[str, int]:
+def _count_by(values: Iterable[object]) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for value in values:  # ty:ignore[not-iterable]
+    for value in values:
         key = str(value)
         if key:
             counts[key] = counts.get(key, 0) + 1

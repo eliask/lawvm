@@ -2045,5 +2045,5 @@ def normalize_and_compile_ops(
 
 
 if TYPE_CHECKING:
-    from lawvm.finland.statute import ReplayState  # noqa: F401
+    from lawvm.finland.statute import ReplayState
     from lawvm.core.phase_result import PhaseResult
