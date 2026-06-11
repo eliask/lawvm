@@ -6578,6 +6578,35 @@ def test_enrich_ops_mints_deterministic_ids_for_blank_fallback_ops() -> None:
     assert got[0].op_id.startswith("fi:2024/1:")
 
 
+def test_enrich_ops_preserves_johtolause_source_witness_on_legal_operation() -> None:
+    muutos_tree = etree.fromstring("<akn><docTitle>Witness test</docTitle></akn>")
+    johto = "kumotaan lain 2 § seuraavasti:"
+    op = AmendmentOp(
+        op_id="repeal-2",
+        op_type="REPEAL",
+        target_section="2",
+        target_unit_kind="section",
+        lo=LegalOperation(
+            op_id="repeal-2",
+            sequence=1,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "2"),)),
+        ),
+    )
+
+    got = _enrich_ops_from_amendment_tree(
+        [op],
+        "2024/1",
+        muutos_tree,
+        master=None,
+        johto=johto,
+    )
+
+    assert got[0].lo is not None
+    assert got[0].lo.source is not None
+    assert got[0].lo.source.raw_text == johto
+
+
 def test_stamp_fallback_op_ids_mints_deterministic_ids_for_blank_ops() -> None:
     op = AmendmentOp(op_id="", op_type="INSERT", target_section="2", target_unit_kind="section")
 

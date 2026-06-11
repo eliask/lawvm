@@ -6584,7 +6584,12 @@ def process_muutoslaki(
                 skipped_targets_out=_vts_skipped_targets,
             )
             if _vts_cross_ops:
-                ops = _enrich_ops_from_amendment_tree(_vts_cross_ops, amendment_id, muutos_tree)
+                ops = _enrich_ops_from_amendment_tree(
+                    _vts_cross_ops,
+                    amendment_id,
+                    muutos_tree,
+                    johto=johto,
+                )
                 _replay_print(f"  [{amendment_id}] voimaantulo_repeal (cross-statute): {[op.description() for op in ops]}")
                 _vts_ops_enrich_done = True
                 _skip_to_compile = True
@@ -6613,7 +6618,12 @@ def process_muutoslaki(
                 skipped_targets_out=_vts_skipped_targets,
             )
             if _vts_ops:
-                ops = _enrich_ops_from_amendment_tree(_vts_ops, amendment_id, muutos_tree)
+                ops = _enrich_ops_from_amendment_tree(
+                    _vts_ops,
+                    amendment_id,
+                    muutos_tree,
+                    johto=johto,
+                )
                 _replay_print(f"  [{amendment_id}] voimaantulo_repeal: {[op.description() for op in ops]}")
                 _vts_ops_enrich_done = True
             elif not any(kw in johto.lower() for kw in OP_KEYWORDS):
