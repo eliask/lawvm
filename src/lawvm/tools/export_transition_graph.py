@@ -48,6 +48,29 @@ _BASE_SENTINEL_DATE = "0000-00-00"
 _HE_HREF_RE = re.compile(r"/akn/fi/doc/government-proposal/(\d{4})/(\d{1,4}-\d{1,4}|\d{1,4})")
 _HE_TEXT_RE = re.compile(r"\bHE\s{1,4}(\d{1,4}-\d{1,4}|\d{1,4})/(\d{4})\s{0,4}vp", re.IGNORECASE)
 
+TransitionRow = Tuple[str, int, str, str, str, str, str, str, str, str, str, str, str, str]
+SourceArtifactRow = Tuple[str, str, str, str, str, str, str]
+EdgeRow = Tuple[str, str, str, str, str]
+
+
+def _transition_row_with_he_ref(row: TransitionRow, he_ref: str) -> TransitionRow:
+    return (
+        row[0],
+        row[1],
+        row[2],
+        row[3],
+        row[4],
+        row[5],
+        row[6],
+        row[7],
+        row[8],
+        row[9],
+        row[10],
+        row[11],
+        he_ref,
+        row[13],
+    )
+
 
 # ---------------------------------------------------------------------------
 # Structural subtree hashing (L3 certification primitive)
@@ -721,7 +744,7 @@ def export_transition_graph(
         checkpoint_rows: List[Tuple[str, str, str, int]] = []
         # active_rows are appended in document order so SQLite rowid preserves it.
         active_rows: List[Tuple[str, str, str, str]] = []
-        transition_rows: List[tuple] = []
+        transition_rows: List[TransitionRow] = []
         seq = 0
 
         for date in bundle.change_dates:
@@ -820,7 +843,7 @@ def export_transition_graph(
 
         corpus = _get_corpus_store()
 
-        source_rows: List[tuple] = []
+        source_rows: List[SourceArtifactRow] = []
         he_by_amendment: Dict[str, str] = {}
         # the base statute
         source_rows.append(
@@ -865,7 +888,7 @@ def export_transition_graph(
         )
 
         # backfill he_ref onto transition rows
-        transition_rows = [row[:12] + (he_by_amendment.get(row[11], ""),) + row[13:] for row in transition_rows]
+        transition_rows = [_transition_row_with_he_ref(row, he_by_amendment.get(row[11], "")) for row in transition_rows]
 
         conn.executemany(
             "INSERT INTO transitions"
@@ -891,7 +914,7 @@ def export_transition_graph(
 
         # --- edges: created_by / amended_by (address-version -> source) and
         #     supersedes (transition -> transition at same address) ---
-        edge_rows: List[tuple] = []
+        edge_rows: List[EdgeRow] = []
         eid = 0
         # created_by / amended_by
         for row in transition_rows:
@@ -905,7 +928,7 @@ def export_transition_graph(
             eid += 1
             edge_rows.append((f"e{eid:06d}", kind, transition_id, source_id, json.dumps({"address": addr})))
         # supersedes: consecutive transitions at the same address
-        by_addr: Dict[str, List[tuple]] = {}
+        by_addr: Dict[str, List[TransitionRow]] = {}
         for row in transition_rows:
             by_addr.setdefault(row[5], []).append(row)
         for addr, rows in by_addr.items():

@@ -39,7 +39,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 
 # ---------------------------------------------------------------------------
@@ -76,8 +76,8 @@ class ProjectionState:
     row_count: int
     last_rebuild_at: str          # ISO 8601 UTC string
     source_farchive_hash: str     # SHA-256 hex of the primary Tier 1 farchive
-    tier_1_dependencies: tuple    # farchive filenames consumed
-    tier_2_dependencies: tuple    # other projections consumed
+    tier_1_dependencies: tuple[str, ...]    # farchive filenames consumed
+    tier_2_dependencies: tuple[str, ...]    # other projections consumed
     incremental_state: IncrementalState
 
 
@@ -86,7 +86,7 @@ class ProjectionState:
 # ---------------------------------------------------------------------------
 
 
-def _state_to_dict(state: ProjectionState) -> dict:
+def _state_to_dict(state: ProjectionState) -> dict[str, object]:
     """Convert ProjectionState to a JSON-serializable dict."""
     return {
         "projection_name": state.projection_name,
@@ -103,7 +103,7 @@ def _state_to_dict(state: ProjectionState) -> dict:
     }
 
 
-def _state_from_dict(d: dict) -> ProjectionState:
+def _state_from_dict(d: dict[str, Any]) -> ProjectionState:
     """Parse a JSON dict into a typed ProjectionState."""
     inc_raw = d.get("incremental_state", {})
     incremental = IncrementalState(

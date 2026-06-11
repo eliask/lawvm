@@ -121,9 +121,9 @@ def _replay_section_text(node: Any) -> str:
 # Map failed/recovered ops to section keys they targeted
 # ---------------------------------------------------------------------------
 
-def _section_keys_from_failed_ops(failed_ops: List[Any]) -> set:
+def _section_keys_from_failed_ops(failed_ops: List[Any]) -> set[str]:
     """Extract normalised section-key strings from FailedOp records."""
-    keys: set = set()
+    keys: set[str] = set()
     for f in failed_ops:
         key = section_key_from_compile_failure(f)
         if key:
@@ -138,9 +138,9 @@ _RECOVERY_FINDING_KINDS = {
 }
 
 
-def _section_keys_from_recovery_findings(findings: List[Any]) -> set:
+def _section_keys_from_recovery_findings(findings: List[Any]) -> set[str]:
     """Extract section keys from section-scoped replay recovery findings."""
-    keys: set = set()
+    keys: set[str] = set()
     for finding in findings:
         kind = str(getattr(finding, "kind", "") or "")
         if kind not in _RECOVERY_FINDING_KINDS:

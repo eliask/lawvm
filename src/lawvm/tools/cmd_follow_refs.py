@@ -65,7 +65,7 @@ def _load_refs_for_node(
     direction: str,
     as_of: Optional[str],
     include_broken: bool,
-) -> List[Tuple]:
+) -> List[Tuple[Any, ...]]:
     """Fetch one hop of edges from the ref graph for node_ref.
 
     Args:
@@ -132,7 +132,7 @@ def _traverse(
     as_of: Optional[str],
     include_broken: bool,
     limit: Optional[int],
-) -> List[tuple]:
+) -> List[tuple[Any, ...]]:
     """BFS traversal of the citation graph.
 
     Returns an edge list with depth annotation. Each row in the output has:
@@ -140,10 +140,10 @@ def _traverse(
      target_statute_id, target_provision_ref_str, cite_kind, cite_confidence,
      valid_at_start, valid_at_end)
     """
-    output: List[tuple] = []
-    seen_edges: Set[tuple] = set()
+    output: List[tuple[Any, ...]] = []
+    seen_edges: Set[tuple[Any, ...]] = set()
     # Queue: (node_ref, current_depth)
-    queue: deque = deque([(start, 0)])
+    queue: deque[tuple[str, int]] = deque([(start, 0)])
     visited_nodes: Set[str] = {start}
 
     while queue:

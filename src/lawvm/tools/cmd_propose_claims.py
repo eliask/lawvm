@@ -29,7 +29,7 @@ import re
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from lawvm.core.manual_claims.native import (
     attest,
@@ -142,7 +142,7 @@ def _fetch_source_for_frontier(
 # ---------------------------------------------------------------------------
 
 
-def _load_all_objects(store: GraphStore):
+def _load_all_objects(store: GraphStore) -> Iterator[dict[str, Any]]:
     """Yield all assertions and attestations from the objects dir."""
     objects_dir = store._objects_dir()
     if not objects_dir.exists():
@@ -158,8 +158,8 @@ def _accepted_target_exists(
     target_json: str,
 ) -> bool:
     """Return True if an assertion of claim_kind + target has a reviewed(accepted=True) attestation."""
-    assertions_by_id: dict[str, dict] = {}
-    attestations_for: dict[str, list[dict]] = {}
+    assertions_by_id: dict[str, dict[str, Any]] = {}
+    attestations_for: dict[str, list[dict[str, Any]]] = {}
 
     for d in _load_all_objects(store):
         if "assertion_id" in d and "kind" in d:
@@ -190,7 +190,7 @@ def _proposed_triple_exists(
     value_json: str,
 ) -> Optional[str]:
     """Return assertion_id if a proposed (not reviewed) triple exists."""
-    assertions_by_id: dict[str, dict] = {}
+    assertions_by_id: dict[str, dict[str, Any]] = {}
     reviewed_ids: set[str] = set()
 
     for d in _load_all_objects(store):
@@ -849,7 +849,7 @@ def _discover_gaps_from_he(
         return gap_rows
 
     text = he_xml.decode("utf-8", errors="replace")
-    found_ids: set = set()
+    found_ids: set[str] = set()
 
     for m in _PLAIN_STATUTE_RE.finditer(text):
         stat_num = m.group(1)

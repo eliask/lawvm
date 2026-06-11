@@ -24,7 +24,7 @@ from lawvm.core.ir import LegalOperation
 # Address formatting
 # ---------------------------------------------------------------------------
 
-def _fmt_target(target: dict) -> str:
+def _fmt_target(target: dict[str, Any]) -> str:
     """Format an IRTargetRef dict as a human-readable address."""
     container = target.get("container", "?")
     section = target.get("section") or ""
@@ -56,11 +56,11 @@ def _fmt_target(target: dict) -> str:
     return addr
 
 
-def _matches_source(op: dict, source_filter: str) -> bool:
+def _matches_source(op: dict[str, Any], source_filter: str) -> bool:
     return op.get("source_statute", "").strip() == source_filter.strip()
 
 
-def _matches_target(op: dict, target_filter: str) -> bool:
+def _matches_target(op: dict[str, Any], target_filter: str) -> bool:
     """Check if op matches a 'kind:label' address filter."""
     if ":" not in target_filter:
         return False
@@ -136,7 +136,7 @@ def _ops_sync(
     target_filter: Optional[str],
     mode: Literal["official_consolidation", "legal_pit"],
 ) -> None:
-    compiled_ops: list = []
+    compiled_ops: list[dict[str, Any]] = []
     replay_xml(sid, mode=mode, compiled_ops_out=compiled_ops, quiet=True, build_full_products=False)
 
     # Apply filters

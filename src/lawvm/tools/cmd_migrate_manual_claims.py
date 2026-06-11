@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from lawvm.core.provenance_graph import (
     ArtifactRef,
@@ -75,7 +75,7 @@ def _normalize_graph_producer_kind(raw_kind: object) -> GraphProducerKind:
 # ---------------------------------------------------------------------------
 
 
-def _make_assertion_from_claim(claim_dict: dict) -> ProvenanceAssertion:
+def _make_assertion_from_claim(claim_dict: dict[str, Any]) -> ProvenanceAssertion:
     """Convert a v2.2 ManualCompilationClaim dict to a ProvenanceAssertion."""
     jurisdiction = str(claim_dict.get("jurisdiction", "fi"))
     claim_kind = str(claim_dict.get("claim_kind", ""))
@@ -102,8 +102,8 @@ def _make_assertion_from_claim(claim_dict: dict) -> ProvenanceAssertion:
     # Convert target + value tuples back to dicts
     target_raw = claim_dict.get("target", [])
     value_raw = claim_dict.get("value", [])
-    target: dict = dict(target_raw) if isinstance(target_raw, (list, tuple)) else {}
-    value: dict = dict(value_raw) if isinstance(value_raw, (list, tuple)) else {}
+    target: dict[str, Any] = dict(target_raw) if isinstance(target_raw, (list, tuple)) else {}
+    value: dict[str, Any] = dict(value_raw) if isinstance(value_raw, (list, tuple)) else {}
 
     # Build a stub SourceRef from cited_source fields
     artifact_digest = str(claim_dict.get("cited_source_hash", "")) or "unknown"
@@ -186,7 +186,7 @@ _EVENT_KIND_TO_ATTESTATION_KIND: dict[str, str] = {
 
 
 def _make_attestation_from_event(
-    event_dict: dict,
+    event_dict: dict[str, Any],
     assertion_id_map: dict[str, str],
 ) -> Optional[ProvenanceAttestation]:
     """Convert a v2.2 ClaimStateEvent dict to a ProvenanceAttestation.
