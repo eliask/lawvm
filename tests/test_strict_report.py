@@ -833,6 +833,32 @@ def test_format_report_surfaces_failed_op_reason_code() -> None:
     assert "section 5" in out
 
 
+def test_format_report_surfaces_candidate_set_closure_boundaries() -> None:
+    cr = {
+        "statute_id": "2001/1234",
+        "replay_mode": "legal_pit",
+        "compile_mode": "strict",
+        "profile": FINLAND_INGESTION_V1,
+        "canonical_ops": [SimpleNamespace(op_id="lo-visible-1")],
+        "failed_ops": [],
+        "projection_rows": [],
+        "source_pathologies": [],
+        "strict_fail_reasons": [],
+    }
+
+    out = strict_report._format_report(cr, verbose=False)
+
+    assert "Ownership closure" in out
+    assert "status           : open" in out
+    assert "candidate_set_fi_strict_report_source_unit_enumeration_unavailable" in out
+    assert "Candidate set certificates" in out
+    assert "fi_strict_report_source_unit_enumeration: unavailable" in out
+    assert "fi_strict_report_operation_cue_coverage: partial" in out
+    assert "replay_authorized=False" in out
+    assert "candidate_set_incomplete_not_replay_authority" in out
+    assert "independent_source_text_cue_detector" in out
+
+
 def test_format_report_uses_projection_rows_when_available() -> None:
     cr = SimpleNamespace(
         statute_id="2001/1234",

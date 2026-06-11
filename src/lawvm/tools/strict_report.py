@@ -249,6 +249,15 @@ def _source_completeness_counts(record: Any) -> tuple[int, int, int]:
     return (0, 0, 0)
 
 
+def _format_count_map(counts: Any) -> str:
+    if not isinstance(counts, dict) or not counts:
+        return "{}"
+    return ", ".join(
+        f"{str(key)}={str(value)}"
+        for key, value in sorted(counts.items(), key=lambda item: str(item[0]))
+    )
+
+
 def _effective_source_adjudication(
     *,
     statute_id: str,
@@ -361,6 +370,51 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
         lines.append("Strict fail reasons")
         for reason in strict_fail_reasons:
             lines.append(f"  {reason}")
+        lines.append("")
+
+    proof_payload = _to_json(cr)
+    ownership_closure = proof_payload["ownership_closure_certificate"]
+    candidate_sets = list(proof_payload["strict_report_candidate_set_certificates"])
+    candidate_set_authorizations = list(
+        proof_payload["strict_report_candidate_set_execution_authorizations"]
+    )
+    if candidate_sets or ownership_closure:
+        lines.append("Ownership closure")
+        lines.append(f"  status           : {ownership_closure.get('closure_status', '')}")
+        lines.append(f"  closed           : {ownership_closure.get('closed', False)}")
+        failed_gates = list(ownership_closure.get("failed_gates", ()) or ())
+        if failed_gates:
+            lines.append(f"  failed gates     : {', '.join(str(gate) for gate in failed_gates)}")
+        unowned_counts = ownership_closure.get("unowned_counts", {}) or {}
+        lines.append(f"  unowned counts   : {_format_count_map(unowned_counts)}")
+        lines.append("")
+
+    if candidate_sets:
+        auth_by_kind = {
+            str(row.get("candidate_set_kind") or ""): row
+            for row in candidate_set_authorizations
+            if isinstance(row, dict)
+        }
+        lines.append("Candidate set certificates")
+        for row in candidate_sets:
+            kind = str(row.get("candidate_set_kind") or "")
+            status = str(row.get("completeness_status") or "")
+            phase = str(row.get("phase") or "")
+            candidate_count = int(row.get("candidate_count") or 0)
+            missing_count = int(row.get("missing_candidate_count") or 0)
+            blockers = _format_count_map(row.get("blocker_counts") or {})
+            authorization = auth_by_kind.get(kind, {})
+            auth_status = str(authorization.get("authorization_status") or "")
+            replay_authorized = bool(authorization.get("replay_authorized", False))
+            lines.append(
+                f"  {kind}: {status} phase={phase} "
+                f"candidates={candidate_count} missing={missing_count} "
+                f"blockers={blockers} replay_authorized={replay_authorized} "
+                f"authorization={auth_status}"
+            )
+            required = row.get("next_promotion_requires") or ()
+            if required:
+                lines.append(f"    requires        : {', '.join(str(item) for item in required)}")
         lines.append("")
 
     # Compatibility projection rows
