@@ -98,6 +98,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
 import re
 import sys
@@ -11531,19 +11532,19 @@ def main() -> None:
 
     elif args.command == "claim":
         # Activate Finland claim kinds (registers fi.v1.* into core registry)
-        import lawvm.finland.claim_kinds  # noqa: F401
+        importlib.import_module("lawvm.finland.claim_kinds")
         from lawvm.tools.cmd_claim import main as claim_main
 
         claim_main(args)
 
     elif args.command == "propose-claims":
-        import lawvm.finland.claim_kinds  # noqa: F401
+        importlib.import_module("lawvm.finland.claim_kinds")
         from lawvm.tools.cmd_propose_claims import main as propose_main
 
         propose_main(args)
 
     elif args.command == "validate-claims":
-        import lawvm.finland.claim_kinds  # noqa: F401
+        importlib.import_module("lawvm.finland.claim_kinds")
         from lawvm.tools.cmd_validate_claims import main as validate_claims_main
 
         validate_claims_main(args)
