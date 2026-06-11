@@ -249,6 +249,71 @@ def test_provision_state_path_parser_rejects_malformed_segments() -> None:
     assert payload["address_candidates"] == []
 
 
+def test_provision_state_absent_finnish_section_suggests_real_nearby_address_only() -> None:
+    actual = LegalAddress(path=(("chapter", "6"), ("section", "127 a")))
+    timelines = {actual: ProvisionTimeline(address=actual)}
+
+    payload = build_provision_state_response(
+        timelines=timelines,
+        statute_id="1992/1535",
+        jurisdiction="fi",
+        provision="section:127a",
+        as_of="2024-06-01",
+    )
+
+    assert payload["status"] == "address_not_found"
+    assert payload["resolved_address"] is None
+    assert payload["address_candidates"] == []
+    assert payload["diagnostic"]["code"] == "LAWVM_PROVISION_ADDRESS_NOT_FOUND"
+    assert payload["diagnostic"]["suggestion_status"] == "non_authoritative_query_help_only"
+    assert payload["diagnostic"]["nearby_address_candidates"] == [
+        {
+            "path": [
+                {"kind": "chapter", "label": "6"},
+                {"kind": "section", "label": "127 a"},
+            ],
+            "special": None,
+            "text": "chapter:6/section:127 a",
+        }
+    ]
+
+
+def test_resolve_address_nearby_suggestions_do_not_resolve_or_rewrite_query() -> None:
+    actual = LegalAddress(path=(("section", "127 a"),))
+    timelines = {actual: ProvisionTimeline(address=actual)}
+
+    resolution = resolve_address(timelines, "section:127a")
+
+    assert resolution.status == "address_not_found"
+    assert resolution.address is None
+    assert resolution.timeline is None
+    assert resolution.candidates == ()
+    assert resolution.suggestions == (actual,)
+
+
+def test_provision_state_absent_numeric_section_suggests_close_real_sections() -> None:
+    near = LegalAddress(path=(("section", "128"),))
+    far = LegalAddress(path=(("section", "140"),))
+    timelines = {
+        near: ProvisionTimeline(address=near),
+        far: ProvisionTimeline(address=far),
+    }
+
+    payload = build_provision_state_response(
+        timelines=timelines,
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="section:130",
+        as_of="2021-01-01",
+    )
+
+    assert payload["status"] == "address_not_found"
+    assert [
+        candidate["text"]
+        for candidate in payload["diagnostic"]["nearby_address_candidates"]
+    ] == ["section:128"]
+
+
 # --- timeline-integrity surfacing ---------------------------------------------
 # A replay abort / broken compile fold must never produce clean-looking answers.
 # Break evidence is classified by lawvm.tools.timeline_integrity; the seam marks

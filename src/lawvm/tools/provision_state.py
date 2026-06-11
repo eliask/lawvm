@@ -94,6 +94,7 @@ class AddressResolution:
     address: LegalAddress | None = None
     timeline: ProvisionTimeline | None = None
     candidates: tuple[LegalAddress, ...] = ()
+    suggestions: tuple[LegalAddress, ...] = ()
 
 
 def main(args: Any) -> None:
@@ -188,6 +189,9 @@ def build_provision_state_response(
             "source_locator": None,
             "source_locator_status": "unavailable_unresolved_provision",
         }
+        diagnostic = _address_resolution_diagnostic(resolution)
+        if diagnostic is not None:
+            payload["diagnostic"] = diagnostic
         if tl_block is not None:
             payload["timeline_broken_at"] = tl_marker
             payload["timeline_integrity"] = tl_block
@@ -603,7 +607,11 @@ def resolve_address(
             requested=provision,
             candidates=tuple(sorted(candidates, key=str)),
         )
-    return AddressResolution(status="address_not_found", requested=provision)
+    return AddressResolution(
+        status="address_not_found",
+        requested=provision,
+        suggestions=_nearby_address_suggestions(timelines, target),
+    )
 
 
 def _selected_response(
@@ -727,6 +735,71 @@ def _parse_addr(addr_str: str) -> LegalAddress | None:
 def _fi_section_suggestion(number: str, letter: str | None) -> str:
     suffix = str(letter or "").lower()
     return f"section:{number}{suffix}"
+
+
+def _address_resolution_diagnostic(resolution: AddressResolution) -> dict[str, Any] | None:
+    if resolution.status != "address_not_found" or not resolution.suggestions:
+        return None
+    return {
+        "code": "LAWVM_PROVISION_ADDRESS_NOT_FOUND",
+        "message": "requested provision was not found in the materialized replay timeline",
+        "nearby_address_candidates": [
+            _address_wire(candidate) for candidate in resolution.suggestions
+        ],
+        "suggestion_status": "non_authoritative_query_help_only",
+    }
+
+
+def _nearby_address_suggestions(
+    timelines: Mapping[LegalAddress, ProvisionTimeline],
+    target: LegalAddress,
+    *,
+    limit: int = 5,
+) -> tuple[LegalAddress, ...]:
+    target_section = _last_path_component(target, "section")
+    if not target_section:
+        return ()
+    normalized_target = _fi_address_label_key(target_section)
+    if not normalized_target:
+        return ()
+    same_normalized = tuple(
+        address
+        for address in sorted(timelines, key=str)
+        if _fi_address_label_key(_last_path_component(address, "section")) == normalized_target
+    )
+    if same_normalized:
+        return same_normalized[:limit]
+    target_number = _leading_int(target_section)
+    if target_number is None:
+        return ()
+    nearby = []
+    for address in sorted(timelines, key=str):
+        section_label = _last_path_component(address, "section")
+        section_number = _leading_int(section_label)
+        if section_number is None:
+            continue
+        distance = abs(section_number - target_number)
+        if distance <= 3:
+            nearby.append((distance, str(address), address))
+    return tuple(address for _distance, _text, address in sorted(nearby)[:limit])
+
+
+def _last_path_component(address: LegalAddress, kind: str) -> str:
+    for component_kind, label in reversed(address.path):
+        if component_kind == kind:
+            return label
+    return ""
+
+
+def _fi_address_label_key(label: str) -> str:
+    return re.sub(r"[\s§]+", "", str(label or "")).lower()
+
+
+def _leading_int(value: str) -> int | None:
+    match = re.match(r"\s*(\d+)", str(value or ""))
+    if match is None:
+        return None
+    return int(match.group(1))
 
 
 def _query_payload(
