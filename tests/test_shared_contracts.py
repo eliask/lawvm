@@ -13,6 +13,7 @@ from lawvm.core.candidate_set_certificate import (
     CANDIDATE_SET_COMPLETE,
     CANDIDATE_SET_TRUNCATED,
     CandidateSetCertificate,
+    candidate_set_evidence_report,
 )
 from lawvm.core.evidence_contracts import (
     CorpusFindingEvidenceRow,
@@ -2050,6 +2051,110 @@ def test_candidate_set_certificate_records_bounded_completeness() -> None:
     assert data["missing_candidate_count"] == 1
     assert data["next_promotion_allowed"] is False
     assert data["summary_only_projection"] is False
+
+
+def test_candidate_set_evidence_report_is_passive_shared_surface() -> None:
+    complete = CandidateSetCertificate(
+        scope_id="fi:demo:source-unit-enumeration",
+        candidate_set_kind="fi_strict_report_source_unit_enumeration",
+        phase="source_unit_enumeration",
+        rule_id="fi_source_unit_enumeration_complete",
+        reason="declared source units were enumerated",
+        completeness_status=CANDIDATE_SET_COMPLETE,
+        candidate_count=2,
+        candidate_ids=("source-unit:1", "source-unit:2"),
+        missing_candidate_count=0,
+        next_promotion_allowed=True,
+        next_promotion_requires=("execution_authorization",),
+    )
+    truncated = CandidateSetCertificate(
+        scope_id="fi:demo:operation-cue-coverage",
+        candidate_set_kind="fi_strict_report_operation_cue_coverage",
+        phase="operation_cue_detection",
+        rule_id="fi_operation_cue_coverage_truncated",
+        reason="operation cue scan was truncated",
+        completeness_status=CANDIDATE_SET_TRUNCATED,
+        candidate_count=3,
+        candidate_ids=("op:1", "op:2"),
+        missing_candidate_count=1,
+        blocker_counts={"operation_cue_scan_truncated": 1},
+        blocker_families=("operation_cue_scan_truncated",),
+        next_promotion_allowed=False,
+        next_promotion_requires=("operation_cue_classification_report",),
+    )
+
+    report = candidate_set_evidence_report(
+        (complete, truncated),
+        jurisdiction="fi",
+        report_kind="finland_candidate_sets",
+    ).to_dict()
+
+    assert report["schema"] == "lawvm.candidate_set_report.v1"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is False
+    assert report["summary"]["candidate_set_certificate_count"] == 2
+    assert report["summary"]["complete_count"] == 1
+    assert report["summary"]["incomplete_count"] == 1
+    assert report["summary"]["candidate_count"] == 5
+    assert report["summary"]["missing_candidate_count"] == 1
+    assert report["summary"]["next_promotion_allowed_count"] == 1
+    assert report["summary"]["blocker_family_counts"] == {
+        "operation_cue_scan_truncated": 1
+    }
+    row = report["rows"][0]
+    assert row["surface"] == "candidate_set_certificate"
+    assert row["row_id"] == "fi:demo:source-unit-enumeration"
+    assert row["subject_id"] == "fi:demo:source-unit-enumeration"
+    assert row["status"] == "complete"
+    assert "candidate_set_certificate_as_replay_authorization" in row["forbidden_shortcuts"]
+    assert "candidate_set_certificate_as_replay_authorization" in report["forbidden_shortcuts"]
+
+
+def test_candidate_set_report_rejects_invalid_mapping_rows() -> None:
+    with pytest.raises(ValueError, match="candidate_count must be an integer"):
+        candidate_set_evidence_report(
+            {
+                "scope_id": "bad-candidates",
+                "candidate_set_kind": "bad",
+                "phase": "tooling",
+                "rule_id": "bad_rule",
+                "reason": "bad row",
+                "completeness_status": CANDIDATE_SET_COMPLETE,
+                "candidate_count": "1",
+                "missing_candidate_count": 0,
+            },
+            jurisdiction="fi",
+        )
+
+
+def test_candidate_set_report_projects_to_proof_surface_rows() -> None:
+    report = candidate_set_evidence_report(
+        CandidateSetCertificate(
+            scope_id="fi:demo:source-unit-enumeration",
+            candidate_set_kind="fi_strict_report_source_unit_enumeration",
+            phase="source_unit_enumeration",
+            rule_id="fi_source_unit_enumeration_complete",
+            reason="declared source units were enumerated",
+            completeness_status=CANDIDATE_SET_COMPLETE,
+            candidate_count=1,
+            candidate_ids=("source-unit:1",),
+            missing_candidate_count=0,
+        ),
+        jurisdiction="fi",
+    )
+
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert proof_surface["surface_kind"] == "candidate_set_certificate"
+    assert proof_surface["claim_flags"]["candidate_effect_claims"] is False
+    assert proof_surface["rows"][0]["row_id"] == "fi:demo:source-unit-enumeration"
+    assert proof_surface["rows"][0]["subject_id"] == "fi:demo:source-unit-enumeration"
+    assert proof_surface["rows"][0]["row_kind"] == "candidate_set_certificate"
+    assert proof_surface["rows"][0]["status"] == "complete"
+    assert proof_surface["rows"][0]["proof_refs"] == ["fi_source_unit_enumeration_complete"]
 
 
 def test_candidate_set_certificate_rejects_partial_promotion() -> None:

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, cast
 
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
 
 
@@ -30,6 +31,11 @@ _VALID_COMPLETENESS_STATUSES = frozenset(
         CANDIDATE_SET_UNAVAILABLE,
         CANDIDATE_SET_REJECTED,
     }
+)
+_CANDIDATE_SET_REPORT_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
+    "candidate_set_certificate_as_replay_authorization",
+    "candidate_set_certificate_as_source_cue_exhaustiveness_proof_without_declared_scope",
+    "candidate_set_completeness_as_target_uniqueness_proof",
 )
 _RESERVED_DETAIL_KEYS = frozenset(
     {
@@ -145,6 +151,128 @@ class CandidateSetCertificate:
         return payload
 
 
+def candidate_set_evidence_report(
+    certificates: (
+        CandidateSetCertificate
+        | Mapping[str, Any]
+        | tuple[CandidateSetCertificate | Mapping[str, Any], ...]
+    ),
+    *,
+    jurisdiction: str,
+    report_kind: str = "candidate_set_certificate",
+) -> EvidenceSurfaceReport:
+    """Project candidate-set certificates into a shared passive report."""
+
+    rows = tuple(_candidate_set_mapping(row) for row in _candidate_set_sequence(certificates))
+    report_rows = tuple(_candidate_set_report_row(row) for row in rows)
+    status_counts = _counts(str(row.get("completeness_status") or "") for row in rows)
+    kind_counts = _counts(str(row.get("candidate_set_kind") or "") for row in rows)
+    phase_counts = _counts(str(row.get("phase") or "") for row in rows)
+    blocker_family_counts = _counts(
+        str(family)
+        for row in rows
+        for family in _sequence(row.get("blocker_families"))
+    )
+    summary = {
+        "candidate_set_certificate_count": len(rows),
+        "candidate_set_status_counts": status_counts,
+        "candidate_set_kind_counts": kind_counts,
+        "phase_counts": phase_counts,
+        "blocker_family_counts": blocker_family_counts,
+        "complete_count": status_counts.get(CANDIDATE_SET_COMPLETE, 0),
+        "incomplete_count": len(rows) - status_counts.get(CANDIDATE_SET_COMPLETE, 0),
+        "candidate_count": sum(int(row.get("candidate_count") or 0) for row in rows),
+        "missing_candidate_count": sum(
+            int(row.get("missing_candidate_count") or 0)
+            for row in rows
+        ),
+        "next_promotion_allowed_count": sum(
+            1 for row in rows if bool(row.get("next_promotion_allowed"))
+        ),
+        "claim_flags": {
+            "replay_claims": False,
+            "canonical_effect_claims": False,
+            "candidate_effect_claims": False,
+            "dry_run_claims": False,
+            "agreement_claims": False,
+        },
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction=jurisdiction,
+        report_kind=report_kind,
+        schema="lawvm.candidate_set_report.v1",
+        truth_claim="bounded candidate-set completeness projections",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={"report_kind": report_kind},
+        filtered_summary=summary,
+        rows=report_rows,
+        detail={
+            "safe_default": "treat_candidate_sets_as_completeness_evidence_not_replay_authority",
+            "forbidden_shortcuts": _CANDIDATE_SET_REPORT_FORBIDDEN_SHORTCUTS,
+            "included_surfaces": ("candidate_set_certificate",),
+        },
+    )
+
+
+def _candidate_set_sequence(
+    value: (
+        CandidateSetCertificate
+        | Mapping[str, Any]
+        | tuple[CandidateSetCertificate | Mapping[str, Any], ...]
+    ),
+) -> tuple[CandidateSetCertificate | Mapping[str, Any], ...]:
+    if isinstance(value, CandidateSetCertificate) or isinstance(value, Mapping):
+        return (cast(CandidateSetCertificate | Mapping[str, Any], value),)
+    return tuple(value)
+
+
+def _candidate_set_mapping(value: CandidateSetCertificate | Mapping[str, Any]) -> Mapping[str, Any]:
+    if isinstance(value, CandidateSetCertificate):
+        return value.to_dict()
+    # Rehydrate through the dataclass so mapping rows get the same validation.
+    return CandidateSetCertificate(
+        scope_id=str(value.get("scope_id") or ""),
+        candidate_set_kind=str(value.get("candidate_set_kind") or ""),
+        phase=str(value.get("phase") or ""),
+        rule_id=str(value.get("rule_id") or ""),
+        reason=str(value.get("reason") or ""),
+        completeness_status=cast(CandidateSetCompletenessStatus, value.get("completeness_status")),
+        candidate_count=_required_nonnegative_int_value("candidate_count", value.get("candidate_count")),
+        candidate_ids=tuple(str(item) for item in _sequence(value.get("candidate_ids"))),
+        missing_candidate_count=_required_nonnegative_int_value(
+            "missing_candidate_count",
+            value.get("missing_candidate_count", 0),
+        ),
+        selected_candidate_ids=tuple(
+            str(item) for item in _sequence(value.get("selected_candidate_ids"))
+        ),
+        blocker_counts=_mapping_str_int(value.get("blocker_counts")),
+        blocker_families=tuple(str(item) for item in _sequence(value.get("blocker_families"))),
+        next_promotion_allowed=bool(value.get("next_promotion_allowed")),
+        next_promotion_requires=tuple(
+            str(item) for item in _sequence(value.get("next_promotion_requires"))
+        ),
+        detail=_mapping_detail_without_certificate_keys(value),
+    ).to_dict()
+
+
+def _candidate_set_report_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        **dict(row),
+        "surface": "candidate_set_certificate",
+        "row_id": str(row.get("scope_id") or ""),
+        "subject_id": str(row.get("scope_id") or ""),
+        "status": str(row.get("completeness_status") or ""),
+        "proof_ref": str(row.get("rule_id") or ""),
+        "forbidden_shortcuts": _CANDIDATE_SET_REPORT_FORBIDDEN_SHORTCUTS,
+    }
+
+
 def _required_string(field_name: str, value: Any) -> str:
     text = str(value or "").strip()
     if not text:
@@ -176,6 +304,47 @@ def _int_mapping(field_name: str, value: Any) -> Mapping[str, int]:
             raise ValueError(f"CandidateSetCertificate.{field_name} values must be non-negative")
         normalized[str(key)] = count
     return freeze_mapping(normalized)
+
+
+def _mapping_str_int(value: Any) -> Mapping[str, int]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {
+        str(key): _required_nonnegative_int_value(f"blocker_counts.{key}", count)
+        for key, count in value.items()
+    }
+
+
+def _mapping_detail_without_certificate_keys(value: Mapping[str, Any]) -> Mapping[str, Any]:
+    return {
+        str(key): item
+        for key, item in value.items()
+        if str(key) not in _RESERVED_DETAIL_KEYS
+    }
+
+
+def _required_nonnegative_int_value(field_name: str, value: Any) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"CandidateSetCertificate.{field_name} must be an integer")
+    if value < 0:
+        raise ValueError(f"CandidateSetCertificate.{field_name} must be non-negative")
+    return value
+
+
+def _sequence(value: Any) -> tuple[Any, ...]:
+    if isinstance(value, str):
+        return (value,) if value else ()
+    if isinstance(value, list | tuple):
+        return tuple(value)
+    return ()
+
+
+def _counts(values: Any) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = str(value or "__blank__")
+        counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def _reject_reserved_detail_keys(values: Mapping[str, Any]) -> None:
