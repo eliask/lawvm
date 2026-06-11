@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from lxml import etree
+import pytest
+
 from lawvm.core.ir import IRNode, LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.ir_helpers import irnode_content_hash
 from lawvm.core.provenance import MigrationEvent, OperationSource
@@ -72,7 +77,25 @@ def test_provision_state_response_exposes_text_hash_and_temporal_pin() -> None:
     assert payload["source_locator"]["detail"]["target_address_authority"] == (
         "resolved_replay_timeline_address"
     )
-    assert payload["source_locator"]["detail"]["xpath_status"] == "unavailable_initial_surface"
+    assert payload["source_locator"]["detail"]["target_xpath_candidate"].startswith(
+        "//*[local-name()='body']"
+    )
+    xml = etree.fromstring(
+        b"""
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act><body><chapter><num>1 luku</num><section><num>1 \xc2\xa7</num></section></chapter></body></act>
+        </akomaNtoso>
+        """
+    )
+    matches = xml.xpath(payload["source_locator"]["detail"]["target_xpath_candidate"])
+    assert isinstance(matches, list)
+    assert len(matches) == 1
+    assert payload["source_locator"]["detail"]["target_xpath_candidate_status"] == (
+        "finlex_structural_xpath_candidate"
+    )
+    assert payload["source_locator"]["detail"]["xpath_status"] == (
+        "unavailable_operation_source_target_not_xml_anchored"
+    )
     assert payload["source_locator"]["detail"]["byte_span_status"] == "unavailable_initial_surface"
     assert payload["source_locator"]["detail"]["hash_role"] == "excluded_from_derived_state_hash"
     assert payload["source_locator"]["quote_hash"]
@@ -214,6 +237,24 @@ def test_provision_state_response_uses_base_source_locator_for_sourceless_base_v
     assert payload["source_locator"]["artifact_kind"] == "base_statute_xml"
     assert payload["source_locator"]["document_uri"] == "finlex://sd/2000/1/fin/main.xml"
     assert payload["source_locator"]["structural_path"] == "lawvm-target:section:1"
+    assert payload["source_locator"]["xpath"].startswith("//*[local-name()='body']")
+    xml = etree.fromstring(
+        b"""
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act><body><section><num>1 \xc2\xa7</num><content>Base duty.</content></section></body></act>
+        </akomaNtoso>
+        """
+    )
+    matches = xml.xpath(payload["source_locator"]["xpath"])
+    assert isinstance(matches, list)
+    assert len(matches) == 1
+    assert "section" in payload["source_locator"]["xpath"]
+    assert payload["source_locator"]["detail"]["xpath"] == payload["source_locator"]["xpath"]
+    assert payload["source_locator"]["detail"]["xpath_status"] == "finlex_structural_xpath_candidate"
+    assert payload["source_locator"]["detail"]["target_xpath_candidate_status"] == (
+        "finlex_structural_xpath_candidate"
+    )
+    assert payload["source_locator"]["detail"]["byte_span_status"] == "unavailable_initial_surface"
     assert payload["source_locator"]["detail"]["source_witness_status"] == (
         "unavailable_no_operation_source_raw_text"
     )
@@ -630,10 +671,6 @@ def test_timeline_integrity_flag_off_restores_prior_behavior(monkeypatch) -> Non
 # CONSISTENCY between recorded break evidence and the surfaced marker, so this
 # test stays green if/when the underlying replay break is fixed: with evidence
 # the response must be marked; without evidence it must be clean.
-
-from pathlib import Path
-
-import pytest
 
 _FINLEX_CORPUS_AVAILABLE = (
     Path(__file__).resolve().parents[1] / "data" / "finlex.farchive"

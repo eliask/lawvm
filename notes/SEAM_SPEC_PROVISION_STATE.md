@@ -88,6 +88,25 @@ either live text or expiry when the stated bound cannot be proven.
 - `engine`, `source`, `source_locator` — provenance; NOT part of the state
   hash (§3).
 
+### 2.4 `source_locator` XPath footing
+
+`source_locator` is provenance and is excluded from `derived_state_hash`.
+
+For Finland base-statute versions, `source_locator.xpath` MAY contain a
+deterministic Finlex AKN structural XPath candidate derived from the resolved
+`LegalAddress`. The corresponding status is
+`detail.xpath_status="finlex_structural_xpath_candidate"`. This is a structural
+locator, not a byte-span proof: `byte_span` remains absent and
+`detail.byte_span_status="unavailable_initial_surface"` until an exact source
+offset is available.
+
+For Finland operation-source versions, the cited document is the amending act,
+not the amended target provision. The target address is still exposed as
+`detail.target_xpath_candidate`, but top-level `source_locator.xpath` remains
+absent and `detail.xpath_status` is
+`unavailable_operation_source_target_not_xml_anchored`. Operation-source footing
+comes from the bounded `OperationSource.raw_text` witness when available.
+
 ## 3. derived_state_hash
 
 `hashes.derived_state_hash` is the consumer's stable commitment to a

@@ -22,6 +22,7 @@ from lawvm.core.source_locator import SourceLocator
 from lawvm.core.statute_validity import StatuteValidityBound, is_expired_at
 from lawvm.core.timeline_lineage import lineage_address_chain
 from lawvm.core.timeline_selection import VersionSelectionResult, select_active_version_ex
+from lawvm.roman import arabic_to_roman
 from lawvm.tools.timeline_integrity import (
     TimelineBreak,
     break_governs_as_of,
@@ -1079,6 +1080,15 @@ def _source_locator_payload(
         locator_status = "operation_source_locator"
     if jurisdiction != "fi":
         return None
+    target_xpath = _finlex_target_xpath_candidate(address)
+    source_xpath = target_xpath if artifact_kind == "base_statute_xml" else ""
+    xpath_status = (
+        "finlex_structural_xpath_candidate"
+        if source_xpath
+        else "unavailable_operation_source_target_not_xml_anchored"
+        if artifact_kind == "operation_source_statute_xml"
+        else "unavailable_initial_surface"
+    )
     detail: dict[str, Any] = {
         "locator_status": locator_status,
         "document_locator_status": "canonical_finlex_document_uri",
@@ -1086,8 +1096,12 @@ def _source_locator_payload(
         "precision": "document_plus_resolved_target_legal_address",
         "target_legal_address_kind": "lawvm_resolved_target",
         "target_address_authority": "resolved_replay_timeline_address",
-        "xpath": "unavailable",
-        "xpath_status": "unavailable_initial_surface",
+        "target_xpath_candidate": target_xpath or "unavailable",
+        "target_xpath_candidate_status": (
+            "finlex_structural_xpath_candidate" if target_xpath else "unavailable_unsupported_address_kind"
+        ),
+        "xpath": source_xpath or "unavailable",
+        "xpath_status": xpath_status,
         "byte_span": "unavailable",
         "byte_span_status": "unavailable_initial_surface",
         "hash_role": "excluded_from_derived_state_hash",
@@ -1103,12 +1117,96 @@ def _source_locator_payload(
         source_id=f"finlex:{artifact_kind}:{source_sid}",
         document_uri=statute_url(source_sid),
         structural_path=f"lawvm-target:{address}",
+        xpath=source_xpath,
         quote_hash=source_quote["quote_hash"] if source_quote is not None else "",
         statute_id=source_sid,
         normalization_policy="finlex_statute_document_locator.v1",
         detail=detail,
     )
     return locator.to_dict()
+
+
+_FINLEX_ADDRESS_KIND_TO_XML_TAG = {
+    "part": "part",
+    "chapter": "chapter",
+    "section": "section",
+    "subsection": "subsection",
+    "paragraph": "paragraph",
+    "subparagraph": "subparagraph",
+    "item": "item",
+}
+_FINLEX_XPATH_TRANSLATE_FROM = "ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖ §)."
+_FINLEX_XPATH_TRANSLATE_TO = "abcdefghijklmnopqrstuvwxyzåäö"
+
+
+def _finlex_target_xpath_candidate(address: LegalAddress) -> str:
+    """Return a deterministic Finlex AKN XPath candidate for a LawVM address.
+
+    This is intentionally a candidate locator, not a byte-span proof. Finland
+    replay timelines carry stable ``LegalAddress`` objects, but provision-state
+    does not yet retain the original lxml element pointer. The XPath mirrors the
+    same <num> normalization used by Finnish XML ingestion and falls back to
+    ordinal matching for generated positional subsection/paragraph labels.
+    """
+    parts: list[str] = ["//*[local-name()='body']"]
+    for kind, label in address.path:
+        tag = _FINLEX_ADDRESS_KIND_TO_XML_TAG.get(kind)
+        if tag is None:
+            return ""
+        parts.append(f"/*[local-name()={_xpath_literal(tag)}][{_finlex_num_predicate(kind, tag, label)}]")
+    return "".join(parts)
+
+
+def _finlex_num_predicate(kind: str, tag: str, label: str) -> str:
+    expr = _finlex_normalized_num_expr()
+    variants = _finlex_label_variants(kind, label)
+    clauses = [f"{expr}={_xpath_literal(variant)}" for variant in variants]
+    if label.isdigit() and kind in {"subsection", "paragraph", "subparagraph", "item"}:
+        clauses.append(
+            f"(not(*[local-name()='num']) and count(preceding-sibling::*[local-name()={_xpath_literal(tag)}]) + 1 = {label})"
+        )
+    return " or ".join(clauses) or "false()"
+
+
+def _finlex_normalized_num_expr() -> str:
+    return (
+        "translate(normalize-space(string(*[local-name()='num'][1])), "
+        f"{_xpath_literal(_FINLEX_XPATH_TRANSLATE_FROM)}, {_xpath_literal(_FINLEX_XPATH_TRANSLATE_TO)})"
+    )
+
+
+def _finlex_label_variants(kind: str, label: str) -> tuple[str, ...]:
+    normalized = label.strip().lower()
+    if not normalized:
+        return ()
+    variants = {normalized}
+    if kind == "chapter":
+        variants.add(f"{normalized}luku")
+        variants.update(_roman_label_variants(normalized, suffixes=("luku",)))
+    elif kind == "part":
+        variants.add(f"{normalized}osa")
+        variants.add(f"{normalized}osasto")
+        variants.update(_roman_label_variants(normalized, suffixes=("osa", "osasto")))
+    return tuple(sorted(variants))
+
+
+def _roman_label_variants(label: str, *, suffixes: tuple[str, ...]) -> set[str]:
+    if not label.isdigit():
+        return set()
+    try:
+        roman = arabic_to_roman(int(label)).lower()
+    except ValueError:
+        return set()
+    return {roman, *(f"{roman}{suffix}" for suffix in suffixes)}
+
+
+def _xpath_literal(value: str) -> str:
+    if "'" not in value:
+        return f"'{value}'"
+    if '"' not in value:
+        return f'"{value}"'
+    parts = value.split("'")
+    return "concat(" + ', "\'", '.join(f"'{part}'" for part in parts) + ")"
 
 
 def _source_quote_payload(version: ProvisionVersion | None) -> dict[str, Any] | None:
