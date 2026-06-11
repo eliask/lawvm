@@ -2612,7 +2612,7 @@ class XMLStatute:
         self._base_ir: IRNode = self._ir
         self._label_index: Optional[_tops.LabelIndex] = None
         # Populated by replay_simple() after timeline compilation.
-        self.timelines: Optional[dict] = None
+        self.timelines: Optional[dict[str, Any]] = None
 
     @property
     def ir(self) -> IRNode:
@@ -3035,7 +3035,7 @@ def _build_group_surface(
     target_norm: str,
     target_chapter: Optional[str],
     target_part: Optional[str],
-) -> "PhaseResult":
+) -> "PhaseResult[GroupSurface]":
     """Stage 1: extract amendment-body payload. Pure of live state.
 
     Returns a PhaseResult where:
@@ -3276,7 +3276,7 @@ def _elaborate_group(
     johto: str,
     profile: "ReplayProfile",
     strict_profile: Optional[StrictProfile],
-) -> "PhaseResult":
+) -> "PhaseResult[ElaboratedGroup]":
     """Stage 2: elaborate payload against live state.
 
     Takes a ``GroupSurface`` from Stage 1 and typed snapshots ``target_ctx``
@@ -3758,7 +3758,7 @@ def _lower_group(
     compiled_ops_out: Optional[List[Dict[str, object]]],
     master: Optional["ReplayState"] = None,
     lookups: Optional["ReplayLookups"] = None,
-) -> "PhaseResult":
+) -> "PhaseResult[list[ResolvedOp]]":
     """Stage 3: lower elaborated ops to ResolvedOps. Pure of live state.
 
     Takes an ``ElaboratedGroup`` from Stage 2 and ``target_ctx`` for the sort
@@ -4051,7 +4051,7 @@ def _compile_group(
     strict_profile: Optional[StrictProfile],
     foreign_scoped_standalone_section_targets: Optional[Set[str]] = None,
     precomputed_lookups: Optional[Any] = None,
-) -> "PhaseResult":
+) -> "PhaseResult[list[ResolvedOp]]":
     """Compile one group of ops (same target section/chapter) into ResolvedOps.
 
     Structured as three stages per PRO_RESPONSE3_1 section 7:
@@ -4762,7 +4762,7 @@ def compile_amendment_ops(
     source_ref: str = "",
     source_title: str = "",
     target_statute: str = "",
-) -> "PhaseResult":
+) -> "PhaseResult[list[ResolvedOp]]":
     """Compile grouped amendment ops into resolved ops ready for application.
 
     Groups ops by target (section/chapter), then delegates each group to
@@ -4846,7 +4846,7 @@ def compile_amendment_ops(
 
     # ── EffectIntent lowering (amendment-level, once per johtolause) ─────────
     # Extract and lower temporal/conditional clauses from the johtolause text.
-    _lowered_temporal_events: tuple = ()
+    _lowered_temporal_events: tuple[TemporalEvent, ...] = ()
     _activation_rules: list["ActivationRule"] = []
     if johto:
         _unsupported_meta_clauses: list[_UnsupportedMetaClause] = []
@@ -6021,7 +6021,7 @@ def process_muutoslaki(
     prior_migration_events: Optional[Iterable["MigrationEvent"]] = None,
     restructure_plans_out: Optional[List[StructuralTransformPlan]] = None,
     processed_amendment_titles: Optional[Dict[str, str]] = None,
-) -> "PhaseResult":
+) -> "PhaseResult[ReplayState]":
     """Process one amendment statute end-to-end.
 
     Returns a PhaseResult where:
@@ -6051,7 +6051,7 @@ def process_muutoslaki(
     from lawvm.core.phase_result import PhaseResult as _PR
 
     # Accumulates executable amendment temporal authority from compile/apply phases.
-    _amendment_temporal_events: list = []
+    _amendment_temporal_events: list[TemporalEvent] = []
     _process_findings: list[Finding] = []
     _compat_failed_ops: list[FailedOp] = []
     _compat_source_pathologies: list[SourcePathology] = []
@@ -6273,7 +6273,7 @@ def process_muutoslaki(
         if commencement_expiry_overrides_out is not None:
             commencement_expiry_overrides_out.extend(_commencement_expiry_override_notes)
 
-    def _build_result(output_state: "ReplayState") -> "_PR":
+    def _build_result(output_state: "ReplayState") -> "_PR[ReplayState]":
         """Build PhaseResult from local phase-owned signals, then project compat sinks."""
         amendment_temporal_events = list(_amendment_temporal_events)
         merged_findings: list[Finding] = list(_process_findings)
@@ -8038,7 +8038,7 @@ def replay_xml(
             )
             if replay_meta_out is not None and materialized_text_duplication_findings:
                 warnings = replay_meta_out.setdefault("text_duplication_warnings", [])
-                cast(list, warnings).extend(
+                cast(list[dict[str, object]], warnings).extend(
                     {
                         key: value
                         for key, value in finding.detail.items()
