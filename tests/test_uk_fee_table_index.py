@@ -15,7 +15,7 @@ from lawvm.uk_legislation import table_sources as TS
 ET = TS.ET
 
 
-def _root(xml: str):  # type: ignore[no-untyped-def]
+def _root(xml: str) -> TS.ET._Element:
     return ET.fromstring(xml)
 
 

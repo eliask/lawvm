@@ -836,8 +836,8 @@ def compile_fi_facade_from_replay(
     extra_findings: Optional[List[Finding]] = None,
 ):
     """Build Finland's native CompileFacade from an already-executed replay."""
-    from lawvm.core.compile_facade import CompileFacade  # noqa: PLC0415
-    from lawvm.core.phase_result import PhaseBuilder  # noqa: PLC0415
+    from lawvm.core.compile_facade import CompileFacade
+    from lawvm.core.phase_result import PhaseBuilder
 
     profile = strict_profile or default_finland_strict_profile()
     artifacts = _compile_artifacts_from_replay(
@@ -887,7 +887,7 @@ def compile_fi_facade(
     execution directly and returns the shared `CompileFacade` without
     reconstructing a second Finland-specific dossier carrier.
     """
-    from lawvm.finland.grafter import replay_xml  # noqa: PLC0415
+    from lawvm.finland.grafter import replay_xml
 
     compiled_ops: List[Dict[str, object]] = []
     replay_meta: Dict[str, object] = {}

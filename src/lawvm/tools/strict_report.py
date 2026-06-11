@@ -395,7 +395,7 @@ def _to_json(cr: Any) -> dict[str, Any]:
     strict_fail_reasons = list(_field(cr, "strict_fail_reasons", []) or [])
     source_pathologies = _source_pathologies(cr)
     source_pathology_proof_rows = source_pathology_proof_surface_rows(
-        tuple(cast(Any, p) for p in source_pathologies),  # ty:ignore[redundant-cast]
+        tuple(source_pathologies),
         statute_id=str(_field(cr, "statute_id", "") or ""),
     )
     sparse_slot_candidate_certificates = sparse_slot_candidate_set_certificate_rows(
@@ -411,7 +411,7 @@ def _to_json(cr: Any) -> dict[str, Any]:
         statute_id=str(_field(cr, "statute_id", "") or ""),
     )
     mutation_boundary_proofs = mutation_boundary_proof_rows(
-        tuple(cast(Any, row) for row in _mutation_invariant_reports(cr)),  # ty:ignore[redundant-cast]
+        tuple(_mutation_invariant_reports(cr)),
         statute_id=str(_field(cr, "statute_id", "") or ""),
     )
     sc_chain_length, sc_source_available, sc_dates_available = _source_completeness_counts(cr)
@@ -1125,8 +1125,10 @@ def main(args: Any) -> None:
         failed_ops=failed_ops,
         source_adjudication=master.source_adjudication,
     )
+    mutation_reports_raw = replay_meta.get("apply_mutation_invariant_reports", [])
+    mutation_reports = mutation_reports_raw if isinstance(mutation_reports_raw, list) else []
     report_record["apply_mutation_invariant_reports"] = [
-        dict(row) for row in replay_meta.get("apply_mutation_invariant_reports", []) if isinstance(row, dict)  # ty:ignore[not-iterable]
+        dict(row) for row in mutation_reports if isinstance(row, dict)
     ]
 
     if getattr(args, "json_output", False):

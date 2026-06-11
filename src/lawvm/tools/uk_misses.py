@@ -19,7 +19,11 @@ from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from lawvm.core.agreement_residual import AgreementResidual
+from lawvm.core.agreement_residual import (
+    AgreementResidual,
+    AgreementResidualFamily,
+    AgreementResidualStatus,
+)
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.uk_legislation.phase_discipline import (
     UK_PHASE_CANONICAL_OP_COMPILATION,
@@ -281,8 +285,8 @@ def _uk_misses_agreement_residual(
         residual_id=f"uk-misses:{statute_id}",
         jurisdiction="uk",
         agreement_surface="replay_eid_set_vs_current_oracle_eid_set",
-        family=family,  # ty:ignore[invalid-argument-type]
-        status=status,  # ty:ignore[invalid-argument-type]
+        family=family,
+        status=status,
         owner_phase=owner_phase,
         rule_id=rule_id,
         source_artifact_id=statute_id,
@@ -317,7 +321,7 @@ def _uk_misses_residual_family(
     only_in_oracle_count: int,
     only_in_replayed_count: int,
     blocking_rejection_rule_counts: dict[str, int],
-) -> str:
+) -> AgreementResidualFamily:
     if only_in_oracle_count == 0 and only_in_replayed_count == 0:
         return "agreement"
     if oracle_compare_eid_count == 0 and replay_compare_eid_count > 0:
@@ -333,10 +337,10 @@ def _uk_misses_residual_family(
 
 def _uk_misses_residual_status(
     *,
-    family: str,
+    family: AgreementResidualFamily,
     only_in_oracle_count: int,
     only_in_replayed_count: int,
-) -> str:
+) -> AgreementResidualStatus:
     if family == "agreement":
         return "agrees"
     if family in {

@@ -971,7 +971,7 @@ def score_one(statute_id: str) -> dict[str, Any]:
         result["aligned"] = lanes["aligned"]
         result["unaligned"] = lanes["unaligned"]
         return result
-    except Exception as exc:  # noqa: BLE001 — a broken statute must not abort the sweep
+    except Exception as exc:
         return {**result, "error": f"{type(exc).__name__}: {exc}"}
     finally:
         archive.close()

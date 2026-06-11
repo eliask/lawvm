@@ -302,7 +302,7 @@ class TestEEParserIntegration:
             facet: Optional[FacetKind] = None
             if op.target.special == FacetKind.HEADING:
                 facet = FacetKind.HEADING
-            verb = verb_map.get(op.action, "M")  # type: ignore
+            verb = verb_map.get(str(op.action), "M")
             pop = ParsedOp(
                 verb=verb,
                 kind="P",

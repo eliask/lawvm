@@ -39,8 +39,8 @@ def _uk_temporal_events_from_ops(
     temporal authority so the core bridge can eventually be retired without
     changing the matcher again.
     """
-    from lawvm.core.compile_result import ActivationRule, TemporalEvent, TemporalScope  # noqa: PLC0415
-    from lawvm.core.temporal import FIXED_DATE_KIND  # noqa: PLC0415
+    from lawvm.core.compile_result import ActivationRule, TemporalEvent, TemporalScope
+    from lawvm.core.temporal import FIXED_DATE_KIND
 
     events: list[TemporalEvent] = []
     seen_group_ids: set[str] = set()

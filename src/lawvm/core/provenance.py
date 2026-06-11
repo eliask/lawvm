@@ -82,7 +82,7 @@ class MigrationEvent:
     witness: object | None = None
 
     def __post_init__(self) -> None:
-        from lawvm.core.ir import LegalAddress  # noqa: PLC0415
+        from lawvm.core.ir import LegalAddress
 
         if not self.event_id:
             raise ValueError("MigrationEvent.event_id must be non-empty")

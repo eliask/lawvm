@@ -23,6 +23,7 @@ AGENTS.md §1.10: no broad try/except in non-test code.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import re
 import sys
@@ -40,6 +41,7 @@ from lawvm.core.manual_claims.primitive import (
     GapDiscoveryRow,
 )
 from lawvm.core.manual_claims.proposal_backend import (
+    ClaimProposalBackend,
     ClaimSchema,
     MockProposalBackend,
     ProposedClaim,
@@ -102,7 +104,7 @@ def _cli_producer(model_id: Optional[str] = None) -> Producer:
     )
 
 
-def _make_backend(backend_name: str) -> object:
+def _make_backend(backend_name: str) -> ClaimProposalBackend:
     if backend_name == "mock":
         return MockProposalBackend()
     if backend_name == "qwen":
@@ -341,7 +343,7 @@ def _run_validators(
                 he_id=None,
                 version_id=None,
             ),
-            cited_source_span=list(assertion.source_refs[0].byte_range) if assertion.source_refs else [0, 0],  # ty:ignore[invalid-argument-type]
+            cited_source_span=assertion.source_refs[0].byte_range if assertion.source_refs else (0, 0),
             cited_source_hash=assertion.source_refs[0].artifact_digest if assertion.source_refs else "unknown",
             dependency_fingerprint=(),
             valid_at=(assertion.valid_at.start, assertion.valid_at.end),
@@ -406,7 +408,9 @@ def _normalize_fi_statute_resolution(
 
     value_dict = dict(proposed.value)
     raw_id = value_dict.get("resolved_statute_id", "")
-    canonical = _canonicalize_finnish_statute_id(raw_id)  # ty:ignore[invalid-argument-type]
+    if not isinstance(raw_id, str):
+        return proposed
+    canonical = _canonicalize_finnish_statute_id(raw_id)
 
     if canonical is None or canonical == raw_id:
         return proposed
@@ -462,7 +466,7 @@ def _write_live_snapshot(store: GraphStore) -> str:
 def _process_one_frontier(
     frontier_row: object,
     store: GraphStore,
-    backend: object,
+    backend: ClaimProposalBackend,
     claim_kind: str,
     source_bytes: bytes,
     cited_span_hash: str,
@@ -503,7 +507,7 @@ def _process_one_frontier(
         cited_span_hash=cited_span_hash,
     )
 
-    proposed: ProposedClaim = backend.propose(frontier_row, schema, quoted_source)  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    proposed = backend.propose(frontier_row, schema, quoted_source)
 
     if claim_kind == "fi.v1.INLINE_STATUTE_RESOLUTION":
         proposed = _normalize_fi_statute_resolution(proposed, verbose=verbose)
@@ -937,7 +941,8 @@ def cmd_propose_from_frontier(args: object) -> int:
 
 
 def cmd_propose_gap_discovery(args: object) -> int:
-    he_id: str = getattr(args, "he", None)  # ty:ignore[invalid-assignment]
+    he_arg = getattr(args, "he", None)
+    he_id = he_arg if isinstance(he_arg, str) else ""
     if not he_id:
         print("error: --gap-discovery requires --he HE_ID", file=sys.stderr)
         return 1
@@ -993,7 +998,8 @@ def cmd_propose_gap_discovery(args: object) -> int:
 
 
 def cmd_propose_specific(args: object) -> int:
-    he_id: str = getattr(args, "he", None)  # ty:ignore[invalid-assignment]
+    he_arg = getattr(args, "he", None)
+    he_id = he_arg if isinstance(he_arg, str) else ""
     kind: str = getattr(args, "kind", "fi.v1.INLINE_STATUTE_RESOLUTION")
     graph_store_root: Optional[str] = (
         getattr(args, "graph_store_root", None)
@@ -1046,7 +1052,7 @@ def cmd_propose_specific(args: object) -> int:
 
 
 def main(args: object) -> None:
-    import lawvm.finland.claim_kinds  # noqa: F401
+    importlib.import_module("lawvm.finland.claim_kinds")
     register_fi_source_provider()
 
     from_frontier: bool = getattr(args, "from_frontier", False)

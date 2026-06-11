@@ -15,7 +15,7 @@ from lawvm.uk_legislation.heading_facets import (
     _CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE,
     _heading_facet_carrier_for_target,
 )
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
+from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 from lawvm.uk_legislation.provenance_notes import (
     NOTE_TEXT_REWRITE_RULE as _NOTE_TEXT_REWRITE_RULE,
     _table_cell_selector,
@@ -89,6 +89,7 @@ class UKReplayTextActionApplyMixin:
     adjudications_out: list[CompileAdjudication]
     lo_ops_out: list[LegalOperation] | None
     mutation_events_out: list[MutationEvent] | None
+    statute: UKMutableStatute
     _applied_text_patch_targets: dict[str, list[str]]
 
     if TYPE_CHECKING:
@@ -249,9 +250,9 @@ class UKReplayTextActionApplyMixin:
             return nodes
 
         text_nodes: list[tuple[tuple[tuple[str, str], ...], UKMutableNode]] = []
-        for child in self.statute.body.children:  # ty:ignore[unresolved-attribute]
+        for child in self.statute.body.children:
             text_nodes.extend(_walk(child, (_kind_label(child),)))
-        for supplement in self.statute.supplements:  # ty:ignore[unresolved-attribute]
+        for supplement in self.statute.supplements:
             text_nodes.extend(_walk(supplement, (_kind_label(supplement),)))
         return text_nodes
 
@@ -282,11 +283,11 @@ class UKReplayTextActionApplyMixin:
         top_path: tuple[str, str],
     ) -> UKMutableNode | None:
         top_kind, top_label = top_path
-        for child in self.statute.body.children:  # ty:ignore[unresolved-attribute]
+        for child in self.statute.body.children:
             child_kind = child.kind.value if hasattr(child.kind, "value") else str(child.kind)
             if child_kind == top_kind and (child.label or "") == top_label:
                 return child
-        for supplement in self.statute.supplements:  # ty:ignore[unresolved-attribute]
+        for supplement in self.statute.supplements:
             supplement_kind = (
                 supplement.kind.value if hasattr(supplement.kind, "value") else str(supplement.kind)
             )

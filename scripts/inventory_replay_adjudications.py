@@ -80,12 +80,12 @@ class _AdjudicationVisitor(ast.NodeVisitor):
     def function_name(self) -> str | None:
         return self._function_stack[-1] if self._function_stack else None
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self._function_stack.append(node.name)
         self.generic_visit(node)
         self._function_stack.pop()
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         self._function_stack.append(node.name)
         self.generic_visit(node)
         self._function_stack.pop()

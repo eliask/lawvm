@@ -13,6 +13,7 @@ Tests cover:
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from typing import Any, cast
 
 import pytest
 
@@ -386,7 +387,7 @@ def test_interval_rejects_end_before_start() -> None:
 
 def test_producer_kind_validated() -> None:
     with pytest.raises(ValueError, match="producer_kind"):
-        Producer(producer_id="test", producer_kind="robot")  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+        Producer(producer_id="test", producer_kind=cast(Any, "robot"))
 
 
 def test_graph_builder_deduplicates_nodes() -> None:

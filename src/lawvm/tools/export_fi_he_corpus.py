@@ -188,7 +188,7 @@ def _element_text_content(element: etree._Element) -> str:
     import re as _re
     parts: List[str] = []
     for text in element.itertext():
-        parts.append(text)  # ty:ignore[invalid-argument-type]
+        parts.append(str(text))
     raw = "".join(parts)
     return _re.sub(r"\s+", " ", raw).strip()
 

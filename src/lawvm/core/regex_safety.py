@@ -96,15 +96,21 @@ Sound prefilter (``build_regex_prefilter`` / ``compile_classifier_regex``):
 
 from __future__ import annotations
 
+import importlib
 import re
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any, Iterable
+from typing import Any, Iterable, cast
 
-try:
-    from re import _parser as _sre  # type: ignore[attr-defined]  # ty: ignore[unresolved-import]
-except ImportError:
-    import sre_parse as _sre  # type: ignore[no-redef]  # older Python fallback
+def _load_private_re_module(primary: str, fallback: str) -> Any:
+    try:
+        return importlib.import_module(primary)
+    except ImportError:
+        return importlib.import_module(fallback)
+
+
+_sre = _load_private_re_module("re._parser", "sre_parse")
+_sre_constants = _load_private_re_module("re._constants", "sre_constants")
 
 # ---------------------------------------------------------------------------
 # Prefilter plan nodes — AND / OR / Lit predicate tree.
@@ -347,7 +353,7 @@ def build_regex_prefilter(
         return None
     if _count_literals(plan) > max_literals:
         return None
-    return plan  # type: ignore[return-value]
+    return cast(And | Or | Lit, plan)
 
 
 # ---------------------------------------------------------------------------
@@ -683,15 +689,6 @@ def _build_category_char_sets() -> None:
     if _CATEGORY_SETS_BUILT:
         return
 
-    try:
-        from re import _constants  # type: ignore[attr-defined]  # ty: ignore[unresolved-import]
-    except ImportError:
-        try:
-            import sre_constants as _constants  # type: ignore[no-redef]
-        except ImportError:
-            _CATEGORY_SETS_BUILT = True
-            return
-
     # ASCII digit set: 0-9
     _digits = frozenset(range(ord("0"), ord("9") + 1))
     # ASCII space set: space, tab, newline, carriage-return, vertical-tab, form-feed
@@ -713,7 +710,7 @@ def _build_category_char_sets() -> None:
     _t_linebreak = re.compile("[\n\r\x0b\x0c\x1c\x1d\x1e\x85  ]")
 
     def _get(name: str) -> object | None:
-        return getattr(_constants, name, None)
+        return getattr(_sre_constants, name, None)
 
     pairs: list[tuple[str, frozenset[int] | None, re.Pattern[str] | None]] = [
         # Positive sets (ascii charset, unicode membership tester)
@@ -797,40 +794,35 @@ def regex_risks(pattern: str, flags: int = 0) -> list[str]:
 
     Source: ChatGPT Pro draft, 2026-05-29.
     """
-    try:
-        from re import _parser as sre_parse  # type: ignore[attr-defined]  # ty: ignore[unresolved-import]
-    except ImportError:
-        import sre_parse  # type: ignore[no-redef]  # older Python fallback
+    MAXREPEAT = _sre.MAXREPEAT
+    MAX_REPEAT = _sre.MAX_REPEAT
+    MIN_REPEAT = _sre.MIN_REPEAT
+    SUBPATTERN = _sre.SUBPATTERN
+    BRANCH = _sre.BRANCH
+    ASSERT = _sre.ASSERT
+    ASSERT_NOT = _sre.ASSERT_NOT
+    AT = _sre.AT
+    LITERAL = _sre.LITERAL
+    NOT_LITERAL = _sre.NOT_LITERAL
+    IN = _sre.IN
+    ANY = _sre.ANY
+    RANGE = _sre.RANGE
+    CATEGORY = _sre.CATEGORY
+    GROUPREF = _sre.GROUPREF
+    GROUPREF_EXISTS = _sre.GROUPREF_EXISTS
 
-    MAXREPEAT = sre_parse.MAXREPEAT
-    MAX_REPEAT = sre_parse.MAX_REPEAT
-    MIN_REPEAT = sre_parse.MIN_REPEAT
-    SUBPATTERN = sre_parse.SUBPATTERN
-    BRANCH = sre_parse.BRANCH
-    ASSERT = sre_parse.ASSERT
-    ASSERT_NOT = sre_parse.ASSERT_NOT
-    AT = sre_parse.AT
-    LITERAL = sre_parse.LITERAL
-    NOT_LITERAL = sre_parse.NOT_LITERAL
-    IN = sre_parse.IN
-    ANY = sre_parse.ANY
-    RANGE = sre_parse.RANGE
-    CATEGORY = sre_parse.CATEGORY
-    GROUPREF = sre_parse.GROUPREF
-    GROUPREF_EXISTS = sre_parse.GROUPREF_EXISTS
-
-    POSSESSIVE_REPEAT = getattr(sre_parse, "POSSESSIVE_REPEAT", None)
-    ATOMIC_GROUP = getattr(sre_parse, "ATOMIC_GROUP", None)
+    POSSESSIVE_REPEAT = getattr(_sre, "POSSESSIVE_REPEAT", None)
+    ATOMIC_GROUP = getattr(_sre, "ATOMIC_GROUP", None)
 
     BACKTRACKING_REPEATS = {MAX_REPEAT, MIN_REPEAT}
     ALL_REPEATS = set(BACKTRACKING_REPEATS)
     if POSSESSIVE_REPEAT is not None:
         ALL_REPEATS.add(POSSESSIVE_REPEAT)
 
-    def seq(x):  # type: ignore[no-untyped-def]
+    def seq(x: Any) -> Any:
         return getattr(x, "data", x)
 
-    def walk(sub):  # type: ignore[no-untyped-def]
+    def walk(sub: Any) -> Iterable[tuple[Any, Any]]:
         for op, arg in seq(sub):
             yield op, arg
             if op == SUBPATTERN:
@@ -849,7 +841,7 @@ def regex_risks(pattern: str, flags: int = 0) -> list[str]:
                 if arg[2] is not None:
                     yield from walk(arg[2])
 
-    def nullable(sub):  # type: ignore[no-untyped-def]
+    def nullable(sub: Any) -> bool:
         for op, arg in seq(sub):
             if op == AT:
                 continue
@@ -876,10 +868,10 @@ def regex_risks(pattern: str, flags: int = 0) -> list[str]:
                 return False
         return True
 
-    def has_backtracking_repeat(sub):  # type: ignore[no-untyped-def]
+    def has_backtracking_repeat(sub: Any) -> bool:
         # Do NOT descend into ATOMIC_GROUP: an atomic group discards its inner
         # backtracking points, so (?>a+)+ is not a nested-backtracking risk.
-        def walk_no_atomic(s):  # type: ignore[no-untyped-def]
+        def walk_no_atomic(s: Any) -> Iterable[tuple[Any, Any]]:
             for op, arg in seq(s):
                 if op == ATOMIC_GROUP:
                     continue
@@ -900,7 +892,7 @@ def regex_risks(pattern: str, flags: int = 0) -> list[str]:
 
         return any(op in BACKTRACKING_REPEATS for op, _ in walk_no_atomic(sub))
 
-    def first_chars(sub, cur_flags):  # type: ignore[no-untyped-def]
+    def first_chars(sub: Any, cur_flags: int) -> tuple[bool, set[int] | None, set[Any]]:
         """Return (nullable, charset_or_None, testers) — see adjacent_repeat_risks."""
         out: set[int] = set()
         testers: set[Any] = set()
@@ -972,7 +964,12 @@ def regex_risks(pattern: str, flags: int = 0) -> list[str]:
                 return False, out, testers
         return True, out, testers
 
-    def _branch_overlap(seen, seen_testers, s, s_testers):  # type: ignore[no-untyped-def]
+    def _branch_overlap(
+        seen: set[int],
+        seen_testers: set[Any],
+        s: set[int],
+        s_testers: set[Any],
+    ) -> bool:
         if seen & s:
             return True
         if any(t.match(chr(c)) for t in seen_testers for c in s if c > 127):
@@ -981,7 +978,7 @@ def regex_risks(pattern: str, flags: int = 0) -> list[str]:
             return True
         return False
 
-    def ambiguous_branch_inside_repeat(sub, cur_flags):  # type: ignore[no-untyped-def]
+    def ambiguous_branch_inside_repeat(sub: Any, cur_flags: int) -> bool:
         for op, arg in walk(sub):
             if op == BRANCH:
                 seen: set[int] = set()
@@ -994,7 +991,7 @@ def regex_risks(pattern: str, flags: int = 0) -> list[str]:
                     seen_testers |= t
         return False
 
-    tree = sre_parse.parse(pattern, flags)
+    tree = _sre.parse(pattern, flags)
     eff_flags = tree.state.flags
     risks: list[str] = []
 
@@ -1037,26 +1034,21 @@ def adjacent_repeat_risks(pattern: str, flags: int = 0) -> list[str]:
 
     Source: ChatGPT Pro draft, 2026-05-29; soundness hardening 2026-05-30.
     """
-    try:
-        from re import _parser as sre  # type: ignore[attr-defined]  # ty: ignore[unresolved-import]
-    except ImportError:
-        import sre_parse as sre  # type: ignore[no-redef]
+    MAXREPEAT = _sre.MAXREPEAT
+    BACKTRACKING_REPEAT = {_sre.MAX_REPEAT, _sre.MIN_REPEAT}
 
-    MAXREPEAT = sre.MAXREPEAT
-    BACKTRACKING_REPEAT = {sre.MAX_REPEAT, sre.MIN_REPEAT}
-
-    POSSESSIVE_REPEAT = getattr(sre, "POSSESSIVE_REPEAT", None)
+    POSSESSIVE_REPEAT = getattr(_sre, "POSSESSIVE_REPEAT", None)
     ALL_REPEAT = set(BACKTRACKING_REPEAT)
     if POSSESSIVE_REPEAT is not None:
         ALL_REPEAT.add(POSSESSIVE_REPEAT)
 
-    ATOMIC_GROUP = getattr(sre, "ATOMIC_GROUP", None)
-    ANY_ALL = getattr(sre, "ANY_ALL", None)
+    ATOMIC_GROUP = getattr(_sre, "ATOMIC_GROUP", None)
+    ANY_ALL = getattr(_sre, "ANY_ALL", None)
 
-    def data(sub):  # type: ignore[no-untyped-def]
+    def data(sub: Any) -> Any:
         return getattr(sub, "data", sub)
 
-    def first_chars(sub, cur_flags):  # type: ignore[no-untyped-def]
+    def first_chars(sub: Any, cur_flags: int) -> tuple[bool, set[int] | None, set[Any]]:
         """Return (nullable, charset_or_None, testers).
 
         ``testers`` is a set of Unicode membership testers for any categories in
@@ -1066,36 +1058,36 @@ def adjacent_repeat_risks(pattern: str, flags: int = 0) -> list[str]:
         out: set[int] = set()
         testers: set[Any] = set()
         for op, arg in data(sub):
-            if op in (sre.AT, sre.ASSERT, sre.ASSERT_NOT):
+            if op in (_sre.AT, _sre.ASSERT, _sre.ASSERT_NOT):
                 continue
-            if op == sre.LITERAL:
+            if op == _sre.LITERAL:
                 out.update(_case_expand({arg}, cur_flags))
                 return False, out, testers
-            if op in (sre.NOT_LITERAL, sre.ANY) or (
+            if op in (_sre.NOT_LITERAL, _sre.ANY) or (
                 ANY_ALL is not None and op == ANY_ALL
             ):
                 return False, None, set()
-            if op == sre.CATEGORY:
+            if op == _sre.CATEGORY:
                 cat_chars, tester = _resolve_category(arg, cur_flags)
                 if cat_chars is None:
                     return False, None, set()
                 return False, cat_chars, ({tester} if tester is not None else set())
-            if op == sre.IN:
+            if op == _sre.IN:
                 chars: set[int] = set()
                 known = True
                 in_testers: set[Any] = set()
                 for iop, iarg in arg:
-                    if iop == sre.NEGATE:
+                    if iop == _sre.NEGATE:
                         return False, None, set()
-                    if iop == sre.LITERAL:
+                    if iop == _sre.LITERAL:
                         chars.update(_case_expand({iarg}, cur_flags))
-                    elif iop == sre.RANGE:
+                    elif iop == _sre.RANGE:
                         lo, hi = iarg
                         if hi - lo > 512:
                             known = False
                         else:
                             chars.update(_case_expand(set(range(lo, hi + 1)), cur_flags))
-                    elif iop == sre.CATEGORY:
+                    elif iop == _sre.CATEGORY:
                         cat_chars, tester = _resolve_category(iarg, cur_flags)
                         if cat_chars is not None:
                             chars.update(cat_chars)
@@ -1106,10 +1098,10 @@ def adjacent_repeat_risks(pattern: str, flags: int = 0) -> list[str]:
                     else:
                         known = False
                 return False, (chars if known else None), in_testers
-            if op == sre.SUBPATTERN:
+            if op == _sre.SUBPATTERN:
                 _g, add_f, del_f, child = arg
                 nullable, chars2, t2 = first_chars(child, (cur_flags | add_f) & ~del_f)
-            elif op == sre.BRANCH:
+            elif op == _sre.BRANCH:
                 nullable_any = False
                 chars3: set[int] = set()
                 br_testers: set[Any] = set()
@@ -1137,7 +1129,7 @@ def adjacent_repeat_risks(pattern: str, flags: int = 0) -> list[str]:
                 return False, out, testers
         return True, out, testers
 
-    def flatten_concat(sub, cur_flags):  # type: ignore[no-untyped-def]
+    def flatten_concat(sub: Any, cur_flags: int) -> list[tuple[Any, Any, int]]:
         """Flatten bare subpatterns into a token list, carrying effective flags.
 
         Carrying per-token flags is what lets ``(?i:a+)A+`` resolve each repeat
@@ -1145,17 +1137,17 @@ def adjacent_repeat_risks(pattern: str, flags: int = 0) -> list[str]:
         """
         flat = []
         for op, arg in data(sub):
-            if op == sre.SUBPATTERN:
+            if op == _sre.SUBPATTERN:
                 _g, add_f, del_f, child = arg
                 flat.extend(flatten_concat(child, (cur_flags | add_f) & ~del_f))
             else:
                 flat.append((op, arg, cur_flags))
         return flat
 
-    def is_zero_width(tok):  # type: ignore[no-untyped-def]
-        return tok[0] in (sre.AT, sre.ASSERT, sre.ASSERT_NOT)
+    def is_zero_width(tok: tuple[Any, Any, int]) -> bool:
+        return tok[0] in (_sre.AT, _sre.ASSERT, _sre.ASSERT_NOT)
 
-    def nullable_token(tok):  # type: ignore[no-untyped-def]
+    def nullable_token(tok: tuple[Any, Any, int]) -> bool:
         """Conservatively, only ``lo == 0`` repeats can match empty.
 
         Returning False for anything else stops the look-ahead at the first
@@ -1164,7 +1156,7 @@ def adjacent_repeat_risks(pattern: str, flags: int = 0) -> list[str]:
         op, arg, _flags = tok
         return op in ALL_REPEAT and arg[0] == 0
 
-    def repeat_sig(tok):  # type: ignore[no-untyped-def]
+    def repeat_sig(tok: tuple[Any, Any, int]) -> dict[str, Any] | None:
         op, arg, tflags = tok
         if op not in BACKTRACKING_REPEAT:
             return None
@@ -1174,7 +1166,7 @@ def adjacent_repeat_risks(pattern: str, flags: int = 0) -> list[str]:
         _nullable, chars, testers = first_chars(body, tflags)
         return {"lo": lo, "hi": hi, "first": chars, "testers": testers}
 
-    def overlaps(a, b):  # type: ignore[no-untyped-def]
+    def overlaps(a: dict[str, Any], b: dict[str, Any]) -> bool:
         ca, cb = a["first"], b["first"]
         if ca is None or cb is None:
             return True
@@ -1189,10 +1181,10 @@ def adjacent_repeat_risks(pattern: str, flags: int = 0) -> list[str]:
             return True
         return False
 
-    tree = sre.parse(pattern, flags)
+    tree = _sre.parse(pattern, flags)
     risks: list[str] = []
 
-    def scan(sub, cur_flags, where: str = "$") -> None:  # type: ignore[no-untyped-def]
+    def scan(sub: Any, cur_flags: int, where: str = "$") -> None:
         flat = [tok for tok in flatten_concat(sub, cur_flags) if not is_zero_width(tok)]
         n = len(flat)
         for i in range(n):
@@ -1221,17 +1213,17 @@ def adjacent_repeat_risks(pattern: str, flags: int = 0) -> list[str]:
                 k += 1
         for idx, (op, arg) in enumerate(data(sub)):
             child_where = f"{where}/{idx}:{op}"
-            if op == sre.SUBPATTERN:
+            if op == _sre.SUBPATTERN:
                 _g, add_f, del_f, child = arg
                 scan(child, (cur_flags | add_f) & ~del_f, child_where)
-            elif op == sre.BRANCH:
+            elif op == _sre.BRANCH:
                 for bidx, branch in enumerate(arg[1]):
                     scan(branch, cur_flags, f"{child_where}|{bidx}")
             elif op in ALL_REPEAT:
                 scan(arg[2], cur_flags, child_where)
             elif ATOMIC_GROUP is not None and op == ATOMIC_GROUP:
                 scan(arg, cur_flags, child_where)
-            elif op in (sre.ASSERT, sre.ASSERT_NOT):
+            elif op in (_sre.ASSERT, _sre.ASSERT_NOT):
                 scan(arg[1], cur_flags, child_where)
 
     scan(tree, tree.state.flags)

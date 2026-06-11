@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from lawvm.core.provenance_graph import (
     ArtifactRef,
@@ -49,6 +49,26 @@ _DEFAULT_DATA_DIR = "data"
 _V2_MANUAL_CLAIMS_SUBDIR = "manual_claims"
 _V3_PROVENANCE_SUBDIR = "provenance_graph"
 
+GraphProducerKind = Literal["human", "llm", "service", "script", "institution"]
+
+
+def _normalize_graph_producer_kind(raw_kind: object) -> GraphProducerKind:
+    """Map v2.2 producer-kind vocabulary onto v3 ProvenanceGraph values."""
+    kind = str(raw_kind or "human")
+    kind_map: dict[str, GraphProducerKind] = {
+        "human": "human",
+        "llm": "llm",
+        "service": "service",
+        "script": "script",
+        "institution": "institution",
+        "operator": "human",
+        "tool": "script",
+    }
+    try:
+        return kind_map[kind]
+    except KeyError as exc:
+        raise ValueError(f"unsupported v2.2 producer_kind {kind!r}") from exc
+
 
 # ---------------------------------------------------------------------------
 # Conversion helpers: v2.2 → v3
@@ -57,7 +77,6 @@ _V3_PROVENANCE_SUBDIR = "provenance_graph"
 
 def _make_assertion_from_claim(claim_dict: dict) -> ProvenanceAssertion:
     """Convert a v2.2 ManualCompilationClaim dict to a ProvenanceAssertion."""
-    claim_id = str(claim_dict["claim_id"])
     jurisdiction = str(claim_dict.get("jurisdiction", "fi"))
     claim_kind = str(claim_dict.get("claim_kind", ""))
     claim_layer = str(claim_dict.get("claim_layer", "extraction"))
@@ -90,39 +109,20 @@ def _make_assertion_from_claim(claim_dict: dict) -> ProvenanceAssertion:
     artifact_digest = str(claim_dict.get("cited_source_hash", "")) or "unknown"
     span = claim_dict.get("cited_source_span", [0, 0])
     byte_range: tuple[int, int] = (int(span[0]), int(span[1])) if len(span) == 2 else (0, 0)
-    source_locator = claim_dict.get("cited_source_locator", {})  # noqa: F841  # BUG: cited_source_locator read but never passed to SourceRef (structural_locator used instead)
+    source_locator = claim_dict.get("cited_source_locator", {})
     structural_locator = str(provision_ref or "")
+    if isinstance(source_locator, dict):
+        structural_locator = str(
+            source_locator.get("structural_locator")
+            or source_locator.get("locator")
+            or structural_locator
+        )
     source_ref = SourceRef(
         artifact_digest=artifact_digest,
         structural_locator=structural_locator,
         bounded_quote_hash=artifact_digest[:64] if len(artifact_digest) >= 64 else artifact_digest,
         normalization_policy_id="v2.2.migration",
         byte_range=byte_range,
-    )
-
-    # Producer from claim's producer field
-    producer_raw = claim_dict.get("producer", {})
-    if isinstance(producer_raw, dict):
-        producer_id = str(producer_raw.get("handle") or producer_raw.get("model_id") or "unknown")
-        raw_kind = str(producer_raw.get("producer_kind", "human"))
-        # v2.2 used "operator" and "tool" which are not valid v3 producer kinds
-        _kind_map = {"operator": "human", "tool": "script"}
-        producer_kind = _kind_map.get(raw_kind, raw_kind)
-        ts_raw = producer_raw.get("timestamp", "")
-        if ts_raw:
-            produced_dt = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))  # noqa: F841  # BUG: timestamp parsed but ProvenanceAssertion has no producer/timestamp field; dead computation
-        else:
-            produced_dt = datetime.now(tz=timezone.utc)  # noqa: F841  # BUG: same — ProvenanceAssertion has no producer field to receive this
-    else:
-        producer_id = "unknown"
-        producer_kind = "human"
-        produced_dt = datetime.now(tz=timezone.utc)  # noqa: F841  # BUG: same
-
-    producer = Producer(  # noqa: F841  # BUG: Producer built but ProvenanceAssertion schema has no producer field; entire block is dead
-        producer_id=producer_id,
-        producer_kind=producer_kind,  # ty:ignore[invalid-argument-type]
-        public_key=None,
-        metadata={"migrated_from": "v2.2", "original_claim_id": claim_id},
     )
 
     supersedes = tuple(str(x) for x in claim_dict.get("supersedes", []))
@@ -205,20 +205,24 @@ def _make_attestation_from_event(
     produced_at = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00")) if ts_raw else datetime.now(tz=timezone.utc)
 
     producer_raw = event_dict.get("producer", {})
+    raw_kind: object = "human"
     if isinstance(producer_raw, dict):
         producer_id = str(producer_raw.get("handle") or producer_raw.get("model_id") or "unknown")
-        raw_kind = str(producer_raw.get("producer_kind", "human"))
-        _kind_map = {"operator": "human", "tool": "script"}
-        producer_kind = _kind_map.get(raw_kind, raw_kind)
+        raw_kind = producer_raw.get("producer_kind", "human")
+        producer_kind = _normalize_graph_producer_kind(raw_kind)
     else:
         producer_id = "unknown"
         producer_kind = "human"
 
     producer = Producer(
         producer_id=producer_id,
-        producer_kind=producer_kind,  # ty:ignore[invalid-argument-type]
+        producer_kind=producer_kind,
         public_key=None,
-        metadata={"migrated_from": "v2.2", "original_event_kind": event_kind},
+        metadata={
+            "migrated_from": "v2.2",
+            "original_event_kind": event_kind,
+            "original_producer_kind": str(raw_kind),
+        },
     )
 
     payload: dict[str, object] = {

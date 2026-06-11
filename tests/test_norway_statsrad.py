@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from typing import Any
 
 from lawvm.norway.statsrad import (
     build_no_statsrad_commencement_candidate_scan,
@@ -400,7 +401,10 @@ def test_fetch_statsrad_url_retries_curl(monkeypatch) -> None:
 
 
 def test_build_no_statsrad_commencement_candidate_scan_separates_evidence(monkeypatch) -> None:
-    def fake_events(data_dir=None, diagnostics_out=None):  # noqa: ANN001
+    def fake_events(
+        data_dir: str | None = None,
+        diagnostics_out: list[dict[str, str]] | None = None,
+    ) -> list[dict[str, Any]]:
         if diagnostics_out is not None:
             diagnostics_out.append(
                 {

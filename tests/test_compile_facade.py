@@ -1096,7 +1096,7 @@ class TestFromPhaseResult:
         pr = _pr(output=None)
         facade = CompileFacade.from_phase_result(pr, replay_mode="legal_pit")
         with pytest.raises((AttributeError, TypeError)):
-            facade.replay_mode = "other"  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+            cast(Any, facade).replay_mode = "other"
 
 
 # ---------------------------------------------------------------------------

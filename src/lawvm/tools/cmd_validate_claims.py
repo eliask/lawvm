@@ -11,6 +11,7 @@ AGENTS.md §1.10: no broad try/except in non-test code.
 """
 from __future__ import annotations
 
+import importlib
 import json
 import sys
 from datetime import datetime, timezone
@@ -50,6 +51,17 @@ def _resolve_graph_store_root(args: object) -> str:
         or os.environ.get("LAWVM_GRAPH_STORE_ROOT")
         or _DEFAULT_GRAPH_ROOT
     )
+
+
+def _required_arg_str(args: object, primary: str, fallback: str | None = None) -> str:
+    """Return a required string CLI argument from argparse-like objects."""
+    value = getattr(args, primary, None)
+    if value is None and fallback is not None:
+        value = getattr(args, fallback, None)
+    if not isinstance(value, str) or not value:
+        names = primary if fallback is None else f"{primary}/{fallback}"
+        raise ValueError(f"missing required CLI argument: {names}")
+    return value
 
 
 def _tool_producer() -> Producer:
@@ -154,7 +166,7 @@ def _build_compat_claim(assertion: ProvenanceAssertion):
             he_id=None,
             version_id=None,
         ),
-        cited_source_span=list(byte_range),  # ty:ignore[invalid-argument-type]
+        cited_source_span=byte_range,
         cited_source_hash=artifact_digest,
         dependency_fingerprint=(),
         valid_at=(assertion.valid_at.start, assertion.valid_at.end),
@@ -197,7 +209,7 @@ def _validate_one_assertion(
     verbose: bool = True,
 ) -> bool:
     """Re-run validators; emit new attestations. Assertion is NOT mutated."""
-    import lawvm.finland.claim_kinds  # noqa: F401
+    importlib.import_module("lawvm.finland.claim_kinds")
     from lawvm.core.manual_claims.kind_registry import get_claim_kind_spec
 
     spec = get_claim_kind_spec(assertion.kind)
@@ -273,7 +285,7 @@ def _source_bytes_for_assertion(assertion: ProvenanceAssertion) -> bytes:
 
 
 def cmd_validate_one(args: object) -> int:
-    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    assertion_id = _required_arg_str(args, "claim_id", fallback="assertion_id")
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 

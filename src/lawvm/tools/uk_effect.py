@@ -62,7 +62,11 @@ def _tag(el: ET._Element) -> str:
 def _text_snippet(el: Optional[ET._Element], *, limit: int = 300) -> str:
     if el is None:
         return ""
-    text = " ".join(t.strip() for t in el.itertext() if t and t.strip())  # type: ignore[union-attr]  # ty: ignore[no-matching-overload]
+    text = " ".join(
+        text_part.strip()
+        for text_part in (str(part) for part in el.itertext())
+        if text_part and text_part.strip()
+    )
     text = " ".join(text.split())
     if len(text) <= limit:
         return text
@@ -106,7 +110,7 @@ def _source_context_jsonable(
     }
 
 
-def _fmt_target(target) -> str:  # noqa: ANN001
+def _fmt_target(target) -> str:
     addr = "/".join(f"{kind}:{label}" for kind, label in target.path) or str(target)
     special = target.special
     if special is not None:
@@ -116,7 +120,7 @@ def _fmt_target(target) -> str:  # noqa: ANN001
     return addr
 
 
-def _print_payload(node, *, indent: str = "    ") -> None:  # noqa: ANN001
+def _print_payload(node, *, indent: str = "    ") -> None:
     label = f" {node.label}" if node.label else ""
     snippet = " ".join((node.text or "").split())
     if len(snippet) > 100:
@@ -129,7 +133,7 @@ def _print_payload(node, *, indent: str = "    ") -> None:  # noqa: ANN001
         _print_payload(child, indent=indent + "  ")
 
 
-def _payload_jsonable(node) -> dict[str, Any]:  # noqa: ANN001
+def _payload_jsonable(node) -> dict[str, Any]:
     return {
         "kind": str(node.kind),
         "label": node.label or "",
@@ -139,7 +143,7 @@ def _payload_jsonable(node) -> dict[str, Any]:  # noqa: ANN001
     }
 
 
-def _text_patch_jsonable(op) -> dict[str, Any] | None:  # noqa: ANN001
+def _text_patch_jsonable(op) -> dict[str, Any] | None:
     patch = op.text_patch
     if patch is None:
         return None
@@ -181,7 +185,7 @@ def _blocking_rows(rows: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ..
     return tuple(row for row in rows if is_blocking_compile_record(row))
 
 
-def affecting_act_xml_missing_rejection(effect) -> dict[str, Any]:  # noqa: ANN001
+def affecting_act_xml_missing_rejection(effect) -> dict[str, Any]:
     act_id = str(getattr(effect, "affecting_act_id", "") or "")
     return uk_affecting_act_xml_missing_rejection(
         effect_id=str(getattr(effect, "effect_id", "") or ""),
@@ -190,7 +194,7 @@ def affecting_act_xml_missing_rejection(effect) -> dict[str, Any]:  # noqa: ANN0
     )
 
 
-def affecting_act_xml_parse_rejection(effect, exc: Exception) -> dict[str, Any]:  # noqa: ANN001
+def affecting_act_xml_parse_rejection(effect, exc: Exception) -> dict[str, Any]:
     act_id = str(getattr(effect, "affecting_act_id", "") or "")
     return uk_affecting_act_xml_parse_rejection(
         effect_id=str(getattr(effect, "effect_id", "") or ""),
@@ -200,7 +204,7 @@ def affecting_act_xml_parse_rejection(effect, exc: Exception) -> dict[str, Any]:
     )
 
 
-def affecting_act_xml_too_small_rejection(effect, *, source_size: int) -> dict[str, Any]:  # noqa: ANN001
+def affecting_act_xml_too_small_rejection(effect, *, source_size: int) -> dict[str, Any]:
     act_id = str(getattr(effect, "affecting_act_id", "") or "")
     return uk_affecting_act_xml_too_small_rejection(
         effect_id=str(getattr(effect, "effect_id", "") or ""),
@@ -229,7 +233,7 @@ def has_blocking_lowering_rejection(rejections: list[dict[str, Any]] | tuple[dic
 def _manual_compile_claim_template_for_effect_report(
     *,
     statute_id: str,
-    effect,  # noqa: ANN001
+    effect,
     source_pathology: str,
     extracted: Optional[ET._Element],
     lowering_rejections: list[dict[str, Any]],
@@ -277,10 +281,10 @@ def print_lowering_rejections(rejections: list[dict[str, Any]], *, prefix: str =
             print(f"{prefix}  {rule_id}: {count}")
 
 
-def uk_effect_report_jsonable(  # noqa: PLR0913
+def uk_effect_report_jsonable(
     *,
     statute_id: str,
-    effect,  # noqa: ANN001
+    effect,
     source_pathology: str,
     extracted: Optional[ET._Element],
     lowering_rejections: list[dict[str, Any]],
@@ -707,7 +711,7 @@ def _eid_present(eid: str, candidates: set[str]) -> bool:
 def _resolve_target_presence(
     target: "LegalAddress",
     *,
-    resolver,  # noqa: ANN001
+    resolver,
     base_eids: set[str],
     oracle_eids: set[str],
 ) -> _EIDPresence:
@@ -751,12 +755,12 @@ def _resolve_descendant_presence(
     return _DescendantPresence(base_present=base_hit, oracle_present=oracle_hit)
 
 
-def _find_node_by_eid(statute: "IRStatute", eid: str):  # noqa: ANN001
+def _find_node_by_eid(statute: "IRStatute", eid: str):
     found, _parent = _find_node_and_parent_by_eid(statute, eid)
     return found
 
 
-def _find_node_and_parent_by_eid(statute: "IRStatute", eid: str):  # noqa: ANN001
+def _find_node_and_parent_by_eid(statute: "IRStatute", eid: str):
     want = eid.lower()
     stack = [(statute.body, None), *((node, None) for node in statute.supplements)]
     while stack:
@@ -768,7 +772,7 @@ def _find_node_and_parent_by_eid(statute: "IRStatute", eid: str):  # noqa: ANN00
     return None, None
 
 
-def _target_heading_texts(node, parent) -> list[str]:  # noqa: ANN001
+def _target_heading_texts(node, parent) -> list[str]:
     """Return explicit heading-facet text for a target node, not body text."""
     title_bearing_kinds = {
         IRNodeKind.PART,
@@ -805,7 +809,7 @@ def _target_heading_texts(node, parent) -> list[str]:  # noqa: ANN001
     return []
 
 
-def _subtree_text_surface(node) -> str:  # noqa: ANN001
+def _subtree_text_surface(node) -> str:
     parts: list[str] = []
     if node.text:
         parts.append(node.text)

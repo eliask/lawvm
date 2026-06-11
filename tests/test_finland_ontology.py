@@ -17,6 +17,8 @@ Run:
 """
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from lawvm.finland.ontology import (
@@ -70,7 +72,7 @@ class TestOntologyEntries:
         for entry in UNIT_ONTOLOGY.values():
             assert isinstance(entry, UnitOntologyEntry)
             with pytest.raises(AttributeError):
-                entry.kind = "bogus"  # type: ignore[misc]  # ty: ignore[invalid-assignment]
+                cast(Any, entry).kind = "bogus"
 
     def test_repeal_compacts_always_false(self):
         """Finnish law never auto-compacts on repeal."""

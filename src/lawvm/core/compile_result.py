@@ -40,6 +40,11 @@ from lawvm.core.target_scope import (
 from lawvm.core.provenance import MigrationEvent, migration_event_sort_key
 from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.timeline_results import MaterializationLineagePlan
+from lawvm.core.timeline import (
+    materialize_pit as _materialize_pit,
+    materialize_pit_ex as _materialize_pit_ex,
+    provision_lineage as _provision_lineage,
+)
 
 # Compatibility re-exports while temporal carriers migrate to core.temporal.
 _TEMPORAL_COMPAT_EXPORTS = (ActivationRule, TemporalEvent, TemporalScope)
@@ -567,8 +572,6 @@ def _validate_bundle_purity(
     semantic center and must not carry frontend-local waist types as
     first-class bundle payload.
     """
-    from lawvm.core.ir import LegalOperation  # noqa: PLC0415 (avoid circular at module level)
-
     violations: list[str] = []
     for i, op in enumerate(structural_ops):
         if not isinstance(op, LegalOperation):
@@ -660,9 +663,7 @@ class CanonicalBundle:
         Core consumes the emitted chain; producer frontends remain the
         emission site.
         """
-        from lawvm.core.timeline import provision_lineage  # noqa: PLC0415
-
-        return provision_lineage(
+        return _provision_lineage(
             timelines,
             address,
             migration_events=self.migration_events,
@@ -681,9 +682,7 @@ class CanonicalBundle:
         expires_as_of: str = "",
     ) -> "IRStatute":
         """Materialize PIT using the bundle's emitted lineage migrations."""
-        from lawvm.core.timeline import materialize_pit  # noqa: PLC0415
-
-        return materialize_pit(
+        return _materialize_pit(
             timelines,
             as_of,
             base=base,
@@ -709,9 +708,7 @@ class CanonicalBundle:
         expires_as_of: str = "",
     ) -> "MaterializationResult":
         """Materialize PIT with explicit degradation metadata and lineage migrations."""
-        from lawvm.core.timeline import materialize_pit_ex  # noqa: PLC0415
-
-        return materialize_pit_ex(
+        return _materialize_pit_ex(
             timelines,
             as_of,
             base=base,

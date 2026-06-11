@@ -419,7 +419,10 @@ def _build_live_target_index(rows: tuple[Mapping[str, Any], ...]) -> _LiveTarget
             statute_id: frozenset(paths)
             for statute_id, paths in paths_by_statute.items()
         },
-        fingerprints_by_statute_id=fingerprints_by_statute,  # ty:ignore[invalid-argument-type]
+        fingerprints_by_statute_id={
+            statute_id: dict(fingerprints)
+            for statute_id, fingerprints in fingerprints_by_statute.items()
+        },
         issues_by_statute_id={
             statute_id: tuple(issues)
             for statute_id, issues in issue_lists_by_statute.items()

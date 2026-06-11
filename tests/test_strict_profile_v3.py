@@ -4,6 +4,8 @@ test_strict_profile_channel_gating_via_PROFILE_GATES (required by spec)
 """
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from lawvm.core.compile_result import StrictProfile, _profile_allows, _PROFILE_GATES
@@ -42,7 +44,7 @@ def test_channel_fields_require_bool():
     with pytest.raises(ValueError, match="must be a bool"):
         StrictProfile(
             name="bad",
-            allows_attested_reference_resolution="yes",  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            allows_attested_reference_resolution=cast(Any, "yes"),
         )
 
 

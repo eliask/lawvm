@@ -25,8 +25,8 @@ from pathlib import Path
 # Add src to path for lawvm imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from lawvm.fetch_archive import FetchArchive  # ty: ignore[unresolved-import]  # legacy: module deleted
 from farchive import Farchive, CompressionPolicy
+from scripts.legacy_fetch_archive import FetchArchive
 
 
 def _parse_args() -> argparse.Namespace:

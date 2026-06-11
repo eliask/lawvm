@@ -421,7 +421,7 @@ def _element_text(element: etree._Element) -> str:
     """Extract all text content from an element, whitespace-normalized."""
     parts: list[str] = []
     for text in element.itertext():
-        parts.append(text)  # ty:ignore[invalid-argument-type]
+        parts.append(str(text))
     raw = "".join(parts)
     return re.sub(r"\s+", " ", raw).strip()
 

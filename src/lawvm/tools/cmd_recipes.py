@@ -108,5 +108,5 @@ def _print_recipes() -> None:
     print(f"{'─' * 72}")
 
 
-def main(args: Any) -> None:  # noqa: ARG001
+def main(_args: Any) -> None:
     _print_recipes()

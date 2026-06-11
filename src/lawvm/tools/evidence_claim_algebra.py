@@ -283,7 +283,7 @@ def _finalize(
         # behavior: empty candidates list, no selected.
         return ResolvedSectionClaims(
             ctx=ctx,
-            selected=None,  # type: ignore[arg-type]
+            selected=None,
             candidates=(),
             defeated_candidates=(),
             suppressed_candidates=tuple(suppressed),

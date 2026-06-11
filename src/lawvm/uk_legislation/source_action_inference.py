@@ -161,7 +161,7 @@ def _empty_effect_type_text_insertions(
     return fragments
 
 
-def infer_uk_effect_action_from_source(  # noqa: PLR0913
+def infer_uk_effect_action_from_source(
     *,
     effect: UKEffectRecord,
     effect_type: str,

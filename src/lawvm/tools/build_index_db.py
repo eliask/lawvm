@@ -12,6 +12,7 @@ Usage:
 """
 from __future__ import annotations
 
+import importlib
 import sys
 import time
 from pathlib import Path
@@ -32,8 +33,7 @@ from lawvm.core.manual_claims.primitive import _ProfileTagDeprecated as ProfileT
 def _require_duckdb() -> Any:
     """Import duckdb or print a helpful error and exit."""
     try:
-        import duckdb
-        return duckdb
+        return importlib.import_module("duckdb")
     except ImportError:
         print(
             "error: duckdb is not installed.\n\n"

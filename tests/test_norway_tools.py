@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import io
 import json
 import tarfile
@@ -524,7 +525,7 @@ def test_no_frontier_tool_emits_json(tmp_path, monkeypatch, capsys) -> None:
     # verify.py at a moment when inventory.build_no_inventory is already patched,
     # leaving verify.build_no_inventory permanently bound to the lambda after
     # teardown and breaking all subsequent tests in this session.
-    import lawvm.norway.verify  # noqa: F401 – side-effect import for binding safety
+    importlib.import_module("lawvm.norway.verify")
     from lawvm.norway.inventory import NOInventory
 
     _write_archive(

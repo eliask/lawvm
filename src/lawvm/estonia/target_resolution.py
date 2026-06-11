@@ -501,143 +501,6 @@ def matches_target_statute_header(target_title: str, para_title: str) -> bool:
     return strict_title_match_para(target_title, para_title) or title_matches_para(target_title, para_title)
 
 
-def paragrahv_to_act_id(title: str) -> str:
-    """Heuristically derive a short base act name from a paragrahv title."""
-    title = re.sub(r"\s+muutmine\s*$", "", title.strip(), flags=re.IGNORECASE)
-    title = re.sub(r"\s+§.*$", "", title, flags=re.IGNORECASE)
-    title = re.sub(
-        r"(seadustiku|seaduse|koodeksi)$",
-        lambda m: {
-            "seadustiku": "seadustik",
-            "seaduse": "seadus",
-            "koodeksi": "koodeks",
-        }.get(m.group(1), m.group(1)),
-        title,
-        flags=re.IGNORECASE,
-    )
-    return title.lower().strip()
-
-
-def extract_intro_statute_fragment(text: str) -> str:
-    """Extract a leading target-statute phrase from an untitled amendment clause."""
-    if not text:
-        return ""
-    text = re.sub(r"\s*\(RT[^)]*\)", "", text, flags=re.IGNORECASE)
-    year_prefix = ""
-    year_match = re.match(r"^(\d{4}\.\s*aasta\s+)", text, re.IGNORECASE)
-    if year_match is not None:
-        year_prefix = year_match.group(1)
-        text = text[year_match.end():]
-    fragment = ""
-    fragment_from_quoted_title = False
-    quoted_title_match = re.match(
-        r"^[A-ZÜÕÖÄ][^\n]{0,240}?\b(?:seaduse|seaduses|seadust|seadustiku|koodeksi|määruse|määruses|määrust)\b"
-        r"(?:\s+nr\.?\s*[\w./-]+)?\s+[„\"“](?P<title>[^„”“\"]+)[”“\"]"
-        r"\s+(?:§|paragrahv|\btehakse\b|\bmuudetakse\b|\btunnistatakse\b|\btäiendatakse\b|\bjäetakse\b)",
-        text,
-        re.IGNORECASE,
-    )
-    if quoted_title_match:
-        fragment = quoted_title_match.group("title").strip()
-        fragment_from_quoted_title = True
-    section_scoped_match = re.match(
-        r"^([A-ZÜÕÖÄ][^\n.]{4,180}?\b(?:seadus|seaduse|seadust|"
-        r"seadustik|seadustiku|seadustikku|koodeks|koodeksi|koodeksit|"
-        r"määrus|määruse|määrust)\b)"
-        r"(\s+§[^.]*)?\s+"
-        r"(muudetakse|asendatakse|tunnistatakse|täiendatakse|jäetakse)",
-        text,
-        re.IGNORECASE,
-    )
-    if not fragment and section_scoped_match:
-        fragment = section_scoped_match.group(1).strip()
-        if section_scoped_match.group(3).lower() == "jäetakse" and section_scoped_match.group(2):
-            fragment = f"{fragment}{section_scoped_match.group(2)}"
-    elif not fragment:
-        direct_match = re.match(
-            r"^([A-ZÜÕÖÄ][^\n.]{4,180}?)"
-            r"(?:tehakse|tehtakse|asendatakse|tunnistatakse|täiendatakse|jäetakse)",
-            text,
-            re.IGNORECASE,
-        )
-        if direct_match:
-            fragment = direct_match.group(1).strip()
-    if not fragment:
-        return ""
-    if year_prefix:
-        fragment = f"{year_prefix}{fragment}".strip()
-    if not fragment_from_quoted_title and not any(
-        token in fragment.lower()
-        for token in (
-            "seadus",
-            "seaduse",
-            "seadust",
-            "seadustik",
-            "seadustiku",
-            "seadustikku",
-            "koodeks",
-            "koodeksi",
-            "koodeksit",
-            "määrus",
-            "määruse",
-            "määrust",
-        )
-    ):
-        return ""
-    return fragment
-
-
-def is_specific_direct_target_fragment(fragment: str) -> bool:
-    """Return True when a clause fragment names a statute, not a generic law noun."""
-    if not fragment:
-        return False
-    cleaned = re.sub(r"\s+", " ", fragment.strip())
-    lowered = cleaned.lower()
-    generic_only = {
-        "seadus",
-        "seaduse",
-        "seadust",
-        "seadustik",
-        "seadustiku",
-        "seadustikku",
-        "koodeks",
-        "koodeksi",
-        "koodeksit",
-        "määrus",
-        "määruse",
-        "määrust",
-    }
-    if lowered in generic_only:
-        return False
-    if re.match(
-        r"^(?:käesolev|nimetatud|see|sama|kõnealune|nimetatud)\s+"
-        r"(?:seadus|seaduse|seadust|seadustik|seadustiku|seadustikku|koodeks|koodeksi|koodeksit|määrus|määruse|määrust)\b",
-        lowered,
-        re.IGNORECASE,
-    ):
-        return False
-    return True
-
-
-def direct_target_clause_matches_registry(
-    *,
-    fragment: str,
-    target_title: str,
-    lookup_act_identity: Callable[..., object | None] = lookup_ee_act_identity,
-    title_matcher: Callable[[str, str], bool] = title_matches_para,
-) -> bool:
-    """Resolve a direct-target fragment against the act-identity registry."""
-    if not is_specific_direct_target_fragment(fragment):
-        return False
-    registry_record = lookup_act_identity(alias=fragment or "")
-    if registry_record is not None and _registry_record_matches_all(registry_record, target_title, fragment):
-        return True
-    registry_record = lookup_act_identity(title=fragment, alias=target_title)
-    if registry_record is not None and _registry_record_matches_all(registry_record, target_title, fragment):
-        return True
-    return title_matcher(target_title, fragment)
-
-
 def intro_fragment_matches_target(
     *,
     target_title: str,
@@ -3087,7 +2950,7 @@ def _first_tavatekst_text(para: ET.Element, ns_str: str) -> str:
     return ""
 
 
-def extract_intro_statute_fragment(text: str) -> str:  # noqa: F811
+def extract_intro_statute_fragment(text: str) -> str:
     """Extract a leading target-statute phrase from an untitled amendment clause."""
     if not text:
         return ""
@@ -3156,7 +3019,7 @@ def extract_intro_statute_fragment(text: str) -> str:  # noqa: F811
     return fragment
 
 
-def is_specific_direct_target_fragment(fragment: str) -> bool:  # noqa: F811
+def is_specific_direct_target_fragment(fragment: str) -> bool:
     """Return True when a clause fragment names a statute, not just a generic law noun."""
     if not fragment:
         return False
@@ -3180,7 +3043,7 @@ def is_specific_direct_target_fragment(fragment: str) -> bool:  # noqa: F811
     return True
 
 
-def direct_target_clause_matches_registry(  # noqa: F811
+def direct_target_clause_matches_registry(
     *,
     fragment: str,
     target_title: str,
@@ -3201,7 +3064,7 @@ def direct_target_clause_matches_registry(  # noqa: F811
     return title_matcher(target_title, fragment)
 
 
-def paragrahv_to_act_id(title: str) -> str:  # noqa: F811
+def paragrahv_to_act_id(title: str) -> str:
     """Heuristically derive a short base act name from a paragrahv title."""
     title = re.sub(r"\s+muutmine\s*$", "", title.strip(), flags=re.IGNORECASE)
     title = re.sub(r"\s+§.*$", "", title, flags=re.IGNORECASE)

@@ -11,6 +11,8 @@ Usage:
 """
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -18,11 +20,7 @@ from typing import Any, Optional
 
 def _check_duckdb() -> bool:
     """Check if duckdb is importable."""
-    try:
-        import duckdb  # noqa: F401
-        return True
-    except ImportError:
-        return False
+    return importlib.util.find_spec("duckdb") is not None
 
 
 def _discover_tables(data_dir: Path) -> dict[str, Path]:
@@ -132,7 +130,7 @@ def run_sql(
         )
         sys.exit(1)
 
-    import duckdb
+    duckdb = importlib.import_module("duckdb")
 
     dd = Path(data_dir)
     tables = _discover_tables(dd)

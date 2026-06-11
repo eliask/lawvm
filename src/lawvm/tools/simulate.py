@@ -45,6 +45,8 @@ AGENTS.md compliance
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import json
 import sys
 from dataclasses import dataclass
@@ -59,6 +61,13 @@ from lawvm.finland.he_branch_parser import (
     HEParseStatus,
     parse_he_branch,
 )
+
+
+def _optional_module(module_name: str) -> Any | None:
+    """Import an optional runtime dependency without making ty resolve it."""
+    if importlib.util.find_spec(module_name) is None:
+        return None
+    return importlib.import_module(module_name)
 
 
 # ---------------------------------------------------------------------------
@@ -182,32 +191,32 @@ def _resolve_branch(
     if farchive_path is not None:
         fa_path = Path(farchive_path)
         if fa_path.exists():
+            farchive_mod = _optional_module("farchive")
+            if farchive_mod is None:
+                return None
+            farchive_cls = farchive_mod.Farchive
+            fa = farchive_cls(str(fa_path))
             try:
-                from farchive import Farchive  # type: ignore[import]
-            except ImportError:
-                return None
-            fa = Farchive(str(fa_path))
-            loc = f"akn/fi/doc/government-proposal/{he_year}/{he_number}/fin@/main.xml"
-            blob = fa.get(loc)
-            if blob is None:
+                loc = f"akn/fi/doc/government-proposal/{he_year}/{he_number}/fin@/main.xml"
+                blob = fa.get(loc)
+                if blob is None:
+                    return None
+                # Read acquisition metadata (he_id is in last_metadata on the
+                # StateSpan record). Fall back to constructed he_id if missing.
+                span = fa.resolve(loc)
+                he_id = ""
+                if span is not None and span.last_metadata:
+                    he_id = span.last_metadata.get("he_id", "")
+                if not he_id:
+                    he_id = f"HE {he_number}/{he_year}"
+                return parse_he_branch(
+                    blob,
+                    he_year=he_year,
+                    he_number=he_number,
+                    he_id=he_id,
+                )
+            finally:
                 fa.close()
-                return None
-            # Read acquisition metadata (he_id is in last_metadata on the
-            # StateSpan record). Fall back to constructed he_id if missing.
-            span = fa.resolve(loc)
-            he_id = ""
-            if span is not None and span.last_metadata:
-                he_id = span.last_metadata.get("he_id", "")
-            if not he_id:
-                he_id = f"HE {he_number}/{he_year}"
-            fa.close()
-            return parse_he_branch(
-                blob,
-                he_year=he_year,
-                he_number=he_number,
-                he_id=he_id,
-            )
-            fa.close()
 
     return None
 
@@ -320,9 +329,8 @@ def _detect_broken_refs(
     if not changed_provision_refs and not changed_statute_ids:
         return []
 
-    try:
-        import pyarrow.parquet as pq  # type: ignore[import]
-    except ImportError:
+    pq = _optional_module("pyarrow.parquet")
+    if pq is None:
         return []
 
     table = pq.read_table(refs_parquet_path)
@@ -394,9 +402,8 @@ def _detect_actor_changes(
     if not changed_provision_refs:
         return []
 
-    try:
-        import pyarrow.parquet as pq  # type: ignore[import]
-    except ImportError:
+    pq = _optional_module("pyarrow.parquet")
+    if pq is None:
         return []
 
     table = pq.read_table(actors_parquet_path)

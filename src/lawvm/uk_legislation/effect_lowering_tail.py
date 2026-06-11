@@ -221,7 +221,9 @@ def _source_payload_parent_instruction_context(
         instruction_text = " ".join(
             _instruction_text_before_amendment_container(ancestor).split()
         ).strip()
-        context_text = instruction_text or " ".join(" ".join(ancestor.itertext()).split()).strip()  # type: ignore[arg-type]  # ty: ignore[no-matching-overload]
+        context_text = instruction_text or " ".join(
+            " ".join(str(part) for part in ancestor.itertext()).split()
+        ).strip()
         if not context_text or context_text == payload_text:
             continue
         if _UK_OVERLAP_ACTION_WORD_RE.search(context_text) is None:

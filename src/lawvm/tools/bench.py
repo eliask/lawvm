@@ -1169,7 +1169,8 @@ def _save_run(
                 ssim = sec_sim_map.get(sid, -1.0)
                 row_vals.append(f"{ssim:.6f}" if ssim >= 0 else "ERR")
             if has_lev:
-                lsim = lev_sims.get(sid, -1.0) if lev_sims else -1.0  # type: ignore[union-attr]
+                assert lev_sims is not None
+                lsim = lev_sims.get(sid, -1.0)
                 row_vals.append(f"{lsim:.6f}" if lsim >= 0 else "ERR")
             row_vals += [status, f"{elapsed:.1f}"]
             if has_diagnostics:

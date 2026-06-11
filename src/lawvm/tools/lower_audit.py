@@ -209,8 +209,11 @@ def _run_for_statute(
         records, _cutoff, _vmid = _resolve_applicable_amendment_records(
             sid, mode="official_consolidation", corpus=cs,
         )
-        amendment_ids = [r[0] if isinstance(r, tuple) else r.get("statute_id", r.get("amendment_id", ""))  # type: ignore[union-attr]
-                         for r in records if r.get("included", True)]
+        amendment_ids = [
+            str(r[0] if isinstance(r, tuple) else r.get("statute_id", r.get("amendment_id", "")))
+            for r in records
+            if isinstance(r, tuple) or r.get("included", True)
+        ]
 
     any_loss = False
     total_results: list[LoweringAuditResult] = []

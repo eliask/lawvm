@@ -25,11 +25,12 @@ import zipfile
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 try:
     import yaml
 except ImportError:
-    yaml = None  # type: ignore
+    yaml: Any | None = None
 
 
 _PUB_SCHEMA = """

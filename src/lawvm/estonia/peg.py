@@ -2805,7 +2805,7 @@ def _extract_global_text_replace_chapter_scope(text: str) -> List[str]:
 # Delegates to ``lawvm.roman``.  The shared parser rejects non-canonical
 # spellings like ``"IIII"`` via round-trip canonicalization.
 
-from lawvm.roman import roman_to_arabic as _roman_to_int  # noqa: E402
+from lawvm.roman import roman_to_arabic as _roman_to_int
 
 
 # ---------------------------------------------------------------------------

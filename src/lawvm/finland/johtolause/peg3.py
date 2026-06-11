@@ -17,16 +17,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 # ---- lexicon ----
-from lawvm.finland.johtolause.lexicon import Token  # noqa: F401
+from lawvm.finland.johtolause.lexicon import Token
 
 # ---- lexer ----
-from lawvm.finland.johtolause.lexer import (  # noqa: F401
+from lawvm.finland.johtolause.lexer import (
     tokenize,
     witness_char_span,
 )
 
 # ---- surface_parse ----
-from lawvm.finland.johtolause.surface_parse import (  # noqa: F401
+from lawvm.finland.johtolause.surface_parse import (
     Stream,
     SubRef,
     VerbGroupContext,
@@ -34,13 +34,13 @@ from lawvm.finland.johtolause.surface_parse import (  # noqa: F401
 )
 
 # ---- diagnostics ----
-from lawvm.finland.johtolause.diagnostics import (  # noqa: F401
+from lawvm.finland.johtolause.diagnostics import (
     ParseDiagnostic,
     extract_ops_diagnostic,
 )
 
 # ---- compat (canonical API) ----
-from lawvm.finland.johtolause.api import (  # noqa: F401
+from lawvm.finland.johtolause.api import (
     ClauseParseResult,
     parse_clause,
     derive_features,
@@ -81,4 +81,20 @@ def parse_to_ops(tokens: list[Token]) -> list[ParsedOp]:
 
 
 # backward compat: peg3.parse() returns list[ParsedOp]
-parse = parse_to_ops  # noqa: F811
+parse = parse_to_ops
+
+_PEG3_COMPAT_EXPORTS = (
+    Token,
+    tokenize,
+    witness_char_span,
+    Stream,
+    SubRef,
+    VerbGroupContext,
+    _skip_prov_span,
+    ParseDiagnostic,
+    extract_ops_diagnostic,
+    ClauseParseResult,
+    parse_clause,
+    derive_features,
+    parse,
+)

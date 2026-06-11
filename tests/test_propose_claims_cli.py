@@ -12,12 +12,13 @@ Mandatory acceptance criteria:
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 
 
-import lawvm.finland.claim_kinds  # noqa: F401
+importlib.import_module("lawvm.finland.claim_kinds")
 
 from lawvm.core.manual_claims.primitive import ExtractionFrontierRow
 from lawvm.core.manual_claims.proposal_backend import (

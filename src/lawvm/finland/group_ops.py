@@ -303,7 +303,7 @@ def sort_group_ops_for_apply(
             sec = target_ctx.live_node
             if sec is not None:
                 live_labels = {
-                    int(child.label)  # ty: ignore[invalid-argument-type]  # guarded by isdigit() filter
+                    int(child.label or "")
                     for child in sec.children
                     if child.kind == IRNodeKind.SUBSECTION and (child.label or "").isdigit()
                 }

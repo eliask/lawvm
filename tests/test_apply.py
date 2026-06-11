@@ -11824,7 +11824,7 @@ def test_typed_dispatch_unknown_intent_emits_failed_event() -> None:
     state = _make_state(_body(_sec("1", _sub("1", _content("text")))))
     op = _op(op_type="REPLACE", target_section="1")
     unknown_intent = _UnknownIntent()
-    rop = _make_rop(op, unknown_intent)  # type: ignore[arg-type]
+    rop = _make_rop(op, cast(Any, unknown_intent))
     ctx = _ctx(_body())
     failed_ops: List[FailedOp] = []
     mutation_events: List[ApplyMutationEvent] = []

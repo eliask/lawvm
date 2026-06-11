@@ -22,10 +22,12 @@ from pathlib import Path
 from typing import Any, Sequence
 
 try:
-    from lxml import etree as _ET
+    from lxml import etree as _lxml_ET
+    _ET: Any = _lxml_ET
     _LXML = True
 except ImportError:
-    import xml.etree.ElementTree as _ET  # type: ignore[no-redef]
+    import xml.etree.ElementTree as _stdlib_ET
+    _ET = _stdlib_ET
     _LXML = False
 
 # ---------------------------------------------------------------------------

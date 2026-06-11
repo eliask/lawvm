@@ -35,7 +35,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from lawvm.tools.reconcile import reconcile_provision
 
@@ -235,6 +235,7 @@ def _memoized_provision_replay():
     from lawvm.finland import grafter
 
     real = grafter.replay_xml
+    mutable_grafter = cast(Any, grafter)
     cache: dict[str, object] = {}
 
     def _wrapped(parent_id, *args, **kwargs):
@@ -248,11 +249,11 @@ def _memoized_provision_replay():
             return cache[parent_id]
         return real(parent_id, *args, **kwargs)
 
-    grafter.replay_xml = _wrapped  # ty:ignore[invalid-assignment]
+    mutable_grafter.replay_xml = _wrapped
     try:
         yield
     finally:
-        grafter.replay_xml = real
+        mutable_grafter.replay_xml = real
         cache.clear()
 
 

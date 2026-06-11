@@ -21,7 +21,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, List, Optional, cast
+from typing import Any, List, Optional, Protocol, cast
 
 from lawvm.estonia.compare import irnode_to_ee_comparison_text
 from lawvm.estonia.compare import normalize_ee_comparison_text
@@ -113,20 +113,29 @@ class _GroupInfo:
     title: str = ""
 
 
-def _index_corpus(archive: Any, include_decrees: bool = False) -> tuple[list[tuple[str, str, str]], dict[str, tuple[int, str]]]:
+class _ArchiveWithConnection(Protocol):
+    _conn: Any
+
+    def get(self, locator: str) -> bytes | None: ...
+
+
+def _index_corpus(
+    archive: _ArchiveWithConnection,
+    include_decrees: bool = False,
+) -> tuple[list[tuple[str, str, str]], dict[str, tuple[int, str]]]:
     """Index RT archive → list of (grupiId, base_id, oracle_id) pairs.
 
     Only includes groups with 2+ non-stub tervikteksts.
     Returns sorted by amendment count ascending.
     """
-    conn = archive._conn  # type: ignore[union-attr]
+    conn = archive._conn
     rows = conn.execute("SELECT DISTINCT locator FROM locator WHERE locator LIKE '%riigiteataja.ee/akt/%.xml'").fetchall()
 
     groups: dict[str, _GroupInfo] = {}
 
     for i, (url,) in enumerate(rows):
         aid = url.split("/akt/")[-1].replace(".xml", "")
-        data = archive.get(url)  # type: ignore[union-attr]
+        data = archive.get(url)
         if not data or len(data) < 100:
             continue
 

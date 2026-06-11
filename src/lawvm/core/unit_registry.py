@@ -211,7 +211,7 @@ def validate_intent_target(target: "CanonicalTarget", registry: UnitRegistry) ->
     registry contract.
     """
     # Import here to avoid circular imports at module load time.
-    from lawvm.core.canonical_intent import NodeTarget, FacetTarget  # noqa: PLC0415
+    from lawvm.core.canonical_intent import NodeTarget, FacetTarget
 
     if isinstance(target, NodeTarget):
         target_kind = target.address.leaf_kind()

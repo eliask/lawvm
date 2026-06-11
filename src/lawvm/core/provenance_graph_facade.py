@@ -26,9 +26,9 @@ Step 1 conversion boundary (notes_internal/UNIFIED_PROVENANCE_GRAPH_DESIGN_v3.md
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
+from typing import Any, cast
 
-from lawvm.core.phase_result import Finding, PhaseResult
+from lawvm.core.phase_result import Finding, FindingRole, PhaseResult
 from lawvm.core.provenance_graph import (
     ATTESTATION_KIND_REGISTRY_V0_HASH,
     ArtifactRef,
@@ -249,7 +249,7 @@ def _assertion_to_finding(assertion: ProvenanceAssertion) -> "Finding | None":
 
     return Finding(
         kind=str(original_kind),
-        role=str(original_role),  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+        role=cast(FindingRole, str(original_role)),
         stage=str(original_stage),
         detail=original_detail if isinstance(original_detail, dict) else {},
         blocking=bool(original_blocking),

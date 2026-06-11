@@ -545,7 +545,7 @@ def _parse_verified_finlex_divergences_yaml(
         return result
 
     try:
-        import yaml  # type: ignore[import-untyped]
+        import yaml
     except ImportError:
         print("  WARNING: pyyaml not installed — skipping verified_finlex_divergences YAML", file=sys.stderr)
         return result

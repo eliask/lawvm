@@ -13,5 +13,7 @@ Currently registered:
   fi.v1.TEMPORAL_BASE_SELECTION_RESOLUTION — temporal base-selection boundary
   fi.v1.MUTATION_BOUNDARY_RESOLUTION — mutation-boundary proof boundary
 """
-from lawvm.finland.claim_kinds import inline_statute_resolution  # noqa: F401
-from lawvm.finland.claim_kinds import xml_manual_frontier  # noqa: F401
+import importlib
+
+importlib.import_module("lawvm.finland.claim_kinds.inline_statute_resolution")
+importlib.import_module("lawvm.finland.claim_kinds.xml_manual_frontier")

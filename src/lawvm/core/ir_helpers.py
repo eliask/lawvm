@@ -103,7 +103,7 @@ def structural_subtree_hash(node: Optional["IRNode"]) -> str:
 
 def irnode_from_dict(data: dict[str, Any]) -> "IRNode":
     """Deserialize a bare IRNode payload into an IRNode."""
-    from lawvm.core.ir import FrozenDict, IRNode  # noqa: PLC0415
+    from lawvm.core.ir import FrozenDict, IRNode
 
     if any(key in data for key in ("schema", "producer", "version", "payload", "status")):
         raise ValueError("IRNode.from_dict expects a bare node payload; unpack the artifact envelope first")
@@ -125,7 +125,7 @@ def irnode_from_dict(data: dict[str, Any]) -> "IRNode":
 
 def ir_statute_from_dict(data: dict[str, Any]) -> "IRStatute":
     """Deserialize a bare IRStatute payload into an IRStatute."""
-    from lawvm.core.ir import IRStatute  # noqa: PLC0415
+    from lawvm.core.ir import IRStatute
 
     if any(key in data for key in ("schema", "producer", "version", "payload", "status")):
         raise ValueError("IRStatute.from_dict expects a bare statute payload; unpack the artifact envelope first")

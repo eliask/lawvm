@@ -41,7 +41,7 @@ _SCRIPT_DIR = Path(__file__).parent
 _REPO_ROOT = _SCRIPT_DIR.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
-from lawvm.fetch_archive import FetchArchive  # noqa: E402  # ty: ignore[unresolved-import]
+from scripts.legacy_fetch_archive import FetchArchive
 
 # ---------------------------------------------------------------------------
 # Regex patterns — applied to raw bytes (b"...") for speed

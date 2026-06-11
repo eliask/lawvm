@@ -75,7 +75,7 @@ class RuleExample:
 
     @property
     def expected_fields(self) -> dict[str, str]:
-        return self._expected_fields  # type: ignore[return-value]
+        return dict(self._expected_fields)
 
 
 # ---------------------------------------------------------------------------

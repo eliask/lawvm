@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 from datetime import date, datetime, timezone
+from typing import Any, cast
 
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.evidence_kernel import (
@@ -50,7 +51,7 @@ def _reg_hash() -> str:
 def _make_producer(producer_id: str = "test.prod", producer_kind: str = "human") -> Producer:
     return Producer(
         producer_id=producer_id,
-        producer_kind=producer_kind,  # ty:ignore[invalid-argument-type]
+        producer_kind=cast(Any, producer_kind),
         public_key=None,
         metadata={},
     )

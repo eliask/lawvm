@@ -34,7 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from lawvm.fetch_archive import FetchArchive  # ty: ignore[unresolved-import]  # legacy: module deleted, script needs farchive migration
+from scripts.legacy_fetch_archive import FetchArchive
 
 _BASE_URL = "https://www.riigiteataja.ee"
 _MASTER_FEED = f"{_BASE_URL}/ilmunud_ilmumas.xml"

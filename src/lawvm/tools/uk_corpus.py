@@ -191,7 +191,7 @@ class _HTTP:
                     time.sleep(min(2**attempt * 0.5, 15))
                     continue
                 return None, None
-            except Exception:  # noqa: BLE001 — transport robustness for a long batch crawl
+            except Exception:
                 if attempt <= _MAX_RETRIES:
                     time.sleep(min(2**attempt * 0.5, 15))
                     continue
@@ -352,7 +352,7 @@ def _fetch_effects_pages(
                 root = ET.fromstring(data)
                 el = root.find(f".//{ns}")
                 return int(el.text) if el is not None and el.text else 1
-            except Exception:  # noqa: BLE001
+            except Exception:
                 return 1
         return 0
 
@@ -365,7 +365,7 @@ def _fetch_effects_pages(
         root = ET.fromstring(data)
         el = root.find(f".//{ns}")
         total_pages = int(el.text) if el is not None and el.text else 1
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
     for p in range(2, total_pages + 1):
         purl = f"{p1_url}&page={p}"

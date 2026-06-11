@@ -51,7 +51,7 @@ class _FakeArchive:
     def history(self, locator: str) -> list[Any]:
         return self._history.get(locator, [])
 
-    def store(self, locator: str, data: bytes, storage_class: str = "xml") -> None:  # noqa: ARG002
+    def store(self, locator: str, data: bytes, storage_class: str = "xml") -> None:
         self.store_calls.append((locator, storage_class))
         self._existing.add(locator)
         self._data[locator] = data

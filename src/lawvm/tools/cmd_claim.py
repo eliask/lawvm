@@ -458,7 +458,7 @@ def cmd_supersede(args: object) -> int:
 def cmd_show(args: object) -> int:
     """Render assertion + attestations + authorization result."""
     assertion_id = _claim_id_arg(args)
-    profile_name: Optional[str] = getattr(args, "profile", None)  # noqa: F841  # BUG: --profile arg is read but never forwarded to _default_profile()
+    _profile_name: Optional[str] = getattr(args, "profile", None)  # BUG: --profile arg is read but never forwarded to _default_profile()
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 

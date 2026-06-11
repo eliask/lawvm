@@ -21,7 +21,7 @@ from threading import Lock
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from lawvm.fetch_archive import FetchArchive  # ty: ignore[unresolved-import]  # legacy: module deleted
+from scripts.legacy_fetch_archive import FetchArchive
 from lawvm.finland.finlex_html import (
     _DEFAULT_CACHE,
     _curl_fetch,

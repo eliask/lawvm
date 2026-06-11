@@ -207,11 +207,7 @@ if __name__ == '__main__':
     # Add LawVM src to path
     sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
-    try:
-        from lawvm.fetch_archive import FetchArchive  # ty: ignore[unresolved-import]
-    except ImportError:
-        print('ERROR: could not import lawvm.fetch_archive — run from LawVM/ dir with uv run', file=sys.stderr)
-        sys.exit(1)
+    from scripts.legacy_fetch_archive import FetchArchive
 
     ARCHIVE_PATH = Path(__file__).parent.parent / '.tmp' / 'finlex_archive.db'
     if not ARCHIVE_PATH.exists():

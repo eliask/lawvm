@@ -64,7 +64,7 @@ def _compile_with_warnings(sid: str) -> tuple[str, list[dict[str, object]]]:
     """Compile one statute, capturing all warnings.  Runs in worker process."""
     import warnings
 
-    from lawvm.finland.compile import compile_fi_facade  # noqa: PLC0415
+    from lawvm.finland.compile import compile_fi_facade
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")

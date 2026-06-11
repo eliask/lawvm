@@ -7,6 +7,7 @@ seam is monkeypatched so the test stays fast and deterministic.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 
 from lawvm.tools import reconcile_sweep as rs
@@ -133,11 +134,11 @@ def test_memoized_provision_replay_caches_no_outparam_calls() -> None:
     calls = {"n": 0}
     real = grafter.replay_xml
 
-    def _counting(parent_id, *a, **k):
+    def _counting(parent_id: str, *a: Any, **k: Any) -> str:
         calls["n"] += 1
         return f"master::{parent_id}"
 
-    grafter.replay_xml = _counting  # ty:ignore[invalid-assignment]
+    cast(Any, grafter).replay_xml = _counting
     try:
         with rs._memoized_provision_replay():
             # Same statute, no out-params: cached after first call.
@@ -151,4 +152,4 @@ def test_memoized_provision_replay_caches_no_outparam_calls() -> None:
         # Restored after context exit.
         assert grafter.replay_xml is _counting
     finally:
-        grafter.replay_xml = real
+        cast(Any, grafter).replay_xml = real

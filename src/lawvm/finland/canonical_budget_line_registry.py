@@ -104,7 +104,7 @@ def _parse_yaml_budget_lines(yaml_text: str, year: int) -> List[BudgetLine]:
     lines: List[BudgetLine] = []
 
     # Current record accumulator
-    current: Dict[str, object] = {}
+    current: Dict[str, str | int] = {}
 
     def _flush() -> None:
         nonlocal current
@@ -118,9 +118,9 @@ def _parse_yaml_budget_lines(yaml_text: str, year: int) -> List[BudgetLine]:
                 momentti = int(m.group(3))
             else:
                 # Fallback: use stored paaluokka/luku/momentti if present
-                paaluokka = int(current.get("paaluokka", 0))  # ty:ignore[invalid-argument-type]
-                luku = int(current.get("luku", 0))  # ty:ignore[invalid-argument-type]
-                momentti = int(current.get("momentti", 0))  # ty:ignore[invalid-argument-type]
+                paaluokka = int(current.get("paaluokka", 0))
+                luku = int(current.get("luku", 0))
+                momentti = int(current.get("momentti", 0))
 
             bl = BudgetLine(
                 canonical_id=cid,
@@ -130,13 +130,13 @@ def _parse_yaml_budget_lines(yaml_text: str, year: int) -> List[BudgetLine]:
                 momentti_code=mc,
                 show_as=str(current.get("show_as", "")),
                 year=year,
-                estimated_amount=int(current["estimated_amount"])  # ty:ignore[invalid-argument-type]
+                estimated_amount=int(current["estimated_amount"])
                 if "estimated_amount" in current
                 else None,
                 lineage_successor_id=str(current["lineage_successor_id"])
                 if "lineage_successor_id" in current
                 else None,
-                lineage_successor_year=int(current["lineage_successor_year"])  # ty:ignore[invalid-argument-type]
+                lineage_successor_year=int(current["lineage_successor_year"])
                 if "lineage_successor_year" in current
                 else None,
             )

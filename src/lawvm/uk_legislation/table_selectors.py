@@ -194,7 +194,7 @@ def _normalized_element_text(el: ET._Element) -> str:
     try:
         return _NORMALIZED_ELEMENT_TEXT_CACHE[el]
     except KeyError:
-        text = " ".join(" ".join(el.itertext()).split()).strip()  # type: ignore[arg-type]  # ty: ignore[no-matching-overload]
+        text = " ".join(" ".join(str(part) for part in el.itertext()).split()).strip()
         _NORMALIZED_ELEMENT_TEXT_CACHE[el] = text
         return text
 

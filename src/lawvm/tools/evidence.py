@@ -46,7 +46,7 @@ from lawvm.tools.oracle_check import _classify_statute
 from lawvm.finland.transparent_store import is_known_missing_source
 
 
-from lawvm.tools._evidence_helpers import (  # noqa: E402
+from lawvm.tools._evidence_helpers import (
     _MANUAL_DATASET,
     _ORACLE_INCORRECT_DIAGNOSES,
     _PRIMARY_TIER_ORDER,
@@ -62,7 +62,7 @@ from lawvm.tools._evidence_helpers import (  # noqa: E402
     _section_label_from_key,
     _section_similarity,
 )
-from lawvm.tools.bisect_support import _section_bisect_support  # noqa: E402
+from lawvm.tools.bisect_support import _section_bisect_support
 
 _EVIDENCE_BUNDLE_CACHE_VERSION = "evidence-bundle-v54"
 _DEFAULT_ORACLE_CORPUS_BUNDLE_CACHE_DIR = ".tmp/evidence_bundle_cache"
@@ -762,18 +762,23 @@ def _compiler_observation_summary(
     }
 
 
-from lawvm.tools.evidence_claims import (  # noqa: E402
-    _build_section_claims,  # noqa: F401 — re-exported for test compatibility
-    _build_proof_claims,  # noqa: F401 — re-exported for test compatibility; kept as legacy fallback
+from lawvm.tools.evidence_claims import (
+    _build_section_claims,
+    _build_proof_claims,
     _primary_proof_tier,
 )
-from lawvm.tools.evidence_render import (  # noqa: E402
+from lawvm.tools.evidence_render import (
     _render_markdown_bundle,
     _write_bundle_output,
     _write_markdown_output,
     _print_evidence_bundle,
     _print_oracle_proof_bundle,
     _print_review_summary,
+)
+
+_EVIDENCE_COMPAT_EXPORTS = (
+    _build_section_claims,
+    _build_proof_claims,
 )
 
 
@@ -3435,7 +3440,11 @@ def build_evidence_bundle(
     _trigger_coverage_search_failures: List[Dict[str, Any]] = []
     if contingent_effective_sources:
         try:
-            from lawvm.core.temporal import ActivationRule as _ActivationRule
+            from lawvm.core.temporal import (
+                PENDING_CONDITION_KIND as _PENDING_CONDITION_KIND,
+                PENDING_DECREE_KIND as _PENDING_DECREE_KIND,
+                ActivationRule as _ActivationRule,
+            )
             from lawvm.finland.amendment_index import get_amendment_children as _get_amendment_children
             from lawvm.finland.trigger_coverage import (
                 produce_certificates_for_activation_rules as _produce_certs,
@@ -3461,25 +3470,30 @@ def build_evidence_bundle(
                 if _amendment_id in _seen_amendment_ids:
                     continue
                 _seen_amendment_ids.add(_amendment_id)
-                _kind = str(_ar_raw.get("kind") or "")  # ty:ignore[invalid-argument-type]
-                if _kind not in ("pending_decree", "pending_condition"):
+                _kind = str(_ar_raw.get("kind") or "")
+                if _kind == _PENDING_DECREE_KIND:
+                    _activation_kind = _PENDING_DECREE_KIND
+                elif _kind == _PENDING_CONDITION_KIND:
+                    _activation_kind = _PENDING_CONDITION_KIND
+                else:
                     continue
                 _contingent_rules.append(
                     _ActivationRule(
-                        kind=_kind,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
-                        effective_date=str(_ar_raw.get("effective_date") or ""),  # ty:ignore[invalid-argument-type]
-                        condition_ref=str(_ar_raw.get("condition_ref") or ""),  # ty:ignore[invalid-argument-type]
-                        raw_text=str(_ar_raw.get("raw_text") or ""),  # ty:ignore[invalid-argument-type]
+                        kind=_activation_kind,
+                        effective_date=str(_ar_raw.get("effective_date") or ""),
+                        condition_ref=str(_ar_raw.get("condition_ref") or ""),
+                        raw_text=str(_ar_raw.get("raw_text") or ""),
                     )
                 )
 
             if _contingent_rules:
                 import datetime as _dt
 
+                _activation_rule_objects: list[object] = list(_contingent_rules)
                 _cert_result = _produce_certs(
                     statute_id=statute_id,
                     amendment_id="|".join(sorted(_seen_amendment_ids)),
-                    activation_rules=_contingent_rules,  # ty:ignore[invalid-argument-type]
+                    activation_rules=_activation_rule_objects,
                     amendment_children=_statute_amendment_children,
                     as_of=_dt.date.today(),
                 )

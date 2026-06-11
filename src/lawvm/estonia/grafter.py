@@ -6111,14 +6111,11 @@ def _ee_global_generic_minister_plural_replace(
         rf"|{singular_pattern}\s+(?:ja|ning|või)\s+{singular_pattern}",
         re.IGNORECASE,
     )
-    title_stems: list[str] = cast(
-        list[str],
-        sorted(
-            {title[: -len("minister")].rstrip() for title in old_titles if title.endswith("minister")},
-            key=len,
-            reverse=True,
-        ),
-    )  # ty:ignore[redundant-cast]
+    title_stems = sorted(
+        {title[: -len("minister")].rstrip() for title in old_titles if title.endswith("minister")},
+        key=len,
+        reverse=True,
+    )
     shared_head_pattern = None
     if title_stems:
         stem_pattern = "|".join(_ee_surface_pattern(stem) for stem in title_stems)

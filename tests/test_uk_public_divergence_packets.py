@@ -5,6 +5,7 @@ import io
 import json
 import urllib.error
 from pathlib import Path
+from typing import Any, cast
 
 from scripts import uk_public_divergence_packets as packets
 
@@ -618,7 +619,7 @@ def test_unavailable_current_timeline_xml_is_snapshot_not_xml_witness(
                 url,
                 404,
                 "Not Found",
-                {},  # ty:ignore[invalid-argument-type]
+                cast(Any, {}),
                 io.BytesIO(b"missing dated XML"),
             )
         return url, 200, "text/xml", bodies[url]

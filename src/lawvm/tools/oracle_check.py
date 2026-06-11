@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Tuple, cast
 
 if TYPE_CHECKING:
-    from lawvm.core.ir import IRNode  # noqa: F401
+    from lawvm.core.ir import IRNode
 
 import Levenshtein
 from lxml import etree

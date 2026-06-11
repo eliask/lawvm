@@ -55,7 +55,7 @@ def test_source_adjudication_lineage_is_frozen_recursively() -> None:
     adjudication = SourceAdjudication(
         statute_id="2000/1",
         replay_mode="strict",
-        lineage=lineage,  # ty: ignore[invalid-argument-type]
+        lineage=cast(Any, lineage),
     )
     lineage[0]["event"]["sources"].append("mutated")
 
