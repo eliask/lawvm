@@ -1410,7 +1410,8 @@ def _hash_payload(
         "derived_state_hash": _sha256_canonical(derived_input),
         "derived_state_hash_semantics": (
             "sha256(canonical lawvm.provision_state.v1 state: status, query, "
-            "resolved address, version temporal metadata, applicability, content_hash)"
+            "resolved address, lineage control fields, version temporal metadata, "
+            "applicability, content_hash)"
         ),
     }
 

@@ -77,6 +77,7 @@ def test_provision_state_response_exposes_text_hash_and_temporal_pin() -> None:
     assert len(payload["hashes"]["structured_content_hash"]) == 64
     assert "IRNode.to_jsonable_dict" in payload["hashes"]["structured_content_hash_semantics"]
     assert len(payload["hashes"]["derived_state_hash"]) == 64
+    assert "lineage control fields" in payload["hashes"]["derived_state_hash_semantics"]
     assert payload["version"]["effective"] == "2020-01-01"
     assert payload["version"]["enacted"] == "2019-12-01"
     assert payload["source"]["statute_id"] == "2019/1"
