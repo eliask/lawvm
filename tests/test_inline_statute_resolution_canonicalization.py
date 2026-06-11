@@ -8,9 +8,10 @@ Covers:
 from __future__ import annotations
 
 import hashlib
+import importlib
 
 
-import lawvm.finland.claim_kinds  # noqa: F401 — activate claim kind registry
+importlib.import_module("lawvm.finland.claim_kinds")
 
 from lawvm.finland.claim_kinds.inline_statute_resolution import (
     _canonicalize_finnish_statute_id,

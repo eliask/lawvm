@@ -20,6 +20,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from lawvm.uk_legislation.effect_compiler import (
     compile_effect_to_ir_ops,
     _UK_EFFECT_FEE_TARGET_REFINEMENT_FAILED_RULE_ID,
@@ -202,16 +204,5 @@ def test_fee_target_refinement_runtime_error_propagates() -> None:
         "lawvm.uk_legislation.effect_compiler._parse_affected_target",
         side_effect=RuntimeError("unexpected internal failure for test"),
     ):
-        try:
+        with pytest.raises(RuntimeError, match="unexpected internal failure for test"):
             compile_effect_to_ir_ops(effect, None)
-            raise AssertionError(
-                "Expected RuntimeError to propagate but compile_effect_to_ir_ops returned normally"
-            )
-        except RuntimeError as exc:
-            assert "unexpected internal failure for test" in str(exc), (
-                f"RuntimeError message mismatch: {exc!r}"
-            )
-        except Exception as exc:  # noqa: BLE001  (test-only broad catch for assertion)
-            raise AssertionError(
-                f"Expected RuntimeError to propagate but got {type(exc).__name__}: {exc}"
-            ) from exc

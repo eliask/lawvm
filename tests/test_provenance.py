@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 from lawvm.core.preparatory_reference import (
+    PreparatoryReference,
     PreparatoryReferenceConfidence,
     PreparatoryReferenceKind,
 )
@@ -33,16 +32,30 @@ def _payload(
     }
 
 
-def _ref(kind: PreparatoryReferenceKind, canonical_id: str, raw_text: str) -> SimpleNamespace:
+def _ref(kind: PreparatoryReferenceKind, canonical_id: str, raw_text: str) -> PreparatoryReference:
     he_year = 2025 if kind == PreparatoryReferenceKind.HE else None
     he_number = 188 if kind == PreparatoryReferenceKind.HE else None
-    return SimpleNamespace(
+    return PreparatoryReference(
+        source_statute_id="2026/269",
         kind=kind,
         canonical_id=canonical_id,
         raw_text=raw_text,
+        committee_abbrev=None,
         he_year=he_year,
         he_number=he_number,
+        eu_form=None,
+        eu_number=None,
+        eu_year=None,
+        celex=None,
+        oj_series=None,
+        oj_number=None,
+        oj_date=None,
+        oj_page=None,
         confidence=PreparatoryReferenceConfidence.EXACT,
+        source_span_file=None,
+        source_span_byte_offset=None,
+        source_span_byte_len=None,
+        valid_at_interval=(None, None),
     )
 
 
@@ -80,7 +93,7 @@ def _patch_refs(monkeypatch) -> None:
                 _ref(PreparatoryReferenceKind.HE, "he/2025/188", "HE 188/2025"),
                 _ref(PreparatoryReferenceKind.COMMITTEE_REPORT, "fi.committee.lavm.3.2026", "LaVM 3/2026"),
                 _ref(PreparatoryReferenceKind.PARLIAMENT_RESPONSE, "fi.ev.23.2026", "EV 23/2026"),
-            ]  # ty:ignore[invalid-argument-type]
+            ]
         )
 
     monkeypatch.setattr(provenance, "extract_preparatory_refs", fake_extract_preparatory_refs)

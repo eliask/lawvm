@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Mapping
 
 import pytest
 
@@ -749,13 +749,14 @@ class TestFarchiveSignatureRegression:
         meta = span.last_metadata if span is not None else {}
         fa.close()
         assert xml_bytes is not None, f"No XML bytes for {locator}"
+        assert isinstance(meta, Mapping)
         return project_he_from_xml(
             xml_bytes,
             he_year=year,
             he_number=number,
             lang="fin",
             source_file=locator,
-            source_zip_sha256=str(meta.get("source_zip_sha256", "")),  # ty:ignore[unresolved-attribute]
+            source_zip_sha256=str(meta.get("source_zip_sha256", "")),
         )
 
     def test_he_2024_100_has_signatures_via_farchive(self) -> None:

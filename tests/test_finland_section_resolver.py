@@ -1,7 +1,10 @@
+import importlib
+
 from lxml import etree
 
 from lawvm.core.locator import get_section_resolver, parse_locator_string
-import lawvm.finland.section_resolver  # noqa: F401 — registers FI resolver
+
+importlib.import_module("lawvm.finland.section_resolver")
 
 
 def _resolve(xml_bytes: bytes, locator_str: str):

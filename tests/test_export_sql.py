@@ -83,16 +83,16 @@ class TestExportParquet:
         # regardless of whether pyarrow is installed in the environment.
         real_import = builtins.__import__
 
-        def _no_pyarrow(name, *args, **kwargs):
+        def _no_pyarrow(name: str, *args: Any, **kwargs: Any) -> Any:
             if name == "pyarrow" or name.startswith("pyarrow."):
                 raise ImportError("simulated: pyarrow not installed")
             return real_import(name, *args, **kwargs)
 
-        builtins.__import__ = _no_pyarrow  # ty:ignore[invalid-assignment]
+        cast(Any, builtins).__import__ = _no_pyarrow
         try:
             result = _try_write_parquet(tmp_path / "test.parquet", [{"x": 1}])
         finally:
-            builtins.__import__ = real_import
+            cast(Any, builtins).__import__ = real_import
         assert result is False
 
     def test_try_write_parquet_requires_compile_metadata_when_pyarrow_present(

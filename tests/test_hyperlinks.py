@@ -20,7 +20,8 @@ OSC8 = "\033]8"
 
 
 class _FakeTTY(io.StringIO):
-    def isatty(self) -> bool:  # noqa: D401 - simple stub
+    def isatty(self) -> bool:
+        """Return true for terminal-gated rendering tests."""
         return True
 
 

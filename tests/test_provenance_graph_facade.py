@@ -286,24 +286,21 @@ def test_real_phase_result_converts_to_graph() -> None:
 
     # Import Finland compile pipeline
     try:
-        from lawvm.finland.compile import compile_ops_for_statute  # ty:ignore[unresolved-import]
         from lawvm.core.phase_result import PhaseResult
+        from lawvm.finland.compile import compile_fi_facade
     except ImportError as e:
         pytest.skip(f"Finland compile not importable: {e}")
 
     # Use a known statute that should produce findings
     statute_id = "2002/738"
     try:
-        result = compile_ops_for_statute(statute_id)
+        result = compile_fi_facade(statute_id)
     except Exception as e:
-        pytest.skip(f"compile_ops_for_statute failed for {statute_id}: {e}")
+        pytest.skip(f"compile_fi_facade failed for {statute_id}: {e}")
 
     # Extract PhaseResult if the compile result carries one
     # Fall back to constructing a minimal PhaseResult from findings if needed
-    if not hasattr(result, "findings"):
-        pytest.skip(f"compile result for {statute_id} does not expose findings")
-
-    findings = result.findings() if callable(getattr(result, "findings", None)) else ()
+    findings = result.finding_ledger
     if not findings:
         # Construct a synthetic PhaseResult with one finding to verify the plumbing
         finding = Finding(

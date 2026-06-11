@@ -20,13 +20,14 @@ data shape they asserted no longer exists in the GraphStore taint model.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
 
-import lawvm.finland.claim_kinds  # noqa: F401
+importlib.import_module("lawvm.finland.claim_kinds")
 
 from lawvm.core.manual_claims.hashing import compute_claim_id
 from lawvm.core.manual_claims.primitive import (
@@ -235,5 +236,4 @@ def test_strict_rebuild_refuses_retracted_claim(tmp_path: Path):
         [(claim, state)],
         ProfileTag.NON_STRICT_WITH_CLAIMS,
     )  # must not raise
-
 
