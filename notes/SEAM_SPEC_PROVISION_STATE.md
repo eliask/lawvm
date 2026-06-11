@@ -53,6 +53,7 @@ primary control signal.
 | `unsupported_jurisdiction` | `jurisdiction` not in supported set (`["fi"]`). |
 | `expired` | (since 0.2) A whole-statute fixed-term validity bound has lapsed at `as_of`. `version` is null, `text.available=false`; top-level `valid_until` (inclusive) and `expires` (exclusive) dates plus an `expiry` provenance block are present (§6.1). |
 | `expiry_unverified` | (since 0.2) A whole-law fixed-term expiry clause was recognised on the governing version but its validity end could not be determined (unparseable date, conflicting bounds, or ambiguous anaphoric year). **Blocking**: `version` is null and the `expiry` block carries the blocking diagnostic code. Never read as confirmed-live. |
+| `timeline_unverified` | (since 0.2.x, §7.3) The replayed timeline this query runs over carries break evidence (e.g. an occupancy-contract violation at amendment X, or a failed op targeting the queried provision) governing at `as_of`. **Blocking**: `version` is null, `text.available=false`; top-level `timeline_broken_at` `{amendment_id, diagnostic_code}` plus a `timeline_integrity` block enumerate the typed breaks. Never read as a legal fact — neither presence NOR absence of the provision is asserted. |
 
 Consumers MUST treat any status other than `selected` as "no asserted
 text-state". In particular `address_not_found`, `ambiguous_address`, and
@@ -110,6 +111,13 @@ fields, in this nesting:
   `rule_id`, `governing_bound_id`) or the blocking diagnostic. Responses on
   which the overlay does not fire hash EXACTLY as under 0.1 — the member is
   absent, not null.
+- `timeline_broken_at` and `timeline_integrity` — (since 0.2.x, §7.3) present
+  IFF timeline-break evidence is relevant to this query (statute-scoped break,
+  or address-scoped break matching the queried target). Includes the
+  non-blocking warning case (break effective AFTER `as_of`): a consumer pin
+  must notice that the statute's timeline is broken even when the pre-break
+  answer is servable. Responses without relevant break evidence hash EXACTLY
+  as before — the members are absent, not null.
 
 Canonical encoding: `json.dumps(..., ensure_ascii=True, sort_keys=True,
 separators=(",", ":"))` then `sha256` of the UTF-8 bytes.
@@ -354,6 +362,54 @@ are unaffected.
   change. This is a correction to the expiry recognizer's classification,
   not a seam-schema change; pinned consumers MUST still treat it as a
   semantic output change for the affected rows, covered by canary diffs.
+
+### 7.3 Changes within 0.2: timeline-integrity surfacing
+
+Previously, when a statute's replay fold recorded break evidence — e.g. an op
+applied onto a slot whose occupancy contradicted its occupancy contract
+(`APPLY.OCCUPANCY_POLICY_VIOLATION`, true violation), or a compiled op that
+could not be applied at all (`APPLY.FAILED_OPERATION`) — the seam still served
+clean-looking answers over the unproven timeline: `selected` with stale text,
+or `address_not_found` for addresses the breaking amendment may have created.
+A consumer could (and did) mint "no amendment touched this provision" from
+that output. This violated the core discipline: uncertainty must remain
+visible.
+
+Since 0.2.x the seam classifies replay break evidence
+(`lawvm.tools.timeline_integrity`) into typed `TimelineBreak` records:
+
+- **statute scope** (occupancy true violations; any finding marked
+  `timeline_fatal` by its emitter): the shared-state compile fold is unproven
+  from the breaking amendment onward. Every query with `as_of` at/after the
+  break's effective date (or with an undatable break — conservative) returns
+  `status="timeline_unverified"` with `version` null and the typed
+  `timeline_broken_at`/`timeline_integrity` members. Queries strictly BEFORE
+  the break's effective date are servable from the proven prefix and keep
+  their ordinary status, with the marker members present as a hashed warning.
+  Unresolved addresses under a governing break also return
+  `timeline_unverified` (NOT `address_not_found`) with the resolution outcome
+  preserved as `timeline_integrity.resolution_status` — absence is not
+  provable over a broken timeline.
+- **address scope** (`APPLY.FAILED_OPERATION`): only queries whose target
+  matches the failed op's recorded target are affected; all other addresses
+  of the statute hash byte-identically. Deliberately NOT classified:
+  `APPLY.RELABEL_SKIPPED` (governed skip), `APPLY.FALLBACK_WHOLE_SECTION_
+  REPLACE` (unproven-but-applied fallback obligation), `TIME.*`/`COVERAGE.*`
+  completeness obligations — widening the class is a seam-visible semantics
+  change and gets its own spec note.
+
+Classification under §7: responses without relevant break evidence are
+byte/hash-identical (verified against the 21-pin suite and unaffected-statute
+diffs), and compliant consumers already treat any status other than
+`selected` as "no asserted text-state", so an unknown status fails safe.
+Nevertheless a STRICT reading of §7 makes widening the `status` enumeration
+and the hashed member set 0.3 material; consumers that enumerate statuses
+exhaustively or pin hashes on rows of break-carrying statutes MUST treat this
+as a semantic output change for those rows (canary diffs), exactly like the
+7.2 recognizer corrections. Rollback:
+`LAWVM_ENABLE_TIMELINE_INTEGRITY_SURFACING=0` restores the prior (dishonest)
+behavior; responses for statutes without break evidence are byte-identical
+either way.
 
 <!--
 CODE-VS-NOTES DISAGREEMENTS (code wins, flagged per task instructions):
