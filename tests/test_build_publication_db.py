@@ -1063,16 +1063,20 @@ class TestErrorCountPostFilter:
             "artifact_summary": {"by_family": {}, "ready_total_artifact_count": 3},
             "verification_links": {"consolidated_url": "https://finlex.fi/fi/test"},
             # Three section rows:
-            # row A — clean: has blame + johtolause
+            # row A — clean: has blame + preamble (new key)
             # row B — empty section: no blame, no text → _row_is_meaningful rejects
             # row C — no structure: _require_section_structure_payload raises
+            #
+            # Row A carries the post-rename key ``blame_source_preamble``; row C
+            # carries the legacy ``blame_source_johtolause`` key so the read-shim
+            # in build_publication_db is exercised on both vocabularies.
             "section_results": [
                 {
                     "section": "section:1",
                     "diagnosis": "ORACLE_STALE",
                     "blame_source": "2019/99",
                     "blame_title": "Muutoslaki",
-                    "blame_source_johtolause": "muutetaan 1 § seuraavasti:",
+                    "blame_source_preamble": "muutetaan 1 § seuraavasti:",
                     "oracle_text": "vanha teksti",
                     "replay_text": "uusi teksti",
                 },
@@ -1170,6 +1174,18 @@ class TestErrorCountPostFilter:
         actual_errors = con.execute(
             "SELECT COUNT(*) FROM errors WHERE statute_id=?", ("2020/1",)
         ).fetchone()[0]
+        # The read-shim must resolve the new ``blame_source_preamble`` key for
+        # row A into the johtolause_text column (regression guard against a
+        # silent pass on a missing key after the rename).
+        preamble_texts = [
+            r[0]
+            for r in con.execute(
+                "SELECT johtolause_text FROM errors WHERE statute_id=?", ("2020/1",)
+            ).fetchall()
+        ]
+        assert "muutetaan 1 § seuraavasti:" in preamble_texts, (
+            f"expected row A johtolause_text resolved from blame_source_preamble, got {preamble_texts!r}"
+        )
         con.close()
 
         # The pre-filter count would have been 2 (section:1 and section:2 after
