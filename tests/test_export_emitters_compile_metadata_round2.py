@@ -9,8 +9,14 @@ Covers the 4 emitters deferred from Step 5:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
+
+from lawvm.core.compile_metadata import CompileMetadata
+
+ParquetRow = dict[str, Any]
+SchemaMetadata = dict[bytes, bytes]
 
 
 # ---------------------------------------------------------------------------
@@ -18,8 +24,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
-def _make_minimal_compile_metadata():
-    from lawvm.core.compile_metadata import CompileMetadata
+def _make_minimal_compile_metadata() -> CompileMetadata:
     return CompileMetadata(
         provenance_graph_hash="a" * 64,
         strict_profile_fingerprint="b" * 64,
@@ -39,7 +44,7 @@ _REQUIRED_KEYS = (
 )
 
 
-def _assert_all_lawvm_keys_present(schema_meta: dict) -> None:
+def _assert_all_lawvm_keys_present(schema_meta: SchemaMetadata) -> None:
     for key in _REQUIRED_KEYS:
         assert key in schema_meta, f"Missing metadata key: {key!r}"
 
@@ -148,7 +153,7 @@ def test_export_fi_sections_text_raises_when_absent(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _sample_statute_row() -> dict:
+def _sample_statute_row() -> ParquetRow:
     return {
         "statute_id": "2002/738",
         "title": "Test statute",
@@ -160,7 +165,7 @@ def _sample_statute_row() -> dict:
     }
 
 
-def _sample_section_row() -> dict:
+def _sample_section_row() -> ParquetRow:
     return {
         "statute_id": "2002/738",
         "section_key": "section:1",
@@ -176,7 +181,7 @@ def _sample_section_row() -> dict:
     }
 
 
-def _sample_finding_row() -> dict:
+def _sample_finding_row() -> ParquetRow:
     return {
         "statute_id": "2002/738",
         "claim_kind": "section_diff.editorial_only",
@@ -187,7 +192,7 @@ def _sample_finding_row() -> dict:
     }
 
 
-def _sample_op_row() -> dict:
+def _sample_op_row() -> ParquetRow:
     return {
         "statute_id": "2002/738",
         "amendment_id": "2024/100",
