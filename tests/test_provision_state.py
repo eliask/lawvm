@@ -363,6 +363,55 @@ def test_provision_state_response_uses_base_source_locator_for_sourceless_base_v
     assert "source_witness" not in payload["source_locator"]["detail"]
 
 
+def test_base_source_locator_xml_spans_do_not_affect_state_hashes() -> None:
+    address = LegalAddress(path=(("section", "1"),))
+    content = _section("Base duty.")
+    timelines = {
+        address: ProvisionTimeline(
+            address=address,
+            versions=[
+                ProvisionVersion(
+                    effective="2000-01-01",
+                    enacted="2000-01-01",
+                    content=content,
+                    content_hash=irnode_content_hash(content),
+                )
+            ],
+        )
+    }
+    source_xml = (
+        b"""
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act><body><section eId="sec_1"><num>1 \xc2\xa7</num><content>Base duty.</content></section></body></act>
+        </akomaNtoso>
+        """
+    )
+
+    without_span = build_provision_state_response(
+        timelines=timelines,
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="section:1",
+        as_of="2021-01-01",
+    )
+    with_span = build_provision_state_response(
+        timelines=timelines,
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="section:1",
+        as_of="2021-01-01",
+        source_xml_provider=lambda sid: source_xml if sid == "2000/1" else None,
+    )
+
+    assert "char_span" not in without_span["source_locator"]
+    assert without_span["source_locator"]["detail"]["byte_span_status"] == "unavailable_initial_surface"
+    assert with_span["source_locator"]["char_span"]
+    assert with_span["source_locator"]["byte_span"]
+    assert with_span["source_locator"]["detail"]["hash_role"] == "excluded_from_derived_state_hash"
+    assert with_span["hashes"]["content_hash"] == without_span["hashes"]["content_hash"]
+    assert with_span["hashes"]["derived_state_hash"] == without_span["hashes"]["derived_state_hash"]
+
+
 def test_base_source_locator_char_span_falls_back_to_finlex_eid() -> None:
     address = LegalAddress(path=(("section", "1"),))
     content = _section("Base duty.")

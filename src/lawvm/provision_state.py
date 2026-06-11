@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, TextIO
 
 from lawvm.core.ir import IRStatute
@@ -100,7 +101,7 @@ def resolve_provision_state(
     )
 
 
-def _source_xml_provider():
+def _source_xml_provider() -> Callable[[str], bytes | None]:
     from lawvm.corpus_store import get_corpus_store
 
     corpus = get_corpus_store(readonly=True)
