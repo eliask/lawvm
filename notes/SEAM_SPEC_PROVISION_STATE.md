@@ -320,8 +320,17 @@ are unaffected.
   TEMPORAL.FIXED_TERM_EXPIRY_UNPARSEABLE
   TEMPORAL.FIXED_TERM_EXPIRY_AMBIGUOUS
   TEMPORAL.FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS
-  TEMPORAL.DURATION_ARITHMETIC_AUTHORITY_MISSING   (duration form awaiting the
-                                                    pinned arithmetic rule)
+  TEMPORAL.DURATION_ARITHMETIC_AUTHORITY_MISSING   (duration form outside the
+                                                    pinned 150/1930 rule's
+                                                    input domain: caps,
+                                                    unsupported units,
+                                                    non-commencement anchors)
+  TEMPORAL.DURATION_COMMENCEMENT_UNRESOLVED        (duration form whose
+                                                    commencement anchor is
+                                                    decree-set, unstated, or
+                                                    ambiguous — the period is
+                                                    computable, its start is
+                                                    not)
   TEMPORAL.EVENT_BOUND_RESOLVER_MISSING            (säädöskokoelma-discernible
                                                     event bound, resolver not
                                                     yet built)
