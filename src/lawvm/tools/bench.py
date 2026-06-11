@@ -344,7 +344,7 @@ def _lev_sim_fast(sid: str, master: Any) -> float:
         return -1.0
 
 
-def _is_oracle_crossheading_only(sd: dict, events: list[dict]) -> bool:
+def _is_oracle_crossheading_only(sd: dict[str, Any], events: list[dict[str, Any]]) -> bool:
     """Return True when a section's only diffs are crossHeading heading facets.
 
     Replay correctly hoists ``crossHeading`` elements as section heading facets
@@ -369,7 +369,7 @@ def _is_oracle_crossheading_only(sd: dict, events: list[dict]) -> bool:
 _DIGIT_PREFIX_RE = re.compile(r"^\d+[a-z]?\)\s+")
 
 
-def _is_digit_renesting_mismatch(sd: dict, events: list[dict]) -> bool:
+def _is_digit_renesting_mismatch(sd: dict[str, Any], events: list[dict[str, Any]]) -> bool:
     """Return True when a section's diff is entirely from flat→merged digit renesting.
 
     The Finland parser normalises flat digit-item subsections (intro ending with
@@ -450,7 +450,7 @@ def _is_digit_renesting_mismatch(sd: dict, events: list[dict]) -> bool:
 _TEXT_ONLY_EVENT_KINDS = {"wording_text_changed", "heading_text_changed", "intro_text_changed"}
 
 
-def _is_wording_whitespace_only_diff(sd: dict, events: list[dict]) -> bool:
+def _is_wording_whitespace_only_diff(sd: dict[str, Any], events: list[dict[str, Any]]) -> bool:
     """Return True when a section's diff consists entirely of whitespace-only text changes.
 
     Detects OCR-era source pathology: words fused together in old scanned source
@@ -2047,7 +2047,7 @@ def _html_label_summary(sids_and_scores: List[Tuple[str, float]]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _warm_oracle(sids: list, *, force: bool = False) -> int:
+def _warm_oracle(sids: list[str], *, force: bool = False) -> int:
     """Pre-fetch missing oracle cache entries before parallel benchmarking.
 
     Only runs when TransparentCorpusStore is active. The warm pass operates on
@@ -2103,7 +2103,7 @@ def _warm_oracle(sids: list, *, force: bool = False) -> int:
     return fetched
 
 
-def _warm_sources(sids: list) -> int:
+def _warm_sources(sids: list[str]) -> int:
     """Pre-fetch missing source/amendment XMLs referenced by the bench corpus.
 
     This serial pass prevents worker processes from fan-out fetching source
