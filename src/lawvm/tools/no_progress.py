@@ -16,15 +16,13 @@ def main(args: "argparse.Namespace") -> None:
         build_no_progress_report,
         build_no_work_queue,
         export_no_progress_packets,
-        load_no_current_law_ids,
-        load_no_current_law_titles,
         load_no_commencement_overrides,
     )
     from lawvm.norway.index import build_no_amendment_index, load_no_amendment_index
     from lawvm.norway.sources import (
         load_available_lti_law_ids,
-        load_no_current_law_ids,  # noqa: F811
-        load_no_current_law_titles,  # noqa: F811
+        load_no_current_law_ids,
+        load_no_current_law_titles,
         resolve_no_source_path,
     )
     from lawvm.tools.no_workqueue import _attach_candidate_split
