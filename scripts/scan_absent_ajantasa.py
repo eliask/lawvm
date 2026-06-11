@@ -32,6 +32,10 @@ try:
 except ImportError:
     yaml: Any | None = None
 
+AbsentRow = dict[str, Any]
+CorrectionRow = dict[str, Any]
+CorrectionsByStatute = dict[str, CorrectionRow]
+
 
 _PUB_SCHEMA = """
 CREATE TABLE IF NOT EXISTS absent_ajantasa (
@@ -92,7 +96,7 @@ CREATE INDEX IF NOT EXISTS absent_ajantasa_year_amendment_idx ON absent_ajantasa
 """
 
 
-def _load_corrections(corrections_path: Path) -> dict[str, dict]:
+def _load_corrections(corrections_path: Path) -> CorrectionsByStatute:
     """Load metadata corrections YAML. Returns {statute_id: entry}."""
     if not corrections_path.exists():
         return {}
@@ -107,7 +111,7 @@ def _load_corrections(corrections_path: Path) -> dict[str, dict]:
     if entries is None:
         entries = data.get("stale_in_force", [])
 
-    def _entry_scope(entry: dict) -> str:
+    def _entry_scope(entry: CorrectionRow) -> str:
         scope = str(entry.get("scope") or "").strip()
         if scope:
             return scope
@@ -186,7 +190,7 @@ def _finlex_alkup_url(year: str, num: str) -> str:
 
 
 def scan(zip_path: Path, min_year: int = 0,
-         corrections: dict[str, dict] | None = None) -> list[dict]:
+         corrections: CorrectionsByStatute | None = None) -> list[AbsentRow]:
     """Scan ZIP for in-force contentAbsent statutes. Returns list of dicts."""
     corrections = corrections or {}
     zf = zipfile.ZipFile(zip_path)
@@ -215,7 +219,7 @@ def scan(zip_path: Path, min_year: int = 0,
     print(f"contentAbsent statutes (>={min_year}): {len(absent_keys)}", file=sys.stderr)
 
     # Second pass: parse metadata for absent statutes
-    results: list[dict] = []
+    results: list[AbsentRow] = []
     for i, key in enumerate(sorted(absent_keys)):
         path = name_idx[key]
         data = zf.read(path)
@@ -242,8 +246,8 @@ def _parse_statute_record(
     year_s: str,
     num_s: str,
     data: bytes,
-    corrections: dict[str, dict],
-) -> dict | None:
+    corrections: CorrectionsByStatute,
+) -> AbsentRow | None:
     """Parse one oracle XML payload into an absent_ajantasa row dict."""
     text = data.decode("utf-8", errors="replace")
     sid = f"{year_s}/{num_s}"
@@ -301,8 +305,8 @@ def _parse_statute_record(
 def scan_farchive(
     farchive_path: Path,
     min_year: int = 0,
-    corrections: dict[str, dict] | None = None,
-) -> list[dict]:
+    corrections: CorrectionsByStatute | None = None,
+) -> list[AbsentRow]:
     """Scan farchive for in-force contentAbsent statutes.
 
     Drop-in replacement for scan() that reads from data/finlex.farchive
@@ -344,7 +348,7 @@ def scan_farchive(
         print(f"contentAbsent statutes (>={min_year}): {len(absent_sids)}", file=sys.stderr)
 
         # Second pass: in-force check and metadata extraction
-        results: list[dict] = []
+        results: list[AbsentRow] = []
         for i, sid in enumerate(sorted(absent_sids)):
             _ver, loc = sid_best[sid]
             data = archive.get(loc)
@@ -363,7 +367,7 @@ def scan_farchive(
         archive.close()
 
 
-def write_csv(results: list[dict], path: Path) -> None:
+def write_csv(results: list[AbsentRow], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(results[0].keys()))
@@ -372,8 +376,8 @@ def write_csv(results: list[dict], path: Path) -> None:
     print(f"Wrote {len(results)} rows to {path}")
 
 
-def write_publication_db(results: list[dict], db_path: Path,
-                         corrections: dict[str, dict] | None = None) -> None:
+def write_publication_db(results: list[AbsentRow], db_path: Path,
+                         corrections: CorrectionsByStatute | None = None) -> None:
     corrections = corrections or {}
     con = sqlite3.connect(str(db_path))
 
@@ -452,7 +456,7 @@ def write_publication_db(results: list[dict], db_path: Path,
     print(f"Added absent_ajantasa ({len(results)} rows) + metadata_corrections ({len(corrections)} rows) to {db_path}")
 
 
-def print_summary(results: list[dict]) -> None:
+def print_summary(results: list[AbsentRow]) -> None:
     by_type = Counter(r["type_statute"] for r in results)
     by_decade = Counter((r["year"] // 10) * 10 for r in results)
     amended = sum(1 for r in results if r["is_amended"])
