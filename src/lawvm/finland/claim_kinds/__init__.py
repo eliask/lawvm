@@ -13,6 +13,7 @@ Currently registered:
   fi.v1.TEMPORAL_BASE_SELECTION_RESOLUTION — temporal base-selection boundary
   fi.v1.MUTATION_BOUNDARY_RESOLUTION — mutation-boundary proof boundary
   fi.v1.FAILED_OPERATION_RESOLUTION — failed-operation proof boundary
+  fi.v1.CORRIGENDUM_UNSUPPORTED_PATCH_RESOLUTION — unsupported corrigendum patch boundary
 """
 import importlib
 

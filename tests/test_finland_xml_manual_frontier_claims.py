@@ -36,6 +36,7 @@ _XML_FRONTIER_KINDS = (
     "fi.v1.TEMPORAL_BASE_SELECTION_RESOLUTION",
     "fi.v1.MUTATION_BOUNDARY_RESOLUTION",
     "fi.v1.FAILED_OPERATION_RESOLUTION",
+    "fi.v1.CORRIGENDUM_UNSUPPORTED_PATCH_RESOLUTION",
 )
 
 
@@ -141,6 +142,11 @@ def test_finland_xml_manual_frontier_kinds_are_registered() -> None:
     assert failed_op.layer == "adjudication"
     assert failed_op.is_semantic_compilation_claim is True
 
+    unsupported_corrigendum = get_claim_kind_spec("fi.v1.CORRIGENDUM_UNSUPPORTED_PATCH_RESOLUTION")
+    assert unsupported_corrigendum is not None
+    assert unsupported_corrigendum.layer == "adjudication"
+    assert unsupported_corrigendum.is_semantic_compilation_claim is True
+
 
 def test_shipped_evidence_policy_covers_xml_manual_frontier_kinds() -> None:
     import json
@@ -243,6 +249,30 @@ def test_failed_operation_resolution_validates_without_pathology_code() -> None:
         source_bytes=source,
     )
     spec = get_claim_kind_spec("fi.v1.FAILED_OPERATION_RESOLUTION")
+    assert spec is not None
+    assert spec.entailment_validator is not None
+    assert spec.entailment_validator(claim, source).passed is True
+
+
+def test_unsupported_corrigendum_patch_resolution_validates_without_pathology_code() -> None:
+    source = b"<p>Johtolauseesta puuttuu virke, joka kuuluu: lisatty teksti.</p>"
+    claim = _claim(
+        claim_kind="fi.v1.CORRIGENDUM_UNSUPPORTED_PATCH_RESOLUTION",
+        target=(
+            ("source_statute", "corr/442/2016"),
+            ("affected_target", "preamble:formula"),
+            ("unsupported_reason_code", "FINLAND.CORRIGENDUM_ADD_UNSUPPORTED"),
+        ),
+        value=(
+            ("source_quote", "puuttuu virke"),
+            ("correction_kind", "ADD"),
+            ("resolution_kind", "manual_corrigendum_patch_boundary"),
+            ("resolution_basis", "reviewed corrigendum source and target mutation boundary"),
+            ("mutation_boundary_proof_ref", "proof-corr-1"),
+        ),
+        source_bytes=source,
+    )
+    spec = get_claim_kind_spec("fi.v1.CORRIGENDUM_UNSUPPORTED_PATCH_RESOLUTION")
     assert spec is not None
     assert spec.entailment_validator is not None
     assert spec.entailment_validator(claim, source).passed is True

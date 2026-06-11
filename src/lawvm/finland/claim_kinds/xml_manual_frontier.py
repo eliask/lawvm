@@ -194,6 +194,26 @@ _FAILED_OPERATION = _XmlClaimSpec(
     semantic=True,
 )
 
+_UNSUPPORTED_CORRIGENDUM_PATCH = _XmlClaimSpec(
+    claim_kind="fi.v1.CORRIGENDUM_UNSUPPORTED_PATCH_RESOLUTION",
+    layer="adjudication",
+    description=(
+        "Manual proof boundary for XML/source-backed corrigendum patches whose "
+        "patch shape is visible but not deterministically compilable by the "
+        "current corrigendum parser."
+    ),
+    target_fields=("source_statute", "affected_target", "unsupported_reason_code"),
+    value_fields=(
+        "source_quote",
+        "correction_kind",
+        "resolution_kind",
+        "resolution_basis",
+        "mutation_boundary_proof_ref",
+    ),
+    allowed_pathology_codes=(),
+    semantic=True,
+)
+
 _XML_FRONTIER_SPECS: tuple[_XmlClaimSpec, ...] = (
     _SOURCE_CORRECTION,
     _PAYLOAD_COMPLETENESS,
@@ -203,6 +223,7 @@ _XML_FRONTIER_SPECS: tuple[_XmlClaimSpec, ...] = (
     _TEMPORAL_BASE,
     _MUTATION_BOUNDARY,
     _FAILED_OPERATION,
+    _UNSUPPORTED_CORRIGENDUM_PATCH,
 )
 
 _SPECS_BY_KIND: dict[str, _XmlClaimSpec] = {
