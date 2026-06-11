@@ -194,6 +194,13 @@ the de-facto join key between LawVM and downstream corpora. The format is a
 **stable public interface**: any change to it is a breaking change under §7
 regardless of whether hashed fields change.
 
+`statute_id` is the legacy/local normative-work identifier OF THIS SEAM
+VERSION. Certificate envelopes (CERTIFICATE_SCHEMA_V0.md) identify their
+subject by the universal `subject.work_id` (`fi:act:273/2009`) and map it
+onto this projection's `statute_id` via `subject.legacy_statute_id`;
+the seam keeps `statute_id` unchanged — projections preserve local
+contracts.
+
 ## 6. Fixed-term whole-law expiry and remaining limitations
 
 ### 6.1 Fixed-term whole-law expiry (modeled, default-on since 0.2)
@@ -295,16 +302,21 @@ are unaffected.
                                                     impossible date)
   ```
 
-  Consumers MUST treat the diagnostic-code set as OPEN within a spec version:
-  new codes refine the typing of already-blocking responses; they never
-  change `status` semantics.
+  The diagnostic-code vocabulary is OPEN within 0.2 for already-blocking
+  `expiry_unverified` responses. This is a control-contract-compatible
+  refinement: `status` semantics and the hashed field SET do not change.
+  However, because the full `expiry` block is part of `derived_state_hash`
+  when the overlay fires (§3), refining a row's diagnostic code DOES change
+  `derived_state_hash` for that row. Consumers that pin hashes on blocked
+  fixed-term rows MUST rerun their canaries.
 - Three recognised clause shapes that are NOT whole-law expiry bounds left
   the blocking lane as audited non-candidates (decree-set commencement,
   start-only validity statements, voimassa-text that never predicates
   validity of the act itself). Statutes previously blocked on those shapes
-  now answer `selected` with live text — for those statutes the response
-  status and hash change; that change is a fail-loud false positive being
-  retired, not a semantics change.
+  now answer `selected` with live text — for those rows, status and hash
+  change. This is a correction to the expiry recognizer's classification,
+  not a seam-schema change; pinned consumers MUST still treat it as a
+  semantic output change for the affected rows, covered by canary diffs.
 
 <!--
 CODE-VS-NOTES DISAGREEMENTS (code wins, flagged per task instructions):

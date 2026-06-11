@@ -1,7 +1,7 @@
 ---
 title: LawVM Canonical Transition Trace v0 — Replayable Patch Grammar
 schema: lawvm.canonical_transition_trace.v0
-spec_version: 0.1
+spec_version: 0.2
 status: normative draft (spec-first; bundle writer and checker v0 follow it)
 ---
 
@@ -44,7 +44,7 @@ empty string `""` denotes an absent subtree, never a hash.
 ## 1. Trace model
 
 A trace describes the evolution of a **covering state**: a map from
-addresses to IR subtrees that tiles the declared statute/slice with no
+addresses to IR subtrees that tiles the declared legal work/slice with no
 overlap. Replay is a fold:
 
 ```text
@@ -113,6 +113,14 @@ Properties (normative):
   NOT part of the structural hash. Two subtrees differing only in `attrs`
   collide. Consumers MUST NOT key decisions on attrs via this hash —
   mirror of the seam's content_hash structure-blindness caveat.
+- **attrs non-semantic rule (hard precondition of attrs-blindness)**: no
+  field that affects legal text-state, applicability, temporal eligibility,
+  tombstone/live status, addressability, or source identity may live ONLY
+  in `attrs`. Such state MUST be represented in the typed node shape
+  (kind/label/text/children), transition fields, residuals, or projection
+  payloads committed by the relevant roots. If the engine ever needs a
+  semantic field that only fits `attrs`, this recipe is no longer sound and
+  `attrs` MUST be folded into the structural hash under a schema bump.
 - Distinct from the text-only `content_hash` of seam responses
   (`sha256(irnode_to_text(...))`); the two MUST NOT be conflated even though
   both are sha256 hex values.
@@ -157,7 +165,7 @@ One JSON object:
 ```json
 {
   "schema": "lawvm.base_tree.v0",
-  "statute_id": "301/2004",
+  "work_id": "fi:act:301/2004",
   "jurisdiction": "fi",
   "slice_prefix": "",
   "granularity": "subsection",
@@ -221,16 +229,21 @@ excluded from the hash — same hashed/excluded discipline as the seam spec's
   "post_hash": "sha256:...",
   "payload_hash": "sha256:...",
   "source_refs": ["fi.finlex.alkup.2008.1234"],
-  "source_anchor": {
-    "source_artifact_id": "fi.finlex.alkup.2008.1234",
-    "locator": "sources/<raw_source_hash>.bin",
-    "span": [1042, 1311],
-    "quote_hash": "sha256:..."
-  },
+  "source_anchors": [
+    {
+      "source_artifact_id": "fi.finlex.alkup.2008.1234",
+      "locator": "sources/<raw_source_hash>.bin",
+      "span_unit": "byte",
+      "span": [1042, 1311],
+      "quote_hash": "sha256:..."
+    }
+  ],
 
   "legal_op_kind": "replace",
   "legal_op_summary": "replace chapter:4/section:30a [1234/2008]",
-  "he_ref": "HE 46/2008 vp",
+  "preparatory_refs": [
+    { "kind": "fi_government_proposal", "display_label": "HE 46/2008 vp" }
+  ],
   "expires_date": "",
   "flags": { "created": false, "removed": false, "temporary_expiry": false }
 }
@@ -238,15 +251,24 @@ excluded from the hash — same hashed/excluded discipline as the seam spec's
 
 Certified core (hashed): `transition_id`, `sequence`, `effective_date`,
 `action`, `target_address`, `pre_hash`, `post_hash`, `payload_hash`,
-`source_refs`, `source_anchor` (or explicit `null`).
+`source_refs`, `source_anchors` (possibly empty array).
 
 Display annotation (NOT hashed): `legal_op_kind`, `legal_op_summary`,
-`he_ref`, `expires_date`, `flags`. These carry the L2 attribution a viewer
-renders — which säädös amended this unit, the HE reference, whether the
-change was a temporary act's scheduled lapse (`flags.temporary_expiry`) —
-and are derivable/re-attributable without changing any committed root.
-Annotation drift never invalidates a trace; annotation MUST NOT be treated
-as certified content.
+`preparatory_refs`, `expires_date`, `flags`, and optional `display_span`
+objects (decoded-character spans for UI rendering; the certified anchor is
+always byte-level). These carry the L2 attribution a viewer renders — which
+amending instrument changed this unit, the preparatory-work reference,
+whether the change was a temporary act's scheduled lapse
+(`flags.temporary_expiry`) — and are derivable/re-attributable without
+changing any committed root. `preparatory_refs` entries are
+`{kind, display_label}` pairs whose `kind` is a jurisdiction-adapter value
+(`fi_government_proposal`, `uk_bill`, `uk_explanatory_notes`, ...) — the
+field name is universal, the species is a value, and the local shorthand
+("HE 46/2008 vp") survives only as a display label. Annotation drift never
+invalidates a trace; annotation MUST NOT be treated as certified content. A
+viewer or report MUST NOT present `preparatory_refs` or other annotation as
+certified provenance unless it is also committed through a rooted
+projection family (e.g. transition-graph projection rows).
 
 Field rules:
 
@@ -265,11 +287,16 @@ Field rules:
   instruments drive this transition; for a scheduled lapse of a temporary
   act, the ref points at the act that scheduled the expiry — a lapse is
   never an unexplained deletion.
-- `source_anchor`, when non-null, pins the driving clause: `span` is a
-  byte/character range in the decoded source artifact, `quote_hash` is
-  `sha256` of the spanned text. When no anchor is available the field is
-  explicit `null` AND a `kind=source_anchor_unavailable` residual scoped to
-  this transition MUST exist in the certificate's residual ledger (§7).
+- `source_anchors` pins the driving clauses. Certified anchor spans are
+  BYTE-LEVEL only: `span_unit` MUST be `"byte"`, `span` is the half-open
+  `[start_byte, end_byte)` range over the source artifact's RAW bytes, and
+  `quote_hash = sha256(raw_source_bytes[start_byte:end_byte])`. No decoded
+  string offsets in the certified anchor — two implementations disagreeing
+  on decoding would verify different substrings under the same numbers;
+  decoded-character spans live only in `display_span` annotation. When no
+  anchor covers a `source_ref`, the array entry is simply absent AND a
+  `kind=source_anchor_unavailable` residual scoped to this transition MUST
+  exist in the certificate's residual ledger (§7).
 
 ### 5.2 Trace root
 
@@ -364,20 +391,22 @@ failure mode      as for set_subtree
 
 ## 7. Source anchoring
 
-Every transition MUST satisfy ONE of:
+Every `source_ref` of every transition MUST satisfy ONE of:
 
 ```text
-1. source_anchor non-null: the anchor's source_artifact_id resolves in the
-   certificate's source bundle, the span exists in the artifact's bytes,
-   and quote_hash matches sha256 of the spanned text; or
-2. source_anchor null AND a residual row with
-   kind=source_anchor_unavailable exists in the certificate's residual
-   ledger whose scope names this transition (by transition_id or leaf
-   hash).
+1. at least one source_anchors entry references that source_artifact_id,
+   resolves into the certificate's source bundle, its byte span exists in
+   the artifact's raw bytes, and quote_hash matches sha256 of the spanned
+   bytes; or
+2. a residual row with kind=source_anchor_unavailable exists in the
+   certificate's residual ledger whose scope names this transition (by
+   transition_id or leaf hash) and the uncovered source_ref.
 ```
 
-Missing anchors are NEVER silent (`TRACE.SOURCE_ANCHOR_MISSING` when
-neither holds). The residual's `profile_effect` determines whether the
+A multi-source transition (one date-batch step driven by several
+instruments or clauses) carries one anchor per driving clause. Missing
+anchors are NEVER silent (`TRACE.SOURCE_ANCHOR_MISSING` when neither holds
+for some source_ref). The residual's `profile_effect` determines whether the
 certificate is `qualified` or `blocked` under the certificate's profile
 (certificate spec §5). Anchor verification is byte-level only; whether the
 anchored clause legally entails the transition is outside the trace's claim
@@ -427,7 +456,7 @@ One row per declared change date, after that date's full batch is applied:
 The checkpoint set is the trace's bridge to the certificate's `time_axis`:
 the row dates MUST equal the change-date set committed under
 `change_dates_root` — which includes per-version expiry dates and
-statute-level fixed-term `expires_on` dates, since an expiry day is a real
+work-level fixed-term `expires_on` dates, since an expiry day is a real
 state boundary (the tree on/after that date differs).
 
 ## 9. Failure model
@@ -500,3 +529,20 @@ annotation field set and rendering; transition_id readable format;
 attrs payload contents; reserved-action future semantics; sliced-trace
 multi-prefix layout; inclusion-proof optimization
 ```
+
+### 11.1 Changes 0.1 → 0.2
+
+Second adversarial-review round; pre-implementation contract repairs.
+
+- `source_anchor` (singular, nullable) → `source_anchors` (array): a
+  multi-source transition carries one anchor per driving clause, and the
+  anchor-or-residual rule is enforced PER source_ref (§5.1, §7).
+- Certified anchor spans are byte-level only (`span_unit="byte"`, half-open
+  range over raw bytes, quote_hash over the raw byte slice); decoded
+  character spans are display annotation (`display_span`) (§5.1).
+- attrs non-semantic rule added as a hard precondition of the attrs-blind
+  structural hash (§2.2).
+- `he_ref` annotation → `preparatory_refs` (`{kind, display_label}` pairs;
+  jurisdiction species as values, never field names); base tree
+  `statute_id` → `work_id`; viewer labeling rule for uncommitted annotation
+  (§3, §5.1).

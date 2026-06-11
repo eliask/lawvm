@@ -1,7 +1,7 @@
 ---
 title: LawVM Certificate Schema v0 — Temporal Dossier and Checker Contract
 schema: lawvm.certificate.v0
-spec_version: 0.2
+spec_version: 0.3
 status: normative draft (spec-first; bundle writer and checker v0 follow it)
 ---
 
@@ -29,13 +29,13 @@ certificate projection), [LAWVM_PROOF_SURFACES.md](LAWVM_PROOF_SURFACES.md),
 [COMPILER_OBSERVATION_STREAM.md](COMPILER_OBSERVATION_STREAM.md),
 [REPLAY_INVARIANTS_AND_FAILURE_MODEL.md](REPLAY_INVARIANTS_AND_FAILURE_MODEL.md).
 
-## 1. Claim model: the per-statute temporal dossier
+## 1. Claim model: the per-work temporal dossier
 
-A v0 certificate asserts a **declared statute/slice timeline** — not one
+A v0 certificate asserts a **declared legal-work/slice timeline** — not one
 provision query, and not one transition:
 
 ```text
-For jurisdiction J, statute S, source bundle B, profile P, interpretation
+For jurisdiction J, legal work S, source bundle B, profile P, interpretation
 policy I, over declared time scope W, LawVM derives a temporal text-state
 timeline T for a declared address scope, with source artifacts D,
 replay/transition trace R, materialization roots M, projection roots Q, and
@@ -46,9 +46,14 @@ The certificate identity is the tuple:
 
 ```json
 {
-  "jurisdiction": "fi",
-  "statute_id": "301/2004",
-  "scope": { "kind": "whole_statute | address_prefix | address_set", "addresses": [] },
+  "subject": {
+    "jurisdiction": "fi",
+    "work_id": "fi:act:301/2004",
+    "work_kind": "normative_act",
+    "local_id": "301/2004",
+    "legacy_statute_id": "301/2004"
+  },
+  "scope": { "kind": "whole_work | address_prefix | address_set", "addresses": [] },
   "time_scope": { "kind": "closed_interval", "from": "2004-05-01", "to": "2026-06-10" },
   "profile_id": "fi.strict.current",
   "interpretation_policy_id": "lawvm.fi.default.v1",
@@ -56,15 +61,36 @@ The certificate identity is the tuple:
 }
 ```
 
+The certificate subject is a LEGAL WORK, not a "statute": `work_id` is the
+jurisdiction-prefixed canonical work identifier
+(`<jurisdiction>:<work_kind-local-prefix>:<local_id>`), `work_kind` names
+the species (`normative_act`, `statutory_instrument`, `regulation`, ...),
+and `local_id` is the jurisdiction-local citation form. `legacy_statute_id`
+carries the seam projection's join key unchanged: the seam keeps
+`statute_id` as its stable public interface (seam spec §5.1) and the
+certificate maps `subject.work_id` onto it — projections preserve local
+contracts; the certificate does not inherit their legacy names as its
+universal fields. Jurisdiction-specific document species (FI hallituksen
+esitys, UK Bill, NZ reprint) are never core field names — they enter as
+`work_kind`/`source_role` VALUES and display labels (§3.2).
+
 `time_scope` declares the temporal interval the certificate claims to cover:
 
 ```text
-kind = closed_interval     claims cover [from, to] inclusive
-kind = open_ended          claims cover [from, ∞); "to" is null
+kind = closed_interval     claims cover [from, to] inclusive (v0 default)
 kind = change_dates_only   claims cover exactly the committed change-date set
                            within [from, to]; intervals between change dates
                            are asserted only as "no modeled boundary"
+kind = open_ended          RESERVED — MUST NOT be emitted in v0
 ```
+
+`open_ended` is reserved, not normative: a static source bundle cannot
+honestly claim `[from, ∞)` — a later amendment outside the bundle would
+falsify it. A future version MAY define an
+`open_ended_within_source_bundle` kind carrying an explicit source-bundle
+horizon (`known_sources_through`, `future_sources_not_claimed`); until
+then, emitting `open_ended` is INVALID and `to` is always a concrete date
+bounded by the source bundle's acquisition horizon.
 
 Residue accounting, the status algebra (§5.2), and the checker's scope
 intersection (§5.3) are all evaluated against `time_scope`. A consumer
@@ -76,8 +102,9 @@ Leaf units (the five kinds every artifact in the bundle reduces to):
 ```text
 1. SourceArtifact leaf      — identity metadata + hash of exact bytes
                               observed at a named locator (§3.2)
-2. CanonicalTransition leaf — one typed replay step with pre/post hashes
-                              (companion spec)
+2. CanonicalTransition leaf — one certified TREE transition (a state patch
+                              with pre/post hashes — never a legal-operation
+                              claim; companion spec)
 3. ProvisionState leaf      — one (address, date-interval) text-state
 4. Residual/Finding leaf    — one typed gap, recovery, or pathology
 5. Projection leaf          — one consumer-facing row (seam/dump/graph/packet)
@@ -99,10 +126,15 @@ cannot honestly claim the PIT state of a statute).
 {
   "schema": "lawvm.certificate.v0",
   "certificate_id": "sha256:<certificate_root>",
-  "claim_kind": "statute_temporal_text_state",
-  "jurisdiction": "fi",
-  "statute_id": "301/2004",
-  "scope": { "kind": "whole_statute", "addresses": [] },
+  "claim_kind": "legal_work_temporal_text_state",
+  "subject": {
+    "jurisdiction": "fi",
+    "work_id": "fi:act:301/2004",
+    "work_kind": "normative_act",
+    "local_id": "301/2004",
+    "legacy_statute_id": "301/2004"
+  },
+  "scope": { "kind": "whole_work", "addresses": [] },
   "time_scope": { "kind": "closed_interval", "from": "2004-05-01", "to": "2026-06-10" },
   "profile": { "profile_id": "fi.strict.current", "profile_hash": "sha256:..." },
   "interpretation_policy": { "policy_id": "lawvm.fi.default.v1", "policy_hash": "sha256:..." },
@@ -149,7 +181,7 @@ the declared scope, not only amendment effective dates:
 base effective dates (excluding the 0000-00-00 base sentinel)
 amendment effective dates
 per-version expires dates
-statute-level fixed-term expires_on dates (määräaikainen laki bounds)
+work-level fixed-term expires_on dates (FI: määräaikainen laki bounds)
 enactment / commencement gate dates where materialized
 temporal-event dates (revive / commence / suspend) where materialized
 ```
@@ -297,12 +329,33 @@ locators are two distinct artifacts:
 {
   "source_artifact_id": "fi.finlex.alkup.2004.301",
   "jurisdiction": "fi",
-  "role": "source_as_enacted | amending_source | current_consolidation | public_page_snapshot",
+  "work_kind": "normative_act",
+  "source_role": "enacted_text",
   "canonical_id": "301/2004",
   "locator": "sources/<raw_source_hash>.bin",
   "raw_source_hash": "sha256:..."
 }
 ```
+
+`work_kind` names what the document IS (jurisdiction-neutral species:
+`normative_act`, `statutory_instrument`, `regulation`, `proposal_package`,
+`committee_report`, `official_consolidation`, `correction_notice`,
+`commencement_instrument`, ...); `source_role` names what LawVM USES it for
+in this bundle. The v0 source-role vocabulary:
+
+```text
+normative roles     enacted_text | amending_text | commencement_text |
+                    expiry_or_suspension_text | correction_text | repeal_text
+preparatory roles   proposal_text | explanatory_reasoning |
+                    committee_material | consultation_material
+comparison roles    official_consolidation_view | current_public_view
+```
+
+The same work may appear under different roles in different bundles — the
+role is per-use, not per-document. Jurisdiction-specific species names (FI
+hallituksen esitys, UK Bill, UK Explanatory Notes) are NEVER role or kind
+field names; they map into these values via the jurisdiction's adapter and
+survive as display labels only.
 
 `retrieved_at` and other acquisition provenance MAY be carried on the source
 row but are NOT part of the hashed identity object (non-semantic, mirrors the
@@ -323,7 +376,8 @@ exactly one member removed: `certificate_id`. Nothing else is omitted. In
 particular the root therefore commits to:
 
 ```text
-schema, claim_kind, jurisdiction, statute_id, scope, time_scope,
+schema, claim_kind, subject (jurisdiction, work_id, work_kind, local_id,
+legacy_statute_id), scope, time_scope,
 profile (id + hash), interpretation_policy (id + hash),
 time_axis (change_dates_root, min_date, max_date),
 ALL roots (§3 tree, including coverage_root and base_tree_root),
@@ -423,6 +477,26 @@ projection kind, the `{schema, spec_version, spec_hash}` triple of §3.4. The
 checker contract manifest (`policy/checker_contract.json`) restates the
 envelope's `checker_contract` for bundle-local inspection.
 
+The diagnostic registry manifest (`policy/diagnostic_registry.json`,
+`lawvm.diagnostic_registry.v0`) pins the registered diagnostic-code set the
+bundle was emitted against — "registered code" means registered in THIS
+manifest, never in whatever the checker's local repository happens to know,
+or old bundles stop being checkable. One row per code:
+
+```json
+{
+  "diagnostic_code": "TEMPORAL.DURATION_ARITHMETIC_AUTHORITY_MISSING",
+  "role": "observation | obligation | violation",
+  "allowed_residual_kinds": ["expiry_unverified"],
+  "profile_disposition": { "fi.strict.current": "blocks", "fi.quirks.current": "qualifies" }
+}
+```
+
+The checker verifies, per residual row: the `diagnostic_code` is registered
+here; the row's `kind` is in the code's `allowed_residual_kinds`; and the
+row's effect is the registry-derived one (§5.4 — `profile_effect` is
+derived, never author-set).
+
 ## 4. Bundle layout
 
 ```text
@@ -433,6 +507,7 @@ policy/
   strict_profile.json
   interpretation_policy.json
   projection_specs.json
+  diagnostic_registry.json
   checker_contract.json
 trace/
   canonical_transitions.jsonl
@@ -480,6 +555,11 @@ projection family or optional artifact that is not emitted is an explicit
       "schema": "lawvm.projection_specs.v0",
       "root": "sha256:...",
       "locator": "policy/projection_specs.json"
+    },
+    "diagnostic_registry_manifest": {
+      "schema": "lawvm.diagnostic_registry.v0",
+      "root": "sha256:...",
+      "locator": "policy/diagnostic_registry.json"
     },
     "base_tree": {
       "schema": "lawvm.base_tree.v0",
@@ -621,17 +701,20 @@ self-description.
 A residual **intersects** the certificate iff ALL of:
 
 ```text
-1. statute overlap   — the residual's statute is the certificate's
-                       statute_id (or the residual is scoped corpus-wide);
+1. work overlap      — the residual's work is the certificate's subject
+                       (matched on work_id or its legacy_statute_id alias;
+                       or the residual is scoped corpus-wide);
 2. address overlap   — the residual's address scope overlaps the declared
-                       scope (a whole_statute certificate overlaps every
-                       address in the statute; an address_prefix certificate
+                       scope (a whole_work certificate overlaps every
+                       address in the work; an address_prefix certificate
                        overlaps descendants, the prefix itself, and its
-                       ancestors' statute-level facts);
+                       ancestors' work-level facts);
 3. temporal overlap  — the residual's date_range overlaps time_scope:
-                       closed_interval = [from, to]; open_ended = [from, ∞);
-                       change_dates_only = the committed change-date set
-                       within [from, to]. A null end is unbounded.
+                       closed_interval = [from, to]; change_dates_only =
+                       the committed change-date set within [from, to].
+                       A null end on the RESIDUAL's date_range is unbounded
+                       (an open-ended residual overlaps every scope whose
+                       interval reaches its start).
 4. profile effect    — residual.profile_effect for the certificate's
                        profile_id is "blocks" or "qualifies" (a "permits"
                        or absent effect leaves the row observation-only).
@@ -665,8 +748,9 @@ part of certificate identity and committed under `certificate_root`.
 Typed diagnostic codes are REQUIRED, not decorative:
 
 - Every residual row MUST carry a `diagnostic_code` registered in the
-  observation registry. A catchall (`unclassified`, unregistered, or empty)
-  is permitted ONLY in a `blocked` certificate — it forces
+  bundle's pinned diagnostic registry manifest (§3.5; emitted from the
+  engine's observation registry). A catchall (`unclassified`, unregistered,
+  or empty) is permitted ONLY in a `blocked` certificate — it forces
   `certificate_status=blocked` (§5.2) and is INVALID inside a clean or
   qualified one.
 - `kind=expiry_unverified` rows MUST carry one of the registered fixed-term
@@ -688,19 +772,34 @@ Typed diagnostic codes are REQUIRED, not decorative:
   duration forms, source-impossible dates, ambiguous anaphora) into one
   untyped `expiry_unverified` bucket loses exactly the honesty the
   fail-loud expiry design bought.
-- Recognised validity prose that is NOT a whole-law expiry bound is typed by
-  the non-blocking observation-role codes
-  `TEMPORAL.DECREE_SET_COMMENCEMENT_UNRESOLVED`,
-  `TEMPORAL.START_ONLY_NOT_EXPIRY_BOUND`, and
-  `TEMPORAL.NON_VALIDITY_VOIMASSA_SUPPRESSED`. These are audited
-  observations, never `expiry_unverified` residuals; a residual carrying one
-  of them with `blocking=true` is INVALID. The registered code set lives in
-  the observation registry and MAY widen within v0; an emitter MUST use the
+- Recognised prose that is NOT a whole-law expiry bound MUST NOT be emitted
+  as `kind=expiry_unverified`. In the fixed-term-expiry lane, decree-set
+  commencement (`TEMPORAL.DECREE_SET_COMMENCEMENT_UNRESOLVED`), start-only
+  clauses (`TEMPORAL.START_ONLY_NOT_EXPIRY_BOUND`), and non-validity
+  voimassa text (`TEMPORAL.NON_VALIDITY_VOIMASSA_SUPPRESSED`) are
+  non-blocking observations; an `expiry_unverified` residual carrying one of
+  these non-expiry codes is INVALID. This does NOT prohibit a different
+  temporal lane — e.g. a future commencement resolver — from emitting a
+  blocking residual under its own residual kind for the same clause:
+  decree-set commencement is not blocking *expiry*, which is a statement
+  about the lane, not about the code.
+- The registered code set is pinned per bundle by the diagnostic registry
+  manifest (§3.5) and MAY widen within v0; an emitter MUST use the
   registered code matching the failure class, never a coarser one.
 - `kind=unsupported_scoped_expiry` rows carry
   `TEMPORAL.SCOPED_FIXED_TERM_EXPIRY_UNSUPPORTED`;
   `kind=source_anchor_unavailable` rows carry the transition identity they
   excuse (companion spec §7).
+- `profile_effect` is DERIVED, never author-set. The authoritative
+  disposition for a (diagnostic_code, profile_id) pair is the
+  `profile_disposition` table of the pinned diagnostic registry manifest
+  (§3.5); the row's `profile_effect` member is a cached copy for readers.
+  The checker recomputes each intersecting residual's disposition from the
+  registry and profile manifests and rejects the bundle (INVALID) when a
+  row's declared effect disagrees — an emitter cannot soften a blocking
+  finding by writing `"permits"` into the row. (Mirror of the manual-claims
+  rule: admissibility is composed per build from policy, never carried as an
+  immutable claim field.)
 
 ### 5.5 Projection rows and certification_status
 
@@ -752,7 +851,9 @@ all-provision clean:
 {
   "projection_coverage": {
     "seam": {
-      "universe": "all (address, change-date-interval) provision states in scope",
+      "universe_kind": "all_address_interval_states",
+      "address_source": "materialization.covering_states",
+      "interval_source": "time_axis.boundary_dates",
       "row_count": 412,
       "omitted_row_count": 0,
       "blocked_row_count": 5
@@ -761,12 +862,29 @@ all-provision clean:
 }
 ```
 
-For a full-statute certificate with seam projections, either every
-(address, date-interval) provision-state row in scope is emitted, or the
-family declares `omitted_row_count > 0` — and a certificate with omitted
-rows in an asserted family MUST NOT present `certificate_status=clean` as
-all-provision clean; the checker treats undeclared omission (universe says N,
-rows + omissions < N) as INVALID.
+The universe is a FORMAL DERIVATION, never a prose string — a checker
+cannot audit "all provision states in scope" as text. `universe_kind`
+names a derivation the checker recomputes from committed artifacts:
+
+```text
+all_address_interval_states   the universe is { (address, interval) :
+                              address ∈ the covering state at any committed
+                              change date (folded from the certified trace),
+                              interval ∈ consecutive committed boundary-date
+                              pairs intersecting time_scope, address active
+                              in that interval }
+explicit_address_set          the universe is the certificate scope's
+                              declared address list × the same intervals
+```
+
+The checker recomputes the universe size from the folded trace and the
+committed change-date set; `row_count + omitted_row_count` MUST equal the
+recomputed universe size, and every universe member is either an emitted
+row or declared omitted. A shortfall (universe says N, rows + omissions
+< N) and an undeclared surplus are both INVALID — partial emission can
+never masquerade as full coverage because the universe is recomputed, not
+trusted. A certificate with `omitted_row_count > 0` in an asserted family
+MUST NOT present `certificate_status=clean` as all-provision clean.
 
 ### 5.6 Invariants (checker-enforced, §7 step 12)
 
@@ -784,12 +902,56 @@ rows + omissions < N) as INVALID.
   reach the production certificate is not a proof.)
 - Residual rows with unregistered/`unclassified` diagnostic codes force
   `blocked` (§5.4).
+- Every intersecting residual's disposition MUST equal the
+  registry-derived one (§5.4); a declared `profile_effect` that softens the
+  registry's disposition is INVALID.
 - `residual_summary` counts MUST equal recomputed counts from the residual
   ledger.
 
 Consumers MUST branch on `certificate_status`, `certification_status`, and
 residual role/blocking — never on a confidence field. Confidence MAY exist
 as a diagnostic only.
+
+### 5.7 Ledger and coverage row schemas (minimal v0)
+
+The checker obligations of §5.6 and §7 are implementable only if the
+finding and coverage rows have committed shapes. Minimal required fields
+(emitters MAY carry more; extra fields are hashed as part of the row):
+
+```text
+lawvm.finding_ledger.v0 row
+  finding_id        stable content-derived id ("sha256:...")
+  diagnostic_code   registered code (§3.5 registry)
+  role              observation | obligation | violation
+  blocking          bool
+  scope             { address | null, date_range }
+  source_refs       source_artifact_id list (may be empty)
+  phase             producing pipeline phase (parse | resolve | apply |
+                    materialize | project)
+
+lawvm.residual_ledger.v0 row
+  as defined in §5.4 (residual_id, kind, diagnostic_code, role, blocking,
+  scope, source_text, rule_id, source_refs, finding_refs, profile_effect —
+  the last derived per §5.4)
+
+lawvm.source_unit_coverage.v0 row
+  source_unit_id    emitter-stable id within the source artifact
+  source_anchor     anchor into the source bundle (companion spec §7 shape)
+  classification    operative | non_operative | preamble | signature |
+                    entry_into_force | unclassified
+  status            compiled | skipped_declared | residual
+  refs              residual/finding ids when status != compiled
+
+lawvm.potential_operation_coverage.v0 row
+  potential_operation_id
+  source_anchor     anchor to the operation-shaped cue
+  classification    compiled | suppressed | frontier | residual
+  refs              transition ids / residual ids per classification
+```
+
+`unclassified` source units and `residual`-status rows participate in the
+§5.2 status algebra through their linked residuals; a coverage row claiming
+`compiled` with no corresponding transition (by source-ref) is INVALID.
 
 ## 6. Versioning: freeze the waist, projections stay in place
 
@@ -822,7 +984,12 @@ FROZEN in v0 (changing any of these is a schema bump):
 5. certificate_status enum and the §5.2 status algebra
 6. residual role/blocking semantics and the §5.3 intersection rule
 7. projection inclusion mechanism, payload/wrapper split, and identity pins
-8. statute_id as stable public join key
+8. subject identity fields (work_id grammar, legacy_statute_id alias) and
+   statute_id as the seam projection's stable public join key
+9. the naming rule: core field names, statuses, kinds, and registry
+   namespaces are jurisdiction-neutral; jurisdiction-specific legal-document
+   species (hallituksen esitys, Bill, SI, reprint) enter ONLY as
+   work_kind/source_role values, registered codes, ids, and display labels
 ```
 
 EXPLICITLY UNSTABLE in v0:
@@ -900,10 +1067,11 @@ Procedure:
  2. Recompute raw_source_hash for every source blob; recompute SourceArtifact
     leaves and source_bundle_root.
  3. Verify source anchoring per transition (companion spec §7): every
-    CanonicalTransition has source_refs resolving into the source bundle and
-    either a source_anchor whose span exists in the source bytes and whose
-    quote_hash matches, or a kind=source_anchor_unavailable residual mapped
-    to it. Missing anchors are NEVER silent.
+    source_ref of every CanonicalTransition resolves into the source bundle
+    and is covered by at least one source_anchors entry whose byte span
+    exists in the artifact's raw bytes and whose quote_hash matches, or by a
+    kind=source_anchor_unavailable residual mapped to this transition and
+    ref. Missing anchors are NEVER silent.
  4. Recompute canonical_transition_root from the trace (ordering + duplicate
     rules of §3.1.1).
  5. Validate each transition row against the companion-spec grammar:
@@ -923,7 +1091,9 @@ Procedure:
  9. Recompute projection payload hashes, per-family projection subroots, and
     projection_root (explicit nulls included); verify each projected
     artifact's parentage block references this certificate and a correct
-    inclusion path.
+    inclusion path. Then verify projection DERIVATION per family (§7.2):
+    inclusion proves the rows were committed, not that they are true of the
+    folded state.
 10. Recompute residual_root and finding_root.
 11. Verify coverage row integrity and coverage_root (§4.1 boundary: declared
     coverage only).
@@ -958,7 +1128,8 @@ is INVALID, never "uncheckable".
 
 Checker v0 CAN catch: tampered or wrong-hash source blobs; broken source
 spans/quote hashes; a trace that does not produce the claimed state; pre/post
-hash mismatches; seam/dump projection drift; materialization root mismatches;
+hash mismatches; seam/dump projection drift for families with a registered
+derivation verifier (§7.2); materialization root mismatches;
 residue contradictions; a clean certificate with blocking residue; blocking
 findings that never became residuals; coverage rows that drifted from their
 committed root; viewer/artifact inconsistency with the certificate.
@@ -980,6 +1151,47 @@ Guard-liveness lesson applies: the worst failure class is a check that exists
 but is not live in the production lane. The checker MUST be exercised against
 deliberately corrupted bundles (fire-drill style) so each verification step
 is demonstrably reachable.
+
+### 7.2 Projection derivation verification (family verifiers)
+
+Committing a projection row proves nothing about its truth: a trace can
+fold to state A while a committed, inclusion-verified seam row asserts
+state B. Each projection family therefore has a VERIFIER, keyed by
+`(projection_schema, projection_spec_version)` like the rest of the checker
+registry, that re-derives the row's load-bearing fields from the folded
+materialization:
+
+```text
+lawvm.provision_state.v1 / 0.2 (seam)
+  status=selected   the row's resolved_address is in the folded covering
+                    state for an interval containing as_of; the row's
+                    content_hash equals the text flattening
+                    (lawvm.text.irnode_to_text.v1) of that unit's committed
+                    blob; version temporal metadata (effective/expires)
+                    matches the committed boundary dates around as_of.
+  status=expired,
+  expiry_unverified the expiry block's bound provenance or blocking
+                    diagnostic maps to committed finding/residual rows
+                    (§5.6); never derived fresh by the checker.
+  status=blocked-   blocked/absent/not-found rows are checked for
+  family            CONSISTENCY (no folded state contradicts them) and for
+                    the §5.6 residual mapping.
+
+lawvm.dump.v1
+  every emitted row matches the folded state at the dump's date/scope.
+
+lawvm.transition_graph.v1
+  every row is either certified trace material (identical structural and
+  covering-state hashes) or explicitly labelled derived/display material;
+  a graph row presenting derived material as certified is INVALID.
+```
+
+A projection family whose verifier is NOT in the checker's registry is
+reported as **inclusion-verified only**: the checker MUST NOT present that
+family as derivation-checked, and tooling MUST NOT describe the bundle as
+"projection drift caught" for it. Checker v0 MUST implement at least the
+seam family verifier — the seam is the consumer-facing surface the
+certificate exists to back.
 
 ## 8. Do-not-build (v0)
 
@@ -1026,12 +1238,21 @@ uncheckable bundle is a checked bundle".
 
 Transition-leaf provenance (normative for the bundle writer): the
 CanonicalTransition leaves and their pre/post hashes MUST be produced from
-the landed write footprint of the apply step (write receipts), never
-reconstructed from the operation's nominal target after the fact. The
-binding the engine resolved, the write it landed, and the address the leaf
-declares are one and the same; a bundle writer that re-derives transitions
+the landed write footprint of the apply step (a WriteReceipt or equivalent
+landed-footprint producer), never reconstructed from the operation's
+nominal target after the fact — a bundle writer that re-derives transitions
 from nominal targets can certify a write that never happened where it
-claims.
+claims. The resolved binding, the landed write, and the declared transition
+address MUST either be identical or be connected by a NAMED migration,
+recovery, scaffold, restoration, or container-placement rule recorded in
+the receipt (moves/renumbers, lineage rebinds, placeholder recoveries, and
+temporary-expiry restorations legitimately diverge); unexplained divergence
+is a mutation-boundary failure. This is the producer-side contract for
+transition leaves — the checker verifies pre/post hashes, the apply
+contract (APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md, forthcoming) defines
+the receipt. An experimental schema-pressure emitter MAY derive transitions
+from observed state diffs, but its bundles are local test fixtures: they
+MUST NOT be published or presented as checkable public claims.
 
 ## 11. Change policy
 
@@ -1093,3 +1314,41 @@ contract freezes tight rather than loose.
 - Verdict `UNCHECKABLE_MISSING_ARTIFACTS` added; URL fetching demoted to an
   acquisition helper; `VALID_*` requires bundled bytes (§7).
 - Transition-graph `certified` migration made fail-safe (§6.1).
+
+### 11.2 Changes 0.2 → 0.3
+
+Second adversarial-review round; still pre-implementation. An experimental
+one-statute bundle writer MAY build against 0.3 as a local schema-pressure
+fixture; public emitters and the checker freeze only after these hold.
+
+- Projection derivation verification added (§7.2): per-family verifiers
+  re-derive projection rows from the folded materialization; inclusion alone
+  is reported as inclusion-verified only. §7.1's drift claim is qualified
+  accordingly.
+- Diagnostic registry manifest added (`policy/diagnostic_registry.json`,
+  §3.5): the registered-code set is pinned per bundle; residual
+  `profile_effect` is DERIVED from the registry + profile manifests and
+  checker-recomputed — an emitter cannot soften a blocking disposition
+  (§5.4, §5.6).
+- `kind=expiry_unverified` code list refreshed to the full typed blocking
+  family; non-expiry validity prose MUST NOT be emitted as
+  `expiry_unverified`, without prohibiting other temporal lanes from
+  blocking on the same clause under their own residual kind (§5.4).
+- `time_scope.kind=open_ended` is RESERVED in v0 (§1): a static source
+  bundle cannot claim `[from, ∞)`.
+- `projection_coverage` universes are formal derivations the checker
+  recomputes (`universe_kind`/`address_source`/`interval_source`), never
+  prose strings (§5.5).
+- Minimal finding/residual/coverage row schemas specified (§5.7).
+- Transition-leaf provenance pinned to the landed write footprint, with the
+  named-rule exception for legitimate binding/landing divergence
+  (moves, lineage rebinds, recoveries, restorations) and an explicit
+  experimental-emitter carve-out (§10).
+- Universal-core naming applied: top-level `jurisdiction`/`statute_id` →
+  `subject` block (`work_id`, `work_kind`, `local_id`, `legacy_statute_id`);
+  `claim_kind` = `legal_work_temporal_text_state`; scope kind
+  `whole_statute` → `whole_work`; SourceArtifact `role` → `work_kind` +
+  `source_role` with the universal role vocabulary (§1, §2, §3.2). The seam
+  projection keeps `statute_id` (its frozen public join key); jurisdiction
+  species are values and display labels, never core field names (frozen
+  rule, §6).
