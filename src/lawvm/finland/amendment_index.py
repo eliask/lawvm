@@ -297,9 +297,17 @@ def build_amendment_index(
     return sorted(list(edges))
 
 def _path_from_pathlike(value: object) -> Path | None:
-    if isinstance(value, os.PathLike | str):
-        return Path(value)  # ty:ignore[invalid-argument-type]
+    if isinstance(value, str):
+        return Path(value)
+    if isinstance(value, os.PathLike):
+        return Path(cast(os.PathLike[str], value))
     return None
+
+
+def _fingerprint_int(value: object) -> int:
+    if isinstance(value, int | float | str | bytes | bytearray):
+        return int(value)
+    raise TypeError(f"Expected integer-like fingerprint field, got {type(value).__name__}")
 
 
 def _corpus_source_fingerprint(cs: CorpusStore | None) -> dict[str, object] | None:
@@ -486,8 +494,8 @@ def _default_source_cache_key() -> tuple[()] | tuple[str, int, int]:
             return ()
         return (
             str(fingerprint["path"]),
-            int(fingerprint["size"]),  # ty:ignore[invalid-argument-type]
-            int(fingerprint["mtime_ns"]),  # ty:ignore[invalid-argument-type]
+            _fingerprint_int(fingerprint["size"]),
+            _fingerprint_int(fingerprint["mtime_ns"]),
         )
     finally:
         cs.close()
