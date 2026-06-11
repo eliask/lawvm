@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -105,6 +106,13 @@ def test_fetched_source_projects_shared_source_locator() -> None:
         core_locator,
         artifact_digest=source.sha256_hex,
     )
+    locator_digest_ref = source_ref_from_locator(
+        replace(
+            core_locator,
+            artifact_digest=source.sha256_hex,
+            artifact_digest_algorithm="sha256",
+        )
+    )
 
     assert core_locator.jurisdiction == "fi"
     assert core_locator.artifact_kind == "finlex_akn"
@@ -113,6 +121,7 @@ def test_fetched_source_projects_shared_source_locator() -> None:
     assert core_locator.byte_span == (6, 10)
     assert core_locator.quote_hash == hashlib.sha256(b"beta").hexdigest()
     assert core_locator.version_id == "2024-01-15"
+    assert locator_digest_ref.artifact_digest == source_ref.artifact_digest
     assert source_ref.structural_locator == "section:1"
     assert source_ref.byte_range == (6, 10)
     assert source_ref.bounded_quote_hash == core_locator.quote_hash

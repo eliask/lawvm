@@ -27,6 +27,8 @@ class SourceLocator:
     xpath: str = ""
     char_span: tuple[int, int] | None = None
     byte_span: tuple[int, int] | None = None
+    artifact_digest: str = ""
+    artifact_digest_algorithm: str = ""
     quote_hash: str = ""
     normalization_policy: str = ""
     statute_id: str = ""
@@ -43,6 +45,8 @@ class SourceLocator:
         object.__setattr__(self, "xpath", str(self.xpath or ""))
         object.__setattr__(self, "char_span", _optional_span("char_span", self.char_span))
         object.__setattr__(self, "byte_span", _optional_span("byte_span", self.byte_span))
+        object.__setattr__(self, "artifact_digest", str(self.artifact_digest or ""))
+        object.__setattr__(self, "artifact_digest_algorithm", str(self.artifact_digest_algorithm or ""))
         object.__setattr__(self, "quote_hash", str(self.quote_hash or ""))
         object.__setattr__(self, "normalization_policy", str(self.normalization_policy or ""))
         object.__setattr__(self, "statute_id", str(self.statute_id or ""))
@@ -62,6 +66,8 @@ class SourceLocator:
             "xpath": self.xpath,
             "char_span": list(self.char_span) if self.char_span is not None else None,
             "byte_span": list(self.byte_span) if self.byte_span is not None else None,
+            "artifact_digest": self.artifact_digest,
+            "artifact_digest_algorithm": self.artifact_digest_algorithm,
             "quote_hash": self.quote_hash,
             "normalization_policy": self.normalization_policy,
             "statute_id": self.statute_id,
@@ -117,14 +123,14 @@ def source_locator_from_legacy_manual_locator(
 def source_ref_from_locator(
     locator: SourceLocator,
     *,
-    artifact_digest: str,
+    artifact_digest: str = "",
     bounded_quote_hash: str = "",
     byte_range: tuple[int, int] | None = None,
 ) -> SourceRef:
     """Convert a shared locator into provenance-graph ``SourceRef`` footing."""
 
     return SourceRef(
-        artifact_digest=_required_string("artifact_digest", artifact_digest),
+        artifact_digest=_required_string("artifact_digest", artifact_digest or locator.artifact_digest),
         structural_locator=_structural_locator(locator),
         bounded_quote_hash=bounded_quote_hash or locator.quote_hash,
         normalization_policy_id=locator.normalization_policy or "source_locator.v1",

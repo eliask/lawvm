@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -149,6 +150,7 @@ def test_operation_source_locator_anchors_exact_raw_quote_in_source_xml() -> Non
         len(source_text[:expected_start].encode("utf-8")),
         len(source_text[:expected_end].encode("utf-8")),
     ]
+    expected_digest = hashlib.sha256(source_xml).hexdigest()
 
     without_span = build_provision_state_response(
         timelines=_timeline(),
@@ -169,10 +171,15 @@ def test_operation_source_locator_anchors_exact_raw_quote_in_source_xml() -> Non
     locator = payload["source_locator"]
     witness = locator["detail"]["source_witness"]
     assert locator["artifact_kind"] == "operation_source_statute_xml"
+    assert locator["artifact_digest"] == expected_digest
+    assert locator["artifact_digest_algorithm"] == "sha256"
     assert "xpath" not in locator
     assert locator["char_span"] == expected_char_span
     assert locator["byte_span"] == expected_byte_span
     assert locator["detail"]["operation_source_xml_span_status"] == "available"
+    assert locator["detail"]["artifact_digest"] == expected_digest
+    assert locator["detail"]["artifact_digest_algorithm"] == "sha256"
+    assert locator["detail"]["artifact_digest_status"] == "source_xml_bytes_sha256"
     assert locator["detail"]["char_span_status"] == "operation_source_raw_xml_quote_scan"
     assert locator["detail"]["byte_span_status"] == "operation_source_raw_xml_quote_scan_utf8"
     assert witness["artifact_char_span"] == expected_char_span
@@ -202,6 +209,8 @@ def test_operation_source_locator_rejects_duplicate_raw_quote_xml_span() -> None
 
     locator = payload["source_locator"]
     witness = locator["detail"]["source_witness"]
+    assert locator["artifact_digest"] == hashlib.sha256(source_xml).hexdigest()
+    assert locator["artifact_digest_algorithm"] == "sha256"
     assert "char_span" not in locator
     assert "byte_span" not in locator
     assert locator["detail"]["operation_source_xml_span_status"] == (
@@ -398,6 +407,7 @@ def test_provision_state_response_uses_base_source_locator_for_sourceless_base_v
         len(source_text[:expected_start].encode("utf-8")),
         len(source_text[:expected_end].encode("utf-8")),
     ]
+    expected_digest = hashlib.sha256(source_xml).hexdigest()
 
     payload = build_provision_state_response(
         timelines=timelines,
@@ -411,6 +421,8 @@ def test_provision_state_response_uses_base_source_locator_for_sourceless_base_v
     assert payload["source"] is None
     assert payload["source_locator_status"] == "canonical_document_locator"
     assert payload["source_locator"]["artifact_kind"] == "base_statute_xml"
+    assert payload["source_locator"]["artifact_digest"] == expected_digest
+    assert payload["source_locator"]["artifact_digest_algorithm"] == "sha256"
     assert payload["source_locator"]["document_uri"] == "finlex://sd/2000/1/fin/main.xml"
     assert payload["source_locator"]["structural_path"] == "lawvm-target:section:1"
     assert payload["source_locator"]["xpath"].startswith("//*[local-name()='body']")
@@ -420,6 +432,9 @@ def test_provision_state_response_uses_base_source_locator_for_sourceless_base_v
     assert len(matches) == 1
     assert "section" in payload["source_locator"]["xpath"]
     assert payload["source_locator"]["detail"]["xpath"] == payload["source_locator"]["xpath"]
+    assert payload["source_locator"]["detail"]["artifact_digest"] == expected_digest
+    assert payload["source_locator"]["detail"]["artifact_digest_algorithm"] == "sha256"
+    assert payload["source_locator"]["detail"]["artifact_digest_status"] == "source_xml_bytes_sha256"
     assert payload["source_locator"]["detail"]["xpath_status"] == "finlex_structural_xpath_candidate"
     assert payload["source_locator"]["detail"]["target_xpath_candidate_status"] == (
         "finlex_structural_xpath_candidate"

@@ -109,6 +109,12 @@ either live text or expiry when the stated bound cannot be proven.
 
 `source_locator` is provenance and is excluded from `derived_state_hash`.
 
+When LawVM loads the referenced source XML bytes, `source_locator` MAY include
+top-level `artifact_digest` and `artifact_digest_algorithm="sha256"`, with
+matching `detail.artifact_digest*` fields. This digest identifies the exact
+source artifact used for locator/span footing. It is provenance only and is not
+part of `derived_state_hash`.
+
 For Finland base-statute versions, `source_locator.xpath` MAY contain a
 deterministic Finlex AKN structural XPath candidate derived from the resolved
 `LegalAddress`. The corresponding status is

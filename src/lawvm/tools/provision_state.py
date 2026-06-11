@@ -1432,9 +1432,25 @@ def _source_locator_payload(
         "hash_role": "excluded_from_derived_state_hash",
     }
     span = None
+    source_xml_bytes = None
+    if source_xml_provider is not None and (
+        (artifact_kind == "base_statute_xml" and source_xpath)
+        or (artifact_kind == "operation_source_statute_xml" and source_quote is not None)
+    ):
+        source_xml_bytes = source_xml_provider(source_sid)
+    artifact_digest = ""
+    artifact_digest_algorithm = ""
+    if source_xml_bytes is not None:
+        artifact_digest = hashlib.sha256(source_xml_bytes).hexdigest()
+        artifact_digest_algorithm = "sha256"
+        detail["artifact_digest"] = artifact_digest
+        detail["artifact_digest_algorithm"] = artifact_digest_algorithm
+        detail["artifact_digest_status"] = "source_xml_bytes_sha256"
+    else:
+        detail["artifact_digest_status"] = "unavailable_source_xml_not_loaded"
     if artifact_kind == "base_statute_xml" and source_xpath and source_xml_provider is not None:
         span = _finlex_source_xml_element_span(
-            source_xml_provider(source_sid),
+            source_xml_bytes,
             xpath=source_xpath,
             fallback_eid=_finlex_eid_candidate(address),
         )
@@ -1447,7 +1463,7 @@ def _source_locator_payload(
         and source_xml_provider is not None
     ):
         span = _operation_source_xml_quote_span(
-            source_xml_provider(source_sid),
+            source_xml_bytes,
             raw_source_text=version.source.raw_text,
         )
         detail.update(span["detail"])
@@ -1467,6 +1483,8 @@ def _source_locator_payload(
         xpath=source_xpath,
         char_span=span["char_span"] if span is not None else None,
         byte_span=span["byte_span"] if span is not None else None,
+        artifact_digest=artifact_digest,
+        artifact_digest_algorithm=artifact_digest_algorithm,
         quote_hash=source_quote["quote_hash"] if source_quote is not None else "",
         statute_id=source_sid,
         normalization_policy="finlex_statute_document_locator.v1",
