@@ -22,6 +22,11 @@ from typing import Any, TYPE_CHECKING
 if TYPE_CHECKING:
     import argparse
 
+JsonRow = dict[str, Any]
+CensusRows = list[JsonRow]
+CensusStats = dict[str, Any]
+CensusResult = tuple[CensusRows, CensusStats]
+
 _MANDATORY_RE = re.compile(r'\b(säädetään|on annettava|on säädettävä)\b', re.I)
 
 
@@ -29,7 +34,7 @@ _MANDATORY_RE = re.compile(r'\b(säädetään|on annettava|on säädettävä)\b'
 # Census 1.1: Stale Reference Census
 # ---------------------------------------------------------------------------
 
-def census_1_1(citations: list, amendment_index: dict) -> tuple[list, dict]:
+def census_1_1(citations: list[JsonRow], amendment_index: dict[str, list[str]]) -> CensusResult:
     """CITES edges where target was amended after citing statute enacted."""
     latest_amend_year: dict[str, int] = {}
     for parent_id, amend_list in amendment_index.items():
@@ -37,7 +42,7 @@ def census_1_1(citations: list, amendment_index: dict) -> tuple[list, dict]:
         if years:
             latest_amend_year[parent_id] = max(years)
 
-    rows: list[dict[str, Any]] = []
+    rows: CensusRows = []
     total_fi = 0
     for cite in citations:
         if cite.get('edge_type') != 'CITES':
@@ -77,7 +82,7 @@ def census_1_1(citations: list, amendment_index: dict) -> tuple[list, dict]:
 # Census 1.2: Delegation Gap Census
 # ---------------------------------------------------------------------------
 
-def census_1_2(citations: list, delegations: list) -> tuple[list, dict]:
+def census_1_2(citations: list[JsonRow], delegations: list[JsonRow]) -> CensusResult:
     """Unexercised delegation clauses — no ISSUED_UNDER child decree found."""
     has_child: set[str] = {
         c.get('target_statute_id', '')
@@ -103,7 +108,7 @@ def census_1_2(citations: list, delegations: list) -> tuple[list, dict]:
                 verbatim[sid] = d.get('quote', '') or text
                 trigger[sid] = m.group(1)
 
-    rows = []
+    rows: CensusRows = []
     for sid, total in sorted(deleg_total.items(), key=lambda x: -x[1]):
         exercised = sid in has_child
         rows.append({
@@ -135,7 +140,7 @@ def census_1_2(citations: list, delegations: list) -> tuple[list, dict]:
 # Census 1.3: Orphaned Decree Census
 # ---------------------------------------------------------------------------
 
-def census_1_3(citations: list) -> tuple[list, dict]:
+def census_1_3(citations: list[JsonRow]) -> CensusResult:
     """Decrees with ISSUED_UNDER link to a statute that was subsequently REPEALED."""
     repealed: set[str] = {
         c.get('target_statute_id', '')
@@ -143,8 +148,8 @@ def census_1_3(citations: list) -> tuple[list, dict]:
         if c.get('edge_type') == 'REPEALS' and c.get('target_statute_id')
     }
 
-    rows = []
-    seen: set = set()
+    rows: CensusRows = []
+    seen: set[tuple[Any, Any]] = set()
     total_issued_under = 0
     for cite in citations:
         if cite.get('edge_type') != 'ISSUED_UNDER':
@@ -187,10 +192,14 @@ def census_1_3(citations: list) -> tuple[list, dict]:
 # Census 1.4: Complexity Trajectory
 # ---------------------------------------------------------------------------
 
-def census_1_4(statute_meta: dict, citations: list, delegations: list,
-               amendment_index: dict) -> tuple[list, dict]:
+def census_1_4(
+    statute_meta: dict[str, Any],
+    citations: list[JsonRow],
+    delegations: list[JsonRow],
+    amendment_index: dict[str, list[str]],
+) -> CensusResult:
     """Statute volume, citation density, delegation density, amendment rate — by decade."""
-    by_decade: dict = defaultdict(lambda: {
+    by_decade: dict[int, JsonRow] = defaultdict(lambda: {
         'statutes': 0, 'fi_cites': 0, 'eu_cites': 0,
         'delegations': 0, 'amendments': 0,
     })
@@ -230,7 +239,7 @@ def census_1_4(statute_meta: dict, citations: list, delegations: list,
         except (ValueError, IndexError):
             pass
 
-    rows = []
+    rows: CensusRows = []
     for decade in sorted(by_decade):
         d = by_decade[decade]
         n = max(d['statutes'], 1)
@@ -252,7 +261,7 @@ def census_1_4(statute_meta: dict, citations: list, delegations: list,
 # Census 1.5: EU Reference Inventory
 # ---------------------------------------------------------------------------
 
-def census_1_5(citations: list) -> tuple[list, dict]:
+def census_1_5(citations: list[JsonRow]) -> CensusResult:
     """FI→EU CITES edges: which EU acts are cited and how many Finnish statutes cite them."""
     eu_cites = [
         c for c in citations
@@ -260,12 +269,12 @@ def census_1_5(citations: list) -> tuple[list, dict]:
         (c.get('target_statute_id') or '').startswith('eu/')
     ]
 
-    target_count: Counter = Counter(c.get('target_statute_id') for c in eu_cites)
-    citing_by_tgt: dict[str, set] = defaultdict(set)
+    target_count: Counter[str] = Counter(str(c.get('target_statute_id') or '') for c in eu_cites)
+    citing_by_tgt: dict[str, set[str]] = defaultdict(set)
     for c in eu_cites:
         citing_by_tgt[c.get('target_statute_id', '')].add(c.get('source_statute_id', ''))
 
-    rows = []
+    rows: CensusRows = []
     for tgt, cnt in target_count.most_common():
         parts = tgt.split('/')
         rows.append({
@@ -291,7 +300,7 @@ def census_1_5(citations: list) -> tuple[list, dict]:
 # CSV helper
 # ---------------------------------------------------------------------------
 
-def _write_csv(path: Path, rows: list) -> None:
+def _write_csv(path: Path, rows: CensusRows) -> None:
     if not rows:
         path.write_text('', encoding='utf-8')
         return
@@ -305,7 +314,7 @@ def _write_csv(path: Path, rows: list) -> None:
 # Markdown report generator
 # ---------------------------------------------------------------------------
 
-def _generate_report(results: dict, corpus_size: int) -> str:
+def _generate_report(results: dict[str, CensusResult], corpus_size: int) -> str:
     s11 = results.get('1.1', ({}, {}))[1]
     s12 = results.get('1.2', ({}, {}))[1]
     s13 = results.get('1.3', ({}, {}))[1]
@@ -436,7 +445,7 @@ def main(args: "argparse.Namespace") -> None:
     corpus_size = ag.meta.get('corpus_size', len(ag.statute_meta))
     print(f"  {corpus_size:,} statutes | {len(ag.citations):,} citation edges | {len(ag.delegations):,} delegation clauses")
 
-    results: dict[str, tuple[list, dict]] = {}
+    results: dict[str, CensusResult] = {}
 
     if '1.1' in only:
         print("\nCensus 1.1: Stale Reference Census...")
