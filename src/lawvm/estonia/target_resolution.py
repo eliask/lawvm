@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, replace
 from functools import lru_cache
-from typing import Callable, Iterable, Sequence, cast
+from typing import TYPE_CHECKING, Callable, Iterable, Sequence, cast
 import xml.etree.ElementTree as ET
 import html as html_lib
 
@@ -21,6 +21,11 @@ from lawvm.core.target_resolution import (
     TargetResolutionCertificate,
 )
 from lawvm.replay_adjudication import CompileAdjudication
+
+if TYPE_CHECKING:
+    XmlElement = ET.Element[str]
+else:
+    XmlElement = ET.Element
 
 from lawvm.estonia.act_identity_registry import (
     EEActIdentityRecord,
@@ -574,13 +579,13 @@ def detect_dedicated_target_gate(
 
 def prepare_new_format_gate_flags(
     *,
-    root: ET.Element,
+    root: XmlElement,
     ns_str: str,
     target_title: str,
-    first_tavatekst_text: Callable[[ET.Element, str], str],
-    text_finder: Callable[[ET.Element | None], str],
-    find_child: Callable[[ET.Element, str, str], ET.Element | None],
-    is_omnibus_amendment: Callable[[ET.Element, str, str], bool],
+    first_tavatekst_text: Callable[[XmlElement, str], str],
+    text_finder: Callable[[XmlElement | None], str],
+    find_child: Callable[[XmlElement, str, str], XmlElement | None],
+    is_omnibus_amendment: Callable[[XmlElement, str, str], bool],
 ) -> NewFormatGateFlags:
     """Collect root-level gate flags for new-format amendment parsing."""
     dedicated_kws = ("muutmine", "kehtetuks tunnistamine", "täiendamine")
@@ -1131,7 +1136,7 @@ def new_format_lower_op_texts(
 
 def new_format_collect_all_ops(
     *,
-    root: ET.Element,
+    root: XmlElement,
     ns_str: str,
     source_id: str,
     target_title: str,
@@ -1142,11 +1147,11 @@ def new_format_collect_all_ops(
     new_format_collect_op_texts: Callable[..., list[str]],
     filter_direct_target_clause_op_texts: Callable[..., list[str]],
     new_format_lower_op_texts: Callable[..., tuple[list[LegalOperation], int]],
-    first_tavatekst_text: Callable[[ET.Element, str], str],
-    text_finder: Callable[[ET.Element | None], str],
-    find_child: Callable[[ET.Element, str, str], ET.Element | None],
-    is_omnibus_amendment: Callable[[ET.Element, str, str], bool],
-    para_contains_direct_target_clause: Callable[[ET.Element, str, str], bool],
+    first_tavatekst_text: Callable[[XmlElement, str], str],
+    text_finder: Callable[[XmlElement | None], str],
+    find_child: Callable[[XmlElement, str, str], XmlElement | None],
+    is_omnibus_amendment: Callable[[XmlElement, str, str], bool],
+    para_contains_direct_target_clause: Callable[[XmlElement, str, str], bool],
     collect_embedded_target_sections: Callable[..., list[str]],
     normalize_act_id: Callable[[str], str],
     title_matcher: Callable[[str, str], bool],
@@ -1322,7 +1327,7 @@ def should_admit_new_format_paragraph(
 
 def new_format_collect_op_texts(
     *,
-    para: ET.Element,
+    para: XmlElement,
     ns_str: str,
     embedded_target_sections: Sequence[str],
     allow_plain_paragraph_items: bool = False,
@@ -1552,14 +1557,14 @@ def new_format_collect_op_texts(
 
 def prepare_new_format_paragraph_context(
     *,
-    para: ET.Element,
+    para: XmlElement,
     ns_str: str,
     source_id: str,
     target_title: str,
-    text_finder: Callable[[ET.Element | None], str],
-    find_child: Callable[[ET.Element, str, str], ET.Element | None],
-    first_tavatekst_text: Callable[[ET.Element, str], str],
-    para_contains_direct_target_clause: Callable[[ET.Element, str, str], bool],
+    text_finder: Callable[[XmlElement | None], str],
+    find_child: Callable[[XmlElement, str, str], XmlElement | None],
+    first_tavatekst_text: Callable[[XmlElement, str], str],
+    para_contains_direct_target_clause: Callable[[XmlElement, str, str], bool],
     collect_embedded_target_sections: Callable[..., list[str]],
     normalize_act_id: Callable[[str], str],
 ) -> NewFormatParagraphContext:
@@ -2940,7 +2945,7 @@ def _ns(ns_str: str, tag: str) -> str:
     return f"{{{ns_str}}}{tag}"
 
 
-def _first_tavatekst_text(para: ET.Element, ns_str: str) -> str:
+def _first_tavatekst_text(para: XmlElement, ns_str: str) -> str:
     for st in para.iter(_ns(ns_str, "sisuTekst")):
         for t in st.findall(_ns(ns_str, "tavatekst")):
             txt = " ".join(str(_t) for _t in t.itertext()).replace("\xa0", " ")
@@ -3121,7 +3126,7 @@ def looks_like_self_referential_amendment_act_para(
 
 
 def para_contains_direct_target_clause(
-    para: ET.Element,
+    para: XmlElement,
     ns_str: str,
     target_title: str,
     *,
@@ -3169,7 +3174,7 @@ def para_contains_direct_target_clause(
 
 
 def is_omnibus_amendment(
-    root: ET.Element,
+    root: XmlElement,
     ns_str: str,
     target_title: str,
     *,
@@ -3315,15 +3320,15 @@ def parse_constitutional_review_ops(
 
 
 def parse_preambul_single_target_ops(
-    root: ET.Element,
+    root: XmlElement,
     source_id: str,
     ns_str: str,
     target_title: str,
     *,
     lookup_act_identity: Callable[..., object | None] = lookup_ee_act_identity,
     title_matcher: Callable[[str, str], bool] = title_matches_para,
-    tavatekst_text: Callable[[ET.Element, str], str],
-    parse_muutmisseadus_ops: Callable[[ET.Element, str, str, str], list[LegalOperation]],
+    tavatekst_text: Callable[[XmlElement, str], str],
+    parse_muutmisseadus_ops: Callable[[XmlElement, str, str, str], list[LegalOperation]],
     adjudications_out: list[CompileAdjudication] | None = None,
 ) -> list[LegalOperation]:
     """Handle single-target amendment acts expressed as preambul plus one content block."""
