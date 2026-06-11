@@ -85,19 +85,28 @@ def _fake_master_with_ambiguous_part_sections(*, findings=()) -> SimpleNamespace
     )
 
 
-def _occupancy_violation_finding(amendment_id: str = "2025/1382"):
+def _occupancy_violation_finding(
+    amendment_id: str = "2025/1382",
+    *,
+    target_label: str | None = "30",
+    target_chapter: str = "6",
+):
     from lawvm.core.phase_result import Finding
 
+    detail: dict[str, object] = {
+        "current_occupancy": "absent",
+        "allowed_from": ["substantive", "tombstone"],
+    }
+    if target_label is not None:
+        detail["target_label"] = target_label
+    if target_chapter:
+        detail["ctx_label"] = f"[{amendment_id}] INSERT {target_chapter} luku {target_label or '?'} §"
     return Finding(
         kind="APPLY.OCCUPANCY_POLICY_VIOLATION",
         role="observation",
         stage="apply",
         source_statute=amendment_id,
-        detail={
-            "target_label": "29e",
-            "current_occupancy": "absent",
-            "allowed_from": ["substantive", "tombstone"],
-        },
+        detail=detail,
         blocking=False,
     )
 
@@ -201,7 +210,9 @@ def test_blame_never_reports_unmodified_when_timeline_broken(monkeypatch, capsys
             replay_meta_out["lineage"] = [
                 {"statute_id": "2025/1382", "effective_date": "2026-01-01"}
             ]
-        return _fake_master_with_section(findings=(_occupancy_violation_finding(),))
+        return _fake_master_with_section(
+            findings=(_occupancy_violation_finding(target_label=None),)
+        )
 
     monkeypatch.setattr("lawvm.tools.blame.replay_xml", fake_replay_xml)
     blame.main(Namespace(statute_id="2014/1429", address="section:30", source=None, mode="official_consolidation"))
@@ -435,7 +446,9 @@ def test_status_op_unapplied_precedence_over_modified_by_op(monkeypatch, capsys)
             replay_meta_out["lineage"] = [
                 {"statute_id": "2025/1382", "effective_date": "2026-01-01"}
             ]
-        return _fake_master_with_section(findings=(_occupancy_violation_finding(),))
+        return _fake_master_with_section(
+            findings=(_occupancy_violation_finding(target_label=None),)
+        )
 
     payload = _blame_json(
         monkeypatch, capsys, statute_id="2014/1429", address="section:30", fake_replay=fake_replay
@@ -468,7 +481,9 @@ def test_status_address_unresolved_prefers_unverifiable_under_break(monkeypatch,
             replay_meta_out["lineage"] = [
                 {"statute_id": "2025/1382", "effective_date": "2026-01-01"}
             ]
-        return _fake_master_with_section(findings=(_occupancy_violation_finding(),))
+        return _fake_master_with_section(
+            findings=(_occupancy_violation_finding(target_label=None),)
+        )
 
     payload = _blame_json(
         monkeypatch, capsys, statute_id="2014/1429", address="section:999", fake_replay=fake_replay
