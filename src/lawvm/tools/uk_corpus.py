@@ -74,6 +74,7 @@ _TTL_CURRENT = 300 * 86400  # ~30 days
 _TTL_EFFECTS = 300 * 86400
 
 _DEFAULT_ARCHIVE = Path(__file__).resolve().parents[3] / "data" / "uk_legislation.farchive"
+UKActRow = dict[str, str]
 
 
 def _missing_enacted_locator(act_id: str) -> str:
@@ -213,9 +214,9 @@ def _is_stale(archive: Farchive, url: str, ttl: float) -> bool:
     return (time.time() - last.timestamp()) > ttl
 
 
-def _parse_csv_acts(act_type: str, data: bytes) -> list[dict]:
+def _parse_csv_acts(act_type: str, data: bytes) -> list[UKActRow]:
     text = data.decode("utf-8-sig", errors="replace")
-    acts = []
+    acts: list[UKActRow] = []
     for row in csv.DictReader(io.StringIO(text)):
         year = (row.get("YEAR") or row.get("Year") or "").strip()
         num = (row.get("NUMBER") or row.get("Number") or "").strip()
@@ -225,8 +226,8 @@ def _parse_csv_acts(act_type: str, data: bytes) -> list[dict]:
     return acts
 
 
-def _enumerate_type(act_type: str, http: _HTTP) -> list[dict]:
-    all_acts: list[dict] = []
+def _enumerate_type(act_type: str, http: _HTTP) -> list[UKActRow]:
+    all_acts: list[UKActRow] = []
     page = 1
     while True:
         url = f"{_LEG_BASE}/{act_type}/data.csv?results-count={_CSV_PAGE_SIZE}&page={page}"
@@ -406,8 +407,8 @@ def _split_statute_id(statute_id: str) -> tuple[str, str, str]:
 # ── Phases ──────────────────────────────────────────────────────────────────
 
 
-def do_enumerate(types: list[str], http: _HTTP) -> dict[str, list[dict]]:
-    manifest: dict[str, list[dict]] = {}
+def do_enumerate(types: list[str], http: _HTTP) -> dict[str, list[UKActRow]]:
+    manifest: dict[str, list[UKActRow]] = {}
     total = 0
     for t in types:
         acts = _enumerate_type(t, http)
@@ -419,8 +420,8 @@ def do_enumerate(types: list[str], http: _HTTP) -> dict[str, list[dict]]:
 
 
 def do_download(
-    manifest: dict[str, list[dict]], archive: Farchive, http: _HTTP, *, enacted_only: bool = False
-) -> dict:
+    manifest: dict[str, list[UKActRow]], archive: Farchive, http: _HTTP, *, enacted_only: bool = False
+) -> dict[str, int]:
     all_acts = [(t, a) for t, acts in manifest.items() for a in acts]
     total = len(all_acts)
     n_enacted = n_current = n_effects = n_multiple_choices = n_candidate_sources = 0
@@ -495,7 +496,7 @@ def do_download(
 def do_affecting(
     archive: Farchive, http: _HTTP, *, types: Optional[set[str]] = None,
     diagnostics_out: Optional[list[dict[str, object]]] = None,
-) -> dict:
+) -> dict[str, int]:
     affecting = _scan_affecting_acts(archive)
     if types:
         affecting = {a for a in affecting if a.split("/")[0] in types}
@@ -555,7 +556,7 @@ def do_affecting(
 
 def do_refresh(
     archive: Farchive, http: _HTTP, *, statute_ids: Optional[set[str]] = None, force: bool = False
-) -> dict:
+) -> dict[str, int]:
     n_current = n_effects = 0
     if statute_ids:
         for sid in sorted(statute_ids):
@@ -869,7 +870,7 @@ def do_stats(archive: Farchive) -> None:
     print(f"  Raw:          {st.total_raw_bytes / 1e6:.1f} MB")
     print(f"  Stored:       {st.total_stored_bytes / 1e6:.1f} MB")
     print(f"  Compression:  {(st.compression_ratio or 0.0):.1f}x")
-    cats: Counter = Counter()
+    cats: Counter[str] = Counter()
     for loc in archive.locators("%"):
         if "/data.csv" in loc:
             cats["csv"] += 1
@@ -883,7 +884,7 @@ def do_stats(archive: Farchive) -> None:
             cats["other"] += 1
     for k, v in sorted(cats.items()):
         print(f"    {k:10s}: {v:,}")
-    source_states: Counter = Counter()
+    source_states: Counter[str] = Counter()
     for loc in archive.locators("%/data.xml"):
         source_states[_cached_source_xml_status(archive, loc).value] += 1
     if source_states:
@@ -933,7 +934,7 @@ def _open_archive(db_path: Path) -> Farchive:
     )
 
 
-def _manifest(types: list[str], http: _HTTP) -> dict[str, list[dict]]:
+def _manifest(types: list[str], http: _HTTP) -> dict[str, list[UKActRow]]:
     print("\n[enumerate] CSV feeds (not stored)")
     return do_enumerate(types, http)
 
