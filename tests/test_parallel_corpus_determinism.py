@@ -88,6 +88,43 @@ def test_shards_are_contiguous_and_cover_corpus() -> None:
     assert all(len(chunk) > 0 for _, chunk in shards)
 
 
+def test_workers_capped_to_max(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An over-large --workers must clamp to MAX_WORKERS at pool creation.
+
+    Each worker holds a full corpus store, so the cap bounds resident memory
+    under the WSL2 ceiling. We assert the cap by observing the max_workers
+    handed to the executor, and that output is still corpus-ordered.
+    """
+    seen: List[int] = []
+
+    from lawvm.tools import _worker_pool
+
+    orig = _worker_pool.managed_executor
+
+    def _spy(workers: int, *args: Any, **kwargs: Any):  # type: ignore[no-untyped-def]
+        seen.append(workers)
+        return orig(workers, *args, **kwargs)
+
+    monkeypatch.setattr(_worker_pool, "managed_executor", _spy)
+
+    statute_ids = [str(i) for i in range(200)]
+    ref = ("lawvm.tools._parallel_corpus", "_fake_projector")
+    par_rows, par_diags = project_corpus_parallel(
+        statute_ids=statute_ids,
+        projector_ref=ref,
+        serial_projector=_fake_projector,
+        store=None,
+        workers=64,  # far above the cap
+    )
+
+    assert seen, "executor was never created"
+    assert max(seen) <= _parallel_corpus.MAX_WORKERS
+    # Output is still byte-order-identical to the serial path.
+    expected_rows, expected_diags = _expected_serial(statute_ids)
+    assert par_rows == expected_rows
+    assert par_diags == expected_diags
+
+
 def test_empty_corpus() -> None:
     rows, diags = project_corpus_parallel(
         statute_ids=[],

@@ -44,6 +44,11 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 # Must be a module-level callable so it is picklable for the process pool.
 StatuteProjector = Callable[[str, Any], Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]]
 
+# Hard pool-size ceiling. Each worker holds a full corpus store, so this bounds
+# resident memory under the WSL2 ceiling regardless of host core count or an
+# over-large explicit --workers. Matches the core export path's cap.
+MAX_WORKERS = 8
+
 
 # ---------------------------------------------------------------------------
 # Worker-side state (one corpus store per worker process)
@@ -157,6 +162,11 @@ def project_corpus_parallel(
     """
     if workers <= 0:
         workers = max(1, (os.cpu_count() or 2) - 2)
+    # Cap the pool at MAX_WORKERS. Each worker builds its own full corpus store
+    # (get_corpus_store, one per process), so pool size is a direct multiplier on
+    # resident memory; an uncapped cpu_count-2 default (e.g. 14 on a 16-core box)
+    # would hold 14 corpus stores at once and trip the WSL2 memory ceiling.
+    workers = min(workers, MAX_WORKERS)
 
     n = len(statute_ids)
 

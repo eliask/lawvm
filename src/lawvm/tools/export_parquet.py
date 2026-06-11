@@ -465,7 +465,10 @@ def export_projections(
 
     if workers <= 0:
         import os
-        workers = max(1, min(os.cpu_count() or 1, 8))
+        workers = os.cpu_count() or 1
+    # Clamp to 8 even for an explicit --workers: each worker holds a corpus
+    # store, so the cap bounds resident memory under the WSL2 ceiling.
+    workers = max(1, min(workers, 8))
 
     if workers > 1:
         from lawvm.tools._worker_pool import managed_executor
