@@ -609,6 +609,10 @@ _STRICT_RUN_HEADER = [
     "html_noncommensurable_reason",
     "contingent_effective_sources",
     "fail_reasons",
+    "ownership_closure_status",
+    "ownership_closure_failed_gates",
+    "candidate_set_statuses",
+    "candidate_set_blockers",
     "source_incomplete",
     "chain_length",
     "source_available",
@@ -686,6 +690,31 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
                 verdict=getattr(facade, "verdict", None),
             )
         )
+        proof_payload = _to_json(
+            {
+                "statute_id": sid,
+                "profile": strict_profile,
+                "canonical_ops": list(facade.bundle.structural_ops),
+                "failed_ops": failed_ops,
+                "projection_rows": projection_rows,
+                "source_pathologies": source_pathologies,
+                "strict_fail_reasons": fail_reasons,
+                "source_adjudication": source_adjudication,
+            }
+        )
+        ownership_closure = proof_payload["ownership_closure_certificate"]
+        candidate_sets = list(proof_payload["strict_report_candidate_set_certificates"])
+        candidate_set_statuses = [
+            f"{row.get('candidate_set_kind')}:{row.get('completeness_status')}"
+            for row in candidate_sets
+        ]
+        candidate_set_blockers = sorted(
+            {
+                f"{row.get('candidate_set_kind')}:{blocker}"
+                for row in candidate_sets
+                for blocker in (row.get("blocker_families") or ())
+            }
+        )
         return {
             "sid": sid,
             "n_canonical": len(facade.bundle.structural_ops),
@@ -710,6 +739,10 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             ),
             "contingent_effective_sources": contingent_sources,
             "fail_reasons": fail_reasons,
+            "ownership_closure_status": str(ownership_closure.get("closure_status") or ""),
+            "ownership_closure_failed_gates": list(ownership_closure.get("failed_gates", ()) or ()),
+            "candidate_set_statuses": candidate_set_statuses,
+            "candidate_set_blockers": candidate_set_blockers,
             "source_incomplete": "APPLY.SOURCE_INCOMPLETE" in fail_reasons,
             "chain_length": len(lineage),
             "source_available": sum(1 for row in lineage if row.get("included")),
@@ -732,6 +765,10 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "html_noncommensurable_reason": "",
             "contingent_effective_sources": [],
             "fail_reasons": [],
+            "ownership_closure_status": "",
+            "ownership_closure_failed_gates": [],
+            "candidate_set_statuses": [],
+            "candidate_set_blockers": [],
             "source_incomplete": False,
             "chain_length": 0,
             "source_available": 0,
@@ -809,6 +846,10 @@ def _save_strict_run(results: list[dict[str, Any]], label: str, timestamp: str) 
                     str(rec.get("html_noncommensurable_reason", "") or ""),
                     "|".join(rec["contingent_effective_sources"]),
                     "|".join(rec["fail_reasons"]),
+                    str(rec.get("ownership_closure_status", "") or ""),
+                    "|".join(rec.get("ownership_closure_failed_gates", [])),
+                    "|".join(rec.get("candidate_set_statuses", [])),
+                    "|".join(rec.get("candidate_set_blockers", [])),
                     "1" if rec["source_incomplete"] else "0",
                     rec["chain_length"],
                     rec["source_available"],
@@ -851,6 +892,16 @@ def _load_strict_run(label: str) -> list[dict[str, Any]] | None:
                 k for k in row.get("contingent_effective_sources", "").split("|") if k
             ]
             row["fail_reasons"] = [r for r in row["fail_reasons"].split("|") if r]
+            row["ownership_closure_status"] = str(row.get("ownership_closure_status", "") or "")
+            row["ownership_closure_failed_gates"] = [
+                r for r in row.get("ownership_closure_failed_gates", "").split("|") if r
+            ]
+            row["candidate_set_statuses"] = [
+                r for r in row.get("candidate_set_statuses", "").split("|") if r
+            ]
+            row["candidate_set_blockers"] = [
+                r for r in row.get("candidate_set_blockers", "").split("|") if r
+            ]
             for int_col in (
                 "n_canonical",
                 "n_failed",
@@ -927,6 +978,17 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     for r in valid:
         for sid in r.get("contingent_effective_sources", []):
             contingent_counter[sid] += 1
+
+    ownership_gate_counter: Counter[str] = Counter()
+    candidate_set_status_counter: Counter[str] = Counter()
+    candidate_set_blocker_counter: Counter[str] = Counter()
+    for r in valid:
+        for gate in r.get("ownership_closure_failed_gates", []):
+            ownership_gate_counter[gate] += 1
+        for status in r.get("candidate_set_statuses", []):
+            candidate_set_status_counter[status] += 1
+        for blocker in r.get("candidate_set_blockers", []):
+            candidate_set_blocker_counter[blocker] += 1
 
     # Strictness vs bench score correlation: bucket into two groups
     # and show mean canonical fraction for each
@@ -1009,7 +1071,34 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
         print("       (none)")
     print()
 
-    print("  5e. Strict vs canonical fraction (correlation proxy):")
+    print("  5e. Ownership closure failed gates:")
+    if ownership_gate_counter:
+        for gate, cnt in ownership_gate_counter.most_common():
+            pct = 100 * cnt / n_valid
+            print(f"       {gate:<60s} {cnt:5d}  ({pct:.1f}%)")
+    else:
+        print("       (none)")
+    print()
+
+    print("  5f. Candidate-set statuses:")
+    if candidate_set_status_counter:
+        for status, cnt in candidate_set_status_counter.most_common():
+            pct = 100 * cnt / n_valid
+            print(f"       {status:<60s} {cnt:5d}  ({pct:.1f}%)")
+    else:
+        print("       (none)")
+    print()
+
+    print("  5g. Candidate-set blockers:")
+    if candidate_set_blocker_counter:
+        for blocker, cnt in candidate_set_blocker_counter.most_common():
+            pct = 100 * cnt / n_valid
+            print(f"       {blocker:<60s} {cnt:5d}  ({pct:.1f}%)")
+    else:
+        print("       (none)")
+    print()
+
+    print("  5h. Strict vs canonical fraction (correlation proxy):")
     print(
         f"       strict=YES        mean canonical fraction: {_mean(strict_yes_canonical):.3f}"
         f"  (N={len(strict_yes_canonical)})"

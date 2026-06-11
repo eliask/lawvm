@@ -42,6 +42,9 @@ def test_load_strict_run_reads_source_pathology_codes(tmp_path, monkeypatch) -> 
     ]
     assert rows[0]["source_pathology_rows"] == []
     assert rows[0]["html_noncommensurable_reason"] == ("oracle_extra_scoped_labels:chapter:15/section:1")
+    assert rows[0]["ownership_closure_failed_gates"] == []
+    assert rows[0]["candidate_set_statuses"] == []
+    assert rows[0]["candidate_set_blockers"] == []
 
 
 def test_load_strict_run_ignores_legacy_adjudication_kinds_column(tmp_path, monkeypatch) -> None:
@@ -130,6 +133,16 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                 "html_noncommensurable_reason": "oracle_extra_scoped_labels:chapter:15/section:1",
                 "contingent_effective_sources": [],
                 "fail_reasons": ["APPLY.SOURCE_PATHOLOGY_DETECTED"],
+                "ownership_closure_status": "open",
+                "ownership_closure_failed_gates": [
+                    "candidate_set_fi_strict_report_operation_cue_coverage_partial"
+                ],
+                "candidate_set_statuses": [
+                    "fi_strict_report_operation_cue_coverage:partial"
+                ],
+                "candidate_set_blockers": [
+                    "fi_strict_report_operation_cue_coverage:operation_cue_coverage_gap"
+                ],
                 "source_incomplete": False,
                 "chain_length": 1,
                 "source_available": 1,
@@ -147,8 +160,14 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert "source_pathology_rows_json" in text
     assert "source_pathology_diagnostic_reasons" in text
     assert "html_noncommensurable_reason" in text
+    assert "ownership_closure_failed_gates" in text
+    assert "candidate_set_statuses" in text
+    assert "candidate_set_blockers" in text
     assert "DESTRUCTIVE_SHAPE_LOSS_RISK" in text
     assert "partial_body_only" in text
+    assert "candidate_set_fi_strict_report_operation_cue_coverage_partial" in text
+    assert "fi_strict_report_operation_cue_coverage:partial" in text
+    assert "fi_strict_report_operation_cue_coverage:operation_cue_coverage_gap" in text
     assert '""target_unit_kind"": ""section""' in text
     assert '""target_label"": ""6 \\u00a7""' in text
     assert "oracle_extra_scoped_labels:chapter:15/section:1" in text
@@ -224,6 +243,15 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                 "html_noncommensurable_reason": "oracle_extra_scoped_labels:chapter:15/section:1",
                 "contingent_effective_sources": ["2005/544"],
                 "fail_reasons": ["APPLY.SOURCE_PATHOLOGY_DETECTED"],
+                "ownership_closure_failed_gates": [
+                    "candidate_set_fi_strict_report_operation_cue_coverage_partial"
+                ],
+                "candidate_set_statuses": [
+                    "fi_strict_report_operation_cue_coverage:partial"
+                ],
+                "candidate_set_blockers": [
+                    "fi_strict_report_operation_cue_coverage:operation_cue_coverage_gap"
+                ],
                 "chain_length": 43,
                 "source_available": 43,
                 "error": "",
@@ -243,6 +271,12 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
     assert "oracle_extra_scoped_labels:chapter:15/section:1" in out
     assert "Contingent effective-date sources" in out
     assert "2005/544" in out
+    assert "Ownership closure failed gates" in out
+    assert "candidate_set_fi_strict_report_operation_cue_coverage_partial" in out
+    assert "Candidate-set statuses" in out
+    assert "fi_strict_report_operation_cue_coverage:partial" in out
+    assert "Candidate-set blockers" in out
+    assert "fi_strict_report_operation_cue_coverage:operation_cue_coverage_gap" in out
 
 
 def test_print_facade_summary_includes_source_pathology_reasons(capsys) -> None:
