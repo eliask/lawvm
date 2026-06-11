@@ -1786,7 +1786,7 @@ def test_replay_xml_1987_1250_resolves_1999_81_johd_without_failed_op() -> None:
 
 
 # ---------------------------------------------------------------------------
-# --mode vocabulary: canonical value + legacy CLI alias
+# --mode vocabulary: canonical value, no legacy alias
 # ---------------------------------------------------------------------------
 
 
@@ -1797,12 +1797,12 @@ def test_cli_mode_defaults_to_official_consolidation() -> None:
     assert args.mode == "official_consolidation"
 
 
-def test_cli_mode_accepts_legacy_finlex_oracle_alias() -> None:
-    """finlex_oracle stays accepted on the CLI surface and normalizes at parse time."""
+def test_cli_mode_rejects_legacy_finlex_oracle_alias() -> None:
+    """The finlex_oracle alias was removed; the CLI now rejects it."""
     from lawvm.tools.cli import _build_parser
 
-    args = _build_parser().parse_args(["bisect", "2006/1299", "--mode", "finlex_oracle"])
-    assert args.mode == "official_consolidation"
+    with pytest.raises(SystemExit):
+        _build_parser().parse_args(["bisect", "2006/1299", "--mode", "finlex_oracle"])
 
     args = _build_parser().parse_args(["bisect", "2006/1299", "--mode", "legal_pit"])
     assert args.mode == "legal_pit"
@@ -1813,17 +1813,3 @@ def test_cli_mode_rejects_unknown_value() -> None:
 
     with pytest.raises(SystemExit):
         _build_parser().parse_args(["bisect", "2006/1299", "--mode", "mystery_mode"])
-
-
-def test_cli_mode_help_mentions_legacy_alias() -> None:
-    from typing import Any, cast
-
-    from lawvm.tools.cli import _build_parser
-
-    parser = _build_parser()
-    subparsers_action = next(
-        action for action in parser._actions
-        if action.__class__.__name__ == "_SubParsersAction"
-    )
-    help_text = cast(Any, subparsers_action).choices["bisect"].format_help()
-    assert "legacy alias: finlex_oracle" in help_text

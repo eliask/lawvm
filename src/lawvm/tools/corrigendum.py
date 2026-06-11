@@ -4484,7 +4484,7 @@ def register_cli(sub: Any) -> None:
     corr_review_p.add_argument(
         "--mode", default="legal_pit",
         type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
-        help="replay mode for live disagreement classification (default: legal_pit; legacy alias: finlex_oracle)",
+        help="replay mode for live disagreement classification (default: legal_pit)",
     )
     corr_review_p.add_argument(
         "--db", metavar="PATH",
