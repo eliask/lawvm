@@ -11,6 +11,7 @@ from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping, cast
 
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.mutation_accounting import (
     MUTATION_ACCOUNTING_HARD_CODES,
@@ -35,6 +36,11 @@ _UNRESOLVED_RESULT_CODES = frozenset(
         "REPLAY_APPLY_BOUNDARY_UNRESOLVED",
         "REPLAY_MISSING_PRIMARY_TARGET_CONSUMPTION",
     }
+)
+_MUTATION_BOUNDARY_REPORT_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
+    "mutation_boundary_proof_as_replay_authorization",
+    "proved_boundary_as_target_resolution_proof",
+    "unresolved_boundary_as_successful_apply",
 )
 
 
@@ -200,6 +206,128 @@ class MutationBoundaryProof:
         }
 
 
+def mutation_boundary_evidence_report(
+    proofs: (
+        MutationBoundaryProof
+        | Mapping[str, Any]
+        | tuple[MutationBoundaryProof | Mapping[str, Any], ...]
+    ),
+    *,
+    jurisdiction: str = "",
+    report_kind: str = "mutation_boundary_proof",
+) -> EvidenceSurfaceReport:
+    """Project mutation-boundary proofs into a shared passive report."""
+
+    rows = tuple(_mutation_boundary_proof(row) for row in _proof_sequence(proofs))
+    report_rows = tuple(_mutation_boundary_report_row(row) for row in rows)
+    status_counts = _counts(row.status for row in rows)
+    owner_phase_counts = _counts(row.owner_phase for row in rows)
+    rule_counts = _counts(row.rule_id for row in rows)
+    result_code_counts = _counts(code for row in rows for code in row.result_codes)
+    summary = {
+        "mutation_boundary_proof_count": len(rows),
+        "status_counts": status_counts,
+        "owner_phase_counts": owner_phase_counts,
+        "rule_counts": rule_counts,
+        "result_code_counts": result_code_counts,
+        "proved_count": status_counts.get("proved", 0),
+        "proved_with_allowance_count": status_counts.get("proved_with_allowance", 0),
+        "unresolved_count": status_counts.get("unresolved", 0),
+        "violated_count": status_counts.get("violated", 0),
+        "claim_flags": {
+            "replay_claims": False,
+            "canonical_effect_claims": False,
+            "candidate_effect_claims": False,
+            "dry_run_claims": False,
+            "agreement_claims": False,
+        },
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction=jurisdiction or _report_jurisdiction(rows),
+        report_kind=report_kind,
+        schema="lawvm.mutation_boundary_report.v1",
+        truth_claim="passive mutation-boundary path containment proofs",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={"report_kind": report_kind},
+        filtered_summary=summary,
+        rows=report_rows,
+        detail={
+            "safe_default": "treat_boundary_proofs_as_apply-accounting_evidence_not_replay_authority",
+            "forbidden_shortcuts": _MUTATION_BOUNDARY_REPORT_FORBIDDEN_SHORTCUTS,
+            "included_surfaces": ("mutation_boundary_proof",),
+        },
+    )
+
+
+def _proof_sequence(
+    value: (
+        MutationBoundaryProof
+        | Mapping[str, Any]
+        | tuple[MutationBoundaryProof | Mapping[str, Any], ...]
+    ),
+) -> tuple[MutationBoundaryProof | Mapping[str, Any], ...]:
+    if isinstance(value, MutationBoundaryProof) or isinstance(value, Mapping):
+        return (cast(MutationBoundaryProof | Mapping[str, Any], value),)
+    return tuple(value)
+
+
+def _mutation_boundary_proof(value: MutationBoundaryProof | Mapping[str, Any]) -> MutationBoundaryProof:
+    if isinstance(value, MutationBoundaryProof):
+        return value
+    return MutationBoundaryProof(
+        proof_id=str(value.get("proof_id") or ""),
+        jurisdiction=str(value.get("jurisdiction") or ""),
+        materialization_surface=str(value.get("materialization_surface") or ""),
+        operation_id=str(value.get("operation_id") or ""),
+        owner_phase=str(value.get("owner_phase") or ""),
+        rule_id=str(value.get("rule_id") or ""),
+        status=cast(MutationBoundaryProofStatus, str(value.get("status") or "")),
+        helper=str(value.get("helper") or ""),
+        outcome=str(value.get("outcome") or ""),
+        selected_target_paths=_tree_paths_from_diagnostics(value.get("selected_target_paths")),
+        allowed_mutation_regions=_tree_paths_from_diagnostics(value.get("allowed_mutation_regions")),
+        changed_paths=_tree_paths_from_diagnostics(value.get("changed_paths")),
+        covered_changed_paths=_tree_paths_from_diagnostics(value.get("covered_changed_paths")),
+        unexplained_changed_paths=_tree_paths_from_diagnostics(value.get("unexplained_changed_paths")),
+        declared_allowance_paths=_tree_paths_from_diagnostics(value.get("declared_allowance_paths")),
+        declared_recovery_paths=_tree_paths_from_diagnostics(value.get("declared_recovery_paths")),
+        declared_recovery_rule_ids=tuple(str(item) for item in _sequence(value.get("declared_recovery_rule_ids"))),
+        declared_migration_paths=_tree_paths_from_diagnostics(value.get("declared_migration_paths")),
+        declared_migration_rule_ids=tuple(str(item) for item in _sequence(value.get("declared_migration_rule_ids"))),
+        matched_allowance_rule_ids=tuple(str(item) for item in _sequence(value.get("matched_allowance_rule_ids"))),
+        result_codes=tuple(str(item) for item in _sequence(value.get("result_codes"))),
+        path_set_invariant_holds=bool(value.get("path_set_invariant_holds", True)),
+        safe_default=str(value.get("safe_default") or ""),
+        forbidden_shortcuts=tuple(str(item) for item in _sequence(value.get("forbidden_shortcuts"))),
+        detail=_mapping_or_empty(value.get("detail")),
+    )
+
+
+def _mutation_boundary_report_row(proof: MutationBoundaryProof) -> dict[str, Any]:
+    row = proof.to_dict()
+    return {
+        **row,
+        "surface": "mutation_boundary_proof",
+        "row_id": proof.proof_id,
+        "subject_id": proof.operation_id,
+        "proof_ref": proof.proof_id,
+        "status": proof.status,
+        "forbidden_shortcuts": tuple(
+            dict.fromkeys(
+                (
+                    *proof.forbidden_shortcuts,
+                    *_MUTATION_BOUNDARY_REPORT_FORBIDDEN_SHORTCUTS,
+                )
+            )
+        ),
+    }
+
+
 def _status_for_report(report: MutationInvariantReport) -> MutationBoundaryProofStatus:
     result_codes = {result.code for result in report.results}
     if result_codes & MUTATION_ACCOUNTING_HARD_CODES:
@@ -266,6 +394,52 @@ def _string_tuple(field_name: str, values: Any) -> tuple[str, ...]:
 
 def _path_strings(paths: TreePaths) -> list[str]:
     return [tree_path_to_diagnostic_string(path) for path in paths]
+
+
+def _tree_paths_from_diagnostics(value: Any) -> TreePaths:
+    paths: list[tuple[tuple[str, str], ...]] = []
+    for item in _sequence(value):
+        text = str(item or "").strip()
+        if not text:
+            continue
+        path: list[tuple[str, str]] = []
+        for step in text.split("/"):
+            if ":" in step:
+                kind, label = step.split(":", 1)
+            else:
+                kind, label = step, ""
+            path.append((kind, label))
+        paths.append(tuple(path))
+    return tuple(paths)
+
+
+def _report_jurisdiction(rows: tuple[MutationBoundaryProof, ...]) -> str:
+    jurisdictions = tuple(dict.fromkeys(row.jurisdiction for row in rows if row.jurisdiction))
+    if len(jurisdictions) == 1:
+        return jurisdictions[0]
+    if len(jurisdictions) > 1:
+        return "mixed"
+    return ""
+
+
+def _mapping_or_empty(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _sequence(value: Any) -> tuple[Any, ...]:
+    if isinstance(value, str):
+        return (value,) if value else ()
+    if isinstance(value, list | tuple):
+        return tuple(value)
+    return ()
+
+
+def _counts(values: Any) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = str(value or "__blank__")
+        counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def _plain_jsonable(value: Any) -> Any:

@@ -56,6 +56,7 @@ from lawvm.core.frontier_work_item import (
 from lawvm.core.frozen_values import FrozenDict
 from lawvm.core.mutation_accounting import build_mutation_invariant_reports
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
+from lawvm.core.mutation_boundary_proof import mutation_boundary_evidence_report
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.ownership_closure import (
     OwnershipClosureCertificate,
@@ -1623,6 +1624,114 @@ def test_mutation_boundary_proof_projects_passive_accounting() -> None:
     assert data["unexplained_changed_paths"] == ["body/section:2"]
     assert data["result_codes"] == ["REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"]
     assert "ignore_unexplained_changed_paths" in data["forbidden_shortcuts"]
+
+
+def test_mutation_boundary_evidence_report_is_passive_shared_surface() -> None:
+    violated = MutationBoundaryProof(
+        proof_id="proof-violated",
+        jurisdiction="fi",
+        materialization_surface="finland_strict_report",
+        operation_id="op-1",
+        owner_phase="replay_apply",
+        rule_id="mutation_boundary_path_set_violated",
+        status="violated",
+        selected_target_paths=((("section", "1"),),),
+        changed_paths=((("section", "2"),),),
+        unexplained_changed_paths=((("section", "2"),),),
+        result_codes=("REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET",),
+        path_set_invariant_holds=False,
+        safe_default="preserve_report_as_passive_boundary_evidence_not_replay_authorization",
+        forbidden_shortcuts=("ignore_unexplained_changed_paths",),
+    )
+    proved = MutationBoundaryProof(
+        proof_id="proof-proved",
+        jurisdiction="fi",
+        materialization_surface="finland_strict_report",
+        operation_id="op-2",
+        owner_phase="replay_apply",
+        rule_id="mutation_boundary_path_set_proved",
+        status="proved",
+        selected_target_paths=((("section", "2"),),),
+        changed_paths=((("section", "2"),),),
+        covered_changed_paths=((("section", "2"),),),
+        safe_default="preserve_report_as_passive_boundary_evidence_not_replay_authorization",
+        forbidden_shortcuts=("mutation_boundary_report_as_replay_authorization",),
+    )
+
+    report = mutation_boundary_evidence_report(
+        (violated, proved),
+        report_kind="finland_mutation_boundaries",
+    ).to_dict()
+
+    assert report["jurisdiction"] == "fi"
+    assert report["schema"] == "lawvm.mutation_boundary_report.v1"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is False
+    assert report["summary"]["mutation_boundary_proof_count"] == 2
+    assert report["summary"]["proved_count"] == 1
+    assert report["summary"]["violated_count"] == 1
+    assert report["summary"]["result_code_counts"] == {
+        "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET": 1
+    }
+    row = report["rows"][0]
+    assert row["surface"] == "mutation_boundary_proof"
+    assert row["row_id"] == "proof-violated"
+    assert row["subject_id"] == "op-1"
+    assert row["proof_ref"] == "proof-violated"
+    assert row["status"] == "violated"
+    assert "mutation_boundary_proof_as_replay_authorization" in row["forbidden_shortcuts"]
+    assert "mutation_boundary_proof_as_replay_authorization" in report["forbidden_shortcuts"]
+
+
+def test_mutation_boundary_report_projects_to_proof_surface_rows() -> None:
+    report = mutation_boundary_evidence_report(
+        MutationBoundaryProof(
+            proof_id="proof-proved",
+            jurisdiction="fi",
+            materialization_surface="finland_strict_report",
+            operation_id="op-2",
+            owner_phase="replay_apply",
+            rule_id="mutation_boundary_path_set_proved",
+            status="proved",
+            selected_target_paths=((("section", "2"),),),
+            changed_paths=((("section", "2"),),),
+            covered_changed_paths=((("section", "2"),),),
+            safe_default="preserve_report_as_passive_boundary_evidence_not_replay_authorization",
+            forbidden_shortcuts=("mutation_boundary_report_as_replay_authorization",),
+        ),
+        jurisdiction="fi",
+    )
+
+    surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert surface["surface_kind"] == "mutation_boundary_proof"
+    assert surface["claim_flags"]["replay_claims"] is False
+    assert surface["rows"][0]["row_id"] == "proof-proved"
+    assert surface["rows"][0]["subject_id"] == "op-2"
+    assert surface["rows"][0]["row_kind"] == "mutation_boundary_proof"
+    assert surface["rows"][0]["status"] == "proved"
+    assert surface["rows"][0]["proof_refs"] == ["proof-proved"]
+
+
+def test_mutation_boundary_report_rejects_invalid_mapping_rows() -> None:
+    with pytest.raises(ValueError, match="MutationBoundaryProof.status"):
+        mutation_boundary_evidence_report(
+            {
+                "proof_id": "bad-proof",
+                "jurisdiction": "fi",
+                "materialization_surface": "finland_strict_report",
+                "operation_id": "op-1",
+                "owner_phase": "replay_apply",
+                "rule_id": "bad",
+                "status": "done",
+                "safe_default": "classify",
+                "forbidden_shortcuts": ["shortcut"],
+            },
+            jurisdiction="fi",
+        )
 
 
 def test_mutation_boundary_proof_requires_safe_default_and_forbidden_shortcuts() -> None:
