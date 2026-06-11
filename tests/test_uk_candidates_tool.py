@@ -615,7 +615,7 @@ def test_replay_applicable_effects_with_budget_preserves_truncation_evidence() -
 
         return _matches
 
-    effects = [
+    effects: list[Any] = [
         SimpleNamespace(
             applied=True,
             metadata_only=False,
