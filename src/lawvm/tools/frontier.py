@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from lawvm.finland.corpus import get_consolidated_oracle_suspect_cache_only
 from lawvm.finland.proof_surfaces import finland_frontier_proof_evidence_surface
+from lawvm.tools._evidence_helpers import _run_quietly
 from lawvm.tools.replay_mode_arg import replay_mode_argument
 
 FRESH_ORACLE_CHECK_LIMIT = 100
@@ -165,9 +166,6 @@ def _score_one_sync(sid: str, mode: str = "official_consolidation") -> Tuple[str
     return _run_quietly(_score_one, sid, mode=mode)
 
 
-from lawvm.tools._evidence_helpers import _run_quietly  # noqa: E302
-
-
 def _load_oracle_check_cache(db_path: Path) -> Dict[str, Dict]:
     """Load previously computed oracle-check results from divergences.db."""
     import sqlite3
@@ -201,7 +199,7 @@ def _load_oracle_check_cache(db_path: Path) -> Dict[str, Dict]:
         by_sid[sid][diag] += n_total
         by_sid_unblamed[sid][diag] += n_unblamed
 
-    result = {}
+    result: dict[str, dict[str, Any]] = {}
     for sid, counts in by_sid.items():
         total_divs = sum(counts.values())
         suspect = sum(v for k, v in counts.items() if k in ORACLE_SUSPECT_CATEGORIES)
@@ -241,7 +239,7 @@ def _load_oracle_check_cache(db_path: Path) -> Dict[str, Dict]:
             },
         )
         info["source_pathology"] = bool(source_pathology)
-        info["source_pathology_codes"] = _parse_string_listish(source_pathology_codes)  # ty:ignore[invalid-assignment]
+        info["source_pathology_codes"] = _parse_string_listish(source_pathology_codes)
         source_pathology_rows: list[dict[str, Any]] = []
         raw_rows = str(source_pathology_rows_json or "")
         if raw_rows:
@@ -251,12 +249,12 @@ def _load_oracle_check_cache(db_path: Path) -> Dict[str, Dict]:
                 loaded_rows = None
             if isinstance(loaded_rows, list):
                 source_pathology_rows = [item for item in loaded_rows if isinstance(item, dict)]
-        info["source_pathology_rows"] = source_pathology_rows  # ty:ignore[invalid-assignment]
+        info["source_pathology_rows"] = source_pathology_rows
         info["html_topology_mismatch"] = bool(html_topology_mismatch)
-        info["html_missing_from_xml"] = _parse_string_listish(html_missing_from_xml)  # ty:ignore[invalid-assignment]
-        info["html_extra_in_xml"] = _parse_string_listish(html_extra_in_xml)  # ty:ignore[invalid-assignment]
+        info["html_missing_from_xml"] = _parse_string_listish(html_missing_from_xml)
+        info["html_extra_in_xml"] = _parse_string_listish(html_extra_in_xml)
         info["html_noncommensurable_reason"] = str(html_noncommensurable_reason or "")
-        info["contingent_effective_sources"] = _parse_string_listish(contingent_effective_sources)  # ty:ignore[invalid-assignment]
+        info["contingent_effective_sources"] = _parse_string_listish(contingent_effective_sources)
     return result
 
 
