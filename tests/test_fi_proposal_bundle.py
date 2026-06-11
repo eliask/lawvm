@@ -33,6 +33,8 @@ so they do not depend on the filesystem farchive or external downloads.
 """
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -64,6 +66,15 @@ from lawvm.tools.fi_proposal_bundle import (
 
 _NOW = datetime(2024, 6, 1, tzinfo=timezone.utc)
 _SHA = "test_sha256_bundle"
+_PYARROW = importlib.util.find_spec("pyarrow") is not None
+_DUCKDB = importlib.util.find_spec("duckdb") is not None
+
+
+def _pyarrow_modules() -> tuple[Any, Any]:
+    return (
+        importlib.import_module("pyarrow"),
+        importlib.import_module("pyarrow.parquet"),
+    )
 
 
 def _project(fixture: Any) -> Any:
@@ -91,11 +102,9 @@ def _write_parquets_from_result(
     imports).  Skips writing if pyarrow is not available (tests will fall through
     with missing-file warnings, which is the correct AGENTS §1.8 behaviour).
     """
-    try:
-        import pyarrow as pa
-        import pyarrow.parquet as pq
-    except ImportError:
+    if not _PYARROW:
         return
+    pa, pq = _pyarrow_modules()
 
     data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -185,11 +194,9 @@ def _write_parquets_from_result(
 
 def _write_empty_corpus(data_dir: Path, corpus_rows: List[Dict[str, Any]]) -> None:
     """Write a corpus parquet with given rows (may be empty for PDF_WRAPPER)."""
-    try:
-        import pyarrow as pa
-        import pyarrow.parquet as pq
-    except ImportError:
+    if not _PYARROW:
         return
+    pa, pq = _pyarrow_modules()
     data_dir.mkdir(parents=True, exist_ok=True)
     schema = pa.schema([
         pa.field("he_id", pa.string()),
@@ -237,12 +244,6 @@ def _get_corpus_he_id(fixture: Any, tmp_path: Path) -> str:
 # Check whether pyarrow is available (needed for most tests)
 # ---------------------------------------------------------------------------
 
-try:
-    import pyarrow  # noqa: F401
-    _PYARROW = True
-except ImportError:
-    _PYARROW = False
-
 _needs_pyarrow = pytest.mark.skipif(
     not _PYARROW,
     reason="pyarrow required to write test Parquet fixtures",
@@ -252,12 +253,6 @@ _needs_duckdb = pytest.mark.skipif(
     True,  # evaluated lazily below
     reason="duckdb required for bundle assembly",
 )
-
-try:
-    import duckdb  # noqa: F401
-    _DUCKDB = True
-except ImportError:
-    _DUCKDB = False
 
 _needs_duckdb = pytest.mark.skipif(
     not _DUCKDB,
