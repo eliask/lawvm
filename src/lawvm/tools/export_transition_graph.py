@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from lawvm.core.ir import IRNode, LegalAddress
+from lawvm.core.ir_helpers import structural_subtree_hash as structural_subtree_hash
 
 SCHEMA_VERSION = "transition-graph.v1"
 
@@ -57,7 +58,6 @@ _HE_TEXT_RE = re.compile(r"\bHE\s{1,4}(\d{1,4}-\d{1,4}|\d{1,4})/(\d{4})\s{0,4}vp
 # WriteReceipt producer and this exporter share the single frozen recipe
 # (CERTIFIED_TREE_TRANSITION_TRACE_V0.md §2.2). Re-exported here because this
 # module historically owned it.
-from lawvm.core.ir_helpers import structural_subtree_hash as structural_subtree_hash  # noqa: E402
 
 
 def _subtree_json(node: IRNode) -> bytes:
