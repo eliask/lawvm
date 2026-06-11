@@ -180,6 +180,180 @@ def test_blame_main_suppresses_raw_replay_failed_chatter_for_1978_38(capsys) -> 
     assert "INSERT 10 luku 16 § 2 mom → FAILED" not in out
 
 
+# --- typed per-address status enum -------------------------------------------
+# One synthetic case per enum value. The status field is the single source of
+# truth; these pin its derivation directly off the JSON rows.
+
+import json as _json
+
+
+def _failed_op_finding(amendment_id: str = "2022/378", section: str = "30"):
+    from lawvm.core.phase_result import Finding
+
+    return Finding(
+        kind="APPLY.FAILED_OPERATION",
+        role="obligation",
+        stage="process_muutoslaki",
+        source_statute="",
+        detail={
+            "amendment_id": amendment_id,
+            "reason_code": "section_not_found",
+            "target_unit_kind": "section",
+            "target_section": section,
+            "target_chapter": None,
+        },
+        blocking=True,
+    )
+
+
+def _blame_json(monkeypatch, capsys, *, statute_id, address, fake_replay) -> dict:
+    monkeypatch.setattr("lawvm.tools.blame.replay_xml", fake_replay)
+    blame.main(
+        Namespace(
+            statute_id=statute_id,
+            address=address,
+            source=None,
+            mode="official_consolidation",
+            format="json",
+        )
+    )
+    return _json.loads(capsys.readouterr().out)
+
+
+def test_status_unmodified_base_text(monkeypatch, capsys) -> None:
+    def fake_replay(statute_id, *, mode, quiet=False, compiled_ops_out=None, replay_meta_out=None):
+        return _fake_master_with_section()
+
+    payload = _blame_json(
+        monkeypatch, capsys, statute_id="2014/1429", address="section:30", fake_replay=fake_replay
+    )
+    [row] = payload["provisions"]
+    assert row["status"] == "unmodified_base_text"
+    assert "last_op" not in row
+    assert "broken_at" not in row
+
+
+def test_status_modified_by_op(monkeypatch, capsys) -> None:
+    def fake_replay(statute_id, *, mode, quiet=False, compiled_ops_out=None, replay_meta_out=None):
+        if compiled_ops_out is not None:
+            compiled_ops_out.append(
+                {
+                    "sequence": 1,
+                    "action": "replace",
+                    "source_statute": "2025/1382",
+                    "source_title": "Amending act",
+                    "target_unit_kind": "section",
+                    "target_norm": "30",
+                    "target_chapter": "6",
+                }
+            )
+        return _fake_master_with_section()
+
+    payload = _blame_json(
+        monkeypatch, capsys, statute_id="2014/1429", address="section:30", fake_replay=fake_replay
+    )
+    [row] = payload["provisions"]
+    assert row["status"] == "modified_by_op"
+    assert row["last_op"]["source_statute"] == "2025/1382"
+    assert "broken_at" not in row
+
+
+def test_status_op_unapplied_address_scope_failed_op(monkeypatch, capsys) -> None:
+    def fake_replay(statute_id, *, mode, quiet=False, compiled_ops_out=None, replay_meta_out=None):
+        return _fake_master_with_section(findings=(_failed_op_finding(),))
+
+    payload = _blame_json(
+        monkeypatch, capsys, statute_id="2010/1326", address="section:30", fake_replay=fake_replay
+    )
+    [row] = payload["provisions"]
+    assert row["status"] == "op_unapplied_or_engine_error"
+    assert row["broken_at"] == "2022/378"
+
+
+def test_status_op_unapplied_precedence_over_modified_by_op(monkeypatch, capsys) -> None:
+    """A statute-scope break is terminal: it overrides modified_by_op, and the
+    attributed op stays listed (modification proven, current state unproven)."""
+
+    def fake_replay(statute_id, *, mode, quiet=False, compiled_ops_out=None, replay_meta_out=None):
+        if compiled_ops_out is not None:
+            compiled_ops_out.append(
+                {
+                    "sequence": 7,
+                    "action": "replace",
+                    "source_statute": "2020/100",
+                    "source_title": "Earlier amendment",
+                    "target_unit_kind": "section",
+                    "target_norm": "30",
+                    "target_chapter": "6",
+                }
+            )
+        if replay_meta_out is not None:
+            replay_meta_out["lineage"] = [
+                {"statute_id": "2025/1382", "effective_date": "2026-01-01"}
+            ]
+        return _fake_master_with_section(findings=(_occupancy_violation_finding(),))
+
+    payload = _blame_json(
+        monkeypatch, capsys, statute_id="2014/1429", address="section:30", fake_replay=fake_replay
+    )
+    [row] = payload["provisions"]
+    assert row["status"] == "op_unapplied_or_engine_error"
+    assert row["broken_at"] == "2025/1382"
+    # the proven 2020 modification is still carried
+    assert row["last_op"]["source_statute"] == "2020/100"
+
+
+def test_status_address_unresolved(monkeypatch, capsys) -> None:
+    def fake_replay(statute_id, *, mode, quiet=False, compiled_ops_out=None, replay_meta_out=None):
+        return _fake_master_with_section()
+
+    payload = _blame_json(
+        monkeypatch, capsys, statute_id="2014/1429", address="section:999", fake_replay=fake_replay
+    )
+    [row] = payload["provisions"]
+    assert row["status"] == "address_unresolved"
+    assert row["address"] == "section:999"
+
+
+def test_status_address_unresolved_prefers_unverifiable_under_break(monkeypatch, capsys) -> None:
+    """With a statute break present, an unresolved address is unprovable —
+    prefer op_unapplied_or_engine_error (mirrors provision-state)."""
+
+    def fake_replay(statute_id, *, mode, quiet=False, compiled_ops_out=None, replay_meta_out=None):
+        if replay_meta_out is not None:
+            replay_meta_out["lineage"] = [
+                {"statute_id": "2025/1382", "effective_date": "2026-01-01"}
+            ]
+        return _fake_master_with_section(findings=(_occupancy_violation_finding(),))
+
+    payload = _blame_json(
+        monkeypatch, capsys, statute_id="2014/1429", address="section:999", fake_replay=fake_replay
+    )
+    [row] = payload["provisions"]
+    assert row["status"] == "op_unapplied_or_engine_error"
+    assert row["broken_at"] == "2025/1382"
+
+
+def test_status_human_text_derived_from_enum(monkeypatch, capsys) -> None:
+    """The text renderer drives off the same rows: a clean unbroken section
+    keeps the 'unmodified — base statute text' wording."""
+
+    def fake_replay(statute_id, *, mode, quiet=False, compiled_ops_out=None, replay_meta_out=None):
+        return _fake_master_with_section()
+
+    monkeypatch.setattr("lawvm.tools.blame.replay_xml", fake_replay)
+    blame.main(
+        Namespace(
+            statute_id="2014/1429",
+            address="section:30",
+            source=None,
+            mode="official_consolidation",
+            format="text",
+        )
+    )
+    assert "unmodified — base statute text" in capsys.readouterr().out
+
+
 # --- live-corpus specimen regression -------------------------------------------
 # Consumer-reported specimen: blame 2010/1326 --address section:22 used to say
 # "unmodified — base statute text" although the oracle shows 2025/2026-amended
@@ -231,3 +405,43 @@ def test_specimen_blame_2014_1429_section_30_attributes_amendment(capsys) -> Non
     # blame must attribute §30 to 2025/1382, not claim base-statute text.
     assert "2025/1382" in out
     assert "unmodified — base statute text" not in out
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_status_2014_1429_section_30_op_unapplied(capsys) -> None:
+    """Live: §30 is op-attributed (2025/1382) under a statute break at 2025/1382
+    → terminal status op_unapplied_or_engine_error, attributed op still listed."""
+    blame.main(
+        Namespace(
+            statute_id="2014/1429",
+            address="section:30",
+            source=None,
+            mode="official_consolidation",
+            format="json",
+        )
+    )
+    payload = _json.loads(capsys.readouterr().out)
+    [row] = payload["provisions"]
+    assert row["status"] == "op_unapplied_or_engine_error"
+    assert row["broken_at"] == "2025/1382"
+    assert row["last_op"]["source_statute"] == "2025/1382"
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_status_unbroken_statute_unmodified_base_text(capsys) -> None:
+    """Live: an untouched section of an unbroken statute (perustuslaki 1999/731
+    §1:2) is the grounded negative → unmodified_base_text, no break, no op."""
+    blame.main(
+        Namespace(
+            statute_id="1999/731",
+            address="chapter:1/section:2",
+            source=None,
+            mode="official_consolidation",
+            format="json",
+        )
+    )
+    payload = _json.loads(capsys.readouterr().out)
+    assert payload["timeline_breaks"] == []
+    [row] = payload["provisions"]
+    assert row["status"] == "unmodified_base_text"
+    assert "last_op" not in row
