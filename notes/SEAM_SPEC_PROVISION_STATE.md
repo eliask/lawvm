@@ -150,6 +150,13 @@ nested `detail.source_witness` object MAY include `quote_char_span` and
 after boundary-whitespace trimming. Those spans are over the stored witness
 string, not the source artifact.
 
+The same nested witness also carries shared `SourceWitness`-compatible fields:
+`source_role="operation_source_raw_text"`, `artifact_id`, `locator`,
+`source_lane`, `bounded_preview`, and `preview_digest*`. When the referenced
+source XML bytes were loaded, it also carries `digest*` for the source artifact.
+These fields support shared digest-coverage reporting; they do not make the
+quote executable authority by themselves.
+
 Since 0.2.x, operation-source rows MAY also include top-level
 `source_locator.char_span` and `source_locator.byte_span`, plus nested
 `detail.source_witness.artifact_char_span` and `artifact_byte_span`, when the

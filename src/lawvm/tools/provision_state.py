@@ -21,6 +21,7 @@ from lawvm.core.phase_result import Finding
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.source_locator import SourceLocator
+from lawvm.core.source_witness import DigestWitness, SourceWitness
 from lawvm.core.statute_validity import StatuteValidityBound, is_expired_at
 from lawvm.core.timeline_lineage import lineage_address_chain
 from lawvm.core.timeline_selection import VersionSelectionResult, select_active_version_ex
@@ -1470,6 +1471,13 @@ def _source_locator_payload(
     if source_quote is not None:
         if span is not None and span.get("source_witness_detail"):
             source_quote.update(span["source_witness_detail"])
+        source_quote = _operation_source_witness_payload(
+            source_quote,
+            artifact_id=source_sid,
+            locator=statute_url(source_sid),
+            artifact_digest=artifact_digest,
+            artifact_digest_algorithm=artifact_digest_algorithm,
+        )
         detail["source_witness"] = source_quote
         detail["source_witness_status"] = "operation_source_raw_text_available"
     else:
@@ -1886,6 +1894,40 @@ def _source_quote_payload(version: ProvisionVersion | None) -> dict[str, Any] | 
         "char_span_status": "operation_source_raw_text_char_span",
         "precision": "bounded_source_quote",
     }
+
+
+def _operation_source_witness_payload(
+    quote_payload: Mapping[str, Any],
+    *,
+    artifact_id: str,
+    locator: str,
+    artifact_digest: str,
+    artifact_digest_algorithm: str,
+) -> dict[str, Any]:
+    bounded_preview = str(quote_payload.get("quote") or "")
+    digest = (
+        DigestWitness(
+            digest_algorithm=artifact_digest_algorithm or "sha256",
+            digest=artifact_digest,
+        )
+        if artifact_digest
+        else None
+    )
+    preview_digest = (
+        DigestWitness(digest_algorithm="sha256", digest=_sha256_text(bounded_preview))
+        if bounded_preview
+        else None
+    )
+    return SourceWitness(
+        source_role="operation_source_raw_text",
+        artifact_id=artifact_id,
+        locator=locator,
+        digest=digest,
+        bounded_preview=bounded_preview,
+        preview_digest=preview_digest,
+        source_lane="finlex_source_xml",
+        metadata=quote_payload,
+    ).to_dict()
 
 
 def _engine_payload() -> dict[str, str]:

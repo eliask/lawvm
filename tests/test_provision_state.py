@@ -13,6 +13,7 @@ from lawvm.core.ir import IRNode, LegalAddress, ProvisionTimeline, ProvisionVers
 from lawvm.core.ir_helpers import irnode_content_hash
 from lawvm.core.provenance import MigrationEvent, OperationSource
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.source_witness import source_witness_digest_coverage
 from lawvm.provision_state import resolve_provision_state
 from lawvm.tools.provision_state import (
     _lawvm_code_identity,
@@ -114,6 +115,25 @@ def test_provision_state_response_exposes_text_hash_and_temporal_pin() -> None:
         "operation_source_raw_text_available"
     )
     assert payload["source_locator"]["detail"]["source_witness"]["kind"] == "operation_source_raw_text"
+    assert payload["source_locator"]["detail"]["source_witness"]["source_role"] == (
+        "operation_source_raw_text"
+    )
+    assert payload["source_locator"]["detail"]["source_witness"]["artifact_id"] == "2019/1"
+    assert payload["source_locator"]["detail"]["source_witness"]["locator"] == (
+        "finlex://sd/2019/1/fin/main.xml"
+    )
+    assert payload["source_locator"]["detail"]["source_witness"]["source_lane"] == (
+        "finlex_source_xml"
+    )
+    assert payload["source_locator"]["detail"]["source_witness"]["bounded_preview"] == (
+        "Section 1 is replaced with a new duty."
+    )
+    assert payload["source_locator"]["detail"]["source_witness"]["preview_digest_algorithm"] == (
+        "sha256"
+    )
+    assert source_witness_digest_coverage(payload["source_locator"]["detail"]["source_witness"]) == (
+        "preview_digest"
+    )
     assert payload["source_locator"]["detail"]["source_witness"]["quote"] == (
         "Section 1 is replaced with a new duty."
     )
@@ -186,6 +206,15 @@ def test_operation_source_locator_anchors_exact_raw_quote_in_source_xml() -> Non
     assert witness["artifact_byte_span"] == expected_byte_span
     assert witness["artifact_span_status"] == "operation_source_raw_xml_quote_scan"
     assert witness["artifact_span_match_count"] == 1
+    assert witness["source_role"] == "operation_source_raw_text"
+    assert witness["artifact_id"] == "2019/1"
+    assert witness["locator"] == "finlex://sd/2019/1/fin/main.xml"
+    assert witness["source_lane"] == "finlex_source_xml"
+    assert witness["digest_algorithm"] == "sha256"
+    assert witness["digest"] == expected_digest
+    assert witness["preview_digest_algorithm"] == "sha256"
+    assert witness["bounded_preview"] == quote
+    assert source_witness_digest_coverage(witness) == "artifact_and_preview_digest"
     assert payload["hashes"]["content_hash"] == without_span["hashes"]["content_hash"]
     assert payload["hashes"]["derived_state_hash"] == without_span["hashes"]["derived_state_hash"]
 
@@ -219,6 +248,8 @@ def test_operation_source_locator_rejects_duplicate_raw_quote_xml_span() -> None
     assert locator["detail"]["operation_source_xml_quote_match_count"] == 2
     assert witness["artifact_span_status"] == "unavailable_operation_source_quote_not_unique"
     assert witness["artifact_span_match_count"] == 2
+    assert witness["digest"] == locator["artifact_digest"]
+    assert source_witness_digest_coverage(witness) == "artifact_and_preview_digest"
 
 
 def test_lawvm_code_identity_ignores_untracked_files(monkeypatch) -> None:
