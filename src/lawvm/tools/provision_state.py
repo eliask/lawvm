@@ -1353,7 +1353,14 @@ def _lawvm_code_identity() -> dict[str, str]:
         text=True,
     ).stdout.strip()
     status = subprocess.run(
-        ("git", "-C", str(repo_root), "status", "--short"),
+        (
+            "git",
+            "-C",
+            str(repo_root),
+            "status",
+            "--porcelain",
+            "--untracked-files=no",
+        ),
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,

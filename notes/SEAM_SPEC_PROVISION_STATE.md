@@ -87,7 +87,9 @@ either live text or expiry when the stated bound cannot be proven.
   version-selection decision (rail, candidate count, selected dates).
 - `text` — `{rendered, available}`; `available=false` for tombstone/absent.
 - `engine`, `source`, `source_locator` — provenance; NOT part of the state
-  hash (§3).
+  hash (§3). `engine.git_dirty` reports tracked LawVM code/index dirtiness
+  relative to `engine.git_commit`; untracked local artifacts do not taint the
+  engine identity because they do not change executable LawVM code.
 
 ### 2.4 `source_locator` XPath footing
 

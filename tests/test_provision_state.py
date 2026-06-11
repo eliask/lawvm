@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -12,7 +13,12 @@ from lawvm.core.ir_helpers import irnode_content_hash
 from lawvm.core.provenance import MigrationEvent, OperationSource
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.provision_state import resolve_provision_state
-from lawvm.tools.provision_state import build_provision_state_response, main, resolve_address
+from lawvm.tools.provision_state import (
+    _lawvm_code_identity,
+    build_provision_state_response,
+    main,
+    resolve_address,
+)
 
 
 def _section(text: str) -> IRNode:
@@ -115,6 +121,49 @@ def test_provision_state_response_exposes_text_hash_and_temporal_pin() -> None:
     assert payload["engine"]["producer"] == "lawvm"
     assert payload["engine"]["interface"] == "lawvm provision-state"
     assert {"build_id", "git_commit", "git_dirty", "repository"} <= set(payload["engine"])
+
+
+def test_lawvm_code_identity_ignores_untracked_files(monkeypatch) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def fake_run(args, **kwargs):
+        command = tuple(str(part) for part in args)
+        calls.append(command)
+        if "rev-parse" in command and "--is-inside-work-tree" in command:
+            return subprocess.CompletedProcess(command, 0, stdout="true\n", stderr="")
+        if "rev-parse" in command and "HEAD" in command:
+            return subprocess.CompletedProcess(command, 0, stdout="a" * 40 + "\n", stderr="")
+        if "status" in command:
+            assert "--untracked-files=no" in command
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        raise AssertionError(f"unexpected subprocess command: {command!r}")
+
+    monkeypatch.setattr("lawvm.tools.provision_state.subprocess.run", fake_run)
+
+    identity = _lawvm_code_identity()
+
+    assert identity["git_dirty"] == "false"
+    assert identity["build_id"] == "git:" + "a" * 40
+    assert any("--untracked-files=no" in call for call in calls)
+
+
+def test_lawvm_code_identity_marks_tracked_changes_dirty(monkeypatch) -> None:
+    def fake_run(args, **kwargs):
+        command = tuple(str(part) for part in args)
+        if "rev-parse" in command and "--is-inside-work-tree" in command:
+            return subprocess.CompletedProcess(command, 0, stdout="true\n", stderr="")
+        if "rev-parse" in command and "HEAD" in command:
+            return subprocess.CompletedProcess(command, 0, stdout="b" * 40 + "\n", stderr="")
+        if "status" in command:
+            return subprocess.CompletedProcess(command, 0, stdout=" M src/lawvm/tools/provision_state.py\n", stderr="")
+        raise AssertionError(f"unexpected subprocess command: {command!r}")
+
+    monkeypatch.setattr("lawvm.tools.provision_state.subprocess.run", fake_run)
+
+    identity = _lawvm_code_identity()
+
+    assert identity["git_dirty"] == "true"
+    assert identity["build_id"] == "git:" + "b" * 40 + "+dirty"
 
 
 def test_derived_state_hash_changes_when_temporal_metadata_changes_without_text_change() -> None:
