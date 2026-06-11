@@ -224,7 +224,7 @@ def test_insert_numeric_item_sort_position_target_before_all() -> None:
 
 
 def test_replay_xml_hoists_trailing_wrapup_after_numbered_items() -> None:
-    replay = pinned_replay("2015/517", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("2015/517", mode="official_consolidation", quiet=True)
     section = replay.find_section("72", "11")
     assert section is not None
     subsection = next(child for child in section.children if child.kind == IRNodeKind.SUBSECTION and child.label == "1")
@@ -237,7 +237,7 @@ def test_replay_xml_hoists_trailing_wrapup_after_numbered_items() -> None:
 
 def test_replay_xml_keeps_1981_555_section_11_moments_split() -> None:
     """Maa-aineslaki § 11 must keep the 4th and 5th moments distinct."""
-    replay = pinned_replay("1981/555", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("1981/555", mode="official_consolidation", quiet=True)
     section = replay.find_section("11")
     assert section is not None
 

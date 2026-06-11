@@ -43,7 +43,7 @@ def test_paragraph_to_subparagraph_ir_preserves_spaced_letter_suffix_display() -
 
 
 def test_replay_xml_preserves_letter_suffix_item_spacing_for_2014_346() -> None:
-    replay = pinned_replay("2014/346", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("2014/346", mode="official_consolidation", quiet=True)
     section = extract_ir_sections(replay.materialized_state.ir)["section:1"]
 
     num_text = None

@@ -250,7 +250,7 @@ async def _process_statute(
     cs = _get_corpus_store()
 
     # Get amendment chain
-    records, _, _ = _resolve_applicable_amendment_records(sid, "finlex_oracle")
+    records, _, _ = _resolve_applicable_amendment_records(sid, "official_consolidation")
 
     amendment_results = []
     for rec in records:

@@ -45,7 +45,7 @@ def _resolve_side_section_key(section_filter: str, *candidate_sections: Dict[str
     raise ValueError("no sections available")
 
 
-def _next_amendment_id(statute_id: str, source_id: str, mode: Literal["finlex_oracle", "legal_pit"]) -> Optional[str]:
+def _next_amendment_id(statute_id: str, source_id: str, mode: Literal["official_consolidation", "legal_pit"]) -> Optional[str]:
     records, _, _ = _resolve_applicable_amendment_records(statute_id, mode)
     ids = [str(record["statute_id"]) for record in records]
     try:
@@ -61,7 +61,7 @@ def build_trace_bundle(
     statute_id: str,
     source_id: str,
     section: str,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     *,
     oracle_root: Optional[Any] = None,
 ) -> Dict[str, Any]:

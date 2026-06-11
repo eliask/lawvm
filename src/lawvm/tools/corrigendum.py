@@ -101,6 +101,7 @@ from lawvm.finland.proof_surfaces import (
     finland_corrigendum_sources_evidence_surface,
 )
 from lawvm.tools.section_keys import leaf_section_label, norm_section_label
+from lawvm.tools.replay_mode_arg import replay_mode_argument
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -2560,7 +2561,7 @@ def build_review_bundle(
     """Build a review bundle joining live disagreements to corrigendum evidence."""
     from lawvm.tools.oracle_check import _classify_statute
 
-    result = _classify_statute(statute_id, cast(Literal["finlex_oracle", "legal_pit"], mode))
+    result = _classify_statute(statute_id, cast(Literal["official_consolidation", "legal_pit"], mode))
     if not result:
         raise SystemExit(f"Could not classify statute {statute_id}")
     if result.error:
@@ -4481,8 +4482,8 @@ def register_cli(sub: Any) -> None:
     corr_review_p.add_argument("statute_id", help="statute ID, e.g. 1995/1552")
     corr_review_p.add_argument(
         "--mode", default="legal_pit",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode for live disagreement classification (default: legal_pit)",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode for live disagreement classification (default: legal_pit; legacy alias: finlex_oracle)",
     )
     corr_review_p.add_argument(
         "--db", metavar="PATH",

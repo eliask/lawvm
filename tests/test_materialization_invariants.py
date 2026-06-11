@@ -167,7 +167,7 @@ def test_2017_519_2019_979_official_johtolause_corrigendum_updates_section_15(
 def test_2013_599_2025_854_official_johtolause_corrigendum_updates_section_5_item_17() -> None:
     """Official 854/2025 johtolause corrigendum must materialize 5 §:n 1 mom 17 kohta."""
 
-    replay = pinned_replay("2013/599", quiet=True, mode="finlex_oracle")
+    replay = pinned_replay("2013/599", quiet=True, mode="official_consolidation")
     section_node = replay.find_section("5", "1", None)
     assert section_node is not None
     section_text = " ".join(irnode_to_text(section_node).split())
@@ -179,7 +179,7 @@ def test_2012_980_2022_604_johtolause_corrigendum_repeals_subsection_3_not_2() -
     """Official 604/2022 johtolause corrigendum must target 2 § 3 mom, not 2 mom."""
     from lawvm.core import tree_ops as _tops
 
-    replay = pinned_replay("2012/980", quiet=True, mode="finlex_oracle", build_full_products=False)
+    replay = pinned_replay("2012/980", quiet=True, mode="official_consolidation", build_full_products=False)
     section_path = replay.replay_fold_state.find_section_path("2", "1", None)
     assert section_path is not None
     section_node = _tops.resolve(replay.replay_fold_state.ir, section_path)
@@ -1001,7 +1001,7 @@ class Test1981_555Section11Split:
     """Maa-aineslaki § 11 must keep the proportionality sentence as its own moment."""
 
     def test_1981_555_section_11_materializes_fourth_moment(self) -> None:
-        replay = pinned_replay("1981/555", mode="finlex_oracle", quiet=True)
+        replay = pinned_replay("1981/555", mode="official_consolidation", quiet=True)
         section = replay.find_section("11")
         assert section is not None
 

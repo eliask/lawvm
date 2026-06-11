@@ -602,7 +602,7 @@ class TestTemporarySubsectionPITFilter:
 class TestSplitExpiresAsOf:
     """materialize_pit expires_as_of splits effective and expiry horizons.
 
-    The primary use case is finlex_oracle mode:
+    The primary use case is official_consolidation mode:
     - effective horizon = "9999-12-31" (include ALL amendments regardless of
       effective date)
     - expiry horizon = oracle PIT date (temporary sections active at snapshot
@@ -683,7 +683,7 @@ class TestSplitExpiresAsOf:
 def test_decoupled_expiry_horizon_keeps_permanent_background_over_future_repeal_placeholder() -> None:
     """An inactive future repeal placeholder should not erase a permanent background.
 
-    Finland's finlex_oracle replay uses an open-ended effective horizon with a
+    Finland's official_consolidation replay uses an open-ended effective horizon with a
     separate expiry horizon.  That means a future repeal placeholder may be
     present in the timeline without yet being active at the oracle snapshot.
     The selector must still surface the permanent background in that case.
@@ -971,7 +971,7 @@ class TestTemporaryWithoutExpiry:
             effective="2005-01-01",
         )
         timelines = compile_timelines(base, [op], base_date="1999-01-01", temporal_events=temporal_events)
-        # finlex_oracle mode: expires_as_of set to a concrete PIT date
+        # official_consolidation mode: expires_as_of set to a concrete PIT date
         pit = materialize_pit(timelines, "9999-12-31", base=base, expires_as_of="2025-01-01")
         labels = [c.label for c in pit.body.children]
         assert "2" in labels, "missing-expiry provenance should not be treated as executable temporal authority"

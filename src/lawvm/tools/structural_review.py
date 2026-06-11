@@ -573,7 +573,7 @@ def dump_statute(
     statute_id: str,
     *,
     corpus: Any = None,
-    mode: str = "finlex_oracle",
+    mode: str = "official_consolidation",
     oracle_selector_mode: str = "bench_comparable",
     compact: bool = False,
     section_filter: str | None = None,
@@ -647,7 +647,7 @@ def dump_single_side(
     side: str = "replay",
     section_filter: str | None = None,
     corpus: Any = None,
-    mode: str = "finlex_oracle",
+    mode: str = "official_consolidation",
     oracle_selector_mode: str = "bench_comparable",
 ) -> str:
     """Dump full text of one side (replay or oracle) for a statute.
@@ -671,7 +671,7 @@ def dump_single_side(
     if side == "replay":
         replay_master = replay_xml(
             statute_id,
-            mode=cast(Literal["finlex_oracle", "legal_pit"], mode),
+            mode=cast(Literal["official_consolidation", "legal_pit"], mode),
             quiet=True,
             corpus=corpus,
             oracle_selector=_selector_from_mode(oracle_selector_mode),
@@ -715,7 +715,7 @@ def dump_corpus(
     statute_list: str,
     *,
     workers: int = 0,
-    mode: str = "finlex_oracle",
+    mode: str = "official_consolidation",
     oracle_selector_mode: str = "bench_comparable",
 ) -> None:
     """Dump structural diffs for all statutes in the list file to stdout.
@@ -769,7 +769,7 @@ def compute_statute_section_diffs(
     statute_id: str,
     *,
     corpus: Any = None,
-    mode: str = "finlex_oracle",
+    mode: str = "official_consolidation",
     oracle_selector_mode: str = "bench_comparable",
     replay_master: Any = None,
 ) -> tuple[dict[str, dict[str, Any]], bool]:
@@ -807,7 +807,7 @@ def compute_statute_section_diffs(
     if replay_master is None:
         replay_master = replay_xml(
             statute_id,
-            mode=cast(Literal["finlex_oracle", "legal_pit"], mode),
+            mode=cast(Literal["official_consolidation", "legal_pit"], mode),
             quiet=True,
             corpus=corpus,
             oracle_selector=_selector_from_mode(oracle_selector_mode),
@@ -1272,7 +1272,7 @@ def dump_triple_view(
     # --- Replay ---
     replay_master = replay_xml(
         statute_id,
-        mode=cast(Literal["finlex_oracle", "legal_pit"], "finlex_oracle"),
+        mode=cast(Literal["official_consolidation", "legal_pit"], "official_consolidation"),
         quiet=True,
         corpus=corpus,
         oracle_selector=_selector_from_mode(oracle_selector_mode),
