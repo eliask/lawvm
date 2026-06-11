@@ -4,12 +4,21 @@ from argparse import Namespace
 from types import SimpleNamespace
 import sys
 import types
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from lawvm.tools import dump
 from lawvm.tools import source_dump
+
+
+def _install_fake_farchive(
+    monkeypatch: pytest.MonkeyPatch,
+    archive_type: type[object],
+) -> None:
+    fake_farchive = types.ModuleType("farchive")
+    cast(Any, fake_farchive).Farchive = archive_type
+    monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
 
 
 def test_dump_apply_replays_quietly(monkeypatch, capsys) -> None:
@@ -67,9 +76,7 @@ def test_dump_parse_routes_uk_statute_id_to_farchive(monkeypatch, tmp_path, caps
         def close(self) -> None:
             seen["closed"] = True
 
-    fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
-    monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
+    _install_fake_farchive(monkeypatch, DummyArchive)
 
     dump.main(
         Namespace(
@@ -120,9 +127,7 @@ def test_dump_default_routes_uk_statute_id_to_farchive(monkeypatch, tmp_path, ca
         def close(self) -> None:
             seen["closed"] = True
 
-    fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
-    monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
+    _install_fake_farchive(monkeypatch, DummyArchive)
 
     dump.main(
         Namespace(
@@ -162,9 +167,7 @@ def test_source_dump_parse_routes_j_uk_to_farchive(monkeypatch, tmp_path) -> Non
         def close(self) -> None:
             return None
 
-    fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
-    monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
+    _install_fake_farchive(monkeypatch, DummyArchive)
 
     bundle = source_dump.build_uk_source_dump(
         "ukpga/2002/30",
@@ -196,9 +199,7 @@ def test_source_dump_uk_parse_uses_shared_roman_label_range(monkeypatch, tmp_pat
         def close(self) -> None:
             return None
 
-    fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
-    monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
+    _install_fake_farchive(monkeypatch, DummyArchive)
 
     bundle = source_dump.build_uk_source_dump(
         "ukpga/2002/30",
@@ -240,9 +241,7 @@ def test_source_dump_uk_parse_finds_metadata_matched_archived_leaf_without_direc
         def close(self) -> None:
             return None
 
-    fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
-    monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
+    _install_fake_farchive(monkeypatch, DummyArchive)
 
     bundle = source_dump.build_uk_source_dump("ukpga/2002/30", db_path=db_path)
 
@@ -284,9 +283,7 @@ def test_source_dump_uk_parse_scans_archive_when_multiple_choice_has_no_links(
         def close(self) -> None:
             return None
 
-    fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
-    monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
+    _install_fake_farchive(monkeypatch, DummyArchive)
 
     bundle = source_dump.build_uk_source_dump("ukpga/1955/18", db_path=db_path)
 
@@ -336,9 +333,7 @@ The link that you've followed could mean either of the following:
         def close(self) -> None:
             seen["closed"] = True
 
-    fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
-    monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
+    _install_fake_farchive(monkeypatch, DummyArchive)
 
     dump.main(
         Namespace(
@@ -397,9 +392,7 @@ The link that you've followed could mean either of the following:
         def close(self) -> None:
             return None
 
-    fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
-    monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
+    _install_fake_farchive(monkeypatch, DummyArchive)
 
     with pytest.raises(SystemExit) as exc_info:
         source_dump.build_uk_source_dump("ukpga/2002/30", db_path=db_path)
@@ -444,9 +437,7 @@ def test_source_dump_uk_parse_rejects_ambiguous_bare_multiple_choice_archive_row
         def close(self) -> None:
             return None
 
-    fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
-    monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
+    _install_fake_farchive(monkeypatch, DummyArchive)
 
     with pytest.raises(SystemExit) as exc_info:
         source_dump.build_uk_source_dump("ukpga/1955/18", db_path=db_path)
@@ -485,9 +476,7 @@ def test_source_dump_main_routes_j_uk_to_farchive(monkeypatch, tmp_path, capsys)
         def close(self) -> None:
             seen["closed"] = True
 
-    fake_farchive = types.ModuleType("farchive")
-    fake_farchive.Farchive = DummyArchive  # ty: ignore[unresolved-attribute]
-    monkeypatch.setitem(sys.modules, "farchive", fake_farchive)
+    _install_fake_farchive(monkeypatch, DummyArchive)
 
     source_dump.main(
         Namespace(

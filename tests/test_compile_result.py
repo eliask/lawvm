@@ -68,6 +68,16 @@ def _legal_op(op_id: str = "op-1", section: str = "1") -> LegalOperation:
     )
 
 
+def _runtime_input(value: object) -> Any:
+    """Expose deliberately non-static constructor inputs to runtime validators."""
+    return cast(Any, value)
+
+
+def _runtime_structural_ops(*ops: object) -> tuple[LegalOperation, ...]:
+    """Bypass static purity so CanonicalBundle's runtime guard is exercised."""
+    return cast(tuple[LegalOperation, ...], ops)
+
+
 class _FrontendLocalOp:
     """Placeholder for a frontend-local type (e.g. Finland's ResolvedOp)."""
 
@@ -88,8 +98,8 @@ def _impure_bundle(*, structural_ops: tuple[object, ...]) -> CanonicalBundle:
 
 
 def test_legal_address_and_scope_predicate_normalize_sequence_inputs() -> None:
-    address = LegalAddress(path=[("section", "1"), ("subsection", "2")])  # ty: ignore[invalid-argument-type]
-    predicate = ScopePredicate(dimension="territory", includes=["AX", ""])  # ty: ignore[invalid-argument-type]
+    address = LegalAddress(path=_runtime_input([("section", "1"), ("subsection", "2")]))
+    predicate = ScopePredicate(dimension="territory", includes=_runtime_input(["AX", ""]))
 
     assert isinstance(address.path, tuple)
     assert address.path == (("section", "1"), ("subsection", "2"))
@@ -102,12 +112,16 @@ def test_legal_operation_and_provision_version_normalize_sequence_inputs() -> No
         sequence=1,
         action=StructuralAction.REPLACE,
         target=LegalAddress(path=(("section", "1"),)),
-        applicability=[ScopePredicate(dimension="territory", includes={"AX"})],  # ty: ignore[invalid-argument-type]
-        provenance_tags=["tag-a", ""],  # ty: ignore[invalid-argument-type]
+        applicability=_runtime_input(
+            [ScopePredicate(dimension="territory", includes=_runtime_input({"AX"}))]
+        ),
+        provenance_tags=_runtime_input(["tag-a", ""]),
     )
     version = ProvisionVersion(
         effective="2020-01-01",
-        applicability=[ScopePredicate(dimension="territory", includes={"AX"})],  # ty: ignore[invalid-argument-type]
+        applicability=_runtime_input(
+            [ScopePredicate(dimension="territory", includes=_runtime_input({"AX"}))]
+        ),
     )
 
     assert isinstance(op.applicability, tuple)
@@ -230,23 +244,23 @@ class TestCanonicalBundleConstructionPurity:
     def test_frontend_local_op_raises_type_error(self):
         bad = _FrontendLocalOp()
         with pytest.raises(TypeError, match="non-LegalOperation"):
-            CanonicalBundle(structural_ops=(bad,))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            CanonicalBundle(structural_ops=_runtime_structural_ops(bad))
 
     def test_type_error_mentions_type_name(self):
         bad = _FrontendLocalOp()
         with pytest.raises(TypeError, match="_FrontendLocalOp"):
-            CanonicalBundle(structural_ops=(bad,))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            CanonicalBundle(structural_ops=_runtime_structural_ops(bad))
 
     def test_type_error_mentions_lowering_requirement(self):
         bad = _FrontendLocalOp()
         with pytest.raises(TypeError, match="lowered"):
-            CanonicalBundle(structural_ops=(bad,))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            CanonicalBundle(structural_ops=_runtime_structural_ops(bad))
 
     def test_mixed_ops_raises_type_error(self):
         op = _legal_op()
         bad = _FrontendLocalOp()
         with pytest.raises(TypeError, match="non-LegalOperation"):
-            CanonicalBundle(structural_ops=(op, bad))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            CanonicalBundle(structural_ops=_runtime_structural_ops(op, bad))
 
 
 class TestCanonicalEffectContracts:

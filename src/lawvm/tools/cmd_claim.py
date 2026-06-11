@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -49,6 +50,43 @@ from lawvm.core.provenance_graph_storage import (
 )
 
 _DEFAULT_GRAPH_ROOT = "data/fi/v1/provenance_graph"
+_MISSING_ARG = object()
+
+
+def _arg_value(args: object, name: str, *, default: object = _MISSING_ARG) -> object:
+    value = getattr(args, name, _MISSING_ARG)
+    if value is _MISSING_ARG:
+        if default is _MISSING_ARG:
+            raise AttributeError(f"claim CLI parser did not provide expected argument: {name}")
+        return default
+    return value
+
+
+def _arg_str(args: object, name: str) -> str:
+    value = _arg_value(args, name)
+    if not isinstance(value, str):
+        raise TypeError(f"claim CLI argument {name!r} must be str, got {type(value).__name__}")
+    return value
+
+
+def _arg_optional_str(args: object, name: str) -> Optional[str]:
+    value = _arg_value(args, name, default=None)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError(f"claim CLI argument {name!r} must be str or None, got {type(value).__name__}")
+    return value
+
+
+def _arg_bool(args: object, name: str, *, default: bool = False) -> bool:
+    value = _arg_value(args, name, default=default)
+    if not isinstance(value, bool):
+        raise TypeError(f"claim CLI argument {name!r} must be bool, got {type(value).__name__}")
+    return value
+
+
+def _claim_id_arg(args: object) -> str:
+    return _arg_optional_str(args, "claim_id") or _arg_str(args, "assertion_id")
 
 
 def _get_store(graph_store_root: str) -> GraphStore:
@@ -273,7 +311,7 @@ def _default_profile(allows_attested_reference_resolution: bool = True):
 
 def cmd_propose(args: object) -> int:
     """Load assertion from JSON; submit to graph store; emit claim_submitted attestation."""
-    claim_file = Path(args.claim_file)  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    claim_file = Path(_arg_str(args, "claim_file"))
     if not claim_file.exists():
         print(f"error: claim file not found: {claim_file}", file=sys.stderr)
         return 1
@@ -297,7 +335,7 @@ def cmd_propose(args: object) -> int:
 
 def cmd_accept(args: object) -> int:
     """Emit reviewed attestation with accepted=True."""
-    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    assertion_id = _claim_id_arg(args)
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
@@ -319,8 +357,8 @@ def cmd_accept(args: object) -> int:
 
 def cmd_reject(args: object) -> int:
     """Emit reviewed attestation with accepted=False."""
-    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-    reason: str = args.reason  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    assertion_id = _claim_id_arg(args)
+    reason = _arg_str(args, "reason")
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
@@ -342,8 +380,8 @@ def cmd_reject(args: object) -> int:
 
 def cmd_retract(args: object) -> int:
     """Emit retracted attestation; render retraction taint report."""
-    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-    reason: str = args.reason  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    assertion_id = _claim_id_arg(args)
+    reason = _arg_str(args, "reason")
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
@@ -378,9 +416,9 @@ def cmd_retract(args: object) -> int:
 
 def cmd_supersede(args: object) -> int:
     """Submit new assertion superseding old; emit superseded attestation."""
-    old_id: str = args.old_assertion_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-    new_file = Path(args.with_file)  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-    delta_reason: str = getattr(args, "delta_reason", "") or ""
+    old_id = _arg_str(args, "old_assertion_id")
+    new_file = Path(_arg_str(args, "with_file"))
+    delta_reason = _arg_optional_str(args, "delta_reason") or ""
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
@@ -419,7 +457,7 @@ def cmd_supersede(args: object) -> int:
 
 def cmd_show(args: object) -> int:
     """Render assertion + attestations + authorization result."""
-    assertion_id: str = getattr(args, "claim_id", None) or args.assertion_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    assertion_id = _claim_id_arg(args)
     profile_name: Optional[str] = getattr(args, "profile", None)  # noqa: F841  # BUG: --profile arg is read but never forwarded to _default_profile()
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
@@ -562,7 +600,7 @@ def cmd_list(args: object) -> int:
 
 def cmd_history(args: object) -> int:
     """Show all assertions targeting a provision_ref over time, chronologically."""
-    target_ref: str = args.target  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    target_ref = _arg_str(args, "target")
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
@@ -592,7 +630,7 @@ def cmd_history(args: object) -> int:
 
 def cmd_disputes(args: object) -> int:
     """Show conflicting assertion pairs for a statute."""
-    statute_id: str = args.statute  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+    statute_id = _arg_str(args, "statute")
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
@@ -628,7 +666,7 @@ def cmd_disputes(args: object) -> int:
 def cmd_taint_report(args: object) -> int:
     """Compute retraction taint at query time (not from stored taint)."""
     assertion_id: Optional[str] = getattr(args, "claim_id", None) or getattr(args, "assertion_id", None)
-    list_all: bool = getattr(args, "list", False)
+    list_all = _arg_bool(args, "list", default=False)
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
@@ -674,8 +712,8 @@ def cmd_taint_report(args: object) -> int:
 
 
 def main(args: object) -> None:
-    subcmd = getattr(args, "claim_subcommand", None)
-    dispatch = {
+    subcmd = _arg_optional_str(args, "claim_subcommand")
+    dispatch: dict[str, Callable[[object], int]] = {
         "propose": cmd_propose,
         "accept": cmd_accept,
         "reject": cmd_reject,
@@ -687,7 +725,7 @@ def main(args: object) -> None:
         "disputes": cmd_disputes,
         "taint-report": cmd_taint_report,
     }
-    fn = dispatch.get(subcmd)  # ty:ignore[invalid-argument-type]
+    fn = dispatch.get(subcmd or "")
     if fn is None:
         print(f"unknown claim subcommand: {subcmd!r}", file=sys.stderr)
         sys.exit(1)
