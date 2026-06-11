@@ -28,6 +28,7 @@ from lawvm.core.temporal_scheduler import TemporalScheduleDelta
 from lawvm.core.timeline import materialize_pit
 from lawvm.core.timeline_lineage import lineage_address_chain
 from lawvm.core.timeline_selection import VersionSelectionResult, select_active_version_ex
+from lawvm.core.timeline_selection import content_is_repeal_placeholder
 from lawvm.core.tree_ops import resolve as resolve_tree
 from lawvm.roman import arabic_to_roman
 from lawvm.tools.timeline_integrity import (
@@ -796,7 +797,7 @@ def build_statute_dump_response(
         version = selection.version
         if version is None:
             continue
-        if version.content is None:
+        if version.content is None or content_is_repeal_placeholder(version.content):
             # Tombstoned at as_of: the provision is not part of the text-state read.
             continue
         selected.append(
@@ -1454,7 +1455,11 @@ def _version_payload(
 ) -> dict[str, Any] | None:
     if version is None:
         return None
-    content_state = content_state_override or ("tombstone" if version.content is None else "live")
+    content_state = content_state_override or (
+        "tombstone"
+        if version.content is None or content_is_repeal_placeholder(version.content)
+        else "live"
+    )
     return {
         "effective": version.effective,
         "enacted": version.enacted,
@@ -1474,13 +1479,15 @@ def _version_payload(
 def _content_hash(version: ProvisionVersion | None) -> str:
     if version is None:
         return ""
+    if content_is_repeal_placeholder(version.content):
+        return ""
     if version.content_hash:
         return version.content_hash
     return irnode_content_hash(version.content)
 
 
 def _structured_content_hash(version: ProvisionVersion | None) -> str:
-    if version is None or version.content is None:
+    if version is None or version.content is None or content_is_repeal_placeholder(version.content):
         return ""
     return _sha256_canonical(version.content.to_jsonable_dict())
 
@@ -1539,7 +1546,7 @@ def _hash_payload(
 
 
 def _text_payload(version: ProvisionVersion | None) -> dict[str, Any]:
-    if version is None or version.content is None:
+    if version is None or version.content is None or content_is_repeal_placeholder(version.content):
         return {
             "rendered": "",
             "available": False,
@@ -1551,7 +1558,7 @@ def _text_payload(version: ProvisionVersion | None) -> dict[str, Any]:
 
 
 def _ir_payload(version: ProvisionVersion | None) -> dict[str, Any] | None:
-    if version is None or version.content is None:
+    if version is None or version.content is None or content_is_repeal_placeholder(version.content):
         return None
     return version.content.to_jsonable_dict()
 

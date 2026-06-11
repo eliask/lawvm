@@ -1880,6 +1880,33 @@ def test_specimen_1972_66_injected_repeal_exposes_operation_source_witness() -> 
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_1996_1128_subsection_repeal_placeholder_is_tombstone_with_witness() -> None:
+    payload = resolve_provision_state(
+        statute_id="1996/1128",
+        jurisdiction="fi",
+        provision="section:4/subsection:4",
+        as_of="2021-01-01",
+        query_type="in_force",
+    )
+
+    assert payload["status"] == "selected"
+    assert payload["version"]["content_state"] == "tombstone"
+    assert payload["text"]["available"] is False
+    assert payload["hashes"]["content_hash"] == ""
+    assert payload["hashes"]["structured_content_hash"] == ""
+    assert payload["source"]["statute_id"] == "2019/1396"
+    assert payload["source"]["title"] == (
+        "Laki lasten kotihoidon ja yksityisen hoidon tuesta annetun lain muuttamisesta"
+    )
+    locator = payload["source_locator"]
+    detail = locator["detail"]
+    assert detail["source_witness_status"] == "operation_source_raw_text_available"
+    witness = detail["source_witness"]
+    assert "kumotaan" in witness["quote"]
+    assert "4 §:n 4 momentti" in witness["quote"]
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 def test_specimen_2023_71_chapter_insert_recovery_warning_is_visible() -> None:
     payload = resolve_provision_state(
         statute_id="2023/71",

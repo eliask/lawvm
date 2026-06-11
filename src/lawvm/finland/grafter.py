@@ -1807,10 +1807,12 @@ def _inject_pure_kumotaan_subsection_repeal_ops(
     lo_ops_out: List[_LegalOperation],
     *,
     amendment_id: str,
+    source_title: str,
     kumotaan_subsection_map: dict[str, list[str]],
     amendment_effective_date: "dt.date",
     amendment_issue_date: Optional["dt.date"] = None,
     state: "ReplayState",
+    source_raw_text: str = "",
 ) -> int:
     """Inject REPLACE (repeal-placeholder) lo_ops for pure-kumotaan subsection ranges.
 
@@ -1859,8 +1861,10 @@ def _inject_pure_kumotaan_subsection_repeal_ops(
     enacted_iso = amendment_issue_date.isoformat() if amendment_issue_date else effective_iso
     repeal_src = OperationSource(
         statute_id=amendment_id,
+        title=source_title,
         enacted=enacted_iso,
         effective=effective_iso,
+        raw_text=source_raw_text.strip(),
     )
     injected = 0
     for sec_label, sub_labels in kumotaan_subsection_map.items():
@@ -7747,10 +7751,12 @@ def process_muutoslaki(
                 _n_pure_sub = _inject_pure_kumotaan_subsection_repeal_ops(
                     lo_ops_out,
                     amendment_id=amendment_id,
+                    source_title=source_title,
                     kumotaan_subsection_map=_kumotaan_subsection_map,
                     amendment_effective_date=amendment_effective_date,
                     amendment_issue_date=amendment_issue_date,
                     state=state,
+                    source_raw_text=_johto_for_subsec,
                 )
                 if _n_pure_sub:
                     _replay_print(
