@@ -200,11 +200,11 @@ def _extract_amendment_info(
     """Extract title, preamble (johtolause), section body text from amendment XML.
 
     section_key is the normalized section number (e.g. '3', '12a').
-    Returns a dict with keys: title, johtolause, body_text, section_found.
+    Returns a dict with keys: title, preamble, body_text, section_found.
     """
     result: dict = {
         "title": "",
-        "johtolause": "",
+        "preamble": "",
         "body_text": "",
         "section_found": False,
     }
@@ -217,7 +217,7 @@ def _extract_amendment_info(
     # Preamble / johtolause
     preamble = root.find(".//{*}preamble")
     if preamble is not None:
-        result["johtolause"] = _norm_ws(_el_text(preamble))
+        result["preamble"] = _norm_ws(_el_text(preamble))
 
     # Body: find the section matching section_key
     body = root.find(".//{*}body")
@@ -326,7 +326,7 @@ def _build_evidence_bundle(row: sqlite3.Row) -> dict:
         if root is not None:
             amend_info = _extract_amendment_info(root, section)
         if not amend_info:
-            amend_info = {"title": blame_title, "johtolause": "", "body_text": "", "section_found": False}
+            amend_info = {"title": blame_title, "preamble": "", "body_text": "", "section_found": False}
         amend_info["id"] = blame_source
         amend_info["date"] = _get_amendment_date(blame_source)
         amend_info["title"] = amend_info.get("title") or blame_title
@@ -385,12 +385,12 @@ def _build_evidence_bundle(row: sqlite3.Row) -> dict:
         "5. Note the discrepancy between what the amendment mandates and what Finlex shows.",
     ]
 
-    if blame_source and amend_info.get("johtolause"):
+    if blame_source and amend_info.get("preamble"):
         llm_prompt = (
             f"VÄITE: Finlex-merkintä säädökselle {statute_id} {section} §\n"
             f"poikkeaa lain mukaisesta tilasta.\n\n"
             f"MUUTOSLAKI: {blame_source} ({_get_amendment_date(blame_source)})\n"
-            f"Johtolause: \"{amend_info['johtolause'][:500]}\"\n"
+            f"Johtolause: \"{amend_info['preamble'][:500]}\"\n"
             f"Uusi teksti: \"{amend_info.get('body_text', '')[:500]}\"\n\n"
             f"FINLEX-TEKSTI (haettu {fetched_ts}):\n"
             f"\"{oracle_text[:500]}\"\n\n"
@@ -423,7 +423,7 @@ def _build_evidence_bundle(row: sqlite3.Row) -> dict:
                 "id": amend_info.get("id", blame_source),
                 "date": amend_info.get("date", ""),
                 "title": amend_info.get("title", ""),
-                "johtolause": amend_info.get("johtolause", ""),
+                "preamble": amend_info.get("preamble", ""),
                 "body_text": amend_info.get("body_text", ""),
                 "section_found_in_xml": amend_info.get("section_found", False),
                 "source": amend_info.get("source", ""),

@@ -71,6 +71,36 @@ def irnode_content_hash(node: Optional["IRNode"]) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def structural_subtree_hash(node: Optional["IRNode"]) -> str:
+    """Return the canonical structural hash of an IRNode subtree.
+
+    Frozen recipe (CERTIFIED_TREE_TRANSITION_TRACE_V0.md §2.2): sha256 over a
+    depth-first kind/label/text byte stream with explicit separators. Unlike
+    ``irnode_content_hash`` (text-only), this hash is sensitive to structure,
+    labels, and ordering, so renumbers, insertions, deletions, and
+    reorderings are all visible. attrs are deliberately NOT hashed
+    (attrs-blindness caveat in the trace spec). Returns "" for ``None``
+    (an absent subtree).
+    """
+    if node is None:
+        return ""
+    h = hashlib.sha256()
+
+    def _rec(n: "IRNode") -> None:
+        h.update(str(n.kind).encode("utf-8"))
+        h.update(b"\x00")
+        h.update((n.label or "").encode("utf-8"))
+        h.update(b"\x00")
+        h.update((n.text or "").encode("utf-8"))
+        h.update(b"\x01")
+        for child in n.children:
+            _rec(child)
+        h.update(b"\x02")
+
+    _rec(node)
+    return h.hexdigest()
+
+
 def irnode_from_dict(data: dict[str, Any]) -> "IRNode":
     """Deserialize a bare IRNode payload into an IRNode."""
     from lawvm.core.ir import FrozenDict, IRNode

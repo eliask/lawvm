@@ -51,6 +51,7 @@ from lawvm.tools._evidence_helpers import (
     _ORACLE_INCORRECT_DIAGNOSES,
     _PRIMARY_TIER_ORDER,
     _REPLAY_BUG_DIAGNOSES,
+    _bundle_blame_source_preamble,
     _cross_chapter_same_label_oracle_matches,
     _cross_chapter_same_label_replay_matches,
     _diagnosis_counts,
@@ -64,7 +65,7 @@ from lawvm.tools._evidence_helpers import (
 )
 from lawvm.tools.bisect_support import _section_bisect_support
 
-_EVIDENCE_BUNDLE_CACHE_VERSION = "evidence-bundle-v53"
+_EVIDENCE_BUNDLE_CACHE_VERSION = "evidence-bundle-v54"
 _DEFAULT_ORACLE_CORPUS_BUNDLE_CACHE_DIR = ".tmp/evidence_bundle_cache"
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_EE_FARCHIVE = _REPO_ROOT / "data" / "ee_riigiteataja.farchive"
@@ -2548,8 +2549,8 @@ def _oracle_artifact_profile_for_section(
         else:
             if not str(item.get("blame_source_url") or ""):
                 verification_gaps.append("missing_blame_source_url")
-            if not str(item.get("blame_source_johtolause") or ""):
-                verification_gaps.append("missing_blame_source_johtolause")
+            if not str(_bundle_blame_source_preamble(item) or ""):
+                verification_gaps.append("missing_blame_source_preamble")
 
     return {
         "family": family,
@@ -2636,7 +2637,7 @@ def _load_amendment_source_context(amendment_id: str) -> Dict[str, str]:
         "amendment_id": str(amendment_id or ""),
         "amendment_url": _finlex_original_url(amendment_id),
         "source_title": "",
-        "johtolause": "",
+        "preamble": "",
     }
     if not str(amendment_id or "").strip():
         return result
@@ -2655,7 +2656,7 @@ def _load_amendment_source_context(amendment_id: str) -> Dict[str, str]:
         result["source_title"] = " ".join(str(title_el.text or "").split())
     preamble = root.find(".//{*}preamble")
     if preamble is not None:
-        result["johtolause"] = " ".join(etree.tostring(preamble, method="text", encoding="unicode").split())
+        result["preamble"] = " ".join(etree.tostring(preamble, method="text", encoding="unicode").split())
     return result
 
 
@@ -5020,7 +5021,7 @@ def build_oracle_proof_bundle(
                     "amendment_id": amendment_id,
                     "amendment_url": amendment_ctx.get("amendment_url", ""),
                     "source_title": amendment_ctx.get("source_title", ""),
-                    "johtolause": amendment_ctx.get("johtolause", ""),
+                    "preamble": amendment_ctx.get("preamble", ""),
                 }
             )
         enriched_item = {
@@ -5031,7 +5032,7 @@ def build_oracle_proof_bundle(
             "section_url": _finlex_section_url(statute_id, section),
             "blame_source_url": ctx.get("amendment_url", ""),
             "blame_source_title": ctx.get("source_title", ""),
-            "blame_source_johtolause": ctx.get("johtolause", ""),
+            "blame_source_preamble": ctx.get("preamble", ""),
         }
         enriched_item["artifact_profile"] = _oracle_artifact_profile_for_section(
             enriched_item,
@@ -5059,7 +5060,7 @@ def build_oracle_proof_bundle(
                 **item,
                 "amendment_url": ctx.get("amendment_url", ""),
                 "source_title": ctx.get("source_title", ""),
-                "johtolause": ctx.get("johtolause", ""),
+                "preamble": ctx.get("preamble", ""),
             }
         )
 

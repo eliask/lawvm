@@ -318,7 +318,7 @@ def build_amendment_bundle(
         "source_id": source_id,
         "mode": mode,
         "source_title": source_title,
-        "johtolause": johto,
+        "preamble": johto,
         "used_sec1_fallback": used_sec1_fallback,
         "route": {
             "should_apply": should_apply,
@@ -549,8 +549,8 @@ def _format_text(bundle: Dict[str, Any]) -> str:
     if stage in {"all", "source"}:
         lines.extend(
             [
-                "Johtolause:",
-                *(f"  {line}" for line in (bundle.get("johtolause") or "").splitlines()),
+                "Preamble (johtolause):",
+                *(f"  {line}" for line in (bundle.get("preamble") or "").splitlines()),
                 "",
                 "Source payload:",
                 f"  Raw IR        : {source_payload.get('raw_ir', {})}",
