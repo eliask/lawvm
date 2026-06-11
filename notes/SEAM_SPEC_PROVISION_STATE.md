@@ -90,6 +90,15 @@ either live text or expiry when the stated bound cannot be proven.
   hash (§3). `engine.git_dirty` reports tracked LawVM code/index dirtiness
   relative to `engine.git_commit`; untracked local artifacts do not taint the
   engine identity because they do not change executable LawVM code.
+- `diagnostics` — optional list of non-clean proof/recovery findings attached
+  to an otherwise servable answer. A selected response MAY carry diagnostics
+  such as `COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED` or
+  `APPLY.UNCOVERED_BODY_RECOVERY` when the selected source path depends on a
+  profile-authorized recovery. These rows are not control signals: each row
+  carries `seam_blocking=false` when the response remains servable, while
+  `finding_blocking` preserves the original strict/profile finding severity.
+  Consumers SHOULD surface or log these rows instead of treating the selected
+  answer as proof-clean.
 
 ### 2.4 `source_locator` XPath footing
 
@@ -148,9 +157,9 @@ separators=(",", ":"))` then `sha256` of the UTF-8 bytes.
 
 The following are NEVER hashed: `spec_version`, `engine` (`producer`,
 `build_id`, `git_commit`, `git_dirty`, `repository`), `source`,
-`source_locator`, `text`, `selection`, `address_match`, `title`. A change in
-engine build, git commit, or working-tree dirtiness MUST NOT, by itself, change
-`derived_state_hash`.
+`source_locator`, `diagnostics`, `text`, `selection`, `address_match`, `title`.
+A change in engine build, git commit, working-tree dirtiness, or non-control
+diagnostic/proof metadata MUST NOT, by itself, change `derived_state_hash`.
 
 ### 3.2 content_hash
 

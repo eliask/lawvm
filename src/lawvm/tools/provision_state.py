@@ -16,6 +16,7 @@ from typing import Any, Mapping
 from lawvm.corpus_store import statute_url
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.ir_helpers import irnode_content_hash, irnode_to_text
+from lawvm.core.phase_result import Finding
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.source_locator import SourceLocator
@@ -179,6 +180,7 @@ def build_provision_state_response(
     title: str = "",
     base: IRStatute | None = None,
     timeline_breaks: tuple[TimelineBreak, ...] = (),
+    findings: tuple[Finding, ...] = (),
 ) -> dict[str, Any]:
     """Return a stable provision-state response for one PIT address query."""
 
@@ -278,6 +280,7 @@ def build_provision_state_response(
         timeline_broken_at=tl_marker,
         timeline_integrity=tl_block,
         timeline_blocking=tl_blocking,
+        findings=findings,
     )
 
 
@@ -679,6 +682,7 @@ def _selected_response(
     timeline_broken_at: dict[str, Any] | None = None,
     timeline_integrity: dict[str, Any] | None = None,
     timeline_blocking: bool = False,
+    findings: tuple[Finding, ...] = (),
 ) -> dict[str, Any]:
     address = _require_address(resolution)
     version = selection.version
@@ -754,6 +758,13 @@ def _selected_response(
     if timeline_integrity is not None:
         payload["timeline_broken_at"] = timeline_broken_at
         payload["timeline_integrity"] = timeline_integrity
+    diagnostics = _selected_diagnostics(
+        findings,
+        version=payload_version,
+        address=address,
+    )
+    if diagnostics:
+        payload["diagnostics"] = diagnostics
     payload["source_locator_status"] = (
         "canonical_document_locator" if payload["source_locator"] is not None else "unavailable_no_source"
     )
@@ -765,6 +776,103 @@ def _selected_response(
             "title": base.title,
         }
     return payload
+
+
+_SELECTED_DIAGNOSTIC_CODES = frozenset(
+    {
+        "APPLY.UNCOVERED_BODY_RECOVERY",
+        "APPLY.FALLBACK_WHOLE_SECTION_REPLACE",
+        "ELAB.OMISSION_EXPANSION",
+        "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED",
+    }
+)
+
+
+def _selected_diagnostics(
+    findings: tuple[Finding, ...],
+    *,
+    version: ProvisionVersion | None,
+    address: LegalAddress,
+) -> list[dict[str, Any]]:
+    """Expose non-clean recovery evidence on otherwise servable answers."""
+
+    if version is None or version.source is None or not findings:
+        return []
+    source_statute = version.source.statute_id
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for finding in findings:
+        if finding.kind not in _SELECTED_DIAGNOSTIC_CODES:
+            continue
+        if finding.source_statute != source_statute:
+            continue
+        if not _finding_relevant_to_selected_address(finding, address):
+            continue
+        row = _selected_diagnostic_payload(finding)
+        key = _selected_diagnostic_dedupe_key(row)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(row)
+    return rows
+
+
+def _selected_diagnostic_dedupe_key(row: Mapping[str, Any]) -> str:
+    if row.get("code") == "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED":
+        detail = row.get("detail")
+        if isinstance(detail, Mapping):
+            semantic_key = {
+                "code": row.get("code"),
+                "source_statute": row.get("source_statute"),
+                "uncovered_count": detail.get("uncovered_count"),
+                "total_units": detail.get("total_units"),
+                "uncov_ratio": detail.get("uncov_ratio"),
+                "confidence": detail.get("confidence"),
+                "signals": detail.get("signals"),
+            }
+            return _sha256_canonical(semantic_key)
+    return _sha256_canonical(row)
+
+
+def _finding_relevant_to_selected_address(finding: Finding, address: LegalAddress) -> bool:
+    """Return true when a recovery finding is source-wide or target-matched."""
+
+    if finding.kind == "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED":
+        # Coverage findings are source-wide: they explain that this amendment's
+        # chapter-level recovery proceeded under degraded confidence.
+        return True
+    detail = finding.detail
+    target_norm = detail.get("target_norm")
+    if target_norm is None:
+        return True
+    section = _address_label(address, "section")
+    if section != str(target_norm):
+        return False
+    target_chapter = detail.get("target_chapter")
+    if target_chapter is not None and _address_label(address, "chapter") != str(target_chapter):
+        return False
+    target_part = detail.get("target_part")
+    return not (target_part is not None and _address_label(address, "part") != str(target_part))
+
+
+def _address_label(address: LegalAddress, kind: str) -> str | None:
+    for part_kind, label in reversed(address.path):
+        if part_kind == kind:
+            return label
+    return None
+
+
+def _selected_diagnostic_payload(finding: Finding) -> dict[str, Any]:
+    return {
+        "code": finding.kind,
+        "role": finding.role,
+        "stage": finding.stage,
+        "source_statute": finding.source_statute,
+        "finding_blocking": finding.blocking,
+        "seam_blocking": False,
+        "detail": dict(finding.detail),
+        "hash_role": "excluded_from_derived_state_hash",
+    }
 
 
 def _parse_addr(addr_str: str) -> LegalAddress | None:

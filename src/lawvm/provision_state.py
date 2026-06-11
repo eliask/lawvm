@@ -81,4 +81,5 @@ def resolve_provision_state(
         title=master.title,
         base=base_ir,
         timeline_breaks=timeline_breaks,
+        findings=tuple(getattr(master, "findings", ()) or ()),
     )

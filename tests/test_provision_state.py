@@ -633,6 +633,118 @@ def test_provision_state_without_breaks_is_byte_identical() -> None:
     assert "timeline_integrity" not in base
 
 
+def test_selected_response_exposes_recovery_diagnostics_without_hash_change() -> None:
+    finding = Finding(
+        kind="COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED",
+        role="obligation",
+        stage="coverage_analysis",
+        source_statute="2019/1",
+        blocking=True,
+        detail={
+            "message": "chapter-level INSERT plan proceeded with degraded confidence",
+            "uncovered_count": 11,
+            "total_units": 21,
+            "uncov_ratio": 0.5238,
+            "confidence": 0.75,
+            "signals": ["new_chapter_insert"],
+        },
+    )
+
+    clean = build_provision_state_response(
+        timelines=_timeline(),
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="chapter:1/section:1",
+        as_of="2021-01-01",
+    )
+    payload = build_provision_state_response(
+        timelines=_timeline(),
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="chapter:1/section:1",
+        as_of="2021-01-01",
+        findings=(finding, finding),
+    )
+
+    assert payload["status"] == "selected"
+    assert payload["text"]["available"] is True
+    assert payload["diagnostics"] == [
+        {
+            "code": "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED",
+            "role": "obligation",
+            "stage": "coverage_analysis",
+            "source_statute": "2019/1",
+            "finding_blocking": True,
+            "seam_blocking": False,
+            "detail": {
+                "message": "chapter-level INSERT plan proceeded with degraded confidence",
+                "uncovered_count": 11,
+                "total_units": 21,
+                "uncov_ratio": 0.5238,
+                "confidence": 0.75,
+                "signals": ("new_chapter_insert",),
+            },
+            "hash_role": "excluded_from_derived_state_hash",
+        }
+    ]
+    assert payload["hashes"]["derived_state_hash"] == clean["hashes"]["derived_state_hash"]
+
+
+def test_selected_response_recovery_diagnostics_are_source_and_target_scoped() -> None:
+    matching = Finding(
+        kind="APPLY.UNCOVERED_BODY_RECOVERY",
+        role="obligation",
+        stage="apply",
+        source_statute="2019/1",
+        blocking=True,
+        detail={
+            "message": "Uncovered-body insertion supplement was used.",
+            "op_id": "uncovered_insert_1",
+            "target_unit_kind": "section",
+            "target_norm": "1",
+            "target_chapter": "1",
+            "barrier_code": "APPLY.UNCOVERED_BODY_RECOVERY",
+        },
+    )
+    wrong_target = Finding(
+        kind="APPLY.UNCOVERED_BODY_RECOVERY",
+        role="obligation",
+        stage="apply",
+        source_statute="2019/1",
+        blocking=True,
+        detail={
+            "message": "Uncovered-body insertion supplement was used.",
+            "op_id": "uncovered_insert_2",
+            "target_unit_kind": "section",
+            "target_norm": "2",
+            "target_chapter": "1",
+            "barrier_code": "APPLY.UNCOVERED_BODY_RECOVERY",
+        },
+    )
+    wrong_source = Finding(
+        kind="COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED",
+        role="obligation",
+        stage="coverage_analysis",
+        source_statute="2019/2",
+        blocking=True,
+        detail={"message": "wrong source"},
+    )
+
+    payload = build_provision_state_response(
+        timelines=_timeline(),
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="chapter:1/section:1",
+        as_of="2021-01-01",
+        findings=(matching, wrong_target, wrong_source),
+    )
+
+    assert [item["code"] for item in payload["diagnostics"]] == [
+        "APPLY.UNCOVERED_BODY_RECOVERY"
+    ]
+    assert payload["diagnostics"][0]["detail"]["target_norm"] == "1"
+
+
 def test_statute_scoped_break_blocks_post_break_query() -> None:
     payload = build_provision_state_response(
         timelines=_timeline(),
@@ -814,6 +926,32 @@ def test_specimen_2023_703_section_9_exposes_operation_source_witness() -> None:
     assert "9 §:ään" in witness["quote"]
     assert locator["quote_hash"] == witness["quote_hash"]
     assert locator["detail"]["hash_role"] == "excluded_from_derived_state_hash"
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_2023_71_chapter_insert_recovery_warning_is_visible() -> None:
+    payload = resolve_provision_state(
+        statute_id="2023/71",
+        jurisdiction="fi",
+        provision="section:25c",
+        as_of="2026-07-01",
+    )
+
+    assert payload["status"] == "selected"
+    assert payload["source"]["statute_id"] == "2025/1373"
+    diagnostics = payload.get("diagnostics")
+    assert isinstance(diagnostics, list)
+    codes = [
+        item["code"]
+        for item in diagnostics
+        if isinstance(item, dict)
+    ]
+    assert set(codes) >= {"COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED"}
+    assert codes.count("COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED") == 1
+    for item in diagnostics:
+        assert item["source_statute"] == "2025/1373"
+        assert item["seam_blocking"] is False
+        assert item["hash_role"] == "excluded_from_derived_state_hash"
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
