@@ -36,9 +36,10 @@ NOT:
 
 ## 2. Response envelope
 
-Every response is a JSON object carrying `schema`, `jurisdiction`,
-`statute_id`, `status`, and the echoed `query`. The `status` field is the
-primary control signal.
+Every response is a JSON object carrying `schema`, `spec_version`,
+`jurisdiction`, `statute_id`, `status`, and the echoed `query`. The
+`spec_version` field is the seam contract version (`"0.2"` for this document).
+The `status` field is the primary control signal.
 
 ### 2.1 Top-level statuses
 
@@ -143,10 +144,11 @@ separators=(",", ":"))` then `sha256` of the UTF-8 bytes.
 
 ### 3.1 Excluded from the hash
 
-The following are NEVER hashed: `engine` (`producer`, `build_id`,
-`git_commit`, `git_dirty`, `repository`), `source`, `source_locator`, `text`,
-`selection`, `address_match`, `title`. A change in engine build, git commit, or
-working-tree dirtiness MUST NOT, by itself, change `derived_state_hash`.
+The following are NEVER hashed: `spec_version`, `engine` (`producer`,
+`build_id`, `git_commit`, `git_dirty`, `repository`), `source`,
+`source_locator`, `text`, `selection`, `address_match`, `title`. A change in
+engine build, git commit, or working-tree dirtiness MUST NOT, by itself, change
+`derived_state_hash`.
 
 ### 3.2 content_hash
 
@@ -318,6 +320,13 @@ ship under the same `spec_version`. Breaking changes are announced via a
 `spec_version` bump AND will manifest as divergence in the 21-pin regression
 suite (`tests/test_mevm_grounding_pins.py`), which consumers SHOULD also run in
 their own CI. Consumers MUST pin the `spec_version` they validated against.
+
+### 7.0.1 Changes within 0.2: response exposes `spec_version`
+
+Non-breaking under §7: `spec_version` is an added top-level contract marker and
+is explicitly excluded from `derived_state_hash`. It lets downstream lockfiles
+pin the prose contract they validated against without changing existing state
+hashes.
 
 ### 7.1 Changes 0.1 → 0.2
 

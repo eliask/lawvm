@@ -31,6 +31,7 @@ from lawvm.tools.timeline_integrity import (
 )
 
 SCHEMA = "lawvm.provision_state.v1"
+SPEC_VERSION = "0.2"
 DUMP_SCHEMA = "lawvm.dump.v1"
 
 _FI_PROSE_SECTION_RE = re.compile(r"^\s*(?P<number>\d+)\s*(?P<letter>[A-Za-z])?\s*§\s*$")
@@ -161,6 +162,7 @@ def build_provision_state_response(
             tl_block = {**tl_block, "resolution_status": resolution.status}
         payload: dict[str, Any] = {
             "schema": SCHEMA,
+            "spec_version": SPEC_VERSION,
             "jurisdiction": jurisdiction,
             "statute_id": statute_id,
             "title": title,
@@ -316,6 +318,7 @@ def invalid_provision_selector_payload(
     )
     return {
         "schema": SCHEMA,
+        "spec_version": SPEC_VERSION,
         "jurisdiction": jurisdiction,
         "statute_id": statute_id,
         "title": "",
@@ -658,6 +661,7 @@ def _selected_response(
     )
     payload: dict[str, Any] = {
         "schema": SCHEMA,
+        "spec_version": SPEC_VERSION,
         "jurisdiction": jurisdiction,
         "statute_id": statute_id,
         "title": title,
@@ -1248,6 +1252,7 @@ def unsupported_jurisdiction_payload(
 ) -> dict[str, Any]:
     return {
         "schema": SCHEMA,
+        "spec_version": SPEC_VERSION,
         "jurisdiction": jurisdiction,
         "statute_id": statute_id,
         "status": "unsupported_jurisdiction",
