@@ -15,6 +15,12 @@ _FRONTIER_WORK_ITEM_REPORT_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
     "frontier_work_item_as_mutation_boundary_proof",
 )
 
+_FRONTIER_CLAIM_CLOSURE_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
+    "frontier_claim_closure_as_replay_authorization",
+    "evidence_policy_satisfaction_as_mutation_boundary_proof",
+    "claim_kind_match_as_target_resolution_proof",
+)
+
 _FRONTIER_CLAIM_TEMPLATE_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
     "frontier_claim_template_as_replay_authorization",
     "frontier_claim_template_as_canonical_operation",
@@ -387,6 +393,154 @@ def frontier_work_item_evidence_report(
     )
 
 
+def frontier_work_item_claim_closure_report(
+    work_item: FrontierWorkItem | Mapping[str, Any],
+    *,
+    assertion: Any,
+    authorization_result: Any,
+    jurisdiction: str = "",
+    report_kind: str = "frontier_work_item_claim_closure",
+) -> EvidenceSurfaceReport:
+    """Report whether one authorized claim matches one frontier item.
+
+    This is a passive closure/read-model bridge. It proves only that an
+    assertion and evidence-policy result line up with a frontier work item; it
+    never grants replay authority or lowers the claim into an operation.
+    """
+
+    frontier = _frontier_mapping(work_item)
+    claim = _claim_assertion_mapping(assertion)
+    authorization = _authorization_result_mapping(authorization_result)
+    row = _frontier_claim_closure_row(
+        frontier=frontier,
+        claim=claim,
+        authorization=authorization,
+    )
+    closure_status = str(row.get("closure_status") or "")
+    summary = {
+        "frontier_claim_closure_count": 1,
+        "closure_status_counts": _counts((closure_status,)),
+        "policy_authorized_count": 1 if row["policy_authorized"] else 0,
+        "claim_kind_match_count": 1 if row["claim_kind_matches"] else 0,
+        "frontier_ref_match_count": 1 if row["frontier_ref_matches"] else 0,
+        "authorization_subject_match_count": 1 if row["authorization_subject_matches"] else 0,
+        "phase_gate_required_count": 1 if row["phase_gate_required"] else 0,
+        "replay_authorized_count": 0,
+        "executable_count": 0,
+        "claim_flags": {
+            "replay_claims": False,
+            "canonical_effect_claims": False,
+            "candidate_effect_claims": False,
+            "dry_run_claims": False,
+            "agreement_claims": False,
+        },
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction=jurisdiction or str(frontier.get("jurisdiction") or claim.get("jurisdiction") or ""),
+        report_kind=report_kind,
+        schema="lawvm.frontier_work_item_claim_closure_report.v1",
+        truth_claim="manual-claim authorization matched to frontier work item",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={"report_kind": report_kind},
+        filtered_summary=summary,
+        rows=(row,),
+        rows_truncated=False,
+        detail={
+            "safe_default": "treat_frontier_claim_closure_as_phase_gate_evidence_not_replay_authority",
+            "forbidden_shortcuts": _FRONTIER_CLAIM_CLOSURE_FORBIDDEN_SHORTCUTS,
+            "included_surfaces": ("frontier_work_item_claim_closure",),
+        },
+    )
+
+
+def _frontier_claim_closure_row(
+    *,
+    frontier: Mapping[str, Any],
+    claim: Mapping[str, Any],
+    authorization: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    frontier_ref = str(frontier.get("work_item_id") or "")
+    required_claim_kind = str(frontier.get("required_claim_kind") or "")
+    claim_kind = str(claim.get("kind") or "")
+    assertion_id = str(claim.get("assertion_id") or "")
+    claim_frontier_ref = _claim_frontier_ref(claim)
+    subject_id = str(authorization.get("subject_id") or "")
+    policy_authorized = bool(authorization.get("authorized"))
+    claim_kind_matches = bool(claim_kind and claim_kind == required_claim_kind)
+    frontier_ref_matches = bool(claim_frontier_ref and claim_frontier_ref == frontier_ref)
+    authorization_subject_matches = bool(subject_id and subject_id == assertion_id)
+    closure_status = _frontier_claim_closure_status(
+        policy_authorized=policy_authorized,
+        claim_kind_matches=claim_kind_matches,
+        frontier_ref_matches=frontier_ref_matches,
+        authorization_subject_matches=authorization_subject_matches,
+    )
+    phase_gate_required = closure_status == "evidence_policy_satisfied_phase_gate_required"
+    return {
+        "surface": "frontier_work_item_claim_closure",
+        "row_id": f"{frontier_ref}:{assertion_id}:claim-closure",
+        "frontier_ref": frontier_ref,
+        "assertion_id": assertion_id,
+        "authorization_subject_id": subject_id,
+        "required_claim_kind": required_claim_kind,
+        "claim_kind": claim_kind,
+        "claim_frontier_ref": claim_frontier_ref,
+        "policy_id": str(authorization.get("policy_id") or ""),
+        "policy_authorized": policy_authorized,
+        "claim_kind_matches": claim_kind_matches,
+        "frontier_ref_matches": frontier_ref_matches,
+        "authorization_subject_matches": authorization_subject_matches,
+        "closure_status": closure_status,
+        "phase_gate_required": phase_gate_required,
+        "executable": False,
+        "replay_authorized": False,
+        "required_proofs": list(_sequence(frontier.get("required_proofs"))) + [
+            "phase_local_replay_authorization",
+        ],
+        "safe_default": "do_not_replay_manual_claim_from_closure_report",
+        "forbidden_shortcuts": list(
+            dict.fromkeys(
+                (
+                    *tuple(str(item) for item in _sequence(frontier.get("forbidden_shortcuts"))),
+                    *_FRONTIER_CLAIM_CLOSURE_FORBIDDEN_SHORTCUTS,
+                )
+            )
+        ),
+        "detail": {
+            "frontier_family": str(frontier.get("frontier_family") or ""),
+            "frontier_status": str(frontier.get("frontier_status") or ""),
+            "owner_phase": str(frontier.get("owner_phase") or ""),
+            "evidence_bundle_hash": str(authorization.get("evidence_bundle_hash") or ""),
+            "satisfied_clauses": list(_sequence(authorization.get("satisfied_clauses"))),
+            "unsatisfied_clauses": list(_sequence(authorization.get("unsatisfied_clauses"))),
+            "forbidden_present": list(_sequence(authorization.get("forbidden_present"))),
+        },
+    }
+
+
+def _frontier_claim_closure_status(
+    *,
+    policy_authorized: bool,
+    claim_kind_matches: bool,
+    frontier_ref_matches: bool,
+    authorization_subject_matches: bool,
+) -> str:
+    if not claim_kind_matches:
+        return "claim_kind_mismatch"
+    if not frontier_ref_matches:
+        return "frontier_ref_mismatch"
+    if not authorization_subject_matches:
+        return "authorization_subject_mismatch"
+    if not policy_authorized:
+        return "evidence_policy_unsatisfied"
+    return "evidence_policy_satisfied_phase_gate_required"
+
+
 def _frontier_sequence(
     value: (
         FrontierWorkItem
@@ -443,6 +597,52 @@ def _template_claim_kind(row: Mapping[str, Any]) -> str:
     template = row.get("suggested_claim_template") or {}
     if isinstance(template, Mapping):
         return str(template.get("claim_kind") or "")
+    return ""
+
+
+def _claim_assertion_mapping(assertion: Any) -> Mapping[str, Any]:
+    from lawvm.core.provenance_graph import ProvenanceAssertion
+
+    if isinstance(assertion, ProvenanceAssertion):
+        return {
+            "assertion_id": assertion.assertion_id,
+            "jurisdiction": assertion.jurisdiction,
+            "kind": assertion.kind,
+            "scope": assertion.scope,
+            "target": assertion.target,
+            "value": assertion.value,
+        }
+    if isinstance(assertion, Mapping):
+        return assertion
+    raise TypeError("assertion must be a ProvenanceAssertion or mapping")
+
+
+def _authorization_result_mapping(result: Any) -> Mapping[str, Any]:
+    from lawvm.core.evidence_kernel import AuthorizationResult
+
+    if isinstance(result, AuthorizationResult):
+        return {
+            "subject_id": result.subject.artifact_id,
+            "policy_id": result.policy_id,
+            "profile_name": result.profile_name,
+            "authorized": result.authorized,
+            "satisfied_clauses": result.satisfied_clauses,
+            "unsatisfied_clauses": result.unsatisfied_clauses,
+            "forbidden_present": result.forbidden_present,
+            "evidence_bundle_hash": result.evidence_bundle_hash,
+        }
+    if isinstance(result, Mapping):
+        return result
+    raise TypeError("authorization_result must be an AuthorizationResult or mapping")
+
+
+def _claim_frontier_ref(claim: Mapping[str, Any]) -> str:
+    for field_name in ("target", "scope", "value"):
+        value = claim.get(field_name)
+        if isinstance(value, Mapping):
+            frontier_ref = str(value.get("frontier_ref") or "")
+            if frontier_ref:
+                return frontier_ref
     return ""
 
 
