@@ -155,13 +155,13 @@ class ClauseParseResult:
     enriched_surface_clause: _SurfaceClauseType | None = None
     resolved: _ResolvedSurfaceClauseType | None = None
     parsed_ops: list[ParsedOp] = field(default_factory=list)
-    residuals: list = field(default_factory=list)
+    residuals: list[dict[str, Any]] = field(default_factory=list)
     diagnostics: list[str] = field(default_factory=list)
-    meta_clauses: tuple = ()
-    supplementary_clauses: tuple = ()
-    target_version_bindings: tuple = ()
+    meta_clauses: tuple[Any, ...] = ()
+    supplementary_clauses: tuple[Any, ...] = ()
+    target_version_bindings: tuple[Any, ...] = ()
     parse_error: str | None = None
-    lowering_diagnostics: tuple = ()
+    lowering_diagnostics: tuple[Any, ...] = ()
     phase_surface: FrontendPhaseSurface | None = None
     surface_result: SurfaceParseResult | None = None
     compatibility_artifacts: tuple[DerivedCompatibilityArtifact, ...] = ()
@@ -289,7 +289,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
 
     # Collect all supplementary nodes — these are the meta + text-amend nodes
     # that are NOT part of any structural verb group.
-    supplementary_nodes: tuple = tuple(list(meta_nodes) + list(text_amend_nodes))
+    supplementary_nodes: tuple[Any, ...] = tuple(list(meta_nodes) + list(text_amend_nodes))
 
     enriched_surface_clause = enriched if was_enriched else None
 
@@ -338,7 +338,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
         ),
     )
 
-    residuals: list = []
+    residuals: list[dict[str, Any]] = []
 
     # -- Collect token residuals (tokens beyond consumed_count) --
     # consumed_count is set on the ORIGINAL surface clause (not the enriched one,
@@ -444,11 +444,11 @@ def _build_finland_clause_phase_surface(
     clause_ast: ClauseAST,
     parsed_ops: list[ParsedOp],
     compatibility_artifacts: tuple[DerivedCompatibilityArtifact, ...],
-    residuals: list,
+    residuals: list[dict[str, Any]],
     diagnostics: list[str],
     parse_error: str | None,
     internal_error_phase: str | None,
-    lowering_diagnostics: tuple,
+    lowering_diagnostics: tuple[Any, ...],
     meta_clause_count: int,
     text_amend_clause_count: int,
     supplementary_clause_count: int,
@@ -687,7 +687,7 @@ def _build_finland_surface_parse_result(
     resolved: _ResolvedSurfaceClauseType | None,
     meta_clause_count: int,
     text_amend_clause_count: int,
-    supplementary_nodes: tuple,
+    supplementary_nodes: tuple[Any, ...],
     diagnostic_ids: tuple[str, ...],
 ) -> SurfaceParseResult:
     enrichment_rule_ids: list[str] = []
@@ -745,10 +745,10 @@ def _core_token_tape_from_finland_tokens(text: str, tokens: Sequence[object]) ->
 def _build_finland_frontend_diagnostics(
     *,
     diagnostics: list[str],
-    residuals: list,
+    residuals: list[dict[str, Any]],
     parse_error: str | None,
     internal_error_phase: str | None,
-    lowering_diagnostics: tuple,
+    lowering_diagnostics: tuple[Any, ...],
 ) -> tuple[FrontendDiagnostic, ...]:
     out: list[FrontendDiagnostic] = []
     if parse_error and internal_error_phase:
@@ -1004,7 +1004,7 @@ _TEXT_AMEND_RE = re.compile(
 )
 
 
-def _extract_text_amend_clauses(text: str) -> list:
+def _extract_text_amend_clauses(text: str) -> list[Any]:
     """Extract text amendment clauses from johtolause text."""
     from lawvm.finland.johtolause.surface_model import (
         SurfaceTargetRef,
@@ -1016,7 +1016,7 @@ def _extract_text_amend_clauses(text: str) -> list:
 
     if not text:
         return []
-    results: list = []
+    results: list[Any] = []
     for m in _TEXT_AMEND_RE.finditer(text):
         sec = re.sub(r"\s+", "", (m.group("sec") or "").strip())  # "5 a" → "5a"
         mom_str = m.group("mom")
@@ -1025,7 +1025,7 @@ def _extract_text_amend_clauses(text: str) -> list:
         new_text = m.group("new").strip()
         target = None
         if sec:
-            sub_refs: tuple = ()
+            sub_refs: tuple[Any, ...] = ()
             if mom_str and mom_str.isdigit():
                 item = kohta_str if kohta_str else ""
                 sub_refs = (SurfaceSubRef(momentti=int(mom_str), item=item),)
