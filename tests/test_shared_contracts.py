@@ -158,6 +158,13 @@ def test_ownership_closure_certificate_closes_only_zero_unowned_slice() -> None:
             "candidates_without_authorization": 0,
         },
         owned_counts={"replay_authorized_operations": 3},
+        detail={
+            "closure_dimensions": (
+                "source_artifact_coverage",
+                "execution_authorization",
+                "agreement_residual",
+            )
+        },
     )
 
     data = certificate.to_dict()
@@ -206,6 +213,19 @@ def test_ownership_closure_certificate_rejects_false_closed_claims() -> None:
             phase_report_ids={"potential_operation_coverage": "report-potentials"},
             closed=True,
             failed_gates=("potential_operation_coverage",),
+        )
+
+    with pytest.raises(ValueError, match="detail.closure_dimensions"):
+        OwnershipClosureCertificate(
+            certificate_id="closure-fi-ambiguous",
+            corpus_slice_id="fi-demo-slice",
+            source_bundle_hash="sha256:source",
+            profile_id="strict",
+            interpretation_policy_id="fi-policy",
+            graph_snapshot_hash="sha256:graph",
+            phase_report_ids={"potential_operation_coverage": "report-potentials"},
+            closed=True,
+            unowned_counts={"potential_ops_without_status": 0},
         )
 
 

@@ -64,6 +64,10 @@ class OwnershipClosureCertificate:
             raise ValueError("OwnershipClosureCertificate.closed requires no failed_gates")
         if self.closed and any(count != 0 for count in unowned_counts.values()):
             raise ValueError("OwnershipClosureCertificate.closed requires all unowned_counts to be zero")
+        if self.closed and not phase_report_ids:
+            raise ValueError("OwnershipClosureCertificate.closed requires phase_report_ids")
+        if self.closed and not _string_sequence(self.detail.get("closure_dimensions")):
+            raise ValueError("OwnershipClosureCertificate.closed requires detail.closure_dimensions")
         object.__setattr__(self, "failed_gates", failed_gates)
         object.__setattr__(self, "phase_report_ids", phase_report_ids)
         object.__setattr__(self, "unowned_counts", unowned_counts)
@@ -167,6 +171,14 @@ def _string_mapping(field_name: str, value: Any) -> Mapping[str, str]:
         raise ValueError(f"OwnershipClosureCertificate.{field_name} must be a mapping")
     normalized = {str(key): str(item) for key, item in value.items() if str(key) and str(item)}
     return freeze_mapping(normalized)
+
+
+def _string_sequence(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return (value,) if value else ()
+    if isinstance(value, list | tuple):
+        return tuple(str(item) for item in value if str(item))
+    return ()
 
 
 def _int_mapping(field_name: str, value: Any) -> Mapping[str, int]:

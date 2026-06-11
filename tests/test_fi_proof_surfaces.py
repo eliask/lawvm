@@ -1251,6 +1251,19 @@ def test_finland_strict_report_ownership_closure_can_close_declared_slice() -> N
     assert certificate["failed_gates"] == []
     assert set(certificate["unowned_counts"].values()) == {0}
     assert certificate["detail"]["missing_required_certificates"] == []
+    assert certificate["detail"]["closure_dimensions"] == [
+        "visible_operation_rows",
+        "source_lineage_units",
+        "source_unit_enumeration",
+        "operation_cue_coverage",
+        "failed_operations",
+        "strict_fail_reasons",
+        "mutation_boundary_proofs",
+    ]
+    assert "source_unit_enumeration_closure" not in certificate["detail"]["does_not_claim"]
+    assert "operation_candidate_coverage_closure" not in certificate["detail"]["does_not_claim"]
+    assert "full_finland_corpus_closure" in certificate["detail"]["does_not_claim"]
+    assert "replay_authorization" in certificate["detail"]["does_not_claim"]
 
 
 def test_temporal_resolution_evidence_rows_project_finland_time_findings() -> None:

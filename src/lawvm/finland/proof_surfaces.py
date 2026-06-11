@@ -1521,6 +1521,35 @@ def finland_strict_report_ownership_closure_certificate(
             incomplete_certificate="complete_operation_cue_exhaustiveness_certificate",
         ),
     )
+    closure_dimensions = (
+        "visible_operation_rows",
+        "source_lineage_units",
+        "source_unit_enumeration",
+        "operation_cue_coverage",
+        "failed_operations",
+        "strict_fail_reasons",
+        "mutation_boundary_proofs",
+    )
+    does_not_claim = (
+        "full_finland_corpus_closure",
+        *(
+            ()
+            if _candidate_set_complete(
+                candidate_set_certificates,
+                "fi_strict_report_source_unit_enumeration",
+            )
+            else ("source_unit_enumeration_closure",)
+        ),
+        *(
+            ()
+            if _candidate_set_complete(
+                candidate_set_certificates,
+                "fi_strict_report_operation_cue_coverage",
+            )
+            else ("operation_candidate_coverage_closure",)
+        ),
+        "replay_authorization",
+    )
     owned_counts = {
         "canonical_ops": _ops_count(payload, "canonical"),
         "failed_ops_visible": len(failed_ops),
@@ -1592,12 +1621,8 @@ def finland_strict_report_ownership_closure_certificate(
         owned_counts=owned_counts,
         detail={
             "scope": "strict_report_visible_surfaces_only",
-            "does_not_claim": (
-                "full_finland_corpus_closure",
-                "source_unit_enumeration_closure",
-                "operation_candidate_coverage_closure",
-                "replay_authorization",
-            ),
+            "closure_dimensions": closure_dimensions,
+            "does_not_claim": does_not_claim,
             "safe_default": "treat_open_certificate_as_accounting_gap_not_replay_failure",
             "missing_required_certificates": missing_required_certificates,
         },
