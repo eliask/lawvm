@@ -37,7 +37,12 @@ def _load_all_objects(tmp_path: Path) -> list[dict]:
     return [json.loads(f.read_text()) for f in sorted(obj_dir.glob("*.json"))]
 
 
-def _file_assertion(store: GraphStore) -> str:
+def _file_assertion(
+    store: GraphStore,
+    *,
+    statute_id: str = "711/2022",
+    resolved_statute_id: str = "1234/2020",
+) -> str:
     """Submit a test assertion; return assertion_id."""
     from lawvm.core.manual_claims.native import submit_assertion
     from lawvm.core.provenance_graph import Interval, ProvenanceAssertion, SourceRef
@@ -63,9 +68,12 @@ def _file_assertion(store: GraphStore) -> str:
         jurisdiction="fi",
         kind="fi.v1.INLINE_STATUTE_RESOLUTION",
         layer="extraction",
-        scope={"statute_id": "711/2022", "provision_ref": "section:3"},
-        target={"statute_id": "711/2022", "section_locator": "section:3", "mention_span": "0-26"},
-        value={"resolved_statute_id": "1234/2020", "citation_form": "lain 1234/2020"},
+        scope={"statute_id": statute_id, "provision_ref": "section:3"},
+        target={"statute_id": statute_id, "section_locator": "section:3", "mention_span": "0-26"},
+        value={
+            "resolved_statute_id": resolved_statute_id,
+            "citation_form": f"lain {resolved_statute_id}",
+        },
         source_refs=(src,),
         dependency_refs=(),
         valid_at=Interval(start=date(2022, 1, 1)),
@@ -78,9 +86,12 @@ def _file_assertion(store: GraphStore) -> str:
         jurisdiction="fi",
         kind="fi.v1.INLINE_STATUTE_RESOLUTION",
         layer="extraction",
-        scope={"statute_id": "711/2022", "provision_ref": "section:3"},
-        target={"statute_id": "711/2022", "section_locator": "section:3", "mention_span": "0-26"},
-        value={"resolved_statute_id": "1234/2020", "citation_form": "lain 1234/2020"},
+        scope={"statute_id": statute_id, "provision_ref": "section:3"},
+        target={"statute_id": statute_id, "section_locator": "section:3", "mention_span": "0-26"},
+        value={
+            "resolved_statute_id": resolved_statute_id,
+            "citation_form": f"lain {resolved_statute_id}",
+        },
         source_refs=(src,),
         dependency_refs=(),
         valid_at=Interval(start=date(2022, 1, 1)),
@@ -89,6 +100,24 @@ def _file_assertion(store: GraphStore) -> str:
 
 
 class TestValidateClaimsCLI:
+
+    def test_validate_claims_parser_exposes_graph_store_root_and_status(self):
+        """Argparse exposes the graph-native store/status controls used by helpers."""
+        from lawvm.tools.cli import _build_parser
+
+        args = _build_parser().parse_args([
+            "validate-claims",
+            "--all",
+            "--status",
+            "accepted",
+            "--graph-store-root",
+            ".tmp/test-graph",
+        ])
+
+        assert args.command == "validate-claims"
+        assert args.all is True
+        assert args.status == "accepted"
+        assert args.graph_store_root == ".tmp/test-graph"
 
     def test_validate_claims_command_emits_validator_attestations(self, tmp_path: Path):
         """--assertion-id X re-runs span + entailment validators; emits new attestations."""
@@ -159,6 +188,52 @@ class TestValidateClaimsCLI:
 
         assert rc == 0
         assert seen_source_bytes == [provider_bytes]
+
+    def test_validate_all_status_filter_uses_graph_attestations(self, tmp_path: Path, monkeypatch):
+        """--all --status filters by attestation-derived lifecycle status."""
+        from lawvm.core.manual_claims.native import attest
+        from lawvm.tools.cmd_validate_claims import cmd_validate_all
+
+        store = _make_store(tmp_path)
+        accepted_id = _file_assertion(
+            store,
+            statute_id="711/2022",
+            resolved_statute_id="1234/2020",
+        )
+        _file_assertion(
+            store,
+            statute_id="712/2022",
+            resolved_statute_id="5678/2020",
+        )
+        producer = Producer(
+            producer_id="test.reviewer",
+            producer_kind="script",
+            public_key=None,
+            metadata={},
+        )
+        attest(store, accepted_id, "reviewed", {"accepted": True}, producer)
+
+        validated_ids = []
+
+        def _record_validated_assertion(assertion, store, source_bytes=b"", *, verbose=True):
+            validated_ids.append(assertion.assertion_id)
+            return True
+
+        monkeypatch.setattr(
+            "lawvm.tools.cmd_validate_claims._validate_one_assertion",
+            _record_validated_assertion,
+        )
+
+        rc = cmd_validate_all(_make_args(
+            graph_store_root=str(tmp_path / "provenance_graph"),
+            kind=None,
+            status="accepted",
+            missing_attestation_kind=None,
+            all=True,
+        ))
+
+        assert rc == 0
+        assert validated_ids == [accepted_id]
 
     def test_validate_does_not_mutate_assertion(self, tmp_path: Path):
         """Validate emits new attestations; assertion content hash is unchanged."""

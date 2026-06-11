@@ -42,8 +42,8 @@ def _resolve_graph_store_root(args: object) -> str:
     """Resolve graph store root from args, env, or default.
 
     Priority: args.graph_store_root > LAWVM_GRAPH_STORE_ROOT env > _DEFAULT_GRAPH_ROOT.
-    The 'validate-claims' CLI parser does not yet expose --graph-store-root (Task S3);
-    this function bridges that gap via the env var for smoke/test isolation.
+    The environment fallback keeps smoke tests and embedded callers isolated
+    even when they bypass the argparse surface.
     """
     import os
     return (
@@ -118,6 +118,37 @@ def _attestation_kinds_for(store: GraphStore, assertion_id: str) -> set[str]:
         ):
             kinds.add(d["attestation_kind"])
     return kinds
+
+
+def _claim_lifecycle_status_for(store: GraphStore, assertion_id: str) -> str:
+    """Derive v3 graph-native claim lifecycle status from attestations."""
+
+    objects_dir = store._objects_dir()
+    if not objects_dir.exists():
+        return "proposed"
+    attestations = []
+    for f in sorted(objects_dir.glob("*.json")):
+        d = json.loads(f.read_text(encoding="utf-8"))
+        if (
+            "attestation_id" in d
+            and "attestation_kind" in d
+            and d.get("subject", {}).get("artifact_id") == assertion_id
+        ):
+            attestations.append(_deserialize_attestation(d))
+    status = "proposed"
+    for attestation in sorted(attestations, key=lambda item: item.produced_at):
+        if attestation.attestation_kind == "claim_submitted":
+            status = "proposed"
+        elif attestation.attestation_kind == "reviewed":
+            if attestation.payload.get("accepted") is True:
+                status = "accepted"
+            elif attestation.payload.get("accepted") is False:
+                status = "rejected"
+        elif attestation.attestation_kind == "retracted":
+            status = "retracted"
+        elif attestation.attestation_kind == "superseded":
+            status = "superseded"
+    return status
 
 
 def _build_compat_claim(assertion: ProvenanceAssertion):
@@ -306,6 +337,7 @@ def cmd_validate_one(args: object) -> int:
 def cmd_validate_all(args: object) -> int:
     graph_store_root = _resolve_graph_store_root(args)
     kind_filter: Optional[str] = getattr(args, "kind", None)
+    status_filter: Optional[str] = getattr(args, "status", None)
     missing_kind: Optional[str] = getattr(args, "missing_attestation_kind", None)
 
     store = _get_store(graph_store_root)
@@ -320,6 +352,8 @@ def cmd_validate_all(args: object) -> int:
 
     for assertion in assertions:
         if kind_filter and assertion.kind != kind_filter:
+            continue
+        if status_filter and _claim_lifecycle_status_for(store, assertion.assertion_id) != status_filter:
             continue
         if missing_kind:
             existing_kinds = _attestation_kinds_for(store, assertion.assertion_id)

@@ -102,8 +102,8 @@ def _resolve_graph_store_root(args: object) -> str:
     """Resolve graph store root from args (claim_id/graph_store_root), env, or default.
 
     Priority: args.graph_store_root > LAWVM_GRAPH_STORE_ROOT env > _DEFAULT_GRAPH_ROOT.
-    The 'claim' CLI parser does not yet expose --graph-store-root (Task S3); this
-    function bridges that gap via the env var for smoke/test isolation.
+    The environment fallback keeps smoke tests and embedded callers isolated
+    even when they bypass the argparse surface.
     """
     import os
     return (
