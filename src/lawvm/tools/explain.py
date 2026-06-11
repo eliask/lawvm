@@ -251,8 +251,8 @@ def _score_pair(r_el: etree._Element, o_el: etree._Element) -> float:
     return Levenshtein.ratio(r, o)
 
 
-def _build_blame_map(compiled_ops: list) -> Dict[str, dict]:
-    blame: Dict[str, dict] = {}
+def _build_blame_map(compiled_ops: list[dict[str, Any]]) -> Dict[str, dict[str, Any]]:
+    blame: Dict[str, dict[str, Any]] = {}
     for op in compiled_ops:
         # Compiled ops use flat keys (target_norm, target_unit_kind, etc.)
         key = section_key_from_compiled_scope_row(op)
@@ -264,7 +264,7 @@ def _build_blame_map(compiled_ops: list) -> Dict[str, dict]:
     return blame
 
 
-def _lookup_blame_op(blame_map: Dict[str, dict], key: str) -> dict:
+def _lookup_blame_op(blame_map: Dict[str, dict[str, Any]], key: str) -> dict[str, Any]:
     exact = blame_map.get(key)
     if exact is not None:
         return exact
@@ -377,7 +377,7 @@ def _find_divergence_snippet(r_text: str, o_text: str, ctx: int = 15,
 def _diagnose(
     r_text: str,
     o_text: str,
-    blame_op: Optional[dict],
+    blame_op: Optional[dict[str, Any]],
     *,
     oracle_selector_mode: str = "latest_cached_editorial",
 ) -> Tuple[str, str]:
@@ -652,10 +652,10 @@ def _explain_sync(
     strict_profile: Optional["StrictProfile"] = None,
     show_facade: bool = False,
 ) -> None:
-    compiled_ops: list = []
+    compiled_ops: list[dict[str, Any]] = []
     replay_meta: dict[str, object] = {}
-    failed_ops: list = []
-    _dossier_canonical_ops: list = []
+    failed_ops: list[Any] = []
+    _dossier_canonical_ops: list[Any] = []
     needs_dossier = show_compile_summary or show_facade
     from lawvm.finland.grafter import (
         _oracle_version_label,
