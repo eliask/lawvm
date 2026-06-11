@@ -47,6 +47,7 @@ address under a clean timeline yields ``unmodified_base_text``.
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, cast
 
@@ -72,6 +73,7 @@ from lawvm.tools.timeline_integrity import (
 from lawvm.finland.grafter import (
     replay_xml,
 )
+from lawvm.tools.provision_state import provision_selector_diagnostic
 
 
 # ---------------------------------------------------------------------------
@@ -565,7 +567,37 @@ def _parse_address(address: Optional[str]) -> Optional[Tuple[str, str]]:
     return (kind.strip(), num.strip())
 
 
+def _reject_invalid_address_selector(args: Any) -> None:
+    """Fail fast for definitely malformed CLI address filters.
+
+    ``blame`` is not a provision-state seam, but it consumes the same
+    command-line legal-address grammar.  Reuse the provision-state selector
+    diagnostic so a malformed filter cannot be silently normalized or ignored.
+    """
+
+    address = getattr(args, "address", None)
+    if not address:
+        return
+    diagnostic = provision_selector_diagnostic(
+        jurisdiction=str(getattr(args, "jurisdiction", "fi") or "fi"),
+        provision=str(address),
+    )
+    if diagnostic is None:
+        return
+
+    message = str(diagnostic.get("message") or "invalid legal-address selector")
+    print(
+        f"ERROR: invalid --address/--provision {str(address)!r}: {message}",
+        file=sys.stderr,
+    )
+    suggestions = diagnostic.get("suggestions")
+    if isinstance(suggestions, list) and suggestions:
+        print(f"help: try {str(suggestions[0])!r}", file=sys.stderr)
+    raise SystemExit(2)
+
+
 def main(args) -> None:
+    _reject_invalid_address_selector(args)
     address_filter = _parse_address(getattr(args, "address", None))
     source_filter = getattr(args, "source", None)
     mode = getattr(args, "mode", "official_consolidation")

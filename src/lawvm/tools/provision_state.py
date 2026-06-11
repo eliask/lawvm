@@ -372,7 +372,7 @@ def provision_selector_diagnostic(
         return {
             "code": "FI_PROVISION_SELECTOR_UNSUPPORTED_PROSE_NOTATION",
             "message": (
-                "this looks like Finnish pykälä notation; provision-state expects "
+                "this looks like Finnish pykälä notation; LawVM CLI selectors expect "
                 "a canonical LawVM address"
             ),
             "suggestions": [suggestion],

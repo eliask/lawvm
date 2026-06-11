@@ -51,6 +51,89 @@ def test_blame_accepts_provision_alias_for_address() -> None:
     assert args.address == "section:9"
 
 
+def test_blame_rejects_malformed_finnish_address_before_replay(monkeypatch, capsys) -> None:
+    def fail_replay(*_args, **_kwargs):
+        raise AssertionError("invalid address filter should fail before replay")
+
+    monkeypatch.setattr("lawvm.tools.blame.replay_xml", fail_replay)
+
+    with pytest.raises(SystemExit) as raised:
+        blame.main(
+            Namespace(
+                statute_id="1992/1535",
+                jurisdiction="fi",
+                address="section:127 a §",
+                source=None,
+                mode="official_consolidation",
+                format="json",
+            )
+        )
+
+    assert raised.value.code == 2
+    err = capsys.readouterr().err
+    assert "ERROR: invalid --address/--provision 'section:127 a §'" in err
+    assert "help: try 'section:127a'" in err
+
+
+def test_blame_rejects_finnish_prose_address_before_filter_drop(monkeypatch, capsys) -> None:
+    def fail_replay(*_args, **_kwargs):
+        raise AssertionError("prose address filter should fail before replay")
+
+    monkeypatch.setattr("lawvm.tools.blame.replay_xml", fail_replay)
+
+    with pytest.raises(SystemExit) as raised:
+        blame.main(
+            Namespace(
+                statute_id="1992/1535",
+                jurisdiction="fi",
+                address="127 a §",
+                source=None,
+                mode="official_consolidation",
+                format="json",
+            )
+        )
+
+    assert raised.value.code == 2
+    err = capsys.readouterr().err
+    assert "this looks like Finnish pykälä notation" in err
+    assert "help: try 'section:127a'" in err
+
+
+def test_blame_selector_validation_is_fi_only(monkeypatch, capsys) -> None:
+    called: dict[str, object] = {}
+
+    def fake_replay_xml(
+        statute_id: str,
+        *,
+        mode: str,
+        quiet: bool = False,
+        compiled_ops_out=None,
+        replay_meta_out=None,
+    ):
+        called["statute_id"] = statute_id
+        return SimpleNamespace(
+            title="UK-style selector smoke",
+            ir=IRNode(kind=IRNodeKind.BODY, children=()),
+            findings=(),
+        )
+
+    monkeypatch.setattr("lawvm.tools.blame.replay_xml", fake_replay_xml)
+
+    blame.main(
+        Namespace(
+            statute_id="ukpga/2000/8",
+            jurisdiction="uk",
+            address="section:127 a §",
+            source=None,
+            mode="official_consolidation",
+            format="json",
+        )
+    )
+
+    assert called == {"statute_id": "ukpga/2000/8"}
+    assert capsys.readouterr().err == ""
+
+
 def _fake_master_with_section(*, findings=()) -> SimpleNamespace:
     section = IRNode(kind=IRNodeKind.SECTION, label="30")
     chapter = IRNode(kind=IRNodeKind.CHAPTER, label="6", children=(section,))
