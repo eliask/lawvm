@@ -1,10 +1,14 @@
+import ast
 import hashlib
 from datetime import date
+from pathlib import Path
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.candidate_set_certificate import CANDIDATE_SET_COMPLETE, CandidateSetCertificate
+from lawvm.core.manual_claims.kind_registry import list_registered_kinds
 from lawvm.core.mutation_accounting import MutationInvariantReport
 from lawvm.core.source_witness import source_witness_digest_coverage
+import lawvm.finland.claim_kinds  # noqa: F401  # registers fi.v1.* claim kinds
 from lawvm.finland.he_branch_parser import (
     BranchParseRecovery,
     BranchProposedOp,
@@ -45,6 +49,22 @@ from lawvm.finland.proof_surfaces import (
     source_completeness_status_row,
     temporal_resolution_evidence_rows_from_projection_rows,
 )
+
+
+def test_finland_proof_surface_required_claim_kinds_are_registered() -> None:
+    proof_surface_path = Path("src/lawvm/finland/proof_surfaces.py")
+    tree = ast.parse(proof_surface_path.read_text(encoding="utf-8"))
+    required = {
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value.startswith("fi.v1.")
+    }
+
+    missing = required - set(list_registered_kinds())
+
+    assert missing == set()
 
 
 def _consolidated_xml() -> bytes:
