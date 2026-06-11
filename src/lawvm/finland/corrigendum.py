@@ -57,7 +57,7 @@ import difflib
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, List, Literal, Optional, Tuple
+from typing import Any, Iterator, List, Literal, Optional, Tuple
 
 from lxml import etree
 import yaml
@@ -1946,7 +1946,7 @@ class CorrigendumPatchTable:
         if manual_path.exists():
             try:
                 entries = yaml.safe_load(manual_path.read_text(encoding="utf-8")) or []
-                manual_seen: set = set()
+                manual_seen: set[str] = set()
                 for i, entry in enumerate(entries):
                     amendment_id_numyr = str(entry.get("amendment_id", "")).strip()
                     wrong = str(entry.get("wrong_text", "")).strip()
@@ -2287,7 +2287,7 @@ _PATCH_TABLE: Optional[CorrigendumPatchTable] = None
 # Populated by patch_source_xml / patch_source_body_xml during replay.
 # Callers (bench, corpus build) can flush this to disk via
 # flush_misapplied_records() for feedback-loop diagnostics.
-_MISAPPLIED: list[dict] = []
+_MISAPPLIED: list[dict[str, Any]] = []
 
 
 def _record_misapplied(
@@ -2327,7 +2327,7 @@ def reset_patch_table() -> None:
     _PATCH_TABLE = None
 
 
-def get_misapplied_records() -> list[dict]:
+def get_misapplied_records() -> list[dict[str, Any]]:
     """Return accumulated misapplied corrigendum records (miss + ambiguous)."""
     return list(_MISAPPLIED)
 

@@ -123,7 +123,7 @@ def _extract_json_candidate(raw: str) -> str:
     return matches[-1] if matches else raw
 
 
-def _parse_chat_response(raw: str, schema: ClaimSchema) -> Tuple[Optional[dict], Optional[str]]:
+def _parse_chat_response(raw: str, schema: ClaimSchema) -> Tuple[Optional[dict[str, Any]], Optional[str]]:
     """Parse structured JSON from chat completion response.
 
     Returns (parsed_dict, error_str). If error_str is non-None, parsing failed.
@@ -163,7 +163,7 @@ def _make_proposed_claim(
     frontier_row: object,
     schema: ClaimSchema,
     quoted_source: QuotedSource,
-    parsed: dict,
+    parsed: dict[str, Any],
     raw_response: str,
     model_id: str,
 ) -> ProposedClaim:
@@ -259,7 +259,7 @@ class QwenLocalBackend:
             method="POST",
         )
 
-        response_data: Optional[dict] = None
+        response_data: Optional[dict[str, Any]] = None
         endpoint_used = "chat"
 
         try:

@@ -17,6 +17,7 @@ from lawvm.core.compile_result import SourcePathology
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.mutation_boundary import TreePathStep
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import normalized_label_key
@@ -557,7 +558,7 @@ def _resolve_subsection_index_with_rebound_kind(
 def _apply_subsection_repeal(
     state: "ReplayState",
     view: "_SubsectionApplyView | AmendmentOp | ResolvedOp",
-    sec_path: list,
+    sec_path: list[TreePathStep],
     sec: IRNode,
     subsecs: List[IRNode],
     profile: ReplayProfile,
@@ -640,7 +641,7 @@ def _apply_subsection_repeal(
 def _apply_subsection_replace(
     state: "ReplayState",
     view: "_SubsectionApplyView | AmendmentOp | ResolvedOp",
-    sec_path: list,
+    sec_path: list[TreePathStep],
     sec: IRNode,
     subsecs: List[IRNode],
     amend_sub: Optional[IRNode],
@@ -1199,7 +1200,7 @@ def _apply_subsection_replace(
 def _apply_subsection_insert(
     state: "ReplayState",
     view: "_SubsectionApplyView | AmendmentOp | ResolvedOp",
-    sec_path: list,
+    sec_path: list[TreePathStep],
     sec: IRNode,
     subsecs: List[IRNode],
     amend_sub: Optional[IRNode],
