@@ -602,6 +602,30 @@ _FINLEX_CORPUS_AVAILABLE = (
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_2023_703_section_9_exposes_operation_source_witness() -> None:
+    """Selected amended versions should carry the source johtolause witness."""
+    payload = resolve_provision_state(
+        statute_id="2023/703",
+        jurisdiction="fi",
+        provision="section:9",
+        as_of="2026-06-02",
+    )
+
+    assert payload["status"] == "selected"
+    assert payload["source"]["statute_id"] == "2026/376"
+    locator = payload["source_locator"]
+    assert locator["detail"]["source_witness_status"] == (
+        "operation_source_raw_text_available"
+    )
+    witness = locator["detail"]["source_witness"]
+    assert witness["kind"] == "operation_source_raw_text"
+    assert "lisätään" in witness["quote"]
+    assert "9 §:ään" in witness["quote"]
+    assert locator["quote_hash"] == witness["quote_hash"]
+    assert locator["detail"]["hash_role"] == "excluded_from_derived_state_hash"
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 def test_specimen_2014_1429_broken_timeline_is_surfaced_not_clean() -> None:
     from lawvm.finland.grafter import replay_xml
     from lawvm.tools.timeline_integrity import (

@@ -840,6 +840,7 @@ def _enrich_ops_from_amendment_tree(
         title=source_title,
         enacted=source_issue_date.isoformat() if source_issue_date else "",
         effective=eff_date.isoformat() if eff_date else "",
+        raw_text=johto.strip(),
         # _amendment_expiry_date returns the prose-inclusive last in-force day;
         # the kernel `expires` field is an exclusive cutoff, so convert here.
         expires=(
