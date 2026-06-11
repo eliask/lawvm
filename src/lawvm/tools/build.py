@@ -42,7 +42,7 @@ import sys
 from lawvm.tools._worker_pool import managed_executor
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
 
 if TYPE_CHECKING:
     import argparse
@@ -101,7 +101,7 @@ def _list_all_fi_statute_ids() -> List[str]:
     return ids
 
 
-def _edge_to_dict(edge) -> dict:
+def _edge_to_dict(edge) -> dict[str, Any]:
     return dataclasses.asdict(edge)
 
 
@@ -126,7 +126,7 @@ def _worker_init() -> None:
     _w_amendment_children = dict(get_amendment_children())
 
 
-def _worker_fn(sid: str) -> Optional[dict]:
+def _worker_fn(sid: str) -> Optional[dict[str, Any]]:
     """Build lightweight data for one statute — runs in a worker process.
 
     Returns a dict with statute_id, title, statute_type, citations (list[dict]),
@@ -154,8 +154,8 @@ def _worker_fn(sid: str) -> Optional[dict]:
         statute_type = m2.group(1).decode("utf-8", errors="replace")
 
     # delegations + citations from consolidated ZIP
-    delegations: list = []
-    citations: list = []
+    delegations: list[dict[str, Any]] = []
+    citations: list[dict[str, Any]] = []
     con_xml = _w_corpus.read_oracle(sid)
     if con_xml:
         try:
@@ -179,11 +179,11 @@ def _worker_fn(sid: str) -> Optional[dict]:
         auth_edges = extract_asetus_authority(base_xml, sid)
         if auth_edges:
             from collections import defaultdict as _dd
-            auth_map: Dict[str, list] = _dd(list)
+            auth_map: Dict[str, list[str]] = _dd(list)
             for ae in auth_edges:
                 if ae.parent_section:
                     auth_map[ae.parent_statute_id].append(ae.parent_section)
-            existing_targets: set = set()
+            existing_targets: set[str] = set()
             for e in citations:
                 if e.get("edge_type") == "ISSUED_UNDER":
                     existing_targets.add(e["target_statute_id"])
@@ -208,7 +208,7 @@ def _worker_fn(sid: str) -> Optional[dict]:
 
     # Stamp each citation edge with target's current consolidated XML hash (D2).
     # Compute once per unique target to avoid redundant reads.
-    target_hashes: dict = {}
+    target_hashes: dict[str, str] = {}
     if _w_corpus and citations:
         unique_targets = {e['target_statute_id'] for e in citations
                          if not e.get('target_stat_hash') and e.get('target_statute_id')}
@@ -246,7 +246,7 @@ def _build_fi_lightweight_parallel(
     statute_ids: List[str],
     n_workers: int,
     verbose: bool,
-) -> Iterator[Optional[dict]]:
+) -> Iterator[Optional[dict[str, Any]]]:
     """Yield per-statute result dicts using ProcessPoolExecutor."""
     n_total = len(statute_ids)
     with managed_executor(
@@ -285,7 +285,7 @@ async def _build_fi_timelines(
     print(f"Building Finnish graph (with timelines): {n_total} statutes", file=sys.stderr)
 
     n_ok = n_skip = n_cites = n_eu_cites = n_delegs = 0
-    statutes_meta: dict = {}
+    statutes_meta: dict[str, dict[str, str]] = {}
     skipped_statutes: list[dict[str, str]] = []
     sem = asyncio.Semaphore(concurrency)
 
@@ -338,7 +338,7 @@ async def _build_fi_timelines(
                     n_delegs += 1
                 if sg.timelines:
                     tl_key = sg.statute_id.replace("/", "_")
-                    tl_data: dict = {}
+                    tl_data: dict[str, list[dict[str, object]]] = {}
                     for addr, tl in sg.timelines.items():
                         addr_str = "/".join(f"{k}:{v}" for k, v in addr.path)
                         tl_data[addr_str] = [
@@ -371,7 +371,7 @@ async def _build_fi_timelines(
 
 def _write_fi_artifact(
     output_dir: Path,
-    statutes_meta: dict,
+    statutes_meta: dict[str, dict[str, str]],
     n_ok: int,
     n_skip: int,
     n_cites: int,
@@ -445,7 +445,7 @@ async def _build_no(
     output_dir.mkdir(parents=True, exist_ok=True)
     print(f"Building Norwegian graph from {input_path} ...", file=sys.stderr)
 
-    statutes_meta: dict = {}
+    statutes_meta: dict[str, dict[str, object]] = {}
     amendment_index: dict[str, list[str]] = {}
     n_ok = 0
     n_skip = 0
@@ -620,7 +620,7 @@ def main(args: "argparse.Namespace") -> None:
     )
 
     n_ok = n_skip = n_cites = n_eu_cites = n_delegs = 0
-    statutes_meta: dict = {}
+    statutes_meta: dict[str, dict[str, str]] = {}
     skipped_statutes: list[dict[str, str]] = []
 
     with (
