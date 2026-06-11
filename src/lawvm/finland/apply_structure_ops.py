@@ -33,6 +33,9 @@ from lawvm.finland.ops import (
     runtime_scope_confidence_for_op,
 )
 from lawvm.finland.apply_policy import container_resolver_binding
+from lawvm.finland.scoped_section_resolver import (
+    find_scoped_section_insert_parent_path as _find_shared_scoped_section_insert_parent_path,
+)
 from lawvm.finland.helpers import _norm_num_token, _roman_label_to_arabic
 from lawvm.finland.replay_notices import replay_print
 from lawvm.finland.source_pathology import (
@@ -615,25 +618,20 @@ def _find_scoped_section_insert_parent_path(
     target_part: str | None,
 ) -> Path | None:
     """Resolve a section insert parent without dropping explicit part scope."""
-    if target_part:
-        part_path = _find_direct_body_part_path(state.ir, target_part) or state.find("part", target_part)
-        if part_path is None:
-            return None
-        if target_chapter:
-            part_node = _tops.resolve(state.ir, part_path)
-            if part_node is None:
-                return None
-            chapter_path = _tops.find(part_node, "chapter", target_chapter)
-            if chapter_path is None:
-                return None
-            return _tops._as_path(part_path) + _tops._as_path(chapter_path)
-        return _tops._as_path(part_path)
-    return _tops._as_path(
-        _find_insert_parent_path(
-            state.ir,
-            target_chapter,
-            label_index=state.provision_index,
-        )
+    return _find_shared_scoped_section_insert_parent_path(
+        state.ir,
+        chapter_label=target_chapter,
+        part_label=target_part,
+        find_part_path=lambda label: _find_direct_body_part_path(state.ir, label) or state.find("part", label),
+        find_insert_parent_path=lambda chapter: _tops._as_path(
+            _find_insert_parent_path(
+                state.ir,
+                chapter,
+                label_index=state.provision_index,
+            )
+        ),
+        missing_part_policy="not_found",
+        missing_chapter_in_part_policy="not_found",
     )
 
 

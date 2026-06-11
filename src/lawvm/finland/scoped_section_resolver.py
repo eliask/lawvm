@@ -9,6 +9,7 @@ normalization rule, not a core tree-ops rule.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Literal
 
 from lawvm.core import tree_ops as _tops
 from lawvm.core.ir import IRNode
@@ -16,6 +17,10 @@ from lawvm.core.tree_ops import Path
 from lawvm.finland.helpers import _norm_num_token
 
 FindPath = Callable[[str, str, str | None, str | None], Path | None]
+FindPartPath = Callable[[str], Path | None]
+FindInsertParentPath = Callable[[str | None], Path | None]
+MissingPartPolicy = Literal["fallback", "not_found"]
+MissingChapterInPartPolicy = Literal["part", "not_found"]
 
 
 def find_scoped_section_path(
@@ -65,3 +70,45 @@ def find_scoped_section_path(
         "chapter" if target_chapter else None,
         target_chapter,
     )
+
+
+def find_scoped_section_insert_parent_path(
+    ir: IRNode,
+    *,
+    chapter_label: str | None,
+    part_label: str | None,
+    find_part_path: FindPartPath,
+    find_insert_parent_path: FindInsertParentPath,
+    missing_part_policy: MissingPartPolicy,
+    missing_chapter_in_part_policy: MissingChapterInPartPolicy,
+) -> Path | None:
+    """Resolve the parent path for inserting a section under optional scope.
+
+    Existing FI call sites disagree intentionally on two recovery policies.
+    Typed relabel dispatch may fall back when a part scope cannot be found and
+    may insert directly under the part if the requested chapter is absent.
+    Structure bootstrap paths are stricter: a declared part/chapter scope must
+    exist. The policies are explicit here so future resolver adoption does not
+    smuggle either behavior through copy-pasted branches.
+    """
+
+    if part_label:
+        part_path = find_part_path(part_label)
+        if part_path is None:
+            if missing_part_policy == "not_found":
+                return None
+        else:
+            part_node = _tops.resolve(ir, part_path)
+            if part_node is None:
+                if missing_part_policy == "not_found":
+                    return None
+            elif chapter_label:
+                chapter_path = _tops.find(part_node, "chapter", chapter_label)
+                if chapter_path is not None:
+                    return _tops._as_path(part_path + chapter_path)
+                if missing_chapter_in_part_policy == "not_found":
+                    return None
+            if part_node is not None:
+                return _tops._as_path(part_path)
+
+    return find_insert_parent_path(chapter_label)

@@ -25,6 +25,9 @@ from lawvm.finland.apply_policy import (
     _resolve_section_path_with_fallbacks,
     section_resolver_binding,
 )
+from lawvm.finland.scoped_section_resolver import (
+    find_scoped_section_insert_parent_path as _find_shared_scoped_section_insert_parent_path,
+)
 from lawvm.finland.apply_structure_ops import (
     _structure_apply_view_for_op,
     _apply_container_op,
@@ -348,16 +351,17 @@ def _find_scoped_section_insert_parent_path(
     chapter label, as in `2017/320 <- 2019/371`. Prefer the explicitly scoped
     part/chapter parent when available.
     """
-    if part_label:
-        part_path = _tops.find(ir, "part", part_label)
-        if part_path is not None:
-            part_node = _tops.resolve(ir, part_path)
-            if part_node is not None and chapter_label:
-                chapter_in_part = _tops.find(part_node, "chapter", chapter_label)
-                if chapter_in_part is not None:
-                    return _tops._as_path(part_path + chapter_in_part)
-            return _tops._as_path(part_path)
-    return _find_insert_parent_path(ir, chapter_label)
+    parent_path = _find_shared_scoped_section_insert_parent_path(
+        ir,
+        chapter_label=chapter_label,
+        part_label=part_label,
+        find_part_path=lambda label: _tops.find(ir, "part", label),
+        find_insert_parent_path=lambda chapter: _find_insert_parent_path(ir, chapter),
+        missing_part_policy="fallback",
+        missing_chapter_in_part_policy="part",
+    )
+    assert parent_path is not None
+    return parent_path
 
 
 def _post_apply_section_path(result_state: "ReplayState", rop: ResolvedOp) -> TreePath | None:
