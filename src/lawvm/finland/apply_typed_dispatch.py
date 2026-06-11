@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, FrozenSet, List, Optional, cast
 from lawvm.core.compile_result import SourcePathology, StrictProfile
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir import LegalOperation as _LegalOperation
+from lawvm.core.ir_helpers import structural_subtree_hash
 from lawvm.core.mutation_boundary import diff_ir_paths_identity_pruned
 from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
@@ -41,7 +42,7 @@ from lawvm.finland.apply_subsection_dispatch import (
     _apply_deterministic_subsection_op,
     _normalize_subsection_dispatch_inputs,
 )
-from lawvm.core.write_receipt import WriteReceipt
+from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 from lawvm.finland.apply_events import (
     ApplyMutationEvent,
     DeclaredMutationAllowance,
@@ -80,6 +81,8 @@ _MOVE_SKIP_REASON_CODES = {
     "destination_exists": "destination_exists",
 }
 
+_SECTION_RELABEL_MIGRATION_RULE_ID = "section_relabel_renumber"
+
 
 def _address_leaf_kind(address) -> str:
     return address.leaf_kind() if address is not None else ""
@@ -95,6 +98,50 @@ def _is_container_facet_replace(intent: "Replace") -> bool:
 
 def _relabel_source_unit_kind(intent: "Relabel") -> str:
     return _address_leaf_kind(intent.source.address)
+
+
+def _required_tree_path(path: Path) -> TreePath:
+    tree_path = _path_to_tuple(path)
+    if tree_path is None:
+        raise ValueError("non-empty apply path unexpectedly converted to None")
+    return tree_path
+
+
+def _build_section_relabel_write_receipt(
+    *,
+    rop: ResolvedOp,
+    src_path: Path,
+    landed_path: Path,
+    source_node: IRNode,
+    landed_node: IRNode,
+) -> WriteReceipt:
+    """Record the landed write for a section relabel/renumber operation.
+
+    The source path is the resolver-bound section; the landed path is where the
+    renamed section exists after remove+insert. Their divergence is the legal
+    migration itself and must be named on the receipt.
+    """
+    source_tree_path = _required_tree_path(src_path)
+    landed_tree_path = _required_tree_path(landed_path)
+    source_addr = receipt_address_string(source_tree_path)
+    landed_addr = receipt_address_string(landed_tree_path)
+    return WriteReceipt(
+        op_id=rop.op_id or "",
+        helper="_apply_intent_relabel",
+        action=rop.resolved_action_type.lower(),
+        bound_target_path=source_tree_path,
+        landed_primary_path=landed_tree_path,
+        renumbered_paths=((source_tree_path, landed_tree_path),),
+        migration_rule_ids=(_SECTION_RELABEL_MIGRATION_RULE_ID,),
+        pre_hashes={
+            source_addr: structural_subtree_hash(source_node),
+            landed_addr: "",
+        },
+        post_hashes={
+            source_addr: "",
+            landed_addr: structural_subtree_hash(landed_node),
+        },
+    )
 
 
 def _materialization_root_move_allowances(
@@ -1308,19 +1355,23 @@ def _apply_intent_relabel(
                     dest_label,
                     f" in chapter {dest_chapter}" if dest_chapter else "",
                 )
-                _emit_apply_mutation_event_for_rop(
-                    mutation_events_out,
+                landed_path = parent_path + (("section", dest_label),)
+                new_ir = _tops.insert_sorted(without_source, parent_path, relabelled)
+                landed_node = _tops.resolve(new_ir, landed_path)
+                if landed_node is None:
+                    raise RuntimeError(f"section relabel landed path disappeared: {landed_path!r}")
+                receipt = _build_section_relabel_write_receipt(
                     rop=rop,
-                    helper="_apply_intent_relabel",
+                    src_path=src_path,
+                    landed_path=landed_path,
+                    source_node=node,
+                    landed_node=landed_node,
+                )
+                _emit_apply_mutation_event_from_receipt(
+                    mutation_events_out,
+                    receipt=receipt,
+                    rop=rop,
                     outcome="applied",
-                    resolved_target_path=cast(TreePath, _path_to_tuple(src_path)),
-                    parent_path=cast(TreePath, _path_to_tuple(parent_path)),
-                    renumbered_paths=(
-                        (
-                            cast(TreePath, _path_to_tuple(src_path)),
-                            cast(TreePath, _path_to_tuple(parent_path + (("section", dest_label),))),
-                        ),
-                    ),
                 )
                 if migration_ledger is not None:
                     from_addr = intent.source.address
@@ -1333,7 +1384,7 @@ def _apply_intent_relabel(
                         effective=effective,
                         source_statute=rop.resolved_source_statute,
                     )
-                return state.with_ir(_tops.insert_sorted(without_source, parent_path, relabelled))
+                return state.with_ir(new_ir)
         logger.debug(
             "  %s → Relabel section %s not found (absent — may have been renamed already)", ctx_label, rop.target_norm
         )

@@ -429,8 +429,17 @@ def test_apply_op_typed_section_relabel_relabels_and_resorts_within_chapter() ->
     event = mutation_events[0]
     assert event.helper == "_apply_intent_relabel"
     assert event.outcome == "applied"
+    assert event.resolved_target_path == (("chapter", "7"), ("section", "61"))
+    assert event.parent_path == (("chapter", "7"),)
     assert event.renumbered_paths == (
         ((("chapter", "7"), ("section", "73")), (("chapter", "7"), ("section", "61"))),
+    )
+    assert event.declared_allowances == (
+        DeclaredMutationAllowance(
+            kind="migration_path",
+            paths=((("chapter", "7"), ("section", "73")), (("chapter", "7"), ("section", "61"))),
+            rule_id="section_relabel_renumber",
+        ),
     )
 
 
