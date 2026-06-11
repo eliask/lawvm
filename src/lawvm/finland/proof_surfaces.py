@@ -1287,6 +1287,64 @@ def finland_strict_report_candidate_set_certificates(
                 "safe_default": "do_not_treat_lineage_witnesses_as_full_source_unit_enumeration",
             },
         ).to_dict(),
+        CandidateSetCertificate(
+            scope_id=f"fi:{statute_id}:strict-report-source-unit-enumeration",
+            candidate_set_kind="fi_strict_report_source_unit_enumeration",
+            phase="source_unit_enumeration",
+            rule_id="fi_strict_report_source_unit_enumeration_gap_certificate",
+            reason=(
+                "Strict-report evidence does not yet include an independent "
+                "enumeration of all amendment-bearing source units."
+            ),
+            completeness_status=(
+                CANDIDATE_SET_PARTIAL if source_unit_ids else CANDIDATE_SET_UNAVAILABLE
+            ),
+            candidate_count=len(source_unit_ids),
+            candidate_ids=source_unit_ids,
+            missing_candidate_count=1,
+            blocker_counts={"source_unit_enumeration_not_complete": 1},
+            blocker_families=("source_unit_enumeration_gap",),
+            next_promotion_allowed=False,
+            next_promotion_requires=(
+                "source_artifact_unit_inventory",
+                "source_unit_digest_coverage",
+                "unclassified_source_unit_count_zero",
+            ),
+            detail={
+                "visible_scope": "strict_report_negative_space_source_units",
+                "source_lineage_witness_count": len(source_lineage_witnesses),
+                "safe_default": "do_not_treat_this_as_source_unit_closure_until_complete",
+            },
+        ).to_dict(),
+        CandidateSetCertificate(
+            scope_id=f"fi:{statute_id}:strict-report-operation-cue-coverage",
+            candidate_set_kind="fi_strict_report_operation_cue_coverage",
+            phase="operation_cue_detection",
+            rule_id="fi_strict_report_operation_cue_coverage_gap_certificate",
+            reason=(
+                "Strict-report visible operation rows do not prove that all "
+                "source-text operation cues were detected or classified."
+            ),
+            completeness_status=(
+                CANDIDATE_SET_PARTIAL if visible_operation_ids else CANDIDATE_SET_UNAVAILABLE
+            ),
+            candidate_count=len(visible_operation_ids),
+            candidate_ids=visible_operation_ids,
+            missing_candidate_count=1,
+            blocker_counts={"operation_cue_exhaustiveness_unproved": 1},
+            blocker_families=("operation_cue_coverage_gap",),
+            next_promotion_allowed=False,
+            next_promotion_requires=(
+                "independent_source_text_cue_detector",
+                "operation_cue_classification_report",
+                "parser_gap_frontier_items_for_unclassified_cues",
+            ),
+            detail={
+                "visible_scope": "strict_report_negative_space_operation_cues",
+                "visible_operation_row_count": len(visible_operation_ids),
+                "safe_default": "do_not_treat_visible_operation_rows_as_operation_cue_closure",
+            },
+        ).to_dict(),
     ]
 
 
@@ -1351,10 +1409,10 @@ def finland_strict_report_ownership_closure_certificate(
     )
     unowned_counts = {
         "source_units_without_enumeration_certificate": 1
-        if not _has_candidate_set(candidate_set_certificates, "fi_strict_report_source_lineage_units")
+        if not _has_candidate_set(candidate_set_certificates, "fi_strict_report_source_unit_enumeration")
         else 0,
         "operation_cues_without_candidate_coverage_certificate": 1
-        if not _has_candidate_set(candidate_set_certificates, "fi_strict_report_visible_operation_rows")
+        if not _has_candidate_set(candidate_set_certificates, "fi_strict_report_operation_cue_coverage")
         else 0,
         "incomplete_candidate_set_certificates": len(incomplete_candidate_sets),
         "failed_ops_without_frontier_work_item": max(
@@ -1439,12 +1497,12 @@ def finland_strict_report_ownership_closure_certificate(
             "missing_required_certificates": (
                 *(
                     ()
-                    if _has_candidate_set(candidate_set_certificates, "fi_strict_report_source_lineage_units")
+                    if _has_candidate_set(candidate_set_certificates, "fi_strict_report_source_unit_enumeration")
                     else ("source_unit_enumeration_certificate",)
                 ),
                 *(
                     ()
-                    if _has_candidate_set(candidate_set_certificates, "fi_strict_report_visible_operation_rows")
+                    if _has_candidate_set(candidate_set_certificates, "fi_strict_report_operation_cue_coverage")
                     else ("operation_candidate_coverage_certificate",)
                 ),
                 "complete_source_unit_enumeration_certificate",

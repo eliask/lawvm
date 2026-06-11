@@ -544,9 +544,11 @@ def test_to_json_exports_open_ownership_closure_certificate_without_replay_claim
     assert certificate["failed_gates"] == [
         "candidate_set_fi_strict_report_visible_operation_rows_partial",
         "candidate_set_fi_strict_report_source_lineage_units_unavailable",
+        "candidate_set_fi_strict_report_source_unit_enumeration_unavailable",
+        "candidate_set_fi_strict_report_operation_cue_coverage_partial",
     ]
     assert certificate["unowned_counts"] == {
-        "incomplete_candidate_set_certificates": 2,
+        "incomplete_candidate_set_certificates": 4,
         "failed_ops_without_frontier_work_item": 0,
         "operation_cues_without_candidate_coverage_certificate": 0,
         "source_units_without_enumeration_certificate": 0,
@@ -557,24 +559,36 @@ def test_to_json_exports_open_ownership_closure_certificate_without_replay_claim
     assert [row["candidate_set_kind"] for row in candidate_sets] == [
         "fi_strict_report_visible_operation_rows",
         "fi_strict_report_source_lineage_units",
+        "fi_strict_report_source_unit_enumeration",
+        "fi_strict_report_operation_cue_coverage",
     ]
     assert [row["completeness_status"] for row in candidate_sets] == [
         "partial",
         "unavailable",
+        "unavailable",
+        "partial",
     ]
     assert candidate_sets[0]["candidate_ids"] == ["lo-visible-1"]
+    assert candidate_sets[2]["next_promotion_allowed"] is False
+    assert candidate_sets[3]["next_promotion_requires"] == [
+        "independent_source_text_cue_detector",
+        "operation_cue_classification_report",
+        "parser_gap_frontier_items_for_unclassified_cues",
+    ]
     assert report["report_kind"] == "finland_strict_report_ownership_closure"
     assert report["replay_claims"] is False
     assert report["canonical_effect_claims"] is False
-    assert surface["summary"]["strict_report_candidate_set_certificate_count"] == 2
+    assert surface["summary"]["strict_report_candidate_set_certificate_count"] == 4
     assert surface["summary"]["strict_report_candidate_set_status_counts"] == {
-        "partial": 1,
-        "unavailable": 1,
+        "partial": 2,
+        "unavailable": 2,
     }
     assert surface["summary"]["ownership_closure_certificate_count"] == 1
     assert surface["summary"]["ownership_closure_status"] == "open"
     assert surface["summary"]["ownership_closure_failed_gate_counts"] == {
+        "candidate_set_fi_strict_report_operation_cue_coverage_partial": 1,
         "candidate_set_fi_strict_report_source_lineage_units_unavailable": 1,
+        "candidate_set_fi_strict_report_source_unit_enumeration_unavailable": 1,
         "candidate_set_fi_strict_report_visible_operation_rows_partial": 1,
     }
     closure_rows = [
@@ -697,6 +711,8 @@ def test_to_json_exports_source_adjudication_agreement_residual() -> None:
         "source_lineage_source_witness",
         "agreement_residual",
         "source_completeness_status",
+        "strict_report_candidate_set_certificate",
+        "strict_report_candidate_set_certificate",
         "strict_report_candidate_set_certificate",
         "strict_report_candidate_set_certificate",
         "ownership_closure_certificate",
