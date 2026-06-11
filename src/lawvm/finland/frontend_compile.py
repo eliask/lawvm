@@ -147,6 +147,105 @@ def _ambiguous_unscoped_additive_fallback_insert_observation(
     )
 
 
+def _direct_child_localname(el: "etree._Element") -> str:
+    tag = el.tag
+    return str(tag).rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
+def _section_num_label(el: "etree._Element") -> str:
+    num_el = el.find("{*}num")
+    if num_el is None or not num_el.text:
+        return ""
+    return _norm_num_token(re.sub(r"\s*§.*$", "", num_el.text).strip())
+
+
+def _direct_subsection_num_label(el: "etree._Element") -> str | None:
+    num_el = el.find("{*}num")
+    if num_el is None or not num_el.text:
+        return None
+    label = _norm_num_token(re.sub(r"\s*(?:mom(?:entti)?|momentin).*$", "", num_el.text).strip())
+    return label or None
+
+
+def _single_body_section_subsection_labels(
+    muutos_tree: "etree._Element",
+    section_label: str,
+) -> tuple[str | None, ...] | None:
+    sections = [
+        sec
+        for sec in muutos_tree.findall(".//{*}section")
+        if _section_num_label(sec) == _norm_num_token(section_label)
+    ]
+    if len(sections) != 1:
+        return None
+    return tuple(
+        _direct_subsection_num_label(child)
+        for child in sections[0]
+        if _direct_child_localname(child) == "subsection"
+    )
+
+
+def _single_payload_already_owned_fallback_insert_observation(
+    existing_ops: List[AmendmentOp],
+    fallback_op: AmendmentOp,
+    *,
+    amendment_id: str,
+    muutos_tree: "etree._Element",
+) -> Finding | None:
+    """Reject fallback subsection inserts that would reuse one unnumbered body payload.
+
+    In mixed-section formulas the coarse fallback can see a later ``uusi 6
+    momentti`` and bind it to the previous body section. If that body section
+    has exactly one unnumbered subsection payload, and the PEG path already
+    emitted a subsection insert for the same section, accepting the fallback
+    would smuggle the same payload into a second target.
+    """
+    if (
+        fallback_op.op_type != "INSERT"
+        or fallback_op.target_section is None
+        or fallback_op.target_paragraph is None
+        or fallback_op.target_item is not None
+        or fallback_op.target_special is not None
+        or "extraction_fallback_heuristic" not in fallback_op.extraction_provenance_tags
+    ):
+        return None
+
+    labels = _single_body_section_subsection_labels(muutos_tree, fallback_op.target_section)
+    if labels != (None,):
+        return None
+
+    owned_paragraphs = sorted(
+        {
+            int(op.target_paragraph)
+            for op in existing_ops
+            if op.op_type == "INSERT"
+            and op.target_section == fallback_op.target_section
+            and op.target_paragraph is not None
+            and op.target_paragraph != fallback_op.target_paragraph
+            and op.target_item is None
+            and op.target_special is None
+        }
+    )
+    if not owned_paragraphs:
+        return None
+
+    return Finding(
+        kind="ELAB.REJECTED_OPERATION",
+        role="observation",
+        stage="frontend_compile",
+        detail={
+            "message": "Fallback subsection insert was rejected because the source body has one unnumbered subsection payload already owned by a parsed insert for this section.",
+            "reason_code": "ELAB.FALLBACK_INSERT_SINGLE_PAYLOAD_ALREADY_OWNED",
+            "description": fallback_op.description(),
+            "target_section": fallback_op.target_section,
+            "target_paragraph": fallback_op.target_paragraph,
+            "owned_paragraphs": owned_paragraphs,
+        },
+        source_statute=amendment_id,
+        blocking=False,
+    )
+
+
 def _reject_overbroad_section_repeals_for_deep_targets(
     ops: List[AmendmentOp],
     *,
@@ -1883,6 +1982,15 @@ def normalize_and_compile_ops(
                 )
                 if ambiguous_unscoped_insert is not None:
                     frontend_findings_out.append(ambiguous_unscoped_insert)
+                    continue
+                single_payload_already_owned = _single_payload_already_owned_fallback_insert_observation(
+                    ops,
+                    op,
+                    amendment_id=amendment_id,
+                    muutos_tree=muutos_tree,
+                )
+                if single_payload_already_owned is not None:
+                    frontend_findings_out.append(single_payload_already_owned)
                     continue
                 if op.op_type != "INSERT":
                     continue

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+from contextlib import redirect_stdout
+from io import StringIO
 from typing import cast
 
 import lxml.etree as etree
@@ -19,7 +21,7 @@ from lawvm.core.provenance import MigrationEvent
 from lawvm.core.compile_result import TemporalEvent, TemporalScope
 from lawvm.finland.apply import apply_op
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
-from lawvm.finland.grafter import compile_amendment_ops, get_corpus, get_johtolause
+from lawvm.finland.grafter import compile_amendment_ops, get_corpus, get_johtolause, replay_xml
 from lawvm.core.timeline import compile_timelines
 from lawvm.core.timeline import materialize_pit_ex
 from lawvm.core.timeline import select_active_version
@@ -907,6 +909,50 @@ def test_normalize_and_compile_ops_1997_1339_rejects_ambiguous_unscoped_fallback
     assert any(
         finding.kind == "ELAB.REJECTED_OPERATION"
         and finding.detail.get("reason_code") == "ELAB.AMBIGUOUS_UNSCOPED_FALLBACK_INSERT_MULTI_SCOPE"
+        for finding in phase2.finding_ledger
+    )
+
+
+def test_normalize_and_compile_ops_2007_626_rejects_single_payload_fallback_reuse() -> None:
+    with redirect_stdout(StringIO()):
+        base_replay = replay_xml(
+            "1972/66",
+            mode="legal_pit",
+            stop_before="2007/626",
+            quiet=True,
+            build_full_products=False,
+        )
+    xml_bytes = get_corpus().read_source("2007/626")
+    assert xml_bytes is not None
+    muutos_tree = etree.fromstring(xml_bytes)
+    johto = get_johtolause(xml_bytes)
+    title_el = muutos_tree.find(".//{*}docTitle")
+    source_title = (
+        etree.tostring(title_el, method="text", encoding="unicode").strip()
+        if title_el is not None
+        else "Unknown"
+    )
+
+    phase2 = normalize_and_compile_ops(
+        johto=johto,
+        muutos_tree=muutos_tree,
+        master=base_replay.replay_fold_state,
+        amendment_id="2007/626",
+        source_title=source_title,
+        used_sec1_fallback=False,
+        parent_id="1972/66",
+        strict_profile=None,
+    )
+
+    descriptions = [op.description() for op in phase2.output]
+    assert "INSERT 2 luku 4 § 3 mom" in descriptions
+    assert "INSERT 3 luku 14 § 6 mom" in descriptions
+    assert "INSERT 4 § 6 mom" not in descriptions
+    assert "INSERT 2 luku 4 § 6 mom" not in descriptions
+    assert any(
+        finding.kind == "ELAB.REJECTED_OPERATION"
+        and finding.detail.get("reason_code") == "ELAB.FALLBACK_INSERT_SINGLE_PAYLOAD_ALREADY_OWNED"
+        and finding.detail.get("description") == "INSERT 4 § 6 mom"
         for finding in phase2.finding_ledger
     )
 
