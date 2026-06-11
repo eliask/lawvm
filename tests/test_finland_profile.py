@@ -38,7 +38,10 @@ from lawvm.finland.ontology import (
     HIERARCHY_ORDER,
     UNIT_ONTOLOGY,
 )
-from lawvm.core.compile_result import ActivationRule  # noqa: F401
+
+
+def _set_runtime_attr(obj: object, name: str, value: object) -> None:
+    setattr(obj, name, value)
 
 
 # ===========================================================================
@@ -55,7 +58,7 @@ class TestProfileSingleton:
 
     def test_profile_is_frozen(self):
         with pytest.raises(AttributeError):
-            FINLAND_PROFILE.jurisdiction = "EE"  # type: ignore[misc]  # ty: ignore[invalid-assignment]
+            _set_runtime_attr(FINLAND_PROFILE, "jurisdiction", "EE")
 
     def test_unit_ontology_is_canonical(self):
         """Profile's unit_ontology is the same dict as the ontology module's."""
@@ -91,7 +94,7 @@ class TestDefaultActivation:
 
     def test_default_activation_is_frozen(self):
         with pytest.raises(AttributeError):
-            FINLAND_DEFAULT_ACTIVATION.kind = "fixed_date"  # type: ignore[misc]  # ty: ignore[invalid-assignment]
+            _set_runtime_attr(FINLAND_DEFAULT_ACTIVATION, "kind", "fixed_date")
 
 
 # ===========================================================================
@@ -109,7 +112,7 @@ class TestIdentityPolicies:
     def test_identity_policy_is_frozen(self):
         policy = FINLAND_PROFILE.identity_policy("section")
         with pytest.raises(AttributeError):
-            policy.kind = "bogus"  # type: ignore[misc]  # ty: ignore[invalid-assignment]
+            _set_runtime_attr(policy, "kind", "bogus")
 
     def test_stable_label_units_preserve_identity(self):
         """Units with stable_label identity class preserve identity on renumber."""
@@ -363,38 +366,46 @@ class TestReexports:
     """Verify that key APIs are importable from the profile module."""
 
     def test_ontology_reexports(self):
-        from lawvm.finland.profile import (  # noqa: F401
-            ALL_FACET_KINDS,
-            ALL_UNIT_KINDS,
-            HIERARCHY_ORDER,
-            UNIT_ONTOLOGY,
-            UnitOntologyEntry,
-            allowed_label_series,
-            can_carry_facet,
-            hierarchy_depth,
-            is_amendable,
-            is_legal_unit,
-            parent_kinds,
-        )
+        import lawvm.finland.profile as profile
+
+        for name in (
+            "ALL_FACET_KINDS",
+            "ALL_UNIT_KINDS",
+            "HIERARCHY_ORDER",
+            "UNIT_ONTOLOGY",
+            "UnitOntologyEntry",
+            "allowed_label_series",
+            "can_carry_facet",
+            "hierarchy_depth",
+            "is_amendable",
+            "is_legal_unit",
+            "parent_kinds",
+        ):
+            assert hasattr(profile, name)
 
     def test_label_reexports(self):
-        from lawvm.finland.profile import (  # noqa: F401
-            AlphaSequence,
-            AnyFinlandLabel,
-            FinlandLabel,
-            ImplicitOrdinal,
-            InsertableArabic,
-            RomanOrdinal,
-            SymbolicLabel,
-            is_valid_label_for_kind,
-            label_sort_key,
-            normalize_raw_label,
-            parse_label,
-            render_label,
-        )
+        import lawvm.finland.profile as profile
+
+        for name in (
+            "AlphaSequence",
+            "AnyFinlandLabel",
+            "FinlandLabel",
+            "ImplicitOrdinal",
+            "InsertableArabic",
+            "RomanOrdinal",
+            "SymbolicLabel",
+            "is_valid_label_for_kind",
+            "label_sort_key",
+            "normalize_raw_label",
+            "parse_label",
+            "render_label",
+        ):
+            assert hasattr(profile, name)
 
     def test_temporal_reexport(self):
-        from lawvm.finland.profile import ActivationRule  # noqa: F401, F811
+        import lawvm.finland.profile as profile
+
+        assert hasattr(profile, "ActivationRule")
 
     def test_all_list_complete(self):
         """Every name in __all__ is actually importable."""

@@ -18,7 +18,7 @@ Module coverage:
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Dict
+from typing import Any, Dict, Iterable, cast
 
 import pytest
 
@@ -84,6 +84,23 @@ def _assert_rejected_matches(actual: RejectedRefCandidate, expected: Dict[str, A
         assert actual_dict.get(key) == val, (
             f"rejected candidate key {key!r}: expected {val!r}, got {actual_dict.get(key)!r}"
         )
+
+
+def _runtime_candidate_target_ids(values: list[str]) -> tuple[str, ...]:
+    """Deliberately pass list input so constructor normalization is exercised."""
+    return cast(tuple[str, ...], values)
+
+
+def _target_statute_ids(mentions: Iterable[ReferenceMention]) -> set[str]:
+    target_ids: set[str] = set()
+    for mention in mentions:
+        assert mention.target_provision_ref is not None
+        target_ids.add(mention.target_provision_ref.statute_id)
+    return target_ids
+
+
+def _set_runtime_attr(obj: object, name: str, value: object) -> None:
+    setattr(obj, name, value)
 
 
 # ===========================================================================
@@ -243,7 +260,7 @@ class TestReferenceMentionConstruction:
             edge_subtype=None,
         )
         with pytest.raises((TypeError, AttributeError)):
-            mention.cite_kind = CiteKind.EU  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+            _set_runtime_attr(mention, "cite_kind", CiteKind.EU)
 
 
 # ===========================================================================
@@ -360,7 +377,7 @@ class TestFindingObservation:
             phase="cross_ref_extraction",
             source_statute_id="2003/314",
             source_provision_ref_str="2003/314/5",
-            candidate_target_ids=["1984/523", "2003/527"],  # ty:ignore[invalid-argument-type]
+            candidate_target_ids=_runtime_candidate_target_ids(["1984/523", "2003/527"]),
             reason="Two ympäristönsuojelulaki versions both match.",
         )
         assert isinstance(finding.candidate_target_ids, tuple)
@@ -775,7 +792,7 @@ class TestModernEUYearFirstPattern:
         result = extract_eu_reference_mentions(xml, "2018/1050")
         eu_mentions = [m for m in result.mentions if m.cite_kind == CiteKind.EU]
         assert len(eu_mentions) >= 1, f"Expected EU mention, got {result.mentions}"
-        target_ids = {m.target_provision_ref.statute_id for m in eu_mentions}  # ty: ignore[unresolved-attribute]
+        target_ids = _target_statute_ids(eu_mentions)
         assert "eu/reg/2016/679" in target_ids, f"GDPR not found in {target_ids}"
 
     def test_modern_eu_2017_2226(self) -> None:
@@ -786,7 +803,7 @@ class TestModernEUYearFirstPattern:
         result = extract_eu_reference_mentions(xml, "2018/1050")
         eu_mentions = [m for m in result.mentions if m.cite_kind == CiteKind.EU]
         assert len(eu_mentions) >= 1
-        target_ids = {m.target_provision_ref.statute_id for m in eu_mentions}  # ty: ignore[unresolved-attribute]
+        target_ids = _target_statute_ids(eu_mentions)
         assert "eu/reg/2017/2226" in target_ids, f"EES reg not found in {target_ids}"
 
     def test_modern_eu_phrase_lemma_is_eu_text_pattern(self) -> None:
@@ -815,7 +832,7 @@ class TestModernEUYearFirstPattern:
         result = extract_eu_reference_mentions(xml, "2018/1050")
         eu_mentions = [m for m in result.mentions if m.cite_kind == CiteKind.EU]
         assert len(eu_mentions) >= 1
-        target_ids = {m.target_provision_ref.statute_id for m in eu_mentions}  # ty: ignore[unresolved-attribute]
+        target_ids = _target_statute_ids(eu_mentions)
         assert "eu/reg/2001/999" in target_ids, f"N:o form not found in {target_ids}"
 
     def test_old_and_new_forms_coexist(self) -> None:
@@ -825,7 +842,7 @@ class TestModernEUYearFirstPattern:
         )
         result = extract_eu_reference_mentions(xml, "2018/1050")
         eu_mentions = [m for m in result.mentions if m.cite_kind == CiteKind.EU]
-        target_ids = {m.target_provision_ref.statute_id for m in eu_mentions}  # ty: ignore[unresolved-attribute]
+        target_ids = _target_statute_ids(eu_mentions)
         assert "eu/reg/2001/999" in target_ids
         assert "eu/reg/2016/679" in target_ids
 
@@ -869,7 +886,7 @@ class TestModernEUYearFirstPattern:
         result = extract_all_reference_mentions(xml, "2018/1050")
         eu_mentions = [m for m in result.mentions if m.cite_kind == CiteKind.EU]
         assert len(eu_mentions) >= 1
-        target_ids = {m.target_provision_ref.statute_id for m in eu_mentions}  # ty: ignore[unresolved-attribute]
+        target_ids = _target_statute_ids(eu_mentions)
         assert "eu/reg/2016/679" in target_ids
 
 
@@ -1012,7 +1029,7 @@ class TestPlainTextStatuteCitations:
         result = extract_plain_text_statute_mentions(xml, "2003/314")
         plain_mentions = [m for m in result.mentions if m.phrase_lemma == "plain_text"]
         assert len(plain_mentions) >= 1, f"Expected plain_text mention, got {result.mentions}"
-        target_ids = {m.target_provision_ref.statute_id for m in plain_mentions}  # ty: ignore[unresolved-attribute]
+        target_ids = _target_statute_ids(plain_mentions)
         assert "711/2022" in target_ids
 
     def test_plain_text_mention_cite_kind(self) -> None:
