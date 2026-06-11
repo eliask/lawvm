@@ -12067,6 +12067,7 @@ def test_typed_move_stops_without_legacy_dispatch() -> None:
     rop._op_type_seed = "MOVE"
     ctx = _ctx(_body())
     mutation_events: List[ApplyMutationEvent] = []
+    write_audits = []
 
     result = apply_op(
         state,
@@ -12075,6 +12076,7 @@ def test_typed_move_stops_without_legacy_dispatch() -> None:
         muutos_ir=None,
         replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
+        write_audits_out=write_audits,
         rop=rop,
     )
 
@@ -12084,11 +12086,25 @@ def test_typed_move_stops_without_legacy_dispatch() -> None:
     assert event.helper == "_apply_intent_move"
     assert event.outcome == "applied"
     assert event.used_fallback_tags == ()
-    assert event.resolved_target_path == (("chapter", "1"), ("section", "1"))
+    assert event.resolved_target_path == (("chapter", "2"), ("section", "1"))
     assert event.parent_path == (("chapter", "2"),)
     assert event.renumbered_paths == (
         ((("chapter", "1"), ("section", "1")), (("chapter", "2"), ("section", "1"))),
     )
+    assert event.declared_allowances == (
+        DeclaredMutationAllowance(
+            kind="migration_path",
+            paths=((("chapter", "1"), ("section", "1")), (("chapter", "2"), ("section", "1"))),
+            rule_id="move_reparent",
+        ),
+    )
+    assert len(write_audits) == 1
+    audit = write_audits[0]
+    assert audit.op_id == "test_op"
+    assert audit.status == "qualified"
+    assert audit.undeclared_paths == ()
+    assert audit.unobserved_declared_paths == ()
+    assert audit.matched_rule_ids == ("move_reparent",)
     assert state.find_section_path("1", target_chapter="2") is None
     assert result.find_section_path("1", target_chapter="2") == (("chapter", "2"), ("section", "1"))
 

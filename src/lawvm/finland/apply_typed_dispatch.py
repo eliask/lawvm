@@ -86,6 +86,7 @@ _SECTION_RELABEL_MIGRATION_RULE_ID = "section_relabel_renumber"
 _SUBSECTION_RELABEL_MIGRATION_RULE_ID = "subsection_relabel_renumber"
 _CHAPTER_RELABEL_MIGRATION_RULE_ID = "chapter_relabel_renumber"
 _PART_RELABEL_MIGRATION_RULE_ID = "part_relabel_renumber"
+_MOVE_REPARENT_MIGRATION_RULE_ID = "move_reparent"
 
 
 def _address_leaf_kind(address) -> str:
@@ -1581,6 +1582,7 @@ def _apply_intent_move(
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
     path_hint: Optional[Path] = None,
     migration_ledger: Optional[MigrationLedger] = None,
+    write_audits_out: Optional[List[ObservedWriteAudit]] = None,
 ) -> "ReplayState":
     source_addr = intent.source.address
     dest_parent_path = intent.destination_parent.path
@@ -1664,16 +1666,14 @@ def _apply_intent_move(
         )
         return state
 
+    destination_path = dest_parent_path + ((source_leaf_kind, source_leaf_label),)
     moved_ir = _tops.remove_at(state.ir, src_path)
     moved_ir = _tops.insert_sorted(moved_ir, dest_parent_path, node)
 
     if migration_ledger is not None:
         source = rop.resolved_op_source
         effective = source.effective if source is not None else ""
-        destination_address = LegalAddress(
-            path=dest_parent_path + ((source_leaf_kind, source_leaf_label),),
-            special=source_addr.special,
-        )
+        destination_address = LegalAddress(path=destination_path, special=source_addr.special)
         migration_ledger.record_move(
             source_addr,
             destination_address,
@@ -1681,19 +1681,39 @@ def _apply_intent_move(
             source_statute=rop.resolved_source_statute,
         )
 
-    _emit_apply_mutation_event_for_rop(
-        mutation_events_out,
-        rop=rop,
+    source_tree_path = _required_tree_path(src_path)
+    destination_tree_path = _required_tree_path(destination_path)
+    source_receipt_addr = receipt_address_string(source_tree_path)
+    destination_receipt_addr = receipt_address_string(destination_tree_path)
+    landed_node = _tops.resolve(moved_ir, destination_path)
+    receipt = WriteReceipt(
+        op_id=rop.op_id or "",
         helper="_apply_intent_move",
+        action=rop.resolved_action_type.lower(),
+        bound_target_path=source_tree_path,
+        landed_primary_path=destination_tree_path,
+        renumbered_paths=((source_tree_path, destination_tree_path),),
+        migration_rule_ids=(_MOVE_REPARENT_MIGRATION_RULE_ID,),
+        pre_hashes={
+            source_receipt_addr: structural_subtree_hash(node),
+            destination_receipt_addr: structural_subtree_hash(_tops.resolve(state.ir, destination_path)),
+        },
+        post_hashes={
+            source_receipt_addr: "",
+            destination_receipt_addr: structural_subtree_hash(landed_node),
+        },
+    )
+    _append_observed_write_audit(
+        write_audits_out,
+        before_ir=state.ir,
+        after_ir=moved_ir,
+        receipt=receipt,
+    )
+    _emit_apply_mutation_event_from_receipt(
+        mutation_events_out,
+        receipt=receipt,
         outcome="applied",
-        resolved_target_path=cast(TreePath, _path_to_tuple(src_path)),
-        parent_path=cast(TreePath, _path_to_tuple(dest_parent_path)),
-        renumbered_paths=(
-            (
-                cast(TreePath, _path_to_tuple(src_path)),
-                cast(TreePath, _path_to_tuple(dest_parent_path + ((source_leaf_kind, source_leaf_label),))),
-            ),
-        ),
+        rop=rop,
     )
     return state.with_ir(moved_ir)
 
@@ -1862,6 +1882,7 @@ def _apply_canonical_intent(
                 mutation_events_out=mutation_events_out,
                 path_hint=path_hint,
                 migration_ledger=migration_ledger,
+                write_audits_out=write_audits_out,
             )
         case TextPatch():
             logger.warning(
