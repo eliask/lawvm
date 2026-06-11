@@ -19,8 +19,8 @@ from lawvm.core.tree_ops import LabelIndex, Path, build_label_index
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.xml_ir import fi_xml_to_ir_node, detect_unnumbered_paragraph_peers, detect_label_eid_divergence
 from lawvm.finland.source_normalize import normalize_source_ir
-from lawvm.finland.helpers import _norm_num_token as _fi_norm_label
 from lawvm.finland.projection_rows import projection_rows as _projection_rows
+from lawvm.finland.scoped_section_resolver import find_scoped_section_path
 
 if TYPE_CHECKING:
     from lawvm.core.compile_facade import CompileFacade
@@ -338,34 +338,12 @@ class ReplayState:
         target_part: Optional[str] = None,
     ) -> Optional[Path]:
         """Convenience: find path to a section by number, optionally scoped to chapter/part."""
-        if target_part:
-            # Normalize Roman numeral part references (e.g. "II" → "2") so that
-            # johtolause-derived addresses match the Arabic labels stored in IR.
-            expected_part = _fi_norm_label(target_part)
-            part_path = self.find("part", target_part)
-            if part_path is None:
-                part_path = self.find("part", expected_part)
-            if part_path is None or _fi_norm_label(part_path[-1][1]) != expected_part:
-                return None
-            part_node = self.resolve(part_path) if part_path is not None else None
-            if part_path is not None and part_node is not None:
-                if target_chapter:
-                    chapter_path = _tops.find(part_node, "chapter", target_chapter)
-                    chapter_node = _tops.resolve(part_node, chapter_path) if chapter_path is not None else None
-                    if chapter_path is not None and chapter_node is not None:
-                        section_path = _tops.find(chapter_node, "section", target_norm)
-                        if section_path is not None:
-                            return part_path + chapter_path + section_path
-                    return None
-                section_path = _tops.find(part_node, "section", target_norm)
-                if section_path is not None:
-                    return part_path + section_path
-            return None
-        return self.find(
-            "section",
-            target_norm,
-            scope_kind="chapter" if target_chapter else None,
-            scope_label=target_chapter,
+        return find_scoped_section_path(
+            self.ir,
+            target_section=target_norm,
+            target_chapter=target_chapter,
+            target_part=target_part,
+            find_path=self.find,
         )
 
     def find_chapter(self, chap_num: str) -> Optional[IRNode]:

@@ -48,6 +48,7 @@ from lawvm.core.elaboration_context import (
     snapshot_target_context,
 )
 from lawvm.finland.source_normalize import normalize_source_ir
+from lawvm.finland.scoped_section_resolver import find_scoped_section_path
 from lawvm.finland.ops import (
     OpType,
     TargetKind,
@@ -2657,29 +2658,13 @@ class XMLStatute:
     def find_section_path(
         self, sec_num: str, chapter_num: Optional[str] = None, part_num: Optional[str] = None
     ) -> tuple[tuple[str, str], ...] | None:
-        if part_num:
-            part_path = self._find_path("part", part_num)
-            expected_part = str(part_num).strip().upper()
-            if part_path is None or str(part_path[-1][1]).strip().upper() != expected_part:
-                return None
-            part_node = _tops.resolve(self.ir, part_path) if part_path is not None else None
-            if part_path is not None and part_node is not None:
-                if chapter_num:
-                    chapter_path = _tops.find(part_node, "chapter", chapter_num)
-                    chapter_node = _tops.resolve(part_node, chapter_path) if chapter_path is not None else None
-                    if chapter_path is not None and chapter_node is not None:
-                        section_path = _tops.find(chapter_node, "section", sec_num)
-                        if section_path is not None:
-                            return part_path + chapter_path + section_path
-                    return None
-                section_path = _tops.find(part_node, "section", sec_num)
-                if section_path is not None:
-                    return part_path + section_path
-            return None
-        result = self._find_path(
-            "section", sec_num, scope_kind=IRNodeKind.CHAPTER.value if chapter_num else None, scope_label=chapter_num
+        return find_scoped_section_path(
+            self.ir,
+            target_section=sec_num,
+            target_chapter=chapter_num,
+            target_part=part_num,
+            find_path=self._find_path,
         )
-        return result
 
     def find_section(
         self, sec_num: str, chapter_num: Optional[str] = None, part_num: Optional[str] = None
