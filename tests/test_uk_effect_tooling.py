@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from lxml import etree as ET
 from argparse import Namespace
 from types import SimpleNamespace
+from typing import Any, cast
+
+from lxml import etree as ET
 
 import pytest
 
@@ -69,6 +71,19 @@ from lawvm.uk_legislation.manual_claim_templates import (
 )
 from lawvm.uk_legislation.uk_amendment_replay import UKEffectRecord
 from lawvm.uk_legislation import witness_builders
+
+
+JsonObject = dict[str, Any]
+
+
+def _json_object(value: object) -> JsonObject:
+    assert isinstance(value, dict)
+    return cast(JsonObject, value)
+
+
+def _json_list(value: object) -> list[Any]:
+    assert isinstance(value, list)
+    return cast(list[Any], value)
 
 
 def test_uk_replay_timeline_uses_witness_temporal_event_builder() -> None:
@@ -1897,37 +1912,39 @@ def test_manual_frontier_diagnostic_records_claim_template_status() -> None:
         structural_for_replay=True,
     )
 
-    assert diagnostics[0]["manual_compile_status"] == "manual_compile_candidate"
+    diagnostic = _json_object(diagnostics[0])
+
+    assert diagnostic["manual_compile_status"] == "manual_compile_candidate"
     assert (
-        diagnostics[0]["manual_compile_rule_id"]
+        diagnostic["manual_compile_rule_id"]
         == "uk_manual_frontier_heading_facet_candidate"
     )
-    assert diagnostics[0]["owner_phase"] == "affecting_source_extraction"
-    assert diagnostics[0]["suggested_claim_template_status"] == "available"
-    assert diagnostics[0]["executable"] is False
-    assert diagnostics[0]["replay_authorized"] is False
-    assert diagnostics[0]["authorization_status"] == "manual_claim_required"
+    assert diagnostic["owner_phase"] == "affecting_source_extraction"
+    assert diagnostic["suggested_claim_template_status"] == "available"
+    assert diagnostic["executable"] is False
+    assert diagnostic["replay_authorized"] is False
+    assert diagnostic["authorization_status"] == "manual_claim_required"
     assert (
-        diagnostics[0]["authorization_rule_id"]
+        diagnostic["authorization_rule_id"]
         == "uk_execution_authorization_manual_claim_required"
     )
-    assert "mutation_boundary_proof" in diagnostics[0]["required_proofs"]  # ty:ignore[unsupported-operator]
-    assert diagnostics[0]["safe_default"] == (
+    assert "mutation_boundary_proof" in _json_list(diagnostic["required_proofs"])
+    assert diagnostic["safe_default"] == (
         "block_until_validated_claim_authorizes_replay"
     )
-    assert diagnostics[0]["source_witness"]["source_role"] == (  # ty:ignore[not-subscriptable]
-        "affecting_source_fragment"
-    )
-    assert diagnostics[0]["source_witness"]["text_preview"] == (  # ty:ignore[not-subscriptable]
+    source_witness = _json_object(diagnostic["source_witness"])
+    assert source_witness["source_role"] == "affecting_source_fragment"
+    assert source_witness["text_preview"] == (
         'In the title to section 10, for "old" substitute "new".'
     )
-    work_item = diagnostics[0]["frontier_work_item"]
-    assert work_item["source_witness"]["source_role"] == "affecting_source_fragment"  # ty:ignore[not-subscriptable]
-    assert work_item["source_witness"]["preview_digest"]  # ty:ignore[not-subscriptable]
-    assert work_item["detail"]["packet_completeness"][  # ty:ignore[not-subscriptable]
-        "has_source_digest_or_preview_digest"
-    ] is True
-    assert work_item["detail"]["packet_completeness"]["missing_fields"] == []  # ty:ignore[not-subscriptable]
+    work_item = _json_object(diagnostic["frontier_work_item"])
+    work_item_source_witness = _json_object(work_item["source_witness"])
+    assert work_item_source_witness["source_role"] == "affecting_source_fragment"
+    assert work_item_source_witness["preview_digest"]
+    work_item_detail = _json_object(work_item["detail"])
+    packet_completeness = _json_object(work_item_detail["packet_completeness"])
+    assert packet_completeness["has_source_digest_or_preview_digest"] is True
+    assert packet_completeness["missing_fields"] == []
 
 
 def test_manual_frontier_diagnostic_uses_effect_feed_witness_when_source_missing() -> None:
@@ -1962,19 +1979,21 @@ def test_manual_frontier_diagnostic_uses_effect_feed_witness_when_source_missing
         structural_for_replay=True,
     )
 
-    assert diagnostics[0]["manual_compile_status"] == "source_insufficient"
-    assert "official_source_witness" in diagnostics[0]["required_proofs"]  # ty:ignore[unsupported-operator]
-    assert diagnostics[0]["source_witness"]["source_role"] == "effect_feed_row"  # ty:ignore[not-subscriptable]
-    assert diagnostics[0]["source_witness"]["source_lane"] == (  # ty:ignore[not-subscriptable]
-        "legislation_effect_feed"
-    )
-    work_item = diagnostics[0]["frontier_work_item"]
-    assert work_item["source_witness"]["source_role"] == "effect_feed_row"  # ty:ignore[not-subscriptable]
-    assert work_item["source_witness"]["preview_digest"]  # ty:ignore[not-subscriptable]
-    assert work_item["detail"]["packet_completeness"][  # ty:ignore[not-subscriptable]
-        "has_source_digest_or_preview_digest"
-    ] is True
-    assert work_item["detail"]["packet_completeness"]["missing_fields"] == []  # ty:ignore[not-subscriptable]
+    diagnostic = _json_object(diagnostics[0])
+
+    assert diagnostic["manual_compile_status"] == "source_insufficient"
+    assert "official_source_witness" in _json_list(diagnostic["required_proofs"])
+    source_witness = _json_object(diagnostic["source_witness"])
+    assert source_witness["source_role"] == "effect_feed_row"
+    assert source_witness["source_lane"] == "legislation_effect_feed"
+    work_item = _json_object(diagnostic["frontier_work_item"])
+    work_item_source_witness = _json_object(work_item["source_witness"])
+    assert work_item_source_witness["source_role"] == "effect_feed_row"
+    assert work_item_source_witness["preview_digest"]
+    work_item_detail = _json_object(work_item["detail"])
+    packet_completeness = _json_object(work_item_detail["packet_completeness"])
+    assert packet_completeness["has_source_digest_or_preview_digest"] is True
+    assert packet_completeness["missing_fields"] == []
 
 
 def test_manual_frontier_diagnostic_extends_multi_enactment_source_list_witness() -> None:
@@ -2022,16 +2041,18 @@ def test_manual_frontier_diagnostic_extends_multi_enactment_source_list_witness(
         structural_for_replay=True,
     )
 
-    source_witness = diagnostics[0]["source_witness"]
-    work_item = diagnostics[0]["frontier_work_item"]
-    certificate = work_item["detail"]["source_membership_certificate"]  # ty:ignore[not-subscriptable]
+    diagnostic = _json_object(diagnostics[0])
+    source_witness = _json_object(diagnostic["source_witness"])
+    work_item = _json_object(diagnostic["frontier_work_item"])
+    work_item_detail = _json_object(work_item["detail"])
+    certificate = _json_object(work_item_detail["source_membership_certificate"])
 
-    assert source_witness["text_preview"] != source_witness["extended_text_preview"]  # ty:ignore[not-subscriptable]
-    assert "FA 2003 Section 95(2)(b)" not in source_witness["text_preview"]  # ty:ignore[not-subscriptable]
-    assert "FA 2003 Section 95(2)(b)" in source_witness["extended_text_preview"]  # ty:ignore[not-subscriptable]
+    assert source_witness["text_preview"] != source_witness["extended_text_preview"]
+    assert "FA 2003 Section 95(2)(b)" not in source_witness["text_preview"]
+    assert "FA 2003 Section 95(2)(b)" in source_witness["extended_text_preview"]
     assert certificate["completeness_status"] == "complete"
     assert certificate["candidate_ids"] == ["s. 95(2)(b)"]
-    assert work_item["replay_authorized"] is False  # ty:ignore[not-subscriptable]
+    assert work_item["replay_authorized"] is False
 
 
 def test_manual_frontier_out_of_scope_reclassifies_lowering_rejection() -> None:
@@ -2736,7 +2757,9 @@ def test_summarize_uk_effect_preserves_lowering_rejections(monkeypatch) -> None:
         in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
     )
 
-    def fake_compile_effect_to_ir_ops(effect_arg, extracted, **kwargs):  # noqa: ANN001
+    def fake_compile_effect_to_ir_ops(
+        effect_arg: object, extracted: object, **kwargs: Any
+    ) -> list[object]:
         del effect_arg, extracted
         kwargs["lowering_rejections_out"].append(
             {
@@ -2835,7 +2858,9 @@ def test_summarize_uk_effect_reuses_affecting_source_context_cache(monkeypatch) 
     build_calls: list[str] = []
     enacted_cache_ids: list[int] = []
 
-    def fake_build_affecting_source_context(**kwargs):  # noqa: ANN001
+    def fake_build_affecting_source_context(
+        **kwargs: Any,
+    ) -> tuple[UKAffectingSourceContext, None]:
         build_calls.append(kwargs["locator"])
         return (
             UKAffectingSourceContext(
@@ -2852,7 +2877,9 @@ def test_summarize_uk_effect_reuses_affecting_source_context_cache(monkeypatch) 
             None,
         )
 
-    def fake_select_enacted_source_for_current_shell(**kwargs):  # noqa: ANN001
+    def fake_select_enacted_source_for_current_shell(
+        **kwargs: Any,
+    ) -> tuple[Any, Any, tuple[object, ...]]:
         enacted_cache = kwargs["enacted_context_cache"]
         enacted_cache_ids.append(id(enacted_cache))
         enacted_cache.setdefault("sentinel", kwargs["current_context"])
@@ -2921,7 +2948,9 @@ def test_summarize_uk_effect_bounds_affecting_source_caches(monkeypatch) -> None
         affecting_source_cache_limit=2,
     )
 
-    def fake_build_affecting_source_context(**kwargs):  # noqa: ANN001
+    def fake_build_affecting_source_context(
+        **kwargs: Any,
+    ) -> tuple[UKAffectingSourceContext, None]:
         return (
             UKAffectingSourceContext(
                 xml_bytes=kwargs["xml_bytes"],
@@ -2937,7 +2966,9 @@ def test_summarize_uk_effect_bounds_affecting_source_caches(monkeypatch) -> None
             None,
         )
 
-    def fake_select_enacted_source_for_current_shell(**kwargs):  # noqa: ANN001
+    def fake_select_enacted_source_for_current_shell(
+        **kwargs: Any,
+    ) -> tuple[Any, Any, tuple[object, ...]]:
         effect = kwargs["effect"]
         kwargs["enacted_context_cache"][effect.affecting_act_id] = kwargs["current_context"]
         return kwargs["current_context"], kwargs["current_el"], ()
@@ -3024,7 +3055,7 @@ def test_summarize_uk_effect_uses_observed_source_extraction(monkeypatch) -> Non
         in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
     )
     extracted = ET.fromstring("<P3 id='schedule-22-paragraph-88-a'>source payload</P3>")
-    observation = {
+    observation: dict[str, object] = {
         "rule_id": "uk_affecting_act_implicit_first_subparagraph_context_ignored",
         "blocking": False,
         "strict_disposition": "record",
@@ -3032,11 +3063,15 @@ def test_summarize_uk_effect_uses_observed_source_extraction(monkeypatch) -> Non
     }
     seen_extracted: list[ET._Element | None] = []
 
-    def fake_extract_with_observations(_context, effect_arg):  # noqa: ANN001
+    def fake_extract_with_observations(
+        _context: object, effect_arg: UKEffectRecord
+    ) -> tuple[ET._Element, tuple[dict[str, object], ...]]:
         assert effect_arg is effect
         return extracted, (observation,)
 
-    def fake_compile_effect_to_ir_ops(_effect, extracted_arg, **_kwargs):  # noqa: ANN001
+    def fake_compile_effect_to_ir_ops(
+        _effect: object, extracted_arg: ET._Element | None, **_kwargs: object
+    ) -> list[LegalOperation]:
         seen_extracted.append(extracted_arg)
         return [
             LegalOperation(
@@ -3445,7 +3480,7 @@ def test_summarize_uk_effect_does_not_require_source_for_commencement_rows(
         in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
     )
 
-    def fail_if_fetched(_affecting_act_id, _archive):  # noqa: ANN001
+    def fail_if_fetched(_affecting_act_id: object, _archive: object) -> None:
         raise AssertionError("commencement rows should not fetch affecting XML")
 
     monkeypatch.setattr(
@@ -3574,7 +3609,9 @@ def test_summarize_uk_effect_suppresses_aggregate_no_op_rejection_with_specific_
         in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
     )
 
-    def fake_compile_effect_to_ir_ops(effect_arg, extracted, **kwargs):  # noqa: ANN001
+    def fake_compile_effect_to_ir_ops(
+        effect_arg: object, extracted: object, **kwargs: Any
+    ) -> list[object]:
         del effect_arg, extracted
         kwargs["lowering_rejections_out"].append(
             {

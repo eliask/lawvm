@@ -22,9 +22,10 @@ Design:
 from __future__ import annotations
 
 import json
+from dataclasses import fields, is_dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Tuple
+from typing import Dict, Iterator, Optional, Sequence, Tuple
 
 from lawvm.core.manual_claims.hashing import verify_claim_id
 from lawvm.core.manual_claims.primitive import (
@@ -60,25 +61,25 @@ def _to_json_value(v: object) -> object:
         return v.value
     if isinstance(v, (tuple, list)):
         return [_to_json_value(x) for x in v]
-    if hasattr(v, "__dataclass_fields__"):
-        return {k: _to_json_value(getattr(v, k)) for k in v.__dataclass_fields__}  # ty:ignore[not-iterable]
+    if is_dataclass(v) and not isinstance(v, type):
+        return {field.name: _to_json_value(getattr(v, field.name)) for field in fields(v)}
     raise TypeError(f"Cannot serialize {type(v).__name__!r}")
 
 
 def _claim_to_dict(claim: ManualCompilationClaim) -> Dict[str, object]:
-    return {k: _to_json_value(getattr(claim, k)) for k in claim.__dataclass_fields__}
+    return {field.name: _to_json_value(getattr(claim, field.name)) for field in fields(claim)}
 
 
 def _state_to_dict(state: ClaimState) -> Dict[str, object]:
-    return {k: _to_json_value(getattr(state, k)) for k in state.__dataclass_fields__}
+    return {field.name: _to_json_value(getattr(state, field.name)) for field in fields(state)}
 
 
 def _event_to_dict(event: ClaimStateEvent) -> Dict[str, object]:
-    return {k: _to_json_value(getattr(event, k)) for k in event.__dataclass_fields__}
+    return {field.name: _to_json_value(getattr(event, field.name)) for field in fields(event)}
 
 
 def _composition_to_dict(dec: ClaimCompositionDecision) -> Dict[str, object]:
-    return {k: _to_json_value(getattr(dec, k)) for k in dec.__dataclass_fields__}
+    return {field.name: _to_json_value(getattr(dec, field.name)) for field in fields(dec)}
 
 
 # ---------------------------------------------------------------------------
@@ -122,9 +123,36 @@ def _parse_claim_scope(d: Dict) -> ClaimScope:
     )
 
 
-def _parse_tuple_pairs(v: List) -> Tuple[Tuple[str, object], ...]:
+def _parse_tuple_pairs(v: object) -> Tuple[Tuple[str, object], ...]:
     """Parse [[k,v], ...] or [[k,v]] list into tuple of (k,v) pairs."""
-    return tuple((item[0], item[1]) for item in v)
+    return tuple(_parse_pair_sequence(v))
+
+
+def _parse_str_pairs(v: object) -> Tuple[Tuple[str, str], ...]:
+    """Parse [[k,v], ...] into string-valued tuple pairs."""
+    pairs = _parse_pair_sequence(v)
+    out: list[tuple[str, str]] = []
+    for key, value in pairs:
+        if not isinstance(value, str):
+            raise TypeError("string tuple-pair entry value must be a string")
+        out.append((key, value))
+    return tuple(out)
+
+
+def _parse_pair_sequence(v: object) -> list[tuple[str, object]]:
+    if not isinstance(v, Sequence) or isinstance(v, (str, bytes, bytearray)):
+        raise TypeError("tuple-pair field must be a sequence")
+    out: list[tuple[str, object]] = []
+    for item in v:
+        if not isinstance(item, Sequence) or isinstance(item, (str, bytes, bytearray)):
+            raise TypeError("tuple-pair entries must be 2-item sequences")
+        if len(item) != 2:
+            raise ValueError("tuple-pair entries must have exactly two items")
+        key = item[0]
+        if not isinstance(key, str):
+            raise TypeError("tuple-pair entry key must be a string")
+        out.append((key, item[1]))
+    return out
 
 
 def _dict_to_claim(d: Dict) -> ManualCompilationClaim:
@@ -148,7 +176,7 @@ def _dict_to_claim(d: Dict) -> ManualCompilationClaim:
         cited_source_locator=_parse_source_locator(d["cited_source_locator"]),
         cited_source_span=(d["cited_source_span"][0], d["cited_source_span"][1]),
         cited_source_hash=d["cited_source_hash"],
-        dependency_fingerprint=_parse_tuple_pairs(d["dependency_fingerprint"]),  # ty:ignore[invalid-argument-type]
+        dependency_fingerprint=_parse_str_pairs(d["dependency_fingerprint"]),
         valid_at=valid_at,
         supersedes=tuple(d.get("supersedes", [])),
         supersession_delta_reason=d.get("supersession_delta_reason"),
@@ -265,7 +293,7 @@ class ClaimStore:
                 if claim_id is None or d.get("claim_id") == claim_id:
                     yield _dict_to_event(d)
 
-    def read_all_events(self) -> List[ClaimStateEvent]:
+    def read_all_events(self) -> list[ClaimStateEvent]:
         return list(self.read_events())
 
     # --- state files ---

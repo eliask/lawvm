@@ -17,14 +17,15 @@ Test IDs per spec:
 """
 from __future__ import annotations
 
+import importlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, cast, Optional
 
 import pytest
 
-import lawvm.finland.claim_kinds  # noqa: F401
+importlib.import_module("lawvm.finland.claim_kinds")
 
 from lawvm.core.provenance_graph_storage import (
     GraphStore,
@@ -426,7 +427,7 @@ def test_cmd_propose_claims_rejected_proposal_stored_for_audit(tmp_path):
                 cited_source_span=(0, 10),
                 cited_source_hash="e" * 64,
                 rationale="",
-                producer_model_id=None,  # ty:ignore[invalid-argument-type]
+                producer_model_id=cast(Any, None),
                 raw_response="{}",
                 parse_error="schema validation failure: bad field",
             )

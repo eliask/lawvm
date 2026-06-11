@@ -19,7 +19,7 @@ Module coverage:
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Dict
+from typing import Any, cast, Dict
 
 import pytest
 
@@ -169,7 +169,7 @@ class TestActorMentionConstruction:
             valid_at_end=None,
         )
         with pytest.raises((TypeError, AttributeError)):
-            mention.modal_kind = ActorModalKind.DUTY  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+            cast(Any, mention).modal_kind = ActorModalKind.DUTY
 
     def test_all_modal_kinds_constructable(self) -> None:
         """Each ActorModalKind enum value is constructable."""
@@ -539,7 +539,7 @@ class TestFindingObservation:
             source_statute_id="2010/400",
             source_provision_ref="2010/400/1",
             actor_phrase="ministerio",
-            candidate_canonical_ids=["fi.ministry.stm", "fi.ministry.sm"],  # ty:ignore[invalid-argument-type]
+            candidate_canonical_ids=cast(Any, ["fi.ministry.stm", "fi.ministry.sm"]),
             reason="Phrase 'ministerio' matches 2 registry entries.",
         )
         assert isinstance(finding.candidate_canonical_ids, tuple)

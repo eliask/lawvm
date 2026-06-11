@@ -1953,10 +1953,7 @@ def _build_se_official_clause_surface(act: SEOfficialActText) -> SEOfficialClaus
     for label in _extract_inserted_point_labels_from_clause(enacting_clause):
         if label:
             inserted_section_label_list.append(label)
-    inserted_section_labels = cast(
-        tuple[str, ...],
-        tuple(sorted(dict.fromkeys(inserted_section_label_list), key=_se_label_sort_key)),
-    )  # ty:ignore[redundant-cast]
+    inserted_section_labels = tuple(sorted(dict.fromkeys(inserted_section_label_list), key=_se_label_sort_key))
     renumber_destinations = {_label_norm(destination) for _, destination in renumber_pairs if _label_norm(destination)}
     if extracted_replace_labels:
         replace_labels = extracted_replace_labels
@@ -2009,10 +2006,7 @@ def _build_se_official_elaboration(act: SEOfficialActText) -> SEOfficialElaborat
     )
     supported_section_labels_set: set[str] = set(clause_surface.replace_section_labels)
     supported_section_labels_set.update(clause_surface.inserted_section_labels)
-    supported_section_labels = cast(
-        tuple[str, ...],
-        tuple(sorted(supported_section_labels_set, key=_se_label_sort_key)),
-    )  # ty:ignore[redundant-cast]
+    supported_section_labels = tuple(sorted(supported_section_labels_set, key=_se_label_sort_key))
     inserted_heading_labels = tuple(
         _label_norm(heading.before_label)
         for heading in payload_surface.inserted_headings

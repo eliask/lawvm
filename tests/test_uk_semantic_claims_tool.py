@@ -4,13 +4,16 @@ from argparse import Namespace
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from lawvm.tools import uk_semantic_claims
 
+JsonObject = dict[str, Any]
 
-def _workqueue_row(*, source_preview: str = "insert the row") -> dict[str, object]:
+
+def _workqueue_row(*, source_preview: str = "insert the row") -> JsonObject:
     source_hash = hashlib.sha256(source_preview.encode("utf-8")).hexdigest()
     return {
         "schema": "lawvm.uk_manual_compile_frontier.v1",
@@ -40,7 +43,7 @@ def _workqueue_row(*, source_preview: str = "insert the row") -> dict[str, objec
     }
 
 
-def _claim_row(*, source_preview: str = "insert the row") -> dict[str, object]:
+def _claim_row(*, source_preview: str = "insert the row") -> JsonObject:
     source_hash = hashlib.sha256(source_preview.encode("utf-8")).hexdigest()
     return {
         "schema": "lawvm.uk_semantic_compile_claim.v1",
@@ -106,9 +109,9 @@ def _live_target_row(
     line_number: int | None = None,
     statute_id: str = "ukpga/2000/1",
     target_paths: list[str] | None = None,
-    target_fingerprints: dict[str, object] | None = None,
-) -> dict[str, object]:
-    row: dict[str, object] = {
+    target_fingerprints: JsonObject | None = None,
+) -> JsonObject:
+    row: JsonObject = {
         "schema": "lawvm.uk_live_target_index.v1",
         "statute_id": statute_id,
         "target_paths": target_paths
@@ -334,11 +337,11 @@ def test_validate_semantic_claim_rejects_replace_with_absent_live_target() -> No
     claim = _claim_row()
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "REPLACE"  # ty:ignore[invalid-assignment]
+    operation["action"] = "REPLACE"
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -364,7 +367,7 @@ def test_validate_semantic_claim_accepts_declared_live_target_precondition() -> 
             "path": "section:1/table:1",
             "text_sha256": target_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -408,7 +411,7 @@ def test_validate_semantic_claim_rejects_live_target_precondition_without_live_i
             "path": "section:1/table:1",
             "text_sha256": hashlib.sha256(b"table text").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -434,7 +437,7 @@ def test_validate_semantic_claim_accepts_duplicate_identical_live_fingerprint() 
             "path": "section:1/table:1",
             "text_sha256": target_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     live_row = _live_target_row(
         target_fingerprints={
             "section:1/table:1": {
@@ -468,7 +471,7 @@ def test_validate_semantic_claim_rejects_conflicting_live_fingerprint_index() ->
             "path": "section:1/table:1",
             "text_sha256": target_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -513,7 +516,7 @@ def test_validate_semantic_claim_rejects_live_target_precondition_mismatch() -> 
             "path": "section:1/table:1",
             "subtree_sha256": "expected",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -555,7 +558,7 @@ def test_validate_semantic_claim_rejects_duplicate_live_target_precondition_id()
             "path": "section:1/table:2",
             "text_sha256": target_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -734,7 +737,7 @@ def test_validate_semantic_claim_rejects_authorization_assertions(
     else:
         proposed_outcome = claim["proposed_outcome"]
         assert isinstance(proposed_outcome, dict)
-        proposed_outcome[field_name] = value  # ty:ignore[invalid-assignment]
+        proposed_outcome[field_name] = value
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -752,7 +755,7 @@ def test_validate_semantic_claim_rejects_workqueue_source_preview_hash_mismatch(
     workqueue = _workqueue_row()
     source = workqueue["source"]
     assert isinstance(source, dict)
-    source["text_preview_sha256"] = "0" * 64  # ty:ignore[invalid-assignment]
+    source["text_preview_sha256"] = "0" * 64
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (_claim_row(),),
@@ -780,7 +783,7 @@ def test_validate_semantic_claim_accepts_source_text_precondition() -> None:
             "contains": "entry relating to X",
             "sha256": hashlib.sha256(b"entry relating to X").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -810,7 +813,7 @@ def test_validate_semantic_claim_rejects_source_text_precondition_mismatch() -> 
         {
             "contains": "entry relating to X",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -832,11 +835,11 @@ def test_validate_semantic_claim_rejects_source_precondition_missing_from_workqu
         {
             "contains": "entry relating to X",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     workqueue = _workqueue_row(source_preview="insert the row")
     source = workqueue["source"]
     assert isinstance(source, dict)
-    source.pop("text_preview_sha256")  # ty:ignore[invalid-argument-type]
+    source.pop("text_preview_sha256")
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -864,7 +867,7 @@ def test_validate_semantic_claim_accepts_source_text_occurrence_count() -> None:
             "min_occurrences": "2",
             "max_occurrences": 2,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -886,7 +889,7 @@ def test_validate_semantic_claim_rejects_source_text_occurrence_count_mismatch()
             "min_occurrences": 3,
             "max_occurrences": 1,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -919,7 +922,7 @@ def test_validate_semantic_claim_rejects_occurrence_count_if_any_source_preview_
             "min_occurrences": 1,
             "max_occurrences": 1,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -945,7 +948,7 @@ def test_validate_semantic_claim_rejects_invalid_source_text_occurrence_count() 
             "contains": '"old"',
             "occurrence_count": "twice",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -971,7 +974,7 @@ def test_validate_semantic_claim_accepts_source_text_precondition_order() -> Non
             "contains": "insert the row",
             "after_precondition_ids": ["source-anchor"],
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -996,7 +999,7 @@ def test_validate_semantic_claim_rejects_source_text_precondition_reversed_order
             "contains": "insert the row",
             "after_precondition_ids": ["source-anchor"],
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1019,7 +1022,7 @@ def test_validate_semantic_claim_rejects_source_text_precondition_unknown_order_
             "contains": "insert the row",
             "after_precondition_ids": ["missing-anchor"],
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1046,7 +1049,7 @@ def test_validate_semantic_claim_rejects_duplicate_source_text_order_refs() -> N
             "contains": "insert the row",
             "after_precondition_ids": ["source-anchor", "source-anchor"],
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1074,7 +1077,7 @@ def test_validate_semantic_claim_rejects_source_text_precondition_order_without_
             "contains": "insert the row",
             "after_precondition_ids": ["source-anchor"],
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1106,7 +1109,7 @@ def test_validate_semantic_claim_rejects_ambiguous_source_text_precondition_orde
             "contains": "insert the row",
             "after_precondition_ids": ["source-anchor"],
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1135,7 +1138,7 @@ def test_validate_semantic_claim_rejects_duplicate_source_text_precondition_id()
             "precondition_id": "source-anchor",
             "contains": "insert the row",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1157,7 +1160,7 @@ def test_validate_semantic_claim_accepts_operation_family_proof_refs() -> None:
             "precondition_id": "source-names-anchor",
             "contains": "entry relating to X",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-insert-anchor",
@@ -1167,7 +1170,7 @@ def test_validate_semantic_claim_accepts_operation_family_proof_refs() -> None:
             "source_text_precondition_ids": ["source-names-anchor"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1196,37 +1199,37 @@ def test_validate_semantic_claim_accepts_source_target_reconciliation_proof() ->
         {
             "ownership_id": "source_feed_target_reconciliation",
             "status": "claimed_not_proved",
-        }  # ty:ignore[invalid-argument-type]
+        }
     )
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "TEXT_REPLACE"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1"  # ty:ignore[invalid-assignment]
-    validator_checks = proposed_outcome["validator_checks"]  # ty:ignore[invalid-argument-type]
+    operation["action"] = "TEXT_REPLACE"
+    operation["target"] = "section:1"
+    validator_checks = proposed_outcome["validator_checks"]
     assert isinstance(validator_checks, list)
     validator_checks.append(
         {
             "check_id": "claim_reconciles_source_amount_target_and_effect_feed_target",
             "status": "claimed_not_proved",
-        }  # ty:ignore[invalid-argument-type]
+        }
     )
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-target",
             "contains": "section 2",
         }
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-carrier",
             "path": "section:1",
             "text_sha256": carrier_hash,
         }
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-source-target-reconciliation",
@@ -1244,7 +1247,7 @@ def test_validate_semantic_claim_accepts_source_target_reconciliation_proof() ->
             "live_target_precondition_ids": ["live-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -1285,7 +1288,7 @@ def test_validate_semantic_claim_rejects_malformed_operation_family_proof_refs()
             "precondition_id": "source-names-anchor",
             "contains": "entry relating to X",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-insert-anchor",
@@ -1295,7 +1298,7 @@ def test_validate_semantic_claim_rejects_malformed_operation_family_proof_refs()
             "source_text_precondition_ids": ["missing-source-precondition"],
             "status": "proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1333,7 +1336,7 @@ def test_validate_semantic_claim_rejects_case_variant_proof_passed_status() -> N
             "precondition_id": "source-names-anchor",
             "contains": "entry relating to X",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-insert-anchor",
@@ -1343,7 +1346,7 @@ def test_validate_semantic_claim_rejects_case_variant_proof_passed_status() -> N
             "source_text_precondition_ids": ["source-names-anchor"],
             "status": " Passed ",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1365,14 +1368,14 @@ def test_validate_semantic_claim_rejects_duplicate_operation_family_proof_refs()
             "precondition_id": "source-names-anchor",
             "contains": "entry relating to X",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-table-carrier",
             "path": "section:1/table:1",
             "text_sha256": hashlib.sha256(b"table one").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-insert-anchor",
@@ -1397,7 +1400,7 @@ def test_validate_semantic_claim_rejects_duplicate_operation_family_proof_refs()
             ],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1435,14 +1438,14 @@ def test_validate_semantic_claim_rejects_duplicate_family_specific_proof_refs() 
             "precondition_id": "source-names-anchor",
             "contains": "entry relating to X",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-table-carrier",
             "path": "section:1/table:1",
             "text_sha256": hashlib.sha256(b"table one").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-insert-anchor",
@@ -1455,7 +1458,7 @@ def test_validate_semantic_claim_rejects_duplicate_family_specific_proof_refs() 
             "entry_ownership_ids": ["entry-carrier", "entry-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1485,13 +1488,13 @@ def test_validate_semantic_claim_rejects_duplicate_validator_check_ids() -> None
             "check_id": "changed_paths_are_within_claimed_table_surface",
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-names-anchor",
             "contains": "entry relating to X",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-insert-anchor",
@@ -1501,7 +1504,7 @@ def test_validate_semantic_claim_rejects_duplicate_validator_check_ids() -> None
             "source_text_precondition_ids": ["source-names-anchor"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1525,14 +1528,14 @@ def test_validate_semantic_claim_accepts_table_insert_family_proof_semantic() ->
             "precondition_id": "source-names-anchor",
             "contains": "entry relating to X",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-table-carrier",
             "path": "section:1/table:1",
             "text_sha256": target_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-insert-anchor",
@@ -1544,7 +1547,7 @@ def test_validate_semantic_claim_accepts_table_insert_family_proof_semantic() ->
             "live_target_precondition_ids": ["live-table-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -1579,21 +1582,21 @@ def test_validate_semantic_claim_scopes_live_paths_to_referenced_precondition_id
     claim = _claim_row(source_preview="after the entry relating to X insert the row")
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["target"] = "section:1/table:2/row:1"  # ty:ignore[invalid-assignment]
+    operation["target"] = "section:1/table:2/row:1"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/table:2/row:1"],
         "target_region": ["section:1/table:2/row:1"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-names-anchor",
             "contains": "entry relating to X",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "referenced-live-carrier",
@@ -1605,7 +1608,7 @@ def test_validate_semantic_claim_scopes_live_paths_to_referenced_precondition_id
             "path": "section:1/table:2",
             "text_sha256": hashlib.sha256(b"table two").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-insert-anchor",
@@ -1617,7 +1620,7 @@ def test_validate_semantic_claim_scopes_live_paths_to_referenced_precondition_id
             "live_target_precondition_ids": ["referenced-live-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1640,7 +1643,7 @@ def test_validate_semantic_claim_rejects_duplicate_live_ids_in_operation_family_
             "precondition_id": "source-names-anchor",
             "contains": "entry relating to X",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-table-carrier",
@@ -1652,7 +1655,7 @@ def test_validate_semantic_claim_rejects_duplicate_live_ids_in_operation_family_
             "path": "section:1/table:2",
             "text_sha256": hashlib.sha256(b"table two").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-insert-anchor",
@@ -1664,7 +1667,7 @@ def test_validate_semantic_claim_rejects_duplicate_live_ids_in_operation_family_
             "live_target_precondition_ids": ["live-table-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1692,7 +1695,7 @@ def test_validate_semantic_claim_rejects_duplicate_live_ids_without_proof_or_ind
             "path": "section:1/table:2",
             "text_sha256": hashlib.sha256(b"table two").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1714,14 +1717,14 @@ def test_validate_semantic_claim_rejects_table_insert_family_proof_semantic_gap(
             "precondition_id": "source-names-anchor",
             "contains": "entry relating to X",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "wrong-live-carrier",
             "path": "section:1/table:2",
             "text_sha256": hashlib.sha256(b"other table").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-insert-anchor",
@@ -1733,7 +1736,7 @@ def test_validate_semantic_claim_rejects_table_insert_family_proof_semantic_gap(
             "live_target_precondition_ids": ["wrong-live-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1753,30 +1756,30 @@ def test_validate_semantic_claim_accepts_text_rewrite_family_proof_semantic() ->
     claim["action_family"] = "facet_text_rewrite"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "TEXT_REPLACE"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1"  # ty:ignore[invalid-assignment]
-    operation["surface_role"] = "heading_facet"  # ty:ignore[invalid-assignment]
+    operation["action"] = "TEXT_REPLACE"
+    operation["target"] = "section:1"
+    operation["surface_role"] = "heading_facet"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1"],
         "target_region": ["section:1"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-names-preimage",
             "contains": "old heading",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-heading-target",
             "path": "section:1",
             "text_sha256": target_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-heading-text-rewrite",
@@ -1788,7 +1791,7 @@ def test_validate_semantic_claim_accepts_text_rewrite_family_proof_semantic() ->
             "live_target_precondition_ids": ["live-heading-target"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -1819,29 +1822,29 @@ def test_validate_semantic_claim_rejects_text_rewrite_family_proof_semantic_gap(
     claim["action_family"] = "facet_text_rewrite"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "INSERT"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1/table:1/row:2"  # ty:ignore[invalid-assignment]
+    operation["action"] = "INSERT"
+    operation["target"] = "section:1/table:1/row:2"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/table:1/row:2"],
         "target_region": ["section:1/table:1/row:2"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-names-preimage",
             "contains": "old heading",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-heading-target",
             "path": "section:1",
             "text_sha256": hashlib.sha256(b"old heading").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-heading-text-rewrite",
@@ -1853,7 +1856,7 @@ def test_validate_semantic_claim_rejects_text_rewrite_family_proof_semantic_gap(
             "live_target_precondition_ids": ["live-heading-target"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -1881,35 +1884,35 @@ def test_validate_semantic_claim_accepts_sentence_scoped_insert_family_proof_sem
     claim["action_family"] = "sentence_scoped_repeated_insert"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "insert"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1"  # ty:ignore[invalid-assignment]
+    operation["action"] = "insert"
+    operation["target"] = "section:1"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1"],
         "target_region": ["section:1"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-names-sentence-scope",
             "contains": "final two sentences",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-section-target",
             "path": "section:1",
             "text_sha256": hashlib.sha256(b"First. Second.").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["validator_checks"] = [
         {
             "check_id": "claim_identifies_each_sentence_boundary",
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-sentence-insert",
@@ -1922,7 +1925,7 @@ def test_validate_semantic_claim_accepts_sentence_scoped_insert_family_proof_sem
             "sentence_boundary_ownership_ids": ["final-two-sentence-boundaries"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -1953,29 +1956,29 @@ def test_validate_semantic_claim_rejects_sentence_scoped_insert_family_proof_sem
     claim["action_family"] = "sentence_scoped_repeated_insert"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "delete"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:2"  # ty:ignore[invalid-assignment]
+    operation["action"] = "delete"
+    operation["target"] = "section:2"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:2"],
         "target_region": ["section:2"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-names-sentence-scope",
             "contains": "each sentence",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-section-target",
             "path": "section:1",
             "text_sha256": hashlib.sha256(b"First. Second.").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-sentence-insert",
@@ -1986,7 +1989,7 @@ def test_validate_semantic_claim_rejects_sentence_scoped_insert_family_proof_sem
             "live_target_precondition_ids": ["live-section-target"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -2017,29 +2020,29 @@ def test_validate_semantic_claim_accepts_structural_insert_family_proof_semantic
     claim["action_family"] = "structural_sibling_insert"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "INSERT"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1/subsection:1A"  # ty:ignore[invalid-assignment]
+    operation["action"] = "INSERT"
+    operation["target"] = "section:1/subsection:1A"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/subsection:1A"],
         "target_region": ["section:1/subsection:1A"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-carries-inserted-payload",
             "contains": "insert subsection 1A",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-parent-carrier",
             "path": "section:1",
             "text_sha256": parent_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-structural-insert-payload",
@@ -2051,7 +2054,7 @@ def test_validate_semantic_claim_accepts_structural_insert_family_proof_semantic
             "live_target_precondition_ids": ["live-parent-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -2082,29 +2085,29 @@ def test_validate_semantic_claim_rejects_structural_insert_family_proof_semantic
     claim["action_family"] = "structural_sibling_insert"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "INSERT"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1/subsection:1A"  # ty:ignore[invalid-assignment]
+    operation["action"] = "INSERT"
+    operation["target"] = "section:1/subsection:1A"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/subsection:1A"],
         "target_region": ["section:1/subsection:1A"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-carries-inserted-payload",
             "contains": "insert subsection 1A",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "wrong-live-parent",
             "path": "section:2",
             "text_sha256": hashlib.sha256(b"other parent").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-structural-insert-payload",
@@ -2116,7 +2119,7 @@ def test_validate_semantic_claim_rejects_structural_insert_family_proof_semantic
             "live_target_precondition_ids": ["wrong-live-parent"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -2147,7 +2150,7 @@ def test_validate_semantic_claim_accepts_schedule_list_entry_family_proof_semant
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operation = proposed_outcome["operations"][0]  # ty:ignore[invalid-argument-type, not-subscriptable]
+    operation = proposed_outcome["operations"][0]
     assert isinstance(operation, dict)
     operation["action"] = "INSERT"
     operation["target"] = "schedule:1/entry:Y"
@@ -2160,14 +2163,14 @@ def test_validate_semantic_claim_accepts_schedule_list_entry_family_proof_semant
     proposed_outcome["source_text_preconditions"] = [
         {"precondition_id": "entry-anchor", "contains": "entry relating to"},
         {"precondition_id": "entry-payload", "contains": 'insert "Y"'},
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-entry-carrier",
             "path": "schedule:1",
             "text_sha256": carrier_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-schedule-list-entry",
@@ -2186,7 +2189,7 @@ def test_validate_semantic_claim_accepts_schedule_list_entry_family_proof_semant
             "live_target_precondition_ids": ["live-entry-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -2220,7 +2223,7 @@ def test_validate_semantic_claim_rejects_schedule_list_entry_family_proof_semant
     claim["action_family"] = "schedule_list_entry_mutation"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operation = proposed_outcome["operations"][0]  # ty:ignore[invalid-argument-type, not-subscriptable]
+    operation = proposed_outcome["operations"][0]
     assert isinstance(operation, dict)
     operation["action"] = "REPEAL"
     operation["target"] = "schedule:2/entry:Y"
@@ -2230,14 +2233,14 @@ def test_validate_semantic_claim_rejects_schedule_list_entry_family_proof_semant
     }
     proposed_outcome["source_text_preconditions"] = [
         {"precondition_id": "entry-anchor", "contains": "entry relating to"},
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-entry-carrier",
             "path": "schedule:1",
             "text_sha256": hashlib.sha256(b"schedule entries").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-schedule-list-entry",
@@ -2250,7 +2253,7 @@ def test_validate_semantic_claim_rejects_schedule_list_entry_family_proof_semant
             "live_target_precondition_ids": ["live-entry-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -2312,7 +2315,7 @@ def test_validate_semantic_claim_accepts_definition_entry_insert_family_proof_se
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operation = proposed_outcome["operations"][0]  # ty:ignore[invalid-argument-type, not-subscriptable]
+    operation = proposed_outcome["operations"][0]
     assert isinstance(operation, dict)
     operation["action"] = "INSERT"
     operation["target"] = "section:1/definition:registered provider"
@@ -2326,14 +2329,14 @@ def test_validate_semantic_claim_accepts_definition_entry_insert_family_proof_se
     proposed_outcome["source_text_preconditions"] = [
         {"precondition_id": "definition-term", "contains": "registered provider"},
         {"precondition_id": "definition-payload", "contains": "means X"},
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-definition-list",
             "path": "section:1",
             "text_sha256": list_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-definition-entry-insert",
@@ -2356,7 +2359,7 @@ def test_validate_semantic_claim_accepts_definition_entry_insert_family_proof_se
             "live_target_precondition_ids": ["live-definition-list"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -2390,7 +2393,7 @@ def test_validate_semantic_claim_rejects_definition_entry_insert_family_proof_se
     claim["action_family"] = "definition_entry_insert"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operation = proposed_outcome["operations"][0]  # ty:ignore[invalid-argument-type, not-subscriptable]
+    operation = proposed_outcome["operations"][0]
     assert isinstance(operation, dict)
     operation["action"] = "REPLACE"
     operation["target"] = "section:2/definition:registered provider"
@@ -2400,14 +2403,14 @@ def test_validate_semantic_claim_rejects_definition_entry_insert_family_proof_se
     }
     proposed_outcome["source_text_preconditions"] = [
         {"precondition_id": "definition-term", "contains": "registered provider"},
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-definition-list",
             "path": "section:1",
             "text_sha256": hashlib.sha256(b"definition list").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-definition-entry-insert",
@@ -2420,7 +2423,7 @@ def test_validate_semantic_claim_rejects_definition_entry_insert_family_proof_se
             "live_target_precondition_ids": ["live-definition-list"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -2471,19 +2474,19 @@ def test_validate_semantic_claim_accepts_savings_qualified_omission_family_proof
     claim["action_family"] = "savings_qualified_text_omission"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "TEXT_REPEAL"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1"  # ty:ignore[invalid-assignment]
+    operation["action"] = "TEXT_REPEAL"
+    operation["target"] = "section:1"
     operation["applicability_scope"] = {
         "savings_condition": "except in the case of proceedings begun before commencement",
-    }  # ty:ignore[invalid-assignment]
+    }
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1"],
         "target_region": ["section:1"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-names-omitted-reference",
@@ -2493,14 +2496,14 @@ def test_validate_semantic_claim_accepts_savings_qualified_omission_family_proof
             "precondition_id": "source-names-savings-condition",
             "contains": "except in the case of proceedings",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-text-carrier",
             "path": "section:1",
             "text_sha256": target_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-savings-qualified-omission",
@@ -2521,7 +2524,7 @@ def test_validate_semantic_claim_accepts_savings_qualified_omission_family_proof
             "live_target_precondition_ids": ["live-text-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -2557,29 +2560,29 @@ def test_validate_semantic_claim_rejects_unscoped_savings_qualified_omission_pro
     claim["action_family"] = "savings_qualified_text_omission"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "REPEAL"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1"  # ty:ignore[invalid-assignment]
+    operation["action"] = "REPEAL"
+    operation["target"] = "section:1"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1"],
         "target_region": ["section:1"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-names-omitted-reference",
             "contains": "reference to the Magistrates' Courts Act 1980",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "wrong-live-text-carrier",
             "path": "section:2",
             "text_sha256": hashlib.sha256(b"other text").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-savings-qualified-omission",
@@ -2594,7 +2597,7 @@ def test_validate_semantic_claim_rejects_unscoped_savings_qualified_omission_pro
             "live_target_precondition_ids": ["wrong-live-text-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -2643,16 +2646,16 @@ def test_validate_semantic_claim_accepts_whole_act_listed_enactments_family_proo
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "TEXT_REPLACE"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1"  # ty:ignore[invalid-assignment]
+    operation["action"] = "TEXT_REPLACE"
+    operation["target"] = "section:1"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1"],
         "target_region": ["section:1"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-lists-affected-enactment",
@@ -2662,14 +2665,14 @@ def test_validate_semantic_claim_accepts_whole_act_listed_enactments_family_proo
             "precondition_id": "source-names-quoted-preimage",
             "contains": "old phrase",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-text-carrier",
             "path": "section:1",
             "text_sha256": target_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-whole-act-listed-enactment",
@@ -2694,7 +2697,7 @@ def test_validate_semantic_claim_accepts_whole_act_listed_enactments_family_proo
             "live_target_precondition_ids": ["live-text-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -2730,29 +2733,29 @@ def test_validate_semantic_claim_rejects_whole_act_listed_enactments_proof_seman
     claim["action_family"] = "whole_act_listed_enactments_text_patch"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "INSERT"  # ty:ignore[invalid-assignment]
-    operation["target"] = "title:short"  # ty:ignore[invalid-assignment]
+    operation["action"] = "INSERT"
+    operation["target"] = "title:short"
     operation["mutation_boundary"] = {
         "changed_paths": ["title:short"],
         "target_region": ["title:short"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-lists-affected-enactment",
             "contains": "enactments listed in Schedule 1",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-text-carrier",
             "path": "section:1",
             "text_sha256": hashlib.sha256(b"text with old phrase").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-whole-act-listed-enactment",
@@ -2767,7 +2770,7 @@ def test_validate_semantic_claim_rejects_whole_act_listed_enactments_proof_seman
             "live_target_precondition_ids": ["live-text-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -2818,16 +2821,16 @@ def test_validate_semantic_claim_accepts_whole_act_repeal_exception_family_proof
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "REPEAL"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:3"  # ty:ignore[invalid-assignment]
+    operation["action"] = "REPEAL"
+    operation["target"] = "section:3"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:3"],
         "target_region": ["section:3"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-names-whole-act-repeal",
@@ -2837,14 +2840,14 @@ def test_validate_semantic_claim_accepts_whole_act_repeal_exception_family_proof
             "precondition_id": "source-names-exceptions",
             "contains": "except sections 1 and 2",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-whole-act-minus-exceptions",
             "path": "section:3",
             "text_sha256": target_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-whole-act-repeal-exceptions",
@@ -2860,7 +2863,7 @@ def test_validate_semantic_claim_accepts_whole_act_repeal_exception_family_proof
             "live_target_precondition_ids": ["live-whole-act-minus-exceptions"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -2892,23 +2895,23 @@ def test_validate_semantic_claim_rejects_whole_act_repeal_exception_proof_semant
     claim["action_family"] = "whole_act_repeal_with_exceptions"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "INSERT"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:99"  # ty:ignore[invalid-assignment]
+    operation["action"] = "INSERT"
+    operation["target"] = "section:99"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:99"],
         "target_region": ["section:99"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-whole-act-minus-exceptions",
             "path": "section:3",
             "text_sha256": hashlib.sha256(b"whole act section text").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-whole-act-repeal-exceptions",
@@ -2919,7 +2922,7 @@ def test_validate_semantic_claim_rejects_whole_act_repeal_exception_proof_semant
             "live_target_precondition_ids": ["live-whole-act-minus-exceptions"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -2973,16 +2976,16 @@ def test_validate_semantic_claim_accepts_appropriate_place_family_proof_semantic
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "INSERT"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1/subsection:1A"  # ty:ignore[invalid-assignment]
+    operation["action"] = "INSERT"
+    operation["target"] = "section:1/subsection:1A"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/subsection:1A"],
         "target_region": ["section:1/subsection:1A"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-uses-appropriate-place",
@@ -2992,7 +2995,7 @@ def test_validate_semantic_claim_accepts_appropriate_place_family_proof_semantic
             "precondition_id": "source-carries-payload",
             "contains": "new listed entry",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-parent-carrier",
@@ -3004,7 +3007,7 @@ def test_validate_semantic_claim_accepts_appropriate_place_family_proof_semantic
             "path": "section:1/subsection:1",
             "text_sha256": anchor_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-appropriate-place-anchor",
@@ -3027,7 +3030,7 @@ def test_validate_semantic_claim_accepts_appropriate_place_family_proof_semantic
             "anchor_live_target_precondition_ids": ["live-anchor"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -3081,16 +3084,16 @@ def test_validate_semantic_claim_rejects_appropriate_place_unreferenced_anchor_l
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "INSERT"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1/subsection:1A"  # ty:ignore[invalid-assignment]
+    operation["action"] = "INSERT"
+    operation["target"] = "section:1/subsection:1A"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/subsection:1A"],
         "target_region": ["section:1/subsection:1A"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-uses-appropriate-place",
@@ -3100,7 +3103,7 @@ def test_validate_semantic_claim_rejects_appropriate_place_unreferenced_anchor_l
             "precondition_id": "source-carries-payload",
             "contains": "new listed entry",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-parent-carrier",
@@ -3112,7 +3115,7 @@ def test_validate_semantic_claim_rejects_appropriate_place_unreferenced_anchor_l
             "path": "section:1/subsection:1",
             "text_sha256": anchor_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-appropriate-place-anchor",
@@ -3132,7 +3135,7 @@ def test_validate_semantic_claim_rejects_appropriate_place_unreferenced_anchor_l
             "anchor_live_target_precondition_paths": ["section:1/subsection:1"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -3169,23 +3172,23 @@ def test_validate_semantic_claim_accepts_appropriate_place_declared_ordering_rul
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "INSERT"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1/subsection:1A"  # ty:ignore[invalid-assignment]
+    operation["action"] = "INSERT"
+    operation["target"] = "section:1/subsection:1A"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/subsection:1A"],
         "target_region": ["section:1/subsection:1A"],
-    }  # ty:ignore[invalid-assignment]
-    validator_checks = proposed_outcome["validator_checks"]  # ty:ignore[invalid-argument-type]
+    }
+    validator_checks = proposed_outcome["validator_checks"]
     assert isinstance(validator_checks, list)
     validator_checks.append(
         {
             "check_id": "claim_identifies_ordering_rule",
             "status": "claimed_not_proved",
-        }  # ty:ignore[invalid-argument-type]
+        }
     )
     proposed_outcome["source_text_preconditions"] = [
         {
@@ -3196,14 +3199,14 @@ def test_validate_semantic_claim_accepts_appropriate_place_declared_ordering_rul
             "precondition_id": "source-carries-payload",
             "contains": "new listed entry",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-parent-carrier",
             "path": "section:1",
             "text_sha256": parent_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-appropriate-place-ordering",
@@ -3226,7 +3229,7 @@ def test_validate_semantic_claim_accepts_appropriate_place_declared_ordering_rul
             "ordering_rule_id": "claim_identifies_ordering_rule",
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -3267,16 +3270,16 @@ def test_validate_semantic_claim_rejects_appropriate_place_unlisted_ordering_rul
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "INSERT"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1/subsection:1A"  # ty:ignore[invalid-assignment]
+    operation["action"] = "INSERT"
+    operation["target"] = "section:1/subsection:1A"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/subsection:1A"],
         "target_region": ["section:1/subsection:1A"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-uses-appropriate-place",
@@ -3286,14 +3289,14 @@ def test_validate_semantic_claim_rejects_appropriate_place_unlisted_ordering_rul
             "precondition_id": "source-carries-payload",
             "contains": "new listed entry",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-parent-carrier",
             "path": "section:1",
             "text_sha256": parent_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-appropriate-place-ordering",
@@ -3313,7 +3316,7 @@ def test_validate_semantic_claim_rejects_appropriate_place_unlisted_ordering_rul
             "ordering_rule_id": "claim_identifies_ordering_rule",
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -3334,29 +3337,29 @@ def test_validate_semantic_claim_rejects_appropriate_place_family_proof_semantic
     claim["action_family"] = "appropriate_place_mutation"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "TEXT_REPLACE"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:2/subsection:1A"  # ty:ignore[invalid-assignment]
+    operation["action"] = "TEXT_REPLACE"
+    operation["target"] = "section:2/subsection:1A"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:2/subsection:1A"],
         "target_region": ["section:2/subsection:1A"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-uses-appropriate-place",
             "contains": "appropriate place",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-parent-carrier",
             "path": "section:1",
             "text_sha256": hashlib.sha256(b"parent text").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-appropriate-place-anchor",
@@ -3368,7 +3371,7 @@ def test_validate_semantic_claim_rejects_appropriate_place_family_proof_semantic
             "live_target_precondition_ids": ["live-parent-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -3429,18 +3432,18 @@ def test_validate_semantic_claim_accepts_range_to_container_family_proof_semanti
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "REPLACE"  # ty:ignore[invalid-assignment]
-    operation["target"] = "part:2/chapter:1"  # ty:ignore[invalid-assignment]
+    operation["action"] = "REPLACE"
+    operation["target"] = "part:2/chapter:1"
     operation["mutation_boundary"] = {
         "changed_paths": ["part:2/chapter:1"],
         "target_region": ["part:2/chapter:1"],
         "declared_migration_paths": ["section:3", "section:4"],
         "migration_event_id": "migration-range-container-1",
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-names-range",
@@ -3450,14 +3453,14 @@ def test_validate_semantic_claim_accepts_range_to_container_family_proof_semanti
             "precondition_id": "source-carries-container-payload",
             "contains": "Chapter 1 Bus services improvement partnerships",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-container",
             "path": "part:2/chapter:1",
             "text_sha256": container_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-range-to-container",
@@ -3477,7 +3480,7 @@ def test_validate_semantic_claim_accepts_range_to_container_family_proof_semanti
             "live_target_precondition_ids": ["live-container"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -3514,29 +3517,29 @@ def test_validate_semantic_claim_rejects_range_to_container_family_proof_semanti
     claim["action_family"] = "range_to_container_substitution"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "TEXT_REPLACE"  # ty:ignore[invalid-assignment]
-    operation["target"] = "part:3/chapter:1"  # ty:ignore[invalid-assignment]
+    operation["action"] = "TEXT_REPLACE"
+    operation["target"] = "part:3/chapter:1"
     operation["mutation_boundary"] = {
         "changed_paths": ["part:3/chapter:1"],
         "target_region": ["part:3/chapter:1"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-names-range",
             "contains": "sections 3 to 12",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-container",
             "path": "part:2/chapter:1",
             "text_sha256": hashlib.sha256(b"chapter container").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-range-to-container",
@@ -3549,7 +3552,7 @@ def test_validate_semantic_claim_rejects_range_to_container_family_proof_semanti
             "live_target_precondition_ids": ["live-container"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -3603,16 +3606,16 @@ def test_validate_semantic_claim_accepts_table_repeal_or_omission_family_proof_s
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "REPEAL"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1/table:1/row:2"  # ty:ignore[invalid-assignment]
+    operation["action"] = "REPEAL"
+    operation["target"] = "section:1/table:1/row:2"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/table:1/row:2"],
         "target_region": ["section:1/table:1/row:2"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-names-table",
@@ -3622,14 +3625,14 @@ def test_validate_semantic_claim_accepts_table_repeal_or_omission_family_proof_s
             "precondition_id": "source-names-repealed-entry",
             "contains": "entry for old licence",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-table-carrier",
             "path": "section:1/table:1",
             "text_sha256": table_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-repeal-boundary",
@@ -3649,7 +3652,7 @@ def test_validate_semantic_claim_accepts_table_repeal_or_omission_family_proof_s
             "live_target_precondition_ids": ["live-table-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -3685,29 +3688,29 @@ def test_validate_semantic_claim_rejects_table_repeal_or_omission_family_proof_s
     claim["action_family"] = "table_repeal_or_omission"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "REPLACE"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:2/table:1/row:2"  # ty:ignore[invalid-assignment]
+    operation["action"] = "REPLACE"
+    operation["target"] = "section:2/table:1/row:2"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:2/table:1/row:2"],
         "target_region": ["section:2/table:1/row:2"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-names-table",
             "contains": "In the table",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-table-carrier",
             "path": "section:1/table:1",
             "text_sha256": hashlib.sha256(b"table text").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-repeal-boundary",
@@ -3719,7 +3722,7 @@ def test_validate_semantic_claim_rejects_table_repeal_or_omission_family_proof_s
             "live_target_precondition_ids": ["live-table-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -3774,13 +3777,13 @@ def test_validate_semantic_claim_accepts_cross_container_renumber_family_proof_s
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "RENUMBER"  # ty:ignore[invalid-assignment]
-    operation["target"] = "schedule:22/paragraph:88"  # ty:ignore[invalid-assignment]
-    operation["destination"] = "schedule:2/paragraph:88/subparagraph:1"  # ty:ignore[invalid-assignment]
+    operation["action"] = "RENUMBER"
+    operation["target"] = "schedule:22/paragraph:88"
+    operation["destination"] = "schedule:2/paragraph:88/subparagraph:1"
     operation["mutation_boundary"] = {
         "changed_paths": [
             "schedule:22/paragraph:88",
@@ -3792,7 +3795,7 @@ def test_validate_semantic_claim_accepts_cross_container_renumber_family_proof_s
             "schedule:2/paragraph:88/subparagraph:1",
         ],
         "migration_event_id": "migration-cross-container-1",
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-target",
@@ -3802,7 +3805,7 @@ def test_validate_semantic_claim_accepts_cross_container_renumber_family_proof_s
             "precondition_id": "destination-target",
             "contains": "Schedule 2 paragraph 88(1)",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-source-schedule",
@@ -3814,7 +3817,7 @@ def test_validate_semantic_claim_accepts_cross_container_renumber_family_proof_s
             "path": "schedule:2",
             "text_sha256": destination_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-cross-container-renumber",
@@ -3842,7 +3845,7 @@ def test_validate_semantic_claim_accepts_cross_container_renumber_family_proof_s
             "destination_live_target_precondition_paths": ["schedule:2"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -3901,13 +3904,13 @@ def test_validate_semantic_claim_rejects_cross_container_renumber_unreferenced_d
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "RENUMBER"  # ty:ignore[invalid-assignment]
-    operation["target"] = "schedule:22/paragraph:88"  # ty:ignore[invalid-assignment]
-    operation["destination"] = "schedule:2/paragraph:88/subparagraph:1"  # ty:ignore[invalid-assignment]
+    operation["action"] = "RENUMBER"
+    operation["target"] = "schedule:22/paragraph:88"
+    operation["destination"] = "schedule:2/paragraph:88/subparagraph:1"
     operation["mutation_boundary"] = {
         "changed_paths": [
             "schedule:22/paragraph:88",
@@ -3919,7 +3922,7 @@ def test_validate_semantic_claim_rejects_cross_container_renumber_unreferenced_d
             "schedule:2/paragraph:88/subparagraph:1",
         ],
         "migration_event_id": "migration-cross-container-1",
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-target",
@@ -3929,7 +3932,7 @@ def test_validate_semantic_claim_rejects_cross_container_renumber_unreferenced_d
             "precondition_id": "destination-target",
             "contains": "Schedule 2 paragraph 88(1)",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-source-schedule",
@@ -3941,7 +3944,7 @@ def test_validate_semantic_claim_rejects_cross_container_renumber_unreferenced_d
             "path": "schedule:2",
             "text_sha256": destination_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-cross-container-renumber",
@@ -3966,7 +3969,7 @@ def test_validate_semantic_claim_rejects_cross_container_renumber_unreferenced_d
             "destination_live_target_precondition_paths": ["schedule:2"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -4010,29 +4013,29 @@ def test_validate_semantic_claim_rejects_cross_container_renumber_family_proof_s
     claim["action_family"] = "cross_container_renumber_migration"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "INSERT"  # ty:ignore[invalid-assignment]
-    operation["target"] = "schedule:23/paragraph:88"  # ty:ignore[invalid-assignment]
+    operation["action"] = "INSERT"
+    operation["target"] = "schedule:23/paragraph:88"
     operation["mutation_boundary"] = {
         "changed_paths": ["schedule:23/paragraph:88"],
         "target_region": ["schedule:23/paragraph:88"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-target",
             "contains": "Schedule 22 paragraph 88",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-source-schedule",
             "path": "schedule:22",
             "text_sha256": hashlib.sha256(b"source schedule").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-cross-container-renumber",
@@ -4047,7 +4050,7 @@ def test_validate_semantic_claim_rejects_cross_container_renumber_family_proof_s
             "source_live_target_precondition_paths": ["schedule:22"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -4116,17 +4119,17 @@ def test_validate_semantic_claim_accepts_amendment_program_family_proof_semantic
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "INSERT"  # ty:ignore[invalid-assignment]
-    operation["target"] = "schedule:1/paragraph:2/subparagraph:a/item:iia"  # ty:ignore[invalid-assignment]
-    operation["amendment_program_target_id"] = "amendment-program-target-1"  # ty:ignore[invalid-assignment]
+    operation["action"] = "INSERT"
+    operation["target"] = "schedule:1/paragraph:2/subparagraph:a/item:iia"
+    operation["amendment_program_target_id"] = "amendment-program-target-1"
     operation["mutation_boundary"] = {
         "changed_paths": ["schedule:1/paragraph:2/subparagraph:a/item:iia"],
         "target_region": ["schedule:1/paragraph:2/subparagraph:a/item:iia"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-program-target",
@@ -4136,14 +4139,14 @@ def test_validate_semantic_claim_accepts_amendment_program_family_proof_semantic
             "precondition_id": "source-inserted-payload",
             "contains": "insert item (iia)",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-program-parent",
             "path": "schedule:1/paragraph:2/subparagraph:a",
             "text_sha256": program_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-amendment-program-target",
@@ -4166,7 +4169,7 @@ def test_validate_semantic_claim_accepts_amendment_program_family_proof_semantic
             "live_target_precondition_ids": ["live-program-parent"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -4202,29 +4205,29 @@ def test_validate_semantic_claim_rejects_amendment_program_family_proof_semantic
     claim["action_family"] = "amendment_program_target_mutation"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "REPEAL"  # ty:ignore[invalid-assignment]
-    operation["target"] = "schedule:2/paragraph:2/subparagraph:a/item:iia"  # ty:ignore[invalid-assignment]
+    operation["action"] = "REPEAL"
+    operation["target"] = "schedule:2/paragraph:2/subparagraph:a/item:iia"
     operation["mutation_boundary"] = {
         "changed_paths": ["schedule:2/paragraph:2/subparagraph:a/item:iia"],
         "target_region": ["schedule:2/paragraph:2/subparagraph:a/item:iia"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "source-program-target",
             "contains": "paragraph (a), after sub-paragraph (ii)",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-program-parent",
             "path": "schedule:1/paragraph:2/subparagraph:a",
             "text_sha256": hashlib.sha256(b"amendment program text").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-amendment-program-target",
@@ -4239,7 +4242,7 @@ def test_validate_semantic_claim_rejects_amendment_program_family_proof_semantic
             "live_target_precondition_ids": ["live-program-parent"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -4306,14 +4309,14 @@ def test_validate_semantic_claim_accepts_definition_child_text_tail_family_proof
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "TEXT_REPLACE"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:15/subsection:7/definition:NHS body in England/paragraph:d"  # ty:ignore[invalid-assignment]
-    operation["definition_term"] = "NHS body in England"  # ty:ignore[invalid-assignment]
-    operation["definition_child_label"] = "paragraph d"  # ty:ignore[invalid-assignment]
+    operation["action"] = "TEXT_REPLACE"
+    operation["target"] = "section:15/subsection:7/definition:NHS body in England/paragraph:d"
+    operation["definition_term"] = "NHS body in England"
+    operation["definition_child_label"] = "paragraph d"
     operation["mutation_boundary"] = {
         "changed_paths": [
             "section:15/subsection:7/definition:NHS body in England/paragraph:d",
@@ -4321,7 +4324,7 @@ def test_validate_semantic_claim_accepts_definition_child_text_tail_family_proof
         "target_region": [
             "section:15/subsection:7/definition:NHS body in England/paragraph:d",
         ],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "definition-term",
@@ -4339,14 +4342,14 @@ def test_validate_semantic_claim_accepts_definition_child_text_tail_family_proof
             "precondition_id": "replacement-payload",
             "contains": "substitute new text",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-definition",
             "path": "section:15/subsection:7/definition:NHS body in England",
             "text_sha256": definition_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-definition-child-tail",
@@ -4372,7 +4375,7 @@ def test_validate_semantic_claim_accepts_definition_child_text_tail_family_proof
             "live_target_precondition_ids": ["live-definition"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -4415,12 +4418,12 @@ def test_validate_semantic_claim_rejects_definition_child_text_tail_family_proof
     claim["action_family"] = "definition_child_and_tail_substitution"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "REPLACE"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:16/subsection:7/definition:NHS body in England/paragraph:d"  # ty:ignore[invalid-assignment]
+    operation["action"] = "REPLACE"
+    operation["target"] = "section:16/subsection:7/definition:NHS body in England/paragraph:d"
     operation["mutation_boundary"] = {
         "changed_paths": [
             "section:16/subsection:7/definition:NHS body in England/paragraph:d",
@@ -4428,20 +4431,20 @@ def test_validate_semantic_claim_rejects_definition_child_text_tail_family_proof
         "target_region": [
             "section:16/subsection:7/definition:NHS body in England/paragraph:d",
         ],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "definition-term",
             "contains": 'definition of "NHS body in England"',
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-definition",
             "path": "section:15/subsection:7/definition:NHS body in England",
             "text_sha256": hashlib.sha256(b"definition text").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-definition-child-tail",
@@ -4454,7 +4457,7 @@ def test_validate_semantic_claim_rejects_definition_child_text_tail_family_proof
             "live_target_precondition_ids": ["live-definition"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -4532,14 +4535,14 @@ def test_validate_semantic_claim_accepts_definition_child_structural_family_proo
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "REPLACE"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:177/subsection:6/definition:relevant authority/paragraph:a"  # ty:ignore[invalid-assignment]
-    operation["definition_term"] = "relevant authority"  # ty:ignore[invalid-assignment]
-    operation["definition_child_label"] = "paragraph a"  # ty:ignore[invalid-assignment]
+    operation["action"] = "REPLACE"
+    operation["target"] = "section:177/subsection:6/definition:relevant authority/paragraph:a"
+    operation["definition_term"] = "relevant authority"
+    operation["definition_child_label"] = "paragraph a"
     operation["mutation_boundary"] = {
         "changed_paths": [
             "section:177/subsection:6/definition:relevant authority/paragraph:a",
@@ -4547,7 +4550,7 @@ def test_validate_semantic_claim_accepts_definition_child_structural_family_proo
         "target_region": [
             "section:177/subsection:6/definition:relevant authority/paragraph:a",
         ],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "definition-term",
@@ -4561,14 +4564,14 @@ def test_validate_semantic_claim_accepts_definition_child_structural_family_proo
             "precondition_id": "replacement-payload",
             "contains": "structured child payload",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-definition",
             "path": "section:177/subsection:6/definition:relevant authority",
             "text_sha256": definition_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-definition-child-structural",
@@ -4594,7 +4597,7 @@ def test_validate_semantic_claim_accepts_definition_child_structural_family_proo
             "live_target_precondition_ids": ["live-definition"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -4637,12 +4640,12 @@ def test_validate_semantic_claim_rejects_definition_child_structural_family_proo
     claim["action_family"] = "definition_child_structural_substitution"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "TEXT_REPLACE"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:178/subsection:6/definition:relevant authority/paragraph:a"  # ty:ignore[invalid-assignment]
+    operation["action"] = "TEXT_REPLACE"
+    operation["target"] = "section:178/subsection:6/definition:relevant authority/paragraph:a"
     operation["mutation_boundary"] = {
         "changed_paths": [
             "section:178/subsection:6/definition:relevant authority/paragraph:a",
@@ -4650,20 +4653,20 @@ def test_validate_semantic_claim_rejects_definition_child_structural_family_proo
         "target_region": [
             "section:178/subsection:6/definition:relevant authority/paragraph:a",
         ],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "definition-term",
             "contains": 'definition of "relevant authority"',
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-definition",
             "path": "section:177/subsection:6/definition:relevant authority",
             "text_sha256": hashlib.sha256(b"definition text").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-definition-child-structural",
@@ -4677,7 +4680,7 @@ def test_validate_semantic_claim_rejects_definition_child_structural_family_proo
             "live_target_precondition_ids": ["live-definition"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -4753,33 +4756,33 @@ def test_validate_semantic_claim_accepts_definition_child_structural_insert_fami
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "INSERT"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:5/definition:care provider/paragraph:ba"  # ty:ignore[invalid-assignment]
-    operation["definition_term"] = "care provider"  # ty:ignore[invalid-assignment]
-    operation["anchor_definition_child_label"] = "paragraph b"  # ty:ignore[invalid-assignment]
-    operation["inserted_definition_child_label"] = "paragraph ba"  # ty:ignore[invalid-assignment]
-    operation["tail_connector_handling"] = "preserve_or_at_anchor"  # ty:ignore[invalid-assignment]
+    operation["action"] = "INSERT"
+    operation["target"] = "section:5/definition:care provider/paragraph:ba"
+    operation["definition_term"] = "care provider"
+    operation["anchor_definition_child_label"] = "paragraph b"
+    operation["inserted_definition_child_label"] = "paragraph ba"
+    operation["tail_connector_handling"] = "preserve_or_at_anchor"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:5/definition:care provider/paragraph:ba"],
         "target_region": ["section:5/definition:care provider/paragraph:ba"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {"precondition_id": "definition-term", "contains": 'definition of "care provider"'},
         {"precondition_id": "anchor-child", "contains": "paragraph (b)"},
         {"precondition_id": "inserted-payload", "contains": "paragraph (ba)"},
         {"precondition_id": "tail-connector", "contains": 'the "or" at the end'},
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-definition",
             "path": "section:5/definition:care provider",
             "text_sha256": definition_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-definition-child-insert",
@@ -4807,7 +4810,7 @@ def test_validate_semantic_claim_accepts_definition_child_structural_insert_fami
             "live_target_precondition_ids": ["live-definition"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -4841,26 +4844,26 @@ def test_validate_semantic_claim_rejects_definition_child_structural_insert_fami
     claim["action_family"] = "definition_child_structural_insert"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "REPLACE"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:6/definition:care provider/paragraph:ba"  # ty:ignore[invalid-assignment]
+    operation["action"] = "REPLACE"
+    operation["target"] = "section:6/definition:care provider/paragraph:ba"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:6/definition:care provider/paragraph:ba"],
         "target_region": ["section:6/definition:care provider/paragraph:ba"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {"precondition_id": "definition-term", "contains": 'definition of "care provider"'},
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-definition",
             "path": "section:5/definition:care provider",
             "text_sha256": hashlib.sha256(b"definition text").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-definition-child-insert",
@@ -4873,7 +4876,7 @@ def test_validate_semantic_claim_rejects_definition_child_structural_insert_fami
             "live_target_precondition_ids": ["live-definition"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -4961,13 +4964,13 @@ def test_validate_semantic_claim_accepts_mixed_body_heading_split_family_proof_s
                 "target_region": ["section:10/heading"],
             },
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["source_text_preconditions"] = [
         {"precondition_id": "body-target", "contains": "section 10"},
         {"precondition_id": "heading-facet", "contains": "the heading"},
         {"precondition_id": "preimage", "contains": '"old"'},
         {"precondition_id": "replacement", "contains": '"new"'},
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {"precondition_id": "live-body", "path": "section:10", "text_sha256": body_hash},
         {
@@ -4975,7 +4978,7 @@ def test_validate_semantic_claim_accepts_mixed_body_heading_split_family_proof_s
             "path": "section:10/heading",
             "text_sha256": heading_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-mixed-split",
@@ -5002,7 +5005,7 @@ def test_validate_semantic_claim_accepts_mixed_body_heading_split_family_proof_s
             "live_target_precondition_ids": ["live-body", "live-heading"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -5037,7 +5040,7 @@ def test_validate_semantic_claim_rejects_mixed_body_heading_split_family_proof_s
     claim["action_family"] = "mixed_body_heading_text_substitution_split"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operation = proposed_outcome["operations"][0]  # ty:ignore[invalid-argument-type, not-subscriptable]
+    operation = proposed_outcome["operations"][0]
     assert isinstance(operation, dict)
     operation["action"] = "INSERT"
     operation["target"] = "section:11"
@@ -5047,14 +5050,14 @@ def test_validate_semantic_claim_rejects_mixed_body_heading_split_family_proof_s
     }
     proposed_outcome["source_text_preconditions"] = [
         {"precondition_id": "body-target", "contains": "section 10"},
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-body",
             "path": "section:10",
             "text_sha256": hashlib.sha256(b"body text").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-mixed-split",
@@ -5067,7 +5070,7 @@ def test_validate_semantic_claim_rejects_mixed_body_heading_split_family_proof_s
             "live_target_precondition_ids": ["live-body"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -5125,7 +5128,7 @@ def test_validate_semantic_claim_accepts_structural_child_range_family_proof_sem
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operation = proposed_outcome["operations"][0]  # ty:ignore[invalid-argument-type, not-subscriptable]
+    operation = proposed_outcome["operations"][0]
     assert isinstance(operation, dict)
     operation["action"] = "REPLACE"
     operation["target"] = "section:2/subsection:1/paragraph:a"
@@ -5140,14 +5143,14 @@ def test_validate_semantic_claim_accepts_structural_child_range_family_proof_sem
         {"precondition_id": "child-range", "contains": "paragraphs (a) to (c)"},
         {"precondition_id": "removed-child", "contains": "paragraphs (a) to (c)"},
         {"precondition_id": "replacement-payload", "contains": "substitute paragraphs"},
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-range",
             "path": "section:2/subsection:1",
             "text_sha256": range_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-structural-child-range",
@@ -5172,7 +5175,7 @@ def test_validate_semantic_claim_accepts_structural_child_range_family_proof_sem
             "live_target_precondition_ids": ["live-range"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -5209,7 +5212,7 @@ def test_validate_semantic_claim_rejects_structural_child_range_family_proof_sem
     claim["action_family"] = "structural_child_range_substitution"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operation = proposed_outcome["operations"][0]  # ty:ignore[invalid-argument-type, not-subscriptable]
+    operation = proposed_outcome["operations"][0]
     assert isinstance(operation, dict)
     operation["action"] = "MOVE"
     operation["target"] = "section:2/subsection:2/paragraph:a"
@@ -5219,14 +5222,14 @@ def test_validate_semantic_claim_rejects_structural_child_range_family_proof_sem
     }
     proposed_outcome["source_text_preconditions"] = [
         {"precondition_id": "child-range", "contains": "paragraphs (a) to (c)"},
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-range",
             "path": "section:2/subsection:1",
             "text_sha256": hashlib.sha256(b"range text").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-structural-child-range",
@@ -5239,7 +5242,7 @@ def test_validate_semantic_claim_rejects_structural_child_range_family_proof_sem
             "live_target_precondition_ids": ["live-range"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -5307,18 +5310,18 @@ def test_validate_semantic_claim_accepts_referent_qualified_family_proof_semanti
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "TEXT_REPLACE"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:4/subsection:4"  # ty:ignore[invalid-assignment]
-    operation["referent_entity"] = "Rail Regulator"  # ty:ignore[invalid-assignment]
-    operation["occurrence_ids"] = ["he-1", "him-1"]  # ty:ignore[invalid-assignment]
+    operation["action"] = "TEXT_REPLACE"
+    operation["target"] = "section:4/subsection:4"
+    operation["referent_entity"] = "Rail Regulator"
+    operation["occurrence_ids"] = ["he-1", "him-1"]
     operation["mutation_boundary"] = {
         "changed_paths": ["section:4/subsection:4"],
         "target_region": ["section:4/subsection:4"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "referent-entity",
@@ -5332,14 +5335,14 @@ def test_validate_semantic_claim_accepts_referent_qualified_family_proof_semanti
             "precondition_id": "replacement",
             "contains": 'substitute "it"',
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-target",
             "path": "section:4/subsection:4",
             "text_sha256": target_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-referent-qualified",
@@ -5362,7 +5365,7 @@ def test_validate_semantic_claim_accepts_referent_qualified_family_proof_semanti
             "live_target_precondition_ids": ["live-target"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -5396,29 +5399,29 @@ def test_validate_semantic_claim_rejects_referent_qualified_family_proof_semanti
     claim["action_family"] = "referent_qualified_text_substitution"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "TEXT_REPEAL"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:5/subsection:4"  # ty:ignore[invalid-assignment]
+    operation["action"] = "TEXT_REPEAL"
+    operation["target"] = "section:5/subsection:4"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:5/subsection:4"],
         "target_region": ["section:5/subsection:4"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "referent-entity",
             "contains": "Rail Regulator",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-target",
             "path": "section:4/subsection:4",
             "text_sha256": hashlib.sha256(b"target text").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-referent-qualified",
@@ -5431,7 +5434,7 @@ def test_validate_semantic_claim_rejects_referent_qualified_family_proof_semanti
             "live_target_precondition_ids": ["live-target"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -5498,17 +5501,17 @@ def test_validate_semantic_claim_accepts_source_carried_multi_subunit_family_pro
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "TEXT_REPLACE"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1/subsection:1/paragraph:a"  # ty:ignore[invalid-assignment]
-    operation["child_unit_label"] = "paragraph a"  # ty:ignore[invalid-assignment]
+    operation["action"] = "TEXT_REPLACE"
+    operation["target"] = "section:1/subsection:1/paragraph:a"
+    operation["child_unit_label"] = "paragraph a"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/subsection:1/paragraph:a"],
         "target_region": ["section:1/subsection:1/paragraph:a"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "child-units",
@@ -5522,14 +5525,14 @@ def test_validate_semantic_claim_accepts_source_carried_multi_subunit_family_pro
             "precondition_id": "replacement-payload",
             "contains": 'substitute "new"',
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-child-a",
             "path": "section:1/subsection:1/paragraph:a",
             "text_sha256": child_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-source-carried-multi-subunit",
@@ -5555,7 +5558,7 @@ def test_validate_semantic_claim_accepts_source_carried_multi_subunit_family_pro
             "live_target_precondition_ids": ["live-child-a"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -5589,29 +5592,29 @@ def test_validate_semantic_claim_rejects_source_carried_multi_subunit_family_pro
     claim["action_family"] = "source_carried_multi_subunit_text_rewrite"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "INSERT"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1/subsection:2/paragraph:a"  # ty:ignore[invalid-assignment]
+    operation["action"] = "INSERT"
+    operation["target"] = "section:1/subsection:2/paragraph:a"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/subsection:2/paragraph:a"],
         "target_region": ["section:1/subsection:2/paragraph:a"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "child-units",
             "contains": "paragraphs (a) and (b)",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-child-a",
             "path": "section:1/subsection:1/paragraph:a",
             "text_sha256": hashlib.sha256(b"child text").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-source-carried-multi-subunit",
@@ -5624,7 +5627,7 @@ def test_validate_semantic_claim_rejects_source_carried_multi_subunit_family_pro
             "live_target_precondition_ids": ["live-child-a"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -5685,18 +5688,18 @@ def test_validate_semantic_claim_accepts_source_carried_child_tail_family_proof_
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "TEXT_REPLACE"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1/subsection:1/paragraph:a#tail"  # ty:ignore[invalid-assignment]
-    operation["child_anchor"] = "paragraph (a)"  # ty:ignore[invalid-assignment]
-    operation["tail_boundary"] = 'after "old"'  # ty:ignore[invalid-assignment]
+    operation["action"] = "TEXT_REPLACE"
+    operation["target"] = "section:1/subsection:1/paragraph:a#tail"
+    operation["child_anchor"] = "paragraph (a)"
+    operation["tail_boundary"] = 'after "old"'
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/subsection:1/paragraph:a#tail"],
         "target_region": ["section:1/subsection:1/paragraph:a#tail"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "child-anchor",
@@ -5710,14 +5713,14 @@ def test_validate_semantic_claim_accepts_source_carried_child_tail_family_proof_
             "precondition_id": "replacement-payload",
             "contains": 'substitute "new"',
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-tail",
             "path": "section:1/subsection:1/paragraph:a#tail",
             "text_sha256": tail_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-source-carried-child-tail",
@@ -5743,7 +5746,7 @@ def test_validate_semantic_claim_accepts_source_carried_child_tail_family_proof_
             "live_target_precondition_ids": ["live-tail"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -5777,29 +5780,29 @@ def test_validate_semantic_claim_rejects_source_carried_child_tail_family_proof_
     claim["action_family"] = "source_carried_child_tail_text_rewrite"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "INSERT"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1/subsection:2/paragraph:a#tail"  # ty:ignore[invalid-assignment]
+    operation["action"] = "INSERT"
+    operation["target"] = "section:1/subsection:2/paragraph:a#tail"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/subsection:2/paragraph:a#tail"],
         "target_region": ["section:1/subsection:2/paragraph:a#tail"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "child-anchor",
             "contains": "paragraph (a)",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-tail",
             "path": "section:1/subsection:1/paragraph:a#tail",
             "text_sha256": hashlib.sha256(b"tail text").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-source-carried-child-tail",
@@ -5812,7 +5815,7 @@ def test_validate_semantic_claim_rejects_source_carried_child_tail_family_proof_
             "live_target_precondition_ids": ["live-tail"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -5876,17 +5879,17 @@ def test_validate_semantic_claim_accepts_source_carried_structured_family_proof_
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "INSERT"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1/subsection:2/paragraph:aa"  # ty:ignore[invalid-assignment]
-    operation["payload_unit_id"] = "paragraph-aa"  # ty:ignore[invalid-assignment]
+    operation["action"] = "INSERT"
+    operation["target"] = "section:1/subsection:2/paragraph:aa"
+    operation["payload_unit_id"] = "paragraph-aa"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/subsection:2/paragraph:aa"],
         "target_region": ["section:1/subsection:2/paragraph:aa"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "parent-anchor",
@@ -5896,14 +5899,14 @@ def test_validate_semantic_claim_accepts_source_carried_structured_family_proof_
             "precondition_id": "payload-unit",
             "contains": "paragraph (aa)",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-parent",
             "path": "section:1/subsection:2",
             "text_sha256": parent_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-source-carried-structured",
@@ -5925,7 +5928,7 @@ def test_validate_semantic_claim_accepts_source_carried_structured_family_proof_
             "live_target_precondition_ids": ["live-parent"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -5959,29 +5962,29 @@ def test_validate_semantic_claim_rejects_source_carried_structured_family_proof_
     claim["action_family"] = "source_carried_structured_text_patch"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "REPEAL"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1/subsection:3/paragraph:aa"  # ty:ignore[invalid-assignment]
+    operation["action"] = "REPEAL"
+    operation["target"] = "section:1/subsection:3/paragraph:aa"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/subsection:3/paragraph:aa"],
         "target_region": ["section:1/subsection:3/paragraph:aa"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "parent-anchor",
             "contains": "subsection (2)",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-parent",
             "path": "section:1/subsection:2",
             "text_sha256": hashlib.sha256(b"parent text").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-source-carried-structured",
@@ -5994,7 +5997,7 @@ def test_validate_semantic_claim_rejects_source_carried_structured_family_proof_
             "live_target_precondition_ids": ["live-parent"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -6054,18 +6057,18 @@ def test_validate_semantic_claim_accepts_source_carried_structured_tail_family_p
     ]
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "REPLACE"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1/subsection:2/paragraph:aa"  # ty:ignore[invalid-assignment]
-    operation["tail_range_id"] = "after-paragraph-a"  # ty:ignore[invalid-assignment]
-    operation["payload_unit_id"] = "paragraph-aa"  # ty:ignore[invalid-assignment]
+    operation["action"] = "REPLACE"
+    operation["target"] = "section:1/subsection:2/paragraph:aa"
+    operation["tail_range_id"] = "after-paragraph-a"
+    operation["payload_unit_id"] = "paragraph-aa"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/subsection:2/paragraph:aa"],
         "target_region": ["section:1/subsection:2/paragraph:aa"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "tail-range",
@@ -6075,14 +6078,14 @@ def test_validate_semantic_claim_accepts_source_carried_structured_tail_family_p
             "precondition_id": "payload-unit",
             "contains": "paragraphs (aa) and (ab)",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-tail",
             "path": "section:1/subsection:2/paragraph:aa",
             "text_sha256": tail_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-source-carried-structured-tail",
@@ -6105,7 +6108,7 @@ def test_validate_semantic_claim_accepts_source_carried_structured_tail_family_p
             "live_target_precondition_ids": ["live-tail"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -6139,29 +6142,29 @@ def test_validate_semantic_claim_rejects_source_carried_structured_tail_family_p
     claim["action_family"] = "source_carried_structured_tail_substitution"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["action"] = "REPEAL"  # ty:ignore[invalid-assignment]
-    operation["target"] = "section:1/subsection:3/paragraph:aa"  # ty:ignore[invalid-assignment]
+    operation["action"] = "REPEAL"
+    operation["target"] = "section:1/subsection:3/paragraph:aa"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/subsection:3/paragraph:aa"],
         "target_region": ["section:1/subsection:3/paragraph:aa"],
-    }  # ty:ignore[invalid-assignment]
+    }
     proposed_outcome["source_text_preconditions"] = [
         {
             "precondition_id": "tail-range",
             "contains": "after paragraph (a)",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-tail",
             "path": "section:1/subsection:2/paragraph:aa",
             "text_sha256": hashlib.sha256(b"tail range").hexdigest(),
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-source-carried-structured-tail",
@@ -6174,7 +6177,7 @@ def test_validate_semantic_claim_rejects_source_carried_structured_tail_family_p
             "live_target_precondition_ids": ["live-tail"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -6360,7 +6363,7 @@ def test_validate_semantic_claim_checks_template_destination_address() -> None:
     workqueue = _workqueue_row()
     template = workqueue["suggested_claim_template"]
     assert isinstance(template, dict)
-    template["destination_address"] = "section:2/table:1"  # ty:ignore[invalid-assignment]
+    template["destination_address"] = "section:2/table:1"
 
     claim = _claim_row()
     proposed_outcome = claim["proposed_outcome"]
@@ -6368,7 +6371,7 @@ def test_validate_semantic_claim_checks_template_destination_address() -> None:
     proposed_outcome["target_context"] = {
         "source_target_address": "section:1/table:1",
         "destination_address": "section:2/table:1",
-    }  # ty:ignore[invalid-assignment]
+    }
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -6385,23 +6388,23 @@ def test_validate_semantic_claim_accepts_operation_target_under_template_destina
     workqueue = _workqueue_row()
     template = workqueue["suggested_claim_template"]
     assert isinstance(template, dict)
-    template["destination_address"] = "section:2/table:1"  # ty:ignore[invalid-assignment]
+    template["destination_address"] = "section:2/table:1"
 
     claim = _claim_row()
     target_context = claim["target_context"]
     assert isinstance(target_context, dict)
-    target_context["destination_address"] = "section:2/table:1"  # ty:ignore[invalid-assignment]
+    target_context["destination_address"] = "section:2/table:1"
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["target"] = "section:2/table:1/row:2"  # ty:ignore[invalid-assignment]
+    operation["target"] = "section:2/table:1/row:2"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:2/table:1/row:2"],
         "target_region": ["section:2/table:1/row:2"],
-    }  # ty:ignore[invalid-assignment]
+    }
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -6418,15 +6421,15 @@ def test_validate_semantic_claim_rejects_operation_target_outside_template_carri
     claim = _claim_row()
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["target"] = "section:9/table:1/row:2"  # ty:ignore[invalid-assignment]
+    operation["target"] = "section:9/table:1/row:2"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:9/table:1/row:2"],
         "target_region": ["section:9/table:1/row:2"],
-    }  # ty:ignore[invalid-assignment]
+    }
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -6446,7 +6449,7 @@ def test_validate_semantic_claim_rejects_template_destination_address_mismatch()
     workqueue = _workqueue_row()
     template = workqueue["suggested_claim_template"]
     assert isinstance(template, dict)
-    template["destination_address"] = "section:2/table:1"  # ty:ignore[invalid-assignment]
+    template["destination_address"] = "section:2/table:1"
 
     claim = _claim_row()
     proposed_outcome = claim["proposed_outcome"]
@@ -6454,7 +6457,7 @@ def test_validate_semantic_claim_rejects_template_destination_address_mismatch()
     proposed_outcome["target_context"] = {
         "source_target_address": "section:1/table:1",
         "destination_address": "section:3/table:1",
-    }  # ty:ignore[invalid-assignment]
+    }
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -6479,7 +6482,7 @@ def test_validate_semantic_claim_rejects_missing_template_validator_checks() -> 
             "check_id": "claim_identifies_exact_table_carrier",
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -6507,15 +6510,15 @@ def test_validate_semantic_claim_rejects_duplicate_template_obligations() -> Non
     template["required_validator_checks"] = [
         "claim_identifies_exact_table_carrier",
         "claim_identifies_exact_table_carrier",
-    ]  # ty:ignore[invalid-assignment]
+    ]
     template["required_ownership"] = [
         "source_named_table_surface",
         "source_named_table_surface",
-    ]  # ty:ignore[invalid-assignment]
+    ]
     template["required_operation_family_proof_semantics"] = [
         "table_surface_insert_anchor_and_live_carrier",
         "table_surface_insert_anchor_and_live_carrier",
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (_claim_row(),),
@@ -6546,7 +6549,7 @@ def test_validate_semantic_claim_rejects_missing_template_required_proof_semanti
     assert isinstance(template, dict)
     template["required_operation_family_proof_semantics"] = [
         "table_surface_insert_anchor_and_live_carrier",
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (_claim_row(),),
@@ -6570,7 +6573,7 @@ def test_validate_semantic_claim_accepts_template_required_proof_semantic() -> N
     assert isinstance(template, dict)
     template["required_operation_family_proof_semantics"] = [
         "table_surface_insert_anchor_and_live_carrier",
-    ]  # ty:ignore[invalid-assignment]
+    ]
     claim = _claim_row(source_preview=source_preview)
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
@@ -6579,14 +6582,14 @@ def test_validate_semantic_claim_accepts_template_required_proof_semantic() -> N
             "precondition_id": "source-table-anchor",
             "contains": "existing table row",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-table-carrier",
             "path": "section:1/table:1",
             "text_sha256": carrier_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-insert",
@@ -6598,7 +6601,7 @@ def test_validate_semantic_claim_accepts_template_required_proof_semantic() -> N
             "live_target_precondition_ids": ["live-table-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -6653,7 +6656,7 @@ def test_validate_semantic_claim_rejects_template_check_without_status() -> None
             "check_id": "changed_paths_are_within_claimed_table_surface",
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -6682,7 +6685,7 @@ def test_validate_semantic_claim_rejects_template_check_claimed_as_passed() -> N
             "check_id": "changed_paths_are_within_claimed_table_surface",
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -6711,7 +6714,7 @@ def test_validate_semantic_claim_rejects_case_variant_template_check_passed_stat
             "check_id": "changed_paths_are_within_claimed_table_surface",
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
@@ -6873,9 +6876,9 @@ def test_validate_semantic_claim_rejects_duplicate_operation_ids() -> None:
     claim = _claim_row()
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
-    operations.append(dict(operations[0]))  # ty:ignore[invalid-argument-type, no-matching-overload]
+    operations.append(dict(operations[0]))
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -6892,13 +6895,13 @@ def test_validate_semantic_claim_rejects_duplicate_operation_reference_lists() -
     claim = _claim_row()
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
-    operation["destination"] = ["section:2", "section:2"]  # ty:ignore[invalid-assignment]
-    operation["occurrence_ids"] = ["occurrence-1", "occurrence-1"]  # ty:ignore[invalid-assignment]
-    operation["removed_child_ids"] = ["item:a", "item:a"]  # ty:ignore[invalid-assignment]
+    operation["destination"] = ["section:2", "section:2"]
+    operation["occurrence_ids"] = ["occurrence-1", "occurrence-1"]
+    operation["removed_child_ids"] = ["item:a", "item:a"]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -6923,14 +6926,14 @@ def test_validate_semantic_claim_rejects_changed_path_outside_target_region() ->
     claim = _claim_row()
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1/table:2/row:1"],
         "target_region": ["section:1/table:1"],
-    }  # ty:ignore[invalid-assignment]
+    }
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -6947,7 +6950,7 @@ def test_validate_semantic_claim_rejects_duplicate_mutation_boundary_paths() -> 
     claim = _claim_row()
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
@@ -6959,7 +6962,7 @@ def test_validate_semantic_claim_rejects_duplicate_mutation_boundary_paths() -> 
         "target_region": ["section:1/table:1", "section:1/table:1"],
         "declared_recovery_paths": ["section:1/table:2", "section:1/table:2"],
         "recovery_rule_id": "uk_manual_claim_declared_recovery_surface",
-    }  # ty:ignore[invalid-assignment]
+    }
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -6984,7 +6987,7 @@ def test_validate_semantic_claim_accepts_declared_boundary_exception_path() -> N
     claim = _claim_row()
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
@@ -6993,7 +6996,7 @@ def test_validate_semantic_claim_accepts_declared_boundary_exception_path() -> N
         "target_region": ["section:1/table:1"],
         "declared_recovery_paths": ["section:1/table:2"],
         "recovery_rule_id": "uk_manual_claim_declared_recovery_surface",
-    }  # ty:ignore[invalid-assignment]
+    }
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -7007,7 +7010,7 @@ def test_validate_semantic_claim_rejects_declared_exception_without_reason() -> 
     claim = _claim_row()
     proposed_outcome = claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
-    operations = proposed_outcome["operations"]  # ty:ignore[invalid-argument-type]
+    operations = proposed_outcome["operations"]
     assert isinstance(operations, list)
     operation = operations[0]
     assert isinstance(operation, dict)
@@ -7015,7 +7018,7 @@ def test_validate_semantic_claim_rejects_declared_exception_without_reason() -> 
         "changed_paths": ["section:1/table:2/row:1"],
         "target_region": ["section:1/table:1"],
         "declared_recovery_paths": ["section:1/table:2"],
-    }  # ty:ignore[invalid-assignment]
+    }
 
     rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
 
@@ -7242,14 +7245,14 @@ def test_uk_semantic_claims_validation_report_summarizes_proof_semantics(
             "precondition_id": "source-names-anchor",
             "contains": "entry relating to X",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-table-carrier",
             "path": "section:1/table:1",
             "text_sha256": target_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     proposed_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-insert-anchor",
@@ -7261,7 +7264,7 @@ def test_uk_semantic_claims_validation_report_summarizes_proof_semantics(
             "live_target_precondition_ids": ["live-table-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     rejected_claim = _claim_row(
         source_preview="after the entry relating to X insert the row",
     )
@@ -7272,7 +7275,7 @@ def test_uk_semantic_claims_validation_report_summarizes_proof_semantics(
             "precondition_id": "source-names-anchor",
             "contains": "entry relating to X",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     rejected_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-insert-anchor",
@@ -7283,7 +7286,7 @@ def test_uk_semantic_claims_validation_report_summarizes_proof_semantics(
             "source_text_precondition_ids": ["source-names-anchor"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (accepted_claim, rejected_claim),
@@ -7355,7 +7358,7 @@ def test_uk_semantic_claims_validation_report_summarizes_template_obligations(
     assert isinstance(template, dict)
     template["required_operation_family_proof_semantics"] = [
         "table_surface_insert_anchor_and_live_carrier",
-    ]  # ty:ignore[invalid-assignment]
+    ]
     accepted_claim = _claim_row(source_preview=source_preview)
     accepted_outcome = accepted_claim["proposed_outcome"]
     assert isinstance(accepted_outcome, dict)
@@ -7364,14 +7367,14 @@ def test_uk_semantic_claims_validation_report_summarizes_template_obligations(
             "precondition_id": "source-names-anchor",
             "contains": "entry relating to X",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     accepted_outcome["live_target_preconditions"] = [
         {
             "precondition_id": "live-table-carrier",
             "path": "section:1/table:1",
             "text_sha256": target_text_hash,
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     accepted_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-insert-anchor",
@@ -7383,7 +7386,7 @@ def test_uk_semantic_claims_validation_report_summarizes_template_obligations(
             "live_target_precondition_ids": ["live-table-carrier"],
             "status": "claimed_not_proved",
         },
-    ]  # ty:ignore[invalid-assignment]
+    ]
     rejected_claim = _claim_row(source_preview=source_preview)
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
