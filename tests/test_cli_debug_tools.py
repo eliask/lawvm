@@ -15,6 +15,7 @@ from lawvm.tools import (
     cli,
     inspect_amendment,
     oracle_context,
+    ops,
     phase_witness,
     replay_plan,
     replay_debug,
@@ -43,6 +44,32 @@ def _corpus_available() -> bool:
 @pytest.fixture(scope="module")
 def cli_parser():
     return cli._build_parser()
+
+
+def test_ops_formats_flat_finland_compiled_targets() -> None:
+    subsection_row = {
+        "target_unit_kind": "section",
+        "target_norm": "7",
+        "target_chapter": "",
+        "target_part": "",
+        "target_paragraph": "2",
+        "target_item": "",
+        "target_special": "",
+    }
+    section_row = {
+        "target_unit_kind": "section",
+        "target_norm": "8",
+        "target_chapter": "",
+        "target_part": "",
+        "target_paragraph": "",
+        "target_item": "",
+        "target_special": "",
+    }
+
+    assert ops._fmt_compiled_target(subsection_row) == "section:7 / subsection:2"
+    assert ops._fmt_compiled_target(section_row) == "section:8"
+    assert ops._matches_target(subsection_row, "section:7")
+    assert ops._matches_target(subsection_row, "subsection:2")
 
 
 @pytest.mark.skipif(not _corpus_available(), reason="corpus archive not available")

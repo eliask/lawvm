@@ -56,6 +56,45 @@ def _fmt_target(target: dict[str, Any]) -> str:
     return addr
 
 
+def _fmt_compiled_target(op: dict[str, Any]) -> str:
+    """Format a compiled Finland op target from either legacy or flat fields."""
+
+    flat_addr = _fmt_flat_finland_target(op)
+    if flat_addr:
+        return flat_addr
+    target = op.get("target", {})
+    if isinstance(target, dict):
+        return _fmt_target(target)
+    return str(target or "?:")
+
+
+def _fmt_flat_finland_target(op: dict[str, Any]) -> str:
+    target_unit_kind = str(op.get("target_unit_kind") or "").strip()
+    target_norm = str(op.get("target_norm") or "").strip()
+    if not target_unit_kind or not target_norm:
+        return ""
+
+    parts: list[str] = []
+    target_part = str(op.get("target_part") or "").strip()
+    target_chapter = str(op.get("target_chapter") or "").strip()
+    if target_part and target_unit_kind != "part":
+        parts.append(f"part:{target_part}")
+    if target_chapter and target_unit_kind != "chapter":
+        parts.append(f"chapter:{target_chapter}")
+    parts.append(f"{target_unit_kind}:{target_norm}")
+
+    target_paragraph = str(op.get("target_paragraph") or "").strip()
+    target_item = str(op.get("target_item") or "").strip()
+    target_special = str(op.get("target_special") or "").strip()
+    if target_paragraph:
+        parts.append(f"subsection:{target_paragraph}")
+    if target_item:
+        parts.append(f"item:{target_item}")
+    if target_special:
+        parts.append(target_special)
+    return " / ".join(parts)
+
+
 def _matches_source(op: dict[str, Any], source_filter: str) -> bool:
     return op.get("source_statute", "").strip() == source_filter.strip()
 
@@ -68,12 +107,10 @@ def _matches_target(op: dict[str, Any], target_filter: str) -> bool:
     kind = kind.strip().lower()
     label = label.strip().lower()
 
-    target = op.get("target", {})
-    container = target.get("container", "").lower()
-    section = (target.get("section") or "").lower().replace(" ", "").replace("§", "")
+    address = _fmt_compiled_target(op)
     label_norm = label.replace(" ", "").replace("§", "")
-
-    return container.startswith(kind) and section == label_norm
+    wanted_prefix = f"{kind}:{label_norm}"
+    return wanted_prefix in address.casefold().replace(" ", "")
 
 
 def _address_matches_filter(address: str, target_filter: str) -> bool:
@@ -163,8 +200,7 @@ def _ops_sync(
     for op in ops:
         src = op.get("source_statute", "?")
         action = op.get("action", "?").upper()
-        target = op.get("target", {})
-        addr = _fmt_target(target)
+        addr = _fmt_compiled_target(op)
         title = op.get("source_title", "")[:50]
         seq = op.get("sequence", "?")
 
