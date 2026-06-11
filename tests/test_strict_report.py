@@ -392,6 +392,29 @@ def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
             "target_kind": "P",
         }
     ]
+    authorizations = payload["failed_operation_execution_authorizations"]
+    assert len(authorizations) == 1
+    assert authorizations[0]["authorization_status"] == "failed_operation_not_replay_authority"
+    assert authorizations[0]["executable"] is False
+    assert authorizations[0]["replay_authorized"] is False
+    assert authorizations[0]["owner_phase"] == "replay_apply"
+    assert authorizations[0]["detail"]["target_label"] == "chapter:4/section:5"
+    frontier_items = payload["failed_operation_frontier_work_items"]
+    assert len(frontier_items) == 1
+    assert frontier_items[0]["frontier_family"] == "fi_failed_operation_resolution"
+    assert frontier_items[0]["required_claim_kind"] == "fi.v1.FAILED_OPERATION_RESOLUTION"
+    assert frontier_items[0]["authorization_status"] == "failed_operation_not_replay_authority"
+    assert frontier_items[0]["candidate_targets"] == ["chapter:4/section:5"]
+    assert frontier_items[0]["source_witness"]["source_role"] == "finland_failed_operation"
+    assert frontier_items[0]["source_witness"]["source_lane"] == "failed_operation"
+    assert frontier_items[0]["source_witness"]["preview_digest"]
+    assert payload["ownership_closure_certificate"]["unowned_counts"][
+        "failed_ops_without_frontier_work_item"
+    ] == 0
+    assert "failed_ops_present" in payload["ownership_closure_certificate"]["failed_gates"]
+    assert payload["evidence_surface_report"]["summary"][
+        "failed_operation_frontier_work_item_count"
+    ] == 1
 
 
 def test_to_json_uses_projection_rows_when_available() -> None:

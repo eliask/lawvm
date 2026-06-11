@@ -175,6 +175,25 @@ _MUTATION_BOUNDARY = _XmlClaimSpec(
     semantic=True,
 )
 
+_FAILED_OPERATION = _XmlClaimSpec(
+    claim_kind="fi.v1.FAILED_OPERATION_RESOLUTION",
+    layer="adjudication",
+    description=(
+        "Manual or deterministic proof boundary for visible failed operation "
+        "rows. The claim identifies why an attempted operation remained "
+        "non-executable, but does not authorize replay by itself."
+    ),
+    target_fields=("source_statute", "affected_target", "failure_reason_code"),
+    value_fields=(
+        "source_quote",
+        "resolution_kind",
+        "resolution_basis",
+        "mutation_boundary_proof_ref",
+    ),
+    allowed_pathology_codes=(),
+    semantic=True,
+)
+
 _XML_FRONTIER_SPECS: tuple[_XmlClaimSpec, ...] = (
     _SOURCE_CORRECTION,
     _PAYLOAD_COMPLETENESS,
@@ -183,6 +202,7 @@ _XML_FRONTIER_SPECS: tuple[_XmlClaimSpec, ...] = (
     _SOURCE_CHAIN,
     _TEMPORAL_BASE,
     _MUTATION_BOUNDARY,
+    _FAILED_OPERATION,
 )
 
 _SPECS_BY_KIND: dict[str, _XmlClaimSpec] = {
@@ -365,4 +385,3 @@ def list_specs() -> tuple[ClaimKindSpec, ...]:
     """Return all registered Finland XML manual-frontier claim specs."""
 
     return tuple(_REGISTERED_SPECS[kind] for kind in sorted(_REGISTERED_SPECS))
-

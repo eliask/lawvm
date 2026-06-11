@@ -37,6 +37,7 @@ from lawvm.core.compile_views import (
     source_pathology_rows_from_findings,
 )
 from lawvm.finland.proof_surfaces import (
+    failed_operation_proof_surface_rows,
     finland_strict_report_evidence_surface,
     finland_strict_report_candidate_set_certificates,
     finland_strict_report_ownership_closure_certificate,
@@ -431,6 +432,11 @@ def _to_json(cr: Any) -> dict[str, Any]:
     n_canonical = len(canonical_ops)
     profile = _field(cr, "profile", None)
     profile_name = str(getattr(profile, "name", profile or "") or "")
+    failed_op_rows = [_failed_op_to_jsonable(f) for f in failed_ops]
+    failed_operation_proof_rows = failed_operation_proof_surface_rows(
+        tuple(failed_op_rows),
+        statute_id=str(_field(cr, "statute_id", "") or ""),
+    )
     payload = {
         "statute_id": _field(cr, "statute_id", ""),
         "profile": profile_name,
@@ -471,7 +477,8 @@ def _to_json(cr: Any) -> dict[str, Any]:
             }
             for a in projection_rows
         ],
-        "failed_ops": [_failed_op_to_jsonable(f) for f in failed_ops],
+        "failed_ops": failed_op_rows,
+        **failed_operation_proof_rows,
     }
     payload["strict_report_candidate_set_certificates"] = (
         finland_strict_report_candidate_set_certificates(payload)

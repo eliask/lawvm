@@ -116,6 +116,22 @@ _RECOVERY_AUTHORIZATION_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
     "recovery_finding_as_mutation_boundary_proof",
     "recovery_projection_as_target_widening",
 )
+_FAILED_OPERATION_REQUIRED_PROOFS: tuple[str, ...] = (
+    "source_identity_proof",
+    "target_identity_proof",
+    "failed_operation_reason_classification",
+    "payload_identity_or_manual_resolution_proof",
+    "mutation_boundary_proof_before_replay_promotion",
+)
+_FAILED_OPERATION_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
+    "failed_operation_as_replay_authorization",
+    "failed_operation_reason_as_manual_claim",
+    "failed_operation_target_as_target_resolution_proof",
+    "failed_operation_absence_as_source_cue_exhaustiveness_proof",
+)
+_FAILED_OPERATION_SAFE_DEFAULT = (
+    "treat_failed_operation_as_non_executable_frontier_until_source_target_payload_and_boundary_are_proven"
+)
 _HE_BRANCH_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
     "he_branch_op_as_enacted_operation",
     "he_branch_parse_success_as_replay_authorization",
@@ -480,6 +496,129 @@ def source_pathology_proof_surface_rows(
     return {
         "source_pathology_execution_authorizations": authorizations,
         "source_pathology_frontier_work_items": frontier_items,
+    }
+
+
+def failed_operation_execution_authorization(
+    failed_op: Mapping[str, Any],
+) -> ExecutionAuthorization:
+    """Project a visible failed operation as blocked, non-executable work."""
+
+    row = _failed_operation_row(failed_op)
+    reason_code = str(row.get("reason_code") or "unknown")
+    return ExecutionAuthorization(
+        executable=False,
+        replay_authorized=False,
+        authorization_status="failed_operation_not_replay_authority",
+        authorization_rule_id=f"fi_failed_operation_{_kind_slug(reason_code)}",
+        owner_phase="replay_apply",
+        strict_disposition="block",
+        quirks_disposition="record",
+        validator_status="failed_operation_requires_manual_or_deterministic_resolution",
+        required_proofs=_FAILED_OPERATION_REQUIRED_PROOFS,
+        safe_default=_FAILED_OPERATION_SAFE_DEFAULT,
+        forbidden_shortcuts=_FAILED_OPERATION_FORBIDDEN_SHORTCUTS,
+        detail={
+            "jurisdiction": "fi",
+            "source_statute": row.get("source_statute", ""),
+            "failure_reason_code": reason_code,
+            "target_unit_kind": row.get("target_unit_kind", ""),
+            "target_label": row.get("target_label", ""),
+        },
+    )
+
+
+def failed_operation_frontier_work_item(
+    failed_op: Mapping[str, Any],
+    *,
+    index: int = 0,
+    statute_id: str = "",
+) -> FrontierWorkItem:
+    """Project one failed operation row as non-executable frontier work."""
+
+    row = _failed_operation_row(failed_op)
+    authorization = failed_operation_execution_authorization(row)
+    source_statute = str(row.get("source_statute") or statute_id or "unknown")
+    target_label = str(row.get("target_label") or "")
+    reason_code = str(row.get("reason_code") or "unknown")
+    source_unit_id = target_label or f"failed-operation:{reason_code}:{index}"
+    bounded_preview = str(row.get("description") or row.get("reason") or reason_code)
+    source_witness = SourceWitness(
+        source_role="finland_failed_operation",
+        artifact_id=source_statute,
+        source_unit_id=source_unit_id,
+        bounded_preview=bounded_preview,
+        preview_digest=_preview_digest_witness(bounded_preview),
+        source_lane="failed_operation",
+        metadata={
+            "source_statute": source_statute,
+            "failure_reason_code": reason_code,
+            "target_unit_kind": row.get("target_unit_kind", ""),
+            "target_label": target_label,
+            "reason": row.get("reason", ""),
+        },
+    )
+    return FrontierWorkItem(
+        work_item_id=_failed_operation_work_item_id(row, statute_id=statute_id, index=index),
+        jurisdiction="fi",
+        source_artifact_id=source_statute,
+        source_unit_id=source_unit_id,
+        source_witness=source_witness.to_dict(),
+        target_witness={
+            "target_unit_kind": row.get("target_unit_kind", ""),
+            "target_label": target_label,
+            "target_section": row.get("target_section", ""),
+            "target_chapter": row.get("target_chapter"),
+            "target_part": row.get("target_part"),
+            "failure_reason_code": reason_code,
+        },
+        owner_phase="replay_apply",
+        frontier_family="fi_failed_operation_resolution",
+        frontier_status="failed_operation_frontier",
+        candidate_operation_family="failed_operation_resolution",
+        candidate_targets=tuple(target for target in (target_label,) if target),
+        guidance_refs=("lawvm_failed_operation_resolution",),
+        required_claim_kind="fi.v1.FAILED_OPERATION_RESOLUTION",
+        required_validator_checks=(
+            "validate_failed_operation_resolution_claim",
+            "validate_target_identity_before_replay_promotion",
+            "validate_mutation_boundary_before_replay_promotion",
+        ),
+        required_proofs=_FAILED_OPERATION_REQUIRED_PROOFS,
+        safe_default=_FAILED_OPERATION_SAFE_DEFAULT,
+        forbidden_shortcuts=_FAILED_OPERATION_FORBIDDEN_SHORTCUTS,
+        executable=False,
+        replay_authorized=False,
+        authorization_status=authorization.authorization_status,
+        detail={
+            "execution_authorization": authorization.to_dict(),
+            "failed_operation": row,
+            "proof_surface_projection_only": True,
+        },
+    )
+
+
+def failed_operation_proof_surface_rows(
+    failed_ops: tuple[Mapping[str, Any], ...],
+    *,
+    statute_id: str = "",
+) -> dict[str, list[dict[str, Any]]]:
+    """Return shared proof-surface rows for visible failed operations."""
+
+    authorizations: list[dict[str, Any]] = []
+    frontier_items: list[dict[str, Any]] = []
+    for index, failed_op in enumerate(failed_ops):
+        authorizations.append(failed_operation_execution_authorization(failed_op).to_dict())
+        frontier_items.append(
+            failed_operation_frontier_work_item(
+                failed_op,
+                index=index,
+                statute_id=statute_id,
+            ).to_dict()
+        )
+    return {
+        "failed_operation_execution_authorizations": authorizations,
+        "failed_operation_frontier_work_items": frontier_items,
     }
 
 
@@ -912,6 +1051,8 @@ def finland_strict_report_evidence_surface(
     source_pathology_rows = _mapping_sequence(source_pathology_report.get("rows"))
     source_pathology_authorizations = _mapping_sequence(payload.get("source_pathology_execution_authorizations"))
     source_pathology_frontier_items = _mapping_sequence(payload.get("source_pathology_frontier_work_items"))
+    failed_operation_authorizations = _mapping_sequence(payload.get("failed_operation_execution_authorizations"))
+    failed_operation_frontier_items = _mapping_sequence(payload.get("failed_operation_frontier_work_items"))
     sparse_certificates = _mapping_sequence(payload.get("sparse_slot_candidate_set_certificates"))
     source_lineage_witnesses = _mapping_sequence(payload.get("source_lineage_source_witnesses"))
     agreement_residuals = _mapping_sequence(payload.get("agreement_residuals"))
@@ -954,6 +1095,14 @@ def finland_strict_report_evidence_surface(
                 {"surface": "source_pathology_frontier_work_item", **dict(row)}
                 for row in source_pathology_frontier_items
             ),
+            *(
+                {"surface": "failed_operation_execution_authorization", **dict(row)}
+                for row in failed_operation_authorizations
+            ),
+            *(
+                {"surface": "failed_operation_frontier_work_item", **dict(row)}
+                for row in failed_operation_frontier_items
+            ),
             *({"surface": "sparse_slot_candidate_set_certificate", **dict(row)} for row in sparse_certificates),
             *({"surface": "source_lineage_source_witness", **dict(row)} for row in source_lineage_witnesses),
             *({"surface": "agreement_residual", **dict(row)} for row in agreement_report_rows),
@@ -978,6 +1127,8 @@ def finland_strict_report_evidence_surface(
         ),
         "source_pathology_execution_authorization_count": len(source_pathology_authorizations),
         "source_pathology_frontier_work_item_count": len(source_pathology_frontier_items),
+        "failed_operation_execution_authorization_count": len(failed_operation_authorizations),
+        "failed_operation_frontier_work_item_count": len(failed_operation_frontier_items),
         "sparse_slot_candidate_set_certificate_count": len(sparse_certificates),
         "source_lineage_source_witness_count": len(source_lineage_witnesses),
         "agreement_residual_count": len(agreement_report_rows),
@@ -1017,6 +1168,9 @@ def finland_strict_report_evidence_surface(
         ),
         "source_pathology_frontier_source_witness_digest_coverage_counts": (
             nested_source_witness_digest_coverage_counts(source_pathology_frontier_items)
+        ),
+        "failed_operation_frontier_source_witness_digest_coverage_counts": (
+            nested_source_witness_digest_coverage_counts(failed_operation_frontier_items)
         ),
         "source_lineage_source_witness_digest_coverage_counts": (
             source_witness_digest_coverage_counts(source_lineage_witnesses)
@@ -1154,6 +1308,7 @@ def finland_strict_report_ownership_closure_certificate(
     strict_fail_reasons = _string_sequence(payload.get("strict_fail_reasons"))
     source_pathologies = _mapping_sequence(payload.get("source_pathologies"))
     source_pathology_frontier_items = _mapping_sequence(payload.get("source_pathology_frontier_work_items"))
+    failed_operation_frontier_items = _mapping_sequence(payload.get("failed_operation_frontier_work_items"))
     sparse_certificates = _mapping_sequence(payload.get("sparse_slot_candidate_set_certificates"))
     source_lineage_witnesses = _mapping_sequence(payload.get("source_lineage_source_witnesses"))
     agreement_residuals = _mapping_sequence(payload.get("agreement_residuals"))
@@ -1202,13 +1357,17 @@ def finland_strict_report_ownership_closure_certificate(
         if not _has_candidate_set(candidate_set_certificates, "fi_strict_report_visible_operation_rows")
         else 0,
         "incomplete_candidate_set_certificates": len(incomplete_candidate_sets),
-        "failed_ops_without_frontier_work_item": len(failed_ops),
+        "failed_ops_without_frontier_work_item": max(
+            len(failed_ops) - len(failed_operation_frontier_items),
+            0,
+        ),
         "strict_fail_reasons_without_closure": len(strict_fail_reasons),
         "unproved_mutation_boundary_proofs": len(unproved_mutation_boundaries),
     }
     owned_counts = {
         "canonical_ops": _ops_count(payload, "canonical"),
         "failed_ops_visible": len(failed_ops),
+        "failed_operation_frontier_items": len(failed_operation_frontier_items),
         "projection_rows_visible": len(projection_rows),
         "source_pathology_frontier_items": len(source_pathology_frontier_items),
         "source_pathologies_visible": len(source_pathologies),
@@ -1247,6 +1406,11 @@ def finland_strict_report_ownership_closure_certificate(
                 "source-pathology-frontiers",
                 statute_id,
                 source_pathology_frontier_items,
+            ),
+            "failed_operation_frontiers": _strict_report_id(
+                "failed-operation-frontiers",
+                statute_id,
+                failed_operation_frontier_items,
             ),
             "mutation_boundary_proofs": _strict_report_id(
                 "mutation-boundary",
@@ -2570,6 +2734,70 @@ def _pathology_work_item_id(row: Mapping[str, Any], *, statute_id: str = "") -> 
     return f"fi-source-pathology:{source}:{code}:{digest}"
 
 
+def _failed_operation_row(failed_op: Mapping[str, Any]) -> dict[str, Any]:
+    source_statute = str(failed_op.get("source") or failed_op.get("source_statute") or failed_op.get("amendment_id") or "")
+    target_section = str(failed_op.get("target_section") or "")
+    target_chapter = failed_op.get("target_chapter")
+    target_part = failed_op.get("target_part")
+    target_label = _failed_operation_target_label(
+        target_unit_kind=str(failed_op.get("target_unit_kind") or ""),
+        target_section=target_section,
+        target_chapter=str(target_chapter or ""),
+        target_part=str(target_part or ""),
+    )
+    return {
+        "amendment_id": str(failed_op.get("amendment_id") or source_statute),
+        "source_statute": source_statute,
+        "description": str(failed_op.get("description") or ""),
+        "reason": str(failed_op.get("reason") or ""),
+        "reason_code": str(failed_op.get("reason_code") or ""),
+        "target_unit_kind": str(failed_op.get("target_unit_kind") or ""),
+        "target_section": target_section,
+        "target_chapter": target_chapter,
+        "target_part": target_part,
+        "target_label": target_label,
+        "target_kind": str(failed_op.get("target_kind") or ""),
+    }
+
+
+def _failed_operation_target_label(
+    *,
+    target_unit_kind: str,
+    target_section: str,
+    target_chapter: str,
+    target_part: str,
+) -> str:
+    if target_unit_kind == "part" and target_part:
+        return f"part:{target_part}"
+    if target_unit_kind == "chapter" and target_chapter:
+        return f"chapter:{target_chapter}"
+    if target_unit_kind == "section" and target_section:
+        prefix = f"chapter:{target_chapter}/" if target_chapter else ""
+        return f"{prefix}section:{target_section}"
+    return target_section or target_chapter or target_part
+
+
+def _failed_operation_work_item_id(
+    row: Mapping[str, Any],
+    *,
+    statute_id: str = "",
+    index: int = 0,
+) -> str:
+    payload = {
+        "statute_id": statute_id,
+        "index": index,
+        "amendment_id": str(row.get("amendment_id") or ""),
+        "source_statute": str(row.get("source_statute") or ""),
+        "reason_code": str(row.get("reason_code") or ""),
+        "target_unit_kind": str(row.get("target_unit_kind") or ""),
+        "target_label": str(row.get("target_label") or ""),
+        "reason": str(row.get("reason") or ""),
+    }
+    digest = hashlib.sha256(json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+    source = str(row.get("source_statute") or statute_id or "unknown").replace("/", "_")
+    return f"fi-failed-operation:{source}:{_kind_slug(str(row.get('reason_code') or 'unknown'))}:{digest}"
+
+
 def _sparse_slot_candidate_certificate(
     row: Mapping[str, Any],
     *,
@@ -2878,6 +3106,8 @@ def _strict_report_closure_graph_payload(payload: Mapping[str, Any]) -> Mapping[
         "source_pathologies",
         "source_pathology_execution_authorizations",
         "source_pathology_frontier_work_items",
+        "failed_operation_execution_authorizations",
+        "failed_operation_frontier_work_items",
         "sparse_slot_candidate_set_certificates",
         "source_lineage_source_witnesses",
         "agreement_residuals",

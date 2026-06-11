@@ -35,6 +35,7 @@ _XML_FRONTIER_KINDS = (
     "fi.v1.SOURCE_CHAIN_RESOLUTION",
     "fi.v1.TEMPORAL_BASE_SELECTION_RESOLUTION",
     "fi.v1.MUTATION_BOUNDARY_RESOLUTION",
+    "fi.v1.FAILED_OPERATION_RESOLUTION",
 )
 
 
@@ -135,6 +136,11 @@ def test_finland_xml_manual_frontier_kinds_are_registered() -> None:
     assert semantic is not None
     assert semantic.is_semantic_compilation_claim is True
 
+    failed_op = get_claim_kind_spec("fi.v1.FAILED_OPERATION_RESOLUTION")
+    assert failed_op is not None
+    assert failed_op.layer == "adjudication"
+    assert failed_op.is_semantic_compilation_claim is True
+
 
 def test_shipped_evidence_policy_covers_xml_manual_frontier_kinds() -> None:
     import json
@@ -217,6 +223,29 @@ def test_xml_manual_frontier_rejects_wrong_pathology_family() -> None:
     result = spec.entailment_validator(claim, source)
     assert result.passed is False
     assert result.details == "source_pathology_code_mismatch"
+
+
+def test_failed_operation_resolution_validates_without_pathology_code() -> None:
+    source = b"<p>Target section could not be applied deterministically.</p>"
+    claim = _claim(
+        claim_kind="fi.v1.FAILED_OPERATION_RESOLUTION",
+        target=(
+            ("source_statute", "2020/1"),
+            ("affected_target", "chapter:4/section:5"),
+            ("failure_reason_code", "no_deterministic_path"),
+        ),
+        value=(
+            ("source_quote", "could not be applied deterministically"),
+            ("resolution_kind", "manual_target_payload_boundary"),
+            ("resolution_basis", "reviewed source and live target state"),
+            ("mutation_boundary_proof_ref", "proof-1"),
+        ),
+        source_bytes=source,
+    )
+    spec = get_claim_kind_spec("fi.v1.FAILED_OPERATION_RESOLUTION")
+    assert spec is not None
+    assert spec.entailment_validator is not None
+    assert spec.entailment_validator(claim, source).passed is True
 
 
 def test_semantic_xml_manual_frontier_claim_validates_but_composer_blocks_replay() -> None:
