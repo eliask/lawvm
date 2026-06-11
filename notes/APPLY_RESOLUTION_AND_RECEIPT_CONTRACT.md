@@ -3,9 +3,10 @@ title: LawVM Apply Resolution and Receipt Contract — the Semantic Apply Waist
 status: normative draft; vertical slice landed for the chapter/part INSERT
   family and Finland typed relabel family (binding consumption §3 step 3 +
   WriteReceipt §4 with receipt-derived mutation events). ObservedWriteAudit
-  (§5) has a passive core helper and fire-drill tests; strict enforcement,
-  occupancy enforcement (§6) and certificate-leaf production (§9) remain
-  future work.
+  (§5) has a passive core helper and fire-drill tests. WriteReceipt now has a
+  strict core projection into CertifiedTreeTransition certified-core rows (§9);
+  receipt persistence/exporter consumption, strict enforcement, and occupancy
+  enforcement (§6) remain future work.
 ---
 
 # Apply Resolution and Receipt Contract
@@ -379,12 +380,20 @@ receipt.landed paths + pre/post structural hashes
   (target_address, pre_hash, post_hash, payload_hash)
 ```
 
-Certificate v0 cannot be credible until transition leaves are produced from
-WriteReceipts or an equivalent landed-footprint source — a bundle writer that
-re-derives transitions from nominal targets can certify a write that never
+`lawvm.core.certified_transition.certified_tree_transitions_from_receipt`
+implements the strict producer projection for one receipt: every declared
+footprint address must have a complete pre/post hash pair, hashes are rendered
+with certificate `sha256:` spelling, `post != ""` becomes `set_subtree`, and
+`post == ""` becomes `delete_subtree`. Declared no-op pairs (`pre == post`) and
+undeclared hash keys are producer errors, not silently skipped rows.
+
+Certificate v0 cannot be credible until exported transition leaves are produced
+from WriteReceipts or an equivalent landed-footprint source — a bundle writer
+that re-derives transitions from nominal targets can certify a write that never
 happened where it claims. The experimental state-diff emitter carve-out
-(certificate spec §10) exists precisely because receipts do not exist yet;
-it must die when they do.
+(certificate spec §10) remains only because receipts are not yet persisted as
+replay products and because exporter granularity still needs alignment with
+receipt granularity; it must die when those integration gaps close.
 
 ## 10. Acceptance criteria
 
@@ -406,6 +415,8 @@ For the receipt (per converted family):
 - observed diff agrees with receipt (audit clean or qualified-by-named-rule)
 - K1 undeclared changed paths = 0 for converted families
 - receipt emits transition-leaf pre/post hashes
+- receipt projects to CertifiedTreeTransition core rows without reconstructing
+  paths from nominal targets
 ```
 
 ## 11. Fire-drill tests
