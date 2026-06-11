@@ -10140,6 +10140,18 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="show all four records for a claim (payload, state, events, composition decisions)",
     )
     claim_show_p.add_argument("claim_id", help="claim ID (full SHA-256 hex)")
+    claim_show_p.add_argument(
+        "--profile",
+        choices=[
+            "default",
+            "fi_strict_with_attested_reference_resolution",
+            "strict",
+            "fi_strict",
+            "deterministic_only",
+        ],
+        default=None,
+        help="authorization profile for the read-only claim show result",
+    )
 
     # validate (standalone validator re-run)
     claim_validate_p = claim_sub.add_parser(

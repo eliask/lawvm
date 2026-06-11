@@ -212,6 +212,55 @@ def test_claim_show_renders_all_four_records(tmp_path: Path, capsys):
     assert "SOURCE PROVENANCE" in out
 
 
+def test_claim_show_uses_requested_profile(tmp_path: Path, capsys):
+    """lawvm claim show --profile selects the authorization read-model profile."""
+    from lawvm.tools.cmd_claim import cmd_show
+    assertion_id = _propose_and_get_id(tmp_path)
+
+    rc = cmd_show(_make_args(
+        assertion_id=assertion_id,
+        graph_store_root=_graph_root(tmp_path),
+        profile="fi_strict",
+    ))
+    assert rc == 0
+
+    out = capsys.readouterr().out
+    assert "profile_name:         fi_strict" in out
+
+
+def test_claim_show_parser_accepts_profile() -> None:
+    """Argparse exposes claim show --profile with the command helper's destination."""
+    from lawvm.tools.cli import _build_parser
+
+    args = _build_parser().parse_args([
+        "claim",
+        "show",
+        "a" * 64,
+        "--profile",
+        "fi_strict",
+    ])
+
+    assert args.command == "claim"
+    assert args.claim_subcommand == "show"
+    assert args.claim_id == "a" * 64
+    assert args.profile == "fi_strict"
+
+
+def test_claim_show_rejects_unknown_profile(tmp_path: Path, capsys):
+    """Direct command calls fail clearly on unsupported profiles."""
+    from lawvm.tools.cmd_claim import cmd_show
+    assertion_id = _propose_and_get_id(tmp_path)
+
+    rc = cmd_show(_make_args(
+        assertion_id=assertion_id,
+        graph_store_root=_graph_root(tmp_path),
+        profile="unknown_profile",
+    ))
+
+    assert rc == 1
+    assert "unsupported claim show profile" in capsys.readouterr().err
+
+
 def test_claim_show_nonexistent_fails(tmp_path: Path):
     from lawvm.tools.cmd_claim import cmd_show
     rc = cmd_show(_make_args(assertion_id="nonexistent" * 4, graph_store_root=_graph_root(tmp_path)))

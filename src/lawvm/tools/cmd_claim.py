@@ -314,6 +314,23 @@ def _default_profile(allows_attested_reference_resolution: bool = True):
     )
 
 
+def _profile_from_cli_name(profile_name: Optional[str]):
+    from lawvm.core.compile_result import StrictProfile
+
+    if profile_name in (None, "", "default", "fi_strict_with_attested_reference_resolution"):
+        return _default_profile(allows_attested_reference_resolution=True)
+    if profile_name in ("strict", "fi_strict", "deterministic_only"):
+        return StrictProfile(
+            name=str(profile_name),
+            allows_attested_reference_resolution=False,
+        )
+    raise ValueError(
+        "unsupported claim show profile "
+        f"{profile_name!r}; expected default, fi_strict_with_attested_reference_resolution, "
+        "strict, fi_strict, or deterministic_only"
+    )
+
+
 # ---------------------------------------------------------------------------
 # propose
 # ---------------------------------------------------------------------------
@@ -470,7 +487,7 @@ def cmd_supersede(args: object) -> int:
 def cmd_show(args: object) -> int:
     """Render assertion + attestations + authorization result."""
     assertion_id = _claim_id_arg(args)
-    _profile_name: Optional[str] = getattr(args, "profile", None)  # BUG: --profile arg is read but never forwarded to _default_profile()
+    profile_name = _arg_optional_str(args, "profile")
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
 
@@ -521,7 +538,11 @@ def cmd_show(args: object) -> int:
         latest_snap = max(snapshot_files, key=lambda p: p.stat().st_mtime)
         snap_hash = latest_snap.stem
         policy = _default_policy(assertion.kind)
-        profile = _default_profile()
+        try:
+            profile = _profile_from_cli_name(profile_name)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
         result = query_state_from_store(
             store, snap_hash, assertion_id,
             policy=policy, profile=profile,
