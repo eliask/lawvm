@@ -20,7 +20,7 @@ VIEWER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
-    def log_message(self, *args):
+    def log_message(self, format: str, *args: object) -> None:
         pass
 
 
