@@ -279,6 +279,17 @@ wait:
   insert consume absent/tombstone/substantive state. The receipt's
   placeholder/consumed path fields are the inputs.
 
+One NAMED evaluation lane refines which slot the policy evaluates;
+it does not widen any `allowed_from` set:
+
+- `section_move_replace_destination_rebind` (move-rider REPLACE): a
+  johtolause move rider ("X §, joka samalla siirretään Y lukuun") resolves
+  the target scope to the DESTINATION, which is absent by definition until
+  the move lands. With the typed `move_clause_target_unit_kind` evidence
+  present and a unique live origin elsewhere, occupancy is evaluated against
+  the ORIGIN slot (the slot the move+replace recovery consumes). Without a
+  live origin the REPLACE-on-absent violation stands.
+
 ## 7. Relationship to ExecutionAuthorization
 
 Unchanged and explicitly restated: the resolver and receipt do NOT authorize

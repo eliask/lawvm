@@ -908,3 +908,123 @@ def test_production_lane_replace_on_absent_emits_violation() -> None:
     assert finding.blocking is False
     assert finding.detail["current_occupancy"] == "absent"
     assert "allowed_non_primary" not in finding.detail
+
+
+def test_production_lane_move_rider_replace_evaluates_origin_occupancy() -> None:
+    """A destination-scoped REPLACE with a typed move rider is not a violation.
+
+    Regression (2014/1429 ← 2025/1382): "29 e §, joka samalla siirretään
+    5 b lukuun" compiles to REPLACE targeted at the DESTINATION chapter 5b
+    where §29e is absent until the move lands. With the typed
+    ``move_clause_target_unit_kind`` rider present and a unique live origin
+    (§29e in chapter 5a), the occupancy policy must evaluate the ORIGIN slot
+    (substantive → primary REPLACE expectation) instead of reporting
+    REPLACE-on-absent at the destination.
+    """
+    from lawvm.core.ir import IRNode
+    from lawvm.finland.statute import ReplayState
+
+    op = AmendmentOp(
+        op_id="prod",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="29e",
+        target_chapter="5b",
+        source_statute="2025/1382",
+        move_clause_target_unit_kind="chapter",
+    )
+    from lawvm.core.semantic_types import IRNodeKind as _K
+
+    rop = ResolvedOp(
+        op=op,
+        muutos_ir=IRNode(kind=_K.SECTION, label="29e"),
+        cross_ir=None,
+        amend_sub_ir=None,
+        op_id=op.op_id,
+        target_unit_kind="section",
+        target_norm="29e",
+        _op_type_seed="REPLACE",
+        move_clause_target_unit_kind="chapter",
+        _source_statute_override="2025/1382",
+        _target_address_override=LegalAddress(
+            path=(("chapter", "5b"), ("section", "29e"))
+        ),
+    )
+    intent = _build_canonical_intent(rop)
+    assert intent is not None
+    assert isinstance(intent, Replace)
+
+    # Live state: §29e lives in chapter 5a (the move origin); 5b is empty.
+    live = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="5a",
+                children=(IRNode(kind=IRNodeKind.SECTION, label="29e"),),
+            ),
+            IRNode(kind=IRNodeKind.CHAPTER, label="5b"),
+        ),
+    )
+    findings: list = []
+    _check_occupancy_policy(
+        ReplayState(ir=live),
+        rop,
+        intent,
+        None,
+        "ctx:move_rider_replace",
+        findings_out=findings,
+    )
+
+    assert findings == [], [f.detail for f in findings]
+
+
+def test_production_lane_move_rider_replace_without_origin_still_violates() -> None:
+    """A move rider with no live origin anywhere is still REPLACE-on-absent."""
+    from lawvm.core.ir import IRNode
+    from lawvm.finland.statute import ReplayState
+
+    op = AmendmentOp(
+        op_id="prod",
+        op_type="REPLACE",
+        target_unit_kind="section",
+        target_section="29e",
+        target_chapter="5b",
+        source_statute="2025/1382",
+        move_clause_target_unit_kind="chapter",
+    )
+    from lawvm.core.semantic_types import IRNodeKind as _K
+
+    rop = ResolvedOp(
+        op=op,
+        muutos_ir=IRNode(kind=_K.SECTION, label="29e"),
+        cross_ir=None,
+        amend_sub_ir=None,
+        op_id=op.op_id,
+        target_unit_kind="section",
+        target_norm="29e",
+        _op_type_seed="REPLACE",
+        move_clause_target_unit_kind="chapter",
+        _source_statute_override="2025/1382",
+        _target_address_override=LegalAddress(
+            path=(("chapter", "5b"), ("section", "29e"))
+        ),
+    )
+    intent = _build_canonical_intent(rop)
+    assert intent is not None
+
+    empty_body = IRNode(kind=IRNodeKind.BODY)
+    findings: list = []
+    _check_occupancy_policy(
+        ReplayState(ir=empty_body),
+        rop,
+        intent,
+        None,
+        "ctx:move_rider_no_origin",
+        findings_out=findings,
+    )
+
+    hits = [f for f in findings if f.kind == "APPLY.OCCUPANCY_POLICY_VIOLATION"]
+    assert len(hits) == 1
+    assert hits[0].detail["current_occupancy"] == "absent"
+

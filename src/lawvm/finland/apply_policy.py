@@ -465,6 +465,45 @@ def section_resolver_binding(
     )
 
 
+def _move_rider_origin_path(
+    state: "ReplayState",
+    rop: ResolvedOp,
+) -> Path | None:
+    """Resolve the unique move ORIGIN slot for a destination-scoped move rider.
+
+    A johtolause move rider ("29 e §, joka samalla siirretään 5 b lukuun")
+    resolves the target scope to the DESTINATION chapter/part at parse time,
+    so the destination slot is legitimately absent before the move lands.
+    The slot the op consumes is the ORIGIN: the unique live same-label
+    section in a different chapter (or part). Mirrors the candidate
+    selection of the section move+replace recovery in
+    ``_apply_whole_section_op`` (recovery rule
+    ``section_move_replace_destination_rebind``).
+    """
+    target_norm, target_chapter, target_part = rop.resolved_section_lookup_scope
+    if not target_norm:
+        return None
+    label_norm = normalized_label_key(target_norm)
+    matches = [
+        _tops._as_path(path)
+        for path in state.provision_index.get(("section", label_norm), [])
+    ]
+    if len(matches) != 1:
+        return None
+    origin = matches[0]
+    origin_chapter = _chapter_from_section_path(origin)
+    origin_part = _part_from_section_path(origin)
+    if rop.move_clause_target_unit_kind == "chapter":
+        if not target_chapter or origin_chapter == target_chapter:
+            return None
+    elif rop.move_clause_target_unit_kind == "part":
+        if not target_part or origin_part == target_part:
+            return None
+    else:
+        return None
+    return origin
+
+
 def _check_occupancy_policy(
     state: "ReplayState",
     rop: ResolvedOp,
@@ -489,6 +528,25 @@ def _check_occupancy_policy(
             return
 
     current = _section_occupancy(state, sec_path)
+    if (
+        current is OccupancyClass.ABSENT
+        and sec_path is None
+        and isinstance(intent, Replace)
+        and rop.resolved_action_type == "REPLACE"
+        and rop.move_clause_target_unit_kind in ("chapter", "part")
+    ):
+        # Typed move-rider lane: the REPLACE targets the move DESTINATION
+        # (absent by definition until the move lands); the slot it consumes
+        # is the unique live origin. Evaluate occupancy against the origin
+        # so a legitimate move arrival is not reported as REPLACE-on-absent.
+        origin_path = _move_rider_origin_path(state, rop)
+        if origin_path is not None:
+            current = _section_occupancy(state, origin_path)
+            logger.debug(
+                "  %s → occupancy evaluated at move-rider origin %s (rule: section_move_replace_destination_rebind)",
+                ctx_label,
+                LegalAddress(path=origin_path),
+            )
     policy = intent.contract.occupancy
     if current not in policy.allowed_from:
         allowed_from = sorted(c.value for c in policy.allowed_from)

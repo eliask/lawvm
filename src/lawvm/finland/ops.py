@@ -340,6 +340,28 @@ def lo_with_scope_confidence(
     return lo
 
 
+def lo_with_move_clause_target_unit_kind(
+    lo: _LegalOperation,
+    move_clause_target_unit_kind: "TargetUnitKind | None",
+) -> _LegalOperation:
+    """Attach the Finland-local move-rider destination kind to one LegalOperation.
+
+    Finnish johtolause move riders ("29 e §, joka samalla siirretään 5 b
+    lukuun") resolve the DESTINATION scope onto the target address at parse
+    time. The rider itself must survive to the apply layer as typed evidence:
+    ``AmendmentOp.from_lo`` reads this carrier, and the occupancy policy uses
+    it to evaluate a destination-scoped REPLACE against the move ORIGIN slot.
+    Same Finland-local transport pattern as ``lo_with_scope_confidence``.
+    """
+    if move_clause_target_unit_kind is not None:
+        object.__setattr__(
+            lo,
+            "move_clause_target_unit_kind",
+            move_clause_target_unit_kind,
+        )
+    return lo
+
+
 def lo_with_added_scope_tag(lo: _LegalOperation, tag: str) -> _LegalOperation:
     """Append one scope evidence tag and refresh the stored Finland witness."""
     provenance_tags = tuple(dict.fromkeys((*tuple(lo.provenance_tags), tag)))
@@ -1956,6 +1978,11 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
             and destination_parent is not None
             and source_parent is not None
             and destination_parent.path != source_parent.path
+            # A Move intent carries no payload; a payload-bearing move rider
+            # ("muutetaan X §, joka samalla siirretään Y lukuun") must stay a
+            # destination-scoped Replace so the replacement text lands via the
+            # section move+replace recovery instead of being silently dropped.
+            and payload is None
         ):
             return Move(
                 kind=IntentKind.MOVE,

@@ -283,6 +283,13 @@ exact slot.
 Jurisdiction-specific "replace into absent slot" behavior must be explicit and
 non-default.
 
+Typed exception (Finland move riders): "muutetaan X §, joka samalla
+siirretään Y lukuun" compiles to a `replace` scoped to the move DESTINATION,
+which is absent until the move lands. With the typed move-rider evidence the
+occupancy of such a `replace` is evaluated against the unique live ORIGIN
+slot. See APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §6,
+`section_move_replace_destination_rebind`.
+
 ### 6.3 `repeal`
 
 `repeal` terminates substantive occupancy of the exact slot.

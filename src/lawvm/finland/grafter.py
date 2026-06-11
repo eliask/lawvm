@@ -3800,7 +3800,18 @@ def _lower_group(
             cited_live_path = master.find_section_path(op.target_section, None, op.target_part)
             if cited_live_path is not None and any(kind in {"chapter", "part"} for kind, _label in cited_live_path):
                 target_address = LegalAddress(path=tuple(cited_live_path))
-        if op.move_clause_target_unit_kind is not None and op.lo is not None and op.target_unit_kind == "section":
+        if (
+            op.move_clause_target_unit_kind is not None
+            and op.lo is not None
+            and op.target_unit_kind == "section"
+            # Payload-less ops lower to a pure typed Move (origin target +
+            # destination parent). Payload-bearing ops ("muutetaan X §, joka
+            # samalla siirretään Y lukuun") must keep the destination-scoped
+            # REPLACE target: the apply layer's section move+replace recovery
+            # both rehomes the section AND lands the replacement payload,
+            # which a bare Move intent would silently drop.
+            and muutos_ir is None
+        ):
             source_path = master.find_section_path(op.target_section, None, op.target_part) if master is not None else None
             if source_path is not None:
                 target_address = LegalAddress(path=tuple(source_path))
