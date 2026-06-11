@@ -83,6 +83,8 @@ _MOVE_SKIP_REASON_CODES = {
 
 _SECTION_RELABEL_MIGRATION_RULE_ID = "section_relabel_renumber"
 _SUBSECTION_RELABEL_MIGRATION_RULE_ID = "subsection_relabel_renumber"
+_CHAPTER_RELABEL_MIGRATION_RULE_ID = "chapter_relabel_renumber"
+_PART_RELABEL_MIGRATION_RULE_ID = "part_relabel_renumber"
 
 
 def _address_leaf_kind(address) -> str:
@@ -144,6 +146,14 @@ def _build_relabel_write_receipt(
             landed_addr: structural_subtree_hash(landed_node),
         },
     )
+
+
+def _container_relabel_migration_rule_id(kind: str) -> str:
+    if kind == "chapter":
+        return _CHAPTER_RELABEL_MIGRATION_RULE_ID
+    if kind == "part":
+        return _PART_RELABEL_MIGRATION_RULE_ID
+    raise ValueError(f"unsupported container relabel kind: {kind!r}")
 
 
 def _materialization_root_move_allowances(
@@ -1270,19 +1280,24 @@ def _apply_intent_relabel(
                     )
                 )
                 logger.debug("  %s → Relabel container %s → %s", ctx_label, rop.target_norm, dest_label)
-                _emit_apply_mutation_event_for_rop(
-                    mutation_events_out,
+                landed_path = src_path[:-1] + ((source_unit_kind, dest_label),)
+                new_ir = _tops.replace_at(state.ir, src_path, renamed)
+                landed_node = _tops.resolve(new_ir, landed_path)
+                if landed_node is None:
+                    raise RuntimeError(f"container relabel landed path disappeared: {landed_path!r}")
+                receipt = _build_relabel_write_receipt(
                     rop=rop,
-                    helper="_apply_intent_relabel",
+                    src_path=src_path,
+                    landed_path=landed_path,
+                    source_node=node,
+                    landed_node=landed_node,
+                    migration_rule_id=_container_relabel_migration_rule_id(source_unit_kind),
+                )
+                _emit_apply_mutation_event_from_receipt(
+                    mutation_events_out,
+                    receipt=receipt,
+                    rop=rop,
                     outcome="applied",
-                    resolved_target_path=cast(TreePath, _path_to_tuple(src_path)),
-                    parent_path=cast(TreePath, _path_to_tuple(src_path[:-1])),
-                    renumbered_paths=(
-                        (
-                            cast(TreePath, _path_to_tuple(src_path)),
-                            cast(TreePath, _path_to_tuple(src_path[:-1] + ((source_unit_kind, dest_label),))),
-                        ),
-                    ),
                 )
                 if migration_ledger is not None:
                     from_addr = intent.source.address
@@ -1295,7 +1310,7 @@ def _apply_intent_relabel(
                         effective=effective,
                         source_statute=rop.resolved_source_statute,
                     )
-                return state.with_ir(_tops.replace_at(state.ir, src_path, renamed))
+                return state.with_ir(new_ir)
         logger.debug(
             "  %s → Relabel container %s not found (absent — may have been renamed already)", ctx_label, rop.target_norm
         )

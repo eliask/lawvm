@@ -12418,8 +12418,82 @@ def test_typed_container_relabel_prefers_scoped_target_address() -> None:
     event = mutation_events[0]
     assert event.helper == "_apply_intent_relabel"
     assert event.outcome == "applied"
+    assert event.resolved_target_path == (("part", "III"), ("chapter", "18"))
+    assert event.parent_path == (("part", "III"),)
     assert event.renumbered_paths == (
         ((("part", "III"), ("chapter", "2")), (("part", "III"), ("chapter", "18"))),
+    )
+    assert event.declared_allowances == (
+        DeclaredMutationAllowance(
+            kind="migration_path",
+            paths=((("part", "III"), ("chapter", "2")), (("part", "III"), ("chapter", "18"))),
+            rule_id="chapter_relabel_renumber",
+        ),
+    )
+
+
+def test_typed_part_relabel_emits_receipt_derived_migration_allowance() -> None:
+    from lawvm.core.canonical_intent import (
+        CoverageMode,
+        ExecutionContract,
+        IntentKind,
+        NodeTarget,
+        Relabel,
+    )
+    from lawvm.core.ir import LegalAddress
+
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="II",
+                children=(IRNode(kind=IRNodeKind.CHAPTER, label="1", children=(_sec("10"),)),),
+            ),
+        )
+    )
+    op = _op(op_type="RENUMBER", target_section="II")
+    op.target_unit_kind = "part"
+    intent = Relabel(
+        kind=IntentKind.RELABEL,
+        source=NodeTarget(address=LegalAddress(path=(("part", "II"),))),
+        destination=NodeTarget(address=LegalAddress(path=(("part", "III"),))),
+        contract=ExecutionContract(
+            occupancy=_compat_upsert_policy(),
+            coverage=CoverageMode.EXACT,
+        ),
+    )
+    rop = _make_rop(op, intent)
+    rop._op_type_seed = "RENUMBER"
+    rop.target_unit_kind = "part"
+    rop.target_norm = "II"
+    rop._target_address_override = LegalAddress(path=(("part", "II"),))
+    mutation_events: List[ApplyMutationEvent] = []
+
+    result = apply_op(
+        state,
+        op,
+        _ctx(_body()),
+        muutos_ir=None,
+        replay_mode="official_consolidation",
+        mutation_events_out=mutation_events,
+        rop=rop,
+    )
+
+    assert result.find("part", "III") == (("part", "III"),)
+    assert result.find("part", "II") is None
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    assert event.helper == "_apply_intent_relabel"
+    assert event.outcome == "applied"
+    assert event.resolved_target_path == (("part", "III"),)
+    assert event.parent_path == ()
+    assert event.renumbered_paths == (((("part", "II"),), (("part", "III"),)),)
+    assert event.declared_allowances == (
+        DeclaredMutationAllowance(
+            kind="migration_path",
+            paths=((("part", "II"),), (("part", "III"),)),
+            rule_id="part_relabel_renumber",
+        ),
     )
 
 
