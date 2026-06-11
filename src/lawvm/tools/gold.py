@@ -27,7 +27,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import Levenshtein
 
@@ -45,7 +45,7 @@ def _manifest_path() -> Path:
     return _gold_dir() / "manifest.json"
 
 
-def _load_manifest() -> dict:
+def _load_manifest() -> dict[str, Any]:
     p = _manifest_path()
     if p.exists():
         with open(p) as f:
@@ -53,7 +53,7 @@ def _load_manifest() -> dict:
     return {"version": 1, "statutes": {}}
 
 
-def _save_manifest(manifest: dict) -> None:
+def _save_manifest(manifest: dict[str, Any]) -> None:
     p = _manifest_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w") as f:
@@ -68,7 +68,7 @@ ORACLE_CATEGORIES = {"ORACLE_STALE", "EDITORIAL_CONVENTION"}
 REPLAY_BUG_CATEGORIES = {"REPLAY_EXTRA", "REPLAY_MISSING", "UNKNOWN"}
 
 
-def _auto_tier(score: float, section_results: list) -> int:
+def _auto_tier(score: float, section_results: list[tuple[str, str]]) -> int:
     """Derive tier from oracle-check classification results."""
     if not section_results and score >= 0.9999:
         # Truly perfect: replay == oracle at section level
@@ -95,7 +95,7 @@ def _classify_statute_for_gold(sid: str, mode: Literal["official_consolidation",
 # Subcommands
 # ---------------------------------------------------------------------------
 
-def _get_statutes_list(manifest: dict) -> List[dict]:
+def _get_statutes_list(manifest: dict[str, Any]) -> List[dict[str, Any]]:
     """Return statutes as a list regardless of manifest version."""
     statutes = manifest.get("statutes", [])
     if isinstance(statutes, list):
@@ -104,7 +104,7 @@ def _get_statutes_list(manifest: dict) -> List[dict]:
     return [{"statute_id": sid, **entry} for sid, entry in statutes.items()]
 
 
-def _cmd_status(manifest: dict, verbose: bool) -> None:
+def _cmd_status(manifest: dict[str, Any], verbose: bool) -> None:
     statutes = _get_statutes_list(manifest)
     if not statutes:
         print("Gold master is empty.")
@@ -286,7 +286,7 @@ def _cmd_verify(sid: str, mode: Literal["official_consolidation", "legal_pit"]) 
     with open(gold_path) as f:
         statute_data = json.load(f)
 
-    gold_provisions: Dict[str, dict] = statute_data.get("provisions", {})
+    gold_provisions: Dict[str, dict[str, Any]] = statute_data.get("provisions", {})
     gold_date = statute_data.get("verified_date", "?")[:10]
 
     print(f"Verifying {sid} against gold ({gold_date}, {len(gold_provisions)} provisions)...")
@@ -438,7 +438,7 @@ def _cmd_verify_strict(sid: Optional[str], mode: Literal["official_consolidation
             print(f"  {e}")
 
     # Aggregate fail reasons across all failing statutes
-    reason_counts: Counter = Counter()
+    reason_counts: Counter[str] = Counter()
     for _, reasons in failing_statutes:
         for r in reasons:
             reason_counts[r] += 1
@@ -459,7 +459,7 @@ def _cmd_verify_strict(sid: Optional[str], mode: Literal["official_consolidation
     # Regression detection: load previous sentinel list BEFORE overwriting
     sentinel_path = _sentinel_csv_path()
     sentinel_path.parent.mkdir(parents=True, exist_ok=True)
-    old_sentinel: set = set()
+    old_sentinel: set[str] = set()
     if sentinel_path.exists():
         try:
             with open(sentinel_path) as f_old:
@@ -494,7 +494,7 @@ def _cmd_verify_strict(sid: Optional[str], mode: Literal["official_consolidation
         print("\nNo strict regressions vs previous sentinel.")
 
 
-def _cmd_export(manifest: dict, out_path: Optional[str]) -> None:
+def _cmd_export(manifest: dict[str, Any], out_path: Optional[str]) -> None:
     text = json.dumps(manifest, ensure_ascii=False, indent=2)
     if out_path:
         with open(out_path, "w") as f:
