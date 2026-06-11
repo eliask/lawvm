@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, NamedTuple, Optional
 
-from lawvm.core.agreement_residual import AgreementResidual
+from lawvm.core.agreement_residual import AgreementResidual, AgreementResidualFamily
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.source_witness import (
@@ -481,9 +481,15 @@ def summarize_uk_effect(
         start_index=lowering_rejection_count_before,
     )
     extracted_tag = extracted.tag.rsplit("}", 1)[-1] if extracted is not None else None
-    extracted_text = " ".join(  # ty: ignore[no-matching-overload]
-        t.strip() for t in extracted.itertext() if t and t.strip()  # type: ignore[union-attr]
-    ) if extracted is not None else ""
+    extracted_text = (
+        " ".join(
+            text.strip()
+            for text in (str(part) for part in extracted.itertext())
+            if text and text.strip()
+        )
+        if extracted is not None
+        else ""
+    )
     extracted_text_preview = (
         extracted_text if len(extracted_text) <= 500 else extracted_text[:497] + "..."
     )
@@ -1662,7 +1668,7 @@ def _manual_compile_agreement_residual(payload: Mapping[str, Any]) -> dict[str, 
         residual_id=work_item_id,
         jurisdiction="uk",
         agreement_surface="manual_compile_frontier_vs_current_oracle",
-        family=_manual_compile_agreement_residual_family(payload),  # ty:ignore[invalid-argument-type]
+        family=_manual_compile_agreement_residual_family(payload),
         status="frontier",
         owner_phase=str(
             payload.get("owner_phase")
@@ -1706,7 +1712,9 @@ def _manual_compile_agreement_residual(payload: Mapping[str, Any]) -> dict[str, 
     ).to_dict()
 
 
-def _manual_compile_agreement_residual_family(payload: Mapping[str, Any]) -> str:
+def _manual_compile_agreement_residual_family(
+    payload: Mapping[str, Any],
+) -> AgreementResidualFamily:
     if str(payload.get("source_pathology") or ""):
         return "source_pathology"
     if _manual_compile_compare_shape(payload) not in {"", "commensurable"}:

@@ -167,5 +167,9 @@ def extracted_tag_and_text(el: Optional[ET._Element]) -> ExtractedTagAndText:
         return ExtractedTagAndText(None, "")
     return ExtractedTagAndText(
         tag=el.tag.rsplit("}", 1)[-1],
-        text=" ".join(t.strip() for t in el.itertext() if t and t.strip()),  # type: ignore[union-attr]  # ty: ignore[no-matching-overload]
+        text=" ".join(
+            text.strip()
+            for text in (str(part) for part in el.itertext())
+            if text and text.strip()
+        ),
     )

@@ -73,7 +73,7 @@ class _ScheduleItemTargetCandidate(NamedTuple):
 
 def _target_resolution_address_for_node(
     statute: UKMutableStatute,
-    target_node: IRNode,
+    target_node: UKMutableNode,
     path_resolver: Callable[[UKMutableNode], TreePath | None] | None = None,
 ) -> str:
     """Return a diagnostic legal-address string for a mutable replay node."""
@@ -82,7 +82,7 @@ def _target_resolution_address_for_node(
         if resolved_path is not None:
             return str(LegalAddress(path=resolved_path))
 
-    def _walk(node: IRNode, path: tuple[tuple[str, str], ...]) -> str:
+    def _walk(node: UKMutableNode, path: tuple[tuple[str, str], ...]) -> str:
         if node is target_node:
             return str(LegalAddress(path=path))
         for child in node.children:
@@ -100,7 +100,7 @@ def _target_resolution_address_for_node(
         root_path = ()
         if root_kind.lower() != "body":
             root_path = ((root_kind, str(root.label or "")),)
-        found = _walk(root, root_path)  # ty:ignore[invalid-argument-type]
+        found = _walk(root, root_path)
         if found:
             return found
     return ""
@@ -423,7 +423,7 @@ class UKReplayTargetLookupMixin:
                                 if target_resolution_op is not None:
                                     recovered_target = _target_resolution_address_for_node(
                                         self.statute,
-                                        cast(IRNode, res_node),
+                                        cast(UKMutableNode, res_node),
                                         path_resolver=self._tree_path_for_mutable_node,
                                     ) or str(target)
                                     _append_uk_replay_adjudication(
@@ -499,7 +499,7 @@ class UKReplayTargetLookupMixin:
                                         target=(
                                             _target_resolution_address_for_node(
                                                 self.statute,
-                                                match[0],
+                                                cast(UKMutableNode, match[0]),
                                                 path_resolver=self._tree_path_for_mutable_node,
                                             )
                                             or (
@@ -640,7 +640,7 @@ class UKReplayTargetLookupMixin:
         recovered_node, recovered_parent, recovered_idx = candidates[0]
         recovered_target = _target_resolution_address_for_node(
             self.statute,
-            recovered_node,  # ty:ignore[invalid-argument-type]
+            recovered_node,
             path_resolver=self._tree_path_for_mutable_node,
         ) or str(target)
         _append_uk_replay_adjudication(

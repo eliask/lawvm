@@ -154,9 +154,9 @@ def build_uk_proposed_law_branch_payload(
         branch_text_by_target=_text_map(specs, current=False),
     )
     graph = CorpusGraph(
-        branches=(branch,),  # ty:ignore[invalid-argument-type]
-        branch_edges=branch_edges,  # ty:ignore[invalid-argument-type]
-        branch_lifecycle_events=lifecycle_events,  # ty:ignore[invalid-argument-type]
+        branches=[branch],
+        branch_edges=list(branch_edges),
+        branch_lifecycle_events=list(lifecycle_events),
     )
     return UKProposedLawBranchPayload(
         branch=branch,

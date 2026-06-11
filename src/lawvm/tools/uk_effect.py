@@ -62,7 +62,11 @@ def _tag(el: ET._Element) -> str:
 def _text_snippet(el: Optional[ET._Element], *, limit: int = 300) -> str:
     if el is None:
         return ""
-    text = " ".join(t.strip() for t in el.itertext() if t and t.strip())  # type: ignore[union-attr]  # ty: ignore[no-matching-overload]
+    text = " ".join(
+        text_part.strip()
+        for text_part in (str(part) for part in el.itertext())
+        if text_part and text_part.strip()
+    )
     text = " ".join(text.split())
     if len(text) <= limit:
         return text

@@ -1199,7 +1199,7 @@ async def _classify_pdf(
     xml_amendment_id: Optional[str] = None,
     date_published: Optional[str] = None,
     compare: bool = False,   # kept for CLI compat; now always runs both when LLM available
-) -> dict:
+) -> dict[str, Any]:
     from lawvm.finland.corrigendum import (
         count_corrigendum_pairs as _count_pairs,
         parse_corrigendum as _regex_parse,
@@ -1942,7 +1942,7 @@ def build_manual_template_bundle(
         )
         entries.append(entry)
 
-    bundle = {
+    bundle: dict[str, Any] = {
         "amendment_id": amendment_id,
         "records_path": str(path),
         "include_all": include_all,
@@ -1958,7 +1958,7 @@ def build_manual_template_bundle(
         "frontier_work_items": frontier_work_items,
         "entries": entries,
     }
-    bundle["evidence_surface_report"] = finland_corrigendum_manual_template_evidence_surface(bundle)  # ty:ignore[invalid-assignment]
+    bundle["evidence_surface_report"] = finland_corrigendum_manual_template_evidence_surface(bundle)
     return bundle
 
 
@@ -2157,7 +2157,7 @@ def build_source_manifest_bundle(
     official_records_path: Path,
     source_records_path: Path,
     limit: int = 10,
-) -> dict:
+) -> dict[str, Any]:
     """Build the report bundle for PDF-level corrigendum source manifest rows."""
 
     shown = records[:limit] if limit > 0 else records
@@ -2168,7 +2168,7 @@ def build_source_manifest_bundle(
             if str(record.get("date_status") or "").strip()
         }
     )
-    bundle = {
+    bundle: dict[str, Any] = {
         "mode": mode,
         "limit": int(limit),
         "official_records_path": str(official_records_path),
@@ -2353,7 +2353,7 @@ def build_provenance_bundle(
             rendered_row["source_witness"] = source_witness
         rendered_rows.append(rendered_row)
 
-    bundle = {
+    bundle: dict[str, Any] = {
         "amendment_id": amendment_id,
         "records_path": str(path),
         "manual_yaml_path": str(_MANUAL_YAML),
@@ -2371,7 +2371,7 @@ def build_provenance_bundle(
         ),
         "rows": rendered_rows,
     }
-    bundle["evidence_surface_report"] = finland_corrigendum_provenance_evidence_surface(bundle)  # ty:ignore[invalid-assignment]
+    bundle["evidence_surface_report"] = finland_corrigendum_provenance_evidence_surface(bundle)
     return bundle
 
 
@@ -2380,7 +2380,7 @@ def build_overview_bundle(
     db_path: Optional[Path] = None,
     limit: int = 10,
     live: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     """Build a corpus-level overview of corrigendum adjudication state."""
     path = db_path or _OFFICIAL_TEXT
     records = [
@@ -2527,7 +2527,7 @@ def build_overview_bundle(
         ),
     )[: int(limit)]
 
-    bundle = {
+    bundle: dict[str, Any] = {
         "mode": "live" if live else "stored",
         "limit": int(limit),
         "records_path": str(path),
@@ -2728,7 +2728,7 @@ def build_review_bundle(
         )
         amendment["manual_template_entry_count"] = int(template_bundle.get("entry_count", 0))
 
-    bundle = {
+    bundle: dict[str, Any] = {
         "statute_id": statute_id,
         "mode": mode,
         "title": str(result.title or ""),
@@ -2748,7 +2748,7 @@ def build_review_bundle(
         ),
         "unblamed_sections": unblamed_sections,
     }
-    bundle["evidence_surface_report"] = finland_corrigendum_review_evidence_surface(bundle)  # ty:ignore[invalid-assignment]
+    bundle["evidence_surface_report"] = finland_corrigendum_review_evidence_surface(bundle)
     return bundle
 
 
@@ -3694,7 +3694,7 @@ def _cmd_reextract(args) -> None:
 
     cs = _make_corpus_store()
 
-    candidates = []
+    candidates: list[dict[str, Any]] = []
     for amendment_id, wrong, correct, op_id in all_patches:
         xml_bytes = cs.read_source(amendment_id)
         if xml_bytes is None:
@@ -3727,7 +3727,7 @@ def _cmd_reextract(args) -> None:
     results = asyncio.run(_reextract_batch(candidates))
 
     # Process results
-    improved = []
+    improved: list[dict[str, Any]] = []
     for res in results:
         if res["error"]:
             if verbose:
@@ -3748,7 +3748,11 @@ def _cmd_reextract(args) -> None:
         if not cand:
             continue
         # Verify the new wrong_text actually applies
-        _, ok = _apply_text_replace(cand["xml_bytes"], new_wrong, new_correct or cand["correct"])  # ty:ignore[invalid-argument-type]
+        _, ok = _apply_text_replace(
+            cast(bytes, cand["xml_bytes"]),
+            new_wrong,
+            new_correct or str(cand["correct"]),
+        )
         status = "APPLIES" if ok else "STILL NO MATCH"
         improved.append({
             "op_id": res["op_id"],
@@ -3760,7 +3764,7 @@ def _cmd_reextract(args) -> None:
             "applies": ok,
         })
         print(f"  {cand['amendment_id']:>10}  [{status}] [{conf}]")
-        print(f"    old: {repr(cand['wrong'][:70])}")  # ty:ignore[not-subscriptable]
+        print(f"    old: {repr(str(cand['wrong'])[:70])}")
         print(f"    new: {repr(new_wrong[:70])}")
 
     applies_n = sum(1 for x in improved if x["applies"])
@@ -3773,7 +3777,7 @@ def _cmd_reextract(args) -> None:
         for item in improved:
             if not item["applies"]:
                 continue
-            parts = item["op_id"].split("/")  # ty:ignore[unresolved-attribute]
+            parts = str(item["op_id"]).split("/")
             idx = int(parts[3])
             stable_id = _stable_id(pdf_map.get(item["op_id"], ""), idx)
             row = updated_by_id.get(stable_id)
