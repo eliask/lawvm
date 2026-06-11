@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 _HERE = Path(__file__).resolve()
 _LAWVM_DIR = _HERE.parent.parent.parent.parent
@@ -48,6 +48,9 @@ _SOURCE_FIELDS = [
     "size_bytes",
 ]
 
+JsonRow = dict[str, Any]
+
+
 def default_official_records_path() -> Path:
     return _OFFICIAL_JSONL
 
@@ -64,8 +67,8 @@ def default_patch_records_path() -> Path:
     return _OFFICIAL_JSONL
 
 
-def _load_jsonl_records(path: Path) -> list[dict]:
-    records: list[dict] = []
+def _load_jsonl_records(path: Path) -> list[JsonRow]:
+    records: list[JsonRow] = []
     with path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -77,7 +80,7 @@ def _load_jsonl_records(path: Path) -> list[dict]:
     return records
 
 
-def _stable_id(record: dict) -> str:
+def _stable_id(record: JsonRow) -> str:
     source_pdf = str(record.get("source_pdf") or "").strip()
     idx = int(record.get("correction_index") or 0)
     return f"{source_pdf}#{idx}"
@@ -122,7 +125,7 @@ def _date_sort_key(value: object) -> tuple[int, int, int]:
     return (9999, 99, 99)
 
 
-def _official_sort_key(record: dict) -> tuple:
+def _official_sort_key(record: JsonRow) -> tuple[tuple[int, int], tuple[int, int, int], tuple[int, int], int, str]:
     # statute first — keeps all corrections for one statute contiguous in the file
     # then date — chronological audit trail within a statute
     # then amendment, index, pdf — deterministic tiebreaking
@@ -135,7 +138,7 @@ def _official_sort_key(record: dict) -> tuple:
     )
 
 
-def _source_sort_key(record: dict) -> tuple[tuple[int, int, int], int, int, str]:
+def _source_sort_key(record: JsonRow) -> tuple[tuple[int, int, int], int, int, str]:
     date_published = _date_sort_key(record.get("date_published"))
     amendment_year, amendment_num = _amendment_sort_key(record.get("amendment_id"))
     return (
@@ -147,13 +150,13 @@ def _source_sort_key(record: dict) -> tuple[tuple[int, int, int], int, int, str]
 
 
 def _merge_official_and_adjudications(
-    official_records: list[dict],
-    adjudication_records: list[dict],
-) -> list[dict]:
+    official_records: list[JsonRow],
+    adjudication_records: list[JsonRow],
+) -> list[JsonRow]:
     adjudications_by_id = {
         str(row.get("stable_id") or ""): row for row in adjudication_records if row.get("stable_id")
     }
-    combined: list[dict] = []
+    combined: list[JsonRow] = []
     for official in official_records:
         stable_id = str(official.get("stable_id") or "")
         row = dict(official)
@@ -163,7 +166,7 @@ def _merge_official_and_adjudications(
     return combined
 
 
-def load_official_records(path: Optional[Path] = None) -> list[dict]:
+def load_official_records(path: Path | None = None) -> list[JsonRow]:
     target = Path(path) if path is not None else _OFFICIAL_JSONL
     if target.exists():
         records = _load_jsonl_records(target)
@@ -173,7 +176,7 @@ def load_official_records(path: Optional[Path] = None) -> list[dict]:
     return []
 
 
-def load_adjudication_records(path: Optional[Path] = None) -> list[dict]:
+def load_adjudication_records(path: Path | None = None) -> list[JsonRow]:
     target = Path(path) if path is not None else _ADJUDICATIONS_JSONL
     if target.exists():
         records = _load_jsonl_records(target)
@@ -183,14 +186,14 @@ def load_adjudication_records(path: Optional[Path] = None) -> list[dict]:
     return []
 
 
-def load_source_records(path: Optional[Path] = None) -> list[dict]:
+def load_source_records(path: Path | None = None) -> list[JsonRow]:
     target = Path(path) if path is not None else _SOURCES_JSONL
     if target.exists():
         return _load_jsonl_records(target)
     return []
 
 
-def load_patch_records(path: Optional[Path] = None) -> list[dict]:
+def load_patch_records(path: Path | None = None) -> list[JsonRow]:
     target = Path(path) if path is not None else _OFFICIAL_JSONL
     if target.exists():
         if target.name == _ADJUDICATIONS_JSONL.name:
@@ -209,7 +212,7 @@ def load_patch_records(path: Optional[Path] = None) -> list[dict]:
     return []
 
 
-def write_official_records(records: list[dict], path: Optional[Path] = None) -> Path:
+def write_official_records(records: list[JsonRow], path: Path | None = None) -> Path:
     target = Path(path) if path is not None else _OFFICIAL_JSONL
     target.parent.mkdir(parents=True, exist_ok=True)
     normalized = []
@@ -224,7 +227,7 @@ def write_official_records(records: list[dict], path: Optional[Path] = None) -> 
     return target
 
 
-def write_adjudication_records(records: list[dict], path: Optional[Path] = None) -> Path:
+def write_adjudication_records(records: list[JsonRow], path: Path | None = None) -> Path:
     target = Path(path) if path is not None else _ADJUDICATIONS_JSONL
     target.parent.mkdir(parents=True, exist_ok=True)
     normalized = []
@@ -239,7 +242,7 @@ def write_adjudication_records(records: list[dict], path: Optional[Path] = None)
     return target
 
 
-def write_source_records(records: list[dict], path: Optional[Path] = None) -> Path:
+def write_source_records(records: list[JsonRow], path: Path | None = None) -> Path:
     target = Path(path) if path is not None else _SOURCES_JSONL
     target.parent.mkdir(parents=True, exist_ok=True)
     normalized = []
