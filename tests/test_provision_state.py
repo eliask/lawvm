@@ -1907,6 +1907,29 @@ def test_specimen_1996_1128_subsection_repeal_placeholder_is_tombstone_with_witn
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_1972_66_snapshot_repeal_placeholder_exposes_source_witness() -> None:
+    payload = resolve_provision_state(
+        statute_id="1972/66",
+        jurisdiction="fi",
+        provision="chapter:4/section:27",
+        as_of="2020-12-11",
+        query_type="in_force",
+    )
+
+    assert payload["status"] == "selected"
+    assert payload["version"]["content_state"] == "tombstone"
+    assert payload["text"]["available"] is False
+    assert payload["source"]["statute_id"] == "2010/1327"
+    locator = payload["source_locator"]
+    detail = locator["detail"]
+    assert detail["source_witness_status"] == "operation_source_raw_text_available"
+    witness = detail["source_witness"]
+    assert "kumotaan" in witness["quote"]
+    assert "21―28, 28 a ja 40 §" in witness["quote"]
+    assert detail["operation_source_xml_span_status"] == "available"
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 def test_specimen_2023_71_chapter_insert_recovery_warning_is_visible() -> None:
     payload = resolve_provision_state(
         statute_id="2023/71",

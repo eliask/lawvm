@@ -1460,6 +1460,7 @@ def _rewrite_kumotaan_snapshot_replaces_to_repeal(
     target_source_statute: str,
     section_labels: Set[str],
     chapter_section_map: Optional[Dict[Optional[str], Set[str]]] = None,
+    source_raw_text: str = "",
 ) -> bool:
     """Turn zero-day section snapshots from whole-section kumotaan clauses into repeals.
 
@@ -1580,7 +1581,11 @@ def _rewrite_kumotaan_snapshot_replaces_to_repeal(
             action=StructuralAction.REPEAL,
             target=target,
             payload=None,
-            source=dc_replace(lo.source, expires=""),
+            source=dc_replace(
+                lo.source,
+                expires="",
+                raw_text=lo.source.raw_text or source_raw_text.strip(),
+            ),
         )
         updated = True
 
@@ -7713,6 +7718,7 @@ def process_muutoslaki(
                     target_source_statute=amendment_id,
                     section_labels={label.lower() for label in _kumotaan_labels},
                     chapter_section_map=_chap_map_sets,
+                    source_raw_text=johto,
                 )
             # Pure-repeal injection: sections in the kumotaan clause that have
             # no lo_ops from this amendment (no body text) need an explicit
