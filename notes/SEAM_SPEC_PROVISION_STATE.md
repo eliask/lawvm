@@ -221,6 +221,26 @@ models this as a statute-level validity bound:
   "possibly expired" status), with `bound_kind="upper_cap"`,
   `source_phrase_kind`, and `earlier_termination_possible=true` exposed on the
   `expiry` block so consumers can see the bound is a cap.
+- **Duration-form bound** ("on voimassa kahden vuoden ajan sen
+  voimaantulosta", "voimassa 12 kuukautta lain voimaantulopäivästä lukien")
+  → computed from a CONCRETE commencement date under the pinned 150/1930 §3
+  corresponding-day rule (month-end fallback), never ad hoc arithmetic. The
+  `expiry` block then carries `bound_kind="duration_from_commencement"`,
+  `rule_id="fi_duration_year_month_corresponding_day"`,
+  `arithmetic_authority="fi/150/1930"`, the recorded `authority_scope_caveat`
+  (150/1930 §1 governs procedural deadlines; applying it to whole-law
+  validity is a recorded inference), `epistemic_status=
+  "computed_under_pinned_authority"`, `commencement_date`,
+  `commencement_source_kind` (`same_sentence` or
+  `same_statute_commencement_clause`), and `duration_spec` (`P2Y`, `P12M`).
+  A duration clause whose commencement is decree-set, unstated, or ambiguous
+  stays blocking (`TEMPORAL.DURATION_COMMENCEMENT_UNRESOLVED`) — the pinned
+  arithmetic authority never supplies missing commencement facts.
+- **Elided-year end** ("tulee voimaan ... <year> ... ja on voimassa vuoden
+  loppuun", same sentence only) → end of the commencement year, recorded
+  with `rule_id="fi_elided_year_end_from_same_sentence_commencement_year"`
+  and `epistemic_status="high_confidence_inference"` — never presented as a
+  grammar fact.
 - **Recognised but unprovable bound** (unparseable date, conflicting bounds at
   one effective date, ambiguous anaphoric year) → blocking
   `status="expiry_unverified"` with the diagnostic code on the `expiry`
@@ -228,6 +248,13 @@ models this as a statute-level validity bound:
   expired answer.
 - Bare "on voimassa toistaiseksi" (no cap) is the permanent-law default and is
   NOT a bound.
+- Cutoff conventions: stated calendar ends ("31 päivään joulukuuta") and
+  duration-computed ends are INCLUSIVE `valid_until` / exclusive
+  `expires_on = valid_until + 1`. Event-bound validity ("voimassa päivään,
+  jona X tulee voimaan") is NOT yet resolved; when it is, the cutoff is
+  exclusive at the resolver date (`expires_on = resolver_commencement_date`,
+  not + 1) — a deliberate asymmetry pinned by fixtures in
+  `tests/test_temporal_fixed_term_expiry.py`.
 
 Rollback: setting `LAWVM_ENABLE_FIXED_TERM_STATUTE_BOUNDS=0` restores the 0.1
 flag-OFF behavior (no `expired`/`expiry_unverified`; a lapsed fixed-term law
@@ -236,9 +263,10 @@ validity check past a prose term) applies whenever the rollback is active.
 
 Residual coverage caveat: a small typed residue of statutes carries
 recognised-but-unprovable bounds (event-bound "kunnes ..." clauses, duration
-forms, source typos stating impossible dates). These return
-`expiry_unverified` rather than a wrong answer; the residue is enumerated,
-typed, and carries the offending clause text in its diagnostics.
+forms without a resolvable commencement, source typos stating impossible
+dates). These return `expiry_unverified` rather than a wrong answer; the
+residue is enumerated, typed, and carries the offending clause text in its
+diagnostics.
 
 ### 6.2 content_hash text-only aliasing
 

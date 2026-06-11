@@ -566,14 +566,29 @@ def _expiry_block(
             block["rule_id"] = bound.rule_id
             block["governing_bound_id"] = bound.bound_id
             if bound.bound_kind != "stated_expiry":
-                # Toistaiseksi outer cap: status is still expired past the cap
-                # (no weaker "possibly expired"), but the consumer can see the
-                # bound is a cap and that earlier termination was possible.
+                # Non-default bound kinds (toistaiseksi outer cap, computed
+                # duration): status is still expired past the bound (no weaker
+                # "possibly expired"), but the consumer can see what kind of
+                # bound it is and whether earlier termination was possible.
                 block["bound_kind"] = bound.bound_kind
                 block["source_phrase_kind"] = bound.source_phrase_kind
                 block["earlier_termination_possible"] = (
                     bound.earlier_termination_possible
                 )
+            if bound.epistemic_status != "grammar_fact":
+                # Computed/inferred ends must never read as grammar facts.
+                block["epistemic_status"] = bound.epistemic_status
+            if bound.arithmetic_authority:
+                # Duration arithmetic provenance: the named authority, its
+                # recorded scope caveat (150/1930 §1 governs procedural
+                # deadlines; applying it to whole-law validity is a recorded
+                # inference), and the inputs the end was computed from.
+                block["arithmetic_authority"] = bound.arithmetic_authority
+                block["authority_scope_caveat"] = bound.authority_scope_caveat
+                block["duration_spec"] = bound.duration_spec
+            if bound.commencement_date:
+                block["commencement_date"] = bound.commencement_date
+                block["commencement_source_kind"] = bound.commencement_source_kind
         if overlay.late_extension_gap:
             block["diagnostic"] = "TEMPORAL.FIXED_TERM_LATE_EXTENSION_GAP"
         return block

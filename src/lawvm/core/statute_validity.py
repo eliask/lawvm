@@ -37,7 +37,22 @@ ValidityScope = Literal["whole_statute"]
 # cap. Expiry projection is identical past the cap — there is no weaker
 # "possibly expired" status — but the law may have been terminated earlier by
 # a separate instrument, which ``earlier_termination_possible`` records.
-BoundKind = Literal["stated_expiry", "upper_cap"]
+# "duration_from_commencement": the source states a year/month duration from
+# the law's commencement; the end day is COMPUTED under a named, pinned
+# arithmetic authority (150/1930 §3), never ad hoc — the bound must carry
+# ``arithmetic_authority``, ``commencement_date`` and ``duration_spec``.
+BoundKind = Literal["stated_expiry", "upper_cap", "duration_from_commencement"]
+
+# How the bound's validity end was established. "grammar_fact": parsed
+# directly from an explicit date expression. "computed_under_pinned_authority":
+# arithmetic under a named statutory rule (the application of that rule to
+# whole-law validity carries a recorded scope caveat).
+# "high_confidence_inference": a narrow doctrinal inference (e.g. elided-year
+# "vuoden loppuun" resolved from the same-sentence commencement year) — never
+# to be presented as a grammar fact.
+EpistemicStatus = Literal[
+    "grammar_fact", "computed_under_pinned_authority", "high_confidence_inference"
+]
 
 FIXED_TERM_WHOLE_STATUTE_RULE_ID = "fi_fixed_term_whole_statute_expiry"
 
@@ -64,6 +79,12 @@ class FixedTermValidityProof:
     governing_bound_id: str
     bound_kind: BoundKind = "stated_expiry"
     earlier_termination_possible: bool = False
+    epistemic_status: EpistemicStatus = "grammar_fact"
+    arithmetic_authority: Optional[str] = None
+    authority_scope_caveat: Optional[str] = None
+    commencement_date: Optional[str] = None
+    commencement_source_kind: Optional[str] = None
+    duration_spec: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -99,6 +120,20 @@ class StatuteValidityBound:
     # in the normalised source text. None for non-anaphoric grammar families.
     antecedent_text: Optional[str] = None
     antecedent_span: Optional[Tuple[int, int]] = None
+    # Epistemic provenance: how the validity end was established (grammar
+    # fact / computed under a pinned authority / narrow inference). Computed
+    # and inferred bounds must never masquerade as grammar facts.
+    epistemic_status: EpistemicStatus = "grammar_fact"
+    # Arithmetic provenance for duration_from_commencement bounds: the named
+    # authority (e.g. "fi/150/1930"), its recorded scope caveat, the concrete
+    # commencement the period runs from, where that commencement was read
+    # ("same_sentence" / "same_statute_commencement_clause"), and the period
+    # ("P2Y", "P12M").
+    arithmetic_authority: Optional[str] = None
+    authority_scope_caveat: Optional[str] = None
+    commencement_date: Optional[str] = None
+    commencement_source_kind: Optional[str] = None
+    duration_spec: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.statute_id:
@@ -107,10 +142,24 @@ class StatuteValidityBound:
             raise ValueError(
                 f"StatuteValidityBound.scope must be 'whole_statute'; got {self.scope!r}"
             )
-        if self.bound_kind not in ("stated_expiry", "upper_cap"):
+        if self.bound_kind not in (
+            "stated_expiry",
+            "upper_cap",
+            "duration_from_commencement",
+        ):
             raise ValueError(
-                f"StatuteValidityBound.bound_kind must be 'stated_expiry' or "
-                f"'upper_cap'; got {self.bound_kind!r}"
+                f"StatuteValidityBound.bound_kind must be 'stated_expiry', "
+                f"'upper_cap' or 'duration_from_commencement'; got {self.bound_kind!r}"
+            )
+        if self.epistemic_status not in (
+            "grammar_fact",
+            "computed_under_pinned_authority",
+            "high_confidence_inference",
+        ):
+            raise ValueError(
+                f"StatuteValidityBound.epistemic_status must be 'grammar_fact', "
+                f"'computed_under_pinned_authority' or 'high_confidence_inference'; "
+                f"got {self.epistemic_status!r}"
             )
         if self.bound_kind == "upper_cap" and not self.earlier_termination_possible:
             raise ValueError(
@@ -118,6 +167,30 @@ class StatuteValidityBound:
                 "earlier_termination_possible=True (an upper cap bounds an "
                 "otherwise open-ended validity)"
             )
+        if self.bound_kind == "duration_from_commencement":
+            # A computed bound must carry its full arithmetic provenance and
+            # must not present itself as a grammar fact.
+            missing = [
+                name
+                for name, value in (
+                    ("arithmetic_authority", self.arithmetic_authority),
+                    ("authority_scope_caveat", self.authority_scope_caveat),
+                    ("commencement_date", self.commencement_date),
+                    ("commencement_source_kind", self.commencement_source_kind),
+                    ("duration_spec", self.duration_spec),
+                )
+                if not value
+            ]
+            if missing:
+                raise ValueError(
+                    "StatuteValidityBound with bound_kind='duration_from_commencement' "
+                    f"must carry arithmetic provenance; missing: {missing}"
+                )
+            if self.epistemic_status == "grammar_fact":
+                raise ValueError(
+                    "a duration-computed bound must not claim epistemic_status="
+                    "'grammar_fact'; use 'computed_under_pinned_authority'"
+                )
         if not self.effective:
             raise ValueError("StatuteValidityBound.effective must be a non-empty date string")
         if not self.valid_until:
@@ -148,6 +221,12 @@ class StatuteValidityBound:
             governing_bound_id=self.bound_id,
             bound_kind=self.bound_kind,
             earlier_termination_possible=self.earlier_termination_possible,
+            epistemic_status=self.epistemic_status,
+            arithmetic_authority=self.arithmetic_authority,
+            authority_scope_caveat=self.authority_scope_caveat,
+            commencement_date=self.commencement_date,
+            commencement_source_kind=self.commencement_source_kind,
+            duration_spec=self.duration_spec,
         )
 
 
