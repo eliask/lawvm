@@ -82,6 +82,7 @@ _MOVE_SKIP_REASON_CODES = {
 }
 
 _SECTION_RELABEL_MIGRATION_RULE_ID = "section_relabel_renumber"
+_SUBSECTION_RELABEL_MIGRATION_RULE_ID = "subsection_relabel_renumber"
 
 
 def _address_leaf_kind(address) -> str:
@@ -107,18 +108,19 @@ def _required_tree_path(path: Path) -> TreePath:
     return tree_path
 
 
-def _build_section_relabel_write_receipt(
+def _build_relabel_write_receipt(
     *,
     rop: ResolvedOp,
     src_path: Path,
     landed_path: Path,
     source_node: IRNode,
     landed_node: IRNode,
+    migration_rule_id: str,
 ) -> WriteReceipt:
-    """Record the landed write for a section relabel/renumber operation.
+    """Record the landed write for a relabel/renumber operation.
 
-    The source path is the resolver-bound section; the landed path is where the
-    renamed section exists after remove+insert. Their divergence is the legal
+    The source path is the resolver-bound old address; the landed path is where
+    the renamed node exists after the write. Their divergence is the legal
     migration itself and must be named on the receipt.
     """
     source_tree_path = _required_tree_path(src_path)
@@ -132,7 +134,7 @@ def _build_section_relabel_write_receipt(
         bound_target_path=source_tree_path,
         landed_primary_path=landed_tree_path,
         renumbered_paths=((source_tree_path, landed_tree_path),),
-        migration_rule_ids=(_SECTION_RELABEL_MIGRATION_RULE_ID,),
+        migration_rule_ids=(migration_rule_id,),
         pre_hashes={
             source_addr: structural_subtree_hash(source_node),
             landed_addr: "",
@@ -1360,12 +1362,13 @@ def _apply_intent_relabel(
                 landed_node = _tops.resolve(new_ir, landed_path)
                 if landed_node is None:
                     raise RuntimeError(f"section relabel landed path disappeared: {landed_path!r}")
-                receipt = _build_section_relabel_write_receipt(
+                receipt = _build_relabel_write_receipt(
                     rop=rop,
                     src_path=src_path,
                     landed_path=landed_path,
                     source_node=node,
                     landed_node=landed_node,
+                    migration_rule_id=_SECTION_RELABEL_MIGRATION_RULE_ID,
                 )
                 _emit_apply_mutation_event_from_receipt(
                     mutation_events_out,
@@ -1450,23 +1453,29 @@ def _apply_intent_relabel(
             return state
 
         rebuilt_subsections = list(subsections)
-        rebuilt_subsections[source_idx] = _relabel_subsection_ir(rebuilt_subsections[source_idx], dest_label)
+        source_subsection_node = rebuilt_subsections[source_idx]
+        rebuilt_subsections[source_idx] = _relabel_subsection_ir(source_subsection_node, dest_label)
         rebuilt_subsections.sort(key=lambda child: default_label_sort_key(child.label))
         rebuilt_section = _rebuild_section_with_subsections_ir(section_node, rebuilt_subsections)
 
-        _emit_apply_mutation_event_for_rop(
-            mutation_events_out,
+        source_subsection_path = section_path + (("subsection", source_subsection),)
+        landed_subsection_path = section_path + (("subsection", dest_label),)
+        landed_subsection_node = next(
+            child for child in rebuilt_subsections if child.kind is IRNodeKind.SUBSECTION and child.label == dest_label
+        )
+        receipt = _build_relabel_write_receipt(
             rop=rop,
-            helper="_apply_intent_relabel",
+            src_path=source_subsection_path,
+            landed_path=landed_subsection_path,
+            source_node=source_subsection_node,
+            landed_node=landed_subsection_node,
+            migration_rule_id=_SUBSECTION_RELABEL_MIGRATION_RULE_ID,
+        )
+        _emit_apply_mutation_event_from_receipt(
+            mutation_events_out,
+            receipt=receipt,
+            rop=rop,
             outcome="applied",
-            resolved_target_path=cast(TreePath, _path_to_tuple(section_path)),
-            parent_path=cast(TreePath, _path_to_tuple(section_path)),
-            renumbered_paths=(
-                (
-                    cast(TreePath, _path_to_tuple(section_path + (("subsection", source_subsection),))),
-                    cast(TreePath, _path_to_tuple(section_path + (("subsection", dest_label),))),
-                ),
-            ),
         )
         if migration_ledger is not None:
             from_addr = intent.source.address
