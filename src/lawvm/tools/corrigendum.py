@@ -169,6 +169,9 @@ _PDF_NAME_RE = re.compile(r"([a-z]+)(\d{4})(\d+)_(\d+)\.pdf$")
 
 VALID_TYPES = {"johtolause", "table", "footnote", "prose", "metadata", "sami_translation", "typeset", "unknown"}
 VALID_CONFIDENCE = {"high", "medium", "low"}
+JsonRow = dict[str, Any]
+JsonRows = list[JsonRow]
+JsonBundle = dict[str, Any]
 
 # ---------------------------------------------------------------------------
 # Typed extraction schema
@@ -181,7 +184,7 @@ class CorrectionItem:
     wrong_text: str
     correct_text: str
     confidence: str     # high | medium | low
-    table_meta: Optional[dict] = None   # vision-only: {rows, cols, change_row, change_col, headers, format_only, highlight_text}
+    table_meta: Optional[JsonRow] = None   # vision-only: {rows, cols, change_row, change_col, headers, format_only, highlight_text}
 
 
 @dataclass
@@ -736,7 +739,7 @@ def _parse_llm_lines(
     current_delete: str = ""
     current_add: str = ""
     current_used_spans: bool = False
-    current_table_meta: dict = {}
+    current_table_meta: JsonRow = {}
     # open block state
     open_kw: str = ""
     buf: list[str] = []
@@ -991,7 +994,7 @@ def _verify_in_source_xml(xml_bytes: bytes | None, wrong_text: str) -> Optional[
         return None
 
 
-def _load_patch_rows(path: Optional[Path] = None) -> list[dict]:
+def _load_patch_rows(path: Optional[Path] = None) -> JsonRows:
     target = Path(path) if path is not None else _OFFICIAL_TEXT
     return load_patch_records(target)
 
@@ -1071,7 +1074,7 @@ async def _call_llm_vision(
     images_b64: list[str],
 ) -> str:
     """Send PDF page images to vision-capable LLM for scanned corrigendum extraction."""
-    content: list[dict] = []
+    content: JsonRows = []
     for img_b64 in images_b64:
         content.append({
             "type": "image_url",
@@ -1117,8 +1120,8 @@ def _normalize_pair(w: str, c: str) -> tuple[str, str]:
     return _WS_RE.sub(" ", w).strip(), _WS_RE.sub(" ", c).strip()
 
 
-def _correction_item_to_dict(c: "CorrectionItem") -> dict:
-    d: dict = {
+def _correction_item_to_dict(c: "CorrectionItem") -> JsonRow:
+    d: JsonRow = {
         "type": c.type,
         "location": c.location,
         "wrong_text": c.wrong_text,
@@ -1131,7 +1134,7 @@ def _correction_item_to_dict(c: "CorrectionItem") -> dict:
 
 
 def _rows_from_corrections(
-    corrections: list,  # list[CorrectionItem]
+    corrections: list[CorrectionItem],
     source_pdf: str,
     statute_id: str,
     lang: str,
@@ -1139,15 +1142,15 @@ def _rows_from_corrections(
     date_published: Optional[str],
     source_tag: str,  # "regex", "llm", "both", "regex+llm", "vision", "vision+llm", etc.
     agreed: bool,
-    precomputed_verified: Optional[dict] = None,  # wrong_text -> bool|None, avoids double call
-    llm_extraction: Optional[list] = None,      # list[dict] — text LLM items, for audit
-    vision_extraction: Optional[list] = None,   # list[dict] — vision LLM items, for audit
-    regex_extraction: Optional[list] = None,    # list[dict] — regex items, for audit
+    precomputed_verified: Optional[dict[str, bool | None]] = None,  # wrong_text -> bool|None, avoids double call
+    llm_extraction: Optional[JsonRows] = None,      # text LLM items, for audit
+    vision_extraction: Optional[JsonRows] = None,   # vision LLM items, for audit
+    regex_extraction: Optional[JsonRows] = None,    # regex items, for audit
     expected_pair_count: Optional[int] = None,  # regex count of On:/Pitää olla: pairs in raw PDF
-) -> tuple[list[dict], list[dict]]:
+) -> tuple[JsonRows, JsonRows]:
     """Build JSONL rows from a CorrectionItem list."""
-    official_rows: list[dict] = []
-    adjudication_rows: list[dict] = []
+    official_rows: JsonRows = []
+    adjudication_rows: JsonRows = []
     for i, c in enumerate(corrections):
         verified: Optional[int] = None
         if c.type == "johtolause" and amendment_id and c.wrong_text:
@@ -1419,7 +1422,7 @@ async def _classify_pdf(
 
     # Pre-compute verification for johtolause items once — avoids calling
     # _verify_in_source twice (verbose print + _rows_from_corrections).
-    precomputed_verified: dict = {}
+    precomputed_verified: dict[str, bool | None] = {}
     if has_johtolause and amendment_id:
         import time as _time
         _t0_verify = _time.monotonic()
@@ -1450,8 +1453,8 @@ async def _classify_pdf(
                 ):
                     print(f"    [llm-only  {j}] {l_it.wrong_text!r} → {l_it.correct_text!r}")
 
-    official_rows: list[dict] = []
-    adjudication_rows: list[dict] = []
+    official_rows: JsonRows = []
+    adjudication_rows: JsonRows = []
     if not dry_run and final_items:
         llm_ext_dicts = [_correction_item_to_dict(it) for it in llm_items] if llm_items else None
         vis_ext_dicts = [_correction_item_to_dict(it) for it in vision_items] if vision_items else None
@@ -1536,7 +1539,7 @@ async def _run_classify(args) -> None:
 
     # Pre-read XML metadata: amendment_id (from <finlex:ref>) and date_published
     # Reading from XML is more reliable than LLM for amendment_id (always NUM/YEAR).
-    xml_meta: dict[str, dict] = {}  # source_pdf_path → {amendment_id, date_published}
+    xml_meta: dict[str, JsonRow] = {}  # source_pdf_path → {amendment_id, date_published}
     target_sids = set(s for _, s, _, _loc in targets)
     for sid in target_sids:
         refs = _get_xml_corrigendum_refs(cs, sid)
@@ -1834,7 +1837,7 @@ def build_manual_template_bundle(
     *,
     db_path: Optional[Path] = None,
     include_all: bool = False,
-) -> dict:
+) -> JsonBundle:
     """Build a manual-override scaffold bundle for one amendment.
 
     Returns a typed dict suitable for JSON output or YAML rendering.
@@ -1859,7 +1862,7 @@ def build_manual_template_bundle(
     except (ValueError, OSError, RuntimeError):
         source_xml = None
 
-    manual_entries: list[dict] = []
+    manual_entries: JsonRows = []
     if _MANUAL_YAML.exists():
         try:
             loaded = yaml.safe_load(_MANUAL_YAML.read_text(encoding="utf-8")) or []
@@ -1872,9 +1875,9 @@ def build_manual_template_bundle(
         except (OSError, yaml.YAMLError):
             manual_entries = []
 
-    entries: list[dict] = []
-    frontier_work_items: list[dict] = []
-    source_witnesses_by_locator: dict[str, dict] = {}
+    entries: JsonRows = []
+    frontier_work_items: JsonRows = []
+    source_witnesses_by_locator: dict[str, JsonRow] = {}
     attachment_only_entry_count = 0
     already_covered = bool(manual_entries) and not include_all
     for row in rows:
@@ -2000,7 +2003,7 @@ def _load_manual_override_counts(path: Path) -> dict[str, int]:
     return counts
 
 
-def _load_manual_override_entries(path: Path) -> list[dict]:
+def _load_manual_override_entries(path: Path) -> JsonRows:
     if not path.exists():
         return []
     try:
@@ -2009,7 +2012,7 @@ def _load_manual_override_entries(path: Path) -> list[dict]:
         return []
     if not isinstance(loaded, list):
         return []
-    entries: list[dict] = []
+    entries: JsonRows = []
     malformed_indexes: list[int] = []
     for index, entry in enumerate(loaded):
         if isinstance(entry, dict):
@@ -2022,7 +2025,7 @@ def _load_manual_override_entries(path: Path) -> list[dict]:
     return entries
 
 
-def _manual_entry_matches_row(manual_entry: dict, row: dict) -> bool:
+def _manual_entry_matches_row(manual_entry: JsonRow, row: JsonRow) -> bool:
     if str(manual_entry.get("amendment_id", "")).strip() != str(row.get("amendment_id") or "").strip():
         return False
     if str(manual_entry.get("wrong_text", "")).strip() != str(row.get("wrong_text") or "").strip():
@@ -2034,7 +2037,7 @@ def _manual_entry_matches_row(manual_entry: dict, row: dict) -> bool:
     return manual_type == row_type
 
 
-def _xml_corrigendum_meta_by_pdf(records: list[dict], cs) -> dict[str, dict[str, str | None]]:
+def _xml_corrigendum_meta_by_pdf(records: JsonRows, cs) -> dict[str, dict[str, str | None]]:
     xml_meta_by_pdf: dict[str, dict[str, str | None]] = {}
     statute_ids = sorted(
         {
@@ -2056,7 +2059,7 @@ def _xml_corrigendum_meta_by_pdf(records: list[dict], cs) -> dict[str, dict[str,
     return xml_meta_by_pdf
 
 
-def build_source_manifest_records(*, records_path: Optional[Path] = None) -> list[dict]:
+def build_source_manifest_records(*, records_path: Optional[Path] = None) -> JsonRows:
     """Build one official provenance record per corrigendum PDF."""
     def _date_sort_key(value: object) -> tuple[int, int, int]:
         text = str(value or "").strip()
@@ -2090,7 +2093,7 @@ def build_source_manifest_records(*, records_path: Optional[Path] = None) -> lis
         if str(record.get("lang") or "fi").strip() == "fi"
         and str(record.get("source_pdf") or "").strip()
     ]
-    grouped: dict[str, list[dict]] = {}
+    grouped: dict[str, JsonRows] = {}
     for record in records:
         source_pdf = str(record.get("source_pdf") or "").strip()
         grouped.setdefault(source_pdf, []).append(record)
@@ -2098,7 +2101,7 @@ def build_source_manifest_records(*, records_path: Optional[Path] = None) -> lis
     cs = _make_corpus_store()
     xml_meta_by_pdf = _xml_corrigendum_meta_by_pdf(records, cs)
 
-    manifest: list[dict] = []
+    manifest: JsonRows = []
     for source_pdf, items in grouped.items():
         items.sort(
             key=lambda item: (
@@ -2152,13 +2155,13 @@ def build_source_manifest_records(*, records_path: Optional[Path] = None) -> lis
 
 
 def build_source_manifest_bundle(
-    records: list[dict],
+    records: JsonRows,
     *,
     mode: str,
     official_records_path: Path,
     source_records_path: Path,
     limit: int = 10,
-) -> dict[str, Any]:
+) -> JsonBundle:
     """Build the report bundle for PDF-level corrigendum source manifest rows."""
 
     shown = records[:limit] if limit > 0 else records
@@ -2195,16 +2198,16 @@ def build_source_manifest_bundle(
     return bundle
 
 
-def build_official_metadata_backfill(*, records_path: Optional[Path] = None) -> dict:
+def build_official_metadata_backfill(*, records_path: Optional[Path] = None) -> JsonBundle:
     """Backfill missing official corrigendum metadata from XML refs and filenames."""
     path = records_path or _OFFICIAL_TEXT
     records = load_official_records(path)
     cs = _make_corpus_store()
     xml_meta_by_pdf = _xml_corrigendum_meta_by_pdf(records, cs)
-    updated_records: list[dict] = []
-    changed_items: list[dict] = []
+    updated_records: JsonRows = []
+    changed_items: JsonRows = []
     residual_missing_date_counts: dict[str, int] = {}
-    residual_missing_date_samples: dict[str, list[dict]] = {}
+    residual_missing_date_samples: dict[str, JsonRows] = {}
     for record in records:
         updated = dict(record)
         source_pdf = str(record.get("source_pdf") or "").strip()
@@ -2267,7 +2270,7 @@ def build_provenance_bundle(
     amendment_id: str,
     *,
     db_path: Optional[Path] = None,
-) -> dict:
+) -> JsonBundle:
     """Build an amendment-scoped corrigendum provenance and adjudication bundle."""
     path = db_path or _OFFICIAL_TEXT
     rows = [
@@ -2298,8 +2301,8 @@ def build_provenance_bundle(
         if str(entry.get("amendment_id", "")).strip() == amendment_id
     ]
 
-    rendered_rows: list[dict] = []
-    source_witnesses_by_locator: dict[str, dict] = {}
+    rendered_rows: JsonRows = []
+    source_witnesses_by_locator: dict[str, JsonRow] = {}
     for row in rows:
         db_verified = row.get("verified_in_source")
         current_verified = _verify_in_source_xml(source_xml, str(row.get("wrong_text") or ""))
@@ -2412,7 +2415,7 @@ def build_overview_bundle(
         source_date_status_counts[status] = source_date_status_counts.get(status, 0) + 1
     type_counts: dict[str, int] = {}
     status_counts: dict[str, int] = {}
-    amendment_stats: dict[str, dict] = {}
+    amendment_stats: dict[str, JsonRow] = {}
     source_xml_by_amendment: dict[str, bytes | None] = {}
 
     for record in records:
@@ -2558,7 +2561,7 @@ def build_review_bundle(
     *,
     mode: str = "legal_pit",
     db_path: Optional[Path] = None,
-) -> dict:
+) -> JsonBundle:
     """Build a review bundle joining live disagreements to corrigendum evidence."""
     from lawvm.tools.oracle_check import _classify_statute
 
@@ -2570,9 +2573,9 @@ def build_review_bundle(
 
     dbp = db_path or _OFFICIAL_TEXT
     manual_counts = _load_manual_override_counts(_MANUAL_YAML)
-    amendment_groups: dict[str, dict] = {}
-    unblamed_sections: list[dict] = []
-    all_sections: list[dict] = []
+    amendment_groups: dict[str, JsonRow] = {}
+    unblamed_sections: JsonRows = []
+    all_sections: JsonRows = []
     records = _load_patch_rows(dbp)
 
     def _chapter_label_for_key(section_key: str) -> str:
@@ -2603,7 +2606,7 @@ def build_review_bundle(
             return _chapter_label_for_key(section_key) == norm_section_label(m.group(1))
         return False
 
-    def _ensure_amendment_group(amendment_id: str, blame_title: str = "") -> dict:
+    def _ensure_amendment_group(amendment_id: str, blame_title: str = "") -> JsonRow:
         return amendment_groups.setdefault(
             amendment_id,
             {
@@ -2758,14 +2761,14 @@ def list_open_manual_candidates(
     db_path: Optional[Path] = None,
     limit: int = 20,
     include_all: bool = False,
-) -> list[dict]:
+) -> JsonRows:
     path = db_path or _OFFICIAL_TEXT
     records = [
         row
         for row in _load_patch_rows(path)
         if str(row.get("lang") or "fi") == "fi"
     ]
-    grouped: dict[str, list[dict]] = {}
+    grouped: dict[str, JsonRows] = {}
     for row in records:
         amendment_id = str(row.get("amendment_id") or "")
         if not amendment_id:
@@ -2783,7 +2786,7 @@ def list_open_manual_candidates(
         key=lambda item: (-item[2], -item[1], item[0]),
     )[: int(limit)]
 
-    out: list[dict] = []
+    out: JsonRows = []
     for amendment_id, row_count, db_no_match_rows in ranked:
         bundle = build_manual_template_bundle(
             str(amendment_id),
@@ -3218,7 +3221,7 @@ def _cmd_review(args) -> None:
 def _corrigendum_locators_for_sid(cs, sid: str) -> list[str]:
     return list_cached_corrigendum_locators(cs, sid)
 
-def _parse_corrigendum_xml_refs(xml_bytes: bytes) -> list[dict]:
+def _parse_corrigendum_xml_refs(xml_bytes: bytes) -> JsonRows:
     """Extract <finlex:corrigendum> metadata from XML bytes without lxml."""
     refs = []
     # Find all corrigendum blocks
@@ -3239,7 +3242,7 @@ def _parse_corrigendum_xml_refs(xml_bytes: bytes) -> list[dict]:
     return refs
 
 
-def _get_xml_corrigendum_refs(cs, sid: str) -> list[dict]:
+def _get_xml_corrigendum_refs(cs, sid: str) -> JsonRows:
     """Read best oracle XML and extract corrigendum metadata."""
     oracle_path = get_oracle_path(
         sid,
@@ -3426,7 +3429,7 @@ def _status_corpus(cs) -> None:
             for filename in sorted(other[sid]):
                 print(f"    {sid}  {filename}")
 
-    by_decade: Counter = Counter()
+    by_decade: Counter[int] = Counter()
     for sid, files in finnish.items():
         year = int(sid.split("/")[0])
         by_decade[(year // 10) * 10] += len(files)
@@ -3519,7 +3522,7 @@ async def _reextract_one(
     op_id: str,
     xml_bytes: bytes,
     pdf_bytes: Optional[bytes],
-) -> dict:
+) -> JsonBundle:
     """Two-phase span-based reextraction.
 
     Phase 1: Give LLM numbered plain-text lines, ask for line number only (~5 tokens).
@@ -3630,9 +3633,9 @@ async def _reextract_one(
 
 
 async def _reextract_batch(
-    candidates: list[dict],
+    candidates: JsonRows,
     concurrency: int = 4,
-) -> list[dict]:
+) -> JsonRows:
     sem = asyncio.Semaphore(concurrency)
     async with aiohttp.ClientSession() as session:
         tasks = [
@@ -3845,7 +3848,7 @@ def _cmd_check_completeness(args) -> None:
     records = load_official_records(official_path)
 
     from collections import defaultdict
-    by_pdf: dict[str, list[dict]] = defaultdict(list)
+    by_pdf: dict[str, JsonRows] = defaultdict(list)
     for row in records:
         by_pdf[str(row.get("source_pdf") or "")].append(row)
 
@@ -3956,7 +3959,7 @@ def _check_patches_init() -> None:
     _cp_pt = get_patch_table()
 
 
-def _check_patches_one(amendment_id: str) -> tuple[int, int, list[dict]]:
+def _check_patches_one(amendment_id: str) -> tuple[int, int, JsonRows]:
     """Worker: apply all patches for one amendment; return (hj, hb, misapplied)."""
     import warnings
     from lawvm.finland.corrigendum import clear_misapplied_records, get_misapplied_records
@@ -3994,7 +3997,7 @@ def _cmd_check_patches(args) -> None:
     total_b = sum(len(v) for v in pt._body_patches.values())
 
     hits_j = hits_b = 0
-    all_misapplied: list[dict] = []
+    all_misapplied: JsonRows = []
 
     with ProcessPoolExecutor(max_workers=workers, initializer=_check_patches_init) as ex:
         futs = {ex.submit(_check_patches_one, aid): aid for aid in all_ids}
