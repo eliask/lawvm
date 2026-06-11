@@ -131,10 +131,10 @@ class TestFromPhaseResult:
         pr = _pr(output=None)
         facade = CompileFacade.from_phase_result(
             pr,
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
             strict_profile_name="finland_ingestion_v1",
         )
-        assert facade.replay_mode == "finlex_oracle"
+        assert facade.replay_mode == "official_consolidation"
         assert facade.strict_profile_name == "finland_ingestion_v1"
 
     def test_empty_replay_mode_is_rejected(self):
@@ -1692,7 +1692,7 @@ class TestFacadeSummaryPrinting:
 
         facade = CompileFacade.from_phase_result(
             _pr(output=None),
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
         )
 
         _print_facade_summary(

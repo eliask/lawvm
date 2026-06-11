@@ -280,7 +280,7 @@ def _working_johtolause(
 def build_amendment_bundle(
     statute_id: str,
     source_id: str,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
 ) -> Dict[str, Any]:
     before_master = replay_xml(statute_id, mode=mode, stop_before=source_id, quiet=True)
     cs = get_corpus()

@@ -157,37 +157,37 @@ def amendment_bundle_2010_1396_2018_441() -> dict[str, Any]:
 
 @pytest.fixture(scope="module")
 def amendment_bundle_2013_588_2025_201() -> dict[str, Any]:
-    return build_amendment_bundle("2013/588", "2025/201", mode="finlex_oracle")
+    return build_amendment_bundle("2013/588", "2025/201", mode="official_consolidation")
 
 
 @pytest.fixture(scope="module")
 def replay_2013_588_finlex_oracle() -> Any:
-    return pinned_replay("2013/588", mode="finlex_oracle", quiet=True)
+    return pinned_replay("2013/588", mode="official_consolidation", quiet=True)
 
 
 @pytest.fixture(scope="module")
 def replay_2004_699_finlex_oracle() -> Any:
-    return pinned_replay("2004/699", mode="finlex_oracle", quiet=True)
+    return pinned_replay("2004/699", mode="official_consolidation", quiet=True)
 
 
 @pytest.fixture(scope="module")
 def replay_2016_1227_finlex_oracle() -> Any:
-    return pinned_replay("2016/1227", mode="finlex_oracle", quiet=True)
+    return pinned_replay("2016/1227", mode="official_consolidation", quiet=True)
 
 
 @pytest.fixture(scope="module")
 def replay_2005_579_finlex_oracle() -> Any:
-    return pinned_replay("2005/579", mode="finlex_oracle", quiet=True)
+    return pinned_replay("2005/579", mode="official_consolidation", quiet=True)
 
 
 @pytest.fixture(scope="module")
 def replay_2003_549_finlex_oracle() -> Any:
-    return pinned_replay("2003/549", mode="finlex_oracle", quiet=True, build_full_products=False)
+    return pinned_replay("2003/549", mode="official_consolidation", quiet=True, build_full_products=False)
 
 
 @pytest.fixture(scope="module")
 def replay_2007_1024_finlex_oracle() -> Any:
-    return pinned_replay("2007/1024", mode="finlex_oracle", quiet=True)
+    return pinned_replay("2007/1024", mode="official_consolidation", quiet=True)
 
 
 class _MapCorpus:
@@ -1698,7 +1698,7 @@ def test_allow_unscoped_live_section_retarget_requires_carry_forward_scope() -> 
         target_section="159",
         target_unit_kind="section",
         target_chapter="2",
-        scope_provenance_tags=("chapter_scope_from_johtolause",),
+        scope_provenance_tags=("chapter_scope_from_preamble",),
         source_statute="2019/371",
     )
     carry_forward_scoped = AmendmentOp(
@@ -2126,7 +2126,7 @@ def test_compile_group_uses_unscoped_body_surface_for_carry_forward_section_scop
         set(),
         muutos_tree,
         "",
-        get_replay_profile("finlex_oracle"),
+        get_replay_profile("official_consolidation"),
         None,
         None,
     )
@@ -2215,7 +2215,7 @@ def test_compile_group_uses_stale_body_chapter_surface_for_carry_forward_section
         set(),
         muutos_tree,
         "",
-        get_replay_profile("finlex_oracle"),
+        get_replay_profile("official_consolidation"),
         None,
         None,
     )
@@ -4288,7 +4288,7 @@ def test_mixed_sparse_intro_replace_preserves_first_subsection_items() -> None:
 
 
 def test_replay_1994_1472_preserves_subparagraph_tree_across_2018_1225() -> None:
-    master = pinned_replay("1994/1472", mode="finlex_oracle", stop_before="2019/1554")
+    master = pinned_replay("1994/1472", mode="official_consolidation", stop_before="2019/1554")
 
     sec = master.find_section("2")
     assert sec is not None
@@ -6354,7 +6354,7 @@ def test_append_compiled_group_ops_serializes_resolved_scope_confidence() -> Non
         target_kind=TargetKind.SECTION,
         target_section="4",
         target_chapter="5",
-        scope_provenance_tags=("chapter_scope_from_johtolause",),
+        scope_provenance_tags=("chapter_scope_from_preamble",),
     )
     rop = ResolvedOp.from_amendment_op(
         op,
@@ -6375,7 +6375,7 @@ def test_append_compiled_group_ops_serializes_resolved_scope_confidence() -> Non
             "source_title": None,
             "extraction_provenance_tags": [],
             "target_guessing_provenance_tags": [],
-            "scope_provenance_tags": ["chapter_scope_from_johtolause"],
+            "scope_provenance_tags": ["chapter_scope_from_preamble"],
             "witness_rule_id": None,
             "target_unit_kind": "section",
             "target_norm": "4",
@@ -6384,7 +6384,7 @@ def test_append_compiled_group_ops_serializes_resolved_scope_confidence() -> Non
             "target_paragraph": "",
             "target_item": "",
             "target_special": "",
-            "scope_source": "johtolause",
+            "scope_source": "preamble",
             "scope_confidence": "inferred",
         }
     ]
@@ -6833,7 +6833,7 @@ def test_scope_anchor_dependence_observations_flag_heuristic_scope_tags() -> Non
             target_section="34",
             target_kind=TargetKind.SECTION,
             target_chapter="5",
-            scope_provenance_tags=("grouped_chapter_scope", "chapter_scope_from_johtolause"),
+            scope_provenance_tags=("grouped_chapter_scope", "chapter_scope_from_preamble"),
         ),
         AmendmentOp(
             op_id="",
@@ -6876,8 +6876,8 @@ def test_scope_anchor_dependence_observations_flag_heuristic_scope_tags() -> Non
                 "target_unit_kind": "section",
                 "target_norm": "34",
                 "target_chapter": "5",
-                "tag": "chapter_scope_from_johtolause",
-                "scope_source": "johtolause",
+                "tag": "chapter_scope_from_preamble",
+                "scope_source": "preamble",
                 "scope_confidence": "inferred",
                 "op_type": "REPLACE",
                 "target_paragraph": None,
@@ -6977,7 +6977,7 @@ def test_root_insert_fallback_recovers_decision_scoped_secondary_section_range()
 
 
 def test_combined_root_insert_ranges_place_trailing_sections_under_following_chapter() -> None:
-    master = pinned_replay("2007/159", mode="finlex_oracle")
+    master = pinned_replay("2007/159", mode="official_consolidation")
     sections = extract_ir_sections(master.ir)
 
     assert "chapter:6/section:20a" in sections
@@ -6987,7 +6987,7 @@ def test_combined_root_insert_ranges_place_trailing_sections_under_following_cha
 
 
 def test_replay_xml_2002_1330_prefers_live_substantive_section_8_over_repeal_placeholder_slot() -> None:
-    replay = pinned_replay("2002/1330", as_of="2019-04-02", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("2002/1330", as_of="2019-04-02", mode="official_consolidation", quiet=True)
     sections = extract_ir_sections(replay.products.materialized_state.ir)
 
     section8_paths = sorted(path for path in sections if path.endswith("section:8"))
@@ -7032,7 +7032,7 @@ def test_replay_xml_2013_588_retargets_explicit_chunk_sections_from_2023_497_to_
 
 
 def test_replay_xml_1982_716_applies_glued_18ja_20_clause_for_section_18() -> None:
-    replay = pinned_replay("1982/716", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("1982/716", mode="official_consolidation", quiet=True)
     sections = extract_ir_sections(replay.products.materialized_state.ir)
 
     sec18 = sections["chapter:3/section:18"]
@@ -7045,7 +7045,7 @@ def test_replay_xml_1982_716_applies_glued_18ja_20_clause_for_section_18() -> No
 
 
 def test_replay_xml_2007_370_drops_stale_section_15_item_7_subitems_after_2015_742() -> None:
-    replay = pinned_replay("2007/370", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("2007/370", mode="official_consolidation", quiet=True)
     sections = extract_ir_sections(replay.products.materialized_state.ir)
 
     sec15 = sections["chapter:4/section:15"]
@@ -7059,7 +7059,7 @@ def test_replay_xml_2007_370_drops_stale_section_15_item_7_subitems_after_2015_7
 
 
 def test_replay_xml_1997_133_applies_section_31_intro_replace_from_2026_130() -> None:
-    replay = pinned_replay("1997/133", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("1997/133", mode="official_consolidation", quiet=True)
     sections = extract_ir_sections(replay.products.materialized_state.ir)
 
     sec31 = sections["chapter:5/section:31"]
@@ -7070,7 +7070,7 @@ def test_replay_xml_1997_133_applies_section_31_intro_replace_from_2026_130() ->
 
 
 def test_replay_xml_1995_1760_restores_inserted_section_8b_from_2004_1250() -> None:
-    replay = pinned_replay("1995/1760", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("1995/1760", mode="official_consolidation", quiet=True)
     sections = extract_ir_sections(replay.products.materialized_state.ir)
 
     sec8b = sections["section:8b"]
@@ -7081,7 +7081,7 @@ def test_replay_xml_1995_1760_restores_inserted_section_8b_from_2004_1250() -> N
 
 
 def test_replay_xml_1940_378_1994_318_does_not_duplicate_section_61_timeline_versions() -> None:
-    replay = pinned_replay("1940/378", as_of="1994-07-02", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("1940/378", as_of="1994-07-02", mode="official_consolidation", quiet=True)
     addr = LegalAddress(path=(("chapter", "7"), ("section", "61")))
 
     assert replay.timelines is not None
@@ -7095,7 +7095,7 @@ def test_replay_xml_1940_378_1994_318_does_not_duplicate_section_61_timeline_ver
 
 
 def test_whole_section_replace_collapses_intro_list_subsections_into_paragraphs() -> None:
-    master = pinned_replay("1993/58", mode="finlex_oracle")
+    master = pinned_replay("1993/58", mode="official_consolidation")
     sec = master.find_section("3")
     subs = [c for c in sec.children if c.kind is IRNodeKind.SUBSECTION]
 
@@ -7160,7 +7160,7 @@ def test_uncovered_body_insert_accepts_spaced_lettered_sibling_section_refs() ->
     for rop in rops:
         assert rop.intent is not None
         assert rop.op.uncovered_body_recovery is True
-        got = apply_op(got, None, ctx, None, replay_mode="finlex_oracle", rop=rop)
+        got = apply_op(got, None, ctx, None, replay_mode="official_consolidation", rop=rop)
 
     assert got.find_section("4a") is not None
     assert got.find_section("4b") is not None
@@ -8308,7 +8308,7 @@ def test_uncovered_body_whole_chapter_replace_stamps_exact_tail_policy() -> None
     assert replace_6.payload_completeness.kind == "complete"
     assert replace_6.payload_completeness.tail_policy == "replace_if_target_scope_requires"
 
-    result = apply_op(state, None, ctx, None, replay_mode="finlex_oracle", rop=replace_6)
+    result = apply_op(state, None, ctx, None, replay_mode="official_consolidation", rop=replace_6)
     live = result.find_section("6", "16")
     assert live is not None
     assert live.attrs["lawvm_tail_policy"] == "replace_if_target_scope_requires"
@@ -8533,7 +8533,7 @@ def test_uncovered_body_adopts_sections_into_new_chapter_when_chapter_insert_lef
     # After applying the rops, sections should appear under chapter 5
     final_state = state
     for rop in rops:
-        final_state = apply_op(final_state, None, ctx, None, replay_mode="finlex_oracle", rop=rop)
+        final_state = apply_op(final_state, None, ctx, None, replay_mode="official_consolidation", rop=rop)
     assert final_state.find_section("20", "5") is not None
     assert final_state.find_section("21", "5") is not None
     assert final_state.find_section("22", "5") is not None
@@ -8643,7 +8643,7 @@ def test_uncovered_body_adopts_sections_into_part_scoped_new_chapter_with_same_l
 
     final_state = state
     for rop in rops:
-        final_state = apply_op(final_state, None, ctx, None, replay_mode="finlex_oracle", rop=rop)
+        final_state = apply_op(final_state, None, ctx, None, replay_mode="official_consolidation", rop=rop)
 
     assert final_state.find_section("1", "2", "5") is not None
 
@@ -9713,7 +9713,7 @@ def test_strict_replay_emits_explicit_source_pathology_rejection_for_2001_1234()
 def test_replay_xml_1986_609_applies_2021_657_subsection_replace_inside_section_omission_shell() -> None:
     replay = pinned_replay(
         "1986/609",
-        mode="finlex_oracle",
+        mode="official_consolidation",
     )
 
     section = next(
@@ -9731,7 +9731,7 @@ def test_replay_xml_1986_609_applies_2021_657_subsection_replace_inside_section_
 
 
 def test_replay_xml_1920_26_applies_conclusions_repeal_clause_for_section_6() -> None:
-    replay = pinned_replay("1920/26", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("1920/26", mode="official_consolidation", quiet=True)
     sec6 = replay.find_section("6")
     assert sec6 is not None
     assert sec6.attrs.get("lawvm_repeal_placeholder") == "1"
@@ -9820,7 +9820,7 @@ def test_group_shadow_pruning_section_targets_ignores_duplicate_same_scope_label
 
 
 def test_replay_xml_2010_1048_repeals_6a_lane_and_keeps_live_18b_26() -> None:
-    replay = pinned_replay("2010/1048", mode="finlex_oracle")
+    replay = pinned_replay("2010/1048", mode="official_consolidation")
     state = replay.materialized_state
 
     assert state.find("chapter", "6a") is None
@@ -9834,7 +9834,7 @@ def test_replay_xml_2010_1048_repeals_6a_lane_and_keeps_live_18b_26() -> None:
 
 
 def test_replay_xml_1991_1144_does_not_duplicate_section_60b_under_chapter_9a() -> None:
-    replay = pinned_replay("1991/1144", mode="finlex_oracle")
+    replay = pinned_replay("1991/1144", mode="official_consolidation")
     state = replay.materialized_state
 
     assert state.find_section("60b", "9a") is None
@@ -10099,7 +10099,7 @@ def test_replay_xml_2015_1525_no_botanical_list_duplication() -> None:
     target_paragraph==2==len(live_subsecs), but the section-level trailing omission
     is structural, not a subsection-level tail marker.
     """
-    master = pinned_replay("2015/1525", mode="finlex_oracle")
+    master = pinned_replay("2015/1525", mode="official_consolidation")
     sec = master.find_section("1")
     assert sec is not None
     text = irnode_to_text(sec)
@@ -10685,7 +10685,7 @@ def test_resort_children_sorts_paragraphs_within_subsection() -> None:
 
 
 def test_replay_xml_2014_834_voimaantulo_only_amendment_keeps_section_7a() -> None:
-    """Regression: 2014/834 §7a was MISSING from finlex_oracle replay.
+    """Regression: 2014/834 §7a was MISSING from official_consolidation replay.
 
     §7a was inserted by 2019/154 with expires='2021-04-30'.  Subsequent amendments
     2021/179 and 2023/197 each extended 8a§ explicitly, and 2025/41 amended only the
@@ -10698,12 +10698,12 @@ def test_replay_xml_2014_834_voimaantulo_only_amendment_keeps_section_7a() -> No
     lo_ops carry amendment IDs, not the parent statute ID, as source).
 
     Fix: call _commencement_expiry_override for accepted amendments after
-    apply_ops_to_tree, and clear the expires field in finlex_oracle mode so
+    apply_ops_to_tree, and clear the expires field in official_consolidation mode so
     materialization at 9999-12-31 includes the section.
     """
-    master = pinned_replay("2014/834", mode="finlex_oracle")
+    master = pinned_replay("2014/834", mode="official_consolidation")
     sections = master.find_section("7a")
-    assert sections is not None, "Section 7a must be present in finlex_oracle replay"
+    assert sections is not None, "Section 7a must be present in official_consolidation replay"
 
 
 def test_rewrite_lo_op_source_effective_uses_insert_for_scoped_replay_owned_snapshot() -> None:
@@ -10855,7 +10855,7 @@ def test_replay_xml_1959_324_section_4a_uses_1995_454_commencement_text() -> Non
     scoped snapshot; the regression was that timeline products kept the older
     replay-introduced version instead of the commenced replacement.
     """
-    master = pinned_replay("1959/324", mode="finlex_oracle")
+    master = pinned_replay("1959/324", mode="official_consolidation")
     sec = master.find_section("4a")
     assert sec is not None
     text = irnode_to_text(sec)
@@ -10866,7 +10866,7 @@ def test_replay_xml_1959_324_section_4a_uses_1995_454_commencement_text() -> Non
 
 def test_replay_xml_2016_549_section_32_keeps_subsection_1_under_2022_283_root() -> None:
     """Materialized PIT must reattach surviving subsection 1 under the 2022/283 section root."""
-    master = pinned_replay("2016/549", mode="finlex_oracle", quiet=True)
+    master = pinned_replay("2016/549", mode="official_consolidation", quiet=True)
     sec = master.find_section("32", chapter_num="5")
     assert sec is not None
     subsection_labels = [child.label for child in sec.children if child.kind is IRNodeKind.SUBSECTION]
@@ -11599,7 +11599,7 @@ def test_replay_xml_2016_1227_reuses_repealed_section_51_subsection_3_slot(
 
 
 def test_replay_xml_2009_617_preserves_section_tail_under_2016_533_sparse_section_shells() -> None:
-    master = pinned_replay("2009/617", mode="finlex_oracle", quiet=True)
+    master = pinned_replay("2009/617", mode="official_consolidation", quiet=True)
 
     sec15 = master.find_section("15")
     assert sec15 is not None
@@ -11618,7 +11618,7 @@ def test_replay_xml_2009_617_preserves_section_tail_under_2016_533_sparse_sectio
 
 
 def test_replay_xml_1947_328_keeps_section_1_tail_as_repeal_placeholders_not_old_substantive_text() -> None:
-    master = pinned_replay("1947/328", mode="finlex_oracle", quiet=True)
+    master = pinned_replay("1947/328", mode="official_consolidation", quiet=True)
     sec = master.find_section("1")
 
     assert sec is not None
@@ -11632,7 +11632,7 @@ def test_replay_xml_1947_328_keeps_section_1_tail_as_repeal_placeholders_not_old
 
 
 def test_replay_xml_2015_351_applies_insert_before_shifted_replace_for_section_26() -> None:
-    replay = pinned_replay("2015/351", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("2015/351", mode="official_consolidation", quiet=True)
     sec = replay.find_section("26", "4")
 
     assert sec is not None
@@ -11649,7 +11649,7 @@ def test_replay_xml_2015_351_applies_insert_before_shifted_replace_for_section_2
 
 
 def test_replay_xml_2011_715_applies_corrigendum_label_fix_for_2024_33() -> None:
-    replay = pinned_replay("2011/715", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("2011/715", mode="official_consolidation", quiet=True)
 
     sec_5a = replay.find_section("5a")
     sec_5b = replay.find_section("5b")
@@ -11842,7 +11842,7 @@ def test_collect_johto_mentioned_section_labels_expands_alpha_suffix_ranges() ->
 def test_replay_xml_2001_101_preserves_section_24_sparse_item_tail_from_2017_169() -> None:
     from lawvm.core.ir_helpers import irnode_to_text
 
-    master = pinned_replay("2001/101", mode="finlex_oracle", quiet=True)
+    master = pinned_replay("2001/101", mode="official_consolidation", quiet=True)
     sec = master.find_section("24", chapter_num="7")
 
     assert sec is not None
@@ -11859,7 +11859,7 @@ def test_replay_xml_2001_101_preserves_section_24_sparse_item_tail_from_2017_169
 def test_replay_xml_1996_1093_drops_stale_section_18_item_6_after_2013_1085() -> None:
     from lawvm.core.ir_helpers import irnode_to_text
 
-    master = pinned_replay("1996/1093", mode="finlex_oracle", quiet=True)
+    master = pinned_replay("1996/1093", mode="official_consolidation", quiet=True)
     sec = master.find_section("18", chapter_num="5")
 
     assert sec is not None
@@ -11883,7 +11883,7 @@ def test_replay_xml_2017_444_applies_explicit_2023_444_targets_for_sections_10_a
     ``13 §:n 3 ja 4 momentti`` replaces. Replay then fell back to stale text or
     uncovered-body materialization.
     """
-    master = pinned_replay("2017/444", mode="finlex_oracle", quiet=True)
+    master = pinned_replay("2017/444", mode="official_consolidation", quiet=True)
 
     sec10 = master.find_section("10", chapter_num="3")
     sec13 = master.find_section("13", chapter_num="3")
@@ -11933,7 +11933,7 @@ def test_inspect_amendment_2003_549_2010_469_prunes_carried_section_149_subsecti
     carried sibling slots visible as unassigned source context rather than
     hiding them through pre-replay pruning.
     """
-    bundle = build_amendment_bundle("2003/549", "2010/469", mode="finlex_oracle")
+    bundle = build_amendment_bundle("2003/549", "2010/469", mode="official_consolidation")
     group = next(group for group in bundle["groups"] if group["target_norm"] == "149")
 
     normalized = group["normalized_payload"]
@@ -11962,7 +11962,7 @@ def test_inspect_amendment_2003_549_2006_1293_keeps_explicit_section_149_item_ta
     explicit item replacements for `1 momentti` to `4 momentti`, which then
     duplicated the item list into subsection 4 for the live statute.
     """
-    bundle = build_amendment_bundle("2003/549", "2006/1293", mode="finlex_oracle")
+    bundle = build_amendment_bundle("2003/549", "2006/1293", mode="official_consolidation")
     group = next(group for group in bundle["groups"] if group["target_norm"] == "149")
 
     assert group["ops_raw"] == [
@@ -11975,7 +11975,7 @@ def test_inspect_amendment_2003_549_2006_1293_keeps_explicit_section_149_item_ta
 
 
 def test_inspect_amendment_2005_579_2014_751_drops_language_variant_plain_replaces_for_section_9() -> None:
-    bundle = build_amendment_bundle("2005/579", "2014/751", mode="finlex_oracle")
+    bundle = build_amendment_bundle("2005/579", "2014/751", mode="official_consolidation")
     group9 = next(
         group
         for group in bundle["groups"]
@@ -11994,7 +11994,7 @@ def test_inspect_amendment_2005_579_2014_751_drops_language_variant_plain_replac
 
 
 def test_inspect_amendment_2014_527_2019_49_keeps_section_149b_between_149a_and_149c() -> None:
-    bundle = build_amendment_bundle("2014/527", "2019/49", mode="finlex_oracle")
+    bundle = build_amendment_bundle("2014/527", "2019/49", mode="official_consolidation")
     targets = [group["target_norm"] for group in bundle["groups"]]
 
     assert "149" in targets
@@ -12004,7 +12004,7 @@ def test_inspect_amendment_2014_527_2019_49_keeps_section_149b_between_149a_and_
 
 
 def test_inspect_amendment_2014_527_2022_490_reports_pre_merge_whole_section_constraint_shape() -> None:
-    bundle = build_amendment_bundle("2014/527", "2022/490", mode="finlex_oracle")
+    bundle = build_amendment_bundle("2014/527", "2022/490", mode="official_consolidation")
     group221c = next(group for group in bundle["groups"] if group["target_norm"] == "221c")
 
     assert group221c["ops_raw"] == ["REPLACE 221c § otsikko", "REPLACE 221c § 1 mom"]
@@ -12018,7 +12018,7 @@ def test_inspect_amendment_2014_527_2022_490_reports_pre_merge_whole_section_con
 
 
 def test_inspect_amendment_1965_40_1989_612_keeps_section_25_1a_in_explicit_chapter() -> None:
-    bundle = build_amendment_bundle("1965/40", "1989/612", mode="finlex_oracle")
+    bundle = build_amendment_bundle("1965/40", "1989/612", mode="official_consolidation")
     group1a = next(group for group in bundle["groups"] if group["target_norm"] == "1a")
     group7 = next(group for group in bundle["groups"] if group["target_norm"] == "7")
 
@@ -12029,7 +12029,7 @@ def test_inspect_amendment_1965_40_1989_612_keeps_section_25_1a_in_explicit_chap
 
 
 def test_inspect_amendment_1965_40_2004_783_keeps_section_19_12a_in_explicit_chapter() -> None:
-    bundle = build_amendment_bundle("1965/40", "2004/783", mode="finlex_oracle")
+    bundle = build_amendment_bundle("1965/40", "2004/783", mode="official_consolidation")
     group12a = next(group for group in bundle["groups"] if group["target_norm"] == "12a")
 
     assert group12a["target_chapter"] == "19"
@@ -12037,7 +12037,7 @@ def test_inspect_amendment_1965_40_2004_783_keeps_section_19_12a_in_explicit_cha
 
 
 def test_inspect_amendment_1940_378_1995_1392_aligns_sparse_omission_replace_to_subsection_2() -> None:
-    bundle = build_amendment_bundle("1940/378", "1995/1392", mode="finlex_oracle")
+    bundle = build_amendment_bundle("1940/378", "1995/1392", mode="official_consolidation")
     group20 = next(group for group in bundle["groups"] if group["target_norm"] == "20")
 
     assert group20["ops_final"] == ["REPLACE 20 § 2 mom"]
@@ -12053,7 +12053,7 @@ def test_inspect_amendment_1940_378_1995_1392_aligns_sparse_omission_replace_to_
 
 
 def test_inspect_amendment_1940_378_1994_318_drops_payloadless_replace_shadowed_by_direct_relabel() -> None:
-    bundle = build_amendment_bundle("1940/378", "1994/318", mode="finlex_oracle")
+    bundle = build_amendment_bundle("1940/378", "1994/318", mode="official_consolidation")
     group73 = next(
         group
         for group in bundle["groups"]
@@ -12069,7 +12069,7 @@ def test_inspect_amendment_1940_378_1994_318_drops_payloadless_replace_shadowed_
 
 
 def test_build_amendment_bundle_2012_980_2022_604_applies_johtolause_corrigendum_to_repeal_target() -> None:
-    bundle = build_amendment_bundle("2012/980", "2022/604", mode="finlex_oracle")
+    bundle = build_amendment_bundle("2012/980", "2022/604", mode="official_consolidation")
 
     descriptions = bundle["compiled_ops"]
 
@@ -12364,7 +12364,7 @@ def test_reject_overbroad_section_repeal_for_deep_target_keeps_plain_section_rep
 
 
 def test_inspect_amendment_1994_674_2016_860_keeps_section_1_inside_new_chapter_11a() -> None:
-    bundle = build_amendment_bundle("1994/674", "2016/860", mode="finlex_oracle")
+    bundle = build_amendment_bundle("1994/674", "2016/860", mode="official_consolidation")
     group11a = next(
         group
         for group in bundle["groups"]
@@ -12380,7 +12380,7 @@ def test_inspect_amendment_1994_674_2016_860_keeps_section_1_inside_new_chapter_
 
 
 def test_inspect_amendment_1994_674_2019_1401_shows_whole_chapter_replace_not_heading_only() -> None:
-    bundle = build_amendment_bundle("1994/674", "2019/1401", mode="finlex_oracle")
+    bundle = build_amendment_bundle("1994/674", "2019/1401", mode="official_consolidation")
     group11 = next(
         group
         for group in bundle["groups"]
@@ -12395,7 +12395,7 @@ def test_inspect_amendment_1994_674_2019_1401_shows_whole_chapter_replace_not_he
 
 
 def test_inspect_amendment_2011_1552_2022_1188_reports_pending_amendment_skip_family() -> None:
-    bundle = build_amendment_bundle("2011/1552", "2022/1188", mode="finlex_oracle")
+    bundle = build_amendment_bundle("2011/1552", "2022/1188", mode="official_consolidation")
 
     assert bundle["route"]["should_apply"] is False
     assert bundle["route"]["reason"] == "pending_amendment_of_parent_skip"
@@ -12403,7 +12403,7 @@ def test_inspect_amendment_2011_1552_2022_1188_reports_pending_amendment_skip_fa
 
 
 def test_inspect_amendment_2011_1552_2022_708_reports_pending_amendment_skip_family() -> None:
-    bundle = build_amendment_bundle("2011/1552", "2022/708", mode="finlex_oracle")
+    bundle = build_amendment_bundle("2011/1552", "2022/708", mode="official_consolidation")
 
     assert bundle["route"]["should_apply"] is False
     assert bundle["route"]["reason"] == "pending_amendment_of_parent_skip"
@@ -12411,7 +12411,7 @@ def test_inspect_amendment_2011_1552_2022_708_reports_pending_amendment_skip_fam
 
 
 def test_process_muutoslaki_2011_1552_composes_pending_amendment_on_processed_target() -> None:
-    replay = pinned_replay("2011/1552", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("2011/1552", mode="official_consolidation", quiet=True)
     findings = list(replay.findings or [])
 
     assert any(
@@ -12460,7 +12460,7 @@ def test_inspect_amendment_2013_588_2025_201_owns_sparse_higher_moment_and_trail
 
 
 def test_inspect_amendment_2012_1020_2024_776_does_not_duplicate_section_1_new_sixth_subsection() -> None:
-    bundle = build_amendment_bundle("2012/1020", "2024/776", mode="finlex_oracle")
+    bundle = build_amendment_bundle("2012/1020", "2024/776", mode="official_consolidation")
     group1 = next(group for group in bundle["groups"] if group["target_norm"] == "1")
     group7 = next(group for group in bundle["groups"] if group["target_norm"] == "7")
 
@@ -12473,7 +12473,7 @@ def test_inspect_amendment_2012_1020_2024_776_does_not_duplicate_section_1_new_s
 
 
 def test_inspect_amendment_2012_1020_2015_1328_keeps_bare_johdanto_targets_and_later_section_refs_alive() -> None:
-    bundle = build_amendment_bundle("2012/1020", "2015/1328", mode="finlex_oracle")
+    bundle = build_amendment_bundle("2012/1020", "2015/1328", mode="official_consolidation")
 
     got = {group["target_norm"]: group["ops_final"] for group in bundle["groups"]}
 
@@ -12536,7 +12536,7 @@ def test_replay_xml_2013_588_routes_section_87_only_under_chapter_13_after_2025_
 
 
 def test_inspect_amendment_2021_82_2024_495_recovers_section_1a_moment_5_and_section_83a() -> None:
-    bundle = build_amendment_bundle("2021/82", "2024/495", mode="finlex_oracle")
+    bundle = build_amendment_bundle("2021/82", "2024/495", mode="official_consolidation")
     group1a = next(group for group in bundle["groups"] if group["target_norm"] == "1a")
     group83a = next(group for group in bundle["groups"] if group["target_norm"] == "83a")
 
@@ -12547,7 +12547,7 @@ def test_inspect_amendment_2021_82_2024_495_recovers_section_1a_moment_5_and_sec
 
 
 def test_replay_xml_2021_82_restores_section_1a_fifth_moment_after_2024_495() -> None:
-    replay = pinned_replay("2021/82", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("2021/82", mode="official_consolidation", quiet=True)
     sec = replay.materialized_state.find_section("1a", "1")
 
     assert sec is not None
@@ -12562,7 +12562,7 @@ def test_replay_xml_2021_82_restores_section_1a_fifth_moment_after_2024_495() ->
 
 
 def test_replay_xml_2009_1599_restores_section_8_after_2023_280_same_wave_shift_family() -> None:
-    replay = pinned_replay("2009/1599", stop_before="2023/152", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("2009/1599", stop_before="2023/152", mode="official_consolidation", quiet=True)
     sec = replay.state.find_section("8", "5")
 
     assert sec is not None
@@ -12580,7 +12580,7 @@ def test_replay_xml_2009_1599_restores_section_8_after_2023_280_same_wave_shift_
 
 
 def test_inspect_amendment_1996_1266_2012_963_recovers_section_30_replace_from_single_body_section() -> None:
-    bundle = build_amendment_bundle("1996/1266", "2012/963", mode="finlex_oracle")
+    bundle = build_amendment_bundle("1996/1266", "2012/963", mode="official_consolidation")
     group30 = next(group for group in bundle["groups"] if group["target_norm"] == "30")
 
     assert group30["ops_raw"] == ["REPLACE 30 §"]
@@ -12588,7 +12588,7 @@ def test_inspect_amendment_1996_1266_2012_963_recovers_section_30_replace_from_s
 
 
 def test_replay_xml_1996_1266_updates_section_30_after_2012_963() -> None:
-    replay = pinned_replay("1996/1266", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("1996/1266", mode="official_consolidation", quiet=True)
     sec = replay.materialized_state.find_section("30")
 
     assert sec is not None
@@ -12598,7 +12598,7 @@ def test_replay_xml_1996_1266_updates_section_30_after_2012_963() -> None:
 
 
 def test_inspect_amendment_1959_191_1992_203_keeps_following_targets_after_included_heading() -> None:
-    bundle = build_amendment_bundle("1959/191", "1992/203", mode="finlex_oracle")
+    bundle = build_amendment_bundle("1959/191", "1992/203", mode="official_consolidation")
     targets = {
         group["target_norm"]: group
         for group in bundle["groups"]
@@ -12618,7 +12618,7 @@ def test_inspect_amendment_1959_191_1992_203_keeps_following_targets_after_inclu
 def test_replay_xml_1959_191_updates_section_53_after_1992_203() -> None:
     replay = pinned_replay(
         "1959/191",
-        mode="finlex_oracle",
+        mode="official_consolidation",
         quiet=True,
         build_full_products=False,
         stop_before="1994/443",
@@ -12634,7 +12634,7 @@ def test_replay_xml_1959_191_updates_section_53_after_1992_203() -> None:
 
 
 def test_replay_xml_2013_588_restores_sections_21a_and_21b_from_2023_497() -> None:
-    replay = pinned_replay("2013/588", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("2013/588", mode="official_consolidation", quiet=True)
 
     sec21a = replay.materialized_state.find_section("21a", "4")
     sec21b = replay.materialized_state.find_section("21b", "4")
@@ -12655,7 +12655,7 @@ def test_replay_xml_2013_588_restores_sections_21a_and_21b_from_2023_497() -> No
 
 
 def test_inspect_amendment_2013_588_2019_108_keeps_section_87_subsection_replace_after_move_tail() -> None:
-    bundle = build_amendment_bundle("2013/588", "2019/108", mode="finlex_oracle")
+    bundle = build_amendment_bundle("2013/588", "2019/108", mode="official_consolidation")
     group11a = next(group for group in bundle["groups"] if group["target_unit_kind"] == "chapter" and group["target_norm"] == "11a")
     group87 = next(group for group in bundle["groups"] if group["target_norm"] == "87")
 
@@ -12676,7 +12676,7 @@ def test_replay_xml_2013_588_does_not_keep_section_87_under_chapter_11a_after_20
 
 
 def test_inspect_amendment_2013_588_2023_497_owns_sparse_higher_moment_binding_for_section_93() -> None:
-    bundle = build_amendment_bundle("2013/588", "2023/497", mode="finlex_oracle")
+    bundle = build_amendment_bundle("2013/588", "2023/497", mode="official_consolidation")
     group93 = next(group for group in bundle["groups"] if group["target_norm"] == "93")
 
     assert group93["ops_final"] == ["REPLACE 93 § 4 mom"]
@@ -12708,7 +12708,7 @@ def test_replay_xml_2013_588_updates_section_93_subsection_4_after_2023_497(
 
 
 def test_replay_xml_2014_527_keeps_section_221c_subsection_2_after_2022_490() -> None:
-    replay = pinned_replay("2014/527", mode="finlex_oracle", quiet=True, build_full_products=False)
+    replay = pinned_replay("2014/527", mode="official_consolidation", quiet=True, build_full_products=False)
     sec221c = replay.materialized_state.find_section("221c", "20")
 
     assert sec221c is not None
@@ -12762,7 +12762,7 @@ def test_replay_xml_2003_549_keeps_section_149_subsection_4_as_wrapup_only(
 
 def test_replay_xml_2003_549_applies_shifted_subsection_insert_for_section_53() -> None:
     """`2009/925` must preserve the shifted old 6 momentti as the new 7 momentti."""
-    master = pinned_replay("2003/549", as_of="2010-01-02", mode="finlex_oracle", quiet=True)
+    master = pinned_replay("2003/549", as_of="2010-01-02", mode="official_consolidation", quiet=True)
     sec = master.find_section("53", chapter_num="4")
 
     assert sec is not None
@@ -12787,7 +12787,7 @@ def test_replay_xml_1987_693_restores_inserted_sections_10d_and_10e_from_2002_11
     asetukseen uusi väliotsikko 25 §:n edelle, ...`
     to zero insert ops. Replay then missed `10 d §` and `10 e §` entirely.
     """
-    master = pinned_replay("1987/693", mode="finlex_oracle", quiet=True)
+    master = pinned_replay("1987/693", mode="official_consolidation", quiet=True)
 
     sec10d = master.find_section("10d")
     sec10e = master.find_section("10e")
@@ -12995,7 +12995,7 @@ def test_find_chapter_insert_parent_path_hint_nonexistent_part_falls_through() -
 
 
 def test_replay_xml_2004_137_restores_section_4_split_moments_from_2017_367() -> None:
-    result = pinned_replay("2004/137", mode="finlex_oracle", quiet=True)
+    result = pinned_replay("2004/137", mode="official_consolidation", quiet=True)
 
     sec4 = result.find_section("4")
     assert sec4 is not None
@@ -13014,7 +13014,7 @@ def test_replay_xml_2004_137_restores_section_4_split_moments_from_2017_367() ->
 
 
 def test_replay_xml_2016_1503_preserves_section_4_first_moment_tail_once_after_2018_541() -> None:
-    result = pinned_replay("2016/1503", mode="finlex_oracle", quiet=True)
+    result = pinned_replay("2016/1503", mode="official_consolidation", quiet=True)
 
     sec4 = result.find_section("4")
     assert sec4 is not None

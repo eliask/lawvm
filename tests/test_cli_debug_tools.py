@@ -401,7 +401,7 @@ def test_finland_bench_evidence_surface_sidecar_writer(tmp_path) -> None:
         run_path=run_path,
         label="demo",
         timestamp="2026-06-06T12:00",
-        mode="finlex_oracle",
+        mode="official_consolidation",
         corpus_path="data/finland/bench_corpus.csv",
         stats={
             "n": 1,
@@ -521,7 +521,7 @@ def test_structural_review_dump_section_filter_is_forwarded(monkeypatch, capsys)
         statute_id,
         *,
         corpus=None,
-        mode="finlex_oracle",
+        mode="official_consolidation",
         oracle_selector_mode="bench_comparable",
         compact=False,
         section_filter=None,
@@ -554,7 +554,7 @@ def test_structural_review_dump_statute_filters_to_one_section(monkeypatch) -> N
     monkeypatch.setattr(
         structural_review,
         "compute_statute_section_diffs",
-        lambda statute_id, *, corpus=None, mode="finlex_oracle", oracle_selector_mode="bench_comparable": (
+        lambda statute_id, *, corpus=None, mode="official_consolidation", oracle_selector_mode="bench_comparable": (
             {
                 "section:4": {
                     "semantic_diff": {"kind": "text", "structural": 0, "label": 0, "text": 1, "events": [{"kind": "text_change"}]},
@@ -582,7 +582,7 @@ def test_structural_review_dump_statute_forwards_selector_mode(monkeypatch) -> N
     captured: dict[str, object] = {}
     monkeypatch.setattr(structural_review, "_get_statute_title", lambda statute_id, corpus: "Test title")
 
-    def fake_compute(statute_id, *, corpus=None, mode="finlex_oracle", oracle_selector_mode="bench_comparable"):
+    def fake_compute(statute_id, *, corpus=None, mode="official_consolidation", oracle_selector_mode="bench_comparable"):
         captured["oracle_selector_mode"] = oracle_selector_mode
         return ({}, False)
 
@@ -795,7 +795,7 @@ def test_replay_plan_main_renders_lineage_and_context(monkeypatch, capsys) -> No
         assert args.statute_id == "1995/1552"
         return {
             "statute_id": "1995/1552",
-            "mode": "finlex_oracle",
+            "mode": "official_consolidation",
             "selector_mode": "bench_comparable",
             "oracle_context": {
                 "locator": "finlex://sd-cons/1995/1552/fin@20240621/main.xml",
@@ -826,7 +826,7 @@ def test_replay_plan_main_renders_lineage_and_context(monkeypatch, capsys) -> No
 
     monkeypatch.setattr(replay_plan, "build_replay_plan_inspection", fake_build_replay_plan_inspection)
 
-    replay_plan.main(Namespace(statute_id="1995/1552", mode="finlex_oracle", json=False))
+    replay_plan.main(Namespace(statute_id="1995/1552", mode="official_consolidation", json=False))
     out = capsys.readouterr().out
     assert "Selector mode  : bench_comparable" in out
     assert "Oracle locator : finlex://sd-cons/1995/1552/fin@20240621/main.xml" in out
@@ -1560,7 +1560,7 @@ def test_build_replay_inspect_bundle_prefers_materialized_section_lookup(monkeyp
     bundle = replay_inspect.build_replay_inspect_bundle(
         statute_id="2012/422",
         section="9 §",
-        mode="finlex_oracle",
+        mode="official_consolidation",
         chapter="3",
     )
 
@@ -1743,14 +1743,14 @@ def test_classify_1987_1250_reports_item_target_structure_absent_pathologies() -
     compiled_ops: list[LegalOperation] = []
     replay = pinned_replay(
         "1987/1250",
-        mode="finlex_oracle",
+        mode="official_consolidation",
         compiled_ops_out=compiled_ops,
         quiet=True,
         build_full_products=False,
     )
     result = classify._classify_statute(
         "1987/1250",
-        "finlex_oracle",
+        "official_consolidation",
         replay_result=replay,
         precomputed_compiled_ops=compiled_ops,
         html_audit_result=SimpleNamespace(
@@ -1783,3 +1783,47 @@ def test_replay_xml_1987_1250_resolves_1999_81_johd_without_failed_op() -> None:
         and getattr(op, "target_special", None) == "johd"
         for op in failed
     )
+
+
+# ---------------------------------------------------------------------------
+# --mode vocabulary: canonical value + legacy CLI alias
+# ---------------------------------------------------------------------------
+
+
+def test_cli_mode_defaults_to_official_consolidation() -> None:
+    from lawvm.tools.cli import _build_parser
+
+    args = _build_parser().parse_args(["bisect", "2006/1299"])
+    assert args.mode == "official_consolidation"
+
+
+def test_cli_mode_accepts_legacy_finlex_oracle_alias() -> None:
+    """finlex_oracle stays accepted on the CLI surface and normalizes at parse time."""
+    from lawvm.tools.cli import _build_parser
+
+    args = _build_parser().parse_args(["bisect", "2006/1299", "--mode", "finlex_oracle"])
+    assert args.mode == "official_consolidation"
+
+    args = _build_parser().parse_args(["bisect", "2006/1299", "--mode", "legal_pit"])
+    assert args.mode == "legal_pit"
+
+
+def test_cli_mode_rejects_unknown_value() -> None:
+    from lawvm.tools.cli import _build_parser
+
+    with pytest.raises(SystemExit):
+        _build_parser().parse_args(["bisect", "2006/1299", "--mode", "mystery_mode"])
+
+
+def test_cli_mode_help_mentions_legacy_alias() -> None:
+    from typing import Any, cast
+
+    from lawvm.tools.cli import _build_parser
+
+    parser = _build_parser()
+    subparsers_action = next(
+        action for action in parser._actions
+        if action.__class__.__name__ == "_SubParsersAction"
+    )
+    help_text = cast(Any, subparsers_action).choices["bisect"].format_help()
+    assert "legacy alias: finlex_oracle" in help_text

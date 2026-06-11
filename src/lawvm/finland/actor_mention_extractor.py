@@ -485,12 +485,14 @@ def _pass2_prose_scan(
                     start_pos = phrase_end
                     continue
 
-                # Single match -- resolve
-                actor = REGISTRY.get_actor(canonical_id)  # ty:ignore[invalid-argument-type]
+                # Single match -- resolve. ActorRegistry.lookup() guarantees a
+                # canonical ID when exactly one candidate is returned.
+                assert canonical_id is not None
+                actor = REGISTRY.get_actor(canonical_id)
                 assert actor is not None  # invariant: lookup returned a valid id
 
                 # Determine confidence: LIFECYCLE_RESOLVED vs REGISTRY_RESOLVED
-                lifecycle_info = REGISTRY.lifecycle_observation_for(phrase, canonical_id)  # ty:ignore[invalid-argument-type]
+                lifecycle_info = REGISTRY.lifecycle_observation_for(phrase, canonical_id)
                 if lifecycle_info is not None:
                     # Per AGENTS.md §1.6: lifecycle resolution emits observation
                     pred_id, succ_id, lc_date = lifecycle_info

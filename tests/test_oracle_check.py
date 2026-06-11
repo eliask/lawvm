@@ -93,10 +93,10 @@ def test_diagnose_treats_multiline_aiempi_change_note_as_editorial() -> None:
 
 def test_classify_statute_1974_258_repeal_stub_is_editorial_convention() -> None:
     """1974/258 15 § should replay as absent, not as live stale text."""
-    replay = pinned_replay("1974/258", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("1974/258", mode="official_consolidation", quiet=True)
     assert replay.materialized_state.find_section("15") is None
 
-    result = _classify_statute("1974/258", "finlex_oracle", replay_result=replay)
+    result = _classify_statute("1974/258", "official_consolidation", replay_result=replay)
 
     assert result is not None
     row = next(item for item in result.section_results if item["section"] == "section:15")
@@ -104,7 +104,7 @@ def test_classify_statute_1974_258_repeal_stub_is_editorial_convention() -> None
 
 
 def test_classify_statute_1992_1702_empty_operative_body_wave_is_source_incomplete() -> None:
-    result = _classify_statute("1992/1702", "finlex_oracle")
+    result = _classify_statute("1992/1702", "official_consolidation")
 
     assert result is not None
 
@@ -121,7 +121,7 @@ def test_classify_statute_1987_322_repealed_stubs_are_editorial_convention() -> 
     # Sections 10a-10f appear in the oracle as "kumottu" repeal stubs.
     # They are correctly absent from the replay (repealed), and the oracle
     # stub is an editorial rendering of that state — so EDITORIAL_CONVENTION.
-    result = _classify_statute("1987/322", "finlex_oracle")
+    result = _classify_statute("1987/322", "official_consolidation")
 
     assert result is not None
 
@@ -210,7 +210,7 @@ def test_classify_statute_demotes_unknown_to_source_pathology_when_blame_is_alre
             )
 
     def fake_replay_xml(_sid: str, mode: str, compiled_ops_out=None, quiet=False, **_kwargs):
-        assert mode == "finlex_oracle"
+        assert mode == "official_consolidation"
         if compiled_ops_out is not None:
             compiled_ops_out.append(
                 {
@@ -232,7 +232,7 @@ def test_classify_statute_demotes_unknown_to_source_pathology_when_blame_is_alre
 
     result = _classify_statute(
         "2012/916",
-        "finlex_oracle",
+        "official_consolidation",
         oracle_root=etree.fromstring(
             """
             <act>
@@ -298,7 +298,7 @@ def test_classify_statute_keeps_unknown_when_source_pathology_lacks_apply_or_cov
             )
 
     def fake_replay_xml(_sid: str, mode: str, compiled_ops_out=None, quiet=False, **_kwargs):
-        assert mode == "finlex_oracle"
+        assert mode == "official_consolidation"
         if compiled_ops_out is not None:
             compiled_ops_out.append(
                 {
@@ -320,7 +320,7 @@ def test_classify_statute_keeps_unknown_when_source_pathology_lacks_apply_or_cov
 
     result = _classify_statute(
         "2012/916",
-        "finlex_oracle",
+        "official_consolidation",
         oracle_root=etree.fromstring(
             """
             <act>
@@ -349,7 +349,7 @@ def test_classify_statute_keeps_unknown_when_source_pathology_lacks_apply_or_cov
 def test_classify_statute_2001_1047_future_parent_repeal_is_oracle_stale() -> None:
     # Chapter 3 sections (14, 14c, 16, 16a, 12, etc.) are ORACLE_STALE because
     # the oracle reflects a future-effective state beyond the replay's cutoff.
-    result = _classify_statute("2001/1047", "finlex_oracle")
+    result = _classify_statute("2001/1047", "official_consolidation")
 
     assert result is not None
 
@@ -605,7 +605,7 @@ def test_classify_statute_treats_oracle_version_mid_future_effective_as_oracle_s
             return ()
 
     def fake_replay_xml(_sid: str, mode: str, compiled_ops_out=None, quiet=False, **_kwargs):
-        assert mode == "finlex_oracle"
+        assert mode == "official_consolidation"
         if compiled_ops_out is not None:
             compiled_ops_out.append(
                 {
@@ -644,7 +644,7 @@ def test_classify_statute_treats_oracle_version_mid_future_effective_as_oracle_s
 
     result = _classify_statute(
         "2016/258",
-        "finlex_oracle",
+        "official_consolidation",
         oracle_root=fake_ground_truth_tree("2016/258"),
         html_audit_result=SimpleNamespace(
             missing_from_xml=[],
@@ -664,7 +664,7 @@ def test_cutoff_witness_matches_mixed_oracle_section_for_2016_258() -> None:
     from tests.corpus_pin_helpers import pinned_replay
     from lawvm.finland.grafter import get_ground_truth_tree
 
-    replay = pinned_replay("2016/258", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("2016/258", mode="official_consolidation", quiet=True)
     oracle_root = get_ground_truth_tree("2016/258")
     assert oracle_root is not None
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
@@ -721,7 +721,7 @@ def test_classify_statute_treats_future_dated_replay_version_as_oracle_stale(
             return ()
 
     def fake_replay_xml(_sid: str, mode: str, compiled_ops_out=None, quiet=False, **_kwargs):
-        assert mode == "finlex_oracle"
+        assert mode == "official_consolidation"
         return FakeMaster()
 
     def fake_ground_truth_tree(_sid: str):
@@ -747,7 +747,7 @@ def test_classify_statute_treats_future_dated_replay_version_as_oracle_stale(
     monkeypatch.setattr("lawvm.tools.oracle_check.get_ground_truth_tree", fake_ground_truth_tree)
     monkeypatch.setattr("lawvm.tools.oracle_check.get_consolidated_meta", lambda _sid: (date(2025, 5, 27), "2025/1497"))
 
-    result = _classify_statute("2014/1429", "finlex_oracle")
+    result = _classify_statute("2014/1429", "official_consolidation")
     assert result is not None
     sec = next((s for s in result.section_results if s["section"] == "chapter:5a/section:29e"), None)
     assert sec is not None
@@ -917,7 +917,7 @@ def test_classify_statute_treats_bare_temporary_stub_as_editorial_in_finlex_orac
             return ()
 
     def fake_replay_xml(_sid: str, mode: str, compiled_ops_out=None, quiet=False, **_kwargs):
-        assert mode == "finlex_oracle"
+        assert mode == "official_consolidation"
         return FakeMaster()
 
     def fake_ground_truth_tree(_sid: str):
@@ -939,7 +939,7 @@ def test_classify_statute_treats_bare_temporary_stub_as_editorial_in_finlex_orac
     monkeypatch.setattr("lawvm.tools.oracle_check.replay_xml", fake_replay_xml)
     monkeypatch.setattr("lawvm.tools.oracle_check.get_ground_truth_tree", fake_ground_truth_tree)
 
-    result = _classify_statute("1999/488", "finlex_oracle")
+    result = _classify_statute("1999/488", "official_consolidation")
     assert result is not None
     sec = next((s for s in result.section_results if s["section"] == "section:21b"), None)
     assert sec is not None
@@ -1276,7 +1276,7 @@ def test_diagnose_treats_same_section_oracle_duplicate_sentence_as_oracle_stale(
 
 
 def test_classify_statute_2016_768_reclassifies_oracle_sentence_residue_and_repeal_banner() -> None:
-    result = _classify_statute("2016/768", "finlex_oracle")
+    result = _classify_statute("2016/768", "official_consolidation")
 
     assert result is not None
 
@@ -1526,7 +1526,7 @@ def test_classify_statute_returns_live_source_pathology_codes(monkeypatch) -> No
 
 
 def test_classify_statute_2012_916_demotes_section_1_unknown_to_source_pathology() -> None:
-    result = _classify_statute("2012/916", "finlex_oracle")
+    result = _classify_statute("2012/916", "official_consolidation")
 
     assert result is not None
     row = next(sec for sec in result.section_results if sec["section"] == "chapter:13/section:1")
@@ -1725,7 +1725,7 @@ def test_print_corpus_summary_reports_source_pathology_sections_and_excludes_the
         [
             ClassifyResult(
                 sid="2012/916",
-                mode="finlex_oracle",
+                mode="official_consolidation",
                 overall_score=0.50,
                 section_results=[
                     {"section": "chapter:13/section:1", "diagnosis": "SOURCE_PATHOLOGY"},
@@ -1821,7 +1821,7 @@ def test_main_prints_truthful_corpus_selector_detail(monkeypatch, capsys, tmp_pa
             corpus_full=False,
             save=False,
             db=None,
-            mode="finlex_oracle",
+            mode="official_consolidation",
             parallel=2,
             statute_id=None,
         )

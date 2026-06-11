@@ -9,9 +9,13 @@ import json
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Mapping, NamedTuple, Sequence, cast
+from typing import TYPE_CHECKING, Any, Callable, Mapping, NamedTuple, Protocol, Sequence, TypeVar, cast
 
-from lawvm.core.agreement_residual import AgreementResidual
+from lawvm.core.agreement_residual import (
+    AgreementResidual,
+    AgreementResidualFamily,
+    AgreementResidualStatus,
+)
 from lawvm.core.candidate_set_certificate import (
     CANDIDATE_SET_COMPLETE,
     CANDIDATE_SET_TRUNCATED,
@@ -53,7 +57,56 @@ _REPLAY_ADJUDICATION_KIND_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
-def _primary_frontier_score(result, *, score_mode: str = "auto") -> float:  # noqa: ANN001
+class _BenchResultLike(Protocol):
+    statute_id: str
+    act_type: str
+    year: int
+    n_effects: int
+    n_enacted_eids: int
+    n_oracle_eids: int
+    score: float
+    status: str
+    replay_score: float
+    commencement_score: float
+    n_commenced_eids: int
+    replay_commencement_score: float
+    comparison_class: str
+    replay_adjudication_count: int
+    replay_adjudication_kind_counts: Mapping[str, int]
+    replay_adjudications: Sequence[Mapping[str, Any]]
+    effect_feed_observations: Sequence[Mapping[str, Any]]
+
+
+class _ReplayApplicableEffectLike(Protocol):
+    applied: bool
+
+    def is_applicable_for_replay(self, *, applicability_mode: str) -> bool: ...
+
+
+class _ResidualAnalysisContextLike(Protocol):
+    enacted_missing: bool
+    enacted_ir: object | None
+    oracle_missing: bool
+    oracle_eids: set[str]
+
+
+class _EffectSummaryLike(Protocol):
+    resolver_eids: tuple[str, ...]
+    n_ops: int
+    source_pathology: str
+    compare_shape: str
+    candidate: bool
+    lowering_rejections: tuple[dict[str, Any], ...]
+    source_acquisition_rejections: tuple[dict[str, Any], ...]
+    manual_compile_status: str
+    manual_compile_rule_id: str
+    manual_compile_owner_phase: str
+
+
+_TReplayEffect = TypeVar("_TReplayEffect", bound=_ReplayApplicableEffectLike)
+
+
+def _primary_frontier_score(result: _BenchResultLike, *, score_mode: str = "auto") -> float:
     if score_mode == "replay":
         if result.replay_score >= 0.0:
             return result.replay_score
@@ -82,7 +135,7 @@ def _primary_frontier_score(result, *, score_mode: str = "auto") -> float:  # no
     return result.score
 
 
-def _effective_comparison_class(result) -> str:  # noqa: ANN001
+def _effective_comparison_class(result: _BenchResultLike) -> str:
     from lawvm.uk_legislation.source_adjudication import classify_uk_bench_comparison
 
     comparison_class = str(getattr(result, "comparison_class", "") or "").strip()
@@ -96,7 +149,7 @@ def _effective_comparison_class(result) -> str:  # noqa: ANN001
     )
 
 
-def _effective_core_benchmark(result) -> bool:  # noqa: ANN001
+def _effective_core_benchmark(result: _BenchResultLike) -> bool:
     from lawvm.uk_legislation.source_adjudication import is_core_uk_comparison
 
     return is_core_uk_comparison(_effective_comparison_class(result))
@@ -116,7 +169,7 @@ def _bool_bench_field(value: object, *, default: bool) -> bool:
     return bool(value)
 
 
-def _uk_replay_regime_kwargs_from_bench_row(result) -> dict[str, object]:  # noqa: ANN001
+def _uk_replay_regime_kwargs_from_bench_row(result: _BenchResultLike) -> dict[str, object]:
     """Recover the replay regime that produced a saved UK bench row."""
     return {
         "allow_metadata_backfill": _bool_bench_field(
@@ -170,7 +223,7 @@ def _string_tuple_from_object(value: object) -> tuple[str, ...]:
     return (str(value),)
 
 
-def _uk_replay_regime_claim_from_bench_row(result) -> dict[str, object]:  # noqa: ANN001
+def _uk_replay_regime_claim_from_bench_row(result: _BenchResultLike) -> dict[str, object]:
     """Read persisted UK source-first regime evidence from a saved bench row."""
     return {
         "source_purity_lane": str(getattr(result, "uk_source_purity_lane", "") or "unknown"),
@@ -190,7 +243,7 @@ def _uk_replay_regime_claim_from_bench_row(result) -> dict[str, object]:  # noqa
     }
 
 
-def _uk_residual_claim_from_bench_row(result) -> dict[str, object]:  # noqa: ANN001
+def _uk_residual_claim_from_bench_row(result: _BenchResultLike) -> dict[str, object]:
     """Read persisted replay residual proof-claim evidence from a saved bench row."""
     tier = str(getattr(result, "uk_residual_claim_tier", "") or "UNRESOLVED")
     kind = str(getattr(result, "uk_residual_claim_kind", "") or "unknown_legacy_missing")
@@ -377,11 +430,11 @@ def _residual_claim_agreement_residual(
         residual_id=work_item_id,
         jurisdiction="uk",
         agreement_surface="candidate_residual_claim_vs_current_oracle",
-        family=family,  # ty:ignore[invalid-argument-type]
+        family=family,
         status=_residual_claim_agreement_residual_status(
             family,
             candidate_set_certificate=candidate_set_certificate,
-        ),  # ty:ignore[invalid-argument-type]
+        ),
         owner_phase=owner_phase,
         rule_id=f"uk_residual_claim_{family}",
         source_artifact_id=str(row.get("statute_id") or ""),
@@ -423,7 +476,7 @@ def _residual_claim_agreement_residual_family(
     claim: Mapping[str, object],
     *,
     candidate_set_certificate: Mapping[str, Any],
-) -> str:
+) -> AgreementResidualFamily:
     comparison_class = str(
         claim.get("comparison_class") or row.get("comparison_class") or ""
     )
@@ -459,10 +512,10 @@ def _residual_claim_agreement_residual_family(
 
 
 def _residual_claim_agreement_residual_status(
-    family: str,
+    family: AgreementResidualFamily,
     *,
     candidate_set_certificate: Mapping[str, Any],
-) -> str:
+) -> AgreementResidualStatus:
     if family == "agreement":
         return "agrees"
     if str(candidate_set_certificate.get("completeness_status") or "") != (
@@ -774,8 +827,8 @@ def _write_residual_claim_evidence_report_from_candidate_rows(
     }
 
 
-def _matches_filters(  # noqa: ANN001
-    result,
+def _matches_filters(
+    result: _BenchResultLike,
     *,
     min_year: int | None,
     max_year: int | None,
@@ -801,14 +854,14 @@ def _row_matches_claim_template_status(row: Mapping[str, Any], status: str) -> b
     return int(counts.get(status) or 0) > 0
 
 
-def _matching_frontier(  # noqa: ANN001
-    results,
+def _matching_frontier(
+    results: Sequence[_BenchResultLike],
     *,
     score_mode: str,
     min_year: int | None,
     max_year: int | None,
     types: set[str] | None,
-):
+) -> list[_BenchResultLike]:
     frontier = [
         r for r in results
         if r.status == "OK"
@@ -820,15 +873,15 @@ def _matching_frontier(  # noqa: ANN001
     return frontier
 
 
-def _filtered_frontier(  # noqa: ANN001
-    results,
+def _filtered_frontier(
+    results: Sequence[_BenchResultLike],
     *,
     top: int,
     score_mode: str,
     min_year: int | None,
     max_year: int | None,
     types: set[str] | None,
-):
+) -> list[_BenchResultLike]:
     frontier = _matching_frontier(
         results,
         score_mode=score_mode,
@@ -1131,7 +1184,7 @@ def _observation_rows_from_object(value: object) -> list[dict[str, Any]]:
     return rows
 
 
-def _saved_bench_diagnostic_rows_from_result(result) -> tuple[dict[str, Any], ...]:  # noqa: ANN001
+def _saved_bench_diagnostic_rows_from_result(result: _BenchResultLike) -> tuple[dict[str, Any], ...]:
     def _effect_diagnostic_lane(record: dict[str, Any]) -> str:
         from lawvm.uk_legislation.source_state import is_uk_affecting_act_xml_source_observation
 
@@ -1208,7 +1261,7 @@ def _saved_bench_diagnostic_rows_from_result(result) -> tuple[dict[str, Any], ..
     return tuple(rows)
 
 
-def _replay_adjudication_records_from_result(result) -> tuple[dict[str, Any], ...]:  # noqa: ANN001
+def _replay_adjudication_records_from_result(result: _BenchResultLike) -> tuple[dict[str, Any], ...]:
     records: list[dict[str, Any]] = []
     for record in _observation_rows_from_object(getattr(result, "replay_adjudications", ())):
         records.append(record)
@@ -1229,7 +1282,7 @@ def _replay_adjudication_bucket_counts_from_kind_counts(
 
 
 def _result_has_replay_adjudication_kind(
-    result,  # noqa: ANN001
+    result: _BenchResultLike,
     *,
     kinds: set[str],
 ) -> bool:
@@ -1261,7 +1314,7 @@ def _replay_adjudication_kinds_from_args(value: object) -> set[str]:
 
 
 def _replay_adjudication_sample_rows(
-    result,  # noqa: ANN001
+    result: _BenchResultLike,
     *,
     kinds: set[str],
     limit: int,
@@ -1315,7 +1368,7 @@ def _replay_adjudication_sample_rows(
 
 
 def _replay_adjudication_sample_omitted(
-    result,  # noqa: ANN001
+    result: _BenchResultLike,
     *,
     kinds: set[str],
     sampled_count: int,
@@ -1378,7 +1431,7 @@ def _replay_adjudication_source_witness(record: Mapping[str, Any]) -> dict[str, 
 
 
 def _replay_adjudication_evidence_row_jsonable(
-    result,  # noqa: ANN001
+    result: _BenchResultLike,
     *,
     label: str,
     record: Mapping[str, Any],
@@ -1518,7 +1571,7 @@ def _replay_adjudication_evidence_row_jsonable(
 
 
 def _replay_adjudication_evidence_rows(
-    results: Sequence[object],
+    results: Sequence[_BenchResultLike],
     *,
     label: str,
     kinds: set[str],
@@ -1541,7 +1594,7 @@ def _replay_adjudication_evidence_rows(
 
 
 def _replay_adjudication_fields_from_result(
-    result,  # noqa: ANN001
+    result: _BenchResultLike,
     *,
     kinds: set[str],
     sample_limit: int,
@@ -1571,7 +1624,7 @@ def _replay_adjudication_fields_from_result(
     }
 
 
-def _saved_effect_feed_observation_rows_from_result(result) -> tuple[dict[str, Any], ...]:  # noqa: ANN001
+def _saved_effect_feed_observation_rows_from_result(result: _BenchResultLike) -> tuple[dict[str, Any], ...]:
     return tuple(
         dict(row)
         for row in _observation_rows_from_object(getattr(result, "effect_feed_observations", ()))
@@ -1752,7 +1805,7 @@ def _compact_uk_candidate_row_jsonable(row: Mapping[str, Any]) -> dict[str, Any]
 
 
 def _uk_candidate_row_jsonable(  # noqa: PLR0913
-    result,  # noqa: ANN001
+    result: _BenchResultLike,
     *,
     score_mode: str,
     source_counts: Mapping[str, int],
@@ -2128,7 +2181,7 @@ def _triage_rule_id(status: str) -> str:
 
 
 def _saved_bench_prefilter_candidate_row_jsonable(
-    result: object,
+    result: _BenchResultLike,
     *,
     score_mode: str,
     replay_adjudication_kinds: set[str] | None = None,
@@ -3175,7 +3228,7 @@ def _format_candidate_effect_inventory(row: object) -> str:
     return f"effect_rows={effect_rows:4d} effect_pages={effect_pages:4d}"
 
 
-def _format_saved_bench_rejection_rules(row: object) -> str:
+def _format_saved_bench_rejection_rules(row: _BenchResultLike) -> str:
     feed_rules = _count_map_from_object(getattr(row, "effect_feed_rejection_rule_counts", {}))
     feed_observation_rules = _count_map_from_object(
         getattr(row, "effect_feed_observation_rule_counts", {})
@@ -3401,14 +3454,14 @@ def _format_residual_claim_evidence_report(
 
 
 def _replay_applicable_effects_with_budget(
-    effects,  # noqa: ANN001
+    effects: Sequence[_TReplayEffect],
     *,
     effect_budget: int | None,
     applicability_mode: str = "effective_date_plus_feed_applied",
     allow_metadata_only_effects: bool = True,
     selection_observations_out: list[dict[str, Any]] | None = None,
-) -> tuple[list[Any], int, int, bool]:
-    replay_applicable_effects = []
+) -> tuple[list[_TReplayEffect], int, int, bool]:
+    replay_applicable_effects: list[_TReplayEffect] = []
     for effect in effects:
         effect_id = str(getattr(effect, "effect_id", "") or "")
         if bool(getattr(effect, "metadata_only", False)) and not allow_metadata_only_effects:
@@ -3510,7 +3563,7 @@ def _include_candidate_row(
     )
 
 
-def _residual_analysis_unavailable_reason(context) -> str:  # noqa: ANN001
+def _residual_analysis_unavailable_reason(context: _ResidualAnalysisContextLike) -> str:
     if bool(getattr(context, "enacted_missing", False)) or getattr(context, "enacted_ir", None) is None:
         return "enacted_missing"
     if bool(getattr(context, "oracle_missing", False)) or not bool(getattr(context, "oracle_eids", set())):
@@ -3519,11 +3572,11 @@ def _residual_analysis_unavailable_reason(context) -> str:  # noqa: ANN001
 
 
 def _summarize_effect_inventory(
-    effect_summaries,
+    effect_summaries: Sequence[_EffectSummaryLike],
     *,
-    effect_report_rows=(),
+    effect_report_rows: Sequence[Any] = (),
     statute_id: str = "",
-):
+) -> dict[str, Any]:
     source_counts: Counter[str] = Counter()
     compare_counts: Counter[str] = Counter()
     candidate_source_counts: Counter[str] = Counter()
@@ -3639,13 +3692,13 @@ def _summarize_effect_inventory(
 
 
 def _residual_candidate_inventory(
-    candidate_summaries,
+    candidate_summaries: Sequence[_EffectSummaryLike],
     *,
     residual_roots: set[str],
     only_in_replayed: set[str],
     only_in_oracle: set[str],
 ) -> dict[str, Any]:
-    def _sample_priority(summary) -> tuple[int, int, int, int]:  # noqa: ANN001
+    def _sample_priority(summary: _EffectSummaryLike) -> tuple[int, int, int, int]:
         return (
             1 if bool(getattr(summary, "structural_for_replay", False)) else 0,
             1 if bool(getattr(summary, "replay_applicable", False)) else 0,
@@ -3653,7 +3706,7 @@ def _residual_candidate_inventory(
             int(getattr(summary, "n_ops", 0) or 0),
         )
 
-    def _target_presence_bucket(summary) -> str:  # noqa: ANN001
+    def _target_presence_bucket(summary: _EffectSummaryLike) -> str:
         resolver_count = len(tuple(getattr(summary, "resolver_eids", ())))
         if resolver_count <= 0:
             return "no_resolver_eids"

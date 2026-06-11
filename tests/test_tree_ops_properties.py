@@ -1030,7 +1030,7 @@ def test_item_replace_does_not_promote_content_only_target_subsection() -> None:
         muutos_ir,
         amend_sub,
         None,  # slot_assignment
-        get_replay_profile("finlex_oracle"),
+        get_replay_profile("official_consolidation"),
         "[1992/1600] REPLACE 8 § 4 mom 1 kohta",
     )
 

@@ -119,7 +119,7 @@ def test_dump_statute_includes_event_trace(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(
         structural_review,
         "compute_statute_section_diffs",
-        lambda statute_id, corpus=None, mode="finlex_oracle", oracle_selector_mode="bench_comparable": (
+        lambda statute_id, corpus=None, mode="official_consolidation", oracle_selector_mode="bench_comparable": (
             {
                 "chapter:1/section:2": {
                     "semantic_diff": {

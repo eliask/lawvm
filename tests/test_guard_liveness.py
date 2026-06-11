@@ -34,7 +34,7 @@ the underlying structural cause is fixed.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, cast, Callable, Dict
+from typing import Any, cast, Callable, Dict, NoReturn
 
 import pytest
 
@@ -151,7 +151,12 @@ def drill_tree_invariant_violation_duplicate_label() -> None:
     behind; the guard + projection are production code.
     """
 
-    def process_muutoslaki(mid, state, ctx, **kwargs):  # noqa: ANN001
+    def process_muutoslaki(
+        mid: str,
+        state: ReplayState,
+        ctx: StatuteContext,
+        **kwargs: Any,
+    ) -> PhaseResult[ReplayState]:
         duplicated = IRNode(
             kind=IRNodeKind.BODY,
             children=(
@@ -246,7 +251,7 @@ def drill_frontend_internal_error_parse_surface() -> None:
 
     from unittest.mock import patch as _patch
 
-    def raising_resolver(clause):  # noqa: ANN001
+    def raising_resolver(clause: surface_resolve.SurfaceClause) -> NoReturn:
         raise RuntimeError("synthetic internal resolver fault for guard-liveness drill")
 
     with _patch.object(surface_resolve, "resolve_surface_clause", raising_resolver):
@@ -361,7 +366,12 @@ def drill_replay_unknown_mutation_outcome_apply_lane() -> None:
     state, ctx, _op, rop = _drill_renumber_rop()
     events: list[ApplyMutationEvent] = []
 
-    def _unknown_outcome_emit(mutation_events_out, *, outcome, **kwargs):  # noqa: ANN001
+    def _unknown_outcome_emit(
+        mutation_events_out: list[ApplyMutationEvent] | None,
+        *,
+        outcome: str,
+        **kwargs: Any,
+    ) -> None:
         # Force an outcome label outside the registered outcome sets while leaving
         # the rest of the real production event construction intact.
         return _real_emit(mutation_events_out, outcome="freshly_invented_outcome", **kwargs)
@@ -412,7 +422,10 @@ def drill_replay_undeclared_tree_touch_apply_lane() -> None:
     events: list[ApplyMutationEvent] = []
     observed: list[MutationAccountingResult] = []
 
-    def _underdeclaring_emit(mutation_events_out, **kwargs):  # noqa: ANN001
+    def _underdeclaring_emit(
+        mutation_events_out: list[ApplyMutationEvent] | None,
+        **kwargs: Any,
+    ) -> None:
         # Keep the real apply, but emit an event that declares none of the paths
         # the apply actually touched — the observed diff is then unexplained.
         kwargs["renumbered_paths"] = ()
@@ -604,7 +617,7 @@ def drill_frontend_internal_error_finland_ingress() -> None:
     master = ReplayState(ir=copy.deepcopy(ctx.base_ir))
     muutos_tree = etree.fromstring(_statute_xml("2010-01-01"))
 
-    def raising_resolver(clause):  # noqa: ANN001
+    def raising_resolver(clause: surface_resolve.SurfaceClause) -> NoReturn:
         raise RuntimeError("synthetic internal resolver fault for guard-liveness drill")
 
     with _patch.object(surface_resolve, "resolve_surface_clause", raising_resolver):

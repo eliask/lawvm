@@ -47,6 +47,14 @@ _AMENDMENT_ID = "2025/50"
 _PRED_ID = "fi:2024/100:2025/50:1"
 
 
+def _set_runtime_attr(obj: object, name: str, value: object) -> None:
+    setattr(obj, name, value)
+
+
+def _runtime_activation_rules(rules: list[ActivationRule]) -> list[object]:
+    return list(rules)
+
+
 # ---------------------------------------------------------------------------
 # CoverageStatus enum
 # ---------------------------------------------------------------------------
@@ -162,7 +170,7 @@ class TestTriggerCoverageCertificateConstruction:
             as_of=_TODAY,
         )
         with pytest.raises(AttributeError):
-            cert.coverage_status = CoverageStatus.SATISFIED  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+            _set_runtime_attr(cert, "coverage_status", CoverageStatus.SATISFIED)
 
 
 # ---------------------------------------------------------------------------
@@ -384,7 +392,7 @@ class TestTriggerCoverageSearchFailure:
             as_of=_TODAY,
         )
         with pytest.raises(AttributeError):
-            failure.failure_kind = "other"  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+            _set_runtime_attr(failure, "failure_kind", "other")
 
 
 # ---------------------------------------------------------------------------
@@ -550,7 +558,7 @@ class TestProduceCertificatesForActivationRules:
         result = produce_certificates_for_activation_rules(
             statute_id=_STATUTE_ID,
             amendment_id=_AMENDMENT_ID,
-            activation_rules=rules,  # ty:ignore[invalid-argument-type]
+            activation_rules=_runtime_activation_rules(rules),
             amendment_children=("2025/200",),
             as_of=_TODAY,
         )
@@ -589,7 +597,7 @@ class TestProduceCertificatesForActivationRules:
         result = produce_certificates_for_activation_rules(
             statute_id=_STATUTE_ID,
             amendment_id=_AMENDMENT_ID,
-            activation_rules=rules,  # ty:ignore[invalid-argument-type]
+            activation_rules=_runtime_activation_rules(rules),
             amendment_children=("2025/50", "2025/51"),
             as_of=_TODAY,
         )
@@ -609,7 +617,7 @@ class TestProduceCertificatesForActivationRules:
         result = produce_certificates_for_activation_rules(
             statute_id=_STATUTE_ID,
             amendment_id=_AMENDMENT_ID,
-            activation_rules=rules,  # ty:ignore[invalid-argument-type]
+            activation_rules=_runtime_activation_rules(rules),
             amendment_children=("2025/50",),
             as_of=_TODAY,
         )
@@ -627,7 +635,7 @@ class TestProduceCertificatesForActivationRules:
         result = produce_certificates_for_activation_rules(
             statute_id=_STATUTE_ID,
             amendment_id=_AMENDMENT_ID,
-            activation_rules=rules,  # ty:ignore[invalid-argument-type]
+            activation_rules=_runtime_activation_rules(rules),
             amendment_children=(),
             as_of=_TODAY,
         )
@@ -647,7 +655,7 @@ class TestProduceCertificatesForActivationRules:
         result = produce_certificates_for_activation_rules(
             statute_id=_STATUTE_ID,
             amendment_id=_AMENDMENT_ID,
-            activation_rules=rules,  # ty:ignore[invalid-argument-type]
+            activation_rules=_runtime_activation_rules(rules),
             amendment_children=("2025/50",),
             as_of=_TODAY,
         )
@@ -663,7 +671,7 @@ class TestProduceCertificatesForActivationRules:
         result = produce_certificates_for_activation_rules(
             statute_id=_STATUTE_ID,
             amendment_id=_AMENDMENT_ID,
-            activation_rules=rules,  # ty:ignore[invalid-argument-type]
+            activation_rules=_runtime_activation_rules(rules),
             amendment_children=("2025/50",),
             as_of=_TODAY,
         )
@@ -683,7 +691,7 @@ class TestStrictModeOnBulkResult:
         result = produce_certificates_for_activation_rules(
             statute_id=_STATUTE_ID,
             amendment_id=_AMENDMENT_ID,
-            activation_rules=rules,  # ty:ignore[invalid-argument-type]
+            activation_rules=_runtime_activation_rules(rules),
             amendment_children=("2025/50",),
             as_of=_TODAY,
         )
@@ -706,7 +714,7 @@ class TestStrictModeOnBulkResult:
         result = produce_certificates_for_activation_rules(
             statute_id=_STATUTE_ID,
             amendment_id=_AMENDMENT_ID,
-            activation_rules=rules,  # ty:ignore[invalid-argument-type]
+            activation_rules=_runtime_activation_rules(rules),
             amendment_children=(),
             as_of=_TODAY,
         )

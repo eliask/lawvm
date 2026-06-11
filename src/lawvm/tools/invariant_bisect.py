@@ -33,7 +33,7 @@ Usage:
     lawvm invariant-bisect 1995/398 --target chapter:4/section:20
     lawvm invariant-bisect 1995/398 --detector illegal_edge
     lawvm invariant-bisect 1995/398 --after 2010/100 --before 2015/200
-    lawvm invariant-bisect 1995/398 --mode finlex_oracle
+    lawvm invariant-bisect 1995/398 --mode official_consolidation
     lawvm invariant-bisect 1995/398 --json
     lawvm invariant-bisect 1995/398 --verbose
 """
@@ -295,7 +295,7 @@ def build_uk_invariant_bisect_bundle(
 
 def build_invariant_bisect_bundle(
     statute_id: str,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     target_path: str = "",
     detector: str = "duplicate_label",
     after_mid: str = "",
@@ -308,7 +308,7 @@ def build_invariant_bisect_bundle(
     statute_id:
         Parent statute identifier, e.g. "1995/398".
     mode:
-        Replay mode, "legal_pit" or "finlex_oracle".
+        Replay mode, "legal_pit" or "official_consolidation".
     target_path:
         Optional structural path filter, e.g. "chapter:4/section:20".
         Only violations whose path contains this segment are considered.

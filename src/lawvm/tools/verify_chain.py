@@ -399,7 +399,7 @@ def verify_chain(
     sid: str,
     skip_html: bool = False,
     output_dir: Optional[Path] = None,
-    mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle",
+    mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
 ) -> ChainVerificationResult:
     """Verify a statute's amendment chain against PIT XML checkpoints.
 
@@ -917,7 +917,7 @@ def main(args) -> None:
         result = verify_chain(
             sid=sid,
             skip_html=skip_html,
-            mode="finlex_oracle",
+            mode="official_consolidation",
         )
 
         _print_blame_matrix(result)

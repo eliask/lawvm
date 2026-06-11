@@ -28,7 +28,7 @@ def _section_text_from_state(state: ReplayState, target_key: str) -> str:
 def build_bisect_bundle(
     statute_id: str,
     section: str,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     threshold: float,
     top: int,
     *,
@@ -113,7 +113,7 @@ def build_bisect_bundle(
 def build_bisect_bundles_batch(
     statute_id: str,
     sections: List[str],
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     threshold: float,
     top: int,
     *,
@@ -271,7 +271,7 @@ def _format_text(bundle: Dict[str, Any], verbose: bool) -> str:
 
 def main(args) -> None:
     try:
-        _mode: Literal["finlex_oracle", "legal_pit"] = getattr(args, "mode", "legal_pit")
+        _mode: Literal["official_consolidation", "legal_pit"] = getattr(args, "mode", "legal_pit")
         bundle = build_bisect_bundle(
             statute_id=args.statute_id,
             section=args.section,

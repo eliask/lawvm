@@ -17,8 +17,11 @@ Per AGENTS.md §15, covers all required test categories:
 """
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -34,6 +37,13 @@ from lawvm.tools.tier2_state import (
     tier2_dir,
     write_state,
 )
+
+_HAS_DUCKDB = importlib.util.find_spec("duckdb") is not None
+_needs_duckdb = pytest.mark.skipif(not _HAS_DUCKDB, reason="duckdb not installed")
+
+
+def _duckdb_module() -> Any:
+    return importlib.import_module("duckdb")
 
 
 # ---------------------------------------------------------------------------
@@ -398,12 +408,13 @@ class TestSchemaVersionIsolation:
 # ---------------------------------------------------------------------------
 
 
+@_needs_duckdb
 class TestBuildIndexDb:
     """Category 6: build-index-db produces a queryable .db file."""
 
     def test_build_creates_db_with_views(self, tmp_path: Path) -> None:
         """Each parquet in the tier2 dir becomes a DuckDB view."""
-        import duckdb
+        duckdb = _duckdb_module()
 
         from lawvm.tools.build_index_db import build_index_db
 
@@ -472,7 +483,7 @@ class TestBuildIndexDb:
 
     def test_build_overwrites_stale_db(self, tmp_path: Path) -> None:
         """A second build overwrites the previous .db (no stale views)."""
-        import duckdb
+        duckdb = _duckdb_module()
 
         from lawvm.tools.build_index_db import build_index_db
 
@@ -554,6 +565,7 @@ class TestBuildIndexDb:
 # ---------------------------------------------------------------------------
 
 
+@_needs_duckdb
 class TestFtsFlag:
     """Category 7: --fts flag attempts FTS index without hard-crashing."""
 
@@ -652,13 +664,13 @@ class TestNegativeCases:
         """IncrementalState is a frozen dataclass — must not be mutable."""
         inc = IncrementalState(partition_hashes={}, last_amendment_seen="")
         with pytest.raises((AttributeError, TypeError)):
-            inc.last_amendment_seen = "mutated"  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+            cast(Any, inc).last_amendment_seen = "mutated"
 
     def test_projection_state_is_frozen(self) -> None:
         """ProjectionState is a frozen dataclass."""
         state = _make_test_state()
         with pytest.raises((AttributeError, TypeError)):
-            state.row_count = 0  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+            cast(Any, state).row_count = 0
 
     def test_unknown_jurisdiction_returns_empty_projections(self) -> None:
         """rebuild_indexes for an unknown jurisdiction logs and returns cleanly."""

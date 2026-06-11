@@ -306,7 +306,7 @@ def _comparison_summary(master: Any) -> dict[str, Any]:
 def build_phase_witness_bundle(
     statute_id: str,
     source_id: str,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     target_path: str = "",
 ) -> dict[str, Any]:
     records, _cutoff, _oracle_version = _resolve_applicable_amendment_records(statute_id, mode)

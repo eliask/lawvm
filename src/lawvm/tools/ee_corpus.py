@@ -60,17 +60,17 @@ def _farchive_get_or_fetch(archive: Any, url: str, *, max_age_hours: float = flo
     """Return cached content if present; otherwise HTTP-fetch and store."""
     import math
     if math.isinf(max_age_hours):
-        cached = archive.get(url)  # type: ignore[union-attr]
+        cached = archive.get(url)
         if cached is not None:
             return cached
     else:
-        if archive.has(url, max_age_hours=max_age_hours):  # type: ignore[union-attr]
-            cached = archive.get(url)  # type: ignore[union-attr]
+        if archive.has(url, max_age_hours=max_age_hours):
+            cached = archive.get(url)
             if cached is not None:
                 return cached
     data = _http_fetch(url)
     if data:
-        archive.store(url, data)  # type: ignore[union-attr]
+        archive.store(url, data)
     return data
 
 

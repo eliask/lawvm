@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -349,7 +350,7 @@ def test_claim_is_frozen():
     """ManualCompilationClaim is frozen — attribute mutation raises."""
     claim = _make_claim()
     with pytest.raises((AttributeError, TypeError)):
-        claim.rationale = "mutated"  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+        cast(Any, claim).rationale = "mutated"
 
 
 def test_state_is_frozen():
@@ -363,4 +364,4 @@ def test_state_is_frozen():
         last_updated=datetime(2026, 6, 4, tzinfo=timezone.utc),
     )
     with pytest.raises((AttributeError, TypeError)):
-        state.status = ClaimStatus.ACCEPTED  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+        cast(Any, state).status = ClaimStatus.ACCEPTED

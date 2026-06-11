@@ -13,16 +13,19 @@ from __future__ import annotations
 
 import csv
 import io
+import importlib
+import importlib.util
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-try:
-    import duckdb as _duckdb_mod  # noqa: F401
-    _HAS_DUCKDB = True
-except ImportError:
-    _HAS_DUCKDB = False
+_HAS_DUCKDB = importlib.util.find_spec("duckdb") is not None
+
+
+def _duckdb_module() -> Any:
+    return importlib.import_module("duckdb")
 
 duckdb_required = pytest.mark.skipif(not _HAS_DUCKDB, reason="duckdb not installed")
 
@@ -38,7 +41,7 @@ def tmp_competing_dir(tmp_path_factory) -> Path:
     if not _HAS_DUCKDB:
         pytest.skip("duckdb not installed")
 
-    import duckdb
+    duckdb = _duckdb_module()
 
     d = tmp_path_factory.mktemp("competing")
 
@@ -226,7 +229,8 @@ class TestFiProposalsCompetingOutputFormats:
         reader = csv.DictReader(io.StringIO(out))
         rows = list(reader)
         assert len(rows) == 3
-        assert "he_id" in reader.fieldnames  # ty:ignore[unsupported-operator]
+        assert reader.fieldnames is not None
+        assert "he_id" in reader.fieldnames
 
 
 # ---------------------------------------------------------------------------

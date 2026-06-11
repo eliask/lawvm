@@ -32,7 +32,7 @@ Usage:
     lawvm diagnose-phase 1995/398 --source 2013/982
     lawvm diagnose-phase 1995/398 --source 2013/982 --target chapter:4/section:20
     lawvm diagnose-phase 1995/398 --source 2013/982 --detector illegal_edge
-    lawvm diagnose-phase 1995/398 --source 2013/982 --mode finlex_oracle --json
+    lawvm diagnose-phase 1995/398 --source 2013/982 --mode official_consolidation --json
     lawvm diagnose-phase 1995/398 --source 2013/982 --certificate
     lawvm diagnose-phase 1995/398 --source 2013/982 --certificate \\
         --first-bad-amendment 2013/982
@@ -120,7 +120,7 @@ def _attribute(
 def build_diagnose_phase_bundle(
     statute_id: str,
     source_id: str,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     target_path: str = "",
     detector: str = "duplicate_label",
 ) -> Dict[str, Any]:

@@ -129,7 +129,7 @@ from lawvm.finland.statute import ReplayState, StatuteContext
 
 _DATE = dt.date(2020, 1, 1)
 
-_FINLEX_ORACLE = get_replay_profile("finlex_oracle")
+_FINLEX_ORACLE = get_replay_profile("official_consolidation")
 _LEGAL_PIT = get_replay_profile("legal_pit")
 
 
@@ -4962,7 +4962,7 @@ def test_apply_op_section_repeal_removes_non_base_insert_even_in_finlex_oracle()
         op,
         ctx,
         muutos_ir=None,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
     )
 
@@ -6323,7 +6323,7 @@ def test_resolver_binding_contract_validators_reject_malformed_bindings() -> Non
         ResolverBinding,
     )
 
-    common = dict(
+    common: dict[str, Any] = dict(
         binding_id="rb:test",
         op_label="[t] REPLACE 1 §",
         target_text="section:1",
@@ -8190,7 +8190,7 @@ class TestApplyItemRepeal:
         assert "d text" not in " ".join(c.text or "" for c in new_sub.children)
 
     def test_repeal_always_synthesizes_placeholder_in_finlex_oracle(self):
-        """In finlex_oracle mode, item repeal always keeps a placeholder — not
+        """In official_consolidation mode, item repeal always keeps a placeholder — not
         just for intro-list shapes.  The placeholder retains the label so later
         amendments can use it as an anchor.
         (PRO_RESPONSE_5_1 §8 — repeal and visibility are separate questions.)
@@ -8239,7 +8239,7 @@ class TestApplyItemRepeal:
         sec = _sec("5", sub)
         body = _body(sec)
 
-        # Step 1: repeal item 15 in finlex_oracle mode.
+        # Step 1: repeal item 15 in official_consolidation mode.
         state = _make_state(body)
         sec_path = [("section", "5")]
         repeal_op = _op(op_type="REPEAL", target_section="5", target_paragraph=1, target_item="15")
@@ -9358,7 +9358,7 @@ class TestApplyItemReplace:
         replay = pinned_replay(
             "2006/395",
             stop_before="2019/1468",
-            mode="finlex_oracle",
+            mode="official_consolidation",
             quiet=True,
             build_full_products=False,
         )
@@ -9419,7 +9419,7 @@ class TestApplyItemReplace:
         replay = pinned_replay(
             "2006/395",
             stop_before="2022/572",
-            mode="finlex_oracle",
+            mode="official_consolidation",
             quiet=True,
             build_full_products=False,
         )
@@ -10675,7 +10675,7 @@ def test_typed_repeal_section_emits_mutation_event() -> None:
         op,
         ctx,
         muutos_ir=None,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
         rop=rop,
     )
@@ -10703,7 +10703,7 @@ def test_typed_replace_section_emits_mutation_event() -> None:
         op,
         ctx,
         muutos_ir=payload,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
         rop=rop,
     )
@@ -10729,7 +10729,7 @@ def test_uncovered_body_replace_declares_recovery_allowance_on_mutation_event() 
         op,
         ctx,
         muutos_ir=payload,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
         rop=rop,
     )
@@ -11511,7 +11511,7 @@ def test_typed_dispatch_unknown_intent_emits_failed_event() -> None:
         op,
         ctx,
         muutos_ir=None,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         failed_ops_out=failed_ops,
         mutation_events_out=mutation_events,
         rop=rop,
@@ -11558,7 +11558,7 @@ def test_typed_replace_unsupported_target_stops_without_legacy_dispatch() -> Non
         op,
         ctx,
         muutos_ir=payload,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         failed_ops_out=failed_ops,
         mutation_events_out=mutation_events,
         rop=rop,
@@ -11613,7 +11613,7 @@ def test_typed_insert_unsupported_target_stops_without_legacy_dispatch() -> None
         op,
         ctx,
         muutos_ir=payload,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         failed_ops_out=failed_ops,
         mutation_events_out=mutation_events,
         rop=rop,
@@ -11662,7 +11662,7 @@ def test_typed_repeal_unsupported_target_stops_without_legacy_dispatch() -> None
         op,
         ctx,
         muutos_ir=None,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         failed_ops_out=failed_ops,
         mutation_events_out=mutation_events,
         rop=rop,
@@ -11717,7 +11717,7 @@ def test_typed_move_stops_without_legacy_dispatch() -> None:
         op,
         ctx,
         muutos_ir=None,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
         rop=rop,
     )
@@ -11998,7 +11998,7 @@ def test_typed_relabel_unhandled_target_keeps_target_address() -> None:
         op,
         ctx,
         muutos_ir=None,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
         rop=rop,
     )
@@ -12066,7 +12066,7 @@ def test_typed_container_relabel_prefers_scoped_target_address() -> None:
         op,
         ctx,
         muutos_ir=None,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
         rop=rop,
     )
@@ -12167,7 +12167,7 @@ def test_typed_section_suffix_marker_does_not_authorize_apply_rewrite() -> None:
         op,
         ctx,
         muutos_ir=None,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
         rop=rop,
     )
