@@ -1201,3 +1201,58 @@ def test_corrigendum_verify_updates_adjudication_text_corpus(
             "verified_in_source": 1,
         }
     ]
+
+
+def test_classify_corrigendum_locators_parses_current_and_legacy_schemes() -> None:
+    finnish, swedish, other, unparsed = corr_tools._classify_corrigendum_locators(
+        [
+            # Current finlex://sd-cons scheme; same PDF cached under two versions
+            # must deduplicate to one (sid, filename) entry.
+            "finlex://sd-cons/1734/4-000/fin@20180107/media/corrigenda/sk20090135_1.pdf",
+            "finlex://sd-cons/1734/4-000/fin@20190812/media/corrigenda/sk20090135_1.pdf",
+            # Swedish fs* series under the same statute — reported distinctly.
+            "finlex://sd-cons/1734/4-000/swe@20230451/media/corrigenda/fs20090135_1.pdf",
+            # Legacy akn scheme still parses.
+            "akn/fi/act/statute-consolidated/2013/23/media/corrigenda/sk20160442_1.pdf",
+            # Unrecognized filename series.
+            "finlex://sd-cons/2002/1248/fin@20200101/media/corrigenda/zz20200001_1.pdf",
+            # Malformed locator — statute id not extractable.
+            "finlex://bogus/media/corrigenda/sk20210001_1.pdf",
+            # Non-PDF entries are ignored entirely.
+            "finlex://sd-cons/1734/4-000/fin@20180107/main.xml",
+        ]
+    )
+
+    assert finnish == {
+        "1734/4-000": {"sk20090135_1.pdf"},
+        "2013/23": {"sk20160442_1.pdf"},
+    }
+    assert swedish == {"1734/4-000": {"fs20090135_1.pdf"}}
+    assert other == {"2002/1248": {"zz20200001_1.pdf"}}
+    assert unparsed == ["finlex://bogus/media/corrigenda/sk20210001_1.pdf"]
+
+
+def test_status_corpus_reports_counts_and_loud_diagnostics(capsys, monkeypatch) -> None:
+    monkeypatch.setattr(
+        corr_tools,
+        "list_cached_corrigendum_locators",
+        lambda cs, sid=None, filename=None: [
+            "finlex://sd-cons/1734/4-000/fin@20180107/media/corrigenda/sk20090135_1.pdf",
+            "finlex://sd-cons/1734/4-000/fin@20190812/media/corrigenda/sk20090135_1.pdf",
+            "finlex://sd-cons/2002/1248/fin@20200101/media/corrigenda/sk20030001_1.pdf",
+            "finlex://sd-cons/1734/4-000/swe@20230451/media/corrigenda/fs20090135_1.pdf",
+            "finlex://bogus/media/corrigenda/sk20210001_1.pdf",
+        ],
+    )
+
+    corr_tools._status_corpus(cs=object())
+
+    out = capsys.readouterr().out
+    assert "Finnish (sk*) corrigendum PDFs : 2" in out
+    assert "Statutes affected (Finnish)    : 2" in out
+    assert "Swedish (fs*) corrigendum PDFs : 1" in out
+    assert "excluded from breakdowns" in out
+    # Malformed locator must surface as a loud counted diagnostic with the
+    # offending locator embedded, not be silently skipped.
+    assert "DIAGNOSTIC corrigendum-locator-unparsed: 1 locator(s)" in out
+    assert "finlex://bogus/media/corrigenda/sk20210001_1.pdf" in out

@@ -51,7 +51,7 @@ def _format_text(result: Any) -> str:
 
 
 def main(args) -> None:
-    result = _classify_statute(args.statute_id, getattr(args, "mode", "finlex_oracle"))
+    result = _classify_statute(args.statute_id, getattr(args, "mode", "official_consolidation"))
     if result is None:
         print("classification failed", file=sys.stderr)
         sys.exit(1)

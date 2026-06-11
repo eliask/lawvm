@@ -291,7 +291,7 @@ def test_format_report_verbose_prefers_typed_provenance_tags() -> None:
             {
                 "op_id": "op-2",
                 "description": "typed scope op",
-                "scope_provenance_tags": ["chapter_scope_from_johtolause"],
+                "scope_provenance_tags": ["chapter_scope_from_preamble"],
             },
             {
                 "op_id": "op-3",
@@ -304,7 +304,7 @@ def test_format_report_verbose_prefers_typed_provenance_tags() -> None:
     out = strict_report._format_report(cr, verbose=True)
 
     assert "extraction_fallback_heuristic" in out
-    assert "chapter_scope_from_johtolause" in out
+    assert "chapter_scope_from_preamble" in out
     assert "normalize_item_like_target" in out
 
 
@@ -657,7 +657,7 @@ def test_format_report_surfaces_target_scoped_projection_row_detail() -> None:
                 "message": "Compilation required context-dependent anchor resolution.",
                 "source": "2020/1",
                 "detail": {
-                    "tag": "chapter_scope_from_johtolause",
+                    "tag": "chapter_scope_from_preamble",
                     "target_unit_kind": "section",
                     "target_norm": "35",
                     "target_chapter": "5",
@@ -670,7 +670,7 @@ def test_format_report_surfaces_target_scoped_projection_row_detail() -> None:
 
     assert "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION" in out
     assert "source: 2020/1" in out
-    assert "detail: target(kind=section, norm=35, chapter=5); tag=chapter_scope_from_johtolause" in out
+    assert "detail: target(kind=section, norm=35, chapter=5); tag=chapter_scope_from_preamble" in out
 
 
 def test_format_report_surfaces_failed_op_reason_code() -> None:
@@ -714,7 +714,7 @@ def test_format_report_uses_projection_rows_when_available() -> None:
                 "message": "Compilation required context-dependent anchor resolution.",
                 "source": "2020/1",
                 "detail": {
-                    "tag": "chapter_scope_from_johtolause",
+                    "tag": "chapter_scope_from_preamble",
                     "target_unit_kind": "section",
                     "target_norm": "35",
                     "target_chapter": "5",
@@ -727,7 +727,7 @@ def test_format_report_uses_projection_rows_when_available() -> None:
 
     assert "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION" in out
     assert "source: 2020/1" in out
-    assert "detail: target(kind=section, norm=35, chapter=5); tag=chapter_scope_from_johtolause" in out
+    assert "detail: target(kind=section, norm=35, chapter=5); tag=chapter_scope_from_preamble" in out
 
 
 def test_format_report_surfaces_source_pathology_projection_row_detail() -> None:
@@ -775,7 +775,7 @@ def test_build_facade_for_statute_preserves_projection_row_detail(monkeypatch) -
                     role="obligation",
                     kind="LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION",
                     detail={
-                        "tag": "chapter_scope_from_johtolause",
+                        "tag": "chapter_scope_from_preamble",
                         "target_unit_kind": "section",
                         "target_norm": "35",
                         "target_chapter": "5",
@@ -792,7 +792,7 @@ def test_build_facade_for_statute_preserves_projection_row_detail(monkeypatch) -
     assert len(obligations) == 1
     obl = obligations[0]
     assert obl.kind == "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION"
-    assert obl.detail["tag"] == "chapter_scope_from_johtolause"
+    assert obl.detail["tag"] == "chapter_scope_from_preamble"
     assert obl.detail["target_norm"] == "35"
     assert obl.detail["target_chapter"] == "5"
 

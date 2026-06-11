@@ -315,7 +315,7 @@ def test_classify_one_sync_forwards_mode(monkeypatch, capsys) -> None:
 def test_score_one_sync_forwards_mode(monkeypatch, capsys) -> None:
     import lawvm.tools.bench as bench
 
-    def fake_score(sid: str, mode: str = "finlex_oracle"):
+    def fake_score(sid: str, mode: str = "official_consolidation"):
         print("more noisy replay chatter")
         return sid, 0.5 if mode == "legal_pit" else 0.1, mode
 
@@ -1478,7 +1478,7 @@ def test_frontier_main_refresh_all_oracle_check_overrides_large_pool(monkeypatch
     monkeypatch.setattr("lawvm.tools.frontier._load_oracle_check_cache", lambda path: {})
     monkeypatch.setattr(
         "lawvm.tools.frontier._run_oracle_checks_parallel",
-        lambda sids, workers, mode="finlex_oracle", progress=True: refreshed_calls.append(list(sids)) or {},
+        lambda sids, workers, mode="official_consolidation", progress=True: refreshed_calls.append(list(sids)) or {},
     )
     monkeypatch.setattr("lawvm.tools.frontier._should_refresh_all_low_scoring_scores", lambda rows: False)
     monkeypatch.setattr(
@@ -1539,7 +1539,7 @@ def test_frontier_main_refresh_all_scores_overrides_large_pool(monkeypatch, caps
     monkeypatch.setattr("lawvm.tools.frontier._run_oracle_checks_parallel", lambda *args, **kwargs: {})
     monkeypatch.setattr(
         "lawvm.tools.frontier._run_score_refresh_parallel",
-        lambda sids, workers, mode="finlex_oracle", progress=True: (
+        lambda sids, workers, mode="official_consolidation", progress=True: (
             refreshed_calls.append(list(sids))
             or {sid: {"similarity": 0.99, "status": "OK"} for sid in sids}
         ),

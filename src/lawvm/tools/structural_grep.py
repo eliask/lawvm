@@ -363,7 +363,7 @@ def _extract_section_ops(statute_id: str) -> dict[str, set[str]]:
         compiled_ops: list[dict] = []
         replay_xml(
             statute_id,
-            mode="finlex_oracle",
+            mode="official_consolidation",
             compiled_ops_out=compiled_ops,
             quiet=True,
             build_full_products=False,

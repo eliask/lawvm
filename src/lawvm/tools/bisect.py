@@ -67,7 +67,7 @@ def _score_master(state: "ReplayState", c_truth: str) -> float:
 
 def bisect_statute(
     sid: str,
-    mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle",
+    mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     verbose: bool = False,
     top: int = 5,
 ) -> None:
@@ -172,7 +172,7 @@ def bisect_statute(
 def main(args) -> None:
     bisect_statute(
         sid=args.statute_id,
-        mode=getattr(args, "mode", "finlex_oracle"),
+        mode=getattr(args, "mode", "official_consolidation"),
         verbose=getattr(args, "verbose", False),
         top=getattr(args, "top", 5),
     )

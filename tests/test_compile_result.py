@@ -29,6 +29,8 @@ from lawvm.core.compile_result import (
     SectionStrictVerdict,
     SourceCompletenessInfo,
     SourcePathology,
+    _compiled_op_provenance_tag_sets,
+    _compiled_op_scope_witness,
     _compiled_op_source_statute,
     _compiled_op_matches_section,
     _operation_matches_section,
@@ -159,6 +161,44 @@ def test_compiled_op_scope_witness_rejects_empty_or_untyped_fields() -> None:
             confidence="explicit",
             used_legacy_tag_fallback=cast(Any, "yes"),
         )
+
+
+def test_compiled_op_scope_witness_normalizes_legacy_johtolause_vocabulary() -> None:
+    """Legacy rows spelled with the Finnish vocabulary normalize on read."""
+    legacy_structured = _compiled_op_scope_witness(
+        {"scope_source": "johtolause", "scope_confidence": "inferred"}
+    )
+    assert legacy_structured is not None
+    assert legacy_structured.source == "preamble"
+    assert legacy_structured.kind == "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION"
+    assert legacy_structured.used_legacy_tag_fallback is False
+
+    legacy_tag_fallback = _compiled_op_scope_witness(
+        {"scope_provenance_tags": ["chapter_scope_from_johtolause"]}
+    )
+    assert legacy_tag_fallback is not None
+    assert legacy_tag_fallback.source == "preamble"
+    assert legacy_tag_fallback.tag == "chapter_scope_from_preamble"
+    assert legacy_tag_fallback.used_legacy_tag_fallback is True
+
+    tag_sets = _compiled_op_provenance_tag_sets(
+        [
+            {
+                "scope_provenance_tags": ["chapter_scope_from_johtolause"],
+                "scope_source": "johtolause",
+                "scope_confidence": "inferred",
+            }
+        ]
+    )
+    assert tag_sets.scope_tags == frozenset({"chapter_scope_from_preamble"})
+    assert tag_sets.scope_sources == frozenset({"preamble"})
+
+
+def test_compiled_op_scope_witness_still_rejects_unrecognized_scope_source() -> None:
+    """The legacy shim normalizes only known values; unknown ones keep failing."""
+    assert _compiled_op_scope_witness(
+        {"scope_source": "mystery_source", "scope_confidence": "inferred"}
+    ) is None
 
 
 def test_admissible_binding_certificate_rejects_count_contradictions() -> None:

@@ -17,7 +17,7 @@ class _DummyReplay:
 def test_score_one_defaults_to_fast_replay(monkeypatch) -> None:
     seen: dict[str, object] = {}
 
-    def fake_replay_xml(sid: str, mode: str = "finlex_oracle", **kwargs):
+    def fake_replay_xml(sid: str, mode: str = "official_consolidation", **kwargs):
         seen["sid"] = sid
         seen["mode"] = mode
         seen.update(kwargs)
@@ -37,7 +37,7 @@ def test_score_one_defaults_to_fast_replay(monkeypatch) -> None:
 def test_score_one_can_request_diagnostic_replay(monkeypatch) -> None:
     seen: dict[str, object] = {}
 
-    def fake_replay_xml(sid: str, mode: str = "finlex_oracle", **kwargs):
+    def fake_replay_xml(sid: str, mode: str = "official_consolidation", **kwargs):
         seen["sid"] = sid
         seen["mode"] = mode
         seen.update(kwargs)
@@ -210,7 +210,7 @@ def test_run_benchmark_prints_warning_summary_per_row(monkeypatch, capsys) -> No
     monkeypatch.setattr(
         bench,
         "_score_one_with_warning_summary",
-        lambda sid, mode="finlex_oracle", *, diagnostic_replay=False, fast=False: (
+        lambda sid, mode="official_consolidation", *, diagnostic_replay=False, fast=False: (
             sid,
             0.9,
             "OK",
@@ -279,7 +279,7 @@ def test_run_benchmark_can_emit_diagnostic_summaries_for_persistence(monkeypatch
     monkeypatch.setattr(
         bench,
         "_score_one_with_warning_summary",
-        lambda sid, mode="finlex_oracle", *, diagnostic_replay=False, fast=False: (
+        lambda sid, mode="official_consolidation", *, diagnostic_replay=False, fast=False: (
             sid,
             0.9,
             "OK",
@@ -403,7 +403,7 @@ def test_oracle_stale_adjusted_stats_excludes_stale_rows(monkeypatch) -> None:
     monkeypatch.setattr(
         bench,
         "_run_oracle_checks_parallel",
-        lambda sids, workers, mode="finlex_oracle", progress=False: {
+        lambda sids, workers, mode="official_consolidation", progress=False: {
             "2004/1037": {"top_diagnosis": "ORACLE_STALE"},
             "2012/916": {"top_diagnosis": "REPLAY_MISSING"},
             "1993/1501": {"top_diagnosis": "EDITORIAL_CONVENTION"},

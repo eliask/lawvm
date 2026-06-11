@@ -151,7 +151,7 @@ Required behavior:
 Expected validation:
 
 ```bash
-uv run lawvm trace-section 2009/1672 --mode finlex_oracle --source 2024/1116 --section '14 b §'
+uv run lawvm trace-section 2009/1672 --mode official_consolidation --source 2024/1116 --section '14 b §'
 ```
 
 Expected outcome:

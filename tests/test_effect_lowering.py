@@ -492,7 +492,7 @@ def test_compile_amendment_ops_emits_temporal_events_without_retaining_effect_in
         ops=[],
         muutos_tree=muutos_tree,
         johto=johto,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         source_ref="2026/1",
         source_title="Amendment Title",
         target_statute="1991/1",
@@ -531,7 +531,7 @@ def test_compile_amendment_ops_surfaces_unsupported_meta_clause() -> None:
         ops=[],
         muutos_tree=muutos_tree,
         johto="Asetuksella voidaan antaa tarkempia säännöksiä.",
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         source_ref="2026/1",
     )
 
@@ -563,7 +563,7 @@ def test_compile_amendment_ops_no_effect_intents_without_johto():
         ops=[],
         muutos_tree=muutos_tree,
         johto="",
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
     )
     assert result.temporal_events == ()
 

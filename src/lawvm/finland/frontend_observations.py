@@ -354,7 +354,7 @@ def _scope_anchor_dependence_observations(
             witness = dc_replace(witness, tag=op.scope_provenance_tags[0])
         if witness.source == "carry_forward":
             obs_kind = "LOWER.SCOPE_CARRY_FORWARD"
-        elif witness.source in {"johtolause", "grouped_part", "grouped_chapter"}:
+        elif witness.source in {"preamble", "grouped_part", "grouped_chapter"}:
             obs_kind = "LOWER.CONTEXT_DEPENDENT_ANCHOR"
         elif witness.source == "explicit_chunk":
             obs_kind = "LOWER.EXPLICIT_CHUNK_SCOPE"

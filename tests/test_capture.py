@@ -152,7 +152,7 @@ def test_build_capture_preserves_replay_meta_observation_streams(monkeypatch) ->
     monkeypatch.setattr(
         "lawvm.finland.grafter.replay_xml",
         lambda statute_id,
-        mode="finlex_oracle",
+        mode="official_consolidation",
         compiled_ops_out=None,
         replay_meta_out=None,
         lo_ops_out=None,
@@ -220,7 +220,7 @@ def test_build_capture_summarizes_apply_mutation_invariant_result_codes(monkeypa
     monkeypatch.setattr(
         "lawvm.finland.grafter.replay_xml",
         lambda statute_id,
-        mode="finlex_oracle",
+        mode="official_consolidation",
         compiled_ops_out=None,
         replay_meta_out=None,
         lo_ops_out=None,
@@ -255,7 +255,7 @@ def test_build_capture_does_not_publish_strictness_summary_rails(monkeypatch) ->
     monkeypatch.setattr(
         "lawvm.finland.grafter.replay_xml",
         lambda statute_id,
-        mode="finlex_oracle",
+        mode="official_consolidation",
         compiled_ops_out=None,
         replay_meta_out=None,
         lo_ops_out=None,
@@ -310,7 +310,7 @@ def test_build_capture_projects_source_pathology_target_unit_kind_at_presentatio
     monkeypatch.setattr(
         "lawvm.finland.grafter.replay_xml",
         lambda statute_id,
-        mode="finlex_oracle",
+        mode="official_consolidation",
         compiled_ops_out=None,
         replay_meta_out=None,
         lo_ops_out=None,
@@ -404,7 +404,7 @@ def test_build_capture_threads_per_amendment_source_pathologies_and_mutation_rep
     monkeypatch.setattr(
         "lawvm.finland.grafter.replay_xml",
         lambda statute_id,
-        mode="finlex_oracle",
+        mode="official_consolidation",
         compiled_ops_out=None,
         replay_meta_out=None,
         lo_ops_out=None,
@@ -505,7 +505,7 @@ def test_build_capture_serializes_typed_text_patch(monkeypatch) -> None:
 
     def fake_replay_xml(
         statute_id: str,
-        mode: str = "finlex_oracle",
+        mode: str = "official_consolidation",
         compiled_ops_out=None,
         replay_meta_out=None,
         lo_ops_out=None,
@@ -577,7 +577,7 @@ def test_build_capture_projects_legacy_text_fields_from_typed_patch(monkeypatch)
 
     def fake_replay_xml(
         statute_id: str,
-        mode: str = "finlex_oracle",
+        mode: str = "official_consolidation",
         compiled_ops_out=None,
         replay_meta_out=None,
         lo_ops_out=None,
@@ -643,7 +643,7 @@ def test_build_capture_uses_projection_row_public_names(monkeypatch) -> None:
     monkeypatch.setattr(
         "lawvm.finland.grafter.replay_xml",
         lambda statute_id,
-        mode="finlex_oracle",
+        mode="official_consolidation",
         compiled_ops_out=None,
         replay_meta_out=None,
         lo_ops_out=None,
@@ -705,7 +705,7 @@ def test_build_capture_hydrates_typed_source_adjudication_from_replay_meta(monke
     monkeypatch.setattr(
         "lawvm.finland.grafter.replay_xml",
         lambda statute_id,
-        mode="finlex_oracle",
+        mode="official_consolidation",
         compiled_ops_out=None,
         replay_meta_out=None,
         lo_ops_out=None,
@@ -764,7 +764,7 @@ def test_build_capture_prefers_existing_typed_source_adjudication_over_conflicti
     monkeypatch.setattr(
         "lawvm.finland.grafter.replay_xml",
         lambda statute_id,
-        mode="finlex_oracle",
+        mode="official_consolidation",
         compiled_ops_out=None,
         replay_meta_out=None,
         lo_ops_out=None,

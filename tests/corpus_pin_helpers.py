@@ -8,7 +8,7 @@ consolidation.
 The oracle version pin usually also pins the amendment chain because
 _resolve_applicable_amendment_records() filters amendments by
 oracle_version_amendment_id (derived from the pinned oracle) in both
-finlex_oracle and legal_pit modes.
+official_consolidation and legal_pit modes.
 
 Exception: if the pinned oracle bytes themselves explicitly cite a later
 cross-statute `source_vts_explicit` amendment, replay planning re-includes that

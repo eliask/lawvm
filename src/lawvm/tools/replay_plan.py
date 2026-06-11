@@ -48,7 +48,7 @@ def build_replay_plan_inspection(args: Any) -> dict[str, Any]:
     )
     plan = prepare_replay_plan(
         args.statute_id,
-        mode=getattr(args, "mode", "finlex_oracle"),
+        mode=getattr(args, "mode", "official_consolidation"),
         strict_profile=FINLAND_INGESTION_V1 if getattr(args, "strict", False) else None,
         corpus=corpus,
         stop_before="",
@@ -73,7 +73,7 @@ def build_replay_plan_inspection(args: Any) -> dict[str, Any]:
     )
     return {
         "statute_id": args.statute_id,
-        "mode": getattr(args, "mode", "finlex_oracle"),
+        "mode": getattr(args, "mode", "official_consolidation"),
         "selector_mode": oracle_inspection.selector_mode,
         "oracle_context": {
             "locator": oracle_inspection.locator,
