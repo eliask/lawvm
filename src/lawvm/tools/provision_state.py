@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import functools
 import hashlib
 import json
 import os
@@ -49,6 +50,7 @@ _FI_SUFFIX_AS_SUBSECTION_RE = re.compile(
 )
 _FI_SPACED_SECTION_LABEL_RE = re.compile(r"^(?P<number>\d+)\s+(?P<letter>[A-Za-z])$")
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_XML_TEXT_SEQUENCE_TOKEN_RE = re.compile(r"[\w]+(?:/[\w]+)*|§")
 _QUERY_TYPES = frozenset({"governing", "in_force"})
 
 # Rollback flag (Pro §5). Fixed-term statute bounds are DEFAULT-ON since seam
@@ -2053,7 +2055,7 @@ def _operation_source_xml_text_sequence_span(
 def _xml_text_sequence_tokens(value: str) -> list[str]:
     return [
         match.group(0).casefold()
-        for match in re.finditer(r"[\w]+(?:/[\w]+)*|§", _normalize_xml_text_for_span_match(value))
+        for match in _XML_TEXT_SEQUENCE_TOKEN_RE.finditer(_normalize_xml_text_for_span_match(value))
     ]
 
 
@@ -2300,7 +2302,7 @@ def _raw_xml_local_tag_element_char_span_from_start(
     local_tag: str,
     start: int,
 ) -> tuple[int, int] | None:
-    tag_re = re.compile(rf"</?(?:[A-Za-z_][\w.-]*:)?{re.escape(local_tag)}\b[^>]*>")
+    tag_re = _raw_xml_local_tag_re(local_tag)
     depth = 0
     for match in tag_re.finditer(text, start):
         token = match.group(0)
@@ -2332,7 +2334,7 @@ def _raw_xml_sourceline_element_char_span(
     line_end = text.find("\n", line_start)
     if line_end < 0:
         line_end = len(text)
-    start_tag_re = re.compile(rf"<(?:[A-Za-z_][\w.-]*:)?{re.escape(local_tag)}\b[^>]*>")
+    start_tag_re = _raw_xml_local_start_tag_re(local_tag)
     for match in start_tag_re.finditer(text, line_start, line_end):
         start_tag = match.group(0)
         if _raw_xml_start_tag_has_attrs(start_tag, attrs):
@@ -2372,6 +2374,16 @@ def _raw_xml_start_tag_has_attrs(start_tag: str, attrs: Mapping[str, str]) -> bo
         if f'{name}="{value}"' not in start_tag and f"{name}='{value}'" not in start_tag:
             return False
     return True
+
+
+@functools.lru_cache(maxsize=128)
+def _raw_xml_local_tag_re(local_tag: str) -> re.Pattern[str]:
+    return re.compile(rf"</?(?:[A-Za-z_][\w.-]*:)?{re.escape(local_tag)}\b[^>]*>")
+
+
+@functools.lru_cache(maxsize=128)
+def _raw_xml_local_start_tag_re(local_tag: str) -> re.Pattern[str]:
+    return re.compile(rf"<(?:[A-Za-z_][\w.-]*:)?{re.escape(local_tag)}\b[^>]*>")
 
 
 def _raw_xml_eid_start(text: str, *, local_tag: str, eid: str) -> int | None:
