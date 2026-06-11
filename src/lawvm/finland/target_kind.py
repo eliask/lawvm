@@ -6,6 +6,7 @@ it.
 """
 
 from __future__ import annotations
+from typing_extensions import override
 
 from enum import Enum
 from typing import Any
@@ -16,6 +17,7 @@ class _StringComparableMixin:
 
     value: Any
 
+    @override
     def __eq__(self, other: object) -> bool:
         if isinstance(other, type(self)):
             return self is other
@@ -23,15 +25,18 @@ class _StringComparableMixin:
             return self.value == other
         return NotImplemented
 
+    @override
     def __ne__(self, other: object) -> bool:
         result = self.__eq__(other)
         if result is NotImplemented:
             return result
         return not result
 
+    @override
     def __str__(self) -> str:
         return self.value
 
+    @override
     def __hash__(self) -> int:
         return hash(self.value)
 

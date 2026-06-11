@@ -7,6 +7,8 @@ Chromium (Playwright). Uses the system Playwright browser cache if the
 package's pinned build is absent. Not wired into ci.sh (needs Playwright);
 run it manually after any viewer change.
 """
+
+from typing_extensions import override
 import glob
 import os
 import sys
@@ -20,6 +22,7 @@ VIEWER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
+    @override
     def log_message(self, format: str, *args: object) -> None:
         pass
 

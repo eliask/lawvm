@@ -23,6 +23,7 @@ Each jurisdiction registers a SectionResolver implementation. Callers
 look it up by jurisdiction code.
 """
 from __future__ import annotations
+from typing_extensions import override
 
 import re
 from dataclasses import dataclass
@@ -39,6 +40,7 @@ class LocatorSegment:
 class HierarchicalLocator:
     segments: tuple[LocatorSegment, ...]
 
+    @override
     def __str__(self) -> str:
         return "/".join(f"{s.kind}:{s.label}" for s in self.segments)
 

@@ -11,6 +11,7 @@ Shared evidence contract header. Stable enough for report/query consumers, but
 still deliberately small; frontends own their local semantics.
 """
 from __future__ import annotations
+from typing_extensions import override
 
 from dataclasses import asdict, dataclass, field
 from enum import Enum
@@ -68,6 +69,7 @@ class CorpusRowStatus(Enum):
     MATCHED = "matched"
     DIVERGED = "diverged"
 
+    @override
     def __str__(self) -> str:
         return self.value
 

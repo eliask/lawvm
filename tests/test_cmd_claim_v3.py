@@ -16,6 +16,7 @@ Test IDs per spec:
   13. test_cmd_claim_propose_real_corpus_regression  (marked slow)
 """
 from __future__ import annotations
+from typing_extensions import override
 
 import importlib
 import json
@@ -74,6 +75,7 @@ def _write_claim_file(tmp_path: Path, d: dict) -> Path:
 
 
 class _Args:
+    @override
     def __setattr__(self, k, v):
         object.__setattr__(self, k, v)
 

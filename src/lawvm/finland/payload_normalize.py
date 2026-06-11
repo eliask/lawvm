@@ -16,6 +16,7 @@ See notes/LAWVM_CONSTITUTION.md §3 (Phase Ownership Rules).
 """
 
 from __future__ import annotations
+from typing_extensions import override
 
 from collections.abc import MutableMapping, Iterator
 import re
@@ -120,9 +121,11 @@ class SubsectionSlotMap(MutableMapping[int, IRNode]):
             stable_id_by_identity_key=self._stable_id_by_identity_key,
         )
 
+    @override
     def __getitem__(self, key: object) -> IRNode:
         return self._by_op_id[self._coerce_key(key)]
 
+    @override
     def __setitem__(self, key: object, value: IRNode) -> None:
         coerced = self._coerce_key(key)
         self._by_op_id[coerced] = value
@@ -130,6 +133,7 @@ class SubsectionSlotMap(MutableMapping[int, IRNode]):
         if stable_id is not None:
             self._by_stable_op_id[stable_id] = value
 
+    @override
     def __delitem__(self, key: object) -> None:
         coerced = self._coerce_key(key)
         del self._by_op_id[coerced]
@@ -137,12 +141,15 @@ class SubsectionSlotMap(MutableMapping[int, IRNode]):
         if stable_id is not None:
             self._by_stable_op_id.pop(stable_id, None)
 
+    @override
     def __iter__(self) -> Iterator[int]:
         return iter(self._by_op_id)
 
+    @override
     def __len__(self) -> int:
         return len(self._by_op_id)
 
+    @override
     def items(self):
         return self._by_op_id.items()
 

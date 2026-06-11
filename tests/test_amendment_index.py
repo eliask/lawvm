@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing_extensions import override
 
 import json
 import os
@@ -29,27 +30,35 @@ class _FakeCorpus(CorpusStore):
         if archive is not None:
             self._archive = archive
 
+    @override
     def oracle_path_index(self, **kwargs: object) -> dict[str, str]:
         return {sid: f"oracle://{sid}" for sid in self._oracle_map}
 
+    @override
     def read_oracle(self, sid: str) -> bytes | None:
         return self._oracle_map.get(sid)
 
+    @override
     def read_source(self, sid: str) -> bytes | None:
         return self._source_map.get(sid)
 
+    @override
     def list_statute_ids(self) -> list[str]:
         return sorted(self._source_map)
 
+    @override
     def close(self) -> None:
         return None
 
+    @override
     def read_media(self, sid: str, filename: str) -> bytes | None:
         return None
 
+    @override
     def read_corrigendum_media(self, sid: str, filename: str) -> bytes | None:
         return None
 
+    @override
     def read_locator(self, locator: str) -> bytes | None:
         if locator.startswith("oracle://"):
             return self.read_oracle(locator.removeprefix("oracle://"))
@@ -245,11 +254,13 @@ def test_build_amendment_index_reads_oracles_via_index_locators() -> None:
     """
 
     class _NoPerSidOracleCorpus(_FakeCorpus):
+        @override
         def read_locator(self, locator: str) -> bytes | None:
             if locator.startswith("oracle://"):
                 return self._oracle_map.get(locator.removeprefix("oracle://"))
             return None
 
+        @override
         def read_oracle(self, sid: str) -> bytes | None:
             raise AssertionError(
                 "per-sid read_oracle() re-scans the locator table; the index "

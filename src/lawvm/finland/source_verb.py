@@ -5,6 +5,7 @@ tokenization. Shared core semantics should use jurisdiction-neutral enums.
 """
 
 from __future__ import annotations
+from typing_extensions import override
 
 from enum import Enum
 
@@ -17,5 +18,6 @@ class SourceVerb(Enum):
     LISATA = "lisata"
     SIIRTAA = "siirtaa"
 
+    @override
     def __str__(self) -> str:
         return self.value

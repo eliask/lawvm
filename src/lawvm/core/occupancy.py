@@ -43,6 +43,7 @@ consume as documentation or telemetry but are not a validity gate.
 """
 
 from __future__ import annotations
+from typing_extensions import override
 
 from dataclasses import dataclass
 from enum import Enum
@@ -61,6 +62,7 @@ class OccupancyAction(Enum):
     REPEAL = "repeal"
     REENACT = "reenact"
 
+    @override
     def __str__(self) -> str:
         return self.value
 

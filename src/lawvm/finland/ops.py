@@ -13,6 +13,7 @@ grafter.py re-exports every public symbol from here for backward compatibility.
 """
 
 from __future__ import annotations
+from typing_extensions import override
 
 import datetime as dt
 import logging
@@ -2172,6 +2173,7 @@ class _IntentCompatStats:
         self.unit_kind: int = 0
         self.facet: int = 0
 
+    @override
     def __repr__(self) -> str:
         return (
             f"IntentCompatStats(total={self.total}, "

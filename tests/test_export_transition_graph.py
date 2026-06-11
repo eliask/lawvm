@@ -10,6 +10,7 @@ statute when the corpus is available (skipped otherwise).
 """
 
 from __future__ import annotations
+from typing_extensions import override
 
 import json
 import os
@@ -135,6 +136,7 @@ def _make_bundle() -> etg.ReplayBundle:
         def __init__(self, s: str) -> None:
             self._s = s
 
+        @override
         def __str__(self) -> str:
             return self._s
 
@@ -206,6 +208,7 @@ def _make_deep_bundle() -> etg.ReplayBundle:
         def __init__(self, s: str) -> None:
             self._s = s
 
+        @override
         def __str__(self) -> str:
             return self._s
 

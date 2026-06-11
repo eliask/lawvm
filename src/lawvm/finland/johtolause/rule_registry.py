@@ -26,6 +26,7 @@ Rule categories:
 """
 
 from __future__ import annotations
+from typing_extensions import override
 
 from dataclasses import dataclass, field
 
@@ -154,6 +155,7 @@ class RuleRegistry:
     def __len__(self) -> int:
         return len(self._rules)
 
+    @override
     def __repr__(self) -> str:
         return f"RuleRegistry({len(self._rules)} rules)"
 

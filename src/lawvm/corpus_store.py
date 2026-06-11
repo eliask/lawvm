@@ -7,6 +7,7 @@ the strict read-only archive adapter for other corpus consumers.
 """
 
 from __future__ import annotations
+from typing_extensions import override
 
 import os
 import re
@@ -229,13 +230,16 @@ class ArchiveCorpusStore(CorpusStore):
     # CorpusStore interface
     # ------------------------------------------------------------------
 
+    @override
     def read_source(self, sid: str) -> bytes | None:
         url = statute_url(sid)
         return self._archive.get(url)
 
+    @override
     def read_locator(self, locator: str) -> bytes | None:
         return self._archive.get(locator)
 
+    @override
     def read_oracle(self, sid: str) -> bytes | None:
         # Versioned-only canonical consolidated namespace: pick the highest
         # numeric PIT key present in sd-cons for this SID.
@@ -260,10 +264,12 @@ class ArchiveCorpusStore(CorpusStore):
             return best_data
         return None
 
+    @override
     def read_media(self, sid: str, filename: str) -> bytes | None:
         url = media_url(sid, filename)
         return self._archive.get(url)
 
+    @override
     def read_corrigendum_media(self, sid: str, filename: str) -> bytes | None:
         pattern = build_versioned_consolidated_corrigendum_glob(
             sid=sid,
@@ -284,6 +290,7 @@ class ArchiveCorpusStore(CorpusStore):
                     best_data = data
         return best_data
 
+    @override
     def list_statute_ids(self) -> list[str]:
         urls = self._archive.locators("finlex://sd/%/fin/main.xml")
         sids: list[str] = []
@@ -294,6 +301,7 @@ class ArchiveCorpusStore(CorpusStore):
                 sids.append(m.group(1))
         return sids
 
+    @override
     def oracle_path_index(self, **kwargs: object) -> dict[str, str]:
         """Return {sid -> best versioned oracle URL} for ArchiveCorpusStore."""
         urls = self._archive.locators(build_versioned_consolidated_main_glob())
@@ -308,6 +316,7 @@ class ArchiveCorpusStore(CorpusStore):
                 candidates[parts.sid] = (pit_key, url)
         return {sid: v[1] for sid, v in candidates.items()}
 
+    @override
     def close(self) -> None:
         self._archive.close()
 

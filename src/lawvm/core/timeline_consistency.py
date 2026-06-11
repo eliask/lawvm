@@ -1,6 +1,7 @@
 """States-first ingestion and consistency comparison helpers."""
 
 from __future__ import annotations
+from typing_extensions import override
 
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -109,6 +110,7 @@ class ConsistencyDivergence:
     ops_text: Optional[str]
     consolidated_text: Optional[str]
 
+    @override
     def __str__(self) -> str:
         addr_str = "/".join(f"{k}:{v}" for k, v in self.address.path)
         ops_preview = (self.ops_text or "")[:80].replace("\n", " ")

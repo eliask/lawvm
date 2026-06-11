@@ -1,6 +1,7 @@
 """Typed carriers for the Open Law Library frontend."""
 
 from __future__ import annotations
+from typing_extensions import override
 
 from dataclasses import dataclass
 from enum import Enum
@@ -17,6 +18,7 @@ class OpenLawAction(Enum):
     EXPIRE = "expire"
     UNSUPPORTED = "unsupported"
 
+    @override
     def __str__(self) -> str:
         return self.value
 
@@ -41,6 +43,7 @@ class OpenLawAnnotationLane(Enum):
     OFFICIAL_CODE = "official_code"
     PUBLICATION_METADATA = "publication_metadata"
 
+    @override
     def __str__(self) -> str:
         return self.value
 

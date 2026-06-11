@@ -1,5 +1,6 @@
 """UK archive source-surface availability classification."""
 from __future__ import annotations
+from typing_extensions import override
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -264,6 +265,7 @@ class _UKMultipleChoiceHTMLParser(HTMLParser):
         self._active_text: list[str] = []
         self.candidates: list[UKMultipleChoiceCandidate] = []
 
+    @override
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.lower() != "a":
             return
@@ -276,10 +278,12 @@ class _UKMultipleChoiceHTMLParser(HTMLParser):
             self._active_href = href
             self._active_text = []
 
+    @override
     def handle_data(self, data: str) -> None:
         if self._active_href:
             self._active_text.append(data)
 
+    @override
     def handle_endtag(self, tag: str) -> None:
         if tag.lower() != "a" or not self._active_href:
             return

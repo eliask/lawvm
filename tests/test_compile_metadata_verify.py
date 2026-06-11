@@ -5,6 +5,7 @@ Covers:
   8. test_consumer_rejects_tampered_strict_profile_fingerprint
 """
 from __future__ import annotations
+from typing_extensions import override
 
 
 from lawvm.core.compile_metadata_verify import (
@@ -74,6 +75,7 @@ class _FakeGraphStore(GraphStore):
     def __init__(self, known_hashes: frozenset[str]) -> None:
         self._known = known_hashes
 
+    @override
     def snapshot_exists(self, snapshot_hash: str) -> bool:
         return snapshot_hash in self._known
 

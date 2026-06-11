@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing_extensions import override
 
 import argparse
 import json
@@ -48,6 +49,7 @@ class ClassificationTableParser(HTMLParser):
         self._href = ""
         self._text_parts: list[str] = []
 
+    @override
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag != "a":
             return
@@ -60,10 +62,12 @@ class ClassificationTableParser(HTMLParser):
         self._href = href
         self._text_parts = []
 
+    @override
     def handle_data(self, data: str) -> None:
         if self._in_link:
             self._text_parts.append(data)
 
+    @override
     def handle_endtag(self, tag: str) -> None:
         if tag != "a" or not self._in_link:
             return

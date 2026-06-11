@@ -10,6 +10,7 @@ Per AGENTS.md §15: each subcommand needs:
 These tests use in-memory DuckDB fixtures (no real parquet files needed).
 """
 from __future__ import annotations
+from typing_extensions import override
 
 import csv
 import io
@@ -225,6 +226,7 @@ class TestCliOutput:
 
     def test_json_safe_unknown_converts_to_str(self):
         class Weird:
+            @override
             def __str__(self):
                 return "weird"
         assert json_safe(Weird()) == "weird"

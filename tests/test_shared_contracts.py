@@ -1,3 +1,4 @@
+from typing_extensions import override
 from typing import Any, cast
 
 import pytest
@@ -2164,6 +2165,7 @@ def test_evidence_row_kind_classifies_shared_evidence_rows() -> None:
 
 def test_to_wire_jsonable_normalizes_nested_runtime_shapes() -> None:
     class Weird:
+        @override
         def __repr__(self) -> str:
             return "<weird>"
 

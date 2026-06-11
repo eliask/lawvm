@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing_extensions import override
 
 import datetime as dt
 from typing import Any, cast
@@ -637,6 +638,7 @@ def test_get_consolidated_oracle_context_honors_selector() -> None:
     """
 
     class _SelectorAwareCorpus(_FakeCorpus):
+        @override
         def oracle_path_index(self, **kwargs: object):
             selector = kwargs.get("selector")
             if selector == ConsolidatedArtifactSelector.exact_embedded_version("20190112"):

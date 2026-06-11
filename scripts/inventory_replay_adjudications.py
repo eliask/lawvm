@@ -1,5 +1,6 @@
 """Inventory replay-facing adjudication kinds from replay pipeline source files."""
 from __future__ import annotations
+from typing_extensions import override
 
 import argparse
 import ast
@@ -80,16 +81,19 @@ class _AdjudicationVisitor(ast.NodeVisitor):
     def function_name(self) -> str | None:
         return self._function_stack[-1] if self._function_stack else None
 
+    @override
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self._function_stack.append(node.name)
         self.generic_visit(node)
         self._function_stack.pop()
 
+    @override
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         self._function_stack.append(node.name)
         self.generic_visit(node)
         self._function_stack.pop()
 
+    @override
     def visit_Call(self, node: ast.Call) -> None:
         if _is_relevant_call_node(node, include_wrappers=self.include_wrappers):
             kind = _find_kind_keyword(node)

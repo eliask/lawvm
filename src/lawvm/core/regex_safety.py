@@ -95,6 +95,7 @@ Sound prefilter (``build_regex_prefilter`` / ``compile_classifier_regex``):
 """
 
 from __future__ import annotations
+from typing_extensions import override
 
 import importlib
 import re
@@ -404,6 +405,7 @@ class PrefilteredPattern:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._rx, name)
 
+    @override
     def __repr__(self) -> str:
         return f"PrefilteredPattern({self._rx!r}, plan={self._plan!r})"
 

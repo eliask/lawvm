@@ -1,6 +1,7 @@
 """Frozen mapping and JSON-safe value helpers used by core IR types."""
 
 from __future__ import annotations
+from typing_extensions import override
 
 from copy import deepcopy
 from typing import Any, Dict, Mapping, Self, SupportsIndex
@@ -9,27 +10,35 @@ from typing import Any, Dict, Mapping, Self, SupportsIndex
 class FrozenDict(dict[str, Any]):
     """A deepcopy-friendly immutable dict for kernel IR attrs/metadata."""
 
+    @override
     def __setitem__(self, key: str, value: Any) -> None:
         raise TypeError("FrozenDict is immutable")
 
+    @override
     def __delitem__(self, key: str) -> None:
         raise TypeError("FrozenDict is immutable")
 
+    @override
     def clear(self) -> None:
         raise TypeError("FrozenDict is immutable")
 
+    @override
     def pop(self, key: str, default: Any = None) -> Any:
         raise TypeError("FrozenDict is immutable")
 
+    @override
     def popitem(self) -> tuple[str, Any]:
         raise TypeError("FrozenDict is immutable")
 
+    @override
     def setdefault(self, key: str, default: Any = None) -> Any:
         raise TypeError("FrozenDict is immutable")
 
+    @override
     def update(self, *args: Any, **kwargs: Any) -> None:
         raise TypeError("FrozenDict is immutable")
 
+    @override
     def __ior__(self, other: Any) -> Self:
         raise TypeError("FrozenDict is immutable")
 
@@ -43,6 +52,7 @@ class FrozenDict(dict[str, Any]):
         memo[id(self)] = frozen
         return frozen
 
+    @override
     def __reduce_ex__(self, protocol: SupportsIndex) -> tuple[type["FrozenDict"], tuple[dict[str, Any]]]:
         return (FrozenDict, (dict(self),))
 

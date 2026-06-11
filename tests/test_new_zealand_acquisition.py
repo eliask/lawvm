@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing_extensions import override
 
 import json
 from dataclasses import dataclass
@@ -440,6 +441,7 @@ def test_urllib_nz_transport_uses_explicit_timeout(monkeypatch: Any) -> None:
     seen: dict[str, Any] = {}
 
     class FakeHeaders(dict[str, str]):
+        @override
         def items(self) -> Any:
             return super().items()
 

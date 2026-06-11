@@ -1,5 +1,6 @@
 """Typed in-process payloads for capture/disagreement reporting."""
 from __future__ import annotations
+from typing_extensions import override
 
 from dataclasses import dataclass, field
 from typing import Any, Iterator, Mapping
@@ -52,6 +53,7 @@ class CaptureBodyShapeView(_DictCompatMixin):
     chapter_count: int = 0
     section_count: int = 0
 
+    @override
     def to_dict(self) -> dict[str, Any]:
         return {
             "body_intro_excerpt": self.body_intro_excerpt,
@@ -70,6 +72,7 @@ class CaptureSourceCompletenessView(_DictCompatMixin):
     source_available: int = 0
     dates_available: int = 0
 
+    @override
     def to_dict(self) -> dict[str, Any]:
         return {
             "chain_length": self.chain_length,
@@ -90,6 +93,7 @@ class CaptureSourcePathologyView(_DictCompatMixin):
     def __post_init__(self) -> None:
         object.__setattr__(self, "detail", freeze_mapping(self.detail))
 
+    @override
     def to_dict(self) -> dict[str, Any]:
         return {
             "code": self.code,
@@ -111,6 +115,7 @@ class CaptureSourceAdjudicationView(_DictCompatMixin):
     html_noncommensurable_reason: str = ""
     source_pathologies: tuple[CaptureSourcePathologyView, ...] = ()
 
+    @override
     def to_dict(self) -> dict[str, Any]:
         return {
             "statute_id": self.statute_id,
@@ -169,6 +174,7 @@ class CaptureReplayMetaView(_DictCompatMixin):
             _freeze_rows(self.apply_mutation_invariant_reports),
         )
 
+    @override
     def to_dict(self) -> dict[str, Any]:
         return {
             "cutoff_date": self.cutoff_date,
@@ -199,6 +205,7 @@ class CaptureCountsView(_DictCompatMixin):
     projection_rows: int = 0
     amendments: int = 0
 
+    @override
     def to_dict(self) -> dict[str, Any]:
         return {
             "compiled_ops": self.compiled_ops,
@@ -244,6 +251,7 @@ class CaptureAmendmentView(_DictCompatMixin):
             freeze_mapping(self.apply_mutation_invariant_result_code_counts),
         )
 
+    @override
     def to_dict(self) -> dict[str, Any]:
         return {
             "statute_id": self.statute_id,
@@ -280,6 +288,7 @@ class CapturePayload(_DictCompatMixin):
     def __post_init__(self) -> None:
         object.__setattr__(self, "top_level_projection_rows", _freeze_rows(self.top_level_projection_rows))
 
+    @override
     def to_dict(self) -> dict[str, Any]:
         return {
             "statute_id": self.statute_id,

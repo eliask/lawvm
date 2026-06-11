@@ -37,6 +37,7 @@ Or via factory:
 """
 
 from __future__ import annotations
+from typing_extensions import override
 
 import re
 import sys
@@ -463,6 +464,7 @@ class TransparentCorpusStore(CorpusStore):
     # CorpusStore interface
     # ------------------------------------------------------------------
 
+    @override
     def read_oracle(self, sid: str) -> bytes | None:
         """Return best cached consolidated XML for sid.
 
@@ -497,6 +499,7 @@ class TransparentCorpusStore(CorpusStore):
             return cached[0]
         return None
 
+    @override
     def read_source(self, sid: str) -> bytes | None:
         """Read original enacted statute XML.
 
@@ -517,6 +520,7 @@ class TransparentCorpusStore(CorpusStore):
 
         return None
 
+    @override
     def read_amendment(self, sid: str) -> bytes | None:
         """Read amendment act XML.
 
@@ -536,13 +540,16 @@ class TransparentCorpusStore(CorpusStore):
 
         return None
 
+    @override
     def read_locator(self, locator: str) -> bytes | None:
         return self._archive.get(locator)
 
+    @override
     def read_media(self, sid: str, filename: str) -> bytes | None:
         """Read media blob. Not cached in Farchive; always returns None."""
         return None
 
+    @override
     def read_corrigendum_media(self, sid: str, filename: str) -> bytes | None:
         """Read consolidated corrigendum PDF from the corpus store."""
         urls = list_cached_corrigendum_locators(self._archive, sid, filename)
@@ -558,6 +565,7 @@ class TransparentCorpusStore(CorpusStore):
                     best_data = data
         return best_data
 
+    @override
     def list_statute_ids(self) -> list[str]:
         """List all statute IDs present in the Farchive (source XMLs)."""
         sids: list[str] = []
@@ -567,6 +575,7 @@ class TransparentCorpusStore(CorpusStore):
                 sids.append(m.group(1))
         return sids
 
+    @override
     def oracle_path_index(self, **kwargs: object) -> dict[str, str]:
         """Return {sid -> best oracle identifier}.
 
@@ -588,6 +597,7 @@ class TransparentCorpusStore(CorpusStore):
             selector=cast(ConsolidatedArtifactSelector, selector),
         )
 
+    @override
     def close(self) -> None:
         self._archive.close()
 

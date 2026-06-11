@@ -9,6 +9,7 @@ Correctness story under test:
   - default-off human output is byte-identical to the pre-feature renderer.
 """
 from __future__ import annotations
+from typing_extensions import override
 
 import io
 import json
@@ -20,12 +21,14 @@ OSC8 = "\033]8"
 
 
 class _FakeTTY(io.StringIO):
+    @override
     def isatty(self) -> bool:
         """Return true for terminal-gated rendering tests."""
         return True
 
 
 class _FakeNonTTY(io.StringIO):
+    @override
     def isatty(self) -> bool:
         return False
 

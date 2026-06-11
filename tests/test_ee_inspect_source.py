@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing_extensions import override
 
 from types import SimpleNamespace
 
@@ -11,6 +12,7 @@ class _Target:
     def __init__(self, text: str) -> None:
         self._text = text
 
+    @override
     def __str__(self) -> str:
         return self._text
 

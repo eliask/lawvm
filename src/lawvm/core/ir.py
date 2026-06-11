@@ -1,6 +1,7 @@
 """Core IR carriers for legal replay and JSON-safe projections."""
 
 from __future__ import annotations
+from typing_extensions import override
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, FrozenSet, List, Literal, Mapping, Optional, Tuple
@@ -54,6 +55,7 @@ class LegalAddress:
     def leaf_label(self) -> str:
         return self.path[-1][1] if self.path else ""
 
+    @override
     def __str__(self) -> str:
         parts = "/".join(f"{k}:{lbl}" for k, lbl in self.path)
         if self.special:

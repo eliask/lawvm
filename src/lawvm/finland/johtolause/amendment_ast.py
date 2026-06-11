@@ -18,6 +18,7 @@ LegalRef serialized as a flat path list instead of a linked chain:
 
 LegalRef stays as the Finland frontend's internal type.
 """
+from typing_extensions import override
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -40,6 +41,7 @@ class AmendmentVerb(Enum):
     def code(self) -> str:
         return _VERB_TO_CODE[self]
 
+    @override
     def __repr__(self):
         return self.value
 
@@ -64,6 +66,7 @@ class StructureKind(Enum):
     def code(self) -> str:
         return _KIND_TO_CODE[self]
 
+    @override
     def __repr__(self):
         return self.value
 
@@ -119,6 +122,7 @@ class LegalRef:
         chain.reverse()
         return "/".join(chain)
 
+    @override
     def __repr__(self):
         parts = [self.kind.value]
         if self.number:
@@ -129,12 +133,14 @@ class LegalRef:
             parts.append(f"< {self.parent!r}")
         return f"LegalRef({' '.join(parts)})"
 
+    @override
     def __eq__(self, other):
         if not isinstance(other, LegalRef):
             return NotImplemented
         return (self.kind == other.kind and self.number == other.number
                 and self.special == other.special and self.parent == other.parent)
 
+    @override
     def __hash__(self):
         return hash((self.kind, self.number, self.special,
                      self.parent if self.parent is None else self.parent.__hash__()))
@@ -153,6 +159,7 @@ class AmendmentOp:
     source: str = ""          # which extractor produced this
     confidence: float = 1.0   # extractor self-confidence
 
+    @override
     def __repr__(self):
         parts = [self.verb.value, repr(self.target)]
         if self.is_new:
@@ -161,12 +168,14 @@ class AmendmentOp:
             parts.append(f"INTO {self.insertion_point!r}")
         return f"AmendmentOp({' '.join(parts)})"
 
+    @override
     def __eq__(self, other):
         if not isinstance(other, AmendmentOp):
             return NotImplemented
         return (self.verb == other.verb and self.target == other.target
                 and self.is_new == other.is_new)
 
+    @override
     def __hash__(self):
         return hash((self.verb, self.target, self.is_new))
 
@@ -177,6 +186,7 @@ class Johtolause:
     ops: List[AmendmentOp] = field(default_factory=list)
     raw_text: str = ""
 
+    @override
     def __repr__(self):
         lines = [f"Johtolause({len(self.ops)} ops):"]
         for op in self.ops:

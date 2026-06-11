@@ -15,6 +15,7 @@ Enum design:
 """
 
 from __future__ import annotations
+from typing_extensions import override
 
 from dataclasses import dataclass
 from enum import Enum
@@ -41,6 +42,7 @@ class StructuralAction(Enum):
     TEXT_REPLACE = "text_replace"
     TEXT_REPEAL = "text_repeal"
 
+    @override
     def __str__(self) -> str:
         return self.value
 
@@ -76,6 +78,7 @@ class PayloadSourceShape(Enum):
     ITEMS_ONLY = "items_only"
     EMPTY = "empty"
 
+    @override
     def __str__(self) -> str:
         return self.value
 
@@ -104,6 +107,7 @@ class MetaClauseKind(Enum):
     DELEGATION = "delegation"
     OTHER = "other"
 
+    @override
     def __str__(self) -> str:
         return self.value
 
@@ -151,6 +155,7 @@ class StructureKind(Enum):
     APPENDIX = "appendix"
     ANNEX_PART = "annex_part"
 
+    @override
     def __str__(self) -> str:
         return self.value
 
@@ -182,6 +187,7 @@ class FacetKind(Enum):
     FOOTNOTE = "footnote"
     WHOLE_ACT = "whole_act"
 
+    @override
     def __str__(self) -> str:
         return self.value
 
@@ -206,6 +212,7 @@ class SpanKind(Enum):
     INTRO = "intro"
     SUBPARAGRAPH = "subparagraph"
 
+    @override
     def __str__(self) -> str:
         return self.value
 
@@ -237,6 +244,7 @@ class LabelForm(Enum):
     STARRED = "starred"
     FREE_TEXT = "free_text"
 
+    @override
     def __str__(self) -> str:
         return self.value
 
@@ -310,6 +318,7 @@ class IRNodeKind(Enum):
     CELL = "cell"
     HEADER_CELL = "header_cell"
 
+    @override
     def __str__(self) -> str:
         return self.value
 
@@ -344,6 +353,7 @@ class BodyNodeRole(Enum):
     OMITTED_CONTEXT = "omitted_context"
     UNMATCHED = "unmatched"
 
+    @override
     def __str__(self) -> str:
         return self.value
 
@@ -376,6 +386,7 @@ class StructuralStatus(Enum):
     RESERVED = "reserved"
     UNKNOWN = "unknown"
 
+    @override
     def __str__(self) -> str:
         return self.value
 
@@ -420,6 +431,7 @@ class SourceNormalizationKind(Enum):
     CROSS_HEADING_HOIST = "cross_heading_hoist"
     SUSPICIOUS_SHAPE = "suspicious_shape"
 
+    @override
     def __str__(self) -> str:
         return self.value
 
@@ -441,6 +453,7 @@ class SourceNormalizationBasis(Enum):
     EDITORIAL_CONTAMINATION = "editorial_contamination"
     MONOTONIC_LOCAL_REPAIR = "monotonic_local_repair"
 
+    @override
     def __str__(self) -> str:
         return self.value
 

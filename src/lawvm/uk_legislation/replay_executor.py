@@ -1,6 +1,7 @@
 """UK replay executor and public replay API."""
 
 from __future__ import annotations
+from typing_extensions import override
 
 import time
 from typing import Any, List, Optional
@@ -83,6 +84,7 @@ class UKReplayExecutor(
         self._recursive_match_all_cache = {}
         self._node_tree_path_index = None
 
+    @override
     def _log(self, message: str) -> None:
         if self.verbose:
             print(message)

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing_extensions import override
 
 from dataclasses import dataclass, field
 import json
@@ -126,16 +127,19 @@ class _FakeArchive(_ArchiveLike):
         self.fetch_calls.append((url, content_type, max_age_hours))
         return self.fetched.get(url)
 
+    @override
     def store(self, locator: str, data: bytes, *, storage_class: str | None = None) -> str:
         self.stored[locator] = data
         return "fakehash"
 
+    @override
     def get(self, locator: str) -> bytes | None:
         return self.stored.get(locator)
 
     def get_latest(self, locator: str) -> bytes | None:
         return self.stored.get(locator)
 
+    @override
     def has(self, locator: str, *, max_age_hours: float = float("inf")) -> bool:
         return locator in self.stored
 
