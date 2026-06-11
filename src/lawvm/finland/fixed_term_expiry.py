@@ -18,6 +18,7 @@ blocking obligations, scoped/weak cases are observations).
 
 from __future__ import annotations
 
+import calendar
 import hashlib
 import re
 from dataclasses import dataclass
@@ -33,6 +34,7 @@ from lawvm.core.statute_validity import (
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
 from lawvm.finland.metadata import (
     CHAPTER_SCOPED_EXPIRY_RE,
+    FI_MONTH_MAP,
     SECTION_SCOPED_EXPIRY_RE,
     _normalize_fi_parse_text,
     parse_whole_law_validity,
@@ -49,6 +51,29 @@ POSSIBLE_EXPIRY_TEXT_UNSUPPORTED = "TEMPORAL.POSSIBLE_EXPIRY_TEXT_UNSUPPORTED"
 FIXED_TERM_LATE_EXTENSION_GAP = "TEMPORAL.FIXED_TERM_LATE_EXTENSION_GAP"
 EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT = (
     "TEMPORAL.EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT"
+)
+# Typed residue classes for recognised-but-unresolved validity clauses. Each
+# names the missing authority or the reason the clause is not a bound at all,
+# instead of collapsing every failure into the generic unparseable bucket.
+DURATION_ARITHMETIC_AUTHORITY_MISSING = "TEMPORAL.DURATION_ARITHMETIC_AUTHORITY_MISSING"
+EVENT_BOUND_RESOLVER_MISSING = "TEMPORAL.EVENT_BOUND_RESOLVER_MISSING"
+EVENT_BOUND_OUT_OF_DOCTRINE = "TEMPORAL.EVENT_BOUND_OUT_OF_DOCTRINE"
+DECREE_SET_COMMENCEMENT_UNRESOLVED = "TEMPORAL.DECREE_SET_COMMENCEMENT_UNRESOLVED"
+SOURCE_IMPOSSIBLE_DATE = "TEMPORAL.SOURCE_IMPOSSIBLE_DATE"
+START_ONLY_NOT_EXPIRY_BOUND = "TEMPORAL.START_ONLY_NOT_EXPIRY_BOUND"
+NON_VALIDITY_VOIMASSA_SUPPRESSED = "TEMPORAL.NON_VALIDITY_VOIMASSA_SUPPRESSED"
+
+# Blocking residue family: a recognised whole-law validity clause whose end the
+# extractor must not guess. These keep the seam fail-loud (expiry_unverified).
+BLOCKING_UNRESOLVED_EXPIRY_CODES = frozenset(
+    {
+        FIXED_TERM_EXPIRY_UNPARSEABLE,
+        FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS,
+        DURATION_ARITHMETIC_AUTHORITY_MISSING,
+        EVENT_BOUND_RESOLVER_MISSING,
+        EVENT_BOUND_OUT_OF_DOCTRINE,
+        SOURCE_IMPOSSIBLE_DATE,
+    }
 )
 
 # Diagnostic clause texts are evidence, not logs; keep enough to re-find the
@@ -139,6 +164,138 @@ def _whole_law_subject_re_search(text: str) -> bool:
         return False
     tail = lowered[idx : idx + 40]
     return any(word in tail for word in ("laki", "asetus", "päätös"))
+
+
+# Dative end-date whose day number must validate against the calendar
+# ("31 päivään kesäkuuta 1995" — June has no day 31).
+_DATIVE_END_DATE_RE = re.compile(
+    r"(\d{1,2})\s*päivään\s+(\w+kuuta)\s+(\d{4})",
+    re.IGNORECASE,
+)
+_DECREE_SET_COMMENCEMENT_RE = re.compile(
+    r"asetuksella\s+säädettävänä\s+ajankohtana"
+    r"|asetuksella\s+erikseen\s+säädettävänä\s+ajankohtana",
+    re.IGNORECASE,
+)
+_EVENT_BOUND_RE = re.compile(
+    r"\bkunnes\b|siihen\s+päivään,?\s+jona|siihen\s+saakka,?\s+kun\b", re.IGNORECASE
+)
+# Does the event tail name a säädöskokoelma-discernible instrument (another
+# statute/decree/treaty whose entry into force is itself published)?
+_EVENT_INSTRUMENT_RE = re.compile(
+    r"sopimu|voimaansaatt|asetuk|asetus|\blain\b|\blaki\b|tulee\s+voimaan|säädet|§",
+    re.IGNORECASE,
+)
+_DURATION_FORM_RE = re.compile(
+    r"voimassa[^.]{0,40}?(?:vuoden|vuotta|kuukautta|kuukauden)\b", re.IGNORECASE
+)
+_ELIDED_YEAR_END_RE = re.compile(r"voimassa\s+vuoden\s+loppuun", re.IGNORECASE)
+_START_ONLY_RE = re.compile(r"voimassa\s+\d{1,2}\s*päivästä", re.IGNORECASE)
+_END_MARKER_RE = re.compile(
+    r"päivään|saakka|asti|loppuun|\bkunnes\b|enintään|\bajan\b", re.IGNORECASE
+)
+_REFERENTIAL_VOIMASSA_RE = re.compile(
+    r"on\s+voimassa,\s+mitä|sikäli\s+kuin[^.]{0,80}?on\s+voimassa", re.IGNORECASE
+)
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _subject_voimassa_same_sentence(text: str) -> bool:
+    """Does any single sentence predicate ``voimassa`` of the act itself?
+
+    Chapter-aggregate version texts glue many sections together, so a
+    whole-law subject in one sentence and a ``voimassa`` about something else
+    in another sentence can masquerade as a validity clause. A genuine
+    validity statement keeps both in one sentence ("Tämä laki tulee voimaan X
+    ja on voimassa Y")."""
+    for sentence in _SENTENCE_SPLIT_RE.split(text):
+        if "voimassa" in sentence.lower() and _whole_law_subject_re_search(sentence):
+            return True
+    return False
+
+
+def _classify_unresolved_validity_clause(clause_text: str) -> tuple[str, str, bool]:
+    """Type a recognised clause whose validity end did not parse.
+
+    Returns ``(code, detail, blocking)``. Blocking classes name the missing
+    authority (the seam stays fail-loud); non-blocking classes are audited
+    non-candidates (the clause is not a whole-law expiry bound at all).
+    Ordered most-specific first; the generic unparseable code is the fallback.
+    """
+    for match in _DATIVE_END_DATE_RE.finditer(clause_text):
+        day = int(match.group(1))
+        month_num = FI_MONTH_MAP.get(match.group(2).lower())
+        year = int(match.group(3))
+        if month_num is None:
+            continue
+        last_day = calendar.monthrange(year, month_num)[1]
+        if day > last_day:
+            candidate = f"{year:04d}-{month_num:02d}-{last_day:02d}"
+            return (
+                SOURCE_IMPOSSIBLE_DATE,
+                "source states a calendar-impossible end date "
+                f"('{match.group(0)}'); candidate normalization {candidate} "
+                "requires a säädöskokoelma correction or manual attestation",
+                True,
+            )
+    if not _subject_voimassa_same_sentence(clause_text):
+        return (
+            NON_VALIDITY_VOIMASSA_SUPPRESSED,
+            "no sentence predicates 'voimassa' of the act itself; the "
+            "voimassa-shaped text is about another subject",
+            False,
+        )
+    if _REFERENTIAL_VOIMASSA_RE.search(clause_text):
+        return (
+            NON_VALIDITY_VOIMASSA_SUPPRESSED,
+            "referential/qualifying 'voimassa' (incorporation by reference or "
+            "'sikäli kuin' qualifier), not a whole-law validity bound",
+            False,
+        )
+    if _DECREE_SET_COMMENCEMENT_RE.search(clause_text):
+        return (
+            DECREE_SET_COMMENCEMENT_UNRESOLVED,
+            "commencement is decree-set ('asetuksella säädettävänä "
+            "ajankohtana'); commencement resolution frontier, not a "
+            "whole-law expiry bound",
+            False,
+        )
+    event_match = _EVENT_BOUND_RE.search(clause_text)
+    if event_match is not None:
+        tail = clause_text[event_match.start() :]
+        if _EVENT_INSTRUMENT_RE.search(tail):
+            return (
+                EVENT_BOUND_RESOLVER_MISSING,
+                "validity ends at a säädöskokoelma-discernible event (another "
+                "instrument's entry into force); cross-document resolver not "
+                "yet implemented",
+                True,
+            )
+        return (
+            EVENT_BOUND_OUT_OF_DOCTRINE,
+            "validity ends at a substantive event not discernible from the "
+            "säädöskokoelma; out of the blessed event-bound drafting pattern",
+            True,
+        )
+    if _DURATION_FORM_RE.search(clause_text) or _ELIDED_YEAR_END_RE.search(clause_text):
+        return (
+            DURATION_ARITHMETIC_AUTHORITY_MISSING,
+            "duration-form validity (period from commencement); computing the "
+            "end date requires the pinned 150/1930 arithmetic rule",
+            True,
+        )
+    if _START_ONLY_RE.search(clause_text) and not _END_MARKER_RE.search(clause_text):
+        return (
+            START_ONLY_NOT_EXPIRY_BOUND,
+            "start-only validity statement ('voimassa N päivästä ...') with "
+            "no end marker; a commencement fact, not an expiry bound",
+            False,
+        )
+    return (
+        FIXED_TERM_EXPIRY_UNPARSEABLE,
+        "whole-law expiry clause recognised but validity date unparseable",
+        True,
+    )
 
 
 def _content_hash(version: ProvisionVersion) -> str:
@@ -277,13 +434,16 @@ def extract_fixed_term_bounds(
                         )
                     )
                 else:
+                    code, detail, _blocking = _classify_unresolved_validity_clause(
+                        clause_text
+                    )
                     diagnostics.append(
                         FixedTermDiagnostic(
-                            code=FIXED_TERM_EXPIRY_UNPARSEABLE,
+                            code=code,
                             statute_id=statute_id,
                             address=str(address),
                             effective=version.effective,
-                            detail="whole-law expiry clause recognised but validity date unparseable",
+                            detail=detail,
                             clause_text=clause_text[:_CLAUSE_TEXT_LIMIT],
                         )
                     )
@@ -408,12 +568,14 @@ def build_corpus_report(
         for diagnostic in extraction.diagnostics:
             if diagnostic.code == SCOPED_FIXED_TERM_EXPIRY_UNSUPPORTED:
                 scoped_unsupported += 1
-            elif diagnostic.code == FIXED_TERM_EXPIRY_UNPARSEABLE:
-                unparseable += 1
             elif diagnostic.code == FIXED_TERM_EXPIRY_AMBIGUOUS:
                 ambiguous += 1
             elif diagnostic.code == FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS:
                 anaphora_ambiguous += 1
+            elif diagnostic.code in BLOCKING_UNRESOLVED_EXPIRY_CODES:
+                # All typed blocking residue classes count into the historical
+                # "unparseable" aggregate so soak history stays comparable.
+                unparseable += 1
             elif diagnostic.code == EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT:
                 suppressed += 1
     return FixedTermCorpusReport(
@@ -447,9 +609,7 @@ def governing_unparseable(
     candidates = [
         d
         for d in extraction.diagnostics
-        if d.code
-        in (FIXED_TERM_EXPIRY_UNPARSEABLE, FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS)
-        and d.effective <= as_of
+        if d.code in BLOCKING_UNRESOLVED_EXPIRY_CODES and d.effective <= as_of
     ]
     if not candidates:
         return None

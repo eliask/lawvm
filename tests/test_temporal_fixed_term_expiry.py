@@ -25,11 +25,18 @@ from lawvm.core.statute_validity import (
     late_extension_gap,
 )
 from lawvm.finland.fixed_term_expiry import (
+    DECREE_SET_COMMENCEMENT_UNRESOLVED,
+    DURATION_ARITHMETIC_AUTHORITY_MISSING,
+    EVENT_BOUND_OUT_OF_DOCTRINE,
+    EVENT_BOUND_RESOLVER_MISSING,
     EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT,
     FIXED_TERM_EXPIRY_AMBIGUOUS,
     FIXED_TERM_EXPIRY_ANAPHORA_AMBIGUOUS,
     FIXED_TERM_EXPIRY_UNPARSEABLE,
+    NON_VALIDITY_VOIMASSA_SUPPRESSED,
     SCOPED_FIXED_TERM_EXPIRY_UNSUPPORTED,
+    SOURCE_IMPOSSIBLE_DATE,
+    START_ONLY_NOT_EXPIRY_BOUND,
     build_corpus_report,
     extract_fixed_term_bounds,
     governing_unparseable,
@@ -327,8 +334,10 @@ def test_invalid_calendar_date_stays_blocking() -> None:
     )
     extraction = extract_fixed_term_bounds(statute_id="1993/319", timelines=timelines)
     assert extraction.bounds == ()
-    assert [d.code for d in extraction.diagnostics] == [FIXED_TERM_EXPIRY_UNPARSEABLE]
+    assert [d.code for d in extraction.diagnostics] == [SOURCE_IMPOSSIBLE_DATE]
     assert "kesäkuuta 1995" in extraction.diagnostics[0].clause_text
+    # The candidate normalization is recorded as evidence, never as the bound.
+    assert "1995-06-30" in extraction.diagnostics[0].detail
 
 
 def test_per_grammar_family_rule_ids() -> None:
@@ -404,7 +413,7 @@ def test_voimaantulo_heading_overrides_commencement_guard() -> None:
     )
     extraction = extract_fixed_term_bounds(statute_id="1992/1161", timelines=timelines)
     codes = [d.code for d in extraction.diagnostics]
-    assert codes == [FIXED_TERM_EXPIRY_UNPARSEABLE]
+    assert codes == [EVENT_BOUND_RESOLVER_MISSING]
     assert "siihen saakka" in extraction.diagnostics[0].clause_text
 
 
@@ -417,9 +426,103 @@ def test_unparseable_diagnostic_carries_clause_text() -> None:
         [_voimaantulo_version(effective="1992-12-01", enacted="1992-11-01", text=text, source_statute="1992/1239")]
     )
     extraction = extract_fixed_term_bounds(statute_id="1992/1239", timelines=timelines)
-    diags = [d for d in extraction.diagnostics if d.code == FIXED_TERM_EXPIRY_UNPARSEABLE]
+    diags = [d for d in extraction.diagnostics if d.code == DURATION_ARITHMETIC_AUTHORITY_MISSING]
     assert len(diags) == 1
     assert "kahden vuoden ajan" in diags[0].clause_text
+
+
+def test_start_only_clause_is_nonblocking_non_candidate() -> None:
+    # 2018/1092: a start date with no end marker is a commencement fact, not
+    # an expiry bound — audited, never blocking.
+    text = "4 § Tämä asetus on voimassa 13 päivästä joulukuuta 2018."
+    timelines = _timelines(
+        [_voimaantulo_version(effective="2018-12-13", enacted="2018-12-05", text=text, source_statute="2018/1092")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="2018/1092", timelines=timelines)
+    assert extraction.bounds == ()
+    codes = [d.code for d in extraction.diagnostics]
+    assert START_ONLY_NOT_EXPIRY_BOUND in codes
+    assert governing_unparseable(extraction, as_of="2019-01-01", query_type="governing") is None
+
+
+def test_decree_set_commencement_is_not_expiry_residue() -> None:
+    # 2004/309: decree-set commencement is a commencement-resolution frontier;
+    # it must not block as unverified expiry.
+    text = (
+        "7 § Voimaantulo ja voimassaoloaika Tämä laki tulee voimaan "
+        "valtioneuvoston asetuksella säädettävänä ajankohtana. Lakia "
+        "sovelletaan kunkin 1 §:n 1 momentissa mainitun valtion osalta kaksi "
+        "vuotta siitä päivästä, jolloin kyseinen valtio liittyi Euroopan "
+        "unionin jäseneksi."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="2004-05-01", enacted="2004-04-30", text=text, source_statute="2004/309")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="2004/309", timelines=timelines)
+    assert extraction.bounds == ()
+    codes = [d.code for d in extraction.diagnostics]
+    assert DECREE_SET_COMMENCEMENT_UNRESOLVED in codes
+    assert governing_unparseable(extraction, as_of="2010-01-01", query_type="governing") is None
+
+
+def test_out_of_doctrine_event_bound_blocks() -> None:
+    # 1994/1187: validity until a substantive (non-säädöskokoelma) event —
+    # blocking, typed as out-of-doctrine rather than generic unparseable.
+    text = (
+        "2 § Tämä laki tulee voimaan 19 päivänä joulukuuta 1994 ja se on "
+        "voimassa siihen saakka, kunnes ensimmäisissä yleisissä vaaleissa "
+        "valitut valtuustot aloittavat toimintansa."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1994-12-19", enacted="1994-12-01", text=text, source_statute="1994/1187")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1994/1187", timelines=timelines)
+    assert extraction.bounds == ()
+    codes = [d.code for d in extraction.diagnostics]
+    assert EVENT_BOUND_OUT_OF_DOCTRINE in codes
+    assert governing_unparseable(extraction, as_of="1995-06-01", query_type="governing") is not None
+
+
+def test_referential_voimassa_is_suppressed_non_candidate() -> None:
+    # 1954/243 §118: "sikäli kuin se vielä on voimassa" qualifies a repealed
+    # prior law inside a repeal enumeration — not a whole-law validity bound.
+    text = (
+        "118 § Tämä laki kumoaa, mikäli edellä ei ole toisin säädetty, 3 "
+        "päivänä toukokuuta 1927 annetun tialain, lukuun ottamatta sen 20 §:n "
+        "toista lausetta ja 33 §:n 1 momenttia, rakennuskaaren 25 luvun 8 §:n, "
+        "sikäli kuin se vielä on voimassa, sekä muut tämän lain kanssa "
+        "ristiriidassa olevat säännökset. Tämä laki tulee voimaan 1 päivänä "
+        "tammikuuta 1958."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="1958-01-01", enacted="1954-05-21", text=text, source_statute="1954/243")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="1954/243", timelines=timelines)
+    assert extraction.bounds == ()
+    codes = [d.code for d in extraction.diagnostics]
+    assert NON_VALIDITY_VOIMASSA_SUPPRESSED in codes
+    assert governing_unparseable(extraction, as_of="1960-01-01", query_type="governing") is None
+
+
+def test_other_subject_voimassa_in_aggregate_text_is_suppressed() -> None:
+    # 2015/1442 chapter aggregate: the act's commencement sentence and a
+    # "suoritus on voimassa ..." sentence about exam parts must not combine
+    # into a whole-law validity clause.
+    text = (
+        "26 § Voimaantulo Tämä asetus tulee voimaan 1 päivänä tammikuuta 2016. "
+        "27 § Siirtymäsäännökset Jos HTM- tai KHT-tutkintosuoritusta ei ole "
+        "hyväksytty kokonaisuudessaan kumotun lain mukaisen tutkintojärjestelmän "
+        "voimassaolon aikana, yhden osan hyväksytty suoritus on voimassa "
+        "tutkinnon osan hyväksymisvuotta seuraavien viiden vuoden ajan."
+    )
+    timelines = _timelines(
+        [_voimaantulo_version(effective="2016-01-01", enacted="2015-12-10", text=text, source_statute="2015/1442")]
+    )
+    extraction = extract_fixed_term_bounds(statute_id="2015/1442", timelines=timelines)
+    assert extraction.bounds == ()
+    codes = [d.code for d in extraction.diagnostics]
+    assert NON_VALIDITY_VOIMASSA_SUPPRESSED in codes
+    assert governing_unparseable(extraction, as_of="2020-01-01", query_type="governing") is None
 
 
 def test_month_end_forms_parse_to_last_day_of_month() -> None:
@@ -496,7 +599,7 @@ def test_until_event_clause_stays_unparseable() -> None:
     extraction = extract_fixed_term_bounds(statute_id="1992/1161", timelines=timelines)
     assert extraction.has_candidate is True
     assert extraction.bounds == ()
-    assert any(d.code == FIXED_TERM_EXPIRY_UNPARSEABLE for d in extraction.diagnostics)
+    assert any(d.code == EVENT_BOUND_RESOLVER_MISSING for d in extraction.diagnostics)
 
 
 def test_unparseable_whole_law_clause_diagnoses() -> None:
@@ -509,7 +612,7 @@ def test_unparseable_whole_law_clause_diagnoses() -> None:
     extraction = extract_fixed_term_bounds(statute_id="2099/1", timelines=timelines)
     assert extraction.has_candidate is True
     assert extraction.bounds == ()
-    assert any(d.code == FIXED_TERM_EXPIRY_UNPARSEABLE for d in extraction.diagnostics)
+    assert any(d.code == DURATION_ARITHMETIC_AUTHORITY_MISSING for d in extraction.diagnostics)
 
 
 def test_scoped_chapter_form_unsupported_diagnostic() -> None:
@@ -689,7 +792,7 @@ def test_seam_unparseable_governing_bound_blocks(monkeypatch: pytest.MonkeyPatch
     state = _state(timelines, as_of="2024-06-01")
     assert state["status"] == "expiry_unverified"
     assert state["version"] is None
-    assert state["expiry"]["diagnostic"] == FIXED_TERM_EXPIRY_UNPARSEABLE
+    assert state["expiry"]["diagnostic"] == DURATION_ARITHMETIC_AUTHORITY_MISSING
     assert state["expiry"]["blocking"] is True
 
 
