@@ -44,12 +44,43 @@ def test_blame_sync_replays_quietly(monkeypatch, capsys) -> None:
     assert "Statute : 1991/1" in out
 
 
+def test_blame_accepts_provision_alias_for_address() -> None:
+    from lawvm.tools.cli import _build_parser
+
+    args = _build_parser().parse_args(["blame", "2023/703", "--provision", "section:9"])
+    assert args.address == "section:9"
+
+
 def _fake_master_with_section(*, findings=()) -> SimpleNamespace:
     section = IRNode(kind=IRNodeKind.SECTION, label="30")
     chapter = IRNode(kind=IRNodeKind.CHAPTER, label="6", children=(section,))
     return SimpleNamespace(
         title="Synthetic statute",
         ir=IRNode(kind=IRNodeKind.BODY, children=(chapter,)),
+        findings=tuple(findings),
+    )
+
+
+def _fake_master_with_part_section(*, findings=()) -> SimpleNamespace:
+    section = IRNode(kind=IRNodeKind.SECTION, label="9")
+    chapter = IRNode(kind=IRNodeKind.CHAPTER, label="2", children=(section,))
+    part = IRNode(kind=IRNodeKind.PART, label="1", children=(chapter,))
+    return SimpleNamespace(
+        title="Synthetic statute",
+        ir=IRNode(kind=IRNodeKind.BODY, children=(part,)),
+        findings=tuple(findings),
+    )
+
+
+def _fake_master_with_ambiguous_part_sections(*, findings=()) -> SimpleNamespace:
+    sections = []
+    for part_label in ("1", "2"):
+        section = IRNode(kind=IRNodeKind.SECTION, label="9")
+        chapter = IRNode(kind=IRNodeKind.CHAPTER, label="2", children=(section,))
+        sections.append(IRNode(kind=IRNodeKind.PART, label=part_label, children=(chapter,)))
+    return SimpleNamespace(
+        title="Synthetic statute",
+        ir=IRNode(kind=IRNodeKind.BODY, children=tuple(sections)),
         findings=tuple(findings),
     )
 
@@ -100,6 +131,66 @@ def test_blame_annotates_sections_from_flat_compiled_op_rows(monkeypatch, capsys
     assert "2025/1382" in out
     assert "REPLACE" in out
     assert "unmodified" not in out
+
+
+def test_blame_matches_chapter_scoped_op_to_unique_part_prefixed_section(monkeypatch, capsys) -> None:
+    """Ops may omit a higher container that replay has; match only as a unique suffix."""
+
+    def fake_replay_xml(statute_id, *, mode, quiet=False, compiled_ops_out=None, replay_meta_out=None):
+        if compiled_ops_out is not None:
+            compiled_ops_out.append(
+                {
+                    "sequence": 7,
+                    "action": "insert",
+                    "source_statute": "2026/376",
+                    "source_title": "Amending act",
+                    "target_unit_kind": "section",
+                    "target_norm": "9",
+                    "target_chapter": "2",
+                }
+            )
+        return _fake_master_with_part_section()
+
+    monkeypatch.setattr("lawvm.tools.blame.replay_xml", fake_replay_xml)
+    blame.main(Namespace(statute_id="2023/703", address="section:9", source=None, mode="official_consolidation"))
+
+    out = capsys.readouterr().out
+    assert "2026/376" in out
+    assert "INSERT" in out
+    assert "unmodified" not in out
+
+
+def test_blame_rejects_ambiguous_part_suffix_match(monkeypatch, capsys) -> None:
+    """A chapter/section op without part scope must not pick between duplicate parts."""
+
+    def fake_replay_xml(statute_id, *, mode, quiet=False, compiled_ops_out=None, replay_meta_out=None):
+        if compiled_ops_out is not None:
+            compiled_ops_out.append(
+                {
+                    "sequence": 7,
+                    "action": "insert",
+                    "source_statute": "2026/376",
+                    "source_title": "Amending act",
+                    "target_unit_kind": "section",
+                    "target_norm": "9",
+                    "target_chapter": "2",
+                }
+            )
+        return _fake_master_with_ambiguous_part_sections()
+
+    monkeypatch.setattr("lawvm.tools.blame.replay_xml", fake_replay_xml)
+    blame.main(
+        Namespace(
+            statute_id="2023/703",
+            address="part:1/chapter:2/section:9",
+            source=None,
+            mode="official_consolidation",
+        )
+    )
+
+    out = capsys.readouterr().out
+    assert "2026/376" not in out
+    assert "unmodified — base statute text" in out
 
 
 def test_blame_never_reports_unmodified_when_timeline_broken(monkeypatch, capsys) -> None:
@@ -428,6 +519,30 @@ def test_specimen_status_2014_1429_section_30_modified_by_op(capsys) -> None:
     assert row["status"] == "modified_by_op"
     assert "broken_at" not in row
     assert row["last_op"]["source_statute"] == "2025/1382"
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_blame_2023_703_section_9_attributes_2026_376(capsys) -> None:
+    """Consumer-reported MeVM specimen: §9 must not be a grounded negative.
+
+    The compiled 2026/376 ops target chapter:2/section:9 while replayed IR keys
+    include the enclosing part. Blame should conservatively attribute the unique
+    suffix match instead of reporting unmodified_base_text.
+    """
+    blame.main(
+        Namespace(
+            statute_id="2023/703",
+            address="section:9",
+            source=None,
+            mode="official_consolidation",
+            format="json",
+        )
+    )
+    payload = _json.loads(capsys.readouterr().out)
+    [row] = payload["provisions"]
+    assert row["address"] == "part:1/chapter:2/section:9"
+    assert row["status"] == "modified_by_op"
+    assert row["last_op"]["source_statute"] == "2026/376"
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")

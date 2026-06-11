@@ -1730,6 +1730,12 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="filter to one provision, e.g. 'section:9a'",
     )
     blame_p.add_argument(
+        "--provision",
+        dest="address",
+        metavar="ADDR",
+        help="alias for --address, matching provision-state",
+    )
+    blame_p.add_argument(
         "--source",
         metavar="AMENDMENT_ID",
         help="only show provisions last-touched by this amendment",

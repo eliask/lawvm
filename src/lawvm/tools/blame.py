@@ -230,22 +230,34 @@ def _op_for_section_key(
 ) -> Optional[dict[str, Any]]:
     """Look up the blame op for one IR section key.
 
-    Exact key match first. Compiled ops whose target carries no container
-    produce section-only keys (``section:22``) while the IR section key is
-    chaptered (``chapter:2/section:22``); attribute such an op ONLY when the
-    section label is unique across the statute (mirrors the seam's
-    unique-suffix discipline — never an arbitrary pick).
+    Exact key match first. Compiled ops may carry less container context than
+    the replayed IR key: e.g. an op scoped as ``chapter:2/section:9`` while the
+    materialized section key is ``part:1/chapter:2/section:9``. Attribute such
+    suffix-key ops only when that suffix identifies exactly one replay section.
+    Section-only ops (``section:22``) use the same uniqueness rule.
     """
     op = blame_map.get(key)
     if op is not None:
         return op
     section, chapter = _key_labels(key)
-    if not section or not chapter:
+    if not section:
         return None
-    same_label = [k for k in all_section_keys if _key_labels(k)[0] == section]
-    if len(same_label) != 1:
-        return None
-    return blame_map.get(f"section:{section}")
+    suffixes: list[str] = []
+    if chapter:
+        suffixes.append(f"chapter:{chapter}/section:{section}")
+    suffixes.append(f"section:{section}")
+    for suffix in suffixes:
+        op = blame_map.get(suffix)
+        if op is None:
+            continue
+        matches = [
+            candidate
+            for candidate in all_section_keys
+            if candidate == suffix or candidate.endswith(f"/{suffix}")
+        ]
+        if len(matches) == 1 and matches[0] == key:
+            return op
+    return None
 
 
 def _matching_address_break(
