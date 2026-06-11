@@ -23,6 +23,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.source_locator import SourceLocator
 from lawvm.core.source_witness import DigestWitness, SourceWitness
 from lawvm.core.statute_validity import StatuteValidityBound, is_expired_at
+from lawvm.core.temporal_scheduler import TemporalScheduleDelta
 from lawvm.core.timeline_lineage import lineage_address_chain
 from lawvm.core.timeline_selection import VersionSelectionResult, select_active_version_ex
 from lawvm.roman import arabic_to_roman
@@ -189,6 +190,7 @@ def build_provision_state_response(
     title: str = "",
     base: IRStatute | None = None,
     timeline_breaks: tuple[TimelineBreak, ...] = (),
+    temporal_schedule_deltas: tuple[TemporalScheduleDelta, ...] = (),
     findings: tuple[Finding, ...] = (),
     source_xml_provider: Callable[[str], bytes | None] | None = None,
 ) -> dict[str, Any]:
@@ -318,6 +320,7 @@ def build_provision_state_response(
         timeline_broken_at=tl_marker,
         timeline_integrity=tl_block,
         timeline_blocking=tl_blocking,
+        temporal_schedule_deltas=temporal_schedule_deltas,
         findings=findings,
         source_xml_provider=source_xml_provider,
     )
@@ -650,6 +653,35 @@ def _timeline_integrity_payloads(
     return marker, block, blocking
 
 
+def _relevant_temporal_schedule_deltas(
+    deltas: tuple[TemporalScheduleDelta, ...],
+    *,
+    address: LegalAddress,
+    as_of: str,
+) -> tuple[TemporalScheduleDelta, ...]:
+    relevant = []
+    for delta in deltas:
+        interval = delta.interval
+        if interval.target_address != address:
+            continue
+        if interval.effective <= as_of and (not interval.expires or as_of < interval.expires):
+            relevant.append(delta)
+    return tuple(relevant)
+
+
+def _temporal_schedule_payload(
+    deltas: tuple[TemporalScheduleDelta, ...],
+) -> dict[str, Any] | None:
+    if not deltas:
+        return None
+    return {
+        "status": "materialized",
+        "scheduler": "temporal_write_interval_stage_1",
+        "hash_role": "excluded_from_derived_state_hash",
+        "deltas": [delta.to_wire() for delta in deltas],
+    }
+
+
 def _fixed_term_overlay(
     *,
     timelines: Mapping[LegalAddress, ProvisionTimeline],
@@ -861,6 +893,7 @@ def _selected_response(
     timeline_broken_at: dict[str, Any] | None = None,
     timeline_integrity: dict[str, Any] | None = None,
     timeline_blocking: bool = False,
+    temporal_schedule_deltas: tuple[TemporalScheduleDelta, ...] = (),
     findings: tuple[Finding, ...] = (),
     source_xml_provider: Callable[[str], bytes | None] | None = None,
 ) -> dict[str, Any]:
@@ -941,6 +974,15 @@ def _selected_response(
     if timeline_integrity is not None:
         payload["timeline_broken_at"] = timeline_broken_at
         payload["timeline_integrity"] = timeline_integrity
+    temporal_schedule = _temporal_schedule_payload(
+        _relevant_temporal_schedule_deltas(
+            temporal_schedule_deltas,
+            address=address,
+            as_of=query["as_of"],
+        )
+    )
+    if temporal_schedule is not None:
+        payload["temporal_schedule"] = temporal_schedule
     diagnostics = _selected_diagnostics(
         findings,
         version=payload_version,

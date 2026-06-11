@@ -72,7 +72,13 @@ def resolve_provision_state(
     if status_stream is not None:
         print(f"Replaying {statute_id}...", file=status_stream)
     replay_meta: dict[str, Any] = {}
-    master = replay_xml(statute_id, quiet=True, replay_meta_out=replay_meta)
+    lo_ops: list[Any] = []
+    master = replay_xml(
+        statute_id,
+        quiet=True,
+        replay_meta_out=replay_meta,
+        lo_ops_out=lo_ops,
+    )
     source_xml_provider = _source_xml_provider()
     base_ir = IRStatute(
         statute_id=statute_id,
@@ -83,8 +89,15 @@ def resolve_provision_state(
         timeline_breaks_from_findings(getattr(master, "findings", ()) or ()),
         replay_meta.get("lineage") or (),
     )
+    from lawvm.core.temporal_scheduler import materialize_temporal_write_windows
+
+    scheduled = materialize_temporal_write_windows(
+        master.timelines,
+        lo_ops,
+        timeline_breaks,
+    )
     return build_provision_state_response(
-        timelines=master.timelines,
+        timelines=scheduled.timelines,
         migration_events=tuple(master.migration_events or ()),
         statute_id=statute_id,
         jurisdiction=jurisdiction,
@@ -95,7 +108,8 @@ def resolve_provision_state(
         include_ir=include_ir,
         title=master.title,
         base=base_ir,
-        timeline_breaks=timeline_breaks,
+        timeline_breaks=scheduled.unresolved_breaks,
+        temporal_schedule_deltas=scheduled.deltas,
         findings=tuple(getattr(master, "findings", ()) or ()),
         source_xml_provider=source_xml_provider,
     )

@@ -25,7 +25,9 @@ from lawvm.core.ir import IRNode, LegalAddress, ProvisionTimeline, ProvisionVers
 from lawvm.core.ir_helpers import irnode_content_hash
 from lawvm.core.phase_result import Finding
 from lawvm.core.provenance import OperationSource
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.core.temporal_scheduler import materialize_temporal_write_windows
+from lawvm.core.ir import LegalOperation
 from lawvm.tools.provision_state import build_provision_state_response
 from lawvm.tools.timeline_integrity import (
     WINDOW_UNMATERIALIZED_CODE,
@@ -53,6 +55,45 @@ def _timeline() -> dict[LegalAddress, ProvisionTimeline]:
         content_hash=irnode_content_hash(content),
     )
     return {address: ProvisionTimeline(address=address, versions=[version])}
+
+
+def _timeline_with_deferred_occupant() -> dict[LegalAddress, ProvisionTimeline]:
+    address = LegalAddress(path=(("chapter", "1"), ("section", "1")))
+    content = IRNode(kind=IRNodeKind.SECTION, label="1", text="Permanent provision duty.")
+    version = ProvisionVersion(
+        effective="2021-07-01",
+        enacted="2020-12-01",
+        content=content,
+        source=OperationSource(
+            statute_id="2020/901",
+            title="Permanent Amending Act",
+            enacted="2020-12-01",
+            effective="2021-07-01",
+            raw_text="Section 1 is inserted permanently.",
+        ),
+        content_hash=irnode_content_hash(content),
+    )
+    return {address: ProvisionTimeline(address=address, versions=[version])}
+
+
+def _temporary_window_op() -> LegalOperation:
+    address = LegalAddress(path=(("chapter", "1"), ("section", "1")))
+    content = IRNode(kind=IRNodeKind.SECTION, label="1", text="Temporary provision duty.")
+    return LegalOperation(
+        op_id="op_0",
+        sequence=12,
+        action=StructuralAction.INSERT,
+        target=address,
+        payload=content,
+        source=OperationSource(
+            statute_id="2020/900",
+            title="Temporary Amending Act",
+            enacted="2020-12-01",
+            effective="2021-01-01",
+            expires="2021-07-01",
+            raw_text="Section 1 is temporarily inserted.",
+        ),
+    )
 
 
 def _disjoint_finding(
@@ -171,6 +212,42 @@ def test_in_window_query_on_target_address_is_blocked() -> None:
     assert payload["hashes"]["content_hash"] == ""
 
 
+def test_temporal_scheduler_materializes_proved_window() -> None:
+    scheduled = materialize_temporal_write_windows(
+        _timeline_with_deferred_occupant(),
+        [_temporary_window_op()],
+        [_window_break()],
+    )
+    assert scheduled.unresolved_breaks == ()
+    assert len(scheduled.deltas) == 1
+
+    payload = build_provision_state_response(
+        timelines=scheduled.timelines,
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="chapter:1/section:1",
+        as_of="2021-03-15",
+        timeline_breaks=scheduled.unresolved_breaks,
+        temporal_schedule_deltas=scheduled.deltas,
+    )
+    assert payload["status"] == "selected"
+    assert payload["version"]["variant_kind"] == "temporary"
+    assert payload["text"]["rendered"] == "Temporary provision duty."
+    assert "timeline_integrity" not in payload
+    assert payload["temporal_schedule"]["scheduler"] == "temporal_write_interval_stage_1"
+    assert payload["temporal_schedule"]["deltas"][0]["interval"]["source_work_id"] == "2020/900"
+
+
+def test_temporal_scheduler_keeps_break_when_payload_is_missing() -> None:
+    scheduled = materialize_temporal_write_windows(
+        _timeline_with_deferred_occupant(),
+        [],
+        [_window_break()],
+    )
+    assert scheduled.deltas == ()
+    assert scheduled.unresolved_breaks == (_window_break(),)
+
+
 def test_window_blocks_start_day_and_last_in_force_day() -> None:
     for as_of in ("2021-01-01", "2021-06-30"):
         payload = build_provision_state_response(
@@ -269,7 +346,7 @@ _FINLEX_CORPUS_AVAILABLE = (
         ("section:51b", "2024-01-01", "2023/117"),
     ],
 )
-def test_live_twin_window_query_is_blocked(provision, as_of, window_source) -> None:
+def test_live_twin_window_query_is_materialized(provision, as_of, window_source) -> None:
     from lawvm.provision_state import resolve_provision_state
 
     payload = resolve_provision_state(
@@ -278,12 +355,13 @@ def test_live_twin_window_query_is_blocked(provision, as_of, window_source) -> N
         as_of=as_of,
         query_type="in_force",
     )
-    assert payload["status"] == "timeline_unverified", (provision, as_of)
-    assert payload["timeline_broken_at"]["diagnostic_code"] == WINDOW_UNMATERIALIZED_CODE
-    assert payload["timeline_broken_at"]["amendment_id"] == window_source
-    block = payload["timeline_integrity"]
-    assert block["blocking"] is True
-    assert block["broken_at"]["scope"] == "window"
+    assert payload["status"] == "selected", (provision, as_of)
+    assert payload["version"]["variant_kind"] == "temporary"
+    assert "timeline_integrity" not in payload
+    schedule = payload["temporal_schedule"]
+    assert schedule["scheduler"] == "temporal_write_interval_stage_1"
+    assert schedule["deltas"][0]["diagnostic_code"] == WINDOW_UNMATERIALIZED_CODE
+    assert schedule["deltas"][0]["interval"]["source_work_id"] == window_source
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
