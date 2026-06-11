@@ -1568,7 +1568,9 @@ def run_curated_tests(nlp=None, verbose: bool = False) -> bool:
     # Feature coverage summary
     all_expected: set[str] = set()
     for tc in CURATED_CASES:
-        all_expected.update(set(tc.get("features", set())))  # ty: ignore[invalid-argument-type]
+        features = tc.get("features", set())
+        if isinstance(features, set):
+            all_expected.update(str(feature) for feature in features)
     covered = feature_hits & all_expected
     uncovered = all_expected - feature_hits
 

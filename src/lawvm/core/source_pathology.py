@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
@@ -242,7 +242,7 @@ def _pathology_sequence(
     ),
 ) -> tuple[SourcePathologyProjection | SourcePathology | Mapping[str, Any], ...]:
     if isinstance(value, SourcePathologyProjection | SourcePathology) or isinstance(value, Mapping):
-        return (value,)  # ty:ignore[invalid-return-type]
+        return (cast(SourcePathologyProjection | SourcePathology | Mapping[str, Any], value),)
     return tuple(value)
 
 

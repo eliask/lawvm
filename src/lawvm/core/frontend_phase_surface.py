@@ -327,7 +327,7 @@ def _frontend_diagnostic_finding(diagnostic: FrontendDiagnostic | Mapping[str, A
         finding_blocking = False
     return Finding(
         kind=kind,
-        role=role,  # type: ignore[arg-type]
+        role=role,
         stage=str(row.get("phase") or "frontend_phase_surface"),
         blocking=finding_blocking,
         detail={

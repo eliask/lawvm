@@ -215,8 +215,9 @@ def _unescape_rsc_json_string(raw: str) -> str:
 def _find_documenttocs_in_rsc(data: Any) -> dict[str, Any] | None:
     """Recursively search parsed RSC JSON for the documentToCs dict."""
     if isinstance(data, dict):
-        if 'documentToCs' in data:
-            return data['documentToCs']  # type: ignore[return-value]
+        document_to_cs = data.get('documentToCs')
+        if isinstance(document_to_cs, dict):
+            return dict(document_to_cs)
         for v in data.values():
             result = _find_documenttocs_in_rsc(v)
             if result is not None:

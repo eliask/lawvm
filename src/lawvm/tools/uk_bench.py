@@ -3102,7 +3102,7 @@ def _get_csv_row(
 
 
 def _get_score_witness_dict_rows(r: _BenchResult, label: str) -> list[dict[str, object]]:
-    rows = []
+    rows: list[dict[str, object]] = []
     for witness in r.score_witness_rows:
         left_label, right_label = _score_witness_labels(witness.comparison_scope)
         rows.append({
@@ -3143,7 +3143,7 @@ def _get_score_witness_dict_rows(r: _BenchResult, label: str) -> list[dict[str, 
             "uk_applicability_mode": r.uk_applicability_mode,
             "uk_authority_mode": r.uk_authority_mode,
         })
-    return rows  # ty:ignore[invalid-return-type]
+    return rows
 
 
 def _run_bench_parallel_entries(

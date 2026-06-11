@@ -23,7 +23,7 @@ from difflib import SequenceMatcher
 from dataclasses import dataclass, field
 from dataclasses import replace as dc_replace
 from itertools import pairwise
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Literal, Mapping, Optional, Set, Tuple
 
 from lawvm.core.compile_result import AdmissibleBindingCertificate, SourcePathology
 from lawvm.core.ir import IRNode
@@ -3018,7 +3018,7 @@ def _assign_subsection_slots(
         )
         if binding_rule in {"local_dense_subsection_numbering", "trailing_sparse_insert_binding"}:
             count = 1
-            admissibility = "single"
+            admissibility: Literal["single", "ambiguous", "fallback"] = "single"
         elif binding.target_item:
             # Item-targeted sparse payloads commonly reproduce one local
             # subsection slot that contains the changed item body plus omission
@@ -3026,10 +3026,10 @@ def _assign_subsection_slots(
             # not encode the live target paragraph ("2"), so label mismatch is
             # not itself evidence of an ambiguous/fallback binding.
             count = 1
-            admissibility: str = "single"
+            admissibility = "single"
         elif slot_label_norm and slot_label_norm == target_str:
             count = label_counts.get(slot_label_norm, 1)
-            admissibility: str = "single" if count == 1 else "ambiguous"
+            admissibility = "single" if count == 1 else "ambiguous"
         else:
             # Positional/fallback assignment — label didn't match target
             count = len(slot_inputs.amend_subs)  # all slots were candidates
@@ -3046,7 +3046,7 @@ def _assign_subsection_slots(
                 slot_id=binding.payload_slot_index,
                 amendment_id=source_statute,
                 candidate_count=count,
-                admissibility=admissibility,  # type: ignore[arg-type]
+                admissibility=admissibility,
             )
         )
         for op in all_slot_ops:

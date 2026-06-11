@@ -40,7 +40,7 @@ class YamlReview:
 
 def _load_yaml_reviews(yaml_dir: Path) -> dict[str, YamlReview]:
     try:
-        import yaml  # type: ignore[import-untyped]
+        import yaml
     except ImportError as exc:  # pragma: no cover - environment issue
         raise SystemExit(f"pyyaml required for audit: {exc}") from exc
 

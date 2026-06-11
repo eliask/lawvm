@@ -281,7 +281,7 @@ def _find_repeal_terminator_for_slot(
                         latest_repeal_src = src
             if latest_repeal_src is not None:
                 return latest_repeal_src
-        current = ancestor  # type: ignore[assignment]
+        current = ancestor
 
     return None
 

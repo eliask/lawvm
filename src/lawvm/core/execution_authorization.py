@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
@@ -301,7 +301,7 @@ def _authorization_sequence(
     ),
 ) -> tuple[ExecutionAuthorization | Mapping[str, Any], ...]:
     if isinstance(value, ExecutionAuthorization) or isinstance(value, Mapping):
-        return (value,)  # ty:ignore[invalid-return-type]
+        return (cast(ExecutionAuthorization | Mapping[str, Any], value),)
     return tuple(value)
 
 
