@@ -192,7 +192,7 @@ class _EffectReportRow:
 def build_uk_effect_summary_context(
     statute_id: str,
     *,
-    archive,  # noqa: ANN001
+    archive,
 ) -> _EffectSummaryContext:
     from lawvm.uk_legislation.uk_amendment_replay import UKReplayExecutor
     from lawvm.uk_legislation.uk_grafter import (
@@ -313,9 +313,9 @@ def build_uk_effect_summary_context(
 
 
 def summarize_uk_effect(
-    effect,  # noqa: ANN001
+    effect,
     *,
-    archive,  # noqa: ANN001
+    archive,
     context: _EffectSummaryContext,
     applicability_mode: str = _DEFAULT_APPLICABILITY_MODE,
 ) -> _EffectSummary:
@@ -2344,7 +2344,7 @@ def main(args: "argparse.Namespace") -> None:
         )
         context = build_uk_effect_summary_context(statute_id, archive=archive)
 
-        def _matches(effect) -> bool:  # noqa: ANN001
+        def _matches(effect) -> bool:
             if applied_only and not effect.applied:
                 return False
             if structural_only and not effect.is_structural:

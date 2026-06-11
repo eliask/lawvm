@@ -81,7 +81,7 @@ from lawvm.uk_legislation.witnesses import (
 )
 
 
-def lower_uk_metadata_renumber_effect(  # noqa: PLR0913
+def lower_uk_metadata_renumber_effect(
     *,
     effect: UKEffectRecord,
     extracted_el: Optional[ET._Element],
@@ -154,7 +154,7 @@ def lower_uk_metadata_renumber_effect(  # noqa: PLR0913
     ]
 
 
-def lower_uk_after_paragraph_insert_labelled_series(  # noqa: PLR0913
+def lower_uk_after_paragraph_insert_labelled_series(
     *,
     effect: UKEffectRecord,
     extracted_el: Optional[ET._Element],
@@ -307,7 +307,7 @@ def lower_uk_after_paragraph_insert_labelled_series(  # noqa: PLR0913
     return custom_ops
 
 
-def lower_uk_definition_child_structural_sibling_insert(  # noqa: PLR0913
+def lower_uk_definition_child_structural_sibling_insert(
     *,
     effect: UKEffectRecord,
     extracted_el: Optional[ET._Element],
@@ -485,7 +485,7 @@ def lower_uk_definition_child_structural_sibling_insert(  # noqa: PLR0913
     return custom_ops
 
 
-def lower_uk_definition_child_structural_substitution(  # noqa: PLR0913
+def lower_uk_definition_child_structural_substitution(
     *,
     effect: UKEffectRecord,
     extracted_el: Optional[ET._Element],
@@ -585,7 +585,7 @@ def lower_uk_definition_child_structural_substitution(  # noqa: PLR0913
     ]
 
 
-def lower_uk_after_paragraph_insert_connector_sibling(  # noqa: PLR0913
+def lower_uk_after_paragraph_insert_connector_sibling(
     *,
     effect: UKEffectRecord,
     extracted_el: Optional[ET._Element],
@@ -714,7 +714,7 @@ def lower_uk_after_paragraph_insert_connector_sibling(  # noqa: PLR0913
     ]
 
 
-def lower_uk_definition_child_range_substitution(  # noqa: PLR0913
+def lower_uk_definition_child_range_substitution(
     *,
     effect: UKEffectRecord,
     extracted_el: Optional[ET._Element],
@@ -803,7 +803,7 @@ def lower_uk_definition_child_range_substitution(  # noqa: PLR0913
     return ops
 
 
-def lower_uk_after_paragraph_insert_single_label(  # noqa: PLR0913
+def lower_uk_after_paragraph_insert_single_label(
     *,
     effect: UKEffectRecord,
     extracted_el: Optional[ET._Element],
@@ -893,7 +893,7 @@ def lower_uk_after_paragraph_insert_single_label(  # noqa: PLR0913
     ]
 
 
-def lower_uk_after_section_subsection_range_insert_block_amendment(  # noqa: PLR0913
+def lower_uk_after_section_subsection_range_insert_block_amendment(
     *,
     effect: UKEffectRecord,
     extracted_el: Optional[ET._Element],
@@ -1017,7 +1017,7 @@ def lower_uk_after_section_subsection_range_insert_block_amendment(  # noqa: PLR
     return custom_ops
 
 
-def lower_uk_source_carried_structured_tail_substitution(  # noqa: PLR0913
+def lower_uk_source_carried_structured_tail_substitution(
     *,
     effect: UKEffectRecord,
     extracted_el: Optional[ET._Element],
@@ -1101,7 +1101,7 @@ def lower_uk_source_carried_structured_tail_substitution(  # noqa: PLR0913
     return ops
 
 
-def lower_uk_source_carried_parent_quoted_child_substitution(  # noqa: PLR0913
+def lower_uk_source_carried_parent_quoted_child_substitution(
     *,
     effect: UKEffectRecord,
     extracted_el: Optional[ET._Element],
@@ -1192,7 +1192,7 @@ def lower_uk_source_carried_parent_quoted_child_substitution(  # noqa: PLR0913
     ]
 
 
-def lower_uk_source_carried_inserted_subsection_child_range_substitution(  # noqa: PLR0913
+def lower_uk_source_carried_inserted_subsection_child_range_substitution(
     *,
     effect: UKEffectRecord,
     extracted_el: Optional[ET._Element],

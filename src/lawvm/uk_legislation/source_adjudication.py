@@ -2651,7 +2651,7 @@ def _has_source_parent_grouped_substitution_context(
     return False
 
 
-def classify_uk_manual_compile_frontier(  # noqa: PLR0913
+def classify_uk_manual_compile_frontier(
     *,
     effect_type: str,
     source_pathology: str,
