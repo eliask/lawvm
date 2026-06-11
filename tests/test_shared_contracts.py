@@ -1389,6 +1389,12 @@ def test_frontier_work_item_evidence_report_is_passive_shared_surface() -> None:
     assert report["summary"]["required_validator_check_counts"] == {
         "validate_sparse_slot_payload_claim": 1
     }
+    assert report["summary"]["suggested_claim_template_status_counts"] == {
+        "__none__": 1
+    }
+    assert report["summary"]["suggested_claim_template_kind_counts"] == {
+        "__none__": 1
+    }
     row = report["rows"][0]
     assert row["surface"] == "frontier_work_item"
     assert row["row_id"] == "fi-frontier-demo"
@@ -1474,6 +1480,15 @@ def test_frontier_work_item_with_claim_template_attaches_available_template() ->
     assert item["suggested_claim_template"]["claim_kind"] == "fi.v1.FAILED_OPERATION_RESOLUTION"
     assert item["suggested_claim_template"]["executable"] is False
     assert item["suggested_claim_template"]["replay_authorized"] is False
+
+    report = frontier_work_item_evidence_report(item).to_dict()
+
+    assert report["summary"]["suggested_claim_template_status_counts"] == {
+        "available": 1
+    }
+    assert report["summary"]["suggested_claim_template_kind_counts"] == {
+        "fi.v1.FAILED_OPERATION_RESOLUTION": 1
+    }
 
 
 def test_frontier_work_item_report_rejects_invalid_mapping_rows() -> None:

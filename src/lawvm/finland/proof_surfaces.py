@@ -1063,6 +1063,7 @@ def finland_strict_report_evidence_surface(
     source_pathology_frontier_items = _mapping_sequence(payload.get("source_pathology_frontier_work_items"))
     failed_operation_authorizations = _mapping_sequence(payload.get("failed_operation_execution_authorizations"))
     failed_operation_frontier_items = _mapping_sequence(payload.get("failed_operation_frontier_work_items"))
+    frontier_items = (*source_pathology_frontier_items, *failed_operation_frontier_items)
     sparse_certificates = _mapping_sequence(payload.get("sparse_slot_candidate_set_certificates"))
     source_lineage_witnesses = _mapping_sequence(payload.get("source_lineage_source_witnesses"))
     agreement_residuals = _mapping_sequence(payload.get("agreement_residuals"))
@@ -1148,6 +1149,8 @@ def finland_strict_report_evidence_surface(
         "source_pathology_frontier_work_item_count": len(source_pathology_frontier_items),
         "failed_operation_execution_authorization_count": len(failed_operation_authorizations),
         "failed_operation_frontier_work_item_count": len(failed_operation_frontier_items),
+        "frontier_claim_template_status_counts": _frontier_claim_template_status_counts(frontier_items),
+        "frontier_claim_template_kind_counts": _frontier_claim_template_kind_counts(frontier_items),
         "sparse_slot_candidate_set_certificate_count": len(sparse_certificates),
         "source_lineage_source_witness_count": len(source_lineage_witnesses),
         "agreement_residual_count": len(agreement_report_rows),
@@ -2440,6 +2443,8 @@ def finland_corrigendum_open_manual_evidence_surface(
     summary = {
         "candidate_count": len(candidates),
         "frontier_work_item_count": len(frontier_items),
+        "frontier_claim_template_status_counts": _frontier_claim_template_status_counts(frontier_items),
+        "frontier_claim_template_kind_counts": _frontier_claim_template_kind_counts(frontier_items),
         "open_manual_row_count": sum(int(row.get("open_manual_rows") or 0) for row in candidates),
         "attachment_only_row_count": sum(int(row.get("attachment_only_rows") or 0) for row in candidates),
         "unverified_row_count": sum(int(row.get("db_no_match_rows") or 0) for row in candidates),
@@ -2669,6 +2674,8 @@ def finland_corrigendum_unsupported_patch_evidence_surface(
     summary = {
         "unsupported_patch_count": len(patches),
         "frontier_work_item_count": len(frontier_items),
+        "frontier_claim_template_status_counts": _frontier_claim_template_status_counts(frontier_items),
+        "frontier_claim_template_kind_counts": _frontier_claim_template_kind_counts(frontier_items),
         "source_witness_count": len(source_witnesses),
         "source_witness_digest_coverage_counts": source_witness_digest_coverage_counts(source_witnesses),
         "reason_counts": _count_by_field(patches, "reason"),
@@ -2826,6 +2833,8 @@ def finland_corrigendum_manual_template_evidence_surface(
     summary = {
         "entry_count": len(entries),
         "frontier_work_item_count": len(frontier_items),
+        "frontier_claim_template_status_counts": _frontier_claim_template_status_counts(frontier_items),
+        "frontier_claim_template_kind_counts": _frontier_claim_template_kind_counts(frontier_items),
         "source_witness_count": len(source_witnesses),
         "source_witness_digest_coverage_counts": source_witness_digest_coverage_counts(source_witnesses),
         "manual_entry_count": int(payload.get("manual_entry_count") or 0),
@@ -3382,6 +3391,38 @@ def _count_by_field(rows: tuple[Mapping[str, Any], ...], field_name: str) -> dic
         if key:
             counts[key] = counts.get(key, 0) + 1
     return dict(sorted(counts.items()))
+
+
+def _count_values(values: tuple[str, ...]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = value or "__none__"
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _frontier_claim_template_status_counts(
+    frontier_items: tuple[Mapping[str, Any], ...],
+) -> dict[str, int]:
+    return _count_values(
+        tuple(
+            str(item.get("suggested_claim_template_status") or "__none__")
+            for item in frontier_items
+        )
+    )
+
+
+def _frontier_claim_template_kind_counts(
+    frontier_items: tuple[Mapping[str, Any], ...],
+) -> dict[str, int]:
+    kinds: list[str] = []
+    for item in frontier_items:
+        template = item.get("suggested_claim_template") or {}
+        if isinstance(template, Mapping):
+            kinds.append(str(template.get("claim_kind") or "__none__"))
+        else:
+            kinds.append("__none__")
+    return _count_values(tuple(kinds))
 
 
 def _has_candidate_set(

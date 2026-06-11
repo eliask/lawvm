@@ -203,6 +203,12 @@ def test_finland_corrigendum_open_manual_evidence_surface_is_frontier_listing_on
     assert report["agreement_claims"] is False
     assert report["summary"]["candidate_count"] == 1
     assert report["summary"]["frontier_work_item_count"] == 1
+    assert report["summary"]["frontier_claim_template_status_counts"] == {
+        "available": 1
+    }
+    assert report["summary"]["frontier_claim_template_kind_counts"] == {
+        "fi.v1.CORRIGENDUM_SOURCE_CORRECTION": 1
+    }
     assert report["summary"]["open_manual_row_count"] == 1
     rows_by_surface = {row["surface"]: row for row in report["rows"]}
     assert set(rows_by_surface) == {
@@ -771,6 +777,12 @@ def test_finland_corrigendum_unsupported_patch_evidence_surface_projects_frontie
     assert report["agreement_claims"] is False
     assert report["summary"]["unsupported_patch_count"] == 1
     assert report["summary"]["frontier_work_item_count"] == 1
+    assert report["summary"]["frontier_claim_template_status_counts"] == {
+        "available": 1
+    }
+    assert report["summary"]["frontier_claim_template_kind_counts"] == {
+        "fi.v1.CORRIGENDUM_UNSUPPORTED_PATCH_RESOLUTION": 1
+    }
     assert report["summary"]["source_witness_digest_coverage_counts"] == {
         "artifact_and_preview_digest": 1
     }
@@ -832,6 +844,12 @@ def test_finland_corrigendum_manual_template_projects_frontier_envelope() -> Non
     assert report["agreement_claims"] is False
     assert report["summary"]["entry_count"] == 1
     assert report["summary"]["frontier_work_item_count"] == 1
+    assert report["summary"]["frontier_claim_template_status_counts"] == {
+        "available": 1
+    }
+    assert report["summary"]["frontier_claim_template_kind_counts"] == {
+        "fi.v1.CORRIGENDUM_SOURCE_CORRECTION": 1
+    }
     assert report["summary"]["source_witness_count"] == 1
     assert report["summary"]["source_witness_digest_coverage_counts"] == {
         "artifact_and_preview_digest": 1
@@ -1248,6 +1266,12 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     assert report["summary"]["source_pathology_count"] == 1
     assert report["summary"]["source_pathology_kind_counts"] == {"DESTRUCTIVE_SHAPE_LOSS_RISK": 1}
     assert report["summary"]["source_pathology_frontier_work_item_count"] == 1
+    assert report["summary"]["frontier_claim_template_status_counts"] == {
+        "__none__": 1
+    }
+    assert report["summary"]["frontier_claim_template_kind_counts"] == {
+        "__none__": 1
+    }
     assert report["summary"]["sparse_slot_candidate_set_certificate_count"] == 1
     assert report["summary"]["agreement_residual_count"] == 1
     assert report["summary"]["agreement_residual_family_counts"] == {

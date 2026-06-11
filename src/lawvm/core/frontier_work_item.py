@@ -335,6 +335,14 @@ def frontier_work_item_evidence_report(
         for row in rows
         for check in _sequence(row.get("required_validator_checks"))
     )
+    suggested_claim_template_status_counts = _counts(
+        str(row.get("suggested_claim_template_status") or "__none__")
+        for row in rows
+    )
+    suggested_claim_template_kind_counts = _counts(
+        str(_template_claim_kind(row) or "__none__")
+        for row in rows
+    )
     summary = {
         "frontier_work_item_count": len(rows),
         "frontier_family_counts": family_counts,
@@ -344,6 +352,8 @@ def frontier_work_item_evidence_report(
         "required_claim_kind_counts": required_claim_kind_counts,
         "candidate_operation_family_counts": candidate_operation_family_counts,
         "required_validator_check_counts": required_validator_check_counts,
+        "suggested_claim_template_status_counts": suggested_claim_template_status_counts,
+        "suggested_claim_template_kind_counts": suggested_claim_template_kind_counts,
         "replay_authorized_count": 0,
         "executable_count": 0,
         "claim_flags": {
@@ -426,6 +436,13 @@ def _report_jurisdiction(rows: tuple[Mapping[str, Any], ...]) -> str:
         return jurisdictions[0]
     if len(jurisdictions) > 1:
         return "mixed"
+    return ""
+
+
+def _template_claim_kind(row: Mapping[str, Any]) -> str:
+    template = row.get("suggested_claim_template") or {}
+    if isinstance(template, Mapping):
+        return str(template.get("claim_kind") or "")
     return ""
 
 

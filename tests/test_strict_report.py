@@ -527,6 +527,12 @@ def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
     assert payload["evidence_surface_report"]["summary"][
         "failed_operation_frontier_work_item_count"
     ] == 1
+    assert payload["evidence_surface_report"]["summary"][
+        "frontier_claim_template_status_counts"
+    ] == {"available": 1}
+    assert payload["evidence_surface_report"]["summary"][
+        "frontier_claim_template_kind_counts"
+    ] == {"fi.v1.FAILED_OPERATION_RESOLUTION": 1}
 
 
 def test_to_json_uses_projection_rows_when_available() -> None:
@@ -628,6 +634,12 @@ def test_to_json_preserves_source_pathology_target_unit_kind() -> None:
     assert payload["evidence_surface_report"]["summary"][
         "source_pathology_frontier_source_witness_digest_coverage_counts"
     ] == {"preview_digest": 1}
+    assert payload["evidence_surface_report"]["summary"][
+        "frontier_claim_template_status_counts"
+    ] == {"available": 1}
+    assert payload["evidence_surface_report"]["summary"][
+        "frontier_claim_template_kind_counts"
+    ] == {"fi.v1.MUTATION_BOUNDARY_RESOLUTION": 1}
 
 
 def test_to_json_exports_open_ownership_closure_certificate_without_replay_claims() -> None:
