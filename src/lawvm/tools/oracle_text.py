@@ -497,7 +497,7 @@ def _find_nearby_sections(
     m = _NUM_STEM_RE.search(section_filter)
     if m:
         target_num = int(m.group(1))
-        scored: List[tuple] = []
+        scored: List[tuple[int, str]] = []
         for info in section_info:
             canon = info["canonical"]
             if not canon:

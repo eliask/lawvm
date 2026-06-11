@@ -104,7 +104,7 @@ def source_expr_for_path(path: Path) -> str:
 # ---------------------------------------------------------------------------
 
 
-def as_of_conditions(as_of: str) -> list:
+def as_of_conditions(as_of: str) -> list[str]:
     """Return SQL WHERE conditions for a valid_at temporal window.
 
     Args:

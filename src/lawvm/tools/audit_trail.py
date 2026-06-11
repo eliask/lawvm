@@ -15,11 +15,11 @@ from typing import Any
 from lawvm.core.pipeline_capture import AmendmentCapture, CaptureStore
 
 
-def _format_ops(ops: list[dict]) -> list[str]:
+def _format_ops(ops: list[dict[str, object]]) -> list[str]:
     """Format a list of op dicts as indented lines."""
     lines = []
     for op in ops:
-        action = op.get("action", op.get("op_type", "?")).upper()
+        action = str(op.get("action", op.get("op_type", "?"))).upper()
         target = op.get("target", op.get("target_ref", "?"))
         lines.append(f"      {action:<8s} {target}")
     return lines

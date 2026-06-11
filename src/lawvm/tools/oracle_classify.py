@@ -96,7 +96,7 @@ def main(args) -> None:
         print(f"  Full corpus: {len(sids)} statute IDs")
 
     rows = []
-    counts: dict = {}
+    counts: dict[str, int] = {}
     for i, sid in enumerate(sids, 1):
         data = cs.read_oracle(sid)
         if data is None:

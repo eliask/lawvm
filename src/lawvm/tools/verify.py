@@ -486,7 +486,7 @@ def verify_observations(
 
     all_issues: List[Issue] = []
     total_obs = 0
-    distinct_kinds: set = set()
+    distinct_kinds: set[str] = set()
     total_unregistered = 0
     total_temporal_events = 0
     registered_observation_kinds = set(finding_codes_by_role("observation"))

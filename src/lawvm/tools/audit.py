@@ -976,7 +976,7 @@ def cmd_body_pairing(args) -> None:
     anomalies_only = getattr(args, "anomalies_only", False)
     emit_json = getattr(args, "json", False)
 
-    all_results: list[dict] = []
+    all_results: list[dict[str, object]] = []
     total_amendments = 0
     total_findings = 0
     total_foreign = 0

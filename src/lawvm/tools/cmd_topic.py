@@ -233,7 +233,7 @@ def _run_fts_query(
 
     safe_topic = topic.replace("'", "''")
     con = duckdb.connect(str(db), read_only=True)
-    results: List[tuple] = []
+    results: List[tuple[object, ...]] = []
     columns: List[str] = []
 
     include_statutes = source_filter_kind in ("both", "statutes")

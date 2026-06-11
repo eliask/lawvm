@@ -1176,7 +1176,7 @@ def rule_replay_divergence_fallback(
     ctx: SectionEvidenceContext,
 ) -> tuple[PositiveClaim, ...]:
     """Fallback replay divergence (line 668-686)."""
-    replay_support: dict = {}
+    replay_support: dict[str, object] = {}
     if ctx.alternative_replay_match:
         replay_support.update(
             {

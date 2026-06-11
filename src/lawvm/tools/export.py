@@ -29,7 +29,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Mapping, Sequence
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +200,7 @@ def export_neo4j(output_dir: Path, corpus: List[str], verbose: bool = False) -> 
     )
 
 
-def _write_csv(path: Path, fieldnames: List[str], rows: List[dict]) -> None:
+def _write_csv(path: Path, fieldnames: List[str], rows: Sequence[Mapping[str, object]]) -> None:
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         w.writeheader()

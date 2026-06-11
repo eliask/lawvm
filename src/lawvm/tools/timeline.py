@@ -58,7 +58,7 @@ async def _main(args) -> None:
         _cmd_summary(timelines, lo_ops_out, sid, master.title)
 
 
-def _addr_str(path: tuple) -> str:
+def _addr_str(path: tuple[tuple[str, str], ...]) -> str:
     return "/".join(f"{k}:{v}" for k, v in path)
 
 

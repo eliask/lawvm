@@ -5,7 +5,7 @@ proof claims with tier classification.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Optional, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, cast
 
 from lawvm.core.section_evidence_context import _scoped_html_noncommensurable_reason
 from lawvm.tools._evidence_helpers import (
@@ -18,6 +18,9 @@ from lawvm.tools._evidence_helpers import (
     _REPLAY_BUG_DIAGNOSES,
     _section_similarity,
 )
+
+if TYPE_CHECKING:
+    from lawvm.tools.evidence_claim_algebra import ResolvedSectionClaims
 
 _ALIGN_SPARSE_OMISSION_KIND = "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE"
 _PAYLOAD_COMPLETENESS_KIND = "ELAB.PAYLOAD_COMPLETENESS"
@@ -2224,7 +2227,7 @@ def build_section_claims_typed(
     section_strict_verdicts: Optional[Dict[str, Any]] = None,
     section_invariant_violations: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     chain_completeness_by_section: Optional[Dict[str, Any]] = None,
-) -> list:
+) -> list["ResolvedSectionClaims"]:
     """Typed section claim construction — produces identical output to legacy.
 
     Uses the A1 proof algebra: SectionEvidenceContext -> typed rules ->
@@ -2239,7 +2242,6 @@ def build_section_claims_typed(
         OracleRangeMatch,
     )
     from lawvm.tools.evidence_claim_algebra import (
-        ResolvedSectionClaims,
         resolve,
     )
     from lawvm.tools.evidence_section_rules import (

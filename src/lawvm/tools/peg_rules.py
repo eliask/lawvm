@@ -73,7 +73,7 @@ def _emit_text(rules: list[ParseRule], *, show_examples: bool) -> None:
 def _emit_json(rules: list[ParseRule], *, show_examples: bool) -> None:
     output = []
     for rule in rules:
-        entry: dict = {
+        entry: dict[str, object] = {
             "rule_id": rule.rule_id,
             "description": rule.description,
             "node_kind": rule.node_kind,
