@@ -785,6 +785,24 @@ def test_build_provision_state_response_rejects_noncanonical_selector_whitespace
     assert "text" not in payload
 
 
+def test_public_resolve_provision_state_rejects_leading_trailing_selector_whitespace() -> None:
+    payload = resolve_provision_state(
+        statute_id="2021/618",
+        jurisdiction="fi",
+        provision=" section:47 ",
+        as_of="2026-01-02",
+        query_type="in_force",
+    )
+
+    assert payload["status"] == "invalid_address"
+    assert payload["diagnostic"]["code"] == (
+        "LAWVM_PROVISION_SELECTOR_NON_CANONICAL_WHITESPACE"
+    )
+    assert payload["diagnostic"]["suggestions"] == ["section:47"]
+    assert payload["resolved_address"] is None
+    assert payload["selection"] is None
+
+
 def test_public_resolve_provision_state_rejects_noncanonical_selector_before_replay() -> None:
     payload = resolve_provision_state(
         statute_id="2023/703",

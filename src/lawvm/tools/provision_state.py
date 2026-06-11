@@ -338,12 +338,20 @@ def provision_selector_diagnostic(
 
     if jurisdiction != "fi":
         return None
-    text = str(provision or "").strip()
+    raw_text = str(provision or "")
+    text = raw_text.strip()
     if not text:
         return {
             "code": "FI_PROVISION_SELECTOR_EMPTY",
             "message": "empty --provision is not a valid LawVM legal address",
             "suggestions": [],
+        }
+    if raw_text != text:
+        canonical = _canonical_address_selector(text)
+        return {
+            "code": "LAWVM_PROVISION_SELECTOR_NON_CANONICAL_WHITESPACE",
+            "message": "LawVM legal-address selectors must not contain leading or trailing whitespace",
+            "suggestions": [canonical] if canonical is not None else [],
         }
     hybrid = _FI_HYBRID_SECTION_RE.fullmatch(text)
     if hybrid is not None:
