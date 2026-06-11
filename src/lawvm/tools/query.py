@@ -31,16 +31,16 @@ if TYPE_CHECKING:
 @dataclass
 class ArtifactGraph:
     """Lightweight in-memory view of a serialized lawvm build artifact."""
-    meta: dict
-    statute_meta: Dict[str, dict]
+    meta: dict[str, Any]
+    statute_meta: Dict[str, dict[str, Any]]
     amendment_index: Dict[str, List[str]]
-    citations: list         # List[dict] — raw dicts from citations.jsonl
-    delegations: list       # List[dict] — raw dicts from delegations.jsonl
+    citations: list[dict[str, Any]]         # raw dicts from citations.jsonl
+    delegations: list[dict[str, Any]]       # raw dicts from delegations.jsonl
 
-    def reverse_citations(self, sid: str) -> List[dict]:
+    def reverse_citations(self, sid: str) -> List[dict[str, Any]]:
         return [c for c in self.citations if c.get("target_statute_id") == sid]
 
-    def delegations_for(self, sid: str, section: str = "") -> List[dict]:
+    def delegations_for(self, sid: str, section: str = "") -> List[dict[str, Any]]:
         edges = [d for d in self.delegations if d.get("statute_id") == sid]
         if section:
             edges = [d for d in edges if d.get("section") == section]
@@ -49,7 +49,7 @@ class ArtifactGraph:
     def affecting_acts(self, sid: str) -> List[str]:
         return list(self.amendment_index.get(sid, []))
 
-    def silent_breakage(self, sid: str, target_section: str = "") -> List[dict]:
+    def silent_breakage(self, sid: str, target_section: str = "") -> List[dict[str, Any]]:
         edges = [c for c in self.citations
                  if c.get("target_statute_id") == sid and c.get("edge_type") == "CITES"]
         if target_section:
@@ -66,10 +66,10 @@ class ArtifactGraph:
             for e in edges
         ]
 
-    def breakage_report(self, changed_statutes: List[str]) -> List[dict]:
+    def breakage_report(self, changed_statutes: List[str]) -> List[dict[str, Any]]:
         """Push-based: given a list of recently-changed statute IDs, return all
         citation edges potentially invalidated by those changes."""
-        results: List[dict] = []
+        results: List[dict[str, Any]] = []
         for sid in changed_statutes:
             for row in self.silent_breakage(sid):
                 results.append({"changed_statute": sid, **row})
@@ -82,24 +82,24 @@ class ArtifactGraph:
             if act_id in amenders
         )
 
-    def issued_under(self, sid: str) -> List[dict]:
+    def issued_under(self, sid: str) -> List[dict[str, Any]]:
         """Return decrees (asetukset) issued under sid (ISSUED_UNDER edges targeting sid)."""
         return [c for c in self.citations
                 if c.get("target_statute_id") == sid and c.get("edge_type") == "ISSUED_UNDER"]
 
-    def eu_refs(self, sid: str) -> List[dict]:
+    def eu_refs(self, sid: str) -> List[dict[str, Any]]:
         """Return EU cross-reference edges sourced from sid (FI→EU)."""
         return [c for c in self.citations
                 if c.get("source_statute_id") == sid
                 and (c.get("target_statute_id") or "").startswith("eu/")]
 
     @staticmethod
-    def _is_permissive(clause: dict) -> bool:
+    def _is_permissive(clause: dict[str, Any]) -> bool:
         """Return True if delegation clause appears permissive (voidaan/voi/saa/tarvittaessa)."""
         text = (clause.get("match_text", "") + " " + clause.get("quote", "")).lower()
         return any(p in text for p in ["voidaan", " voi ", " saa ", "tarvittaessa"])
 
-    def missing_decrees(self, sids: List[str]) -> List[dict]:
+    def missing_decrees(self, sids: List[str]) -> List[dict[str, Any]]:
         """For each statute in sids, return mandatory delegation clauses with no ISSUED_UNDER decree.
 
         "Mandatory" = not permissive (no voidaan/voi/saa/tarvittaessa in clause text).
@@ -126,7 +126,7 @@ class ArtifactGraph:
                     })
         return results
 
-    def repeal_cascade(self, sid: str) -> dict:
+    def repeal_cascade(self, sid: str) -> dict[str, list[dict[str, Any]]]:
         """Show which decrees become orphaned if sid is repealed.
 
         Returns {"decrees": [...], "repealed_decrees": [...]} where
@@ -146,7 +146,7 @@ class ArtifactGraph:
         already_dead = [d for d in decrees if d.get("source_statute_id") in repealed_ids]
         return {"all_decrees": decrees, "alive": alive, "already_repealed": already_dead}
 
-    def delegation_chain(self, sid: str) -> dict:
+    def delegation_chain(self, sid: str) -> dict[str, list[dict[str, Any]]]:
         """Return delegation clauses + decrees issued under sid, as a combined view.
 
         Returns {"clauses": [...], "decrees": [...], "unexercised": [...]} where
@@ -158,7 +158,7 @@ class ArtifactGraph:
         decrees = self.issued_under(sid)
 
         # Build set of sections covered by decrees (target_section from preamble parsing)
-        covered_sections: set = set()
+        covered_sections: set[str] = set()
         for d in decrees:
             ts = d.get("target_section", "")
             if ts:
@@ -200,12 +200,12 @@ def load_artifact(graph_dir: Path) -> ArtifactGraph:
             statute_meta = json.load(f)
 
     amendments_path = graph_dir / "amendments.json"
-    amendment_index: dict = {}
+    amendment_index: dict[str, list[str]] = {}
     if amendments_path.exists():
         with open(amendments_path, encoding="utf-8") as f:
             amendment_index = json.load(f)
 
-    citations: list = []
+    citations: list[dict[str, Any]] = []
     cite_path = graph_dir / "citations.jsonl"
     if cite_path.exists():
         with open(cite_path, encoding="utf-8") as f:
@@ -214,7 +214,7 @@ def load_artifact(graph_dir: Path) -> ArtifactGraph:
                 if line:
                     citations.append(json.loads(line))
 
-    delegations: list = []
+    delegations: list[dict[str, Any]] = []
     delg_path = graph_dir / "delegations.jsonl"
     if delg_path.exists():
         with open(delg_path, encoding="utf-8") as f:
@@ -441,7 +441,7 @@ def main(args: "argparse.Namespace") -> None:
         changed = args.breakage_report
         results = ag.breakage_report(changed)
         print(f"Breakage report — {len(changed)} changed statute(s) → {len(results)} affected citation(s)")
-        by_changed: dict = {}
+        by_changed: dict[str, list[dict[str, Any]]] = {}
         for r in results:
             by_changed.setdefault(r["changed_statute"], []).append(r)
         for changed_sid in changed:
