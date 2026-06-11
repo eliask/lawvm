@@ -7430,7 +7430,7 @@ def _curated_corpus_request(args: Any) -> _CuratedCorpusRequest:
 # ---------------------------------------------------------------------------
 
 
-def main(args) -> None:  # noqa: ANN001
+def main(args) -> None:
     if args.history:
         if not _HISTORY_CSV.exists():
             print("No UK bench history yet. Run a bench first.")

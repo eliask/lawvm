@@ -33,7 +33,7 @@ def resolve_provision_state(
             query_type=query_type,
         )
 
-    from lawvm.finland.grafter import replay_xml  # noqa: PLC0415
+    from lawvm.finland.grafter import replay_xml
 
     if status_stream is not None:
         print(f"Replaying {statute_id}...", file=status_stream)

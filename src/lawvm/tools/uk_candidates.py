@@ -1804,7 +1804,7 @@ def _compact_uk_candidate_row_jsonable(row: Mapping[str, Any]) -> dict[str, Any]
     }
 
 
-def _uk_candidate_row_jsonable(  # noqa: PLR0913
+def _uk_candidate_row_jsonable(
     result: _BenchResultLike,
     *,
     score_mode: str,

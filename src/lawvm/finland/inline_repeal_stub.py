@@ -171,6 +171,6 @@ def _detect_fi_inline_repeal_stub(node: Any) -> dict[str, Any] | None:
 # Self-registration — runs at import time
 # ---------------------------------------------------------------------------
 
-from lawvm.semantic.projection import register_inline_repeal_stub_detector  # noqa: E402
+from lawvm.semantic.projection import register_inline_repeal_stub_detector
 
 register_inline_repeal_stub_detector("fi", _detect_fi_inline_repeal_stub)
