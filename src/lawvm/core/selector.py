@@ -6,7 +6,7 @@ how a provision is addressed:
 
   - ``oracle-text``  took the eId form ``chp_3__sec_1``
   - ``provision-state`` / ``timeline`` took ``chapter:3/section:1`` and
-    momentti ``.../subsection:2``
+    subsection (momentti) ``.../subsection:2``
 
 Neither is human-stable. This module adds ONE canonical, human-stable surface
 form that lowers to the existing ``chapter:/section:/subsection:/paragraph:``
@@ -25,10 +25,10 @@ Examples::
     §7       → section:7                              (flat / chapterless statute)
     §7.1.3   → section:7/subsection:1/paragraph:3    (momentti 1, kohta 3)
 
-Semantic rule (load-bearing, from the Finlex XML): the momentti index is the
-**materialized in-force ordinal**, NOT the raw ``subsec_N`` eId. The downstream
-resolver (``provision-state``) already keys momentti on the post-strip
-materialized sequence, so this module only has to lower ``.N`` to
+Semantic rule (load-bearing, from the Finlex XML): the subsection (momentti)
+index is the **materialized in-force ordinal**, NOT the raw ``subsec_N`` eId.
+The downstream resolver (``provision-state``) already keys the subsection on the
+post-strip materialized sequence, so this module only has to lower ``.N`` to
 ``subsection:N`` and let the resolver do the right thing.
 """
 from __future__ import annotations
@@ -37,7 +37,8 @@ import re
 from dataclasses import dataclass
 
 # A canonical §-selector: optional leading "§", then chapter:section or a bare
-# section, then up to two dotted momentti/kohta components.
+# section, then up to two dotted subsection/paragraph components
+# (momentti/kohta in the Finlex source grammar).
 #   §3:1.2   §7   §7.1.3   3:1   §14 b   §3:1 a
 # Labels may carry a trailing letter (e.g. "14 b", "3a"); we keep the AKN label
 # spacing convention ("14 b") that the existing resolvers already accept.
@@ -45,10 +46,10 @@ _LABEL = r"[0-9]+(?:\s?[A-Za-z])?"
 _SECTION_SELECTOR_RE = re.compile(
     rf"""
     ^\s*§?\s*
-    (?:(?P<chapter>{_LABEL})\s*:\s*)?      # optional  <chapter>:
-    (?P<section>{_LABEL})                   # required  <section>
-    (?:\.\s*(?P<momentti>{_LABEL}))?        # optional  .<momentti>
-    (?:\.\s*(?P<kohta>{_LABEL}))?           # optional  .<kohta>
+    (?:(?P<chapter>{_LABEL})\s*:\s*)?       # optional  <chapter>:
+    (?P<section>{_LABEL})                    # required  <section>
+    (?:\.\s*(?P<subsection>{_LABEL}))?       # optional  .<subsection>  (momentti)
+    (?:\.\s*(?P<paragraph>{_LABEL}))?        # optional  .<paragraph>   (kohta)
     \s*$
     """,
     re.VERBOSE,
@@ -61,14 +62,14 @@ class ParsedSelector:
 
     chapter: str | None
     section: str
-    momentti: str | None
-    kohta: str | None
+    subsection: str | None  # momentti, in the Finlex source grammar
+    paragraph: str | None  # kohta, in the Finlex source grammar
     locator: str  # e.g. "chapter:3/section:1/subsection:2"
 
     @property
     def is_section_scope(self) -> bool:
-        """True when no momentti/kohta is given (whole section)."""
-        return self.momentti is None and self.kohta is None
+        """True when no subsection/paragraph (momentti/kohta) is given (whole section)."""
+        return self.subsection is None and self.paragraph is None
 
 
 def _norm_label(raw: str) -> str:
@@ -93,23 +94,23 @@ def parse_section_selector(s: str) -> ParsedSelector | None:
         return None
     chapter = _norm_label(m.group("chapter")) if m.group("chapter") else None
     section = _norm_label(m.group("section"))
-    momentti = _norm_label(m.group("momentti")) if m.group("momentti") else None
-    kohta = _norm_label(m.group("kohta")) if m.group("kohta") else None
+    subsection = _norm_label(m.group("subsection")) if m.group("subsection") else None
+    paragraph = _norm_label(m.group("paragraph")) if m.group("paragraph") else None
 
     parts: list[str] = []
     if chapter is not None:
         parts.append(f"chapter:{chapter}")
     parts.append(f"section:{section}")
-    if momentti is not None:
-        parts.append(f"subsection:{momentti}")
-    if kohta is not None:
-        parts.append(f"paragraph:{kohta}")
+    if subsection is not None:
+        parts.append(f"subsection:{subsection}")
+    if paragraph is not None:
+        parts.append(f"paragraph:{paragraph}")
     locator = "/".join(parts)
     return ParsedSelector(
         chapter=chapter,
         section=section,
-        momentti=momentti,
-        kohta=kohta,
+        subsection=subsection,
+        paragraph=paragraph,
         locator=locator,
     )
 
@@ -150,10 +151,12 @@ def to_locator_string(s: str) -> str:
 
 
 def section_scope_locator(s: str) -> str:
-    """Lower a selector to its SECTION-scope locator (drop momentti/kohta).
+    """Lower a selector to its SECTION-scope locator (drop subsection/paragraph,
+    i.e. momentti/kohta).
 
     Used where only section-granularity resolution is available (the oracle
-    consolidated resolver segments whole <section> elements, not momentti). For
+    consolidated resolver segments whole <section> elements, not subsection
+    (momentti)). For
     a canonical ``§3:1.2`` this returns ``chapter:3/section:1``; for an already
     section-scoped or legacy form it returns ``to_locator_string(s)`` unchanged.
     """
@@ -176,7 +179,8 @@ def section_scope_locator(s: str) -> str:
 
 
 def has_subprovision(s: str) -> bool:
-    """True if the selector addresses below the section (momentti/kohta)."""
+    """True if the selector addresses below the section (subsection/paragraph,
+    i.e. momentti/kohta)."""
     parsed = parse_section_selector(s.strip()) if s else None
     if parsed is not None:
         return not parsed.is_section_scope

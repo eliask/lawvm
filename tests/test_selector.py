@@ -19,16 +19,16 @@ class TestParseSectionSelector:
     def test_chapter_section(self):
         p = parse_section_selector("§3:1")
         assert p == ParsedSelector(
-            chapter="3", section="1", momentti=None, kohta=None,
+            chapter="3", section="1", subsection=None, paragraph=None,
             locator="chapter:3/section:1",
         )
         assert p is not None and p.is_section_scope
 
-    def test_chapter_section_momentti(self):
+    def test_chapter_section_subsection(self):
         p = parse_section_selector("§3:1.2")
         assert p is not None
         assert p.locator == "chapter:3/section:1/subsection:2"
-        assert p.momentti == "2"
+        assert p.subsection == "2"  # momentti 2
         assert not p.is_section_scope
 
     def test_flat_section(self):
@@ -37,12 +37,12 @@ class TestParseSectionSelector:
         assert p.locator == "section:7"
         assert p.chapter is None
 
-    def test_section_momentti_kohta(self):
+    def test_section_subsection_paragraph(self):
         p = parse_section_selector("§7.1.3")
         assert p is not None
         assert p.locator == "section:7/subsection:1/paragraph:3"
-        assert p.momentti == "1"
-        assert p.kohta == "3"
+        assert p.subsection == "1"  # momentti 1
+        assert p.paragraph == "3"  # kohta 3
 
     def test_without_leading_sign(self):
         assert _parsed_selector("3:1").locator == "chapter:3/section:1"
@@ -51,8 +51,8 @@ class TestParseSectionSelector:
         assert _parsed_selector("§14 b").locator == "section:14 b"
         assert _parsed_selector("§14b").locator == "section:14 b"
 
-    def test_chapter_section_with_lettered_momentti(self):
-        # uncommon but allowed: momentti label normalization
+    def test_chapter_section_with_lettered_subsection(self):
+        # uncommon but allowed: subsection (momentti) label normalization
         p = parse_section_selector("§3:1.2")
         assert p is not None
         assert p.section == "1"
@@ -92,7 +92,7 @@ class TestToLocatorString:
 
 
 class TestSectionScope:
-    def test_section_scope_drops_momentti(self):
+    def test_section_scope_drops_subsection(self):
         assert section_scope_locator("§3:1.2") == "chapter:3/section:1"
         assert section_scope_locator("§7.1.3") == "section:7"
 
