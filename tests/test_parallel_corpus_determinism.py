@@ -11,7 +11,7 @@ by driving the helper with a deterministic, order-sensitive fake projector.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, cast, Dict, List, Tuple
 
 import pytest
 
@@ -31,7 +31,7 @@ def _fake_projector(statute_id: str, store: Any) -> Tuple[List[Dict[str, Any]], 
 
 # Register the fake projector on the module under a stable qualname so the
 # worker init can import it by (module, qualname).
-_parallel_corpus._fake_projector = _fake_projector  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+cast(Any, _parallel_corpus)._fake_projector = _fake_projector
 
 
 def _expected_serial(statute_ids: List[str]) -> Tuple[list, list]:
@@ -101,7 +101,7 @@ def test_workers_capped_to_max(monkeypatch: pytest.MonkeyPatch) -> None:
 
     orig = _worker_pool.managed_executor
 
-    def _spy(workers: int, *args: Any, **kwargs: Any):  # type: ignore[no-untyped-def]
+    def _spy(workers: int, *args: Any, **kwargs: Any) -> Any:
         seen.append(workers)
         return orig(workers, *args, **kwargs)
 

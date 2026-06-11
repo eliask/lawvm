@@ -19,7 +19,7 @@ import hashlib
 import io
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 import zipfile
 
 import pytest
@@ -577,7 +577,8 @@ class TestRealCorpus:
 
     def _sha256(self) -> str:
         """Compute sha256 of the zip (cached lazily)."""
-        if not hasattr(TestRealCorpus, "_sha256_cached"):
+        cached = getattr(TestRealCorpus, "_sha256_cached", None)
+        if cached is None:
             h = hashlib.sha256()
             with open(_GOVT_PROP_ZIP_PATH, "rb") as fp:
                 while True:
@@ -585,8 +586,9 @@ class TestRealCorpus:
                     if not chunk:
                         break
                     h.update(chunk)
-            TestRealCorpus._sha256_cached = h.hexdigest()  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-        return TestRealCorpus._sha256_cached  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            cached = h.hexdigest()
+            cast(Any, TestRealCorpus)._sha256_cached = cached
+        return str(cached)
 
     def test_he_98_1996_structured(self) -> None:
         """HE 98/1996 is a structured full-AKN HE (35KB main.xml)."""

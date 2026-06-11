@@ -17,7 +17,7 @@ Per AGENTS.md §15, covers all 7 required test categories:
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Dict
+from typing import Any, cast, Dict
 
 import pytest
 
@@ -283,7 +283,7 @@ class TestSchemaStability:
             valid_at_end=None,
         )
         with pytest.raises((AttributeError, TypeError)):
-            st.statute_id = "mutated"  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+            cast(Any, st).statute_id = "mutated"
 
 
 # ---------------------------------------------------------------------------
@@ -407,7 +407,7 @@ class TestGracefulDegradation:
         # Patch the store loader to avoid farchive dependency
         import lawvm.tools.export_fi_sections_text as mod
         orig = mod._load_corpus_store
-        mod._load_corpus_store = lambda: _NullStore()  # ty:ignore[invalid-assignment]
+        cast(Any, mod)._load_corpus_store = lambda: _NullStore()
         try:
             count = export_fi_sections_text(
                 [],
@@ -415,7 +415,7 @@ class TestGracefulDegradation:
                 use_parquet=False,
             )
         finally:
-            mod._load_corpus_store = orig
+            cast(Any, mod)._load_corpus_store = orig
         assert count == 0
 
     def test_extraction_result_no_exception_on_empty_body(self) -> None:
