@@ -6332,6 +6332,81 @@ def process_muutoslaki(
                 blocking=False,
             )
 
+    def _govern_failed_ops_by_timeline_snapshots() -> None:
+        """Move apply-fold failures behind exact same-source timeline snapshots.
+
+        The mutable replay fold is a target-resolution aid, while the legal PIT
+        state is compiled from LegalOperation timelines.  If a whole-section
+        apply attempt records ``section_not_found`` but the same amendment also
+        emitted an exact section snapshot LO for that target, the target's
+        timeline state is not missing.  Keep the old apply-fold miss visible as
+        a governed observation instead of exporting it as a timeline-fatal
+        failed operation.
+        """
+        if not _compat_failed_ops or not lo_ops_out:
+            return
+
+        def _snapshot_matches_failed(lo: _LegalOperation, failed: FailedOp) -> bool:
+            if not lo.op_id.startswith("snapshot_section_"):
+                return False
+            if lo.action is not StructuralAction.REPLACE:
+                return False
+            if lo.payload is None or lo.source is None:
+                return False
+            if lo.source.statute_id != failed.amendment_id:
+                return False
+            if not lo.target.path or lo.target.path[-1][0] != "section":
+                return False
+            labels = {kind: label for kind, label in lo.target.path if label}
+            if _norm_num_token(labels.get("section", "")) != _norm_num_token(failed.target_section or ""):
+                return False
+            if failed.target_chapter and labels.get("chapter") != failed.target_chapter:
+                return False
+            if failed.target_part and labels.get("part") != failed.target_part:
+                return False
+            return True
+
+        kept: list[FailedOp] = []
+        governed: list[tuple[FailedOp, _LegalOperation]] = []
+        for failed in _compat_failed_ops:
+            if failed.reason_code != "section_not_found" or failed.target_unit_kind != "section":
+                kept.append(failed)
+                continue
+            snapshot = next(
+                (lo for lo in lo_ops_out if _snapshot_matches_failed(lo, failed)),
+                None,
+            )
+            if snapshot is None:
+                kept.append(failed)
+                continue
+            governed.append((failed, snapshot))
+
+        if not governed:
+            return
+        _compat_failed_ops[:] = kept
+        for failed, snapshot in governed:
+            _record_process_finding(
+                kind="APPLY.FAILED_OPERATION_GOVERNED_BY_TIMELINE_SNAPSHOT",
+                message=(
+                    "Apply-fold failure is governed by an exact same-source "
+                    "timeline snapshot for the target."
+                ),
+                source_statute=amendment_id,
+                detail={
+                    "failed_description": failed.description,
+                    "target_unit_kind": failed.target_unit_kind,
+                    "target_part": failed.target_part,
+                    "target_chapter": failed.target_chapter,
+                    "target_section": failed.target_section,
+                    "failed_reason_code": failed.reason_code,
+                    "snapshot_op_id": snapshot.op_id,
+                    "snapshot_target": str(snapshot.target),
+                    "snapshot_source_statute": snapshot.source.statute_id if snapshot.source else "",
+                },
+                role="observation",
+                blocking=False,
+            )
+
     def _project_compat_sinks() -> None:
         """Project local compatibility capture to caller sinks at the boundary."""
         if failed_ops_out is not None:
@@ -7455,6 +7530,7 @@ def process_muutoslaki(
                     )
         _govern_failed_ops_by_recodification_source_chain_gap()
         _govern_failed_ops_by_same_wave_migration(_final_state)
+        _govern_failed_ops_by_timeline_snapshots()
         return _build_result(_final_state)
 
     except KeyError:

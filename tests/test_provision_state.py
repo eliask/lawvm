@@ -1625,3 +1625,45 @@ def test_specimen_2014_1429_broken_timeline_is_surfaced_not_clean() -> None:
         assert "timeline_broken_at" not in payload or (
             payload["timeline_integrity"]["blocking"] is False
         )
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_2014_938_section_51_failed_apply_is_governed_by_snapshot() -> None:
+    from lawvm.finland.grafter import replay_xml
+
+    master = replay_xml("2014/938", quiet=True)
+    governed = [
+        finding
+        for finding in master.findings
+        if finding.kind == "APPLY.FAILED_OPERATION_GOVERNED_BY_TIMELINE_SNAPSHOT"
+        and finding.detail.get("target_chapter") == "8"
+        and finding.detail.get("target_section") == "51"
+    ]
+
+    assert governed
+    assert not [
+        finding
+        for finding in master.findings
+        if finding.kind == "APPLY.FAILED_OPERATION"
+        and finding.detail.get("target_chapter") == "8"
+        and finding.detail.get("target_section") == "51"
+    ]
+    assert not [
+        item
+        for item in timeline_breaks_from_findings(master.findings)
+        if item.diagnostic_code == "APPLY.FAILED_OPERATION"
+        and item.target_chapter == "8"
+        and item.target_section == "51"
+    ]
+
+    payload = resolve_provision_state(
+        statute_id="2014/938",
+        jurisdiction="fi",
+        provision="section:51",
+        as_of="2026-06-11",
+        query_type="in_force",
+    )
+
+    assert payload["status"] == "selected"
+    assert "timeline_integrity" not in payload
+    assert payload["source"]["statute_id"] == "2024/910"
