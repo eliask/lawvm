@@ -32,6 +32,8 @@ from lawvm.core.provenance_graph_storage import (
     GraphStore,
 )
 
+JsonObj = dict[str, Any]
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -42,7 +44,7 @@ def _make_assertion_dict(
     kind: str = "fi.v1.INLINE_STATUTE_RESOLUTION",
     statute_id: str = "711/2022",
     resolved: str = "1234/2020",
-) -> dict:
+) -> JsonObj:
     return {
         "kind": kind,
         "layer": "extraction",
@@ -68,7 +70,7 @@ def _make_assertion_dict(
     }
 
 
-def _write_claim_file(tmp_path: Path, d: dict) -> Path:
+def _write_claim_file(tmp_path: Path, d: JsonObj) -> Path:
     p = tmp_path / "claim.json"
     p.write_text(json.dumps(d, indent=2), encoding="utf-8")
     return p
@@ -76,11 +78,11 @@ def _write_claim_file(tmp_path: Path, d: dict) -> Path:
 
 class _Args:
     @override
-    def __setattr__(self, k, v):
+    def __setattr__(self, k: str, v: Any) -> None:
         object.__setattr__(self, k, v)
 
 
-def _make_args(**kwargs):
+def _make_args(**kwargs: Any) -> _Args:
     a = _Args()
     for k, v in kwargs.items():
         setattr(a, k, v)
@@ -91,25 +93,25 @@ def _graph_root(tmp_path: Path) -> str:
     return str(tmp_path / "provenance_graph")
 
 
-def _load_all_objects(tmp_path: Path) -> list[dict]:
+def _load_all_objects(tmp_path: Path) -> list[JsonObj]:
     obj_dir = tmp_path / "provenance_graph" / "objects" / "sha256"
     if not obj_dir.exists():
         return []
     return [json.loads(f.read_text()) for f in sorted(obj_dir.glob("*.json"))]
 
 
-def _objects_of_kind(tmp_path: Path, attestation_kind: str) -> list[dict]:
+def _objects_of_kind(tmp_path: Path, attestation_kind: str) -> list[JsonObj]:
     return [
         d for d in _load_all_objects(tmp_path)
         if d.get("attestation_kind") == attestation_kind
     ]
 
 
-def _assertions(tmp_path: Path) -> list[dict]:
+def _assertions(tmp_path: Path) -> list[JsonObj]:
     return [d for d in _load_all_objects(tmp_path) if "kind" in d and "assertion_id" in d]
 
 
-def _propose_assertion(tmp_path: Path, d: Optional[dict] = None) -> str:
+def _propose_assertion(tmp_path: Path, d: Optional[JsonObj] = None) -> str:
     """Propose an assertion; return assertion_id."""
     from lawvm.tools.cmd_claim import cmd_propose
     if d is None:
