@@ -188,8 +188,8 @@ def test_public_resolve_provision_state_reports_unsupported_jurisdiction_without
 # `timeline_broken_at` marker. Responses WITHOUT break evidence stay
 # byte-identical (conditional hash member, same discipline as `expiry`).
 
-from lawvm.core.phase_result import Finding  # noqa: E402
-from lawvm.tools.timeline_integrity import (  # noqa: E402
+from lawvm.core.phase_result import Finding
+from lawvm.tools.timeline_integrity import (
     TimelineBreak,
     attach_effective_dates,
     timeline_breaks_from_findings,
@@ -459,9 +459,9 @@ def test_timeline_integrity_flag_off_restores_prior_behavior(monkeypatch) -> Non
 # test stays green if/when the underlying replay break is fixed: with evidence
 # the response must be marked; without evidence it must be clean.
 
-from pathlib import Path  # noqa: E402
+from pathlib import Path
 
-import pytest  # noqa: E402
+import pytest
 
 _FINLEX_CORPUS_AVAILABLE = (
     Path(__file__).resolve().parents[1] / "data" / "finlex.farchive"
