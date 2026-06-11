@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, cast
 
 from lawvm.tools._evidence_helpers import (
-    _bundle_blame_source_preamble,
     _section_similarity,
 )
 
@@ -947,7 +946,7 @@ def _render_markdown_bundle(bundle: Dict, *, oracle_only: bool = False) -> str:
                 blame_source_url = str(item.get("blame_source_url") or "")
                 if blame_source_url:
                     lines.append(f"- verify_amendment: {blame_source_url}")
-                blame_preamble = _snippet(_bundle_blame_source_preamble(item))
+                blame_preamble = _snippet(str(item.get("blame_source_preamble") or ""))
                 if blame_preamble:
                     lines.append("- preamble (johtolause):")
                     lines.append("")

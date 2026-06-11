@@ -1063,13 +1063,9 @@ class TestErrorCountPostFilter:
             "artifact_summary": {"by_family": {}, "ready_total_artifact_count": 3},
             "verification_links": {"consolidated_url": "https://finlex.fi/fi/test"},
             # Three section rows:
-            # row A — clean: has blame + preamble (new key)
+            # row A — clean: has blame + preamble
             # row B — empty section: no blame, no text → _row_is_meaningful rejects
             # row C — no structure: _require_section_structure_payload raises
-            #
-            # Row A carries the post-rename key ``blame_source_preamble``; row C
-            # carries the legacy ``blame_source_johtolause`` key so the read-shim
-            # in build_publication_db is exercised on both vocabularies.
             "section_results": [
                 {
                     "section": "section:1",
@@ -1084,7 +1080,7 @@ class TestErrorCountPostFilter:
                     "section": "",
                     "diagnosis": "ORACLE_STALE",
                     "blame_source": "",
-                    "blame_source_johtolause": "",
+                    "blame_source_preamble": "",
                     "oracle_text": "",
                     "replay_text": "",
                 },
@@ -1093,7 +1089,7 @@ class TestErrorCountPostFilter:
                     "diagnosis": "ORACLE_STALE",
                     "blame_source": "2019/98",
                     "blame_title": "Toinen muutoslaki",
-                    "blame_source_johtolause": "muutetaan 2 § seuraavasti:",
+                    "blame_source_preamble": "muutetaan 2 § seuraavasti:",
                     "oracle_text": "vanha",
                     "replay_text": "uusi",
                 },
@@ -1174,9 +1170,8 @@ class TestErrorCountPostFilter:
         actual_errors = con.execute(
             "SELECT COUNT(*) FROM errors WHERE statute_id=?", ("2020/1",)
         ).fetchone()[0]
-        # The read-shim must resolve the new ``blame_source_preamble`` key for
-        # row A into the johtolause_text column (regression guard against a
-        # silent pass on a missing key after the rename).
+        # Row A's ``blame_source_preamble`` must land in the johtolause_text
+        # column (regression guard against a silent pass on a missing key).
         preamble_texts = [
             r[0]
             for r in con.execute(
