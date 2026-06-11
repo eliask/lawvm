@@ -29,6 +29,8 @@ from typing import Any
 
 from lawvm.core.manual_claims.native import (
     attest,
+    manual_claim_lifecycle_status,
+    manual_claim_review_status,
     query_state_from_store,
     submit_assertion,
 )
@@ -579,6 +581,8 @@ def cmd_list(args: object) -> int:
     """List assertions with optional filters."""
     kind_filter: Optional[str] = getattr(args, "kind", None)
     layer_filter: Optional[str] = getattr(args, "layer", None)
+    status_filter: Optional[str] = getattr(args, "status", None)
+    review_status_filter: Optional[str] = getattr(args, "review_status", None)
     has_attestation_kind: Optional[str] = getattr(args, "has_attestation_kind", None)
     graph_store_root = _resolve_graph_store_root(args)
     store = _get_store(graph_store_root)
@@ -588,13 +592,10 @@ def cmd_list(args: object) -> int:
         print("no assertions in graph store")
         return 0
 
-    if has_attestation_kind:
-        attestations_by_subject: dict[str, list[str]] = {}
-        for attest_obj in _load_all_attestations(store).values():
-            subj = attest_obj.subject.artifact_id
-            attestations_by_subject.setdefault(subj, []).append(attest_obj.attestation_kind)
-    else:
-        attestations_by_subject = {}
+    attestations_by_subject: dict[str, list[ProvenanceAttestation]] = {}
+    for attest_obj in _load_all_attestations(store).values():
+        subj = attest_obj.subject.artifact_id
+        attestations_by_subject.setdefault(subj, []).append(attest_obj)
 
     rows = []
     for assertion in assertions:
@@ -602,14 +603,23 @@ def cmd_list(args: object) -> int:
             continue
         if layer_filter and assertion.layer != layer_filter:
             continue
+        attestations = attestations_by_subject.get(assertion.assertion_id, [])
+        status = manual_claim_lifecycle_status(attestations)
+        review_status = manual_claim_review_status(attestations)
+        if status_filter and status != status_filter:
+            continue
+        if review_status_filter and review_status != review_status_filter:
+            continue
         if has_attestation_kind:
-            kinds = attestations_by_subject.get(assertion.assertion_id, [])
+            kinds = [attestation.attestation_kind for attestation in attestations]
             if has_attestation_kind not in kinds:
                 continue
         rows.append({
             "assertion_id": assertion.assertion_id[:16] + "...",
             "kind": assertion.kind,
             "layer": assertion.layer,
+            "status": status,
+            "review_status": review_status,
             "jurisdiction": assertion.jurisdiction,
             "valid_from": str(assertion.valid_at.start),
         })
@@ -618,7 +628,15 @@ def cmd_list(args: object) -> int:
         print("no assertions match filters")
         return 0
 
-    headers = ["assertion_id", "kind", "layer", "jurisdiction", "valid_from"]
+    headers = [
+        "assertion_id",
+        "kind",
+        "layer",
+        "status",
+        "review_status",
+        "jurisdiction",
+        "valid_from",
+    ]
     widths = {h: max(len(h), max(len(str(r[h])) for r in rows)) for h in headers}
     fmt = "  ".join(f"{{:<{widths[h]}}}" for h in headers)
     print(fmt.format(*headers))

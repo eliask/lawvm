@@ -10133,6 +10133,13 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
                                choices=["proposed", "accepted", "rejected", "retracted",
                                         "superseded", "orphaned", "needs_revalidation"],
                                help="filter by lifecycle status")
+    claim_list_p.add_argument(
+        "--has-attestation-kind",
+        dest="has_attestation_kind",
+        metavar="KIND",
+        default=None,
+        help="filter by graph attestation kind, e.g. reviewed or entailment_verified",
+    )
 
     # show
     claim_show_p = claim_sub.add_parser(

@@ -21,7 +21,7 @@ Design
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Mapping
+from typing import Iterable, Mapping
 
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.evidence_kernel import (
@@ -60,6 +60,39 @@ _MANUAL_CLAIM_AUTHORIZATION_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
     "manual_claim_authorization_as_canonical_operation",
     "manual_claim_policy_success_as_phase_local_proof",
 )
+
+
+def manual_claim_lifecycle_status(
+    attestations: Iterable[ProvenanceAttestation],
+) -> str:
+    """Derive v3 graph-native lifecycle status from attestations."""
+
+    status = "proposed"
+    for attestation in sorted(tuple(attestations), key=lambda item: item.produced_at):
+        if attestation.attestation_kind == "claim_submitted":
+            status = "proposed"
+        elif attestation.attestation_kind == "reviewed":
+            if attestation.payload.get("accepted") is True:
+                status = "accepted"
+            elif attestation.payload.get("accepted") is False:
+                status = "rejected"
+        elif attestation.attestation_kind == "retracted":
+            status = "retracted"
+        elif attestation.attestation_kind == "superseded":
+            status = "superseded"
+    return status
+
+
+def manual_claim_review_status(
+    attestations: Iterable[ProvenanceAttestation],
+) -> str:
+    """Derive v3 graph-native review status from attestations."""
+
+    review_status = "proposed"
+    for attestation in sorted(tuple(attestations), key=lambda item: item.produced_at):
+        if attestation.attestation_kind == "reviewed":
+            review_status = "human_reviewed"
+    return review_status
 
 
 # ---------------------------------------------------------------------------

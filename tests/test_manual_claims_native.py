@@ -19,6 +19,8 @@ from lawvm.core.manual_claims.native import (
     build_claim_subgraph,
     manual_claim_authorization_evidence_report,
     manual_claim_frontier_closure_report,
+    manual_claim_lifecycle_status,
+    manual_claim_review_status,
     query_state,
     query_state_from_store,
     submit_assertion,
@@ -98,6 +100,35 @@ def _make_test_assertion(kind: str = "fi.v1.INLINE_STATUTE_RESOLUTION") -> Prove
         dependency_refs=(),
         valid_at=Interval(start=date(2024, 1, 1)),
     )
+
+
+def test_manual_claim_status_helpers_derive_graph_native_state(tmp_path):
+    store = _make_store(tmp_path)
+    producer = _make_producer()
+    assertion = _make_test_assertion()
+
+    assertion_id = submit_assertion(store, assertion, producer)
+    submitted = store.read_attestation(
+        next(
+            obj["attestation_id"]
+            for obj in (
+                json.loads(path.read_text(encoding="utf-8"))
+                for path in store._objects_dir().glob("*.json")
+            )
+            if obj.get("attestation_kind") == "claim_submitted"
+        )
+    )
+    assert manual_claim_lifecycle_status([submitted]) == "proposed"
+    assert manual_claim_review_status([submitted]) == "proposed"
+
+    reviewed_id = attest(store, assertion_id, "reviewed", {"accepted": True}, producer)
+    reviewed = store.read_attestation(reviewed_id)
+    assert manual_claim_lifecycle_status([submitted, reviewed]) == "accepted"
+    assert manual_claim_review_status([submitted, reviewed]) == "human_reviewed"
+
+    retracted_id = attest(store, assertion_id, "retracted", {"reason": "test"}, producer)
+    retracted = store.read_attestation(retracted_id)
+    assert manual_claim_lifecycle_status([submitted, reviewed, retracted]) == "retracted"
 
 
 # ---------------------------------------------------------------------------

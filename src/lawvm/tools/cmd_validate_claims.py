@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from lawvm.core.manual_claims.native import attest
+from lawvm.core.manual_claims.native import attest, manual_claim_lifecycle_status
 from lawvm.core.provenance_graph import (
     GraphBuilder,
     Producer,
@@ -135,20 +135,7 @@ def _claim_lifecycle_status_for(store: GraphStore, assertion_id: str) -> str:
             and d.get("subject", {}).get("artifact_id") == assertion_id
         ):
             attestations.append(_deserialize_attestation(d))
-    status = "proposed"
-    for attestation in sorted(attestations, key=lambda item: item.produced_at):
-        if attestation.attestation_kind == "claim_submitted":
-            status = "proposed"
-        elif attestation.attestation_kind == "reviewed":
-            if attestation.payload.get("accepted") is True:
-                status = "accepted"
-            elif attestation.payload.get("accepted") is False:
-                status = "rejected"
-        elif attestation.attestation_kind == "retracted":
-            status = "retracted"
-        elif attestation.attestation_kind == "superseded":
-            status = "superseded"
-    return status
+    return manual_claim_lifecycle_status(attestations)
 
 
 def _build_compat_claim(assertion: ProvenanceAssertion):

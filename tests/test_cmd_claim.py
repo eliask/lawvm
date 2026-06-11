@@ -196,6 +196,64 @@ class TestCmdClaim:
         assert "no assertions match" in out
 
 
+def test_claim_list_filters_by_status_and_review_status(tmp_path: Path, capsys):
+    """claim list applies graph-native status filters exposed by argparse."""
+    from lawvm.tools.cmd_claim import cmd_accept, cmd_list
+    accepted_id = _propose_and_get_id(tmp_path)
+    cmd_accept(_make_args(
+        assertion_id=accepted_id,
+        graph_store_root=_graph_root(tmp_path),
+    ))
+
+    rc = cmd_list(_make_args(
+        kind=None,
+        layer=None,
+        status="accepted",
+        review_status="human_reviewed",
+        has_attestation_kind=None,
+        graph_store_root=_graph_root(tmp_path),
+    ))
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "accepted" in out
+    assert "human_reviewed" in out
+    assert "fi.v1.INLINE_STATUTE_RESOLUTION" in out
+
+    rc = cmd_list(_make_args(
+        kind=None,
+        layer=None,
+        status="rejected",
+        review_status=None,
+        has_attestation_kind=None,
+        graph_store_root=_graph_root(tmp_path),
+    ))
+    assert rc == 0
+    assert "no assertions match" in capsys.readouterr().out
+
+
+def test_claim_list_parser_accepts_graph_filters() -> None:
+    """Argparse exposes the graph-native filters consumed by cmd_list."""
+    from lawvm.tools.cli import _build_parser
+
+    args = _build_parser().parse_args([
+        "claim",
+        "list",
+        "--status",
+        "accepted",
+        "--review-status",
+        "human_reviewed",
+        "--has-attestation-kind",
+        "reviewed",
+    ])
+
+    assert args.command == "claim"
+    assert args.claim_subcommand == "list"
+    assert args.status == "accepted"
+    assert args.review_status == "human_reviewed"
+    assert args.has_attestation_kind == "reviewed"
+
+
 def test_claim_show_renders_all_four_records(tmp_path: Path, capsys):
     """lawvm claim show renders assertion payload + attestations + authorization + source provenance."""
     from lawvm.tools.cmd_claim import cmd_show
