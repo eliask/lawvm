@@ -142,23 +142,18 @@ def _read_source_xml(source_amendment_id: str) -> bytes | None:
     except (OSError, RuntimeError):
         return None
 
-_SID_RE = re.compile(r"akn/fi/act/statute-consolidated/(\d{4}/[^/]+)/")
 _FINLEX_CONS_RE = re.compile(r"finlex://sd-cons/(\d{4}/[^/]+)/")
 
 
 def _locator_to_akn_source_pdf(locator: str) -> str | None:
     """Normalise a farchive corrigendum locator to the akn/... source_pdf format used in JSONL.
 
-    Handles both legacy akn/fi/... paths and current finlex://sd-cons/... paths.
+    Parses the current finlex://sd-cons/... corrigendum locator scheme.
     Returns None if the locator doesn't look like a corrigendum PDF.
     """
     if "/media/corrigenda/" not in locator or not locator.endswith(".pdf"):
         return None
     filename = Path(locator).name
-    # akn/fi/act/statute-consolidated/{sid}/media/corrigenda/{filename}
-    m = _SID_RE.search(locator)
-    if m:
-        return f"akn/fi/act/statute-consolidated/{m.group(1)}/media/corrigenda/{filename}"
     # finlex://sd-cons/{sid}/{lang}@{version}/media/corrigenda/{filename}
     m = _FINLEX_CONS_RE.search(locator)
     if m:
@@ -167,8 +162,8 @@ def _locator_to_akn_source_pdf(locator: str) -> str | None:
 
 
 def _sid_from_locator(locator: str) -> str | None:
-    """Extract statute ID (YEAR/NUM) from an akn/... or finlex://sd-cons/... locator."""
-    m = _SID_RE.search(locator) or _FINLEX_CONS_RE.search(locator)
+    """Extract statute ID (YEAR/NUM) from a finlex://sd-cons/... locator."""
+    m = _FINLEX_CONS_RE.search(locator)
     return m.group(1) if m else None
 _PDF_NAME_RE = re.compile(r"([a-z]+)(\d{4})(\d+)_(\d+)\.pdf$")
 
@@ -1516,6 +1511,12 @@ async def _run_classify(args) -> None:
                 sid = _sid_from_locator(name)
                 if source_pdf and sid:
                     targets.append((source_pdf, sid, lang, name))
+                else:
+                    print(
+                        f"  corrigendum-locator-unparsed: {name!r} matched a corrigenda PDF "
+                        f"prefix but did not parse as finlex://sd-cons/... — skipping.",
+                        file=sys.stderr,
+                    )
                 break
 
     if limit:
@@ -4483,7 +4484,7 @@ def register_cli(sub: Any) -> None:
     corr_review_p.add_argument(
         "--mode", default="legal_pit",
         type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
-        help="replay mode for live disagreement classification (default: legal_pit; legacy alias: finlex_oracle)",
+        help="replay mode for live disagreement classification (default: legal_pit)",
     )
     corr_review_p.add_argument(
         "--db", metavar="PATH",

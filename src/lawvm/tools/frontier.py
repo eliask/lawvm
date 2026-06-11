@@ -1683,7 +1683,7 @@ def register_cli(sub: Any) -> None:
         "--mode",
         default="official_consolidation",
         type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
-        help="replay mode for fresh oracle-check and score refresh (default: official_consolidation; legacy alias: finlex_oracle)",
+        help="replay mode for fresh oracle-check and score refresh (default: official_consolidation)",
     )
     frontier_p.add_argument(
         "--top",

@@ -46,7 +46,6 @@ from lawvm.tools.editorial_hygiene import (
     strip_kumottu_attribution,
 )
 from lawvm.tools._section_debug import resolve_section_key, score_text_pair
-from lawvm.tools._evidence_helpers import _bundle_blame_source_preamble
 from lawvm.tools.section_keys import section_key_sort_text
 
 
@@ -2217,7 +2216,7 @@ def build(
                             later.append(sa["amendment_id"])
             is_last = 0 if later else 1
 
-            j_text = _bundle_blame_source_preamble(sr)
+            j_text = str(sr.get("blame_source_preamble") or "")
             # Skip rows with no johtolause text and no blame attribution.
             # These produce proof cards with zero actionable content ("Johtolauseteksti ei saatavilla").
             if not j_text and not blame:

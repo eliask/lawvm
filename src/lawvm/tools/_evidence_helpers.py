@@ -40,8 +40,6 @@ __all__ = [
     "_PROOF_CONTRACT_VERSION",
     "_PROOF_STATUS",
     "_REPLAY_BUG_DIAGNOSES",
-    "_bundle_amendment_preamble",
-    "_bundle_blame_source_preamble",
     "_build_support_lookup_maps",
     "_chapter_label_from_key",
     "_cross_chapter_same_label_oracle_matches",
@@ -56,33 +54,6 @@ __all__ = [
     "_section_label_from_key",
     "_section_similarity",
 ]
-
-
-def _bundle_amendment_preamble(amendment: Dict) -> str:
-    """Read an amendment-context preamble field, accepting the legacy key.
-
-    The evidence-bundle field was renamed ``johtolause`` -> ``preamble``
-    (jurisdiction-neutral vocabulary). Persisted bundles emitted before the
-    rename still carry the old key, so accept both on read; prefer the new key.
-    """
-    if not isinstance(amendment, dict):
-        return ""
-    if amendment.get("preamble"):
-        return str(amendment.get("preamble") or "")
-    return str(amendment.get("johtolause") or amendment.get("preamble") or "")
-
-
-def _bundle_blame_source_preamble(item: Dict) -> str:
-    """Read a section-result blame-source preamble, accepting the legacy key.
-
-    Renamed ``blame_source_johtolause`` -> ``blame_source_preamble``; persisted
-    bundles from before the rename still carry the old key.
-    """
-    if not isinstance(item, dict):
-        return ""
-    if item.get("blame_source_preamble"):
-        return str(item.get("blame_source_preamble") or "")
-    return str(item.get("blame_source_johtolause") or item.get("blame_source_preamble") or "")
 
 
 def _payload_materially_prefers_replay(

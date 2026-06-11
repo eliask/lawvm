@@ -51,9 +51,6 @@ _SCOPE_PROVENANCE_TAGS = frozenset(
         "grouped_chapter_scope",
         "grouped_part_scope",
         "chapter_scope_from_preamble",
-        # Legacy spelling kept for read compatibility with rows produced before
-        # the preamble vocabulary migration.
-        "chapter_scope_from_johtolause",
         "chapter_scope_from_explicit_chunk",
         "chapter_scope_carry_forward",
     }
@@ -193,9 +190,7 @@ def scope_confidence_from_tags(
             confidence="inferred",
             resolved_chapter=resolved_chapter,
         )
-    # Legacy "chapter_scope_from_johtolause" normalizes to the canonical
-    # preamble vocabulary on read (mirrors the pipeline_capture shim).
-    if "chapter_scope_from_preamble" in normalized or "chapter_scope_from_johtolause" in normalized:
+    if "chapter_scope_from_preamble" in normalized:
         return ScopeConfidence(
             tag="chapter_scope_from_preamble",
             source="preamble",

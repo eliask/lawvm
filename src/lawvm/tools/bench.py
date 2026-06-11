@@ -2432,7 +2432,7 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         default="official_consolidation",
         type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
         help=(
-            "replay mode: official_consolidation (default; legacy alias: finlex_oracle) compares against the Finlex consolidated XML; "
+            "replay mode: official_consolidation (default) compares against the Finlex consolidated XML; "
             "legal_pit applies date-cutoff PIT materialization (excludes future-dated amendments "
             "and corrigendum patches, giving a cleaner accuracy signal against the legal record)"
         ),

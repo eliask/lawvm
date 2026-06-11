@@ -51,7 +51,6 @@ from lawvm.tools._evidence_helpers import (  # noqa: E402
     _ORACLE_INCORRECT_DIAGNOSES,
     _PRIMARY_TIER_ORDER,
     _REPLAY_BUG_DIAGNOSES,
-    _bundle_blame_source_preamble,
     _cross_chapter_same_label_oracle_matches,
     _cross_chapter_same_label_replay_matches,
     _diagnosis_counts,
@@ -2544,7 +2543,7 @@ def _oracle_artifact_profile_for_section(
         else:
             if not str(item.get("blame_source_url") or ""):
                 verification_gaps.append("missing_blame_source_url")
-            if not str(_bundle_blame_source_preamble(item) or ""):
+            if not str(item.get("blame_source_preamble") or ""):
                 verification_gaps.append("missing_blame_source_preamble")
 
     return {

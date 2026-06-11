@@ -478,16 +478,15 @@ def test_assign_chapter_scope_from_johtolause_respects_part_scope() -> None:
     assert scope_confidence.confidence == "inferred"
 
 
-def test_scope_confidence_from_tags_normalizes_legacy_johtolause_tag() -> None:
-    """Legacy stored tags spelled with the Finnish vocabulary normalize on read."""
+def test_scope_confidence_from_tags_classifies_preamble_tag_and_rejects_unknown() -> None:
+    """The canonical preamble tag classifies; unknown tags stay unrecognized."""
     from lawvm.finland.ops import scope_confidence_from_tags
 
-    witness = scope_confidence_from_tags(["chapter_scope_from_johtolause"])
+    witness = scope_confidence_from_tags(["chapter_scope_from_preamble"])
     assert witness is not None
     assert witness.tag == "chapter_scope_from_preamble"
     assert witness.source == "preamble"
     assert witness.confidence == "inferred"
-    # Unknown tags stay unrecognized — the shim covers only the known legacy value.
     assert scope_confidence_from_tags(["chapter_scope_from_mystery"]) is None
 
 
