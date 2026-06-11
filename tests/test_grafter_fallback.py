@@ -6371,6 +6371,7 @@ def test_append_compiled_group_ops_serializes_resolved_scope_confidence() -> Non
     assert compiled_ops == [
         {
             "sequence": 1,
+            "op_id": "op0",
             "action": "replace",
             "source_statute": "",
             "source_title": None,

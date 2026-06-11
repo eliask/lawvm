@@ -342,6 +342,7 @@ def append_compiled_group_ops(
         target_scope = CompiledOpTargetScope.from_resolved_op(rop)
         row: Dict[str, object] = {
             "sequence": sequence,
+            "op_id": rop.op_id or "",
             "action": rop.resolved_action_type.lower(),
             "source_statute": rop.resolved_source_statute,
             "source_title": rop.resolved_source_title or None,

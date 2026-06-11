@@ -48,7 +48,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, cast
 
 from lxml import etree
 
@@ -109,7 +109,50 @@ def _display_section(num: str) -> str:
 # Build blame map from compiled_ops
 # ---------------------------------------------------------------------------
 
-def _build_blame_map(compiled_ops: list[dict[str, Any]]) -> Dict[str, dict[str, Any]]:
+def _apply_event_outcomes(
+    apply_events: object,
+) -> dict[tuple[str, str], set[str]]:
+    """Return {(source_statute, op_id): outcomes} from replay apply events."""
+    outcomes: dict[tuple[str, str], set[str]] = {}
+    if not isinstance(apply_events, list):
+        return outcomes
+    for event in apply_events:
+        if not isinstance(event, Mapping):
+            continue
+        event_map = cast(Mapping[str, object], event)
+        source = str(event_map.get("source_statute") or "").strip()
+        op_id = str(event_map.get("op_id") or "").strip()
+        outcome = str(event_map.get("outcome") or "").strip()
+        if not source or not op_id or not outcome:
+            continue
+        outcomes.setdefault((source, op_id), set()).add(outcome)
+    return outcomes
+
+
+def _op_has_applied_mutation_evidence(
+    op: dict[str, Any],
+    event_outcomes: dict[tuple[str, str], set[str]],
+) -> bool:
+    """Whether a compiled op may count as a modifying blame op.
+
+    Legacy compiled rows may not have event evidence; keep those rows. When a
+    row has a `(source_statute, op_id)` event key, require at least one applied
+    event so skipped relabel/renumber rows cannot win last-modification blame.
+    """
+    source = str(op.get("source_statute") or "").strip()
+    op_id = str(op.get("op_id") or "").strip()
+    if not source or not op_id:
+        return True
+    outcomes = event_outcomes.get((source, op_id))
+    if outcomes is None:
+        return True
+    return "applied" in outcomes
+
+
+def _build_blame_map(
+    compiled_ops: list[dict[str, Any]],
+    apply_events: object = None,
+) -> Dict[str, dict[str, Any]]:
     """Build {norm_section_num: last_op_dict} from compiled ops list.
 
     Later ops overwrite earlier ops for the same section, giving us
@@ -117,11 +160,15 @@ def _build_blame_map(compiled_ops: list[dict[str, Any]]) -> Dict[str, dict[str, 
 
     Compiled-op rows are flat (``target_unit_kind``/``target_norm``/
     ``target_chapter`` fields); the legacy nested ``target`` dict shape is
-    still accepted for older callers.
+    still accepted for older callers. When apply-event outcomes are available,
+    skipped ops are not treated as modifying blame rows.
     """
     blame: Dict[str, dict[str, Any]] = {}
+    event_outcomes = _apply_event_outcomes(apply_events)
 
     for op in compiled_ops:
+        if not _op_has_applied_mutation_evidence(op, event_outcomes):
+            continue
         key = section_key_from_target_dict(op.get("target") or {})
         if not key:
             key = section_key_from_compiled_scope_row(op)
@@ -167,6 +214,7 @@ class BlameRow:
             wire["last_op"] = {
                 "source_statute": op.get("source_statute", ""),
                 "source_title": op.get("source_title", ""),
+                "op_id": op.get("op_id", ""),
                 "sequence": op.get("sequence"),
                 "action": op.get("action", ""),
             }
@@ -343,7 +391,10 @@ def _build_blame_result(
     # break governs every address. The chronologically-first one names it.
     governing_statute_break = statute_breaks[0] if statute_breaks else None
 
-    blame_map = _build_blame_map(compiled_ops)
+    blame_map = _build_blame_map(
+        compiled_ops,
+        apply_events=replay_meta.get("apply_mutation_events"),
+    )
 
     # Collect sections from replayed IRNode tree (for ordering and display)
     replay_secs_ir = extract_ir_sections(master.ir)
