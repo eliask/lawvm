@@ -59,6 +59,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator, List, Literal, Optional, Tuple
 
+import Levenshtein
 from lxml import etree
 import yaml
 
@@ -877,33 +878,67 @@ def _apply_text_replace_heuristic(
                 best_i = -1
                 best_w_var = w_len
 
-                # Pre-filter: find candidate regions by searching for
-                # the first word of wrong_ws.  Only scan within ±2*w_len
-                # of each hit, drastically reducing the search space for
-                # large documents.
-                _first_word = wrong_words_list[0]
+                # Pre-filter: find candidate regions by searching for a
+                # present, reasonably rare witness token.  Official
+                # corrigendum snippets may start with abbreviated punctuation
+                # ("...jos", etc.); using that absent first token forces a
+                # full-document fuzzy scan on large XML.
+                def _anchor_token() -> tuple[str, int] | None:
+                    best: tuple[int, int, int, str, int] | None = None
+                    for idx, token in enumerate(wrong_words_list):
+                        if len(token) < 4 or not any(ch.isalnum() for ch in token):
+                            continue
+                        first = xml_plain.find(token)
+                        if first < 0:
+                            continue
+                        occurrences = 1
+                        cursor = first + 1
+                        while occurrences < 3:
+                            cursor = xml_plain.find(token, cursor)
+                            if cursor < 0:
+                                break
+                            occurrences += 1
+                            cursor += 1
+                        # Prefer unique/rare and long tokens, preserving source
+                        # order as a final deterministic tie-breaker.
+                        candidate = (occurrences, -len(token), idx, token, wrong_ws.find(token))
+                        if best is None or candidate < best:
+                            best = candidate
+                    if best is None:
+                        return None
+                    return best[3], max(0, best[4])
+
+                _anchor = _anchor_token()
                 _candidate_regions: list[tuple[int, int]] = []
-                _search_start = 0
-                while True:
-                    _hit = xml_plain.find(_first_word, _search_start)
-                    if _hit < 0:
-                        break
-                    _region_start = max(0, _hit - w_len)
-                    _region_end = min(len(xml_plain), _hit + 2 * w_len)
-                    if _candidate_regions and _region_start <= _candidate_regions[-1][1]:
-                        # Merge overlapping regions
-                        _candidate_regions[-1] = (_candidate_regions[-1][0], _region_end)
-                    else:
-                        _candidate_regions.append((_region_start, _region_end))
-                    _search_start = _hit + 1
+                if _anchor is not None:
+                    _anchor_word, _anchor_offset = _anchor
+                    _search_start = 0
+                    region_slack = max(step, w_len // 3)
+                    while True:
+                        _hit = xml_plain.find(_anchor_word, _search_start)
+                        if _hit < 0:
+                            break
+                        _estimated_start = max(0, _hit - _anchor_offset)
+                        _region_start = max(0, _estimated_start - region_slack)
+                        _region_end = min(len(xml_plain), _estimated_start + w_len + region_slack)
+                        if _candidate_regions and _region_start <= _candidate_regions[-1][1]:
+                            # Merge overlapping regions
+                            _candidate_regions[-1] = (_candidate_regions[-1][0], _region_end)
+                        else:
+                            _candidate_regions.append((_region_start, _region_end))
+                        _search_start = _hit + 1
+                elif len(xml_plain) <= 5000:
+                    _candidate_regions.append((0, len(xml_plain)))
+                else:
+                    return xml_bytes, None
 
                 for w_var in range(max(10, w_len - win_range), w_len + win_range + 1):
-                    for _r_start, _r_end in (_candidate_regions or [(0, len(xml_plain))]):
+                    for _r_start, _r_end in _candidate_regions:
                         for i in range(_r_start, min(_r_end, len(xml_plain) - w_var + 1), step):
                             window = xml_plain[i : i + w_var]
-                            sm = difflib.SequenceMatcher(None, wrong_ws, window, autojunk=False)
-                            if sm.quick_ratio() >= 0.83 and sm.ratio() > best_ratio:
-                                best_ratio = sm.ratio()
+                            score = Levenshtein.ratio(wrong_ws, window)
+                            if score > best_ratio:
+                                best_ratio = score
                                 best_i = i
                                 best_w_var = w_var
 
@@ -911,9 +946,9 @@ def _apply_text_replace_heuristic(
                     for w_var in range(max(10, w_len - win_range), w_len + win_range + 1):
                         for i in range(max(0, best_i - step), min(len(xml_plain) - w_var + 1, best_i + step + 1)):
                             window = xml_plain[i : i + w_var]
-                            sm = difflib.SequenceMatcher(None, wrong_ws, window, autojunk=False)
-                            if sm.quick_ratio() >= 0.83 and sm.ratio() > best_ratio:
-                                best_ratio = sm.ratio()
+                            score = Levenshtein.ratio(wrong_ws, window)
+                            if score > best_ratio:
+                                best_ratio = score
                                 best_i = i
                                 best_w_var = w_var
 

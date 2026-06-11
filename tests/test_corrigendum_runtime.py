@@ -365,6 +365,45 @@ def test_apply_text_replace_deterministic_does_not_use_fuzzy_recovery() -> None:
     assert patched == original
 
 
+def test_apply_text_replace_fuzzy_uses_later_anchor_when_first_token_absent() -> None:
+    original = (
+        "<body><p>"
+        + ("taustateksti " * 500)
+        + "jos ajoneuvo täyttää kaikkien auton mallivuotta koskevien "
+        "FMVSS-standardien vaatimukset, sitä pidetään hyväksyttävänä."
+        + (" loppu " * 500)
+        + "</p></body>"
+    ).encode("utf-8")
+
+    patched, mode = corr._apply_text_replace_with_mode(
+        original,
+        "xxxjos ajoneuvo täyttää kaikkien auton mallivuotta koskevien "
+        "FMVSS-standardien vaatimukset, sitä pidetään hyväksyttävänä.",
+        "jos ajoneuvo täyttää uuden tarkistetun vaatimuksen.",
+    )
+
+    assert mode == "fuzzy_window"
+    assert "uuden tarkistetun vaatimuksen".encode("utf-8") in patched
+
+
+def test_apply_text_replace_fuzzy_large_no_anchor_skips_sequence_matcher(monkeypatch) -> None:
+    class _ForbiddenSequenceMatcher:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            raise AssertionError("large no-anchor fuzzy scan must be skipped")
+
+    monkeypatch.setattr(corr.difflib, "SequenceMatcher", _ForbiddenSequenceMatcher)
+    original = ("<body><p>" + ("taustateksti " * 1000) + "</p></body>").encode("utf-8")
+
+    patched, mode = corr._apply_text_replace_with_mode(
+        original,
+        "puuttuva ankkuri jota dokumentissa ei esiinny",
+        "korjattu teksti",
+    )
+
+    assert mode is None
+    assert patched == original
+
+
 def test_load_patch_records_merges_official_and_adjudication_files(tmp_path: Path) -> None:
     official_path = tmp_path / "corrigendum_official_fi.jsonl"
     adjudication_path = tmp_path / "corrigendum_adjudications_fi.jsonl"
