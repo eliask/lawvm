@@ -32,7 +32,7 @@ def parse_open_law_xml(xml_text: str) -> IRNode:
     return IRNode(kind=IRNodeKind.BODY, children=(node,))
 
 
-def convert_open_law_element(element: ET.Element) -> IRNode:
+def convert_open_law_element(element: ET.Element[str]) -> IRNode:
     """Convert one already-parsed Open Law structural element."""
 
     return _convert_element(element)
@@ -63,7 +63,7 @@ def wrap_open_law_body_with_prefix(tree: IRNode, prefix: Tuple[str, ...]) -> IRN
     return current
 
 
-def _convert_element(element: ET.Element) -> IRNode:
+def _convert_element(element: ET.Element[str]) -> IRNode:
     local = _local_name(element.tag)
     if local == "document":
         return _convert_document(element)
@@ -86,7 +86,7 @@ def _convert_element(element: ET.Element) -> IRNode:
     return IRNode(kind=IRNodeKind.CONTENT, text=_collapse_itertext(element), attrs=_attrs(element))
 
 
-def _convert_document(element: ET.Element) -> IRNode:
+def _convert_document(element: ET.Element[str]) -> IRNode:
     children = _converted_children(element)
     attrs = _attrs(element)
     doc_id = element.attrib.get("id", "")
@@ -95,7 +95,7 @@ def _convert_document(element: ET.Element) -> IRNode:
     return IRNode(kind=IRNodeKind.BODY, attrs=attrs, children=children)
 
 
-def _convert_container(element: ET.Element) -> IRNode:
+def _convert_container(element: ET.Element[str]) -> IRNode:
     label = _first_child_text(element, "num")
     attrs = _attrs(element)
     prefix = _first_child_text(element, "prefix")
@@ -105,7 +105,7 @@ def _convert_container(element: ET.Element) -> IRNode:
     return IRNode(kind=IRNodeKind.HCONTAINER, label=label or None, attrs=attrs, children=children)
 
 
-def _convert_section(element: ET.Element) -> IRNode:
+def _convert_section(element: ET.Element[str]) -> IRNode:
     label = _first_child_text(element, "num")
     attrs = _attrs(element)
     prefix = _first_child_text(element, "prefix")
@@ -118,14 +118,14 @@ def _convert_section(element: ET.Element) -> IRNode:
     return IRNode(kind=IRNodeKind.SECTION, label=label or None, attrs=attrs, children=children)
 
 
-def _convert_para(element: ET.Element) -> IRNode:
+def _convert_para(element: ET.Element[str]) -> IRNode:
     label = _first_child_text(element, "num")
     attrs = _attrs(element)
     children = _identity_children(element) + _converted_children(element)
     return IRNode(kind=IRNodeKind.PARAGRAPH, label=label or None, attrs=attrs, children=children)
 
 
-def _convert_annotations(element: ET.Element) -> IRNode:
+def _convert_annotations(element: ET.Element[str]) -> IRNode:
     return IRNode(
         kind=IRNodeKind.HCONTAINER,
         label="annos",
@@ -134,7 +134,7 @@ def _convert_annotations(element: ET.Element) -> IRNode:
     )
 
 
-def _identity_children(element: ET.Element) -> Tuple[IRNode, ...]:
+def _identity_children(element: ET.Element[str]) -> Tuple[IRNode, ...]:
     out: list[IRNode] = []
     num = _first_child_text(element, "num")
     if num:
@@ -142,7 +142,7 @@ def _identity_children(element: ET.Element) -> Tuple[IRNode, ...]:
     return tuple(out)
 
 
-def _converted_children(element: ET.Element) -> Tuple[IRNode, ...]:
+def _converted_children(element: ET.Element[str]) -> Tuple[IRNode, ...]:
     out: list[IRNode] = []
     for child in list(element):
         local = _local_name(child.tag)
@@ -156,7 +156,7 @@ def _converted_children(element: ET.Element) -> Tuple[IRNode, ...]:
     return tuple(out)
 
 
-def _attrs(element: ET.Element) -> dict[str, str]:
+def _attrs(element: ET.Element[str]) -> dict[str, str]:
     attrs = {
         "open_law_tag": _local_name(element.tag),
     }
@@ -166,18 +166,18 @@ def _attrs(element: ET.Element) -> dict[str, str]:
     return attrs
 
 
-def _first_child_text(element: ET.Element, local_name: str) -> str:
+def _first_child_text(element: ET.Element[str], local_name: str) -> str:
     for child in list(element):
         if _local_name(child.tag) == local_name:
             return _collapse_itertext(child)
     return ""
 
 
-def _collapse_itertext(element: ET.Element) -> str:
+def _collapse_itertext(element: ET.Element[str]) -> str:
     return _WHITESPACE_RE.sub(" ", "".join(_iter_text_chunks(element)).strip())
 
 
-def _iter_text_chunks(element: ET.Element) -> Iterable[str]:
+def _iter_text_chunks(element: ET.Element[str]) -> Iterable[str]:
     for chunk in element.itertext():
         if chunk:
             yield chunk

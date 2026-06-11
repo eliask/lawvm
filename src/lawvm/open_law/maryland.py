@@ -206,7 +206,7 @@ def _publication_suffix(branch: str) -> str:
     return match.group(2) or ""
 
 
-def _first_text(root: ET.Element, local_name: str) -> str:
+def _first_text(root: ET.Element[str], local_name: str) -> str:
     for element in root.iter():
         if _local_name(element.tag) == local_name:
             return " ".join("".join(element.itertext()).split())

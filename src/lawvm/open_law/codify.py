@@ -79,23 +79,23 @@ def _parse_bool(value: str) -> bool:
     return value.strip().lower() not in {"false", "0", "no"}
 
 
-def _payload_element(element: ET.Element) -> ET.Element | None:
+def _payload_element(element: ET.Element[str]) -> ET.Element[str] | None:
     payload_elements = _payload_elements(element)
     return payload_elements[0] if payload_elements else None
 
 
-def _payload_elements(element: ET.Element) -> tuple[ET.Element, ...]:
+def _payload_elements(element: ET.Element[str]) -> tuple[ET.Element[str], ...]:
     payload_elements, _diagnostics = _payload_elements_and_diagnostics(element, op_id="", path=())
     return payload_elements
 
 
 def _payload_elements_and_diagnostics(
-    element: ET.Element,
+    element: ET.Element[str],
     *,
     op_id: str,
     path: Tuple[str, ...],
-) -> tuple[tuple[ET.Element, ...], tuple[OpenLawFinding, ...]]:
-    out: list[ET.Element] = []
+) -> tuple[tuple[ET.Element[str], ...], tuple[OpenLawFinding, ...]]:
+    out: list[ET.Element[str]] = []
     unsupported: list[str] = []
     for child in list(element):
         namespace, local = _split_tag(child.tag)
@@ -127,7 +127,7 @@ def _format_payload_child_tags(tags: list[str]) -> str:
     return ", ".join(sorted(set(tags)))
 
 
-def _first_descendant_text(element: ET.Element, local_name: str) -> str:
+def _first_descendant_text(element: ET.Element[str], local_name: str) -> str:
     for child in element.iter():
         if _split_tag(child.tag)[1] == local_name:
             text = "".join(chunk for chunk in child.itertext() if chunk).strip()
