@@ -1,7 +1,7 @@
 """EXPERIMENTAL one-work certificate bundle writer (schema-pressure fixture).
 
 Emits a complete ``lawvm.certificate.v0`` bundle directory for ONE Finnish
-statute per notes/CERTIFICATE_SCHEMA_V0.md (spec_version 0.4) and
+statute per notes/CERTIFICATE_SCHEMA_V0.md (spec_version 0.4.1) and
 notes/CERTIFIED_TREE_TRANSITION_TRACE_V0.md (spec_version 0.3), within the
 experimental-writer boundary of certificate spec §11.3:
 
@@ -22,8 +22,10 @@ inconsistent bundle — it is not checker v0 and asserts nothing beyond the
 writer's own consistency. Bundles MUST NOT be published or presented as
 checkable public claims (certificate spec §10, §11.3).
 
-Known, deliberately surfaced spec-vs-engine gaps are marked with
-``SPEC-GAP:`` comments referencing the exact spec section.
+The interim decisions this writer surfaced on first emission were ratified
+(or resolved) into certificate spec 0.4.1 §11.4; remaining engine-surface
+limits are marked with ``SPEC-NOTE:`` comments referencing the exact spec
+section.
 """
 
 from __future__ import annotations
@@ -54,7 +56,7 @@ from lawvm.tools.export_transition_graph import (
 # ---------------------------------------------------------------------------
 
 CERTIFICATE_SCHEMA = "lawvm.certificate.v0"
-CERTIFICATE_SPEC_VERSION = "0.4"
+CERTIFICATE_SPEC_VERSION = "0.4.1"
 TRACE_SPEC_VERSION = "0.3"
 SEAM_SPEC_VERSION = "0.2"
 SEAM_SCHEMA = "lawvm.provision_state.v1"
@@ -86,22 +88,25 @@ D_INTERPRETATION_POLICY = "lawvm.interpretation_policy.v0"
 D_PROJECTION_SPECS = "lawvm.projection_specs.v0"
 D_DIAGNOSTIC_REGISTRY = "lawvm.diagnostic_registry.v0"
 D_CHECKER_CONTRACT = "lawvm.checker_contract.v0"
-# SPEC-GAP: certificate spec §2.1 defines change_dates_root as "SetRoot over
-# the ISO date strings" but names no domain tag for it. Writer pins one.
+# Certificate spec §2.1: change_dates_root is a VALUE SET — raw ISO date
+# strings under this domain, the one named exception to the digest-member
+# rule of §3.1.1.
 D_CHANGE_DATES = "lawvm.change_dates.v0"
 
-# SPEC-GAP: trace spec §7 / certificate spec §5.4 require
-# kind=source_anchor_unavailable residuals, but the engine observation
-# registry has no diagnostic code for source-anchor unavailability. The
-# writer registers this bundle-local code in the pinned diagnostic-registry
-# manifest (§3.5 allows the registered set to widen within v0).
+# Certificate spec §3.5: bundle-local certificate-layer code (CERT.
+# namespace) carried by kind=source_anchor_unavailable residuals (§5.4,
+# trace spec §7).
 SOURCE_ANCHOR_UNAVAILABLE_CODE = "CERT.SOURCE_ANCHOR_UNAVAILABLE"
 
+# Certificate spec §3.4 + §3.5: per-family run-provenance exclusion list.
+# The seam payload's `engine` block (git commit/dirty/repository) is
+# excluded from the projection-hash input — visible in the artifact row,
+# never hashed (mirrors seam spec §3.1's derived_state_hash exclusion).
+SEAM_HASH_EXCLUDED_MEMBERS: Tuple[str, ...] = ("engine",)
+
 # Certificate spec §5.4 typed blocking fixed-term codes mapped to
-# kind=expiry_unverified.
-# SPEC-GAP: the §5.4 list omits TEMPORAL.DURATION_COMMENCEMENT_UNRESOLVED,
-# which seam spec 0.2 §6.1 names as blocking; included here (the registered
-# set MAY widen within v0 per §5.4).
+# kind=expiry_unverified (matches seam spec 0.2 §6.1, including
+# TEMPORAL.DURATION_COMMENCEMENT_UNRESOLVED).
 _EXPIRY_BLOCKING_CODES = frozenset(
     {
         "TEMPORAL.FIXED_TERM_EXPIRY_UNPARSEABLE",
@@ -211,6 +216,22 @@ def _sha256_rendered(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
+def projection_hash_view(payload: Mapping[str, Any], excluded_members: Sequence[str]) -> Dict[str, Any]:
+    """Certificate spec §3.4 hash view: payload minus declared run-provenance.
+
+    Excluded members stay VISIBLE in the emitted artifact row; only the hash
+    input drops them, so engine commit/dirty-state churn cannot reach
+    ``projection_hash`` or ``certificate_root``.
+    """
+    excluded = set(excluded_members)
+    return {k: v for k, v in payload.items() if k not in excluded}
+
+
+def projection_payload_hash(payload: Mapping[str, Any], excluded_members: Sequence[str]) -> str:
+    """``projection_hash`` per certificate spec §3.4 (hash-view normalized)."""
+    return leaf_hash(D_PROJECTION_PAYLOAD, projection_hash_view(payload, excluded_members))
+
+
 def _plainify(value: Any, path: str = "") -> Any:
     """Convert frozen mappings/tuples from engine carriers into plain JSON values."""
     if isinstance(value, Mapping):
@@ -246,10 +267,9 @@ def _residual_kind_for_code(code: str, spec: Optional[FindingSpec]) -> str:
     if spec.family == "violation":
         return "failed_operation"
     if spec.family == "ambiguity":
-        # SPEC-GAP: certificate spec §5.4 has no residual kind for blocking
-        # ambiguity findings outside the fixed-term lane (e.g.
-        # TIME.TRIGGER_COVERAGE_INCOMPLETE). manual_frontier is the closest
-        # honest bucket: source/temporal coverage awaiting external input.
+        # Certificate spec §5.4: non-expiry blocking ambiguity findings
+        # (e.g. TIME.TRIGGER_COVERAGE_INCOMPLETE) map to manual_frontier —
+        # resolution awaits external/manual input.
         return "manual_frontier"
     return "grounding_unclassified"
 
@@ -279,8 +299,8 @@ def build_diagnostic_registry_rows(profile_fields: Mapping[str, Any]) -> List[Di
     """Emit §3.5 registry rows from the live engine observation registry.
 
     Registry "barrier" roles are strictness taxonomy metadata that can never
-    appear on a runtime Finding (and therefore never on a residual row); the
-    §3.5 role enum has no barrier value, so barrier codes are excluded.
+    appear on a runtime Finding; certificate spec §3.5 forbids registering
+    codes whose role cannot produce a runtime finding, so they are excluded.
     """
     rows: List[Dict[str, Any]] = []
     for code in sorted(FINDING_REGISTRY):
@@ -817,10 +837,10 @@ def build_certificate_bundle(
     }
     profile_hash = leaf_hash(D_STRICT_PROFILE, profile_manifest)
 
-    # SPEC-GAP: the engine has no reified interpretation-policy object for
-    # lawvm.fi.default.v1 (only an optional fingerprint hook, unused for FI).
-    # The manifest pins the interpretation parameters this bundle was emitted
-    # under so it stays self-describing (§3.5).
+    # SPEC-NOTE §3.5: the engine has no reified interpretation-policy object
+    # for lawvm.fi.default.v1 (only an unused fingerprint hook) — an explicit
+    # checker-v0 non-goal. The manifest pins the interpretation parameters
+    # this bundle was emitted under (the §3.5 policy-manifest minimum).
     policy_manifest = {
         "schema": D_INTERPRETATION_POLICY,
         "policy_id": POLICY_ID,
@@ -843,6 +863,9 @@ def build_certificate_bundle(
                 "schema": SEAM_SCHEMA,
                 "spec_version": SEAM_SPEC_VERSION,
                 "spec_hash": seam_spec_hash,
+                # §3.4/§3.5: pinned run-provenance exclusion list for the
+                # projection-hash input.
+                "hash_excluded_members": list(SEAM_HASH_EXCLUDED_MEMBERS),
             }
         },
     }
@@ -955,9 +978,9 @@ def build_certificate_bundle(
                 address=finding_row["scope"]["address"],
                 date_range=list(finding_row["scope"]["date_range"]),
                 source_text=source_text,
-                # SPEC-GAP: §5.4 requires the grammar-family rule_id on
-                # expiry_unverified residuals, but FixedTermDiagnostic carries
-                # no rule_id field; empty when the engine surface lacks it.
+                # §5.4: rule_id required where the producing surface carries
+                # one; "" has fixed semantics — no grammar-family attribution
+                # exists (FixedTermDiagnostic fails before family selection).
                 rule_id=str(detail.get("rule_id") or ""),
                 source_refs=list(finding_row["source_refs"]),
                 finding_refs=[finding_row["finding_id"]],
@@ -1019,8 +1042,9 @@ def build_certificate_bundle(
                 territory=None,
                 title=bundle.title,
             )
-            # §3.4: only the payload is hashed; parentage is a wrapper member.
-            projection_hash = leaf_hash(D_PROJECTION_PAYLOAD, payload)
+            # §3.4: only the payload's hash view is hashed (run-provenance
+            # excluded); parentage is a wrapper member.
+            projection_hash = projection_payload_hash(payload, SEAM_HASH_EXCLUDED_MEMBERS)
             projection_hashes.append(projection_hash)
             certification_status = certification_status_for_row(
                 payload["status"],
@@ -1164,10 +1188,8 @@ def build_certificate_bundle(
             "root": source_bundle_root,
             "locator": "sources/",
         },
-        # SPEC-GAP: §4's bundle layout has no file carrying the SourceArtifact
-        # identity rows, yet checker step 2 must recompute identity-object
-        # leaves. The writer adds sources/source_artifacts.json (same root as
-        # source_bundle) so the bundle is self-contained.
+        # §4: REQUIRED index of §3.2 SourceArtifact identity rows; its root
+        # IS source_bundle_root (no new root — index and bundle cannot drift).
         "source_artifact_index": {
             "schema": "lawvm.source_artifact_index.v0",
             "root": source_bundle_root,
@@ -1555,13 +1577,21 @@ def verify_bundle(bundle_dir: str | Path) -> Dict[str, str]:
 
     # seam projection rows: payload hashes, family root, projection_root,
     # parentage consistency, universe reconciliation (§5.5)
+    # §3.4: recompute projection hashes under the bundle's OWN pinned
+    # hash_excluded_members, never a hardcoded table.
+    projection_specs = json.loads(
+        (bundle_path / artifacts["projection_spec_manifest"]["locator"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    seam_excluded = projection_specs["projections"]["seam"]["hash_excluded_members"]
     wrapper_rows = _read_jsonl(bundle_path / artifacts["seam_projection_rows"]["locator"])
     projection_hashes = []
     emitted_universe: set[Tuple[str, str]] = set()
     certification_statuses: List[str] = []
     for wrapper in wrapper_rows:
         payload = wrapper["projection_payload"]
-        projection_hash = leaf_hash(D_PROJECTION_PAYLOAD, payload)
+        projection_hash = projection_payload_hash(payload, seam_excluded)
         parentage = wrapper["certificate"]
         _require(
             parentage["projection_hash"] == projection_hash,
