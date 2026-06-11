@@ -1360,8 +1360,10 @@ def materialize_pit_ex(
 
     # Step 1d: Temporary-ancestor subtree masking.
     # If a temporary ancestor is active, background descendants must be hidden —
-    # the temporary content is self-contained and should not have permanent
-    # child amendments grafted into it.
+    # the temporary content is self-contained and should not have older
+    # permanent child state grafted into it. Later permanent child amendments
+    # are foreground state transitions and must still overlay the active
+    # temporary ancestor.
     temp_ancestors: Set[Tuple[Tuple[str, str], ...]] = set()
     for addr, ver in active_versions.items():
         if ver.variant_kind == "temporary":
@@ -1373,7 +1375,17 @@ def materialize_pit_ex(
                 continue
             # Check if any prefix of this address is a temporary ancestor
             for depth in range(1, len(addr.path)):
-                if addr.path[:depth] in temp_ancestors:
+                ancestor_path = addr.path[:depth]
+                if ancestor_path not in temp_ancestors:
+                    continue
+                ancestor_addr = LegalAddress(path=ancestor_path)
+                ancestor_version = active_versions.get(ancestor_addr)
+                if ancestor_version is None:
+                    continue
+                if (ver.effective, ver.enacted) <= (
+                    ancestor_version.effective,
+                    ancestor_version.enacted,
+                ):
                     masked.add(addr)
                     break
         for addr in masked:

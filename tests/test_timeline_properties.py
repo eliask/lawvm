@@ -4464,6 +4464,92 @@ def test_select_active_version_agrees_with_materialize_pit() -> None:
     assert irnode_to_text(active.content) == irnode_to_text(pit_section)
 
 
+def test_materialize_pit_temporary_parent_masks_only_background_descendants() -> None:
+    """Temporary ancestors hide older child state, not later child amendments."""
+    base = IRStatute(
+        statute_id="test/temporary-parent-child",
+        title="Temporary parent child overlay",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="7",
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="base child 1"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="base child 2"),
+                    ),
+                ),
+            ),
+        ),
+    )
+    section = LegalAddress(path=(("section", "7"),))
+    child1 = LegalAddress(path=(("section", "7"), ("subsection", "1")))
+    child2 = LegalAddress(path=(("section", "7"), ("subsection", "2")))
+    timelines = {
+        section: ProvisionTimeline(
+            address=section,
+            versions=[
+                ProvisionVersion(
+                    effective="2000-01-01",
+                    enacted="2000-01-01",
+                    variant_kind="permanent",
+                    content=base.body.children[0],
+                ),
+                ProvisionVersion(
+                    effective="2010-01-01",
+                    enacted="2010-01-01",
+                    expires="2020-01-01",
+                    variant_kind="temporary",
+                    content=IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="7",
+                        children=(
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="temporary child 1"),
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="temporary child 2"),
+                        ),
+                    ),
+                ),
+            ],
+        ),
+        child1: ProvisionTimeline(
+            address=child1,
+            versions=[
+                ProvisionVersion(
+                    effective="2005-01-01",
+                    enacted="2005-01-01",
+                    variant_kind="permanent",
+                    content=IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="older child 1"),
+                ),
+            ],
+        ),
+        child2: ProvisionTimeline(
+            address=child2,
+            versions=[
+                ProvisionVersion(
+                    effective="2015-01-01",
+                    enacted="2015-01-01",
+                    variant_kind="permanent",
+                    content=IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="later child 2"),
+                ),
+            ],
+        ),
+    }
+
+    pit = materialize_pit(timelines, "2016-01-01", base=base)
+    section_node = next(
+        child
+        for child in pit.body.children
+        if child.kind is IRNodeKind.SECTION and child.label == "7"
+    )
+    text = irnode_to_text(section_node)
+
+    assert "older child 1" not in text
+    assert "temporary child 1" in text
+    assert "temporary child 2" not in text
+    assert "later child 2" in text
+
+
 def test_select_active_version_filters_by_territory_applicability() -> None:
     """Territory-scoped selection should ignore non-matching versions."""
     addr = LegalAddress(path=(("section", "1"),))

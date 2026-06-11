@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from lxml import etree
 import pytest
 
-from lawvm.core.ir import IRNode, LegalAddress, ProvisionTimeline, ProvisionVersion
+from lawvm.core.ir import IRNode, IRStatute, LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.ir_helpers import irnode_content_hash
 from lawvm.core.provenance import MigrationEvent, OperationSource
 from lawvm.core.semantic_types import IRNodeKind
@@ -26,6 +26,14 @@ from lawvm.tools.provision_state import (
 
 def _section(text: str) -> IRNode:
     return IRNode(kind=IRNodeKind.SECTION, label="1", text=text)
+
+
+def _numbered_section(label: str, children: tuple[IRNode, ...]) -> IRNode:
+    return IRNode(kind=IRNodeKind.SECTION, label=label, children=children)
+
+
+def _subsection(label: str, text: str) -> IRNode:
+    return IRNode(kind=IRNodeKind.SUBSECTION, label=label, text=text)
 
 
 def _timeline(*, expires: str = "") -> dict[LegalAddress, ProvisionTimeline]:
@@ -1387,6 +1395,89 @@ def test_timeline_integrity_flag_off_restores_prior_behavior(monkeypatch) -> Non
     assert "timeline_broken_at" not in payload
 
 
+def test_provision_state_materializes_later_child_overlay_under_temporary_parent() -> None:
+    parent_address = LegalAddress(path=(("chapter", "1"), ("section", "7")))
+    child_1_address = LegalAddress(path=(*parent_address.path, ("subsection", "1")))
+    child_2_address = LegalAddress(path=(*parent_address.path, ("subsection", "2")))
+    base_section = _numbered_section(
+        "7",
+        (
+            _subsection("1", "base child 1"),
+            _subsection("2", "base child 2"),
+        ),
+    )
+    base = IRStatute(
+        statute_id="2000/1",
+        title="Base",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(IRNode(kind=IRNodeKind.CHAPTER, label="1", children=(base_section,)),),
+        ),
+    )
+    temporary_parent = _numbered_section(
+        "7",
+        (
+            _subsection("1", "temporary child 1"),
+            _subsection("2", "temporary child 2"),
+        ),
+    )
+    timelines = {
+        parent_address: ProvisionTimeline(
+            address=parent_address,
+            versions=[
+                ProvisionVersion(
+                    effective="2010-01-01",
+                    enacted="2010-01-01",
+                    expires="2020-01-01",
+                    content=temporary_parent,
+                    content_hash=irnode_content_hash(temporary_parent),
+                )
+            ],
+        ),
+        child_1_address: ProvisionTimeline(
+            address=child_1_address,
+            versions=[
+                ProvisionVersion(
+                    effective="2005-01-01",
+                    enacted="2005-01-01",
+                    content=_subsection("1", "older child 1"),
+                )
+            ],
+        ),
+        child_2_address: ProvisionTimeline(
+            address=child_2_address,
+            versions=[
+                ProvisionVersion(
+                    effective="2015-01-01",
+                    enacted="2015-01-01",
+                    content=_subsection("2", "later child 2"),
+                )
+            ],
+        ),
+    }
+
+    payload = build_provision_state_response(
+        timelines=timelines,
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="chapter:1/section:7",
+        as_of="2016-01-01",
+        base=base,
+        include_ir=True,
+    )
+
+    rendered = payload["text"]["rendered"]
+    assert payload["status"] == "selected"
+    assert "temporary child 1" in rendered
+    assert "older child 1" not in rendered
+    assert "temporary child 2" not in rendered
+    assert "later child 2" in rendered
+    assert payload["content_derivation"]["mode"] == "pit_materialized_descendant_overlays"
+    assert payload["hashes"]["content_hash"] == payload["content_derivation"][
+        "materialized_content_hash"
+    ]
+
+
 # --- live-corpus specimen regression -------------------------------------------
 # Consumer-reported specimen: 2014/1429 replay records an occupancy violation at
 # 2025/1382 (timeline break), yet the seam used to serve clean-looking answers
@@ -1398,6 +1489,24 @@ def test_timeline_integrity_flag_off_restores_prior_behavior(monkeypatch) -> Non
 _FINLEX_CORPUS_AVAILABLE = (
     Path(__file__).resolve().parents[1] / "data" / "finlex.farchive"
 ).exists()
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_2016_258_section_7_exposes_child_overlay_in_parent_text() -> None:
+    payload = resolve_provision_state(
+        statute_id="2016/258",
+        jurisdiction="fi",
+        provision="section:7",
+        as_of="2021-12-31",
+    )
+
+    assert payload["status"] == "selected"
+    rendered = payload["text"]["rendered"]
+    assert "0,70 euroa sivulta" in rendered
+    assert "1,40 euroa sivulta" in rendered
+    assert "23 euroa levyltä" in rendered
+    assert "0,60 euroa sivulta" not in rendered
+    assert payload["content_derivation"]["mode"] == "pit_materialized_descendant_overlays"
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")

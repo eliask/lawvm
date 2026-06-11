@@ -10,9 +10,9 @@ import os
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Literal, Mapping
 
 from lawvm.corpus_store import statute_url
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, ProvisionTimeline, ProvisionVersion
@@ -24,8 +24,10 @@ from lawvm.core.source_locator import SourceLocator
 from lawvm.core.source_witness import DigestWitness, SourceWitness
 from lawvm.core.statute_validity import StatuteValidityBound, is_expired_at
 from lawvm.core.temporal_scheduler import TemporalScheduleDelta
+from lawvm.core.timeline import materialize_pit
 from lawvm.core.timeline_lineage import lineage_address_chain
 from lawvm.core.timeline_selection import VersionSelectionResult, select_active_version_ex
+from lawvm.core.tree_ops import resolve as resolve_tree
 from lawvm.roman import arabic_to_roman
 from lawvm.tools.timeline_integrity import (
     TimelineBreak,
@@ -307,6 +309,7 @@ def build_provision_state_response(
         )
     )
     return _selected_response(
+        timelines=timelines,
         selection=selection,
         resolution=resolution,
         migration_events=migration_events,
@@ -880,6 +883,7 @@ def resolve_address(
 
 def _selected_response(
     *,
+    timelines: Mapping[LegalAddress, ProvisionTimeline],
     selection: VersionSelectionResult,
     resolution: AddressResolution,
     migration_events: tuple[MigrationEvent, ...],
@@ -904,6 +908,17 @@ def _selected_response(
     expired = overlay is not None and overlay.kind == "expired"
     blocked = overlay is not None and overlay.kind in ("blocked_unparseable", "blocked_ambiguous")
     payload_version = None if (expired or blocked or timeline_blocking) else version
+    content_derivation: dict[str, Any] | None = None
+    if payload_version is not None:
+        payload_version, content_derivation = _materialized_payload_version(
+            timelines=timelines,
+            base=base,
+            address=address,
+            version=payload_version,
+            as_of=str(query["as_of"]),
+            query_type=_query_type_literal(str(query["query_type"])),
+            territory=query.get("territory"),
+        )
     content_hash = _content_hash(payload_version)
     if timeline_blocking:
         # A governing timeline break makes ANY selection outcome unprovable —
@@ -990,17 +1005,72 @@ def _selected_response(
     )
     if diagnostics:
         payload["diagnostics"] = diagnostics
+    if content_derivation is not None:
+        payload["content_derivation"] = content_derivation
     payload["source_locator_status"] = (
         "canonical_document_locator" if payload["source_locator"] is not None else "unavailable_no_source"
     )
     if include_ir:
-        payload["ir"] = _ir_payload(version)
+        payload["ir"] = _ir_payload(payload_version)
     if base is not None:
         payload["base"] = {
             "statute_id": base.statute_id,
             "title": base.title,
         }
     return payload
+
+
+def _query_type_literal(value: str) -> Literal["governing", "in_force"]:
+    if value == "in_force":
+        return "in_force"
+    return "governing"
+
+
+def _materialized_payload_version(
+    *,
+    timelines: Mapping[LegalAddress, ProvisionTimeline],
+    base: IRStatute | None,
+    address: LegalAddress,
+    version: ProvisionVersion,
+    as_of: str,
+    query_type: Literal["governing", "in_force"],
+    territory: Any,
+) -> tuple[ProvisionVersion, dict[str, Any] | None]:
+    """Use PIT-materialized content for reads of composite ancestor provisions."""
+
+    if base is None or version.content is None:
+        return version, None
+    if not any(candidate.has_prefix(address) and candidate != address for candidate in timelines):
+        return version, None
+    materialized = materialize_pit(
+        dict(timelines),
+        as_of=as_of,
+        base=base,
+        query_type=query_type,
+        territory=str(territory) if territory is not None else None,
+    )
+    materialized_content = resolve_tree(materialized.body, address.path)
+    if materialized_content is None:
+        return version, None
+    if materialized_content.to_jsonable_dict() == version.content.to_jsonable_dict():
+        return version, None
+
+    selected_hash = _content_hash(version)
+    materialized_hash = irnode_content_hash(materialized_content)
+    materialized_version = replace(
+        version,
+        content=materialized_content,
+        content_hash=materialized_hash,
+    )
+    return materialized_version, {
+        "mode": "pit_materialized_descendant_overlays",
+        "hash_role": "included_in_content_hash_and_derived_state_hash",
+        "selected_version_content_hash": selected_hash,
+        "materialized_content_hash": materialized_hash,
+        "selected_version_effective": version.effective,
+        "selected_version_enacted": version.enacted,
+        "address": _address_wire(address),
+    }
 
 
 _SELECTED_DIAGNOSTIC_CODES = frozenset(
