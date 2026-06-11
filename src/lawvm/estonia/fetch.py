@@ -209,7 +209,7 @@ _RIIGIKOGU_TERM_START_DATES = {
 }
 
 
-def _partial_commencement_dates(muutm: ET.Element) -> list[str]:
+def _partial_commencement_dates(muutm: ET.Element[str]) -> list[str]:
     """Extract explicit delayed partial-effect slices from muutmismarge metadata."""
     note_text = "".join(str(text) for text in muutm.itertext()).replace("\xa0", " ")
     note_text = re.sub(r"\s+", " ", note_text).strip()

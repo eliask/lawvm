@@ -7466,7 +7466,7 @@ def parse_html_op_items(html_cdata: str, *, allow_plain_paragraph_items: bool = 
         # Match <b>...</b> blocks containing § (section marker), including when
         # nested tags like <sup> appear inside <b> (e.g. <b>§ 12<sup>1</sup>. Title</b>).
         # Strategy: strip inner tags from the b-content first, then check for §.
-        def _b_sentinel(m: re.Match) -> str:
+        def _b_sentinel(m: re.Match[str]) -> str:
             inner = m.group(1)
             # Replace inner tags with a space so adjacent text/numbers are not
             # concatenated: "<b>§ 11<sup>1</sup>. Title</b>" → "§ 11 1 . Title"

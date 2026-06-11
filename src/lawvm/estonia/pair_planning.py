@@ -196,14 +196,14 @@ def _local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
-def _child_text(element: ET.Element, child_name: str) -> str:
+def _child_text(element: ET.Element[str], child_name: str) -> str:
     for child in element:
         if _local_name(child.tag) == child_name:
             return (child.text or "").strip()
     return ""
 
 
-def _nested_child_text(element: ET.Element, *child_names: str) -> str:
+def _nested_child_text(element: ET.Element[str], *child_names: str) -> str:
     current = element
     for child_name in child_names:
         next_child = next((child for child in current if _local_name(child.tag) == child_name), None)
@@ -213,7 +213,7 @@ def _nested_child_text(element: ET.Element, *child_names: str) -> str:
     return (current.text or "").strip()
 
 
-def _publication_candidate_aktviide(muutmismarge: ET.Element) -> str:
+def _publication_candidate_aktviide(muutmismarge: ET.Element[str]) -> str:
     note_text = " ".join(text.strip() for text in muutmismarge.itertext() if text and text.strip())
     match = re.search(r"\bRT\s+I\s+(\d{4})-(\d{2})-(\d{2})\s+(\d+)\b", note_text)
     if match is None:

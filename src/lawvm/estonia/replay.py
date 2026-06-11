@@ -31,7 +31,7 @@ from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.core.temporal import TemporalScope
 from lawvm.replay_adjudication import CompileAdjudication, SourceAdjudication
-from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, StructuralAction
+from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, ProvisionTimeline, StructuralAction
 from lawvm.core.timeline import compile_timelines, materialize_pit
 from lawvm.core.timeline_consistency import ingest_consolidated, verify_consistency
 from lawvm.estonia.grafter import (
@@ -59,7 +59,7 @@ def _ee_ref_sort_key(ref) -> tuple[str, str, str]:
     return (ref.joustumine, ref.passed, ref.aktViide)
 
 
-def _ee_xml_ns(root: ET.Element) -> str:
+def _ee_xml_ns(root: ET.Element[str]) -> str:
     return root.tag.split("}")[0].strip("{")
 
 
@@ -1143,13 +1143,13 @@ class EEPitResult:
     source_adjudication: Optional[SourceAdjudication] = None
 
     # Timelines (populated after timeline-primary flip)
-    timelines: Optional[dict] = None
+    timelines: Optional[dict[LegalAddress, ProvisionTimeline]] = None
     temporal_events: tuple[TemporalEvent, ...] = ()
     compiled_ops: tuple[LegalOperation, ...] = ()
     applied_snapshot_ops: tuple[LegalOperation, ...] = ()
 
     # Consistency check
-    divergences: list = field(default_factory=list)
+    divergences: list[Any] = field(default_factory=list)
     n_mismatch: int = 0
     n_ops_missing: int = 0    # in oracle but not in replay
     n_con_missing: int = 0    # in replay but not in oracle
@@ -1497,7 +1497,7 @@ def replay_ee_to_pit(
         _log(f"Derived temporal expiry events: {len(derived_temporal_events)}")
 
     # ── Step 5: Apply ops ─────────────────────────────────────────────────────
-    lo_ops_out: list = []
+    lo_ops_out: list[LegalOperation] = []
     adjudications: list[CompileAdjudication] = []
     try:
         result.replayed = apply_ee_ops(
