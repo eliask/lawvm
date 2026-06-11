@@ -134,6 +134,7 @@ from lawvm.finland.normalize import (
 from lawvm.finland.scope import assign_scope_from_renumber_destinations
 from lawvm.finland.source_pathology import build_container_replace_target_absent_pathology
 from lawvm.finland.statute import ReplayState, StatuteContext
+from lawvm.finland.restructure_plan import StructuralTransformPlan
 from lawvm.tools.inspect_amendment import build_amendment_bundle
 from lawvm.tools.trace_section import build_trace_bundle
 
@@ -462,7 +463,7 @@ def test_process_muutoslaki_ignores_preseeded_compat_sinks_when_building_finding
         )
     ]
     preseeded_failed_ops = cast(
-        list,
+        list[Any],
         [
             SimpleNamespace(
                 as_detail=lambda: {
@@ -544,13 +545,13 @@ def test_process_muutoslaki_flags_missing_temporal_coverage(monkeypatch) -> None
     state = _replay_state(IRNode(kind=IRNodeKind.BODY))
     ctx = _statute_context(state.ir)
 
-    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult:
+    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(output=[])
 
     def fake_compile_amendment_ops(
         *_args,
         **_kwargs,
-    ) -> PhaseResult:
+    ) -> PhaseResult[Any]:
         return PhaseResult(
             output=(SimpleNamespace(resolved_source_statute="1996/1260"),),
             temporal_events=(),
@@ -598,10 +599,10 @@ def test_process_muutoslaki_carries_cao_violation_into_findings(monkeypatch) -> 
         blocking=True,
     )
 
-    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult:
+    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(output=[])
 
-    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult:
+    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(
             output=(SimpleNamespace(resolved_source_statute="1996/1260"),),
             temporal_events=(),
@@ -635,13 +636,13 @@ def test_process_muutoslaki_does_not_flag_when_temporal_coverage_matches(monkeyp
     state = _replay_state(IRNode(kind=IRNodeKind.BODY))
     ctx = _statute_context(state.ir)
 
-    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult:
+    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(output=[])
 
     def fake_compile_amendment_ops(
         *_args,
         **_kwargs,
-    ) -> PhaseResult:
+    ) -> PhaseResult[Any]:
         return PhaseResult(
             output=(SimpleNamespace(resolved_source_statute="1996/1260"),),
             temporal_events=(
@@ -688,10 +689,10 @@ def test_process_muutoslaki_observes_chapter_seed_skip(monkeypatch) -> None:
         source_statute="1996/1261",
     )
 
-    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult:
+    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(output=[skipped_op])
 
-    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult:
+    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(output=(), temporal_events=())
 
     def fake_apply_ops_to_tree(*_args, **_kwargs):
@@ -726,10 +727,10 @@ def test_process_muutoslaki_observes_sec1_pre_routing_fallback(monkeypatch) -> N
         base_xml_bytes=b"",
     )
 
-    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult:
+    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(output=[])
 
-    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult:
+    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(output=(), temporal_events=())
 
     def fake_apply_ops_to_tree(*_args, **_kwargs):
@@ -784,10 +785,10 @@ def test_process_muutoslaki_preserves_source_pathologies_from_uncovered_apply(mo
         source_statute="1996/1261",
     )
 
-    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult:
+    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(output=[phase2_op])
 
-    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult:
+    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(output=(), temporal_events=())
 
     def fake_recover_uncovered_body_ops(*_args, **_kwargs):
@@ -842,10 +843,10 @@ def test_process_muutoslaki_projects_apply_mutation_findings_from_typed_invarian
     ctx = _statute_context(state.ir)
     mutation_events: list[ApplyMutationEvent] = []
 
-    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult:
+    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(output=[])
 
-    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult:
+    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(output=(), temporal_events=())
 
     def fake_apply_ops_to_tree(*args, **kwargs):
@@ -890,10 +891,10 @@ def test_process_muutoslaki_projects_governed_apply_fallback_findings(monkeypatc
     ctx = _statute_context(state.ir)
     mutation_events: list[ApplyMutationEvent] = []
 
-    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult:
+    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(output=[])
 
-    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult:
+    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(output=(), temporal_events=())
 
     def fake_apply_ops_to_tree(*args, **kwargs):
@@ -941,10 +942,10 @@ def test_process_muutoslaki_projects_scope_confidence_global_fallback_as_apply_f
     ctx = _statute_context(state.ir)
     mutation_events: list[ApplyMutationEvent] = []
 
-    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult:
+    def fake_normalize_and_compile_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(output=[])
 
-    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult:
+    def fake_compile_amendment_ops(*_args, **_kwargs) -> PhaseResult[Any]:
         return PhaseResult(output=(), temporal_events=())
 
     def fake_apply_ops_to_tree(*args, **kwargs):
@@ -9682,7 +9683,7 @@ def test_strict_replay_emits_explicit_source_pathology_rejection_for_1994_1472()
     # content lineage. This removes a spurious rebound and improves the 1994/1472
     # replay score; the remaining genuine pathologies are unchanged.
     assert {
-        cast(dict, row.get("detail") or {}).get("code")
+        cast(dict[str, object], row.get("detail") or {}).get("code")
         for row in rejected
         } == {
             "DESTRUCTIVE_SHAPE_LOSS_RISK",
@@ -9705,7 +9706,7 @@ def test_strict_replay_emits_explicit_source_pathology_rejection_for_2001_1234()
         if row.get("kind") == "APPLY.SOURCE_PATHOLOGY_DETECTED"
     ]
     assert "DESTRUCTIVE_SHAPE_LOSS_RISK" in {
-        cast(dict, row.get("detail") or {}).get("code")
+        cast(dict[str, object], row.get("detail") or {}).get("code")
         for row in rejected
     }
 
@@ -11162,8 +11163,8 @@ def test_recover_uncovered_body_ops_emits_high_uncovered_observation() -> None:
     # One chapter INSERT op (covers the chapter structurally, but no per-section ops)
     ops = [AmendmentOp(op_id="", op_type="INSERT", target_kind=TargetKind.CHAPTER, target_section="3")]
 
-    observations_out: list = []
-    restructure_plans_out: list = []
+    observations_out: list[dict[str, Any]] = []
+    restructure_plans_out: list[StructuralTransformPlan] = []
     findings_out: list[Finding] = []
 
     _recover_uncovered_body_ops(
@@ -11213,7 +11214,7 @@ def test_recover_uncovered_body_ops_deduplicates_identical_restructure_plan_outp
     muutos_tree = etree.fromstring(_make_many_section_muutos_xml(12))
     ops = [AmendmentOp(op_id="", op_type="INSERT", target_kind=TargetKind.CHAPTER, target_section="3")]
 
-    restructure_plans_out: list = []
+    restructure_plans_out: list[StructuralTransformPlan] = []
 
     _recover_uncovered_body_ops(
         state,
@@ -11449,7 +11450,7 @@ def test_recover_uncovered_body_ops_no_observation_when_ratio_low() -> None:
     muutos_tree = etree.fromstring(_make_many_section_muutos_xml(3))
     ops = [AmendmentOp(op_id="", op_type="INSERT", target_kind=TargetKind.CHAPTER, target_section="3")]
 
-    observations_out: list = []
+    observations_out: list[dict[str, Any]] = []
     _recover_uncovered_body_ops(
         state,
         ctx,
@@ -12120,7 +12121,7 @@ def test_emit_restructure_plan_renumber_legal_operations_emits_explicit_renumber
     from lawvm.core.provenance import MigrationEvent
     from lawvm.finland.grafter import _emit_restructure_plan_renumber_legal_operations
 
-    lo_ops: list = []
+    lo_ops: list[LegalOperation] = []
     emitted = _emit_restructure_plan_renumber_legal_operations(
         lo_ops_out=lo_ops,
         migration_events=(
