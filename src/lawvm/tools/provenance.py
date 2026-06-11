@@ -109,15 +109,14 @@ def _lookup_he_meta(he_id: str, data_dir: str) -> dict[str, Any] | None:
     if not path.exists():
         return None
 
-    import pyarrow.compute as pc
     import pyarrow.parquet as pq
 
     table = pq.read_table(path)
-    mask = pc.and_(  # ty:ignore[unresolved-attribute]
-        pc.equal(table["he_year"], year),  # ty:ignore[unresolved-attribute]
-        pc.equal(table["he_number"], number),  # ty:ignore[unresolved-attribute]
-    )
-    rows = table.filter(mask).to_pylist()
+    rows = [
+        row
+        for row in table.to_pylist()
+        if row.get("he_year") == year and row.get("he_number") == number
+    ]
     if not rows:
         return None
     row = rows[0]
