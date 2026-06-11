@@ -27,6 +27,9 @@ from lawvm.finland.apply_policy import (
 )
 from lawvm.finland.scoped_section_resolver import (
     find_scoped_section_insert_parent_path as _find_shared_scoped_section_insert_parent_path,
+    section_paths_for_label,
+    unique_root_or_only_section_path,
+    unique_same_part_different_chapter_section_path,
 )
 from lawvm.finland.apply_structure_ops import (
     _structure_apply_view_for_op,
@@ -158,38 +161,22 @@ def _whole_section_move_rebind_paths(
         return ()
     if normalized_label_key(payload_label) != normalized_label_key(target_norm):
         return ()
-    matches = state.provision_index.get(("section", normalized_label_key(target_norm)), [])
-    root_matches = [
-        _tops._as_path(path)
-        for path in matches
-        if not any(kind == "chapter" for kind, _label in _tops._as_path(path))
-    ]
-    candidate_paths = root_matches if len(root_matches) == 1 else ([_tops._as_path(matches[0])] if len(matches) == 1 else [])
-    if not candidate_paths:
+    matches = section_paths_for_label(state.provision_index, target_norm)
+    existing_path = unique_root_or_only_section_path(matches)
+    if existing_path is None:
         # Same-labeled sections in several parts make the unscoped lookup
         # ambiguous, but the op's part scope can still single out the move
         # source: the only same-labeled section in the target part that sits
         # under a different chapter is the node this write vacates. Mirrors
         # the part-scoped disambiguation in
         # _find_scoped_section_insert_parent_path.
-        part_label = str(rop.resolved_target_scope_part_label or "").strip()
-        if part_label:
-            part_key = normalized_label_key(part_label)
-            part_scoped = [
-                path
-                for path in (_tops._as_path(match) for match in matches)
-                if any(
-                    kind == "part" and normalized_label_key(str(label)) == part_key
-                    for kind, label in path
-                )
-                and next((str(label) for kind, label in path if kind == "chapter"), None)
-                not in (None, target_chapter)
-            ]
-            if len(part_scoped) == 1:
-                candidate_paths = part_scoped
-    if not candidate_paths:
+        existing_path = unique_same_part_different_chapter_section_path(
+            matches,
+            target_part=str(rop.resolved_target_scope_part_label or "").strip() or None,
+            target_chapter=target_chapter,
+        )
+    if existing_path is None:
         return ()
-    existing_path = candidate_paths[0]
     existing_chapter = next((label for kind, label in existing_path if kind == "chapter"), None)
     if rop.resolved_action_type == "REPLACE":
         if not existing_chapter or existing_chapter != target_chapter:

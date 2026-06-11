@@ -35,6 +35,8 @@ from lawvm.finland.ops import (
 from lawvm.finland.apply_policy import container_resolver_binding
 from lawvm.finland.scoped_section_resolver import (
     find_scoped_section_insert_parent_path as _find_shared_scoped_section_insert_parent_path,
+    section_paths_for_label,
+    unique_root_or_only_section_path,
 )
 from lawvm.finland.helpers import _norm_num_token, _roman_label_to_arabic
 from lawvm.finland.replay_notices import replay_print
@@ -599,16 +601,6 @@ def _move_section_payload_to_target_chapter(
             source_statute=source_statute,
     )
     return moved_ir
-
-
-def _path_matches_target_part(path: Path, target_part: str | None) -> bool:
-    """Require exact part scope when a section fallback is part-scoped."""
-    if not target_part:
-        return True
-    parts = [label for kind, label in path if kind == "part" and label]
-    if not parts:
-        return False
-    return _norm_num_token(parts[-1]) == _norm_num_token(target_part)
 
 
 def _find_scoped_section_insert_parent_path(
@@ -1748,20 +1740,14 @@ def _apply_whole_section_op(
 
     if _op_type == "REPLACE" and sec_path is None and muutos_ir is not None:
         if _target_chapter and _same_norm_label(muutos_ir.label, _ts):
-            label_norm = normalized_label_key(_ts)
-            matches = [
-                _tops._as_path(path)
-                for path in state.provision_index.get(("section", label_norm), [])
-                if _path_matches_target_part(_tops._as_path(path), _target_part)
-            ]
-            root_matches = [
-                path
-                for path in matches
-                if not any(kind == "chapter" for kind, _label in path)
-            ]
-            candidate_paths = root_matches if len(root_matches) == 1 else ([matches[0]] if len(matches) == 1 else [])
-            if candidate_paths:
-                existing_path = candidate_paths[0]
+            existing_path = unique_root_or_only_section_path(
+                section_paths_for_label(
+                    state.provision_index,
+                    _ts,
+                    target_part=_target_part,
+                )
+            )
+            if existing_path is not None:
                 existing_chapter = next((lbl for kind, lbl in existing_path if kind == "chapter"), None)
                 if not existing_chapter:
                     if _scope_confidence is not None and _scope_confidence.source == "carry_forward":
@@ -1945,20 +1931,14 @@ def _apply_whole_section_op(
 
     if _op_type == "INSERT" and muutos_ir is not None:
         if _target_chapter and _same_norm_label(muutos_ir.label, _ts):
-            label_norm = normalized_label_key(_ts)
-            matches = [
-                _tops._as_path(path)
-                for path in state.provision_index.get(("section", label_norm), [])
-                if _path_matches_target_part(_tops._as_path(path), _target_part)
-            ]
-            root_matches = [
-                path
-                for path in matches
-                if not any(kind == "chapter" for kind, _label in path)
-            ]
-            candidate_paths = root_matches if len(root_matches) == 1 else ([matches[0]] if len(matches) == 1 else [])
-            if candidate_paths:
-                existing_path = candidate_paths[0]
+            existing_path = unique_root_or_only_section_path(
+                section_paths_for_label(
+                    state.provision_index,
+                    _ts,
+                    target_part=_target_part,
+                )
+            )
+            if existing_path is not None:
                 existing_node = _tops.resolve(state.ir, existing_path)
                 existing_chapter = next((lbl for kind, lbl in existing_path if kind == "chapter"), None)
                 if not existing_chapter:

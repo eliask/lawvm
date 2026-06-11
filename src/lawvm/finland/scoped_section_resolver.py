@@ -8,12 +8,12 @@ normalization rule, not a core tree-ops rule.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from typing import Literal
 
 from lawvm.core import tree_ops as _tops
 from lawvm.core.ir import IRNode
-from lawvm.core.tree_ops import Path
+from lawvm.core.tree_ops import Path, normalized_label_key
 from lawvm.finland.helpers import _norm_num_token
 
 FindPath = Callable[[str, str, str | None, str | None], Path | None]
@@ -21,6 +21,7 @@ FindPartPath = Callable[[str], Path | None]
 FindInsertParentPath = Callable[[str | None], Path | None]
 MissingPartPolicy = Literal["fallback", "not_found"]
 MissingChapterInPartPolicy = Literal["part", "not_found"]
+ProvisionIndex = Mapping[tuple[str, str], Iterable[Path]]
 
 
 def find_scoped_section_path(
@@ -112,3 +113,72 @@ def find_scoped_section_insert_parent_path(
                 return _tops._as_path(part_path)
 
     return find_insert_parent_path(chapter_label)
+
+
+def path_matches_part_scope(path: Path, target_part: str | None) -> bool:
+    """Return whether a path is inside the requested part scope.
+
+    A declared part scope must bind an actual part step. Roman/Arabic
+    equivalence is Finland-local and goes through ``_norm_num_token``.
+    """
+
+    if not target_part:
+        return True
+    parts = [label for kind, label in path if kind == "part" and label]
+    if not parts:
+        return False
+    return _norm_num_token(parts[-1]) == _norm_num_token(target_part)
+
+
+def section_paths_for_label(
+    provision_index: ProvisionIndex,
+    section_label: str,
+    *,
+    target_part: str | None = None,
+) -> tuple[Path, ...]:
+    """Return indexed same-label section paths, optionally restricted to a part."""
+
+    label_norm = normalized_label_key(section_label)
+    return tuple(
+        path
+        for path in (_tops._as_path(raw_path) for raw_path in provision_index.get(("section", label_norm), ()))
+        if path_matches_part_scope(path, target_part)
+    )
+
+
+def unique_root_or_only_section_path(paths: Iterable[Path]) -> Path | None:
+    """Prefer a unique root-level section, otherwise require a unique candidate."""
+
+    candidates = tuple(paths)
+    root_matches = tuple(
+        path
+        for path in candidates
+        if not any(kind == "chapter" for kind, _label in path)
+    )
+    if len(root_matches) == 1:
+        return root_matches[0]
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+def unique_same_part_different_chapter_section_path(
+    paths: Iterable[Path],
+    *,
+    target_part: str | None,
+    target_chapter: str | None,
+) -> Path | None:
+    """Select the unique same-part section outside the target chapter, if any."""
+
+    if not target_part or not target_chapter:
+        return None
+    part_scoped = tuple(
+        path
+        for path in paths
+        if path_matches_part_scope(path, target_part)
+        and next((str(label) for kind, label in path if kind == "chapter"), None)
+        not in (None, target_chapter)
+    )
+    if len(part_scoped) == 1:
+        return part_scoped[0]
+    return None

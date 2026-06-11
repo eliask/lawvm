@@ -5,6 +5,9 @@ from lawvm.core.tree_ops import Path
 from lawvm.finland.scoped_section_resolver import (
     find_scoped_section_insert_parent_path,
     find_scoped_section_path,
+    section_paths_for_label,
+    unique_root_or_only_section_path,
+    unique_same_part_different_chapter_section_path,
 )
 
 
@@ -109,3 +112,27 @@ def test_scoped_section_insert_parent_path_keeps_missing_scope_policies_explicit
         missing_part_policy="not_found",
         missing_chapter_in_part_policy="not_found",
     ) is None
+
+
+def test_section_candidate_selectors_keep_part_and_chapter_boundaries() -> None:
+    ir = _body(
+        _sec("8"),
+        _part("1", _chapter("1", _sec("8"))),
+        _part("2", _chapter("1", _sec("8")), _chapter("2", _sec("8"))),
+    )
+    index = _tops.build_label_index(ir)
+
+    all_paths = section_paths_for_label(index, "8")
+    assert unique_root_or_only_section_path(all_paths) == (("section", "8"),)
+
+    part_two_paths = section_paths_for_label(index, "8", target_part="II")
+    assert part_two_paths == (
+        (("part", "2"), ("chapter", "1"), ("section", "8")),
+        (("part", "2"), ("chapter", "2"), ("section", "8")),
+    )
+    assert unique_root_or_only_section_path(part_two_paths) is None
+    assert unique_same_part_different_chapter_section_path(
+        all_paths,
+        target_part="II",
+        target_chapter="1",
+    ) == (("part", "2"), ("chapter", "2"), ("section", "8"))
