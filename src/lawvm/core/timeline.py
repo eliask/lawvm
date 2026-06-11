@@ -1274,24 +1274,34 @@ def materialize_pit_ex(
             parent_addr = LegalAddress(path=parent_path)
             parent_v = active_versions.get(parent_addr)
             child_v = active_versions.get(addr)
+            if not parent_v or not child_v:
+                continue
+            if parent_v.content is None:
+                if (child_v.effective, child_v.enacted) <= (
+                    parent_v.effective,
+                    parent_v.enacted,
+                ):
+                    superseded.add(addr)
+                    break
+                continue
+            if child_v.content is None:
+                # A selected tombstone is an explicit deletion overlay. Parent
+                # snapshots can carry stale descendants, so they must not mask
+                # the tombstone that cuts that carried content out.
+                continue
             if (
-                parent_v
-                and parent_v.content is not None
-                and child_v
-                and (
-                    (
-                        _parent_content_masks_child(parent_v.content, parent_addr, addr)
-                        and parent_v.effective > child_v.effective
-                    )
-                    or (
-                        _parent_content_masks_child(parent_v.content, parent_addr, addr)
-                        and parent_v.effective == child_v.effective
-                        and parent_v.enacted > child_v.enacted
-                    )
-                    or (
-                        parent_v.effective == child_v.effective
-                        and _same_source_section_snapshot_masks_child(parent_v, parent_addr, child_v)
-                    )
+                (
+                    _parent_content_masks_child(parent_v.content, parent_addr, addr)
+                    and parent_v.effective > child_v.effective
+                )
+                or (
+                    _parent_content_masks_child(parent_v.content, parent_addr, addr)
+                    and parent_v.effective == child_v.effective
+                    and parent_v.enacted > child_v.enacted
+                )
+                or (
+                    parent_v.effective == child_v.effective
+                    and _same_source_section_snapshot_masks_child(parent_v, parent_addr, child_v)
                 )
             ):
                 superseded.add(addr)

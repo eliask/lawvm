@@ -957,6 +957,21 @@ def test_normalize_and_compile_ops_2007_626_rejects_single_payload_fallback_reus
     )
 
 
+def test_replay_xml_1972_66_repeals_live_suffix_section_in_numeric_range() -> None:
+    with redirect_stdout(StringIO()):
+        replay = replay_xml("1972/66", mode="official_consolidation", quiet=True)
+    addr = LegalAddress(path=(("chapter", "4"), ("section", "27a")))
+    timeline = replay.timelines[addr]
+    selected = select_active_version(timeline, "2020-12-11", query_type="in_force")
+
+    assert replay.materialized_state.find_section("27a", chapter_num="4") is None
+    assert selected is not None
+    assert selected.content is None
+    assert selected.source is not None
+    assert selected.source.statute_id == "1982/684"
+    assert selected.effective == "1984-01-01"
+
+
 def test_replay_xml_nests_simple_digit_subparagraphs_for_1997_108() -> None:
     """Regression: repeated digit families in 1997/108 must not stay as duplicate labels."""
     replay = pinned_replay("1997/108", mode="official_consolidation", quiet=True, build_full_products=True)

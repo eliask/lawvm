@@ -1731,6 +1731,71 @@ def _inject_pure_kumotaan_repeal_ops(
     return injected
 
 
+def _live_suffix_section_labels_for_numeric_kumotaan_ranges(
+    johto: str,
+    *,
+    state: "ReplayState",
+) -> Dict[Optional[str], Set[str]]:
+    """Return live letter-suffix sections covered by explicit numeric repeal ranges."""
+    text = johto.lower()
+    kumotaan_match = re.search(
+        r'kumotaan\b(.*?)(?:muutetaan|lisätään|seuraavasti|sekä\s+muutetaan|sekä\s+lisätään|$)',
+        text,
+        re.DOTALL,
+    )
+    if not kumotaan_match:
+        return {}
+
+    kumotaan_text = kumotaan_match.group(1)
+    markers = list(re.finditer(r'(\d+(?:\s*[a-z])?)\s+luvun\b', kumotaan_text))
+    blocks: list[tuple[Optional[str], str]] = []
+    if markers and markers[0].start() > 0:
+        blocks.append((None, kumotaan_text[:markers[0].start()]))
+    if markers:
+        for idx, marker in enumerate(markers):
+            chapter = re.sub(r'\s+', '', marker.group(1).strip())
+            start = marker.end()
+            end = markers[idx + 1].start() if idx + 1 < len(markers) else len(kumotaan_text)
+            blocks.append((chapter, kumotaan_text[start:end]))
+    else:
+        blocks.append((None, kumotaan_text))
+
+    def _section_labels(node: IRNode) -> list[str]:
+        labels: list[str] = []
+
+        def _walk(cur: IRNode) -> None:
+            if cur.kind is IRNodeKind.SECTION and cur.label:
+                labels.append(str(cur.label).lower())
+                return
+            for child in cur.children:
+                _walk(child)
+
+        _walk(node)
+        return labels
+
+    additions: Dict[Optional[str], Set[str]] = {}
+    for chapter, block in blocks:
+        live_root = state.find_chapter(chapter) if chapter is not None else state.ir
+        if live_root is None:
+            continue
+        live_labels = _section_labels(live_root)
+        ranges = [
+            (int(match.group(1)), int(match.group(2)))
+            for match in re.finditer(r'\b(\d+)\s*[–—―\-]\s*(\d+)\s*§(?!:)', block)
+            if int(match.group(1)) <= int(match.group(2))
+        ]
+        if not ranges:
+            continue
+        for label in live_labels:
+            label_match = re.fullmatch(r'(\d+)[a-zäöå]+', label, flags=re.I)
+            if label_match is None:
+                continue
+            base = int(label_match.group(1))
+            if any(start <= base <= end for start, end in ranges):
+                additions.setdefault(chapter, set()).add(label)
+    return additions
+
+
 def _inject_pure_kumotaan_subsection_repeal_ops(
     lo_ops_out: List[_LegalOperation],
     *,
@@ -7593,6 +7658,19 @@ def process_muutoslaki(
                     k: {s.lower() for s in secs}
                     for k, secs in _kumotaan_chap_map.items()
                 }
+            _range_suffix_sections = _live_suffix_section_labels_for_numeric_kumotaan_ranges(
+                johto,
+                state=state,
+            )
+            if _range_suffix_sections:
+                _known_labels = {label.lower() for label in _kumotaan_labels}
+                for _chap, _labels in _range_suffix_sections.items():
+                    for _label in sorted(_labels):
+                        if _label not in _known_labels:
+                            _kumotaan_labels.append(_label)
+                            _known_labels.add(_label)
+                    if _chap_map_sets is not None:
+                        _chap_map_sets.setdefault(_chap, set()).update(_labels)
             if _kumotaan_labels and _rewrite_lo_op_source_expiry(
                 lo_ops_out,
                 amendment_id,

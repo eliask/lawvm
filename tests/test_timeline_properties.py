@@ -1041,6 +1041,94 @@ def test_materialize_pit_does_not_record_equal_rank_conflict_for_exact_duplicate
     ] == []
 
 
+def test_materialize_pit_keeps_child_tombstone_under_stale_parent_snapshot() -> None:
+    """A carried parent snapshot must not suppress an explicit child deletion."""
+    chapter_addr = LegalAddress(path=(("chapter", "4"),))
+    section_addr = LegalAddress(path=(("chapter", "4"), ("section", "27a")))
+    subsection_addr = LegalAddress(
+        path=(("chapter", "4"), ("section", "27a"), ("subsection", "1"))
+    )
+    stale_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="27a",
+        text="stale section",
+        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="stale child"),),
+    )
+    stale_chapter_snapshot = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="4",
+        text="carried chapter snapshot",
+        children=(stale_section,),
+    )
+    base = IRStatute(
+        statute_id="test/tombstone-parent-snapshot",
+        title="Tombstone parent snapshot",
+        body=IRNode(kind=IRNodeKind.BODY, children=(stale_chapter_snapshot,)),
+    )
+    parent_source = OperationSource(
+        statute_id="1982/684",
+        enacted="1982-09-17",
+        effective="1984-01-01",
+    )
+    timelines = {
+        chapter_addr: ProvisionTimeline(
+            address=chapter_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="1984-01-01",
+                    enacted="1982-09-17",
+                    content=stale_chapter_snapshot,
+                    source=parent_source,
+                )
+            ],
+        ),
+        section_addr: ProvisionTimeline(
+            address=section_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="1977-01-01",
+                    enacted="1976-09-02",
+                    content=stale_section,
+                    source=OperationSource(
+                        statute_id="1976/788",
+                        enacted="1976-09-02",
+                        effective="1977-01-01",
+                    ),
+                ),
+                ProvisionVersion(
+                    effective="1984-01-01",
+                    enacted="",
+                    content=None,
+                    source=parent_source,
+                ),
+            ],
+        ),
+        subsection_addr: ProvisionTimeline(
+            address=subsection_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="1977-01-01",
+                    enacted="1976-09-02",
+                    content=IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        text="stale child",
+                    ),
+                    source=OperationSource(
+                        statute_id="1976/788",
+                        enacted="1976-09-02",
+                        effective="1977-01-01",
+                    ),
+                )
+            ],
+        ),
+    }
+
+    result = materialize_pit(timelines, "2020-01-01", base=base)
+
+    assert _find_node_by_label(result.body, IRNodeKind.SECTION, "27a") is None
+
+
 def test_materialize_pit_applies_nested_section_replace_without_parent_version() -> None:
     """A nested section timeline must still overlay through active parent containers."""
     base = IRStatute(
