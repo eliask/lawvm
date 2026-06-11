@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
+
+
+_FRONTIER_WORK_ITEM_REPORT_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
+    "frontier_work_item_as_replay_authorization",
+    "frontier_work_item_as_canonical_operation",
+    "frontier_work_item_as_mutation_boundary_proof",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,6 +176,155 @@ def validate_frontier_work_item(row: Mapping[str, Any]) -> tuple[str, ...]:
     if not isinstance(row.get("detail", {}), Mapping):
         issues.append("detail must be a mapping")
     return tuple(issues)
+
+
+def frontier_work_item_evidence_report(
+    work_items: (
+        FrontierWorkItem
+        | Mapping[str, Any]
+        | tuple[FrontierWorkItem | Mapping[str, Any], ...]
+    ),
+    *,
+    jurisdiction: str = "",
+    report_kind: str = "frontier_work_item",
+) -> EvidenceSurfaceReport:
+    """Project non-executable frontier work items into a shared report envelope.
+
+    This adapter is deliberately passive.  It gives frontends a common
+    report/read-model shape for manual or blocked work without turning those
+    rows into operations, dry-runs, or replay authority.
+    """
+
+    rows = tuple(_frontier_mapping(row) for row in _frontier_sequence(work_items))
+    report_rows = tuple(_frontier_report_row(row) for row in rows)
+    family_counts = _counts(str(row.get("frontier_family") or "") for row in rows)
+    status_counts = _counts(str(row.get("frontier_status") or "") for row in rows)
+    owner_phase_counts = _counts(str(row.get("owner_phase") or "") for row in rows)
+    authorization_status_counts = _counts(
+        str(row.get("authorization_status") or "")
+        for row in rows
+    )
+    required_claim_kind_counts = _counts(
+        str(row.get("required_claim_kind") or "")
+        for row in rows
+    )
+    candidate_operation_family_counts = _counts(
+        str(row.get("candidate_operation_family") or "__blank__")
+        for row in rows
+    )
+    required_validator_check_counts = _counts(
+        str(check)
+        for row in rows
+        for check in _sequence(row.get("required_validator_checks"))
+    )
+    summary = {
+        "frontier_work_item_count": len(rows),
+        "frontier_family_counts": family_counts,
+        "frontier_status_counts": status_counts,
+        "owner_phase_counts": owner_phase_counts,
+        "authorization_status_counts": authorization_status_counts,
+        "required_claim_kind_counts": required_claim_kind_counts,
+        "candidate_operation_family_counts": candidate_operation_family_counts,
+        "required_validator_check_counts": required_validator_check_counts,
+        "replay_authorized_count": 0,
+        "executable_count": 0,
+        "claim_flags": {
+            "replay_claims": False,
+            "canonical_effect_claims": False,
+            "candidate_effect_claims": False,
+            "dry_run_claims": False,
+            "agreement_claims": False,
+        },
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction=jurisdiction or _report_jurisdiction(rows),
+        report_kind=report_kind,
+        schema="lawvm.frontier_work_item_report.v1",
+        truth_claim="non-executable frontier work item projections",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={"report_kind": report_kind},
+        filtered_summary=summary,
+        rows=report_rows,
+        rows_truncated=False,
+        detail={
+            "safe_default": "treat_frontier_work_items_as_blocked_non_executable_work",
+            "forbidden_shortcuts": _FRONTIER_WORK_ITEM_REPORT_FORBIDDEN_SHORTCUTS,
+            "included_surfaces": ("frontier_work_item",),
+        },
+    )
+
+
+def _frontier_sequence(
+    value: (
+        FrontierWorkItem
+        | Mapping[str, Any]
+        | tuple[FrontierWorkItem | Mapping[str, Any], ...]
+    ),
+) -> tuple[FrontierWorkItem | Mapping[str, Any], ...]:
+    if isinstance(value, FrontierWorkItem) or isinstance(value, Mapping):
+        return (cast(FrontierWorkItem | Mapping[str, Any], value),)
+    return tuple(value)
+
+
+def _frontier_mapping(value: FrontierWorkItem | Mapping[str, Any]) -> Mapping[str, Any]:
+    if isinstance(value, FrontierWorkItem):
+        return value.to_dict()
+    row = dict(value)
+    issues = validate_frontier_work_item(row)
+    if issues:
+        raise ValueError("; ".join(issues))
+    return row
+
+
+def _frontier_report_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "surface": "frontier_work_item",
+        "row_id": str(row.get("work_item_id") or ""),
+        "subject_id": str(row.get("source_artifact_id") or ""),
+        "status": str(row.get("frontier_status") or ""),
+        "frontier_ref": str(row.get("work_item_id") or ""),
+        **dict(row),
+        "forbidden_shortcuts": tuple(
+            dict.fromkeys(
+                (
+                    *tuple(str(item) for item in _sequence(row.get("forbidden_shortcuts"))),
+                    *_FRONTIER_WORK_ITEM_REPORT_FORBIDDEN_SHORTCUTS,
+                )
+            )
+        ),
+    }
+
+
+def _report_jurisdiction(rows: tuple[Mapping[str, Any], ...]) -> str:
+    jurisdictions = tuple(
+        dict.fromkeys(str(row.get("jurisdiction") or "") for row in rows if row.get("jurisdiction"))
+    )
+    if len(jurisdictions) == 1:
+        return jurisdictions[0]
+    if len(jurisdictions) > 1:
+        return "mixed"
+    return ""
+
+
+def _sequence(value: Any) -> tuple[Any, ...]:
+    if isinstance(value, str):
+        return (value,) if value else ()
+    if isinstance(value, list | tuple):
+        return tuple(value)
+    return ()
+
+
+def _counts(values: Any) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = str(value or "__blank__")
+        counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def _plain_jsonable(value: Any) -> Any:

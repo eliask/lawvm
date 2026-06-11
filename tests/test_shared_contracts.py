@@ -49,6 +49,7 @@ from lawvm.core.frontend_phase_surface import (
 )
 from lawvm.core.frontier_work_item import (
     FrontierWorkItem,
+    frontier_work_item_evidence_report,
     validate_frontier_work_item,
 )
 from lawvm.core.frozen_values import FrozenDict
@@ -1260,6 +1261,120 @@ def test_frontier_work_item_rejects_replay_promotion() -> None:
 
     assert "frontier work items must be non-executable" in issues
     assert "frontier work items must not be replay-authorized" in issues
+
+
+def test_frontier_work_item_evidence_report_is_passive_shared_surface() -> None:
+    item = FrontierWorkItem(
+        work_item_id="fi-frontier-demo",
+        jurisdiction="fi",
+        source_artifact_id="2020/1",
+        source_unit_id="section:2",
+        source_witness={
+            "source_role": "finlex_xml",
+            "artifact_id": "2020/1",
+            "locator": "finlex://2020/1",
+        },
+        target_witness={"candidate_targets": ["section:2"]},
+        compare_witness={"compare_shape": "source_only"},
+        owner_phase="typed_elaboration",
+        frontier_family="fi_sparse_item_body_missing",
+        frontier_status="manual_claim_needed",
+        candidate_operation_family="sparse_item_payload_resolution",
+        candidate_targets=("section:2",),
+        required_claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        required_validator_checks=("validate_sparse_slot_payload_claim",),
+        required_proofs=("payload_identity_proof", "mutation_boundary_proof"),
+        safe_default="block_until_validated_claim_authorizes_replay",
+        forbidden_shortcuts=("manual_claim_as_replay_authorization",),
+        authorization_status="blocked_manual_claim_required",
+    )
+
+    report = frontier_work_item_evidence_report(item).to_dict()
+
+    assert report["jurisdiction"] == "fi"
+    assert report["schema"] == "lawvm.frontier_work_item_report.v1"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is False
+    assert report["summary"]["frontier_work_item_count"] == 1
+    assert report["summary"]["frontier_family_counts"] == {
+        "fi_sparse_item_body_missing": 1
+    }
+    assert report["summary"]["required_validator_check_counts"] == {
+        "validate_sparse_slot_payload_claim": 1
+    }
+    row = report["rows"][0]
+    assert row["surface"] == "frontier_work_item"
+    assert row["row_id"] == "fi-frontier-demo"
+    assert row["frontier_ref"] == "fi-frontier-demo"
+    assert row["executable"] is False
+    assert row["replay_authorized"] is False
+    assert "frontier_work_item_as_replay_authorization" in row["forbidden_shortcuts"]
+
+
+def test_frontier_work_item_report_rejects_invalid_mapping_rows() -> None:
+    with pytest.raises(ValueError, match="required_proofs is required"):
+        frontier_work_item_evidence_report(
+            {
+                "work_item_id": "bad-frontier",
+                "jurisdiction": "fi",
+                "source_artifact_id": "2020/1",
+                "source_unit_id": "section:2",
+                "owner_phase": "typed_elaboration",
+                "frontier_family": "family",
+                "frontier_status": "manual_claim_needed",
+                "required_claim_kind": "claim",
+                "safe_default": "block",
+                "forbidden_shortcuts": ["shortcut"],
+                "executable": False,
+                "replay_authorized": False,
+                "authorization_status": "blocked",
+            }
+        )
+
+
+def test_frontier_work_item_report_projects_to_proof_surface_frontier_ref() -> None:
+    report = frontier_work_item_evidence_report(
+        FrontierWorkItem(
+            work_item_id="uk-frontier-demo",
+            jurisdiction="uk",
+            source_artifact_id="ukpga/2020/1",
+            source_unit_id="eff-1",
+            source_witness={
+                "source_role": "effect_feed",
+                "artifact_id": "ukpga/2020/1",
+                "source_unit_id": "eff-1",
+                "locator": "https://example.test/effects/1",
+            },
+            target_witness={"affected_provisions": "s. 1"},
+            compare_witness={"compare_shape": "commensurable"},
+            owner_phase="typed_elaboration",
+            frontier_family="uk_manual_frontier_heading_facet_candidate",
+            frontier_status="manual_compile_candidate",
+            candidate_operation_family="facet_text_rewrite",
+            candidate_targets=("section-1",),
+            required_claim_kind="semantic_compile",
+            required_validator_checks=("claim_identifies_heading_facet",),
+            required_proofs=("mutation_boundary_proof",),
+            safe_default="block_until_validated_claim_authorizes_replay",
+            forbidden_shortcuts=("unvalidated_manual_claim_execution",),
+            authorization_status="manual_claim_required",
+        ),
+    )
+
+    surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert surface["surface_kind"] == "frontier_work_item"
+    assert surface["claim_flags"]["replay_claims"] is False
+    assert surface["rows"][0]["row_kind"] == "frontier_work_item"
+    assert surface["rows"][0]["frontier_ref"] == "uk-frontier-demo"
+    assert surface["rows"][0]["source_refs"] == [
+        "ukpga/2020/1",
+        "eff-1",
+        "https://example.test/effects/1",
+    ]
 
 
 def test_proof_obligation_certificate_records_blocked_promotion() -> None:
