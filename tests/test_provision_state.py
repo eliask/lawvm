@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from lxml import etree
 import pytest
@@ -10,7 +12,7 @@ from lawvm.core.ir_helpers import irnode_content_hash
 from lawvm.core.provenance import MigrationEvent, OperationSource
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.provision_state import resolve_provision_state
-from lawvm.tools.provision_state import build_provision_state_response, resolve_address
+from lawvm.tools.provision_state import build_provision_state_response, main, resolve_address
 
 
 def _section(text: str) -> IRNode:
@@ -316,6 +318,67 @@ def test_public_resolve_provision_state_rejects_finnish_suffix_as_subsection() -
     assert payload["status"] == "invalid_address"
     assert payload["diagnostic"]["code"] == "FI_PROVISION_SELECTOR_SUFFIX_AS_SUBSECTION"
     assert payload["diagnostic"]["suggestions"] == ["section:127a"]
+
+
+def test_provision_state_cli_invalid_selector_prints_diagnostic_and_exits_2(capsys) -> None:
+    args = SimpleNamespace(
+        statute_id="1992/1535",
+        jurisdiction="fi",
+        provision="section:127 a §",
+        as_of="2024-06-01",
+        query_type="governing",
+        territory=None,
+        include_ir=False,
+    )
+
+    with pytest.raises(SystemExit) as raised:
+        main(args)
+
+    captured = capsys.readouterr()
+    assert raised.value.code == 2
+    assert "ERROR: invalid --provision 'section:127 a §'" in captured.err
+    assert "help: try 'section:127a'" in captured.err
+    payload = json.loads(captured.out)
+    assert payload["status"] == "invalid_address"
+    assert payload["diagnostic"]["code"] == "FI_PROVISION_SELECTOR_MALFORMED_HYBRID"
+
+
+def test_provision_state_cli_address_not_found_prints_nearby_help(
+    capsys,
+    monkeypatch,
+) -> None:
+    actual = LegalAddress(path=(("chapter", "6"), ("section", "127 a")))
+    payload = build_provision_state_response(
+        timelines={actual: ProvisionTimeline(address=actual)},
+        statute_id="1992/1535",
+        jurisdiction="fi",
+        provision="section:127a",
+        as_of="2024-06-01",
+    )
+
+    def fake_resolve_provision_state(**kwargs):
+        return payload
+
+    monkeypatch.setattr(
+        "lawvm.provision_state.resolve_provision_state",
+        fake_resolve_provision_state,
+    )
+    args = SimpleNamespace(
+        statute_id="1992/1535",
+        jurisdiction="fi",
+        provision="section:127a",
+        as_of="2024-06-01",
+        query_type="governing",
+        territory=None,
+        include_ir=False,
+    )
+
+    main(args)
+
+    captured = capsys.readouterr()
+    assert "nearest materialized addresses include: chapter:6/section:127 a" in captured.err
+    emitted = json.loads(captured.out)
+    assert emitted["status"] == "address_not_found"
 
 
 def test_provision_state_path_parser_rejects_malformed_segments() -> None:

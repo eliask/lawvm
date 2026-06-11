@@ -116,7 +116,53 @@ async def _main(args: Any) -> None:
         include_ir=args.include_ir,
         status_stream=sys.stderr,
     )
+    _emit_cli_diagnostic(payload, stream=sys.stderr)
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2))
+    if payload.get("status") == "invalid_address":
+        raise SystemExit(2)
+
+
+def _emit_cli_diagnostic(payload: Mapping[str, Any], *, stream: Any) -> None:
+    """Render human-facing diagnostics while preserving the JSON seam payload."""
+
+    diagnostic = payload.get("diagnostic")
+    if not isinstance(diagnostic, Mapping):
+        return
+
+    status = str(payload.get("status") or "")
+    query = payload.get("query")
+    provision = ""
+    if isinstance(query, Mapping):
+        provision = str(query.get("provision") or "")
+    if not provision:
+        provision = str(payload.get("section_filter") or "")
+
+    message = str(diagnostic.get("message") or "provision selector could not be resolved")
+    target = f" {provision!r}" if provision else ""
+    if status == "invalid_address":
+        print(f"ERROR: invalid --provision{target}: {message}", file=stream)
+    elif status == "address_not_found":
+        print(f"note: --provision{target} was not found: {message}", file=stream)
+    else:
+        print(f"note: --provision{target}: {message}", file=stream)
+
+    suggestions = diagnostic.get("suggestions")
+    if isinstance(suggestions, list) and suggestions:
+        print(f"help: try {str(suggestions[0])!r}", file=stream)
+
+    nearby = diagnostic.get("nearby_address_candidates")
+    if isinstance(nearby, list) and nearby:
+        candidate_texts = [
+            str(item.get("text"))
+            for item in nearby
+            if isinstance(item, Mapping) and item.get("text")
+        ]
+        if candidate_texts:
+            print(
+                "help: nearest materialized addresses include: "
+                + ", ".join(candidate_texts[:5]),
+                file=stream,
+            )
 
 
 def build_provision_state_response(
