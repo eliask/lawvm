@@ -18,6 +18,7 @@ Usage:
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import json
 import io
 import re
@@ -25,10 +26,10 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Protocol, Tuple, cast
 
 if TYPE_CHECKING:
-    from lawvm.core.ir import IRNode  # noqa: F401
+    from lawvm.core.ir import IRNode
 
 import Levenshtein
 from lxml import etree
@@ -53,16 +54,21 @@ _TMP_DIR = _LAWVM_DIR / ".tmp"
 _SCRIPTS_DIR = _LAWVM_DIR / "scripts"
 _AKN_NS = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
 
-# ---------------------------------------------------------------------------
-# Import proper HTML section extractor from scripts/
-# ---------------------------------------------------------------------------
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
-try:
-    from html_section_extractor import extract_sections_from_html as _extract_sections_from_html  # ty: ignore[unresolved-import]
-    _HTML_EXTRACTOR_AVAILABLE = True
-except ImportError:
-    _HTML_EXTRACTOR_AVAILABLE = False
+class _HTMLSectionExtractorModule(Protocol):
+    def extract_sections_from_html(self, html: bytes) -> list[str]: ...
+
+
+def _load_html_section_extractor() -> _HTMLSectionExtractorModule | None:
+    extractor_path = _SCRIPTS_DIR / "html_section_extractor.py"
+    spec = importlib.util.spec_from_file_location("html_section_extractor", extractor_path)
+    if spec is None or spec.loader is None:
+        return None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return cast(_HTMLSectionExtractorModule, mod)
+
+
+_HTML_SECTION_EXTRACTOR = _load_html_section_extractor()
 
 # ---------------------------------------------------------------------------
 # Helpers: text normalization and scoring
@@ -319,8 +325,8 @@ def _fetch_html_sections(sid: str, archive_db: Optional[Path] = None) -> Tuple[L
         except Exception as e:
             return [], f"fetch failed: {e}"
 
-    if _HTML_EXTRACTOR_AVAILABLE:
-        raw_labels = _extract_sections_from_html(raw)
+    if _HTML_SECTION_EXTRACTOR is not None:
+        raw_labels = _HTML_SECTION_EXTRACTOR.extract_sections_from_html(raw)
         labels = [_normalise_html_label(lbl) for lbl in raw_labels]
     else:
         # Fallback: crude regex (body text references may inflate counts)
