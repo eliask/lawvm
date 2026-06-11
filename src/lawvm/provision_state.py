@@ -7,6 +7,8 @@ from typing import Any, TextIO
 from lawvm.core.ir import IRStatute
 from lawvm.tools.provision_state import (
     build_provision_state_response,
+    invalid_provision_selector_payload,
+    provision_selector_diagnostic,
     unsupported_jurisdiction_payload,
 )
 
@@ -31,6 +33,20 @@ def resolve_provision_state(
             provision=provision,
             as_of=as_of,
             query_type=query_type,
+        )
+    selector_diagnostic = provision_selector_diagnostic(
+        jurisdiction=jurisdiction,
+        provision=provision,
+    )
+    if selector_diagnostic is not None:
+        return invalid_provision_selector_payload(
+            jurisdiction=jurisdiction,
+            statute_id=statute_id,
+            provision=provision,
+            as_of=as_of,
+            query_type=query_type,
+            territory=territory,
+            diagnostic=selector_diagnostic,
         )
 
     from lawvm.finland.grafter import replay_xml

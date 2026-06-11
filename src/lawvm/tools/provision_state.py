@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -30,6 +31,14 @@ from lawvm.tools.timeline_integrity import (
 
 SCHEMA = "lawvm.provision_state.v1"
 DUMP_SCHEMA = "lawvm.dump.v1"
+
+_FI_PROSE_SECTION_RE = re.compile(r"^\s*(?P<number>\d+)\s*(?P<letter>[A-Za-z])?\s*§\s*$")
+_FI_HYBRID_SECTION_RE = re.compile(
+    r"^\s*section\s*:\s*(?P<number>\d+)\s*(?P<letter>[A-Za-z])?\s*§\s*$"
+)
+_FI_SUFFIX_AS_SUBSECTION_RE = re.compile(
+    r"^\s*section\s*:\s*(?P<number>\d+)\s*/\s*subsection\s*:\s*(?P<letter>[A-Za-z])\s*$"
+)
 
 # Rollback flag (Pro §5). Fixed-term statute bounds are DEFAULT-ON since seam
 # spec 0.2 (corpus soak criteria met: residual blocking statutes well under
@@ -217,6 +226,115 @@ def build_provision_state_response(
         timeline_integrity=tl_block,
         timeline_blocking=tl_blocking,
     )
+
+
+def provision_selector_diagnostic(
+    *,
+    jurisdiction: str,
+    provision: str,
+) -> dict[str, Any] | None:
+    """Return an early diagnostic for definitely malformed provision selectors."""
+
+    if jurisdiction != "fi":
+        return None
+    text = str(provision or "").strip()
+    if not text:
+        return {
+            "code": "FI_PROVISION_SELECTOR_EMPTY",
+            "message": "empty --provision is not a valid LawVM legal address",
+            "suggestions": [],
+        }
+    hybrid = _FI_HYBRID_SECTION_RE.fullmatch(text)
+    if hybrid is not None:
+        suggestion = _fi_section_suggestion(hybrid.group("number"), hybrid.group("letter"))
+        return {
+            "code": "FI_PROVISION_SELECTOR_MALFORMED_HYBRID",
+            "message": (
+                "LawVM legal-address selectors are kind:label paths without the Finnish § sign"
+            ),
+            "suggestions": [suggestion],
+        }
+    prose = _FI_PROSE_SECTION_RE.fullmatch(text)
+    if prose is not None:
+        suggestion = _fi_section_suggestion(prose.group("number"), prose.group("letter"))
+        return {
+            "code": "FI_PROVISION_SELECTOR_UNSUPPORTED_PROSE_NOTATION",
+            "message": (
+                "this looks like Finnish pykälä notation; provision-state expects "
+                "a canonical LawVM address"
+            ),
+            "suggestions": [suggestion],
+        }
+    suffix_as_subsection = _FI_SUFFIX_AS_SUBSECTION_RE.fullmatch(text)
+    if suffix_as_subsection is not None:
+        suggestion = _fi_section_suggestion(
+            suffix_as_subsection.group("number"),
+            suffix_as_subsection.group("letter"),
+        )
+        return {
+            "code": "FI_PROVISION_SELECTOR_SUFFIX_AS_SUBSECTION",
+            "message": (
+                "Finnish letter suffixes such as '127 a §' are section labels, "
+                "not subsection labels"
+            ),
+            "suggestions": [suggestion],
+        }
+    malformed_parts = [part.strip() for part in text.split("/") if ":" not in part]
+    if malformed_parts:
+        return {
+            "code": "LAWVM_PROVISION_SELECTOR_MALFORMED_PATH",
+            "message": "LawVM legal-address path segments must be kind:label pairs",
+            "suggestions": [],
+            "malformed_segments": malformed_parts,
+        }
+    return None
+
+
+def invalid_provision_selector_payload(
+    *,
+    jurisdiction: str,
+    statute_id: str,
+    provision: str,
+    as_of: str,
+    query_type: str = "governing",
+    territory: str | None = None,
+    diagnostic: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return a stable invalid-address seam payload without running replay."""
+
+    query = _query_payload(
+        statute_id=statute_id,
+        provision=provision,
+        as_of=as_of,
+        query_type=query_type,
+        territory=territory,
+    )
+    return {
+        "schema": SCHEMA,
+        "jurisdiction": jurisdiction,
+        "statute_id": statute_id,
+        "title": "",
+        "status": "invalid_address",
+        "query": query,
+        "resolved_address": None,
+        "lineage": _lineage_payload(address=None, migration_events=(), as_of=as_of),
+        "address_candidates": [],
+        "selection": None,
+        "hashes": _hash_payload(
+            status="invalid_address",
+            statute_id=statute_id,
+            jurisdiction=jurisdiction,
+            query=query,
+            address=None,
+            lineage=None,
+            version=None,
+            content_hash="",
+        ),
+        "engine": _engine_payload(),
+        "source_locator": None,
+        "source_locator_status": "unavailable_invalid_provision",
+        "diagnostic": dict(diagnostic),
+    }
 
 
 def _relevant_timeline_breaks(
@@ -594,7 +712,7 @@ def _parse_addr(addr_str: str) -> LegalAddress | None:
     pairs: list[tuple[str, str]] = []
     for part in addr_str.split("/"):
         if ":" not in part:
-            continue
+            return None
         kind, label = part.split(":", 1)
         kind = kind.strip()
         label = label.strip()
@@ -604,6 +722,11 @@ def _parse_addr(addr_str: str) -> LegalAddress | None:
     if not pairs:
         return None
     return LegalAddress(path=tuple(pairs))
+
+
+def _fi_section_suggestion(number: str, letter: str | None) -> str:
+    suffix = str(letter or "").lower()
+    return f"section:{number}{suffix}"
 
 
 def _query_payload(

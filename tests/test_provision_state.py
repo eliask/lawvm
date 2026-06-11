@@ -194,6 +194,61 @@ def test_public_resolve_provision_state_reports_unsupported_jurisdiction_without
     assert payload["supported_jurisdictions"] == ["fi"]
 
 
+def test_public_resolve_provision_state_rejects_finnish_prose_selector_before_replay() -> None:
+    payload = resolve_provision_state(
+        statute_id="1992/1535",
+        jurisdiction="fi",
+        provision="127 a §",
+        as_of="2024-06-01",
+    )
+
+    assert payload["status"] == "invalid_address"
+    assert payload["diagnostic"]["code"] == "FI_PROVISION_SELECTOR_UNSUPPORTED_PROSE_NOTATION"
+    assert payload["diagnostic"]["suggestions"] == ["section:127a"]
+    assert payload["source_locator_status"] == "unavailable_invalid_provision"
+    assert len(payload["hashes"]["derived_state_hash"]) == 64
+
+
+def test_public_resolve_provision_state_rejects_finnish_hybrid_selector_before_replay() -> None:
+    payload = resolve_provision_state(
+        statute_id="1992/1535",
+        jurisdiction="fi",
+        provision="section:127 a §",
+        as_of="2024-06-01",
+    )
+
+    assert payload["status"] == "invalid_address"
+    assert payload["diagnostic"]["code"] == "FI_PROVISION_SELECTOR_MALFORMED_HYBRID"
+    assert payload["diagnostic"]["suggestions"] == ["section:127a"]
+
+
+def test_public_resolve_provision_state_rejects_finnish_suffix_as_subsection() -> None:
+    payload = resolve_provision_state(
+        statute_id="1992/1535",
+        jurisdiction="fi",
+        provision="section:127/subsection:a",
+        as_of="2024-06-01",
+    )
+
+    assert payload["status"] == "invalid_address"
+    assert payload["diagnostic"]["code"] == "FI_PROVISION_SELECTOR_SUFFIX_AS_SUBSECTION"
+    assert payload["diagnostic"]["suggestions"] == ["section:127a"]
+
+
+def test_provision_state_path_parser_rejects_malformed_segments() -> None:
+    payload = build_provision_state_response(
+        timelines=_timeline(),
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="section:1/not-a-segment",
+        as_of="2021-01-01",
+    )
+
+    assert payload["status"] == "invalid_address"
+    assert payload["resolved_address"] is None
+    assert payload["address_candidates"] == []
+
+
 # --- timeline-integrity surfacing ---------------------------------------------
 # A replay abort / broken compile fold must never produce clean-looking answers.
 # Break evidence is classified by lawvm.tools.timeline_integrity; the seam marks
