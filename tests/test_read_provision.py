@@ -66,6 +66,12 @@ class TestSelectorRouting:
         rp.main(_Args(statute_id="2011/805", selector="chapter:3/section:1"))
         assert captured["provision"] == "chapter:3/section:1"
 
+    def test_lettered_section_selectors_lower_to_compact_locator(self, monkeypatch):
+        for selector in ("§2d", "§2 d", "2 d §"):
+            captured = _patch_replay(monkeypatch)
+            rp.main(_Args(statute_id="2021/728", selector=selector))
+            assert captured["provision"] == "section:2d"
+
 
 class TestHumanRender:
     def test_render_uses_typed_selector(self, monkeypatch, capsys):

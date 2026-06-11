@@ -40,8 +40,9 @@ from dataclasses import dataclass
 # section, then up to two dotted subsection/paragraph components
 # (momentti/kohta in the Finlex source grammar).
 #   §3:1.2   §7   §7.1.3   3:1   §14 b   §3:1 a
-# Labels may carry a trailing letter (e.g. "14 b", "3a"); we keep the AKN label
-# spacing convention ("14 b") that the existing resolvers already accept.
+# Labels may carry a trailing letter (e.g. "14 b", "3a"); the public LawVM
+# locator form compacts that suffix ("14b") so it can be handed directly to
+# `provision-state`.
 _LABEL = r"[0-9]+(?:\s?[A-Za-z])?"
 _SECTION_SELECTOR_RE = re.compile(
     rf"""
@@ -73,12 +74,12 @@ class ParsedSelector:
 
 
 def _norm_label(raw: str) -> str:
-    """Normalize a label's internal whitespace: '14 b' stays '14 b', '14b' → '14 b'."""
+    """Normalize a label's internal whitespace: '14 b' and '14b' -> '14b'."""
     m = re.fullmatch(r"\s*(\d+)\s*([A-Za-z])?\s*", raw)
     if m is None:
         return raw.strip()
     num, letter = m.group(1), m.group(2)
-    return f"{num} {letter.lower()}" if letter else num
+    return f"{num}{letter.lower()}" if letter else num
 
 
 def parse_section_selector(s: str) -> ParsedSelector | None:
@@ -122,6 +123,17 @@ _LEGACY_EID_RE = re.compile(r"^(?:part_|chp_|sec_|chapter_).*", re.IGNORECASE)
 _BARE_SECTION_LABEL_RE = re.compile(r"^\(?\s*\d+\s*[a-z]?\s*§\s*\)?$", re.IGNORECASE)
 
 
+def _bare_section_label_to_locator(value: str) -> str | None:
+    if not _BARE_SECTION_LABEL_RE.fullmatch(value):
+        return None
+    label = value.strip()
+    if label.startswith("(") and label.endswith(")"):
+        label = label[1:-1].strip()
+    label = re.sub(r"\s*§\s*$", "", label).strip()
+    normalized = _norm_label(label)
+    return f"section:{normalized}" if normalized else None
+
+
 def to_locator_string(s: str) -> str:
     """Lower any accepted selector form to a legacy locator string.
 
@@ -129,7 +141,7 @@ def to_locator_string(s: str) -> str:
       1. the canonical ``§a:b.c.d`` form  → lowered to ``chapter:/section:/...``
       2. an existing ``kind:label/...`` locator → returned unchanged
       3. an eId like ``chp_3__sec_1`` → returned unchanged
-      4. a bare ``N §`` label → returned unchanged (resolver tolerates it)
+      4. a bare ``N §`` label → lowered to ``section:N``
 
     The string is returned UNCHANGED when it is already a legacy form, so this
     is safe to call unconditionally before handing a selector to any engine.
@@ -146,7 +158,10 @@ def to_locator_string(s: str) -> str:
     parsed = parse_section_selector(stripped)
     if parsed is not None:
         return parsed.locator
-    # Bare "N §" or anything else — pass through for resolver_raw to handle.
+    bare_section = _bare_section_label_to_locator(stripped)
+    if bare_section is not None:
+        return bare_section
+    # Anything else — pass through for resolver_raw to handle.
     return stripped
 
 

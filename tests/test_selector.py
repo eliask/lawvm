@@ -48,8 +48,8 @@ class TestParseSectionSelector:
         assert _parsed_selector("3:1").locator == "chapter:3/section:1"
 
     def test_lettered_label(self):
-        assert _parsed_selector("§14 b").locator == "section:14 b"
-        assert _parsed_selector("§14b").locator == "section:14 b"
+        assert _parsed_selector("§14 b").locator == "section:14b"
+        assert _parsed_selector("§14b").locator == "section:14b"
 
     def test_chapter_section_with_lettered_subsection(self):
         # uncommon but allowed: subsection (momentti) label normalization
@@ -84,8 +84,9 @@ class TestToLocatorString:
         assert to_locator_string("chp_2__sec_7v20221023") == "chp_2__sec_7v20221023"
 
     def test_bare_label_passthrough(self):
-        assert to_locator_string("1 §") == "1 §"
-        assert to_locator_string("(7 §)") == "(7 §)"
+        assert to_locator_string("1 §") == "section:1"
+        assert to_locator_string("(7 §)") == "section:7"
+        assert to_locator_string("14 b §") == "section:14b"
 
     def test_empty_passthrough(self):
         assert to_locator_string("") == ""
@@ -99,6 +100,7 @@ class TestSectionScope:
     def test_section_scope_section_unchanged(self):
         assert section_scope_locator("§3:1") == "chapter:3/section:1"
         assert section_scope_locator("§7") == "section:7"
+        assert section_scope_locator("§14 b") == "section:14b"
 
     def test_section_scope_legacy_locator(self):
         assert (
