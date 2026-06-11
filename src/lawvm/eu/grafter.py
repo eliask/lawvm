@@ -29,7 +29,7 @@ def _normalize_text(text: str) -> str:
     return " ".join(text.split())
 
 
-def _element_text(el: ET.Element | None) -> str:
+def _element_text(el: ET.Element[str] | None) -> str:
     """Collect all inner text recursively."""
     if el is None:
         return ""
@@ -152,7 +152,7 @@ class EUIRGrafter:
             metadata=metadata,
         )
 
-    def _parse_recitals(self, el: ET.Element) -> Optional[IRNode]:
+    def _parse_recitals(self, el: ET.Element[str]) -> Optional[IRNode]:
         """Parse the preamble into a container of recitals."""
         children = []
         for consid in el.findall(".//CONSID"):
@@ -166,7 +166,7 @@ class EUIRGrafter:
             return None
         return IRNode(kind=IRNodeKind.PREAMBLE, children=tuple(children))
 
-    def _parse_structural_node(self, el: ET.Element, parent_eid: str = "") -> Optional[IRNode]:
+    def _parse_structural_node(self, el: ET.Element[str], parent_eid: str = "") -> Optional[IRNode]:
         """Recursively parse articles, chapters, divisions, annexes."""
         tag = el.tag
         kind = _get_kind(tag)

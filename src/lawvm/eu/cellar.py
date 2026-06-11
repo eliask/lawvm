@@ -154,7 +154,7 @@ def _extract_urls_from_xml(path: Path) -> dict[str, Any]:
     }
 
 
-def _child_text(el: ET.Element | None, name: str) -> str:
+def _child_text(el: ET.Element[str] | None, name: str) -> str:
     if el is None:
         return ""
     child = el.find(name)
@@ -163,14 +163,14 @@ def _child_text(el: ET.Element | None, name: str) -> str:
     return child.text.strip()
 
 
-def _iter_notice_entities(root: ET.Element, tag: str) -> list[ET.Element]:
+def _iter_notice_entities(root: ET.Element[str], tag: str) -> list[ET.Element[str]]:
     work = root.find(tag)
     if work is None:
         return []
     return list(work)
 
 
-def _parse_sameas(el: ET.Element) -> list[dict[str, str]]:
+def _parse_sameas(el: ET.Element[str]) -> list[dict[str, str]]:
     items: list[dict[str, str]] = []
     for sameas in el.findall("SAMEAS"):
         uri = sameas.find("URI")
@@ -186,7 +186,7 @@ def _parse_sameas(el: ET.Element) -> list[dict[str, str]]:
     return items
 
 
-def _parse_uriish(el: ET.Element | None) -> dict[str, str]:
+def _parse_uriish(el: ET.Element[str] | None) -> dict[str, str]:
     if el is None:
         return {}
     return {
@@ -203,7 +203,7 @@ def _group_sameas(items: list[dict[str, str]]) -> dict[str, list[dict[str, str]]
     return grouped
 
 
-def _parse_expression(el: ET.Element) -> dict[str, Any]:
+def _parse_expression(el: ET.Element[str]) -> dict[str, Any]:
     expr_uri = _parse_uriish(el.find("URI"))
     languages: list[dict[str, str]] = []
     for lang in el.findall("EXPRESSION_USES_LANGUAGE"):
@@ -221,7 +221,7 @@ def _parse_expression(el: ET.Element) -> dict[str, Any]:
     }
 
 
-def _parse_manifestation(el: ET.Element) -> dict[str, Any]:
+def _parse_manifestation(el: ET.Element[str]) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     for item in el.findall("MANIFESTATION_HAS_ITEM"):
         items.append(
@@ -251,7 +251,7 @@ def _dedupe_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return deduped
 
 
-def _expression_language_code(el: ET.Element) -> str:
+def _expression_language_code(el: ET.Element[str]) -> str:
     for lang in el.findall("EXPRESSION_USES_LANGUAGE"):
         code = _child_text(lang, "IDENTIFIER") or _child_text(lang, "OP-CODE")
         if code:
@@ -262,7 +262,7 @@ def _expression_language_code(el: ET.Element) -> str:
     return ""
 
 
-def _manifestation_items(el: ET.Element) -> list[dict[str, Any]]:
+def _manifestation_items(el: ET.Element[str]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for item in el.findall("MANIFESTATION_HAS_ITEM"):
         items.append(
@@ -304,8 +304,8 @@ def list_manifestation_options(
     root = ET.parse(tree_notice_path).getroot()
 
     # 1. Broadly collect all manifests by URI (if available)
-    manifests_by_uri: dict[str, ET.Element] = {}
-    all_mans: list[ET.Element] = list(root.iter("MANIFESTATION"))
+    manifests_by_uri: dict[str, ET.Element[str]] = {}
+    all_mans: list[ET.Element[str]] = list(root.iter("MANIFESTATION"))
     for manifestation in all_mans:
         uri_el = manifestation.find(".//URI")  # Flexible search
         if uri_el is not None:
@@ -586,7 +586,7 @@ def _normalize_text(text: str) -> str:
     return " ".join(text.split())
 
 
-def _element_text(el: ET.Element | None) -> str:
+def _element_text(el: ET.Element[str] | None) -> str:
     if el is None:
         return ""
     return _normalize_text("".join(str(_t) for _t in el.itertext()))
