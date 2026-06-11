@@ -87,7 +87,7 @@ def _subsection(num: str, text: str, eid: Optional[str] = None) -> str:
     return f"<subsection{eid_attr}><num>{num}</num><content><p>{text}</p></content></subsection>"
 
 
-def _findings(result: PhaseResult, role: str):
+def _findings(result: PhaseResult[Any], role: str) -> tuple[Finding, ...]:
     return tuple(finding for finding in result.findings() if finding.role == role)
 
 
@@ -2180,7 +2180,7 @@ class TestCompileAmendmentOps:
 # ---------------------------------------------------------------------------
 
 
-def _make_dates() -> tuple:
+def _make_dates() -> tuple[dt.date, dt.date]:
     return dt.date(2010, 1, 1), dt.date(2010, 3, 1)
 
 
@@ -2317,7 +2317,7 @@ class TestApplyOpsToTree:
         ).output
         resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "official_consolidation").output
         issue, effective = _make_dates()
-        mutation_events: list = []
+        mutation_events: list[Any] = []
 
         apply_ops_to_tree(
             state=state,
@@ -2370,7 +2370,7 @@ class TestApplyOpsToTree:
             parent_id="2000/1",
         ).output
         resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "official_consolidation").output
-        lo_ops_out: list = []
+        lo_ops_out: list[Any] = []
         issue, effective = _make_dates()
 
         apply_ops_to_tree(
@@ -2414,7 +2414,7 @@ class TestApplyOpsToTree:
             )
         ]
         resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "official_consolidation").output
-        failed_ops: list = []
+        failed_ops: list[Any] = []
         issue, effective = _make_dates()
 
         apply_ops_to_tree(
