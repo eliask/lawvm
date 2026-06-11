@@ -9,6 +9,11 @@ from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
 
 OWNERSHIP_CLOSURE_SCHEMA = "lawvm.ownership_closure_certificate.v1"
+_OWNERSHIP_CLOSURE_REPORT_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
+    "ownership_closure_certificate_as_replay_authorization",
+    "ownership_closure_certificate_as_full_corpus_omniscience",
+    "open_ownership_closure_as_compile_failure",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,8 +127,26 @@ def ownership_closure_evidence_report(
         dry_run_claims=False,
         agreement_claims=False,
         summary=summary,
-        rows=tuple(row.to_dict() for row in rows),
+        rows=tuple(_ownership_closure_report_row(row) for row in rows),
+        detail={
+            "safe_default": "treat_open_closure_as_declared_accounting_gap_not_replay_authority",
+            "forbidden_shortcuts": _OWNERSHIP_CLOSURE_REPORT_FORBIDDEN_SHORTCUTS,
+            "included_surfaces": ("ownership_closure_certificate",),
+        },
     )
+
+
+def _ownership_closure_report_row(certificate: OwnershipClosureCertificate) -> dict[str, Any]:
+    row = certificate.to_dict()
+    return {
+        **row,
+        "surface": "ownership_closure_certificate",
+        "row_id": certificate.certificate_id,
+        "subject_id": certificate.corpus_slice_id,
+        "status": row["closure_status"],
+        "closure_ref": certificate.certificate_id,
+        "forbidden_shortcuts": _OWNERSHIP_CLOSURE_REPORT_FORBIDDEN_SHORTCUTS,
+    }
 
 
 def _required_string(field_name: str, value: Any) -> str:

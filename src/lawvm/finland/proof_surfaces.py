@@ -1506,6 +1506,21 @@ def finland_strict_report_ownership_closure_certificate(
         "strict_fail_reasons_without_closure": len(strict_fail_reasons),
         "unproved_mutation_boundary_proofs": len(unproved_mutation_boundaries),
     }
+    closed = not failed_gates and all(count == 0 for count in unowned_counts.values())
+    missing_required_certificates = (
+        *_closure_certificate_requirements(
+            candidate_set_certificates,
+            candidate_set_kind="fi_strict_report_source_unit_enumeration",
+            missing_certificate="source_unit_enumeration_certificate",
+            incomplete_certificate="complete_source_unit_enumeration_certificate",
+        ),
+        *_closure_certificate_requirements(
+            candidate_set_certificates,
+            candidate_set_kind="fi_strict_report_operation_cue_coverage",
+            missing_certificate="operation_candidate_coverage_certificate",
+            incomplete_certificate="complete_operation_cue_exhaustiveness_certificate",
+        ),
+    )
     owned_counts = {
         "canonical_ops": _ops_count(payload, "canonical"),
         "failed_ops_visible": len(failed_ops),
@@ -1571,7 +1586,7 @@ def finland_strict_report_ownership_closure_certificate(
                 candidate_set_authorizations,
             ),
         },
-        closed=False,
+        closed=closed,
         failed_gates=tuple(failed_gates),
         unowned_counts=unowned_counts,
         owned_counts=owned_counts,
@@ -1584,20 +1599,7 @@ def finland_strict_report_ownership_closure_certificate(
                 "replay_authorization",
             ),
             "safe_default": "treat_open_certificate_as_accounting_gap_not_replay_failure",
-            "missing_required_certificates": (
-                *(
-                    ()
-                    if _has_candidate_set(candidate_set_certificates, "fi_strict_report_source_unit_enumeration")
-                    else ("source_unit_enumeration_certificate",)
-                ),
-                *(
-                    ()
-                    if _has_candidate_set(candidate_set_certificates, "fi_strict_report_operation_cue_coverage")
-                    else ("operation_candidate_coverage_certificate",)
-                ),
-                "complete_source_unit_enumeration_certificate",
-                "complete_operation_cue_exhaustiveness_certificate",
-            ),
+            "missing_required_certificates": missing_required_certificates,
         },
     )
     return certificate.to_dict()
@@ -3165,6 +3167,31 @@ def _has_candidate_set(
     candidate_set_kind: str,
 ) -> bool:
     return any(str(row.get("candidate_set_kind") or "") == candidate_set_kind for row in rows)
+
+
+def _candidate_set_complete(
+    rows: tuple[Mapping[str, Any], ...],
+    candidate_set_kind: str,
+) -> bool:
+    return any(
+        str(row.get("candidate_set_kind") or "") == candidate_set_kind
+        and str(row.get("completeness_status") or "") == CANDIDATE_SET_COMPLETE
+        for row in rows
+    )
+
+
+def _closure_certificate_requirements(
+    rows: tuple[Mapping[str, Any], ...],
+    *,
+    candidate_set_kind: str,
+    missing_certificate: str,
+    incomplete_certificate: str,
+) -> tuple[str, ...]:
+    if not _has_candidate_set(rows, candidate_set_kind):
+        return (missing_certificate,)
+    if not _candidate_set_complete(rows, candidate_set_kind):
+        return (incomplete_certificate,)
+    return ()
 
 
 def _visible_operation_candidate_ids(

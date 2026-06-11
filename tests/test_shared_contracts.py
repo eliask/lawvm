@@ -171,6 +171,14 @@ def test_ownership_closure_certificate_closes_only_zero_unowned_slice() -> None:
     assert report["summary"]["closed_count"] == 1
     assert report["summary"]["unowned_counts"]["candidates_without_authorization"] == 0
     assert report["rows"][0]["closed"] is True
+    assert report["rows"][0]["surface"] == "ownership_closure_certificate"
+    assert report["rows"][0]["row_id"] == "closure-fi-demo"
+    assert report["rows"][0]["subject_id"] == "fi-demo-slice"
+    assert report["rows"][0]["status"] == "closed"
+    assert (
+        "ownership_closure_certificate_as_full_corpus_omniscience"
+        in report["rows"][0]["forbidden_shortcuts"]
+    )
 
 
 def test_ownership_closure_certificate_rejects_false_closed_claims() -> None:
@@ -223,6 +231,15 @@ def test_ownership_closure_report_summarizes_open_slices_without_replay_claims()
     assert report["summary"]["failed_gate_counts"] == {"potential_operation_coverage": 1}
     assert report["summary"]["unowned_counts"] == {"potential_ops_without_status": 2}
     assert report["rows"][0]["closure_status"] == "open"
+    assert report["rows"][0]["status"] == "open"
+    assert "open_ownership_closure_as_compile_failure" in report["forbidden_shortcuts"]
+
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+
+    assert proof_surface["rows"][0]["row_id"] == "closure-fi-open"
+    assert proof_surface["rows"][0]["subject_id"] == "fi-demo-slice"
+    assert proof_surface["rows"][0]["row_kind"] == "ownership_closure_certificate"
+    assert proof_surface["rows"][0]["status"] == "open"
 
 
 def test_source_pathology_projection_is_passive_proof_surface_row() -> None:

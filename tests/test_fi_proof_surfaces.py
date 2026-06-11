@@ -2,6 +2,7 @@ import hashlib
 from datetime import date
 
 from lawvm.core.compile_result import SourcePathology
+from lawvm.core.candidate_set_certificate import CANDIDATE_SET_COMPLETE, CandidateSetCertificate
 from lawvm.core.mutation_accounting import MutationInvariantReport
 from lawvm.core.source_witness import source_witness_digest_coverage
 from lawvm.finland.he_branch_parser import (
@@ -27,6 +28,7 @@ from lawvm.finland.proof_surfaces import (
     finland_evidence_bundle_evidence_surface,
     finland_frontier_proof_evidence_surface,
     finland_he_branch_evidence_surface,
+    finland_strict_report_ownership_closure_certificate,
     finland_strict_report_evidence_surface,
     finlex_editorial_witness_agreement_residual_rows,
     mutation_boundary_proof_rows,
@@ -1201,6 +1203,54 @@ def test_source_completeness_status_row_records_counts_without_authority() -> No
     assert incomplete["counts"]["missing_dates"] == 0
     assert complete["status"] == "complete"
     assert source_completeness_status_row({"source_completeness": {}}) == {}
+
+
+def test_finland_strict_report_ownership_closure_can_close_declared_slice() -> None:
+    candidate_set_kinds = (
+        "fi_strict_report_visible_operation_rows",
+        "fi_strict_report_source_lineage_units",
+        "fi_strict_report_source_unit_enumeration",
+        "fi_strict_report_operation_cue_coverage",
+    )
+    candidate_sets = [
+        CandidateSetCertificate(
+            scope_id=f"fi:2001/1234:{kind}",
+            candidate_set_kind=kind,
+            phase="strict_report_projection",
+            rule_id=f"{kind}_complete",
+            reason="declared test slice is fully enumerated",
+            completeness_status=CANDIDATE_SET_COMPLETE,
+            candidate_count=1,
+            candidate_ids=(f"{kind}:candidate",),
+            missing_candidate_count=0,
+            blocker_counts={},
+            blocker_families=(),
+            next_promotion_allowed=False,
+            next_promotion_requires=("execution_authorization",),
+        ).to_dict()
+        for kind in candidate_set_kinds
+    ]
+
+    certificate = finland_strict_report_ownership_closure_certificate(
+        {
+            "statute_id": "2001/1234",
+            "profile": "strict",
+            "canonical_ops": [],
+            "failed_ops": [],
+            "projection_rows": [],
+            "source_pathologies": [],
+            "strict_fail_reasons": [],
+            "strict_report_candidate_set_certificates": candidate_sets,
+            "strict_report_candidate_set_execution_authorizations": [],
+            "mutation_boundary_proofs": [],
+        }
+    )
+
+    assert certificate["closed"] is True
+    assert certificate["closure_status"] == "closed"
+    assert certificate["failed_gates"] == []
+    assert set(certificate["unowned_counts"].values()) == {0}
+    assert certificate["detail"]["missing_required_certificates"] == []
 
 
 def test_temporal_resolution_evidence_rows_project_finland_time_findings() -> None:
