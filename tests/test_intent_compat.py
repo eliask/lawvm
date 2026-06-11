@@ -36,6 +36,7 @@ from lawvm.core.canonical_intent import (
     Replace,
 )
 from lawvm.core.ir import LegalAddress
+from lawvm.core.phase_result import Finding
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.finland.target_kind import TargetKind
@@ -53,17 +54,19 @@ from lawvm.finland.apply_policy import _check_occupancy_policy
 # Helpers
 # ---------------------------------------------------------------------------
 
+PathPair = tuple[str, str]
 
-def _addr(*path_pairs: tuple) -> LegalAddress:
+
+def _addr(*path_pairs: PathPair) -> LegalAddress:
     """Build a LegalAddress from positional (kind, label) pairs."""
     return LegalAddress(path=tuple(path_pairs))
 
 
-def _node_target(unit_kind: str, *path_pairs: tuple) -> NodeTarget:
+def _node_target(unit_kind: str, *path_pairs: PathPair) -> NodeTarget:
     return NodeTarget(address=_addr(*path_pairs))
 
 
-def _facet_target(facet: FacetKind, *path_pairs: tuple) -> FacetTarget:
+def _facet_target(facet: FacetKind, *path_pairs: PathPair) -> FacetTarget:
     return FacetTarget(host=_addr(*path_pairs), facet=facet)
 
 
@@ -861,7 +864,7 @@ def test_production_lane_replace_on_tombstone_emits_observation() -> None:
             ),
         ),
     )
-    findings: list = []
+    findings: list[Finding] = []
     _check_occupancy_policy(
         ReplayState(ir=tombstone),
         rop,
@@ -891,7 +894,7 @@ def test_production_lane_replace_on_absent_emits_violation() -> None:
 
     # Empty body: the §1 slot has never existed → ABSENT, outside allowed_from.
     empty_body = IRNode(kind=IRNodeKind.BODY)
-    findings: list = []
+    findings: list[Finding] = []
     _check_occupancy_policy(
         ReplayState(ir=empty_body),
         rop,
@@ -966,7 +969,7 @@ def test_production_lane_move_rider_replace_evaluates_origin_occupancy() -> None
             IRNode(kind=IRNodeKind.CHAPTER, label="5b"),
         ),
     )
-    findings: list = []
+    findings: list[Finding] = []
     _check_occupancy_policy(
         ReplayState(ir=live),
         rop,
@@ -1014,7 +1017,7 @@ def test_production_lane_move_rider_replace_without_origin_still_violates() -> N
     assert intent is not None
 
     empty_body = IRNode(kind=IRNodeKind.BODY)
-    findings: list = []
+    findings: list[Finding] = []
     _check_occupancy_policy(
         ReplayState(ir=empty_body),
         rop,
@@ -1099,7 +1102,7 @@ def test_production_lane_temporally_disjoint_twin_insert_is_not_a_violation() ->
             ),
         )
     ]
-    findings: list = []
+    findings: list[Finding] = []
     _check_occupancy_policy(
         ReplayState(ir=live),
         rop,
@@ -1185,7 +1188,7 @@ def test_production_lane_overlapping_twin_insert_still_violates() -> None:
             ),
         )
     ]
-    findings: list = []
+    findings: list[Finding] = []
     _check_occupancy_policy(
         ReplayState(ir=live),
         rop,
