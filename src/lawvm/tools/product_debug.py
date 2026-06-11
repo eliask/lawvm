@@ -63,7 +63,7 @@ def _addr_str(path: Tuple[Tuple[str, str], ...]) -> str:
 def build_product_debug_bundle(
     statute_id: str,
     source_id: str,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
     target_path: str = "",
 ) -> Dict[str, Any]:
     """Produce a timeline+materialization diagnostic bundle for one amendment."""

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import types
+from typing import Any, Mapping, cast
 
 import pytest
 
@@ -16,6 +17,20 @@ from lawvm.uk_legislation.proposed_law_branch import (
     build_uk_proposed_law_branch_payload,
     build_uk_proposed_law_branch_payload_from_dict,
 )
+
+
+def _object_dict(value: object) -> dict[str, Any]:
+    assert isinstance(value, dict)
+    return cast(dict[str, Any], value)
+
+
+def _dict_sequence(value: object) -> tuple[dict[str, Any], ...]:
+    assert isinstance(value, (list, tuple))
+    return tuple(_object_dict(item) for item in value)
+
+
+def _field(row: Mapping[str, object], key: str) -> object:
+    return row[key]
 
 
 def test_uk_proposed_law_branch_payload_is_graph_only_and_non_enacted() -> None:
@@ -49,9 +64,10 @@ def test_uk_proposed_law_branch_payload_is_graph_only_and_non_enacted() -> None:
     row = payload.impact_projection.rows[0]
     assert row.current_text == "Current text."
     assert row.branch_text == "Proposed section."
-    assert exported["graph_counts"]["branches"] == 1  # ty:ignore[not-subscriptable]
-    assert exported["graph_counts"]["branch_edges"] == 1  # ty:ignore[not-subscriptable]
-    assert exported["graph_counts"]["branch_lifecycle_events"] == 1  # ty:ignore[not-subscriptable]
+    graph_counts = _object_dict(exported["graph_counts"])
+    assert graph_counts["branches"] == 1
+    assert graph_counts["branch_edges"] == 1
+    assert graph_counts["branch_lifecycle_events"] == 1
 
 
 def test_uk_proposed_law_branch_payload_can_record_failed_lifecycle() -> None:
@@ -114,10 +130,9 @@ def test_uk_proposed_law_branch_payload_imports_structured_claim_dict() -> None:
     exported = payload.to_dict()
     assert exported["default_enacted_operation_ids"] == ()
     assert exported["branch_operation_ids"] == ("uk-structured-op-1",)
-    assert exported["branch_edges"][0]["edge_kind"] == "would_replace"  # ty:ignore[not-subscriptable]
-    assert exported["impact_projection"]["rows"][0]["branch_text"] == (  # ty:ignore[not-subscriptable]
-        "Structured proposed section text."
-    )
+    assert _dict_sequence(exported["branch_edges"])[0]["edge_kind"] == "would_replace"
+    impact_projection = _object_dict(exported["impact_projection"])
+    assert _dict_sequence(impact_projection["rows"])[0]["branch_text"] == "Structured proposed section text."
 
 
 def test_uk_branch_import_tool_reads_structured_json(tmp_path) -> None:
@@ -149,17 +164,19 @@ def test_uk_branch_import_tool_reads_structured_json(tmp_path) -> None:
     payload = build_uk_branch_import_payload(str(path))
 
     assert payload["default_enacted_operation_ids"] == ()
-    assert payload["branch_edges"][0]["source_unit_id"] == "clause:5"  # ty:ignore[not-subscriptable]
-    assert payload["graph_counts"]["branch_edges"] == 1  # ty:ignore[not-subscriptable]
+    assert _dict_sequence(_field(payload, "branch_edges"))[0]["source_unit_id"] == "clause:5"
+    assert _object_dict(_field(payload, "graph_counts"))["branch_edges"] == 1
 
 
 def test_uk_branch_demo_payload_uses_uk_ids_and_proposal_layer() -> None:
     payload = build_uk_branch_demo_payload()
 
-    assert payload["branch"]["branch_id"] == "proposal:uk:uk-bill-2026-example-bill"  # ty:ignore[not-subscriptable]
-    assert payload["branch"]["authority_layer"] == "proposal"  # ty:ignore[not-subscriptable]
-    assert payload["branch_edges"][0]["target_statute_id"] == "ukpga/1978/30"  # ty:ignore[not-subscriptable]
-    assert payload["impact_projection"]["rows"][0]["source_unit_id"] == "clause:1"  # ty:ignore[not-subscriptable]
+    branch = _object_dict(payload["branch"])
+    assert branch["branch_id"] == "proposal:uk:uk-bill-2026-example-bill"
+    assert branch["authority_layer"] == "proposal"
+    assert _dict_sequence(payload["branch_edges"])[0]["target_statute_id"] == "ukpga/1978/30"
+    impact_projection = _object_dict(payload["impact_projection"])
+    assert _dict_sequence(impact_projection["rows"])[0]["source_unit_id"] == "clause:1"
 
 
 def test_uk_branch_demo_main_outputs_json(capsys) -> None:

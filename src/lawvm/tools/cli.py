@@ -106,6 +106,7 @@ from typing import TextIO
 
 from lawvm.tools.uk_replay_regime import UK_APPLICABILITY_MODE_CHOICES
 from lawvm.tools.uk_replay_regime import add_uk_replay_regime_arguments
+from lawvm.tools.replay_mode_arg import replay_mode_argument
 
 # Inlined from lawvm.core.invariant_detectors.SUPPORTED_INVARIANT_DETECTORS.
 # Used only as argparse choices= — no need to import the full module (which pulls
@@ -273,9 +274,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     bisect_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: finlex_oracle)",
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: official_consolidation; legacy alias: finlex_oracle)",
     )
     bisect_p.add_argument(
         "--top",
@@ -302,9 +303,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     bisect_section_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: finlex_oracle)",
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: official_consolidation; legacy alias: finlex_oracle)",
     )
     bisect_section_p.add_argument(
         "--threshold",
@@ -437,8 +438,8 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     inspect_amendment_p.add_argument(
         "--mode",
         default="legal_pit",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode for the parent state before this amendment (default: legal_pit)",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode for the parent state before this amendment (default: legal_pit; legacy alias: finlex_oracle)",
     )
     inspect_amendment_p.add_argument(
         "--json",
@@ -497,8 +498,8 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     diagnose_phase_p.add_argument(
         "--mode",
         default="legal_pit",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: legal_pit)",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: legal_pit; legacy alias: finlex_oracle)",
     )
     diagnose_phase_p.add_argument(
         "--first-bad-amendment",
@@ -554,8 +555,8 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     invariant_bisect_p.add_argument(
         "--mode",
         default="legal_pit",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: legal_pit)",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: legal_pit; legacy alias: finlex_oracle)",
     )
     invariant_bisect_p.add_argument(
         "--after",
@@ -610,8 +611,8 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     snapshot_debug_p.add_argument(
         "--mode",
         default="legal_pit",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: legal_pit)",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: legal_pit; legacy alias: finlex_oracle)",
     )
     snapshot_debug_p.add_argument(
         "--json",
@@ -649,8 +650,8 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     product_debug_p.add_argument(
         "--mode",
         default="legal_pit",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: legal_pit)",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: legal_pit; legacy alias: finlex_oracle)",
     )
     product_debug_p.add_argument(
         "--json",
@@ -685,8 +686,8 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     phase_witness_p.add_argument(
         "--mode",
         default="legal_pit",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: legal_pit)",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: legal_pit; legacy alias: finlex_oracle)",
     )
     phase_witness_p.add_argument(
         "--output",
@@ -805,9 +806,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     replay_plan_p.add_argument("statute_id", help="statute ID, e.g. 2006/1299")
     replay_plan_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode used to prepare the plan (default: finlex_oracle)",
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode used to prepare the plan (default: official_consolidation; legacy alias: finlex_oracle)",
     )
     replay_plan_p.add_argument(
         "--selector-mode",
@@ -867,8 +868,8 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     trace_section_p.add_argument(
         "--mode",
         default="legal_pit",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: legal_pit)",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: legal_pit; legacy alias: finlex_oracle)",
     )
     trace_section_p.add_argument(
         "--json",
@@ -890,8 +891,8 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     evidence_p.add_argument(
         "--mode",
         default="legal_pit",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode for live evidence building (default: legal_pit)",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode for live evidence building (default: legal_pit; legacy alias: finlex_oracle)",
     )
     evidence_p.add_argument(
         "--json",
@@ -924,8 +925,8 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     prove_oracle_p.add_argument(
         "--mode",
         default="legal_pit",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode for live evidence building (default: legal_pit)",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode for live evidence building (default: legal_pit; legacy alias: finlex_oracle)",
     )
     prove_oracle_p.add_argument(
         "--json",
@@ -974,8 +975,8 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     evidence_review_p.add_argument(
         "--mode",
         default="legal_pit",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode for live statute review (default: legal_pit)",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode for live statute review (default: legal_pit; legacy alias: finlex_oracle)",
     )
     evidence_review_p.add_argument(
         "--with-bisect",
@@ -1214,9 +1215,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     capture_p.add_argument("statute_id", help="statute ID, e.g. 1992/480")
     capture_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: finlex_oracle)",
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: official_consolidation; legacy alias: finlex_oracle)",
     )
     capture_p.add_argument(
         "--source",
@@ -1254,9 +1255,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     explain_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: finlex_oracle)",
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: official_consolidation; legacy alias: finlex_oracle)",
     )
     explain_p.add_argument(
         "--oracle-selector-mode",
@@ -1325,9 +1326,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     classify_p.add_argument("statute_id", help="statute ID, e.g. 2006/1299")
     classify_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: finlex_oracle)",
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: official_consolidation; legacy alias: finlex_oracle)",
     )
     classify_p.add_argument(
         "--json",
@@ -1354,10 +1355,10 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     bench_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
         help=(
-            "replay mode: finlex_oracle (default) compares against the Finlex consolidated XML; "
+            "replay mode: official_consolidation (default; legacy alias: finlex_oracle) compares against the Finlex consolidated XML; "
             "legal_pit applies date-cutoff PIT materialization (excludes future-dated amendments "
             "and corrigendum patches, giving a cleaner accuracy signal against the legal record)"
         ),
@@ -1734,9 +1735,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     blame_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: finlex_oracle)",
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: official_consolidation; legacy alias: finlex_oracle)",
     )
     blame_p.add_argument(
         "--as-of",
@@ -3003,9 +3004,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     diff_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: finlex_oracle)",
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: official_consolidation; legacy alias: finlex_oracle)",
     )
     diff_p.add_argument(
         "--compile-summary",
@@ -3054,9 +3055,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     ops_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: finlex_oracle)",
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: official_consolidation; legacy alias: finlex_oracle)",
     )
     ops_p.add_argument(
         "--oracle-id",
@@ -3105,9 +3106,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     replay_debug_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: finlex_oracle)",
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: official_consolidation; legacy alias: finlex_oracle)",
     )
     replay_debug_p.add_argument(
         "--show-clause-text",
@@ -3195,8 +3196,8 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     replay_inspect_p.add_argument(
         "--mode",
         default="legal_pit",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: legal_pit)",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: legal_pit; legacy alias: finlex_oracle)",
     )
     replay_inspect_p.add_argument(
         "--json",
@@ -3249,9 +3250,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     ocheck_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: finlex_oracle)",
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: official_consolidation; legacy alias: finlex_oracle)",
     )
 
     # --- gold ---
@@ -3284,8 +3285,8 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     gold_promote_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
     )
 
     gold_verify_p = gold_sub.add_parser(
@@ -3299,8 +3300,8 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     gold_verify_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
     )
     gold_verify_p.add_argument(
         "--strict",
@@ -4392,8 +4393,8 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     corr_review_p.add_argument("statute_id", help="statute ID, e.g. 1995/1552")
     corr_review_p.add_argument(
         "--mode", default="legal_pit",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode for live disagreement classification (default: legal_pit)",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode for live disagreement classification (default: legal_pit; legacy alias: finlex_oracle)",
     )
     corr_review_p.add_argument(
         "--db", metavar="PATH",
@@ -5772,9 +5773,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     frontier_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode for fresh oracle-check and score refresh (default: finlex_oracle)",
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode for fresh oracle-check and score refresh (default: official_consolidation; legacy alias: finlex_oracle)",
     )
     frontier_p.add_argument(
         "--top",
@@ -5917,9 +5918,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     strict_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode for single-statute mode (default: finlex_oracle)",
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode for single-statute mode (default: official_consolidation; legacy alias: finlex_oracle)",
     )
     strict_p.add_argument(
         "--verbose",
@@ -7895,9 +7896,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     verify_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode for full pipeline (default: finlex_oracle)",
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode for full pipeline (default: official_consolidation; legacy alias: finlex_oracle)",
     )
     verify_p.add_argument(
         "--facade",
@@ -8481,9 +8482,9 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     ep_p.add_argument("--workers", type=int, default=0, help="parallel workers (default: cpu_count, max 8)")
     ep_p.add_argument(
         "--mode",
-        default="finlex_oracle",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode (default: finlex_oracle)",
+        default="official_consolidation",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: official_consolidation; legacy alias: finlex_oracle)",
     )
     ep_p.add_argument("--limit", type=int, metavar="N", help="process only first N statutes")
     ep_p.add_argument(
@@ -10273,6 +10274,43 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         ),
     )
 
+    # --- certificate-bundle (EXPERIMENTAL) ---
+    cert_bundle_p = sub.add_parser(
+        "certificate-bundle",
+        parents=_P,
+        help="EXPERIMENTAL: emit a one-statute certificate bundle fixture (FI)",
+        description=(
+            "EXPERIMENTAL schema-pressure fixture, NOT a checked certificate. "
+            "Run the Finland replay engine once for a statute and emit a "
+            "lawvm.certificate.v0 bundle directory (envelope, bundled source "
+            "bytes, policy manifests, certified tree-transition trace, "
+            "materialization roots, seam projection rows, residual/finding "
+            "ledgers, declared coverage). Transitions are derived from "
+            "observed state diffs (cert spec section 10 carve-out); no checker "
+            "exists, so the output must never be presented as a verified or "
+            "checkable public claim."
+        ),
+    )
+    cert_bundle_p.add_argument(
+        "--statute",
+        default="482/2024",
+        metavar="ID",
+        help="statute id, canonical 'num/year' (default 482/2024) or 'year/num'",
+    )
+    cert_bundle_p.add_argument(
+        "--out",
+        required=True,
+        metavar="DIR",
+        help="output bundle directory",
+    )
+    cert_bundle_p.add_argument(
+        "--granularity",
+        dest="granularity",
+        default="subsection",
+        choices=["subsection", "section"],
+        help="covering-frontier depth (experimental boundary: subsection or section)",
+    )
+
     # --- recipes ---
     sub.add_parser(
         "recipes",
@@ -10314,10 +10352,11 @@ def _reject_uk_replay_regime_flags_for_non_uk(args: argparse.Namespace, *, comma
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
-    # export-transition-graph deliberately takes the canonical säädös id in
-    # 'num/year' form (e.g. 301/2004); its handler normalizes both orderings,
-    # so the year/num-only pre-1734 guard must not reject it.
-    if args.command != "export-transition-graph":
+    # export-transition-graph and certificate-bundle deliberately take the
+    # canonical säädös id in 'num/year' form (e.g. 301/2004); their handlers
+    # normalize both orderings, so the year/num-only pre-1734 guard must not
+    # reject them.
+    if args.command not in ("export-transition-graph", "certificate-bundle"):
         _reject_pre_1734_fi_command_line_ids(args)
 
     if args.command == "bisect":
@@ -11518,6 +11557,11 @@ def main() -> None:
         from lawvm.tools.export_transition_graph import main as export_transition_graph_main
 
         export_transition_graph_main(args)
+
+    elif args.command == "certificate-bundle":
+        from lawvm.tools.certificate_bundle import main as certificate_bundle_main
+
+        certificate_bundle_main(args)
 
     elif args.command is None:
         parser.print_help()

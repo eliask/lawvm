@@ -129,7 +129,7 @@ from lawvm.finland.statute import ReplayState, StatuteContext
 
 _DATE = dt.date(2020, 1, 1)
 
-_FINLEX_ORACLE = get_replay_profile("finlex_oracle")
+_FINLEX_ORACLE = get_replay_profile("official_consolidation")
 _LEGAL_PIT = get_replay_profile("legal_pit")
 
 
@@ -4083,6 +4083,329 @@ class TestApplyContainerInsert:
         chapter_2 = next(child for child in part_5.children if child.kind is IRNodeKind.CHAPTER and child.label == "2")
         assert [child.label for child in chapter_2.children if child.kind is IRNodeKind.SECTION] == ["1"]
 
+    def _dup_chapter_label_state(self):
+        return _make_state(
+            _body(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="4",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CHAPTER,
+                            label="2",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="2 luku"),
+                                _sec("1", _content("part 4 chapter 2")),
+                            ),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="5",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CHAPTER,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="1 luku"),
+                                _sec("1", _content("part 5 chapter 1")),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        )
+
+    def test_container_insert_binding_not_found_when_part_scope_excludes_global_duplicate(self):
+        """Bare top-level find would bind part 4's chapter 2; the part-scoped binding must not.
+
+        Contract §3 fixture "bare top-level find would pick the wrong part":
+        the chapter/part INSERT family consumes its ResolverBinding, so the
+        binding must report not_found (fresh insert into part 5) instead of
+        silently widening to the same-labeled chapter in part 4.
+        """
+        from lawvm.core.resolver_binding import ResolverBinding
+
+        state = self._dup_chapter_label_state()
+        op = AmendmentOp(
+            op_id="insert_part5_chapter2",
+            op_type="INSERT",
+            target_unit_kind="chapter",
+            target_section="2",
+            target_part="5",
+            source_statute="2018/301",
+        )
+        muutos_ir = IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="2 luku"),
+                _sec("1", _content("new part 5 chapter 2")),
+            ),
+        )
+        bindings: List[ResolverBinding] = []
+
+        result = _apply_container_op(
+            state,
+            op,
+            muutos_ir,
+            _LEGAL_PIT,
+            "[2018/301] INSERT V osan 2 luku",
+            resolver_bindings_out=bindings,
+        )
+
+        assert len(bindings) == 1
+        binding = bindings[0]
+        assert binding.policy_id == "fi.container_target.v0"
+        assert binding.status == "not_found"
+        assert binding.target_path is None
+        assert binding.rung_id is None
+        assert binding.candidate_count == 1  # part 4's chapter 2 is visible but out of scope
+        assert binding.fallback_used is False
+        assert binding.target_text == "part:5/chapter:2"
+
+        result = _modified(state, result)
+        part_4 = next(child for child in result.ir.children if child.kind is IRNodeKind.PART and child.label == "4")
+        part_5 = next(child for child in result.ir.children if child.kind is IRNodeKind.PART and child.label == "5")
+        assert [child.label for child in part_4.children if child.kind is IRNodeKind.CHAPTER] == ["2"]
+        assert [child.label for child in part_5.children if child.kind is IRNodeKind.CHAPTER] == ["1", "2"]
+
+    def test_container_insert_binding_resolved_within_declared_part_scope(self):
+        """The consumed binding resolves the part-scoped chapter and records candidates."""
+        from lawvm.core.resolver_binding import ResolverBinding
+
+        state = self._dup_chapter_label_state()
+        op = AmendmentOp(
+            op_id="insert_part4_chapter2",
+            op_type="INSERT",
+            target_unit_kind="chapter",
+            target_section="2",
+            target_part="4",
+            source_statute="2018/301",
+        )
+        muutos_ir = IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="2 luku"),
+                _sec("2", _content("inserted into part 4 chapter 2")),
+            ),
+        )
+        bindings: List[ResolverBinding] = []
+
+        result = _apply_container_op(
+            state,
+            op,
+            muutos_ir,
+            _LEGAL_PIT,
+            "[2018/301] INSERT IV osan 2 luku",
+            base_ir=state.ir,
+            resolver_bindings_out=bindings,
+        )
+
+        assert len(bindings) == 1
+        binding = bindings[0]
+        assert binding.status == "resolved"
+        assert binding.rung_id == "scoped_find"
+        assert binding.target_path == (("part", "4"), ("chapter", "2"))
+        assert binding.candidate_count == 1
+        assert binding.binding_id.startswith("rb:")
+
+        result = _modified(state, result)
+        part_4 = next(child for child in result.ir.children if child.kind is IRNodeKind.PART and child.label == "4")
+        chapter_2 = next(child for child in part_4.children if child.kind is IRNodeKind.CHAPTER and child.label == "2")
+        assert [child.label for child in chapter_2.children if child.kind is IRNodeKind.SECTION] == ["1", "2"]
+
+    def test_fresh_chapter_insert_write_receipt_records_landed_footprint_and_hashes(self):
+        """Contract §4: the receipt records the landed write, with §2.2 hashes computed at the write."""
+        from lawvm.core import tree_ops as _tops
+        from lawvm.core.ir_helpers import structural_subtree_hash
+        from lawvm.core.write_receipt import WriteReceipt
+
+        state = self._dup_chapter_label_state()
+        op = AmendmentOp(
+            op_id="insert_part5_chapter2",
+            op_type="INSERT",
+            target_unit_kind="chapter",
+            target_section="2",
+            target_part="5",
+            source_statute="2018/301",
+        )
+        muutos_ir = IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="2 luku"),
+                _sec("1", _content("new part 5 chapter 2")),
+            ),
+        )
+        receipts: List[WriteReceipt] = []
+
+        result = _apply_container_op(
+            state,
+            op,
+            muutos_ir,
+            _LEGAL_PIT,
+            "[2018/301] INSERT V osan 2 luku",
+            write_receipts_out=receipts,
+        )
+
+        result = _modified(state, result)
+        assert len(receipts) == 1
+        receipt = receipts[0]
+        assert receipt.op_id == "insert_part5_chapter2"
+        assert receipt.helper == "_apply_container_op"
+        assert receipt.action == "insert"
+        assert receipt.bound_target_path is None  # target was absent: fresh insert
+        landed = receipt.landed_primary_path
+        assert landed == (("part", "5"), ("chapter", "2"))
+        assert receipt.created_paths == (landed,)
+        assert receipt.recovery_rule_ids == ("container_insert_parent_placement",)
+        assert receipt.divergence_explained  # bound!=landed covered by named rule
+        addr = "part:5/chapter:2"
+        assert receipt.pre_hashes[addr] == ""  # absent before the write
+        landed_node = _tops.resolve(result.ir, landed)
+        assert receipt.post_hashes[addr] == structural_subtree_hash(landed_node)
+        assert receipt.post_hashes[addr] != ""
+
+    def test_part_scaffold_chapter_insert_receipt_declares_part_creation_and_sibling_moves(self):
+        from lawvm.core.write_receipt import WriteReceipt
+
+        state = _make_state(
+            _body(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="5",
+                    children=(
+                        IRNode(kind=IRNodeKind.CHAPTER, label="20", children=(_sec("1", _content("chapter 20")),)),
+                        IRNode(kind=IRNodeKind.CHAPTER, label="21", children=(_sec("1", _content("chapter 21")),)),
+                    ),
+                ),
+            )
+        )
+        op = AmendmentOp(
+            op_id="insert_chapter_19a_under_new_part",
+            op_type="INSERT",
+            target_unit_kind="chapter",
+            target_section="19a",
+            source_statute="2019/209",
+        )
+        muutos_ir = IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="19a",
+            attrs={
+                "lawvm_amendment_part_hint": "iva",
+                "lawvm_amendment_part_sibling_chapters": ("20", "21"),
+            },
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="19 a luku"),
+                _sec("1", _content("new chapter 19a")),
+            ),
+        )
+        receipts: List[WriteReceipt] = []
+
+        result = _apply_container_op(
+            state,
+            op,
+            muutos_ir,
+            _LEGAL_PIT,
+            "[2019/209] INSERT 19a luku",
+            write_receipts_out=receipts,
+        )
+
+        result = _modified(state, result)
+        assert len(receipts) == 1
+        receipt = receipts[0]
+        assert receipt.landed_primary_path == (("part", "iva"), ("chapter", "19a"))
+        assert receipt.created_paths == (
+            (("part", "iva"), ("chapter", "19a")),
+            (("part", "iva"),),
+        )
+        assert receipt.renumbered_paths == (
+            ((("part", "5"), ("chapter", "20")), (("part", "iva"), ("chapter", "20"))),
+            ((("part", "5"), ("chapter", "21")), (("part", "iva"), ("chapter", "21"))),
+        )
+        assert receipt.migration_rule_ids == ("container_insert_part_hint_scaffold",)
+        # Moved subtrees are content-identical: pre hash at the from-path
+        # equals post hash at the to-path, and the vacated from-path is gone.
+        assert receipt.pre_hashes["part:5/chapter:20"] == receipt.post_hashes["part:iva/chapter:20"]
+        assert receipt.post_hashes["part:5/chapter:20"] == ""
+        assert receipt.pre_hashes["part:5/chapter:20"] != ""
+
+    def test_container_insert_merge_receipt_records_replaced_target_with_named_rule(self):
+        from lawvm.core import tree_ops as _tops
+        from lawvm.core.ir_helpers import structural_subtree_hash
+        from lawvm.core.write_receipt import WriteReceipt
+
+        state = self._dup_chapter_label_state()
+        base_ir = state.ir
+        op = AmendmentOp(
+            op_id="insert_part4_chapter2",
+            op_type="INSERT",
+            target_unit_kind="chapter",
+            target_section="2",
+            target_part="4",
+            source_statute="2018/301",
+        )
+        muutos_ir = IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="2 luku"),
+                _sec("2", _content("merged into part 4 chapter 2")),
+            ),
+        )
+        receipts: List[WriteReceipt] = []
+        pre_node = _tops.resolve(state.ir, (("part", "4"), ("chapter", "2")))
+
+        result = _apply_container_op(
+            state,
+            op,
+            muutos_ir,
+            _LEGAL_PIT,
+            "[2018/301] INSERT IV osan 2 luku",
+            base_ir=base_ir,
+            write_receipts_out=receipts,
+        )
+
+        result = _modified(state, result)
+        assert len(receipts) == 1
+        receipt = receipts[0]
+        landed = (("part", "4"), ("chapter", "2"))
+        assert receipt.bound_target_path == landed
+        assert receipt.landed_primary_path == landed
+        assert receipt.replaced_paths == (landed,)
+        assert receipt.created_paths == ()
+        assert receipt.recovery_rule_ids == ("container_insert_base_chapter_merge",)
+        assert receipt.divergence_explained
+        addr = "part:4/chapter:2"
+        assert receipt.pre_hashes[addr] == structural_subtree_hash(pre_node)
+        assert receipt.post_hashes[addr] == structural_subtree_hash(_tops.resolve(result.ir, landed))
+        assert receipt.pre_hashes[addr] != receipt.post_hashes[addr]
+
+    def test_write_receipt_unexplained_divergence_is_visible_not_silent(self):
+        """A bound!=landed receipt with no named rule must self-report as unexplained."""
+        from lawvm.core.write_receipt import WriteReceipt
+
+        receipt = WriteReceipt(
+            op_id="op",
+            helper="_apply_container_op",
+            action="insert",
+            bound_target_path=(("chapter", "2"),),
+            landed_primary_path=(("chapter", "3"),),
+        )
+        assert receipt.divergence_explained is False
+        explained = WriteReceipt(
+            op_id="op",
+            helper="_apply_container_op",
+            action="insert",
+            bound_target_path=(("chapter", "2"),),
+            landed_primary_path=(("chapter", "3"),),
+            recovery_rule_ids=("some_named_rule",),
+        )
+        assert explained.divergence_explained is True
+
     def test_insert_chapter_keeps_child_when_shadow_target_exists_only_in_other_part(self):
         state = _make_state(
             _body(
@@ -4962,7 +5285,7 @@ def test_apply_op_section_repeal_removes_non_base_insert_even_in_finlex_oracle()
         op,
         ctx,
         muutos_ir=None,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
     )
 
@@ -6323,7 +6646,7 @@ def test_resolver_binding_contract_validators_reject_malformed_bindings() -> Non
         ResolverBinding,
     )
 
-    common = dict(
+    common: dict[str, Any] = dict(
         binding_id="rb:test",
         op_label="[t] REPLACE 1 §",
         target_text="section:1",
@@ -8190,7 +8513,7 @@ class TestApplyItemRepeal:
         assert "d text" not in " ".join(c.text or "" for c in new_sub.children)
 
     def test_repeal_always_synthesizes_placeholder_in_finlex_oracle(self):
-        """In finlex_oracle mode, item repeal always keeps a placeholder — not
+        """In official_consolidation mode, item repeal always keeps a placeholder — not
         just for intro-list shapes.  The placeholder retains the label so later
         amendments can use it as an anchor.
         (PRO_RESPONSE_5_1 §8 — repeal and visibility are separate questions.)
@@ -8239,7 +8562,7 @@ class TestApplyItemRepeal:
         sec = _sec("5", sub)
         body = _body(sec)
 
-        # Step 1: repeal item 15 in finlex_oracle mode.
+        # Step 1: repeal item 15 in official_consolidation mode.
         state = _make_state(body)
         sec_path = [("section", "5")]
         repeal_op = _op(op_type="REPEAL", target_section="5", target_paragraph=1, target_item="15")
@@ -9358,7 +9681,7 @@ class TestApplyItemReplace:
         replay = pinned_replay(
             "2006/395",
             stop_before="2019/1468",
-            mode="finlex_oracle",
+            mode="official_consolidation",
             quiet=True,
             build_full_products=False,
         )
@@ -9419,7 +9742,7 @@ class TestApplyItemReplace:
         replay = pinned_replay(
             "2006/395",
             stop_before="2022/572",
-            mode="finlex_oracle",
+            mode="official_consolidation",
             quiet=True,
             build_full_products=False,
         )
@@ -10675,7 +10998,7 @@ def test_typed_repeal_section_emits_mutation_event() -> None:
         op,
         ctx,
         muutos_ir=None,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
         rop=rop,
     )
@@ -10703,7 +11026,7 @@ def test_typed_replace_section_emits_mutation_event() -> None:
         op,
         ctx,
         muutos_ir=payload,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
         rop=rop,
     )
@@ -10729,7 +11052,7 @@ def test_uncovered_body_replace_declares_recovery_allowance_on_mutation_event() 
         op,
         ctx,
         muutos_ir=payload,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
         rop=rop,
     )
@@ -11511,7 +11834,7 @@ def test_typed_dispatch_unknown_intent_emits_failed_event() -> None:
         op,
         ctx,
         muutos_ir=None,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         failed_ops_out=failed_ops,
         mutation_events_out=mutation_events,
         rop=rop,
@@ -11558,7 +11881,7 @@ def test_typed_replace_unsupported_target_stops_without_legacy_dispatch() -> Non
         op,
         ctx,
         muutos_ir=payload,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         failed_ops_out=failed_ops,
         mutation_events_out=mutation_events,
         rop=rop,
@@ -11613,7 +11936,7 @@ def test_typed_insert_unsupported_target_stops_without_legacy_dispatch() -> None
         op,
         ctx,
         muutos_ir=payload,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         failed_ops_out=failed_ops,
         mutation_events_out=mutation_events,
         rop=rop,
@@ -11662,7 +11985,7 @@ def test_typed_repeal_unsupported_target_stops_without_legacy_dispatch() -> None
         op,
         ctx,
         muutos_ir=None,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         failed_ops_out=failed_ops,
         mutation_events_out=mutation_events,
         rop=rop,
@@ -11717,7 +12040,7 @@ def test_typed_move_stops_without_legacy_dispatch() -> None:
         op,
         ctx,
         muutos_ir=None,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
         rop=rop,
     )
@@ -11998,7 +12321,7 @@ def test_typed_relabel_unhandled_target_keeps_target_address() -> None:
         op,
         ctx,
         muutos_ir=None,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
         rop=rop,
     )
@@ -12066,7 +12389,7 @@ def test_typed_container_relabel_prefers_scoped_target_address() -> None:
         op,
         ctx,
         muutos_ir=None,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
         rop=rop,
     )
@@ -12167,7 +12490,7 @@ def test_typed_section_suffix_marker_does_not_authorize_apply_rewrite() -> None:
         op,
         ctx,
         muutos_ir=None,
-        replay_mode="finlex_oracle",
+        replay_mode="official_consolidation",
         mutation_events_out=mutation_events,
         rop=rop,
     )

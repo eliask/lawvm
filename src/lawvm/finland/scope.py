@@ -749,7 +749,7 @@ def assign_chapter_scope_from_johtolause(
                     continue
                 lo_new = _lo_with_path_update(lo, chapter=chapter_label)
                 note = (
-                    "chapter_scope_from_johtolause"
+                    "chapter_scope_from_preamble"
                     if section_norm in duplicate_labels
                     else "chapter_scope_from_explicit_chunk"
                 )
@@ -758,13 +758,13 @@ def assign_chapter_scope_from_johtolause(
                     ScopeConfidence(
                         tag=note,
                         source=(
-                            "johtolause"
-                            if note == "chapter_scope_from_johtolause"
+                            "preamble"
+                            if note == "chapter_scope_from_preamble"
                             else "explicit_chunk"
                         ),
                         confidence=(
                             "inferred"
-                            if note == "chapter_scope_from_johtolause"
+                            if note == "chapter_scope_from_preamble"
                             else "explicit"
                         ),
                         resolved_chapter=chapter_label,

@@ -32,6 +32,7 @@ from lawvm.finland.apply_subsection_dispatch import (
     _apply_deterministic_subsection_op,
     _normalize_subsection_dispatch_inputs,
 )
+from lawvm.core.write_receipt import WriteReceipt
 from lawvm.finland.apply_events import (
     ApplyMutationEvent,
     DeclaredMutationAllowance,
@@ -39,6 +40,7 @@ from lawvm.finland.apply_events import (
     TreePaths,
     _emit_apply_mutation_event,
     _emit_apply_mutation_event_for_rop,
+    _emit_apply_mutation_event_from_receipt,
     _path_to_tuple,
     _resolved_target_path_for_event,
     _resolved_target_path_for_rop_event,
@@ -97,7 +99,7 @@ def _apply_legacy_dispatch(
     cross_ir: Optional[IRNode] = None,
     amend_sub_ir: Optional[IRNode] = None,
     slot_assignment: "SubsectionSlotAssignmentResult | None" = None,
-    replay_mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle",
+    replay_mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     failed_ops_out: Optional[List[FailedOp]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
@@ -218,6 +220,7 @@ def _apply_legacy_dispatch(
         and structure_view.target_special is None
         and any(binding.op_type == "INSERT" for binding in slot_assignment.sparse_slot_bindings)
     )
+    write_receipts: List[WriteReceipt] = []
     container_result = _apply_container_op(
         state,
         structure_view,
@@ -229,8 +232,22 @@ def _apply_legacy_dispatch(
         mixed_sparse_insert=mixed_sparse_insert,
         source_pathologies_out=source_pathologies_out,
         migration_ledger=migration_ledger,
+        write_receipts_out=write_receipts,
     )
     if container_result is not None:
+        # Receipt-first declaration (apply contract §4): the chapter/part
+        # INSERT family derives its mutation event from the landed footprint
+        # the helper recorded, never from the nominal target address.
+        if write_receipts and container_result is not state:
+            _emit_apply_mutation_event_from_receipt(
+                mutation_events_out,
+                receipt=write_receipts[-1],
+                outcome="applied",
+                rop=rop,
+                op=dispatch_op,
+                used_fallback_tags=used_fallback_tags,
+            )
+            return container_result
         _emit(
             helper="_apply_container_op",
             outcome="applied" if container_result is not state else "failed",

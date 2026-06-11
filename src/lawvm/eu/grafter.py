@@ -241,12 +241,12 @@ class EUIRGrafter:
                 # getnext() stubs return Optional[_Element]; the lxml HTML parser
                 # actually returns HtmlElement subclasses, but we only need tag +
                 # text_content() which are available on all lxml elements.
-                sibling: Optional[HtmlElement] = el.getnext()  # type: ignore[assignment]
+                sibling = cast(Optional[HtmlElement], el.getnext())
                 while sibling is not None and not (
                     sibling.tag == "p" and _normalize_text(sibling.text_content()).startswith("Article ")
                 ):
                     article_content.append(_normalize_text(sibling.text_content()))
-                    sibling = sibling.getnext()  # type: ignore[assignment]
+                    sibling = cast(Optional[HtmlElement], sibling.getnext())
 
                 body_nodes.append(IRNode(kind=IRNodeKind.SECTION, label=label, text=" ".join(article_content), children=()))
 

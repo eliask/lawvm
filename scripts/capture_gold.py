@@ -37,7 +37,7 @@ def _capture_one(statute_id: str) -> list:
     import lxml.etree as etree
 
     cs = _get_corpus_store()
-    records, _, _ = _resolve_applicable_amendment_records(statute_id, "finlex_oracle")
+    records, _, _ = _resolve_applicable_amendment_records(statute_id, "official_consolidation")
     captures = []
 
     for rec in records:

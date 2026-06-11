@@ -82,7 +82,7 @@ def test_1978_38_consumer_credit_chapter_7_not_mislabelled_as_12() -> None:
     # ("Erinäisiä säännöksiä"). Following that stale renumber chain for the
     # reborn chapter-7 body misfiled the consumer-credit sections under the
     # chapter-12 node and left chapter 7 holding only §22.
-    state = pinned_replay("1978/38", mode="finlex_oracle", quiet=True)
+    state = pinned_replay("1978/38", mode="official_consolidation", quiet=True)
 
     ch7_heading, ch7_sections = _chapter_section_labels(state.ir, "7")
     ch12_heading, ch12_sections = _chapter_section_labels(state.ir, "12")

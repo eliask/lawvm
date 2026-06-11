@@ -18,10 +18,14 @@ from __future__ import annotations
 
 import pytest
 
-crosshair = pytest.importorskip("crosshair")
-from crosshair.core_and_libs import analyze_function, AnalysisKind  # noqa: E402
-from crosshair.options import AnalysisOptionSet  # noqa: E402
-from crosshair.statespace import MessageType  # noqa: E402
+pytest.importorskip("crosshair")
+_core_and_libs = pytest.importorskip("crosshair.core_and_libs")
+_options = pytest.importorskip("crosshair.options")
+_statespace = pytest.importorskip("crosshair.statespace")
+analyze_function = _core_and_libs.analyze_function
+AnalysisKind = _core_and_libs.AnalysisKind
+AnalysisOptionSet = _options.AnalysisOptionSet
+MessageType = _statespace.MessageType
 from lawvm.core.semantic_types import IRNodeKind
 
 

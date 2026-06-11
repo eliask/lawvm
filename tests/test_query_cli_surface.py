@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import csv
 import io
+import importlib.util
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -31,11 +33,11 @@ from lawvm.tools._cli_output import emit_rows, format_table, json_safe
 # Fixtures: real Parquet files written with DuckDB for in-process tests
 # ---------------------------------------------------------------------------
 
-try:
-    import duckdb as _duckdb_available  # noqa: F401
-    _HAS_DUCKDB = True
-except ImportError:
-    _HAS_DUCKDB = False
+_HAS_DUCKDB = importlib.util.find_spec("duckdb") is not None
+
+
+def _duckdb_module() -> Any:
+    return cast(Any, importlib.import_module("duckdb"))
 
 duckdb_required = pytest.mark.skipif(
     not _HAS_DUCKDB, reason="duckdb not installed"
@@ -48,7 +50,7 @@ def tmp_proj_dir(tmp_path_factory) -> Path:
     if not _HAS_DUCKDB:
         pytest.skip("duckdb not installed")
 
-    import duckdb
+    duckdb = _duckdb_module()
 
     d = tmp_path_factory.mktemp("projections")
 
@@ -486,7 +488,8 @@ class TestRefsQueryIntegration:
         reader = csv.DictReader(io.StringIO(out))
         rows = list(reader)
         assert len(rows) >= 1
-        assert "source_statute_id" in reader.fieldnames  # ty:ignore[unsupported-operator]
+        assert reader.fieldnames is not None
+        assert "source_statute_id" in reader.fieldnames
 
     @duckdb_required
     def test_refs_cross_jurisdiction_error(self, tmp_proj_dir):
@@ -898,7 +901,9 @@ class TestDefaultDataDir:
             required_extra = ["--provision", "x", "--t1", "2020-01-01", "--t2", "2024-01-01"]
 
         args = parser.parse_args([command] + required_extra)
-        return getattr(args, "data_dir", None)  # ty:ignore[invalid-return-type]
+        data_dir = getattr(args, "data_dir", None)
+        assert isinstance(data_dir, str)
+        return data_dir
 
     def test_refs_default_data_dir(self):
         assert self._get_default("refs") == "data/fi/v1"

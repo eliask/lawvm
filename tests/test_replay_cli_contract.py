@@ -1893,10 +1893,10 @@ def test_uk_replay_main_json_records_oracle_compare_residuals(monkeypatch, tmp_p
         def __init__(self, _repo_root):
             pass
 
-        def compile_ops_for_statute(self, *args, **kwargs):  # noqa: ANN002, ANN003
+        def compile_ops_for_statute(self, *args: Any, **kwargs: Any) -> list[object]:
             return []
 
-        def apply_ops(self, base, ops, **kwargs):  # noqa: ANN001, ANN003
+        def apply_ops(self, base: object, ops: object, **kwargs: Any) -> IRStatute:
             del base, ops
             kwargs["oracle_alignment_events_out"].extend(
                 [
@@ -1937,7 +1937,7 @@ def test_uk_replay_main_json_records_oracle_compare_residuals(monkeypatch, tmp_p
             )
             return replayed_ir
 
-    def fake_parse_uk_statute_ir_bytes(*args, **kwargs):  # noqa: ANN002, ANN003
+    def fake_parse_uk_statute_ir_bytes(*args: Any, **kwargs: Any) -> IRStatute:
         if kwargs.get("version_label") == "oracle":
             return oracle_ir
         return base_ir

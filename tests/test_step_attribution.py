@@ -123,7 +123,7 @@ def test_run_single_prefers_typed_source_adjudication_over_conflicting_replay_me
 
     monkeypatch.setattr(
         "lawvm.finland.grafter.replay_xml",
-        lambda statute_id, mode="finlex_oracle", compiled_ops_out=None, replay_meta_out=None, lo_ops_out=None, failed_ops_out=None: (
+        lambda statute_id, mode="official_consolidation", compiled_ops_out=None, replay_meta_out=None, lo_ops_out=None, failed_ops_out=None: (
             replay_meta_out.update(
                 {"lineage": [{"statute_id": "2000/999", "included": False, "effective_date": ""}]}
             ) if replay_meta_out is not None else None,
@@ -150,7 +150,7 @@ def test_run_single_hydrates_source_adjudication_from_replay_meta(monkeypatch) -
 
     monkeypatch.setattr(
         "lawvm.finland.grafter.replay_xml",
-        lambda statute_id, mode="finlex_oracle", compiled_ops_out=None, replay_meta_out=None, lo_ops_out=None, failed_ops_out=None: (
+        lambda statute_id, mode="official_consolidation", compiled_ops_out=None, replay_meta_out=None, lo_ops_out=None, failed_ops_out=None: (
             replay_meta_out.update(
                 {
                     "lineage": [

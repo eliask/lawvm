@@ -124,7 +124,7 @@ def test_1974_412_clean_no_observations():
 def test_2013_331_base_observations_in_findings():
     """Verify that base observations (T1b) are threaded into ReplayResult.findings."""
     cs = get_corpus_store()
-    m = pinned_replay("2013/331", mode="finlex_oracle", quiet=True, corpus=cs)
+    m = pinned_replay("2013/331", mode="official_consolidation", quiet=True, corpus=cs)
 
     # Verify base_observations are populated in ctx
     assert len(m.ctx.base_observations) == 13, (
@@ -175,7 +175,7 @@ def test_2013_331_base_observations_in_findings():
 def test_1974_412_clean_no_findings():
     """Verify that clean statute (1974/412) has no base observation findings."""
     cs = get_corpus_store()
-    m = pinned_replay("1974/412", mode="finlex_oracle", quiet=True, corpus=cs)
+    m = pinned_replay("1974/412", mode="official_consolidation", quiet=True, corpus=cs)
 
     # Verify no base observations
     assert len(m.ctx.base_observations) == 0, (

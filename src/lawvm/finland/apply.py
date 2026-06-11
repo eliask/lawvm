@@ -126,7 +126,7 @@ def apply_op(
     cross_ir: Optional[IRNode] = None,
     amend_sub_ir: Optional[IRNode] = None,
     slot_assignment: "SubsectionSlotAssignmentResult | None" = None,
-    replay_mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle",
+    replay_mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     failed_ops_out: Optional[List[FailedOp]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,

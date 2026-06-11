@@ -280,7 +280,7 @@ def _working_johtolause(
 def build_amendment_bundle(
     statute_id: str,
     source_id: str,
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
 ) -> Dict[str, Any]:
     before_master = replay_xml(statute_id, mode=mode, stop_before=source_id, quiet=True)
     cs = get_corpus()
@@ -318,7 +318,7 @@ def build_amendment_bundle(
         "source_id": source_id,
         "mode": mode,
         "source_title": source_title,
-        "johtolause": johto,
+        "preamble": johto,
         "used_sec1_fallback": used_sec1_fallback,
         "route": {
             "should_apply": should_apply,
@@ -549,8 +549,8 @@ def _format_text(bundle: Dict[str, Any]) -> str:
     if stage in {"all", "source"}:
         lines.extend(
             [
-                "Johtolause:",
-                *(f"  {line}" for line in (bundle.get("johtolause") or "").splitlines()),
+                "Preamble (johtolause):",
+                *(f"  {line}" for line in (bundle.get("preamble") or "").splitlines()),
                 "",
                 "Source payload:",
                 f"  Raw IR        : {source_payload.get('raw_ir', {})}",

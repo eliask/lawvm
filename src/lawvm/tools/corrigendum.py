@@ -67,7 +67,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Optional, cast
+from typing import Any, Iterable, Literal, Optional, cast
 
 import aiohttp
 import yaml
@@ -101,6 +101,7 @@ from lawvm.finland.proof_surfaces import (
     finland_corrigendum_sources_evidence_surface,
 )
 from lawvm.tools.section_keys import leaf_section_label, norm_section_label
+from lawvm.tools.replay_mode_arg import replay_mode_argument
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -2561,7 +2562,7 @@ def build_review_bundle(
     """Build a review bundle joining live disagreements to corrigendum evidence."""
     from lawvm.tools.oracle_check import _classify_statute
 
-    result = _classify_statute(statute_id, cast(Literal["finlex_oracle", "legal_pit"], mode))
+    result = _classify_statute(statute_id, cast(Literal["official_consolidation", "legal_pit"], mode))
     if not result:
         raise SystemExit(f"Could not classify statute {statute_id}")
     if result.error:
@@ -3325,55 +3326,120 @@ def _cmd_status(args) -> None:
 def _status_single(cs, sid: str) -> None:
     pdf_paths = _corrigendum_locators_for_sid(cs, sid)
     xml_refs = _get_xml_corrigendum_refs(cs, sid)
+    finnish, swedish, other, unparsed = _classify_corrigendum_locators(pdf_paths)
+    fi_files = sorted(finnish.get(sid, set()))
+    sv_files = sorted(swedish.get(sid, set()))
+    other_files = sorted({f for files in other.values() for f in files})
 
     print(f"=== Corrigendum: {sid} ===")
-    print(f"  PDFs in corpus : {len(pdf_paths)}")
+    print(f"  Finnish (sk*) PDFs in corpus : {len(fi_files)}")
+    print(f"  Swedish (fs*) PDFs in corpus : {len(sv_files)}  (not LawVM-relevant)")
     print(f"  XML refs       : {len(xml_refs)}")
+
+    if unparsed:
+        print(f"\n  DIAGNOSTIC corrigendum-locator-unparsed: {len(unparsed)} locator(s) did not match any known locator scheme:")
+        for locator in unparsed:
+            print(f"    {locator}")
+    if other_files:
+        print(f"\n  DIAGNOSTIC corrigendum-series-unrecognized: {len(other_files)} PDF(s) outside the sk*/fs* series:")
+        for filename in other_files:
+            print(f"    {filename}")
 
     if xml_refs:
         print("\n  XML references:")
         for r in xml_refs:
             print(f"    [{r.get('date', '?')}]  {r.get('ref_text', '?')}  →  {r.get('pdf_href', '?')}")
 
-    if pdf_paths:
-        print("\n  PDF files in corpus:")
-        for p in pdf_paths:
-            print(f"    {Path(p).name:<40}")
+    if fi_files:
+        print("\n  Finnish PDF files in corpus:")
+        for name in fi_files:
+            print(f"    {name:<40}")
+    if sv_files:
+        print("\n  Swedish PDF files in corpus:")
+        for name in sv_files:
+            print(f"    {name:<40}")
 
-    if not pdf_paths and not xml_refs:
+    if not fi_files and not sv_files and not other_files and not unparsed and not xml_refs:
         print("  No corrigenda found.")
 
 
+def _classify_corrigendum_locators(
+    locators: Iterable[str],
+) -> tuple[dict[str, set[str]], dict[str, set[str]], dict[str, set[str]], list[str]]:
+    """Group corrigendum PDF locators by statute id and filename series.
+
+    The same PDF is cached under many ``{lang}@{version}`` consolidation
+    directories, so counts are deduplicated by ``(statute_id, filename)``.
+
+    Returns ``(finnish, swedish, other, unparsed_locators)`` where the first
+    three map ``statute_id -> {filename, ...}`` for the Finnish ``sk*``
+    series, the Swedish ``fs*`` series, and any unrecognized filename series,
+    and ``unparsed_locators`` lists locators whose statute id could not be
+    extracted under the known locator schemes.
+    """
+    from collections import defaultdict
+
+    finnish: dict[str, set[str]] = defaultdict(set)
+    swedish: dict[str, set[str]] = defaultdict(set)
+    other: dict[str, set[str]] = defaultdict(set)
+    unparsed: list[str] = []
+    for locator in locators:
+        if not locator.endswith(".pdf"):
+            continue
+        sid = _sid_from_locator(locator)
+        if sid is None:
+            unparsed.append(locator)
+            continue
+        filename = Path(locator).name
+        if filename.startswith("sk"):
+            finnish[sid].add(filename)
+        elif filename.startswith("fs"):
+            swedish[sid].add(filename)
+        else:
+            other[sid].add(filename)
+    return finnish, swedish, other, unparsed
+
+
 def _status_corpus(cs) -> None:
-    from collections import Counter, defaultdict
+    from collections import Counter
 
-    by_sid: dict[str, list[str]] = defaultdict(list)
-    for name in list_cached_corrigendum_locators(cs):
-        if name.endswith(".pdf"):
-            m = _FINLEX_CONS_RE.search(name)
-            if m:
-                by_sid[m.group(1)].append(name)
+    finnish, swedish, other, unparsed = _classify_corrigendum_locators(
+        list_cached_corrigendum_locators(cs)
+    )
 
-    total_pdfs = sum(len(v) for v in by_sid.values())
-    n_statutes = len(by_sid)
-
-    by_decade: Counter = Counter()
-    for sid in by_sid:
-        year = int(sid.split("/")[0])
-        by_decade[(year // 10) * 10] += len(by_sid[sid])
+    total_fi = sum(len(v) for v in finnish.values())
+    total_sv = sum(len(v) for v in swedish.values())
 
     print("=== Corrigendum Corpus Summary ===")
-    print(f"  Total corrigendum PDFs : {total_pdfs}")
-    print(f"  Statutes affected      : {n_statutes}")
+    print(f"  Finnish (sk*) corrigendum PDFs : {total_fi}")
+    print(f"  Statutes affected (Finnish)    : {len(finnish)}")
+    print(f"  Swedish (fs*) corrigendum PDFs : {total_sv}  (not LawVM-relevant; excluded from breakdowns)")
+
+    if unparsed:
+        print(f"\n  DIAGNOSTIC corrigendum-locator-unparsed: {len(unparsed)} locator(s) did not match any known locator scheme:")
+        for locator in unparsed:
+            print(f"    {locator}")
+    if other:
+        n_other = sum(len(v) for v in other.values())
+        print(f"\n  DIAGNOSTIC corrigendum-series-unrecognized: {n_other} PDF(s) outside the sk*/fs* series:")
+        for sid in sorted(other):
+            for filename in sorted(other[sid]):
+                print(f"    {sid}  {filename}")
+
+    by_decade: Counter = Counter()
+    for sid, files in finnish.items():
+        year = int(sid.split("/")[0])
+        by_decade[(year // 10) * 10] += len(files)
+
     print()
-    print("  By decade:")
+    print("  By decade (Finnish):")
     for decade in sorted(by_decade):
         print(f"    {decade}s : {by_decade[decade]:>5} PDFs")
 
-    top = sorted(by_sid.items(), key=lambda x: -len(x[1]))[:15]
-    print("\n  Most-corrected statutes (top 15):")
-    for sid, pdfs in top:
-        print(f"    {sid:<20}  {len(pdfs)} corrigenda")
+    top = sorted(finnish.items(), key=lambda x: (-len(x[1]), x[0]))[:15]
+    print("\n  Most-corrected statutes (top 15, Finnish):")
+    for sid, files in top:
+        print(f"    {sid:<20}  {len(files)} corrigenda")
 
 
 # ---------------------------------------------------------------------------
@@ -4417,8 +4483,8 @@ def register_cli(sub: Any) -> None:
     corr_review_p.add_argument("statute_id", help="statute ID, e.g. 1995/1552")
     corr_review_p.add_argument(
         "--mode", default="legal_pit",
-        choices=["finlex_oracle", "legal_pit"],
-        help="replay mode for live disagreement classification (default: legal_pit)",
+        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        help="replay mode for live disagreement classification (default: legal_pit; legacy alias: finlex_oracle)",
     )
     corr_review_p.add_argument(
         "--db", metavar="PATH",

@@ -134,7 +134,7 @@ def _ops_sync(
     sid: str,
     source_filter: Optional[str],
     target_filter: Optional[str],
-    mode: Literal["finlex_oracle", "legal_pit"],
+    mode: Literal["official_consolidation", "legal_pit"],
 ) -> None:
     compiled_ops: list = []
     replay_xml(sid, mode=mode, compiled_ops_out=compiled_ops, quiet=True, build_full_products=False)
@@ -484,5 +484,5 @@ def main(args) -> None:
         sid=args.statute_id,
         source_filter=getattr(args, "source", None),
         target_filter=getattr(args, "target", None),
-        mode=getattr(args, "mode", "finlex_oracle"),
+        mode=getattr(args, "mode", "official_consolidation"),
     )

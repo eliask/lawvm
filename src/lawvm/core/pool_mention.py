@@ -35,7 +35,8 @@ class QuantityKind(Enum):
     """What kind of fiscal/quantity object is mentioned."""
 
     BUDGET_LINE = "budget_line"
-    """Resolves to a talousarviolaki address (paaluokka.luku.momentti)."""
+    """Resolves to a budget act (talousarviolaki) address
+    (main class.chapter.line / paaluokka.luku.momentti)."""
 
     FISCAL_POOL = "fiscal_pool"
     """Named pool that does not map to a single budget line (e.g. 'yleiskate')."""
@@ -60,7 +61,7 @@ class PoolResolutionConfidence(Enum):
     """Canonical ID resolved directly against the per-year registry."""
 
     APPROXIMATE = "approximate"
-    """Registry lookup via cross-year lineage (momentti renumbering heuristic)."""
+    """Registry lookup via cross-year lineage (budget line (momentti) renumbering heuristic)."""
 
     UNRESOLVED = "unresolved"
     """No registry hit; canonical ID is None."""
@@ -92,7 +93,7 @@ class PoolMention:
       - when this mention state holds (valid_at_*)
 
     Per AGENTS.md §1.1: ambiguous budget-line -> AmbiguousPoolMention, not silent pick.
-    Per AGENTS.md §1.6: momentti renumbering -> BudgetLineRenumberingObservation.
+    Per AGENTS.md §1.6: budget line (momentti) renumbering -> BudgetLineRenumberingObservation.
     Per AGENTS.md §1.8: rejected candidates emit RejectedPoolCandidate.
     """
 
@@ -196,12 +197,12 @@ class AmbiguousPoolMention:
 
 @dataclass(frozen=True, slots=True)
 class BudgetLineRenumberingObservation:
-    """Observation emitted when a momentti resolves via cross-year lineage.
+    """Observation emitted when a budget line (momentti) resolves via cross-year lineage.
 
-    Budget-line momentti numbers occasionally renumber across fiscal years.
-    When a phrase like '28.91.50' appears in a statute and the exact momentti
-    exists in one year but has been renumbered in another, this observation
-    documents the cross-year lineage heuristic.
+    Budget line (momentti) numbers occasionally renumber across fiscal years.
+    When a phrase like '28.91.50' appears in a statute and the exact budget line
+    (momentti) exists in one year but has been renumbered in another, this
+    observation documents the cross-year lineage heuristic.
 
     resolution_confidence=APPROXIMATE always pairs with this observation.
     """
@@ -216,9 +217,9 @@ class BudgetLineRenumberingObservation:
     resolved_canonical_id: str
     """The canonical ID after cross-year lineage resolution."""
     lineage_year: int
-    """The year in which the original momentti was found."""
+    """The year in which the original budget line (momentti) was found."""
     resolution_year: int
-    """The year to which the momentti was mapped via lineage."""
+    """The year to which the budget line (momentti) was mapped via lineage."""
     reason: str
     blocking: bool = False
     strict_disposition: str = "record"

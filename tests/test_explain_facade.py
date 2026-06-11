@@ -136,10 +136,10 @@ class TestBuildFacadeFromReplay:
         facade = _build_facade_from_replay(
             failed_ops=[],
             projection_rows=[],
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
         )
         assert isinstance(facade, CompileFacade)
-        assert facade.replay_mode == "finlex_oracle"
+        assert facade.replay_mode == "official_consolidation"
         assert facade.finding_ledger == ()
         assert facade.bundle.structural_ops == ()
 
@@ -156,7 +156,7 @@ class TestBuildFacadeFromReplay:
         facade = _build_facade_from_replay(
             failed_ops=[],
             projection_rows=[adj],
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
         )
         violations = tuple(f for f in facade.finding_ledger if f.role == "violation")
         assert len(violations) == 1
@@ -168,7 +168,7 @@ class TestBuildFacadeFromReplay:
         facade = _build_facade_from_replay(
             failed_ops=[fop],
             projection_rows=[],
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
         )
         obligations = tuple(f for f in facade.finding_ledger if f.role == "obligation")
         assert len(obligations) == 1
@@ -189,7 +189,7 @@ class TestBuildFacadeFromReplay:
         facade = _build_facade_from_replay(
             failed_ops=[],
             projection_rows=[adj],
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
         )
         obs = tuple(f for f in facade.finding_ledger if f.role == "observation")[0]
         assert obs.kind == "PARSE.SEMANTIC_COLLAPSE_MOVE_RENUMBER"
@@ -207,7 +207,7 @@ class TestBuildFacadeFromReplay:
         facade = _build_facade_from_replay(
             failed_ops=[fop],
             projection_rows=[adj],
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
         )
         assert len([f for f in facade.finding_ledger if f.role == "violation"]) == 1
         assert len([f for f in facade.finding_ledger if f.role == "obligation"]) == 1
@@ -216,7 +216,7 @@ class TestBuildFacadeFromReplay:
         facade = _build_facade_from_replay(
             failed_ops=[],
             projection_rows=[],
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
         )
         assert facade.bundle.temporal_events == ()
 
@@ -224,7 +224,7 @@ class TestBuildFacadeFromReplay:
         facade = _build_facade_from_replay(
             failed_ops=[],
             projection_rows=[],
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
         )
         assert facade.has_blocking is False
 
@@ -233,7 +233,7 @@ class TestBuildFacadeFromReplay:
         facade = _build_facade_from_replay(
             failed_ops=[],
             projection_rows=[adj],
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
         )
         assert facade.has_blocking is True
 
@@ -241,7 +241,7 @@ class TestBuildFacadeFromReplay:
         facade = _build_facade_from_replay(
             failed_ops=[],
             projection_rows=[],
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
         )
         with pytest.raises((AttributeError, TypeError)):
             cast(Any, facade).replay_mode = "other"
@@ -277,7 +277,7 @@ class TestPrintFacadeSummary:
         return _build_facade_from_replay(
             failed_ops=[],
             projection_rows=[],
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
         )
 
     def test_strict_yes_in_output(self):
@@ -290,7 +290,7 @@ class TestPrintFacadeSummary:
         facade = _build_facade_from_replay(
             failed_ops=[],
             projection_rows=[adj],
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
         )
         out = _capture_facade_summary(facade)
         assert "strict=NO" in out
@@ -326,7 +326,7 @@ class TestPrintFacadeSummary:
             detail={},
         )
         pr = builder.finish(None)
-        facade = CompileFacade.from_phase_result(pr, replay_mode="finlex_oracle")
+        facade = CompileFacade.from_phase_result(pr, replay_mode="official_consolidation")
         out = _capture_facade_summary(facade)
         assert "Quirks" in out
         assert "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE" in out
@@ -341,7 +341,7 @@ class TestPrintFacadeSummary:
             detail={},
         )
         pr = builder.finish(None)
-        facade = CompileFacade.from_phase_result(pr, replay_mode="finlex_oracle")
+        facade = CompileFacade.from_phase_result(pr, replay_mode="official_consolidation")
         out = _capture_facade_summary(facade)
         assert "SC issues" in out
 
@@ -377,7 +377,7 @@ class TestPrintCompileSummary:
                     detail={
                         "message": "Compilation required context-dependent anchor resolution.",
                         "source_statute": "2020/1",
-                        "tag": "chapter_scope_from_johtolause",
+                        "tag": "chapter_scope_from_preamble",
                         "target_unit_kind": "section",
                         "target_norm": "35",
                         "target_chapter": "5",
@@ -400,7 +400,7 @@ class TestPrintCompileSummary:
                     "message": "Compilation required context-dependent anchor resolution.",
                     "source": "2020/1",
                     "detail": {
-                        "tag": "chapter_scope_from_johtolause",
+                        "tag": "chapter_scope_from_preamble",
                         "target_unit_kind": "section",
                         "target_norm": "35",
                         "target_chapter": "5",
@@ -414,7 +414,7 @@ class TestPrintCompileSummary:
 
         assert "Projection rows: LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION" in out
         assert (
-            "- LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION  [target(kind=P, norm=35, chapter=5); tag=chapter_scope_from_johtolause]"
+            "- LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION  [target(kind=P, norm=35, chapter=5); tag=chapter_scope_from_preamble]"
             in out
         )
 
@@ -507,7 +507,7 @@ def test_explain_main_ignores_removed_effect_intents_flag(monkeypatch) -> None:
         statute_id="1991/1",
         section=None,
         threshold=1.0,
-        mode="finlex_oracle",
+        mode="official_consolidation",
         compile_summary=False,
         facade=False,
         strict=False,
@@ -529,7 +529,7 @@ def test_explain_main_uses_explicit_oracle_selector(monkeypatch) -> None:
         statute_id="1991/1",
         section=None,
         threshold=1.0,
-        mode="finlex_oracle",
+        mode="official_consolidation",
         oracle_selector_mode="bench_comparable",
         oracle_version_amendment_id="",
         compile_summary=False,
@@ -581,7 +581,7 @@ def test_explain_sync_classifies_future_effective_missing_section_as_oracle_stal
         "2019/213",
         "part:4/chapter:10/section:6",
         1.0,
-        "finlex_oracle",
+        "official_consolidation",
     )
 
     out = capsys.readouterr().out
@@ -662,7 +662,7 @@ def test_explain_sync_classifies_repeal_banner_missing_section_as_oracle_stale_f
         "2016/768",
         "chapter:9/section:53",
         1.0,
-        "finlex_oracle",
+        "official_consolidation",
     )
 
     out = capsys.readouterr().out
@@ -687,7 +687,7 @@ def test_explain_sync_demotes_2012_916_section_1_unknown_to_source_pathology(
         "2012/916",
         "chapter:13/section:1",
         1.0,
-        "finlex_oracle",
+        "official_consolidation",
     )
 
     out = capsys.readouterr().out

@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import date, datetime
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, cast
 
 
 # ---------------------------------------------------------------------------
@@ -545,9 +545,8 @@ def _canonical_json(obj: Any) -> str:
         )
         return "{" + pairs + "}"
     # dataclasses: serialize as dict of fields
-    import dataclasses  # noqa: PLC0415
-    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
-        d = dataclasses.asdict(obj)  # type: ignore[call-overload]
+    if is_dataclass(obj) and not isinstance(obj, type):
+        d = asdict(cast(Any, obj))
         return _canonical_json(d)
     raise TypeError(f"_canonical_json: unsupported type {type(obj).__qualname__!r}")
 

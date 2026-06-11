@@ -84,7 +84,7 @@ def _auto_tier(score: float, section_results: list) -> int:
     return 4
 
 
-def _classify_statute_for_gold(sid: str, mode: Literal["finlex_oracle", "legal_pit"]):
+def _classify_statute_for_gold(sid: str, mode: Literal["official_consolidation", "legal_pit"]):
     """Run oracle-check classification and return (score, section_results, title)."""
     from lawvm.tools.oracle_check import _classify_statute
     result = _classify_statute(sid, mode)
@@ -129,7 +129,7 @@ def _cmd_status(manifest: dict, verbose: bool) -> None:
         print(f"  {sid}  {t2}/{n} correct{anomaly_info}  [{vdate}]  {title}")
 
 
-def _cmd_promote(sid: str, mode: Literal["finlex_oracle", "legal_pit"], forced_tier: Optional[int]) -> None:
+def _cmd_promote(sid: str, mode: Literal["official_consolidation", "legal_pit"], forced_tier: Optional[int]) -> None:
     manifest = _load_manifest()
     statutes = manifest.setdefault("statutes", {})
 
@@ -264,7 +264,7 @@ def _normalize_address(address: str) -> str:
     return address.strip()
 
 
-def _cmd_verify(sid: str, mode: Literal["finlex_oracle", "legal_pit"]) -> None:
+def _cmd_verify(sid: str, mode: Literal["official_consolidation", "legal_pit"]) -> None:
     manifest = _load_manifest()
     statutes_list = _get_statutes_list(manifest)
     entry = next((s for s in statutes_list if s.get("statute_id") == sid), None)
@@ -377,7 +377,7 @@ def _sentinel_csv_path() -> Path:
     return here.parent.parent.parent.parent / "data" / "finland" / "strict_sentinel.csv"
 
 
-def _cmd_verify_strict(sid: Optional[str], mode: Literal["finlex_oracle", "legal_pit"]) -> None:
+def _cmd_verify_strict(sid: Optional[str], mode: Literal["official_consolidation", "legal_pit"]) -> None:
     """Check strictness for gold statutes via Finland's native facade.
 
     If sid is given, check only that statute.  Otherwise check all gold statutes.
@@ -510,7 +510,7 @@ def _cmd_export(manifest: dict, out_path: Optional[str]) -> None:
 
 def main(args) -> None:
     subcommand = getattr(args, "gold_command", None)
-    mode = getattr(args, "mode", "finlex_oracle")
+    mode = getattr(args, "mode", "official_consolidation")
     verbose = getattr(args, "verbose", False)
 
     if subcommand == "status":

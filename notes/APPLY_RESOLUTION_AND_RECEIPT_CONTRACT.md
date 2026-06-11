@@ -1,6 +1,9 @@
 ---
 title: LawVM Apply Resolution and Receipt Contract — the Semantic Apply Waist
-status: normative draft (spec-first; resolver/receipt vertical slice follows it)
+status: normative draft; vertical slice landed for the chapter/part INSERT
+  family (binding consumption §3 step 3 + WriteReceipt §4 with receipt-derived
+  mutation events). ObservedWriteAudit (§5), occupancy enforcement (§6) and
+  certificate-leaf production (§9) remain spec-only.
 ---
 
 # Apply Resolution and Receipt Contract
@@ -156,9 +159,18 @@ transition leaf), then expand.
 ```text
 1. Wrap the existing scoped-section resolution helper
    (finland apply_policy._resolve_section_path_with_fallbacks) as a
-   ResolverBinding producer.
+   ResolverBinding producer.                                    [DONE]
 2. Add passive observational equality checks against existing path outputs.
-3. Convert the known-bad chapter/part insert path first.
+                                                                [DONE]
+3. Convert the known-bad chapter/part insert path first.        [DONE]
+   _apply_container_op consumes the binding: _resolve_container_target
+   wraps _find_container_path_with_part_scope with rung provenance and
+   work-wide candidate counts; container_resolver_binding
+   (fi.container_target.v0) projects it; the write target comes from
+   binding.target_path. The container ladder has a single scoped-find
+   rung — no widening fallback exists for this family. Conversion covers
+   ALL container target ops (the resolution site is shared); receipts
+   (§4) cover the INSERT family only.
 4. Convert _find_scoped_section_insert_parent_path AND its duplicate
    same-name sibling (one in apply_structure_ops, one in
    apply_typed_dispatch) — the duplication itself is part of the bug class.
@@ -187,6 +199,17 @@ bare top-level find would pick the wrong part
 `MutationEvent` and mutation accounting are carriers; the missing piece is
 the PRODUCER contract. The receipt is the helper's record of what actually
 landed — not what it intended.
+
+Implementation state: `lawvm.core.write_receipt.WriteReceipt` exists and is
+produced by `_apply_container_op` for the chapter/part whole-container
+INSERT lane (scaffold consume, base-chapter merge, fresh placement with
+part-hint scaffolding and placeholder consumption — each divergence carries
+its named rule id). Both dispatch sites derive the op's ApplyMutationEvent
+from the receipt (`_emit_apply_mutation_event_from_receipt`). Pre/post
+structural hashes use the frozen §2.2 recipe
+(`lawvm.core.ir_helpers.structural_subtree_hash`), computed at the write.
+Not yet: the container child-section INSERT sub-lane, other op families,
+receipt persistence, and the independent ObservedWriteAudit (§5).
 
 ```python
 @dataclass(frozen=True, slots=True)

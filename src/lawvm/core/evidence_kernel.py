@@ -304,7 +304,7 @@ def _eval_none(args: Mapping[str, object], ctx: _EvalContext) -> bool:
 def _eval_count_distinct_at_least(args: Mapping[str, object], ctx: _EvalContext) -> bool:
     kind = str(args.get("attestation_kind", ""))
     path = str(args.get("path", ""))
-    n = int(args.get("n", 1))  # ty:ignore[invalid-argument-type]
+    n = _int_arg(args, "n", default=1)
     attestations = _attestations_for_subject(ctx)
     filtered = _filter_attestations(attestations, kind if kind else None, {})
     values: set[str] = set()
@@ -313,6 +313,15 @@ def _eval_count_distinct_at_least(args: Mapping[str, object], ctx: _EvalContext)
         if val is not None:
             values.add(str(val))
     return len(values) >= n
+
+
+def _int_arg(args: Mapping[str, object], name: str, *, default: int) -> int:
+    raw = args.get(name, default)
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, str):
+        return int(raw)
+    raise TypeError(f"EvidenceKernel: {name!r} argument must be int or int string")
 
 
 def _extract_path_value(a: ProvenanceAttestation, path: str) -> object:
@@ -358,7 +367,7 @@ def _eval_signed_by(args: Mapping[str, object], ctx: _EvalContext) -> bool:
     keyring = str(args.get("keyring", ""))
     attestations = _attestations_for_subject(ctx)
     for a in attestations:
-        if a.signature is not None and a.signature.keyring_id == keyring:  # ty:ignore[unresolved-attribute]
+        if a.signature is not None and a.signature.public_key == keyring:
             return True
     return False
 

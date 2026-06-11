@@ -292,7 +292,7 @@ def _audit_one(norm_id: str) -> list[dict[str, str]]:
         plan_bundle = build_replay_plan_inspection(
             SimpleNamespace(
                 statute_id=norm_id,
-                mode="finlex_oracle",
+                mode="official_consolidation",
                 strict=False,
                 oracle_selector_mode="bench_comparable",
             )

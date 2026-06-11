@@ -1409,7 +1409,7 @@ class TestCompileAmendmentOps:
         master = _make_master()
         muutos_tree = _make_muutos_tree()
 
-        result = compile_amendment_ops(master, [], muutos_tree, "", "finlex_oracle").output
+        result = compile_amendment_ops(master, [], muutos_tree, "", "official_consolidation").output
 
         assert result == []
 
@@ -1422,7 +1422,7 @@ class TestCompileAmendmentOps:
             [],
             muutos_tree,
             "Tätä lakia sovelletaan aiempiin hakemuksiin.",
-            "finlex_oracle",
+            "official_consolidation",
         )
 
         skipped = [f for f in result.findings() if f.kind == "TIME.ACTIVATION_RULE_INPUT_SKIPPED"]
@@ -1446,7 +1446,7 @@ class TestCompileAmendmentOps:
         ]
 
         resolved = compile_amendment_ops(
-            master, ops, muutos_tree, "muutetaan 3 \u00a7:n 1 momentti seuraavasti:", "finlex_oracle"
+            master, ops, muutos_tree, "muutetaan 3 \u00a7:n 1 momentti seuraavasti:", "official_consolidation"
         ).output
 
         assert len(resolved) == 1
@@ -1478,7 +1478,7 @@ class TestCompileAmendmentOps:
         ]
 
         resolved = compile_amendment_ops(
-            master, ops, muutos_tree, "muutetaan 3 \u00a7:n 1 momentti seuraavasti:", "finlex_oracle"
+            master, ops, muutos_tree, "muutetaan 3 \u00a7:n 1 momentti seuraavasti:", "official_consolidation"
         ).output
 
         assert len(resolved) == 1
@@ -1751,7 +1751,7 @@ class TestCompileAmendmentOps:
         ]
 
         resolved = compile_amendment_ops(
-            master, ops, muutos_tree, "muutetaan 3 \u00a7:n 1 ja 2 momentti", "finlex_oracle"
+            master, ops, muutos_tree, "muutetaan 3 \u00a7:n 1 ja 2 momentti", "official_consolidation"
         ).output
 
         assert len(resolved) == 2
@@ -1796,7 +1796,7 @@ class TestCompileAmendmentOps:
             ops,
             muutos_tree,
             "muutetaan 3 \u00a7:n 1 momentti ja 5 \u00a7:n 1 momentti",
-            "finlex_oracle",
+            "official_consolidation",
         ).output
 
         assert len(resolved) == 2
@@ -1816,7 +1816,7 @@ class TestCompileAmendmentOps:
             ),
         ]
 
-        resolved = compile_amendment_ops(master, ops, muutos_tree, "muutetaan 7 \u00a7", "finlex_oracle").output
+        resolved = compile_amendment_ops(master, ops, muutos_tree, "muutetaan 7 \u00a7", "official_consolidation").output
 
         assert resolved
         r = resolved[0]
@@ -1882,7 +1882,7 @@ class TestCompileAmendmentOps:
             ),
         ]
 
-        resolved = compile_amendment_ops(master, ops, muutos_tree, "kumotaan 9 \u00a7", "finlex_oracle").output
+        resolved = compile_amendment_ops(master, ops, muutos_tree, "kumotaan 9 \u00a7", "official_consolidation").output
 
         # REPEAL with no body in amendment: either no resolved ops (filtered) or
         # a resolved op with muutos_ir=None.  Both are acceptable — what must NOT
@@ -1927,7 +1927,7 @@ class TestCompileAmendmentOps:
             ops,
             muutos_tree,
             "muutetaan 3 §:n 1 momentti",
-            "finlex_oracle",
+            "official_consolidation",
         )
 
         assert result.output == []
@@ -1976,7 +1976,7 @@ class TestCompileAmendmentOps:
             ops,
             muutos_tree,
             "muutetaan 3 §:n 1 momentti",
-            "finlex_oracle",
+            "official_consolidation",
         )
 
         assert result.output == []
@@ -2038,7 +2038,7 @@ class TestCompileAmendmentOps:
             ops,
             muutos_tree,
             "muutetaan 3 §:n 1 momentti",
-            "finlex_oracle",
+            "official_consolidation",
         )
 
         assert result.output == []
@@ -2090,7 +2090,7 @@ class TestCompileAmendmentOps:
             ops,
             muutos_tree,
             "muutetaan 3 §:n 1 momentti",
-            "finlex_oracle",
+            "official_consolidation",
         )
 
         assert result.output == []
@@ -2150,7 +2150,7 @@ class TestCompileAmendmentOps:
             ops,
             muutos_tree,
             "muutetaan 3 §:n 1 momentti",
-            "finlex_oracle",
+            "official_consolidation",
         )
 
         assert result.output == []
@@ -2201,7 +2201,7 @@ class TestApplyOpsToTree:
             used_sec1_fallback=False,
             parent_id="2000/1",
         ).output
-        resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "finlex_oracle").output
+        resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "official_consolidation").output
         issue, effective = _make_dates()
 
         result = apply_ops_to_tree(
@@ -2216,7 +2216,7 @@ class TestApplyOpsToTree:
             amendment_issue_date=issue,
             amendment_effective_date=effective,
             amendment_expiry_date=None,
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
             lo_ops_out=[],
             failed_ops_out=[],
             source_pathologies_out=[],
@@ -2245,7 +2245,7 @@ class TestApplyOpsToTree:
             amendment_issue_date=issue,
             amendment_effective_date=effective,
             amendment_expiry_date=None,
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
             lo_ops_out=None,
             failed_ops_out=None,
             source_pathologies_out=None,
@@ -2280,7 +2280,7 @@ class TestApplyOpsToTree:
             amendment_issue_date=issue,
             amendment_effective_date=effective,
             amendment_expiry_date=None,
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
             lo_ops_out=None,
             failed_ops_out=[],
             source_pathologies_out=[],
@@ -2313,7 +2313,7 @@ class TestApplyOpsToTree:
             used_sec1_fallback=False,
             parent_id="2000/1",
         ).output
-        resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "finlex_oracle").output
+        resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "official_consolidation").output
         issue, effective = _make_dates()
         mutation_events: list = []
 
@@ -2329,7 +2329,7 @@ class TestApplyOpsToTree:
             amendment_issue_date=issue,
             amendment_effective_date=effective,
             amendment_expiry_date=None,
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
             lo_ops_out=[],
             failed_ops_out=[],
             source_pathologies_out=[],
@@ -2367,7 +2367,7 @@ class TestApplyOpsToTree:
             used_sec1_fallback=False,
             parent_id="2000/1",
         ).output
-        resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "finlex_oracle").output
+        resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "official_consolidation").output
         lo_ops_out: list = []
         issue, effective = _make_dates()
 
@@ -2383,7 +2383,7 @@ class TestApplyOpsToTree:
             amendment_issue_date=issue,
             amendment_effective_date=effective,
             amendment_expiry_date=None,
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
             lo_ops_out=lo_ops_out,
             failed_ops_out=[],
             source_pathologies_out=[],
@@ -2411,7 +2411,7 @@ class TestApplyOpsToTree:
                 source_statute="2010/100",
             )
         ]
-        resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "finlex_oracle").output
+        resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "official_consolidation").output
         failed_ops: list = []
         issue, effective = _make_dates()
 
@@ -2427,7 +2427,7 @@ class TestApplyOpsToTree:
             amendment_issue_date=issue,
             amendment_effective_date=effective,
             amendment_expiry_date=None,
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
             lo_ops_out=None,
             failed_ops_out=failed_ops,
             source_pathologies_out=[],
@@ -2462,7 +2462,7 @@ class TestApplyOpsToTree:
             used_sec1_fallback=False,
             parent_id="2000/1",
         ).output
-        resolved1 = compile_amendment_ops(master, ops1, muutos1, johto1, "finlex_oracle").output
+        resolved1 = compile_amendment_ops(master, ops1, muutos1, johto1, "official_consolidation").output
         issue, effective = _make_dates()
         state = apply_ops_to_tree(
             state=state,
@@ -2476,7 +2476,7 @@ class TestApplyOpsToTree:
             amendment_issue_date=issue,
             amendment_effective_date=effective,
             amendment_expiry_date=None,
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
             lo_ops_out=None,
             failed_ops_out=None,
             source_pathologies_out=None,
@@ -2499,7 +2499,7 @@ class TestApplyOpsToTree:
             used_sec1_fallback=False,
             parent_id="2000/1",
         ).output
-        resolved2 = compile_amendment_ops(master, ops2, muutos2, johto2, "finlex_oracle").output
+        resolved2 = compile_amendment_ops(master, ops2, muutos2, johto2, "official_consolidation").output
         state = apply_ops_to_tree(
             state=state,
             ctx=ctx,
@@ -2512,7 +2512,7 @@ class TestApplyOpsToTree:
             amendment_issue_date=issue,
             amendment_effective_date=effective,
             amendment_expiry_date=None,
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
             lo_ops_out=None,
             failed_ops_out=None,
             source_pathologies_out=None,
@@ -2560,7 +2560,7 @@ class TestRoundTrip:
             parent_id="2000/1",
         )
         ops = phase.output
-        resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "finlex_oracle").output
+        resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "official_consolidation").output
         result = apply_ops_to_tree(
             state=state,
             ctx=ctx,
@@ -2573,7 +2573,7 @@ class TestRoundTrip:
             amendment_issue_date=issue,
             amendment_effective_date=effective,
             amendment_expiry_date=None,
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
             lo_ops_out=[],
             failed_ops_out=[],
             source_pathologies_out=[],
@@ -2608,7 +2608,7 @@ class TestRoundTrip:
             used_sec1_fallback=False,
             parent_id="2000/1",
         ).output
-        resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "finlex_oracle").output
+        resolved = compile_amendment_ops(master, ops, muutos_tree, johto, "official_consolidation").output
         result = apply_ops_to_tree(
             state=state,
             ctx=ctx,
@@ -2621,7 +2621,7 @@ class TestRoundTrip:
             amendment_issue_date=issue,
             amendment_effective_date=effective,
             amendment_expiry_date=None,
-            replay_mode="finlex_oracle",
+            replay_mode="official_consolidation",
             lo_ops_out=[],
             failed_ops_out=[],
             source_pathologies_out=[],

@@ -46,6 +46,14 @@ from lawvm.core.timeline_temporal_events import (
 )
 
 
+def _set_runtime_attr(obj: object, name: str, value: object) -> None:
+    setattr(obj, name, value)
+
+
+def _runtime_string_tuple(values: list[str]) -> tuple[str, ...]:
+    return cast(tuple[str, ...], values)
+
+
 # ---------------------------------------------------------------------------
 # ActivationRule construction
 # ---------------------------------------------------------------------------
@@ -110,7 +118,7 @@ class TestActivationRuleConstruction:
     def test_frozen(self) -> None:
         rule = ActivationRule(kind="immediate")
         with pytest.raises(AttributeError):
-            rule.kind = "fixed_date"  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+            _set_runtime_attr(rule, "kind", "fixed_date")
 
 
 def test_temporal_event_and_scope_live_in_temporal_module_with_compile_result_compat() -> None:
@@ -314,8 +322,8 @@ class TestTriggerCoverageCertificateConstruction:
             status=TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
             as_of="2026-04-07",
             activation_rule_ref="event:1",
-            checked_sources=["decree-register"],  # ty: ignore[invalid-argument-type]
-            source_scope=["commencement-instruments"],  # ty: ignore[invalid-argument-type]
+            checked_sources=_runtime_string_tuple(["decree-register"]),
+            source_scope=_runtime_string_tuple(["commencement-instruments"]),
             detail=detail,
         )
         detail["nested"]["sources"].append("mutated")
@@ -390,7 +398,7 @@ class TestResolutionFactConstruction:
     def test_frozen(self) -> None:
         fact = ResolutionFact(status="unresolved")
         with pytest.raises(AttributeError):
-            fact.status = "resolved"  # type: ignore[misc]  # ty:ignore[invalid-assignment]
+            _set_runtime_attr(fact, "status", "resolved")
 
     def test_status_predicates_reflect_current_status(self) -> None:
         resolved = ResolutionFact(status="resolved", resolved_effective="2027-06-01")
