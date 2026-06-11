@@ -1741,6 +1741,16 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="replay mode (default: official_consolidation)",
     )
     blame_p.add_argument(
+        "--format",
+        default="text",
+        choices=["text", "json"],
+        help=(
+            "output format (default: text). 'json' emits per-address rows with a"
+            " typed status enum (unmodified_base_text | modified_by_op |"
+            " op_unapplied_or_engine_error | address_unresolved)."
+        ),
+    )
+    blame_p.add_argument(
         "--as-of",
         dest="as_of",
         metavar="YYYY-MM-DD",
