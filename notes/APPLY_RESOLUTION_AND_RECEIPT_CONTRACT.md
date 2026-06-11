@@ -3,8 +3,9 @@ title: LawVM Apply Resolution and Receipt Contract — the Semantic Apply Waist
 status: normative draft; vertical slice landed for the chapter/part INSERT
   family and Finland typed relabel family (binding consumption §3 step 3 +
   WriteReceipt §4 with receipt-derived mutation events). ObservedWriteAudit
-  (§5), occupancy enforcement (§6) and certificate-leaf production (§9) remain
-  spec-only.
+  (§5) has a passive core helper and fire-drill tests; strict enforcement,
+  occupancy enforcement (§6) and certificate-leaf production (§9) remain
+  future work.
 ---
 
 # Apply Resolution and Receipt Contract
@@ -290,6 +291,15 @@ The audit closes the self-referential gap the Fable audit found: mutation
 accounting that compares helper-declared touched paths against
 helper-declared allowed roots can pass a misdirected write by construction.
 The audit's observed side comes from the tree, never from the helper.
+
+Implementation state: `lawvm.core.observed_write_audit.ObservedWriteAudit`
+and `build_observed_write_audit(...)` exist. The first implementation is
+passive and relation-aware: exact observed/declared path equality is `clean`,
+ancestor/descendant granularity differences with named receipt rules are
+`qualified`, and unrelated observed or declared paths are `violation`. Tests
+cover clean writes, relabel-style parent/child granularity, declared-but-
+unobserved writes, observed-outside-receipt writes, and an actual Finland
+container-insert receipt. The audit is not yet wired as a replay blocker.
 
 ## 6. Occupancy transition contract
 

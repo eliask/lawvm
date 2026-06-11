@@ -4242,6 +4242,7 @@ class TestApplyContainerInsert:
         """Contract §4: the receipt records the landed write, with §2.2 hashes computed at the write."""
         from lawvm.core import tree_ops as _tops
         from lawvm.core.ir_helpers import structural_subtree_hash
+        from lawvm.core.observed_write_audit import build_observed_write_audit
         from lawvm.core.write_receipt import WriteReceipt
 
         state = self._dup_chapter_label_state()
@@ -4289,6 +4290,11 @@ class TestApplyContainerInsert:
         landed_node = _tops.resolve(result.ir, landed)
         assert receipt.post_hashes[addr] == structural_subtree_hash(landed_node)
         assert receipt.post_hashes[addr] != ""
+        audit = build_observed_write_audit(state.ir, result.ir, receipt)
+        assert audit.status == "qualified"
+        assert audit.undeclared_paths == ()
+        assert audit.unobserved_declared_paths == ()
+        assert audit.matched_rule_ids == ("container_insert_parent_placement",)
 
     def test_part_scaffold_chapter_insert_receipt_declares_part_creation_and_sibling_moves(self):
         from lawvm.core.write_receipt import WriteReceipt
