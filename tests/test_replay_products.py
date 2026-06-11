@@ -170,11 +170,11 @@ def test_replay_xml_2016_258_section_3_matches_oracle_version_anchor() -> None:
     """official_consolidation should anchor 2016/258 to the oracle-version amendment date.
 
     Oracle version ``fin@20211199`` is keyed by amendment ``2021/1199``, whose
-    own entry-into-force date is ``2021-12-31``. Once that effective date is
-    honored correctly, ``official_consolidation`` materialization for 2016/258 is
-    anchored to ``2021-12-31`` rather than the earlier consolidated date. On
-    that anchored date the temporary second subsection of 3 § from 2019/1458
-    has already expired, so only the first moment remains visible.
+    own entry-into-force date is ``2021-12-31``. On that anchored date the
+    temporary 3 § text from 2019/1458 (valid through 2021-12-31, exclusive
+    expires 2022-01-01) is STILL IN FORCE, and the Finlex consolidation keeps
+    it — both moments (the 7 §:n 2 mom sairaankuljetus moment and the
+    6 §:n 1 mom omakustannus moment) are present, matching the oracle.
     """
     replay = pinned_replay("2016/258", mode="official_consolidation", quiet=True)
 
@@ -185,7 +185,7 @@ def test_replay_xml_2016_258_section_3_matches_oracle_version_anchor() -> None:
     assert replay.materialization_spec.as_of == "2021-12-31"
 
     assert text.count("Valtion maksuperustelain 7 §:n 2 momentissa") == 1
-    assert text.count("Valtion maksuperustelain 6 §:n 1 momentissa") == 0
+    assert text.count("Valtion maksuperustelain 6 §:n 1 momentissa") == 1
 
 
 def test_replay_xml_2022_213_keeps_future_repeal_at_oracle_cutoff() -> None:

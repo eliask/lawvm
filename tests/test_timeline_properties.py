@@ -6693,10 +6693,14 @@ def test_temporary_version_replacement_inherits_expiry(
     lifespan_days: int,
     replacement_offset: int,
 ) -> None:
-    """Replacing a temporary version must preserve the inherited expiry."""
+    """Replacing a temporary version STRICTLY INSIDE its window preserves the
+    inherited expiry. A replace landing on the temporary's LAST in-force day
+    is the regime-handoff pattern and does NOT inherit (see the boundary test
+    below); the property therefore samples offsets strictly inside the window.
+    """
     expiry = start_date + timedelta(days=lifespan_days)
     assume(expiry <= date(2030, 12, 31))
-    assume(replacement_offset < lifespan_days)
+    assume(replacement_offset < lifespan_days - 1)
 
     replacement_effective = start_date + timedelta(days=replacement_offset)
     base = IRStatute(
@@ -6743,6 +6747,62 @@ def test_temporary_version_replacement_inherits_expiry(
     assert tl.versions[-1].expires == expiry.isoformat()
     assert select_active_version(tl, start_date.isoformat()) is not None
     assert select_active_version(tl, (expiry + timedelta(days=1)).isoformat()) is None
+
+
+def test_replace_on_temporary_last_in_force_day_does_not_inherit_expiry() -> None:
+    """Regime handoff: a replace effective ON the temporary's last in-force
+    day supersedes the dying temporary instead of extending its regime — the
+    replacement is permanent. Witness 2016/258 §8: 1199/2021 commences
+    2021-12-31, the same day 1458/2019's temporary text is last in force
+    (exclusive expires 2022-01-01); the consolidation shows 1199's text
+    living on, not dying 2022-01-01."""
+    base = IRStatute(
+        statute_id="test/temp-expiry-handoff",
+        title="Temporary expiry handoff",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+    )
+    addr = LegalAddress(path=(("section", "5e"),))
+    timelines = _compile_timelines_with_explicit_temporal_authority(
+        base,
+        [
+            LegalOperation(
+                op_id="insert_temp",
+                sequence=1,
+                action=StructuralAction.INSERT,
+                target=addr,
+                payload=IRNode(kind=IRNodeKind.SECTION, label="5e", text="temporary text"),
+                source=OperationSource(
+                    statute_id="2020/294",
+                    title="temporary insert",
+                    enacted="2021-01-01",
+                    effective="2021-01-01",
+                    expires="2022-01-01",
+                ),
+            ),
+            LegalOperation(
+                op_id="replace_on_handoff_day",
+                sequence=2,
+                action=StructuralAction.REPLACE,
+                target=addr,
+                payload=IRNode(kind=IRNodeKind.SECTION, label="5e", text="successor text"),
+                source=OperationSource(
+                    statute_id="2021/485",
+                    title="successor replace",
+                    enacted="2021-12-31",
+                    effective="2021-12-31",
+                ),
+            ),
+        ],
+        base_date="2000-01-01",
+    )
+
+    tl = timelines[addr]
+    assert tl.versions[-1].expires == ""  # permanent: no inherited sunset
+    # The successor governs on the handoff day and survives past the cutoff.
+    for as_of in ("2021-12-31", "2022-01-01", "2023-06-01"):
+        active = select_active_version(tl, as_of)
+        assert active is not None, as_of
+        assert active.content is not None and active.content.text == "successor text", as_of
 
 
 @given(

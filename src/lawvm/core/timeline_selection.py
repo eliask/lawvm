@@ -134,6 +134,21 @@ class VersionSelectionTie:
     candidate_count: int
 
 
+def _day_before_iso(iso_date: str) -> str:
+    """ISO date one day before ``iso_date``; passthrough for non-date strings.
+
+    Used to name the LAST in-force day of a version under the exclusive
+    ``expires`` convention (in force on [effective, expires), so the last
+    in-force day is ``expires - 1``).
+    """
+    import datetime as _dt
+
+    try:
+        return (_dt.date.fromisoformat(iso_date) - _dt.timedelta(days=1)).isoformat()
+    except ValueError:
+        return iso_date
+
+
 def content_is_repeal_placeholder(content: IRNode | None) -> bool:
     """Return whether timeline content is a repeal placeholder node."""
     if content is None:
@@ -389,6 +404,33 @@ def select_active_version_ex(
         territory=territory,
         expires_as_of=expires_as_of,
     )
+    background = select_background_version(
+        timeline,
+        as_of,
+        query_type=query_type,
+        territory=territory,
+        expires_as_of=expires_as_of,
+    )
+    if (
+        overlay is not None
+        and background is not None
+        and overlay.expires
+        and background.effective > overlay.effective
+        and background.effective >= _day_before_iso(overlay.expires)
+    ):
+        # Regime-handoff day: a newer permanent version whose effective date
+        # falls ON the overlay's LAST in-force day supersedes the overlay for
+        # that day (lex posterior). Witness 2016/258 §8: 1199/2021 commences
+        # 2021-12-31 — deliberately the same day 1458/2019's temporary text is
+        # last in force (exclusive expires 2022-01-01) — and the consolidation
+        # shows 1199's text. This deliberately does NOT generalize to
+        # mid-window permanent updates: a temporary overlay continues to
+        # govern over a newer background enacted strictly inside its window
+        # (two-rail doctrine), and twin windows are untouched (their deferred
+        # background is not yet active in-window). Given both versions are
+        # eligible at as_of, this branch can only fire when as_of IS the
+        # handoff day.
+        overlay = None
     if overlay is not None:
         return VersionSelectionResult(
             status="selected",
@@ -405,13 +447,6 @@ def select_active_version_ex(
             ),
         )
 
-    background = select_background_version(
-        timeline,
-        as_of,
-        query_type=query_type,
-        territory=territory,
-        expires_as_of=expires_as_of,
-    )
     if background is not None:
         return VersionSelectionResult(
             status="selected",

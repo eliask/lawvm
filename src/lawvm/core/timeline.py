@@ -113,6 +113,22 @@ _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR = (
     "lawvm_materialize_as_absent_under_detached_horizon"
 )
 
+
+def _day_after_iso(iso_date: str) -> str:
+    """ISO date one day after ``iso_date``; passthrough for non-date strings.
+
+    Used for boundary comparisons against the exclusive ``expires`` cutoff
+    where the question is "still in force strictly after day D" (i.e.
+    ``expires > D + 1``), not "still in force on day D" (``expires > D``).
+    """
+    import datetime as _dt
+
+    try:
+        return (_dt.date.fromisoformat(iso_date) + _dt.timedelta(days=1)).isoformat()
+    except ValueError:
+        return iso_date
+
+
 def _apply_overlays(
     content: IRNode,
     parent_address: LegalAddress,
@@ -418,6 +434,15 @@ def compile_timelines(
         temporary child snapshot from a broader parent replace. Ancestor expiry
         is inherited only when the target itself has no active durable
         pre-existing version at ``effective``.
+
+        Boundary: the sunset is inherited only when the temporary would still
+        be in force STRICTLY AFTER the new version's effective day
+        (``expires > effective + 1`` under the exclusive ``expires``
+        convention). A replace landing exactly on the temporary's last
+        in-force day supersedes the dying temporary rather than extending its
+        regime — witness 2016/258, where 1199/2021 (effective 2021-12-31)
+        replaces the 1458/2019 fee schedule that is valid through that same
+        day; inheriting there would kill the new schedule one day later.
         """
         tl = timelines.get(target)
         if tl is not None:
@@ -428,7 +453,7 @@ def compile_timelines(
                 territory=None,
             ).version
             if prev_active is not None:
-                if prev_active.expires and prev_active.expires > effective:
+                if prev_active.expires and prev_active.expires > _day_after_iso(effective):
                     background = select_background_version(
                         tl,
                         effective,
@@ -450,6 +475,12 @@ def compile_timelines(
                     query_type="governing",
                     territory=None,
                 ).version
+                # Ancestor branch: a child written under a temporary ANCESTOR
+                # inherits the ancestor's sunset whenever the ancestor is in
+                # force ON the child's effective day — including the last
+                # in-force day. The subtree dies together; the exact-target
+                # handoff boundary above does not apply here (a child insert
+                # is regime-internal, not a superseding replace).
                 if prev_active is not None and prev_active.expires and prev_active.expires > effective:
                     return prev_active.expires
             current = LegalAddress(path=current.path[:-1])

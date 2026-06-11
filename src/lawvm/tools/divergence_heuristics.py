@@ -350,20 +350,16 @@ def replay_section_matches_text_at_cutoff(
     from lawvm.core.timeline import materialize_pit_ex
     from lawvm.tools.section_keys import extract_ir_sections
 
-    import datetime as _dt
-
     witness = materialize_pit_ex(
         timelines,
         cutoff_iso,
         base=IRStatute(statute_id=statute_id, title=title, body=base_body),
         label_norm=label_norm,
-        # Mirror the official_consolidation expiry horizon: Finlex
-        # consolidations show the state after the anchor day ends, so a
-        # temporary provision whose exclusive `expires` is anchor + 1 (in
-        # force THROUGH the anchor day) is already dropped from the oracle.
-        expires_as_of=(
-            _dt.date.fromisoformat(cutoff_iso) + _dt.timedelta(days=1)
-        ).isoformat(),
+        # Mirror the official_consolidation expiry horizon: a consolidation
+        # keyed to a date shows the legal state ON that day, including
+        # temporaries in force through it; with the exclusive `expires`
+        # convention the plain horizon at the cutoff gives exactly that.
+        expires_as_of=cutoff_iso,
         migration_events=migration_events,
     )
     witness_sections = extract_ir_sections(witness.statute.body)

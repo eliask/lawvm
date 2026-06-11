@@ -7901,21 +7901,20 @@ def replay_xml(
         if mode == "official_consolidation":
             # official_consolidation expiry horizon tracks oracle_materialize_as_of (which
             # may have been extended to cover future kumotaan REPEAL dates).
-            # Finlex consolidations show the state AFTER the anchor day ends:
-            # a temporary provision in force THROUGH the anchor day (kernel
-            # exclusive ``expires == anchor + 1``) is already dropped from the
-            # consolidation keyed to that day. The expiry horizon is therefore
-            # end-of-anchor-day (anchor + 1), while commencement eligibility
-            # stays anchored to the day itself (``effective <= as_of``).
+            # Finlex consolidations keyed to an amendment show the legal state
+            # ON that amendment's effective day, INCLUDING temporaries still in
+            # force through that day (witness 2016/258 @1199/2021: the oracle
+            # keeps the 1458/2019 fee-schedule texts on their last in-force
+            # day). With the exclusive kernel ``expires`` convention the plain
+            # ``eligible()`` predicate at the anchor gives exactly that
+            # semantics, so the horizon is the anchor itself — no end-of-day
+            # adjustment.
             if oracle_materialize_as_of is not None:
-                _expiry_anchor = oracle_materialize_as_of
+                expires_as_of = oracle_materialize_as_of
             elif plan.cutoff_date is not None:
-                _expiry_anchor = plan.cutoff_date.isoformat()
+                expires_as_of = plan.cutoff_date.isoformat()
             else:
-                _expiry_anchor = dt.date.today().isoformat()
-            expires_as_of = (
-                dt.date.fromisoformat(_expiry_anchor) + dt.timedelta(days=1)
-            ).isoformat()
+                expires_as_of = dt.date.today().isoformat()
 
         # Detect chapter-scoped expiry from base statute voimaantulo.
         base_tree = etree.fromstring(plan.ctx.base_xml_bytes)
