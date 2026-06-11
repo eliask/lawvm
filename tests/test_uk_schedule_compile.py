@@ -66239,7 +66239,7 @@ def test_pipeline_compile_ops_does_not_require_affecting_source_for_commencement
         in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
     )
 
-    def fail_if_fetched(_aid, _archive):  # noqa: ANN001
+    def fail_if_fetched(_aid, _archive):
         raise AssertionError("commencement rows should not fetch affecting XML")
 
     monkeypatch.setattr(

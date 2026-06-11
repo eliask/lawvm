@@ -284,7 +284,7 @@ def materials_match_dependencies() -> PolicyExpr:
 # ---------------------------------------------------------------------------
 
 
-from lawvm.core.provenance_graph import ProvenanceAttestation  # noqa: E402
+from lawvm.core.provenance_graph import ProvenanceAttestation
 
 
 def check_independence(

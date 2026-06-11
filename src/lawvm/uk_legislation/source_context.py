@@ -232,13 +232,13 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
         for el in tuple(cache):
             if el is root or el.getroottree().getroot() is root:
                 cache.pop(el, None)
-    from lawvm.uk_legislation.source_fragment_context import (  # noqa: PLC0415
+    from lawvm.uk_legislation.source_fragment_context import (
         evict_source_fragment_context_caches,
     )
     evict_source_fragment_context_caches(root)
     # Lazy import to avoid circular dependency: table_sources → uk_grafter → ...
     # does not import source_context, so this is safe.
-    from lawvm.uk_legislation.table_sources import (  # noqa: PLC0415
+    from lawvm.uk_legislation.table_sources import (
         _REPEAL_EXTENT_TABLE_CACHE,
         _UK_TABLE_ROWSPAN_ROWS_CACHE,
         _UK_FEE_TABLE_INDEX_CACHE,
@@ -248,7 +248,7 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
     for table in tuple(_UK_TABLE_ROWSPAN_ROWS_CACHE):
         if table is root or table.getroottree().getroot() is root:
             _UK_TABLE_ROWSPAN_ROWS_CACHE.pop(table, None)
-    from lawvm.uk_legislation.table_selectors import (  # noqa: PLC0415
+    from lawvm.uk_legislation.table_selectors import (
         evict_table_selector_caches,
     )
     evict_table_selector_caches(root)

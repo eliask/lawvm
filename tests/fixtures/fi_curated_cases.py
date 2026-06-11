@@ -176,7 +176,7 @@ CURATED_CASES = [
     },
     {
         "name": "section_ref comma-continued intro target keeps sibling items and later sections",
-        "text": "muutetaan 48 §:n 1 momentin johdantokappale, 2 ja 4 kohta sekä 5 momentti, 49 a §:n 2 momentti, 50 §, 51 §:n 3 momentti ja 53 §",  # noqa: E501
+        "text": "muutetaan 48 §:n 1 momentin johdantokappale, 2 ja 4 kohta sekä 5 momentti, 49 a §:n 2 momentti, 50 §, 51 §:n 3 momentti ja 53 §",
         "expected": ["M P 48 1 j", "M P 48 1 2", "M P 48 1 4", "M P 48 5", "M P 49a 2", "M P 50", "M P 51 3", "M P 53"],
         "features": {
             "verb_muuttaa", "section_ref", "sub_ref_momentti",
@@ -332,7 +332,7 @@ CURATED_CASES = [
     },
     {
         "name": "insertion target list keeps jolloin clause",
-        "text": "lisätään 7 §:ään uusi 4 ja 5 momentti, jolloin nykyinen 4-8 momentti siirtyvät 6-10 momentiksi, lakiin uusi 17 a §",  # noqa: E501
+        "text": "lisätään 7 §:ään uusi 4 ja 5 momentti, jolloin nykyinen 4-8 momentti siirtyvät 6-10 momentiksi, lakiin uusi 17 a §",
         "expected": ["S P 7 4", "S P 7 5", "S P 7 6", "S P 7 7", "S P 7 8", "L P 7 4", "L P 7 5", "L P 17a"],
         "features": {
             "verb_lisata", "insertion_pykala_ill", "insertion_law_level",
@@ -341,7 +341,7 @@ CURATED_CASES = [
     },
     {
         "name": "insertion momentti reinstatement clause with letter item continues list",
-        "text": "lisätään 9 §:n 1 momenttiin siitä lailla 1363/1992 kumotun b kohdan tilalle uusi b kohta, 10 §:ään uusi 7 momentti",  # noqa: E501
+        "text": "lisätään 9 §:n 1 momenttiin siitä lailla 1363/1992 kumotun b kohdan tilalle uusi b kohta, 10 §:ään uusi 7 momentti",
         "expected": ["L P 9 1 b", "L P 10 7"],
         "features": {
             "verb_lisata", "insertion_momentti_ill", "insertion_pykala_ill",
@@ -350,7 +350,7 @@ CURATED_CASES = [
     },
     {
         "name": "insertion chapter reinstatement clause keeps chapter illative context",
-        "text": "muutetaan 10 luvun otsikko ja lisätään 10 lukuun siitä lailla 361/1999 kumotun 14 §:n tilalle uusi 14 § seuraavasti:",  # noqa: E501
+        "text": "muutetaan 10 luvun otsikko ja lisätään 10 lukuun siitä lailla 361/1999 kumotun 14 §:n tilalle uusi 14 § seuraavasti:",
         "expected": ["M L 10 o", "L P L:10 14"],
         "features": {
             "verb_muuttaa", "verb_lisata", "chapter_ref",
@@ -378,7 +378,7 @@ CURATED_CASES = [
     },
     {
         "name": "insertion skips chained provenance continuation",
-        "text": "lisätään 1 §:ään, sellaisena kuin se on osittain muutettuna 9 päivänä toukokuuta 1986 annetulla lailla (333/86) ja mainitulla 27 päivänä maaliskuuta 1991 annetulla lailla, uusi 8 momentti",  # noqa: E501
+        "text": "lisätään 1 §:ään, sellaisena kuin se on osittain muutettuna 9 päivänä toukokuuta 1986 annetulla lailla (333/86) ja mainitulla 27 päivänä maaliskuuta 1991 annetulla lailla, uusi 8 momentti",
         "expected": ["L P 1 8"],
         "features": {
             "verb_lisata", "insertion_pykala_ill", "provenance_skip",
@@ -387,7 +387,7 @@ CURATED_CASES = [
     },
     {
         "name": "insertion chained same-section uusi tail survives jolloin",
-        "text": "lisätään 18 §:ään uusi 2 momentti sekä uusi 6-8 momentti, jolloin nykyinen 6-10 momentti siirtyvät 9-13 momentiksi, sekä lakiin uusi 25 a §",  # noqa: E501
+        "text": "lisätään 18 §:ään uusi 2 momentti sekä uusi 6-8 momentti, jolloin nykyinen 6-10 momentti siirtyvät 9-13 momentiksi, sekä lakiin uusi 25 a §",
         "expected": ["S P 18 6", "S P 18 7", "S P 18 8", "S P 18 9", "S P 18 10", "L P 18 2", "L P 18 6", "L P 18 7", "L P 18 8", "L P 25a"],
         "features": {
             "verb_lisata", "insertion_pykala_ill", "insertion_law_level",

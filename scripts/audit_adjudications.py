@@ -59,8 +59,8 @@ class WorkerResult(NamedTuple):
 def _compile_one(sid: str) -> WorkerResult:
     """Compile one statute; return projected findings, blocking rows, warning count."""
     try:
-        from lawvm.core.compile_views import projection_rows_from_findings  # noqa: PLC0415
-        from lawvm.finland.compile import compile_fi_facade  # noqa: PLC0415
+        from lawvm.core.compile_views import projection_rows_from_findings
+        from lawvm.finland.compile import compile_fi_facade
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -94,7 +94,7 @@ def _compile_one(sid: str) -> WorkerResult:
             warning_count=len(caught),
             error="",
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return WorkerResult(
             sid=sid,
             adj_rows=[],
@@ -303,7 +303,7 @@ def main() -> None:
                 sid = futures[fut]
                 try:
                     res: WorkerResult = fut.result()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     errors[sid] = f"future error: {exc}"
                     processed += 1
                     continue

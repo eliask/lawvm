@@ -4936,12 +4936,12 @@ def test_uk_bench_parallel_future_failure_becomes_typed_row(monkeypatch) -> None
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-        def submit(self, fn, entry):  # noqa: ANN001
+        def submit(self, fn, entry):
             future = FakeFuture()
             self.submitted.append(future)
             return future
 
-    def fake_as_completed(futures):  # noqa: ANN001
+    def fake_as_completed(futures):
         return list(futures)
 
     monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", FakePool)
@@ -5003,11 +5003,11 @@ def test_uk_bench_parallel_submits_predicted_heavy_rows_first(monkeypatch) -> No
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-        def submit(self, fn, entry):  # noqa: ANN001
+        def submit(self, fn, entry):
             submitted.append(str(entry["statute_id"]))
             return FakeFuture(entry)
 
-    def fake_as_completed(futures):  # noqa: ANN001
+    def fake_as_completed(futures):
         return list(futures)
 
     monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", FakePool)
@@ -5076,10 +5076,10 @@ def test_uk_bench_parallel_reports_row_start_on_submission(monkeypatch) -> None:
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-        def submit(self, fn, entry):  # noqa: ANN001
+        def submit(self, fn, entry):
             return FakeFuture(entry)
 
-    def fake_as_completed(futures):  # noqa: ANN001
+    def fake_as_completed(futures):
         return list(futures)
 
     monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", FakePool)
@@ -5149,10 +5149,10 @@ def test_uk_bench_parallel_releases_completed_futures_before_result(monkeypatch)
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-        def submit(self, fn, entry):  # noqa: ANN001
+        def submit(self, fn, entry):
             return FakeFuture(entry)
 
-    def fake_as_completed(futures):  # noqa: ANN001
+    def fake_as_completed(futures):
         nonlocal live_future_mapping
         live_future_mapping = futures
         return list(futures)
@@ -5202,11 +5202,11 @@ def test_uk_bench_parallel_bounds_in_flight_futures(monkeypatch) -> None:
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-        def submit(self, fn, entry):  # noqa: ANN001
+        def submit(self, fn, entry):
             submitted.append(str(entry["statute_id"]))
             return FakeFuture(entry)
 
-    def fake_as_completed(futures):  # noqa: ANN001
+    def fake_as_completed(futures):
         nonlocal submitted_at_first_wait
         if submitted_at_first_wait is None:
             submitted_at_first_wait = len(submitted)
@@ -5261,10 +5261,10 @@ def test_uk_bench_parallel_worker_recycling_sets_initializer(monkeypatch) -> Non
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-        def submit(self, fn, entry):  # noqa: ANN001
+        def submit(self, fn, entry):
             return FakeFuture(entry)
 
-    def fake_as_completed(futures):  # noqa: ANN001
+    def fake_as_completed(futures):
         return list(futures)
 
     monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", FakePool)
@@ -5320,10 +5320,10 @@ def test_uk_bench_worker_recycling_uses_process_pool_with_one_worker(monkeypatch
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-        def submit(self, fn, entry):  # noqa: ANN001
+        def submit(self, fn, entry):
             return FakeFuture(entry)
 
-    def fake_as_completed(futures):  # noqa: ANN001
+    def fake_as_completed(futures):
         return list(futures)
 
     monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", FakePool)
@@ -5364,10 +5364,10 @@ def test_uk_bench_parallel_submit_failure_becomes_typed_row(monkeypatch) -> None
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-        def submit(self, fn, entry):  # noqa: ANN001
+        def submit(self, fn, entry):
             raise RuntimeError("worker submit failed")
 
-    def fake_as_completed(futures):  # noqa: ANN001
+    def fake_as_completed(futures):
         return list(futures)
 
     monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", FakePool)
@@ -5400,7 +5400,7 @@ def test_uk_bench_parallel_submit_failure_becomes_typed_row(monkeypatch) -> None
 
 
 def test_uk_bench_sequential_scorer_failure_becomes_typed_row(monkeypatch) -> None:
-    def fail_score(*args, **kwargs):  # noqa: ANN002, ANN003
+    def fail_score(*args, **kwargs):
         raise RuntimeError("sequential scorer failed")
 
     monkeypatch.setattr(uk_bench, "_score_statute", fail_score)
