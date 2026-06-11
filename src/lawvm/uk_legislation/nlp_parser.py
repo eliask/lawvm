@@ -83,6 +83,7 @@ from lawvm.uk_legislation.text_selectors import (
 
 # ASCII Unit Separator
 US = "\x1f"
+FragmentSubstitutionDict = Dict[str, str]
 
 _ORDINAL_OCCURRENCES = {
     "first": "1",
@@ -979,7 +980,7 @@ def parse_fragment_substitution_typed(text: str) -> tuple[UKTextRewriteFragment,
     return _parse_fragment_substitution_cached(text)
 
 
-def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
+def _parse_respectively_and_anchored_inserts(text: str, subs: list[FragmentSubstitutionDict]) -> None:
     """Recognize the ``respectively`` series and anchored-insert fragment core.
 
     The middle recognizer group, distinguished from the leading/trailing groups
@@ -2782,7 +2783,7 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
         )
 
 
-def _parse_leading_substitutions(text: str, subs: list) -> None:
+def _parse_leading_substitutions(text: str, subs: list[FragmentSubstitutionDict]) -> None:
     """Recognize the leading ``for "X" substitute "Y"`` substitution family.
 
     The first contiguous group of independent ``re.finditer`` recognizers in the
@@ -3019,7 +3020,7 @@ def _parse_leading_substitutions(text: str, subs: list) -> None:
             )
 
 
-def _parse_trailing_inserts(text: str, subs: list) -> None:
+def _parse_trailing_inserts(text: str, subs: list[FragmentSubstitutionDict]) -> None:
     """Recognize the trailing insertion fragment family.
 
     A contiguous group of independent ``re.finditer`` recognizers for the
@@ -4576,7 +4577,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         )
 
 
-def _parse_trailing_repeals_and_omissions(text: str, subs: list) -> None:
+def _parse_trailing_repeals_and_omissions(text: str, subs: list[FragmentSubstitutionDict]) -> None:
     """Recognize the trailing repeal / omission / leave-out fragment family.
 
     A contiguous group of independent ``re.finditer`` recognizers that read

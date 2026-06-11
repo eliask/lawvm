@@ -618,7 +618,7 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         return unchanged
 
     curr_action = action
-    fragment_subs: Optional[list] = None
+    fragment_subs: Optional[list[dict[str, str]]] = None
     # Text-level fields (populated for text_replace / text_repeal ops)
     op_text_match: Optional[str] = None
     op_text_replacement: Optional[str] = None

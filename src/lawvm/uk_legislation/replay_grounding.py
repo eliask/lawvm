@@ -120,7 +120,7 @@ class UKReplayGroundingMixin:
 
         # Collect the full set of oracle EID values (the canonical IDs we want to
         # assign).  Used both for pre-seeding and in the main matching loop.
-        oracle_id_values: set = set(self.eid_map.values())
+        oracle_id_values: set[str] = set(self.eid_map.values())
         pending_cleared_events: dict[int, dict[str, object]] = {}
 
         def _alignment_event(
@@ -190,7 +190,7 @@ class UKReplayGroundingMixin:
         # These nodes already carry an oracle-canonical EID and must NOT be
         # cleared — they would otherwise be reset to generic local IDs and
         # potentially mis-re-grounded to a different oracle EID.
-        seen_oracle_ids: set = set()
+        seen_oracle_ids: set[str] = set()
 
         def _preseed_correct_eids(node: UKMutableNode) -> None:
             eid = _grounding_eid(node)
@@ -288,7 +288,7 @@ class UKReplayGroundingMixin:
                         before_eid=before_eid,
                         match_method="schedule_entry_public_eid_cleared",
                     )
-                kind_counts: dict = {}
+                kind_counts: dict[str, int] = {}
                 for child in node.children:
                     child_kind = _uk_kind_value(child.kind)
                     kind_counts[child_kind] = kind_counts.get(child_kind, 0) + 1
@@ -322,7 +322,7 @@ class UKReplayGroundingMixin:
                     new_context = f"schedule-{clean_label}"
                 elif kind_name == "body":
                     new_context = "body"
-                kind_counts: dict = {}
+                kind_counts: dict[str, int] = {}
                 for child in node.children:
                     child_kind = _uk_kind_value(child.kind)
                     kind_counts[child_kind] = kind_counts.get(child_kind, 0) + 1

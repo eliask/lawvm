@@ -2381,7 +2381,7 @@ class UKReplayTextApplyMixin:
     def _apply_text_substitution_on_node(
         self,
         node: UKMutableNode,
-        subs: list[dict],
+        subs: list[dict[str, Any]],
     ) -> tuple[UKMutableNode, tuple[dict[str, Any], ...]]:
         text = node.text or ""
         children = list(node.children)

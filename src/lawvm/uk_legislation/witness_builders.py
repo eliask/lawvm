@@ -149,7 +149,7 @@ def _uk_target_expansion_witness(
 
 def _uk_text_rewrite_spec(
     *,
-    fragment_subs: Optional[list],
+    fragment_subs: Optional[list[dict[str, str]]],
     text_patch: Optional[TextPatchSpec],
     op_text_match: Optional[str],
     op_text_replacement: Optional[str],

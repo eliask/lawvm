@@ -159,7 +159,7 @@ def _download(url: str) -> _UKDownloadResult:
         return _UKDownloadResult(response.read(), response.geturl())
 
 
-def _load_xml_root(path: Path) -> ET.Element:
+def _load_xml_root(path: Path) -> ET.Element[str]:
     return ET.parse(path).getroot()
 
 
@@ -317,7 +317,7 @@ def _parse_version_links(path: Path) -> dict[str, Any]:
     }
 
 
-def _parse_in_force_dates(effect_el: ET.Element, ns: dict[str, str]) -> list[dict[str, Any]]:
+def _parse_in_force_dates(effect_el: ET.Element[str], ns: dict[str, str]) -> list[dict[str, Any]]:
     dates: list[dict[str, Any]] = []
     for in_force in effect_el.findall(".//ukm:InForceDates/ukm:InForce", ns):
         commencing_provisions = []
