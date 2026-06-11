@@ -2837,6 +2837,108 @@ def test_frontier_main_proof_report_honors_top_boundary(monkeypatch, capsys) -> 
     assert [row["statute_id"] for row in payload["rows"]] == ["2000/0", "2000/1"]
 
 
+def test_frontier_main_cache_only_skips_live_refresh(monkeypatch, capsys) -> None:
+    bench_rows = [
+        {"statute_id": f"2000/{i}", "similarity": 0.70, "amendments": 1}
+        for i in range(3)
+    ]
+    refresh_calls: list[str] = []
+
+    def unexpected_refresh(*args: object, **kwargs: object) -> dict[str, object]:
+        refresh_calls.append("refresh")
+        raise AssertionError("cache-only frontier must not run live refresh")
+
+    monkeypatch.setattr("lawvm.tools.frontier._load_bench_run", lambda label: bench_rows)
+    monkeypatch.setattr("lawvm.tools.frontier._load_oracle_check_cache", lambda path: {})
+    monkeypatch.setattr(
+        "lawvm.tools.frontier.get_consolidated_oracle_suspect_cache_only",
+        lambda sid: ("", ""),
+    )
+    monkeypatch.setattr("lawvm.tools.frontier._should_refresh_all_low_scoring", lambda rows: True)
+    monkeypatch.setattr("lawvm.tools.frontier._should_refresh_all_low_scoring_scores", lambda rows: True)
+    monkeypatch.setattr("lawvm.tools.frontier._run_oracle_checks_parallel", unexpected_refresh)
+    monkeypatch.setattr("lawvm.tools.frontier._run_score_refresh_parallel", unexpected_refresh)
+    monkeypatch.setattr("lawvm.tools.frontier._select_provisional_candidate_refresh_sids", unexpected_refresh)
+    monkeypatch.setattr(
+        "lawvm.tools.frontier._summarize_low_scoring_rows",
+        lambda *args, **kwargs: {
+            "total_low": 3,
+            "resolved_after_refresh": 0,
+            "oracle_version_suspect": 0,
+            "no_oracle_check": 3,
+            "source_pathology": 0,
+            "html_noncommensurable": 0,
+            "html_topology": 0,
+            "contingent_effective_date": 0,
+            "base_drift": 0,
+            "other_suspect": 0,
+            "candidate": 0,
+        },
+    )
+
+    main(
+        SimpleNamespace(
+            label="demo",
+            mode="legal_pit",
+            top=2,
+            exclude_suspect=False,
+            strict_label=None,
+            corpus=None,
+            export_low_corpus=None,
+            db=None,
+            threshold=0.95,
+            parallel=1,
+            no_save=True,
+            refresh_all_oracle_check=False,
+            refresh_all_scores=False,
+            cache_only=True,
+            bucket=None,
+            bucket_report=False,
+            proof_report=False,
+            proof_summary=False,
+            json_output=True,
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert refresh_calls == []
+    assert payload["summary"]["no_oracle_check"] == 3
+
+
+def test_frontier_main_cache_only_rejects_forced_refresh(capsys) -> None:
+    try:
+        main(
+            SimpleNamespace(
+                label="demo",
+                mode="legal_pit",
+                top=2,
+                exclude_suspect=False,
+                strict_label=None,
+                corpus=None,
+                export_low_corpus=None,
+                db=None,
+                threshold=0.95,
+                parallel=1,
+                no_save=True,
+                refresh_all_oracle_check=True,
+                refresh_all_scores=False,
+                cache_only=True,
+                bucket=None,
+                bucket_report=False,
+                proof_report=False,
+                proof_summary=False,
+                json_output=True,
+            )
+        )
+    except SystemExit as exc:
+        assert exc.code == 1
+    else:
+        raise AssertionError("expected SystemExit")
+
+    captured = capsys.readouterr()
+    assert "--cache-only cannot be combined" in captured.err
+
+
 def test_frontier_main_json_output_demotes_proof_rejected_candidates(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         "lawvm.tools.frontier._load_bench_run",

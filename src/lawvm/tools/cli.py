@@ -5912,6 +5912,15 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         ),
     )
     frontier_p.add_argument(
+        "--cache-only",
+        dest="cache_only",
+        action="store_true",
+        help=(
+            "do not run live oracle-check or score refresh; inspect only saved bench, "
+            "divergence DB, strict-run, and cache-only version gates"
+        ),
+    )
+    frontier_p.add_argument(
         "--no-save",
         dest="no_save",
         action="store_true",

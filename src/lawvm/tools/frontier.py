@@ -1487,6 +1487,7 @@ def main(args) -> None:
     no_save = getattr(args, "no_save", False)
     refresh_all_oracle_check = bool(getattr(args, "refresh_all_oracle_check", False))
     refresh_all_scores = bool(getattr(args, "refresh_all_scores", False))
+    cache_only = bool(getattr(args, "cache_only", False))
     bucket_filter = getattr(args, "bucket", None)
     bucket_report = bool(getattr(args, "bucket_report", False))
     proof_report = bool(getattr(args, "proof_report", False))
@@ -1501,6 +1502,12 @@ def main(args) -> None:
 
     if label is None:
         print("ERROR: --label is required", file=sys.stderr)
+        sys.exit(1)
+    if cache_only and (refresh_all_oracle_check or refresh_all_scores):
+        print(
+            "ERROR: --cache-only cannot be combined with --refresh-all-oracle-check or --refresh-all-scores",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     # Step 1: Load bench results
@@ -1548,7 +1555,10 @@ def main(args) -> None:
             status(f"  Loaded oracle-check data for {len(oracle_checks)} statutes.")
 
     refresh_sids: List[str]
-    if refresh_all_oracle_check or _should_refresh_all_low_scoring(low_scoring):
+    if cache_only:
+        refresh_sids = []
+        status("Cache-only mode: skipping live oracle-check refresh.")
+    elif refresh_all_oracle_check or _should_refresh_all_low_scoring(low_scoring):
         refresh_sids = [r["statute_id"] for r in low_scoring]
         refresh_reason = (
             "forced full refresh"
@@ -1572,7 +1582,9 @@ def main(args) -> None:
         oracle_checks.update(fresh)
         status(f"  Oracle-check complete. Total covered: {len(oracle_checks)}")
 
-    if refresh_all_scores or _should_refresh_all_low_scoring_scores(low_scoring):
+    if cache_only:
+        status("Cache-only mode: skipping live score refresh.")
+    elif refresh_all_scores or _should_refresh_all_low_scoring_scores(low_scoring):
         score_refresh_sids = [r["statute_id"] for r in low_scoring]
         status(
             f"Refreshing current scores for all {len(score_refresh_sids)} low-scoring statutes "
@@ -1620,7 +1632,11 @@ def main(args) -> None:
         else:
             status(f"  Loaded strict data for {len(strict_data)} statutes.")
 
-    if not refresh_all_oracle_check and not _should_refresh_all_low_scoring(low_scoring):
+    if (
+        not cache_only
+        and not refresh_all_oracle_check
+        and not _should_refresh_all_low_scoring(low_scoring)
+    ):
         provisional_refresh_sids = _select_provisional_candidate_refresh_sids(
             bench_data=bench_data,
             oracle_checks=oracle_checks,
@@ -1909,6 +1925,15 @@ def register_cli(sub: Any) -> None:
         help=(
             "force a live score refresh for all low-scoring statutes, "
             "even when the candidate pool is too large for the default score-refresh heuristic"
+        ),
+    )
+    frontier_p.add_argument(
+        "--cache-only",
+        dest="cache_only",
+        action="store_true",
+        help=(
+            "do not run live oracle-check or score refresh; inspect only saved bench, "
+            "divergence DB, strict-run, and cache-only version gates"
         ),
     )
     frontier_p.add_argument(
