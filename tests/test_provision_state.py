@@ -353,6 +353,106 @@ def test_operation_source_locator_uses_sourceline_for_unique_no_eid_split_quote_
     )
 
 
+def test_operation_source_locator_anchors_multiblock_condensed_quote_to_formula() -> None:
+    raw_text = (
+        "muutetaan\n"
+        "                         target Act section 1, lisätään\n"
+        "                         target Act section 2 seuraavasti:"
+    )
+    source_xml = (
+        b"""
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act><preamble>
+            <formula name="enactingClause">
+              <blockContainer>
+                <block name="substitutions"><i>muutetaan</i> target Act section 1,</block>
+                <block name="substitutions-originals">as inserted by an earlier Act, plus</block>
+              </blockContainer>
+              <blockContainer>
+                <block name="insertions"><i>lis\xc3\xa4t\xc3\xa4\xc3\xa4n</i> target Act section 2 seuraavasti:</block>
+              </blockContainer>
+            </formula>
+          </preamble></act>
+        </akomaNtoso>
+        """
+    )
+    source_text = source_xml.decode("utf-8")
+    expected_start = source_text.index('<formula name="enactingClause">')
+    expected_end = source_text.index("</formula>", expected_start) + len("</formula>")
+
+    payload = build_provision_state_response(
+        timelines=_timeline_with_content(_section("A provision duty."), raw_text=raw_text),
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="section:1",
+        as_of="2021-01-01",
+        source_xml_provider=lambda sid: source_xml if sid == "2019/1" else None,
+    )
+
+    locator = payload["source_locator"]
+    assert locator["char_span"] == [expected_start, expected_end]
+    assert locator["detail"]["operation_source_xml_span_status"] == "available"
+    assert locator["detail"]["operation_source_xml_quote_match_count"] == 0
+    assert locator["detail"]["operation_source_xml_text_sequence_match_count"] == 1
+    assert locator["detail"]["operation_source_xml_text_sequence_local_tag"] == "formula"
+    assert locator["detail"]["operation_source_xml_text_sequence_span_basis"] == (
+        "source_line_and_stable_attrs"
+    )
+    assert locator["detail"]["char_span_status"] == (
+        "operation_source_raw_xml_text_sequence_container_scan"
+    )
+    assert locator["detail"]["source_witness"]["artifact_span_status"] == (
+        "operation_source_raw_xml_text_sequence_container_scan"
+    )
+
+
+def test_operation_source_locator_rejects_duplicate_multiblock_sequence_containers() -> None:
+    raw_text = (
+        "muutetaan\n"
+        "                         target Act section 1, lisätään\n"
+        "                         target Act section 2 seuraavasti:"
+    )
+    formula = """
+            <formula name="enactingClause">
+              <blockContainer>
+                <block name="substitutions"><i>muutetaan</i> target Act section 1,</block>
+                <block name="substitutions-originals">as inserted by an earlier Act, plus</block>
+              </blockContainer>
+              <blockContainer>
+                <block name="insertions"><i>lisätään</i> target Act section 2 seuraavasti:</block>
+              </blockContainer>
+            </formula>
+    """
+    source_xml = f"""
+        <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <act><preamble>{formula}{formula}</preamble></act>
+        </akomaNtoso>
+        """.encode("utf-8")
+
+    payload = build_provision_state_response(
+        timelines=_timeline_with_content(_section("A provision duty."), raw_text=raw_text),
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="section:1",
+        as_of="2021-01-01",
+        source_xml_provider=lambda sid: source_xml if sid == "2019/1" else None,
+    )
+
+    locator = payload["source_locator"]
+    witness = locator["detail"]["source_witness"]
+    assert "char_span" not in locator
+    assert "byte_span" not in locator
+    assert locator["detail"]["operation_source_xml_span_status"] == (
+        "unavailable_operation_source_text_sequence_container_not_unique"
+    )
+    assert locator["detail"]["operation_source_xml_quote_match_count"] == 0
+    assert locator["detail"]["operation_source_xml_text_sequence_match_count"] == 2
+    assert witness["artifact_span_status"] == (
+        "unavailable_operation_source_text_sequence_container_not_unique"
+    )
+    assert witness["artifact_span_match_count"] == 2
+
+
 def test_operation_source_locator_rejects_duplicate_raw_quote_xml_span() -> None:
     quote = "Section 1 is replaced with a new duty."
     source_xml = f"""

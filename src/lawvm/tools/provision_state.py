@@ -1871,6 +1871,13 @@ def _operation_source_xml_quote_span(
         )
         if container_span is not None:
             return container_span
+        sequence_span = _operation_source_xml_text_sequence_span(
+            xml_bytes,
+            raw_xml_text=text,
+            raw_source_text=raw_text,
+        )
+        if sequence_span is not None:
+            return sequence_span
         return {
             "char_span": None,
             "byte_span": None,
@@ -1926,6 +1933,141 @@ def _operation_source_xml_quote_span(
             "artifact_span_match_count": 1,
         },
     }
+
+
+def _operation_source_xml_text_sequence_span(
+    xml_bytes: bytes,
+    *,
+    raw_xml_text: str,
+    raw_source_text: str,
+) -> dict[str, Any] | None:
+    """Anchor a condensed operation quote to a unique XML text-sequence container.
+
+    Finland preambles sometimes split one operation source across sibling
+    ``blockContainer`` elements and insert an ``*-originals`` qualification block
+    between the executable action blocks. ``OperationSource.raw_text`` may carry
+    the executable action sequence without that intervening qualification. This
+    fallback therefore checks ordered token containment, not substring
+    containment, and returns a containing-element span only when the match is
+    unique.
+    """
+    from lxml import etree
+
+    quote_tokens = _xml_text_sequence_tokens(raw_source_text)
+    if len(quote_tokens) < 8:
+        return None
+    try:
+        root = etree.fromstring(xml_bytes)
+    except etree.XMLSyntaxError:
+        return _unavailable_operation_source_container_span(
+            "unavailable_operation_source_xml_parse_failed",
+            match_count=0,
+        )
+    candidates: list[Any] = []
+    for element in root.iter():
+        if not isinstance(element, etree._Element):
+            continue
+        candidate_tokens = _xml_text_sequence_tokens(" ".join(str(part) for part in element.itertext()))
+        if _contains_ordered_token_sequence(candidate_tokens, quote_tokens):
+            candidates.append(element)
+    if not candidates:
+        return None
+    smallest = [
+        element
+        for element in candidates
+        if not any(other is not element and _xml_element_is_ancestor(element, other) for other in candidates)
+    ]
+    if len(smallest) != 1:
+        return _unavailable_operation_source_container_span(
+            "unavailable_operation_source_text_sequence_container_not_unique",
+            match_count=len(smallest),
+            candidate_count=len(candidates),
+        )
+    element = smallest[0]
+    tag = etree.QName(element).localname
+    eid = str(element.get("eId") or "")
+    if eid:
+        char_span = _raw_xml_eid_element_char_span(raw_xml_text, local_tag=tag, eid=eid)
+        span_basis_detail = "eid"
+    else:
+        char_span = _raw_xml_sourceline_element_char_span(
+            raw_xml_text,
+            local_tag=tag,
+            sourceline=int(getattr(element, "sourceline", 0) or 0),
+            attrs=_raw_xml_stable_attrs(element),
+        )
+        span_basis_detail = "source_line_and_stable_attrs"
+    if char_span is None:
+        return _unavailable_operation_source_container_span(
+            "unavailable_operation_source_text_sequence_container_raw_xml_scan_failed",
+            match_count=1,
+            candidate_count=len(candidates),
+            eid=eid,
+            local_tag=tag,
+            sourceline=int(getattr(element, "sourceline", 0) or 0),
+        )
+    byte_span = (
+        len(raw_xml_text[: char_span[0]].encode("utf-8")),
+        len(raw_xml_text[: char_span[1]].encode("utf-8")),
+    )
+    span_status = "operation_source_raw_xml_text_sequence_container_scan"
+    basis = (
+        "Raw Finlex operation-source XML decoded as UTF-8; exact raw quote and "
+        "contiguous normalized text-container quote did not occur, but the "
+        "OperationSource.raw_text tokens appeared in order within exactly one "
+        "smallest XML element. Span covers that containing XML element and may "
+        "include intervening source qualification text; it does not cover exact "
+        "quote bytes."
+    )
+    detail = {
+        "char_span": list(char_span),
+        "char_span_status": span_status,
+        "char_span_basis": basis,
+        "byte_span": list(byte_span),
+        "byte_span_status": f"{span_status}_utf8",
+        "byte_span_basis": "UTF-8 byte offsets derived from raw XML containing-element character span.",
+        "operation_source_xml_span_status": "available",
+        "operation_source_xml_quote_match_count": 0,
+        "operation_source_xml_text_sequence_match_count": 1,
+        "operation_source_xml_text_sequence_candidate_count": len(candidates),
+        "operation_source_xml_text_sequence_token_count": len(quote_tokens),
+        "operation_source_xml_text_sequence_local_tag": tag,
+        "operation_source_xml_text_sequence_span_basis": span_basis_detail,
+    }
+    if eid:
+        detail["operation_source_xml_text_sequence_eid"] = eid
+    return {
+        "char_span": char_span,
+        "byte_span": byte_span,
+        "detail": detail,
+        "source_witness_detail": {
+            "artifact_char_span": list(char_span),
+            "artifact_byte_span": list(byte_span),
+            "artifact_span_status": span_status,
+            "artifact_span_basis": basis,
+            "artifact_span_match_count": 1,
+        },
+    }
+
+
+def _xml_text_sequence_tokens(value: str) -> list[str]:
+    return [
+        match.group(0).casefold()
+        for match in re.finditer(r"[\w]+(?:/[\w]+)*|§", _normalize_xml_text_for_span_match(value))
+    ]
+
+
+def _contains_ordered_token_sequence(candidate_tokens: list[str], quote_tokens: list[str]) -> bool:
+    if not quote_tokens or len(candidate_tokens) < len(quote_tokens):
+        return False
+    offset = 0
+    for token in quote_tokens:
+        while offset < len(candidate_tokens) and candidate_tokens[offset] != token:
+            offset += 1
+        if offset == len(candidate_tokens):
+            return False
+        offset += 1
+    return True
 
 
 def _operation_source_xml_text_container_span(
@@ -2082,18 +2224,19 @@ def _unavailable_operation_source_container_span(
     local_tag: str = "",
     sourceline: int = 0,
 ) -> dict[str, Any]:
+    counter_family = "text_sequence" if "text_sequence" in status else "text_container"
     detail: dict[str, Any] = {
         "operation_source_xml_span_status": status,
         "operation_source_xml_quote_match_count": 0,
-        "operation_source_xml_text_container_match_count": match_count,
-        "operation_source_xml_text_container_candidate_count": candidate_count,
+        f"operation_source_xml_{counter_family}_match_count": match_count,
+        f"operation_source_xml_{counter_family}_candidate_count": candidate_count,
     }
     if eid:
-        detail["operation_source_xml_text_container_eid"] = eid
+        detail[f"operation_source_xml_{counter_family}_eid"] = eid
     if local_tag:
-        detail["operation_source_xml_text_container_local_tag"] = local_tag
+        detail[f"operation_source_xml_{counter_family}_local_tag"] = local_tag
     if sourceline:
-        detail["operation_source_xml_text_container_sourceline"] = sourceline
+        detail[f"operation_source_xml_{counter_family}_sourceline"] = sourceline
     return {
         "char_span": None,
         "byte_span": None,
