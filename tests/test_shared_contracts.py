@@ -656,34 +656,66 @@ def test_source_bundle_evidence_report_projects_passive_admissions() -> None:
         status="observed",
         witness=witness,
     )
+    attestation = SourceAcquisitionAttestation(
+        attestation_id="attestation-3",
+        assertion_id="assertion-3",
+        attestation_kind="artifact_digest_verified",
+        producer_id="lawvm-test",
+        status="verified",
+        witness=witness,
+    )
     policy = SourceBundlePolicy(
         policy_id="fi.source_bundle.v1",
         jurisdiction="fi",
         admitted_source_lanes=("official_xml",),
     )
-    admission = policy.evaluate(assertion)
+    admission = policy.evaluate(assertion, attestations=(attestation,))
 
     report = source_bundle_evidence_report(
         (admission,),
         jurisdiction="fi",
         assertions=(assertion,),
+        attestations=(attestation,),
     ).to_dict()
 
     assert report["report_kind"] == "source_bundle_admission"
     assert report["replay_claims"] is False
     assert report["summary"]["assertion_count"] == 1
+    assert report["summary"]["attestation_count"] == 1
     assert report["summary"]["admitted_count"] == 1
     assert report["summary"]["status_counts"] == {"source_bundle_admitted": 1}
     assert {row["surface"] for row in report["rows"]} == {
         "source_acquisition_assertion",
+        "source_acquisition_attestation",
         "source_bundle_admission",
     }
+    assertion_row = next(row for row in report["rows"] if row["surface"] == "source_acquisition_assertion")
+    assert assertion_row["row_id"] == "assertion-3"
+    assert assertion_row["subject_id"] == "2024/2"
+    assert assertion_row["assertion_ref"] == "assertion-3"
+    attestation_row = next(row for row in report["rows"] if row["surface"] == "source_acquisition_attestation")
+    assert attestation_row["row_id"] == "attestation-3"
+    assert attestation_row["subject_id"] == "assertion-3"
+    assert attestation_row["assertion_ref"] == "assertion-3"
     admission_row = next(row for row in report["rows"] if row["surface"] == "source_bundle_admission")
+    assert admission_row["row_id"] == "fi.source_bundle.v1:assertion-3"
+    assert admission_row["subject_id"] == "assertion-3"
+    assert admission_row["assertion_ref"] == "assertion-3"
+    assert admission_row["authorization_ref"] == "fi.source_bundle.v1:assertion-3"
+    assert admission_row["proof_ref"] == "fi.source_bundle.v1"
     assert admission_row["execution_authorization"]["executable"] is False
     assert admission_row["execution_authorization"]["replay_authorized"] is False
     assert (
         "source_bundle_admission_as_replay_authorization"
         in admission_row["execution_authorization"]["forbidden_shortcuts"]
+    )
+
+    surface = proof_surface_from_evidence_report(report).to_dict()
+    rows_by_id = {row["row_id"]: row for row in surface["rows"]}
+    assert rows_by_id["assertion-3"]["source_refs"] == ["2024/2"]
+    assert rows_by_id["attestation-3"]["assertion_refs"] == ["assertion-3"]
+    assert rows_by_id["fi.source_bundle.v1:assertion-3"]["authorization_ref"] == (
+        "fi.source_bundle.v1:assertion-3"
     )
 
 

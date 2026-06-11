@@ -317,25 +317,15 @@ def source_bundle_evidence_report(
     """Project source-bundle policy results without granting replay authority."""
 
     admission_rows = tuple(
-        {
-            "surface": "source_bundle_admission",
-            **admission.to_dict(),
-            "execution_authorization": admission.to_execution_authorization().to_dict(),
-        }
+        _source_bundle_admission_row(admission)
         for admission in admissions
     )
     assertion_rows = tuple(
-        {
-            "surface": "source_acquisition_assertion",
-            **assertion.to_dict(),
-        }
+        _source_acquisition_assertion_row(assertion)
         for assertion in assertions
     )
     attestation_rows = tuple(
-        {
-            "surface": "source_acquisition_attestation",
-            **attestation.to_dict(),
-        }
+        _source_acquisition_attestation_row(attestation)
         for attestation in attestations
     )
     status_counts = _count_by(admission.status for admission in admissions)
@@ -375,6 +365,45 @@ def source_bundle_evidence_report(
             ),
         },
     )
+
+
+def _source_acquisition_assertion_row(
+    assertion: SourceAcquisitionAssertion,
+) -> dict[str, Any]:
+    return {
+        "surface": "source_acquisition_assertion",
+        "row_id": assertion.assertion_id,
+        "subject_id": assertion.artifact_id,
+        "assertion_ref": assertion.assertion_id,
+        **assertion.to_dict(),
+    }
+
+
+def _source_acquisition_attestation_row(
+    attestation: SourceAcquisitionAttestation,
+) -> dict[str, Any]:
+    return {
+        "surface": "source_acquisition_attestation",
+        "row_id": attestation.attestation_id,
+        "subject_id": attestation.assertion_id,
+        "assertion_ref": attestation.assertion_id,
+        **attestation.to_dict(),
+    }
+
+
+def _source_bundle_admission_row(admission: SourceBundleAdmission) -> dict[str, Any]:
+    authorization = admission.to_execution_authorization().to_dict()
+    authorization_ref = str(authorization.get("authorization_rule_id") or "")
+    return {
+        "surface": "source_bundle_admission",
+        "row_id": authorization_ref,
+        "subject_id": admission.assertion_id,
+        "assertion_ref": admission.assertion_id,
+        "authorization_ref": authorization_ref,
+        "proof_ref": admission.policy_id,
+        **admission.to_dict(),
+        "execution_authorization": authorization,
+    }
 
 
 def _required_string(field_name: str, value: Any) -> str:
