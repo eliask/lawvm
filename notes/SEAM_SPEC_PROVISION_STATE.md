@@ -21,7 +21,8 @@ provision of one statute as of one date?** A query is the tuple:
   `status=unsupported_jurisdiction`.
 - `provision` — a `LegalAddress` string, slash-joined `kind:label` segments
   (e.g. `section:6a`, `chapter:4a/section:30a`).
-- `as_of` — ISO date (`YYYY-MM-DD`); MUST be non-empty.
+- `as_of` — exact ISO date string (`YYYY-MM-DD`); MUST be non-empty and
+  MUST NOT contain leading or trailing whitespace.
 - `query_type` — `governing` (default) or `in_force` (see §5).
 - `territory` — optional applicability scope.
 

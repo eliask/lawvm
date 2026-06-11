@@ -373,6 +373,24 @@ def test_build_provision_state_response_rejects_invalid_as_of() -> None:
     assert len(payload["hashes"]["derived_state_hash"]) == 64
 
 
+def test_build_provision_state_response_rejects_whitespace_wrapped_as_of() -> None:
+    payload = build_provision_state_response(
+        timelines=_timeline(),
+        statute_id="2000/1",
+        jurisdiction="fi",
+        provision="section:1",
+        as_of=" 2021-01-01 ",
+    )
+
+    assert payload["status"] == "invalid_query"
+    assert payload["diagnostic"]["code"] == "LAWVM_PROVISION_AS_OF_INVALID"
+    assert payload["diagnostic"]["message"] == (
+        "as_of must be exactly an ISO date in YYYY-MM-DD form"
+    )
+    assert payload["selection"] is None
+    assert "text" not in payload
+
+
 def test_public_resolve_provision_state_rejects_invalid_as_of_before_replay() -> None:
     payload = resolve_provision_state(
         statute_id="2023/703",
@@ -471,7 +489,7 @@ def test_provision_state_cli_invalid_as_of_prints_diagnostic_and_exits_2(capsys)
 
     captured = capsys.readouterr()
     assert raised.value.code == 2
-    assert "ERROR: invalid --as-of: as_of must be an ISO date" in captured.err
+    assert "ERROR: invalid --as-of: as_of must be exactly an ISO date" in captured.err
     payload = json.loads(captured.out)
     assert payload["status"] == "invalid_query"
     assert payload["diagnostic"]["code"] == "LAWVM_PROVISION_AS_OF_INVALID"

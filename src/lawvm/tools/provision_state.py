@@ -379,7 +379,7 @@ def provision_query_diagnostic(
             "message": "query_type must be one of: governing, in_force",
             "allowed_values": sorted(_QUERY_TYPES),
         }
-    text = str(as_of or "").strip()
+    text = str(as_of or "")
     if not text:
         return {
             "code": "LAWVM_PROVISION_AS_OF_EMPTY",
@@ -391,7 +391,7 @@ def provision_query_diagnostic(
         return {
             "code": "LAWVM_PROVISION_AS_OF_INVALID",
             "field": "as_of",
-            "message": "as_of must be an ISO date in YYYY-MM-DD form",
+            "message": "as_of must be exactly an ISO date in YYYY-MM-DD form",
             "expected_format": "YYYY-MM-DD",
             "received": as_of,
         }
