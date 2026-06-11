@@ -140,7 +140,7 @@ def _project_one_statute(
         "ops": [],
     }
 
-    compiled_ops: list = []
+    compiled_ops: list[Any] = []
     try:
         master = replay_xml(
             statute_id,
@@ -189,7 +189,7 @@ def _project_one_statute(
         pass
 
     # --- Section diffs ---
-    diff_kind_counter: Counter = Counter()
+    diff_kind_counter: Counter[str] = Counter()
     try:
         replay_ir = (
             master.materialized_state.ir

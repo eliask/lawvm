@@ -3594,7 +3594,7 @@ def build_evidence_bundle(
         except Exception as exc:
             _evidence_context_diagnostics.append(_evidence_context_degradation("section_strict_verdicts", exc))
     # C3: Compute section-local invariant violations from timelines
-    _section_inv_violations: dict[str, list[dict]] | None = None
+    _section_inv_violations: dict[str, list[dict[str, Any]]] | None = None
     _rr2 = ctx.replay_result
     if _rr2 is not None and hasattr(_rr2, "timelines") and _rr2.timelines and hasattr(_rr2, "ir") and _rr2.ir:
         try:
@@ -5052,7 +5052,11 @@ def build_oracle_proof_bundle(
             "source_pdfs": [],
             "manual_override_count": 0,
         }
-        existing_sections = {str(section) for section in cast(list, item.get("blamed_sections", [])) if str(section)}
+        existing_sections = {
+            str(section)
+            for section in cast(list[object], item.get("blamed_sections", []))
+            if str(section)
+        }
         item["blamed_sections"] = sorted(existing_sections | set(recovered_blame_sections.get(amendment_id, [])))
         ctx = _source_context(amendment_id) if amendment_id else {}
         enriched_supporting_amendments.append(

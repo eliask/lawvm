@@ -91,7 +91,7 @@ def _write_live_snapshot(store: GraphStore) -> str:
     return graph.snapshot_hash
 
 
-def _load_all_assertions(store: GraphStore) -> list:
+def _load_all_assertions(store: GraphStore) -> list[ProvenanceAssertion]:
     objects_dir = store._objects_dir()
     if not objects_dir.exists():
         return []
@@ -103,12 +103,12 @@ def _load_all_assertions(store: GraphStore) -> list:
     return result
 
 
-def _attestation_kinds_for(store: GraphStore, assertion_id: str) -> set:
+def _attestation_kinds_for(store: GraphStore, assertion_id: str) -> set[str]:
     """Return set of attestation kinds already present for this assertion."""
     objects_dir = store._objects_dir()
     if not objects_dir.exists():
         return set()
-    kinds = set()
+    kinds: set[str] = set()
     for f in objects_dir.glob("*.json"):
         d = json.loads(f.read_text(encoding="utf-8"))
         if (

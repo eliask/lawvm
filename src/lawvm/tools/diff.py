@@ -154,9 +154,9 @@ def _diff_sections_ir_vs_xml(
     perfect = 0
     missing_replay = 0
     extra_replay = 0
-    editorial_stub: set = set()
+    editorial_stub: set[str] = set()
 
-    editorial_kumottu: set = set()  # keys where diff is editorial (kumottu)
+    editorial_kumottu: set[str] = set()  # keys where diff is editorial (kumottu)
 
     for key in all_keys:
         r_node = replay_secs.get(key)

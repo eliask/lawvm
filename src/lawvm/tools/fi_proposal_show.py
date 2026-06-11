@@ -144,7 +144,7 @@ def _format_kv(label: str, value: Any) -> str:
     return f"  {label:<30s} {value}"
 
 
-def _format_corpus_row(row: tuple, columns: List[str]) -> str:
+def _format_corpus_row(row: tuple[Any, ...], columns: List[str]) -> str:
     lines = [""]
     row_dict = dict(zip(columns, row, strict=True))
     for col in columns:
@@ -153,7 +153,7 @@ def _format_corpus_row(row: tuple, columns: List[str]) -> str:
     return "\n".join(lines)
 
 
-def _format_table(columns: List[str], rows: List[tuple], max_col_width: int = 60) -> str:
+def _format_table(columns: List[str], rows: List[tuple[Any, ...]], max_col_width: int = 60) -> str:
     if not rows:
         return "  (0 rows)"
     str_rows = [[str(v) if v is not None else "" for v in row] for row in rows]

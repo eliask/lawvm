@@ -63,7 +63,7 @@ class CoverageEntry:
     content_absent: Optional[bool] = None  # None = not checked (fast scan)
     gif_count: int = 0              # .gif files in any lang version
     corrigendum_count: int = 0      # corrigendum PDFs
-    corrigendum_pdfs: list = field(default_factory=list)
+    corrigendum_pdfs: list[str] = field(default_factory=list)
     annexed_pdf_count: int = 0      # non-corrigendum embedded PDFs
 
     @property
@@ -279,7 +279,7 @@ def lookup_statute(sid: str, cs: CorpusStore) -> CoverageEntry:
 
 def _print_corpus_report(entries: dict[str, CoverageEntry], gaps_only: bool) -> None:
     from collections import Counter
-    status_counts: Counter = Counter()
+    status_counts: Counter[str] = Counter()
     gif_total = corr_total = annexed_total = absent_total = 0
     gap_entries = []
 

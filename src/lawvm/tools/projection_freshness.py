@@ -171,7 +171,7 @@ def farchive_age_days(data_root: str, farchive_name: str) -> Optional[float]:
 
 
 # Track which farchives we've already age-warned about this process.
-_AGE_WARNED: set = set()
+_AGE_WARNED: set[str] = set()
 
 
 def warn_if_source_old(
@@ -226,7 +226,7 @@ def warn_if_source_old(
 
 # Track which (stem, data_dir) pairs we've already warned about this process so
 # a command that reads several projections doesn't spam the same warning.
-_WARNED: set = set()
+_WARNED: set[tuple[str, str]] = set()
 
 
 def _rebuild_command(stem: str, jurisdiction: str) -> str:

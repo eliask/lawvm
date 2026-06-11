@@ -236,9 +236,9 @@ def phase2_fetch(db_path: Path, acts: list[str], workers: int, delay: float) -> 
 @dataclass
 class _GroupInfo:
     grupi_id: str
-    terviktekst_with_body: list = field(default_factory=list)
+    terviktekst_with_body: list[tuple[str, int, str]] = field(default_factory=list)
     n_amendments: int = 0
-    schemas: set = field(default_factory=set)
+    schemas: set[str] = field(default_factory=set)
     title: str = ""
 
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from lawvm.tools.ee_reporting import (
     build_ee_benchmark_reporting_summary,
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     import argparse
 
 
-def _build_ee_explain_payload(base_id: str, oracle_id: str, verbose: bool = False) -> dict:
+def _build_ee_explain_payload(base_id: str, oracle_id: str, verbose: bool = False) -> dict[str, Any]:
     """Build a deep-dive explanation payload for one EE pair."""
     from lawvm.estonia.fetch import extract_effective_date, fetch_rt_xml, open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -151,7 +151,7 @@ def _build_ee_explain_payload(base_id: str, oracle_id: str, verbose: bool = Fals
     }
 
 
-def _print_ee_explain(payload: dict, verbose: bool = False) -> None:
+def _print_ee_explain(payload: dict[str, Any], verbose: bool = False) -> None:
     """Print a human-readable explanation report."""
     if "error" in payload:
         print(f"ERROR: {payload['error']}", file=sys.stderr)

@@ -166,8 +166,8 @@ def dump_parse(
 
     print()
     # Summary
-    sections = cast(list, body.xpath(".//*[local-name()='section']"))
-    chapters = cast(list, body.xpath(".//*[local-name()='chapter']"))
+    sections = cast(list[etree._Element], body.xpath(".//*[local-name()='section']"))
+    chapters = cast(list[etree._Element], body.xpath(".//*[local-name()='chapter']"))
     print(f"Summary: {len(chapters)} chapters, {len(sections)} sections")
 
 

@@ -37,7 +37,7 @@ def json_safe(v: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
-def format_table(columns: List[str], rows: List[tuple], max_col_width: int = 50) -> str:
+def format_table(columns: List[str], rows: List[tuple[Any, ...]], max_col_width: int = 50) -> str:
     """Format query results as an aligned text table.
 
     Args:
@@ -82,7 +82,7 @@ def format_table(columns: List[str], rows: List[tuple], max_col_width: int = 50)
 def emit_rows(
     *,
     columns: List[str],
-    rows: List[tuple],
+    rows: List[tuple[Any, ...]],
     output_format: str,
     data_dir: str,
     result_stem: str,
