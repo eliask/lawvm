@@ -546,7 +546,7 @@ class InlineCitationExtractionResult:
 # ---------------------------------------------------------------------------
 
 
-def _get_text_excluding_refs(elem: ET.Element) -> str:
+def _get_text_excluding_refs(elem: ET.Element[str]) -> str:
     """Get all text content from a <p> element, EXCLUDING text inside <ref> children.
 
     Per composition discipline: text inside <ref> elements is deferred to
@@ -672,7 +672,7 @@ def extract_inline_citations(
 
 
 def _walk_body(
-    root: ET.Element,
+    root: ET.Element[str],
     doc_id: str,
     doc_kind: str,
     source_span_file: Optional[str],
@@ -694,7 +694,7 @@ def _walk_body(
 
 
 def _walk_element(
-    elem: ET.Element,
+    elem: ET.Element[str],
     doc_id: str,
     doc_kind: str,
     source_span_file: Optional[str],
@@ -743,7 +743,7 @@ def _walk_element(
 
 
 def _process_p_element(
-    p_elem: ET.Element,
+    p_elem: ET.Element[str],
     doc_id: str,
     doc_kind: str,
     source_span_file: Optional[str],

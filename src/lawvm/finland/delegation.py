@@ -320,7 +320,7 @@ def _false_positive_rule_id(context_text: str) -> str:
     return ""
 
 
-def _section_num(section_elem: ET.Element) -> str:
+def _section_num(section_elem: ET.Element[str]) -> str:
     """Extract § number from an Akoma Ntoso section element."""
     num_elem = section_elem.find(f'{NS}num')
     if num_elem is not None and num_elem.text:
@@ -328,7 +328,7 @@ def _section_num(section_elem: ET.Element) -> str:
     return ''
 
 
-def _elem_text_norm(elem: ET.Element) -> str:
+def _elem_text_norm(elem: ET.Element[str]) -> str:
     """Extract normalized plain text from an XML element."""
     raw = ET.tostring(elem, encoding='unicode', method='text')
     return re.sub(r'\s+', ' ', raw).strip()
@@ -419,7 +419,7 @@ def extract_delegations(
 
     # Build list of (element, section_num, eid) scan units.
     # Prefer subsections for fine-grained addressing.
-    scan_units: List[tuple] = []
+    scan_units: List[tuple[ET.Element[str], str, str, str]] = []
     sections = root.findall(f'.//{NS}section') + root.findall(f'.//{NS}article')
 
     if not sections:
@@ -445,7 +445,7 @@ def extract_delegations(
         if not unit_text:
             continue
 
-        matched_spans: List[tuple] = []
+        matched_spans: List[tuple[int, int]] = []
 
         for pat in _DELEGATION_PATTERNS:
             for m in pat.finditer(unit_text):

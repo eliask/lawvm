@@ -251,7 +251,7 @@ def _extract_fin_pit_version_from_xml(raw: bytes) -> str | None:
 # URI parsing
 # ---------------------------------------------------------------------------
 
-def parse_akn_uri(akn_uri: str) -> dict | None:
+def parse_akn_uri(akn_uri: str) -> dict[str, str] | None:
     """Parse an akn_uri from the list endpoint.
 
     Returns a dict with keys:
@@ -288,7 +288,7 @@ def list_changed_since(
     doc_type: str = "statute-consolidated",
     lang: str = "fin",
     limit: int = 1000,
-) -> list[dict]:
+) -> list[dict[str, str]]:
     """List statutes changed since a datetime.
 
     Args:
@@ -321,7 +321,7 @@ def list_changed_since(
         params["langAndVersion"] = f"{lang}@"
 
     base = f"{BASE_URL}/akn/fi/act/{doc_type}/list"
-    results: list[dict] = []
+    results: list[dict[str, str]] = []
     page = 1
 
     while True:
@@ -688,7 +688,7 @@ def sync_changes(
     doc_type: str = "statute-consolidated",
     dry_run: bool = False,
     verbose: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     """Incremental sync: fetch all changes since datetime, store in archive.
 
     Args:
