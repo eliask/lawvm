@@ -500,7 +500,7 @@ def test_to_json_exports_open_ownership_closure_certificate_without_replay_claim
         {
             "statute_id": "2001/1234",
             "profile": FINLAND_INGESTION_V1,
-            "canonical_ops": [],
+            "canonical_ops": [SimpleNamespace(op_id="lo-visible-1")],
             "failed_ops": [],
             "projection_rows": [],
             "source_pathologies": [],
@@ -519,24 +519,40 @@ def test_to_json_exports_open_ownership_closure_certificate_without_replay_claim
     assert certificate["source_bundle_hash"].startswith("sha256:")
     assert certificate["graph_snapshot_hash"].startswith("sha256:")
     assert certificate["failed_gates"] == [
-        "source_unit_enumeration_closure_unverified",
-        "operation_candidate_coverage_unverified",
+        "candidate_set_fi_strict_report_visible_operation_rows_partial",
+        "candidate_set_fi_strict_report_source_lineage_units_unavailable",
     ]
     assert certificate["unowned_counts"] == {
+        "incomplete_candidate_set_certificates": 2,
         "failed_ops_without_frontier_work_item": 0,
-        "operation_cues_without_candidate_coverage_certificate": 1,
-        "source_units_without_enumeration_certificate": 1,
+        "operation_cues_without_candidate_coverage_certificate": 0,
+        "source_units_without_enumeration_certificate": 0,
         "strict_fail_reasons_without_closure": 0,
         "unproved_mutation_boundary_proofs": 0,
     }
+    candidate_sets = payload["strict_report_candidate_set_certificates"]
+    assert [row["candidate_set_kind"] for row in candidate_sets] == [
+        "fi_strict_report_visible_operation_rows",
+        "fi_strict_report_source_lineage_units",
+    ]
+    assert [row["completeness_status"] for row in candidate_sets] == [
+        "partial",
+        "unavailable",
+    ]
+    assert candidate_sets[0]["candidate_ids"] == ["lo-visible-1"]
     assert report["report_kind"] == "finland_strict_report_ownership_closure"
     assert report["replay_claims"] is False
     assert report["canonical_effect_claims"] is False
+    assert surface["summary"]["strict_report_candidate_set_certificate_count"] == 2
+    assert surface["summary"]["strict_report_candidate_set_status_counts"] == {
+        "partial": 1,
+        "unavailable": 1,
+    }
     assert surface["summary"]["ownership_closure_certificate_count"] == 1
     assert surface["summary"]["ownership_closure_status"] == "open"
     assert surface["summary"]["ownership_closure_failed_gate_counts"] == {
-        "operation_candidate_coverage_unverified": 1,
-        "source_unit_enumeration_closure_unverified": 1,
+        "candidate_set_fi_strict_report_source_lineage_units_unavailable": 1,
+        "candidate_set_fi_strict_report_visible_operation_rows_partial": 1,
     }
     closure_rows = [
         row
@@ -658,6 +674,8 @@ def test_to_json_exports_source_adjudication_agreement_residual() -> None:
         "source_lineage_source_witness",
         "agreement_residual",
         "source_completeness_status",
+        "strict_report_candidate_set_certificate",
+        "strict_report_candidate_set_certificate",
         "ownership_closure_certificate",
     ]
 

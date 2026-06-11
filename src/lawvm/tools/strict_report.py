@@ -38,6 +38,7 @@ from lawvm.core.compile_views import (
 )
 from lawvm.finland.proof_surfaces import (
     finland_strict_report_evidence_surface,
+    finland_strict_report_candidate_set_certificates,
     finland_strict_report_ownership_closure_certificate,
     finland_strict_report_ownership_closure_report,
     mutation_boundary_proof_rows,
@@ -140,6 +141,16 @@ def _failed_op_to_jsonable(failed_op: Any) -> dict[str, Any]:
         "",
     )
     return detail
+
+
+def _canonical_operation_ids(canonical_ops: list[Any]) -> list[str]:
+    """Return stable visible IDs for canonical ops in strict-report JSON."""
+
+    ids: list[str] = []
+    for index, op in enumerate(canonical_ops):
+        op_id = str(_field(op, "op_id", "") or "").strip()
+        ids.append(op_id or f"canonical-op:{index + 1}")
+    return ids
 
 
 def _strict_from_record(record: Any) -> bool:
@@ -428,6 +439,7 @@ def _to_json(cr: Any) -> dict[str, Any]:
             "failed": len(failed_ops),
             "total": n_canonical + len(failed_ops),
         },
+        "canonical_op_ids": _canonical_operation_ids(canonical_ops),
         "source_completeness": {
             "chain_length": sc_chain_length,
             "source_available": sc_source_available,
@@ -461,6 +473,9 @@ def _to_json(cr: Any) -> dict[str, Any]:
         ],
         "failed_ops": [_failed_op_to_jsonable(f) for f in failed_ops],
     }
+    payload["strict_report_candidate_set_certificates"] = (
+        finland_strict_report_candidate_set_certificates(payload)
+    )
     closure_certificate = finland_strict_report_ownership_closure_certificate(payload)
     payload["ownership_closure_certificate"] = closure_certificate
     payload["ownership_closure_report"] = finland_strict_report_ownership_closure_report(

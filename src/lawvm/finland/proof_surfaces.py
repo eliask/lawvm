@@ -29,7 +29,11 @@ from lawvm.core.authority import (
     PROPOSAL_AUTHORITY,
 )
 from lawvm.core.branch_projection import BranchImpactProjection, branch_impact_projection_from_edges
-from lawvm.core.candidate_set_certificate import CandidateSetCertificate
+from lawvm.core.candidate_set_certificate import (
+    CANDIDATE_SET_PARTIAL,
+    CANDIDATE_SET_UNAVAILABLE,
+    CandidateSetCertificate,
+)
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.execution_authorization import ExecutionAuthorization
@@ -929,6 +933,7 @@ def finland_strict_report_evidence_surface(
         strict_fail_reasons=strict_fail_reasons,
         statute_id=str(payload.get("statute_id") or ""),
     )
+    strict_report_candidate_sets = _mapping_sequence(payload.get("strict_report_candidate_set_certificates"))
     ownership_closure = _mapping_or_empty(payload.get("ownership_closure_certificate"))
     ownership_closure_report = _mapping_or_empty(payload.get("ownership_closure_report"))
     ownership_closure_rows = _mapping_sequence(ownership_closure_report.get("rows"))
@@ -956,6 +961,7 @@ def finland_strict_report_evidence_surface(
             *(({"surface": "source_completeness_status", **source_completeness_row},) if source_completeness_row else ()),
             *({"surface": "temporal_resolution_evidence", **dict(row)} for row in temporal_resolution_rows),
             *({"surface": "recovery_execution_authorization", **dict(row)} for row in recovery_authorization_rows),
+            *({"surface": "strict_report_candidate_set_certificate", **dict(row)} for row in strict_report_candidate_sets),
             *({"surface": "ownership_closure_certificate", **dict(row)} for row in ownership_closure_rows),
         )
     )
@@ -992,6 +998,15 @@ def finland_strict_report_evidence_surface(
         "source_completeness": source_completeness_row.get("counts", {}) if source_completeness_row else {},
         "temporal_resolution_evidence_count": len(temporal_resolution_rows),
         "recovery_execution_authorization_count": len(recovery_authorization_rows),
+        "strict_report_candidate_set_certificate_count": len(strict_report_candidate_sets),
+        "strict_report_candidate_set_status_counts": _count_by_field(
+            strict_report_candidate_sets,
+            "completeness_status",
+        ),
+        "strict_report_candidate_set_kind_counts": _count_by_field(
+            strict_report_candidate_sets,
+            "candidate_set_kind",
+        ),
         "ownership_closure_certificate_count": len(ownership_closure_rows),
         "ownership_closure_status": str(ownership_closure.get("closure_status") or ""),
         "ownership_closure_failed_gate_counts": dict(
@@ -1039,10 +1054,86 @@ def finland_strict_report_evidence_surface(
                 "source_completeness_status_as_replay_authorization",
                 "temporal_resolution_evidence_as_unconditional_commencement_proof",
                 "recovery_projection_as_replay_authorization",
+                "candidate_set_certificate_as_source_cue_exhaustiveness_proof",
                 "ownership_closure_certificate_as_full_corpus_omniscience",
             ),
         },
     ).to_dict()
+
+
+def finland_strict_report_candidate_set_certificates(
+    payload: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Candidate-set certificates for visible strict-report accounting slices."""
+
+    statute_id = str(payload.get("statute_id") or "unknown")
+    canonical_count = _ops_count(payload, "canonical")
+    canonical_op_ids = _string_sequence(payload.get("canonical_op_ids"))
+    failed_ops = _mapping_sequence(payload.get("failed_ops"))
+    source_lineage_witnesses = _mapping_sequence(payload.get("source_lineage_source_witnesses"))
+    visible_operation_ids = _visible_operation_candidate_ids(
+        canonical_op_ids=canonical_op_ids,
+        canonical_count=canonical_count,
+        failed_ops=failed_ops,
+    )
+    source_unit_ids = _source_lineage_candidate_ids(source_lineage_witnesses)
+    return [
+        CandidateSetCertificate(
+            scope_id=f"fi:{statute_id}:strict-report-visible-operation-rows",
+            candidate_set_kind="fi_strict_report_visible_operation_rows",
+            phase="strict_report_projection",
+            rule_id="fi_strict_report_visible_operation_candidate_projection",
+            reason=(
+                "Visible canonical and failed operation rows are accounted for, "
+                "but this does not prove all source-text operation cues were enumerated."
+            ),
+            completeness_status=CANDIDATE_SET_PARTIAL,
+            candidate_count=len(visible_operation_ids),
+            candidate_ids=visible_operation_ids,
+            missing_candidate_count=1,
+            blocker_counts={"source_text_cue_exhaustiveness_unproved": 1},
+            blocker_families=("source_text_cue_exhaustiveness_unproved",),
+            next_promotion_allowed=False,
+            next_promotion_requires=(
+                "source_unit_enumeration_certificate",
+                "operation_cue_exhaustiveness_certificate",
+                "execution_authorization",
+            ),
+            detail={
+                "visible_scope": "strict_report_canonical_and_failed_operation_rows",
+                "canonical_count": canonical_count,
+                "failed_count": len(failed_ops),
+                "safe_default": "do_not_treat_visible_operation_rows_as_complete_source_cue_coverage",
+            },
+        ).to_dict(),
+        CandidateSetCertificate(
+            scope_id=f"fi:{statute_id}:strict-report-source-lineage-units",
+            candidate_set_kind="fi_strict_report_source_lineage_units",
+            phase="source_chain_elaboration",
+            rule_id="fi_strict_report_source_lineage_candidate_projection",
+            reason=(
+                "Source-lineage witnesses are accounted for when available, but "
+                "they are amendment-chain witnesses rather than a full source-unit enumeration."
+            ),
+            completeness_status=(
+                CANDIDATE_SET_PARTIAL if source_unit_ids else CANDIDATE_SET_UNAVAILABLE
+            ),
+            candidate_count=len(source_unit_ids),
+            candidate_ids=source_unit_ids,
+            missing_candidate_count=1,
+            blocker_counts={"source_unit_enumeration_exhaustiveness_unproved": 1},
+            blocker_families=("source_unit_enumeration_exhaustiveness_unproved",),
+            next_promotion_allowed=False,
+            next_promotion_requires=(
+                "source_unit_enumeration_certificate",
+                "source_unit_digest_coverage",
+            ),
+            detail={
+                "visible_scope": "strict_report_source_lineage_witnesses",
+                "safe_default": "do_not_treat_lineage_witnesses_as_full_source_unit_enumeration",
+            },
+        ).to_dict(),
+    ]
 
 
 def finland_strict_report_ownership_closure_certificate(
@@ -1067,6 +1158,7 @@ def finland_strict_report_ownership_closure_certificate(
     source_lineage_witnesses = _mapping_sequence(payload.get("source_lineage_source_witnesses"))
     agreement_residuals = _mapping_sequence(payload.get("agreement_residuals"))
     mutation_boundary_proofs = _mapping_sequence(payload.get("mutation_boundary_proofs"))
+    candidate_set_certificates = _mapping_sequence(payload.get("strict_report_candidate_set_certificates"))
     source_completeness = _mapping_or_empty(payload.get("source_completeness"))
     temporal_rows = temporal_resolution_evidence_rows_from_projection_rows(
         projection_rows,
@@ -1080,16 +1172,36 @@ def finland_strict_report_ownership_closure_certificate(
     unproved_mutation_boundaries = tuple(
         row for row in mutation_boundary_proofs if str(row.get("status") or "") != "proved"
     )
+    incomplete_candidate_sets = tuple(
+        row
+        for row in candidate_set_certificates
+        if str(row.get("completeness_status") or "") != "complete"
+    )
     failed_gates = (
-        "source_unit_enumeration_closure_unverified",
-        "operation_candidate_coverage_unverified",
+        *(
+            (
+                "source_unit_enumeration_closure_unverified",
+                "operation_candidate_coverage_unverified",
+            )
+            if not candidate_set_certificates
+            else ()
+        ),
+        *(
+            f"candidate_set_{str(row.get('candidate_set_kind') or 'unknown')}_{str(row.get('completeness_status') or 'unknown')}"
+            for row in incomplete_candidate_sets
+        ),
         *(() if not failed_ops else ("failed_ops_present",)),
         *(() if not strict_fail_reasons else ("strict_fail_reasons_present",)),
         *(() if not unproved_mutation_boundaries else ("unproved_mutation_boundary_present",)),
     )
     unowned_counts = {
-        "source_units_without_enumeration_certificate": 1,
-        "operation_cues_without_candidate_coverage_certificate": 1,
+        "source_units_without_enumeration_certificate": 1
+        if not _has_candidate_set(candidate_set_certificates, "fi_strict_report_source_lineage_units")
+        else 0,
+        "operation_cues_without_candidate_coverage_certificate": 1
+        if not _has_candidate_set(candidate_set_certificates, "fi_strict_report_visible_operation_rows")
+        else 0,
+        "incomplete_candidate_set_certificates": len(incomplete_candidate_sets),
         "failed_ops_without_frontier_work_item": len(failed_ops),
         "strict_fail_reasons_without_closure": len(strict_fail_reasons),
         "unproved_mutation_boundary_proofs": len(unproved_mutation_boundaries),
@@ -1106,6 +1218,7 @@ def finland_strict_report_ownership_closure_certificate(
         "mutation_boundary_proofs": len(mutation_boundary_proofs),
         "temporal_resolution_evidence_rows": len(temporal_rows),
         "recovery_authorization_rows": len(recovery_authorizations),
+        "strict_report_candidate_set_certificates": len(candidate_set_certificates),
     }
     certificate = OwnershipClosureCertificate(
         certificate_id=_strict_report_id("ownership-closure", statute_id, payload),
@@ -1140,6 +1253,11 @@ def finland_strict_report_ownership_closure_certificate(
                 statute_id,
                 mutation_boundary_proofs,
             ),
+            "strict_report_candidate_sets": _strict_report_id(
+                "strict-report-candidate-sets",
+                statute_id,
+                candidate_set_certificates,
+            ),
         },
         closed=False,
         failed_gates=tuple(failed_gates),
@@ -1155,8 +1273,18 @@ def finland_strict_report_ownership_closure_certificate(
             ),
             "safe_default": "treat_open_certificate_as_accounting_gap_not_replay_failure",
             "missing_required_certificates": (
-                "source_unit_enumeration_certificate",
-                "operation_candidate_coverage_certificate",
+                *(
+                    ()
+                    if _has_candidate_set(candidate_set_certificates, "fi_strict_report_source_lineage_units")
+                    else ("source_unit_enumeration_certificate",)
+                ),
+                *(
+                    ()
+                    if _has_candidate_set(candidate_set_certificates, "fi_strict_report_visible_operation_rows")
+                    else ("operation_candidate_coverage_certificate",)
+                ),
+                "complete_source_unit_enumeration_certificate",
+                "complete_operation_cue_exhaustiveness_certificate",
             ),
         },
     )
@@ -2647,6 +2775,76 @@ def _mapping_sequence(value: Any) -> tuple[Mapping[str, Any], ...]:
     return tuple(item for item in value if isinstance(item, Mapping))
 
 
+def _count_by_field(rows: tuple[Mapping[str, Any], ...], field_name: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        key = str(row.get(field_name) or "")
+        if key:
+            counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _has_candidate_set(
+    rows: tuple[Mapping[str, Any], ...],
+    candidate_set_kind: str,
+) -> bool:
+    return any(str(row.get("candidate_set_kind") or "") == candidate_set_kind for row in rows)
+
+
+def _visible_operation_candidate_ids(
+    *,
+    canonical_op_ids: tuple[str, ...],
+    canonical_count: int,
+    failed_ops: tuple[Mapping[str, Any], ...],
+) -> tuple[str, ...]:
+    ids = [
+        op_id or f"canonical-op:{index + 1}"
+        for index, op_id in enumerate(canonical_op_ids[:canonical_count])
+    ]
+    if len(ids) < canonical_count:
+        ids.extend(f"canonical-op:{index + 1}" for index in range(len(ids), canonical_count))
+    ids.extend(_failed_operation_candidate_id(index=index, row=row) for index, row in enumerate(failed_ops))
+    return tuple(ids)
+
+
+def _failed_operation_candidate_id(*, index: int, row: Mapping[str, Any]) -> str:
+    op_id = str(row.get("op_id") or "")
+    if op_id:
+        return f"failed-op:{op_id}"
+    digest_payload = {
+        "index": index,
+        "amendment_id": row.get("amendment_id") or row.get("source") or "",
+        "description": row.get("description") or "",
+        "reason": row.get("reason") or "",
+        "reason_code": row.get("reason_code") or "",
+        "target_unit_kind": row.get("target_unit_kind") or row.get("target_kind") or "",
+        "target_section": row.get("target_section") or "",
+        "target_chapter": row.get("target_chapter") or "",
+        "target_part": row.get("target_part") or "",
+    }
+    digest = hashlib.sha256(
+        json.dumps(digest_payload, ensure_ascii=True, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:16]
+    return f"failed-op:{digest}"
+
+
+def _source_lineage_candidate_ids(
+    source_lineage_witnesses: tuple[Mapping[str, Any], ...],
+) -> tuple[str, ...]:
+    ids: list[str] = []
+    for index, witness in enumerate(source_lineage_witnesses):
+        artifact_id = str(witness.get("artifact_id") or "")
+        source_unit_id = str(witness.get("source_unit_id") or "")
+        if artifact_id or source_unit_id:
+            ids.append(f"source-lineage:{artifact_id or 'unknown'}:{source_unit_id or index + 1}")
+            continue
+        digest = hashlib.sha256(
+            json.dumps(witness, ensure_ascii=True, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()[:16]
+        ids.append(f"source-lineage:{digest}")
+    return tuple(ids)
+
+
 def _ops_count(payload: Mapping[str, Any], name: str) -> int:
     ops = payload.get("ops")
     if not isinstance(ops, Mapping):
@@ -2675,6 +2873,7 @@ def _strict_report_closure_graph_payload(payload: Mapping[str, Any]) -> Mapping[
         "statute_id",
         "profile",
         "ops",
+        "canonical_op_ids",
         "source_completeness",
         "source_pathologies",
         "source_pathology_execution_authorizations",
@@ -2683,6 +2882,7 @@ def _strict_report_closure_graph_payload(payload: Mapping[str, Any]) -> Mapping[
         "source_lineage_source_witnesses",
         "agreement_residuals",
         "mutation_boundary_proofs",
+        "strict_report_candidate_set_certificates",
         "strict_fail_reasons",
         "projection_rows",
         "failed_ops",
