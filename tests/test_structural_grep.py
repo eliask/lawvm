@@ -5,6 +5,8 @@ a live corpus or farchive.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from lawvm.tools.structural_grep import (
     GrepMatch,
     StructuralGrepFilter,
@@ -15,6 +17,10 @@ from lawvm.tools.structural_grep import (
     _node_label_basis,
 )
 
+MockNode = dict[str, Any]
+MockSection = dict[str, Any]
+MockEvent = dict[str, Any]
+
 
 # ---------------------------------------------------------------------------
 # Fixtures: mock section data
@@ -23,13 +29,13 @@ from lawvm.tools.structural_grep import (
 
 def _section(
     *,
-    replay: dict | None = None,
-    oracle: dict | None = None,
+    replay: MockNode | None = None,
+    oracle: MockNode | None = None,
     diff_kind: str = "identical",
-    events: list[dict] | None = None,
-) -> dict:
+    events: list[MockEvent] | None = None,
+) -> MockSection:
     """Build a minimal mock section data dict as produced by build_semantic_support."""
-    sd: dict = {
+    sd: MockSection = {
         "kind": diff_kind,
         "summary": "",
         "structural": 0,
@@ -38,7 +44,7 @@ def _section(
         "editorial": 0,
         "events": events or [],
     }
-    result: dict = {"semantic_diff": sd}
+    result: MockSection = {"semantic_diff": sd}
     if replay is not None:
         result["replay"] = replay
     if oracle is not None:
@@ -51,11 +57,11 @@ def _node(
     label: str = "1",
     text: str = "",
     label_basis: str = "explicit",
-    children: list[dict] | None = None,
-    facets: dict | None = None,
-) -> dict:
+    children: list[MockNode] | None = None,
+    facets: MockNode | None = None,
+) -> MockNode:
     """Build a minimal SemanticStructureNode dict."""
-    n: dict = {"kind": kind, "label": label}
+    n: MockNode = {"kind": kind, "label": label}
     if text:
         n["text"] = text
     if label_basis != "explicit":
@@ -289,7 +295,7 @@ class TestMatchesFilter:
     def test_no_semantic_diff(self) -> None:
         """Section without semantic_diff returns False."""
         filt = StructuralGrepFilter(diff_kind=["text_only"])
-        sec: dict = {"replay": _node(), "oracle": _node()}
+        sec: MockSection = {"replay": _node(), "oracle": _node()}
         assert _matches_filter("1 §", sec, filt) is False
 
 
