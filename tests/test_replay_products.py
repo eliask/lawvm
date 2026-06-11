@@ -969,7 +969,11 @@ def test_replay_xml_1972_66_repeals_live_suffix_section_in_numeric_range() -> No
     assert selected.content is None
     assert selected.source is not None
     assert selected.source.statute_id == "1982/684"
+    assert selected.source.title == "Laki kansanterveyslain muuttamisesta"
+    assert selected.source.enacted == "1982-09-17"
     assert selected.effective == "1984-01-01"
+    assert "kumotaan" in selected.source.raw_text
+    assert "4 luvun otsikko 27-39 §" in selected.source.raw_text
 
 
 def test_replay_xml_nests_simple_digit_subparagraphs_for_1997_108() -> None:

@@ -1854,6 +1854,32 @@ def test_specimen_2023_703_section_9_exposes_operation_source_witness() -> None:
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_1972_66_injected_repeal_exposes_operation_source_witness() -> None:
+    payload = resolve_provision_state(
+        statute_id="1972/66",
+        jurisdiction="fi",
+        provision="chapter:4/section:27a",
+        as_of="2020-12-11",
+        query_type="in_force",
+    )
+
+    assert payload["status"] == "selected"
+    assert payload["version"]["content_state"] == "tombstone"
+    assert payload["source"]["statute_id"] == "1982/684"
+    assert payload["source"]["title"] == "Laki kansanterveyslain muuttamisesta"
+    assert payload["source"]["enacted"] == "1982-09-17"
+    locator = payload["source_locator"]
+    detail = locator["detail"]
+    assert detail["source_witness_status"] == "operation_source_raw_text_available"
+    witness = detail["source_witness"]
+    assert witness["kind"] == "operation_source_raw_text"
+    assert "kumotaan" in witness["quote"]
+    assert "4 luvun otsikko 27-39 §" in witness["quote"]
+    assert locator["quote_hash"] == witness["quote_hash"]
+    assert detail["operation_source_xml_span_status"] == "available"
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 def test_specimen_2023_71_chapter_insert_recovery_warning_is_visible() -> None:
     payload = resolve_provision_state(
         statute_id="2023/71",

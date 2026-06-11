@@ -1613,10 +1613,13 @@ def _inject_pure_kumotaan_repeal_ops(
     lo_ops_out: List[_LegalOperation],
     *,
     amendment_id: str,
+    source_title: str,
+    amendment_issue_date: Optional["dt.date"],
     kumotaan_labels: List[str],
     chap_map_sets: Optional[Dict[Optional[str], Set[str]]],
     amendment_effective_date: "dt.date",
     state: "ReplayState",
+    source_raw_text: str,
 ) -> int:
     """Inject REPEAL lo_ops for pure-kumotaan sections that have no existing lo_ops.
 
@@ -1665,9 +1668,13 @@ def _inject_pure_kumotaan_repeal_ops(
         covered_chap_secs.add((chap_label.lower() if chap_label else None, sec_label.lower()))
 
     effective_iso = amendment_effective_date.isoformat()
+    enacted_iso = amendment_issue_date.isoformat() if amendment_issue_date else effective_iso
     repeal_src = OperationSource(
         statute_id=amendment_id,
+        title=source_title,
+        enacted=enacted_iso,
         effective=effective_iso,
+        raw_text=source_raw_text.strip(),
     )
 
     injected = 0
@@ -7710,10 +7717,13 @@ def process_muutoslaki(
                 _n_pure = _inject_pure_kumotaan_repeal_ops(
                     lo_ops_out,
                     amendment_id=amendment_id,
+                    source_title=source_title,
+                    amendment_issue_date=amendment_issue_date,
                     kumotaan_labels=_kumotaan_labels,
                     chap_map_sets=_chap_map_sets,
                     amendment_effective_date=amendment_effective_date,
                     state=state,
+                    source_raw_text=johto,
                 )
                 if _n_pure:
                     _replay_print(
