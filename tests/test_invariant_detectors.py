@@ -9,11 +9,13 @@ from lawvm.core.invariant_detectors import InvariantDetectorResult
 from lawvm.core.invariant_detectors import SUPPORTED_INVARIANT_DETECTORS
 from lawvm.core.invariant_detectors import run_descendant_sibling_loss_detector
 from lawvm.core.invariant_detectors import run_invariant_detector, run_invariant_detector_messages
+from lawvm.core.invariant_detectors import run_label_normalization_collision_detector
 from lawvm.core.invariant_detectors import run_same_source_descendant_snapshot_shadow_detector
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.core.provenance import OperationSource
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.tools.cli import _INVARIANT_DETECTOR_CHOICES
+from lawvm.tools.invariant_bisect import _run_fi_invariant_detector_messages
 
 
 def test_run_invariant_detector_returns_typed_tree_results_with_legacy_messages() -> None:
@@ -32,6 +34,55 @@ def test_run_invariant_detector_returns_typed_tree_results_with_legacy_messages(
     assert results[0].path_text == "body"
     assert results[0].message == "body: duplicate section:1 (2 times)"
     assert isinstance(results[0].detail, FrozenDict)
+
+
+def test_label_normalization_collision_detector_uses_injected_slot_identity() -> None:
+    tree = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.SECTION, label="4a"),
+            IRNode(kind=IRNodeKind.SECTION, label="iva"),
+        ),
+    )
+
+    def normalizer(label: str) -> str:
+        return "4a" if label in {"4a", "iva"} else label
+
+    results = run_label_normalization_collision_detector(tree, normalizer)
+
+    assert [result.kind for result in results] == ["label_normalization_collision"]
+    assert results[0].path_text == "body"
+    assert results[0].message == (
+        "body: label-normalization collision section:4a from labels 4a, iva"
+    )
+    assert results[0].detail["labels"] == ("4a", "iva")
+
+
+def test_default_duplicate_detector_does_not_import_jurisdiction_label_semantics() -> None:
+    tree = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.SECTION, label="4a"),
+            IRNode(kind=IRNodeKind.SECTION, label="iva"),
+        ),
+    )
+
+    assert run_invariant_detector(tree, "duplicate_label") == []
+
+
+def test_fi_invariant_detector_messages_use_finland_label_normalizer() -> None:
+    tree = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.PART, label="4a"),
+            IRNode(kind=IRNodeKind.PART, label="iva"),
+        ),
+    )
+
+    assert _run_fi_invariant_detector_messages(
+        tree,
+        "label_normalization_collision",
+    ) == ["body: label-normalization collision part:4a from labels 4a, iva"]
 
 
 def test_run_invariant_detector_filters_by_typed_path_before_message_projection() -> None:

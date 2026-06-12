@@ -22,6 +22,8 @@ region of the amendment chain.
 
 Detectors:
   duplicate_label        duplicate (kind, label) among siblings
+  label_normalization_collision same-kind sibling labels that collide under
+                          the jurisdiction's slot-identity normalizer
   illegal_edge           impossible parent→child nesting
   all_tree               all check_invariants violations (covers both above)
   text_duplication       large duplicated text blocks (lint-level)
@@ -51,11 +53,31 @@ from typing import Any, Dict, List, Literal, Optional
 from lawvm.core.invariant_detectors import (
     run_descendant_sibling_loss_detector,
     run_invariant_detector_messages,
+    run_label_normalization_collision_detector,
     run_same_source_descendant_snapshot_shadow_detector,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_UK_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
+
+
+def _run_fi_invariant_detector_messages(
+    ir: Any,
+    detector: str,
+    target_path: str = "",
+) -> list[str]:
+    if detector == "label_normalization_collision":
+        from lawvm.finland.helpers import _norm_num_token
+
+        return [
+            result.message
+            for result in run_label_normalization_collision_detector(
+                ir,
+                _norm_num_token,
+                target_path,
+            )
+        ]
+    return run_invariant_detector_messages(ir, detector, target_path)
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +414,7 @@ def build_invariant_bisect_bundle(
         ).output
 
     # Check state before scan window
-    initial_violations = run_invariant_detector_messages(state.ir, detector, target_path)
+    initial_violations = _run_fi_invariant_detector_messages(state.ir, detector, target_path)
     initial_clean = len(initial_violations) == 0
 
     # Scan window
@@ -425,7 +447,7 @@ def build_invariant_bisect_bundle(
                 )
             ]
         else:
-            violations = run_invariant_detector_messages(state.ir, detector, target_path)
+            violations = _run_fi_invariant_detector_messages(state.ir, detector, target_path)
         steps.append({
             "source_id": mid,
             "clean": len(violations) == 0,

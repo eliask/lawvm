@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Mapping
 
@@ -22,6 +22,7 @@ from lawvm.core.tree_ops import (
 
 InvariantDetectorName = Literal[
     "duplicate_label",
+    "label_normalization_collision",
     "illegal_edge",
     "all_tree",
     "text_duplication",
@@ -31,6 +32,7 @@ InvariantDetectorName = Literal[
 ]
 SUPPORTED_INVARIANT_DETECTORS: tuple[InvariantDetectorName, ...] = (
     "duplicate_label",
+    "label_normalization_collision",
     "illegal_edge",
     "all_tree",
     "text_duplication",
@@ -38,6 +40,8 @@ SUPPORTED_INVARIANT_DETECTORS: tuple[InvariantDetectorName, ...] = (
     "descendant_sibling_loss",
     "same_source_descendant_snapshot_shadow",
 )
+
+LabelNormalizer = Callable[[str], str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,8 +90,85 @@ def _address_part_text(path: Sequence[tuple[str, str]]) -> str:
     return "/".join(f"{kind}:{label}" for kind, label in path)
 
 
-def _path_text(path: Sequence[tuple[str, str]]) -> str:
+def _path_text(path: Sequence[tuple[str, str | None]]) -> str:
     return format_invariant_path(tuple((kind, label) for kind, label in path))
+
+
+def _child_label_collision_message(
+    path_text: str,
+    child_kind: str,
+    normalized_label: str,
+    labels: Sequence[str],
+) -> str:
+    label_text = ", ".join(labels)
+    return (
+        f"{path_text}: label-normalization collision {child_kind}:{normalized_label} "
+        f"from labels {label_text}"
+    )
+
+
+def run_label_normalization_collision_detector(
+    ir: IRNode,
+    label_normalizer: LabelNormalizer = normalized_label_key,
+    target_path: str = "",
+    detector: str = "label_normalization_collision",
+) -> list[InvariantDetectorResult]:
+    """Flag sibling labels that collide under a caller-supplied normalizer.
+
+    Core's built-in ``normalized_duplicate_label`` intentionally uses only the
+    shared default label key.  Jurisdictions with stronger slot-identity rules
+    can inject their own normalizer here without moving local semantics into
+    core.
+    """
+    results: list[InvariantDetectorResult] = []
+
+    def _walk(node: IRNode, path: tuple[tuple[str, str | None], ...]) -> None:
+        grouped: dict[tuple[str, str], list[str]] = {}
+        for child in node.children:
+            if child.label is None:
+                continue
+            child_kind = _kind_str(child.kind)
+            normalized = label_normalizer(child.label)
+            grouped.setdefault((child_kind, normalized), []).append(child.label)
+
+        parent_path = _path_text(path)
+        for (child_kind, normalized), labels in grouped.items():
+            distinct_labels = tuple(dict.fromkeys(labels))
+            if len(distinct_labels) < 2:
+                continue
+            if not path_matches_target(parent_path, target_path):
+                continue
+            message = _child_label_collision_message(
+                parent_path,
+                child_kind,
+                normalized,
+                distinct_labels,
+            )
+            results.append(
+                InvariantDetectorResult(
+                    detector=detector,
+                    kind="label_normalization_collision",
+                    path_text=parent_path,
+                    message=message,
+                    detail={
+                        "parent_path": parent_path,
+                        "child_kind": child_kind,
+                        "normalized_label": normalized,
+                        "labels": distinct_labels,
+                        "count": len(labels),
+                    },
+                )
+            )
+
+        for child in node.children:
+            child_label = child.label
+            child_path = path
+            if child_label is not None:
+                child_path = path + ((_kind_str(child.kind), child_label),)
+            _walk(child, child_path)
+
+    _walk(ir, ((_kind_str(ir.kind), ir.label),))
+    return results
 
 
 def _node_matches_step(node: IRNode, step: tuple[str, str]) -> bool:
@@ -343,6 +424,9 @@ def run_invariant_detector(
         "same_source_descendant_snapshot_shadow",
     }:
         return []
+
+    if detector == "label_normalization_collision":
+        return run_label_normalization_collision_detector(ir, target_path=target_path)
 
     if detector in ("duplicate_label", "illegal_edge", "all_tree"):
         selected_families: set[TreeInvariantKind] | None = None

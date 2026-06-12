@@ -22,6 +22,8 @@ Phase attribution:
 
 Detectors:
   duplicate_label          duplicate (kind, label) among siblings
+  label_normalization_collision same-kind sibling labels that collide under
+                          the Finnish slot-identity normalizer
   illegal_edge             impossible parent→child nesting
   all_tree                 all check_invariants violations (covers both above)
   text_duplication         large duplicated text blocks (lint-level)
@@ -60,8 +62,22 @@ def _run_tree_detector(
     Returns a list of violation strings.  If *target_path* is given, only
     violations whose path contains the target components are returned.
     """
-    from lawvm.core.invariant_detectors import run_invariant_detector_messages
+    from lawvm.core.invariant_detectors import (
+        run_invariant_detector_messages,
+        run_label_normalization_collision_detector,
+    )
 
+    if detector == "label_normalization_collision":
+        from lawvm.finland.helpers import _norm_num_token
+
+        return [
+            result.message
+            for result in run_label_normalization_collision_detector(
+                ir,
+                _norm_num_token,
+                target_path,
+            )
+        ]
     return run_invariant_detector_messages(ir, detector, target_path)
 
 

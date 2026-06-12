@@ -116,6 +116,7 @@ from lawvm.tools.replay_mode_arg import replay_mode_argument
 # Drift is caught by tests/test_invariant_detectors.py::test_cli_inlined_choices_match.
 _INVARIANT_DETECTOR_CHOICES: tuple[str, ...] = (
     "duplicate_label",
+    "label_normalization_collision",
     "illegal_edge",
     "all_tree",
     "text_duplication",
