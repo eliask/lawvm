@@ -32,8 +32,9 @@ from lawvm.finland.vts import VtsSkippedTarget
 
 
 @dataclass(slots=True)
-class ProcessResultBuilder:
-    amendment_id: str
+class ProcessSignalBuffers:
+    """Mutable per-amendment signals accumulated before PhaseResult projection."""
+
     process_findings: list[Finding]
     amendment_temporal_events: list[TemporalEvent]
     failed_ops: list[FailedOp]
@@ -43,6 +44,26 @@ class ProcessResultBuilder:
     sparse_leftovers: list[dict[str, object]]
     commencement_expiry_override_notes: list[dict[str, object]]
     vts_skipped_targets: list[VtsSkippedTarget]
+
+    @classmethod
+    def empty(cls) -> "ProcessSignalBuffers":
+        return cls(
+            process_findings=[],
+            amendment_temporal_events=[],
+            failed_ops=[],
+            source_pathologies=[],
+            elaboration_observations=[],
+            sparse_slot_bindings=[],
+            sparse_leftovers=[],
+            commencement_expiry_override_notes=[],
+            vts_skipped_targets=[],
+        )
+
+
+@dataclass(slots=True)
+class ProcessResultBuilder:
+    amendment_id: str
+    buffers: ProcessSignalBuffers
     migration_ledger: MigrationLedger
     migration_ledger_initial_len: int
     failed_ops_out: Optional[List[FailedOp]]
@@ -57,9 +78,9 @@ class ProcessResultBuilder:
 
     def build(self, output_state: Any) -> PhaseResult[Any]:
         """Build PhaseResult from local phase-owned signals and project compat sinks."""
-        amendment_temporal_events = list(self.amendment_temporal_events)
-        merged_findings: list[Finding] = list(self.process_findings)
-        if self.source_pathologies:
+        amendment_temporal_events = list(self.buffers.amendment_temporal_events)
+        merged_findings: list[Finding] = list(self.buffers.process_findings)
+        if self.buffers.source_pathologies:
             merged_findings.extend(
                 Finding(
                     kind="ELAB.SOURCE_PATHOLOGY",
@@ -69,9 +90,9 @@ class ProcessResultBuilder:
                     source_statute=p.source_statute or self.amendment_id,
                     blocking=False,
                 )
-                for p in self.source_pathologies
+                for p in self.buffers.source_pathologies
             )
-        if self.elaboration_observations:
+        if self.buffers.elaboration_observations:
             merged_findings.extend(
                 Finding(
                     kind=str(o.get("kind", "")),
@@ -91,10 +112,10 @@ class ProcessResultBuilder:
                         else False
                     ),
                 )
-                for o in self.elaboration_observations
+                for o in self.buffers.elaboration_observations
                 if str(o.get("kind", "")).strip()
             )
-        if self.vts_skipped_targets:
+        if self.buffers.vts_skipped_targets:
             merged_findings.extend(
                 Finding(
                     kind=record.rule_id,
@@ -104,9 +125,9 @@ class ProcessResultBuilder:
                     source_statute=record.source_statute or self.amendment_id,
                     blocking=record.blocking,
                 )
-                for record in self.vts_skipped_targets
+                for record in self.buffers.vts_skipped_targets
             )
-        if self.failed_ops:
+        if self.buffers.failed_ops:
             merged_findings.extend(
                 Finding(
                     kind="APPLY.FAILED_OPERATION",
@@ -116,7 +137,7 @@ class ProcessResultBuilder:
                     blocking=True,
                     source_statute="",
                 )
-                for f in self.failed_ops
+                for f in self.buffers.failed_ops
             )
 
         current_events = (self.mutation_events_out or [])[self.mutation_cursor:]
@@ -150,17 +171,19 @@ class ProcessResultBuilder:
 
     def project_compat_sinks(self) -> None:
         if self.failed_ops_out is not None:
-            self.failed_ops_out.extend(self.failed_ops)
+            self.failed_ops_out.extend(self.buffers.failed_ops)
         if self.source_pathologies_out is not None:
-            self.source_pathologies_out.extend(self.source_pathologies)
+            self.source_pathologies_out.extend(self.buffers.source_pathologies)
         if self.elaboration_observations_out is not None:
-            self.elaboration_observations_out.extend(self.elaboration_observations)
+            self.elaboration_observations_out.extend(self.buffers.elaboration_observations)
         if self.sparse_slot_bindings_out is not None:
-            self.sparse_slot_bindings_out.extend(self.sparse_slot_bindings)
+            self.sparse_slot_bindings_out.extend(self.buffers.sparse_slot_bindings)
         if self.sparse_leftovers_out is not None:
-            self.sparse_leftovers_out.extend(self.sparse_leftovers)
+            self.sparse_leftovers_out.extend(self.buffers.sparse_leftovers)
         if self.commencement_expiry_overrides_out is not None:
-            self.commencement_expiry_overrides_out.extend(self.commencement_expiry_override_notes)
+            self.commencement_expiry_overrides_out.extend(
+                self.buffers.commencement_expiry_override_notes
+            )
 
     def _append_apply_mutation_findings(
         self,

@@ -636,7 +636,7 @@ from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
 from lawvm.finland.process_findings import ProcessFindingRecorder
 from lawvm.finland.process_frontend_normalization import ProcessFrontendNormalizationContext
 from lawvm.finland.process_precompile_selection import ProcessPrecompileSelectionContext
-from lawvm.finland.process_result_builder import ProcessResultBuilder
+from lawvm.finland.process_result_builder import ProcessResultBuilder, ProcessSignalBuffers
 from lawvm.finland.process_route_rejection import ProcessRouteRejectionContext
 from lawvm.finland.process_compile_signals import ProcessCompileSignalsContext
 from lawvm.finland.process_apply_projection import ProcessApplyProjectionContext
@@ -1633,7 +1633,6 @@ from lawvm.finland.vts import (
     _voimaantulo_repeal_fragment_for_parent,
     _vts_extract_after_citation,
     _expand_section_range_vts,
-    VtsSkippedTarget,
     extract_voimaantulo_repeals,
     extract_vts_repeals_fallback,
 )
@@ -4752,16 +4751,18 @@ def process_muutoslaki(
     etc.) are still populated for backward compatibility, but callers should
     prefer the PhaseResult signals.
     """
-    # Accumulates executable amendment temporal authority from compile/apply phases.
-    _amendment_temporal_events: list[TemporalEvent] = []
-    _process_findings: list[Finding] = []
-    _compat_failed_ops: list[FailedOp] = []
-    _compat_source_pathologies: list[SourcePathology] = []
-    _compat_elaboration_observations: list[dict[str, object]] = []
-    _compat_sparse_slot_bindings: list[dict[str, object]] = []
-    _compat_sparse_leftovers: list[dict[str, object]] = []
-    _commencement_expiry_override_notes: list[dict[str, object]] = []
-    _vts_skipped_targets: list[VtsSkippedTarget] = []
+    # Accumulates executable temporal authority plus compatibility evidence rows
+    # before the PhaseResult/result-sink projection boundary.
+    _signals = ProcessSignalBuffers.empty()
+    _amendment_temporal_events = _signals.amendment_temporal_events
+    _process_findings = _signals.process_findings
+    _compat_failed_ops = _signals.failed_ops
+    _compat_source_pathologies = _signals.source_pathologies
+    _compat_elaboration_observations = _signals.elaboration_observations
+    _compat_sparse_slot_bindings = _signals.sparse_slot_bindings
+    _compat_sparse_leftovers = _signals.sparse_leftovers
+    _commencement_expiry_override_notes = _signals.commencement_expiry_override_notes
+    _vts_skipped_targets = _signals.vts_skipped_targets
     _effective_restructure_plans_out: list[StructuralTransformPlan] = (
         restructure_plans_out if restructure_plans_out is not None else []
     )
@@ -4776,15 +4777,7 @@ def process_muutoslaki(
     _migration_ledger_initial_len = len(_migration_ledger)
     _result_builder = ProcessResultBuilder(
         amendment_id=amendment_id,
-        process_findings=_process_findings,
-        amendment_temporal_events=_amendment_temporal_events,
-        failed_ops=_compat_failed_ops,
-        source_pathologies=_compat_source_pathologies,
-        elaboration_observations=_compat_elaboration_observations,
-        sparse_slot_bindings=_compat_sparse_slot_bindings,
-        sparse_leftovers=_compat_sparse_leftovers,
-        commencement_expiry_override_notes=_commencement_expiry_override_notes,
-        vts_skipped_targets=_vts_skipped_targets,
+        buffers=_signals,
         migration_ledger=_migration_ledger,
         migration_ledger_initial_len=_migration_ledger_initial_len,
         failed_ops_out=failed_ops_out,
