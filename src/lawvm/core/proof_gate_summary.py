@@ -152,11 +152,7 @@ def proof_gate_summary_from_surfaces(
     """Build passive proof-gate accounting from shared report rows."""
 
     failed_gate_rows = tuple(str(gate) for gate in _sequence(failed_gates) if str(gate))
-    unowned = {
-        str(key): int(value)
-        for key, value in dict(unowned_counts or {}).items()
-        if int(value)
-    }
+    unowned = _nonzero_count_mapping(unowned_counts or {})
     coverage_frontiers = _mapping_rows(coverage_frontier_work_items)
     non_coverage_frontiers = _mapping_rows(manual_or_other_frontier_work_items)
     manual_claim_frontiers = tuple(
@@ -245,11 +241,21 @@ def _require_nonnegative_int(field_name: str, value: Any) -> None:
 def _count_mapping(value: Mapping[str, Any]) -> dict[str, int]:
     if not isinstance(value, Mapping):
         raise ValueError("ProofGateSummary count fields must be mappings")
-    return {
-        str(key): int(count)
-        for key, count in value.items()
-        if str(key) and int(count)
-    }
+    return _nonzero_count_mapping(value)
+
+
+def _nonzero_count_mapping(value: Mapping[str, Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for key, count in value.items():
+        if not str(key):
+            continue
+        if not isinstance(count, int) or isinstance(count, bool):
+            raise ValueError("ProofGateSummary count values must be non-negative integers")
+        if count < 0:
+            raise ValueError("ProofGateSummary count values must be non-negative integers")
+        if count:
+            counts[str(key)] = count
+    return counts
 
 
 def _count_values(values: Any) -> dict[str, int]:
@@ -262,6 +268,8 @@ def _count_values(values: Any) -> dict[str, int]:
 
 
 def _mapping_rows(value: Any) -> tuple[dict[str, Any], ...]:
+    if isinstance(value, Mapping):
+        return (dict(value),)
     if not isinstance(value, (list, tuple)):
         return ()
     return tuple(dict(row) for row in value if isinstance(row, Mapping))
@@ -280,4 +288,3 @@ def _sequence(value: Any) -> tuple[Any, ...]:
 def _matches_prefix(value: Any, prefixes: tuple[str, ...]) -> bool:
     text = str(value or "")
     return bool(text) and any(text.startswith(prefix) for prefix in prefixes)
-

@@ -84,3 +84,47 @@ def test_proof_gate_summary_requires_replay_authorization_disclaimer() -> None:
             ownership_failed_gate_count=0,
             does_not_claim=("proof_closure",),
         )
+
+
+def test_proof_gate_summary_accepts_single_mapping_inputs() -> None:
+    summary = proof_gate_summary_from_surfaces(
+        schema="lawvm.test.proof_gate_summary.v1",
+        scope="unit-test",
+        closed=False,
+        failed_gates=(),
+        manual_or_other_frontier_work_items={
+            "owner_phase": "source",
+            "frontier_status": "manual_claim_needed",
+            "required_claim_kind": "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE",
+        },
+        candidate_set_certificates={
+            "candidate_set_kind": "fi_strict_report_source_unit_enumeration",
+            "completeness_status": "partial",
+        },
+        manual_claim_kind_prefixes=("fi.v1.",),
+    ).to_dict()
+
+    assert summary["manual_claim_frontier_count"] == 1
+    assert summary["incomplete_candidate_set_count"] == 1
+    assert summary["open_gate_signal_count"] == 2
+
+
+def test_proof_gate_summary_rejects_boolean_count_values() -> None:
+    with pytest.raises(ValueError, match="count values"):
+        proof_gate_summary_from_surfaces(
+            schema="lawvm.test.proof_gate_summary.v1",
+            scope="unit-test",
+            closed=False,
+            failed_gates=(),
+            unowned_counts={"invalid_bool_count": True},
+        )
+
+    with pytest.raises(ValueError, match="count values"):
+        ProofGateSummary(
+            schema="lawvm.test.proof_gate_summary.v1",
+            scope="unit-test",
+            closed=False,
+            open_gate_signal_count=0,
+            ownership_failed_gate_count=0,
+            unowned_counts={"invalid_bool_count": False},
+        )
