@@ -98,6 +98,15 @@ class TemporalScheduleResult:
     unresolved_breaks: tuple[Any, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class TemporalWindowPayload:
+    """Proved temporal interval plus payload selected for scheduling."""
+
+    interval: TemporalWriteInterval
+    payload: IRNode
+    applicability: tuple[ScopePredicate, ...]
+
+
 def materialize_temporal_write_windows(
     timelines: Mapping[LegalAddress, ProvisionTimeline],
     ops: Iterable[LegalOperation],
@@ -123,11 +132,11 @@ def materialize_temporal_write_windows(
         if interval_and_payload is None:
             unresolved.append(item)
             continue
-        interval, payload, applicability = interval_and_payload
-        timeline = next_timelines.get(interval.target_address)
+        timeline = next_timelines.get(interval_and_payload.interval.target_address)
         if timeline is None or not _window_has_deferred_occupant(item, timeline):
             unresolved.append(item)
             continue
+        interval = interval_and_payload.interval
         if not (interval.effective and interval.expires and interval.effective < interval.expires):
             unresolved.append(item)
             continue
@@ -142,9 +151,9 @@ def materialize_temporal_write_windows(
             enacted=interval.enacted,
             expires=interval.expires,
             variant_kind="temporary",
-            content=payload,
+            content=interval_and_payload.payload,
             source=_matching_source(interval, op_list),
-            applicability=list(applicability),
+            applicability=list(interval_and_payload.applicability),
             content_hash=interval.payload_hash,
         )
         scheduled_versions = [*timeline.versions, version]
@@ -178,7 +187,7 @@ def materialize_temporal_write_windows(
 def _interval_for_window(
     item: Any,
     ops: tuple[LegalOperation, ...],
-) -> tuple[TemporalWriteInterval, IRNode, tuple[ScopePredicate, ...]] | None:
+) -> TemporalWindowPayload | None:
     source_work_id = str(getattr(item, "amendment_id", "") or "")
     target_section = str(getattr(item, "target_section", "") or "")
     effective = str(getattr(item, "window_start", "") or "")
@@ -226,7 +235,11 @@ def _interval_for_window(
         origin_rule_id=rule_id or "temporally_disjoint_twin_insert",
         provenance_findings=("TEMPORAL.WINDOW_UNMATERIALIZED",),
     )
-    return interval, op.payload, tuple(op.applicability)
+    return TemporalWindowPayload(
+        interval=interval,
+        payload=op.payload,
+        applicability=tuple(op.applicability),
+    )
 
 
 def _window_has_deferred_occupant(item: Any, timeline: ProvisionTimeline) -> bool:
