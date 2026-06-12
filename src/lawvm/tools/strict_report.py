@@ -327,6 +327,112 @@ def _format_count_map(counts: Any) -> str:
     )
 
 
+def _count_values(values: Any) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for value in values:
+        text = str(value or "")
+        if text:
+            counts[text] += 1
+    return dict(sorted(counts.items()))
+
+
+def _mapping_rows(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [dict(row) for row in value if isinstance(row, dict)]
+
+
+def _proof_gate_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    """Summarize open proof gates from already-typed strict-report surfaces."""
+
+    ownership = payload.get("ownership_closure_certificate")
+    ownership = ownership if isinstance(ownership, dict) else {}
+    evidence = payload.get("evidence_surface_report")
+    evidence_summary = (
+        dict(evidence.get("summary") or {}) if isinstance(evidence, dict) else {}
+    )
+    source_pathology_frontiers = _mapping_rows(
+        payload.get("source_pathology_frontier_work_items")
+    )
+    failed_operation_frontiers = _mapping_rows(
+        payload.get("failed_operation_frontier_work_items")
+    )
+    candidate_set_frontiers = _mapping_rows(
+        payload.get("strict_report_candidate_set_frontier_work_items")
+    )
+    candidate_sets = _mapping_rows(payload.get("strict_report_candidate_set_certificates"))
+    all_frontiers = [
+        *source_pathology_frontiers,
+        *failed_operation_frontiers,
+        *candidate_set_frontiers,
+    ]
+    failed_gates = [str(gate) for gate in ownership.get("failed_gates", ()) or ()]
+    unowned_counts = {
+        str(key): int(value)
+        for key, value in dict(ownership.get("unowned_counts") or {}).items()
+        if int(value)
+    }
+    incomplete_candidate_sets = [
+        row
+        for row in candidate_sets
+        if str(row.get("completeness_status") or "") != "complete"
+    ]
+    manual_claim_frontiers = [
+        row
+        for row in all_frontiers
+        if str(row.get("required_claim_kind") or "").startswith("fi.v1.")
+    ]
+    coverage_frontiers = [
+        row
+        for row in candidate_set_frontiers
+        if not str(row.get("required_claim_kind") or "").startswith("fi.v1.")
+    ]
+    open_gate_signal_count = (
+        len(failed_gates)
+        + sum(unowned_counts.values())
+        + len(all_frontiers)
+        + len(incomplete_candidate_sets)
+    )
+    return {
+        "schema": "lawvm.fi.strict_report.proof_gate_summary.v1",
+        "scope": "strict_report_visible_surfaces_only",
+        "closed": bool(ownership.get("closed")),
+        "open_gate_signal_count": open_gate_signal_count,
+        "ownership_failed_gate_count": len(failed_gates),
+        "ownership_failed_gate_counts": _count_values(failed_gates),
+        "unowned_counts": unowned_counts,
+        "frontier_work_item_count": len(all_frontiers),
+        "manual_claim_frontier_count": len(manual_claim_frontiers),
+        "coverage_frontier_count": len(coverage_frontiers),
+        "frontier_owner_phase_counts": _count_values(
+            row.get("owner_phase") for row in all_frontiers
+        ),
+        "frontier_status_counts": _count_values(
+            row.get("frontier_status") for row in all_frontiers
+        ),
+        "required_claim_kind_counts": _count_values(
+            row.get("required_claim_kind") for row in all_frontiers
+        ),
+        "incomplete_candidate_set_count": len(incomplete_candidate_sets),
+        "candidate_set_completeness_counts": _count_values(
+            row.get("completeness_status") for row in candidate_sets
+        ),
+        "source_unit_coverage_status_counts": dict(
+            evidence_summary.get("source_unit_coverage_status_counts") or {}
+        ),
+        "potential_operation_classification_counts": dict(
+            evidence_summary.get("potential_operation_classification_counts") or {}
+        ),
+        "safe_default": "treat_open_proof_gates_as_non_executable_frontier_accounting",
+        "does_not_claim": [
+            "proof_closure",
+            "source_unit_enumeration_closure",
+            "operation_cue_exhaustiveness",
+            "replay_authorization",
+        ],
+    }
+
+
 def _effective_source_adjudication(
     *,
     statute_id: str,
@@ -465,6 +571,24 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
             lines.append(f"  failed gates     : {', '.join(str(gate) for gate in failed_gates)}")
         unowned_counts = ownership_closure.get("unowned_counts", {}) or {}
         lines.append(f"  unowned counts   : {_format_count_map(unowned_counts)}")
+        lines.append("")
+
+    proof_gate_summary = proof_payload.get("proof_gate_summary", {}) or {}
+    if proof_gate_summary:
+        lines.append("Proof gate summary")
+        lines.append(
+            f"  open gate signals: {proof_gate_summary.get('open_gate_signal_count', 0)}"
+        )
+        lines.append(
+            f"  manual frontiers : {proof_gate_summary.get('manual_claim_frontier_count', 0)}"
+        )
+        lines.append(
+            f"  coverage frontiers: {proof_gate_summary.get('coverage_frontier_count', 0)}"
+        )
+        lines.append(
+            "  required claims  : "
+            + _format_count_map(proof_gate_summary.get("required_claim_kind_counts"))
+        )
         lines.append("")
 
     if candidate_sets:
@@ -632,6 +756,7 @@ def _to_json(cr: Any) -> dict[str, Any]:
         closure_certificate
     )
     payload["evidence_surface_report"] = finland_strict_report_evidence_surface(payload)
+    payload["proof_gate_summary"] = _proof_gate_summary(payload)
     return payload
 
 

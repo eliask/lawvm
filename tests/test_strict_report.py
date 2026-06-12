@@ -577,6 +577,53 @@ def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
     assert payload["evidence_surface_report"]["summary"][
         "potential_operation_classification_counts"
     ] == {"failed": 1}
+    proof_gates = payload["proof_gate_summary"]
+    assert proof_gates["schema"] == "lawvm.fi.strict_report.proof_gate_summary.v1"
+    assert proof_gates["closed"] is False
+    assert proof_gates["manual_claim_frontier_count"] == 1
+    assert proof_gates["coverage_frontier_count"] == 4
+    assert proof_gates["open_gate_signal_count"] == 18
+    assert proof_gates["frontier_status_counts"] == {
+        "failed_operation_frontier": 1,
+        "partial_candidate_set_frontier": 4,
+    }
+    assert proof_gates["required_claim_kind_counts"] == {
+        "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
+        "operation_cue_exhaustiveness_certificate": 2,
+        "source_unit_enumeration_certificate": 2,
+    }
+    assert proof_gates["candidate_set_completeness_counts"] == {"partial": 4}
+    assert "replay_authorization" in proof_gates["does_not_claim"]
+
+
+def test_format_report_includes_compact_proof_gate_summary() -> None:
+    failed_op = FailedOp.from_scope(
+        amendment_id="2020/1",
+        description="replace chapter-scoped section",
+        reason="no deterministic path",
+        reason_code="no_deterministic_path",
+        target_unit_kind="section",
+        target_section="5",
+        target_chapter="4",
+    )
+    cr = SimpleNamespace(
+        statute_id="2001/1234",
+        replay_mode="legal_pit",
+        compile_mode="strict",
+        profile=FINLAND_INGESTION_V1,
+        canonical_ops=[],
+        failed_ops=[failed_op],
+        projection_rows=lambda: (),
+        source_pathology_rows=lambda: (),
+    )
+
+    out = strict_report._format_report(cr)
+
+    assert "Proof gate summary" in out
+    assert "manual frontiers : 1" in out
+    assert "coverage frontiers: 4" in out
+    assert "open gate signals: 18" in out
+    assert "fi.v1.FAILED_OPERATION_RESOLUTION=1" in out
 
 
 def test_to_json_uses_projection_rows_when_available() -> None:
