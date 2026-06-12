@@ -43,6 +43,10 @@ from lawvm.finland.payload_normalize import (
     elaborate_payload_against_live,
     prepare_payload_surface,
 )
+from lawvm.finland.replay_notices import (
+    reset_replay_verbose as _reset_replay_verbose,
+    set_replay_verbose as _set_replay_verbose,
+)
 from lawvm.finland.ops import legacy_target_kind_for_unit_kind, scope_authority_parity_for_op
 from lawvm.finland.projection_rows import projection_row_from_finding
 from lawvm.tools._section_debug import summarize_node
@@ -342,190 +346,194 @@ def build_amendment_bundle(
     if not should_apply:
         return bundle
 
-    _naco_result = normalize_and_compile_ops(
-        johto,
-        muutos_tree,
-        before_master.replay_fold_state,
-        source_id,
-        source_title=source_title,
-        used_sec1_fallback=used_sec1_fallback,
-        parent_id=statute_id,
-        strict_profile=None,
-    )
-    ops = _naco_result.output
-    bundle["compile_projection_rows"] = [
-        dict(projection_row_from_finding(finding))
-        for finding in _naco_result.findings()
-        if finding.role == "obligation"
-    ]
-    _compiled_rows: list[dict[str, Any]] = []
-    _resolved_compile_result = compile_amendment_ops(
-        before_master.replay_fold_state,
-        ops,
-        muutos_tree,
-        johto,
-        mode,
-        compiled_ops_out=_compiled_rows,
-        strict_profile=None,
-        source_ref=source_id,
-        source_title=source_title,
-        target_statute=statute_id,
-    )
-    _compiled_group_rows: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
-    for row in _compiled_rows:
-        _compiled_group_rows.setdefault(
-            (
-                str(row.get("target_unit_kind") or ""),
-                str(row.get("target_norm") or ""),
-                str(row.get("target_chapter") or ""),
-                str(row.get("target_part") or ""),
-            ),
-            [],
-        ).append(row)
-    bundle["compiled_ops"] = [_format_compiled_op_row(row) for row in _compiled_rows]
-
-    section_groups = _coalesce_same_target_mixed_scope_section_groups(
-        _group_ops_by_target(ops),
-        master=before_master.replay_fold_state,
-        muutos_tree=muutos_tree,
-    )
-    for (target_unit_kind, target_norm, target_chapter, target_part), group_ops in section_groups.items():
-        target_unit_kind_value = cast(TargetUnitKind, target_unit_kind.value)
-        surface_target_chapter, surface_target_part = _resolve_group_surface_scope(
-            muutos_tree=muutos_tree,
-            target_unit_kind=target_unit_kind_value,
-            target_norm=target_norm,
-            target_chapter=target_chapter,
-            target_part=target_part,
-            group_ops=group_ops,
-        )
-        raw_muutos_ir, cross_ir = _find_muutos_ir(
+    verbose_token = _set_replay_verbose(False)
+    try:
+        _naco_result = normalize_and_compile_ops(
+            johto,
             muutos_tree,
-            target_unit_kind_value,
-            target_norm,
-            surface_target_chapter,
-            surface_target_part,
-        )
-        master = before_master.replay_fold_state
-        lookups = snapshot_replay_lookups(master)
-        target_ctx = snapshot_target_context(
-            master,
-            target_unit_kind_value,
-            target_norm,
-            target_chapter,
-            lookups,
-            target_part=target_part,
-        )
-        payload_ctx = build_payload_elaboration_context(
-            target_ctx,
-            lookups,
-            row_anchor_normalizer=_norm_row_anchor_text,
-        )
-        standalone_section_targets = _group_shadow_pruning_section_targets(
-            ops,
-            target_unit_kind=target_unit_kind_value,
-            target_norm=target_norm,
-            target_part=target_part,
-            duplicate_section_labels=frozenset(getattr(master, "duplicate_section_labels", ())),
-        )
-        foreign_scoped_standalone_section_targets = _group_shadow_pruning_foreign_scoped_section_targets(
-            ops,
-            target_unit_kind=target_unit_kind_value,
-            target_norm=target_norm,
-            target_part=target_part,
-            duplicate_section_labels=frozenset(getattr(master, "duplicate_section_labels", ())),
-        )
-        prepared = prepare_payload_surface(
-            payload_ctx,
-            group_ops,
-            raw_muutos_ir,
-            profile=get_replay_profile(mode),
+            before_master.replay_fold_state,
+            source_id,
+            source_title=source_title,
+            used_sec1_fallback=used_sec1_fallback,
+            parent_id=statute_id,
             strict_profile=None,
         )
-        fctx = _FilterCtx(muutos_ir=prepared, muutos_tree=muutos_tree, johto=johto)
-        rejected_pre = []
-        filtered_pre = _filter_ops_by_constraints(group_ops, fctx, rejected_ops_out=rejected_pre)
-        payload_norm = elaborate_payload_against_live(
-            payload_ctx,
-            filtered_pre,
-            prepared,
-            standalone_section_targets,
-            foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
+        ops = _naco_result.output
+        bundle["compile_projection_rows"] = [
+            dict(projection_row_from_finding(finding))
+            for finding in _naco_result.findings()
+            if finding.role == "obligation"
+        ]
+        _compiled_rows: list[dict[str, Any]] = []
+        _resolved_compile_result = compile_amendment_ops(
+            before_master.replay_fold_state,
+            ops,
+            muutos_tree,
+            johto,
+            mode,
+            compiled_ops_out=_compiled_rows,
+            strict_profile=None,
+            source_ref=source_id,
+            source_title=source_title,
+            target_statute=statute_id,
         )
-        slot_assignment = payload_norm.slot_assignment
-        fctx.slot_assignment = slot_assignment
-        rejected_post = []
-        filtered_post = _filter_ops_by_constraints(
-            list(payload_norm.group_ops),
-            fctx,
-            rejected_ops_out=rejected_post,
-        )
-        _final_op_descriptions = [
-            _format_compiled_op_row(row)
-            for row in _compiled_group_rows.get(
+        _compiled_group_rows: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
+        for row in _compiled_rows:
+            _compiled_group_rows.setdefault(
                 (
-                    target_unit_kind_value,
-                    target_norm,
-                    str(target_chapter or ""),
-                    str(target_part or ""),
+                    str(row.get("target_unit_kind") or ""),
+                    str(row.get("target_norm") or ""),
+                    str(row.get("target_chapter") or ""),
+                    str(row.get("target_part") or ""),
                 ),
                 [],
-            )
-        ] or [op.description() for op in filtered_post]
-        group_bundle = {
-            **_scope_bundle(
+            ).append(row)
+        bundle["compiled_ops"] = [_format_compiled_op_row(row) for row in _compiled_rows]
+
+        section_groups = _coalesce_same_target_mixed_scope_section_groups(
+            _group_ops_by_target(ops),
+            master=before_master.replay_fold_state,
+            muutos_tree=muutos_tree,
+        )
+        for (target_unit_kind, target_norm, target_chapter, target_part), group_ops in section_groups.items():
+            target_unit_kind_value = cast(TargetUnitKind, target_unit_kind.value)
+            surface_target_chapter, surface_target_part = _resolve_group_surface_scope(
+                muutos_tree=muutos_tree,
                 target_unit_kind=target_unit_kind_value,
                 target_norm=target_norm,
-                target_chapter=target_chapter or "",
-                target_part=target_part or "",
-            ),
-            "cross_heading": summarize_node(cross_ir),
-            "raw_payload": summarize_node(raw_muutos_ir),
-            "prepared_payload": summarize_node(prepared),
-            "normalized_payload": summarize_node(payload_norm.muutos_ir),
-            "ops_raw": [op.description() for op in group_ops],
-            "ops_after_constraints": [op.description() for op in filtered_pre],
-            "rejected_ops_pre_constraints": [failed.as_detail() for failed in rejected_pre],
-            "ops_after_normalization": [op.description() for op in payload_norm.group_ops],
-            "ops_final": _final_op_descriptions,
-            "scope_authority_parity": [
-                _serialize_scope_authority_parity(op) for op in filtered_post
-            ],
-            "rejected_ops_post_constraints": [failed.as_detail() for failed in rejected_post],
-            "subsection_map": [
-                {
-                    # Slot assignment is keyed to the elaborated group-op order,
-                    # while compiled rows are emitted in apply order. Do not zip
-                    # the two by index or the debug view attributes payloads to
-                    # the wrong operation.
-                    "op": op.description(),
-                    "mapped_payload": summarize_node(slot_assignment.resolve_for_op(op)),
-                }
-                for op in payload_norm.group_ops
-            ]
-            if slot_assignment is not None
-            else [],
-            "sparse_slot_bindings": [
-                {
-                    "op": binding.op_description,
-                    "slot_index": binding.payload_slot_index,
-                    "slot_label": binding.payload_slot_label,
-                    "target_paragraph": binding.target_paragraph,
-                    "target_item": binding.target_item or "",
-                    "target_special": binding.target_special or "",
-                }
-                for binding in slot_assignment.sparse_slot_bindings
-            ]
-            if slot_assignment is not None
-            else [],
-            "source_pathologies": [
-                _serialize_pathology(pathology) for pathology in (payload_norm.source_pathologies or [])
-            ],
-            "elaboration_observations": [
-                _serialize_observation(observation) for observation in (payload_norm.elaboration_observations or [])
-            ],
-        }
-        bundle["groups"].append(group_bundle)
+                target_chapter=target_chapter,
+                target_part=target_part,
+                group_ops=group_ops,
+            )
+            raw_muutos_ir, cross_ir = _find_muutos_ir(
+                muutos_tree,
+                target_unit_kind_value,
+                target_norm,
+                surface_target_chapter,
+                surface_target_part,
+            )
+            master = before_master.replay_fold_state
+            lookups = snapshot_replay_lookups(master)
+            target_ctx = snapshot_target_context(
+                master,
+                target_unit_kind_value,
+                target_norm,
+                target_chapter,
+                lookups,
+                target_part=target_part,
+            )
+            payload_ctx = build_payload_elaboration_context(
+                target_ctx,
+                lookups,
+                row_anchor_normalizer=_norm_row_anchor_text,
+            )
+            standalone_section_targets = _group_shadow_pruning_section_targets(
+                ops,
+                target_unit_kind=target_unit_kind_value,
+                target_norm=target_norm,
+                target_part=target_part,
+                duplicate_section_labels=frozenset(getattr(master, "duplicate_section_labels", ())),
+            )
+            foreign_scoped_standalone_section_targets = _group_shadow_pruning_foreign_scoped_section_targets(
+                ops,
+                target_unit_kind=target_unit_kind_value,
+                target_norm=target_norm,
+                target_part=target_part,
+                duplicate_section_labels=frozenset(getattr(master, "duplicate_section_labels", ())),
+            )
+            prepared = prepare_payload_surface(
+                payload_ctx,
+                group_ops,
+                raw_muutos_ir,
+                profile=get_replay_profile(mode),
+                strict_profile=None,
+            )
+            fctx = _FilterCtx(muutos_ir=prepared, muutos_tree=muutos_tree, johto=johto)
+            rejected_pre = []
+            filtered_pre = _filter_ops_by_constraints(group_ops, fctx, rejected_ops_out=rejected_pre)
+            payload_norm = elaborate_payload_against_live(
+                payload_ctx,
+                filtered_pre,
+                prepared,
+                standalone_section_targets,
+                foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
+            )
+            slot_assignment = payload_norm.slot_assignment
+            fctx.slot_assignment = slot_assignment
+            rejected_post = []
+            filtered_post = _filter_ops_by_constraints(
+                list(payload_norm.group_ops),
+                fctx,
+                rejected_ops_out=rejected_post,
+            )
+            _final_op_descriptions = [
+                _format_compiled_op_row(row)
+                for row in _compiled_group_rows.get(
+                    (
+                        target_unit_kind_value,
+                        target_norm,
+                        str(target_chapter or ""),
+                        str(target_part or ""),
+                    ),
+                    [],
+                )
+            ] or [op.description() for op in filtered_post]
+            group_bundle = {
+                **_scope_bundle(
+                    target_unit_kind=target_unit_kind_value,
+                    target_norm=target_norm,
+                    target_chapter=target_chapter or "",
+                    target_part=target_part or "",
+                ),
+                "cross_heading": summarize_node(cross_ir),
+                "raw_payload": summarize_node(raw_muutos_ir),
+                "prepared_payload": summarize_node(prepared),
+                "normalized_payload": summarize_node(payload_norm.muutos_ir),
+                "ops_raw": [op.description() for op in group_ops],
+                "ops_after_constraints": [op.description() for op in filtered_pre],
+                "rejected_ops_pre_constraints": [failed.as_detail() for failed in rejected_pre],
+                "ops_after_normalization": [op.description() for op in payload_norm.group_ops],
+                "ops_final": _final_op_descriptions,
+                "scope_authority_parity": [
+                    _serialize_scope_authority_parity(op) for op in filtered_post
+                ],
+                "rejected_ops_post_constraints": [failed.as_detail() for failed in rejected_post],
+                "subsection_map": [
+                    {
+                        # Slot assignment is keyed to the elaborated group-op order,
+                        # while compiled rows are emitted in apply order. Do not zip
+                        # the two by index or the debug view attributes payloads to
+                        # the wrong operation.
+                        "op": op.description(),
+                        "mapped_payload": summarize_node(slot_assignment.resolve_for_op(op)),
+                    }
+                    for op in payload_norm.group_ops
+                ]
+                if slot_assignment is not None
+                else [],
+                "sparse_slot_bindings": [
+                    {
+                        "op": binding.op_description,
+                        "slot_index": binding.payload_slot_index,
+                        "slot_label": binding.payload_slot_label,
+                        "target_paragraph": binding.target_paragraph,
+                        "target_item": binding.target_item or "",
+                        "target_special": binding.target_special or "",
+                    }
+                    for binding in slot_assignment.sparse_slot_bindings
+                ]
+                if slot_assignment is not None
+                else [],
+                "source_pathologies": [
+                    _serialize_pathology(pathology) for pathology in (payload_norm.source_pathologies or [])
+                ],
+                "elaboration_observations": [
+                    _serialize_observation(observation) for observation in (payload_norm.elaboration_observations or [])
+                ],
+            }
+            bundle["groups"].append(group_bundle)
+    finally:
+        _reset_replay_verbose(verbose_token)
 
     return bundle
 

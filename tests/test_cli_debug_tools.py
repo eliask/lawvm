@@ -1792,6 +1792,19 @@ def test_build_amendment_bundle_1987_411_runtime_scope_now_matches_explicit_chun
     ]
 
 
+@pytest.mark.skipif(not _corpus_available(), reason="corpus data not available")
+def test_build_amendment_bundle_suppresses_temporary_amendment_notice(capsys) -> None:
+    try:
+        bundle = inspect_amendment.build_amendment_bundle("1972/484", "2011/581", "legal_pit")
+    except (OSError, RuntimeError) as exc:
+        pytest.skip(f"Finlex archive unavailable in this environment: {exc}")
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert bundle["source_id"] == "2011/581"
+    assert "väliaikais" in bundle["source_title"].lower()
+
+
 def test_serialize_scope_authority_parity_surfaces_runtime_projection_agreement() -> None:
     from lawvm.finland.ops import AmendmentOp, ScopeConfidence
 
