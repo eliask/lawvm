@@ -12607,6 +12607,30 @@ def test_sparse_item_tail_prune_recovery_allowance_declares_only_non_target_touc
             rule_id="intro_list_moment_shape",
         ),
     )
+    missing_label_allowances = _subsection_dispatch_landed_recovery_allowances(
+        new_pathologies=(
+            SourcePathology(
+                code="SUBSECTION_TARGET_REBOUND",
+                message="missing exact subsection label rebound",
+                target_unit_kind="section",
+                target_label="52 § 1 mom",
+                detail={"rebound_kind": "missing_exact_subsection_label"},
+            ),
+        ),
+        landed_paths=(
+            (("section", "52"), ("subsection", "1"), ("item", "4")),
+            (("section", "52"), ("subsection", "2"), ("paragraph", "4"), ("content", "")),
+        ),
+        resolved_target_path=(("section", "52"), ("subsection", "1"), ("item", "4")),
+        parent_path=(("section", "52"), ("subsection", "1")),
+    )
+    assert missing_label_allowances == (
+        DeclaredMutationAllowance(
+            kind="recovery_path",
+            paths=((("section", "52"), ("subsection", "2"), ("paragraph", "4"), ("content", "")),),
+            rule_id="missing_exact_subsection_label",
+        ),
+    )
     mutation_events = [
         ApplyMutationEvent(
             op_id="test_op",
