@@ -525,6 +525,10 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
             f"  other frontiers   : {proof_gate_summary.get('other_frontier_count', 0)}"
         )
         lines.append(
+            "  regex gaps        : "
+            f"{proof_gate_summary.get('regex_recognition_unclassified_gap_count', 0)}"
+        )
+        lines.append(
             "  required claims  : "
             + _format_count_map(proof_gate_summary.get("required_claim_kind_counts"))
         )
@@ -785,6 +789,7 @@ _STRICT_RUN_HEADER = [
     "proof_gate_manual_frontier_count",
     "proof_gate_coverage_frontier_count",
     "proof_gate_other_frontier_count",
+    "proof_gate_regex_unclassified_gap_count",
     "proof_gate_required_claim_kind_counts",
     "proof_gate_frontier_status_counts",
     "proof_gate_manual_claim_kind_counts",
@@ -961,6 +966,10 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "proof_gate_other_frontier_count": int(
                 proof_gate_summary.get("other_frontier_count") or 0
             ),
+            "proof_gate_regex_unclassified_gap_count": int(
+                proof_gate_summary.get("regex_recognition_unclassified_gap_count")
+                or 0
+            ),
             "proof_gate_required_claim_kind_counts": dict(
                 proof_gate_summary.get("required_claim_kind_counts") or {}
             ),
@@ -1021,6 +1030,7 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "proof_gate_manual_frontier_count": 0,
             "proof_gate_coverage_frontier_count": 0,
             "proof_gate_other_frontier_count": 0,
+            "proof_gate_regex_unclassified_gap_count": 0,
             "proof_gate_required_claim_kind_counts": {},
             "proof_gate_frontier_status_counts": {},
             "proof_gate_manual_claim_kind_counts": {},
@@ -1117,6 +1127,7 @@ def _save_strict_run(results: list[dict[str, Any]], label: str, timestamp: str) 
                     int(rec.get("proof_gate_manual_frontier_count") or 0),
                     int(rec.get("proof_gate_coverage_frontier_count") or 0),
                     int(rec.get("proof_gate_other_frontier_count") or 0),
+                    int(rec.get("proof_gate_regex_unclassified_gap_count") or 0),
                     json.dumps(
                         rec.get("proof_gate_required_claim_kind_counts", {}),
                         ensure_ascii=True,
@@ -1254,6 +1265,7 @@ def _load_strict_run(label: str) -> list[dict[str, Any]] | None:
                 "proof_gate_manual_frontier_count",
                 "proof_gate_coverage_frontier_count",
                 "proof_gate_other_frontier_count",
+                "proof_gate_regex_unclassified_gap_count",
                 "chain_length",
                 "source_available",
             ):
@@ -1364,11 +1376,15 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     proof_gate_coverage_status_counter: Counter[str] = Counter()
     proof_gate_other_claim_counter: Counter[str] = Counter()
     proof_gate_other_status_counter: Counter[str] = Counter()
+    total_regex_unclassified_gaps = 0
     candidate_set_status_counter: Counter[str] = Counter()
     candidate_set_blocker_counter: Counter[str] = Counter()
     for r in valid:
         for gate in r.get("ownership_closure_failed_gates", []):
             ownership_gate_counter[gate] += 1
+        total_regex_unclassified_gaps += int(
+            r.get("proof_gate_regex_unclassified_gap_count") or 0
+        )
         proof_gate_required_claim_counter.update(
             {
                 str(key): int(value)
@@ -1591,6 +1607,7 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     print(f"       manual frontiers       : {total_manual_frontiers}")
     print(f"       coverage frontiers     : {total_coverage_frontiers}")
     print(f"       other frontiers        : {total_other_frontiers}")
+    print(f"       regex unclassified gaps: {total_regex_unclassified_gaps}")
     if proof_gate_required_claim_counter:
         print("       required claim kinds:")
         for claim_kind, cnt in proof_gate_required_claim_counter.most_common():

@@ -47,6 +47,7 @@ def test_load_strict_run_reads_source_pathology_codes(tmp_path, monkeypatch) -> 
     assert rows[0]["proof_gate_manual_frontier_count"] == 0
     assert rows[0]["proof_gate_coverage_frontier_count"] == 0
     assert rows[0]["proof_gate_other_frontier_count"] == 0
+    assert rows[0]["proof_gate_regex_unclassified_gap_count"] == 0
     assert rows[0]["proof_gate_required_claim_kind_counts"] == {}
     assert rows[0]["proof_gate_frontier_status_counts"] == {}
     assert rows[0]["proof_gate_manual_claim_kind_counts"] == {}
@@ -159,6 +160,7 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                 "proof_gate_manual_frontier_count": 1,
                 "proof_gate_coverage_frontier_count": 4,
                 "proof_gate_other_frontier_count": 2,
+                "proof_gate_regex_unclassified_gap_count": 3,
                 "proof_gate_required_claim_kind_counts": {
                     "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
                     "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE": 2,
@@ -215,6 +217,7 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert "html_noncommensurable_reason" in text
     assert "ownership_closure_failed_gates" in text
     assert "proof_gate_open_signal_count" in text
+    assert "proof_gate_regex_unclassified_gap_count" in text
     assert "proof_gate_required_claim_kind_counts" in text
     assert "proof_gate_manual_claim_kind_counts" in text
     assert "proof_gate_coverage_claim_kind_counts" in text
@@ -242,6 +245,7 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert loaded[0]["proof_gate_manual_frontier_count"] == 1
     assert loaded[0]["proof_gate_coverage_frontier_count"] == 4
     assert loaded[0]["proof_gate_other_frontier_count"] == 2
+    assert loaded[0]["proof_gate_regex_unclassified_gap_count"] == 3
     assert loaded[0]["proof_gate_required_claim_kind_counts"] == {
         "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
         "source_pathology_resolution": 2,
@@ -352,6 +356,7 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                 "proof_gate_manual_frontier_count": 1,
                 "proof_gate_coverage_frontier_count": 4,
                 "proof_gate_other_frontier_count": 2,
+                "proof_gate_regex_unclassified_gap_count": 3,
                 "proof_gate_required_claim_kind_counts": {
                     "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
                     "source_pathology_resolution": 2,
@@ -418,6 +423,7 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
     assert "manual frontiers       : 1" in out
     assert "coverage frontiers     : 4" in out
     assert "other frontiers        : 2" in out
+    assert "regex unclassified gaps: 3" in out
     assert "fi.v1.FAILED_OPERATION_RESOLUTION" in out
     assert "source_pathology_resolution" in out
     assert "partial_candidate_set_frontier" in out
@@ -770,6 +776,7 @@ def test_format_report_includes_compact_proof_gate_summary() -> None:
     assert "coverage frontiers: 4" in out
     assert "other frontiers   : 0" in out
     assert "open gate signals: 18" in out
+    assert "regex gaps        : 0" in out
     assert "fi.v1.FAILED_OPERATION_RESOLUTION=1" in out
     assert "manual claims    : fi.v1.FAILED_OPERATION_RESOLUTION=1" in out
     assert "coverage proofs  : fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE=2" in out
