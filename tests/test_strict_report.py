@@ -47,6 +47,8 @@ def test_load_strict_run_reads_source_pathology_codes(tmp_path, monkeypatch) -> 
     assert rows[0]["proof_gate_manual_frontier_count"] == 0
     assert rows[0]["proof_gate_coverage_frontier_count"] == 0
     assert rows[0]["proof_gate_other_frontier_count"] == 0
+    assert rows[0]["proof_gate_source_unit_unresolved_count"] == 0
+    assert rows[0]["proof_gate_potential_operation_unresolved_count"] == 0
     assert rows[0]["proof_gate_regex_unclassified_gap_count"] == 0
     assert rows[0]["proof_gate_required_claim_kind_counts"] == {}
     assert rows[0]["proof_gate_frontier_status_counts"] == {}
@@ -160,6 +162,8 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                 "proof_gate_manual_frontier_count": 1,
                 "proof_gate_coverage_frontier_count": 4,
                 "proof_gate_other_frontier_count": 2,
+                "proof_gate_source_unit_unresolved_count": 3,
+                "proof_gate_potential_operation_unresolved_count": 5,
                 "proof_gate_regex_unclassified_gap_count": 3,
                 "proof_gate_required_claim_kind_counts": {
                     "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
@@ -217,6 +221,8 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert "html_noncommensurable_reason" in text
     assert "ownership_closure_failed_gates" in text
     assert "proof_gate_open_signal_count" in text
+    assert "proof_gate_source_unit_unresolved_count" in text
+    assert "proof_gate_potential_operation_unresolved_count" in text
     assert "proof_gate_regex_unclassified_gap_count" in text
     assert "proof_gate_required_claim_kind_counts" in text
     assert "proof_gate_manual_claim_kind_counts" in text
@@ -245,6 +251,8 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert loaded[0]["proof_gate_manual_frontier_count"] == 1
     assert loaded[0]["proof_gate_coverage_frontier_count"] == 4
     assert loaded[0]["proof_gate_other_frontier_count"] == 2
+    assert loaded[0]["proof_gate_source_unit_unresolved_count"] == 3
+    assert loaded[0]["proof_gate_potential_operation_unresolved_count"] == 5
     assert loaded[0]["proof_gate_regex_unclassified_gap_count"] == 3
     assert loaded[0]["proof_gate_required_claim_kind_counts"] == {
         "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
@@ -356,6 +364,8 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                 "proof_gate_manual_frontier_count": 1,
                 "proof_gate_coverage_frontier_count": 4,
                 "proof_gate_other_frontier_count": 2,
+                "proof_gate_source_unit_unresolved_count": 3,
+                "proof_gate_potential_operation_unresolved_count": 5,
                 "proof_gate_regex_unclassified_gap_count": 3,
                 "proof_gate_required_claim_kind_counts": {
                     "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
@@ -423,6 +433,8 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
     assert "manual frontiers       : 1" in out
     assert "coverage frontiers     : 4" in out
     assert "other frontiers        : 2" in out
+    assert "unresolved source units: 3" in out
+    assert "unresolved potential ops: 5" in out
     assert "regex unclassified gaps: 3" in out
     assert "fi.v1.FAILED_OPERATION_RESOLUTION" in out
     assert "source_pathology_resolution" in out
@@ -775,6 +787,8 @@ def test_format_report_includes_compact_proof_gate_summary() -> None:
     assert "manual frontiers : 1" in out
     assert "coverage frontiers: 4" in out
     assert "other frontiers   : 0" in out
+    assert "source units      : 0 unresolved" in out
+    assert "potential ops     : 0 unresolved" in out
     assert "open gate signals: 18" in out
     assert "regex gaps        : 0" in out
     assert "fi.v1.FAILED_OPERATION_RESOLUTION=1" in out
