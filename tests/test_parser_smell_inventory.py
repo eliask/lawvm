@@ -34,7 +34,7 @@ def test_build_inventory_reports_heavy_smells(tmp_path) -> None:
 
     assert inventory["hit_count"] == 7
     assert inventory["file_counts"][str(path)] == 7
-    assert inventory["summary"]["category_count"] == 4
+    assert inventory["summary"]["category_count"] == 7
     assert inventory["category_counts"]["fallback_heuristics"] == 2
     assert inventory["category_counts"]["row_target_normalization"] == 3
 
@@ -61,9 +61,12 @@ def test_build_inventory_filters_by_marker(tmp_path) -> None:
     assert inventory["summary"]["hit_count"] == 1
     assert inventory["hit_count"] == 1
     assert inventory["category_counts"]["clause_modifier_filter"] == 1
+    assert inventory["category_counts"]["bounded_wildcard_gap"] == 0
     assert inventory["category_counts"]["fallback_heuristics"] == 0
     assert inventory["category_counts"]["regex_structural_heuristic"] == 0
+    assert inventory["category_counts"]["regex_coverage_surface"] == 0
     assert inventory["category_counts"]["row_target_normalization"] == 0
+    assert inventory["category_counts"]["text_selector_sentinel"] == 0
 
 
 def test_build_inventory_keeps_zero_hit_categories_in_summary(tmp_path) -> None:
@@ -86,6 +89,9 @@ def test_build_inventory_keeps_zero_hit_categories_in_summary(tmp_path) -> None:
     assert inventory["category_counts"]["clause_modifier_filter"] == 0
     assert inventory["category_counts"]["fallback_heuristics"] == 0
     assert inventory["category_counts"]["row_target_normalization"] == 0
+    assert inventory["category_counts"]["bounded_wildcard_gap"] == 0
+    assert inventory["category_counts"]["regex_coverage_surface"] == 0
+    assert inventory["category_counts"]["text_selector_sentinel"] == 0
 
 
 def test_to_markdown_includes_grouped_hit_rows(tmp_path) -> None:
@@ -210,8 +216,33 @@ def test_category_rows_are_stable_and_sorted_in_markdown_snapshot(tmp_path) -> N
     categories = [row.split("|")[1].strip() for row in category_rows if row]
     assert categories == sorted(categories)
     assert categories == [
+        "bounded_wildcard_gap",
         "clause_modifier_filter",
         "fallback_heuristics",
+        "regex_coverage_surface",
         "regex_structural_heuristic",
         "row_target_normalization",
+        "text_selector_sentinel",
     ]
+
+
+def test_build_inventory_reports_bounded_gap_coverage_and_text_sentinel(tmp_path) -> None:
+    path = tmp_path / "nlp_parser.py"
+    path.write_text(
+        "\n".join(
+            [
+                "from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage",
+                "RX = re.compile(r'for .{0,240}? substitute')",
+                "selector = 'TEXT_FROM_X_TO_END'",
+                "coverage_status = 'unclassified_gap'",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    inventory = build_inventory([path])
+
+    assert inventory["category_counts"]["bounded_wildcard_gap"] == 1
+    assert inventory["category_counts"]["regex_coverage_surface"] == 2
+    assert inventory["category_counts"]["text_selector_sentinel"] == 1

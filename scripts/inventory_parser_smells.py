@@ -18,8 +18,13 @@ from collections.abc import Iterable
 
 DEFAULT_FILES = (
     Path("src/lawvm/finland/grafter.py"),
+    Path("src/lawvm/finland/normalize.py"),
     Path("src/lawvm/finland/payload_normalize.py"),
     Path("src/lawvm/finland/johtolause/clause_patterns.py"),
+    Path("src/lawvm/uk_legislation/nlp_parser.py"),
+    Path("src/lawvm/uk_legislation/source_definition_fragments.py"),
+    Path("src/lawvm/uk_legislation/text_selectors.py"),
+    Path("src/lawvm/new_zealand/instruction_workqueue.py"),
 )
 
 SMELL_MARKERS = {
@@ -38,6 +43,18 @@ SMELL_MARKERS = {
     "regex_structural_heuristic": (
         "Regex-driven structural heuristics",
         r"(?i)\bre\.(match|search|findall|finditer|sub|subn|split|compile)\(",
+    ),
+    "bounded_wildcard_gap": (
+        "Bounded wildcard gap needing semantic span ownership",
+        r"\.\{[01],\d+\}\??",
+    ),
+    "regex_coverage_surface": (
+        "Regex recognition coverage / skipped-span ownership surface",
+        r"\b(RegexRecognitionCoverage|regex_recognition_coverage|coverage_status|ignored_spans)\b",
+    ),
+    "text_selector_sentinel": (
+        "Stringly TEXT_* selector sentinel",
+        r"\bTEXT_[A-Z0-9_]+",
     ),
 }
 
@@ -197,8 +214,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=None,
         help="Optional category filter (repeatable). "
-        "Known values: fallback_heuristics, clause_modifier_filter, "
-        "row_target_normalization, regex_structural_heuristic.",
+        "Known values: "
+        + ", ".join(sorted(SMELL_MARKERS))
+        + ".",
     )
     parser.add_argument(
         "--marker",
