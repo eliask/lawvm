@@ -5,7 +5,8 @@ Usage:
     lawvm failures 2012/999           # failures for one statute
     lawvm failures --pattern kohta    # filter by description pattern
     lawvm failures --top 20           # show top N affected statutes
-    lawvm failures --detail           # categorize each failure by root cause
+    lawvm failures --detail           # categorize each failure and proof lane
+    lawvm failures --detail --json    # emit machine-readable detail rows
     lawvm failures --from-bench v33   # only replay imperfect statutes from bench run
     lawvm failures --parallel 8       # parallel replay workers
 """
@@ -430,16 +431,12 @@ def _categorize_failure(
     master: XMLStatute,
     source_pathologies: Optional[Set[tuple[str, str, str]]] = None,
 ) -> str:
-    """Categorize one FailedOp into a root-cause label.
+    """Categorize one FailedOp into a replay/frontier label.
 
-    Categories:
-      renumber               — RENUMBER op (structural, not a content failure)
-      kohta_amend_extract_fail — target paragraph exists but amendment extraction failed
-      kohta_no_paras         — target subsection is content-only (no paragraph children)
-      kohta_label_gap(max=N,want=M) — kohta label beyond available paragraphs
-      kohta_mom_oor          — momentti target out of range for kohta op
-      mom_oor(gap=N)         — subsection target out of range
-      other                  — uncategorized
+    Prefer typed source-pathology or FailedOp reason codes when they exist;
+    only fall back to final-master tree heuristics for older/unowned failures.
+    Source-pathology categories project to registered proof rules, while other
+    replay failures remain in the generic failed-operation resolution lane.
     """
     desc = f.description
 
@@ -539,35 +536,41 @@ def _frontier_projection_for_failure_category(category: str) -> FailureFrontierP
     )
 
 
-def _print_detail(
+def _find_master_for_failure(
+    failure: FailedOp,
+    masters_by_sid: Dict[str, XMLStatute],
+) -> Optional[XMLStatute]:
+    # FailedOp.amendment_id is the amending statute, not the bench statute being
+    # amended. New failure rows carry target_statute_id, so prefer that exact
+    # master. Keep the section scan as a compatibility fallback for old caches.
+    if failure.target_statute_id:
+        master = masters_by_sid.get(failure.target_statute_id)
+        if master is not None:
+            return master
+    for master in masters_by_sid.values():
+        if master.find_section(failure.target_section, failure.target_chapter) is not None:
+            return master
+    return None
+
+
+def _detail_rows(
     failures: List[FailedOp],
     masters_by_sid: Dict[str, XMLStatute],
     pathologies_by_sid: Dict[str, Set[tuple[str, str, str]]],
     pattern: Optional[str],
-    top: int,
-) -> None:
-    """Print per-failure root-cause categorization with a summary table."""
+) -> List[FailureDetailRow]:
+    """Build typed detail rows for human and JSON report surfaces."""
     if pattern:
         failures = [f for f in failures if re.search(pattern, f.description, re.I)]
 
-    # FailedOp.amendment_id is the amending statute, not the bench statute being
-    # amended. New failure rows carry target_statute_id, so prefer that exact
-    # master. Keep the section scan as a compatibility fallback for old caches.
-    def _find_master_for(fo: FailedOp) -> Optional[XMLStatute]:
-        if fo.target_statute_id:
-            master = masters_by_sid.get(fo.target_statute_id)
-            if master is not None:
-                return master
-        for m in masters_by_sid.values():
-            if m.find_section(fo.target_section, fo.target_chapter) is not None:
-                return m
-        return None
-
     rows: List[FailureDetailRow] = []
     for fo in failures:
-        master = _find_master_for(fo)
+        master = _find_master_for_failure(fo, masters_by_sid)
         if master is not None:
-            sid = fo.target_statute_id or next((sid for sid, m in masters_by_sid.items() if m is master), "")
+            sid = fo.target_statute_id or next(
+                (sid for sid, master_for_sid in masters_by_sid.items() if master_for_sid is master),
+                "",
+            )
             cat = _categorize_failure(fo, master, pathologies_by_sid.get(sid))
         else:
             # No master available (section not found in any replayed statute) —
@@ -586,6 +589,37 @@ def _print_detail(
                 frontier_projection=projection,
             )
         )
+    return rows
+
+
+def _detail_row_record(row: FailureDetailRow) -> Dict[str, Any]:
+    failure = row.failure
+    projection = row.frontier_projection
+    return {
+        "amendment_id": failure.amendment_id,
+        "target_statute_id": failure.target_statute_id,
+        "description": failure.description,
+        "reason": failure.reason,
+        "reason_code": failure.reason_code,
+        "category": row.category,
+        "target_unit_kind": failure.target_unit_kind,
+        "target_section": failure.target_section,
+        "target_chapter": failure.target_chapter,
+        "target_part": failure.target_part,
+        "required_claim_kind": projection.required_claim_kind,
+        "owner_phase": projection.owner_phase,
+        "frontier_family": projection.frontier_family,
+        "frontier_status": projection.frontier_status,
+    }
+
+
+def _print_detail_json(rows: List[FailureDetailRow]) -> None:
+    records = [_detail_row_record(row) for row in rows]
+    print(json.dumps({"total_failures": len(records), "failures": records}, ensure_ascii=False, indent=2))
+
+
+def _print_detail_rows(rows: List[FailureDetailRow]) -> None:
+    """Print per-failure root-cause categorization with a summary table."""
 
     cat_counts: Counter[str] = Counter(row.category for row in rows)
     claim_kind_counts: Counter[str] = Counter(
@@ -625,6 +659,22 @@ def _print_detail(
             f"{reason} \u2192 {row.category}"
             f"{claim} owner_phase={projection.owner_phase}{frontier}"
         )
+
+
+def _print_detail(
+    failures: List[FailedOp],
+    masters_by_sid: Dict[str, XMLStatute],
+    pathologies_by_sid: Dict[str, Set[tuple[str, str, str]]],
+    pattern: Optional[str],
+    top: int,
+    *,
+    json_output: bool = False,
+) -> None:
+    rows = _detail_rows(failures, masters_by_sid, pathologies_by_sid, pattern)
+    if json_output:
+        _print_detail_json(rows)
+    else:
+        _print_detail_rows(rows)
 
 
 def _print_summary(failures: List[FailedOp], pattern: Optional[str], top: int) -> None:
@@ -693,6 +743,7 @@ def main(
     from_bench: Optional[str] = None,
     parallel: int = 1,
     save_cache: Optional[str] = None,
+    json_output: bool = False,
 ) -> int:
     cached: Optional[List[FailedOp]] = None
     if statute_id:
@@ -758,7 +809,14 @@ def main(
         print(f"Saved {len(failures)} failures to {p}", file=sys.stderr)
 
     if detail:
-        _print_detail(failures, masters, pathologies_by_sid, pattern, top)
+        _print_detail(
+            failures,
+            masters,
+            pathologies_by_sid,
+            pattern,
+            top,
+            json_output=json_output,
+        )
     else:
         _print_summary(failures, pattern, top)
     return 0

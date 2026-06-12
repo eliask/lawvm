@@ -361,6 +361,45 @@ def test_print_detail_projects_source_pathology_to_claim_kind(capsys) -> None:
     assert "frontier=fi_item_target_structure_absent/target_resolution_frontier" in out
 
 
+def test_detail_json_emits_machine_readable_proof_lane(capsys) -> None:
+    failure = FailedOp(
+        amendment_id="1995/451",
+        description="REPLACE 16 luku 9 § 1 mom 5a kohta",
+        reason="no deterministic path",
+        reason_code="no_deterministic_path",
+        target_section="9",
+        target_chapter="16",
+        target_unit_kind="section",
+        target_statute_id="1987/1250",
+    )
+    master = SimpleNamespace(find_section=lambda section, chapter=None: SimpleNamespace(children=[]))
+    pathologies = {
+        "1987/1250": {
+            ("1995/451", "ITEM_TARGET_STRUCTURE_ABSENT", "9 § 1 mom 5a kohta")
+        }
+    }
+
+    failures._print_detail(
+        [failure],
+        masters_by_sid={"1987/1250": cast(Any, master)},
+        pathologies_by_sid=pathologies,
+        pattern=None,
+        top=5,
+        json_output=True,
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["total_failures"] == 1
+    row = payload["failures"][0]
+    assert row["amendment_id"] == "1995/451"
+    assert row["target_statute_id"] == "1987/1250"
+    assert row["category"] == "source_pathology:ITEM_TARGET_STRUCTURE_ABSENT"
+    assert row["required_claim_kind"] == "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION"
+    assert row["owner_phase"] == "replay_apply"
+    assert row["frontier_family"] == "fi_item_target_structure_absent"
+    assert row["frontier_status"] == "target_resolution_frontier"
+
+
 def test_detail_mode_uses_cached_failures_without_full_replay(monkeypatch) -> None:
     failure = FailedOp(
         amendment_id="2024/2",
@@ -389,11 +428,10 @@ def test_detail_mode_uses_cached_failures_without_full_replay(monkeypatch) -> No
         return {}, {}
 
     monkeypatch.setattr(failures, "_collect_detail_masters", fake_detail_masters)
-    monkeypatch.setattr(
-        failures,
-        "_print_detail",
-        lambda got, *_args: calls.setdefault("printed", got),
-    )
+    def fake_print_detail(got: list[FailedOp], *_args: object, **_kwargs: object) -> None:
+        calls.setdefault("printed", got)
+
+    monkeypatch.setattr(failures, "_print_detail", fake_print_detail)
 
     assert failures.main(from_bench="demo", detail=True, parallel=8, verbose=True) == 0
     assert calls["detail_failures"] == [failure]
@@ -436,7 +474,7 @@ def test_detail_mode_keeps_parallel_failure_scan_before_master_context(monkeypat
         return {}, {}
 
     monkeypatch.setattr(failures, "_collect_detail_masters", fake_detail_masters)
-    monkeypatch.setattr(failures, "_print_detail", lambda *_args: None)
+    monkeypatch.setattr(failures, "_print_detail", lambda *_args, **_kwargs: None)
 
     assert failures.main(from_bench="demo", detail=True, parallel=8, verbose=True) == 0
     assert calls["collect"] == (["2024/1", "2024/3"], True, False, 8)

@@ -4535,7 +4535,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         description=(
             "Replay statutes and collect structured FailedOp records. "
             "Shows failure reason distribution, description patterns, "
-            "and affected statutes. Useful for accuracy grinding."
+            "affected statutes, and proof/frontier lanes in detail mode."
         ),
     )
     failures_p.add_argument(
@@ -4565,7 +4565,12 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     failures_p.add_argument(
         "--detail",
         action="store_true",
-        help="categorize each failure by root cause (kohta_no_paras / kohta_label_gap / mom_oor / renumber / other)",
+        help="categorize each failure by replay/root-cause category and proof/frontier lane",
+    )
+    failures_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable output for --detail",
     )
     failures_p.add_argument(
         "--from-bench",
@@ -11081,6 +11086,7 @@ def _main_impl() -> None:
             from_bench=getattr(args, "from_bench", None),
             parallel=getattr(args, "parallel", 1),
             save_cache=getattr(args, "save_cache", None),
+            json_output=getattr(args, "json", False),
         )
 
     elif args.command == "uk-replay":
