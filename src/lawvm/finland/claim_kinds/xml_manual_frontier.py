@@ -102,6 +102,7 @@ _SPARSE_SLOT = _XmlClaimSpec(
         "ITEM_TARGET_SLOT_OCCUPIED",
         "ITEM_TARGET_ANCHOR_ABSENT",
         "SUBSECTION_TARGET_ABSENT",
+        "SUBSECTION_TARGET_REBOUND",
     ),
     semantic=True,
 )

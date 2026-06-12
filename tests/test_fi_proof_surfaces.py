@@ -108,6 +108,28 @@ def test_static_finland_source_pathology_codes_are_explicitly_registered() -> No
     assert missing == set()
 
 
+def test_v1_source_pathology_rules_have_claim_templates() -> None:
+    for code in registered_source_pathology_proof_rule_codes():
+        rule = source_pathology_proof_rule(code)
+        if not rule.required_claim_kind.startswith("fi.v1."):
+            continue
+        item = source_pathology_frontier_work_item(
+            {
+                "code": code,
+                "message": f"{code} test pathology.",
+                "source_statute": "2020/1",
+                "target_unit_kind": "section",
+                "target_label": "section 5 subsection 2",
+                "detail": {"target_section": "5", "target_paragraph": "2"},
+            },
+            statute_id="1999/1",
+        ).to_dict()
+
+        assert item["suggested_claim_template_status"] == "available"
+        assert item["suggested_claim_template"]["claim_kind"] == rule.required_claim_kind
+        assert item["suggested_claim_template"]["claim_target_seed"]["source_pathology_code"] == code
+
+
 def _consolidated_xml() -> bytes:
     return b"""<?xml version="1.0" encoding="UTF-8"?>
 <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
@@ -1068,7 +1090,7 @@ def test_source_pathology_rule_names_unregistered_other_frontiers() -> None:
     assert rebound.owner_phase == "replay_apply"
     assert rebound.frontier_family == "fi_subsection_target_rebound"
     assert rebound.frontier_status == "target_resolution_frontier"
-    assert rebound.required_claim_kind == "source_pathology_resolution"
+    assert rebound.required_claim_kind == "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION"
     assert "explicit_target_identity_proof" in rebound.required_proofs
     assert "treat_live_unique_subsection_as_source_target_proof" in rebound.forbidden_shortcuts
 

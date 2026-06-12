@@ -419,7 +419,7 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         quirks_disposition="record",
         frontier_family="fi_subsection_target_rebound",
         frontier_status="target_resolution_frontier",
-        required_claim_kind="source_pathology_resolution",
+        required_claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
         required_proofs=(
             "source_identity_proof",
             "explicit_target_identity_proof",
