@@ -314,44 +314,19 @@ def _extract_insert_section_ops_fallback_with_coverage(
                     end=len(clause),
                 )
             )
-            unclassified_count = sum(
-                1 for row in ignored_spans if row.get("classification") == "unclassified"
-            )
             coverage_rows.append(
-                RegexRecognitionCoverage(
-                    coverage_id=_regex_coverage_id(
-                        recognizer_id,
-                        source_hash,
-                        m.start(),
-                        m.end(),
-                    ),
-                    jurisdiction="fi",
+                _regex_recognition_coverage_row(
                     recognizer_id=recognizer_id,
-                    owner_phase="surface_syntax_frontend",
+                    source_hash=source_hash,
                     source_artifact_id=source_artifact_id,
-                    source_text_hash=source_hash,
                     matched_span=(m.start(), m.end()),
-                    coverage_status=(
-                        REGEX_RECOGNITION_UNCLASSIFIED_GAP
-                        if unclassified_count
-                        else REGEX_RECOGNITION_FULLY_CLASSIFIED
-                    ),
                     semantic_slots={
                         "action": "INSERT",
                         "target_unit_kind": "section",
                         "target_sections": target_sections,
                     },
-                    ignored_spans=tuple(ignored_spans),
-                    required_proofs=(
-                        ("regex_skipped_span_classification",)
-                        if unclassified_count
-                        else ()
-                    ),
-                    detail={
-                        "matched_text_preview": cleaned[m.start():m.end()][:240],
-                        "unclassified_ignored_span_count": unclassified_count,
-                        "rule_note": "bounded regex fallback coverage only; not replay authority",
-                    },
+                    ignored_spans=ignored_spans,
+                    matched_text=cleaned[m.start():m.end()],
                 )
             )
     return FallbackParseResult(ops=ops, regex_recognition_coverage=tuple(coverage_rows))
@@ -438,46 +413,20 @@ def _extract_insert_subsection_ops_fallback_with_coverage(
             )
         )
         if matched_moments:
-            unclassified_count = sum(
-                1 for row in ignored_spans if row.get("classification") == "unclassified"
-            )
-            coverage_status = (
-                REGEX_RECOGNITION_UNCLASSIFIED_GAP
-                if unclassified_count
-                else REGEX_RECOGNITION_FULLY_CLASSIFIED
-            )
             coverage_rows.append(
-                RegexRecognitionCoverage(
-                    coverage_id=_regex_coverage_id(
-                        "fi_insert_subsection_fallback",
-                        source_hash,
-                        m.start(),
-                        m.end(),
-                    ),
-                    jurisdiction="fi",
+                _regex_recognition_coverage_row(
                     recognizer_id="fi_insert_subsection_fallback",
-                    owner_phase="surface_syntax_frontend",
+                    source_hash=source_hash,
                     source_artifact_id=source_artifact_id,
-                    source_text_hash=source_hash,
                     matched_span=(m.start(), m.end()),
-                    coverage_status=coverage_status,
                     semantic_slots={
                         "action": "INSERT",
                         "target_unit_kind": "subsection",
                         "target_section": sec_norm,
                         "target_subsections": tuple(matched_moments),
                     },
-                    ignored_spans=tuple(ignored_spans),
-                    required_proofs=(
-                        ("regex_skipped_span_classification",)
-                        if unclassified_count
-                        else ()
-                    ),
-                    detail={
-                        "matched_text_preview": cleaned[m.start():m.end()][:240],
-                        "unclassified_ignored_span_count": unclassified_count,
-                        "rule_note": "bounded regex fallback coverage only; not replay authority",
-                    },
+                    ignored_spans=ignored_spans,
+                    matched_text=cleaned[m.start():m.end()],
                 )
             )
     return FallbackParseResult(ops=ops, regex_recognition_coverage=tuple(coverage_rows))
@@ -562,28 +511,12 @@ def _extract_insert_item_ops_fallback_with_coverage(
             )
         )
         if matched_items:
-            unclassified_count = sum(
-                1 for row in ignored_spans if row.get("classification") == "unclassified"
-            )
             coverage_rows.append(
-                RegexRecognitionCoverage(
-                    coverage_id=_regex_coverage_id(
-                        "fi_insert_item_fallback",
-                        source_hash,
-                        m.start(),
-                        m.end(),
-                    ),
-                    jurisdiction="fi",
+                _regex_recognition_coverage_row(
                     recognizer_id="fi_insert_item_fallback",
-                    owner_phase="surface_syntax_frontend",
+                    source_hash=source_hash,
                     source_artifact_id=source_artifact_id,
-                    source_text_hash=source_hash,
                     matched_span=(m.start(), m.end()),
-                    coverage_status=(
-                        REGEX_RECOGNITION_UNCLASSIFIED_GAP
-                        if unclassified_count
-                        else REGEX_RECOGNITION_FULLY_CLASSIFIED
-                    ),
                     semantic_slots={
                         "action": "INSERT",
                         "target_unit_kind": "item",
@@ -591,17 +524,8 @@ def _extract_insert_item_ops_fallback_with_coverage(
                         "target_subsection": mom_i,
                         "target_items": tuple(matched_items),
                     },
-                    ignored_spans=tuple(ignored_spans),
-                    required_proofs=(
-                        ("regex_skipped_span_classification",)
-                        if unclassified_count
-                        else ()
-                    ),
-                    detail={
-                        "matched_text_preview": cleaned[m.start():m.end()][:240],
-                        "unclassified_ignored_span_count": unclassified_count,
-                        "rule_note": "bounded regex fallback coverage only; not replay authority",
-                    },
+                    ignored_spans=ignored_spans,
+                    matched_text=cleaned[m.start():m.end()],
                 )
             )
     return FallbackParseResult(ops=ops, regex_recognition_coverage=tuple(coverage_rows))
@@ -679,6 +603,52 @@ def _regex_coverage_id(
 ) -> str:
     digest = re.sub(r"[^0-9a-f]", "", source_hash.lower())[:16]
     return f"{recognizer_id}:{digest}:{start}:{end}"
+
+
+def _regex_recognition_coverage_row(
+    *,
+    recognizer_id: str,
+    source_hash: str,
+    source_artifact_id: str,
+    matched_span: tuple[int, int],
+    semantic_slots: dict[str, object],
+    ignored_spans: list[dict[str, object]],
+    matched_text: str,
+) -> RegexRecognitionCoverage:
+    unclassified_count = sum(
+        1 for row in ignored_spans if row.get("classification") == "unclassified"
+    )
+    return RegexRecognitionCoverage(
+        coverage_id=_regex_coverage_id(
+            recognizer_id,
+            source_hash,
+            matched_span[0],
+            matched_span[1],
+        ),
+        jurisdiction="fi",
+        recognizer_id=recognizer_id,
+        owner_phase="surface_syntax_frontend",
+        source_artifact_id=source_artifact_id,
+        source_text_hash=source_hash,
+        matched_span=matched_span,
+        coverage_status=(
+            REGEX_RECOGNITION_UNCLASSIFIED_GAP
+            if unclassified_count
+            else REGEX_RECOGNITION_FULLY_CLASSIFIED
+        ),
+        semantic_slots=semantic_slots,
+        ignored_spans=tuple(ignored_spans),
+        required_proofs=(
+            ("regex_skipped_span_classification",)
+            if unclassified_count
+            else ()
+        ),
+        detail={
+            "matched_text_preview": matched_text[:240],
+            "unclassified_ignored_span_count": unclassified_count,
+            "rule_note": "bounded regex fallback coverage only; not replay authority",
+        },
+    )
 
 
 def _extract_insert_container_ops_fallback(cleaned: str) -> List[AmendmentOp]:
