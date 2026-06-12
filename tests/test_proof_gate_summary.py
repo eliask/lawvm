@@ -41,15 +41,23 @@ def test_proof_gate_summary_buckets_frontiers_without_replay_authority() -> None
             }
         ],
         evidence_summary={
-            "source_unit_coverage_status_counts": {"covered": 3},
-            "potential_operation_classification_counts": {"canonical": 2},
+            "source_unit_coverage_status_counts": {
+                "blocked": 1,
+                "covered": 3,
+                "unclassified": 2,
+            },
+            "potential_operation_classification_counts": {
+                "compiled": 2,
+                "blocked": 1,
+                "unclassified": 4,
+            },
             "regex_recognition_coverage_status_counts": {"unclassified_gap": 3},
             "regex_recognition_unclassified_gap_count": 3,
         },
         manual_claim_kind_prefixes=("fi.v1.",),
     ).to_dict()
 
-    assert summary["open_gate_signal_count"] == 10
+    assert summary["open_gate_signal_count"] == 18
     assert summary["ownership_failed_gate_counts"] == {"failed_ops_present": 1}
     assert summary["unowned_counts"] == {"unproved_mutation_boundary_proofs": 2}
     assert summary["frontier_work_item_count"] == 3
@@ -71,14 +79,26 @@ def test_proof_gate_summary_buckets_frontiers_without_replay_authority() -> None
         "oracle_residual_review": 1,
     }
     assert summary["candidate_set_completeness_counts"] == {"partial": 1}
-    assert summary["source_unit_coverage_status_counts"] == {"covered": 3}
-    assert summary["potential_operation_classification_counts"] == {"canonical": 2}
+    assert summary["source_unit_coverage_status_counts"] == {
+        "blocked": 1,
+        "covered": 3,
+        "unclassified": 2,
+    }
+    assert summary["source_unit_unresolved_count"] == 3
+    assert summary["potential_operation_classification_counts"] == {
+        "blocked": 1,
+        "compiled": 2,
+        "unclassified": 4,
+    }
+    assert summary["potential_operation_unresolved_count"] == 5
     assert summary["regex_recognition_coverage_status_counts"] == {
         "unclassified_gap": 3,
     }
     assert summary["regex_recognition_unclassified_gap_count"] == 3
     assert "replay_authorization" in summary["does_not_claim"]
     assert "regex_recognition_gap_closure" in summary["does_not_claim"]
+    assert "source_unit_unresolved_closure" in summary["does_not_claim"]
+    assert "potential_operation_unresolved_closure" in summary["does_not_claim"]
 
 
 def test_proof_gate_summary_requires_replay_authorization_disclaimer() -> None:
@@ -143,4 +163,13 @@ def test_proof_gate_summary_rejects_boolean_count_values() -> None:
             closed=False,
             failed_gates=(),
             evidence_summary={"regex_recognition_unclassified_gap_count": True},
+        )
+
+    with pytest.raises(ValueError, match="source_unit_coverage_status_counts"):
+        proof_gate_summary_from_surfaces(
+            schema="lawvm.test.proof_gate_summary.v1",
+            scope="unit-test",
+            closed=False,
+            failed_gates=(),
+            evidence_summary={"source_unit_coverage_status_counts": "bad"},
         )

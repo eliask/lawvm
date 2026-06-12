@@ -40,7 +40,9 @@ class ProofGateSummary:
     incomplete_candidate_set_count: int = 0
     candidate_set_completeness_counts: Mapping[str, int] = field(default_factory=dict)
     source_unit_coverage_status_counts: Mapping[str, int] = field(default_factory=dict)
+    source_unit_unresolved_count: int = 0
     potential_operation_classification_counts: Mapping[str, int] = field(default_factory=dict)
+    potential_operation_unresolved_count: int = 0
     regex_recognition_coverage_status_counts: Mapping[str, int] = field(default_factory=dict)
     regex_recognition_unclassified_gap_count: int = 0
     safe_default: str = "treat_open_proof_gates_as_non_executable_frontier_accounting"
@@ -48,6 +50,8 @@ class ProofGateSummary:
         "proof_closure",
         "source_unit_enumeration_closure",
         "operation_cue_exhaustiveness",
+        "source_unit_unresolved_closure",
+        "potential_operation_unresolved_closure",
         "regex_recognition_gap_closure",
         "replay_authorization",
     )
@@ -65,6 +69,8 @@ class ProofGateSummary:
             "coverage_frontier_count",
             "other_frontier_count",
             "incomplete_candidate_set_count",
+            "source_unit_unresolved_count",
+            "potential_operation_unresolved_count",
             "regex_recognition_unclassified_gap_count",
         ):
             _require_nonnegative_int(field_name, getattr(self, field_name))
@@ -126,8 +132,12 @@ class ProofGateSummary:
             "incomplete_candidate_set_count": self.incomplete_candidate_set_count,
             "candidate_set_completeness_counts": dict(self.candidate_set_completeness_counts),
             "source_unit_coverage_status_counts": dict(self.source_unit_coverage_status_counts),
+            "source_unit_unresolved_count": self.source_unit_unresolved_count,
             "potential_operation_classification_counts": dict(
                 self.potential_operation_classification_counts
+            ),
+            "potential_operation_unresolved_count": (
+                self.potential_operation_unresolved_count
             ),
             "regex_recognition_coverage_status_counts": dict(
                 self.regex_recognition_coverage_status_counts
@@ -157,6 +167,8 @@ def proof_gate_summary_from_surfaces(
         "proof_closure",
         "source_unit_enumeration_closure",
         "operation_cue_exhaustiveness",
+        "source_unit_unresolved_closure",
+        "potential_operation_unresolved_closure",
         "regex_recognition_gap_closure",
         "replay_authorization",
     ),
@@ -184,6 +196,21 @@ def proof_gate_summary_from_surfaces(
         if str(row.get("completeness_status") or "") != "complete"
     )
     evidence = dict(evidence_summary or {})
+    source_unit_counts = _summary_count_mapping(
+        evidence,
+        "source_unit_coverage_status_counts",
+    )
+    source_unit_unresolved_count = (
+        source_unit_counts.get("unclassified", 0) + source_unit_counts.get("blocked", 0)
+    )
+    potential_operation_counts = _summary_count_mapping(
+        evidence,
+        "potential_operation_classification_counts",
+    )
+    potential_operation_unresolved_count = (
+        potential_operation_counts.get("unclassified", 0)
+        + potential_operation_counts.get("blocked", 0)
+    )
     regex_unclassified_gap_count = _summary_count(
         evidence,
         "regex_recognition_unclassified_gap_count",
@@ -193,6 +220,8 @@ def proof_gate_summary_from_surfaces(
         + sum(unowned.values())
         + len(all_frontiers)
         + len(incomplete_candidate_sets)
+        + source_unit_unresolved_count
+        + potential_operation_unresolved_count
         + regex_unclassified_gap_count
     )
     return ProofGateSummary(
@@ -232,12 +261,10 @@ def proof_gate_summary_from_surfaces(
         candidate_set_completeness_counts=_count_values(
             row.get("completeness_status") for row in candidate_sets
         ),
-        source_unit_coverage_status_counts=dict(
-            evidence.get("source_unit_coverage_status_counts") or {}
-        ),
-        potential_operation_classification_counts=dict(
-            evidence.get("potential_operation_classification_counts") or {}
-        ),
+        source_unit_coverage_status_counts=source_unit_counts,
+        source_unit_unresolved_count=source_unit_unresolved_count,
+        potential_operation_classification_counts=potential_operation_counts,
+        potential_operation_unresolved_count=potential_operation_unresolved_count,
         regex_recognition_coverage_status_counts=dict(
             evidence.get("regex_recognition_coverage_status_counts") or {}
         ),
@@ -264,6 +291,15 @@ def _summary_count(evidence: Mapping[str, Any], field_name: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise ValueError(f"ProofGateSummary.{field_name} must be a non-negative integer")
     return value
+
+
+def _summary_count_mapping(evidence: Mapping[str, Any], field_name: str) -> dict[str, int]:
+    value = evidence.get(field_name, {})
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ValueError(f"ProofGateSummary.{field_name} must be a mapping")
+    return _count_mapping(value)
 
 
 def _count_mapping(value: Mapping[str, Any]) -> dict[str, int]:
