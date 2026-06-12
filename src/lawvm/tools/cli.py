@@ -121,6 +121,7 @@ _INVARIANT_DETECTOR_CHOICES: tuple[str, ...] = (
     "text_duplication",
     "flattened_sublist_family",
     "descendant_sibling_loss",
+    "same_source_descendant_snapshot_shadow",
 )
 
 

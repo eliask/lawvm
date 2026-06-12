@@ -9,7 +9,9 @@ from lawvm.core.invariant_detectors import InvariantDetectorResult
 from lawvm.core.invariant_detectors import SUPPORTED_INVARIANT_DETECTORS
 from lawvm.core.invariant_detectors import run_descendant_sibling_loss_detector
 from lawvm.core.invariant_detectors import run_invariant_detector, run_invariant_detector_messages
+from lawvm.core.invariant_detectors import run_same_source_descendant_snapshot_shadow_detector
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
+from lawvm.core.provenance import OperationSource
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.tools.cli import _INVARIANT_DETECTOR_CHOICES
 
@@ -181,3 +183,93 @@ def test_descendant_sibling_loss_detector_ignores_single_descendant_deletion() -
     )
 
     assert run_descendant_sibling_loss_detector(before, (op,)) == []
+
+
+def test_same_source_descendant_snapshot_shadow_detector_flags_conflicting_child_payload() -> None:
+    source = OperationSource(statute_id="2022/1029")
+    ancestor_snapshot = LegalOperation(
+        op_id="snapshot_section_32",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "32"),)),
+        payload=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="32",
+            children=(
+                IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="new first"),
+                IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="stale second"),
+            ),
+        ),
+        source=source,
+    )
+    descendant_snapshot = LegalOperation(
+        op_id="snapshot_subsection_2_from_section_32",
+        sequence=2,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "32"), ("subsection", "2"))),
+        payload=IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="authoritative second"),
+        source=source,
+    )
+
+    results = run_same_source_descendant_snapshot_shadow_detector(
+        (ancestor_snapshot, descendant_snapshot)
+    )
+
+    assert [result.kind for result in results] == ["same_source_descendant_snapshot_shadow"]
+    assert results[0].path_text == "section:32/subsection:2"
+    assert "snapshot_section_32 conflicts with snapshot_subsection_2_from_section_32" in results[0].message
+    assert results[0].detail["source_statute"] == "2022/1029"
+    assert results[0].detail["ancestor_target"] == "section:32"
+    assert results[0].detail["descendant_target"] == "section:32/subsection:2"
+
+
+def test_same_source_descendant_snapshot_shadow_detector_ignores_matching_or_uncontained_payload() -> None:
+    source = OperationSource(statute_id="2022/1029")
+    ancestor_snapshot = LegalOperation(
+        op_id="snapshot_section_32",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "32"),)),
+        payload=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="32",
+            children=(IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="same text"),),
+        ),
+        source=source,
+    )
+    matching_descendant = LegalOperation(
+        op_id="snapshot_subsection_2_from_section_32",
+        sequence=2,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "32"), ("subsection", "2"))),
+        payload=IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="same text"),
+        source=source,
+    )
+    absent_descendant = LegalOperation(
+        op_id="snapshot_subsection_3_from_section_32",
+        sequence=3,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "32"), ("subsection", "3"))),
+        payload=IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="not present"),
+        source=source,
+    )
+    other_source_descendant = LegalOperation(
+        op_id="snapshot_subsection_2_from_section_32_other",
+        sequence=4,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "32"), ("subsection", "2"))),
+        payload=IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="different but other source"),
+        source=OperationSource(statute_id="2023/1"),
+    )
+
+    assert (
+        run_same_source_descendant_snapshot_shadow_detector(
+            (
+                ancestor_snapshot,
+                matching_descendant,
+                absent_descendant,
+                other_source_descendant,
+            )
+        )
+        == []
+    )

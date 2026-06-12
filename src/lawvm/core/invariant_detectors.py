@@ -8,7 +8,7 @@ from typing import Any, Literal, Mapping
 
 from lawvm.core.frozen_values import FrozenDict, freeze_mapping
 from lawvm.core.ir import IRNode, LegalOperation
-from lawvm.core.ir_helpers import _kind_str
+from lawvm.core.ir_helpers import _kind_str, irnode_content_hash
 from lawvm.core.replay_lints import build_flattened_sublist_findings
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.core.tree_ops import (
@@ -27,6 +27,7 @@ InvariantDetectorName = Literal[
     "text_duplication",
     "flattened_sublist_family",
     "descendant_sibling_loss",
+    "same_source_descendant_snapshot_shadow",
 ]
 SUPPORTED_INVARIANT_DETECTORS: tuple[InvariantDetectorName, ...] = (
     "duplicate_label",
@@ -35,6 +36,7 @@ SUPPORTED_INVARIANT_DETECTORS: tuple[InvariantDetectorName, ...] = (
     "text_duplication",
     "flattened_sublist_family",
     "descendant_sibling_loss",
+    "same_source_descendant_snapshot_shadow",
 )
 
 
@@ -108,6 +110,33 @@ def _resolve_address_path(root: IRNode, path: Sequence[tuple[str, str]]) -> IRNo
             if resolved is not None:
                 return resolved
     return None
+
+
+def _resolve_payload_relative_path(
+    payload: IRNode,
+    ancestor_path: Sequence[tuple[str, str]],
+    descendant_path: Sequence[tuple[str, str]],
+) -> IRNode | None:
+    """Resolve descendant_path inside an ancestor payload.
+
+    LegalOperation payloads normally carry the target node itself, so a section
+    snapshot payload starts at ``section:N`` while its target path also ends at
+    ``section:N``.  Strip that shared ancestor prefix and resolve only the
+    descendant suffix inside the payload.
+    """
+    if len(descendant_path) <= len(ancestor_path):
+        return None
+    ancestor_leaf = ancestor_path[-1] if ancestor_path else None
+    node = payload
+    if ancestor_leaf is not None and _node_matches_step(node, ancestor_leaf):
+        relative_path = descendant_path[len(ancestor_path) :]
+    else:
+        relative_path = descendant_path
+    return _resolve_address_path(node, relative_path)
+
+
+def _operation_source_statute_id(op: LegalOperation) -> str:
+    return op.source.statute_id if op.source is not None else ""
 
 
 def _labelled_descendant_paths(node: IRNode) -> set[tuple[tuple[str, str], ...]]:
@@ -219,6 +248,83 @@ def run_descendant_sibling_loss_detector(
     return results
 
 
+def run_same_source_descendant_snapshot_shadow_detector(
+    operations: Sequence[LegalOperation],
+    target_path: str = "",
+) -> list[InvariantDetectorResult]:
+    """Flag same-source ancestor snapshots that conflict with descendant ops.
+
+    This transition detector catches a parent snapshot emitted in the same
+    amendment wave as a descendant INSERT/REPLACE where the parent already
+    carries that descendant path but with different text.  That is the precise
+    shape that can later shadow the descendant during PIT materialization.
+    """
+    results: list[InvariantDetectorResult] = []
+    ancestor_ops = [
+        op
+        for op in operations
+        if op.action is StructuralAction.REPLACE and op.payload is not None
+    ]
+    descendant_ops = [
+        op
+        for op in operations
+        if op.action in {StructuralAction.INSERT, StructuralAction.REPLACE}
+        and op.payload is not None
+    ]
+    for ancestor in ancestor_ops:
+        ancestor_source = _operation_source_statute_id(ancestor)
+        if not ancestor_source:
+            continue
+        ancestor_payload = ancestor.payload
+        if ancestor_payload is None:
+            continue
+        for descendant in descendant_ops:
+            if descendant is ancestor:
+                continue
+            if _operation_source_statute_id(descendant) != ancestor_source:
+                continue
+            if len(descendant.target.path) <= len(ancestor.target.path):
+                continue
+            if descendant.target.path[: len(ancestor.target.path)] != ancestor.target.path:
+                continue
+            shadow_node = _resolve_payload_relative_path(
+                ancestor_payload,
+                ancestor.target.path,
+                descendant.target.path,
+            )
+            if shadow_node is None:
+                continue
+            ancestor_hash = irnode_content_hash(shadow_node)
+            descendant_hash = irnode_content_hash(descendant.payload)
+            if ancestor_hash == descendant_hash:
+                continue
+            path_text = _path_text(descendant.target.path)
+            if not path_matches_target(path_text, target_path):
+                continue
+            message = (
+                f"{path_text}: same-source descendant snapshot shadow "
+                f"{ancestor.op_id} conflicts with {descendant.op_id}"
+            )
+            results.append(
+                InvariantDetectorResult(
+                    detector="same_source_descendant_snapshot_shadow",
+                    kind="same_source_descendant_snapshot_shadow",
+                    path_text=path_text,
+                    message=message,
+                    detail={
+                        "ancestor_op_id": ancestor.op_id,
+                        "ancestor_target": _address_part_text(ancestor.target.path),
+                        "descendant_op_id": descendant.op_id,
+                        "descendant_target": _address_part_text(descendant.target.path),
+                        "source_statute": ancestor_source,
+                        "ancestor_descendant_hash": ancestor_hash,
+                        "descendant_payload_hash": descendant_hash,
+                    },
+                )
+            )
+    return results
+
+
 def run_invariant_detector(
     ir: Any,
     detector: str,
@@ -232,7 +338,10 @@ def run_invariant_detector(
         supported = ", ".join(SUPPORTED_INVARIANT_DETECTORS)
         raise ValueError(f"unsupported invariant detector {detector!r}; expected one of: {supported}")
 
-    if detector == "descendant_sibling_loss":
+    if detector in {
+        "descendant_sibling_loss",
+        "same_source_descendant_snapshot_shadow",
+    }:
         return []
 
     if detector in ("duplicate_label", "illegal_edge", "all_tree"):

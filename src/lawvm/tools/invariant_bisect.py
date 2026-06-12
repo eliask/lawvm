@@ -29,6 +29,8 @@ Detectors:
                            nested sublists were merged into one flat list
   descendant_sibling_loss transition detector for sparse broad snapshots that
                            drop descendant siblings from the pre-step live tree
+  same_source_descendant_snapshot_shadow transition detector for same-source
+                           ancestor snapshots that conflict with descendant ops
 
 Usage:
     lawvm invariant-bisect 1995/398
@@ -49,6 +51,7 @@ from typing import Any, Dict, List, Literal, Optional
 from lawvm.core.invariant_detectors import (
     run_descendant_sibling_loss_detector,
     run_invariant_detector_messages,
+    run_same_source_descendant_snapshot_shadow_detector,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -227,6 +230,14 @@ def build_uk_invariant_bisect_bundle(
                     target_path,
                 )
             ]
+        elif detector == "same_source_descendant_snapshot_shadow":
+            violations = [
+                result.message
+                for result in run_same_source_descendant_snapshot_shadow_detector(
+                    group_ops,
+                    target_path,
+                )
+            ]
         else:
             violations = run_invariant_detector_messages(current_ir.body, detector, target_path)
         steps.append({
@@ -401,6 +412,14 @@ def build_invariant_bisect_bundle(
                 result.message
                 for result in run_descendant_sibling_loss_detector(
                     before_ir,
+                    step_lo_ops,
+                    target_path,
+                )
+            ]
+        elif detector == "same_source_descendant_snapshot_shadow":
+            violations = [
+                result.message
+                for result in run_same_source_descendant_snapshot_shadow_detector(
                     step_lo_ops,
                     target_path,
                 )
