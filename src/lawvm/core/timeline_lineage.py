@@ -88,6 +88,26 @@ class MaterializationLineageBridgeClassification:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class TimelineSplitBucket:
+    """Version bucket after splitting a timeline at a native-renumber boundary."""
+
+    address: LegalAddress
+    versions: list[ProvisionVersion]
+    force_native: bool
+    native_boundary: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class RekeyTimelineEntry:
+    """One timeline bucket projected to its migrated PIT address."""
+
+    is_native_lineage: bool
+    source_address: LegalAddress
+    migrated_address: LegalAddress
+    timeline: ProvisionTimeline
+
+
 def _validate_bool_field(carrier_name: str, field_name: str, value: bool) -> None:
     if not isinstance(value, bool):
         raise ValueError(f"{carrier_name}.{field_name} must be a bool")
@@ -587,7 +607,7 @@ def rekey_timelines_with_migration_events(
     def _split_versions_at_native_renumber_boundary(
         address: LegalAddress,
         versions: list[ProvisionVersion],
-    ) -> list[tuple[LegalAddress, list[ProvisionVersion], bool, str]]:
+    ) -> list[TimelineSplitBucket]:
         matching_renumbers = [
             event
             for event in migration_events
@@ -596,12 +616,12 @@ def rekey_timelines_with_migration_events(
             and address_prefix_matches(address, event.from_address)
         ]
         if not matching_renumbers:
-            return [(address, versions, False, "")]
+            return [TimelineSplitBucket(address=address, versions=versions, force_native=False)]
         event = sorted(matching_renumbers, key=migration_event_sort_key)[0]
         before_versions = [version for version in versions if version.effective < event.effective]
         native_versions = [version for version in versions if version.effective >= event.effective]
         if before_versions and not native_versions:
-            return [(address, versions, False, "")]
+            return [TimelineSplitBucket(address=address, versions=versions, force_native=False)]
         if native_versions and not before_versions:
             same_wave_incoming = _has_same_wave_incoming_migration_prefix(
                 address,
@@ -626,68 +646,78 @@ def rekey_timelines_with_migration_events(
                 )
             )
             return [
-                (
-                    address,
-                    versions,
-                    force_native,
-                    event.effective if force_native else "",
+                TimelineSplitBucket(
+                    address=address,
+                    versions=versions,
+                    force_native=force_native,
+                    native_boundary=event.effective if force_native else "",
                 )
             ]
-        buckets: list[tuple[LegalAddress, list[ProvisionVersion], bool, str]] = []
+        buckets: list[TimelineSplitBucket] = []
         if before_versions:
-            buckets.append((address, before_versions, False, ""))
+            buckets.append(TimelineSplitBucket(address=address, versions=before_versions, force_native=False))
         if native_versions:
-            buckets.append((address, native_versions, True, event.effective))
+            buckets.append(
+                TimelineSplitBucket(
+                    address=address,
+                    versions=native_versions,
+                    force_native=True,
+                    native_boundary=event.effective,
+                )
+            )
         return buckets
 
-    entries: list[tuple[bool, LegalAddress, LegalAddress, ProvisionTimeline]] = []
+    entries: list[RekeyTimelineEntry] = []
     for address, timeline in timelines.items():
         split_buckets = _split_versions_at_native_renumber_boundary(address, list(timeline.versions))
-        for bucket_address, bucket_versions, force_native, native_boundary in split_buckets:
+        for bucket in split_buckets:
             migrated_address = (
                 current_address_with_prefix_migrations_fn(
-                    bucket_address,
+                    bucket.address,
                     tuple(
                         event
                         for event in migration_events
-                        if native_boundary and event.effective and event.effective > native_boundary
+                        if bucket.native_boundary and event.effective and event.effective > bucket.native_boundary
                     ),
                     as_of_date,
                 )
-                if force_native
+                if bucket.force_native
                 else current_address_with_prefix_migrations_fn(
-                    bucket_address,
+                    bucket.address,
                     migration_events,
                     as_of_date,
                 )
             )
             entries.append(
-                (
-                    force_native or migrated_address == bucket_address,
-                    bucket_address,
-                    migrated_address,
-                    ProvisionTimeline(address=bucket_address, versions=bucket_versions),
+                RekeyTimelineEntry(
+                    is_native_lineage=bucket.force_native or migrated_address == bucket.address,
+                    source_address=bucket.address,
+                    migrated_address=migrated_address,
+                    timeline=ProvisionTimeline(address=bucket.address, versions=bucket.versions),
                 )
             )
     native_addresses = {
-        migrated_address
-        for is_native_lineage, _address, migrated_address, _timeline in entries
-        if is_native_lineage
+        entry.migrated_address
+        for entry in entries
+        if entry.is_native_lineage
     }
     migrated_prefix_addresses = {
-        outer_migrated
-        for _outer_is_native, _outer_address, outer_migrated, _outer_timeline in entries
+        outer.migrated_address
+        for outer in entries
         if any(
-            inner_migrated.has_path_prefix(outer_migrated)
-            and len(inner_migrated.path) > len(outer_migrated.path)
-            for _inner_is_native, _inner_address, inner_migrated, _inner_timeline in entries
+            inner.migrated_address.has_path_prefix(outer.migrated_address)
+            and len(inner.migrated_address.path) > len(outer.migrated_address.path)
+            for inner in entries
         )
     }
     rekeyed: dict[LegalAddress, ProvisionTimeline] = {}
-    for _is_native_lineage, address, migrated_address, timeline in sorted(
+    for entry in sorted(
         entries,
-        key=lambda item: (0 if not item[0] else 1, str(item[2]), str(item[1])),
+        key=lambda item: (0 if not item.is_native_lineage else 1, str(item.migrated_address), str(item.source_address)),
     ):
+        address = entry.source_address
+        migrated_address = entry.migrated_address
+        timeline = entry.timeline
         source_leaf_label = address.path[-1][1] if address.path else ""
         destination_leaf_label = migrated_address.path[-1][1] if migrated_address.path else ""
         preserve_migrated_history = source_leaf_label == destination_leaf_label
