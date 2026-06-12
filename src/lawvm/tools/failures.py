@@ -19,6 +19,7 @@ import sys
 import time
 from contextlib import redirect_stderr, redirect_stdout
 from collections import Counter
+from dataclasses import replace as dataclass_replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -112,6 +113,7 @@ def _save_failure_cache(label: str, failures: List[FailedOp]) -> Path:
             "description": f.description,
             "reason": f.reason,
             "reason_code": f.reason_code,
+            "target_statute_id": f.target_statute_id,
             "target_unit_kind": f.target_unit_kind,
             "target_section": scope.get("target_section"),
             "target_chapter": scope.get("target_chapter"),
@@ -137,6 +139,7 @@ def _load_failure_cache(label: str) -> Optional[List[FailedOp]]:
             description=r["description"],
             reason=r["reason"],
             reason_code=str(r.get("reason_code") or ""),
+            target_statute_id=r.get("target_statute_id"),
             target_section=r["target_section"],
             target_chapter=r.get("target_chapter"),
             target_part=r.get("target_part"),
@@ -182,6 +185,7 @@ def _replay_one_for_failures(sid: str) -> List[Dict[str, Any]]:
             "description": f.description,
             "reason": f.reason,
             "reason_code": f.reason_code,
+            "target_statute_id": sid,
             **f.scope_detail(),
             "target_unit_kind": f.target_unit_kind,
         }
@@ -223,7 +227,7 @@ def _collect_failures(
         try:
             failed: List[FailedOp] = []
             master = replay_xml(sid, failed_ops_out=failed, quiet=True)
-            all_failures.extend(failed)
+            all_failures.extend(dataclass_replace(f, target_statute_id=sid) for f in failed)
             if need_masters and failed:
                 masters_by_sid[sid] = master
                 with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
@@ -284,8 +288,10 @@ def _collect_failures_parallel(
                     description=r["description"],
                     reason=r["reason"],
                     reason_code=str(r.get("reason_code") or ""),
+                    target_statute_id=r.get("target_statute_id"),
                     target_section=r["target_section"],
                     target_chapter=r.get("target_chapter"),
+                    target_part=r.get("target_part"),
                     target_unit_kind=_failure_target_unit_kind(r),
                 ))
 
@@ -470,7 +476,10 @@ def _print_summary(failures: List[FailedOp], pattern: Optional[str], top: int) -
     statute_counts = Counter(f.amendment_id.split("/")[0] + "/" + f.amendment_id.split("/")[1]
                              if "/" in f.amendment_id else f.amendment_id
                              for f in failures)
-    # Group by target statute (the statute being amended, not the amendment)
+    target_statute_counts: Counter[str] = Counter(
+        f.target_statute_id or "<unknown>" for f in failures
+    )
+    # Group by target section (within the statute being amended).
     target_counts: Counter[str] = Counter()
     for f in failures:
         target_counts[f.target_section] += 1
@@ -503,9 +512,15 @@ def _print_summary(failures: List[FailedOp], pattern: Optional[str], top: int) -
         print(f"  {count:3d}  {sid}")
     print()
 
+    print(f"=== Target statutes (top {top}) ===")
+    for sid, count in target_statute_counts.most_common(top):
+        print(f"  {count:3d}  {sid}")
+    print()
+
     print(f"=== All failures ({len(failures)}) ===")
     for f in failures:
-        print(f"  [{f.amendment_id}] {f.description}  "
+        target_statute = f" target={f.target_statute_id}" if f.target_statute_id else ""
+        print(f"  [{f.amendment_id}]{target_statute} {f.description}  "
               f"kind={f.compat_target_kind_code} sec={f.target_section} ch={f.target_chapter}")
 
 

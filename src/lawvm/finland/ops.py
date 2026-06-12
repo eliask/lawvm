@@ -1486,6 +1486,7 @@ class FailedOp:
     target_chapter: Optional[str] = None
     target_part: Optional[str] = None
     reason_code: str = ""
+    target_statute_id: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.target_unit_kind not in {"section", "chapter", "part"}:
@@ -1509,6 +1510,7 @@ class FailedOp:
             "description": self.description,
             "reason": self.reason,
             "reason_code": self.reason_code,
+            "target_statute_id": self.target_statute_id,
             **self.scope_detail(),
         }
 

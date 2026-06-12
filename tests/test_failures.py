@@ -79,6 +79,7 @@ def test_save_failure_cache_writes_neutral_schema(tmp_path, monkeypatch) -> None
         target_section="3",
         target_unit_kind="chapter",
         target_part="V",
+        target_statute_id="2023/9",
     )
 
     failures._save_failure_cache("demo", [failure])
@@ -87,6 +88,7 @@ def test_save_failure_cache_writes_neutral_schema(tmp_path, monkeypatch) -> None
     assert records[0]["target_unit_kind"] == "chapter"
     assert records[0]["reason_code"] == "TARGET_NOT_FOUND"
     assert records[0]["target_part"] == "V"
+    assert records[0]["target_statute_id"] == "2023/9"
     assert "target_kind" not in records[0]
 
 
@@ -115,6 +117,7 @@ def test_load_failure_cache_accepts_legacy_kind_only_cache(tmp_path, monkeypatch
     assert loaded[0].target_unit_kind == "chapter"
     assert loaded[0].reason_code == ""
     assert loaded[0].target_part == "V"
+    assert loaded[0].target_statute_id is None
 
 
 def test_load_failure_cache_preserves_reason_code(tmp_path, monkeypatch) -> None:
@@ -132,6 +135,7 @@ def test_load_failure_cache_preserves_reason_code(tmp_path, monkeypatch) -> None
                     "target_section": "3",
                     "target_chapter": "",
                     "target_part": "V",
+                    "target_statute_id": "2023/9",
                 }
             ]
         )
@@ -143,6 +147,7 @@ def test_load_failure_cache_preserves_reason_code(tmp_path, monkeypatch) -> None
     assert loaded[0].target_unit_kind == "chapter"
     assert loaded[0].reason_code == "TARGET_NOT_FOUND"
     assert loaded[0].target_part == "V"
+    assert loaded[0].target_statute_id == "2023/9"
 
 
 def test_replay_one_for_failures_serializes_reason_code(monkeypatch) -> None:
@@ -177,9 +182,29 @@ def test_replay_one_for_failures_serializes_reason_code(monkeypatch) -> None:
             "description": "REPLACE 3 §",
             "reason": "source missing",
             "reason_code": "SOURCE_NOT_FOUND",
+            "target_statute_id": "2024/1",
             "target_section": "3",
             "target_chapter": None,
             "target_part": "II",
             "target_unit_kind": "section",
         }
     ]
+
+
+def test_print_summary_includes_target_statute_id(capsys) -> None:
+    failure = FailedOp(
+        amendment_id="2024/2",
+        description="REPLACE 3 §",
+        reason="source missing",
+        reason_code="SOURCE_NOT_FOUND",
+        target_section="3",
+        target_unit_kind="section",
+        target_statute_id="2024/1",
+    )
+
+    failures._print_summary([failure], pattern=None, top=5)
+
+    out = capsys.readouterr().out
+    assert "=== Target statutes" in out
+    assert "2024/1" in out
+    assert "[2024/2] target=2024/1 REPLACE 3 §" in out
