@@ -64,6 +64,7 @@ class _SubsectionApplyView:
     legacy_source_statute_id: str
     is_temporary: bool
     has_exact_bound_payload: bool
+    resolved_op: ResolvedOp | None = None
 
 
 def _coerce_subsection_apply_view(op: "_SubsectionApplyView | AmendmentOp | ResolvedOp") -> _SubsectionApplyView:
@@ -117,6 +118,7 @@ def _subsection_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _SubsectionAp
         legacy_source_statute_id=legacy_source_statute_id,
         is_temporary=is_temporary,
         has_exact_bound_payload=has_exact_bound_payload,
+        resolved_op=op if isinstance(op, ResolvedOp) else None,
     )
 
 
@@ -428,6 +430,90 @@ def _merge_preserved_tail_into_replacement(
         attrs=dict(replacement_subsection.attrs),
         children=tuple(new_children),
     )
+
+
+def _owned_sparse_gap_insert_subsection(
+    section: IRNode,
+    replacement_subsection: IRNode,
+    *,
+    target_paragraph: int,
+) -> IRNode | None:
+    """Insert an owned sparse replacement into a live numeric-label gap.
+
+    This intentionally does not renumber later subsections.  Historical replay
+    state can contain live labels like ``1, 2, 6`` after prior sparse materialization;
+    a source-owned replacement for moment ``3`` or ``5`` should occupy that legal
+    label before ``6``, not shift ``6`` to another legal identity.
+    """
+    target_label = str(target_paragraph)
+    replacement = replacement_subsection
+    if normalized_label_key(replacement.label) != target_label:
+        replacement = IRNode(
+            kind=replacement.kind,
+            label=target_label,
+            text=replacement.text,
+            attrs=dict(replacement.attrs),
+            children=tuple(replacement.children),
+        )
+
+    children: list[IRNode] = []
+    inserted = False
+    for child in section.children:
+        if (
+            not inserted
+            and child.kind is IRNodeKind.SUBSECTION
+            and (child.label or "").strip().isdigit()
+            and int((child.label or "").strip()) > target_paragraph
+        ):
+            children.append(replacement)
+            inserted = True
+        children.append(child)
+    if not inserted:
+        return None
+    return _tops._with_children(section, children)
+
+
+def _has_owned_sparse_gap_replace_witness(
+    view: _SubsectionApplyView,
+    replacement_subsection: IRNode,
+    *,
+    exact_idx_found: bool,
+    has_higher_live_numeric_label: bool,
+) -> bool:
+    """Return True when elaboration, not apply fallback, owns a gap fill."""
+    if exact_idx_found or not has_higher_live_numeric_label:
+        return False
+    if view.op_type != "REPLACE" or view.target_paragraph is None:
+        return False
+    if view.target_item or view.target_special:
+        return False
+    rop = view.resolved_op
+    if rop is None or not rop.has_assigned_subsection_payload():
+        return False
+    if rop.payload_completeness is None or rop.payload_completeness.kind != "sparse_certified":
+        return False
+    if rop.slot_assignment is None:
+        return False
+    if not rop.slot_assignment.has_owned_bound_payload_for_stable_op_id(rop.op_id):
+        return False
+    binding = next(
+        (
+            candidate
+            for candidate in rop.slot_assignment.sparse_slot_bindings
+            if candidate.op_type == view.op_type
+            and candidate.target_paragraph == view.target_paragraph
+            and candidate.target_item is None
+            and candidate.target_special is None
+        ),
+        None,
+    )
+    if binding is None:
+        return False
+    payload_label = normalized_label_key(binding.payload_slot_label)
+    if payload_label and payload_label != str(view.target_paragraph):
+        return False
+    replacement_label = normalized_label_key(replacement_subsection.label)
+    return not replacement_label or replacement_label == str(view.target_paragraph)
 
 
 def _strip_context_carried_omission_for_complete_numbered_replace(
@@ -797,6 +883,38 @@ def _apply_subsection_replace(
             return _with_preserved_provision_index(
                 state,
                 _tops.replace_at(state.ir, sec_path, predecessor_tail_insert),
+            )
+        sparse_gap_insert = None
+        if _has_owned_sparse_gap_replace_witness(
+            view,
+            _replace_sub,
+            exact_idx_found=exact_idx_found,
+            has_higher_live_numeric_label=has_higher_live_numeric_label,
+        ):
+            sparse_gap_insert = _owned_sparse_gap_insert_subsection(
+                sec,
+                _replace_sub,
+                target_paragraph=view.target_paragraph,
+            )
+        if sparse_gap_insert is not None:
+            if source_pathologies_out is not None:
+                source_pathologies_out.append(
+                    build_destructive_shape_loss_risk_pathology(
+                        source_statute=view.legacy_source_statute_id,
+                        target_unit_kind="section",
+                        target_label=f"{view.target_section} § {view.target_paragraph} mom",
+                        recovery_kind="subsection_replace_sparse_gap_insert",
+                        live_sibling_count=len(subsecs),
+                        payload_sibling_count=len(_replace_sub.children),
+                    )
+                )
+            if strict_profile is not None:
+                return None
+            logger.debug("  %s → momentti replace (owned sparse gap insert)", ctx_label)
+            _report_fragment_rebound()
+            return _with_preserved_provision_index(
+                state,
+                _tops.replace_at(state.ir, sec_path, sparse_gap_insert),
             )
         if _looks_like_standalone_tail_subsection(_replace_sub):
             if n >= len(subsecs):

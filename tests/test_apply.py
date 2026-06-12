@@ -4569,7 +4569,10 @@ class TestResolveSubsectionIndex:
         assert result is state
         assert [p.code for p in pathologies] == ["SUBSECTION_TARGET_REBOUND"]
         assert pathologies[0].detail["rebound_kind"] == "continuation_fragment_skip"
-        assert [f.reason for f in failed_ops] == ["no deterministic path"]
+        assert [f.reason_code for f in failed_ops] == ["subsection_target_exists_apply_failed"]
+        assert [f.reason for f in failed_ops] == [
+            "subsection target exists but no deterministic apply path matched"
+        ]
 
 class TestApplyContainerInsert:
     def test_insert_creates_part_and_records_chapter_move_lineage(self):
@@ -14099,6 +14102,86 @@ def test_subsection_replace_missing_target_does_not_gap_fill_before_higher_label
     assert result is None
     assert [p.code for p in pathologies] == ["SUBSECTION_TARGET_ABSENT"]
     assert pathologies[0].detail["has_higher_live_numeric_label"] is True
+
+
+def test_subsection_replace_owned_sparse_payload_can_fill_gap_before_higher_labeled_tail() -> None:
+    sec = _sec(
+        "31",
+        _sub("1", _content("Momentti 1.")),
+        _sub("2", _content("Momentti 2.")),
+        _sub("6", _content("Momentti 6.")),
+    )
+    body = _body(sec)
+    sec_path = [("section", "31")]
+    subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+    pathologies: list[SourcePathology] = []
+
+    replace_sub = _sub("3", _content("Source-owned momentti 3."))
+    state = _make_state(body)
+    op = _op(op_type="REPLACE", target_section="31", target_paragraph=3)
+    slot_map = SubsectionSlotMap()
+    slot_map.assign(op, replace_sub)
+    assignment = SubsectionSlotAssignmentResult(
+        subsec_map=slot_map,
+        sparse_slot_bindings=(
+            SparsePayloadSlotBinding(
+                op_description=op.description(),
+                op_type=str(op.op_type or ""),
+                target_paragraph=3,
+                target_item=None,
+                target_special=None,
+                payload_slot_index=3,
+                payload_slot_label="3",
+            ),
+        ),
+        used_subs=(2,),
+        unassigned_payload_slots=(),
+        binding_admissibility_by_op_id=((op.op_id, "single"),),
+    )
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=_sec("31", replace_sub),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="31",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "31"), ("subsection", "3"))),
+        slot_assignment=assignment,
+        payload_completeness=PayloadCompletenessWitness(
+            kind="sparse_certified",
+            reasons=("omission_marked_sparse_payload",),
+            tail_policy="preserve_unstated_tail",
+        ),
+    )
+
+    result = _apply_subsection_replace(
+        state,
+        rop,
+        sec_path,
+        sec,
+        subsecs,
+        replace_sub,
+        _sec("31", replace_sub),
+        _FINLEX_ORACLE,
+        "31 § 3 mom",
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    live = result.find_section("31")
+    assert live is not None
+    assert [child.label for child in live.children if child.kind is IRNodeKind.SUBSECTION] == [
+        "1",
+        "2",
+        "3",
+        "6",
+    ]
+    assert [p.code for p in pathologies] == [
+        "DESTRUCTIVE_SHAPE_LOSS_RISK",
+        "SUBSECTION_TARGET_REBOUND",
+    ]
+    assert pathologies[0].detail["recovery_kind"] == "subsection_replace_sparse_gap_insert"
+    assert pathologies[1].detail["rebound_kind"] == "missing_exact_subsection_label"
 
     def test_subsection_replace_does_not_report_pathology_when_live_label_is_higher_in_range() -> None:
         sec = _sec(
