@@ -8,6 +8,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.target_kind import TargetKind
 from lawvm.finland.constraints import (
     _FilterCtx,
+    _c_fragmentary_parent_insert_shadowed_by_item_insert_payload,
     _c_internal_list_update_not_whole_section_replace,
     _c_language_variant,
     _c_language_variant_plain_replace_shadowed_by_sparse_item_payload,
@@ -82,6 +83,27 @@ def _assignment_for_op(op: AmendmentOp, sub: IRNode) -> SubsectionSlotAssignment
             ),
         ),
         used_subs=(0,),
+        unassigned_payload_slots=(),
+    )
+
+
+def _assignment_for_ops(*pairs: tuple[AmendmentOp, IRNode]) -> SubsectionSlotAssignmentResult:
+    slot_map = SubsectionSlotMap({id(op): sub for op, sub in pairs})
+    return SubsectionSlotAssignmentResult(
+        subsec_map=slot_map,
+        sparse_slot_bindings=tuple(
+            SparsePayloadSlotBinding(
+                op_description=op.description(),
+                op_type=str(op.op_type or ""),
+                target_paragraph=op.target_paragraph,
+                target_item=op.target_item,
+                target_special=op.target_special,
+                payload_slot_index=idx,
+                payload_slot_label=sub.label or "",
+            )
+            for idx, (op, sub) in enumerate(pairs, start=1)
+        ),
+        used_subs=tuple(range(len(pairs))),
         unassigned_payload_slots=(),
     )
 
@@ -658,6 +680,73 @@ def test_c_internal_list_update_not_whole_section_replace_drops_literal_section_
 
     assert keep is False
     assert "internal section list update" in reason
+
+
+def test_c_fragmentary_parent_insert_shadowed_by_item_insert_payload_drops_parent() -> None:
+    parent = _op(op_type="INSERT", target_section="2", target_paragraph=3)
+    child = _op(op_type="INSERT", target_section="2", target_paragraph=3, target_item="4a")
+    mapped = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="3",
+        children=(
+            IRNode(kind=IRNodeKind.INTRO, text="intro"),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="4a", children=(IRNode(kind=IRNodeKind.CONTENT, text="item"),)),
+        ),
+    )
+    ctx = _ctx(
+        muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="2", children=(mapped,)),
+        slot_assignment=_assignment_for_ops((parent, mapped), (child, mapped)),
+    )
+
+    keep, reason = _c_fragmentary_parent_insert_shadowed_by_item_insert_payload(parent, [parent, child], ctx)
+
+    assert keep is False
+    assert "fragmentary parent subsection insert" in reason
+
+
+def test_c_fragmentary_parent_insert_shadowed_by_item_insert_payload_keeps_full_snapshot_parent() -> None:
+    parent = _op(op_type="INSERT", target_section="22", target_paragraph=1)
+    child = _op(op_type="INSERT", target_section="22", target_paragraph=1, target_item="4a")
+    mapped = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.INTRO, text="intro"),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="one"),)),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="4a", children=(IRNode(kind=IRNodeKind.CONTENT, text="four a"),)),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="5", children=(IRNode(kind=IRNodeKind.CONTENT, text="five"),)),
+        ),
+    )
+    ctx = _ctx(
+        muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="22", children=(mapped,)),
+        slot_assignment=_assignment_for_ops((parent, mapped), (child, mapped)),
+    )
+
+    keep, reason = _c_fragmentary_parent_insert_shadowed_by_item_insert_payload(parent, [parent, child], ctx)
+
+    assert keep is True
+    assert reason == ""
+
+
+def test_filter_ops_by_constraints_records_fragmentary_parent_insert_rejection() -> None:
+    parent = _op(op_type="INSERT", target_section="2", target_paragraph=3)
+    child = _op(op_type="INSERT", target_section="2", target_paragraph=3, target_item="4a")
+    mapped = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="3",
+        children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="4a", children=(IRNode(kind=IRNodeKind.CONTENT, text="item"),)),),
+    )
+    ctx = _ctx(
+        muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="2", children=(mapped,)),
+        slot_assignment=_assignment_for_ops((parent, mapped), (child, mapped)),
+    )
+    rejected: list[FailedOp] = []
+
+    filtered = _filter_ops_by_constraints([parent, child], ctx, rejected_ops_out=rejected)
+
+    assert filtered == [child]
+    assert len(rejected) == 1
+    assert rejected[0].reason_code == "ELAB.REJECTED_FRAGMENTARY_PARENT_INSERT_SHADOWED_BY_ITEM_INSERT"
 
 
 # ---------------------------------------------------------------------------

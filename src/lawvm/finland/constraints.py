@@ -44,6 +44,7 @@ _CONSTRAINT_REASON_CODES: dict[str, str] = {
     "_c_replace_when_insert_same_paragraph": "ELAB.REJECTED_REPLACE_SHADOWED_BY_INSERT",
     "_c_language_variant_replace_shadowed_by_sparse_insert": "ELAB.REJECTED_LANGUAGE_VARIANT_REPLACE_SHADOWED_BY_SPARSE_INSERT",
     "_c_language_variant_plain_replace_shadowed_by_sparse_item_payload": "ELAB.REJECTED_LANGUAGE_VARIANT_PLAIN_REPLACE_SHADOWED_BY_SPARSE_ITEM_PAYLOAD",
+    "_c_fragmentary_parent_insert_shadowed_by_item_insert_payload": "ELAB.REJECTED_FRAGMENTARY_PARENT_INSERT_SHADOWED_BY_ITEM_INSERT",
     "_c_internal_list_update_not_whole_section_replace": "ELAB.REJECTED_INTERNAL_LIST_UPDATE",
     "_c_phantom_subsection": "ELAB.REJECTED_PHANTOM_SUBSECTION",
 }
@@ -753,6 +754,71 @@ def _c_language_variant_plain_replace_shadowed_by_sparse_item_payload(
     return False, "language-variant context replace shadowed by sparse item payload"
 
 
+def _normalized_item_label(label: object) -> str:
+    return re.sub(r"[)\s.]", "", str(label or "")).strip().lower()
+
+
+def _paragraph_labels(node: IRNode) -> tuple[str, ...]:
+    return tuple(
+        label
+        for child in node.children
+        if child.kind == IRNodeKind.PARAGRAPH and (label := _normalized_item_label(child.label))
+    )
+
+
+def _c_fragmentary_parent_insert_shadowed_by_item_insert_payload(
+    op: AmendmentOp, all_ops: List[AmendmentOp], ctx: _FilterCtx
+) -> Tuple[bool, str]:
+    """Drop parent subsection inserts that only carry explicit child item payload.
+
+    Finnish sparse item amendments can compile both:
+
+    - ``INSERT N § M mom``
+    - ``INSERT N § M mom K kohta``
+
+    from one mapped subsection payload.  When that payload's paragraph labels are
+    exactly the explicit child item labels, the parent subsection op is only a
+    carrier for the item payload.  Replaying it as a standalone subsection insert
+    creates a duplicate moment and shifts the real live subsection.
+    """
+    if (
+        not ctx.has_subsection_mapping
+        or op.op_type != "INSERT"
+        or op.target_unit_kind != "section"
+        or op.target_paragraph is None
+        or op.target_item
+        or op.target_special
+    ):
+        return True, ""
+    mapped_sub = ctx.mapped_subsection_for(op)
+    if mapped_sub is None:
+        return True, ""
+
+    explicit_child_labels = {
+        _normalized_item_label(other.target_item)
+        for other in all_ops
+        if (
+            other is not op
+            and other.op_type == "INSERT"
+            and other.target_unit_kind == op.target_unit_kind
+            and other.target_section == op.target_section
+            and other.target_chapter == op.target_chapter
+            and other.target_part == op.target_part
+            and other.target_paragraph == op.target_paragraph
+            and other.target_item
+            and not other.target_special
+            and ctx.mapped_subsection_for(other) is mapped_sub
+        )
+    }
+    if not explicit_child_labels:
+        return True, ""
+
+    payload_labels = set(_paragraph_labels(mapped_sub))
+    if payload_labels and payload_labels == explicit_child_labels:
+        return False, "fragmentary parent subsection insert shadowed by explicit item insert payload"
+    return True, ""
+
+
 def _c_internal_list_update_not_whole_section_replace(
     op: AmendmentOp, all_ops: List[AmendmentOp], ctx: _FilterCtx
 ) -> Tuple[bool, str]:
@@ -797,6 +863,7 @@ _OP_CONSTRAINTS = [
     _c_replace_when_insert_same_paragraph,
     _c_language_variant_replace_shadowed_by_sparse_insert,
     _c_language_variant_plain_replace_shadowed_by_sparse_item_payload,
+    _c_fragmentary_parent_insert_shadowed_by_item_insert_payload,
     _c_internal_list_update_not_whole_section_replace,
     _c_phantom_subsection,
 ]
