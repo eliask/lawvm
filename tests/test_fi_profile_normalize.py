@@ -487,8 +487,25 @@ def test_fi_split_intro_then_numbered_list_subsections_fires() -> None:
     assert result[0].label == "2"
     assert result[0].children == (_content("Standalone earlier moment."),)
     assert result[1].kind == IRNodeKind.SUBSECTION
+    assert result[1].label == "3"
     assert result[1].children[0] == _intro("The authority records the following:")
     assert [c.label for c in result[1].children[1:]] == ["1", "2"]
+
+
+def test_fi_split_intro_then_numbered_list_subsections_shifts_colliding_later_labels() -> None:
+    sub = _subsection(
+        label="2",
+        children=(
+            _intro("Standalone earlier moment."),
+            _para(children=(_content("The authority records the following:"),)),
+            _para(label="1", children=(_num("1)"), _content("item one;"))),
+        ),
+    )
+    later = _subsection(label="3", children=(_content("Later moment."),))
+
+    result = _apply_fi_split_intro_then_numbered_list_subsections([sub, later])
+
+    assert [child.label for child in result] == ["2", "3", "4"]
 
 
 def test_fi_split_intro_then_numbered_list_subsections_no_change_without_list_intro() -> None:

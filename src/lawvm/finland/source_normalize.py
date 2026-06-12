@@ -611,7 +611,27 @@ def _split_intro_then_numbered_list_subsections(
     rewritten: List[IRNode] = []
     changed = False
 
-    for child in children:
+    shift_subsection_labels_from: int | None = None
+    for idx, child in enumerate(children):
+        if (
+            shift_subsection_labels_from is not None
+            and child.kind == IRNodeKind.SUBSECTION
+            and child.label is not None
+            and _norm_num_token(child.label).isdigit()
+            and int(_norm_num_token(child.label)) >= shift_subsection_labels_from
+        ):
+            new_label = str(int(_norm_num_token(child.label)) + 1)
+            rewritten.append(
+                IRNode(
+                    kind=child.kind,
+                    label=new_label,
+                    text=child.text,
+                    attrs=child.attrs,
+                    children=child.children,
+                )
+            )
+            changed = True
+            continue
         if child.kind != IRNodeKind.SUBSECTION:
             rewritten.append(child)
             continue
@@ -647,6 +667,25 @@ def _split_intro_then_numbered_list_subsections(
             rewritten.append(child)
             continue
 
+        child_label_norm = _norm_num_token(child.label or "")
+        split_label: str | None = None
+        if child_label_norm.isdigit():
+            split_label = str(int(child_label_norm) + 1)
+            next_subsection = next(
+                (
+                    candidate
+                    for candidate in children[idx + 1 :]
+                    if candidate.kind == IRNodeKind.SUBSECTION and candidate.label is not None
+                ),
+                None,
+            )
+            if (
+                next_subsection is not None
+                and _norm_num_token(next_subsection.label or "").isdigit()
+                and int(_norm_num_token(next_subsection.label or "")) == int(split_label)
+            ):
+                shift_subsection_labels_from = int(split_label)
+
         changed = True
         rewritten.append(
             IRNode(
@@ -660,6 +699,7 @@ def _split_intro_then_numbered_list_subsections(
         rewritten.append(
             IRNode(
                 kind=IRNodeKind.SUBSECTION,
+                label=split_label,
                 children=(IRNode(kind=IRNodeKind.INTRO, text=lead_text), *remaining),
             )
         )
@@ -675,13 +715,16 @@ def _split_intro_then_numbered_list_subsections(
                 after=(
                     "split into standalone content-only subsection plus intro-bearing "
                     "numbered-list subsection"
+                    + (f"; split subsection labelled {split_label}" if split_label is not None else "")
                 ),
                 explanation=(
                     "The source encoded two legal moments inside one subsection. "
                     "The first sentence is a complete standalone moment, while the "
                     "following colon-ended paragraph introduces a fresh numbered list. "
-                    "Split the malformed subsection at the moment boundary and keep "
-                    "an explicit source-normalization witness."
+                    "Split the malformed subsection at the moment boundary. When the "
+                    "enclosing subsection has a numeric label, the second moment receives "
+                    "the next consecutive label; following colliding subsection labels are "
+                    "shifted as part of the same local numbering repair."
                 ),
                 path=parent_path + (_node_path_label(child),),
                 confidence=0.96,

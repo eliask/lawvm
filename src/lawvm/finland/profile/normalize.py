@@ -1149,7 +1149,25 @@ def _apply_fi_split_intro_then_numbered_list_subsections(children: List[IRNode])
        numbered paragraphs are the restarted list
     """
     rewritten: List[IRNode] = []
-    for child in children:
+    shift_subsection_labels_from: int | None = None
+    for idx, child in enumerate(children):
+        if (
+            shift_subsection_labels_from is not None
+            and child.kind == IRNodeKind.SUBSECTION
+            and child.label is not None
+            and _norm_num_token(child.label).isdigit()
+            and int(_norm_num_token(child.label)) >= shift_subsection_labels_from
+        ):
+            rewritten.append(
+                IRNode(
+                    kind=child.kind,
+                    label=str(int(_norm_num_token(child.label)) + 1),
+                    text=child.text,
+                    attrs=child.attrs,
+                    children=child.children,
+                )
+            )
+            continue
         if child.kind != IRNodeKind.SUBSECTION:
             rewritten.append(child)
             continue
@@ -1190,6 +1208,25 @@ def _apply_fi_split_intro_then_numbered_list_subsections(children: List[IRNode])
             rewritten.append(child)
             continue
 
+        child_label_norm = _norm_num_token(child.label or "")
+        split_label: str | None = None
+        if child_label_norm.isdigit():
+            split_label = str(int(child_label_norm) + 1)
+            next_subsection = next(
+                (
+                    candidate
+                    for candidate in children[idx + 1 :]
+                    if candidate.kind == IRNodeKind.SUBSECTION and candidate.label is not None
+                ),
+                None,
+            )
+            if (
+                next_subsection is not None
+                and _norm_num_token(next_subsection.label or "").isdigit()
+                and int(_norm_num_token(next_subsection.label or "")) == int(split_label)
+            ):
+                shift_subsection_labels_from = int(split_label)
+
         rewritten.append(
             IRNode(
                 kind=IRNodeKind.SUBSECTION,
@@ -1202,6 +1239,7 @@ def _apply_fi_split_intro_then_numbered_list_subsections(children: List[IRNode])
         rewritten.append(
             IRNode(
                 kind=IRNodeKind.SUBSECTION,
+                label=split_label,
                 children=(IRNode(kind=IRNodeKind.INTRO, text=lead_text), *remaining),
             )
         )

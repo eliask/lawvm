@@ -13195,15 +13195,14 @@ def test_replay_xml_2016_1503_preserves_section_4_first_moment_tail_once_after_2
     assert first_text.count(duplicated_tail) == 1
 
 
-def test_replay_xml_2007_1024_section_2_no_spurious_third_subsection_after_2022_525(
-    replay_2007_1024_finlex_oracle: Any,
-) -> None:
+def test_replay_xml_2007_1024_section_2_no_spurious_third_subsection_after_2022_525() -> None:
     """Regression: 2022/525 item-INSERT into section:2 subsection:2 must not create a
     spurious subsection:3.  The amendment XML carries the full updated subsection:2 content
     (OMISSION + SUBSECTION, no trailing omission) — the johtolause parser failed to extract
     target_item, so the op only carries target_paragraph=2.  The in-place merge path must
     replace subsection:2 in-place, not push it to subsection:3."""
-    sec2 = replay_2007_1024_finlex_oracle.find_section("2")
+    replay = pinned_replay("2007/1024", as_of="2024-07-02", mode="official_consolidation", quiet=True)
+    sec2 = replay.find_section("2")
     assert sec2 is not None
 
     subs = [c for c in sec2.children if c.kind == IRNodeKind.SUBSECTION]

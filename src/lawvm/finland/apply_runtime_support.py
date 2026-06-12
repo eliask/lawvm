@@ -1083,6 +1083,16 @@ def _emit_section_snapshot(
     ) -> IRNode | None:
         if subsection_payload.kind is not IRNodeKind.SUBSECTION:
             return None
+        subsection_label = _norm_num_token(child_path[-1][1]) if child_path else ""
+        for rop in group_rops:
+            amend_sub = rop.resolved_amend_sub_ir()
+            if (
+                rop.targets_subsection_only()
+                and _norm_num_token(str(rop.resolved_target_subsection_label or "")) == subsection_label
+                and amend_sub is not None
+                and irnode_to_text(amend_sub) == irnode_to_text(subsection_payload)
+            ):
+                return None
         latest = _latest_snapshot_for_path(child_path)
         if latest is None or latest.payload is None or latest.payload.kind is not IRNodeKind.SUBSECTION:
             return None
@@ -1259,10 +1269,23 @@ def _emit_section_snapshot(
             return None
 
         subsection_payloads: dict[str, IRNode] = {}
+        renumber_destinations: dict[str, str] = {}
         whole_subsection_targets: set[str] = set()
         has_insert = False
         for rop in group_rops:
             if rop.effective_target_special in {"otsikko", "otsikko_edella"}:
+                continue
+            if rop.is_renumber_action and rop.targets_subsection_only():
+                source_label = _norm_num_token(str(rop.resolved_target_subsection_label or "").strip())
+                destination = rop.resolved_destination_address
+                destination_label = ""
+                if destination is not None:
+                    destination_label = _norm_num_token(
+                        next((label for kind, label in reversed(destination.path) if kind == "subsection"), "")
+                    )
+                if not source_label or not destination_label:
+                    return None
+                renumber_destinations[source_label] = destination_label
                 continue
             if not (rop.is_insert_action or rop.is_replace_action):
                 return None
@@ -1289,7 +1312,7 @@ def _emit_section_snapshot(
                 whole_subsection_targets.add(target_norm)
             has_insert = has_insert or rop.is_insert_action
 
-        if not has_insert or len(subsection_payloads) < 2:
+        if not has_insert or (len(subsection_payloads) < 2 and not renumber_destinations):
             has_item_payload = any(rop.resolved_target_item_label is not None for rop in group_rops)
             if not has_item_payload or not subsection_payloads:
                 return None
@@ -1324,11 +1347,13 @@ def _emit_section_snapshot(
         if any(child.kind is not IRNodeKind.SUBSECTION for child in current_children[first_current_subsection:]):
             return None
 
-        base_by_label = {
-            _norm_num_token(child.label): child
-            for child in base_section.children
-            if child.kind is IRNodeKind.SUBSECTION and child.label
-        }
+        base_by_label: dict[str, IRNode] = {}
+        for child in base_section.children:
+            if child.kind is not IRNodeKind.SUBSECTION or not child.label:
+                continue
+            source_label = _norm_num_token(child.label)
+            destination_label = renumber_destinations.get(source_label, source_label)
+            base_by_label[destination_label] = _relabel_subsection_payload(child, destination_label)
         final_payloads: dict[str, IRNode] = {}
         for label, subsection_payload in subsection_payloads.items():
             if label in whole_subsection_targets:

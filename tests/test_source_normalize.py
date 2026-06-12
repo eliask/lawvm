@@ -529,10 +529,49 @@ class TestIntroListRestartSplit:
             kind=IRNodeKind.INTRO,
             text="The authority records the following:",
         )
+        assert subsections[1].label == "3"
         assert [c.label for c in subsections[1].children[1:]] == ["1", "2"]
 
         split_facts = [f for f in facts if f.kind_value == BASE_INTRO_LIST_RESTART_SPLIT]
         assert len(split_facts) == 1
+
+    def test_split_shifts_later_colliding_subsection_labels(self) -> None:
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="4",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="2",
+                    children=(
+                        IRNode(kind=IRNodeKind.INTRO, text="Standalone earlier moment."),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            children=(IRNode(kind=IRNodeKind.CONTENT, text="The authority records the following:"),),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="1)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="item one."),
+                            ),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="3",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="Later moment."),),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "2017/367-fixture")
+
+        subsections = [c for c in normalized.children if c.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["2", "3", "4"]
+        assert any(f.kind_value == BASE_INTRO_LIST_RESTART_SPLIT for f in facts)
 
     def test_no_anomaly_for_single_child(self) -> None:
         """A single numbered child produces no numbering facts."""
