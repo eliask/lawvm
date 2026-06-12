@@ -1486,18 +1486,16 @@ def finland_strict_report_ownership_closure_certificate(
         for row in candidate_set_certificates
         if str(row.get("completeness_status") or "") != "complete"
     )
-    candidate_set_kinds = tuple(
-        str(row.get("candidate_set_kind") or "")
-        for row in candidate_set_certificates
-        if str(row.get("candidate_set_kind") or "")
-    )
-    authorized_candidate_set_kinds = {
-        str(row.get("candidate_set_kind") or "")
+    candidate_set_authorization_keys = {
+        _strict_report_candidate_set_authorization_key(row)
         for row in candidate_set_authorizations
-        if str(row.get("candidate_set_kind") or "")
+        if _strict_report_candidate_set_authorization_key(row) is not None
     }
-    candidate_set_kinds_without_authorization = tuple(
-        kind for kind in candidate_set_kinds if kind not in authorized_candidate_set_kinds
+    candidate_sets_without_authorization = tuple(
+        row
+        for row in candidate_set_certificates
+        if _strict_report_candidate_set_authorization_key(row)
+        not in candidate_set_authorization_keys
     )
     failed_gates = (
         *(
@@ -1513,8 +1511,11 @@ def finland_strict_report_ownership_closure_certificate(
             for row in incomplete_candidate_sets
         ),
         *(
-            f"candidate_set_{kind}_execution_authorization_missing"
-            for kind in candidate_set_kinds_without_authorization
+            "candidate_set_"
+            f"{str(row.get('candidate_set_kind') or 'unknown')}_"
+            f"{str(row.get('scope_id') or 'unknown')}_"
+            "execution_authorization_missing"
+            for row in candidate_sets_without_authorization
         ),
         *(() if not failed_ops else ("failed_ops_present",)),
         *(() if not strict_fail_reasons else ("strict_fail_reasons_present",)),
@@ -1529,7 +1530,7 @@ def finland_strict_report_ownership_closure_certificate(
         else 0,
         "incomplete_candidate_set_certificates": len(incomplete_candidate_sets),
         "candidate_set_certificates_without_execution_authorization": len(
-            candidate_set_kinds_without_authorization
+            candidate_sets_without_authorization
         ),
         "failed_ops_without_frontier_work_item": max(
             len(failed_ops) - len(failed_operation_frontier_items),
@@ -1553,8 +1554,10 @@ def finland_strict_report_ownership_closure_certificate(
             incomplete_certificate="complete_operation_cue_exhaustiveness_certificate",
         ),
         *(
-            f"candidate_set_execution_authorization:{kind}"
-            for kind in candidate_set_kinds_without_authorization
+            "candidate_set_execution_authorization:"
+            f"{str(row.get('candidate_set_kind') or 'unknown')}:"
+            f"{str(row.get('scope_id') or 'unknown')}"
+            for row in candidate_sets_without_authorization
         ),
     )
     closure_dimensions = (
@@ -3479,6 +3482,17 @@ def _closure_certificate_requirements(
     if not _candidate_set_complete(rows, candidate_set_kind):
         return (incomplete_certificate,)
     return ()
+
+
+def _strict_report_candidate_set_authorization_key(
+    row: Mapping[str, Any],
+) -> tuple[str, str, str] | None:
+    candidate_set_kind = str(row.get("candidate_set_kind") or "")
+    scope_id = str(row.get("scope_id") or "")
+    completeness_status = str(row.get("completeness_status") or "")
+    if not candidate_set_kind or not scope_id or not completeness_status:
+        return None
+    return (candidate_set_kind, scope_id, completeness_status)
 
 
 def _visible_operation_candidate_ids(
