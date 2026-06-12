@@ -102,7 +102,6 @@ from lawvm.core.payload_surface import (
     build_group_surface as _build_group_surface_factory,
     build_payload_surface as _build_payload_surface,
 )
-from lawvm.finland.helpers import may_attach_post_list_loppukappale
 from lawvm.finland.labels import leaf_label_identity_key
 from lawvm.finland.elaborated_group import (
     ElaboratedGroup,
@@ -125,53 +124,6 @@ from lawvm.finland.future_repeal import RepealTargetRef
 logger = logging.getLogger(__name__)
 
 AMENDMENT_PARENTS_CSV = Path(".cache/finland/amendment_parents.csv")  # internal cache, auto-built
-
-
-def _hoist_trailing_wrapup_ir(node: IRNode) -> IRNode:
-    """Promote trailing prose after numbered items to a wrapUp node."""
-    node_kind = getattr(node.kind, "value", str(node.kind))
-    if not node.children:
-        return node
-
-    new_children = [_hoist_trailing_wrapup_ir(child) for child in node.children]
-
-    def _child_kind(child: IRNode) -> str:
-        return getattr(child.kind, "value", str(child.kind))
-
-    def _paragraph_has_num_ir(child: IRNode) -> bool:
-        return any(_child_kind(grandchild) == "num" for grandchild in child.children)
-
-    def _paragraph_is_content_only_ir(child: IRNode) -> bool:
-        return _child_kind(child) == "paragraph" and not _paragraph_has_num_ir(child) and all(
-            _child_kind(grandchild) == "content" for grandchild in child.children
-        )
-
-    if node_kind == "subsection":
-        numbered_positions = [
-            idx
-            for idx, child in enumerate(new_children)
-            if _child_kind(child) == "paragraph" and _paragraph_has_num_ir(child)
-        ]
-        if numbered_positions:
-            last_numbered_idx = numbered_positions[-1]
-            trailing = new_children[last_numbered_idx + 1 :]
-            if trailing and may_attach_post_list_loppukappale(
-                IRNode(kind=IRNodeKind.SUBSECTION, label=node.label, text=node.text, attrs=node.attrs, children=tuple(new_children))
-            ) and all(
-                _paragraph_is_content_only_ir(child) or _child_kind(child) == "content"
-                for child in trailing
-            ):
-                rewritten: list[IRNode] = list(new_children[: last_numbered_idx + 1])
-                for child in trailing:
-                    wrap_text = irnode_to_text(child).strip()
-                    if not wrap_text:
-                        continue
-                    rewritten.append(IRNode(kind=IRNodeKind.WRAP_UP, text=wrap_text, attrs=dict(child.attrs)))
-                return _tops._with_children(node, rewritten)
-
-    if tuple(new_children) == node.children:
-        return node
-    return _tops._with_children(node, new_children)
 
 
 # ---------------------------------------------------------------------------
@@ -630,7 +582,9 @@ from lawvm.finland.process_apply_projection import ProcessApplyProjectionContext
 from lawvm.finland.process_structural_prepare import ProcessStructuralPrepareContext
 from lawvm.finland.process_temporal_authority import ProcessTemporalAuthorityContext
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
+from lawvm.finland.replay_fold_projection import ReplayFoldProjectionRequest, project_replay_fold
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks
+from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir as _hoist_trailing_wrapup_ir
 
 
 def _emit_restructure_plan_renumber_legal_operations(
@@ -1108,7 +1062,6 @@ from lawvm.finland.apply_ir_ops import (
     _relabel_subsection_ir,
     _rebuild_section_with_subsections_ir,
     _insert_subsection_with_renumber_ir,
-    _strip_standalone_subsection_item_prefixes_ir,
 )
 
 # ---------------------------------------------------------------------------
@@ -1201,7 +1154,6 @@ from lawvm.finland.replay_products import (
     validate_replay_products,
 )
 from lawvm.finland.replay_pipeline import (
-    build_tree_invariant_finding,
     execute_replay_plan,
     populate_replay_meta,
     prepare_replay_plan,
@@ -5313,114 +5265,15 @@ def replay_xml(
         )
         if temporal_events_out is not None:
             temporal_events_out.extend(temporal_events)
-        replay_fold_state = replay_fold_state.with_ir(
-            _strip_standalone_subsection_item_prefixes_ir(replay_fold_state.ir)
+        replay_fold_state = project_replay_fold(
+            ReplayFoldProjectionRequest(
+                state=replay_fold_state,
+                parent_id=parent_id,
+                replay_findings=replay_findings,
+                replay_meta_out=replay_meta_out,
+                replay_print=_replay_print,
+            )
         )
-        # Materialize trailing wrap-up prose as a real structural node before
-        # invariant checks and materialization. This preserves the subsection
-        # tree shape instead of leaving the closing sentence as a flat content
-        # leaf.
-        replay_fold_state = replay_fold_state.with_ir(_hoist_trailing_wrapup_ir(replay_fold_state.ir))
-        # Remove duplicate same-kind+label sections that can arise when
-        # omission-merge expansions and explicit amendment replacements both
-        # inject the same label into a body or chapter.  Must run before
-        # invariant checking and text-duplication lint so those passes see
-        # the cleaned tree.
-        deduped_replay_fold_ir = _tops.dedup_children_by_label(replay_fold_state.ir)
-        deduped_replay_fold_ir = _emit_structural_dedup_warning(
-            phase="replay_fold",
-            before_ir=replay_fold_state.ir,
-            after_ir=deduped_replay_fold_ir,
-            source_statute=parent_id,
-            replay_findings=replay_findings,
-            replay_meta_out=replay_meta_out,
-        )
-        replay_fold_state = replay_fold_state.with_ir(deduped_replay_fold_ir)
-        # Sort labeled children back into canonical order.  Amendment ops can
-        # leave siblings out of order (e.g. sections 5, 3, 7); this pass fixes
-        # sort_order invariant violations before the invariant check runs.
-        replay_fold_state = replay_fold_state.with_ir(
-            _tops.resort_children(replay_fold_state.ir)
-        )
-        typed_invariant_violations = tuple(_iter_tree_invariant_violations(replay_fold_state.ir))
-        invariant_violations = [violation.message for violation in typed_invariant_violations]
-        if replay_meta_out is not None and invariant_violations:
-            replay_meta_out["invariant_violations"] = list(invariant_violations)
-            replay_meta_out["typed_invariant_violations"] = [
-                violation.to_dict() for violation in typed_invariant_violations
-            ]
-        if invariant_violations:
-            for violation in invariant_violations:
-                replay_findings.append(
-                    build_tree_invariant_finding(
-                        violation=violation,
-                        source_statute="",
-                        phase="replay_fold",
-                        message="Replay tree invariant violated.",
-                    )
-                )
-            seen_tree_invariants = {
-                (
-                    finding.kind,
-                    str(finding.detail.get("violation") or ""),
-                    str(finding.detail.get("phase") or ""),
-                    str(finding.source_statute or ""),
-                )
-                for finding in replay_findings
-                if finding.kind == "APPLY.TREE_INVARIANT_VIOLATION"
-            }
-            for finding in replay_findings:
-                if finding.kind != "APPLY.TREE_INVARIANT_VIOLATION":
-                    continue
-                violation = str(finding.detail.get("violation") or "")
-                phase = str(finding.detail.get("phase") or "")
-                _replay_print(f"WARNING tree invariant: {violation}")
-                seen_tree_invariants.add(
-                    ("APPLY.TREE_INVARIANT_VIOLATION", violation, phase, str(finding.source_statute or ""))
-                )
-        replay_text_duplication_findings = build_text_duplication_findings(
-            replay_fold_state.ir,
-            phase="replay_fold",
-            source_statute=parent_id,
-        )
-        if replay_meta_out is not None and replay_text_duplication_findings:
-            replay_meta_out["text_duplication_warnings"] = [
-                {
-                    key: value
-                    for key, value in finding.detail.items()
-                    if key != "message"
-                }
-                for finding in replay_text_duplication_findings
-            ]
-        if replay_text_duplication_findings:
-            seen_text_warnings = {
-                (
-                    finding.kind,
-                    str(finding.detail.get("phase") or ""),
-                    str(finding.detail.get("kind") or ""),
-                    str(finding.detail.get("left") or ""),
-                    str(finding.detail.get("right") or ""),
-                )
-                for finding in replay_findings
-                if finding.kind == "text_duplication_warning"
-            }
-            for finding in replay_text_duplication_findings:
-                warning = {
-                    key: value
-                    for key, value in finding.detail.items()
-                    if key != "message"
-                }
-                _replay_print(f"WARNING text duplication: {warning['kind']} {warning['left']} <-> {warning['right']}")
-                key = (
-                    "text_duplication_warning",
-                    "replay_fold",
-                    str(warning.get("kind") or ""),
-                    str(warning.get("left") or ""),
-                    str(warning.get("right") or ""),
-                )
-                if key not in seen_text_warnings:
-                    replay_findings.append(finding)
-                    seen_text_warnings.add(key)
         # Convert base observations (from T1b) to findings.
         # These are observations about the base statute source structure (unnumbered peers, label/eId divergences).
         seen_base_observations: Set[tuple[str, str, str, str, str]] = set()

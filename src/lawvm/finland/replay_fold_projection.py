@@ -1,0 +1,132 @@
+"""Replay-fold normalization and diagnostic projection for Finland replay."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable, Dict, Optional
+
+from lawvm.core import tree_ops as _tops
+from lawvm.core.phase_result import Finding
+from lawvm.core.replay_lints import build_text_duplication_findings
+from lawvm.core.tree_ops import iter_tree_invariant_violations
+from lawvm.finland.apply_ir_ops import _strip_standalone_subsection_item_prefixes_ir
+from lawvm.finland.replay_findings import _emit_structural_dedup_warning
+from lawvm.finland.replay_pipeline import build_tree_invariant_finding
+from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir
+from lawvm.finland.statute import ReplayState
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayFoldProjectionRequest:
+    """Inputs for replay-fold normalization and replay-fold diagnostics."""
+
+    state: ReplayState
+    parent_id: str
+    replay_findings: list[Finding]
+    replay_meta_out: Optional[Dict[str, object]]
+    replay_print: Callable[[str], None]
+
+
+def project_replay_fold(request: ReplayFoldProjectionRequest) -> ReplayState:
+    """Normalize replay-fold IR and project invariant/lint diagnostics."""
+    replay_fold_state = request.state.with_ir(
+        _strip_standalone_subsection_item_prefixes_ir(request.state.ir)
+    )
+    replay_fold_state = replay_fold_state.with_ir(hoist_trailing_wrapup_ir(replay_fold_state.ir))
+
+    deduped_replay_fold_ir = _tops.dedup_children_by_label(replay_fold_state.ir)
+    deduped_replay_fold_ir = _emit_structural_dedup_warning(
+        phase="replay_fold",
+        before_ir=replay_fold_state.ir,
+        after_ir=deduped_replay_fold_ir,
+        source_statute=request.parent_id,
+        replay_findings=request.replay_findings,
+        replay_meta_out=request.replay_meta_out,
+    )
+    replay_fold_state = replay_fold_state.with_ir(deduped_replay_fold_ir)
+    replay_fold_state = replay_fold_state.with_ir(_tops.resort_children(replay_fold_state.ir))
+
+    typed_invariant_violations = tuple(iter_tree_invariant_violations(replay_fold_state.ir))
+    invariant_violations = [violation.message for violation in typed_invariant_violations]
+    if request.replay_meta_out is not None and invariant_violations:
+        request.replay_meta_out["invariant_violations"] = list(invariant_violations)
+        request.replay_meta_out["typed_invariant_violations"] = [
+            violation.to_dict() for violation in typed_invariant_violations
+        ]
+    if invariant_violations:
+        for violation in invariant_violations:
+            request.replay_findings.append(
+                build_tree_invariant_finding(
+                    violation=violation,
+                    source_statute="",
+                    phase="replay_fold",
+                    message="Replay tree invariant violated.",
+                )
+            )
+        seen_tree_invariants = {
+            (
+                finding.kind,
+                str(finding.detail.get("violation") or ""),
+                str(finding.detail.get("phase") or ""),
+                str(finding.source_statute or ""),
+            )
+            for finding in request.replay_findings
+            if finding.kind == "APPLY.TREE_INVARIANT_VIOLATION"
+        }
+        for finding in request.replay_findings:
+            if finding.kind != "APPLY.TREE_INVARIANT_VIOLATION":
+                continue
+            violation = str(finding.detail.get("violation") or "")
+            phase = str(finding.detail.get("phase") or "")
+            request.replay_print(f"WARNING tree invariant: {violation}")
+            seen_tree_invariants.add(
+                ("APPLY.TREE_INVARIANT_VIOLATION", violation, phase, str(finding.source_statute or ""))
+            )
+
+    replay_text_duplication_findings = build_text_duplication_findings(
+        replay_fold_state.ir,
+        phase="replay_fold",
+        source_statute=request.parent_id,
+    )
+    if request.replay_meta_out is not None and replay_text_duplication_findings:
+        request.replay_meta_out["text_duplication_warnings"] = [
+            {
+                key: value
+                for key, value in finding.detail.items()
+                if key != "message"
+            }
+            for finding in replay_text_duplication_findings
+        ]
+    if replay_text_duplication_findings:
+        seen_text_warnings = {
+            (
+                finding.kind,
+                str(finding.detail.get("phase") or ""),
+                str(finding.detail.get("kind") or ""),
+                str(finding.detail.get("left") or ""),
+                str(finding.detail.get("right") or ""),
+            )
+            for finding in request.replay_findings
+            if finding.kind == "text_duplication_warning"
+        }
+        for finding in replay_text_duplication_findings:
+            warning = {
+                key: value
+                for key, value in finding.detail.items()
+                if key != "message"
+            }
+            request.replay_print(
+                f"WARNING text duplication: {warning['kind']} {warning['left']} <-> {warning['right']}"
+            )
+            key = (
+                "text_duplication_warning",
+                "replay_fold",
+                str(warning.get("kind") or ""),
+                str(warning.get("left") or ""),
+                str(warning.get("right") or ""),
+            )
+            if key not in seen_text_warnings:
+                request.replay_findings.append(finding)
+                seen_text_warnings.add(key)
+
+    return replay_fold_state
