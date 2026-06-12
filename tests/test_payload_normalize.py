@@ -4855,6 +4855,85 @@ def test_normalize_group_payload_expands_single_tail_insert_across_post_omission
     assert len(got.subsec_map) == 3
 
 
+def test_normalize_group_payload_splits_flattened_insert_subsection_tail() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="15h",
+        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1"),),
+    )
+    ctx = _mock_ctx("section", "15h", target_chapter="2", live_node=live_sec)
+    ops = [
+        AmendmentOp(
+            op_id="insert_15h_2",
+            op_type="INSERT",
+            target_kind=TargetKind.SECTION,
+            target_section="15h",
+            target_chapter="2",
+            target_paragraph=2,
+            lo=LegalOperation(
+                op_id="insert_15h_2",
+                sequence=1,
+                action=StructuralAction.INSERT,
+                target=LegalAddress(path=(("chapter", "2"), ("section", "15h"), ("subsection", "2"))),
+            ),
+        ),
+        AmendmentOp(
+            op_id="insert_15h_3",
+            op_type="INSERT",
+            target_kind=TargetKind.SECTION,
+            target_section="15h",
+            target_chapter="2",
+            target_paragraph=3,
+            lo=LegalOperation(
+                op_id="insert_15h_3",
+                sequence=2,
+                action=StructuralAction.INSERT,
+                target=LegalAddress(path=(("chapter", "2"), ("section", "15h"), ("subsection", "3"))),
+            ),
+        ),
+    ]
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="15h",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="15 h §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Heading"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="First new moment intro:"),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        children=(IRNode(kind=IRNodeKind.NUM, text="1)"), IRNode(kind=IRNodeKind.CONTENT, text="first item")),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="2",
+                        children=(IRNode(kind=IRNodeKind.NUM, text="2)"), IRNode(kind=IRNodeKind.CONTENT, text="second item")),
+                    ),
+                    IRNode(kind=IRNodeKind.WRAP_UP, text="Second new moment tail."),
+                ),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, ops, muutos_ir, set())
+
+    prepared = _muutos_ir(got)
+    subsections = [child for child in prepared.children if child.kind is IRNodeKind.SUBSECTION]
+    assert [sub.label for sub in subsections] == ["2", "3"]
+    assert [op.target_item for op in got.group_ops] == [None, None]
+    assert got.subsec_map[id(got.group_ops[0])].label == "2"
+    assert got.subsec_map[id(got.group_ops[1])].label == "3"
+    assert "first item" in irnode_to_text(got.subsec_map[id(got.group_ops[0])])
+    assert "Second new moment tail." in irnode_to_text(got.subsec_map[id(got.group_ops[1])])
+    assert "ELAB.NORMALIZE_ITEM_LIKE_TARGET" not in [obs.kind for obs in _observations(got)]
+    assert "ELAB.SPLIT_FLATTENED_INSERT_SUBSECTION_TAIL" in [obs.kind for obs in _observations(got)]
+
+
 def test_normalize_group_payload_expands_single_tail_insert_across_post_omission_subsections_with_replace() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,

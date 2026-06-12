@@ -1619,6 +1619,89 @@ def _split_fused_restarted_subsection_across_consecutive_replaces(
     return _tops._with_children(muutos_ir, new_children), True
 
 
+def _split_flattened_insert_subsection_tail(
+    target_unit_kind: TargetUnitKind,
+    muutos_ir: Optional[IRNode],
+    group_ops: List[AmendmentOp],
+) -> Tuple[Optional[IRNode], bool]:
+    """Split an explicit multi-moment INSERT payload flattened into one subsection.
+
+    Some amendment XML serializes ``uusi 2 ja 3 momentti`` as one subsection
+    containing an intro/list for the first new moment and a terminal wrap-up
+    paragraph for the second. The parsed targets already identify the legal
+    moments; this rule only reshapes the source payload to those explicit
+    targets before the item-like fallback can reclassify them as kohta ops.
+    """
+    if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return muutos_ir, False
+
+    insert_ops = sorted(
+        [
+            op
+            for op in group_ops
+            if (
+                op.op_type == "INSERT"
+                and op.target_paragraph is not None
+                and not op.target_item
+                and not op.target_special
+            )
+        ],
+        key=lambda op: op.target_paragraph or 0,
+    )
+    if len(insert_ops) != 2:
+        return muutos_ir, False
+    targets = [int(op.target_paragraph or 0) for op in insert_ops]
+    if targets[1] != targets[0] + 1:
+        return muutos_ir, False
+
+    amend_subs = [child for child in muutos_ir.children if child.kind is IRNodeKind.SUBSECTION]
+    if len(amend_subs) != 1 or not any(child.kind is IRNodeKind.OMISSION for child in muutos_ir.children):
+        return muutos_ir, False
+
+    merged_sub = amend_subs[0]
+    children = list(merged_sub.children)
+    paragraph_indexes = [idx for idx, child in enumerate(children) if child.kind is IRNodeKind.PARAGRAPH]
+    if len(paragraph_indexes) < 2:
+        return muutos_ir, False
+    para_labels = [_norm_num_token(children[idx].label or "") for idx in paragraph_indexes]
+    if para_labels[:2] != ["1", "2"]:
+        return muutos_ir, False
+
+    split_idx = paragraph_indexes[-1] + 1
+    first_children = children[:split_idx]
+    tail_children = [child for child in children[split_idx:] if child.kind is not IRNodeKind.OMISSION]
+    if not first_children or not tail_children:
+        return muutos_ir, False
+    if any(child.kind is IRNodeKind.PARAGRAPH for child in tail_children):
+        return muutos_ir, False
+
+    replacement_subs = [
+        IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label=str(targets[0]),
+            attrs=dict(merged_sub.attrs),
+            children=tuple(first_children),
+        ),
+        IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label=str(targets[1]),
+            attrs=dict(merged_sub.attrs),
+            children=tuple(tail_children),
+        ),
+    ]
+    new_children: List[IRNode] = []
+    replaced = False
+    for child in muutos_ir.children:
+        if child is merged_sub:
+            new_children.extend(replacement_subs)
+            replaced = True
+            continue
+        new_children.append(child)
+    if not replaced:
+        return muutos_ir, False
+    return _tops._with_children(muutos_ir, new_children), True
+
+
 def _flattened_numbered_paragraph_from_subsection_ir(sub_ir: IRNode) -> Optional[IRNode]:
     if any(c.kind in {IRNodeKind.PARAGRAPH, IRNodeKind.SUBSECTION} for c in sub_ir.children):
         return None
@@ -4352,43 +4435,6 @@ def elaborate_payload_against_live(
                 observations=observations,
             ),
         )
-    normalized_group_ops: list[AmendmentOp] = []
-    normalized_item_like_target_rewrites: list[dict[str, object]] = []
-    for op in group_ops:
-        normalized = _normalize_item_like_target(ctx, op, muutos_ir, group_ops)
-        normalized_group_ops.append(normalized)
-        before_tags = set(op.target_guessing_provenance_tags)
-        after_tags = set(normalized.target_guessing_provenance_tags)
-        if "normalize_item_like_target" in after_tags.difference(before_tags):
-            normalized_item_like_target_rewrites.append(
-                {
-                    "op_description": normalized.description(),
-                    "target_paragraph": normalized.target_paragraph,
-                    "target_item": normalized.target_item,
-                }
-            )
-    group_ops = normalized_group_ops
-    if normalized_item_like_target_rewrites:
-        observations.append(
-            _obs(
-                "ELAB.NORMALIZE_ITEM_LIKE_TARGET",
-                "group_payload_normalization",
-                rewrite_count=len(normalized_item_like_target_rewrites),
-                rewrites=normalized_item_like_target_rewrites,
-                target_unit_kind=target_unit_kind,
-                target_norm=target_norm,
-            )
-        )
-        observations.append(
-            _obs(
-                "ELAB.REBASE_ITEM_TARGET_TO_SPARSE_SLOT_LABEL",
-                "group_payload_normalization",
-                rewrite_count=len(normalized_item_like_target_rewrites),
-                rewrites=normalized_item_like_target_rewrites,
-                target_unit_kind=target_unit_kind,
-                target_norm=target_norm,
-            )
-        )
     muutos_ir, omission_aligned = _align_sparse_omission_subsections_to_live(
         ctx,
         target_unit_kind,
@@ -4482,6 +4528,57 @@ def elaborate_payload_against_live(
             _obs(
                 "ELAB.SPLIT_FUSED_RESTARTED_CONSECUTIVE",
                 "group_payload_normalization",
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+            )
+        )
+    muutos_ir, flattened_insert_tail_split = _split_flattened_insert_subsection_tail(
+        target_unit_kind,
+        muutos_ir,
+        group_ops,
+    )
+    if flattened_insert_tail_split:
+        observations.append(
+            _obs(
+                "ELAB.SPLIT_FLATTENED_INSERT_SUBSECTION_TAIL",
+                "group_payload_normalization",
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+            )
+        )
+    normalized_group_ops: list[AmendmentOp] = []
+    normalized_item_like_target_rewrites: list[dict[str, object]] = []
+    for op in group_ops:
+        normalized = _normalize_item_like_target(ctx, op, muutos_ir, group_ops)
+        normalized_group_ops.append(normalized)
+        before_tags = set(op.target_guessing_provenance_tags)
+        after_tags = set(normalized.target_guessing_provenance_tags)
+        if "normalize_item_like_target" in after_tags.difference(before_tags):
+            normalized_item_like_target_rewrites.append(
+                {
+                    "op_description": normalized.description(),
+                    "target_paragraph": normalized.target_paragraph,
+                    "target_item": normalized.target_item,
+                }
+            )
+    group_ops = normalized_group_ops
+    if normalized_item_like_target_rewrites:
+        observations.append(
+            _obs(
+                "ELAB.NORMALIZE_ITEM_LIKE_TARGET",
+                "group_payload_normalization",
+                rewrite_count=len(normalized_item_like_target_rewrites),
+                rewrites=normalized_item_like_target_rewrites,
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+            )
+        )
+        observations.append(
+            _obs(
+                "ELAB.REBASE_ITEM_TARGET_TO_SPARSE_SLOT_LABEL",
+                "group_payload_normalization",
+                rewrite_count=len(normalized_item_like_target_rewrites),
+                rewrites=normalized_item_like_target_rewrites,
                 target_unit_kind=target_unit_kind,
                 target_norm=target_norm,
             )
