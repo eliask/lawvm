@@ -77,7 +77,10 @@ from lawvm.finland.apply_item_ops import (
     _apply_item_replace,
     _apply_special_targets,
 )
-from lawvm.finland.apply_payload_ops import _collapse_intro_list_amend_subsection_ir, _has_intro_list_moment_shape_ir
+from lawvm.finland.apply_payload_ops import (
+    _collapse_intro_list_amend_subsection_ir,
+    _has_intro_list_moment_shape_ir,
+)
 from lawvm.finland.apply_subsection_ops import (
     _apply_subsection_insert,
     _apply_subsection_repeal,
@@ -8177,6 +8180,21 @@ def test_apply_op_typed_strict_blocks_singleton_item_rebound() -> None:
     )
     assert [f.reason_code for f in failed_ops] == ["subsection_out_of_range"]
     assert [f.reason for f in failed_ops] == ["subsection target 3 out of range (subsections=1)"]
+
+
+def test_replay_preserves_letter_i_item_target_through_migration_following() -> None:
+    from lawvm.finland.grafter import replay_xml
+
+    failed_ops: list[FailedOp] = []
+
+    replay_xml("2002/1244", failed_ops_out=failed_ops, quiet=True)
+
+    assert [
+        failed
+        for failed in failed_ops
+        if failed.amendment_id == "2013/1061"
+        and failed.description == "REPLACE 25 § 1 mom i kohta"
+    ] == []
 
 
 def test_apply_op_prefers_slot_assignment_over_stale_amend_sub_ir() -> None:

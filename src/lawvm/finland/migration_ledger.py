@@ -18,13 +18,32 @@ from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.timeline import current_address_from_migration_events
 from lawvm.core.timeline_lineage import current_address_with_prefix_migrations_from_events as _core_prefix_migrations
+from lawvm.core.tree_ops import normalized_label_key
 from lawvm.finland.helpers import _norm_num_token
 
 
+_NUMERIC_ADDRESS_KINDS = frozenset({"part", "chapter", "section", "subsection"})
+_ITEM_ADDRESS_KINDS = frozenset({"item", "paragraph", "subparagraph"})
+
+
+def _normalize_migration_label(kind: str, label: str) -> str:
+    if kind in _NUMERIC_ADDRESS_KINDS:
+        return _norm_num_token(label)
+    if kind in _ITEM_ADDRESS_KINDS:
+        return normalized_label_key(label)
+    return normalized_label_key(label)
+
+
 def normalize_address_path(path: TreePath) -> TreePath:
-    """Normalize address labels for Finland migration-wave matching."""
+    """Normalize address labels for Finland migration-wave matching.
+
+    Numeric structural labels accept Roman/Arabic equivalence, but ``kohta``
+    labels do not: Finnish item labels can be plain letters such as ``i``.
+    Treating every path label as a numeric token silently retargets ``i kohta``
+    to ``1 kohta``.
+    """
     return tuple(
-        (kind, _norm_num_token(label))
+        (kind, _normalize_migration_label(kind, label))
         for kind, label in path
         if label
     )

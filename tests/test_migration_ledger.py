@@ -129,6 +129,38 @@ class TestMigrationLedgerUnit:
             ("section", "12")
         )
 
+    def test_structural_roman_labels_normalize_for_prefix_migrations(self) -> None:
+        ledger = MigrationLedger()
+        ledger.record_renumber(
+            _addr(("part", "III")),
+            _addr(("part", "IV")),
+            effective="2020-01-01",
+            source_statute="2020/100",
+        )
+
+        assert ledger.events[0].from_address == _addr(("part", "3"))
+        assert ledger.events[0].to_address == _addr(("part", "4"))
+        assert ledger.current_address_with_prefix_migrations(
+            _addr(("part", "III"), ("chapter", "2"), ("section", "5"))
+        ) == _addr(("part", "4"), ("chapter", "2"), ("section", "5"))
+
+    def test_item_letter_i_is_not_roman_normalized(self) -> None:
+        ledger = MigrationLedger()
+        ledger.record_renumber(
+            _addr(("section", "25"), ("subsection", "1"), ("item", "i")),
+            _addr(("section", "25"), ("subsection", "1"), ("item", "j")),
+            effective="2020-01-01",
+            source_statute="2020/100",
+        )
+
+        assert ledger.events[0].from_address == _addr(("section", "25"), ("subsection", "1"), ("item", "i"))
+        assert ledger.current_address_with_prefix_migrations(
+            _addr(("section", "25"), ("subsection", "1"), ("item", "i"))
+        ) == _addr(("section", "25"), ("subsection", "1"), ("item", "j"))
+        assert ledger.current_address_with_prefix_migrations(
+            _addr(("section", "25"), ("subsection", "1"), ("item", "1"))
+        ) == _addr(("section", "25"), ("subsection", "1"), ("item", "1"))
+
     def test_query_lineage_both_directions(self) -> None:
         ledger = MigrationLedger()
         addr_a = _addr(("section", "1"))

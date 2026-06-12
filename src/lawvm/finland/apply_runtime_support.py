@@ -45,6 +45,16 @@ class _PendingSubsectionSnapshotPayload:
     target_already_rebased: bool
 
 
+def _normalize_snapshot_item_label(label: str | None) -> str:
+    """Normalize FI item labels without Roman-to-Arabic conversion.
+
+    Finnish ``kohta`` labels can be plain letters (for example ``i kohta``).
+    Generic numeric-token normalization would interpret those as Roman numerals
+    and silently retarget ``i`` to ``1``.
+    """
+    return normalized_label_key(label or "")
+
+
 def _legacy_target_section_for_scope(scope: "ResolvedTargetScopeView", unit_kind: TargetUnitKind) -> str:
     if unit_kind == "part":
         return str(scope.target_part or scope.target_norm)
@@ -1350,7 +1360,7 @@ def _emit_section_snapshot(
                 target_label = _norm_num_token(
                     str(rop.resolved_target_subsection_label or "").strip()
                 )
-                item_label = _norm_num_token(str(rop.resolved_target_item_label or "").strip())
+                item_label = _normalize_snapshot_item_label(str(rop.resolved_target_item_label or "").strip())
                 if not target_label or not item_label:
                     return None
                 repealed_item_labels_by_subsection.setdefault(target_label, set()).add(item_label)
@@ -1368,7 +1378,7 @@ def _emit_section_snapshot(
             if not target_norm:
                 return None
             item_label = str(rop.resolved_target_item_label or "").strip()
-            item_norm = _norm_num_token(item_label)
+            item_norm = _normalize_snapshot_item_label(item_label)
             amend_sub = rop.resolved_amend_sub_ir()
             if amend_sub is None and item_norm:
                 amend_item = _find_amend_paragraph(item_norm, None, rop.muutos_ir)
@@ -1459,7 +1469,7 @@ def _emit_section_snapshot(
             if not item_payloads:
                 return False
             current_items = {
-                _norm_num_token(child.label): child
+                _normalize_snapshot_item_label(child.label): child
                 for child in current_subsection.children
                 if child.kind is IRNodeKind.PARAGRAPH and child.label
             }
@@ -1468,7 +1478,7 @@ def _emit_section_snapshot(
                 if current_item is None:
                     return False
                 payload_subitems = {
-                    _norm_num_token(child.label): irnode_to_text(child)
+                    _normalize_snapshot_item_label(child.label): irnode_to_text(child)
                     for child in payload_item.children
                     if child.kind is IRNodeKind.SUBPARAGRAPH and child.label
                 }
@@ -1477,7 +1487,7 @@ def _emit_section_snapshot(
                         return False
                     continue
                 current_subitems = {
-                    _norm_num_token(child.label): irnode_to_text(child)
+                    _normalize_snapshot_item_label(child.label): irnode_to_text(child)
                     for child in current_item.children
                     if child.kind is IRNodeKind.SUBPARAGRAPH and child.label
                 }
@@ -1513,13 +1523,13 @@ def _emit_section_snapshot(
             payload_items: dict[str, IRNode] = {}
             if subsection_payload is not None:
                 payload_items = {
-                    _norm_num_token(child.label): child
+                    _normalize_snapshot_item_label(child.label): child
                     for child in subsection_payload.children
                     if child.kind is IRNodeKind.PARAGRAPH and child.label
                 }
             if not payload_items:
                 item_labels = {
-                    _norm_num_token(str(rop.resolved_target_item_label or "").strip())
+                    _normalize_snapshot_item_label(str(rop.resolved_target_item_label or "").strip())
                     for rop in group_rops
                     if _norm_num_token(str(rop.resolved_target_subsection_label or "").strip()) == label
                     and rop.resolved_target_item_label
@@ -1528,7 +1538,7 @@ def _emit_section_snapshot(
                     flattened_item = _find_amend_paragraph(item_label, subsection_payload, None)
                     if flattened_item is None or not flattened_item.label:
                         continue
-                    payload_items[_norm_num_token(flattened_item.label)] = flattened_item
+                    payload_items[_normalize_snapshot_item_label(flattened_item.label)] = flattened_item
                     used_flattened_item_payload = True
                     flattened_item_payload_count += 1
             repealed_items = repealed_item_labels_by_subsection.get(label, set())
