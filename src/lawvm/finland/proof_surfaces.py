@@ -204,6 +204,31 @@ class FinlandRecoveryAuthorizationRule:
 
 
 _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
+    "EMPTY_OPERATIVE_BODY": FinlandSourcePathologyProofRule(
+        code="EMPTY_OPERATIVE_BODY",
+        lane="source_acquisition",
+        owner_phase="source_acquisition",
+        strict_disposition="block",
+        quirks_disposition="record",
+        frontier_family="fi_empty_operative_body",
+        frontier_status="source_acquisition_frontier",
+        required_claim_kind="source_pathology_resolution",
+        required_proofs=(
+            "source_artifact_identity_proof",
+            "operative_body_inventory",
+            "alternative_source_witness_or_source_correction_proof",
+            "operation_cue_exhaustiveness_certificate",
+            "mutation_boundary_proof_before_replay_promotion",
+        ),
+        safe_default=(
+            "treat_bodyless_source_as_non_executable_until_an_operative_source_witness_exists"
+        ),
+        forbidden_shortcuts=(
+            "invent_operative_body_from_title_or_metadata",
+            "treat_empty_source_as_no_effects_proof",
+            "promote_alternative_source_without_digest_witness",
+        ),
+    ),
     "PARTIAL_WHOLE_SECTION_PAYLOAD": FinlandSourcePathologyProofRule(
         code="PARTIAL_WHOLE_SECTION_PAYLOAD",
         lane="source_pathology",
@@ -289,6 +314,31 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         frontier_family="fi_destructive_shape_loss_risk",
         frontier_status="mutation_boundary_frontier",
         required_claim_kind="fi.v1.MUTATION_BOUNDARY_RESOLUTION",
+    ),
+    "SUBSECTION_TARGET_REBOUND": FinlandSourcePathologyProofRule(
+        code="SUBSECTION_TARGET_REBOUND",
+        lane="target_resolution_recovery",
+        owner_phase="replay_apply",
+        strict_disposition="block",
+        quirks_disposition="record",
+        frontier_family="fi_subsection_target_rebound",
+        frontier_status="target_resolution_frontier",
+        required_claim_kind="source_pathology_resolution",
+        required_proofs=(
+            "source_identity_proof",
+            "explicit_target_identity_proof",
+            "live_state_candidate_set_certificate",
+            "rebound_rule_ownership_proof",
+            "mutation_boundary_proof_before_replay_promotion",
+        ),
+        safe_default=(
+            "preserve_rebound_as_non_executable_target_resolution_frontier"
+        ),
+        forbidden_shortcuts=(
+            "treat_live_unique_subsection_as_source_target_proof",
+            "rebind_subsection_target_without_target_identity_proof",
+            "promote_rebound_recovery_as_replay_authorization",
+        ),
     ),
 }
 

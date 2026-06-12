@@ -1021,6 +1021,25 @@ def test_source_pathology_rule_owns_high_value_family() -> None:
     assert "mutation_boundary_proof_before_replay_promotion" in rule.required_proofs
 
 
+def test_source_pathology_rule_names_unregistered_other_frontiers() -> None:
+    empty_body = source_pathology_proof_rule("EMPTY_OPERATIVE_BODY")
+    rebound = source_pathology_proof_rule("SUBSECTION_TARGET_REBOUND")
+
+    assert empty_body.owner_phase == "source_acquisition"
+    assert empty_body.frontier_family == "fi_empty_operative_body"
+    assert empty_body.frontier_status == "source_acquisition_frontier"
+    assert empty_body.required_claim_kind == "source_pathology_resolution"
+    assert "operative_body_inventory" in empty_body.required_proofs
+    assert "invent_operative_body_from_title_or_metadata" in empty_body.forbidden_shortcuts
+
+    assert rebound.owner_phase == "replay_apply"
+    assert rebound.frontier_family == "fi_subsection_target_rebound"
+    assert rebound.frontier_status == "target_resolution_frontier"
+    assert rebound.required_claim_kind == "source_pathology_resolution"
+    assert "explicit_target_identity_proof" in rebound.required_proofs
+    assert "treat_live_unique_subsection_as_source_target_proof" in rebound.forbidden_shortcuts
+
+
 def test_source_pathology_authorization_is_not_replay_authority() -> None:
     pathology = SourcePathology.from_scope(
         code="MALFORMED_BROAD_REPLACE_BODY",

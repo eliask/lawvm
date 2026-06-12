@@ -922,7 +922,7 @@ def test_to_json_counts_unregistered_source_pathology_frontiers_as_other() -> No
         "source_pathology_resolution": 1,
     }
     assert proof_gates["other_frontier_status_counts"] == {
-        "source_pathology_frontier": 1,
+        "source_acquisition_frontier": 1,
     }
 
 
