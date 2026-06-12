@@ -60,7 +60,10 @@ SMELL_MARKERS = {
 
 
 _BOUND_COVERAGE_NEARBY_LINES = 80
-_RE_MODULE_PATTERN_ASSIGNMENT = re.compile(r"^\s*([A-Z_][A-Z0-9_]*)\s*=")
+_RE_PATTERN_OWNER_ASSIGNMENT = re.compile(
+    r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:re\.(?:compile|finditer|search|match)|\()?"
+)
+_RE_FUNCTION_DEF = re.compile(r"^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")
 _RE_COVERAGE_FUNCTION = re.compile(r"^\s*def\s+\w*coverage\w*\(")
 _RE_REGEX_COVERAGE_SENSOR_FIELD = re.compile(
     r"\b(regex_recognition_coverage|coverage_status|ignored_spans)\b"
@@ -117,26 +120,70 @@ def _bounded_wildcard_soundness_risk(
     return "needs_triage"
 
 
-def _recognizer_name_for_line(lines: list[str], line_no: int) -> str:
-    """Return the module-level regex recognizer/table name owning a pattern line."""
+def _owner_symbol_for_line(lines: list[str], line_no: int) -> str:
+    """Return the closest variable/table name owning a regex pattern line."""
     start = max(0, line_no - 40)
     for idx in range(line_no - 1, start - 1, -1):
-        match = _RE_MODULE_PATTERN_ASSIGNMENT.search(lines[idx])
+        match = _RE_PATTERN_OWNER_ASSIGNMENT.search(lines[idx])
         if match:
             return match.group(1)
     return ""
 
 
-def _is_referenced_from_coverage_function(lines: list[str], recognizer_name: str) -> bool:
-    if not recognizer_name:
+def _owner_function_for_line(lines: list[str], line_no: int) -> str:
+    """Return the nearest enclosing function name for a regex pattern line."""
+    for idx in range(line_no - 1, -1, -1):
+        match = _RE_FUNCTION_DEF.search(lines[idx])
+        if match:
+            return match.group(1)
+    return ""
+
+
+def _is_referenced_from_coverage_function(lines: list[str], owner_symbol: str) -> bool:
+    if not owner_symbol:
         return False
     for idx, line in enumerate(lines):
-        if recognizer_name not in line:
+        if owner_symbol not in line:
             continue
         window_start = max(0, idx - 40)
         if any(_RE_COVERAGE_FUNCTION.search(prev_line) for prev_line in lines[window_start:idx + 1]):
             return True
     return False
+
+
+def _bounded_wildcard_grammar_family(
+    *,
+    owner_symbol: str,
+    owner_function: str,
+    snippet: str,
+    semantic_role: str,
+) -> str:
+    """Coarse migration family for bounded wildcard recognizers.
+
+    The label is intentionally advisory. It helps prioritize grammar extraction
+    without claiming that a line-level regex scan has proven semantics.
+    """
+
+    haystack = f"{owner_symbol} {owner_function} {snippet}".lower()
+    if semantic_role != "semantic_payload_capture":
+        if "omit" in haystack or "repeal" in haystack:
+            return "omission_classifier"
+        if "insert" in haystack:
+            return "insertion_classifier"
+        return "lexical_or_classifier"
+    if "definition" in haystack or "entr" in haystack:
+        return "definition_entry_or_definition_body_instruction"
+    if "step" in haystack:
+        return "step_insert_instruction"
+    if "bracket" in haystack or "parenthes" in haystack:
+        return "bracket_or_parenthetical_text_selector_instruction"
+    if "ordinal" in haystack or "anchor" in haystack:
+        return "anchor_ordered_insert_instruction"
+    if "at_end" in haystack or "at the end" in haystack:
+        return "at_end_insert_instruction"
+    if "omit" in haystack or "repeal" in haystack:
+        return "omission_instruction"
+    return "unclassified_semantic_payload_instruction"
 
 
 def _annotate_bounded_wildcard_coverage(
@@ -168,10 +215,11 @@ def _annotate_bounded_wildcard_coverage(
             if nearest_line is None
             else abs(int(nearest_line) - line_no)
         )
-        recognizer_name = _recognizer_name_for_line(lines, line_no)
+        owner_symbol = _owner_symbol_for_line(lines, line_no)
+        owner_function = _owner_function_for_line(lines, line_no)
         referenced_from_coverage = _is_referenced_from_coverage_function(
             lines,
-            recognizer_name,
+            owner_symbol,
         )
 
         if referenced_from_coverage:
@@ -189,9 +237,17 @@ def _annotate_bounded_wildcard_coverage(
 
         hit["coverage_sensor"] = {
             "status": coverage_status,
-            "recognizer_name": recognizer_name,
+            "recognizer_name": owner_symbol,
+            "owner_symbol": owner_symbol,
+            "owner_function": owner_function,
             "semantic_role": semantic_role,
             "soundness_risk": soundness_risk,
+            "grammar_family": _bounded_wildcard_grammar_family(
+                owner_symbol=owner_symbol,
+                owner_function=owner_function,
+                snippet=str(hit.get("snippet") or ""),
+                semantic_role=semantic_role,
+            ),
             "nearest_coverage_line": nearest_line,
             "nearest_coverage_distance": nearest_distance,
             "nearby_line_window": _BOUND_COVERAGE_NEARBY_LINES,
@@ -431,16 +487,22 @@ def _to_markdown(inventory: dict[str, Any]) -> str:
             if isinstance(coverage_sensor, dict):
                 status = str(coverage_sensor.get("status") or "")
                 recognizer = str(coverage_sensor.get("recognizer_name") or "")
+                owner_function = str(coverage_sensor.get("owner_function") or "")
                 role = str(coverage_sensor.get("semantic_role") or "")
                 risk = str(coverage_sensor.get("soundness_risk") or "")
+                family = str(coverage_sensor.get("grammar_family") or "")
                 if status:
                     suffix = f" [coverage={status}"
                     if recognizer:
                         suffix += f", recognizer={recognizer}"
+                    if owner_function:
+                        suffix += f", function={owner_function}"
                     if role:
                         suffix += f", role={role}"
                     if risk:
                         suffix += f", risk={risk}"
+                    if family:
+                        suffix += f", family={family}"
                     suffix += "]"
                     snippet = f"{snippet}{suffix}"
             lines.append(

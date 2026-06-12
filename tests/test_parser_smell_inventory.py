@@ -271,7 +271,13 @@ def test_build_inventory_reports_bounded_gap_coverage_and_text_sentinel(tmp_path
 def test_markdown_reports_bounded_wildcard_soundness_caveat(tmp_path) -> None:
     path = tmp_path / "nlp_parser.py"
     path.write_text(
-        "RX = re.compile(r'for .{0,240}? substitute')\n",
+        "\n".join(
+            [
+                "def parse_fragment_substitution(text):",
+                "    RX = re.compile(r'insert (?P<inserted>.{0,240}?) substitute')",
+                "",
+            ]
+        ),
         encoding="utf-8",
     )
 
@@ -280,6 +286,8 @@ def test_markdown_reports_bounded_wildcard_soundness_caveat(tmp_path) -> None:
     assert "Bounded wildcard note" in markdown
     assert "Bounded Wildcard Soundness Risk" in markdown
     assert "not a semantic exhaustiveness proof" in markdown
+    assert "function=parse_fragment_substitution" in markdown
+    assert "family=unclassified_semantic_payload_instruction" in markdown
 
 
 def test_bounded_wildcard_sensor_reports_missing_coverage_surface(tmp_path) -> None:
@@ -303,8 +311,11 @@ def test_bounded_wildcard_sensor_reports_missing_coverage_surface(tmp_path) -> N
     assert hit["coverage_sensor"] == {
         "status": "missing_coverage_surface",
         "recognizer_name": "RX",
+        "owner_symbol": "RX",
+        "owner_function": "",
         "semantic_role": "unknown_pattern_bound",
         "soundness_risk": "needs_triage",
+        "grammar_family": "lexical_or_classifier",
         "nearest_coverage_line": None,
         "nearest_coverage_distance": None,
         "nearby_line_window": 80,
@@ -344,6 +355,8 @@ def test_bounded_wildcard_sensor_detects_coverage_function_reference(tmp_path) -
     assert len(bounded_hits) == 1
     assert bounded_hits[0]["coverage_sensor"]["status"] == "coverage_function_reference"
     assert bounded_hits[0]["coverage_sensor"]["recognizer_name"] == "RX"
+    assert bounded_hits[0]["coverage_sensor"]["owner_symbol"] == "RX"
+    assert bounded_hits[0]["coverage_sensor"]["owner_function"] == ""
     assert bounded_hits[0]["coverage_sensor"]["semantic_role"] == "unknown_pattern_bound"
     assert bounded_hits[0]["coverage_sensor"]["soundness_risk"] == (
         "covered_by_regex_coverage_surface"
@@ -370,6 +383,10 @@ def test_bounded_wildcard_sensor_prioritizes_payload_capture_without_coverage(tm
     inventory = build_inventory([path])
 
     hit = inventory["by_file"][str(path)][0]
+    assert hit["coverage_sensor"]["owner_symbol"] == "RX"
+    assert hit["coverage_sensor"]["grammar_family"] == (
+        "unclassified_semantic_payload_instruction"
+    )
     assert hit["coverage_sensor"]["semantic_role"] == "semantic_payload_capture"
     assert hit["coverage_sensor"]["soundness_risk"] == (
         "needs_typed_coverage_or_grammar"
@@ -444,3 +461,32 @@ def test_bounded_wildcard_sensor_classifies_semantic_payload_captures(tmp_path) 
         "semantic_payload_capture": 1,
         "unknown_pattern_bound": 0,
     }
+
+
+def test_bounded_wildcard_sensor_reports_local_owner_and_grammar_family(tmp_path) -> None:
+    path = tmp_path / "nlp_parser.py"
+    path.write_text(
+        "\n".join(
+            [
+                "def parse_fragment_substitution(text):",
+                "    matches_definition_at_end_insert = re.finditer(",
+                "        r'at the end of the definition (?P<inserted>.{1,1200}?)$',",
+                "        text,",
+                "    )",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    inventory = build_inventory([path], categories={"bounded_wildcard_gap"})
+
+    [hit] = inventory["by_file"][str(path)]
+    sensor = hit["coverage_sensor"]
+    assert sensor["owner_symbol"] == "matches_definition_at_end_insert"
+    assert sensor["recognizer_name"] == "matches_definition_at_end_insert"
+    assert sensor["owner_function"] == "parse_fragment_substitution"
+    assert sensor["grammar_family"] == (
+        "definition_entry_or_definition_body_instruction"
+    )
+    assert sensor["soundness_risk"] == "needs_typed_coverage_or_grammar"
