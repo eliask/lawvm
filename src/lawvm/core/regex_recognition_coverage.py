@@ -78,12 +78,19 @@ class RegexRecognitionCoverage:
                 "RegexRecognitionCoverage.coverage_status must be one of "
                 f"{sorted(_VALID_STATUSES)}"
             )
-        start, end = self.matched_span
-        if start < 0 or end < start:
-            raise ValueError("RegexRecognitionCoverage.matched_span must be ordered non-negative offsets")
-        object.__setattr__(self, "matched_span", (int(start), int(end)))
+        matched_span = _ordered_span("matched_span", self.matched_span)
+        object.__setattr__(self, "matched_span", matched_span)
+        if not isinstance(self.semantic_slots, Mapping):
+            raise ValueError("RegexRecognitionCoverage.semantic_slots must be a mapping")
         object.__setattr__(self, "semantic_slots", freeze_mapping(self.semantic_slots))
-        object.__setattr__(self, "ignored_spans", tuple(freeze_mapping(row) for row in self.ignored_spans))
+        object.__setattr__(
+            self,
+            "ignored_spans",
+            tuple(
+                freeze_mapping(row)
+                for row in _validated_ignored_span_rows(self.ignored_spans, matched_span)
+            ),
+        )
         object.__setattr__(self, "required_proofs", _string_tuple("required_proofs", self.required_proofs))
         object.__setattr__(
             self,
@@ -186,7 +193,7 @@ def _coverage_mapping(value: RegexRecognitionCoverage | Mapping[str, Any]) -> Ma
     if isinstance(value, RegexRecognitionCoverage):
         return value.to_dict()
     row = dict(value)
-    RegexRecognitionCoverage(
+    return RegexRecognitionCoverage(
         coverage_id=str(row.get("coverage_id") or ""),
         jurisdiction=str(row.get("jurisdiction") or ""),
         recognizer_id=str(row.get("recognizer_id") or ""),
@@ -201,8 +208,7 @@ def _coverage_mapping(value: RegexRecognitionCoverage | Mapping[str, Any]) -> Ma
         safe_default=str(row.get("safe_default") or ""),
         forbidden_shortcuts=_string_tuple("forbidden_shortcuts", _sequence(row.get("forbidden_shortcuts"))),
         detail=_mapping(row.get("detail")),
-    )
-    return row
+    ).to_dict()
 
 
 def _coverage_status(value: Any) -> RegexRecognitionCoverageStatus:
@@ -225,7 +231,7 @@ def _coverage_report_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "coverage_status": str(row.get("coverage_status") or ""),
         "owner_phase": str(row.get("owner_phase") or ""),
         "source_artifact_id": str(row.get("source_artifact_id") or ""),
-        "matched_span": tuple(int(part) for part in _sequence(row.get("matched_span"))),
+        "matched_span": _ordered_span("matched_span", row.get("matched_span")),
         "source_text_hash": str(row.get("source_text_hash") or ""),
         "semantic_slots": _mapping(row.get("semantic_slots")),
         "ignored_spans": tuple(_mapping(item) for item in _sequence(row.get("ignored_spans"))),
@@ -244,10 +250,48 @@ def _coverage_report_row(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _span_tuple(value: Any) -> tuple[int, int]:
+    return _ordered_span("matched_span", value)
+
+
+def _ordered_span(field_name: str, value: Any) -> tuple[int, int]:
     seq = _sequence(value)
     if len(seq) != 2:
-        return (0, 0)
-    return (int(seq[0]), int(seq[1]))
+        raise ValueError(f"RegexRecognitionCoverage.{field_name} must contain exactly two offsets")
+    start = _offset(f"{field_name}[0]", seq[0])
+    end = _offset(f"{field_name}[1]", seq[1])
+    if end < start:
+        raise ValueError(
+            f"RegexRecognitionCoverage.{field_name} must be ordered non-negative offsets"
+        )
+    return (start, end)
+
+
+def _offset(field_name: str, value: Any) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"RegexRecognitionCoverage.{field_name} must be an integer offset")
+    if value < 0:
+        raise ValueError(f"RegexRecognitionCoverage.{field_name} must be non-negative")
+    return value
+
+
+def _validated_ignored_span_rows(
+    rows: Any,
+    matched_span: tuple[int, int],
+) -> tuple[Mapping[str, Any], ...]:
+    validated: list[Mapping[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise ValueError("RegexRecognitionCoverage.ignored_spans rows must be mappings")
+        normalized = dict(row)
+        if "span" in normalized and normalized["span"] is not None:
+            ignored_span = _ordered_span("ignored_spans[].span", normalized["span"])
+            if ignored_span[0] < matched_span[0] or ignored_span[1] > matched_span[1]:
+                raise ValueError(
+                    "RegexRecognitionCoverage.ignored_spans must stay within matched_span"
+                )
+            normalized["span"] = ignored_span
+        validated.append(normalized)
+    return tuple(validated)
 
 
 def _sequence(value: Any) -> tuple[Any, ...]:

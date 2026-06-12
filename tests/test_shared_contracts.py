@@ -86,6 +86,7 @@ from lawvm.core.proof_obligations import (
     ProofObligationCertificate,
 )
 from lawvm.core.regex_recognition_coverage import (
+    REGEX_RECOGNITION_FULLY_CLASSIFIED,
     REGEX_RECOGNITION_UNCLASSIFIED_GAP,
     RegexRecognitionCoverage,
     regex_recognition_coverage_evidence_report,
@@ -3128,6 +3129,89 @@ def test_regex_recognition_coverage_reports_unclassified_skipped_spans() -> None
     assert projected["ignored_spans"][0]["could_alter_meaning"] is True
     assert "bounded_wildcard_as_semantic_proof" in projected["forbidden_shortcuts"]
     assert "regex_coverage_as_replay_authorization" in report["forbidden_shortcuts"]
+
+
+def test_regex_recognition_coverage_rejects_malformed_mapping_spans() -> None:
+    text = "lisätään 5 §:ään uusi 2 momentti"
+
+    with pytest.raises(ValueError, match="exactly two offsets"):
+        regex_recognition_coverage_evidence_report(
+            {
+                "coverage_id": "fi:regex:bad",
+                "jurisdiction": "fi",
+                "recognizer_id": "fi_insert_subsection_fallback",
+                "owner_phase": "surface_syntax_frontend",
+                "source_artifact_id": "2020/1",
+                "source_text_hash": regex_source_text_hash(text),
+                "matched_span": [0],
+                "coverage_status": REGEX_RECOGNITION_FULLY_CLASSIFIED,
+                "safe_default": "treat_regex_recognition_as_parse_evidence_not_replay_authority",
+                "forbidden_shortcuts": ("regex_coverage_as_replay_authorization",),
+            },
+            jurisdiction="fi",
+        )
+
+    with pytest.raises(ValueError, match="integer offset"):
+        RegexRecognitionCoverage(
+            coverage_id="fi:regex:bad-bool",
+            jurisdiction="fi",
+            recognizer_id="fi_insert_subsection_fallback",
+            owner_phase="surface_syntax_frontend",
+            source_artifact_id="2020/1",
+            source_text_hash=regex_source_text_hash(text),
+            matched_span=(0, True),
+            coverage_status=REGEX_RECOGNITION_FULLY_CLASSIFIED,
+        )
+
+
+def test_regex_recognition_coverage_rejects_ignored_span_outside_match() -> None:
+    text = "lisätään 5 §:ään kuitenkin uusi 2 momentti"
+
+    with pytest.raises(ValueError, match="within matched_span"):
+        RegexRecognitionCoverage(
+            coverage_id="fi:regex:bad-ignored-span",
+            jurisdiction="fi",
+            recognizer_id="fi_insert_subsection_fallback",
+            owner_phase="surface_syntax_frontend",
+            source_artifact_id="2020/1",
+            source_text_hash=regex_source_text_hash(text),
+            matched_span=(10, len(text)),
+            coverage_status=REGEX_RECOGNITION_UNCLASSIFIED_GAP,
+            ignored_spans=(
+                {
+                    "span": (0, 9),
+                    "classification": "unclassified",
+                    "could_alter_meaning": True,
+                },
+            ),
+            required_proofs=("regex_skipped_span_classification",),
+        )
+
+
+def test_regex_recognition_coverage_normalizes_mapping_rows() -> None:
+    text = "lisätään 5 §:ään uusi 2 momentti"
+
+    report = regex_recognition_coverage_evidence_report(
+        {
+            "coverage_id": "fi:regex:mapping",
+            "jurisdiction": "fi",
+            "recognizer_id": "fi_insert_subsection_fallback",
+            "owner_phase": "surface_syntax_frontend",
+            "source_artifact_id": "2020/1",
+            "source_text_hash": regex_source_text_hash(text),
+            "matched_span": (0, len(text)),
+            "coverage_status": REGEX_RECOGNITION_FULLY_CLASSIFIED,
+            "safe_default": "treat_regex_recognition_as_parse_evidence_not_replay_authority",
+            "forbidden_shortcuts": ("local_shortcut_guard",),
+        },
+        jurisdiction="fi",
+    ).to_dict()
+
+    row = report["rows"][0]
+    assert row["matched_span"] == [0, len(text)]
+    assert row["required_proofs"] == []
+    assert "local_shortcut_guard" in row["forbidden_shortcuts"]
+    assert "bounded_wildcard_as_semantic_proof" in row["forbidden_shortcuts"]
 
 
 def test_candidate_set_report_rejects_invalid_mapping_rows() -> None:
