@@ -33,6 +33,15 @@ from lawvm.tools.classify_result import ClassifyResult
 from tests.corpus_pin_helpers import pinned_replay
 
 
+def test_cli_main_suppresses_broken_pipe(monkeypatch) -> None:
+    def raise_broken_pipe() -> None:
+        raise BrokenPipeError
+
+    monkeypatch.setattr(cli, "_main_impl", raise_broken_pipe)
+
+    cli.main()
+
+
 @lru_cache(maxsize=1)
 def _corpus_available() -> bool:
     try:

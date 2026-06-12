@@ -10413,7 +10413,7 @@ def _reject_uk_replay_regime_flags_for_non_uk(args: argparse.Namespace, *, comma
     raise SystemExit(2)
 
 
-def main() -> None:
+def _main_impl() -> None:
     parser = _build_parser()
     args = parser.parse_args()
     # export-transition-graph and certificate-bundle deliberately take the
@@ -11634,6 +11634,21 @@ def main() -> None:
     else:
         print(f"Unknown command: {args.command}", file=sys.stderr)
         sys.exit(1)
+
+
+def main() -> None:
+    """Run the LawVM CLI, treating closed stdout pipes as normal termination."""
+
+    try:
+        _main_impl()
+    except BrokenPipeError:
+        # Standard Unix pipelines such as ``lawvm strict-report --json | head``
+        # close stdout early.  Do not turn that consumer choice into a Python
+        # traceback; redirect final interpreter flushes away from the closed fd.
+        try:
+            sys.stdout = open(os.devnull, "w")
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":
