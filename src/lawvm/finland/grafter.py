@@ -107,6 +107,7 @@ from lawvm.core.payload_surface import (
     build_payload_surface as _build_payload_surface,
 )
 from lawvm.finland.helpers import may_attach_post_list_loppukappale
+from lawvm.finland.labels import leaf_label_identity_key
 from lawvm.finland.elaborated_group import (
     ElaboratedGroup,
     build_elaborated_group as _build_elaborated_group_factory,
@@ -2308,7 +2309,7 @@ def _coalesce_same_target_mixed_scope_section_groups(
             _norm_num_token(op.target_chapter or "") if op.target_chapter else "",
             _norm_num_token(op.target_part or "") if op.target_part else "",
             op.target_paragraph,
-            _norm_num_token(op.target_item or "") if op.target_item else "",
+            leaf_label_identity_key(op.target_item or "") if op.target_item else "",
             str(op.target_special or "").strip(),
         )
 

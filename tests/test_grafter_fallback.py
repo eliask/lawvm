@@ -9714,6 +9714,63 @@ def test_coalesce_same_target_mixed_scope_section_groups_drops_covered_bare_dupl
     ]
 
 
+def test_coalesce_same_target_mixed_scope_section_groups_does_not_alias_roman_item_tail() -> None:
+    """A roman-looking item label is not the same duplicate tail as arabic item 4."""
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="4"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="4",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="4"),),
+                ),
+            ),
+        )
+    )
+    scoped_insert = AmendmentOp(
+        op_id="scoped_insert_4",
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="4",
+        target_chapter="1",
+        target_paragraph=1,
+        target_item="4",
+    )
+    bare_insert = AmendmentOp(
+        op_id="bare_insert_iv",
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="4",
+        target_paragraph=1,
+        target_item="iv",
+    )
+    section_groups: dict[tuple[IRNodeKind, str, str | None, str | None], list[AmendmentOp]] = {
+        (IRNodeKind.SECTION, "4", "1", None): [scoped_insert],
+        (IRNodeKind.SECTION, "4", None, None): [bare_insert],
+    }
+    muutos_tree = etree.fromstring(
+        "<akn><body><chapter><num>1 luku</num><section num='4'><subsection num='1'/></section></chapter></body></akn>"
+    )
+
+    got = _coalesce_same_target_mixed_scope_section_groups(
+        section_groups,
+        master=master,
+        muutos_tree=muutos_tree,
+    )
+
+    assert set(got) == {(IRNodeKind.SECTION, "4", "1", None)}
+    merged_ops = got[(IRNodeKind.SECTION, "4", "1", None)]
+    assert [op.op_id for op in merged_ops] == ["scoped_insert_4", "bare_insert_iv"]
+    assert merged_ops[1].target_chapter == "1"
+    assert merged_ops[1].scope_provenance_tags[-1] == "mixed_scope_group_merge"
+
+
 def test_pre_scan_repeal_targets_skips_future_effective_repeals_past_cutoff() -> None:
     corpus = _corpus_store(
         {
