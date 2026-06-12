@@ -87,7 +87,6 @@ from lawvm.finland.normalize import (
 )
 from lawvm.finland.johtolause import (
     extract_legal_ops as extract_johtolause_legal_ops,
-    parse_clause as _parse_johtolause_clause,
 )
 from lawvm.finland.constraints import DEBUG
 from lawvm.corpus_store import CorpusStore
@@ -637,6 +636,7 @@ from lawvm.finland.amendment_chapter_precreate import (
     _pre_create_pseudo_marker_chapters,
 )
 from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
+from lawvm.finland.process_frontend_normalization import ProcessFrontendNormalizationContext
 from lawvm.finland.process_result_builder import ProcessResultBuilder
 from lawvm.finland.process_route_rejection import ProcessRouteRejectionContext
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
@@ -5031,52 +5031,22 @@ def process_muutoslaki(
         # Phase 2: PEG extractor → LO normalization chain → AmendmentOp conversion
         # (skipped when _vts_ops_enrich_done is True — ops already populated above)
         if not _vts_ops_enrich_done:
-            _phase2_parse_result = _parse_johtolause_clause(johto)
-            _phase2_result = normalize_and_compile_ops(
+            _phase2_result = ProcessFrontendNormalizationContext(
                 johto=johto,
                 muutos_tree=muutos_tree,
-                master=state,
+                state=state,
                 amendment_id=amendment_id,
                 source_title=source_title,
                 used_sec1_fallback=used_sec1_fallback,
                 parent_id=parent_id,
                 strict_profile=strict_profile,
-                parse_result=_phase2_parse_result,
                 regex_recognition_coverage_out=regex_recognition_coverage_out,
-            )
-            ops = _phase2_result.output
-            # Propagate non-commence frontend temporal events (e.g. VÄLIAIKAINEN
-            # expire events emitted by _tag_temporary_ops in
-            # normalize_and_compile_ops) to the amendment temporal event
-            # accumulator.  Only non-commence events are propagated here:
-            # commence events are already covered by the wildcard
-            # fi-temporal:...:commence event that _temporal_events_from_lo_ops
-            # creates for every amendment group_id, and propagating them would
-            # add the group_id to covered_commence_group_ids, blocking the
-            # wildcard and causing all non-temporary INSERT ops to be skipped.
-            if _phase2_result.temporal_events:
-                _non_commence = [
-                    ev for ev in _phase2_result.temporal_events
-                    if ev.kind != "commence"
-                ]
-                if _non_commence:
-                    _amendment_temporal_events.extend(
-                        _normalize_frontend_temporal_events(
-                            tuple(_non_commence),
-                            amendment_id=amendment_id,
-                            target_statute=parent_id,
-                        )
-                    )
-            # Project normalized frontend findings to compatibility sinks only.
-            for _finding in _phase2_result.findings():
-                if _finding.role != "observation":
-                    continue
-                _compat_elaboration_observations.append(dict(_finding.detail))
-            _process_findings.extend(
-                finding
-                for finding in _phase2_result.findings()
-                if finding.role in ("obligation", "violation")
-            )
+                normalize_and_compile_ops=normalize_and_compile_ops,
+            ).run()
+            ops = list(_phase2_result.ops)
+            _amendment_temporal_events.extend(_phase2_result.temporal_events)
+            _compat_elaboration_observations.extend(_phase2_result.elaboration_observations)
+            _process_findings.extend(_phase2_result.process_findings)
 
         # Skip ops for chapters that were already seeded from this amendment's
         # body XML.  The seeded content is already in state.ir — re-applying
