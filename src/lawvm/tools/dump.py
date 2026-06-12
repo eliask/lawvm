@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 import sys
-from typing import Any, Optional, cast
+from typing import Optional, cast
 
 from lxml import etree
 
@@ -38,6 +38,7 @@ from lawvm.finland.fallback_op_ids import stamp_fallback_op_ids
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.johtolause.peg3 import extract_ops_diagnostic
 from lawvm.finland.ops import classify_legal_operation_conversion_skip
+from lawvm.finland.statute import ReplayState
 from lawvm.core.clause_ast import (
     ClauseAST, VerbGroup, ScopedBlock, RefAmend, TextAmend, LabelAmend, MetaClause,
 )
@@ -277,14 +278,15 @@ def dump_extract(sid: str, source_mid: str, after_normalize: bool = False,
     base_xml = cs.read_source(sid)
     if base_xml is not None:
         master = XMLStatute(base_xml)
+        master_state = ReplayState(ir=master.ir)
     else:
         print(f"WARNING: base statute {sid} not in zip — skipping context-aware repairs",
               file=sys.stderr)
-        master = None
+        master_state = None
 
     if legal_ops:
-        if master:
-            legal_ops = _assign_chapter_scope_from_johtolause(legal_ops, johto, cast(Any, master))
+        if master_state:
+            legal_ops = _assign_chapter_scope_from_johtolause(legal_ops, johto, master_state)
         skipped_los = []
         ops = []
         for i, lo in enumerate(legal_ops):

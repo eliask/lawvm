@@ -199,6 +199,13 @@ def _report_item_missing_exact_subsection_label_rebound(
         return False
     if not (0 <= target_idx < len(subsecs)):
         return False
+    if len(subsecs) == 1 and view.target_paragraph == 1 and view.target_item:
+        only_sub = subsecs[0]
+        if _subsection_exposes_targetable_item_structure(
+            only_sub,
+            re.sub(r"[)\s.]", "", view.target_item).strip().lower(),
+        ):
+            return False
     if len(subsecs) == 1 and view.target_paragraph > len(subsecs):
         return False
     if view.target_paragraph == 1 and _has_intro_list_moment_shape_ir(subsecs):

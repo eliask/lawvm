@@ -10675,6 +10675,45 @@ class TestDispatchIntegration:
         paras = [c for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]
         assert len(paras) == 3
 
+    def test_replace_item_in_single_unnumbered_subsection_preserves_sibling_items(self):
+        sec = _sec(
+            "2",
+            _sub(
+                "",
+                _intro("Luonnonsuojelualueita ovat seuraavat:"),
+                _para("12", "old item 12"),
+                _para("13", "old item 13"),
+                _para("14", "old item 14"),
+            ),
+        )
+        state = _make_state(_body(sec))
+        sec_path = (("section", "2"),)
+        op = _op(op_type="REPLACE", target_section="2", target_paragraph=1, target_item="13")
+        sparse_payload = _sub("2", _content("13) new item 13"))
+
+        result = _apply_deterministic_subsection_op(
+            state,
+            op,
+            sec_path,
+            None,
+            sparse_payload,
+            None,
+            _LEGAL_PIT,
+            "2 § 1 mom 13 kohta",
+            strict_profile=default_finland_strict_profile(),
+        )
+
+        result = _modified(state, result)
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION)
+        paras = [c for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]
+        assert [p.label for p in paras] == ["12", "13", "14"]
+        text = irnode_to_text(new_sec)
+        assert "old item 12" in text
+        assert "new item 13" in text
+        assert "old item 13" not in text
+        assert "old item 14" in text
+
     def test_heading_replace_via_dispatch_skips_temporary_merge_base_retrogression(self):
         base_section = _sec(
             "3",

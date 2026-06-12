@@ -20,6 +20,7 @@ from lawvm.core.tree_ops import Path, default_label_sort_key, normalized_label_k
 
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.finland.apply_ir_ops import _build_repeal_placeholder_from_label_ir
+from lawvm.finland.apply_payload_ops import _find_amend_paragraph
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, ResolvedTargetScopeView, temporary_signal_for_op
 from lawvm.finland.source_pathology import (
@@ -873,7 +874,7 @@ def _emit_section_snapshot(
                 build_destructive_shape_loss_risk_pathology(
                     source_statute=op_source.statute_id,
                     target_unit_kind="section",
-                    target_label=target_norm,
+                    target_label=normalized_target_norm,
                     recovery_kind="section_snapshot_rebase_on_latest_exact_parent",
                     live_sibling_count=len(
                         [child for child in section_payload.children if child.kind is IRNodeKind.SUBSECTION]
@@ -1355,6 +1356,8 @@ def _emit_section_snapshot(
             destination_label = renumber_destinations.get(source_label, source_label)
             base_by_label[destination_label] = _relabel_subsection_payload(child, destination_label)
         final_payloads: dict[str, IRNode] = {}
+        used_flattened_item_payload = False
+        flattened_item_payload_count = 0
         for label, subsection_payload in subsection_payloads.items():
             if label in whole_subsection_targets:
                 final_payloads[label] = subsection_payload
@@ -1368,6 +1371,20 @@ def _emit_section_snapshot(
                 for child in subsection_payload.children
                 if child.kind is IRNodeKind.PARAGRAPH and child.label
             }
+            if not payload_items:
+                item_labels = {
+                    _norm_num_token(str(rop.resolved_target_item_label or "").strip())
+                    for rop in group_rops
+                    if _norm_num_token(str(rop.resolved_target_subsection_label or "").strip()) == label
+                    and rop.resolved_target_item_label
+                }
+                for item_label in item_labels:
+                    flattened_item = _find_amend_paragraph(item_label, subsection_payload, None)
+                    if flattened_item is None or not flattened_item.label:
+                        continue
+                    payload_items[_norm_num_token(flattened_item.label)] = flattened_item
+                    used_flattened_item_payload = True
+                    flattened_item_payload_count += 1
             if not payload_items:
                 final_payloads[label] = subsection_payload
                 continue
@@ -1398,6 +1415,29 @@ def _emit_section_snapshot(
             final_payloads.get(label) or base_by_label[label]
             for label in merged_labels
         ]
+        if used_flattened_item_payload and source_pathologies_out is not None:
+            source_pathologies_out.append(
+                build_destructive_shape_loss_risk_pathology(
+                    source_statute=op_source.statute_id,
+                    target_unit_kind="section",
+                    target_label=normalized_target_norm,
+                    recovery_kind="section_snapshot_flattened_item_payload_merge",
+                    live_sibling_count=sum(
+                        1
+                        for child in base_section.children
+                        if child.kind is IRNodeKind.SUBSECTION
+                        for grandchild in child.children
+                        if grandchild.kind is IRNodeKind.PARAGRAPH
+                    ),
+                    payload_sibling_count=sum(
+                        1
+                        for subsection_payload in subsection_payloads.values()
+                        for child in subsection_payload.children
+                        if child.kind is IRNodeKind.PARAGRAPH
+                    )
+                    + flattened_item_payload_count,
+                )
+            )
         return IRNode(
             kind=section_payload.kind,
             label=section_payload.label,

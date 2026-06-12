@@ -7,9 +7,10 @@ import pytest
 from lawvm.core.frozen_values import FrozenDict
 from lawvm.core.invariant_detectors import InvariantDetectorResult
 from lawvm.core.invariant_detectors import SUPPORTED_INVARIANT_DETECTORS
+from lawvm.core.invariant_detectors import run_descendant_sibling_loss_detector
 from lawvm.core.invariant_detectors import run_invariant_detector, run_invariant_detector_messages
-from lawvm.core.ir import IRNode
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.tools.cli import _INVARIANT_DETECTOR_CHOICES
 
 
@@ -89,3 +90,94 @@ def test_invariant_detector_result_freezes_detail_payload() -> None:
     assert result.detail["count"] == 2
     with pytest.raises(TypeError):
         cast(Any, result.detail)["count"] = 3
+
+
+def test_descendant_sibling_loss_detector_flags_sparse_broad_snapshot() -> None:
+    before = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        children=(
+                            IRNode(kind=IRNodeKind.ITEM, label="1", text="one"),
+                            IRNode(kind=IRNodeKind.ITEM, label="2", text="two"),
+                            IRNode(kind=IRNodeKind.ITEM, label="3", text="three"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    sparse_snapshot = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="2",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.ITEM, label="2", text="two replaced"),),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="snapshot_section_2",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "2"),)),
+        payload=sparse_snapshot,
+    )
+
+    results = run_descendant_sibling_loss_detector(before, (op,))
+
+    assert [result.kind for result in results] == ["descendant_sibling_loss"]
+    assert results[0].path_text == "section:2/subsection:1"
+    assert "2 missing: 1, 3" in results[0].message
+    assert results[0].detail["op_id"] == "snapshot_section_2"
+    assert results[0].detail["missing_child_kind"] == "item"
+
+
+def test_descendant_sibling_loss_detector_ignores_single_descendant_deletion() -> None:
+    before = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        children=(
+                            IRNode(kind=IRNodeKind.ITEM, label="1", text="one"),
+                            IRNode(kind=IRNodeKind.ITEM, label="2", text="two"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    one_missing = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="2",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.ITEM, label="2", text="two replaced"),),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="snapshot_section_2",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "2"),)),
+        payload=one_missing,
+    )
+
+    assert run_descendant_sibling_loss_detector(before, (op,)) == []

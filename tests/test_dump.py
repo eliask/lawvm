@@ -49,6 +49,28 @@ def test_dump_apply_replays_quietly(monkeypatch, capsys) -> None:
     assert "quiet dump text" in out
 
 
+def test_dump_fi_extract_and_normalize_use_replay_state_context(capsys) -> None:
+    """Regression: context-aware dump repairs need ReplayState lookup helpers."""
+    for stage in ("extract", "normalize"):
+        dump.main(
+            Namespace(
+                statute_id="2017/646",
+                after=stage,
+                source="2021/1282",
+                address="section:2",
+                before="",
+                jurisdiction="fi",
+                db=None,
+                json=False,
+                hashes=False,
+                as_of=None,
+            )
+        )
+        out = capsys.readouterr().out
+        assert f"Stage    : {stage.upper()}" in out
+        assert "REPLACE 2 § 1 mom 13 kohta" in out
+
+
 def test_dump_parse_routes_uk_statute_id_to_farchive(monkeypatch, tmp_path, capsys) -> None:
     xml = b"""<Legislation xmlns='http://www.legislation.gov.uk/namespaces/legislation'>
   <Primary>

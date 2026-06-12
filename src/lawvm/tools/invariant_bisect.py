@@ -27,6 +27,8 @@ Detectors:
   text_duplication       large duplicated text blocks (lint-level)
   flattened_sublist_family repeated letter/roman/digit families suggesting
                            nested sublists were merged into one flat list
+  descendant_sibling_loss transition detector for sparse broad snapshots that
+                           drop descendant siblings from the pre-step live tree
 
 Usage:
     lawvm invariant-bisect 1995/398
@@ -44,7 +46,10 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from lawvm.core.invariant_detectors import run_invariant_detector_messages
+from lawvm.core.invariant_detectors import (
+    run_descendant_sibling_loss_detector,
+    run_invariant_detector_messages,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_UK_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
@@ -204,6 +209,7 @@ def build_uk_invariant_bisect_bundle(
 
     for mid in scan_ids:
         group_ops = groups[mid]
+        before_ir = current_ir.body
         if group_ops:
             current_ir = pipeline.apply_ops(
                 current_ir,
@@ -212,7 +218,17 @@ def build_uk_invariant_bisect_bundle(
                 text_map=text_map,
                 allow_oracle_alignment=True,
             )
-        violations = run_invariant_detector_messages(current_ir.body, detector, target_path)
+        if detector == "descendant_sibling_loss":
+            violations = [
+                result.message
+                for result in run_descendant_sibling_loss_detector(
+                    before_ir,
+                    group_ops,
+                    target_path,
+                )
+            ]
+        else:
+            violations = run_invariant_detector_messages(current_ir.body, detector, target_path)
         steps.append({
             "source_id": mid,
             "clean": len(violations) == 0,
@@ -373,11 +389,24 @@ def build_invariant_bisect_bundle(
     steps: List[Dict[str, Any]] = []
 
     for mid in scan_ids:
+        before_ir = state.ir
+        step_lo_ops: list[Any] = []
         state = process_muutoslaki(
             mid, state, ctx,
             replay_mode=mode, parent_id=statute_id, corpus=cs,
+            lo_ops_out=step_lo_ops,
         ).output
-        violations = run_invariant_detector_messages(state.ir, detector, target_path)
+        if detector == "descendant_sibling_loss":
+            violations = [
+                result.message
+                for result in run_descendant_sibling_loss_detector(
+                    before_ir,
+                    step_lo_ops,
+                    target_path,
+                )
+            ]
+        else:
+            violations = run_invariant_detector_messages(state.ir, detector, target_path)
         steps.append({
             "source_id": mid,
             "clean": len(violations) == 0,

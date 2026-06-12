@@ -7,11 +7,17 @@ from dataclasses import dataclass
 from typing import Any, Literal, Mapping
 
 from lawvm.core.frozen_values import FrozenDict, freeze_mapping
+from lawvm.core.ir import IRNode, LegalOperation
+from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.replay_lints import build_flattened_sublist_findings
+from lawvm.core.semantic_types import StructuralAction
 from lawvm.core.tree_ops import (
     TreeInvariantKind,
+    default_label_sort_key,
+    format_invariant_path,
     find_text_duplication_warnings,
     iter_tree_invariant_violations,
+    normalized_label_key,
 )
 
 InvariantDetectorName = Literal[
@@ -20,6 +26,7 @@ InvariantDetectorName = Literal[
     "all_tree",
     "text_duplication",
     "flattened_sublist_family",
+    "descendant_sibling_loss",
 ]
 SUPPORTED_INVARIANT_DETECTORS: tuple[InvariantDetectorName, ...] = (
     "duplicate_label",
@@ -27,6 +34,7 @@ SUPPORTED_INVARIANT_DETECTORS: tuple[InvariantDetectorName, ...] = (
     "all_tree",
     "text_duplication",
     "flattened_sublist_family",
+    "descendant_sibling_loss",
 )
 
 
@@ -72,6 +80,145 @@ def path_matches_target(path_text: str, target_path: str) -> bool:
     return False
 
 
+def _address_part_text(path: Sequence[tuple[str, str]]) -> str:
+    return "/".join(f"{kind}:{label}" for kind, label in path)
+
+
+def _path_text(path: Sequence[tuple[str, str]]) -> str:
+    return format_invariant_path(tuple((kind, label) for kind, label in path))
+
+
+def _node_matches_step(node: IRNode, step: tuple[str, str]) -> bool:
+    kind, label = step
+    return _kind_str(node.kind) == kind and normalized_label_key(node.label or "") == normalized_label_key(label)
+
+
+def _resolve_address_path(root: IRNode, path: Sequence[tuple[str, str]]) -> IRNode | None:
+    """Resolve a LegalAddress path, transparently crossing unlabeled wrappers."""
+    if not path:
+        return root
+    for child in root.children:
+        if _node_matches_step(child, path[0]):
+            resolved = _resolve_address_path(child, path[1:])
+            if resolved is not None:
+                return resolved
+    for child in root.children:
+        if not child.label and _kind_str(child.kind) in {"body", "hcontainer"}:
+            resolved = _resolve_address_path(child, path)
+            if resolved is not None:
+                return resolved
+    return None
+
+
+def _labelled_descendant_paths(node: IRNode) -> set[tuple[tuple[str, str], ...]]:
+    paths: set[tuple[tuple[str, str], ...]] = set()
+
+    def _walk(current: IRNode, prefix: tuple[tuple[str, str], ...]) -> None:
+        for child in current.children:
+            child_kind = _kind_str(child.kind)
+            child_path = prefix
+            if child.label:
+                child_path = prefix + ((child_kind, child.label),)
+                paths.add(child_path)
+            _walk(child, child_path)
+
+    _walk(node, ())
+    return paths
+
+
+def _missing_sibling_groups(
+    live_node: IRNode,
+    payload: IRNode,
+) -> list[tuple[tuple[tuple[str, str], ...], str, list[str]]]:
+    live_paths = _labelled_descendant_paths(live_node)
+    payload_paths = _labelled_descendant_paths(payload)
+    missing_paths = sorted(live_paths - payload_paths)
+    groups: dict[tuple[tuple[tuple[str, str], ...], str], list[str]] = {}
+    for missing_path in missing_paths:
+        if not missing_path:
+            continue
+        parent_path = missing_path[:-1]
+        child_kind, child_label = missing_path[-1]
+        if parent_path and parent_path not in payload_paths:
+            continue
+        groups.setdefault((parent_path, child_kind), []).append(child_label)
+    return [
+        (parent_path, child_kind, sorted(labels, key=default_label_sort_key))
+        for (parent_path, child_kind), labels in groups.items()
+        if len(labels) >= 2
+    ]
+
+
+def _has_descendant_companion_op(
+    op: LegalOperation,
+    operations: Sequence[LegalOperation],
+) -> bool:
+    target_path = op.target.path
+    if str(op.op_id or "").startswith("snapshot_"):
+        return True
+    return any(
+        other is not op
+        and len(other.target.path) > len(target_path)
+        and other.target.path[: len(target_path)] == target_path
+        for other in operations
+    )
+
+
+def run_descendant_sibling_loss_detector(
+    before_ir: IRNode,
+    operations: Sequence[LegalOperation],
+    target_path: str = "",
+) -> list[InvariantDetectorResult]:
+    """Flag sparse broad snapshots that drop pre-existing descendant siblings.
+
+    This is a transition detector for invariant-bisect. It does not judge the
+    final tree alone; it compares broad emitted replacement snapshots against
+    the pre-step live target so descendant-owned over-promotion remains visible
+    even when ordinary structural invariants stay clean.
+    """
+    results: list[InvariantDetectorResult] = []
+    for op in operations:
+        if op.action is not StructuralAction.REPLACE:
+            continue
+        if op.payload is None:
+            continue
+        if not _has_descendant_companion_op(op, operations):
+            continue
+        live_node = _resolve_address_path(before_ir, op.target.path)
+        if live_node is None:
+            continue
+        for parent_path, child_kind, labels in _missing_sibling_groups(live_node, op.payload):
+            issue_path = op.target.path + parent_path
+            path_text = _path_text(issue_path)
+            if not path_matches_target(path_text, target_path):
+                continue
+            sample = labels[:8]
+            sample_text = ", ".join(sample)
+            message = (
+                f"{path_text}: descendant sibling loss in {child_kind} "
+                f"children after {op.op_id} ({len(labels)} missing: {sample_text})"
+            )
+            results.append(
+                InvariantDetectorResult(
+                    detector="descendant_sibling_loss",
+                    kind="descendant_sibling_loss",
+                    path_text=path_text,
+                    message=message,
+                    detail={
+                        "op_id": op.op_id,
+                        "op_target": _address_part_text(op.target.path),
+                        "payload_kind": _kind_str(op.payload.kind),
+                        "payload_label": op.payload.label,
+                        "parent_relative_path": _address_part_text(parent_path),
+                        "missing_child_kind": child_kind,
+                        "missing_count": len(labels),
+                        "missing_labels_sample": tuple(sample),
+                    },
+                )
+            )
+    return results
+
+
 def run_invariant_detector(
     ir: Any,
     detector: str,
@@ -84,6 +231,9 @@ def run_invariant_detector(
     if detector not in SUPPORTED_INVARIANT_DETECTORS:
         supported = ", ".join(SUPPORTED_INVARIANT_DETECTORS)
         raise ValueError(f"unsupported invariant detector {detector!r}; expected one of: {supported}")
+
+    if detector == "descendant_sibling_loss":
+        return []
 
     if detector in ("duplicate_label", "illegal_edge", "all_tree"):
         selected_families: set[TreeInvariantKind] | None = None
