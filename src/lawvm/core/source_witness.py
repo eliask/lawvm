@@ -300,9 +300,33 @@ def _source_witness_row_id(row: Mapping[str, Any], *, index: int) -> str:
         str(row.get("source_unit_id") or index),
     ]
     digest = _mapping_digest(row, ("digest", "source_sha256"), "digest_witness")
-    if digest:
-        parts.append(digest[:12])
+    identity_tail = digest or _source_witness_fallback_identity(row)
+    if identity_tail:
+        parts.append(identity_tail[:12])
     return ":".join(part.replace(":", "_").replace("/", "_") for part in parts if part)
+
+
+def _source_witness_fallback_identity(row: Mapping[str, Any]) -> str:
+    preview_digest = _mapping_digest(
+        row,
+        ("preview_digest", "text_preview_sha256"),
+        "preview_digest_witness",
+    )
+    if preview_digest:
+        return preview_digest
+    identity_parts = tuple(
+        str(row.get(key) or "")
+        for key in (
+            "locator",
+            "source_path",
+            "version_id",
+            "source_lane",
+            "bounded_preview",
+        )
+    )
+    if any(identity_parts):
+        return hashlib.sha256("|".join(identity_parts).encode("utf-8")).hexdigest()
+    return ""
 
 
 def _digest_witness(row: Mapping[str, Any]) -> DigestWitness | None:

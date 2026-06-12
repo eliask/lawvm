@@ -2558,6 +2558,56 @@ def test_source_witness_evidence_report_projects_to_proof_surface() -> None:
     ]
 
 
+def test_source_witness_row_ids_distinguish_preview_only_same_unit_witnesses() -> None:
+    report = source_witness_evidence_report(
+        (
+            {
+                "source_role": "effect_feed_row",
+                "artifact_id": "ukpga/2025/1",
+                "source_unit_id": "effect-1",
+                "text_preview": "first effect row",
+            },
+            {
+                "source_role": "effect_feed_row",
+                "artifact_id": "ukpga/2025/1",
+                "source_unit_id": "effect-1",
+                "text_preview": "second effect row",
+            },
+        ),
+        jurisdiction="uk",
+    )
+    data = report.to_dict()
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+    row_ids = [row["row_id"] for row in data["rows"]]
+
+    assert len(set(row_ids)) == 2
+    assert all(row["status"] == "preview_digest" for row in data["rows"])
+    assert [row["row_id"] for row in proof_surface["rows"]] == row_ids
+
+
+def test_source_witness_row_ids_distinguish_locator_only_same_unit_witnesses() -> None:
+    report = source_witness_evidence_report(
+        (
+            {
+                "source_role": "source_locator",
+                "artifact_id": "fi:2024/1",
+                "source_unit_id": "section:1",
+                "locator": "finlex://2024/1/section/1/current.xml",
+            },
+            {
+                "source_role": "source_locator",
+                "artifact_id": "fi:2024/1",
+                "source_unit_id": "section:1",
+                "locator": "finlex://2024/1/section/1/enacted.xml",
+            },
+        ),
+        jurisdiction="fi",
+    )
+    row_ids = [row["row_id"] for row in report.to_dict()["rows"]]
+
+    assert len(set(row_ids)) == 2
+
+
 def test_source_witness_evidence_report_rejects_non_witness_inputs() -> None:
     with pytest.raises(ValueError, match="source witness report"):
         source_witness_evidence_report(cast(Any, 7), jurisdiction="fi")
