@@ -342,6 +342,10 @@ def _mapping_rows(value: Any) -> list[dict[str, Any]]:
     return [dict(row) for row in value if isinstance(row, dict)]
 
 
+def _is_registered_finland_manual_claim_kind(value: Any) -> bool:
+    return str(value or "").startswith("fi.v1.")
+
+
 def _proof_gate_summary(payload: dict[str, Any]) -> dict[str, Any]:
     """Summarize open proof gates from already-typed strict-report surfaces."""
 
@@ -380,12 +384,22 @@ def _proof_gate_summary(payload: dict[str, Any]) -> dict[str, Any]:
     manual_claim_frontiers = [
         row
         for row in all_frontiers
-        if str(row.get("required_claim_kind") or "").startswith("fi.v1.")
+        if _is_registered_finland_manual_claim_kind(row.get("required_claim_kind"))
     ]
     coverage_frontiers = [
         row
         for row in candidate_set_frontiers
-        if not str(row.get("required_claim_kind") or "").startswith("fi.v1.")
+        if not _is_registered_finland_manual_claim_kind(
+            row.get("required_claim_kind")
+        )
+    ]
+    bucketed_frontier_ids = {
+        id(row) for row in (*manual_claim_frontiers, *coverage_frontiers)
+    }
+    other_frontiers = [
+        row
+        for row in all_frontiers
+        if id(row) not in bucketed_frontier_ids
     ]
     open_gate_signal_count = (
         len(failed_gates)
@@ -404,6 +418,7 @@ def _proof_gate_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "frontier_work_item_count": len(all_frontiers),
         "manual_claim_frontier_count": len(manual_claim_frontiers),
         "coverage_frontier_count": len(coverage_frontiers),
+        "other_frontier_count": len(other_frontiers),
         "frontier_owner_phase_counts": _count_values(
             row.get("owner_phase") for row in all_frontiers
         ),
@@ -424,6 +439,12 @@ def _proof_gate_summary(payload: dict[str, Any]) -> dict[str, Any]:
         ),
         "coverage_frontier_status_counts": _count_values(
             row.get("frontier_status") for row in coverage_frontiers
+        ),
+        "other_frontier_required_claim_kind_counts": _count_values(
+            row.get("required_claim_kind") for row in other_frontiers
+        ),
+        "other_frontier_status_counts": _count_values(
+            row.get("frontier_status") for row in other_frontiers
         ),
         "incomplete_candidate_set_count": len(incomplete_candidate_sets),
         "candidate_set_completeness_counts": _count_values(
@@ -598,6 +619,9 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
             f"  coverage frontiers: {proof_gate_summary.get('coverage_frontier_count', 0)}"
         )
         lines.append(
+            f"  other frontiers   : {proof_gate_summary.get('other_frontier_count', 0)}"
+        )
+        lines.append(
             "  required claims  : "
             + _format_count_map(proof_gate_summary.get("required_claim_kind_counts"))
         )
@@ -611,6 +635,12 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
             "  coverage proofs  : "
             + _format_count_map(
                 proof_gate_summary.get("coverage_frontier_required_claim_kind_counts")
+            )
+        )
+        lines.append(
+            "  other claims     : "
+            + _format_count_map(
+                proof_gate_summary.get("other_frontier_required_claim_kind_counts")
             )
         )
         lines.append("")
@@ -851,12 +881,15 @@ _STRICT_RUN_HEADER = [
     "proof_gate_open_signal_count",
     "proof_gate_manual_frontier_count",
     "proof_gate_coverage_frontier_count",
+    "proof_gate_other_frontier_count",
     "proof_gate_required_claim_kind_counts",
     "proof_gate_frontier_status_counts",
     "proof_gate_manual_claim_kind_counts",
     "proof_gate_manual_frontier_status_counts",
     "proof_gate_coverage_claim_kind_counts",
     "proof_gate_coverage_frontier_status_counts",
+    "proof_gate_other_claim_kind_counts",
+    "proof_gate_other_frontier_status_counts",
     "candidate_set_statuses",
     "candidate_set_blockers",
     "source_incomplete",
@@ -1022,6 +1055,9 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "proof_gate_coverage_frontier_count": int(
                 proof_gate_summary.get("coverage_frontier_count") or 0
             ),
+            "proof_gate_other_frontier_count": int(
+                proof_gate_summary.get("other_frontier_count") or 0
+            ),
             "proof_gate_required_claim_kind_counts": dict(
                 proof_gate_summary.get("required_claim_kind_counts") or {}
             ),
@@ -1041,6 +1077,13 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             ),
             "proof_gate_coverage_frontier_status_counts": dict(
                 proof_gate_summary.get("coverage_frontier_status_counts") or {}
+            ),
+            "proof_gate_other_claim_kind_counts": dict(
+                proof_gate_summary.get("other_frontier_required_claim_kind_counts")
+                or {}
+            ),
+            "proof_gate_other_frontier_status_counts": dict(
+                proof_gate_summary.get("other_frontier_status_counts") or {}
             ),
             "candidate_set_statuses": candidate_set_statuses,
             "candidate_set_blockers": candidate_set_blockers,
@@ -1074,12 +1117,15 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "proof_gate_open_signal_count": 0,
             "proof_gate_manual_frontier_count": 0,
             "proof_gate_coverage_frontier_count": 0,
+            "proof_gate_other_frontier_count": 0,
             "proof_gate_required_claim_kind_counts": {},
             "proof_gate_frontier_status_counts": {},
             "proof_gate_manual_claim_kind_counts": {},
             "proof_gate_manual_frontier_status_counts": {},
             "proof_gate_coverage_claim_kind_counts": {},
             "proof_gate_coverage_frontier_status_counts": {},
+            "proof_gate_other_claim_kind_counts": {},
+            "proof_gate_other_frontier_status_counts": {},
             "candidate_set_statuses": [],
             "candidate_set_blockers": [],
             "source_incomplete": False,
@@ -1167,6 +1213,7 @@ def _save_strict_run(results: list[dict[str, Any]], label: str, timestamp: str) 
                     int(rec.get("proof_gate_open_signal_count") or 0),
                     int(rec.get("proof_gate_manual_frontier_count") or 0),
                     int(rec.get("proof_gate_coverage_frontier_count") or 0),
+                    int(rec.get("proof_gate_other_frontier_count") or 0),
                     json.dumps(
                         rec.get("proof_gate_required_claim_kind_counts", {}),
                         ensure_ascii=True,
@@ -1194,6 +1241,16 @@ def _save_strict_run(results: list[dict[str, Any]], label: str, timestamp: str) 
                     ),
                     json.dumps(
                         rec.get("proof_gate_coverage_frontier_status_counts", {}),
+                        ensure_ascii=True,
+                        sort_keys=True,
+                    ),
+                    json.dumps(
+                        rec.get("proof_gate_other_claim_kind_counts", {}),
+                        ensure_ascii=True,
+                        sort_keys=True,
+                    ),
+                    json.dumps(
+                        rec.get("proof_gate_other_frontier_status_counts", {}),
                         ensure_ascii=True,
                         sort_keys=True,
                     ),
@@ -1272,6 +1329,12 @@ def _load_strict_run(label: str) -> list[dict[str, Any]] | None:
             row["proof_gate_coverage_frontier_status_counts"] = _load_json_count_map(
                 row.get("proof_gate_coverage_frontier_status_counts")
             )
+            row["proof_gate_other_claim_kind_counts"] = _load_json_count_map(
+                row.get("proof_gate_other_claim_kind_counts")
+            )
+            row["proof_gate_other_frontier_status_counts"] = _load_json_count_map(
+                row.get("proof_gate_other_frontier_status_counts")
+            )
             row["candidate_set_statuses"] = [
                 r for r in row.get("candidate_set_statuses", "").split("|") if r
             ]
@@ -1287,6 +1350,7 @@ def _load_strict_run(label: str) -> list[dict[str, Any]] | None:
                 "proof_gate_open_signal_count",
                 "proof_gate_manual_frontier_count",
                 "proof_gate_coverage_frontier_count",
+                "proof_gate_other_frontier_count",
                 "chain_length",
                 "source_available",
             ):
@@ -1395,6 +1459,8 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     proof_gate_manual_status_counter: Counter[str] = Counter()
     proof_gate_coverage_claim_counter: Counter[str] = Counter()
     proof_gate_coverage_status_counter: Counter[str] = Counter()
+    proof_gate_other_claim_counter: Counter[str] = Counter()
+    proof_gate_other_status_counter: Counter[str] = Counter()
     candidate_set_status_counter: Counter[str] = Counter()
     candidate_set_blocker_counter: Counter[str] = Counter()
     for r in valid:
@@ -1448,6 +1514,22 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
                 ).items()
             }
         )
+        proof_gate_other_claim_counter.update(
+            {
+                str(key): int(value)
+                for key, value in dict(
+                    r.get("proof_gate_other_claim_kind_counts") or {}
+                ).items()
+            }
+        )
+        proof_gate_other_status_counter.update(
+            {
+                str(key): int(value)
+                for key, value in dict(
+                    r.get("proof_gate_other_frontier_status_counts") or {}
+                ).items()
+            }
+        )
         for status in r.get("candidate_set_statuses", []):
             candidate_set_status_counter[status] += 1
         for blocker in r.get("candidate_set_blockers", []):
@@ -1461,6 +1543,9 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     )
     total_coverage_frontiers = sum(
         int(r.get("proof_gate_coverage_frontier_count") or 0) for r in valid
+    )
+    total_other_frontiers = sum(
+        int(r.get("proof_gate_other_frontier_count") or 0) for r in valid
     )
 
     # Strictness vs bench score correlation: bucket into two groups
@@ -1602,6 +1687,7 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     print(f"       open gate signals      : {total_open_gate_signals}")
     print(f"       manual frontiers       : {total_manual_frontiers}")
     print(f"       coverage frontiers     : {total_coverage_frontiers}")
+    print(f"       other frontiers        : {total_other_frontiers}")
     if proof_gate_required_claim_counter:
         print("       required claim kinds:")
         for claim_kind, cnt in proof_gate_required_claim_counter.most_common():
@@ -1662,6 +1748,26 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
             )
     else:
         print("       coverage frontier statuses: (none)")
+    if proof_gate_other_claim_counter:
+        print("       other frontier claim kinds:")
+        for claim_kind, cnt in proof_gate_other_claim_counter.most_common():
+            per_statute = cnt / n_valid
+            print(
+                f"         {claim_kind:<58s} {cnt:5d}  "
+                f"({per_statute:.2f} signals/statute)"
+            )
+    else:
+        print("       other frontier claim kinds: (none)")
+    if proof_gate_other_status_counter:
+        print("       other frontier statuses:")
+        for status, cnt in proof_gate_other_status_counter.most_common():
+            per_statute = cnt / n_valid
+            print(
+                f"         {status:<58s} {cnt:5d}  "
+                f"({per_statute:.2f} signals/statute)"
+            )
+    else:
+        print("       other frontier statuses: (none)")
     print()
 
     print("  5l. Strict vs canonical fraction (correlation proxy):")

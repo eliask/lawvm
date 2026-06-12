@@ -46,12 +46,15 @@ def test_load_strict_run_reads_source_pathology_codes(tmp_path, monkeypatch) -> 
     assert rows[0]["proof_gate_open_signal_count"] == 0
     assert rows[0]["proof_gate_manual_frontier_count"] == 0
     assert rows[0]["proof_gate_coverage_frontier_count"] == 0
+    assert rows[0]["proof_gate_other_frontier_count"] == 0
     assert rows[0]["proof_gate_required_claim_kind_counts"] == {}
     assert rows[0]["proof_gate_frontier_status_counts"] == {}
     assert rows[0]["proof_gate_manual_claim_kind_counts"] == {}
     assert rows[0]["proof_gate_manual_frontier_status_counts"] == {}
     assert rows[0]["proof_gate_coverage_claim_kind_counts"] == {}
     assert rows[0]["proof_gate_coverage_frontier_status_counts"] == {}
+    assert rows[0]["proof_gate_other_claim_kind_counts"] == {}
+    assert rows[0]["proof_gate_other_frontier_status_counts"] == {}
     assert rows[0]["candidate_set_statuses"] == []
     assert rows[0]["candidate_set_blockers"] == []
     assert rows[0]["source_completeness_issue_kinds"] == []
@@ -155,13 +158,16 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                 "proof_gate_open_signal_count": 18,
                 "proof_gate_manual_frontier_count": 1,
                 "proof_gate_coverage_frontier_count": 4,
+                "proof_gate_other_frontier_count": 2,
                 "proof_gate_required_claim_kind_counts": {
                     "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
                     "source_unit_enumeration_certificate": 2,
+                    "source_pathology_resolution": 2,
                 },
                 "proof_gate_frontier_status_counts": {
                     "failed_operation_frontier": 1,
                     "partial_candidate_set_frontier": 4,
+                    "source_pathology_frontier": 2,
                 },
                 "proof_gate_manual_claim_kind_counts": {
                     "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
@@ -174,6 +180,12 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                 },
                 "proof_gate_coverage_frontier_status_counts": {
                     "partial_candidate_set_frontier": 4,
+                },
+                "proof_gate_other_claim_kind_counts": {
+                    "source_pathology_resolution": 2,
+                },
+                "proof_gate_other_frontier_status_counts": {
+                    "source_pathology_frontier": 2,
                 },
                 "candidate_set_statuses": [
                     "fi_strict_report_operation_cue_coverage:partial"
@@ -206,7 +218,9 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert "proof_gate_required_claim_kind_counts" in text
     assert "proof_gate_manual_claim_kind_counts" in text
     assert "proof_gate_coverage_claim_kind_counts" in text
+    assert "proof_gate_other_claim_kind_counts" in text
     assert "fi.v1.FAILED_OPERATION_RESOLUTION" in text
+    assert "source_pathology_resolution" in text
     assert "partial_candidate_set_frontier" in text
     assert "candidate_set_statuses" in text
     assert "candidate_set_blockers" in text
@@ -227,13 +241,16 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert loaded[0]["proof_gate_open_signal_count"] == 18
     assert loaded[0]["proof_gate_manual_frontier_count"] == 1
     assert loaded[0]["proof_gate_coverage_frontier_count"] == 4
+    assert loaded[0]["proof_gate_other_frontier_count"] == 2
     assert loaded[0]["proof_gate_required_claim_kind_counts"] == {
         "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
+        "source_pathology_resolution": 2,
         "source_unit_enumeration_certificate": 2,
     }
     assert loaded[0]["proof_gate_frontier_status_counts"] == {
         "failed_operation_frontier": 1,
         "partial_candidate_set_frontier": 4,
+        "source_pathology_frontier": 2,
     }
     assert loaded[0]["proof_gate_manual_claim_kind_counts"] == {
         "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
@@ -246,6 +263,12 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     }
     assert loaded[0]["proof_gate_coverage_frontier_status_counts"] == {
         "partial_candidate_set_frontier": 4,
+    }
+    assert loaded[0]["proof_gate_other_claim_kind_counts"] == {
+        "source_pathology_resolution": 2,
+    }
+    assert loaded[0]["proof_gate_other_frontier_status_counts"] == {
+        "source_pathology_frontier": 2,
     }
 
 
@@ -328,13 +351,16 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                 "proof_gate_open_signal_count": 18,
                 "proof_gate_manual_frontier_count": 1,
                 "proof_gate_coverage_frontier_count": 4,
+                "proof_gate_other_frontier_count": 2,
                 "proof_gate_required_claim_kind_counts": {
                     "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
+                    "source_pathology_resolution": 2,
                     "source_unit_enumeration_certificate": 2,
                 },
                 "proof_gate_frontier_status_counts": {
                     "failed_operation_frontier": 1,
                     "partial_candidate_set_frontier": 4,
+                    "source_pathology_frontier": 2,
                 },
                 "proof_gate_manual_claim_kind_counts": {
                     "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
@@ -347,6 +373,12 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                 },
                 "proof_gate_coverage_frontier_status_counts": {
                     "partial_candidate_set_frontier": 4,
+                },
+                "proof_gate_other_claim_kind_counts": {
+                    "source_pathology_resolution": 2,
+                },
+                "proof_gate_other_frontier_status_counts": {
+                    "source_pathology_frontier": 2,
                 },
                 "candidate_set_statuses": [
                     "fi_strict_report_operation_cue_coverage:partial"
@@ -385,7 +417,9 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
     assert "open gate signals      : 18" in out
     assert "manual frontiers       : 1" in out
     assert "coverage frontiers     : 4" in out
+    assert "other frontiers        : 2" in out
     assert "fi.v1.FAILED_OPERATION_RESOLUTION" in out
+    assert "source_pathology_resolution" in out
     assert "partial_candidate_set_frontier" in out
     assert "1.00 signals/statute" in out
     assert "manual frontier claim kinds" in out
@@ -678,6 +712,7 @@ def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
     assert proof_gates["closed"] is False
     assert proof_gates["manual_claim_frontier_count"] == 1
     assert proof_gates["coverage_frontier_count"] == 4
+    assert proof_gates["other_frontier_count"] == 0
     assert proof_gates["open_gate_signal_count"] == 18
     assert proof_gates["frontier_status_counts"] == {
         "failed_operation_frontier": 1,
@@ -701,6 +736,8 @@ def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
     assert proof_gates["coverage_frontier_status_counts"] == {
         "partial_candidate_set_frontier": 4,
     }
+    assert proof_gates["other_frontier_required_claim_kind_counts"] == {}
+    assert proof_gates["other_frontier_status_counts"] == {}
     assert proof_gates["candidate_set_completeness_counts"] == {"partial": 4}
     assert "replay_authorization" in proof_gates["does_not_claim"]
 
@@ -731,6 +768,7 @@ def test_format_report_includes_compact_proof_gate_summary() -> None:
     assert "Proof gate summary" in out
     assert "manual frontiers : 1" in out
     assert "coverage frontiers: 4" in out
+    assert "other frontiers   : 0" in out
     assert "open gate signals: 18" in out
     assert "fi.v1.FAILED_OPERATION_RESOLUTION=1" in out
     assert "manual claims    : fi.v1.FAILED_OPERATION_RESOLUTION=1" in out
@@ -848,6 +886,44 @@ def test_to_json_preserves_source_pathology_target_unit_kind() -> None:
     assert payload["evidence_surface_report"]["summary"][
         "frontier_claim_template_kind_counts"
     ] == {"fi.v1.MUTATION_BOUNDARY_RESOLUTION": 1}
+
+
+def test_to_json_counts_unregistered_source_pathology_frontiers_as_other() -> None:
+    payload = strict_report._to_json(
+        {
+            "statute_id": "2001/1234",
+            "replay_mode": "legal_pit",
+            "compile_mode": "strict",
+            "profile": FINLAND_INGESTION_V1,
+            "source_pathologies": [
+                {
+                    "code": "EMPTY_OPERATIVE_BODY",
+                    "message": "source pathology",
+                    "source_statute": "2001/748",
+                    "target_unit_kind": "section",
+                    "target_label": "4 §",
+                    "detail": {"diagnostic_reason": "empty_body"},
+                }
+            ],
+        }
+    )
+
+    proof_gates = payload["proof_gate_summary"]
+    assert proof_gates["frontier_work_item_count"] == 5
+    assert proof_gates["manual_claim_frontier_count"] == 0
+    assert proof_gates["coverage_frontier_count"] == 4
+    assert proof_gates["other_frontier_count"] == 1
+    assert proof_gates["required_claim_kind_counts"] == {
+        "operation_cue_exhaustiveness_certificate": 2,
+        "source_pathology_resolution": 1,
+        "source_unit_enumeration_certificate": 2,
+    }
+    assert proof_gates["other_frontier_required_claim_kind_counts"] == {
+        "source_pathology_resolution": 1,
+    }
+    assert proof_gates["other_frontier_status_counts"] == {
+        "source_pathology_frontier": 1,
+    }
 
 
 def test_to_json_exports_open_ownership_closure_certificate_without_replay_claims() -> None:
