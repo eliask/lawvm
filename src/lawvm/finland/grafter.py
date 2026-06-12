@@ -640,6 +640,7 @@ from lawvm.finland.process_frontend_normalization import ProcessFrontendNormaliz
 from lawvm.finland.process_result_builder import ProcessResultBuilder
 from lawvm.finland.process_route_rejection import ProcessRouteRejectionContext
 from lawvm.finland.process_compile_signals import ProcessCompileSignalsContext
+from lawvm.finland.process_apply_projection import ProcessApplyProjectionContext
 from lawvm.finland.process_temporal_authority import ProcessTemporalAuthorityContext
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
 
@@ -5161,37 +5162,15 @@ def process_muutoslaki(
             observed_touch_results_out=_observed_touch_results,
             write_audits_out=write_audits_out,
         )
-        # Stage-0 passive observed-vs-declared cross-check results: surface on
-        # the elaboration-observation rail as non-blocking findings. They never
-        # gate replay; they only record which ops touched tree paths their
-        # mutation events do not declare.
-        if _observed_touch_results and _compat_elaboration_observations is not None:
-            from lawvm.core.mutation_boundary import tree_path_to_diagnostic_string
-            for _otr in _observed_touch_results:
-                _compat_elaboration_observations.append(
-                    {
-                        "kind": "APPLY.REPLAY_UNDECLARED_TREE_TOUCH",
-                        "code": _otr.code,
-                        "source_statute": amendment_id,
-                        "op_id": _otr.op_id,
-                        "helper": _otr.helper,
-                        "undeclared_paths": [
-                            tree_path_to_diagnostic_string(p) for p in _otr.out_of_scope_paths
-                        ],
-                        "declared_paths": [
-                            tree_path_to_diagnostic_string(p) for p in _otr.allowed_paths
-                        ],
-                        "blocking": False,
-                    }
-                )
-        if migration_events_out is not None and len(_migration_ledger) > _migration_ledger_initial_len:
-            migration_events_out.extend(_migration_ledger.events[_migration_ledger_initial_len:])
-        if _migration_ledger:
-            logger.debug(
-                "[%s] migration_ledger: %d event(s)",
-                amendment_id,
-                len(_migration_ledger),
-            )
+        ProcessApplyProjectionContext(
+            amendment_id=amendment_id,
+            observed_touch_results=_observed_touch_results,
+            elaboration_observations=_compat_elaboration_observations,
+            migration_ledger=_migration_ledger,
+            migration_ledger_initial_len=_migration_ledger_initial_len,
+            migration_events_out=migration_events_out,
+            logger=logger,
+        ).project()
         ProcessTemporalPostprocessContext(
             amendment_id=amendment_id,
             parent_id=parent_id,
