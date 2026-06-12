@@ -854,6 +854,21 @@ def test_to_json_exports_source_adjudication_agreement_residual() -> None:
     assert lineage_witnesses[0]["source_role"] == "finland_source_lineage_amendment"
     assert lineage_witnesses[0]["artifact_id"] == "2024/1"
     assert lineage_witnesses[0]["preview_digest"]
+    source_unit_coverages = payload["source_unit_coverages"]
+    assert len(source_unit_coverages) == 1
+    assert source_unit_coverages[0]["coverage_status"] == "lineage_witnessed"
+    assert source_unit_coverages[0]["unit_family"] == "finland_source_lineage_amendment"
+    assert source_unit_coverages[0]["safe_default"] == (
+        "treat_lineage_source_unit_coverage_as_witnessed_only_not_full_enumeration"
+    )
+    source_unit_certificate = next(
+        row
+        for row in payload["strict_report_candidate_set_certificates"]
+        if row["candidate_set_kind"] == "fi_strict_report_source_unit_enumeration"
+    )
+    assert source_unit_certificate["completeness_status"] == "partial"
+    assert source_unit_certificate["source_unit_coverage_count"] == 1
+    assert source_unit_certificate["next_promotion_allowed"] is False
     residuals = payload["agreement_residuals"]
     assert len(residuals) == 1
     assert residuals[0]["family"] == "non_commensurable_surface"
@@ -861,6 +876,10 @@ def test_to_json_exports_source_adjudication_agreement_residual() -> None:
     assert residuals[0]["detail"]["html_noncommensurable_reason"] == ("oracle_extra_scoped_labels:chapter:15/section:1")
     report = payload["evidence_surface_report"]
     assert report["summary"]["source_lineage_source_witness_count"] == 1
+    assert report["summary"]["source_unit_coverage_count"] == 1
+    assert report["summary"]["source_unit_coverage_status_counts"] == {
+        "lineage_witnessed": 1
+    }
     assert report["summary"]["source_lineage_source_witness_digest_coverage_counts"] == {"preview_digest": 1}
     assert report["summary"]["agreement_residual_count"] == 1
     assert report["summary"]["agreement_materialization_kind"] == "legal_text_state"
@@ -878,6 +897,7 @@ def test_to_json_exports_source_adjudication_agreement_residual() -> None:
     }
     assert [row["surface"] for row in report["rows"]] == [
         "source_lineage_source_witness",
+        "source_unit_coverage",
         "agreement_residual",
         "source_completeness_status",
         "strict_report_candidate_set_certificate",

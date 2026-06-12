@@ -69,6 +69,11 @@ from lawvm.core.source_witness import (
     nested_source_witness_digest_coverage_counts,
     source_witness_digest_coverage_counts,
 )
+from lawvm.core.source_unit_coverage import (
+    SOURCE_UNIT_LINEAGE_WITNESSED,
+    SourceUnitCoverage,
+    source_unit_coverage_evidence_report,
+)
 from lawvm.core.source_pathology import (
     SourcePathologyProjection,
     source_pathology_evidence_report,
@@ -1080,6 +1085,14 @@ def finland_strict_report_evidence_surface(
     potential_operation_summary = dict(potential_operation_report.get("summary") or {})
     sparse_certificates = _mapping_sequence(payload.get("sparse_slot_candidate_set_certificates"))
     source_lineage_witnesses = _mapping_sequence(payload.get("source_lineage_source_witnesses"))
+    source_unit_coverages = _mapping_sequence(payload.get("source_unit_coverages"))
+    source_unit_coverage_report = source_unit_coverage_evidence_report(
+        source_unit_coverages,
+        jurisdiction="fi",
+        report_kind="finland_strict_report_source_unit_coverage",
+    ).to_dict()
+    source_unit_coverage_rows = _mapping_sequence(source_unit_coverage_report.get("rows"))
+    source_unit_coverage_summary = dict(source_unit_coverage_report.get("summary") or {})
     agreement_residuals = _mapping_sequence(payload.get("agreement_residuals"))
     agreement_report_rows, agreement_report_summary = _strict_report_agreement_surface_rows(
         agreement_residuals,
@@ -1138,6 +1151,7 @@ def finland_strict_report_evidence_surface(
             ),
             *({"surface": "sparse_slot_candidate_set_certificate", **dict(row)} for row in sparse_certificates),
             *({"surface": "source_lineage_source_witness", **dict(row)} for row in source_lineage_witnesses),
+            *({"surface": "source_unit_coverage", **dict(row)} for row in source_unit_coverage_rows),
             *({"surface": "agreement_residual", **dict(row)} for row in agreement_report_rows),
             *({"surface": "mutation_boundary_proof", **dict(row)} for row in mutation_boundary_proofs),
             *(({"surface": "source_completeness_status", **source_completeness_row},) if source_completeness_row else ()),
@@ -1178,6 +1192,13 @@ def finland_strict_report_evidence_surface(
         "frontier_claim_template_kind_counts": _frontier_claim_template_kind_counts(frontier_items),
         "sparse_slot_candidate_set_certificate_count": len(sparse_certificates),
         "source_lineage_source_witness_count": len(source_lineage_witnesses),
+        "source_unit_coverage_count": len(source_unit_coverage_rows),
+        "source_unit_coverage_status_counts": dict(
+            source_unit_coverage_summary.get("coverage_status_counts") or {}
+        ),
+        "source_unit_coverage_family_counts": dict(
+            source_unit_coverage_summary.get("unit_family_counts") or {}
+        ),
         "agreement_residual_count": len(agreement_report_rows),
         "agreement_residual_family_counts": dict(
             agreement_report_summary.get("residual_family_counts", {})
@@ -1288,6 +1309,7 @@ def finland_strict_report_candidate_set_certificates(
     canonical_op_ids = _string_sequence(payload.get("canonical_op_ids"))
     failed_ops = _mapping_sequence(payload.get("failed_ops"))
     potential_operations = _mapping_sequence(payload.get("potential_operations"))
+    source_unit_coverages = _mapping_sequence(payload.get("source_unit_coverages"))
     source_lineage_witnesses = _mapping_sequence(payload.get("source_lineage_source_witnesses"))
     visible_operation_ids = (
         _potential_operation_candidate_ids(potential_operations)
@@ -1297,7 +1319,10 @@ def finland_strict_report_candidate_set_certificates(
             failed_ops=failed_ops,
         )
     )
-    source_unit_ids = _source_lineage_candidate_ids(source_lineage_witnesses)
+    source_unit_ids = (
+        _source_unit_coverage_candidate_ids(source_unit_coverages)
+        or _source_lineage_candidate_ids(source_lineage_witnesses)
+    )
     return [
         CandidateSetCertificate(
             scope_id=f"fi:{statute_id}:strict-report-visible-operation-rows",
@@ -1380,6 +1405,7 @@ def finland_strict_report_candidate_set_certificates(
             ),
             detail={
                 "visible_scope": "strict_report_negative_space_source_units",
+                "source_unit_coverage_count": len(source_unit_coverages),
                 "source_lineage_witness_count": len(source_lineage_witnesses),
                 "safe_default": "do_not_treat_this_as_source_unit_closure_until_complete",
             },
@@ -1484,6 +1510,62 @@ def finland_strict_report_potential_operation_rows(
     return rows
 
 
+def finland_strict_report_source_unit_coverage_rows(
+    payload: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Source-unit coverage rows visible to the Finland strict report.
+
+    This currently projects source-lineage witnesses only. It is useful
+    accounting, but it is not a full inventory of amendment-bearing XML units.
+    """
+
+    statute_id = str(payload.get("statute_id") or "unknown")
+    source_lineage_witnesses = _mapping_sequence(payload.get("source_lineage_source_witnesses"))
+    rows: list[dict[str, Any]] = []
+    for index, witness in enumerate(source_lineage_witnesses, start=1):
+        artifact_id = str(witness.get("artifact_id") or witness.get("amendment_id") or statute_id)
+        source_unit_id = str(witness.get("source_unit_id") or artifact_id or f"lineage:{index}")
+        rows.append(
+            SourceUnitCoverage(
+                coverage_id=_strict_report_source_unit_coverage_id(
+                    statute_id=statute_id,
+                    artifact_id=artifact_id,
+                    source_unit_id=source_unit_id,
+                    index=index,
+                ),
+                jurisdiction="fi",
+                source_artifact_id=artifact_id,
+                source_unit_id=source_unit_id,
+                owner_phase="source_chain_elaboration",
+                coverage_status=SOURCE_UNIT_LINEAGE_WITNESSED,
+                unit_family="finland_source_lineage_amendment",
+                source_role=str(witness.get("source_role") or "finland_source_lineage_amendment"),
+                source_lane=str(witness.get("source_lane") or "finland_source_adjudication_lineage"),
+                refs=(artifact_id,),
+                required_proofs=(
+                    "source_artifact_unit_inventory",
+                    "source_unit_digest_coverage",
+                    "unclassified_source_unit_count_zero",
+                ),
+                safe_default=(
+                    "treat_lineage_source_unit_coverage_as_witnessed_only_not_full_enumeration"
+                ),
+                detail={
+                    "statute_id": statute_id,
+                    "visible_index": index,
+                    "source_witness": dict(witness),
+                    "projection_only": True,
+                    "does_not_claim": [
+                        "complete_source_unit_enumeration",
+                        "operation_cue_exhaustiveness",
+                        "replay_authorization",
+                    ],
+                },
+            ).to_dict()
+        )
+    return rows
+
+
 def finland_strict_report_candidate_set_execution_authorizations(
     payload: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
@@ -1566,6 +1648,7 @@ def finland_strict_report_ownership_closure_certificate(
     source_pathology_frontier_items = _mapping_sequence(payload.get("source_pathology_frontier_work_items"))
     failed_operation_frontier_items = _mapping_sequence(payload.get("failed_operation_frontier_work_items"))
     potential_operations = _mapping_sequence(payload.get("potential_operations"))
+    source_unit_coverages = _mapping_sequence(payload.get("source_unit_coverages"))
     sparse_certificates = _mapping_sequence(payload.get("sparse_slot_candidate_set_certificates"))
     source_lineage_witnesses = _mapping_sequence(payload.get("source_lineage_source_witnesses"))
     agreement_residuals = _mapping_sequence(payload.get("agreement_residuals"))
@@ -1703,6 +1786,7 @@ def finland_strict_report_ownership_closure_certificate(
         "source_pathologies_visible": len(source_pathologies),
         "sparse_slot_candidate_certificates": len(sparse_certificates),
         "source_lineage_witnesses": len(source_lineage_witnesses),
+        "source_unit_coverages": len(source_unit_coverages),
         "agreement_residuals": len(agreement_residuals),
         "mutation_boundary_proofs": len(mutation_boundary_proofs),
         "temporal_resolution_evidence_rows": len(temporal_rows),
@@ -1718,6 +1802,7 @@ def finland_strict_report_ownership_closure_certificate(
             {
                 "source_completeness": source_completeness,
                 "source_lineage_source_witnesses": source_lineage_witnesses,
+                "source_unit_coverages": source_unit_coverages,
             },
         ),
         profile_id=profile_id,
@@ -1747,6 +1832,11 @@ def finland_strict_report_ownership_closure_certificate(
                 "potential-operations",
                 statute_id,
                 potential_operations,
+            ),
+            "source_unit_coverages": _strict_report_id(
+                "source-unit-coverages",
+                statute_id,
+                source_unit_coverages,
             ),
             "mutation_boundary_proofs": _strict_report_id(
                 "mutation-boundary",
@@ -3722,6 +3812,35 @@ def _source_lineage_candidate_ids(
     return tuple(ids)
 
 
+def _source_unit_coverage_candidate_ids(
+    source_unit_coverages: tuple[Mapping[str, Any], ...],
+) -> tuple[str, ...]:
+    return tuple(
+        str(row.get("coverage_id") or "")
+        for row in source_unit_coverages
+        if str(row.get("coverage_id") or "")
+    )
+
+
+def _strict_report_source_unit_coverage_id(
+    *,
+    statute_id: str,
+    artifact_id: str,
+    source_unit_id: str,
+    index: int,
+) -> str:
+    digest = _strict_report_digest(
+        "source-unit-coverage",
+        {
+            "statute_id": statute_id,
+            "artifact_id": artifact_id,
+            "source_unit_id": source_unit_id,
+            "index": index,
+        },
+    ).split(":", 1)[1][:16]
+    return f"fi:{statute_id or 'unknown'}:source-unit-coverage:{digest}"
+
+
 def _ops_count(payload: Mapping[str, Any], name: str) -> int:
     ops = payload.get("ops")
     if not isinstance(ops, Mapping):
@@ -3758,6 +3877,7 @@ def _strict_report_closure_graph_payload(payload: Mapping[str, Any]) -> Mapping[
         "failed_operation_execution_authorizations",
         "failed_operation_frontier_work_items",
         "potential_operations",
+        "source_unit_coverages",
         "sparse_slot_candidate_set_certificates",
         "source_lineage_source_witnesses",
         "agreement_residuals",

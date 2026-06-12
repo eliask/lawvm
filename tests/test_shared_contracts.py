@@ -118,6 +118,11 @@ from lawvm.core.source_witness import (
     source_witness_from_mapping,
     source_witness_role_key,
 )
+from lawvm.core.source_unit_coverage import (
+    SOURCE_UNIT_LINEAGE_WITNESSED,
+    SourceUnitCoverage,
+    source_unit_coverage_evidence_report,
+)
 from lawvm.core.token_tape import AnnotatedTokenView, TokenAnnotation, TokenLexeme, TokenTape
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
 from lawvm.core.replay_contracts import ReplayAmendmentStep, ReplayCheckpoint, ReplaySummary, ReplayTextView
@@ -3002,6 +3007,42 @@ def test_potential_operation_evidence_report_is_passive_shared_surface() -> None
     assert report["rows"][0]["row_id"] == "canonical-op:lo-1"
     assert report["rows"][0]["status"] == "compiled"
     assert "potential_operation_as_replay_authorization" in report["rows"][0]["forbidden_shortcuts"]
+
+
+def test_source_unit_coverage_evidence_report_is_passive_shared_surface() -> None:
+    lineage_row = SourceUnitCoverage(
+        coverage_id="fi:2001/1234:source-unit-coverage:abc",
+        jurisdiction="fi",
+        source_artifact_id="2020/1",
+        source_unit_id="2020/1",
+        owner_phase="source_chain_elaboration",
+        coverage_status=SOURCE_UNIT_LINEAGE_WITNESSED,
+        unit_family="finland_source_lineage_amendment",
+        source_role="finland_source_lineage_amendment",
+        source_lane="finland_source_adjudication_lineage",
+        refs=("2020/1",),
+        required_proofs=("source_artifact_unit_inventory",),
+        safe_default="treat_lineage_source_unit_coverage_as_witnessed_only_not_full_enumeration",
+    )
+
+    report = source_unit_coverage_evidence_report(
+        lineage_row,
+        jurisdiction="fi",
+        report_kind="finland_strict_report_source_unit_coverage",
+    ).to_dict()
+
+    assert report["schema"] == "lawvm.source_unit_coverage.v1"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["summary"]["source_unit_coverage_count"] == 1
+    assert report["summary"]["coverage_status_counts"] == {"lineage_witnessed": 1}
+    assert report["summary"]["lineage_witnessed_count"] == 1
+    assert report["rows"][0]["surface"] == "source_unit_coverage"
+    assert report["rows"][0]["row_id"] == "fi:2001/1234:source-unit-coverage:abc"
+    assert report["rows"][0]["status"] == "lineage_witnessed"
+    assert "source_unit_coverage_as_replay_authorization" in report["rows"][0]["forbidden_shortcuts"]
+    assert "source_unit_coverage_as_complete_source_enumeration" in report["forbidden_shortcuts"]
 
 
 def test_candidate_set_report_rejects_invalid_mapping_rows() -> None:
