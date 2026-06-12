@@ -210,8 +210,6 @@ from lawvm.finland.grafter_uncovered import (
 from lawvm.finland.citation_routing import (
     OP_KEYWORDS,
     _johtolause_references_parent,
-    _looks_like_fi_meta_repeal,
-    _title_explicitly_targets_other_statute,
     route_amendment,
 )
 from lawvm.finland.acquisition import (
@@ -640,6 +638,7 @@ from lawvm.finland.amendment_chapter_precreate import (
 )
 from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
 from lawvm.finland.process_result_builder import ProcessResultBuilder
+from lawvm.finland.process_route_rejection import ProcessRouteRejectionContext
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
 
 
@@ -1485,7 +1484,6 @@ from lawvm.finland.metadata import (
     _amendment_effective_date_with_step,
     _amendment_expiry_date,
     _chapter_expiry_from_base,
-    _commencement_expiry_override,
     _expiry_date_precedes_effective_date,
     _statute_issue_date,
     _statute_id_sort_key,
@@ -1637,7 +1635,6 @@ from lawvm.finland.vts import (
     _expand_section_range_vts,
     VtsSkippedTarget,
     extract_voimaantulo_repeals,
-    extract_vts_cross_statute_repeals,
     extract_vts_repeals_fallback,
 )
 
@@ -4948,93 +4945,29 @@ def process_muutoslaki(
         ops: list[AmendmentOp] = []
         _vts_ops_enrich_done = False
         if not _should_apply:
-            if _route_reason == "num_collision_skip":
-                _replay_print(
-                    f"  [{amendment_id}] SKIPPED — NUM-collision false mapping: johtolause targets a different statute (not {parent_id})"
-                )
-                _record_process_finding(
-                    kind="APPLY.SOURCE_INCOMPLETE",
-                    message="Amendment skipped: lineage routing rejected by NUM collision.",
-                    source_statute=amendment_id,
-                    detail={"route_reason": "num_collision_skip"},
-                    role="obligation",
-                )
-            elif _route_reason == "pending_amendment_of_parent_skip":
-                _pending_target_mid = acquisition.decision.route_target_amendment_id
-                _target_suffix = f" via pending {_pending_target_mid}" if _pending_target_mid else ""
-                _replay_print(
-                    f"  [{amendment_id}] SKIPPED — pending amendment of parent recognized but not yet composed into {parent_id}{_target_suffix}"
-                )
-                _record_process_finding(
-                    kind="APPLY.SOURCE_INCOMPLETE",
-                    message="Amendment skipped: pending amendment-of-amendment target not yet composed.",
-                    source_statute=amendment_id,
-                    detail={
-                        "route_reason": "pending_amendment_of_parent_skip",
-                        "target_amendment_id": _pending_target_mid,
-                    },
-                    role="obligation",
-                )
-            else:
-                # citation_mismatch_skip — covers meta-repeal and title mismatch
-                if _looks_like_fi_meta_repeal(johto):
-                    logger.debug("  [%s] SKIPPED — meta-repeal targets prior amendment act, not %s", amendment_id, parent_id)
-                elif _title_explicitly_targets_other_statute(source_title, ctx.title):
-                    _replay_print(f"  [{amendment_id}] SKIPPED — title targets different statute (not {parent_id})")
-                else:
-                    _replay_print(
-                        f"  [{amendment_id}] SKIPPED — citation mismatch: johtolause targets different statute (not {parent_id})"
-                    )
-                _record_process_finding(
-                    kind="APPLY.SOURCE_INCOMPLETE",
-                    message="Amendment skipped: citation routing rejected.",
-                    source_statute=amendment_id,
-                    detail={"route_reason": str(_route_reason or "citation_mismatch_skip")},
-                    role="obligation",
-                )
-            _expiry_override = _commencement_expiry_override(muutos_tree, amendment_id)
-            if _expiry_override is not None:
-                _target_mid, _labels, _expiry = _expiry_override
-                if _target_mid != amendment_id and _rewrite_lo_op_source_expiry(
-                    lo_ops_out, _target_mid, _labels, _expiry,
-                    parent_statute_id=parent_id, replay_mode=replay_mode,
-                    # _commencement_expiry_override returns the prose-inclusive
-                    # last in-force day.
-                    expiry_convention="inclusive_prose",
-                ):
-                    _scope = sorted(_labels) if _labels else ["*"]
-                    _replay_print(
-                        f"  [{amendment_id}] voimaantulo_expiry_override: {_target_mid} {_scope} -> {_expiry.isoformat()}"
-                    )
-                    _commencement_expiry_override_notes.append(
-                        {
-                            "source_statute": amendment_id,
-                            "target_statute": _target_mid,
-                            "labels": _scope,
-                            "expiry": _expiry.isoformat(),
-                            "context": "skipped_amendment",
-                        }
-                    )
-            # Heuristic #38: VTS cross-statute repeal (QUIRKS only).
-            _vts_cross_ops = extract_vts_cross_statute_repeals(
-                xml_bytes,
-                parent_id,
-                ctx.title,
-                strict_profile,
-                skipped_targets_out=_vts_skipped_targets,
-            )
-            if _vts_cross_ops:
-                ops = _enrich_ops_from_amendment_tree(
-                    _vts_cross_ops,
-                    amendment_id,
-                    muutos_tree,
-                    johto=johto,
-                )
-                _replay_print(f"  [{amendment_id}] voimaantulo_repeal (cross-statute): {[op.description() for op in ops]}")
-                _vts_ops_enrich_done = True
-                _skip_to_compile = True
-            else:
+            _route_rejection = ProcessRouteRejectionContext(
+                amendment_id=amendment_id,
+                parent_id=parent_id,
+                parent_title=ctx.title,
+                source_title=source_title,
+                johto=johto,
+                xml_bytes=xml_bytes,
+                muutos_tree=muutos_tree,
+                route_reason=_route_reason,
+                route_target_amendment_id=acquisition.decision.route_target_amendment_id,
+                strict_profile=strict_profile,
+                replay_mode=replay_mode,
+                lo_ops_out=lo_ops_out,
+                vts_skipped_targets=_vts_skipped_targets,
+                commencement_expiry_override_notes=_commencement_expiry_override_notes,
+                record_finding=_record_process_finding,
+                replay_print=_replay_print,
+            ).handle()
+            if _route_rejection.should_return_state:
                 return _build_result(state)
+            ops = list(_route_rejection.ops)
+            _vts_ops_enrich_done = _route_rejection.vts_ops_enrich_done
+            _skip_to_compile = _route_rejection.skip_to_compile
         else:
             _skip_to_compile = False
 
