@@ -630,6 +630,7 @@ from lawvm.finland.process_apply_projection import ProcessApplyProjectionContext
 from lawvm.finland.process_structural_prepare import ProcessStructuralPrepareContext
 from lawvm.finland.process_temporal_authority import ProcessTemporalAuthorityContext
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
+from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks
 
 
 def _emit_restructure_plan_renumber_legal_operations(
@@ -5102,7 +5103,7 @@ from lawvm.finland.post_process import post_process_tree
 
 
 def replay_xml(
-    parent_id: str,
+    parent_id: Optional[str] = None,
     mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     compiled_ops_out: Optional[List[Dict[str, object]]] = None,
     replay_meta_out: Optional[Dict[str, object]] = None,
@@ -5119,6 +5120,8 @@ def replay_xml(
     strict_johto_temporal: bool = False,
     oracle_selector: ConsolidatedArtifactSelector | None = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
+    request: Optional[ReplayXmlRequest] = None,
+    sinks: Optional[ReplayXmlSinks] = None,
 ):
     """Replay all applicable amendments for one parent statute.
 
@@ -5145,6 +5148,33 @@ def replay_xml(
     side-channel hook here. Replay internals no longer export a parallel
     parse-layer ``effect_intents`` rail.
     """
+    if request is not None:
+        parent_id = request.parent_id
+        mode = request.mode
+        stop_before = request.stop_before
+        strict_profile = request.strict_profile
+        corpus = request.corpus
+        quiet = request.quiet
+        build_full_products = request.build_full_products
+        checkpoint_callback = request.checkpoint_callback
+        as_of = request.as_of
+        strict_johto_temporal = request.strict_johto_temporal
+        oracle_selector = request.oracle_selector
+    if parent_id is None:
+        raise TypeError("replay_xml requires either parent_id or request=")
+    if sinks is not None:
+        compiled_ops_out = compiled_ops_out if compiled_ops_out is not None else sinks.compiled_ops_out
+        replay_meta_out = replay_meta_out if replay_meta_out is not None else sinks.replay_meta_out
+        lo_ops_out = lo_ops_out if lo_ops_out is not None else sinks.lo_ops_out
+        failed_ops_out = failed_ops_out if failed_ops_out is not None else sinks.failed_ops_out
+        temporal_events_out = (
+            temporal_events_out if temporal_events_out is not None else sinks.temporal_events_out
+        )
+        source_pathologies_out = (
+            source_pathologies_out
+            if source_pathologies_out is not None
+            else sinks.source_pathologies_out
+        )
     if corpus is None:
         corpus = _get_corpus_store()
     verbose_token = _set_replay_verbose(not quiet)

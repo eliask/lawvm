@@ -34,6 +34,7 @@ async def build_statute_graph_fi(sid: str) -> StatuteGraph:
     from lawvm.finland.cross_refs import extract_cross_refs
     from lawvm.finland.delegation import extract_delegations
     from lawvm.finland.grafter import get_corpus, replay_xml, _fi_label_postprocessor
+    from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks
     from lawvm.finland.statute_id import engine_statute_id
 
     # Normalize the säädös id to engine 'year/num' form at this boundary so the
@@ -44,7 +45,10 @@ async def build_statute_graph_fi(sid: str) -> StatuteGraph:
 
     # 1. Replay amendments, collect LegalOperations
     lo_ops_out: list[LegalOperation] = []
-    master = replay_xml(sid, lo_ops_out=lo_ops_out)
+    master = replay_xml(
+        request=ReplayXmlRequest(parent_id=sid),
+        sinks=ReplayXmlSinks(lo_ops_out=lo_ops_out),
+    )
 
     # 2. Build base IRStatute from original (unamended) XML
     cs = get_corpus()
