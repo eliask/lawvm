@@ -74,6 +74,10 @@ def test_proof_gate_summary_buckets_frontiers_without_replay_authority() -> None
                 "failed_operation_not_replay_authority": 1,
             },
             "failed_operation_execution_authorization_strict_blocked_count": 1,
+            "strict_report_candidate_set_execution_authorization_status_counts": {
+                "candidate_set_incomplete_not_replay_authority": 2,
+            },
+            "strict_report_candidate_set_execution_authorization_strict_blocked_count": 2,
             "recovery_execution_authorization_status_counts": {
                 "recovery_projection_not_replay_authority": 3,
                 "strict_recovery_blocked": 2,
@@ -83,7 +87,7 @@ def test_proof_gate_summary_buckets_frontiers_without_replay_authority() -> None
         manual_claim_kind_prefixes=("fi.v1.",),
     ).to_dict()
 
-    assert summary["open_gate_signal_count"] == 29
+    assert summary["open_gate_signal_count"] == 31
     assert summary["ownership_failed_gate_counts"] == {"failed_ops_present": 1}
     assert summary["unowned_counts"] == {"unproved_mutation_boundary_proofs": 2}
     assert summary["frontier_work_item_count"] == 3
@@ -144,6 +148,10 @@ def test_proof_gate_summary_buckets_frontiers_without_replay_authority() -> None
         "failed_operation_not_replay_authority": 1,
     }
     assert summary["failed_operation_authorization_blocked_count"] == 1
+    assert summary["candidate_set_authorization_status_counts"] == {
+        "candidate_set_incomplete_not_replay_authority": 2,
+    }
+    assert summary["candidate_set_authorization_blocked_count"] == 2
     assert summary["recovery_authorization_status_counts"] == {
         "recovery_projection_not_replay_authority": 3,
         "strict_recovery_blocked": 2,
@@ -157,6 +165,7 @@ def test_proof_gate_summary_buckets_frontiers_without_replay_authority() -> None
     assert "temporal_resolution_closure" in summary["does_not_claim"]
     assert "source_pathology_authorization_closure" in summary["does_not_claim"]
     assert "failed_operation_authorization_closure" in summary["does_not_claim"]
+    assert "candidate_set_authorization_closure" in summary["does_not_claim"]
     assert "recovery_authorization_closure" in summary["does_not_claim"]
 
 
@@ -312,5 +321,27 @@ def test_proof_gate_summary_rejects_boolean_count_values() -> None:
             failed_gates=(),
             evidence_summary={
                 "failed_operation_execution_authorization_strict_blocked_count": True
+            },
+        )
+
+    with pytest.raises(ValueError, match="strict_report_candidate_set_execution_authorization_status_counts"):
+        proof_gate_summary_from_surfaces(
+            schema="lawvm.test.proof_gate_summary.v1",
+            scope="unit-test",
+            closed=False,
+            failed_gates=(),
+            evidence_summary={
+                "strict_report_candidate_set_execution_authorization_status_counts": "bad"
+            },
+        )
+
+    with pytest.raises(ValueError, match="strict_report_candidate_set_execution_authorization_strict_blocked_count"):
+        proof_gate_summary_from_surfaces(
+            schema="lawvm.test.proof_gate_summary.v1",
+            scope="unit-test",
+            closed=False,
+            failed_gates=(),
+            evidence_summary={
+                "strict_report_candidate_set_execution_authorization_strict_blocked_count": True
             },
         )

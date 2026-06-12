@@ -72,6 +72,8 @@ class ProofGateSummary:
     source_pathology_authorization_blocked_count: int = 0
     failed_operation_authorization_status_counts: Mapping[str, int] = field(default_factory=dict)
     failed_operation_authorization_blocked_count: int = 0
+    candidate_set_authorization_status_counts: Mapping[str, int] = field(default_factory=dict)
+    candidate_set_authorization_blocked_count: int = 0
     recovery_authorization_status_counts: Mapping[str, int] = field(default_factory=dict)
     recovery_authorization_blocked_count: int = 0
     safe_default: str = "treat_open_proof_gates_as_non_executable_frontier_accounting"
@@ -86,6 +88,7 @@ class ProofGateSummary:
         "temporal_resolution_closure",
         "source_pathology_authorization_closure",
         "failed_operation_authorization_closure",
+        "candidate_set_authorization_closure",
         "recovery_authorization_closure",
         "replay_authorization",
     )
@@ -110,6 +113,7 @@ class ProofGateSummary:
             "temporal_resolution_unresolved_count",
             "source_pathology_authorization_blocked_count",
             "failed_operation_authorization_blocked_count",
+            "candidate_set_authorization_blocked_count",
             "recovery_authorization_blocked_count",
         ):
             _require_nonnegative_int(field_name, getattr(self, field_name))
@@ -133,6 +137,7 @@ class ProofGateSummary:
             "temporal_resolution_status_counts",
             "source_pathology_authorization_status_counts",
             "failed_operation_authorization_status_counts",
+            "candidate_set_authorization_status_counts",
             "recovery_authorization_status_counts",
         ):
             object.__setattr__(self, field_name, freeze_mapping(_count_mapping(getattr(self, field_name))))
@@ -209,6 +214,12 @@ class ProofGateSummary:
             "failed_operation_authorization_blocked_count": (
                 self.failed_operation_authorization_blocked_count
             ),
+            "candidate_set_authorization_status_counts": dict(
+                self.candidate_set_authorization_status_counts
+            ),
+            "candidate_set_authorization_blocked_count": (
+                self.candidate_set_authorization_blocked_count
+            ),
             "recovery_authorization_status_counts": dict(
                 self.recovery_authorization_status_counts
             ),
@@ -244,6 +255,7 @@ def proof_gate_summary_from_surfaces(
         "temporal_resolution_closure",
         "source_pathology_authorization_closure",
         "failed_operation_authorization_closure",
+        "candidate_set_authorization_closure",
         "recovery_authorization_closure",
         "replay_authorization",
     ),
@@ -324,6 +336,15 @@ def proof_gate_summary_from_surfaces(
         "failed_operation_execution_authorization_strict_blocked_count",
         default=0,
     )
+    candidate_set_authorization_counts = _summary_count_mapping(
+        evidence,
+        "strict_report_candidate_set_execution_authorization_status_counts",
+    )
+    candidate_set_authorization_blocked_count = _summary_optional_count(
+        evidence,
+        "strict_report_candidate_set_execution_authorization_strict_blocked_count",
+        default=0,
+    )
     recovery_authorization_counts = _summary_count_mapping(
         evidence,
         "recovery_execution_authorization_status_counts",
@@ -348,6 +369,7 @@ def proof_gate_summary_from_surfaces(
         + temporal_resolution_unresolved_count
         + source_pathology_authorization_blocked_count
         + failed_operation_authorization_blocked_count
+        + candidate_set_authorization_blocked_count
         + recovery_authorization_blocked_count
     )
     return ProofGateSummary(
@@ -403,6 +425,8 @@ def proof_gate_summary_from_surfaces(
         source_pathology_authorization_blocked_count=source_pathology_authorization_blocked_count,
         failed_operation_authorization_status_counts=failed_operation_authorization_counts,
         failed_operation_authorization_blocked_count=failed_operation_authorization_blocked_count,
+        candidate_set_authorization_status_counts=candidate_set_authorization_counts,
+        candidate_set_authorization_blocked_count=candidate_set_authorization_blocked_count,
         recovery_authorization_status_counts=recovery_authorization_counts,
         recovery_authorization_blocked_count=recovery_authorization_blocked_count,
         safe_default=safe_default,

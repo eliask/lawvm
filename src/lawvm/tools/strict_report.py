@@ -557,6 +557,10 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
             f"{proof_gate_summary.get('recovery_authorization_blocked_count', 0)} blocked"
         )
         lines.append(
+            "  candidate set auth: "
+            f"{proof_gate_summary.get('candidate_set_authorization_blocked_count', 0)} blocked"
+        )
+        lines.append(
             "  source path auth statuses: "
             + _format_count_map(
                 proof_gate_summary.get(
@@ -576,6 +580,12 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
             "  recovery auth statuses   : "
             + _format_count_map(
                 proof_gate_summary.get("recovery_authorization_status_counts")
+            )
+        )
+        lines.append(
+            "  candidate set auth statuses: "
+            + _format_count_map(
+                proof_gate_summary.get("candidate_set_authorization_status_counts")
             )
         )
         lines.append(
@@ -847,9 +857,11 @@ _STRICT_RUN_HEADER = [
     "proof_gate_source_pathology_authorization_blocked_count",
     "proof_gate_failed_operation_authorization_blocked_count",
     "proof_gate_recovery_authorization_blocked_count",
+    "proof_gate_candidate_set_authorization_blocked_count",
     "proof_gate_source_pathology_authorization_status_counts",
     "proof_gate_failed_operation_authorization_status_counts",
     "proof_gate_recovery_authorization_status_counts",
+    "proof_gate_candidate_set_authorization_status_counts",
     "proof_gate_required_claim_kind_counts",
     "proof_gate_frontier_status_counts",
     "proof_gate_manual_claim_kind_counts",
@@ -1053,6 +1065,10 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "proof_gate_recovery_authorization_blocked_count": int(
                 proof_gate_summary.get("recovery_authorization_blocked_count") or 0
             ),
+            "proof_gate_candidate_set_authorization_blocked_count": int(
+                proof_gate_summary.get("candidate_set_authorization_blocked_count")
+                or 0
+            ),
             "proof_gate_source_pathology_authorization_status_counts": dict(
                 proof_gate_summary.get("source_pathology_authorization_status_counts")
                 or {}
@@ -1063,6 +1079,10 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             ),
             "proof_gate_recovery_authorization_status_counts": dict(
                 proof_gate_summary.get("recovery_authorization_status_counts") or {}
+            ),
+            "proof_gate_candidate_set_authorization_status_counts": dict(
+                proof_gate_summary.get("candidate_set_authorization_status_counts")
+                or {}
             ),
             "proof_gate_required_claim_kind_counts": dict(
                 proof_gate_summary.get("required_claim_kind_counts") or {}
@@ -1132,9 +1152,11 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "proof_gate_source_pathology_authorization_blocked_count": 0,
             "proof_gate_failed_operation_authorization_blocked_count": 0,
             "proof_gate_recovery_authorization_blocked_count": 0,
+            "proof_gate_candidate_set_authorization_blocked_count": 0,
             "proof_gate_source_pathology_authorization_status_counts": {},
             "proof_gate_failed_operation_authorization_status_counts": {},
             "proof_gate_recovery_authorization_status_counts": {},
+            "proof_gate_candidate_set_authorization_status_counts": {},
             "proof_gate_required_claim_kind_counts": {},
             "proof_gate_frontier_status_counts": {},
             "proof_gate_manual_claim_kind_counts": {},
@@ -1247,6 +1269,12 @@ def _save_strict_run(results: list[dict[str, Any]], label: str, timestamp: str) 
                         or 0
                     ),
                     int(rec.get("proof_gate_recovery_authorization_blocked_count") or 0),
+                    int(
+                        rec.get(
+                            "proof_gate_candidate_set_authorization_blocked_count"
+                        )
+                        or 0
+                    ),
                     json.dumps(
                         rec.get(
                             "proof_gate_source_pathology_authorization_status_counts",
@@ -1265,6 +1293,14 @@ def _save_strict_run(results: list[dict[str, Any]], label: str, timestamp: str) 
                     ),
                     json.dumps(
                         rec.get("proof_gate_recovery_authorization_status_counts", {}),
+                        ensure_ascii=True,
+                        sort_keys=True,
+                    ),
+                    json.dumps(
+                        rec.get(
+                            "proof_gate_candidate_set_authorization_status_counts",
+                            {},
+                        ),
                         ensure_ascii=True,
                         sort_keys=True,
                     ),
@@ -1404,6 +1440,11 @@ def _load_strict_run(label: str) -> list[dict[str, Any]] | None:
                     row.get("proof_gate_recovery_authorization_status_counts")
                 )
             )
+            row["proof_gate_candidate_set_authorization_status_counts"] = (
+                _load_json_count_map(
+                    row.get("proof_gate_candidate_set_authorization_status_counts")
+                )
+            )
             row["candidate_set_statuses"] = [
                 r for r in row.get("candidate_set_statuses", "").split("|") if r
             ]
@@ -1428,6 +1469,7 @@ def _load_strict_run(label: str) -> list[dict[str, Any]] | None:
                 "proof_gate_source_pathology_authorization_blocked_count",
                 "proof_gate_failed_operation_authorization_blocked_count",
                 "proof_gate_recovery_authorization_blocked_count",
+                "proof_gate_candidate_set_authorization_blocked_count",
                 "chain_length",
                 "source_available",
             ):
@@ -1541,6 +1583,7 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     proof_gate_source_pathology_authorization_status_counter: Counter[str] = Counter()
     proof_gate_failed_operation_authorization_status_counter: Counter[str] = Counter()
     proof_gate_recovery_authorization_status_counter: Counter[str] = Counter()
+    proof_gate_candidate_set_authorization_status_counter: Counter[str] = Counter()
     total_source_completeness_missing = 0
     total_source_unit_unresolved = 0
     total_potential_operation_unresolved = 0
@@ -1549,6 +1592,7 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     total_source_pathology_authorization_blocked = 0
     total_failed_operation_authorization_blocked = 0
     total_recovery_authorization_blocked = 0
+    total_candidate_set_authorization_blocked = 0
     candidate_set_status_counter: Counter[str] = Counter()
     candidate_set_blocker_counter: Counter[str] = Counter()
     for r in valid:
@@ -1578,6 +1622,9 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
         total_recovery_authorization_blocked += int(
             r.get("proof_gate_recovery_authorization_blocked_count") or 0
         )
+        total_candidate_set_authorization_blocked += int(
+            r.get("proof_gate_candidate_set_authorization_blocked_count") or 0
+        )
         proof_gate_source_pathology_authorization_status_counter.update(
             {
                 str(key): int(value)
@@ -1603,6 +1650,15 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
                 str(key): int(value)
                 for key, value in dict(
                     r.get("proof_gate_recovery_authorization_status_counts") or {}
+                ).items()
+            }
+        )
+        proof_gate_candidate_set_authorization_status_counter.update(
+            {
+                str(key): int(value)
+                for key, value in dict(
+                    r.get("proof_gate_candidate_set_authorization_status_counts")
+                    or {}
                 ).items()
             }
         )
@@ -1842,6 +1898,10 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
         f"{total_failed_operation_authorization_blocked}"
     )
     print(f"       blocked recovery authorizations: {total_recovery_authorization_blocked}")
+    print(
+        "       blocked candidate set authorizations: "
+        f"{total_candidate_set_authorization_blocked}"
+    )
     if proof_gate_source_pathology_authorization_status_counter:
         print("       source pathology authorization statuses:")
         for status, cnt in proof_gate_source_pathology_authorization_status_counter.most_common():
@@ -1872,6 +1932,16 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
             )
     else:
         print("       recovery authorization statuses: (none)")
+    if proof_gate_candidate_set_authorization_status_counter:
+        print("       candidate set authorization statuses:")
+        for status, cnt in proof_gate_candidate_set_authorization_status_counter.most_common():
+            per_statute = cnt / n_valid
+            print(
+                f"         {status:<58s} {cnt:5d}  "
+                f"({per_statute:.2f} signals/statute)"
+            )
+    else:
+        print("       candidate set authorization statuses: (none)")
     if proof_gate_required_claim_counter:
         print("       required claim kinds:")
         for claim_kind, cnt in proof_gate_required_claim_counter.most_common():
