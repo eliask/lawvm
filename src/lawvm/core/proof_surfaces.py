@@ -109,6 +109,10 @@ class ProofSurface:
         rows = tuple(self.rows)
         if not all(isinstance(row, ProofSurfaceRow) for row in rows):
             raise ValueError("ProofSurface.rows must contain ProofSurfaceRow objects")
+        duplicate_row_ids = _duplicate_values(row.row_id for row in rows)
+        if duplicate_row_ids:
+            duplicates = ", ".join(duplicate_row_ids)
+            raise ValueError(f"ProofSurface.rows must have unique row_id values: {duplicates}")
         object.__setattr__(self, "summary", freeze_mapping(self.summary))
         object.__setattr__(self, "rows", rows)
 
@@ -353,6 +357,17 @@ def _claim_flags(values: Mapping[str, Any]) -> Mapping[str, bool]:
         "dry_run_claims": bool(values.get("dry_run_claims")),
         "agreement_claims": bool(values.get("agreement_claims")),
     }
+
+
+def _duplicate_values(values: Any) -> tuple[str, ...]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for value in values:
+        text = str(value)
+        if text in seen:
+            duplicates.add(text)
+        seen.add(text)
+    return tuple(sorted(duplicates))
 
 
 def _required_string(field_name: str, value: Any) -> str:

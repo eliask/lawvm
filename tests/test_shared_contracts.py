@@ -2625,6 +2625,44 @@ def test_proof_surface_rows_are_queryable_without_replay_authority() -> None:
     assert data["rows"][0]["detail"]["replay_authorized"] is False
 
 
+def test_proof_surface_rejects_duplicate_row_ids() -> None:
+    row = ProofSurfaceRow(
+        row_id="duplicate-row",
+        subject_id="fi:2001/1234",
+        row_kind="source_witness",
+        status="reported",
+    )
+
+    with pytest.raises(ValueError, match="unique row_id"):
+        ProofSurface(
+            surface_id="fi:strict:duplicate-demo",
+            surface_kind="finland_strict_report",
+            jurisdiction="fi",
+            rows=(row, row),
+        )
+
+
+def test_proof_surface_from_evidence_report_rejects_duplicate_explicit_row_ids() -> None:
+    report = EvidenceSurfaceReport(
+        jurisdiction="fi",
+        report_kind="duplicate_rows",
+        schema="test.duplicate_rows.v1",
+        truth_claim="duplicate row identity fixture",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        rows=(
+            {"surface": "source_witness", "row_id": "duplicate-row"},
+            {"surface": "source_witness", "row_id": "duplicate-row"},
+        ),
+    )
+
+    with pytest.raises(ValueError, match="duplicate-row"):
+        proof_surface_from_evidence_report(report)
+
+
 def test_proof_surface_from_evidence_report_preserves_report_rows_as_read_model() -> None:
     report = EvidenceSurfaceReport(
         jurisdiction="fi",
