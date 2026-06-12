@@ -639,6 +639,7 @@ from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
 from lawvm.finland.process_frontend_normalization import ProcessFrontendNormalizationContext
 from lawvm.finland.process_result_builder import ProcessResultBuilder
 from lawvm.finland.process_route_rejection import ProcessRouteRejectionContext
+from lawvm.finland.process_compile_signals import ProcessCompileSignalsContext
 from lawvm.finland.process_temporal_authority import ProcessTemporalAuthorityContext
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
 
@@ -5118,108 +5119,19 @@ def process_muutoslaki(
         )
         resolved = _cao_result.output
 
-        def _cover_temporal_coverage() -> None:
-            """Emit bounded, non-blocking telemetry for missing johto-level temporal coverage."""
-            _fi_johto_prefix = "finland-johto:"
-
-            structural_groups: set[str] = set()
-            for op in resolved:
-                source_statute_for_group = str(getattr(op, "resolved_source_statute", ""))
-                if not source_statute_for_group:
-                    source_statute_for_group = str(getattr(op, "source_statute", ""))
-                if not source_statute_for_group:
-                    source_statute_for_group = str(
-                        getattr(getattr(op, "op", None), "source_statute", "")
-                    )
-                if not source_statute_for_group:
-                    source_statute_for_group = amendment_id
-                structural_groups.add(f"{_fi_johto_prefix}{source_statute_for_group}")
-
-            temporal_groups: set[str] = set()
-            for event in _cao_result.temporal_events:
-                group_id = getattr(event, "group_id", "")
-                if isinstance(group_id, str) and group_id.startswith(_fi_johto_prefix):
-                    temporal_groups.add(group_id)
-
-            missing_groups = tuple(sorted(structural_groups - temporal_groups))
-            if not structural_groups or not missing_groups:
-                return
-
-            _record_process_finding(
-                kind="TIME.TRIGGER_COVERAGE_INCOMPLETE",
-                role="obligation",
-                blocking=True,
-                message=(
-                    "Temporal authority is missing for one or more Finland johto-grouped "
-                    "structural operations and will remain a migration fallback for this "
-                    "compile path."
-                ),
-                source_statute=amendment_id,
-                detail={
-                    "coverage_prefix": _fi_johto_prefix,
-                    "missing_group_ids": list(missing_groups),
-                    "structural_group_count": len(structural_groups),
-                    "temporal_group_count": len(temporal_groups),
-                },
-            )
-
-        # ── Propagate PhaseResult signals back to compatibility sinks ───────
-        _amendment_temporal_events.extend(
-            _normalize_frontend_temporal_events(
-                _cao_result.temporal_events,
-                amendment_id=amendment_id,
-                target_statute=parent_id,
-            )
-        )
-
-        _cover_temporal_coverage()
-
-        for _finding in _cao_result.findings():
-            if _finding.role == "observation" and _finding.kind == "ELAB.SOURCE_PATHOLOGY":
-                detail = cast(dict[str, object], dict(_finding.detail))
-                if "target_kind" in detail:
-                    detail = dict(detail)
-                    detail.pop("target_kind", None)
-                _compat_source_pathologies.append(
-                    SourcePathology.from_internal_detail(
-                        source_statute=_finding.source_statute,
-                        detail=detail,
-                    )
-                )
-            elif (
-                _finding.role == "observation"
-                and _finding.kind == "ELAB.SPARSE_SLOT_BINDING"
-            ):
-                _compat_sparse_slot_bindings.append(dict(_finding.detail))
-            elif (
-                _finding.role == "observation"
-                and _finding.kind not in (
-                "ELAB.SOURCE_PATHOLOGY",
-                "ELAB.SPARSE_SLOT_BINDING",
-                "ELAB.MISSING_PAYLOAD_SURFACE",
-                )
-            ):
-                _compat_elaboration_observations.append(dict(_finding.detail))
-
-        for _finding in _cao_result.findings():
-            if _finding.role == "violation":
-                # Carry compile-rail violations verbatim; re-wrapping through
-                # _record_process_finding would rewrite their role and lose the
-                # barrier provenance. No other consumer reads this rail.
-                _process_findings.append(_finding)
-                continue
-            if _finding.role != "obligation":
-                continue
-            if _finding.kind == "ELAB.SPARSE_PAYLOAD_LEFTOVER" and not _finding.blocking:
-                _compat_sparse_leftovers.append(dict(_finding.detail))
-            elif _finding.blocking:
-                d = dict(_finding.detail)
-                _record_process_finding(
-                    kind=_finding.kind,
-                    message=str(d.get("message", "")),
-                    source_statute=str(d.get("source_statute", "")),
-                    detail={k: v for k, v in d.items() if k not in ("message", "source_statute")},
-                )
+        ProcessCompileSignalsContext(
+            amendment_id=amendment_id,
+            parent_id=parent_id,
+            resolved=resolved,
+            compile_result=_cao_result,
+            amendment_temporal_events=_amendment_temporal_events,
+            source_pathologies=_compat_source_pathologies,
+            elaboration_observations=_compat_elaboration_observations,
+            sparse_slot_bindings=_compat_sparse_slot_bindings,
+            sparse_leftovers=_compat_sparse_leftovers,
+            process_findings=_process_findings,
+            record_finding=_record_process_finding,
+        ).project()
 
         _observed_touch_results: List[MutationAccountingResult] = []
         _final_state = apply_ops_to_tree(
