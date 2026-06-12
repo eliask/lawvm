@@ -31,6 +31,32 @@ class _ParentSnapshotGovernedFailure:
     item: str
 
 
+@dataclass(frozen=True, slots=True)
+class _SameWaveMigrationGovernedFailure:
+    failed: FailedOp
+    source_address: LegalAddress
+    migrated_address: LegalAddress
+
+
+@dataclass(frozen=True, slots=True)
+class _RestructureDeferredTargetGovernedFailure:
+    failed: FailedOp
+    deferred_path: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _TimelineSnapshotGovernedFailure:
+    failed: FailedOp
+    snapshot: _LegalOperation
+
+
+@dataclass(frozen=True, slots=True)
+class _OccupancyPolicyGovernedFinding:
+    finding: Finding
+    resolved_op: ResolvedOp
+    snapshot: _LegalOperation
+
+
 RecordProcessFinding = Callable[..., Finding]
 
 
@@ -140,7 +166,7 @@ class ProcessFailedOpGovernance:
             return
 
         kept: list[FailedOp] = []
-        governed: list[tuple[FailedOp, LegalAddress, LegalAddress]] = []
+        governed: list[_SameWaveMigrationGovernedFailure] = []
         for failed in self.failed_ops:
             if failed.reason_code != "section_not_found" or not failed.target_section:
                 kept.append(failed)
@@ -169,12 +195,19 @@ class ProcessFailedOpGovernance:
             if migrated_path is None:
                 kept.append(failed)
                 continue
-            governed.append((failed, source_address, migrated))
+            governed.append(
+                _SameWaveMigrationGovernedFailure(
+                    failed=failed,
+                    source_address=source_address,
+                    migrated_address=migrated,
+                )
+            )
 
         if not governed:
             return
         self.failed_ops[:] = kept
-        for failed, source_address, migrated in governed:
+        for governed_failure in governed:
+            failed = governed_failure.failed
             self.record_finding(
                 kind="APPLY.FAILED_OPERATION_GOVERNED_BY_SAME_WAVE_MIGRATION",
                 message=(
@@ -189,8 +222,8 @@ class ProcessFailedOpGovernance:
                     "target_chapter": failed.target_chapter,
                     "target_section": failed.target_section,
                     "failed_reason_code": failed.reason_code,
-                    "source_address": str(source_address),
-                    "migrated_address": str(migrated),
+                    "source_address": str(governed_failure.source_address),
+                    "migrated_address": str(governed_failure.migrated_address),
                 },
                 role="observation",
                 blocking=False,
@@ -225,7 +258,7 @@ class ProcessFailedOpGovernance:
             return
 
         kept: list[FailedOp] = []
-        governed: list[tuple[FailedOp, tuple[tuple[str, str], ...]]] = []
+        governed: list[_RestructureDeferredTargetGovernedFailure] = []
         for failed in self.failed_ops:
             if failed.reason_code != "section_not_found" or not failed.target_section:
                 kept.append(failed)
@@ -240,12 +273,18 @@ class ProcessFailedOpGovernance:
             if failed_path_tuple not in deferred_targets:
                 kept.append(failed)
                 continue
-            governed.append((failed, failed_path_tuple))
+            governed.append(
+                _RestructureDeferredTargetGovernedFailure(
+                    failed=failed,
+                    deferred_path=failed_path_tuple,
+                )
+            )
 
         if not governed:
             return
         self.failed_ops[:] = kept
-        for failed, deferred_path in governed:
+        for governed_failure in governed:
+            failed = governed_failure.failed
             self.record_finding(
                 kind="APPLY.FAILED_OPERATION_GOVERNED_BY_RESTRUCTURE_DEFERRED_TARGET",
                 message=(
@@ -260,7 +299,9 @@ class ProcessFailedOpGovernance:
                     "target_chapter": failed.target_chapter,
                     "target_section": failed.target_section,
                     "failed_reason_code": failed.reason_code,
-                    "deferred_target": "/".join(f"{kind}:{label}" for kind, label in deferred_path),
+                    "deferred_target": "/".join(
+                        f"{kind}:{label}" for kind, label in governed_failure.deferred_path
+                    ),
                     "governance_basis": "exact_restructure_plan_deferred_target",
                 },
                 role="observation",
@@ -293,7 +334,7 @@ class ProcessFailedOpGovernance:
             return True
 
         kept: list[FailedOp] = []
-        governed: list[tuple[FailedOp, _LegalOperation]] = []
+        governed: list[_TimelineSnapshotGovernedFailure] = []
         for failed in self.failed_ops:
             if failed.reason_code != "section_not_found" or failed.target_unit_kind != "section":
                 kept.append(failed)
@@ -305,12 +346,14 @@ class ProcessFailedOpGovernance:
             if snapshot is None:
                 kept.append(failed)
                 continue
-            governed.append((failed, snapshot))
+            governed.append(_TimelineSnapshotGovernedFailure(failed=failed, snapshot=snapshot))
 
         if not governed:
             return
         self.failed_ops[:] = kept
-        for failed, snapshot in governed:
+        for governed_failure in governed:
+            failed = governed_failure.failed
+            snapshot = governed_failure.snapshot
             self.record_finding(
                 kind="APPLY.FAILED_OPERATION_GOVERNED_BY_TIMELINE_SNAPSHOT",
                 message=(
@@ -507,7 +550,7 @@ class ProcessFailedOpGovernance:
             return True
 
         kept: list[Finding] = []
-        governed: list[tuple[Finding, ResolvedOp, _LegalOperation]] = []
+        governed: list[_OccupancyPolicyGovernedFinding] = []
         for finding in self.process_findings:
             if finding.kind != "APPLY.OCCUPANCY_POLICY_VIOLATION":
                 kept.append(finding)
@@ -537,12 +580,21 @@ class ProcessFailedOpGovernance:
             if snapshot is None:
                 kept.append(finding)
                 continue
-            governed.append((finding, rop, snapshot))
+            governed.append(
+                _OccupancyPolicyGovernedFinding(
+                    finding=finding,
+                    resolved_op=rop,
+                    snapshot=snapshot,
+                )
+            )
 
         if not governed:
             return
         self.process_findings[:] = kept
-        for finding, rop, snapshot in governed:
+        for governed_finding in governed:
+            finding = governed_finding.finding
+            rop = governed_finding.resolved_op
+            snapshot = governed_finding.snapshot
             self.record_finding(
                 kind="APPLY.OCCUPANCY_POLICY_GOVERNED_BY_TIMELINE_SNAPSHOT",
                 message=(
