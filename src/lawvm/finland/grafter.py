@@ -28,7 +28,6 @@ from lawvm.core.compile_result import (
     SourcePathology,
     StrictProfile,
     TemporalEvent,
-    TemporalScope,
 )
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.core.observation_registry import get_finding_spec
@@ -88,7 +87,6 @@ from lawvm.finland.normalize import (
 )
 from lawvm.finland.johtolause import (
     extract_legal_ops as extract_johtolause_legal_ops,
-    extract_law_level_text_patch_los as _extract_law_level_patch_los,
     parse_clause as _parse_johtolause_clause,
 )
 from lawvm.finland.constraints import DEBUG
@@ -632,16 +630,17 @@ from lawvm.finland.temporal_rewrites import (
     _rewrite_temporal_event_expiry,
 )
 from lawvm.finland.kumotaan_replay import (
-    _inject_pure_kumotaan_repeal_ops,
-    _inject_pure_kumotaan_subsection_repeal_ops,
-    _live_suffix_section_labels_for_numeric_kumotaan_ranges,
-    _rewrite_kumotaan_snapshot_replaces_to_repeal,
+    _inject_pure_kumotaan_repeal_ops as _inject_pure_kumotaan_repeal_ops,
+    _inject_pure_kumotaan_subsection_repeal_ops as _inject_pure_kumotaan_subsection_repeal_ops,
+    _live_suffix_section_labels_for_numeric_kumotaan_ranges as _live_suffix_section_labels_for_numeric_kumotaan_ranges,
+    _rewrite_kumotaan_snapshot_replaces_to_repeal as _rewrite_kumotaan_snapshot_replaces_to_repeal,
 )
 from lawvm.finland.amendment_chapter_precreate import (
     _pre_create_amendment_chapters,
     _pre_create_pseudo_marker_chapters,
 )
 from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
+from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
 
 
 def _emit_restructure_plan_renumber_legal_operations(
@@ -1482,16 +1481,12 @@ class _ContainerLookupShim(Protocol):
 # ---------------------------------------------------------------------------
 from lawvm.finland.metadata import (
     get_johtolause,
-    get_operative_body_repeal_candidate,
     _amendment_effective_date,
     _amendment_effective_date_with_step,
     _amendment_expiry_date,
     _chapter_expiry_from_base,
     _commencement_expiry_override,
     _expiry_date_precedes_effective_date,
-    _section_commencement_effective_override,
-    _section_subsection_commencement_effective_override,
-    _temporary_section_expiry_overrides,
     _statute_issue_date,
     _statute_id_sort_key,
 )
@@ -1650,12 +1645,10 @@ from lawvm.finland.vts import (
 # Moved to lawvm.finland.kumotaan; re-exported here for backward compat.
 from lawvm.finland.kumotaan import (
     _extract_kumotaan_section_refs as _extract_kumotaan_section_refs,
-    _extract_kumotaan_chapter_section_map,
     _extract_kumotaan_container_refs,
-    _extract_kumotaan_subsection_refs,
     _extract_muutetaan_section_refs as _extract_muutetaan_section_refs,
     _extract_muutetaan_chapter_section_map as _extract_muutetaan_chapter_section_map,
-    kumotaan_recycle_guard_result,
+    kumotaan_recycle_guard_result as kumotaan_recycle_guard_result,
 )
 
 
@@ -5583,372 +5576,26 @@ def process_muutoslaki(
                 amendment_id,
                 len(_migration_ledger),
             )
-        # Collect law-level text patches (unscoped "sana X korvataan sanalla Y").
-        # These are not structural ops and are skipped by AmendmentOp.from_lo(),
-        # so they never reach the section-group compilation path.  We extract
-        # them directly from the johtolause and add them to lo_ops_out so that
-        # extract_law_level_text_patches() can pick them up after materialization
-        # and apply global text replacements across the entire statute.
-        if lo_ops_out is not None:
-            _eff_iso = amendment_effective_date.isoformat() if amendment_effective_date else ""
-            _ll_patches = _extract_law_level_patch_los(
-                johto,
-                amendment_id=amendment_id,
-                effective=_eff_iso,
-            )
-            if _ll_patches:
-                _replay_print(
-                    f"  [{amendment_id}] {len(_ll_patches)} law-level text patch(es) collected"
-                )
-                lo_ops_out.extend(_ll_patches)
-        # Commencement expiry override for ACCEPTED amendments.
-        # A voimaantulosäännös-only amendment (e.g. amending only the
-        # entry-into-force provision of the parent statute) will be accepted by
-        # citation routing but produce no section-level lo_ops.  We still need
-        # to propagate the new expiry date to existing lo_ops that were seeded
-        # by earlier amendments.
-        _expiry_override_accepted = _commencement_expiry_override(muutos_tree, amendment_id)
-        if _expiry_override_accepted is not None:
-            _target_mid_acc, _labels_acc, _expiry_acc = _expiry_override_accepted
-            if _target_mid_acc != amendment_id and _rewrite_lo_op_source_expiry(
-                lo_ops_out, _target_mid_acc, _labels_acc, _expiry_acc,
-                parent_statute_id=parent_id, replay_mode=replay_mode,
-                # _commencement_expiry_override returns the prose-inclusive
-                # last in-force day.
-                expiry_convention="inclusive_prose",
-            ):
-                _scope_acc = sorted(_labels_acc) if _labels_acc else ["*"]
-                _replay_print(
-                    f"  [{amendment_id}] voimaantulo_expiry_override (accepted): "
-                    f"{_target_mid_acc} {_scope_acc} -> {_expiry_acc.isoformat()}"
-                )
-                _commencement_expiry_override_notes.append(
-                    {
-                        "source_statute": amendment_id,
-                        "target_statute": _target_mid_acc,
-                        "labels": _scope_acc,
-                        "expiry": _expiry_acc.isoformat(),
-                        "context": "accepted_amendment",
-                    }
-                )
-        for _target_mid_sec, _labels_sec, _expiry_sec in _temporary_section_expiry_overrides(
-            muutos_tree,
-            amendment_id,
-        ):
-            if _target_mid_sec == amendment_id and _rewrite_lo_op_source_expiry(
-                lo_ops_out,
-                _target_mid_sec,
-                _labels_sec,
-                _expiry_sec,
-                parent_statute_id=parent_id,
-                replay_mode=replay_mode,
-                # _temporary_section_expiry_overrides returns prose-inclusive
-                # last in-force days.
-                expiry_convention="inclusive_prose",
-            ):
-                _scope_sec = sorted(_labels_sec) if _labels_sec else ["*"]
-                _replay_print(
-                    f"  [{amendment_id}] temporary_section_expiry_override (accepted): "
-                    f"{_target_mid_sec} {_scope_sec} -> {_expiry_sec.isoformat()}"
-                )
-                _commencement_expiry_override_notes.append(
-                    {
-                        "source_statute": amendment_id,
-                        "target_statute": _target_mid_sec,
-                        "labels": _scope_sec,
-                        "expiry": _expiry_sec.isoformat(),
-                        "context": "accepted_section_temporary",
-                    }
-                )
-
-        _section_commencement_override = _section_commencement_effective_override(
-            muutos_tree,
-            amendment_id,
-        )
-        if _section_commencement_override is not None:
-            _target_mid_eff, _chapter_sec_map_eff, _effective_eff = _section_commencement_override
-            _lo_updated = _rewrite_lo_op_source_effective(
-                lo_ops_out,
-                _target_mid_eff,
-                _effective_eff,
-                chapter_section_map=_chapter_sec_map_eff,
-                base_ir=ctx.base_ir,
-            )
-            _scoped_group_id = f"finland-johto:{amendment_id}:section_commencement"
-            _scoped_addresses = _rewrite_lo_op_group_id(
-                lo_ops_out,
-                _target_mid_eff,
-                _scoped_group_id,
-                chapter_section_map=_chapter_sec_map_eff,
-            )
-            _compiled_updated = _rewrite_compiled_op_activation_rule_effective(
-                compiled_ops_out,
-                _target_mid_eff,
-                _effective_eff,
-                chapter_section_map=_chapter_sec_map_eff,
-            )
-            if _scoped_addresses:
-                _amendment_temporal_events.append(
-                    TemporalEvent(
-                        event_id=f"fi-temporal:{_scoped_group_id}",
-                        kind="commence",
-                        scope=TemporalScope(
-                            target_statute=parent_id or ctx.id,
-                            exact_addresses=_scoped_addresses,
-                        ),
-                        effective=_effective_eff.isoformat(),
-                        source=OperationSource(
-                            statute_id=amendment_id,
-                            title=source_title,
-                            enacted=amendment_issue_date.isoformat() if amendment_issue_date else "",
-                            effective=_effective_eff.isoformat(),
-                        ),
-                        activation_rule=ActivationRule(
-                            kind="fixed_date",
-                            effective_date=_effective_eff.isoformat(),
-                        ),
-                        group_id=_scoped_group_id,
-                    )
-                )
-            if _lo_updated or _compiled_updated:
-                _scope_eff = sorted(
-                    f"{chap + '/' if chap else ''}{sec}"
-                    for chap, secs in _chapter_sec_map_eff.items()
-                    for sec in secs
-                )
-                _replay_print(
-                    f"  [{amendment_id}] section_commencement_effective_override (accepted): "
-                    f"{_target_mid_eff} {_scope_eff} -> {_effective_eff.isoformat()}"
-                )
-                _commencement_expiry_override_notes.append(
-                    {
-                        "source_statute": amendment_id,
-                        "target_statute": _target_mid_eff,
-                        "labels": _scope_eff,
-                        "effective": _effective_eff.isoformat(),
-                        "context": "accepted_section_commencement",
-                    }
-                )
-
-        _subsection_commencement_override = _section_subsection_commencement_effective_override(
-            muutos_tree,
-            amendment_id,
-        )
-        if _subsection_commencement_override is not None:
-            _target_mid_sub_eff, _address_suffixes_eff, _effective_sub_eff = _subsection_commencement_override
-            _scoped_sub_group_id = f"finland-johto:{amendment_id}:subsection_commencement"
-            _scoped_sub_addresses = _rewrite_lo_op_source_effective_for_address_suffixes(
-                lo_ops_out,
-                _target_mid_sub_eff,
-                _effective_sub_eff,
-                address_suffixes=_address_suffixes_eff,
-                new_group_id=_scoped_sub_group_id,
-            )
-            _compiled_sub_updated = _rewrite_compiled_op_activation_rule_effective_for_address_suffixes(
-                compiled_ops_out,
-                _target_mid_sub_eff,
-                _effective_sub_eff,
-                address_suffixes=_address_suffixes_eff,
-            )
-            if _scoped_sub_addresses:
-                _amendment_temporal_events.append(
-                    TemporalEvent(
-                        event_id=f"fi-temporal:{_scoped_sub_group_id}",
-                        kind="commence",
-                        scope=TemporalScope(
-                            target_statute=parent_id or ctx.id,
-                            exact_addresses=_scoped_sub_addresses,
-                        ),
-                        effective=_effective_sub_eff.isoformat(),
-                        source=OperationSource(
-                            statute_id=amendment_id,
-                            title=source_title,
-                            enacted=amendment_issue_date.isoformat() if amendment_issue_date else "",
-                            effective=_effective_sub_eff.isoformat(),
-                        ),
-                        activation_rule=ActivationRule(
-                            kind="fixed_date",
-                            effective_date=_effective_sub_eff.isoformat(),
-                        ),
-                        group_id=_scoped_sub_group_id,
-                    )
-                )
-            if _scoped_sub_addresses or _compiled_sub_updated:
-                _scope_sub_eff = sorted(str(address) for address in _scoped_sub_addresses)
-                _replay_print(
-                    f"  [{amendment_id}] subsection_commencement_effective_override (accepted): "
-                    f"{_target_mid_sub_eff} {_scope_sub_eff} -> {_effective_sub_eff.isoformat()}"
-                )
-                _commencement_expiry_override_notes.append(
-                    {
-                        "source_statute": amendment_id,
-                        "target_statute": _target_mid_sub_eff,
-                        "labels": _scope_sub_eff,
-                        "effective": _effective_sub_eff.isoformat(),
-                        "context": "accepted_subsection_commencement",
-                    }
-                )
-
-        if lo_ops_out is not None and amendment_effective_date is not None:
-            _later_effective_groups = _rewrite_later_effective_lo_groups(
-                lo_ops_out,
-                target_source_statute=amendment_id,
-                amendment_effective_date=amendment_effective_date,
-            )
-            for _effective_iso, _exact_addresses in sorted(_later_effective_groups.items()):
-                _effective_dt = dt.date.fromisoformat(_effective_iso)
-                _rewrite_compiled_op_activation_rule_effective_for_addresses(
-                    compiled_ops_out,
-                    target_source_statute=amendment_id,
-                    effective_date=_effective_dt,
-                    exact_addresses=_exact_addresses,
-                )
-                _amendment_temporal_events.append(
-                    TemporalEvent(
-                        event_id=f"fi-temporal:finland-johto:{amendment_id}:effective:{_effective_iso}",
-                        kind="commence",
-                        scope=TemporalScope(
-                            target_statute=parent_id or ctx.id,
-                            exact_addresses=_exact_addresses,
-                        ),
-                        effective=_effective_iso,
-                        source=OperationSource(
-                            statute_id=amendment_id,
-                            title=source_title,
-                            enacted=amendment_issue_date.isoformat() if amendment_issue_date else "",
-                            effective=_effective_iso,
-                        ),
-                        activation_rule=ActivationRule(
-                            kind="fixed_date",
-                            effective_date=_effective_iso,
-                        ),
-                        group_id=f"finland-johto:{amendment_id}:effective:{_effective_iso}",
-                    )
-                )
-
-        if lo_ops_out is not None and amendment_effective_date is not None:
-            _recycle_guard = kumotaan_recycle_guard_result(johto)
-            _kumotaan_labels = list(_recycle_guard.filtered_labels)
-            _kumotaan_chap_map = _extract_kumotaan_chapter_section_map(johto)
-            if _recycle_guard.fired:
-                _replay_print(
-                    f"  [{amendment_id}] kumotaan_muutetaan_recycle_guard: "
-                    f"excluding {list(_recycle_guard.recycled_labels)} "
-                    "(appear in both kumotaan+muutetaan)"
-                )
-                _record_process_finding(
-                    kind="PARSE.KUMOTAAN_RECYCLE_GUARD",
-                    message=(
-                        "Kumotaan repeal candidates were excluded because the "
-                        "same source also replaces those targets."
-                    ),
-                    source_statute=amendment_id,
-                    detail=_recycle_guard.finding_detail(),
-                    role="observation",
-                    blocking=False,
-                )
-            # Build chapter-scoped set map for guards (None key = global).
-            _chap_map_sets: Optional[Dict[Optional[str], Set[str]]] = None
-            if _kumotaan_chap_map and any(k is not None for k in _kumotaan_chap_map):
-                _chap_map_sets = {
-                    k: {s.lower() for s in secs}
-                    for k, secs in _kumotaan_chap_map.items()
-                }
-            _range_suffix_sections = _live_suffix_section_labels_for_numeric_kumotaan_ranges(
-                johto,
-                state=state,
-            )
-            if _range_suffix_sections:
-                _known_labels = {label.lower() for label in _kumotaan_labels}
-                for _chap, _labels in _range_suffix_sections.items():
-                    for _label in sorted(_labels):
-                        if _label not in _known_labels:
-                            _kumotaan_labels.append(_label)
-                            _known_labels.add(_label)
-                    if _chap_map_sets is not None:
-                        _chap_map_sets.setdefault(_chap, set()).update(_labels)
-            if _kumotaan_labels and _rewrite_lo_op_source_expiry(
-                lo_ops_out,
-                amendment_id,
-                set(_kumotaan_labels),
-                amendment_effective_date,
-                parent_statute_id=parent_id,
-                replay_mode=replay_mode,
-                chapter_section_map=_chap_map_sets,
-                # A kumotaan repeal takes effect ON its effective date: that day
-                # is already the first day NOT in force (exclusive cutoff).
-                expiry_convention="exclusive_cutoff",
-            ):
-                _scope_kumotaan = sorted(set(_kumotaan_labels))
-                _replay_print(
-                    f"  [{amendment_id}] kumotaan_section_expiry_override: "
-                    f"{amendment_id} {_scope_kumotaan} -> {amendment_effective_date.isoformat()}"
-                )
-                _commencement_expiry_override_notes.append(
-                    {
-                        "source_statute": amendment_id,
-                        "target_statute": amendment_id,
-                        "labels": _scope_kumotaan,
-                        "expiry": amendment_effective_date.isoformat(),
-                        "context": "repeal_clause",
-                    }
-                )
-                _rewrite_kumotaan_snapshot_replaces_to_repeal(
-                    lo_ops_out,
-                    target_source_statute=amendment_id,
-                    section_labels={label.lower() for label in _kumotaan_labels},
-                    chapter_section_map=_chap_map_sets,
-                    source_raw_text=johto,
-                )
-            # Pure-repeal injection: sections in the kumotaan clause that have
-            # no lo_ops from this amendment (no body text) need an explicit
-            # REPEAL tombstone so the section is removed from the timeline.
-            if _kumotaan_labels:
-                _n_pure = _inject_pure_kumotaan_repeal_ops(
-                    lo_ops_out,
-                    amendment_id=amendment_id,
-                    source_title=source_title,
-                    amendment_issue_date=amendment_issue_date,
-                    kumotaan_labels=_kumotaan_labels,
-                    chap_map_sets=_chap_map_sets,
-                    amendment_effective_date=amendment_effective_date,
-                    state=state,
-                    source_raw_text=johto,
-                )
-                if _n_pure:
-                    _replay_print(
-                        f"  [{amendment_id}] pure_kumotaan_repeal_injected: "
-                        f"{_n_pure} section(s)"
-                    )
-            # Pure-repeal injection for subsection-range kumotaan clauses
-            # (N §:n M–P momentti). Only fires when no body text covered the
-            # subsection already.
-            # For "tällä asetuksella kumotaan" style amendments the operative
-            # text is in the body prose paragraph rather than the formula-based
-            # johtolause.  Supplement with the operative body repeal candidate
-            # so that subsection ranges declared there are also captured.
-            _johto_for_subsec = johto
-            if not _extract_kumotaan_subsection_refs(johto):
-                _body_repeal = get_operative_body_repeal_candidate(xml_bytes)
-                if _body_repeal:
-                    _johto_for_subsec = johto + " " + _body_repeal
-            _kumotaan_subsection_map = _extract_kumotaan_subsection_refs(_johto_for_subsec)
-            if _kumotaan_subsection_map and amendment_effective_date is not None:
-                _n_pure_sub = _inject_pure_kumotaan_subsection_repeal_ops(
-                    lo_ops_out,
-                    amendment_id=amendment_id,
-                    source_title=source_title,
-                    kumotaan_subsection_map=_kumotaan_subsection_map,
-                    amendment_effective_date=amendment_effective_date,
-                    amendment_issue_date=amendment_issue_date,
-                    state=state,
-                    source_raw_text=_johto_for_subsec,
-                )
-                if _n_pure_sub:
-                    _replay_print(
-                        f"  [{amendment_id}] pure_kumotaan_subsection_repeal_injected: "
-                        f"{_n_pure_sub} subsection(s)"
-                    )
+        ProcessTemporalPostprocessContext(
+            amendment_id=amendment_id,
+            parent_id=parent_id,
+            ctx_id=ctx.id,
+            source_title=source_title,
+            johto=johto,
+            xml_bytes=xml_bytes,
+            muutos_tree=muutos_tree,
+            base_ir=ctx.base_ir,
+            state=state,
+            replay_mode=replay_mode,
+            amendment_issue_date=amendment_issue_date,
+            amendment_effective_date=amendment_effective_date,
+            lo_ops_out=lo_ops_out,
+            compiled_ops_out=compiled_ops_out,
+            amendment_temporal_events=_amendment_temporal_events,
+            commencement_expiry_override_notes=_commencement_expiry_override_notes,
+            record_finding=_record_process_finding,
+            replay_print=_replay_print,
+        ).run()
         ProcessFailedOpGovernance(
             amendment_id=amendment_id,
             johto=johto,
