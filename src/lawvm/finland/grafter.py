@@ -210,7 +210,6 @@ from lawvm.finland.citation_routing import (
     route_amendment,
 )
 from lawvm.finland.acquisition import (
-    build_amendment_acquisition_result,
     should_use_sec1_fallback_pre_routing as _should_use_sec1_fallback_pre_routing_impl,
     should_use_sec1_fallback_post_routing as _should_use_sec1_fallback_post_routing_impl,
 )
@@ -632,6 +631,7 @@ from lawvm.finland.amendment_chapter_precreate import (
     _pre_create_amendment_chapters,
     _pre_create_pseudo_marker_chapters,
 )
+from lawvm.finland.process_acquisition import ProcessAcquisitionContext
 from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
 from lawvm.finland.process_findings import ProcessFindingRecorder
 from lawvm.finland.process_frontend_normalization import ProcessFrontendNormalizationContext
@@ -1481,7 +1481,7 @@ class _ContainerLookupShim(Protocol):
 # Metadata helpers (moved to lawvm.finland.metadata; re-exported for compat)
 # ---------------------------------------------------------------------------
 from lawvm.finland.metadata import (
-    get_johtolause,
+    get_johtolause as get_johtolause,
     _amendment_effective_date,
     _chapter_expiry_from_base,
     _expiry_date_precedes_effective_date,
@@ -4805,84 +4805,27 @@ def process_muutoslaki(
         if xml_bytes is None:
             _replay_print(f"  [{amendment_id}] not found in corpus — skipping")
             return _build_result(state)
-        # Corrigendum patches (Population B): apply johtolause corrections in
-        # both modes. The oracle already has the corrected result — applying the
-        # corrigendum to the source johtolause makes PEG target the right provisions.
-        # Heuristic #35: gated by strict_profile.allows_source_correction_rules (if set).
-        _corr_gate = strict_profile is None or strict_profile.allows_source_correction_rules
-        from lawvm.finland.corrigendum import get_patch_table as _get_corr_patch_table
-        from lawvm.finland.corrigendum import extract_inline_corrections as _extract_inline_corr
-
-        if _corr_gate:
-            _, xml_bytes = _extract_inline_corr(xml_bytes, amendment_id)
-            xml_bytes, _corr_applied = _get_corr_patch_table().patch_source_xml(xml_bytes, amendment_id)
-            # Body text patches: fix SD amendment bodies with incomplete subsection
-            # content (source pathology — sd-cons has full text, SD body truncated).
-            xml_bytes, _body_patch_applied = _get_corr_patch_table().patch_source_body_xml(xml_bytes, amendment_id)
-        else:
-            _corr_applied = False
-            _body_patch_applied = []
-            _record_process_finding(
-                kind="APPLY.STRICT_REJECTED_CORRIGENDUM_PATCH",
-                message="Corrigendum Population B patch rejected by strict profile",
-                source_statute=amendment_id,
-            )
-        muutos_tree = etree.fromstring(xml_bytes)
-        lacks_operative_structure, operative_tags = _amendment_lacks_operative_structure(muutos_tree)
-        johto = get_johtolause(xml_bytes)
-        source_title = _tree_title(muutos_tree)
-
-        acquisition = build_amendment_acquisition_result(
-            xml_bytes=xml_bytes,
-            parent_id=parent_id,
+        _acquired = ProcessAcquisitionContext(
             amendment_id=amendment_id,
-            source_title=source_title,
+            parent_id=parent_id,
             parent_title=ctx.title,
+            xml_bytes=xml_bytes,
             strict_profile=strict_profile,
-            lacks_operative_structure=lacks_operative_structure,
-            operative_structure_tags=operative_tags,
-        )
-        if acquisition.decision.route_reason == "pending_amendment_of_parent_skip":
-            _pending_target_mid = str(acquisition.decision.route_target_amendment_id or "")
-            _pending_target_title = str(_processed_amendment_titles.get(_pending_target_mid) or "")
-            if _pending_target_mid and _pending_target_title:
-                acquisition = build_amendment_acquisition_result(
-                    xml_bytes=xml_bytes,
-                    parent_id=_pending_target_mid,
-                    amendment_id=amendment_id,
-                    source_title=source_title,
-                    parent_title=_pending_target_title,
-                    strict_profile=strict_profile,
-                    lacks_operative_structure=lacks_operative_structure,
-                    operative_structure_tags=operative_tags,
-                )
-                _record_process_finding(
-                    kind="APPLY.PENDING_AMENDMENT_COMPOSED_ON_PROCESSED_TARGET",
-                    message="Pending amendment-of-amendment composed onto already-processed target amendment.",
-                    source_statute=amendment_id,
-                    detail={
-                        "target_amendment_id": _pending_target_mid,
-                        "target_amendment_title": _pending_target_title,
-                        "base_parent_id": parent_id,
-                    },
-                    role="observation",
-                    blocking=False,
-                )
-                _replay_print(
-                    f"  [{amendment_id}] COMPOSED — pending amendment retargeted from {parent_id} onto processed target {_pending_target_mid}"
-                )
-        used_sec1_fallback = acquisition.decision.pre_routing_sec1_applied or acquisition.decision.post_routing_sec1_applied
-        sec1_text = acquisition.sec1_text
-        if acquisition.decision.pre_routing_sec1_requested and sec1_text:
-            _finding_recorder.record_sec1_fallback(
-                amendment_id=amendment_id,
-                stage="pre_routing",
-                previous_johto=acquisition.preamble_text or "",
-                sec1_fallback_text=sec1_text,
-                applied=acquisition.decision.pre_routing_sec1_applied,
-            )
-
-        johto = acquisition.decision.chosen_normalized_text
+            processed_amendment_titles=_processed_amendment_titles,
+            finding_recorder=_finding_recorder,
+            record_finding=_record_process_finding,
+            replay_print=_replay_print,
+            tree_title=_tree_title,
+            amendment_lacks_operative_structure=_amendment_lacks_operative_structure,
+        ).acquire()
+        xml_bytes = _acquired.xml_bytes
+        muutos_tree = _acquired.muutos_tree
+        lacks_operative_structure = _acquired.lacks_operative_structure
+        operative_tags = list(_acquired.operative_tags)
+        johto = _acquired.johto
+        source_title = _acquired.source_title
+        acquisition = _acquired.acquisition
+        used_sec1_fallback = _acquired.used_sec1_fallback
 
         # Guard: misrouted amendment — amendment_parents.csv sometimes maps an
         # amendment to the wrong master statute.
