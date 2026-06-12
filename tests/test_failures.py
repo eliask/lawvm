@@ -208,3 +208,85 @@ def test_print_summary_includes_target_statute_id(capsys) -> None:
     assert "=== Target statutes" in out
     assert "2024/1" in out
     assert "[2024/2] target=2024/1 REPLACE 3 §" in out
+
+
+def test_detail_mode_uses_cached_failures_without_full_replay(monkeypatch) -> None:
+    failure = FailedOp(
+        amendment_id="2024/2",
+        description="REPLACE 3 §",
+        reason="source missing",
+        target_section="3",
+        target_unit_kind="section",
+        target_statute_id="2024/1",
+    )
+    calls: dict[str, Any] = {}
+
+    monkeypatch.setattr(failures, "_load_failure_cache", lambda _label: [failure])
+
+    def fail_collect(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("cached detail must not replay the whole bench")
+
+    monkeypatch.setattr(failures, "_collect_failures", fail_collect)
+
+    def fake_detail_masters(
+        got: list[FailedOp],
+        *,
+        verbose: bool = False,
+    ) -> tuple[dict[str, Any], dict[str, set[tuple[str, str, str]]]]:
+        calls["detail_failures"] = got
+        calls["verbose"] = verbose
+        return {}, {}
+
+    monkeypatch.setattr(failures, "_collect_detail_masters", fake_detail_masters)
+    monkeypatch.setattr(
+        failures,
+        "_print_detail",
+        lambda got, *_args: calls.setdefault("printed", got),
+    )
+
+    assert failures.main(from_bench="demo", detail=True, parallel=8, verbose=True) == 0
+    assert calls["detail_failures"] == [failure]
+    assert calls["printed"] == [failure]
+    assert calls["verbose"] is True
+
+
+def test_detail_mode_keeps_parallel_failure_scan_before_master_context(monkeypatch) -> None:
+    failure = FailedOp(
+        amendment_id="2024/2",
+        description="REPLACE 3 §",
+        reason="source missing",
+        target_section="3",
+        target_unit_kind="section",
+        target_statute_id="2024/1",
+    )
+    calls: dict[str, Any] = {}
+
+    monkeypatch.setattr(failures, "_load_failure_cache", lambda _label: None)
+    monkeypatch.setattr(failures, "_load_imperfect_sids_from_bench", lambda _label: ["2024/1", "2024/3"])
+
+    def fake_collect(
+        sids: list[str],
+        *,
+        verbose: bool,
+        need_masters: bool,
+        parallel: int,
+    ) -> tuple[list[FailedOp], dict[str, Any], dict[str, set[tuple[str, str, str]]]]:
+        calls["collect"] = (sids, verbose, need_masters, parallel)
+        return [failure], {}, {}
+
+    monkeypatch.setattr(failures, "_collect_failures", fake_collect)
+
+    def fake_detail_masters(
+        got: list[FailedOp],
+        *,
+        verbose: bool = False,
+    ) -> tuple[dict[str, Any], dict[str, set[tuple[str, str, str]]]]:
+        calls["detail"] = (got, verbose)
+        return {}, {}
+
+    monkeypatch.setattr(failures, "_collect_detail_masters", fake_detail_masters)
+    monkeypatch.setattr(failures, "_print_detail", lambda *_args: None)
+
+    assert failures.main(from_bench="demo", detail=True, parallel=8, verbose=True) == 0
+    assert calls["collect"] == (["2024/1", "2024/3"], True, False, 8)
+    assert calls["detail"] == ([failure], True)

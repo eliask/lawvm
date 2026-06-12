@@ -23,6 +23,12 @@ from lawvm.finland.helpers import _is_omission_ir
 from lawvm.finland.source_pathology import build_destructive_shape_loss_risk_pathology
 
 
+_STANDALONE_SUBSECTION_ITEM_PREFIX_RE = re.compile(
+    r"^\s*\d+[a-z]?\s*[\).]\s+(.*)$",
+    flags=re.I | re.DOTALL,
+)
+
+
 def _kumottu_attribution(source_id: str, issue_date: Optional[dt.date] = None, source_title: str = "") -> str:
     """Format Finlex-style repeal attribution: ' L:lla DD.MM.YYYY/NUM'.
 
@@ -471,7 +477,7 @@ def _strip_standalone_subsection_item_prefixes_ir(node: IRNode) -> IRNode:
     child = node.children[0]
     if child.kind not in {IRNodeKind.CONTENT, IRNodeKind.INTRO} or not child.text:
         return node
-    match = re.match(r"^\s*\d+[a-z]?\s*[\).]\s+(.*)$", child.text, flags=re.I | re.DOTALL)
+    match = _STANDALONE_SUBSECTION_ITEM_PREFIX_RE.match(child.text)
     if match is None:
         return node
     stripped = match.group(1).lstrip()

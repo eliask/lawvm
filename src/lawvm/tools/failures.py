@@ -12,20 +12,18 @@ Usage:
 from __future__ import annotations
 
 import csv
-import io
 import json
 import re
 import sys
 import time
-from contextlib import redirect_stderr, redirect_stdout
 from collections import Counter
 from dataclasses import replace as dataclass_replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from lawvm.core.compile_result import SourcePathology
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.grafter import FailedOp, XMLStatute, replay_xml
-from lawvm.tools.classify import _classify_statute
 from lawvm.core.tree_ops import normalized_label_key
 
 
@@ -226,16 +224,17 @@ def _collect_failures(
             )
         try:
             failed: List[FailedOp] = []
-            master = replay_xml(sid, failed_ops_out=failed, quiet=True)
+            source_pathologies: List[SourcePathology] = []
+            master = replay_xml(
+                sid,
+                failed_ops_out=failed,
+                quiet=True,
+                source_pathologies_out=source_pathologies,
+            )
             all_failures.extend(dataclass_replace(f, target_statute_id=sid) for f in failed)
             if need_masters and failed:
                 masters_by_sid[sid] = master
-                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-                    result = _classify_statute(sid, "official_consolidation")
-                pathologies_by_sid[sid] = {
-                    (str(p.get("source_statute", "")), str(p.get("code", "")), str(p.get("target_label", "")))
-                    for p in (getattr(result, "source_pathologies", []) or [])
-                } if result is not None else set()
+                pathologies_by_sid[sid] = _source_pathology_keys(source_pathologies)
             ok += 1
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
@@ -303,6 +302,58 @@ def _collect_failures_parallel(
             file=sys.stderr,
         )
     return all_failures, {}, {}
+
+
+def _source_pathology_keys(
+    pathologies: List[SourcePathology],
+) -> Set[tuple[str, str, str]]:
+    return {
+        (
+            pathology.source_statute,
+            pathology.code,
+            str(pathology.as_detail().get("target_label", "")),
+        )
+        for pathology in pathologies
+    }
+
+
+def _collect_detail_masters(
+    failures: List[FailedOp],
+    verbose: bool = False,
+) -> Tuple[Dict[str, XMLStatute], Dict[str, Set[tuple[str, str, str]]]]:
+    """Replay only statutes needed to categorize already-collected failures.
+
+    ``--detail`` used to force the full failure collection pass down the
+    sequential path because XMLStatute masters are not picklable.  That made
+    detail mode replay every imperfect bench row even when only a small subset
+    emitted FailedOp records.  Keep the parallel failure scan separate from the
+    master materialization pass: once failures are known, only their target
+    statutes need masters and source-pathology context.
+    """
+    target_sids = sorted({f.target_statute_id for f in failures if f.target_statute_id})
+    masters_by_sid: Dict[str, XMLStatute] = {}
+    pathologies_by_sid: Dict[str, Set[tuple[str, str, str]]] = {}
+    if verbose and target_sids:
+        print(
+            f"Replaying {len(target_sids)} failed target statutes for detail context",
+            file=sys.stderr,
+        )
+    for sid in target_sids:
+        try:
+            source_pathologies: List[SourcePathology] = []
+            master = replay_xml(
+                sid,
+                failed_ops_out=[],
+                quiet=True,
+                source_pathologies_out=source_pathologies,
+            )
+            masters_by_sid[sid] = master
+            pathologies_by_sid[sid] = _source_pathology_keys(source_pathologies)
+        except (NameError, TypeError, AttributeError):
+            raise  # programming bugs — fail loud
+        except Exception:
+            continue
+    return masters_by_sid, pathologies_by_sid
 
 
 # ---------------------------------------------------------------------------
@@ -428,9 +479,13 @@ def _print_detail(
         failures = [f for f in failures if re.search(pattern, f.description, re.I)]
 
     # FailedOp.amendment_id is the amending statute, not the bench statute being
-    # amended. Masters are keyed by bench sid. Match each failure to a master by
-    # looking up its target_section in each replayed statute.
+    # amended. New failure rows carry target_statute_id, so prefer that exact
+    # master. Keep the section scan as a compatibility fallback for old caches.
     def _find_master_for(fo: FailedOp) -> Optional[XMLStatute]:
+        if fo.target_statute_id:
+            master = masters_by_sid.get(fo.target_statute_id)
+            if master is not None:
+                return master
         for m in masters_by_sid.values():
             if m.find_section(fo.target_section, fo.target_chapter) is not None:
                 return m
@@ -440,7 +495,7 @@ def _print_detail(
     for fo in failures:
         master = _find_master_for(fo)
         if master is not None:
-            sid = next((sid for sid, m in masters_by_sid.items() if m is master), "")
+            sid = fo.target_statute_id or next((sid for sid, m in masters_by_sid.items() if m is master), "")
             cat = _categorize_failure(fo, master, pathologies_by_sid.get(sid))
         else:
             # No master available (section not found in any replayed statute) —
@@ -534,6 +589,7 @@ def main(
     parallel: int = 1,
     save_cache: Optional[str] = None,
 ) -> int:
+    cached: Optional[List[FailedOp]] = None
     if statute_id:
         sids = [statute_id]
     elif from_bench:
@@ -547,29 +603,48 @@ def main(
             )
             _print_summary(cached, pattern, top)
             return 0
-        # No cache or --detail needs masters — filter to imperfect statutes
-        sids_or_none = _load_imperfect_sids_from_bench(from_bench)
-        if sids_or_none is None:
+        if cached is not None and detail and all(f.target_statute_id for f in cached):
+            sids = []
+        else:
+            # No cache or legacy cache without target statute IDs — filter to
+            # imperfect statutes before collecting failures.
+            sids_or_none = _load_imperfect_sids_from_bench(from_bench)
+            if sids_or_none is None:
+                print(
+                    f"Bench run '{from_bench}' not found in data/bench_runs/",
+                    file=sys.stderr,
+                )
+                return 1
+            sids = sids_or_none
             print(
-                f"Bench run '{from_bench}' not found in data/bench_runs/",
+                f"Replaying {len(sids)} imperfect statutes from bench run "
+                f"'{from_bench}'",
                 file=sys.stderr,
             )
-            return 1
-        sids = sids_or_none
-        print(
-            f"Replaying {len(sids)} imperfect statutes from bench run "
-            f"'{from_bench}'",
-            file=sys.stderr,
-        )
     else:
         sids = _load_bench_sids()
         if not sids:
             return 1
         print(f"Replaying {len(sids)} statutes...", file=sys.stderr)
 
-    failures, masters, pathologies_by_sid = _collect_failures(
-        sids, verbose=verbose, need_masters=detail, parallel=parallel,
-    )
+    if detail and cached is not None and all(f.target_statute_id for f in cached):
+        print(
+            f"Loaded {len(cached)} cached failures from bench run "
+            f"'{from_bench}'",
+            file=sys.stderr,
+        )
+        failures = cached
+        masters, pathologies_by_sid = _collect_detail_masters(
+            failures, verbose=verbose,
+        )
+    else:
+        failures, masters, pathologies_by_sid = _collect_failures(
+            sids, verbose=verbose, need_masters=False, parallel=parallel,
+        )
+        if detail:
+            masters, pathologies_by_sid = _collect_detail_masters(
+                failures, verbose=verbose,
+            )
 
     # Save cache if requested
     cache_label = save_cache or from_bench

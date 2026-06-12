@@ -7909,6 +7909,7 @@ def replay_xml(
     as_of: str = "",
     strict_johto_temporal: bool = False,
     oracle_selector: ConsolidatedArtifactSelector | None = None,
+    source_pathologies_out: Optional[List[SourcePathology]] = None,
 ):
     """Replay all applicable amendments for one parent statute.
 
@@ -8214,6 +8215,8 @@ def replay_xml(
             finding = _base_observation_to_finding(obs_dict)
             if finding is not None:
                 replay_findings.append(finding)
+        if source_pathologies_out is not None:
+            source_pathologies_out.extend(source_pathologies)
         if replay_meta_out is not None and source_pathologies:
             replay_meta_out["source_pathologies"] = [
                 {
