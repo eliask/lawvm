@@ -1311,6 +1311,14 @@ def test_sparse_ambiguous_binding_projects_partial_candidate_certificate() -> No
 
 
 def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> None:
+    source_pathology = {
+        "code": "DESTRUCTIVE_SHAPE_LOSS_RISK",
+        "message": "source pathology",
+        "source_statute": "2001/748",
+        "target_unit_kind": "section",
+        "target_label": "6 §",
+        "detail": {"diagnostic_reason": "partial_body_only"},
+    }
     report = finland_strict_report_evidence_surface(
         {
             "statute_id": "2001/1234",
@@ -1321,27 +1329,15 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
                 "source_available": 2,
                 "dates_available": 1,
             },
-            "source_pathologies": [
-                {
-                    "code": "DESTRUCTIVE_SHAPE_LOSS_RISK",
-                    "message": "source pathology",
-                    "source_statute": "2001/748",
-                    "target_unit_kind": "section",
-                    "target_label": "6 §",
-                    "detail": {"diagnostic_reason": "partial_body_only"},
-                }
-            ],
+            "source_pathologies": [source_pathology],
             "source_pathology_execution_authorizations": [
                 {"authorization_status": "source_pathology_not_replay_authority"}
             ],
             "source_pathology_frontier_work_items": [
-                {
-                    "frontier_family": "fi_destructive_shape_loss_risk",
-                    "source_witness": {
-                        "source_role": "finland_source_pathology",
-                        "preview_digest": "abc123",
-                    },
-                }
+                source_pathology_frontier_work_item(
+                    source_pathology,
+                    statute_id="2001/1234",
+                ).to_dict(),
             ],
             "sparse_slot_candidate_set_certificates": [{"candidate_set_kind": "fi_sparse_payload_slot_assignment"}],
             "agreement_residuals": [
@@ -1401,11 +1397,17 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     assert report["summary"]["source_pathology_count"] == 1
     assert report["summary"]["source_pathology_kind_counts"] == {"DESTRUCTIVE_SHAPE_LOSS_RISK": 1}
     assert report["summary"]["source_pathology_frontier_work_item_count"] == 1
+    assert report["summary"]["frontier_work_item_family_counts"] == {
+        "fi_destructive_shape_loss_risk": 1,
+    }
+    assert report["summary"]["frontier_work_item_status_counts"] == {
+        "mutation_boundary_frontier": 1,
+    }
     assert report["summary"]["frontier_claim_template_status_counts"] == {
-        "__none__": 1
+        "available": 1
     }
     assert report["summary"]["frontier_claim_template_kind_counts"] == {
-        "__none__": 1
+        "fi.v1.MUTATION_BOUNDARY_RESOLUTION": 1
     }
     assert report["summary"]["sparse_slot_candidate_set_certificate_count"] == 1
     assert report["summary"]["agreement_residual_count"] == 1
@@ -1444,6 +1446,11 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     source_pathology = rows_by_surface["source_pathology"]
     assert source_pathology["replay_authorized"] is False
     assert source_pathology["affected_phase"] == "replay_apply"
+    source_frontier = rows_by_surface["source_pathology_frontier_work_item"]
+    assert source_frontier["row_id"] == source_frontier["work_item_id"]
+    assert source_frontier["frontier_ref"] == source_frontier["work_item_id"]
+    assert source_frontier["status"] == "mutation_boundary_frontier"
+    assert "frontier_work_item_as_replay_authorization" in source_frontier["forbidden_shortcuts"]
     agreement = rows_by_surface["agreement_residual"]
     assert agreement["replay_authorized"] is False
     assert agreement["family"] == "non_commensurable_surface"

@@ -42,6 +42,7 @@ from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frontier_work_item import (
     FrontierWorkItem,
+    frontier_work_item_evidence_report,
     frontier_work_item_with_claim_template,
 )
 from lawvm.core.mutation_accounting import MutationAccountingResult, MutationInvariantReport
@@ -1128,6 +1129,23 @@ def finland_strict_report_evidence_surface(
     failed_operation_authorizations = _mapping_sequence(payload.get("failed_operation_execution_authorizations"))
     failed_operation_frontier_items = _mapping_sequence(payload.get("failed_operation_frontier_work_items"))
     frontier_items = (*source_pathology_frontier_items, *failed_operation_frontier_items)
+    frontier_work_item_report = frontier_work_item_evidence_report(
+        frontier_items,
+        jurisdiction="fi",
+        report_kind="finland_strict_report_manual_frontiers",
+    ).to_dict()
+    frontier_work_item_report_rows = _mapping_sequence(
+        frontier_work_item_report.get("rows")
+    )
+    frontier_work_item_report_summary = dict(
+        frontier_work_item_report.get("summary") or {}
+    )
+    source_pathology_frontier_report_rows = frontier_work_item_report_rows[
+        : len(source_pathology_frontier_items)
+    ]
+    failed_operation_frontier_report_rows = frontier_work_item_report_rows[
+        len(source_pathology_frontier_items) :
+    ]
     potential_operations = _mapping_sequence(payload.get("potential_operations"))
     potential_operation_report = potential_operation_evidence_report(
         potential_operations,
@@ -1201,16 +1219,16 @@ def finland_strict_report_evidence_surface(
                 for row in source_pathology_authorizations
             ),
             *(
-                {"surface": "source_pathology_frontier_work_item", **dict(row)}
-                for row in source_pathology_frontier_items
+                {**dict(row), "surface": "source_pathology_frontier_work_item"}
+                for row in source_pathology_frontier_report_rows
             ),
             *(
                 {"surface": "failed_operation_execution_authorization", **dict(row)}
                 for row in failed_operation_authorizations
             ),
             *(
-                {"surface": "failed_operation_frontier_work_item", **dict(row)}
-                for row in failed_operation_frontier_items
+                {**dict(row), "surface": "failed_operation_frontier_work_item"}
+                for row in failed_operation_frontier_report_rows
             ),
             *(
                 {"surface": "potential_operation", **dict(row)}
@@ -1262,8 +1280,24 @@ def finland_strict_report_evidence_surface(
         "potential_operation_family_counts": dict(
             potential_operation_summary.get("operation_family_counts") or {}
         ),
-        "frontier_claim_template_status_counts": _frontier_claim_template_status_counts(frontier_items),
-        "frontier_claim_template_kind_counts": _frontier_claim_template_kind_counts(frontier_items),
+        "frontier_claim_template_status_counts": dict(
+            frontier_work_item_report_summary.get(
+                "suggested_claim_template_status_counts"
+            )
+            or {}
+        ),
+        "frontier_claim_template_kind_counts": dict(
+            frontier_work_item_report_summary.get(
+                "suggested_claim_template_kind_counts"
+            )
+            or {}
+        ),
+        "frontier_work_item_family_counts": dict(
+            frontier_work_item_report_summary.get("frontier_family_counts") or {}
+        ),
+        "frontier_work_item_status_counts": dict(
+            frontier_work_item_report_summary.get("frontier_status_counts") or {}
+        ),
         "sparse_slot_candidate_set_certificate_count": len(sparse_certificates),
         "source_lineage_source_witness_count": len(source_lineage_witnesses),
         "source_unit_coverage_count": len(source_unit_coverage_rows),
