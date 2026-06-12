@@ -683,7 +683,23 @@ def _detail_row_record(row: FailureDetailRow) -> Dict[str, Any]:
 
 def _print_detail_json(rows: List[FailureDetailRow]) -> None:
     records = [_detail_row_record(row) for row in rows]
-    print(json.dumps({"total_failures": len(records), "failures": records}, ensure_ascii=False, indent=2))
+    materialization_counts: Counter[str] = Counter(
+        row.materialization_probe.status for row in rows
+    )
+    print(
+        json.dumps(
+            {
+                "total_failures": len(records),
+                "materialized_target_present": sum(
+                    1 for row in rows if row.materialization_probe.target_present
+                ),
+                "materialized_target_status_counts": dict(materialization_counts),
+                "failures": records,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 def _print_detail_rows(rows: List[FailureDetailRow]) -> None:
@@ -692,6 +708,9 @@ def _print_detail_rows(rows: List[FailureDetailRow]) -> None:
     cat_counts: Counter[str] = Counter(row.category for row in rows)
     claim_kind_counts: Counter[str] = Counter(
         row.frontier_projection.required_claim_kind or "<none>" for row in rows
+    )
+    materialization_counts: Counter[str] = Counter(
+        row.materialization_probe.status for row in rows
     )
 
     print(f"Total failures: {len(rows)}")
@@ -703,6 +722,10 @@ def _print_detail_rows(rows: List[FailureDetailRow]) -> None:
     print("=== Required claim kinds ===")
     for claim_kind, count in claim_kind_counts.most_common():
         print(f"  {count:4d}  {claim_kind}")
+    print()
+    print("=== Final materialized target status ===")
+    for status, count in materialization_counts.most_common():
+        print(f"  {count:4d}  {status}")
     print()
 
     print(f"=== Detailed failure list ({len(rows)}) ===")

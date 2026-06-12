@@ -359,6 +359,8 @@ def test_print_detail_projects_source_pathology_to_claim_kind(capsys) -> None:
     assert "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION" in out
     assert "owner_phase=replay_apply" in out
     assert "frontier=fi_item_target_structure_absent/target_resolution_frontier" in out
+    assert "=== Final materialized target status ===" in out
+    assert "target_subsection_absent" in out
 
 
 def test_materialization_probe_marks_final_item_present() -> None:
@@ -411,6 +413,8 @@ def test_detail_json_emits_machine_readable_proof_lane(capsys) -> None:
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["total_failures"] == 1
+    assert payload["materialized_target_present"] == 0
+    assert payload["materialized_target_status_counts"] == {"target_subsection_absent": 1}
     row = payload["failures"][0]
     assert row["amendment_id"] == "1995/451"
     assert row["target_statute_id"] == "1987/1250"
