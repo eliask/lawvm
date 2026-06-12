@@ -70,6 +70,7 @@ def test_proof_gate_summary_buckets_frontiers_without_replay_authority() -> None
                 "recovery_projection_not_replay_authority": 3,
                 "strict_recovery_blocked": 2,
             },
+            "recovery_execution_authorization_strict_blocked_count": 2,
         },
         manual_claim_kind_prefixes=("fi.v1.",),
     ).to_dict()
@@ -239,4 +240,15 @@ def test_proof_gate_summary_rejects_boolean_count_values() -> None:
             closed=False,
             failed_gates=(),
             evidence_summary={"recovery_execution_authorization_status_counts": "bad"},
+        )
+
+    with pytest.raises(ValueError, match="recovery_execution_authorization_strict_blocked_count"):
+        proof_gate_summary_from_surfaces(
+            schema="lawvm.test.proof_gate_summary.v1",
+            scope="unit-test",
+            closed=False,
+            failed_gates=(),
+            evidence_summary={
+                "recovery_execution_authorization_strict_blocked_count": True
+            },
         )

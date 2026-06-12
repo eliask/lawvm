@@ -865,6 +865,9 @@ def test_to_json_counts_blocked_recovery_authorizations_in_proof_gates() -> None
     )
 
     proof_gates = payload["proof_gate_summary"]
+    assert payload["evidence_surface_report"]["summary"][
+        "recovery_execution_authorization_strict_blocked_count"
+    ] == 1
     assert proof_gates["recovery_authorization_status_counts"] == {
         "recovery_projection_not_replay_authority": 1,
         "strict_recovery_blocked": 1,

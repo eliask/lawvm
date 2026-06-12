@@ -216,13 +216,33 @@ def execution_authorization_evidence_report(
     executable_count = sum(1 for row in rows if bool(row.get("executable")))
     status_counts = _counts(str(row.get("authorization_status") or "") for row in rows)
     owner_phase_counts = _counts(str(row.get("owner_phase") or "") for row in rows)
+    strict_disposition_counts = _counts(
+        str(row.get("strict_disposition") or "") for row in rows
+    )
+    quirks_disposition_counts = _counts(
+        str(row.get("quirks_disposition") or "") for row in rows
+    )
+    validator_status_counts = _counts_nonblank(
+        str(row.get("validator_status") or "") for row in rows
+    )
+    required_proof_counts = _counts(
+        str(proof)
+        for row in rows
+        for proof in _sequence(row.get("required_proofs"))
+        if str(proof)
+    )
     summary = {
         "authorization_count": len(rows),
         "executable_count": executable_count,
         "replay_authorized_count": replay_authorized_count,
         "non_authorized_count": len(rows) - replay_authorized_count,
+        "strict_blocked_count": strict_disposition_counts.get("block", 0),
         "authorization_status_counts": status_counts,
         "owner_phase_counts": owner_phase_counts,
+        "strict_disposition_counts": strict_disposition_counts,
+        "quirks_disposition_counts": quirks_disposition_counts,
+        "validator_status_counts": validator_status_counts,
+        "required_proof_counts": required_proof_counts,
         "claim_flags": {
             "replay_claims": replay_authorized_count > 0,
             "canonical_effect_claims": False,
@@ -398,6 +418,16 @@ def _counts(values: Any) -> dict[str, int]:
     counts: dict[str, int] = {}
     for value in values:
         key = str(value or "__blank__")
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _counts_nonblank(values: Any) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = str(value or "")
+        if not key:
+            continue
         counts[key] = counts.get(key, 0) + 1
     return counts
 

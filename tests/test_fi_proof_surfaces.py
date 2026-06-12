@@ -1464,6 +1464,12 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     assert report["summary"]["source_pathology_execution_authorization_status_counts"] == {
         "source_pathology_not_replay_authority": 1
     }
+    assert (
+        report["summary"][
+            "source_pathology_execution_authorization_strict_blocked_count"
+        ]
+        == 1
+    )
     assert report["summary"]["source_pathology_frontier_work_item_count"] == 1
     assert report["summary"]["frontier_work_item_family_counts"] == {
         "fi_destructive_shape_loss_risk": 1,
@@ -1501,6 +1507,7 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
         "unknown_effective_date": 1,
     }
     assert report["summary"]["recovery_execution_authorization_count"] == 1
+    assert report["summary"]["recovery_execution_authorization_strict_blocked_count"] == 1
     assert report["summary"]["source_pathology_frontier_source_witness_digest_coverage_counts"] == {"preview_digest": 1}
     assert [row["surface"] for row in report["rows"]] == [
         "source_pathology",
@@ -1877,6 +1884,12 @@ def test_finland_strict_report_candidate_set_authorization_rows_have_scope_sensi
     ] == {
         "candidate_set_complete_not_replay_authority": 2,
     }
+    assert (
+        report["summary"][
+            "strict_report_candidate_set_execution_authorization_strict_blocked_count"
+        ]
+        == 0
+    )
     candidate_set_rows = [
         row
         for row in report["rows"]

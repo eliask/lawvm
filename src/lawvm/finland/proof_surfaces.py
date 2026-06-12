@@ -1490,6 +1490,10 @@ def finland_strict_report_evidence_surface(
             )
             or {}
         ),
+        "source_pathology_execution_authorization_strict_blocked_count": int(
+            source_pathology_authorization_report_summary.get("strict_blocked_count")
+            or 0
+        ),
         "source_pathology_frontier_work_item_count": len(source_pathology_frontier_items),
         "failed_operation_execution_authorization_count": len(failed_operation_authorizations),
         "failed_operation_execution_authorization_status_counts": dict(
@@ -1497,6 +1501,10 @@ def finland_strict_report_evidence_surface(
                 "authorization_status_counts"
             )
             or {}
+        ),
+        "failed_operation_execution_authorization_strict_blocked_count": int(
+            failed_operation_authorization_report_summary.get("strict_blocked_count")
+            or 0
         ),
         "failed_operation_frontier_work_item_count": len(failed_operation_frontier_items),
         "potential_operation_count": len(potential_operation_rows),
@@ -1575,6 +1583,9 @@ def finland_strict_report_evidence_surface(
             recovery_authorization_report_summary.get("authorization_status_counts")
             or {}
         ),
+        "recovery_execution_authorization_strict_blocked_count": int(
+            recovery_authorization_report_summary.get("strict_blocked_count") or 0
+        ),
         "strict_report_candidate_set_certificate_count": len(strict_report_candidate_sets),
         "strict_report_candidate_set_status_counts": dict(
             strict_report_candidate_set_report_summary.get(
@@ -1598,6 +1609,12 @@ def finland_strict_report_evidence_surface(
                 "authorization_status_counts"
             )
             or {}
+        ),
+        "strict_report_candidate_set_execution_authorization_strict_blocked_count": int(
+            strict_report_candidate_set_authorization_report_summary.get(
+                "strict_blocked_count"
+            )
+            or 0
         ),
         "strict_report_candidate_set_frontier_work_item_count": len(
             strict_report_candidate_set_frontier_items

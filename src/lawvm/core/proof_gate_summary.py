@@ -286,9 +286,13 @@ def proof_gate_summary_from_surfaces(
         evidence,
         "recovery_execution_authorization_status_counts",
     )
-    recovery_authorization_blocked_count = sum(
-        recovery_authorization_counts.get(status, 0)
-        for status in _BLOCKED_RECOVERY_AUTHORIZATION_STATUSES
+    recovery_authorization_blocked_count = _summary_optional_count(
+        evidence,
+        "recovery_execution_authorization_strict_blocked_count",
+        default=sum(
+            recovery_authorization_counts.get(status, 0)
+            for status in _BLOCKED_RECOVERY_AUTHORIZATION_STATUSES
+        ),
     )
     open_gate_signal_count = (
         len(failed_gate_rows)
@@ -375,6 +379,17 @@ def _summary_count(evidence: Mapping[str, Any], field_name: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise ValueError(f"ProofGateSummary.{field_name} must be a non-negative integer")
     return value
+
+
+def _summary_optional_count(
+    evidence: Mapping[str, Any],
+    field_name: str,
+    *,
+    default: int,
+) -> int:
+    if field_name not in evidence:
+        return default
+    return _summary_count(evidence, field_name)
 
 
 def _summary_count_mapping(evidence: Mapping[str, Any], field_name: str) -> dict[str, int]:

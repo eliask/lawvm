@@ -583,6 +583,13 @@ def test_kernel_authorization_projection_does_not_promote_policy_success_by_defa
     assert report_data["replay_claims"] is False
     assert report_data["summary"]["authorization_count"] == 1
     assert report_data["summary"]["replay_authorized_count"] == 0
+    assert report_data["summary"]["strict_blocked_count"] == 1
+    assert report_data["summary"]["strict_disposition_counts"] == {"block": 1}
+    assert report_data["summary"]["quirks_disposition_counts"] == {"record": 1}
+    assert report_data["summary"]["validator_status_counts"] == {}
+    assert report_data["summary"]["required_proof_counts"] == {
+        "phase_local_replay_authorization": 1
+    }
     assert report_data["summary"]["claim_flags"]["replay_claims"] is False
     assert report_data["rows"][0]["surface"] == "execution_authorization"
     assert report_data["rows"][0]["subject_id"] == "assertion-1"
@@ -666,6 +673,9 @@ def test_kernel_authorization_projection_requires_explicit_replay_gate() -> None
     assert report_data["replay_claims"] is True
     assert report_data["summary"]["authorization_count"] == 1
     assert report_data["summary"]["replay_authorized_count"] == 1
+    assert report_data["summary"]["strict_blocked_count"] == 0
+    assert report_data["summary"]["strict_disposition_counts"] == {"record": 1}
+    assert report_data["summary"]["required_proof_counts"] == {}
     assert report_data["summary"]["claim_flags"]["replay_claims"] is True
     assert report_data["rows"][0]["replay_authorized"] is True
 
@@ -720,6 +730,11 @@ def test_execution_authorization_report_preserves_distinct_same_rule_rows() -> N
         "fi:demo:operation-cue-coverage:a",
         "fi:demo:operation-cue-coverage:b",
     ]
+    assert data["summary"]["strict_blocked_count"] == 2
+    assert data["summary"]["strict_disposition_counts"] == {"block": 2}
+    assert data["summary"]["required_proof_counts"] == {
+        "operation_cue_classification_report": 2
+    }
     assert len(set(row_ids)) == 2
     assert [row["row_id"] for row in proof_surface["rows"]] == row_ids
 
