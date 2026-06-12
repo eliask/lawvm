@@ -339,6 +339,12 @@ def build_inventory(
         for hit in hits
         if hit["category"] == "bounded_wildcard_gap"
     )
+    bounded_wildcard_grammar_family_counts: Counter[str] = Counter(
+        str(hit.get("coverage_sensor", {}).get("grammar_family") or "unclassified")
+        for hits in by_file.values()
+        for hit in hits
+        if hit["category"] == "bounded_wildcard_gap"
+    )
     for status in (
         "coverage_function_reference",
         "file_level_coverage_surface",
@@ -379,6 +385,9 @@ def build_inventory(
             ),
             "bounded_wildcard_soundness_risk_counts": dict(
                 sorted(bounded_wildcard_soundness_risk_counts.items())
+            ),
+            "bounded_wildcard_grammar_family_counts": dict(
+                sorted(bounded_wildcard_grammar_family_counts.items())
             ),
             "bounded_wildcard_soundness_note": (
                 "bounded wildcard regexes are recognizer-local span claims, not semantic "
@@ -467,6 +476,18 @@ def _to_markdown(inventory: dict[str, Any]) -> str:
         )
         for risk, count in sorted(soundness_risk_counts.items()):
             lines.append(f"| {risk} | {count} |")
+
+    grammar_family_counts = summary.get("bounded_wildcard_grammar_family_counts") or {}
+    if grammar_family_counts:
+        lines.extend(
+            [
+                "",
+                "| Bounded Wildcard Grammar Family | Count |",
+                "| --- | ---: |",
+            ]
+        )
+        for family, count in sorted(grammar_family_counts.items()):
+            lines.append(f"| {family} | {count} |")
 
     for path, hits in inventory["by_file"].items():
         lines.extend(

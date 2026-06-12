@@ -263,6 +263,9 @@ def test_build_inventory_reports_bounded_gap_coverage_and_text_sentinel(tmp_path
         "needs_triage": 0,
         "needs_typed_coverage_or_grammar": 0,
     }
+    assert inventory["summary"]["bounded_wildcard_grammar_family_counts"] == {
+        "lexical_or_classifier": 1
+    }
     assert "not semantic exhaustiveness proofs" in inventory["summary"][
         "bounded_wildcard_soundness_note"
     ]
@@ -285,6 +288,7 @@ def test_markdown_reports_bounded_wildcard_soundness_caveat(tmp_path) -> None:
 
     assert "Bounded wildcard note" in markdown
     assert "Bounded Wildcard Soundness Risk" in markdown
+    assert "Bounded Wildcard Grammar Family" in markdown
     assert "not a semantic exhaustiveness proof" in markdown
     assert "function=parse_fragment_substitution" in markdown
     assert "family=unclassified_semantic_payload_instruction" in markdown
@@ -460,6 +464,10 @@ def test_bounded_wildcard_sensor_classifies_semantic_payload_captures(tmp_path) 
         "drafting_classifier": 1,
         "semantic_payload_capture": 1,
         "unknown_pattern_bound": 0,
+    }
+    assert inventory["summary"]["bounded_wildcard_grammar_family_counts"] == {
+        "omission_classifier": 1,
+        "unclassified_semantic_payload_instruction": 1,
     }
 
 
