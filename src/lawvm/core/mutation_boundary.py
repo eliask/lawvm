@@ -15,6 +15,16 @@ TreePaths: TypeAlias = Tuple[TreePath, ...]
 RenumberedTreePaths: TypeAlias = Tuple[Tuple[TreePath, TreePath], ...]
 
 
+@dataclass(frozen=True, slots=True)
+class NodeShapeSignature:
+    """IR node identity used for changed-path comparison, excluding children."""
+
+    kind: str
+    label: str | None
+    text: str
+    attrs: tuple[tuple[str, object], ...]
+
+
 def validate_tree_path(
     path: TreePath,
     *,
@@ -338,8 +348,13 @@ def _diff_ir_paths_identity_pruned(before: IRNode, after: IRNode, path: TreePath
     return out
 
 
-def _node_without_children(node: IRNode) -> tuple[str, str | None, str, tuple[tuple[str, object], ...]]:
-    return (_kind_str(node.kind), node.label, node.text, tuple(sorted(dict(node.attrs).items())))
+def _node_without_children(node: IRNode) -> NodeShapeSignature:
+    return NodeShapeSignature(
+        kind=_kind_str(node.kind),
+        label=node.label,
+        text=node.text,
+        attrs=tuple(sorted(dict(node.attrs).items())),
+    )
 
 
 def _parent_tree_path(path: TreePath) -> TreePath:
