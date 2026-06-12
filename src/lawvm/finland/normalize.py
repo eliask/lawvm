@@ -74,6 +74,22 @@ _INSERT_SECTION_UUDEN_FALLBACK_RE = re.compile(
     r"(?:\s*(?:,|ja)\s*\d+\s*[a-z]?(?:\s*[–—―-]\s*\d+\s*[a-z]?)?)*)?)\s*§",
     flags=re.I,
 )
+_INSERT_CONTAINER_COMBINED_FALLBACK_RE = re.compile(
+    r"\blakiin\s+uusi\s+(.{1,80}?)\s+luku\s+ja\s+(.{1,140}?)\s*§",
+    flags=re.I,
+)
+_INSERT_CHAPTER_FALLBACK_RE = re.compile(
+    r"\blakiin\s+uusi\s+(\d+\s*[a-z]?)\s+luku\b",
+    flags=re.I,
+)
+_INSERT_PART_FALLBACK_RE = re.compile(
+    r"\blakiin\s+uusi\s+([ivxlcdm]+\s*[a-z]?)\s+osa\b",
+    flags=re.I,
+)
+_INSERT_CHAPTER_SECTION_FALLBACK_RE = re.compile(
+    r"\b(\d+\s*[a-z]?)\s+lukuun\s+uusi\s+([^§]{1,120})§",
+    flags=re.I,
+)
 _INSERT_SUBSECTION_FALLBACK_RE = re.compile(
     r"(\d+\s*[a-z]?)\s*§\s*:ään\s*,?\s*(?:sellaisena\s+kuin\s+[^,]+,\s*)?"
     r"(.*?)(?=(?:\d+\s*[a-z]?\s*§\s*:ään)|(?:\d+\s*[a-z]?\s+luvun\s+\d+\s*[a-z]?\s*§\s*:)"
@@ -651,6 +667,37 @@ def _regex_recognition_coverage_row(
     )
 
 
+def _regex_label_clause_ignored_spans(
+    source_text: str,
+    *,
+    base_offset: int,
+    clause: str,
+) -> list[dict[str, object]]:
+    ignored_spans: list[dict[str, object]] = []
+    cursor = 0
+    for label_match in _SECTION_TOKEN_RE.finditer(clause):
+        ignored_spans.extend(
+            _regex_ignored_span_rows(
+                source_text,
+                base_offset=base_offset,
+                clause=clause,
+                start=cursor,
+                end=label_match.start(),
+            )
+        )
+        cursor = label_match.end()
+    ignored_spans.extend(
+        _regex_ignored_span_rows(
+            source_text,
+            base_offset=base_offset,
+            clause=clause,
+            start=cursor,
+            end=len(clause),
+        )
+    )
+    return ignored_spans
+
+
 def _extract_insert_container_ops_fallback(cleaned: str) -> List[AmendmentOp]:
     """Recover chapter inserts, combined root inserts, and chapter-scoped section inserts.
 
@@ -662,11 +709,7 @@ def _extract_insert_container_ops_fallback(cleaned: str) -> List[AmendmentOp]:
     seen_chapters: Set[str] = set()
     seen_sections: Set[Tuple[str, str]] = set()
 
-    for m in re.finditer(
-        r"\blakiin\s+uusi\s+(.{1,80}?)\s+luku\s+ja\s+(.{1,140}?)\s*§",
-        cleaned,
-        flags=re.I,
-    ):
+    for m in _INSERT_CONTAINER_COMBINED_FALLBACK_RE.finditer(cleaned):
         chapter_clause = m.group(1)
         section_clause = m.group(2)
         for chapter in _expand_spaced_insert_label_list_ir(chapter_clause):
@@ -695,7 +738,7 @@ def _extract_insert_container_ops_fallback(cleaned: str) -> List[AmendmentOp]:
                 )
             )
 
-    for m in re.finditer(r"\blakiin\s+uusi\s+(\d+\s*[a-z]?)\s+luku\b", cleaned, flags=re.I):
+    for m in _INSERT_CHAPTER_FALLBACK_RE.finditer(cleaned):
         chapter = _RE_WHITESPACE.sub("", m.group(1)).lower()
         if not chapter or chapter in seen_chapters:
             continue
@@ -709,7 +752,7 @@ def _extract_insert_container_ops_fallback(cleaned: str) -> List[AmendmentOp]:
             )
         )
 
-    for m in re.finditer(r"\blakiin\s+uusi\s+([ivxlcdm]+\s*[a-z]?)\s+osa\b", cleaned, flags=re.I):
+    for m in _INSERT_PART_FALLBACK_RE.finditer(cleaned):
         part = _norm_num_token(m.group(1))
         if not part:
             continue
@@ -722,7 +765,7 @@ def _extract_insert_container_ops_fallback(cleaned: str) -> List[AmendmentOp]:
             )
         )
 
-    for m in re.finditer(r"\b(\d+\s*[a-z]?)\s+lukuun\s+uusi\s+([^§]{1,120})§", cleaned, flags=re.I):
+    for m in _INSERT_CHAPTER_SECTION_FALLBACK_RE.finditer(cleaned):
         chapter = _RE_WHITESPACE.sub("", m.group(1)).lower()
         clause = m.group(2)
         for sec in _SECTION_TOKEN_RE.findall(clause):
@@ -741,6 +784,141 @@ def _extract_insert_container_ops_fallback(cleaned: str) -> List[AmendmentOp]:
                 )
             )
     return ops
+
+
+def _extract_insert_container_ops_fallback_with_coverage(
+    cleaned: str,
+    *,
+    source_artifact_id: str = "",
+) -> FallbackParseResult:
+    ops = _extract_insert_container_ops_fallback(cleaned)
+    coverage_rows: list[RegexRecognitionCoverage] = []
+    source_hash = regex_source_text_hash(cleaned)
+    seen_chapters: Set[str] = set()
+    seen_sections: Set[Tuple[str, str]] = set()
+
+    for m in _INSERT_CONTAINER_COMBINED_FALLBACK_RE.finditer(cleaned):
+        chapter_clause = m.group(1)
+        section_clause = m.group(2)
+        target_chapters: list[str] = []
+        target_sections: list[str] = []
+        for chapter in _expand_spaced_insert_label_list_ir(chapter_clause):
+            if chapter in seen_chapters:
+                continue
+            seen_chapters.add(chapter)
+            target_chapters.append(chapter)
+        for sec in _expand_spaced_insert_label_list_ir(section_clause):
+            key = ("", sec)
+            if key in seen_sections:
+                continue
+            seen_sections.add(key)
+            target_sections.append(sec)
+        if not target_chapters and not target_sections:
+            continue
+        ignored_spans = [
+            *_regex_label_clause_ignored_spans(
+                cleaned,
+                base_offset=m.start(1),
+                clause=chapter_clause,
+            ),
+            *_regex_label_clause_ignored_spans(
+                cleaned,
+                base_offset=m.start(2),
+                clause=section_clause,
+            ),
+        ]
+        coverage_rows.append(
+            _regex_recognition_coverage_row(
+                recognizer_id="fi_insert_combined_chapter_section_fallback",
+                source_hash=source_hash,
+                source_artifact_id=source_artifact_id,
+                matched_span=(m.start(), m.end()),
+                semantic_slots={
+                    "action": "INSERT",
+                    "target_unit_kind": "chapter_and_section",
+                    "target_chapters": tuple(target_chapters),
+                    "target_sections": tuple(target_sections),
+                },
+                ignored_spans=ignored_spans,
+                matched_text=cleaned[m.start():m.end()],
+            )
+        )
+
+    for m in _INSERT_CHAPTER_FALLBACK_RE.finditer(cleaned):
+        chapter = _RE_WHITESPACE.sub("", m.group(1)).lower()
+        if not chapter or chapter in seen_chapters:
+            continue
+        seen_chapters.add(chapter)
+        coverage_rows.append(
+            _regex_recognition_coverage_row(
+                recognizer_id="fi_insert_chapter_fallback",
+                source_hash=source_hash,
+                source_artifact_id=source_artifact_id,
+                matched_span=(m.start(), m.end()),
+                semantic_slots={
+                    "action": "INSERT",
+                    "target_unit_kind": "chapter",
+                    "target_chapters": (chapter,),
+                },
+                ignored_spans=[],
+                matched_text=cleaned[m.start():m.end()],
+            )
+        )
+
+    for m in _INSERT_PART_FALLBACK_RE.finditer(cleaned):
+        part = _norm_num_token(m.group(1))
+        if not part:
+            continue
+        coverage_rows.append(
+            _regex_recognition_coverage_row(
+                recognizer_id="fi_insert_part_fallback",
+                source_hash=source_hash,
+                source_artifact_id=source_artifact_id,
+                matched_span=(m.start(), m.end()),
+                semantic_slots={
+                    "action": "INSERT",
+                    "target_unit_kind": "part",
+                    "target_parts": (part,),
+                },
+                ignored_spans=[],
+                matched_text=cleaned[m.start():m.end()],
+            )
+        )
+
+    for m in _INSERT_CHAPTER_SECTION_FALLBACK_RE.finditer(cleaned):
+        chapter = _RE_WHITESPACE.sub("", m.group(1)).lower()
+        clause = m.group(2)
+        target_sections: list[str] = []
+        for sec in _SECTION_TOKEN_RE.findall(clause):
+            norm = _RE_WHITESPACE.sub("", sec).lower()
+            key = (chapter, norm)
+            if not chapter or not norm or key in seen_sections:
+                continue
+            seen_sections.add(key)
+            target_sections.append(norm)
+        if not target_sections:
+            continue
+        coverage_rows.append(
+            _regex_recognition_coverage_row(
+                recognizer_id="fi_insert_chapter_scoped_section_fallback",
+                source_hash=source_hash,
+                source_artifact_id=source_artifact_id,
+                matched_span=(m.start(), m.end()),
+                semantic_slots={
+                    "action": "INSERT",
+                    "target_unit_kind": "section",
+                    "target_chapter": chapter,
+                    "target_sections": tuple(target_sections),
+                },
+                ignored_spans=_regex_label_clause_ignored_spans(
+                    cleaned,
+                    base_offset=m.start(2),
+                    clause=clause,
+                ),
+                matched_text=cleaned[m.start():m.end()],
+            )
+        )
+    return FallbackParseResult(ops=ops, regex_recognition_coverage=tuple(coverage_rows))
 
 
 def _extract_root_insert_ops_fallback(johto: str) -> List[AmendmentOp]:
@@ -1369,6 +1547,10 @@ def parse_ops_fallback_heuristic_with_coverage(
         cleaned,
         source_artifact_id=source_artifact_id,
     ).regex_recognition_coverage
+    container_coverage = _extract_insert_container_ops_fallback_with_coverage(
+        cleaned,
+        source_artifact_id=source_artifact_id,
+    ).regex_recognition_coverage
     subsection_coverage = _extract_insert_subsection_ops_fallback_with_coverage(
         cleaned,
         source_artifact_id=source_artifact_id,
@@ -1381,6 +1563,7 @@ def parse_ops_fallback_heuristic_with_coverage(
         ops=ops,
         regex_recognition_coverage=(
             *section_coverage,
+            *container_coverage,
             *subsection_coverage,
             *item_coverage,
         ),

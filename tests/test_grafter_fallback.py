@@ -6223,6 +6223,95 @@ def test_section_insert_fallback_coverage_marks_list_connector_classified() -> N
     assert coverage["required_proofs"] == []
 
 
+def test_combined_container_insert_fallback_coverage_marks_connectors_classified() -> None:
+    johto = "lisätään lakiin uusi 2 luku ja 15, 16 ja 17 § seuraavasti:"
+
+    result = parse_ops_fallback_heuristic_with_coverage(johto)
+
+    got = {(op.op_type, op.target_unit_kind, op.target_section) for op in result.ops}
+    assert {
+        ("INSERT", "chapter", "2"),
+        ("INSERT", "section", "15"),
+        ("INSERT", "section", "16"),
+        ("INSERT", "section", "17"),
+    } <= got
+    assert len(result.regex_recognition_coverage) == 1
+    coverage = result.regex_recognition_coverage[0].to_dict()
+    assert coverage["recognizer_id"] == "fi_insert_combined_chapter_section_fallback"
+    assert coverage["coverage_status"] == "fully_classified"
+    assert coverage["semantic_slots"] == {
+        "action": "INSERT",
+        "target_unit_kind": "chapter_and_section",
+        "target_chapters": ["2"],
+        "target_sections": ["15", "16", "17"],
+    }
+    assert coverage["ignored_spans"] == [
+        {
+            "span": [37, 41],
+            "classification": "drafting_connector",
+            "text_preview": " ja ",
+            "could_alter_meaning": False,
+        }
+    ]
+    assert coverage["required_proofs"] == []
+
+
+def test_chapter_scoped_section_insert_fallback_coverage_surfaces_unclassified_gap() -> None:
+    johto = "lisätään 4 lukuun uusi 1, kuitenkin 2 § seuraavasti:"
+
+    result = parse_ops_fallback_heuristic_with_coverage(
+        johto,
+        source_artifact_id="2020/4",
+    )
+
+    got = {
+        (op.op_type, op.target_unit_kind, op.target_chapter, op.target_section)
+        for op in result.ops
+    }
+    assert ("INSERT", "section", "4", "1") in got
+    assert ("INSERT", "section", "4", "2") in got
+    assert len(result.regex_recognition_coverage) == 1
+    coverage = result.regex_recognition_coverage[0].to_dict()
+    assert coverage["recognizer_id"] == "fi_insert_chapter_scoped_section_fallback"
+    assert coverage["coverage_status"] == "unclassified_gap"
+    assert coverage["semantic_slots"] == {
+        "action": "INSERT",
+        "target_unit_kind": "section",
+        "target_chapter": "4",
+        "target_sections": ["1", "2"],
+    }
+    assert coverage["ignored_spans"] == [
+        {
+            "span": [24, 36],
+            "classification": "unclassified",
+            "text_preview": ", kuitenkin ",
+            "could_alter_meaning": True,
+        }
+    ]
+    assert coverage["required_proofs"] == ["regex_skipped_span_classification"]
+
+
+def test_chapter_insert_fallback_coverage_marks_whole_match_classified() -> None:
+    johto = "lisätään lakiin uusi 3 luku"
+
+    result = parse_ops_fallback_heuristic_with_coverage(johto)
+
+    assert [(op.op_type, op.target_unit_kind, op.target_section) for op in result.ops] == [
+        ("INSERT", "chapter", "3"),
+    ]
+    assert len(result.regex_recognition_coverage) == 1
+    coverage = result.regex_recognition_coverage[0].to_dict()
+    assert coverage["recognizer_id"] == "fi_insert_chapter_fallback"
+    assert coverage["coverage_status"] == "fully_classified"
+    assert coverage["semantic_slots"] == {
+        "action": "INSERT",
+        "target_unit_kind": "chapter",
+        "target_chapters": ["3"],
+    }
+    assert coverage["ignored_spans"] == []
+    assert coverage["required_proofs"] == []
+
+
 def test_insert_section_fallback_expands_letter_suffix_range_inside_lakiin_uusi_clause() -> None:
     johto = "lisätään lakiin uusi 149 a–149 c ja 211 b § seuraavasti:"
 
