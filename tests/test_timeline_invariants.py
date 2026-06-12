@@ -536,6 +536,92 @@ def test_replay_timeline_consistency_flags_same_source_descendant_shadow() -> No
     assert violation.detail["source_statute"] == "2022/1029"
 
 
+def test_replay_timeline_consistency_flags_active_descendant_negative_space() -> None:
+    """Active descendant state must be addressable or text-present in its ancestor."""
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(IRNode(kind=IRNodeKind.SECTION, label="10", text="section intro"),),
+    )
+    section_addr = _addr(("section", "10"))
+    item_addr = _addr(("section", "10"), ("subsection", "1"), ("item", "1"))
+    timelines = {
+        section_addr: _tl(
+            section_addr,
+            [
+                _pv(
+                    "2020-01-01",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="10", text="section intro"),
+                )
+            ],
+        ),
+        item_addr: _tl(
+            item_addr,
+            [
+                _pv(
+                    "2021-01-01",
+                    content=IRNode(kind=IRNodeKind.ITEM, label="1", text="missing item text"),
+                )
+            ],
+        ),
+    }
+
+    violations = check_replay_timeline_consistency(body, timelines, "2025-01-01")
+
+    assert any("ACTIVE_DESCENDANT_NOT_MATERIALIZED" in v for v in violations)
+    typed = check_all_timeline_invariants_typed(body, timelines, "2025-01-01")
+    violation = next(v for v in typed if v.kind == "active_descendant_not_materialized")
+    assert violation.address_path == "section:10/subsection:1/item:1"
+    assert violation.detail["ancestor_address"] == "section:10"
+    assert violation.detail["timeline_preview"] == "missing item text"
+    assert violation.detail["ancestor_materialized_preview"] == "section intro"
+
+
+def test_replay_timeline_consistency_accepts_composed_active_descendant_text() -> None:
+    """A descendant timeline can be represented by ancestor text projection."""
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="10",
+                text="section intro missing item text",
+            ),
+        ),
+    )
+    section_addr = _addr(("section", "10"))
+    item_addr = _addr(("section", "10"), ("subsection", "1"), ("item", "1"))
+    timelines = {
+        section_addr: _tl(
+            section_addr,
+            [
+                _pv(
+                    "2020-01-01",
+                    content=IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="10",
+                        text="section intro missing item text",
+                    ),
+                )
+            ],
+        ),
+        item_addr: _tl(
+            item_addr,
+            [
+                _pv(
+                    "2021-01-01",
+                    content=IRNode(kind=IRNodeKind.ITEM, label="1", text="missing item text"),
+                )
+            ],
+        ),
+    }
+
+    violations = check_replay_timeline_consistency(body, timelines, "2025-01-01")
+    typed = check_all_timeline_invariants_typed(body, timelines, "2025-01-01")
+
+    assert not any("ACTIVE_DESCENDANT_NOT_MATERIALIZED" in v for v in violations)
+    assert all(v.kind != "active_descendant_not_materialized" for v in typed)
+
+
 def test_replay_timeline_consistency_allows_different_source_descendant_overlay() -> None:
     """A later/different-source descendant can intentionally diverge from ancestor text."""
     body = IRNode(

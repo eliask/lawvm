@@ -360,6 +360,17 @@ def check_replay_timeline_consistency(
             )
         )
 
+    for violation in _active_descendant_materialization_violations(
+        ir_nodes=ir_nodes,
+        active_versions=active_versions,
+    ):
+        violations.append(
+            _active_descendant_materialization_message(
+                violation=violation,
+                pit_date=pit_date,
+            )
+        )
+
     return violations
 
 
@@ -405,6 +416,7 @@ InvariantKind = Literal[
     "timeline_without_ir",
     "content_mismatch",
     "same_source_descendant_shadow",
+    "active_descendant_not_materialized",
 ]
 
 
@@ -492,6 +504,18 @@ def _is_section_address(address: LegalAddress) -> bool:
     return bool(address.path) and address.path[-1][0] == "section"
 
 
+def _section_path_depth(address: LegalAddress) -> int | None:
+    for index, (kind, _label) in enumerate(address.path, start=1):
+        if kind == "section":
+            return index
+    return None
+
+
+def _is_section_descendant_address(address: LegalAddress) -> bool:
+    section_depth = _section_path_depth(address)
+    return section_depth is not None and len(address.path) > section_depth
+
+
 def _source_statute_id(version: ProvisionVersion) -> str:
     return version.source.statute_id if version.source is not None else ""
 
@@ -504,6 +528,15 @@ class _SameSourceDescendantShadowViolation:
     ancestor_version: ProvisionVersion
     timeline_text: str
     materialized_text: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ActiveDescendantMaterializationViolation:
+    address: LegalAddress
+    ancestor_address: LegalAddress | None
+    descendant_version: ProvisionVersion
+    timeline_text: str
+    ancestor_materialized_text: str
 
 
 def _nearest_same_source_ancestor_version(
@@ -580,6 +613,89 @@ def _same_source_descendant_shadow_message(
         f"{source_statute} at {pit_date} is not materialized under same-source "
         f"ancestor {ancestor_address}; timeline={timeline_text[:80]!r}... vs "
         f"ir={materialized_preview!r}..."
+    )
+
+
+def _nearest_materialized_ancestor(
+    address: LegalAddress,
+    ir_nodes: Mapping[LegalAddress, IRNode],
+) -> tuple[LegalAddress, IRNode] | None:
+    for depth in range(len(address.path) - 1, 0, -1):
+        ancestor_address = LegalAddress(path=address.path[:depth])
+        ancestor_node = ir_nodes.get(ancestor_address)
+        if ancestor_node is not None:
+            return ancestor_address, ancestor_node
+    return None
+
+
+def _normalized_ir_text(node: IRNode) -> str:
+    return " ".join(irnode_to_text(node).split())
+
+
+def _active_descendant_materialization_violations(
+    *,
+    ir_nodes: Mapping[LegalAddress, IRNode],
+    active_versions: Mapping[LegalAddress, ProvisionVersion],
+) -> list[_ActiveDescendantMaterializationViolation]:
+    violations: list[_ActiveDescendantMaterializationViolation] = []
+    for address, version in active_versions.items():
+        if not _is_section_descendant_address(address):
+            continue
+        if version.content is None:
+            continue
+        if address in ir_nodes:
+            continue
+        timeline_text = _normalized_ir_text(version.content)
+        if not timeline_text:
+            continue
+        ancestor_pair = _nearest_materialized_ancestor(address, ir_nodes)
+        if ancestor_pair is None:
+            violations.append(
+                _ActiveDescendantMaterializationViolation(
+                    address=address,
+                    ancestor_address=None,
+                    descendant_version=version,
+                    timeline_text=timeline_text,
+                    ancestor_materialized_text="",
+                )
+            )
+            continue
+        ancestor_address, ancestor_node = ancestor_pair
+        ancestor_text = _normalized_ir_text(ancestor_node)
+        if timeline_text in ancestor_text:
+            continue
+        violations.append(
+            _ActiveDescendantMaterializationViolation(
+                address=address,
+                ancestor_address=ancestor_address,
+                descendant_version=version,
+                timeline_text=timeline_text,
+                ancestor_materialized_text=ancestor_text,
+            )
+        )
+    return violations
+
+
+def _active_descendant_materialization_message(
+    *,
+    violation: _ActiveDescendantMaterializationViolation,
+    pit_date: str,
+) -> str:
+    source_statute = _source_statute_id(violation.descendant_version)
+    source_text = f" from {source_statute}" if source_statute else ""
+    ancestor_address = (
+        str(violation.ancestor_address)
+        if violation.ancestor_address is not None
+        else "<missing>"
+    )
+    ancestor_text = violation.ancestor_materialized_text
+    ancestor_preview = ancestor_text[:80] if ancestor_text else "<missing>"
+    return (
+        f"ACTIVE_DESCENDANT_NOT_MATERIALIZED: {violation.address} has active "
+        f"descendant timeline content{source_text} at {pit_date}, but no "
+        f"materialized address and no text witness under ancestor "
+        f"{ancestor_address}; timeline={violation.timeline_text[:80]!r}... vs "
+        f"ancestor_ir={ancestor_preview!r}..."
     )
 
 
@@ -821,6 +937,33 @@ def check_all_timeline_invariants_typed(
                     "ancestor_enacted": violation.ancestor_version.enacted,
                     "timeline_preview": violation.timeline_text[:120],
                     "materialized_preview": violation.materialized_text[:120],
+                },
+            )
+        )
+
+    for violation in _active_descendant_materialization_violations(
+        ir_nodes=ir_nodes,
+        active_versions=active_versions,
+    ):
+        typed_violations.append(
+            _typed_violation_from_address(
+                kind="active_descendant_not_materialized",
+                address=violation.address,
+                message=_active_descendant_materialization_message(
+                    violation=violation,
+                    pit_date=pit_date,
+                ),
+                detail={
+                    "ancestor_address": (
+                        str(violation.ancestor_address)
+                        if violation.ancestor_address is not None
+                        else ""
+                    ),
+                    "source_statute": _source_statute_id(violation.descendant_version),
+                    "descendant_effective": violation.descendant_version.effective,
+                    "descendant_enacted": violation.descendant_version.enacted,
+                    "timeline_preview": violation.timeline_text[:120],
+                    "ancestor_materialized_preview": violation.ancestor_materialized_text[:120],
                 },
             )
         )
