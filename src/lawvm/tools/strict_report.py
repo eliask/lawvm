@@ -529,6 +529,10 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
             f"{proof_gate_summary.get('source_unit_unresolved_count', 0)} unresolved"
         )
         lines.append(
+            "  source chain      : "
+            f"{proof_gate_summary.get('source_completeness_missing_count', 0)} missing"
+        )
+        lines.append(
             "  potential ops     : "
             f"{proof_gate_summary.get('potential_operation_unresolved_count', 0)} unresolved"
         )
@@ -797,6 +801,7 @@ _STRICT_RUN_HEADER = [
     "proof_gate_manual_frontier_count",
     "proof_gate_coverage_frontier_count",
     "proof_gate_other_frontier_count",
+    "proof_gate_source_completeness_missing_count",
     "proof_gate_source_unit_unresolved_count",
     "proof_gate_potential_operation_unresolved_count",
     "proof_gate_regex_unclassified_gap_count",
@@ -976,6 +981,9 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "proof_gate_other_frontier_count": int(
                 proof_gate_summary.get("other_frontier_count") or 0
             ),
+            "proof_gate_source_completeness_missing_count": int(
+                proof_gate_summary.get("source_completeness_missing_count") or 0
+            ),
             "proof_gate_source_unit_unresolved_count": int(
                 proof_gate_summary.get("source_unit_unresolved_count") or 0
             ),
@@ -1046,6 +1054,7 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "proof_gate_manual_frontier_count": 0,
             "proof_gate_coverage_frontier_count": 0,
             "proof_gate_other_frontier_count": 0,
+            "proof_gate_source_completeness_missing_count": 0,
             "proof_gate_source_unit_unresolved_count": 0,
             "proof_gate_potential_operation_unresolved_count": 0,
             "proof_gate_regex_unclassified_gap_count": 0,
@@ -1145,6 +1154,7 @@ def _save_strict_run(results: list[dict[str, Any]], label: str, timestamp: str) 
                     int(rec.get("proof_gate_manual_frontier_count") or 0),
                     int(rec.get("proof_gate_coverage_frontier_count") or 0),
                     int(rec.get("proof_gate_other_frontier_count") or 0),
+                    int(rec.get("proof_gate_source_completeness_missing_count") or 0),
                     int(rec.get("proof_gate_source_unit_unresolved_count") or 0),
                     int(rec.get("proof_gate_potential_operation_unresolved_count") or 0),
                     int(rec.get("proof_gate_regex_unclassified_gap_count") or 0),
@@ -1285,6 +1295,7 @@ def _load_strict_run(label: str) -> list[dict[str, Any]] | None:
                 "proof_gate_manual_frontier_count",
                 "proof_gate_coverage_frontier_count",
                 "proof_gate_other_frontier_count",
+                "proof_gate_source_completeness_missing_count",
                 "proof_gate_source_unit_unresolved_count",
                 "proof_gate_potential_operation_unresolved_count",
                 "proof_gate_regex_unclassified_gap_count",
@@ -1398,6 +1409,7 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     proof_gate_coverage_status_counter: Counter[str] = Counter()
     proof_gate_other_claim_counter: Counter[str] = Counter()
     proof_gate_other_status_counter: Counter[str] = Counter()
+    total_source_completeness_missing = 0
     total_source_unit_unresolved = 0
     total_potential_operation_unresolved = 0
     total_regex_unclassified_gaps = 0
@@ -1406,6 +1418,9 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     for r in valid:
         for gate in r.get("ownership_closure_failed_gates", []):
             ownership_gate_counter[gate] += 1
+        total_source_completeness_missing += int(
+            r.get("proof_gate_source_completeness_missing_count") or 0
+        )
         total_source_unit_unresolved += int(
             r.get("proof_gate_source_unit_unresolved_count") or 0
         )
@@ -1637,6 +1652,7 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     print(f"       manual frontiers       : {total_manual_frontiers}")
     print(f"       coverage frontiers     : {total_coverage_frontiers}")
     print(f"       other frontiers        : {total_other_frontiers}")
+    print(f"       missing source-chain facts: {total_source_completeness_missing}")
     print(f"       unresolved source units: {total_source_unit_unresolved}")
     print(f"       unresolved potential ops: {total_potential_operation_unresolved}")
     print(f"       regex unclassified gaps: {total_regex_unclassified_gaps}")
