@@ -344,6 +344,29 @@ def check_replay_timeline_consistency(
                 ir_preview = ir_norm[:80]
                 violations.append(f"CONTENT_MISMATCH: {address} timeline={tl_preview!r}... vs ir={ir_preview!r}...")
 
+    for (
+        address,
+        ancestor_address,
+        descendant_version,
+        _ancestor_version,
+        timeline_text,
+        materialized_text,
+    ) in _same_source_descendant_shadow_violations(
+        ir_nodes=ir_nodes,
+        active_versions=active_versions,
+        pit_date=pit_date,
+    ):
+        violations.append(
+            _same_source_descendant_shadow_message(
+                address=address,
+                ancestor_address=ancestor_address,
+                descendant_version=descendant_version,
+                timeline_text=timeline_text,
+                materialized_text=materialized_text,
+                pit_date=pit_date,
+            )
+        )
+
     return violations
 
 
@@ -388,6 +411,7 @@ InvariantKind = Literal[
     "ir_without_timeline",
     "timeline_without_ir",
     "content_mismatch",
+    "same_source_descendant_shadow",
 ]
 
 
@@ -473,6 +497,89 @@ def _section_label_from_address(address: LegalAddress) -> str:
 def _is_section_address(address: LegalAddress) -> bool:
     """Return True when the address points at a section node."""
     return bool(address.path) and address.path[-1][0] == "section"
+
+
+def _source_statute_id(version: ProvisionVersion) -> str:
+    return version.source.statute_id if version.source is not None else ""
+
+
+def _nearest_same_source_ancestor_version(
+    address: LegalAddress,
+    version: ProvisionVersion,
+    active_versions: Mapping[LegalAddress, ProvisionVersion],
+) -> tuple[LegalAddress, ProvisionVersion] | None:
+    source_statute = _source_statute_id(version)
+    if not source_statute:
+        return None
+    for depth in range(len(address.path) - 1, 0, -1):
+        ancestor_address = LegalAddress(path=address.path[:depth])
+        ancestor_version = active_versions.get(ancestor_address)
+        if ancestor_version is None or ancestor_version.content is None:
+            continue
+        if _source_statute_id(ancestor_version) == source_statute:
+            return ancestor_address, ancestor_version
+    return None
+
+
+def _same_source_descendant_shadow_violations(
+    *,
+    ir_nodes: Mapping[LegalAddress, IRNode],
+    active_versions: Mapping[LegalAddress, ProvisionVersion],
+    pit_date: str,
+) -> list[tuple[LegalAddress, LegalAddress, ProvisionVersion, ProvisionVersion, str, str]]:
+    violations: list[
+        tuple[LegalAddress, LegalAddress, ProvisionVersion, ProvisionVersion, str, str]
+    ] = []
+    for address, version in active_versions.items():
+        if len(address.path) <= 1:
+            continue
+        if version.content is None:
+            continue
+        ancestor_pair = _nearest_same_source_ancestor_version(address, version, active_versions)
+        if ancestor_pair is None:
+            continue
+        ancestor_address, ancestor_version = ancestor_pair
+        timeline_text = " ".join(irnode_to_text(version.content).split())
+        if not timeline_text:
+            continue
+        materialized_node = ir_nodes.get(address)
+        materialized_text = (
+            " ".join(irnode_to_text(materialized_node).split())
+            if materialized_node is not None
+            else ""
+        )
+        if materialized_text == timeline_text:
+            continue
+        violations.append(
+            (
+                address,
+                ancestor_address,
+                version,
+                ancestor_version,
+                timeline_text,
+                materialized_text,
+            )
+        )
+    return violations
+
+
+def _same_source_descendant_shadow_message(
+    *,
+    address: LegalAddress,
+    ancestor_address: LegalAddress,
+    descendant_version: ProvisionVersion,
+    timeline_text: str,
+    materialized_text: str,
+    pit_date: str,
+) -> str:
+    source_statute = _source_statute_id(descendant_version)
+    materialized_preview = materialized_text[:80] if materialized_text else "<missing>"
+    return (
+        f"SAME_SOURCE_DESCENDANT_SHADOW: {address} selected descendant from "
+        f"{source_statute} at {pit_date} is not materialized under same-source "
+        f"ancestor {ancestor_address}; timeline={timeline_text[:80]!r}... vs "
+        f"ir={materialized_preview!r}..."
+    )
 
 
 def _selection_detail(selection: VersionSelectionResult) -> SelectionDetail:
@@ -686,5 +793,42 @@ def check_all_timeline_invariants_typed(
                     ),
                 )
             )
+
+    for (
+        address,
+        ancestor_address,
+        descendant_version,
+        ancestor_version,
+        timeline_text,
+        materialized_text,
+    ) in _same_source_descendant_shadow_violations(
+        ir_nodes=ir_nodes,
+        active_versions=active_versions,
+        pit_date=pit_date,
+    ):
+        typed_violations.append(
+            _typed_violation_from_address(
+                kind="same_source_descendant_shadow",
+                address=address,
+                message=_same_source_descendant_shadow_message(
+                    address=address,
+                    ancestor_address=ancestor_address,
+                    descendant_version=descendant_version,
+                    timeline_text=timeline_text,
+                    materialized_text=materialized_text,
+                    pit_date=pit_date,
+                ),
+                detail={
+                    "ancestor_address": str(ancestor_address),
+                    "source_statute": _source_statute_id(descendant_version),
+                    "descendant_effective": descendant_version.effective,
+                    "descendant_enacted": descendant_version.enacted,
+                    "ancestor_effective": ancestor_version.effective,
+                    "ancestor_enacted": ancestor_version.enacted,
+                    "timeline_preview": timeline_text[:120],
+                    "materialized_preview": materialized_text[:120],
+                },
+            )
+        )
 
     return typed_violations

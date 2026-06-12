@@ -474,6 +474,124 @@ def test_replay_timeline_consistency_flags_nested_section_content_mismatch() -> 
     assert any("CONTENT_MISMATCH" in v for v in violations)
 
 
+def test_replay_timeline_consistency_flags_same_source_descendant_shadow() -> None:
+    """Same-source selected descendant text must survive materialization."""
+    source = OperationSource(statute_id="2022/1029")
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="32",
+                children=(
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="new first"),
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="stale second"),
+                ),
+            ),
+        ),
+    )
+    section_addr = _addr(("section", "32"))
+    subsection_addr = _addr(("section", "32"), ("subsection", "2"))
+    timelines = {
+        section_addr: _tl(
+            section_addr,
+            [
+                _pv(
+                    "2023-01-01",
+                    content=IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="32",
+                        children=(
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="new first"),
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="stale second"),
+                        ),
+                    ),
+                    source=source,
+                )
+            ],
+        ),
+        subsection_addr: _tl(
+            subsection_addr,
+            [
+                _pv(
+                    "2023-01-01",
+                    content=IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="2",
+                        text="authoritative second",
+                    ),
+                    source=source,
+                )
+            ],
+        ),
+    }
+
+    violations = check_replay_timeline_consistency(body, timelines, "2025-01-01")
+
+    assert any("SAME_SOURCE_DESCENDANT_SHADOW" in v for v in violations)
+    typed = check_all_timeline_invariants_typed(body, timelines, "2025-01-01")
+    violation = next(v for v in typed if v.kind == "same_source_descendant_shadow")
+    assert violation.address_path == "section:32/subsection:2"
+    assert violation.detail["ancestor_address"] == "section:32"
+    assert violation.detail["source_statute"] == "2022/1029"
+
+
+def test_replay_timeline_consistency_allows_different_source_descendant_overlay() -> None:
+    """A later/different-source descendant can intentionally diverge from ancestor text."""
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="32",
+                children=(
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="ancestor text"),
+                ),
+            ),
+        ),
+    )
+    section_addr = _addr(("section", "32"))
+    subsection_addr = _addr(("section", "32"), ("subsection", "2"))
+    timelines = {
+        section_addr: _tl(
+            section_addr,
+            [
+                _pv(
+                    "2020-01-01",
+                    content=IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="32",
+                        children=(
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="ancestor text"),
+                        ),
+                    ),
+                    source=OperationSource(statute_id="2020/1"),
+                )
+            ],
+        ),
+        subsection_addr: _tl(
+            subsection_addr,
+            [
+                _pv(
+                    "2023-01-01",
+                    content=IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="2",
+                        text="later descendant text",
+                    ),
+                    source=OperationSource(statute_id="2023/1"),
+                )
+            ],
+        ),
+    }
+
+    violations = check_replay_timeline_consistency(body, timelines, "2025-01-01")
+    typed = check_all_timeline_invariants_typed(body, timelines, "2025-01-01")
+
+    assert not any("SAME_SOURCE_DESCENDANT_SHADOW" in v for v in violations)
+    assert all(v.kind != "same_source_descendant_shadow" for v in typed)
+
+
 def test_replay_timeline_consistency_understands_supplement_roots() -> None:
     """Top-level supplements must be visible to replay/timeline consistency checks."""
     statute = IRStatute(
