@@ -252,6 +252,72 @@ def test_blame_matches_chapter_scoped_op_to_unique_part_prefixed_section(monkeyp
     assert "unmodified" not in out
 
 
+def test_blame_latest_unique_suffix_op_beats_older_exact_container_op(monkeypatch, capsys) -> None:
+    """A later child op may be less container-scoped than an older section op.
+
+    Exact-key matching must not make an older chapter-scoped op win over a
+    later section-only op when the section-only key uniquely identifies the
+    replayed section.
+    """
+
+    def fake_replay_xml(statute_id, *, mode, quiet=False, compiled_ops_out=None, replay_meta_out=None):
+        if compiled_ops_out is not None:
+            compiled_ops_out.extend(
+                [
+                    {
+                        "sequence": 10,
+                        "op_id": "op_old",
+                        "action": "replace",
+                        "source_statute": "2022/100",
+                        "source_title": "Older exact amendment",
+                        "target_unit_kind": "section",
+                        "target_norm": "9",
+                        "target_chapter": "2",
+                    },
+                    {
+                        "sequence": 20,
+                        "op_id": "op_new",
+                        "action": "replace",
+                        "source_statute": "2026/200",
+                        "source_title": "Newer child amendment",
+                        "target_unit_kind": "section",
+                        "target_norm": "9",
+                    },
+                ]
+            )
+        if replay_meta_out is not None:
+            replay_meta_out["apply_mutation_events"] = [
+                {
+                    "source_statute": "2022/100",
+                    "op_id": "op_old",
+                    "outcome": "applied",
+                },
+                {
+                    "source_statute": "2026/200",
+                    "op_id": "op_new",
+                    "outcome": "applied",
+                },
+            ]
+        return _fake_master_with_part_section()
+
+    monkeypatch.setattr("lawvm.tools.blame.replay_xml", fake_replay_xml)
+    blame.main(
+        Namespace(
+            statute_id="2023/703",
+            address="part:1/chapter:2/section:9",
+            source=None,
+            mode="official_consolidation",
+            format="json",
+        )
+    )
+
+    payload = _json.loads(capsys.readouterr().out)
+    [row] = payload["provisions"]
+    assert row["status"] == "modified_by_op"
+    assert row["last_op"]["source_statute"] == "2026/200"
+    assert row["last_op"]["op_id"] == "op_new"
+
+
 def test_blame_rejects_ambiguous_part_suffix_match(monkeypatch, capsys) -> None:
     """A chapter/section op without part scope must not pick between duplicate parts."""
 
@@ -695,6 +761,32 @@ def test_specimen_blame_2023_703_section_9_attributes_2026_376(capsys) -> None:
     assert row["status"] == "modified_by_op"
     assert row["last_op"]["source_statute"] == "2026/376"
     assert row["last_op"]["action"] == "insert"
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_blame_1997_1412_section_11_attributes_later_child_op(capsys) -> None:
+    """MeVM notice specimen: later subsection/item ops must govern blame.
+
+    The 2022 whole-section replacement has exact chapter context, but 2026/26
+    later replaces child targets inside §11 with only section-level source
+    scope. The suffix is unique in the replayed tree, so the later applied child
+    op is the correct last-touch attribution for the section.
+    """
+    blame.main(
+        Namespace(
+            statute_id="1997/1412",
+            address="section:11",
+            source=None,
+            mode="official_consolidation",
+            format="json",
+        )
+    )
+    payload = _json.loads(capsys.readouterr().out)
+    [row] = payload["provisions"]
+    assert row["address"] == "chapter:2/section:11"
+    assert row["status"] == "modified_by_op"
+    assert row["last_op"]["source_statute"] == "2026/26"
+    assert row["last_op"]["sequence"] == 216
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")

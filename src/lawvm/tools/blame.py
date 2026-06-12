@@ -151,6 +151,22 @@ def _op_has_applied_mutation_evidence(
     return "applied" in outcomes
 
 
+def _op_sequence_value(op: Mapping[str, Any]) -> int:
+    sequence = op.get("sequence")
+    if isinstance(sequence, bool):
+        return -1
+    if isinstance(sequence, int):
+        return sequence
+    if isinstance(sequence, float) and sequence.is_integer():
+        return int(sequence)
+    text = str(sequence or "").strip()
+    return int(text) if text.isdecimal() else -1
+
+
+def _op_is_later(candidate: dict[str, Any], existing: dict[str, Any]) -> bool:
+    return _op_sequence_value(candidate) >= _op_sequence_value(existing)
+
+
 def _build_blame_map(
     compiled_ops: list[dict[str, Any]],
     apply_events: object = None,
@@ -176,7 +192,9 @@ def _build_blame_map(
             key = section_key_from_compiled_scope_row(op)
         if not key:
             continue
-        blame[key] = op
+        existing = blame.get(key)
+        if existing is None or _op_is_later(op, existing):
+            blame[key] = op
 
     return blame
 
@@ -286,12 +304,26 @@ def _op_for_section_key(
     suffix-key ops only when that suffix identifies exactly one replay section.
     Section-only ops (``section:22``) use the same uniqueness rule.
     """
-    op = blame_map.get(key)
-    if op is not None:
-        return op
+    candidates: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, int]] = set()
+
+    def add_candidate(op: Optional[dict[str, Any]]) -> None:
+        if op is None:
+            return
+        dedupe_key = (
+            str(op.get("source_statute") or ""),
+            str(op.get("op_id") or ""),
+            _op_sequence_value(op),
+        )
+        if dedupe_key in seen:
+            return
+        seen.add(dedupe_key)
+        candidates.append(op)
+
+    add_candidate(blame_map.get(key))
     section, chapter = _key_labels(key)
     if not section:
-        return None
+        return max(candidates, key=_op_sequence_value) if candidates else None
     suffixes: list[str] = []
     if chapter:
         suffixes.append(f"chapter:{chapter}/section:{section}")
@@ -306,8 +338,8 @@ def _op_for_section_key(
             if candidate == suffix or candidate.endswith(f"/{suffix}")
         ]
         if len(matches) == 1 and matches[0] == key:
-            return op
-    return None
+            add_candidate(op)
+    return max(candidates, key=_op_sequence_value) if candidates else None
 
 
 def _matching_address_break(
