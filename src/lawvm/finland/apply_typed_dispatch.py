@@ -15,7 +15,11 @@ from lawvm.core.compile_result import SourcePathology, StrictProfile
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.ir_helpers import structural_subtree_hash
-from lawvm.core.mutation_boundary import diff_ir_paths_identity_pruned
+from lawvm.core.mutation_boundary import (
+    diff_ir_paths_identity_pruned,
+    path_has_prefix,
+    path_is_strict_prefix,
+)
 from lawvm.core.observed_write_audit import ObservedWriteAudit, build_observed_write_audit
 from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
@@ -87,6 +91,16 @@ _SUBSECTION_RELABEL_MIGRATION_RULE_ID = "subsection_relabel_renumber"
 _CHAPTER_RELABEL_MIGRATION_RULE_ID = "chapter_relabel_renumber"
 _PART_RELABEL_MIGRATION_RULE_ID = "part_relabel_renumber"
 _MOVE_REPARENT_MIGRATION_RULE_ID = "move_reparent"
+_INTRO_LIST_MOMENT_SHAPE_RULE_ID = "intro_list_moment_shape"
+_SPARSE_ALAKOHTA_INSERT_MERGE_RULE_ID = "sparse_alakohta_insert_merge"
+_SPARSE_ALAKOHTA_REPLACE_MERGE_RULE_ID = "sparse_alakohta_replace_merge"
+_SPARSE_ITEM_TAIL_SUBSECTION_PRUNE_RULE_ID = "sparse_item_tail_subsection_prune"
+_SUBSECTION_DISPATCH_LANDED_RECOVERY_RULE_IDS = (
+    _INTRO_LIST_MOMENT_SHAPE_RULE_ID,
+    _SPARSE_ALAKOHTA_REPLACE_MERGE_RULE_ID,
+    _SPARSE_ALAKOHTA_INSERT_MERGE_RULE_ID,
+    _SPARSE_ITEM_TAIL_SUBSECTION_PRUNE_RULE_ID,
+)
 
 
 def _address_leaf_kind(address) -> str:
@@ -399,6 +413,70 @@ def _section_subtree_landed_touch_paths(
     )
 
 
+def _path_explained_by_effect_roots(path: TreePath, roots: TreePaths) -> bool:
+    """Mirror mutation-accounting target coverage for local allowance pruning."""
+    return path_has_prefix(path, roots) or any(path_is_strict_prefix(path, root) for root in roots)
+
+
+def _new_pathologies_include_recovery_kind(
+    pathologies: tuple[SourcePathology, ...],
+    recovery_kind: str,
+) -> bool:
+    return any(
+        str(pathology.detail.get("recovery_kind", "") or pathology.detail.get("rebound_kind", "")) == recovery_kind
+        for pathology in pathologies
+    )
+
+
+def _sparse_item_tail_prune_recovery_paths(
+    *,
+    new_pathologies: tuple[SourcePathology, ...],
+    landed_paths: TreePaths,
+    resolved_target_path: TreePath | None,
+    parent_path: TreePath | None,
+) -> TreePaths:
+    """Return non-target paths owned by sparse item tail-subsection pruning.
+
+    The item merge helper emits a source pathology when it removes the adjacent
+    duplicate tail subsection. Mutation events must still keep the nominal item
+    target narrow; this helper only declares the concrete landed paths that are
+    outside the target/parent effect region and only when that exact recovery
+    fired during the dispatch call.
+    """
+    if not landed_paths or not _new_pathologies_include_recovery_kind(
+        new_pathologies,
+        _SPARSE_ITEM_TAIL_SUBSECTION_PRUNE_RULE_ID,
+    ):
+        return ()
+    effect_roots: TreePaths = tuple(path for path in (resolved_target_path, parent_path) if path)
+    return tuple(path for path in landed_paths if not _path_explained_by_effect_roots(path, effect_roots))
+
+
+def _subsection_dispatch_landed_recovery_allowances(
+    *,
+    new_pathologies: tuple[SourcePathology, ...],
+    landed_paths: TreePaths,
+    resolved_target_path: TreePath | None,
+    parent_path: TreePath | None,
+) -> tuple[DeclaredMutationAllowance, ...]:
+    """Declare known sparse-item recoveries that legitimately landed off-axis."""
+    if not landed_paths:
+        return ()
+    effect_roots: TreePaths = tuple(path for path in (resolved_target_path, parent_path) if path)
+    recovery_paths = tuple(path for path in landed_paths if not _path_explained_by_effect_roots(path, effect_roots))
+    if not recovery_paths:
+        return ()
+    return tuple(
+        DeclaredMutationAllowance(
+            kind="recovery_path",
+            paths=recovery_paths,
+            rule_id=rule_id,
+        )
+        for rule_id in _SUBSECTION_DISPATCH_LANDED_RECOVERY_RULE_IDS
+        if _new_pathologies_include_recovery_kind(new_pathologies, rule_id)
+    )
+
+
 def _find_scoped_section_insert_parent_path(
     ir: IRNode,
     *,
@@ -704,6 +782,7 @@ def _apply_intent_section_level(
     )
     assert subsection_rop is not None, "typed subsection normalization must preserve the late-waist op"
 
+    pathology_cursor = len(source_pathologies_out) if source_pathologies_out is not None else 0
     subsection_result = _apply_deterministic_subsection_op(
         state,
         subsection_dispatch_op,
@@ -723,9 +802,14 @@ def _apply_intent_section_level(
     )
     if subsection_result is not None:
         resolved_target_path = _resolved_target_path_for_rop_event(rop, sec_path)
+        parent_path = _parent_path(resolved_target_path)
+        new_pathologies: tuple[SourcePathology, ...] = ()
+        if source_pathologies_out is not None:
+            new_pathologies = tuple(source_pathologies_out[pathology_cursor:])
         consumed_paths: TreePaths = ()
         created_paths: TreePaths = ()
         replaced_paths: TreePaths = ()
+        declared_allowances: tuple[DeclaredMutationAllowance, ...] = ()
         if subsection_result is not state and resolved_target_path is not None:
             action = rop.resolved_action_type.lower()
             if action == "insert":
@@ -753,6 +837,12 @@ def _apply_intent_section_level(
             for path in _section_subtree_landed_touch_paths(sec_node, subsection_result, sec_path)
             if path not in already_declared
         )
+        declared_allowances = _subsection_dispatch_landed_recovery_allowances(
+            new_pathologies=new_pathologies,
+            landed_paths=landed_paths,
+            resolved_target_path=resolved_target_path,
+            parent_path=parent_path,
+        )
         replaced_paths = replaced_paths + landed_paths
         _emit_apply_mutation_event_for_rop(
             mutation_events_out,
@@ -760,7 +850,8 @@ def _apply_intent_section_level(
             helper="_apply_deterministic_subsection_op",
             outcome="applied" if subsection_result is not state else "failed",
             resolved_target_path=resolved_target_path,
-            parent_path=_parent_path(resolved_target_path),
+            parent_path=parent_path,
+            declared_allowances=declared_allowances,
             used_fallback_tags=used_fallback_tags,
             consumed_paths=consumed_paths,
             created_paths=created_paths,

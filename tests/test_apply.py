@@ -9406,6 +9406,40 @@ class TestApplyItemReplace:
         text = " ".join(c.text or "" for c in para2.children)
         assert "updated second item" in text
 
+    def test_replace_item_on_intro_list_shape_emits_rebound_pathology(self) -> None:
+        sec = _sec(
+            "1",
+            _sub("1", _intro("intro text:")),
+            _sub("2", _para("1", "first item"), _para("2", "second item"), _para("3", "third item")),
+        )
+        state = _make_state(_body(sec))
+        sec_path = (("section", "1"),)
+        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="3")
+        amend_sub = _sub("1", _para("3", "updated third item"))
+        muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list[SourcePathology] = []
+
+        result = _apply_item_replace(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            amend_sub,
+            muutos_ir,
+            "1 § 1 mom 3 k",
+            source_pathologies_out=pathologies,
+        )
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        list_sub = [c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION][1]
+        para3 = next(c for c in list_sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "3")
+        assert "updated third item" in irnode_to_text(para3)
+        assert [p.code for p in pathologies] == ["SUBSECTION_TARGET_REBOUND"]
+        assert pathologies[0].detail["rebound_kind"] == "intro_list_moment_shape"
+
     def test_replace_item_missing_in_nominal_subsection_does_not_mutate_sibling_subsection(self):
         sec = _sec(
             "1",
@@ -12521,6 +12555,83 @@ def test_section_subtree_landed_touch_paths_scoped_to_resolved_section() -> None
         )
     )
     assert _section_subtree_landed_touch_paths(before_sec, reshaped_state, sec_path) == ()
+
+
+def test_sparse_item_tail_prune_recovery_allowance_declares_only_non_target_touches() -> None:
+    """Sparse item tail pruning owns only the concrete sibling paths it touched."""
+    from lawvm.finland.apply_typed_dispatch import (
+        _sparse_item_tail_prune_recovery_paths,
+        _subsection_dispatch_landed_recovery_allowances,
+    )
+
+    recovery_paths = _sparse_item_tail_prune_recovery_paths(
+        new_pathologies=(
+            SourcePathology(
+                code="DESTRUCTIVE_SHAPE_LOSS_RISK",
+                message="duplicate sparse item tail subsection pruned",
+                target_unit_kind="section",
+                target_label="21",
+                detail={"recovery_kind": "sparse_item_tail_subsection_prune"},
+            ),
+        ),
+        landed_paths=(
+            (("section", "21"), ("subsection", "1"), ("item", "7")),
+            (("section", "21"), ("subsection", "2"), ("content", "")),
+        ),
+        resolved_target_path=(("section", "21"), ("subsection", "1"), ("item", "7")),
+        parent_path=(("section", "21"), ("subsection", "1")),
+    )
+
+    assert recovery_paths == ((("section", "21"), ("subsection", "2"), ("content", "")),)
+    allowances = _subsection_dispatch_landed_recovery_allowances(
+        new_pathologies=(
+            SourcePathology(
+                code="SUBSECTION_TARGET_REBOUND",
+                message="intro-list shape rebound",
+                target_unit_kind="section",
+                target_label="21",
+                detail={"rebound_kind": "intro_list_moment_shape"},
+            ),
+        ),
+        landed_paths=(
+            (("section", "21"), ("subsection", "1"), ("item", "7")),
+            (("section", "21"), ("subsection", "2"), ("paragraph", "7"), ("content", "")),
+        ),
+        resolved_target_path=(("section", "21"), ("subsection", "1"), ("item", "7")),
+        parent_path=(("section", "21"), ("subsection", "1")),
+    )
+    assert allowances == (
+        DeclaredMutationAllowance(
+            kind="recovery_path",
+            paths=((("section", "21"), ("subsection", "2"), ("paragraph", "7"), ("content", "")),),
+            rule_id="intro_list_moment_shape",
+        ),
+    )
+    mutation_events = [
+        ApplyMutationEvent(
+            op_id="test_op",
+            source_statute="2020/1",
+            action="replace",
+            helper="_apply_deterministic_subsection_op",
+            outcome="applied",
+            resolved_target_path=(("section", "21"), ("subsection", "1"), ("item", "7")),
+            parent_path=(("section", "21"), ("subsection", "1")),
+            replaced_paths=(
+                (("section", "21"), ("subsection", "1"), ("item", "7")),
+                (("section", "21"), ("subsection", "2"), ("content", "")),
+            ),
+            declared_allowances=(
+                DeclaredMutationAllowance(
+                    kind="recovery_path",
+                    paths=recovery_paths,
+                    rule_id="sparse_item_tail_subsection_prune",
+                ),
+            ),
+        )
+    ]
+    results = analyze_apply_mutation_accounting(mutation_events)
+    assert [result.code for result in results] == ["REPLAY_APPLY_BOUNDARY_TOUCH_ALLOWED"]
+    assert check_apply_mutation_accounting(mutation_events) == []
 
 
 def test_typed_dispatch_unknown_intent_emits_failed_event() -> None:

@@ -531,15 +531,6 @@ def _apply_item_replace(
     unlabelled_relabel_attempted = False
     n = _resolve_item_subsection_index(subsecs, view.target_paragraph)
     item_norm = re.sub(r"[)\s.]", "", view.target_item).strip().lower()
-    if view.target_paragraph == 1 and view.target_special != "johd":
-        if _report_item_intro_list_rebound(
-            source_pathologies_out=source_pathologies_out,
-            view=view,
-            subsecs=subsecs,
-            amend_sub=amend_sub,
-            strict_profile=strict_profile,
-        ):
-            return None
     if _is_item_johd and 0 <= n < len(subsecs):
         sub = subsecs[n]
         paras = [c for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]
@@ -572,7 +563,7 @@ def _apply_item_replace(
                 return _with_preserved_provision_index(state, _tops.replace_at(state.ir, sec_path, new_sec))
             item_johd_absent_attempted = True
     if 0 <= n < len(subsecs):
-        if view.target_special == "johd" and view.target_paragraph == 1 and _has_intro_list_moment_shape_ir(subsecs):
+        if view.target_paragraph == 1 and _has_intro_list_moment_shape_ir(subsecs):
             if _report_item_intro_list_rebound(
                 source_pathologies_out=source_pathologies_out,
                 view=view,
