@@ -10,6 +10,7 @@ from lawvm.core.phase_result import Finding, OBLIGATION_ROLE, OBSERVATION_ROLE, 
 from lawvm.core.replay_contracts import ReplayCheckpoint, ReplayCheckpointCallback
 from lawvm.core.tree_ops import resort_children as _resort_children
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
+from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.process_result_builder import ProcessAmendmentSinks
 from lawvm.finland.vts import VtsSkippedTarget, VtsSourceDiagnostic
 
@@ -313,17 +314,19 @@ def execute_replay_plan(
     for idx, mid in enumerate(plan.amendment_ids):
         future_repeals = repeal_suffix[idx] if idx < len(repeal_suffix) else set()
         _pm_result = process_muutoslaki(
-            mid,
-            state,
-            plan.ctx,
-            replay_mode=plan.replay_mode,
-            parent_id=plan.parent_id,
-            strict_profile=strict_profile,
-            chapter_seed_skip=chapter_seed_skip,
-            corpus=corpus,
-            future_repeals=future_repeals if future_repeals else None,
-            prior_migration_events=tuple(effective_migration_events_out),
-            processed_amendment_titles=processed_amendment_titles,
+            request=ProcessAmendmentRequest(
+                amendment_id=mid,
+                state=state,
+                ctx=plan.ctx,
+                replay_mode=plan.replay_mode,
+                parent_id=plan.parent_id,
+                strict_profile=strict_profile,
+                chapter_seed_skip=chapter_seed_skip,
+                corpus=corpus,
+                future_repeals=future_repeals if future_repeals else None,
+                prior_migration_events=tuple(effective_migration_events_out),
+                processed_amendment_titles=processed_amendment_titles,
+            ),
             sinks=ProcessAmendmentSinks(
                 compiled_ops_out=compiled_ops_out,
                 lo_ops_out=lo_ops_out,

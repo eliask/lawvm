@@ -9,6 +9,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.tree_ops import check_invariants
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
+from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.process_result_builder import ProcessAmendmentSinks
 from lawvm.finland.replay_pipeline import ReplayPlan, execute_replay_plan, prepare_replay_plan
 from lawvm.corpus_store import CorpusStore
@@ -23,6 +24,12 @@ from lawvm.finland.vts import (
 
 def _corpus_stub() -> CorpusStore:
     return cast(CorpusStore, object())
+
+
+def _request_from_kwargs(kwargs: dict) -> ProcessAmendmentRequest:
+    request = kwargs.get("request")
+    assert isinstance(request, ProcessAmendmentRequest)
+    return request
 
 
 def test_execute_replay_plan_records_post_amendment_tree_invariant_findings() -> None:
@@ -45,10 +52,11 @@ def test_execute_replay_plan_records_post_amendment_tree_invariant_findings() ->
     )
     findings: list[Finding] = []
 
-    def fake_process_muutoslaki(mid, state, ctx, **kwargs):
-        assert mid == "1991/1"
-        assert ctx.id == "test/1"
-        return PhaseResult(output=state.with_ir(
+    def fake_process_muutoslaki(**kwargs):
+        request = _request_from_kwargs(kwargs)
+        assert request.amendment_id == "1991/1"
+        assert request.ctx.id == "test/1"
+        return PhaseResult(output=request.state.with_ir(
             IRNode(
                 kind=IRNodeKind.BODY,
                 children=(IRNode(kind=IRNodeKind.SECTION, label="1"),
@@ -101,19 +109,20 @@ def test_execute_replay_plan_collects_phase_result_findings() -> None:
     )
     findings: list[Finding] = []
 
-    def fake_process_muutoslaki(mid, state, ctx, **kwargs):
-        assert mid == "1991/1"
-        assert ctx.id == "test/1"
+    def fake_process_muutoslaki(**kwargs):
+        request = _request_from_kwargs(kwargs)
+        assert request.amendment_id == "1991/1"
+        assert request.ctx.id == "test/1"
         assert "_adjudications_out" not in kwargs
         return PhaseResult(
-            output=state,
+            output=request.state,
             findings=(
                 Finding(
                     kind="APPLY.STRICT_REJECTED_UNCOVERED_BODY",
                     role="obligation",
                     stage="process_muutoslaki",
                     detail={"message": "strict rejection"},
-                    source_statute=mid,
+                    source_statute=request.amendment_id,
                     blocking=True,
                 ),
             ),
@@ -178,9 +187,10 @@ def test_execute_replay_plan_records_chapter_seed_repair_findings() -> None:
         )
         return ir, {("7", "1991/1")}
 
-    def fake_process_muutoslaki(mid, state, ctx, **kwargs):
-        assert kwargs.get("chapter_seed_skip") == {("7", "1991/1")}
-        return PhaseResult(output=state)
+    def fake_process_muutoslaki(**kwargs):
+        request = _request_from_kwargs(kwargs)
+        assert request.chapter_seed_skip == {("7", "1991/1")}
+        return PhaseResult(output=request.state)
 
     execute_replay_plan(
         plan,
@@ -243,7 +253,7 @@ def test_execute_replay_plan_records_chapter_seed_source_pathology_findings() ->
     execute_replay_plan(
         plan,
         corpus=_corpus_stub(),
-        process_muutoslaki=lambda mid, state, ctx, **kwargs: PhaseResult(output=state),
+        process_muutoslaki=lambda **kwargs: PhaseResult(output=_request_from_kwargs(kwargs).state),
         seed_missing_chapters=fake_seed_missing_chapters,
         pre_scan_repeal_targets=lambda mids, corpus, parent_id, **kwargs: [],
         future_repeals_for_index=lambda schedule: [set() for _ in schedule],
@@ -317,7 +327,7 @@ def test_execute_replay_plan_projects_vts_prescan_skipped_targets_as_findings() 
     execute_replay_plan(
         plan,
         corpus=_corpus_stub(),
-        process_muutoslaki=lambda mid, state, ctx, **kwargs: PhaseResult(output=state),
+        process_muutoslaki=lambda **kwargs: PhaseResult(output=_request_from_kwargs(kwargs).state),
         seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
         pre_scan_repeal_targets=fake_pre_scan,
         future_repeals_for_index=lambda schedule: [set() for _ in schedule],
@@ -383,7 +393,7 @@ def test_execute_replay_plan_projects_vts_prescan_source_diagnostics_as_findings
     execute_replay_plan(
         plan,
         corpus=_corpus_stub(),
-        process_muutoslaki=lambda mid, state, ctx, **kwargs: PhaseResult(output=state),
+        process_muutoslaki=lambda **kwargs: PhaseResult(output=_request_from_kwargs(kwargs).state),
         seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
         pre_scan_repeal_targets=fake_pre_scan,
         future_repeals_for_index=lambda schedule: [set() for _ in schedule],
@@ -467,10 +477,11 @@ def test_execute_replay_plan_does_not_pass_internal_adjudication_sink() -> None:
         oracle_suspect="",
     )
 
-    def fake_process_muutoslaki(mid, state, ctx, **kwargs):
-        assert mid == "1991/1"
+    def fake_process_muutoslaki(**kwargs):
+        request = _request_from_kwargs(kwargs)
+        assert request.amendment_id == "1991/1"
         assert "_adjudications_out" not in kwargs
-        return PhaseResult(output=state)
+        return PhaseResult(output=request.state)
 
     execute_replay_plan(
         plan,
@@ -504,13 +515,14 @@ def test_execute_replay_plan_passes_mutation_events_sink_to_process_muutoslaki()
     )
     mutation_events = []
 
-    def fake_process_muutoslaki(mid, state, ctx, **kwargs):
-        assert mid == "1991/1"
+    def fake_process_muutoslaki(**kwargs):
+        request = _request_from_kwargs(kwargs)
+        assert request.amendment_id == "1991/1"
         sinks = kwargs.get("sinks")
         assert isinstance(sinks, ProcessAmendmentSinks)
         assert sinks.mutation_events_out is mutation_events
-        mutation_events.append({"mid": mid, "kind": "fake"})
-        return PhaseResult(output=state)
+        mutation_events.append({"mid": request.amendment_id, "kind": "fake"})
+        return PhaseResult(output=request.state)
 
     final_state = execute_replay_plan(
         plan,
@@ -548,13 +560,14 @@ def test_execute_replay_plan_passes_sparse_leftovers_sink_to_process_muutoslaki(
     )
     leftovers = []
 
-    def fake_process_muutoslaki(mid, state, ctx, **kwargs):
-        assert mid == "1991/1"
+    def fake_process_muutoslaki(**kwargs):
+        request = _request_from_kwargs(kwargs)
+        assert request.amendment_id == "1991/1"
         sinks = kwargs.get("sinks")
         assert isinstance(sinks, ProcessAmendmentSinks)
         assert sinks.sparse_leftovers_out is leftovers
-        leftovers.append({"mid": mid, "kind": "fake_leftover"})
-        return PhaseResult(output=state)
+        leftovers.append({"mid": request.amendment_id, "kind": "fake_leftover"})
+        return PhaseResult(output=request.state)
 
     final_state = execute_replay_plan(
         plan,
@@ -592,13 +605,14 @@ def test_execute_replay_plan_passes_regex_coverage_sink_to_process_muutoslaki() 
     )
     coverage_rows = []
 
-    def fake_process_muutoslaki(mid, state, ctx, **kwargs):
-        assert mid == "1991/1"
+    def fake_process_muutoslaki(**kwargs):
+        request = _request_from_kwargs(kwargs)
+        assert request.amendment_id == "1991/1"
         sinks = kwargs.get("sinks")
         assert isinstance(sinks, ProcessAmendmentSinks)
         assert sinks.regex_recognition_coverage_out is coverage_rows
-        coverage_rows.append({"mid": mid, "kind": "fake_regex_coverage"})
-        return PhaseResult(output=state)
+        coverage_rows.append({"mid": request.amendment_id, "kind": "fake_regex_coverage"})
+        return PhaseResult(output=request.state)
 
     final_state = execute_replay_plan(
         plan,
@@ -636,13 +650,14 @@ def test_execute_replay_plan_passes_sparse_slot_bindings_sink_to_process_muutosl
     )
     bindings = []
 
-    def fake_process_muutoslaki(mid, state, ctx, **kwargs):
-        assert mid == "1991/1"
+    def fake_process_muutoslaki(**kwargs):
+        request = _request_from_kwargs(kwargs)
+        assert request.amendment_id == "1991/1"
         sinks = kwargs.get("sinks")
         assert isinstance(sinks, ProcessAmendmentSinks)
         assert sinks.sparse_slot_bindings_out is bindings
-        bindings.append({"mid": mid, "kind": "fake_binding"})
-        return PhaseResult(output=state)
+        bindings.append({"mid": request.amendment_id, "kind": "fake_binding"})
+        return PhaseResult(output=request.state)
 
     final_state = execute_replay_plan(
         plan,
@@ -691,8 +706,9 @@ def test_execute_replay_plan_collects_temporal_events_from_phase_result() -> Non
         source=OperationSource(statute_id="test/1", effective="1991-01-01"),
     )
 
-    def fake_process_muutoslaki(mid, state, ctx, **kwargs):
-        return PhaseResult(output=state, temporal_events=(event,))
+    def fake_process_muutoslaki(**kwargs):
+        request = _request_from_kwargs(kwargs)
+        return PhaseResult(output=request.state, temporal_events=(event,))
 
     execute_replay_plan(
         plan,
@@ -729,8 +745,9 @@ def test_execute_replay_plan_handles_empty_temporal_events_without_side_channels
     )
     collected_events: list = []
 
-    def fake_process_muutoslaki(mid, state, ctx, **kwargs):
-        return PhaseResult(output=state, temporal_events=())
+    def fake_process_muutoslaki(**kwargs):
+        request = _request_from_kwargs(kwargs)
+        return PhaseResult(output=request.state, temporal_events=())
 
     execute_replay_plan(
         plan,
@@ -777,8 +794,9 @@ def test_execute_replay_plan_uses_phase_result_contract_without_optional_side_ba
         source=OperationSource(statute_id="test/1", effective="1991-01-01"),
     )
 
-    def fake_process_muutoslaki(mid, state, ctx, **kwargs):
-        return PhaseResult(output=state, temporal_events=(event,))
+    def fake_process_muutoslaki(**kwargs):
+        request = _request_from_kwargs(kwargs)
+        return PhaseResult(output=request.state, temporal_events=(event,))
 
     final_state = execute_replay_plan(
         plan,

@@ -6,7 +6,7 @@ from functools import lru_cache
 import lxml.etree as etree
 import copy
 from pathlib import Path
-from dataclasses import dataclass, replace as dc_replace
+from dataclasses import replace as dc_replace
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Literal, Optional, Protocol, Set, Tuple, cast
 
 if TYPE_CHECKING:
@@ -119,27 +119,7 @@ from lawvm.finland.replay_findings import (
     _serialize_observed_write_audit,
     _strict_rejected_source_pathology_finding,
 )
-
-
-@dataclass(frozen=True)
-class RepealTargetRef:
-    """Typed repeal-target carrier for future-repeal suppression bookkeeping."""
-
-    target_unit_kind: TargetUnitKind
-    target_norm: str
-    target_chapter: Optional[str] = None
-
-    @classmethod
-    def section(cls, target_norm: str, target_chapter: Optional[str] = None) -> "RepealTargetRef":
-        return cls("section", target_norm, target_chapter)
-
-    @classmethod
-    def chapter(cls, target_norm: str) -> "RepealTargetRef":
-        return cls("chapter", target_norm, None)
-
-    @classmethod
-    def part(cls, target_norm: str) -> "RepealTargetRef":
-        return cls("part", target_norm, None)
+from lawvm.finland.future_repeal import RepealTargetRef
 
 
 logger = logging.getLogger(__name__)
@@ -637,6 +617,7 @@ from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
 from lawvm.finland.process_findings import ProcessFindingRecorder
 from lawvm.finland.process_frontend_normalization import ProcessFrontendNormalizationContext
 from lawvm.finland.process_precompile_selection import ProcessPrecompileSelectionContext
+from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.process_result_builder import (
     ProcessAmendmentSinks,
     ProcessCompatSinks,
@@ -4715,9 +4696,9 @@ def should_use_sec1_fallback_post_routing(johto: str, sec1_text: str) -> bool:
 
 
 def process_muutoslaki(
-    amendment_id: str,
-    state: "ReplayState",
-    ctx: "StatuteContext",
+    amendment_id: Optional[str] = None,
+    state: Optional["ReplayState"] = None,
+    ctx: Optional["StatuteContext"] = None,
     replay_mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     compiled_ops_out: Optional[List[Dict[str, object]]] = None,
     lo_ops_out: Optional[List[_LegalOperation]] = None,
@@ -4740,6 +4721,7 @@ def process_muutoslaki(
     prior_migration_events: Optional[Iterable["MigrationEvent"]] = None,
     restructure_plans_out: Optional[List[StructuralTransformPlan]] = None,
     processed_amendment_titles: Optional[Dict[str, str]] = None,
+    request: Optional[ProcessAmendmentRequest] = None,
     sinks: Optional[ProcessAmendmentSinks] = None,
 ) -> "PhaseResult[ReplayState]":
     """Process one amendment statute end-to-end.
@@ -4768,6 +4750,20 @@ def process_muutoslaki(
     etc.) are still populated for backward compatibility, but callers should
     prefer the PhaseResult signals.
     """
+    if request is not None:
+        amendment_id = request.amendment_id
+        state = request.state
+        ctx = request.ctx
+        replay_mode = request.replay_mode
+        parent_id = request.parent_id
+        strict_profile = request.strict_profile
+        chapter_seed_skip = request.chapter_seed_skip
+        corpus = request.corpus
+        future_repeals = request.future_repeals
+        prior_migration_events = request.prior_migration_events
+        processed_amendment_titles = request.processed_amendment_titles
+    if amendment_id is None or state is None or ctx is None:
+        raise TypeError("process_muutoslaki requires either amendment_id/state/ctx or request=")
     if sinks is not None:
         compiled_ops_out = compiled_ops_out if compiled_ops_out is not None else sinks.compiled_ops_out
         lo_ops_out = lo_ops_out if lo_ops_out is not None else sinks.lo_ops_out

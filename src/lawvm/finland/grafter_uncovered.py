@@ -71,6 +71,7 @@ from lawvm.finland.restructure_plan import (
     StructuralTransformPlan,
 )
 from lawvm.finland.replay_notices import replay_verbose_enabled
+from lawvm.finland.future_repeal import RepealTargetRef
 from lawvm.finland.merge import (
     _has_section_omissions_ir,
     _merge_section_with_omission_ir,
@@ -97,7 +98,6 @@ from lawvm.finland.replay_notices import replay_print as _replay_print
 from lawvm.xml_ingest import _tag
 
 if TYPE_CHECKING:
-    from lawvm.finland.grafter import RepealTargetRef
     from lawvm.finland.statute import ReplayState, StatuteContext
     from lawvm.corpus_store import CorpusStore
 
@@ -484,8 +484,6 @@ def _recover_uncovered_body_ops(
     Note: chapter pre-creation is a separate pre-step (_pre_create_amendment_chapters)
     and must be called before this function.
     """
-    from lawvm.finland.grafter import RepealTargetRef
-
     def _heading_text(node: IRNode) -> str:
         heading = next((c for c in node.children if c.kind is IRNodeKind.HEADING), None)
         return " ".join(irnode_to_text(heading).split()).strip().lower() if heading is not None else ""
@@ -1938,8 +1936,6 @@ def _pre_scan_repeal_targets(
     (missed repeals) are also acceptable: they result in the pre-existing
     over-insertion behaviour.
     """
-    from lawvm.finland.grafter import RepealTargetRef
-
     per_amendment: List[Set[RepealTargetRef]] = []
 
     for amendment_id in muutoslait:
