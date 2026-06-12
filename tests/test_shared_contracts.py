@@ -73,6 +73,7 @@ from lawvm.core.payload_elaboration import (
     SlotBindingReport,
     payload_elaboration_evidence_report,
 )
+from lawvm.core.phase_replay_gate import PhaseLocalReplayGate
 from lawvm.core.proof_obligations import (
     PROOF_OBLIGATION_BLOCKED,
     PROOF_OBLIGATION_COMPLETE,
@@ -143,6 +144,92 @@ def test_execution_authorization_allows_explicit_replay_authorized_rows() -> Non
     assert data["replay_authorized"] is True
     assert data["required_proofs"] == []
     assert validate_execution_authorization(data) == ()
+
+
+def test_phase_local_replay_gate_authorizes_only_complete_exact_claim() -> None:
+    gate = PhaseLocalReplayGate(
+        gate_id="fi-gate-1",
+        jurisdiction="fi",
+        claim_id="claim-1",
+        claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        frontier_ref="frontier-1",
+        owner_phase="typed_elaboration",
+        authorization_rule_id="fi_sparse_slot_phase_gate_v1",
+        required_proofs=(
+            "target_uniqueness_proof",
+            "payload_identity_proof",
+            "mutation_boundary_proof",
+        ),
+        satisfied_proofs=(
+            "target_uniqueness_proof",
+            "payload_identity_proof",
+            "mutation_boundary_proof",
+        ),
+        candidate_operation_family="sparse_item_payload_resolution",
+        candidate_targets=("section:2/subsection:1/item:3",),
+        detail={"mutation_boundary_proof_ref": "proof-1"},
+    )
+
+    evaluation = gate.evaluate_for_claim(
+        claim_id="claim-1",
+        claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        frontier_ref="frontier-1",
+    )
+    authorization = gate.to_execution_authorization().to_dict()
+
+    assert evaluation.replay_authorized is True
+    assert evaluation.reason_code == "phase_replay_gate_authorized"
+    assert gate.to_dict()["schema"] == "lawvm.phase_local_replay_gate.v1"
+    assert authorization["replay_authorized"] is True
+    assert authorization["executable"] is True
+    assert authorization["required_proofs"] == []
+    assert authorization["authorization_status"] == "replay_authorized"
+    assert "manual_claim_as_phase_replay_gate" in authorization["forbidden_shortcuts"]
+
+
+def test_phase_local_replay_gate_blocks_mismatch_and_missing_proofs() -> None:
+    gate = PhaseLocalReplayGate(
+        gate_id="fi-gate-2",
+        jurisdiction="fi",
+        claim_id="claim-1",
+        claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        frontier_ref="frontier-1",
+        owner_phase="typed_elaboration",
+        authorization_rule_id="fi_sparse_slot_phase_gate_v1",
+        required_proofs=(
+            "target_uniqueness_proof",
+            "payload_identity_proof",
+            "mutation_boundary_proof",
+        ),
+        satisfied_proofs=("target_uniqueness_proof",),
+    )
+
+    mismatch = gate.evaluate_for_claim(
+        claim_id="claim-1",
+        claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        frontier_ref="different-frontier",
+    )
+    incomplete = gate.evaluate_for_claim(
+        claim_id="claim-1",
+        claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        frontier_ref="frontier-1",
+    )
+    authorization = gate.to_execution_authorization().to_dict()
+
+    assert mismatch.replay_authorized is False
+    assert mismatch.reason_code == "rejected_phase_replay_gate_frontier_mismatch"
+    assert incomplete.replay_authorized is False
+    assert incomplete.reason_code == "rejected_phase_replay_gate_missing_proofs"
+    assert incomplete.missing_proofs == (
+        "payload_identity_proof",
+        "mutation_boundary_proof",
+    )
+    assert authorization["replay_authorized"] is False
+    assert authorization["authorization_status"] == "phase_replay_gate_blocked"
+    assert authorization["required_proofs"] == [
+        "payload_identity_proof",
+        "mutation_boundary_proof",
+    ]
 
 
 def test_ownership_closure_certificate_closes_only_zero_unowned_slice() -> None:

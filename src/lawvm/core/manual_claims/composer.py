@@ -47,6 +47,7 @@ from lawvm.core.manual_claims.primitive import (
     _ProfileTagDeprecated as ProfileTag,
 )
 from lawvm.core.manual_claims.precedence import PrecedenceRegistry
+from lawvm.core.phase_replay_gate import PhaseLocalReplayGate, PhaseReplayGateEvaluation
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +151,7 @@ def derive_composition_decision(
     profile: ProfileTag,
     build_id: str,
     precedence_registry: PrecedenceRegistry,
+    phase_replay_gate: PhaseLocalReplayGate | None = None,
 ) -> tuple[ClaimCompositionDecision, ClaimStateEvent]:
     """Composer-emitted authorization decision. NEVER author-set.
 
@@ -189,7 +191,15 @@ def derive_composition_decision(
         environment="lawvm-composer",
     )
 
-    decision, event = _derive(claim, state, profile, build_id, producer, precedence_registry)
+    decision, event = _derive(
+        claim,
+        state,
+        profile,
+        build_id,
+        producer,
+        precedence_registry,
+        phase_replay_gate=phase_replay_gate,
+    )
     return decision, event
 
 
@@ -199,6 +209,7 @@ def derive_composition_decision_for_strict_profile(
     strict_profile: StrictProfile,
     build_id: str,
     precedence_registry: PrecedenceRegistry,
+    phase_replay_gate: PhaseLocalReplayGate | None = None,
 ) -> tuple[ClaimCompositionDecision, ClaimStateEvent]:
     """Composer decision where StrictProfile is the source of authority.
 
@@ -245,6 +256,7 @@ def derive_composition_decision_for_strict_profile(
         producer,
         precedence_registry,
         strict_profile_name=strict_profile.name,
+        phase_replay_gate=phase_replay_gate,
     )
 
 
@@ -300,6 +312,7 @@ def _derive(
     producer: Producer,
     precedence_registry: PrecedenceRegistry,
     strict_profile_name: str = "",
+    phase_replay_gate: PhaseLocalReplayGate | None = None,
 ) -> tuple[ClaimCompositionDecision, ClaimStateEvent]:
     """Inner derivation — separated to make testing producer-independent."""
 
@@ -341,9 +354,10 @@ def _derive(
     if profile == ProfileTag.EXPLORATORY:
         is_sem = _is_semantic_compilation(claim.claim_kind)
         if is_sem:
-            # In Slice 3 there are no real semantic compilation claim kinds yet.
-            # Treating replay_authorized=False here correctly blocks them.
-            return _reject("rejected_replay_authorized_false")
+            gate = _semantic_phase_replay_gate_evaluation(claim, phase_replay_gate)
+            if not gate.replay_authorized:
+                return _reject(gate.reason_code)
+            return _accept("exploratory_accepted_phase_replay_authorized", replay_auth=True)
         return _accept("exploratory_accepted", replay_auth=False)
 
     # --- strict and non_strict: check validator status ---
@@ -377,10 +391,15 @@ def _derive(
     # --- semantic compilation claims need replay_authorized ---
     is_sem = _is_semantic_compilation(claim.claim_kind)
     if is_sem:
-        # replay_authorized derivation not yet wired to real validators in Slice 3.
-        # Until a semantic compilation claim kind ships with a real validator,
-        # this will always return False, correctly blocking such claims.
-        return _reject("rejected_replay_authorized_false")
+        gate = _semantic_phase_replay_gate_evaluation(claim, phase_replay_gate)
+        if not gate.replay_authorized:
+            return _reject(gate.reason_code)
+        reason = (
+            "accepted_strict_attested_phase_replay_authorized"
+            if profile == ProfileTag.STRICT_WITH_ATTESTED_CLAIMS
+            else "accepted_non_strict_phase_replay_authorized"
+        )
+        return _accept(reason, replay_auth=True)
 
     # --- all checks passed ---
     reason = (
@@ -389,3 +408,21 @@ def _derive(
         else "accepted_non_strict"
     )
     return _accept(reason, replay_auth=False)
+
+
+def _semantic_phase_replay_gate_evaluation(
+    claim: ManualCompilationClaim,
+    phase_replay_gate: PhaseLocalReplayGate | None,
+) -> PhaseReplayGateEvaluation:
+    if phase_replay_gate is None:
+        return PhaseReplayGateEvaluation(False, "rejected_replay_authorized_false")
+    return phase_replay_gate.evaluate_for_claim(
+        claim_id=claim.claim_id,
+        claim_kind=claim.claim_kind,
+        frontier_ref=_claim_frontier_ref(claim),
+    )
+
+
+def _claim_frontier_ref(claim: ManualCompilationClaim) -> str:
+    target = dict(claim.target)
+    return str(target.get("frontier_ref") or "")

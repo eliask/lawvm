@@ -25,6 +25,7 @@ from lawvm.core.manual_claims.primitive import (
     SourceWitnessType,
     ValidatorStatus,
 )
+from lawvm.core.phase_replay_gate import PhaseLocalReplayGate
 
 
 _XML_FRONTIER_KINDS = (
@@ -314,3 +315,117 @@ def test_semantic_xml_manual_frontier_claim_validates_but_composer_blocks_replay
     assert decision.authorized is False
     assert decision.replay_authorized is False
     assert decision.reason_code == "rejected_replay_authorized_false"
+
+
+def test_semantic_xml_manual_frontier_claim_requires_matching_phase_gate() -> None:
+    source = b"<p>literal sparse slot source quote</p>"
+    claim = _claim(
+        claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        target=(
+            *_common_target("SPARSE_ITEM_BODY_MISSING"),
+            ("frontier_ref", "fi-frontier-sparse-1"),
+        ),
+        value=(
+            ("source_quote", "sparse slot source quote"),
+            ("candidate_slots", ("section:35/subsection:1/item:5",)),
+            ("selected_slot", "section:35/subsection:1/item:5"),
+            ("old_text_precondition", "old text"),
+        ),
+        source_bytes=source,
+    )
+    state = ClaimState(
+        claim_id=claim.claim_id,
+        status=ClaimStatus.ACCEPTED,
+        review_status=ReviewStatus.HUMAN_REVIEWED,
+        validator_status=ValidatorStatus.ENTAILMENT_VERIFIED,
+        confidence=ClaimConfidence.HIGH,
+        last_updated=datetime(2026, 6, 7, 12, 0, tzinfo=timezone.utc),
+    )
+    gate = PhaseLocalReplayGate(
+        gate_id="fi-sparse-gate-1",
+        jurisdiction="fi",
+        claim_id=claim.claim_id,
+        claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        frontier_ref="fi-frontier-sparse-1",
+        owner_phase="typed_elaboration",
+        authorization_rule_id="fi_sparse_slot_phase_gate_v1",
+        required_proofs=(
+            "target_uniqueness_proof",
+            "payload_identity_proof",
+            "mutation_boundary_proof",
+        ),
+        satisfied_proofs=(
+            "target_uniqueness_proof",
+            "payload_identity_proof",
+            "mutation_boundary_proof",
+        ),
+        candidate_operation_family="sparse_item_payload_resolution",
+        candidate_targets=("section:35/subsection:1/item:5",),
+        detail={
+            "rejected_candidate_slots": [],
+            "mutation_boundary_proof_ref": "proof-sparse-1",
+        },
+    )
+
+    decision, _event = derive_composition_decision(
+        claim=claim,
+        state=state,
+        profile=ProfileTag.STRICT_WITH_ATTESTED_CLAIMS,
+        build_id="test-build",
+        precedence_registry=PrecedenceRegistry(rules=(), source_path="<test>"),
+        phase_replay_gate=gate,
+    )
+
+    assert decision.authorized is True
+    assert decision.replay_authorized is True
+    assert decision.reason_code == "accepted_strict_attested_phase_replay_authorized"
+
+
+def test_semantic_xml_manual_frontier_claim_rejects_mismatched_phase_gate() -> None:
+    source = b"<p>literal sparse slot source quote</p>"
+    claim = _claim(
+        claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        target=(
+            *_common_target("SPARSE_ITEM_BODY_MISSING"),
+            ("frontier_ref", "fi-frontier-sparse-1"),
+        ),
+        value=(
+            ("source_quote", "sparse slot source quote"),
+            ("candidate_slots", ("section:35/subsection:1/item:5",)),
+            ("selected_slot", "section:35/subsection:1/item:5"),
+            ("old_text_precondition", "old text"),
+        ),
+        source_bytes=source,
+    )
+    state = ClaimState(
+        claim_id=claim.claim_id,
+        status=ClaimStatus.ACCEPTED,
+        review_status=ReviewStatus.HUMAN_REVIEWED,
+        validator_status=ValidatorStatus.ENTAILMENT_VERIFIED,
+        confidence=ClaimConfidence.HIGH,
+        last_updated=datetime(2026, 6, 7, 12, 0, tzinfo=timezone.utc),
+    )
+    gate = PhaseLocalReplayGate(
+        gate_id="fi-sparse-gate-2",
+        jurisdiction="fi",
+        claim_id=claim.claim_id,
+        claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        frontier_ref="different-frontier",
+        owner_phase="typed_elaboration",
+        authorization_rule_id="fi_sparse_slot_phase_gate_v1",
+        required_proofs=("target_uniqueness_proof",),
+        satisfied_proofs=("target_uniqueness_proof",),
+    )
+
+    decision, _event = derive_composition_decision(
+        claim=claim,
+        state=state,
+        profile=ProfileTag.STRICT_WITH_ATTESTED_CLAIMS,
+        build_id="test-build",
+        precedence_registry=PrecedenceRegistry(rules=(), source_path="<test>"),
+        phase_replay_gate=gate,
+    )
+
+    assert decision.authorized is False
+    assert decision.replay_authorized is False
+    assert decision.reason_code == "rejected_phase_replay_gate_frontier_mismatch"
