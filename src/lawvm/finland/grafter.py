@@ -764,8 +764,8 @@ def _find_muutos_ir(
                     _pnorm = _norm_num_token(_part_num_el.text.strip())
                     _pnorm = _pnorm.removesuffix("osasto").removesuffix("osa")
                     _phint_arabic = _roman_label_to_arabic(_pnorm)
-                    # Use the Arabic string if conversion succeeded; otherwise
-                    # keep the raw normalised form (e.g. "iva" for "IV A OSA").
+                    # Canonical addresses use Arabic labels plus suffixes
+                    # (e.g. "4a" for source surface "IV A OSA").
                     _phint = str(_phint_arabic) if _phint_arabic is not None else (_pnorm or None)
                     if _phint:
                         # Collect sibling chapter labels under the same part element

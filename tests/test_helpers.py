@@ -21,7 +21,12 @@ def test_norm_num_token_normalizes_plain_roman_numerals_to_arabic() -> None:
 
 def test_norm_num_token_preserves_structural_suffix_after_roman_normalization() -> None:
     assert _norm_num_token("IV osa") == "4osa"
+    assert _norm_num_token("IV A osa") == "4aosa"
     assert _norm_num_token("VI luku") == "6luku"
+
+
+def test_norm_num_token_normalizes_compact_roman_suffix_part_label() -> None:
+    assert _norm_num_token("iva") == "4a"
 
 
 def test_norm_num_token_documents_no_unicode_normalization_step() -> None:

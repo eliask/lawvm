@@ -13362,6 +13362,32 @@ def test_find_chapter_insert_parent_path_uses_part_hint() -> None:
     )
 
 
+def test_find_chapter_insert_parent_path_normalizes_roman_suffix_part_hint() -> None:
+    """Source-surface IV A OSA must route to canonical part:4a."""
+    from lawvm.finland.apply_runtime_support import _find_chapter_insert_parent_path
+    from lawvm.core.ir import IRNode
+    from lawvm.core.semantic_types import IRNodeKind
+
+    def _ch(label: str) -> IRNode:
+        return IRNode(kind=IRNodeKind.CHAPTER, label=label)
+
+    def _part(label: str, *chapters: IRNode) -> IRNode:
+        return IRNode(kind=IRNodeKind.PART, label=label, children=tuple(chapters))
+
+    master = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            _part("3", _ch("17")),
+            _part("4", _ch("18")),
+            _part("4a", _ch("19a")),
+            _part("5", _ch("20")),
+        ),
+    )
+
+    path = _find_chapter_insert_parent_path(master, "19b", part_hint="IV A OSA")
+    assert path[-1] == ("part", "4a")
+
+
 def test_find_chapter_insert_parent_path_hint_nonexistent_part_falls_through() -> None:
     """If hint names a part that doesn't exist, fall through to heuristic."""
     from lawvm.finland.apply_runtime_support import _find_chapter_insert_parent_path
@@ -13384,7 +13410,7 @@ def test_find_chapter_insert_parent_path_hint_nonexistent_part_falls_through() -
         ),
     )
 
-    # Hint "iva" doesn't exist in master — fall through to heuristic
+    # Canonicalized hint "4a" doesn't exist in master — fall through to heuristic.
     path = _find_chapter_insert_parent_path(master, "17a", part_hint="iva")
     # Heuristic picks part:3 (ch17 < 17a)
     assert path[-1] == ("part", "3"), (

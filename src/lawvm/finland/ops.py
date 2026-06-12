@@ -1662,7 +1662,7 @@ def _canonicalize_replay_address(address: LegalAddress | None) -> LegalAddress |
     """Normalize replay-side part labels to the live-tree identity form.
 
     Finland replay and materialization use normalized part labels in structural
-    paths (for example ``III`` -> ``3`` and ``IIa`` -> ``iia``). Public parse
+    paths (for example ``III`` -> ``3`` and ``IIa`` -> ``2a``). Public parse
     surfaces may still expose source-shaped labels, but the late execution waist
     must canonicalize them before grouping or path resolution.
     """

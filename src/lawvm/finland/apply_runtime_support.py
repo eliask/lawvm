@@ -2466,10 +2466,11 @@ def _find_chapter_insert_parent_path(
 ) -> Path:
     """Find the parent path for inserting a new chapter in a part-structured statute.
 
-    ``part_hint``, when provided, is an Arabic string label for the target part
-    as recorded in the amendment body (e.g. "4" for "IV OSA").  It overrides
-    the positional heuristic so that letter-suffix chapters that cross a part
-    boundary are routed to the correct part.
+    ``part_hint``, when provided, is the source-local target part label as
+    recorded in the amendment body (e.g. "IV A OSA" / "iva" / "4a").  It is
+    normalized to the canonical Arabic-plus-suffix address label before it
+    overrides the positional heuristic, so letter-suffix chapters that cross a
+    part boundary route to the correct part.
     """
     provisions_parent_path = _tops.find_provisions_parent(master_ir) or ()
     parent_node = _tops.resolve(master_ir, provisions_parent_path) if provisions_parent_path else master_ir
@@ -2483,6 +2484,7 @@ def _find_chapter_insert_parent_path(
     # If the amendment body explicitly placed this chapter in a named part,
     # use that as the authoritative routing target.
     if part_hint is not None:
+        part_hint = _norm_num_token(part_hint).removesuffix("osasto").removesuffix("osa") or part_hint
         for part in parts:
             if part.label == part_hint:
                 return provisions_parent_path + (("part", part_hint),)

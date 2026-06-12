@@ -723,9 +723,9 @@ def _find_container_path_with_part_scope(
     """Resolve chapter lookup against an explicit part before falling back globally."""
     if kind == "chapter" and target_part:
         part_lookup = str(target_part)
-        arabic = _roman_label_to_arabic(_norm_num_token(part_lookup).lower())
-        if arabic is not None:
-            part_lookup = str(arabic)
+        normalized_part_lookup = _norm_num_token(part_lookup).lower()
+        arabic = _roman_label_to_arabic(normalized_part_lookup)
+        part_lookup = str(arabic) if arabic is not None else (normalized_part_lookup or part_lookup)
         part_path = _tops.find(ir, "part", part_lookup)
         if part_path is not None:
             direct = _parent_direct_child_path_with_same_label(
@@ -1357,9 +1357,11 @@ def _apply_container_op(
             _ch_part_hint = muutos_ir.attrs.get("lawvm_amendment_part_hint")
             _routing_part_hint = str(_ch_part_hint) if _ch_part_hint is not None else (_target_part or None)
             if _routing_part_hint is not None:
-                _routing_arabic = _roman_label_to_arabic(_norm_num_token(_routing_part_hint).lower())
-                if _routing_arabic is not None:
-                    _routing_part_hint = str(_routing_arabic)
+                _routing_norm = _norm_num_token(_routing_part_hint).lower()
+                _routing_arabic = _roman_label_to_arabic(_routing_norm)
+                _routing_part_hint = str(_routing_arabic) if _routing_arabic is not None else (
+                    _routing_norm or _routing_part_hint
+                )
             if (
                 _routing_part_hint is not None
                 and _tops.find(state.ir, "part", _routing_part_hint) is None

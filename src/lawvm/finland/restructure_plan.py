@@ -639,7 +639,7 @@ def _find_path_in_pre_part_relabel_frame(
     Large Finland restructure waves such as ``2019/371`` can express section
     relabel targets under the amendment's post-relabel part numbering even
     though plan execution still runs against the pre-wave tree. When the plan
-    itself also carries a part relabel chain (for example ``IIa -> 3`` and
+    itself also carries a part relabel chain (for example ``IIa`` / ``2a -> 3`` and
     ``3 -> 4``), prefer a bounded one-step rewrite of the leading part label
     back to its source frame before ordinary lookup. This prevents explicit
     post-wave targets from silently hijacking an unrelated live same-label
@@ -721,7 +721,7 @@ def _restore_missing_source_part_alias(
     source label. If the old source label is absent but the destination part is
     the node found, keep that recovery explicit by relabeling the ancestor part
     back to the source label for the descendant operation. This is intentionally
-    bounded to symbolic source labels such as ``iia``; numeric-to-numeric part
+    bounded to letter-suffix source labels such as ``2a``; numeric-to-numeric part
     chains stay on the ordinary exact lookup path.
     """
     if not source_part or source_part.isdigit():

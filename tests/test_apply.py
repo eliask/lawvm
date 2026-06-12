@@ -4424,12 +4424,12 @@ class TestApplyContainerInsert:
         )
 
         result = _modified(state, result)
-        iva_part = next(child for child in result.ir.children if child.kind == IRNodeKind.PART and child.label == "iva")
-        assert [child.label for child in iva_part.children if child.kind == IRNodeKind.CHAPTER] == ["19a", "20", "21"]
+        part_4a = next(child for child in result.ir.children if child.kind == IRNodeKind.PART and child.label == "4a")
+        assert [child.label for child in part_4a.children if child.kind == IRNodeKind.CHAPTER] == ["19a", "20", "21"]
         move_events = [event for event in migration_ledger.events if event.kind == "move"]
         assert [(event.from_address.path, event.to_address.path) for event in move_events] == [
-            ((("part", "5"), ("chapter", "20")), (("part", "iva"), ("chapter", "20"))),
-            ((("part", "5"), ("chapter", "21")), (("part", "iva"), ("chapter", "21"))),
+            ((("part", "5"), ("chapter", "20")), (("part", "4a"), ("chapter", "20"))),
+            ((("part", "5"), ("chapter", "21")), (("part", "4a"), ("chapter", "21"))),
         ]
 
     def test_insert_consumes_non_base_same_numbered_chapter_scaffold_in_legal_pit(self):
@@ -4798,19 +4798,19 @@ class TestApplyContainerInsert:
         result = _modified(state, result)
         assert len(receipts) == 1
         receipt = receipts[0]
-        assert receipt.landed_primary_path == (("part", "iva"), ("chapter", "19a"))
+        assert receipt.landed_primary_path == (("part", "4a"), ("chapter", "19a"))
         assert receipt.created_paths == (
-            (("part", "iva"), ("chapter", "19a")),
-            (("part", "iva"),),
+            (("part", "4a"), ("chapter", "19a")),
+            (("part", "4a"),),
         )
         assert receipt.renumbered_paths == (
-            ((("part", "5"), ("chapter", "20")), (("part", "iva"), ("chapter", "20"))),
-            ((("part", "5"), ("chapter", "21")), (("part", "iva"), ("chapter", "21"))),
+            ((("part", "5"), ("chapter", "20")), (("part", "4a"), ("chapter", "20"))),
+            ((("part", "5"), ("chapter", "21")), (("part", "4a"), ("chapter", "21"))),
         )
         assert receipt.migration_rule_ids == ("container_insert_part_hint_scaffold",)
         # Moved subtrees are content-identical: pre hash at the from-path
         # equals post hash at the to-path, and the vacated from-path is gone.
-        assert receipt.pre_hashes["part:5/chapter:20"] == receipt.post_hashes["part:iva/chapter:20"]
+        assert receipt.pre_hashes["part:5/chapter:20"] == receipt.post_hashes["part:4a/chapter:20"]
         assert receipt.post_hashes["part:5/chapter:20"] == ""
         assert receipt.pre_hashes["part:5/chapter:20"] != ""
 
@@ -4953,7 +4953,7 @@ class TestApplyContainerInsert:
             _body(
                 IRNode(
                     kind=IRNodeKind.PART,
-                    label="iia",
+                    label="2a",
                     children=(
                         IRNode(
                             kind=IRNodeKind.CHAPTER,
@@ -4971,10 +4971,11 @@ class TestApplyContainerInsert:
             )
         )
         op = AmendmentOp(
-            op_id="replace_part_iia_chapter_1_heading_fragment",
+            op_id="replace_part_2a_chapter_1_heading_fragment",
             op_type="REPLACE",
             target_unit_kind="chapter",
             target_section="1",
+            # Exercise canonical normalization of source-surface Roman+suffix labels.
             target_part="iia",
             source_statute="2018/984",
         )
@@ -4999,14 +5000,14 @@ class TestApplyContainerInsert:
         )
 
         result = _modified(state, result)
-        part_iia = next(
+        part_2a = next(
             child
             for child in result.ir.children
-            if child.kind is IRNodeKind.PART and child.label == "iia"
+            if child.kind is IRNodeKind.PART and child.label == "2a"
         )
         chapter_1 = next(
             child
-            for child in part_iia.children
+            for child in part_2a.children
             if child.kind is IRNodeKind.CHAPTER and child.label == "1"
         )
         heading = next(
@@ -5915,7 +5916,7 @@ def test_apply_whole_section_replace_bootstrap_respects_target_part_scope() -> N
         _body(
             IRNode(
                 kind=IRNodeKind.PART,
-                label="iia",
+                label="2a",
                 children=(
                     IRNode(
                         kind=IRNodeKind.CHAPTER,
@@ -5960,7 +5961,7 @@ def test_apply_whole_section_replace_bootstrap_respects_target_part_scope() -> N
 
     result = _modified(state, result)
     target = result.find_section("3a", "2", "4")
-    untouched = result.find_section("3a", "2", "iia")
+    untouched = result.find_section("3a", "2", "2a")
     assert target is not None
     assert untouched is not None
     assert "part 4 chapter 2 replacement" in irnode_to_text(target)
@@ -5974,7 +5975,7 @@ def test_apply_whole_section_replace_records_missing_bootstrap_parent() -> None:
         _body(
             IRNode(
                 kind=IRNodeKind.PART,
-                label="iia",
+                label="2a",
                 children=(
                     IRNode(
                         kind=IRNodeKind.CHAPTER,
@@ -6160,7 +6161,7 @@ def test_apply_whole_section_insert_does_not_rebind_unique_same_label_across_par
         _body(
             IRNode(
                 kind=IRNodeKind.PART,
-                label="iia",
+                label="2a",
                 children=(
                     IRNode(
                         kind=IRNodeKind.CHAPTER,
@@ -6204,7 +6205,7 @@ def test_apply_whole_section_insert_does_not_rebind_unique_same_label_across_par
 
     result = _modified(state, result)
     target = result.find_section("2a", "1", "6")
-    untouched = result.find_section("2a", "1", "iia")
+    untouched = result.find_section("2a", "1", "2a")
     assert target is not None
     assert untouched is not None
     assert "part 6 chapter 1 insert" in irnode_to_text(target)

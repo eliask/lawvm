@@ -69,6 +69,10 @@ def test_normalize_address_filter_normalizes_roman_numerals_beyond_twenty() -> N
     assert normalize_address_filter("chapter:XXI/section:IV") == "chapter:21/section:4"
 
 
+def test_normalize_address_filter_normalizes_roman_suffix_part_label() -> None:
+    assert normalize_address_filter("part:IV A/section:1") == "part:4a/section:1"
+
+
 def test_extract_oracle_sections_strips_inline_prior_wording_duplicates() -> None:
     oracle = etree.fromstring(
         """
@@ -243,6 +247,28 @@ def test_extract_oracle_sections_normalizes_part_labels_without_osa_suffix() -> 
     oracle_keys = extract_oracle_sections(oracle)
 
     assert set(oracle_keys) == {"part:1/chapter:10/section:1"}
+
+
+def test_extract_oracle_sections_normalizes_roman_suffix_part_label() -> None:
+    oracle = etree.fromstring(
+        """
+        <statute>
+          <body>
+            <part>
+              <num>IV A OSA</num>
+              <chapter>
+                <num>19 a luku</num>
+                <section><num>1 §</num><content><p>teksti</p></content></section>
+              </chapter>
+            </part>
+          </body>
+        </statute>
+        """
+    )
+
+    oracle_keys = extract_oracle_sections(oracle)
+
+    assert set(oracle_keys) == {"part:4a/chapter:19a/section:1"}
 
 
 def test_dedup_versioned_children_preserves_distinct_provisions_sharing_eid_slot() -> None:

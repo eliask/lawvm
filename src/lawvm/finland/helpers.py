@@ -40,6 +40,12 @@ def _norm_num_token(text: str) -> str:
             prefix_arabic = _roman_label_to_arabic(prefix)
             if prefix_arabic is not None:
                 return f"{prefix_arabic}{suffix}"
+            prefixed = _roman_prefixed_label_to_arabic_suffix(prefix)
+            if prefixed is not None:
+                return f"{prefixed}{suffix}"
+    prefixed = _roman_prefixed_label_to_arabic_suffix(token)
+    if prefixed is not None:
+        return prefixed
     return token
 
 
@@ -212,6 +218,22 @@ def _roman_label_to_arabic(token: str) -> Optional[str]:
         return None
     value = _roman_to_arabic_shared(token)
     return None if value is None else str(value)
+
+
+@functools.lru_cache(maxsize=8192)
+def _roman_prefixed_label_to_arabic_suffix(token: str) -> Optional[str]:
+    """Normalize compact Roman-prefix labels such as ``iva`` to ``4a``."""
+    if not token:
+        return None
+    for split_at in range(len(token) - 1, 0, -1):
+        prefix = token[:split_at]
+        suffix = token[split_at:]
+        if not suffix.isalpha():
+            continue
+        prefix_arabic = _roman_label_to_arabic(prefix)
+        if prefix_arabic is not None:
+            return f"{prefix_arabic}{suffix}"
+    return None
 
 
 def _fi_label_postprocessor(tag: str, norm: str) -> str:

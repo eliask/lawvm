@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, Iterable, Optional, Tuple, cast
 from lxml import etree
 
 from lawvm.core.timeline import _iter_nodes_with_address
-from lawvm.roman import roman_to_arabic
+from lawvm.finland.helpers import _norm_num_token
 
 
 _CONTAINER_KINDS = ("book", "part", "subpart", "title", "subtitle", "chapter")
@@ -43,12 +43,7 @@ def _num_text(el: etree._Element) -> str:
 
 
 def norm_section_label(s: str) -> str:
-    stripped = re.sub(r"[\s§.*]", "", s).lower()
-    # Normalize Roman numerals to Arabic for consistent comparison
-    roman_value = roman_to_arabic(stripped)
-    if roman_value is not None:
-        return str(roman_value)
-    return stripped
+    return _norm_num_token(s.replace("*", ""))
 
 
 def normalize_address_filter(address: str) -> str:
@@ -87,7 +82,7 @@ def _normalize_container_label(kind: str, label: str) -> str:
     if kind == "chapter":
         label = re.sub(r"\s+luku\s*$", "", label, flags=re.IGNORECASE)
     elif kind == "part":
-        label = re.sub(r"\s+osa\s*$", "", label, flags=re.IGNORECASE)
+        label = re.sub(r"\s+(?:osa|osasto)\s*$", "", label, flags=re.IGNORECASE)
     return norm_section_label(label)
 
 

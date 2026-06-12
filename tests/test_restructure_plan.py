@@ -962,7 +962,7 @@ class TestExecuteRelabel:
             children=(
                 IRNode(
                     kind=IRNodeKind.PART,
-                    label="iia",
+                    label="2a",
                     children=(
                         IRNode(
                             kind=IRNodeKind.CHAPTER,
@@ -1037,7 +1037,7 @@ class TestExecuteRelabel:
             children=(
                 IRNode(
                     kind=IRNodeKind.PART,
-                    label="iia",
+                    label="2a",
                     children=(
                         IRNode(
                             kind=IRNodeKind.CHAPTER,
@@ -1065,7 +1065,7 @@ class TestExecuteRelabel:
         assert len(executed) == 1
         assert executed[0].success is False
         assert executed[0].reason_code == "target_not_found"
-        part_iia = next(child for child in new_tree.children if child.kind is IRNodeKind.PART and child.label == "iia")
+        part_iia = next(child for child in new_tree.children if child.kind is IRNodeKind.PART and child.label == "2a")
         chapter = next(child for child in part_iia.children if child.kind is IRNodeKind.CHAPTER and child.label == "1")
         assert [child.label for child in chapter.children if child.kind is IRNodeKind.SECTION] == ["4"]
 
@@ -1076,7 +1076,7 @@ class TestExecuteRelabel:
             children=(
                 IRNode(
                     kind=IRNodeKind.PART,
-                    label="iia",
+                    label="2a",
                     children=(
                         IRNode(
                             kind=IRNodeKind.CHAPTER,
@@ -1114,14 +1114,14 @@ class TestExecuteRelabel:
         new_tree, executed = _execute_relabel(
             tree,
             op,
-            part_relabel_sources={"3": "iia"},
+            part_relabel_sources={"3": "2a"},
             source_statute="2019/371",
         )
 
         assert executed.success is True
         part_3 = next(child for child in new_tree.children if child.kind is IRNodeKind.PART and child.label == "3")
         shadow_chapter = next(child for child in part_3.children if child.kind is IRNodeKind.CHAPTER and child.label == "1")
-        part_iia = next(child for child in new_tree.children if child.kind is IRNodeKind.PART and child.label == "iia")
+        part_iia = next(child for child in new_tree.children if child.kind is IRNodeKind.PART and child.label == "2a")
         source_chapter = next(child for child in part_iia.children if child.kind is IRNodeKind.CHAPTER and child.label == "1")
         assert [child.label for child in shadow_chapter.children if child.kind is IRNodeKind.SECTION] == ["150"]
         assert [child.label for child in source_chapter.children if child.kind is IRNodeKind.SECTION] == ["1"]
@@ -1133,7 +1133,7 @@ class TestExecuteRelabel:
             children=(
                 IRNode(
                     kind=IRNodeKind.PART,
-                    label="iia",
+                    label="2a",
                     children=(
                         IRNode(
                             kind=IRNodeKind.CHAPTER,
@@ -1194,7 +1194,7 @@ class TestExecuteRelabel:
             children=(
                 IRNode(
                     kind=IRNodeKind.PART,
-                    label="iia",
+                    label="2a",
                     children=(
                         IRNode(
                             kind=IRNodeKind.CHAPTER,
@@ -1313,7 +1313,7 @@ class TestExecuteRelabel:
         new_tree, executed = _execute_relabel(
             before_master.replay_fold_state.ir,
             op,
-            part_relabel_sources={"3": "iia", "4": "3", "5": "4", "6": "5", "7": "6", "8": "7"},
+            part_relabel_sources={"3": "2a", "4": "3", "5": "4", "6": "5", "7": "6", "8": "7"},
             source_statute=source_id,
         )
 
@@ -1684,7 +1684,7 @@ class TestRelabelSkipSourcePathologyFinding:
         assert finding.kind == "ELAB.SOURCE_PATHOLOGY"
         assert finding.detail["code"] == "RECODIFICATION_SOURCE_CHAIN_GAP"
         assert finding.detail["target_unit_kind"] == "part"
-        assert finding.detail["target_label"] == "iia osa"
+        assert finding.detail["target_label"] == "2a osa"
         assert finding.detail["detail"] == {
             "diagnostic_reason": "target_part_absent_in_pre_partification_frame"
         }

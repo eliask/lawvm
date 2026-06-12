@@ -944,16 +944,22 @@ class TestNoDuplicatesInPIT:
 
 
 
-    def test_2016_673_chapters_20_21_in_part_iva_not_part_5(self) -> None:
-        """2016/673 chapters 20 and 21 must appear in part:iva after 2019/209 moves them.
+    def test_2016_673_chapters_20_21_in_part_4a_not_part_5(self) -> None:
+        """2016/673 chapters 20 and 21 must appear in part:4a after 2019/209 moves them.
 
-        Amendment 2019/209 creates part IV A OSA (label 'iva') and moves chapters 20
+        Amendment 2019/209 creates part IV A OSA (label '4a') and moves chapters 20
         and 21 into it alongside the newly inserted chapter 19a.  Before the fix, the
         materialized PIT placed them in part:5 because section-level timeline ops emitted
         before the chapter move carried the old 'part:5' path prefix.
         """
         ir = _replay("2016/673", stop_before="2019/1509")
         assert check_invariants(ir) == []
+        part_order = [
+            part_node.label
+            for part_node in ir.children
+            if part_node.kind is IRNodeKind.PART and part_node.label
+        ]
+        assert part_order[:6] == ["1", "2", "3", "4", "4a", "5"]
         # Collect part labels for chapters 20 and 21
         ch_to_part: dict[str, str] = {}
         for part_node in ir.children:
@@ -961,8 +967,8 @@ class TestNoDuplicatesInPIT:
                 for ch_node in part_node.children:
                     if ch_node.kind is IRNodeKind.CHAPTER and ch_node.label in ("20", "21"):
                         ch_to_part[ch_node.label] = part_node.label
-        assert ch_to_part.get("20") == "iva", f"chapter 20 expected in part:iva, found in {ch_to_part.get('20')!r}"
-        assert ch_to_part.get("21") == "iva", f"chapter 21 expected in part:iva, found in {ch_to_part.get('21')!r}"
+        assert ch_to_part.get("20") == "4a", f"chapter 20 expected in part:4a, found in {ch_to_part.get('20')!r}"
+        assert ch_to_part.get("21") == "4a", f"chapter 21 expected in part:4a, found in {ch_to_part.get('21')!r}"
 
 
 # ---------------------------------------------------------------------------
