@@ -1038,6 +1038,26 @@ def _temporary_section_expiry_overrides(
             labels |= _parse_section_list_labels(m.group(2))
         _append_override(target_mid_from_cited, labels, expiry)
 
+    # Section/subsection-scoped sunset, e.g.
+    # "Lain 51 §:n 5 momentti on voimassa 31 päivään joulukuuta 2023."
+    # The expiry is still section-scoped for replay stamping: the amendment op
+    # target carries the exact subsection/item granularity.
+    for m in re.finditer(
+        rf'(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_sec_chars}+?)\s*§:n\s+'
+        rf'\d+\s+momentti\s+(?:ovat|on)\s+voimassa\s+'
+        rf'(\d{{1,2}})\s+päivään\s+([a-zäöå]+)\s+(\d{{4}})',
+        full_text,
+        flags=re.IGNORECASE,
+    ):
+        month = month_map.get(m.group(3).lower())
+        if month is None:
+            continue
+        try:
+            expiry = dt.date(int(m.group(4)), month, int(m.group(2)))
+        except ValueError:
+            continue
+        _append_override(target_mid_from_cited, _parse_section_list_labels(m.group(1)), expiry)
+
     # Chained same-sentence temporary sunset where only the first section repeats
     # "on voimassa", e.g.:
     #   "Lain 90 a § on voimassa 31 päivään heinäkuuta 2020 ja 99 a § 31 päivään
@@ -1093,6 +1113,22 @@ def _temporary_section_expiry_overrides(
         raw_secs = re.sub(r'^\s*(?:[\d\w]+\s+)*luvun\s+', '', m_yend.group(1), flags=re.IGNORECASE).strip()
         labels = _parse_section_list_labels(raw_secs)
         _append_override(target_mid_from_cited, labels, expiry)
+
+    for m_yend_moment in re.finditer(
+        rf'(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_sec_chars}+?)\s*§:n\s+'
+        rf'\d+\s+momentti\s+(?:ovat|on)\s+voimassa\s+vuoden\s+(\d{{4}})\s+loppuun',
+        full_text,
+        flags=re.IGNORECASE,
+    ):
+        try:
+            expiry = dt.date(int(m_yend_moment.group(2)), 12, 31)
+        except ValueError:
+            continue
+        _append_override(
+            target_mid_from_cited,
+            _parse_section_list_labels(m_yend_moment.group(1)),
+            expiry,
+        )
 
     _lakkaa_sec_chars = r'[\dA-Za-zÄÖÅäöå\s,\u2013]+'
     for m_lakkaa in re.finditer(

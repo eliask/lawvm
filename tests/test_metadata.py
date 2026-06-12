@@ -155,6 +155,36 @@ def test_temporary_section_expiry_override_accepts_laki_wording() -> None:
     assert expiry.isoformat() == "2020-12-31"
 
 
+def test_temporary_section_expiry_override_parses_subsection_scoped_sunset() -> None:
+    tree = _tree(
+        "Tämä laki tulee voimaan 1 päivänä tammikuuta 2023. "
+        "Lain 51 §:n 5 momentti on voimassa 31 päivään joulukuuta 2023."
+    )
+
+    override = _temporary_section_expiry_override(tree, "2022/1151")
+
+    assert override is not None
+    target_mid, labels, expiry = override
+    assert target_mid == "2022/1151"
+    assert labels == {"51"}
+    assert expiry.isoformat() == "2023-12-31"
+
+
+def test_temporary_section_expiry_override_parses_subsection_scoped_year_end_sunset() -> None:
+    tree = _tree(
+        "Tämä laki tulee voimaan 1 päivänä tammikuuta 2011. "
+        "Lain 11 §:n 3 momentti on voimassa vuoden 2014 loppuun."
+    )
+
+    override = _temporary_section_expiry_override(tree, "2010/1172")
+
+    assert override is not None
+    target_mid, labels, expiry = override
+    assert target_mid == "2010/1172"
+    assert labels == {"11"}
+    assert expiry.isoformat() == "2014-12-31"
+
+
 def test_temporary_section_expiry_overrides_collect_multiple_clauses() -> None:
     tree = _tree(
         "Tämä laki tulee voimaan 1 päivänä toukokuuta 2020. "

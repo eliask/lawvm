@@ -21,6 +21,7 @@ from lawvm.tools.provision_state import (
     build_provision_state_response,
     main,
     resolve_address,
+    resolve_address_for_query,
 )
 
 
@@ -649,6 +650,76 @@ def test_address_resolution_reports_ambiguous_suffix_without_order_dependent_cho
         "chapter:1/section:1",
         "chapter:2/section:1",
     )
+
+
+def test_query_address_resolution_prefers_unique_live_suffix_over_exact_tombstone() -> None:
+    exact = LegalAddress(path=(("section", "125"),))
+    qualified = LegalAddress(path=(("part", "6"), ("chapter", "1"), ("section", "125")))
+    timelines = {
+        exact: ProvisionTimeline(
+            address=exact,
+            versions=[
+                ProvisionVersion(
+                    effective="2025-01-01",
+                    enacted="2024-12-01",
+                    content=None,
+                )
+            ],
+        ),
+        qualified: ProvisionTimeline(
+            address=qualified,
+            versions=[
+                ProvisionVersion(
+                    effective="2026-01-01",
+                    enacted="2025-12-01",
+                    content=_section("Live qualified section."),
+                )
+            ],
+        ),
+    }
+
+    resolution = resolve_address_for_query(
+        timelines,
+        "section:125",
+        as_of="2026-06-11",
+        query_type="in_force",
+        territory=None,
+    )
+
+    assert resolution.status == "resolved"
+    assert resolution.address == qualified
+    assert resolution.mode == "unique_live_suffix_over_exact_tombstone"
+
+
+def test_query_address_resolution_keeps_exact_when_suffix_live_candidate_is_ambiguous() -> None:
+    exact = LegalAddress(path=(("section", "125"),))
+    qualified_a = LegalAddress(path=(("part", "6"), ("chapter", "1"), ("section", "125")))
+    qualified_b = LegalAddress(path=(("part", "7"), ("chapter", "1"), ("section", "125")))
+    timelines = {
+        exact: ProvisionTimeline(
+            address=exact,
+            versions=[ProvisionVersion(effective="2025-01-01", content=None)],
+        ),
+        qualified_a: ProvisionTimeline(
+            address=qualified_a,
+            versions=[ProvisionVersion(effective="2026-01-01", content=_section("A."))],
+        ),
+        qualified_b: ProvisionTimeline(
+            address=qualified_b,
+            versions=[ProvisionVersion(effective="2026-01-01", content=_section("B."))],
+        ),
+    }
+
+    resolution = resolve_address_for_query(
+        timelines,
+        "section:125",
+        as_of="2026-06-11",
+        query_type="in_force",
+        territory=None,
+    )
+
+    assert resolution.address == exact
+    assert resolution.mode == "exact"
 
 
 def test_provision_state_response_exposes_lineage_chain_from_migration_events() -> None:
@@ -1809,6 +1880,40 @@ def test_provision_state_materializes_later_child_overlay_under_temporary_parent
 _FINLEX_CORPUS_AVAILABLE = (
     Path(__file__).resolve().parents[1] / "data" / "finlex.farchive"
 ).exists()
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_1992_1535_section_125_prefers_live_qualified_section() -> None:
+    payload = resolve_provision_state(
+        statute_id="1992/1535",
+        jurisdiction="fi",
+        provision="section:125",
+        as_of="2026-06-11",
+        query_type="in_force",
+    )
+
+    assert payload["status"] == "selected"
+    assert payload["resolved_address"]["text"] == "part:6/chapter:1/section:125"
+    assert payload["address_match"]["mode"] == "unique_live_suffix_over_exact_tombstone"
+    assert payload["version"]["content_state"] == "live"
+    assert payload["source"]["statute_id"] == "2025/1141"
+    assert "Työtulovähennys" in payload["text"]["rendered"]
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_1997_1412_section_11_drops_expired_temporary_items() -> None:
+    payload = resolve_provision_state(
+        statute_id="1997/1412",
+        jurisdiction="fi",
+        provision="section:11",
+        as_of="2026-06-11",
+        query_type="in_force",
+    )
+
+    rendered = payload["text"]["rendered"]
+    assert payload["status"] == "selected"
+    assert "väliaikaisesta epidemiakorvauksesta" not in rendered
+    assert "lapsilisälain (796/1992) 7 §:n 5 momentissa" not in rendered
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")

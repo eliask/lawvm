@@ -109,6 +109,7 @@ class AddressResolution:
     timeline: ProvisionTimeline | None = None
     candidates: tuple[LegalAddress, ...] = ()
     suggestions: tuple[LegalAddress, ...] = ()
+    mode: str = ""
 
 
 def main(args: Any) -> None:
@@ -227,12 +228,18 @@ def build_provision_state_response(
             diagnostic=selector_diagnostic,
         )
 
-    resolution = resolve_address(timelines, provision)
     query = _query_payload(
         statute_id=statute_id,
         provision=provision,
         as_of=as_of,
         query_type=query_type,
+        territory=territory,
+    )
+    resolution = resolve_address_for_query(
+        timelines,
+        provision,
+        as_of=as_of,
+        query_type=_query_type_literal(query_type),
         territory=territory,
     )
     if not _timeline_integrity_enabled():
@@ -868,6 +875,7 @@ def resolve_address(
             requested=provision,
             address=target,
             timeline=timeline,
+            mode="exact",
         )
     suffix = target.path
     candidates = tuple(address for address in timelines if address.path[-len(suffix) :] == suffix)
@@ -878,6 +886,7 @@ def resolve_address(
             requested=provision,
             address=address,
             timeline=timelines[address],
+            mode="unique_suffix",
         )
     if candidates:
         return AddressResolution(
@@ -889,6 +898,92 @@ def resolve_address(
         status="address_not_found",
         requested=provision,
         suggestions=_nearby_address_suggestions(timelines, target),
+    )
+
+
+def resolve_address_for_query(
+    timelines: Mapping[LegalAddress, ProvisionTimeline],
+    provision: str,
+    *,
+    as_of: str,
+    query_type: Literal["governing", "in_force"],
+    territory: Any,
+) -> AddressResolution:
+    """Resolve a public provision query with PIT-aware exact/suffix evidence.
+
+    Exact matches normally win. A bare section timeline can, however, be a
+    historical tombstone while the same provision's live timeline exists at its
+    fully qualified chapter/part address. In that specific read-only seam case,
+    prefer the unique live suffix candidate and report the resolution mode.
+    """
+
+    resolution = resolve_address(timelines, provision)
+    if resolution.status != "resolved" or resolution.address is None or resolution.timeline is None:
+        return resolution
+    target = _parse_addr(provision)
+    if target is None or len(target.path) != 1 or target.path[0][0] != "section":
+        return resolution
+    if not _selected_timeline_is_tombstone_or_absent(
+        resolution.timeline,
+        as_of=as_of,
+        query_type=query_type,
+        territory=territory,
+    ):
+        return resolution
+    suffix = target.path
+    live_candidates = [
+        address
+        for address, timeline in timelines.items()
+        if address != resolution.address
+        and address.path[-len(suffix) :] == suffix
+        and _selected_timeline_has_live_content(
+            timeline,
+            as_of=as_of,
+            query_type=query_type,
+            territory=territory,
+        )
+    ]
+    if len(live_candidates) != 1:
+        return resolution
+    address = live_candidates[0]
+    return AddressResolution(
+        status="resolved",
+        requested=provision,
+        address=address,
+        timeline=timelines[address],
+        mode="unique_live_suffix_over_exact_tombstone",
+    )
+
+
+def _selected_timeline_is_tombstone_or_absent(
+    timeline: ProvisionTimeline,
+    *,
+    as_of: str,
+    query_type: Literal["governing", "in_force"],
+    territory: Any,
+) -> bool:
+    selection = select_active_version_ex(
+        timeline,
+        as_of,
+        query_type=query_type,
+        territory=str(territory) if territory is not None else None,
+    )
+    version = selection.version
+    return version is None or version.content is None or content_is_repeal_placeholder(version.content)
+
+
+def _selected_timeline_has_live_content(
+    timeline: ProvisionTimeline,
+    *,
+    as_of: str,
+    query_type: Literal["governing", "in_force"],
+    territory: Any,
+) -> bool:
+    return not _selected_timeline_is_tombstone_or_absent(
+        timeline,
+        as_of=as_of,
+        query_type=query_type,
+        territory=territory,
     )
 
 
@@ -962,7 +1057,8 @@ def _selected_response(
         "lineage": lineage,
         "address_match": {
             "requested": resolution.requested,
-            "mode": "exact" if str(address) == resolution.requested else "unique_suffix",
+            "mode": resolution.mode
+            or ("exact" if str(address) == resolution.requested else "unique_suffix"),
         },
         "selection": _selection_payload(selection),
         "version": _version_payload(payload_version, content_state_override=("expired" if expired else None)),

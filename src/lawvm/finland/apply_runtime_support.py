@@ -321,7 +321,7 @@ def _prior_non_temporary_section_snapshot_payload(
     if latest_snapshot.source is None:
         return None
     latest_expires = latest_snapshot.source.expires or ""
-    if not latest_expires or current_effective <= latest_expires:
+    if not latest_expires or current_effective < latest_expires:
         return None
 
     # Walk backwards from second-to-last looking for a non-temporary snapshot
@@ -383,7 +383,7 @@ def _expired_temporary_section_merge_base(
     )
     if latest_snapshot is not None and latest_snapshot.source is not None:
         latest_expires = latest_snapshot.source.expires or ""
-        if latest_expires and current_effective > latest_expires:
+        if latest_expires and current_effective >= latest_expires:
             if current_live_section is not None and latest_snapshot.payload != current_live_section:
                 return current_live_section
             return _prior_non_temporary_section_snapshot_payload(
@@ -433,7 +433,7 @@ def _expired_temporary_section_merge_base_rebase_info(
     if latest_snapshot is None or latest_snapshot.source is None:
         return None, None
     latest_expires = latest_snapshot.source.expires or ""
-    if latest_expires and current_effective > latest_expires:
+    if latest_expires and current_effective >= latest_expires:
         if current_live_section is not None and latest_snapshot.payload != current_live_section:
             return "expired_latest_snapshot_current_live_section", latest_expires
         return "expired_latest_snapshot_prior_non_temporary_snapshot", latest_expires
