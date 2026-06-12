@@ -56,6 +56,10 @@ class ProofGateSummary:
     coverage_frontier_status_counts: Mapping[str, int] = field(default_factory=dict)
     other_frontier_required_claim_kind_counts: Mapping[str, int] = field(default_factory=dict)
     other_frontier_status_counts: Mapping[str, int] = field(default_factory=dict)
+    frontier_claim_closure_status_counts: Mapping[str, int] = field(default_factory=dict)
+    frontier_claim_closure_phase_gate_required_count: int = 0
+    frontier_claim_closure_phase_gate_authorized_count: int = 0
+    frontier_claim_closure_replay_authorized_count: int = 0
     incomplete_candidate_set_count: int = 0
     candidate_set_completeness_counts: Mapping[str, int] = field(default_factory=dict)
     source_completeness_counts: Mapping[str, int] = field(default_factory=dict)
@@ -90,6 +94,7 @@ class ProofGateSummary:
         "failed_operation_authorization_closure",
         "candidate_set_authorization_closure",
         "recovery_authorization_closure",
+        "frontier_claim_closure",
         "replay_authorization",
     )
 
@@ -105,6 +110,9 @@ class ProofGateSummary:
             "manual_claim_frontier_count",
             "coverage_frontier_count",
             "other_frontier_count",
+            "frontier_claim_closure_phase_gate_required_count",
+            "frontier_claim_closure_phase_gate_authorized_count",
+            "frontier_claim_closure_replay_authorized_count",
             "incomplete_candidate_set_count",
             "source_completeness_missing_count",
             "source_unit_unresolved_count",
@@ -129,6 +137,7 @@ class ProofGateSummary:
             "coverage_frontier_status_counts",
             "other_frontier_required_claim_kind_counts",
             "other_frontier_status_counts",
+            "frontier_claim_closure_status_counts",
             "candidate_set_completeness_counts",
             "source_completeness_counts",
             "source_unit_coverage_status_counts",
@@ -178,6 +187,18 @@ class ProofGateSummary:
                 self.other_frontier_required_claim_kind_counts
             ),
             "other_frontier_status_counts": dict(self.other_frontier_status_counts),
+            "frontier_claim_closure_status_counts": dict(
+                self.frontier_claim_closure_status_counts
+            ),
+            "frontier_claim_closure_phase_gate_required_count": (
+                self.frontier_claim_closure_phase_gate_required_count
+            ),
+            "frontier_claim_closure_phase_gate_authorized_count": (
+                self.frontier_claim_closure_phase_gate_authorized_count
+            ),
+            "frontier_claim_closure_replay_authorized_count": (
+                self.frontier_claim_closure_replay_authorized_count
+            ),
             "incomplete_candidate_set_count": self.incomplete_candidate_set_count,
             "candidate_set_completeness_counts": dict(self.candidate_set_completeness_counts),
             "source_completeness_counts": dict(self.source_completeness_counts),
@@ -240,6 +261,7 @@ def proof_gate_summary_from_surfaces(
     unowned_counts: Mapping[str, Any] | None = None,
     manual_or_other_frontier_work_items: Any = (),
     coverage_frontier_work_items: Any = (),
+    frontier_claim_closure_rows: Any = (),
     candidate_set_certificates: Any = (),
     evidence_summary: Mapping[str, Any] | None = None,
     manual_claim_kind_prefixes: tuple[str, ...] = (),
@@ -257,6 +279,7 @@ def proof_gate_summary_from_surfaces(
         "failed_operation_authorization_closure",
         "candidate_set_authorization_closure",
         "recovery_authorization_closure",
+        "frontier_claim_closure",
         "replay_authorization",
     ),
 ) -> ProofGateSummary:
@@ -276,6 +299,16 @@ def proof_gate_summary_from_surfaces(
         row for row in non_coverage_frontiers if id(row) not in manual_ids
     )
     all_frontiers = (*manual_claim_frontiers, *other_frontiers, *coverage_frontiers)
+    closure_rows = _mapping_rows(frontier_claim_closure_rows)
+    closure_phase_gate_required_count = sum(
+        1 for row in closure_rows if bool(row.get("phase_gate_required"))
+    )
+    closure_phase_gate_authorized_count = sum(
+        1 for row in closure_rows if bool(row.get("phase_gate_authorized"))
+    )
+    closure_replay_authorized_count = sum(
+        1 for row in closure_rows if bool(row.get("replay_authorized"))
+    )
     candidate_sets = _mapping_rows(candidate_set_certificates)
     incomplete_candidate_sets = tuple(
         row
@@ -361,6 +394,7 @@ def proof_gate_summary_from_surfaces(
         len(failed_gate_rows)
         + sum(unowned.values())
         + len(all_frontiers)
+        + closure_phase_gate_required_count
         + len(incomplete_candidate_sets)
         + source_completeness_missing_count
         + source_unit_unresolved_count
@@ -404,6 +438,18 @@ def proof_gate_summary_from_surfaces(
         ),
         other_frontier_status_counts=_count_values(
             row.get("frontier_status") for row in other_frontiers
+        ),
+        frontier_claim_closure_status_counts=_count_values(
+            row.get("closure_status") for row in closure_rows
+        ),
+        frontier_claim_closure_phase_gate_required_count=(
+            closure_phase_gate_required_count
+        ),
+        frontier_claim_closure_phase_gate_authorized_count=(
+            closure_phase_gate_authorized_count
+        ),
+        frontier_claim_closure_replay_authorized_count=(
+            closure_replay_authorized_count
         ),
         incomplete_candidate_set_count=len(incomplete_candidate_sets),
         candidate_set_completeness_counts=_count_values(

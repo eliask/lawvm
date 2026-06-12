@@ -49,6 +49,9 @@ def test_load_strict_run_reads_source_pathology_codes(tmp_path, monkeypatch) -> 
     assert rows[0]["proof_gate_manual_frontier_count"] == 0
     assert rows[0]["proof_gate_coverage_frontier_count"] == 0
     assert rows[0]["proof_gate_other_frontier_count"] == 0
+    assert rows[0]["proof_gate_frontier_claim_closure_phase_gate_required_count"] == 0
+    assert rows[0]["proof_gate_frontier_claim_closure_phase_gate_authorized_count"] == 0
+    assert rows[0]["proof_gate_frontier_claim_closure_replay_authorized_count"] == 0
     assert rows[0]["proof_gate_source_completeness_missing_count"] == 0
     assert rows[0]["proof_gate_source_unit_unresolved_count"] == 0
     assert rows[0]["proof_gate_potential_operation_unresolved_count"] == 0
@@ -70,6 +73,7 @@ def test_load_strict_run_reads_source_pathology_codes(tmp_path, monkeypatch) -> 
     assert rows[0]["proof_gate_coverage_frontier_status_counts"] == {}
     assert rows[0]["proof_gate_other_claim_kind_counts"] == {}
     assert rows[0]["proof_gate_other_frontier_status_counts"] == {}
+    assert rows[0]["proof_gate_frontier_claim_closure_status_counts"] == {}
     assert rows[0]["candidate_set_statuses"] == []
     assert rows[0]["candidate_set_blockers"] == []
     assert rows[0]["source_completeness_issue_kinds"] == []
@@ -181,6 +185,9 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                 "proof_gate_manual_frontier_count": 1,
                 "proof_gate_coverage_frontier_count": 4,
                 "proof_gate_other_frontier_count": 2,
+                "proof_gate_frontier_claim_closure_phase_gate_required_count": 2,
+                "proof_gate_frontier_claim_closure_phase_gate_authorized_count": 1,
+                "proof_gate_frontier_claim_closure_replay_authorized_count": 1,
                 "proof_gate_source_completeness_missing_count": 3,
                 "proof_gate_source_unit_unresolved_count": 3,
                 "proof_gate_potential_operation_unresolved_count": 5,
@@ -230,6 +237,10 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                 "proof_gate_other_frontier_status_counts": {
                     "source_pathology_frontier": 2,
                 },
+                "proof_gate_frontier_claim_closure_status_counts": {
+                    "evidence_policy_satisfied_phase_gate_required": 2,
+                    "phase_replay_gate_authorized": 1,
+                },
                 "candidate_set_statuses": [
                     "fi_strict_report_operation_cue_coverage:partial"
                 ],
@@ -277,8 +288,13 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert "proof_gate_manual_claim_kind_counts" in text
     assert "proof_gate_coverage_claim_kind_counts" in text
     assert "proof_gate_other_claim_kind_counts" in text
+    assert "proof_gate_frontier_claim_closure_phase_gate_required_count" in text
+    assert "proof_gate_frontier_claim_closure_phase_gate_authorized_count" in text
+    assert "proof_gate_frontier_claim_closure_replay_authorized_count" in text
+    assert "proof_gate_frontier_claim_closure_status_counts" in text
     assert "fi.v1.FAILED_OPERATION_RESOLUTION" in text
     assert "source_pathology_resolution" in text
+    assert "phase_replay_gate_authorized" in text
     assert "partial_candidate_set_frontier" in text
     assert "candidate_set_statuses" in text
     assert "candidate_set_blockers" in text
@@ -307,6 +323,9 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert loaded[0]["proof_gate_manual_frontier_count"] == 1
     assert loaded[0]["proof_gate_coverage_frontier_count"] == 4
     assert loaded[0]["proof_gate_other_frontier_count"] == 2
+    assert loaded[0]["proof_gate_frontier_claim_closure_phase_gate_required_count"] == 2
+    assert loaded[0]["proof_gate_frontier_claim_closure_phase_gate_authorized_count"] == 1
+    assert loaded[0]["proof_gate_frontier_claim_closure_replay_authorized_count"] == 1
     assert loaded[0]["proof_gate_source_completeness_missing_count"] == 3
     assert loaded[0]["proof_gate_source_unit_unresolved_count"] == 3
     assert loaded[0]["proof_gate_potential_operation_unresolved_count"] == 5
@@ -355,6 +374,10 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     }
     assert loaded[0]["proof_gate_other_frontier_status_counts"] == {
         "source_pathology_frontier": 2,
+    }
+    assert loaded[0]["proof_gate_frontier_claim_closure_status_counts"] == {
+        "evidence_policy_satisfied_phase_gate_required": 2,
+        "phase_replay_gate_authorized": 1,
     }
 
 
@@ -445,6 +468,9 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                 "proof_gate_manual_frontier_count": 1,
                 "proof_gate_coverage_frontier_count": 4,
                 "proof_gate_other_frontier_count": 2,
+                "proof_gate_frontier_claim_closure_phase_gate_required_count": 2,
+                "proof_gate_frontier_claim_closure_phase_gate_authorized_count": 1,
+                "proof_gate_frontier_claim_closure_replay_authorized_count": 1,
                 "proof_gate_source_completeness_missing_count": 3,
                 "proof_gate_source_unit_unresolved_count": 3,
                 "proof_gate_potential_operation_unresolved_count": 5,
@@ -494,6 +520,10 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                 "proof_gate_other_frontier_status_counts": {
                     "source_pathology_frontier": 2,
                 },
+                "proof_gate_frontier_claim_closure_status_counts": {
+                    "evidence_policy_satisfied_phase_gate_required": 2,
+                    "phase_replay_gate_authorized": 1,
+                },
                 "candidate_set_statuses": [
                     "fi_strict_report_operation_cue_coverage:partial"
                 ],
@@ -537,6 +567,9 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
     assert "manual frontiers       : 1" in out
     assert "coverage frontiers     : 4" in out
     assert "other frontiers        : 2" in out
+    assert "closure phase gates required: 2" in out
+    assert "closure phase gates authorized: 1" in out
+    assert "closure replay-authorized rows: 1" in out
     assert "missing source-chain facts: 3" in out
     assert "unresolved source units: 3" in out
     assert "unresolved potential ops: 5" in out
@@ -558,6 +591,9 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
     assert "1.00 signals/statute" in out
     assert "manual frontier claim kinds" in out
     assert "coverage proof requirements" in out
+    assert "frontier claim closure statuses" in out
+    assert "evidence_policy_satisfied_phase_gate_required" in out
+    assert "phase_replay_gate_authorized" in out
     assert "Candidate-set statuses" in out
     assert "fi_strict_report_operation_cue_coverage:partial" in out
     assert "Candidate-set blockers" in out

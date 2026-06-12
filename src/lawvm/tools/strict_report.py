@@ -853,6 +853,9 @@ _STRICT_RUN_HEADER = [
     "proof_gate_manual_frontier_count",
     "proof_gate_coverage_frontier_count",
     "proof_gate_other_frontier_count",
+    "proof_gate_frontier_claim_closure_phase_gate_required_count",
+    "proof_gate_frontier_claim_closure_phase_gate_authorized_count",
+    "proof_gate_frontier_claim_closure_replay_authorized_count",
     "proof_gate_source_completeness_missing_count",
     "proof_gate_source_unit_unresolved_count",
     "proof_gate_potential_operation_unresolved_count",
@@ -874,6 +877,7 @@ _STRICT_RUN_HEADER = [
     "proof_gate_coverage_frontier_status_counts",
     "proof_gate_other_claim_kind_counts",
     "proof_gate_other_frontier_status_counts",
+    "proof_gate_frontier_claim_closure_status_counts",
     "candidate_set_statuses",
     "candidate_set_blockers",
     "source_incomplete",
@@ -1048,6 +1052,24 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "proof_gate_other_frontier_count": int(
                 proof_gate_summary.get("other_frontier_count") or 0
             ),
+            "proof_gate_frontier_claim_closure_phase_gate_required_count": int(
+                proof_gate_summary.get(
+                    "frontier_claim_closure_phase_gate_required_count"
+                )
+                or 0
+            ),
+            "proof_gate_frontier_claim_closure_phase_gate_authorized_count": int(
+                proof_gate_summary.get(
+                    "frontier_claim_closure_phase_gate_authorized_count"
+                )
+                or 0
+            ),
+            "proof_gate_frontier_claim_closure_replay_authorized_count": int(
+                proof_gate_summary.get(
+                    "frontier_claim_closure_replay_authorized_count"
+                )
+                or 0
+            ),
             "proof_gate_source_completeness_missing_count": int(
                 proof_gate_summary.get("source_completeness_missing_count") or 0
             ),
@@ -1121,6 +1143,9 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "proof_gate_other_frontier_status_counts": dict(
                 proof_gate_summary.get("other_frontier_status_counts") or {}
             ),
+            "proof_gate_frontier_claim_closure_status_counts": dict(
+                proof_gate_summary.get("frontier_claim_closure_status_counts") or {}
+            ),
             "candidate_set_statuses": candidate_set_statuses,
             "candidate_set_blockers": candidate_set_blockers,
             "source_incomplete": "APPLY.SOURCE_INCOMPLETE" in fail_reasons,
@@ -1156,6 +1181,9 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "proof_gate_manual_frontier_count": 0,
             "proof_gate_coverage_frontier_count": 0,
             "proof_gate_other_frontier_count": 0,
+            "proof_gate_frontier_claim_closure_phase_gate_required_count": 0,
+            "proof_gate_frontier_claim_closure_phase_gate_authorized_count": 0,
+            "proof_gate_frontier_claim_closure_replay_authorized_count": 0,
             "proof_gate_source_completeness_missing_count": 0,
             "proof_gate_source_unit_unresolved_count": 0,
             "proof_gate_potential_operation_unresolved_count": 0,
@@ -1177,6 +1205,7 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "proof_gate_coverage_frontier_status_counts": {},
             "proof_gate_other_claim_kind_counts": {},
             "proof_gate_other_frontier_status_counts": {},
+            "proof_gate_frontier_claim_closure_status_counts": {},
             "candidate_set_statuses": [],
             "candidate_set_blockers": [],
             "source_incomplete": False,
@@ -1275,6 +1304,24 @@ def _save_strict_run(results: list[dict[str, Any]], label: str, timestamp: str) 
                     int(rec.get("proof_gate_manual_frontier_count") or 0),
                     int(rec.get("proof_gate_coverage_frontier_count") or 0),
                     int(rec.get("proof_gate_other_frontier_count") or 0),
+                    int(
+                        rec.get(
+                            "proof_gate_frontier_claim_closure_phase_gate_required_count"
+                        )
+                        or 0
+                    ),
+                    int(
+                        rec.get(
+                            "proof_gate_frontier_claim_closure_phase_gate_authorized_count"
+                        )
+                        or 0
+                    ),
+                    int(
+                        rec.get(
+                            "proof_gate_frontier_claim_closure_replay_authorized_count"
+                        )
+                        or 0
+                    ),
                     int(rec.get("proof_gate_source_completeness_missing_count") or 0),
                     int(rec.get("proof_gate_source_unit_unresolved_count") or 0),
                     int(rec.get("proof_gate_potential_operation_unresolved_count") or 0),
@@ -1366,6 +1413,13 @@ def _save_strict_run(results: list[dict[str, Any]], label: str, timestamp: str) 
                         ensure_ascii=True,
                         sort_keys=True,
                     ),
+                    json.dumps(
+                        rec.get(
+                            "proof_gate_frontier_claim_closure_status_counts", {}
+                        ),
+                        ensure_ascii=True,
+                        sort_keys=True,
+                    ),
                     "|".join(rec.get("candidate_set_statuses", [])),
                     "|".join(rec.get("candidate_set_blockers", [])),
                     "1" if rec["source_incomplete"] else "0",
@@ -1453,6 +1507,11 @@ def _load_strict_run(label: str) -> list[dict[str, Any]] | None:
             row["proof_gate_other_frontier_status_counts"] = _load_json_count_map(
                 row.get("proof_gate_other_frontier_status_counts")
             )
+            row["proof_gate_frontier_claim_closure_status_counts"] = (
+                _load_json_count_map(
+                    row.get("proof_gate_frontier_claim_closure_status_counts")
+                )
+            )
             row["proof_gate_source_pathology_authorization_status_counts"] = (
                 _load_json_count_map(
                     row.get("proof_gate_source_pathology_authorization_status_counts")
@@ -1489,6 +1548,9 @@ def _load_strict_run(label: str) -> list[dict[str, Any]] | None:
                 "proof_gate_manual_frontier_count",
                 "proof_gate_coverage_frontier_count",
                 "proof_gate_other_frontier_count",
+                "proof_gate_frontier_claim_closure_phase_gate_required_count",
+                "proof_gate_frontier_claim_closure_phase_gate_authorized_count",
+                "proof_gate_frontier_claim_closure_replay_authorized_count",
                 "proof_gate_source_completeness_missing_count",
                 "proof_gate_source_unit_unresolved_count",
                 "proof_gate_potential_operation_unresolved_count",
@@ -1610,11 +1672,15 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     proof_gate_coverage_status_counter: Counter[str] = Counter()
     proof_gate_other_claim_counter: Counter[str] = Counter()
     proof_gate_other_status_counter: Counter[str] = Counter()
+    proof_gate_frontier_claim_closure_status_counter: Counter[str] = Counter()
     proof_gate_source_pathology_authorization_status_counter: Counter[str] = Counter()
     proof_gate_failed_operation_authorization_status_counter: Counter[str] = Counter()
     proof_gate_recovery_authorization_status_counter: Counter[str] = Counter()
     proof_gate_candidate_set_authorization_status_counter: Counter[str] = Counter()
     total_source_completeness_missing = 0
+    total_closure_phase_gate_required = 0
+    total_closure_phase_gate_authorized = 0
+    total_closure_replay_authorized = 0
     total_source_unit_unresolved = 0
     total_potential_operation_unresolved = 0
     total_regex_unclassified_gaps = 0
@@ -1646,6 +1712,21 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
         )
         total_source_completeness_missing += int(
             r.get("proof_gate_source_completeness_missing_count") or 0
+        )
+        total_closure_phase_gate_required += int(
+            r.get(
+                "proof_gate_frontier_claim_closure_phase_gate_required_count"
+            )
+            or 0
+        )
+        total_closure_phase_gate_authorized += int(
+            r.get(
+                "proof_gate_frontier_claim_closure_phase_gate_authorized_count"
+            )
+            or 0
+        )
+        total_closure_replay_authorized += int(
+            r.get("proof_gate_frontier_claim_closure_replay_authorized_count") or 0
         )
         total_source_unit_unresolved += int(
             r.get("proof_gate_source_unit_unresolved_count") or 0
@@ -1769,6 +1850,14 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
                 str(key): int(value)
                 for key, value in dict(
                     r.get("proof_gate_other_frontier_status_counts") or {}
+                ).items()
+            }
+        )
+        proof_gate_frontier_claim_closure_status_counter.update(
+            {
+                str(key): int(value)
+                for key, value in dict(
+                    r.get("proof_gate_frontier_claim_closure_status_counts") or {}
                 ).items()
             }
         )
@@ -1954,6 +2043,9 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     print(f"       manual frontiers       : {total_manual_frontiers}")
     print(f"       coverage frontiers     : {total_coverage_frontiers}")
     print(f"       other frontiers        : {total_other_frontiers}")
+    print(f"       closure phase gates required: {total_closure_phase_gate_required}")
+    print(f"       closure phase gates authorized: {total_closure_phase_gate_authorized}")
+    print(f"       closure replay-authorized rows: {total_closure_replay_authorized}")
     print(f"       missing source-chain facts: {total_source_completeness_missing}")
     print(f"       unresolved source units: {total_source_unit_unresolved}")
     print(f"       unresolved potential ops: {total_potential_operation_unresolved}")
@@ -2092,6 +2184,16 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
             )
     else:
         print("       other frontier statuses: (none)")
+    if proof_gate_frontier_claim_closure_status_counter:
+        print("       frontier claim closure statuses:")
+        for status, cnt in proof_gate_frontier_claim_closure_status_counter.most_common():
+            per_statute = cnt / n_valid
+            print(
+                f"         {status:<58s} {cnt:5d}  "
+                f"({per_statute:.2f} signals/statute)"
+            )
+    else:
+        print("       frontier claim closure statuses: (none)")
     print()
 
     print("  5l. Strict vs canonical fraction (correlation proxy):")

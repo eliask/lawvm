@@ -204,6 +204,40 @@ def test_proof_gate_summary_accepts_single_mapping_inputs() -> None:
     assert summary["open_gate_signal_count"] == 2
 
 
+def test_proof_gate_summary_counts_frontier_claim_closure_phase_gates() -> None:
+    summary = proof_gate_summary_from_surfaces(
+        schema="lawvm.test.proof_gate_summary.v1",
+        scope="unit-test",
+        closed=False,
+        failed_gates=(),
+        frontier_claim_closure_rows=[
+            {
+                "closure_status": "evidence_policy_satisfied_phase_gate_required",
+                "phase_gate_required": True,
+                "phase_gate_authorized": False,
+                "replay_authorized": False,
+            },
+            {
+                "closure_status": "phase_replay_gate_authorized",
+                "phase_gate_required": False,
+                "phase_gate_authorized": True,
+                "replay_authorized": True,
+            },
+        ],
+    ).to_dict()
+
+    assert summary["open_gate_signal_count"] == 1
+    assert summary["frontier_claim_closure_status_counts"] == {
+        "evidence_policy_satisfied_phase_gate_required": 1,
+        "phase_replay_gate_authorized": 1,
+    }
+    assert summary["frontier_claim_closure_phase_gate_required_count"] == 1
+    assert summary["frontier_claim_closure_phase_gate_authorized_count"] == 1
+    assert summary["frontier_claim_closure_replay_authorized_count"] == 1
+    assert "frontier_claim_closure" in summary["does_not_claim"]
+    assert "replay_authorization" in summary["does_not_claim"]
+
+
 def test_proof_gate_summary_rejects_boolean_count_values() -> None:
     with pytest.raises(ValueError, match="count values"):
         proof_gate_summary_from_surfaces(
