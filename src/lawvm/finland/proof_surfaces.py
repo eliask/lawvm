@@ -64,6 +64,7 @@ from lawvm.core.potential_operation import (
     PotentialOperation,
     potential_operation_evidence_report,
 )
+from lawvm.core.regex_recognition_coverage import regex_recognition_coverage_evidence_report
 from lawvm.core.source_acquisition import (
     SourceAcquisitionAssertion,
     SourceBundlePolicy,
@@ -1197,6 +1198,18 @@ def finland_strict_report_evidence_surface(
     ).to_dict()
     source_unit_coverage_rows = _mapping_sequence(source_unit_coverage_report.get("rows"))
     source_unit_coverage_summary = dict(source_unit_coverage_report.get("summary") or {})
+    regex_recognition_coverages = _mapping_sequence(payload.get("regex_recognition_coverage"))
+    regex_recognition_coverage_report = regex_recognition_coverage_evidence_report(
+        regex_recognition_coverages,
+        jurisdiction="fi",
+        report_kind="finland_strict_report_regex_recognition_coverage",
+    ).to_dict()
+    regex_recognition_coverage_rows = _mapping_sequence(
+        regex_recognition_coverage_report.get("rows")
+    )
+    regex_recognition_coverage_summary = dict(
+        regex_recognition_coverage_report.get("summary") or {}
+    )
     agreement_residuals = _mapping_sequence(payload.get("agreement_residuals"))
     agreement_report_rows, agreement_report_summary = _strict_report_agreement_surface_rows(
         agreement_residuals,
@@ -1308,6 +1321,10 @@ def finland_strict_report_evidence_surface(
             *({"surface": "sparse_slot_candidate_set_certificate", **dict(row)} for row in sparse_certificates),
             *({"surface": "source_lineage_source_witness", **dict(row)} for row in source_lineage_witnesses),
             *({"surface": "source_unit_coverage", **dict(row)} for row in source_unit_coverage_rows),
+            *(
+                {"surface": "regex_recognition_coverage", **dict(row)}
+                for row in regex_recognition_coverage_rows
+            ),
             *({"surface": "agreement_residual", **dict(row)} for row in agreement_report_rows),
             *({"surface": "mutation_boundary_proof", **dict(row)} for row in mutation_boundary_proofs),
             *(({"surface": "source_completeness_status", **source_completeness_row},) if source_completeness_row else ()),
@@ -1395,6 +1412,13 @@ def finland_strict_report_evidence_surface(
         ),
         "source_unit_coverage_family_counts": dict(
             source_unit_coverage_summary.get("unit_family_counts") or {}
+        ),
+        "regex_recognition_coverage_count": len(regex_recognition_coverage_rows),
+        "regex_recognition_coverage_status_counts": dict(
+            regex_recognition_coverage_summary.get("coverage_status_counts") or {}
+        ),
+        "regex_recognition_unclassified_gap_count": int(
+            regex_recognition_coverage_summary.get("unclassified_gap_count") or 0
         ),
         "agreement_residual_count": len(agreement_report_rows),
         "agreement_residual_family_counts": dict(
@@ -1510,6 +1534,8 @@ def finland_strict_report_evidence_surface(
                 "recovery_projection_as_replay_authorization",
                 "candidate_set_certificate_as_source_cue_exhaustiveness_proof",
                 "ownership_closure_certificate_as_full_corpus_omniscience",
+                "regex_coverage_as_replay_authorization",
+                "bounded_wildcard_as_semantic_proof",
             ),
         },
     ).to_dict()

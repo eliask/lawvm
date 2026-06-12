@@ -12,6 +12,11 @@ from lawvm.core.mutation_accounting import MutationInvariantReport
 from lawvm.core.phase_replay_gate import PhaseLocalReplayGate
 from lawvm.core.proof_surfaces import proof_surface_from_evidence_report
 from lawvm.core.provenance_graph import ArtifactRef
+from lawvm.core.regex_recognition_coverage import (
+    REGEX_RECOGNITION_UNCLASSIFIED_GAP,
+    RegexRecognitionCoverage,
+    regex_source_text_hash,
+)
 from lawvm.core.source_witness import source_witness_digest_coverage
 import lawvm.finland.claim_kinds as fi_claim_kinds
 from lawvm.finland.he_branch_parser import (
@@ -1489,6 +1494,60 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     assert "temporal_resolution_evidence_as_unconditional_commencement_proof" in report["forbidden_shortcuts"]
     assert "recovery_projection_as_replay_authorization" in report["forbidden_shortcuts"]
     assert "source_completeness_status_as_replay_authorization" in report["forbidden_shortcuts"]
+
+
+def test_finland_strict_report_evidence_surface_includes_regex_recognition_coverage() -> None:
+    text = "lisätään 5 §:ään kuitenkin uusi 2 momentti"
+    coverage = RegexRecognitionCoverage(
+        coverage_id="fi:regex:demo",
+        jurisdiction="fi",
+        recognizer_id="fi_insert_subsection_fallback",
+        owner_phase="surface_syntax_frontend",
+        source_artifact_id="2020/1",
+        source_text_hash=regex_source_text_hash(text),
+        matched_span=(0, len(text)),
+        coverage_status=REGEX_RECOGNITION_UNCLASSIFIED_GAP,
+        semantic_slots={
+            "action": "INSERT",
+            "target_section": "5",
+            "target_subsections": (2,),
+        },
+        ignored_spans=(
+            {
+                "span": (17, 27),
+                "classification": "unclassified",
+                "text_preview": "kuitenkin ",
+                "could_alter_meaning": True,
+            },
+        ),
+        required_proofs=("regex_skipped_span_classification",),
+    )
+
+    report = finland_strict_report_evidence_surface(
+        {
+            "statute_id": "2001/1234",
+            "profile": "strict",
+            "ops": {"canonical": 0, "failed": 0, "total": 0},
+            "regex_recognition_coverage": [coverage.to_dict()],
+        }
+    )
+
+    assert report["replay_claims"] is False
+    assert report["summary"]["regex_recognition_coverage_count"] == 1
+    assert report["summary"]["regex_recognition_coverage_status_counts"] == {
+        "unclassified_gap": 1,
+    }
+    assert report["summary"]["regex_recognition_unclassified_gap_count"] == 1
+    rows = [
+        row
+        for row in report["rows"]
+        if row["surface"] == "regex_recognition_coverage"
+    ]
+    assert len(rows) == 1
+    assert rows[0]["status"] == "unclassified_gap"
+    assert rows[0]["required_proofs"] == ["regex_skipped_span_classification"]
+    assert "regex_coverage_as_replay_authorization" in report["forbidden_shortcuts"]
+    assert "bounded_wildcard_as_semantic_proof" in report["forbidden_shortcuts"]
 
 
 def test_source_completeness_status_row_records_counts_without_authority() -> None:
