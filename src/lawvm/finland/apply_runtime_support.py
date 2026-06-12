@@ -9,6 +9,7 @@ surface stable.
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, FrozenSet, List, Optional, cast
 
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
@@ -32,6 +33,16 @@ if TYPE_CHECKING:
     from lawvm.finland.migration_ledger import MigrationLedger
     from lawvm.finland.statute import ReplayState
     from lawvm.finland.payload_normalize import SubsectionSlotMap
+
+
+@dataclass(frozen=True)
+class _PendingSubsectionSnapshotPayload:
+    target_norm: str
+    payload: IRNode
+    is_insert_action: bool
+    has_item_target: bool
+    item_norm: str
+    target_already_rebased: bool
 
 
 def _legacy_target_section_for_scope(scope: "ResolvedTargetScopeView", unit_kind: TargetUnitKind) -> str:
@@ -1113,7 +1124,14 @@ def _emit_section_snapshot(
         if subsection_payload.kind is not IRNodeKind.SUBSECTION:
             return None
         subsection_label = _norm_num_token(child_path[-1][1]) if child_path else ""
+        targets_this_subsection = False
         for rop in group_rops:
+            if (
+                rop.targets_subsection_only()
+                and _norm_num_token(str(rop.resolved_target_subsection_label or ""))
+                == subsection_label
+            ):
+                targets_this_subsection = True
             amend_sub = rop.resolved_amend_sub_ir()
             if (
                 rop.targets_subsection_only()
@@ -1122,6 +1140,8 @@ def _emit_section_snapshot(
                 and irnode_to_text(amend_sub) == irnode_to_text(subsection_payload)
             ):
                 return None
+        if not targets_this_subsection:
+            return None
         latest = _latest_snapshot_for_path(child_path)
         if latest is None or latest.payload is None or latest.payload.kind is not IRNodeKind.SUBSECTION:
             return None
@@ -1300,7 +1320,7 @@ def _emit_section_snapshot(
             return None
 
         subsection_payloads: dict[str, IRNode] = {}
-        pending_subsection_payloads: list[tuple[str, IRNode, bool, bool, str]] = []
+        pending_subsection_payloads: list[_PendingSubsectionSnapshotPayload] = []
         repealed_item_labels_by_subsection: dict[str, set[str]] = {}
         item_target_labels_by_subsection: dict[str, set[str]] = {}
         renumber_destinations: dict[str, str] = {}
@@ -1361,24 +1381,41 @@ def _emit_section_snapshot(
             if amend_sub is None or amend_sub.kind is not IRNodeKind.SUBSECTION:
                 return None
             relabelled = _relabel_subsection_payload(amend_sub, target_norm)
+            target_already_rebased = (
+                "rebase_duplicate_target_shifted_replace"
+                in rop.target_guessing_provenance_tags
+            )
             pending_subsection_payloads.append(
-                (target_norm, relabelled, rop.is_insert_action, bool(item_label), item_norm)
+                _PendingSubsectionSnapshotPayload(
+                    target_norm=target_norm,
+                    payload=relabelled,
+                    is_insert_action=rop.is_insert_action,
+                    has_item_target=bool(item_label),
+                    item_norm=item_norm,
+                    target_already_rebased=target_already_rebased,
+                )
             )
             has_insert = has_insert or rop.is_insert_action
 
-        for target_norm, relabelled, is_insert_action, has_item_target, item_norm in pending_subsection_payloads:
-            effective_norm = target_norm
-            if not is_insert_action:
-                effective_norm = renumber_destinations.get(target_norm, target_norm)
-                relabelled = _relabel_subsection_payload(relabelled, effective_norm)
+        for pending_payload in pending_subsection_payloads:
+            effective_norm = pending_payload.target_norm
+            relabelled = pending_payload.payload
+            if (
+                not pending_payload.is_insert_action
+                and not pending_payload.target_already_rebased
+            ):
+                effective_norm = renumber_destinations.get(pending_payload.target_norm, pending_payload.target_norm)
+            relabelled = _relabel_subsection_payload(relabelled, effective_norm)
             existing = subsection_payloads.get(effective_norm)
             if existing is not None and irnode_to_text(existing) != irnode_to_text(relabelled):
                 return None
             subsection_payloads[effective_norm] = relabelled
-            if not has_item_target:
+            if not pending_payload.has_item_target:
                 whole_subsection_targets.add(effective_norm)
             else:
-                item_target_labels_by_subsection.setdefault(effective_norm, set()).add(item_norm)
+                item_target_labels_by_subsection.setdefault(effective_norm, set()).add(
+                    pending_payload.item_norm
+                )
 
         if not has_insert or (len(subsection_payloads) < 2 and not renumber_destinations):
             has_item_payload = any(rop.resolved_target_item_label is not None for rop in group_rops)
@@ -1499,7 +1536,11 @@ def _emit_section_snapshot(
                 assert subsection_payload is not None
                 final_payloads[label] = subsection_payload
                 continue
-            if label in item_target_labels_by_subsection and label in current_by_label:
+            if (
+                not repealed_items
+                and label in item_target_labels_by_subsection
+                and label in current_by_label
+            ):
                 current_subsection = current_by_label[label]
                 if _subsection_covers_item_payloads(current_subsection, payload_items):
                     final_payloads[label] = current_subsection

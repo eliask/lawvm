@@ -2724,6 +2724,121 @@ def test_emit_section_snapshot_rebases_sparse_item_replace_and_repeal_group() ->
     assert "old fifteen" in rendered
 
 
+def test_emit_section_snapshot_does_not_double_shift_rebased_subsection_replace() -> None:
+    base_section = _sec(
+        "32",
+        IRNode(kind=IRNodeKind.NUM, text="32 §"),
+        _sub("1", _content("old subsection one text")),
+        _sub("2", _content("old subsection two text")),
+    )
+    final_section = _sec(
+        "32",
+        IRNode(kind=IRNodeKind.NUM, text="32 §"),
+        _sub("1", _content("new inserted subsection one text")),
+        _sub("2", _content("changed old subsection one text")),
+        _sub("3", _content("old subsection two text")),
+    )
+    lo_ops: list[LegalOperation] = []
+
+    def _renumber_rop(source_label: str, destination_label: str) -> ResolvedOp:
+        lo = LegalOperation(
+            op_id=f"renumber_{source_label}_to_{destination_label}",
+            sequence=0,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "32"), ("subsection", source_label))),
+            destination=LegalAddress(path=(("section", "32"), ("subsection", destination_label))),
+            source=OperationSource(statute_id="2022/1029"),
+        )
+        op = dc_replace(
+            _op(op_type="RENUMBER", target_section="32", target_paragraph=int(source_label)),
+            op_id=f"renumber_{source_label}_to_{destination_label}",
+            lo=lo,
+        )
+        return ResolvedOp.from_amendment_op(
+            op,
+            muutos_ir=None,
+            cross_ir=None,
+            target_unit_kind="section",
+            target_norm="32",
+            target_chapter=None,
+        )
+
+    insert_op = dc_replace(
+        _op(op_type="INSERT", target_section="32", target_paragraph=1),
+        op_id="insert_new_1",
+        lo=LegalOperation(
+            op_id="insert_new_1",
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "32"), ("subsection", "1"))),
+            source=OperationSource(statute_id="2022/1029"),
+        ),
+    )
+    insert_rop = ResolvedOp.from_amendment_op(
+        insert_op,
+        muutos_ir=_sub("1", _content("new inserted subsection one text")),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="32",
+        target_chapter=None,
+    )
+    replace_op = dc_replace(
+        _op(
+            op_type="REPLACE",
+            target_section="32",
+            target_paragraph=2,
+            target_guessing_provenance_tags=("rebase_duplicate_target_shifted_replace",),
+        ),
+        op_id="replace_rebased_2",
+        lo=LegalOperation(
+            op_id="replace_rebased_2",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "32"), ("subsection", "2"))),
+            source=OperationSource(statute_id="2022/1029"),
+        ),
+    )
+    replace_rop = ResolvedOp.from_amendment_op(
+        replace_op,
+        muutos_ir=_sub("2", _content("changed old subsection one text")),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="32",
+        target_chapter=None,
+    )
+
+    _emit_section_snapshot(
+        _make_state(_body(final_section)),
+        "section",
+        "32",
+        None,
+        None,
+        [
+            _renumber_rop("2", "3"),
+            insert_rop,
+            replace_rop,
+            _renumber_rop("1", "2"),
+        ],
+        lo_ops,
+        "2022/1029",
+        "insert and shift subsections",
+        _DATE,
+        dt.date(2023, 1, 1),
+        base_ir=_body(base_section),
+    )
+
+    section_snapshot = next(op for op in lo_ops if op.op_id == "snapshot_section_32")
+    assert section_snapshot.payload is not None
+    subsections = [
+        child for child in section_snapshot.payload.children if child.kind is IRNodeKind.SUBSECTION
+    ]
+    assert [(sub.label, irnode_to_text(sub)) for sub in subsections] == [
+        ("1", "new inserted subsection one text"),
+        ("2", "changed old subsection one text"),
+        ("3", "old subsection two text"),
+    ]
+
+
 def test_expired_temporary_subsection_slot_can_be_consumed_skips_carried_snapshot() -> None:
     section_path = (("chapter", "2"), ("section", "11"))
     subsection_path = section_path + (("subsection", "3"),)
