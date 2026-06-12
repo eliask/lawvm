@@ -249,9 +249,11 @@ def _string_tuple(field_name: str, values: Any) -> tuple[str, ...]:
 
 
 def _mapping_or_empty(value: Any) -> Mapping[str, Any]:
+    if value is None:
+        return {}
     if isinstance(value, Mapping):
         return value
-    return {}
+    raise ValueError("PotentialOperation mapping fields must be mappings")
 
 
 def _counts(values: Any) -> dict[str, int]:

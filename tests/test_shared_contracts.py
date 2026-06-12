@@ -3032,6 +3032,25 @@ def test_potential_operation_evidence_report_is_passive_shared_surface() -> None
     assert report["rows"][1]["status"] == "failed"
 
 
+def test_potential_operation_evidence_report_rejects_invalid_mapping_fields() -> None:
+    with pytest.raises(ValueError, match="mapping fields"):
+        potential_operation_evidence_report(
+            {
+                "potential_operation_id": "failed-op:bad",
+                "jurisdiction": "fi",
+                "source_artifact_id": "2020/1",
+                "source_unit_id": "chapter:4/section:5",
+                "source_anchor": "not-a-mapping",
+                "owner_phase": "replay_apply",
+                "classification": POTENTIAL_OPERATION_FAILED,
+                "operation_family": "fi_failed_operation",
+                "required_proofs": ("failed_operation_reason_classification",),
+                "safe_default": "do_not_treat_failed_operation_as_replay_authority",
+            },
+            jurisdiction="fi",
+        )
+
+
 def test_source_unit_coverage_evidence_report_is_passive_shared_surface() -> None:
     lineage_row = SourceUnitCoverage(
         coverage_id="fi:2001/1234:source-unit-coverage:abc",
