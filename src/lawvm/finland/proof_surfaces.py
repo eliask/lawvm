@@ -114,8 +114,10 @@ _DEFAULT_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
 _DEFAULT_SAFE_DEFAULT = "preserve_uncertainty_and_do_not_promote_pathology_to_replay_authority"
 _SPARSE_SLOT_PROMOTION_PROOFS: tuple[str, ...] = (
     "full_sparse_slot_candidate_enumeration",
+    "target_uniqueness_proof",
     "slot_uniqueness_proof",
     "payload_identity_proof",
+    "rejected_candidate_accounting_proof",
     "mutation_boundary_proof_before_replay_promotion",
 )
 _FINLEX_RESIDUAL_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
@@ -2155,6 +2157,7 @@ def finland_strict_report_candidate_set_frontier_work_items(
             continue
         candidate_set_kind = str(row.get("candidate_set_kind") or "unknown")
         scope_id = str(row.get("scope_id") or candidate_set_kind)
+        profile = _candidate_set_frontier_profile(candidate_set_kind)
         required_proofs = _string_sequence(row.get("next_promotion_requires")) or (
             "candidate_set_completion_certificate",
         )
@@ -2184,22 +2187,20 @@ def finland_strict_report_candidate_set_frontier_work_items(
                 "blocker_counts": dict(row.get("blocker_counts") or {}),
             },
             owner_phase=str(row.get("phase") or "strict_report_projection"),
-            frontier_family=f"fi_{_kind_slug(candidate_set_kind)}_coverage_gap",
+            frontier_family=profile["frontier_family"],
             frontier_status=f"{completeness_status or 'unknown'}_candidate_set_frontier",
-            candidate_operation_family="candidate_set_coverage_completion",
+            candidate_operation_family=profile["candidate_operation_family"],
             candidate_targets=(scope_id,),
-            guidance_refs=("lawvm_candidate_set_completion_review",),
-            required_claim_kind=_candidate_set_frontier_required_claim_kind(candidate_set_kind),
-            required_validator_checks=(
-                "validate_candidate_set_completion_certificate",
-                "validate_no_replay_promotion_from_partial_candidate_set",
-            ),
+            guidance_refs=profile["guidance_refs"],
+            required_claim_kind=profile["required_claim_kind"],
+            required_validator_checks=profile["required_validator_checks"],
             required_proofs=required_proofs,
-            safe_default="keep_candidate_set_gap_open_until_completion_certificate_exists",
+            safe_default=profile["safe_default"],
             forbidden_shortcuts=(
                 "candidate_set_frontier_as_replay_authorization",
                 "candidate_set_frontier_as_source_cue_exhaustiveness_proof",
                 "partial_candidate_set_as_complete_candidate_set",
+                *profile["forbidden_shortcuts"],
             ),
             executable=False,
             replay_authorized=False,
@@ -2216,6 +2217,7 @@ def finland_strict_report_candidate_set_frontier_work_items(
                     "operation_cue_exhaustiveness",
                     "source_unit_enumeration_closure",
                     "replay_authorization",
+                    *profile["does_not_claim"],
                 ],
             },
         )
@@ -4380,17 +4382,65 @@ def _strict_report_candidate_set_frontier_work_item_id(
 
 
 def _candidate_set_frontier_required_claim_kind(candidate_set_kind: str) -> str:
+    return _candidate_set_frontier_profile(candidate_set_kind)["required_claim_kind"]
+
+
+def _candidate_set_frontier_profile(candidate_set_kind: str) -> dict[str, Any]:
+    if candidate_set_kind == "fi_sparse_payload_slot_assignment":
+        return {
+            "frontier_family": "fi_sparse_payload_slot_assignment_manual_compilation_frontier",
+            "candidate_operation_family": "fi_sparse_slot_payload_resolution",
+            "guidance_refs": (
+                "lawvm_fi_sparse_slot_phase_gate_review",
+                "notes_internal/FINLAND_XML_MANUAL_COMPILATION_FRONTIER_AUDIT_2026-06-07.md",
+            ),
+            "required_claim_kind": "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+            "required_validator_checks": (
+                "validate_sparse_slot_resolution_claim",
+                "validate_target_uniqueness_before_replay_promotion",
+                "validate_payload_identity_before_replay_promotion",
+                "validate_rejected_candidate_accounting",
+                "validate_mutation_boundary_before_replay_promotion",
+                "validate_no_replay_promotion_from_partial_candidate_set",
+            ),
+            "safe_default": "keep_sparse_slot_candidate_set_non_executable_until_phase_replay_gate_exists",
+            "forbidden_shortcuts": (
+                "sparse_slot_candidate_set_as_target_uniqueness_proof",
+                "sparse_slot_binding_as_payload_identity_proof",
+                "manual_claim_as_phase_replay_gate",
+            ),
+            "does_not_claim": (
+                "target_uniqueness",
+                "payload_identity",
+                "rejected_candidate_exhaustiveness",
+                "mutation_boundary_proof",
+            ),
+        }
     if candidate_set_kind in (
         "fi_strict_report_source_lineage_units",
         "fi_strict_report_source_unit_enumeration",
     ):
-        return "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE"
-    if candidate_set_kind in (
+        claim_kind = "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE"
+    elif candidate_set_kind in (
         "fi_strict_report_visible_operation_rows",
         "fi_strict_report_operation_cue_coverage",
     ):
-        return "fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE"
-    return "candidate_set_completion_certificate"
+        claim_kind = "fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE"
+    else:
+        claim_kind = "candidate_set_completion_certificate"
+    return {
+        "frontier_family": f"fi_{_kind_slug(candidate_set_kind)}_coverage_gap",
+        "candidate_operation_family": "candidate_set_coverage_completion",
+        "guidance_refs": ("lawvm_candidate_set_completion_review",),
+        "required_claim_kind": claim_kind,
+        "required_validator_checks": (
+            "validate_candidate_set_completion_certificate",
+            "validate_no_replay_promotion_from_partial_candidate_set",
+        ),
+        "safe_default": "keep_candidate_set_gap_open_until_completion_certificate_exists",
+        "forbidden_shortcuts": (),
+        "does_not_claim": (),
+    }
 
 
 def _strict_report_canonical_potential_operation(

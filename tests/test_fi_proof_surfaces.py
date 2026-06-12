@@ -1980,6 +1980,69 @@ def test_finland_strict_report_candidate_set_frontier_rows_are_non_executable() 
     )
 
 
+def test_finland_sparse_slot_candidate_set_frontier_uses_manual_compilation_lane() -> None:
+    candidate_set = CandidateSetCertificate(
+        scope_id="fi:2010/100:section:3:binding:payload-slot:1:1",
+        candidate_set_kind="fi_sparse_payload_slot_assignment",
+        phase="typed_elaboration",
+        rule_id="fi_sparse_slot_binding_candidate_set",
+        reason="selected_sparse_slot_binding_recorded_without_full_candidate_enumeration",
+        completeness_status="partial",
+        candidate_count=1,
+        candidate_ids=("payload-slot:1:1",),
+        selected_candidate_ids=("payload-slot:1:1",),
+        blocker_counts={"candidate_set_not_enumerated": 1},
+        blocker_families=("candidate_set_completeness",),
+        next_promotion_allowed=False,
+        next_promotion_requires=(
+            "full_sparse_slot_candidate_enumeration",
+            "target_uniqueness_proof",
+            "payload_identity_proof",
+            "rejected_candidate_accounting_proof",
+            "mutation_boundary_proof_before_replay_promotion",
+        ),
+    ).to_dict()
+
+    rows = finland_strict_report_candidate_set_frontier_work_items(
+        {
+            "statute_id": "2001/1234",
+            "strict_report_candidate_set_certificates": [candidate_set],
+        }
+    )
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["executable"] is False
+    assert row["replay_authorized"] is False
+    assert row["frontier_family"] == (
+        "fi_sparse_payload_slot_assignment_manual_compilation_frontier"
+    )
+    assert row["candidate_operation_family"] == "fi_sparse_slot_payload_resolution"
+    assert row["required_claim_kind"] == "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION"
+    assert row["required_validator_checks"] == [
+        "validate_sparse_slot_resolution_claim",
+        "validate_target_uniqueness_before_replay_promotion",
+        "validate_payload_identity_before_replay_promotion",
+        "validate_rejected_candidate_accounting",
+        "validate_mutation_boundary_before_replay_promotion",
+        "validate_no_replay_promotion_from_partial_candidate_set",
+    ]
+    assert row["required_proofs"] == [
+        "full_sparse_slot_candidate_enumeration",
+        "target_uniqueness_proof",
+        "payload_identity_proof",
+        "rejected_candidate_accounting_proof",
+        "mutation_boundary_proof_before_replay_promotion",
+    ]
+    assert "manual_claim_as_phase_replay_gate" in row["forbidden_shortcuts"]
+    assert row["suggested_claim_template_status"] == "available"
+    assert (
+        row["suggested_claim_template"]["claim_kind"]
+        == "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION"
+    )
+    assert "mutation_boundary_proof" in row["detail"]["does_not_claim"]
+
+
 def test_temporal_resolution_evidence_rows_project_finland_time_findings() -> None:
     rows = temporal_resolution_evidence_rows_from_projection_rows(
         (
