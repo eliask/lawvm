@@ -5,9 +5,13 @@ from pathlib import Path
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.candidate_set_certificate import CANDIDATE_SET_COMPLETE, CandidateSetCertificate
+from lawvm.core.evidence_kernel import AuthorizationResult
+from lawvm.core.frontier_work_item import frontier_work_item_claim_closure_report
 from lawvm.core.manual_claims.kind_registry import list_registered_kinds
 from lawvm.core.mutation_accounting import MutationInvariantReport
+from lawvm.core.phase_replay_gate import PhaseLocalReplayGate
 from lawvm.core.proof_surfaces import proof_surface_from_evidence_report
+from lawvm.core.provenance_graph import ArtifactRef
 from lawvm.core.source_witness import source_witness_digest_coverage
 import lawvm.finland.claim_kinds as fi_claim_kinds
 from lawvm.finland.he_branch_parser import (
@@ -1082,6 +1086,103 @@ def test_source_pathology_frontier_work_item_is_non_executable() -> None:
     }
     assert item["suggested_claim_template"]["executable"] is False
     assert item["suggested_claim_template"]["replay_authorized"] is False
+
+
+def test_real_fi_source_pathology_frontier_claim_closure_requires_phase_gate() -> None:
+    pathology = {
+        "code": "SPARSE_ITEM_BODY_MISSING",
+        "message": "Sparse omission payload did not reproduce the targeted item body.",
+        "source_statute": "2020/1",
+        "target_unit_kind": "section",
+        "target_label": "section 5 subsection 2 item 3",
+        "detail": {
+            "target_section": "5",
+            "target_paragraph": "2",
+            "target_item": "3",
+        },
+    }
+    item = source_pathology_frontier_work_item(pathology, statute_id="1999/1").to_dict()
+    template = item["suggested_claim_template"]
+    assertion_id = "claim-real-fi-sparse-1"
+    assertion = {
+        "assertion_id": assertion_id,
+        "jurisdiction": "fi",
+        "kind": template["claim_kind"],
+        "target": {
+            **template["claim_target_seed"],
+            "source_pathology_code": "SPARSE_ITEM_BODY_MISSING",
+        },
+        "value": {
+            "source_quote": "Sparse omission payload did not reproduce the targeted item body.",
+            "candidate_slots": ("section:5/subsection:2/item:3",),
+            "selected_slot": "section:5/subsection:2/item:3",
+            "old_text_precondition": "old item text",
+        },
+    }
+    result = AuthorizationResult(
+        subject=ArtifactRef(
+            artifact_type="assertion",
+            artifact_id=assertion_id,
+            content_hash="sha256:" + "c" * 64,
+        ),
+        policy_id=f"{template['claim_kind']}.strict",
+        profile_name="fi_strict",
+        authorized=True,
+        satisfied_clauses=("exists:span_verified", "exists:entailment_verified"),
+        unsatisfied_clauses=(),
+        forbidden_present=(),
+        evidence_bundle_hash="sha256:" + "d" * 64,
+    )
+
+    passive = frontier_work_item_claim_closure_report(
+        item,
+        assertion=assertion,
+        authorization_result=result,
+    ).to_dict()
+
+    assert passive["replay_claims"] is False
+    assert passive["summary"]["closure_status_counts"] == {
+        "evidence_policy_satisfied_phase_gate_required": 1
+    }
+    assert passive["summary"]["phase_gate_required_count"] == 1
+    assert passive["summary"]["replay_authorized_count"] == 0
+    row = passive["rows"][0]
+    assert row["claim_kind_matches"] is True
+    assert row["frontier_ref_matches"] is True
+    assert row["policy_authorized"] is True
+    assert row["executable"] is False
+    assert row["replay_authorized"] is False
+    assert "phase_local_replay_authorization" in row["required_proofs"]
+    assert "frontier_claim_closure_as_replay_authorization" in row["forbidden_shortcuts"]
+
+    gate = PhaseLocalReplayGate(
+        gate_id="fi-real-sparse-frontier-gate-1",
+        jurisdiction="fi",
+        claim_id=assertion_id,
+        claim_kind=template["claim_kind"],
+        frontier_ref=item["work_item_id"],
+        owner_phase=item["owner_phase"],
+        authorization_rule_id="fi_sparse_slot_phase_gate_v1",
+        required_proofs=("payload_identity_proof", "mutation_boundary_proof"),
+        satisfied_proofs=("payload_identity_proof", "mutation_boundary_proof"),
+        candidate_operation_family=item["candidate_operation_family"],
+        candidate_targets=tuple(item["candidate_targets"]),
+    )
+    authorized = frontier_work_item_claim_closure_report(
+        item,
+        assertion=assertion,
+        authorization_result=result,
+        phase_replay_gate=gate,
+    ).to_dict()
+
+    assert authorized["replay_claims"] is True
+    assert authorized["summary"]["closure_status_counts"] == {
+        "phase_replay_gate_authorized": 1
+    }
+    assert authorized["summary"]["phase_gate_authorized_count"] == 1
+    assert authorized["summary"]["replay_authorized_count"] == 1
+    assert authorized["rows"][0]["executable"] is True
+    assert authorized["rows"][0]["replay_authorized"] is True
 
 
 def test_source_pathology_proof_surface_rows_bundle_authorization_and_frontier() -> None:
