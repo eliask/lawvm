@@ -68,6 +68,10 @@ class ProofGateSummary:
     regex_recognition_unclassified_gap_count: int = 0
     temporal_resolution_status_counts: Mapping[str, int] = field(default_factory=dict)
     temporal_resolution_unresolved_count: int = 0
+    source_pathology_authorization_status_counts: Mapping[str, int] = field(default_factory=dict)
+    source_pathology_authorization_blocked_count: int = 0
+    failed_operation_authorization_status_counts: Mapping[str, int] = field(default_factory=dict)
+    failed_operation_authorization_blocked_count: int = 0
     recovery_authorization_status_counts: Mapping[str, int] = field(default_factory=dict)
     recovery_authorization_blocked_count: int = 0
     safe_default: str = "treat_open_proof_gates_as_non_executable_frontier_accounting"
@@ -80,6 +84,8 @@ class ProofGateSummary:
         "potential_operation_unresolved_closure",
         "regex_recognition_gap_closure",
         "temporal_resolution_closure",
+        "source_pathology_authorization_closure",
+        "failed_operation_authorization_closure",
         "recovery_authorization_closure",
         "replay_authorization",
     )
@@ -102,6 +108,8 @@ class ProofGateSummary:
             "potential_operation_unresolved_count",
             "regex_recognition_unclassified_gap_count",
             "temporal_resolution_unresolved_count",
+            "source_pathology_authorization_blocked_count",
+            "failed_operation_authorization_blocked_count",
             "recovery_authorization_blocked_count",
         ):
             _require_nonnegative_int(field_name, getattr(self, field_name))
@@ -123,6 +131,8 @@ class ProofGateSummary:
             "potential_operation_classification_counts",
             "regex_recognition_coverage_status_counts",
             "temporal_resolution_status_counts",
+            "source_pathology_authorization_status_counts",
+            "failed_operation_authorization_status_counts",
             "recovery_authorization_status_counts",
         ):
             object.__setattr__(self, field_name, freeze_mapping(_count_mapping(getattr(self, field_name))))
@@ -187,6 +197,18 @@ class ProofGateSummary:
             "temporal_resolution_unresolved_count": (
                 self.temporal_resolution_unresolved_count
             ),
+            "source_pathology_authorization_status_counts": dict(
+                self.source_pathology_authorization_status_counts
+            ),
+            "source_pathology_authorization_blocked_count": (
+                self.source_pathology_authorization_blocked_count
+            ),
+            "failed_operation_authorization_status_counts": dict(
+                self.failed_operation_authorization_status_counts
+            ),
+            "failed_operation_authorization_blocked_count": (
+                self.failed_operation_authorization_blocked_count
+            ),
             "recovery_authorization_status_counts": dict(
                 self.recovery_authorization_status_counts
             ),
@@ -220,6 +242,8 @@ def proof_gate_summary_from_surfaces(
         "potential_operation_unresolved_closure",
         "regex_recognition_gap_closure",
         "temporal_resolution_closure",
+        "source_pathology_authorization_closure",
+        "failed_operation_authorization_closure",
         "recovery_authorization_closure",
         "replay_authorization",
     ),
@@ -282,6 +306,24 @@ def proof_gate_summary_from_surfaces(
         temporal_resolution_counts.get(status, 0)
         for status in _UNRESOLVED_TEMPORAL_STATUSES
     )
+    source_pathology_authorization_counts = _summary_count_mapping(
+        evidence,
+        "source_pathology_execution_authorization_status_counts",
+    )
+    source_pathology_authorization_blocked_count = _summary_optional_count(
+        evidence,
+        "source_pathology_execution_authorization_strict_blocked_count",
+        default=0,
+    )
+    failed_operation_authorization_counts = _summary_count_mapping(
+        evidence,
+        "failed_operation_execution_authorization_status_counts",
+    )
+    failed_operation_authorization_blocked_count = _summary_optional_count(
+        evidence,
+        "failed_operation_execution_authorization_strict_blocked_count",
+        default=0,
+    )
     recovery_authorization_counts = _summary_count_mapping(
         evidence,
         "recovery_execution_authorization_status_counts",
@@ -304,6 +346,8 @@ def proof_gate_summary_from_surfaces(
         + potential_operation_unresolved_count
         + regex_unclassified_gap_count
         + temporal_resolution_unresolved_count
+        + source_pathology_authorization_blocked_count
+        + failed_operation_authorization_blocked_count
         + recovery_authorization_blocked_count
     )
     return ProofGateSummary(
@@ -355,6 +399,10 @@ def proof_gate_summary_from_surfaces(
         regex_recognition_unclassified_gap_count=regex_unclassified_gap_count,
         temporal_resolution_status_counts=temporal_resolution_counts,
         temporal_resolution_unresolved_count=temporal_resolution_unresolved_count,
+        source_pathology_authorization_status_counts=source_pathology_authorization_counts,
+        source_pathology_authorization_blocked_count=source_pathology_authorization_blocked_count,
+        failed_operation_authorization_status_counts=failed_operation_authorization_counts,
+        failed_operation_authorization_blocked_count=failed_operation_authorization_blocked_count,
         recovery_authorization_status_counts=recovery_authorization_counts,
         recovery_authorization_blocked_count=recovery_authorization_blocked_count,
         safe_default=safe_default,

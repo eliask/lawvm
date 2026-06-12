@@ -52,6 +52,8 @@ def test_load_strict_run_reads_source_pathology_codes(tmp_path, monkeypatch) -> 
     assert rows[0]["proof_gate_potential_operation_unresolved_count"] == 0
     assert rows[0]["proof_gate_regex_unclassified_gap_count"] == 0
     assert rows[0]["proof_gate_temporal_resolution_unresolved_count"] == 0
+    assert rows[0]["proof_gate_source_pathology_authorization_blocked_count"] == 0
+    assert rows[0]["proof_gate_failed_operation_authorization_blocked_count"] == 0
     assert rows[0]["proof_gate_recovery_authorization_blocked_count"] == 0
     assert rows[0]["proof_gate_required_claim_kind_counts"] == {}
     assert rows[0]["proof_gate_frontier_status_counts"] == {}
@@ -170,6 +172,8 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                 "proof_gate_potential_operation_unresolved_count": 5,
                 "proof_gate_regex_unclassified_gap_count": 3,
                 "proof_gate_temporal_resolution_unresolved_count": 4,
+                "proof_gate_source_pathology_authorization_blocked_count": 6,
+                "proof_gate_failed_operation_authorization_blocked_count": 7,
                 "proof_gate_recovery_authorization_blocked_count": 2,
                 "proof_gate_required_claim_kind_counts": {
                     "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
@@ -232,6 +236,8 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert "proof_gate_potential_operation_unresolved_count" in text
     assert "proof_gate_regex_unclassified_gap_count" in text
     assert "proof_gate_temporal_resolution_unresolved_count" in text
+    assert "proof_gate_source_pathology_authorization_blocked_count" in text
+    assert "proof_gate_failed_operation_authorization_blocked_count" in text
     assert "proof_gate_recovery_authorization_blocked_count" in text
     assert "proof_gate_required_claim_kind_counts" in text
     assert "proof_gate_manual_claim_kind_counts" in text
@@ -265,6 +271,8 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert loaded[0]["proof_gate_potential_operation_unresolved_count"] == 5
     assert loaded[0]["proof_gate_regex_unclassified_gap_count"] == 3
     assert loaded[0]["proof_gate_temporal_resolution_unresolved_count"] == 4
+    assert loaded[0]["proof_gate_source_pathology_authorization_blocked_count"] == 6
+    assert loaded[0]["proof_gate_failed_operation_authorization_blocked_count"] == 7
     assert loaded[0]["proof_gate_recovery_authorization_blocked_count"] == 2
     assert loaded[0]["proof_gate_required_claim_kind_counts"] == {
         "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
@@ -381,6 +389,8 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                 "proof_gate_potential_operation_unresolved_count": 5,
                 "proof_gate_regex_unclassified_gap_count": 3,
                 "proof_gate_temporal_resolution_unresolved_count": 4,
+                "proof_gate_source_pathology_authorization_blocked_count": 6,
+                "proof_gate_failed_operation_authorization_blocked_count": 7,
                 "proof_gate_recovery_authorization_blocked_count": 2,
                 "proof_gate_required_claim_kind_counts": {
                     "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
@@ -452,6 +462,8 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
     assert "unresolved source units: 3" in out
     assert "unresolved potential ops: 5" in out
     assert "regex unclassified gaps: 3" in out
+    assert "blocked source pathology authorizations: 6" in out
+    assert "blocked failed operation authorizations: 7" in out
     assert "fi.v1.FAILED_OPERATION_RESOLUTION" in out
     assert "source_pathology_resolution" in out
     assert "partial_candidate_set_frontier" in out
@@ -747,7 +759,8 @@ def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
     assert proof_gates["manual_claim_frontier_count"] == 1
     assert proof_gates["coverage_frontier_count"] == 4
     assert proof_gates["other_frontier_count"] == 0
-    assert proof_gates["open_gate_signal_count"] == 18
+    assert proof_gates["open_gate_signal_count"] == 19
+    assert proof_gates["failed_operation_authorization_blocked_count"] == 1
     assert proof_gates["frontier_status_counts"] == {
         "failed_operation_frontier": 1,
         "partial_candidate_set_frontier": 4,
@@ -806,9 +819,11 @@ def test_format_report_includes_compact_proof_gate_summary() -> None:
     assert "source units      : 0 unresolved" in out
     assert "source chain      : 0 missing" in out
     assert "potential ops     : 0 unresolved" in out
-    assert "open gate signals: 18" in out
+    assert "open gate signals: 19" in out
     assert "regex gaps        : 0" in out
     assert "temporal facts    : 0 unresolved" in out
+    assert "source pathology auth: 0 blocked" in out
+    assert "failed op auth    : 1 blocked" in out
     assert "recovery auth     : 0 blocked" in out
     assert "fi.v1.FAILED_OPERATION_RESOLUTION=1" in out
     assert "manual claims    : fi.v1.FAILED_OPERATION_RESOLUTION=1" in out
@@ -1014,6 +1029,7 @@ def test_to_json_counts_registered_source_pathology_frontiers_as_manual() -> Non
     assert proof_gates["manual_claim_frontier_count"] == 1
     assert proof_gates["coverage_frontier_count"] == 4
     assert proof_gates["other_frontier_count"] == 0
+    assert proof_gates["source_pathology_authorization_blocked_count"] == 1
     assert proof_gates["required_claim_kind_counts"] == {
         "fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE": 2,
         "fi.v1.SOURCE_PATHOLOGY_RESOLUTION": 1,

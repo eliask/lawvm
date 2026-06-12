@@ -66,6 +66,14 @@ def test_proof_gate_summary_buckets_frontiers_without_replay_authority() -> None
                 "unknown_effective_date": 2,
                 "unresolved_contingent": 1,
             },
+            "source_pathology_execution_authorization_status_counts": {
+                "source_pathology_not_replay_authority": 1,
+            },
+            "source_pathology_execution_authorization_strict_blocked_count": 1,
+            "failed_operation_execution_authorization_status_counts": {
+                "failed_operation_not_replay_authority": 1,
+            },
+            "failed_operation_execution_authorization_strict_blocked_count": 1,
             "recovery_execution_authorization_status_counts": {
                 "recovery_projection_not_replay_authority": 3,
                 "strict_recovery_blocked": 2,
@@ -75,7 +83,7 @@ def test_proof_gate_summary_buckets_frontiers_without_replay_authority() -> None
         manual_claim_kind_prefixes=("fi.v1.",),
     ).to_dict()
 
-    assert summary["open_gate_signal_count"] == 27
+    assert summary["open_gate_signal_count"] == 29
     assert summary["ownership_failed_gate_counts"] == {"failed_ops_present": 1}
     assert summary["unowned_counts"] == {"unproved_mutation_boundary_proofs": 2}
     assert summary["frontier_work_item_count"] == 3
@@ -128,6 +136,14 @@ def test_proof_gate_summary_buckets_frontiers_without_replay_authority() -> None
         "unresolved_contingent": 1,
     }
     assert summary["temporal_resolution_unresolved_count"] == 4
+    assert summary["source_pathology_authorization_status_counts"] == {
+        "source_pathology_not_replay_authority": 1,
+    }
+    assert summary["source_pathology_authorization_blocked_count"] == 1
+    assert summary["failed_operation_authorization_status_counts"] == {
+        "failed_operation_not_replay_authority": 1,
+    }
+    assert summary["failed_operation_authorization_blocked_count"] == 1
     assert summary["recovery_authorization_status_counts"] == {
         "recovery_projection_not_replay_authority": 3,
         "strict_recovery_blocked": 2,
@@ -139,6 +155,8 @@ def test_proof_gate_summary_buckets_frontiers_without_replay_authority() -> None
     assert "source_unit_unresolved_closure" in summary["does_not_claim"]
     assert "potential_operation_unresolved_closure" in summary["does_not_claim"]
     assert "temporal_resolution_closure" in summary["does_not_claim"]
+    assert "source_pathology_authorization_closure" in summary["does_not_claim"]
+    assert "failed_operation_authorization_closure" in summary["does_not_claim"]
     assert "recovery_authorization_closure" in summary["does_not_claim"]
 
 
@@ -250,5 +268,49 @@ def test_proof_gate_summary_rejects_boolean_count_values() -> None:
             failed_gates=(),
             evidence_summary={
                 "recovery_execution_authorization_strict_blocked_count": True
+            },
+        )
+
+    with pytest.raises(ValueError, match="source_pathology_execution_authorization_status_counts"):
+        proof_gate_summary_from_surfaces(
+            schema="lawvm.test.proof_gate_summary.v1",
+            scope="unit-test",
+            closed=False,
+            failed_gates=(),
+            evidence_summary={
+                "source_pathology_execution_authorization_status_counts": "bad"
+            },
+        )
+
+    with pytest.raises(ValueError, match="source_pathology_execution_authorization_strict_blocked_count"):
+        proof_gate_summary_from_surfaces(
+            schema="lawvm.test.proof_gate_summary.v1",
+            scope="unit-test",
+            closed=False,
+            failed_gates=(),
+            evidence_summary={
+                "source_pathology_execution_authorization_strict_blocked_count": True
+            },
+        )
+
+    with pytest.raises(ValueError, match="failed_operation_execution_authorization_status_counts"):
+        proof_gate_summary_from_surfaces(
+            schema="lawvm.test.proof_gate_summary.v1",
+            scope="unit-test",
+            closed=False,
+            failed_gates=(),
+            evidence_summary={
+                "failed_operation_execution_authorization_status_counts": "bad"
+            },
+        )
+
+    with pytest.raises(ValueError, match="failed_operation_execution_authorization_strict_blocked_count"):
+        proof_gate_summary_from_surfaces(
+            schema="lawvm.test.proof_gate_summary.v1",
+            scope="unit-test",
+            closed=False,
+            failed_gates=(),
+            evidence_summary={
+                "failed_operation_execution_authorization_strict_blocked_count": True
             },
         )
