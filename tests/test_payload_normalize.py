@@ -584,7 +584,7 @@ def test_align_sparse_omission_subsections_to_live_uses_mixed_group_logical_targ
     got, changed = _align_sparse_omission_subsections_to_live(ctx, "section", "70", None, muutos_ir, ops)
 
     assert changed is True
-    assert got is not None
+    assert isinstance(got, IRNode)
     subsections = [child for child in got.children if child.kind == IRNodeKind.SUBSECTION]
     assert [child.label for child in subsections] == ["2", "3"]
 
@@ -625,7 +625,7 @@ def test_payload_normalize_keeps_new_sections_in_container_with_standalone_targe
     # Section "26" is NEW (not in live_member_labels {"14","15"}).
     # It must be kept — no pruning should occur.
     assert changed is False
-    assert got is not None
+    assert isinstance(got, IRNode)
     assert pruned == []
     assert [c.label for c in got.children if c.kind == IRNodeKind.SECTION] == ["14", "15", "26"]
 
@@ -662,7 +662,7 @@ def test_payload_normalize_keeps_existing_standalone_sections_in_container() -> 
 
     # Section "14" exists in live — kept in container (no pruning).
     assert changed is False
-    assert got is not None
+    assert isinstance(got, IRNode)
     assert pruned == []
     assert [c.label for c in got.children if c.kind == IRNodeKind.SECTION] == ["14", "15"]
 
@@ -705,7 +705,7 @@ def test_payload_normalize_keeps_mix_of_new_and_existing_standalone_sections() -
     # Section "9" exists in live — kept.  Sections "9b","11","12" are NEW — kept.
     # No sections pruned.
     assert changed is False
-    assert got is not None
+    assert isinstance(got, IRNode)
     assert pruned == []
     assert [c.label for c in got.children if c.kind == IRNodeKind.SECTION] == [
         "1",
@@ -4795,6 +4795,18 @@ def test_normalize_group_payload_treats_new_container_prune_as_expected_split() 
     assert [obs.kind for obs in observations] == ["ELAB.CONTAINER_PRUNED_SHADOWED"]
     assert observations[0].detail is not None
     assert observations[0].detail["pruned_sections"] == ["20a", "20h"]
+    assert observations[0].detail["before_child_paths"] == [
+        "chapter:5c/section:19j",
+        "chapter:5c/section:20a",
+        "chapter:5c/section:20h",
+    ]
+    assert observations[0].detail["after_child_paths"] == ["chapter:5c/section:19j"]
+    witnesses = observations[0].detail["pruned_section_witnesses"]
+    assert [witness["path"] for witness in witnesses] == [
+        "chapter:5c/section:20a",
+        "chapter:5c/section:20h",
+    ]
+    assert all(len(witness["structural_hash"]) == 64 for witness in witnesses)
     assert completeness.kind == "complete"
 
 

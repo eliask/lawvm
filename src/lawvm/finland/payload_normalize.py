@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Literal, Mapping, O
 from lawvm.core.compile_result import AdmissibleBindingCertificate, SourcePathology
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.ir_helpers import structural_subtree_hash
 from lawvm.core.payload_elaboration import (
     PayloadCompletenessWitness,
     PayloadElaborationResult,
@@ -192,6 +193,43 @@ class GroupPayloadNormalizationResult:
             object.__setattr__(self, "source_pathologies", ())
         if self.elaboration_observations is None:
             object.__setattr__(self, "elaboration_observations", ())
+
+
+@dataclass(frozen=True, slots=True)
+class PrunedPayloadSectionWitness:
+    """Evidence for one section removed from a container payload."""
+
+    label: str
+    path: str
+    structural_hash: str
+
+    def to_detail(self) -> dict[str, str]:
+        return {
+            "label": self.label,
+            "path": self.path,
+            "structural_hash": self.structural_hash,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ContainerPayloadPruningResult:
+    """Typed result for container payload pruning.
+
+    ``__iter__`` preserves the historical ``(muutos_ir, changed, pruned)``
+    unpacking surface while new callers consume named evidence fields.
+    """
+
+    muutos_ir: Optional[IRNode]
+    changed: bool
+    pruned_labels: tuple[str, ...] = ()
+    before_child_paths: tuple[str, ...] = ()
+    after_child_paths: tuple[str, ...] = ()
+    pruned_section_witnesses: tuple[PrunedPayloadSectionWitness, ...] = ()
+
+    def __iter__(self) -> Iterator[object]:
+        yield self.muutos_ir
+        yield self.changed
+        yield list(self.pruned_labels)
 
 
 @dataclass(frozen=True)
@@ -2067,14 +2105,14 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     *,
     foreign_scoped_standalone_section_targets: Set[str] | None = None,
     expected_heading_only: bool = False,
-) -> Tuple[Optional[IRNode], bool, List[str]]:
+) -> ContainerPayloadPruningResult:
     """Drop malformed container payload sections that are targeted separately.
 
     Uses ``ctx.live_node`` (Class 2: local subtree) for the container, and
     ``ctx.lookups`` (Class 3: topology) for fallback section scope resolution.
     """
     if muutos_ir is None or target_unit_kind not in ("chapter", "part") or not standalone_section_targets:
-        return muutos_ir, False, []
+        return ContainerPayloadPruningResult(muutos_ir=muutos_ir, changed=False)
     standalone_section_targets = {_norm_num_token(label) for label in standalone_section_targets if label}
     foreign_scoped_standalone_section_targets = {
         _norm_num_token(label) for label in (foreign_scoped_standalone_section_targets or ()) if label
@@ -2126,6 +2164,12 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
 
     changed = False
     pruned_labels: List[str] = []
+    pruned_witnesses: list[PrunedPayloadSectionWitness] = []
+    before_child_paths = _container_payload_section_child_paths(
+        muutos_ir,
+        target_unit_kind,
+        target_norm,
+    )
     new_children: List[IRNode] = []
     for child in muutos_ir.children:
         child_label = _norm_num_token(child.label or "")
@@ -2133,6 +2177,16 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
             new_children.append(child)
             continue
 
+        child_path = _container_payload_section_child_path(
+            target_unit_kind,
+            target_norm,
+            child_label,
+        )
+        child_witness = PrunedPayloadSectionWitness(
+            label=child_label,
+            path=child_path,
+            structural_hash=structural_subtree_hash(child),
+        )
         if master_container is not None:
             if child_label not in live_member_labels:
                 # Foreign-scoped section: belongs to another chapter/part.
@@ -2140,6 +2194,7 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
                 if child_label in foreign_scoped_standalone_section_targets:
                     changed = True
                     pruned_labels.append(child_label)
+                    pruned_witnesses.append(child_witness)
                     continue
                 # NEW section: keep in container — it's being introduced
                 # by the amendment.  The standalone PEG op handles its own
@@ -2149,6 +2204,7 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
                 continue
             changed = True
             pruned_labels.append(child_label)
+            pruned_witnesses.append(child_witness)
             continue
 
         # No live container exists yet: this is a new chapter/part payload.
@@ -2161,10 +2217,52 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
             continue
         changed = True
         pruned_labels.append(child_label)
+        pruned_witnesses.append(child_witness)
 
     if not changed:
-        return muutos_ir, False, []
-    return _tops._with_children(muutos_ir, new_children), True, pruned_labels
+        return ContainerPayloadPruningResult(
+            muutos_ir=muutos_ir,
+            changed=False,
+            before_child_paths=before_child_paths,
+            after_child_paths=before_child_paths,
+        )
+    new_muutos_ir = _tops._with_children(muutos_ir, new_children)
+    return ContainerPayloadPruningResult(
+        muutos_ir=new_muutos_ir,
+        changed=True,
+        pruned_labels=tuple(pruned_labels),
+        before_child_paths=before_child_paths,
+        after_child_paths=_container_payload_section_child_paths(
+            new_muutos_ir,
+            target_unit_kind,
+            target_norm,
+        ),
+        pruned_section_witnesses=tuple(pruned_witnesses),
+    )
+
+
+def _container_payload_section_child_path(
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+    section_label: str,
+) -> str:
+    return f"{target_unit_kind}:{target_norm}/section:{section_label}"
+
+
+def _container_payload_section_child_paths(
+    muutos_ir: IRNode,
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+) -> tuple[str, ...]:
+    return tuple(
+        _container_payload_section_child_path(
+            target_unit_kind,
+            target_norm,
+            _norm_num_token(child.label or ""),
+        )
+        for child in muutos_ir.children
+        if child.kind is IRNodeKind.SECTION and child.label
+    )
 
 
 def _container_pruning_is_expected_heading_only(group_ops: List[AmendmentOp]) -> bool:
@@ -4299,7 +4397,7 @@ def elaborate_payload_against_live(
         muutos_ir,
         group_ops,
     )
-    muutos_ir, payload_pruned, pruned_labels = _prune_container_payload_sections_shadowed_by_standalone_targets(
+    pruning_result = _prune_container_payload_sections_shadowed_by_standalone_targets(
         ctx,
         target_unit_kind,
         target_norm,
@@ -4308,6 +4406,9 @@ def elaborate_payload_against_live(
         foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
         expected_heading_only=_container_pruning_is_expected_heading_only(group_ops),
     )
+    muutos_ir = pruning_result.muutos_ir
+    payload_pruned = pruning_result.changed
+    pruned_labels = list(pruning_result.pruned_labels)
     source_pathologies.extend(
         _detect_sparse_subsection_tail_preservation_risk(
             ctx,
@@ -4324,6 +4425,12 @@ def elaborate_payload_against_live(
                 "ELAB.CONTAINER_PRUNED_SHADOWED",
                 "group_payload_normalization",
                 pruned_sections=pruned_labels,
+                pruned_section_witnesses=[
+                    witness.to_detail()
+                    for witness in pruning_result.pruned_section_witnesses
+                ],
+                before_child_paths=list(pruning_result.before_child_paths),
+                after_child_paths=list(pruning_result.after_child_paths),
                 target_unit_kind=target_unit_kind,
                 target_norm=target_norm,
             )
@@ -4420,8 +4527,10 @@ def elaborate_payload_against_live(
 
 
 __all__ = [
+    "ContainerPayloadPruningResult",
     "GroupPayloadNormalizationResult",
     "PayloadCompletenessWitness",
+    "PrunedPayloadSectionWitness",
     "SubsectionSlotMap",
     "payload_elaboration_projection_from_group_result",
     "prepare_payload_surface",

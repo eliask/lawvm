@@ -2473,6 +2473,7 @@ from lawvm.finland.apply_structure_ops import (
     _normalize_subsection_target_hint_ir,
 )
 from lawvm.finland.payload_normalize import (
+    ContainerPayloadPruningResult,
     GroupPayloadNormalizationResult,
     prepare_payload_surface,
     elaborate_payload_against_live,
@@ -3111,7 +3112,7 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     target_norm: str,
     muutos_ir: Optional[IRNode],
     standalone_section_targets: Set[str],
-) -> Tuple[Optional[IRNode], bool, List[str]]:
+) -> ContainerPayloadPruningResult:
     """Backward-compat wrapper for payload_normalize shadow pruning.
 
     Accepts either a ``PayloadElaborationContext`` or a legacy ``ReplayState``
