@@ -1436,6 +1436,11 @@ def finland_strict_report_candidate_set_execution_authorizations(
                 "projection_only": True,
             },
         ).to_dict()
+        authorization["row_id"] = _strict_report_candidate_set_authorization_row_id(
+            candidate_set_kind=candidate_set_kind,
+            scope_id=str(row.get("scope_id") or ""),
+            completeness_status=completeness_status,
+        )
         authorization["candidate_set_kind"] = candidate_set_kind
         authorization["completeness_status"] = completeness_status
         authorization["scope_id"] = str(row.get("scope_id") or "")
@@ -3493,6 +3498,23 @@ def _strict_report_candidate_set_authorization_key(
     if not candidate_set_kind or not scope_id or not completeness_status:
         return None
     return (candidate_set_kind, scope_id, completeness_status)
+
+
+def _strict_report_candidate_set_authorization_row_id(
+    *,
+    candidate_set_kind: str,
+    scope_id: str,
+    completeness_status: str,
+) -> str:
+    digest = _strict_report_digest(
+        "candidate-set-authorization",
+        {
+            "candidate_set_kind": candidate_set_kind,
+            "scope_id": scope_id,
+            "completeness_status": completeness_status,
+        },
+    ).split(":", 1)[1][:16]
+    return f"fi:strict-report-candidate-set-authorization:{digest}"
 
 
 def _visible_operation_candidate_ids(

@@ -7,6 +7,7 @@ from lawvm.core.compile_result import SourcePathology
 from lawvm.core.candidate_set_certificate import CANDIDATE_SET_COMPLETE, CandidateSetCertificate
 from lawvm.core.manual_claims.kind_registry import list_registered_kinds
 from lawvm.core.mutation_accounting import MutationInvariantReport
+from lawvm.core.proof_surfaces import proof_surface_from_evidence_report
 from lawvm.core.source_witness import source_witness_digest_coverage
 import lawvm.finland.claim_kinds as fi_claim_kinds
 from lawvm.finland.he_branch_parser import (
@@ -1532,6 +1533,69 @@ def test_finland_strict_report_ownership_closure_requires_matching_candidate_set
         "fi:2001/1234:operation-cue-coverage:a"
         in certificate["detail"]["missing_required_certificates"]
     )
+
+
+def test_finland_strict_report_candidate_set_authorization_rows_have_scope_sensitive_ids() -> None:
+    candidate_sets = [
+        CandidateSetCertificate(
+            scope_id=f"fi:2001/1234:operation-cue-coverage:{suffix}",
+            candidate_set_kind="fi_strict_report_operation_cue_coverage",
+            phase="operation_cue_detection",
+            rule_id="fi_strict_report_operation_cue_coverage_complete",
+            reason="operation cues enumerated in declared test slice",
+            completeness_status=CANDIDATE_SET_COMPLETE,
+            candidate_count=1,
+            candidate_ids=(f"operation-cue:{suffix}",),
+            missing_candidate_count=0,
+            blocker_counts={},
+            blocker_families=(),
+            next_promotion_allowed=False,
+            next_promotion_requires=("execution_authorization",),
+        ).to_dict()
+        for suffix in ("a", "b")
+    ]
+    authorizations = finland_strict_report_candidate_set_execution_authorizations(
+        {
+            "strict_report_candidate_set_certificates": candidate_sets,
+        }
+    )
+
+    row_ids = [row["row_id"] for row in authorizations]
+    assert len(row_ids) == 2
+    assert len(set(row_ids)) == 2
+    assert {
+        row["authorization_rule_id"]
+        for row in authorizations
+    } == {"fi_strict_report_candidate_set_fi_strict_report_operation_cue_coverage"}
+
+    report = finland_strict_report_evidence_surface(
+        {
+            "statute_id": "2001/1234",
+            "profile": "strict",
+            "ops": {"canonical": 0, "failed": 0},
+            "strict_report_candidate_set_certificates": candidate_sets,
+            "strict_report_candidate_set_execution_authorizations": authorizations,
+            "ownership_closure_certificate": finland_strict_report_ownership_closure_certificate(
+                {
+                    "statute_id": "2001/1234",
+                    "profile": "strict",
+                    "strict_report_candidate_set_certificates": candidate_sets,
+                    "strict_report_candidate_set_execution_authorizations": authorizations,
+                    "failed_ops": [],
+                    "strict_fail_reasons": [],
+                    "mutation_boundary_proofs": [],
+                }
+            ),
+        }
+    )
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+    projected_authorization_ids = [
+        row["row_id"]
+        for row in proof_surface["rows"]
+        if row["row_kind"] == "strict_report_candidate_set_execution_authorization"
+    ]
+
+    assert sorted(projected_authorization_ids) == sorted(row_ids)
 
 
 def test_temporal_resolution_evidence_rows_project_finland_time_findings() -> None:
