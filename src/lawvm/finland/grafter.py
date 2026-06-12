@@ -639,6 +639,7 @@ from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
 from lawvm.finland.process_frontend_normalization import ProcessFrontendNormalizationContext
 from lawvm.finland.process_result_builder import ProcessResultBuilder
 from lawvm.finland.process_route_rejection import ProcessRouteRejectionContext
+from lawvm.finland.process_temporal_authority import ProcessTemporalAuthorityContext
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
 
 
@@ -1481,8 +1482,6 @@ class _ContainerLookupShim(Protocol):
 from lawvm.finland.metadata import (
     get_johtolause,
     _amendment_effective_date,
-    _amendment_effective_date_with_step,
-    _amendment_expiry_date,
     _chapter_expiry_from_base,
     _expiry_date_precedes_effective_date,
     _statute_issue_date,
@@ -5092,82 +5091,15 @@ def process_muutoslaki(
             ):
                 _effective_restructure_plans_out.append(_early_restructure_plan)
 
-        amendment_effective_date, _eff_step = _amendment_effective_date_with_step(muutos_tree)
-        amendment_expiry_date = _amendment_expiry_date(muutos_tree)
-        amendment_issue_date = _statute_issue_date(muutos_tree)
-
-        # ── Typed ActivationRule derivation (amendment-level) ─────────────────
-        # Derive typed ActivationRules from the johtolause meta surface clauses.
-        # This runs BEFORE projection-row emission so that classify_contingent()
-        # is the execution authority for contingent detection, replacing the
-        # legacy _eff_step == "contingent_text" boolean check.
-        from lawvm.finland.johtolause.meta_parse import (
-            extract_meta_surface_clauses as _extract_meta_sc,
-        )
-        from lawvm.finland.temporal_lowering import (
-            activation_rules_from_meta_clauses as _arules_from_mc,
-            classify_contingent as _classify_cont,
-            default_activation_rule as _default_arule,
-        )
-
-        _amendment_meta_clauses = _extract_meta_sc(johto)
-        _amendment_activation_rules = _arules_from_mc(_amendment_meta_clauses)
-        if not _amendment_activation_rules:
-            _amendment_activation_rules = [_default_arule()]
-
-        _primary_rule = _amendment_activation_rules[0]
-        _typed_contingent = _classify_cont(_primary_rule)
-
-        # When no typed rules were derived from meta_clauses (empty johtolause
-        # temporal info), fall back to the legacy _eff_step detection which
-        # reads the amendment body's voimaantulo section.
-        if not _typed_contingent and _eff_step == "contingent_text":
-            _typed_contingent = True
-
-        # Record date-estimation fallbacks as findings/projection rows (#33: hidden date estimation).
-        # Contingent detection flows through ActivationRule when available;
-        # falls back to legacy _eff_step for body-derived contingency.
-        if _typed_contingent:
-            _record_process_finding(
-                kind="TIME.CONTINGENT_EFFECTIVE_DATE",
-                message=(
-                    "Effective date is contingent or decree-set in voimaantulo text; "
-                    "publication date is not a trustworthy legal PIT proxy."
-                ),
-                source_statute=amendment_id,
-                detail={
-                    "step": _eff_step,
-                    "activation_rule_kind": _primary_rule.kind,
-                },
-            )
-        elif _eff_step in ("text_regex", "publication_date"):
-            _record_process_finding(
-                kind="TIME.ESTIMATED_EFFECTIVE_DATE",
-                message=(
-                    "Effective date estimated by voimaantulo text regex (step 2)."
-                    if _eff_step == "text_regex"
-                    else "Effective date substituted by publication date - dateEntryIntoForce absent (step 3)."
-                ),
-                source_statute=amendment_id,
-                detail={"step": _eff_step},
-                role="obligation",
-                blocking=False,
-            )
-
-        # Bridge: log when typed model and legacy _eff_step disagree on contingency
-        if _typed_contingent and _eff_step not in ("contingent_text",):
-            logger.debug(
-                "[%s] activation_rule=%s (contingent) but _eff_step=%s - typed model more specific",
-                amendment_id,
-                _primary_rule.kind,
-                _eff_step,
-            )
-        elif not _typed_contingent and _eff_step == "contingent_text":
-            logger.debug(
-                "[%s] _eff_step=contingent_text but activation_rule=%s (not contingent) - legacy more specific",
-                amendment_id,
-                _primary_rule.kind,
-            )
+        _temporal_authority = ProcessTemporalAuthorityContext(
+            amendment_id=amendment_id,
+            johto=johto,
+            muutos_tree=muutos_tree,
+            record_finding=_record_process_finding,
+        ).derive()
+        amendment_effective_date = _temporal_authority.effective_date
+        amendment_expiry_date = _temporal_authority.expiry_date
+        amendment_issue_date = _temporal_authority.issue_date
 
         # Compile: resolve all groups into a flat list of ResolvedOps.
         # Both normalize_and_compile_ops and compile_amendment_ops only read
