@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, is_dataclass
+from enum import Enum
 from typing import Any, Dict, Literal, Optional, Protocol
 
 from lxml import etree
@@ -34,7 +35,7 @@ class _ReplayOpLike(Protocol):
 def _serialize_replay_op(op: _ReplayOpLike) -> Dict[str, Any]:
     target = {
         "path": list(op.target.path),
-        "special": op.target.special,
+        "special": _jsonable(op.target.special),
     }
     payload = op.payload
     payload_text = ""
@@ -46,10 +47,10 @@ def _serialize_replay_op(op: _ReplayOpLike) -> Dict[str, Any]:
     return {
         "op_id": op.op_id,
         "sequence": op.sequence,
-        "action": op.action,
+        "action": _jsonable(op.action),
         "target": target,
         "source_statute": source.statute_id if source is not None else "",
-        "payload_kind": payload.kind if payload is not None else "",
+        "payload_kind": _jsonable(payload.kind) if payload is not None else "",
         "payload_label": payload.label if payload is not None else "",
         "payload_preview": payload_preview,
         "is_repeal_placeholder": bool(
@@ -76,11 +77,13 @@ def _matches_contains(payload: dict[str, Any], needle: str) -> bool:
 
 
 def _jsonable(value: Any) -> Any:
+    if isinstance(value, Enum):
+        return value.value
     if is_dataclass(value):
         return _jsonable(asdict(value))
     if isinstance(value, dict):
         return {str(key): _jsonable(val) for key, val in value.items()}
-    if isinstance(value, tuple):
+    if isinstance(value, (tuple, set, frozenset)):
         return [_jsonable(item) for item in value]
     if isinstance(value, list):
         return [_jsonable(item) for item in value]
@@ -389,6 +392,6 @@ def main(args) -> None:
         limit=getattr(args, "limit", 10),
     )
     if getattr(args, "json", False):
-        print(json.dumps(bundle, ensure_ascii=False, indent=2))
+        print(json.dumps(_jsonable(bundle), ensure_ascii=False, indent=2))
         return
     print(_format_text(bundle))

@@ -29,6 +29,7 @@ from lawvm.tools.snapshot_debug import build_snapshot_debug_bundle
 from lawvm.corpus_store import get_corpus_store
 from lawvm.finland.corpus import ConsolidatedOracleInspection
 from lawvm.core.ir import LegalOperation
+from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
 from lawvm.tools.classify_result import ClassifyResult
 from tests.corpus_pin_helpers import pinned_replay
 
@@ -1333,6 +1334,69 @@ def test_replay_debug_main_prints_clause_text_and_filtered_ops(capsys, monkeypat
     assert "chapter:7 / section:14b [placeholder]" in out
     assert "Replay meta:" in out
     assert "cutoff_date" in out
+
+
+def test_replay_debug_json_serializes_replay_op_enums(capsys, monkeypatch) -> None:
+    def fake_replay_xml(*args, **kwargs):
+        compiled_ops_out = kwargs.get("compiled_ops_out")
+        lo_ops_out = kwargs.get("lo_ops_out")
+        assert compiled_ops_out is not None
+        compiled_ops_out.append(
+            {
+                "source_statute": "2023/371",
+                "sequence": 1,
+                "action": "replace",
+                "target": {"container": "section", "section": "1"},
+            }
+        )
+        if lo_ops_out is not None:
+            lo_ops_out.append(
+                SimpleNamespace(
+                    op_id="op-1",
+                    sequence=1,
+                    action=StructuralAction.REPLACE,
+                    target=SimpleNamespace(
+                        path=(("chapter", "13"), ("section", "1")),
+                        special=FacetKind.HEADING,
+                    ),
+                    payload=SimpleNamespace(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="4",
+                        attrs={},
+                        children=[],
+                        text="4) target payload",
+                    ),
+                    source=SimpleNamespace(statute_id="2023/371"),
+                )
+            )
+        return SimpleNamespace(title="Replay title")
+
+    monkeypatch.setattr(replay_debug, "replay_xml", fake_replay_xml)
+
+    replay_debug.main(
+        Namespace(
+            statute_id="2012/916",
+            source="2023/371",
+            target=None,
+            mode="official_consolidation",
+            show_clause_text=False,
+            show_source_blocks=False,
+            show_replay_ops=True,
+            show_replay_meta=False,
+            show_temporal_events=False,
+            show_failed_ops=False,
+            failed_only=False,
+            show_findings=False,
+            contains=None,
+            limit=5,
+            json=True,
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["replay_ops"][0]["action"] == "replace"
+    assert payload["replay_ops"][0]["payload_kind"] == "paragraph"
+    assert payload["replay_ops"][0]["target"]["special"] == "heading"
 
 
 def test_replay_debug_main_prints_filtered_replay_meta_and_temporal_events(capsys, monkeypatch) -> None:
