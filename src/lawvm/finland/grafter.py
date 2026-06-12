@@ -636,7 +636,11 @@ from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
 from lawvm.finland.process_findings import ProcessFindingRecorder
 from lawvm.finland.process_frontend_normalization import ProcessFrontendNormalizationContext
 from lawvm.finland.process_precompile_selection import ProcessPrecompileSelectionContext
-from lawvm.finland.process_result_builder import ProcessResultBuilder, ProcessSignalBuffers
+from lawvm.finland.process_result_builder import (
+    ProcessCompatSinks,
+    ProcessResultBuilder,
+    ProcessSignalBuffers,
+)
 from lawvm.finland.process_route_rejection import ProcessRouteRejectionContext
 from lawvm.finland.process_compile_signals import ProcessCompileSignalsContext
 from lawvm.finland.process_apply_projection import ProcessApplyProjectionContext
@@ -4780,14 +4784,16 @@ def process_muutoslaki(
         buffers=_signals,
         migration_ledger=_migration_ledger,
         migration_ledger_initial_len=_migration_ledger_initial_len,
-        failed_ops_out=failed_ops_out,
-        source_pathologies_out=source_pathologies_out,
-        elaboration_observations_out=elaboration_observations_out,
-        sparse_slot_bindings_out=sparse_slot_bindings_out,
-        sparse_leftovers_out=sparse_leftovers_out,
-        commencement_expiry_overrides_out=commencement_expiry_overrides_out,
-        mutation_events_out=mutation_events_out,
-        mutation_invariant_reports_out=mutation_invariant_reports_out,
+        sinks=ProcessCompatSinks(
+            failed_ops_out=failed_ops_out,
+            source_pathologies_out=source_pathologies_out,
+            elaboration_observations_out=elaboration_observations_out,
+            sparse_slot_bindings_out=sparse_slot_bindings_out,
+            sparse_leftovers_out=sparse_leftovers_out,
+            commencement_expiry_overrides_out=commencement_expiry_overrides_out,
+            mutation_events_out=mutation_events_out,
+            mutation_invariant_reports_out=mutation_invariant_reports_out,
+        ),
     )
 
     def _build_result(output_state: "ReplayState"):

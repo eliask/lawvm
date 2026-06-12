@@ -60,12 +60,10 @@ class ProcessSignalBuffers:
         )
 
 
-@dataclass(slots=True)
-class ProcessResultBuilder:
-    amendment_id: str
-    buffers: ProcessSignalBuffers
-    migration_ledger: MigrationLedger
-    migration_ledger_initial_len: int
+@dataclass(frozen=True, slots=True)
+class ProcessCompatSinks:
+    """Legacy process out-parameter sinks retained for CLI/test compatibility."""
+
     failed_ops_out: Optional[List[FailedOp]]
     source_pathologies_out: Optional[List[SourcePathology]]
     elaboration_observations_out: Optional[List[dict[str, object]]]
@@ -74,6 +72,15 @@ class ProcessResultBuilder:
     commencement_expiry_overrides_out: Optional[List[dict[str, object]]]
     mutation_events_out: Optional[List[ApplyMutationEvent]]
     mutation_invariant_reports_out: Optional[List[ApplyMutationInvariantReport]]
+
+
+@dataclass(slots=True)
+class ProcessResultBuilder:
+    amendment_id: str
+    buffers: ProcessSignalBuffers
+    migration_ledger: MigrationLedger
+    migration_ledger_initial_len: int
+    sinks: ProcessCompatSinks
     mutation_cursor: int = 0
 
     def build(self, output_state: Any) -> PhaseResult[Any]:
@@ -140,17 +147,17 @@ class ProcessResultBuilder:
                 for f in self.buffers.failed_ops
             )
 
-        current_events = (self.mutation_events_out or [])[self.mutation_cursor:]
-        self.mutation_cursor = len(self.mutation_events_out or [])
+        current_events = (self.sinks.mutation_events_out or [])[self.mutation_cursor:]
+        self.mutation_cursor = len(self.sinks.mutation_events_out or [])
         mutation_invariant_reports = build_apply_mutation_invariant_reports(current_events)
-        if self.mutation_invariant_reports_out is not None:
-            self.mutation_invariant_reports_out.extend(mutation_invariant_reports)
+        if self.sinks.mutation_invariant_reports_out is not None:
+            self.sinks.mutation_invariant_reports_out.extend(mutation_invariant_reports)
         self._append_apply_mutation_findings(merged_findings, mutation_invariant_reports)
         self._append_apply_fallback_findings(merged_findings)
         boundary_violations = (
             check_apply_mutation_invariant_reports(mutation_invariant_reports)
             if mutation_invariant_reports
-            else check_apply_mutation_accounting(self.mutation_events_out or [])
+            else check_apply_mutation_accounting(self.sinks.mutation_events_out or [])
         )
         if boundary_violations and not mutation_invariant_reports:
             merged_findings.extend(
@@ -170,18 +177,18 @@ class ProcessResultBuilder:
         )
 
     def project_compat_sinks(self) -> None:
-        if self.failed_ops_out is not None:
-            self.failed_ops_out.extend(self.buffers.failed_ops)
-        if self.source_pathologies_out is not None:
-            self.source_pathologies_out.extend(self.buffers.source_pathologies)
-        if self.elaboration_observations_out is not None:
-            self.elaboration_observations_out.extend(self.buffers.elaboration_observations)
-        if self.sparse_slot_bindings_out is not None:
-            self.sparse_slot_bindings_out.extend(self.buffers.sparse_slot_bindings)
-        if self.sparse_leftovers_out is not None:
-            self.sparse_leftovers_out.extend(self.buffers.sparse_leftovers)
-        if self.commencement_expiry_overrides_out is not None:
-            self.commencement_expiry_overrides_out.extend(
+        if self.sinks.failed_ops_out is not None:
+            self.sinks.failed_ops_out.extend(self.buffers.failed_ops)
+        if self.sinks.source_pathologies_out is not None:
+            self.sinks.source_pathologies_out.extend(self.buffers.source_pathologies)
+        if self.sinks.elaboration_observations_out is not None:
+            self.sinks.elaboration_observations_out.extend(self.buffers.elaboration_observations)
+        if self.sinks.sparse_slot_bindings_out is not None:
+            self.sinks.sparse_slot_bindings_out.extend(self.buffers.sparse_slot_bindings)
+        if self.sinks.sparse_leftovers_out is not None:
+            self.sinks.sparse_leftovers_out.extend(self.buffers.sparse_leftovers)
+        if self.sinks.commencement_expiry_overrides_out is not None:
+            self.sinks.commencement_expiry_overrides_out.extend(
                 self.buffers.commencement_expiry_override_notes
             )
 
@@ -208,7 +215,7 @@ class ProcessResultBuilder:
 
     def _append_apply_fallback_findings(self, merged_findings: list[Finding]) -> None:
         seen: set[tuple[str, str, str, str]] = set()
-        for event in self.mutation_events_out or []:
+        for event in self.sinks.mutation_events_out or []:
             for fallback_kind in (
                 "APPLY.LEGACY_DISPATCH_FALLBACK",
                 "APPLY.RELABEL_SKIPPED",
