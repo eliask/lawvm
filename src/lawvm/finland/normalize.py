@@ -65,6 +65,15 @@ _RE_NEW_ITEM = re.compile(
     r"\s+kohta\b"
 )
 _RE_STATUTE_CREATION_CHAPTER = re.compile(r"\blakiin\s+uusi\s+(\d+\s*[a-z]?)\s+luku\b")
+_INSERT_SECTION_ROOT_FALLBACK_RE = re.compile(
+    r"\b(?:lakiin|asetuksen)\s+uusi\s+([^§]{1,120})§",
+    flags=re.I,
+)
+_INSERT_SECTION_UUDEN_FALLBACK_RE = re.compile(
+    r"\buuden\s+((?:\d+\s*[a-z]?(?:\s*[–—―-]\s*\d+\s*[a-z]?)?"
+    r"(?:\s*(?:,|ja)\s*\d+\s*[a-z]?(?:\s*[–—―-]\s*\d+\s*[a-z]?)?)*)?)\s*§",
+    flags=re.I,
+)
 _INSERT_SUBSECTION_FALLBACK_RE = re.compile(
     r"(\d+\s*[a-z]?)\s*§\s*:ään\s*,?\s*(?:sellaisena\s+kuin\s+[^,]+,\s*)?"
     r"(.*?)(?=(?:\d+\s*[a-z]?\s*§\s*:ään)|(?:\d+\s*[a-z]?\s+luvun\s+\d+\s*[a-z]?\s*§\s*:)"
@@ -229,7 +238,7 @@ def _extract_insert_section_ops_fallback(cleaned: str) -> List[AmendmentOp]:
                 target_unit_kind="section",
             )
         )
-    for m in re.finditer(r"\b(?:lakiin|asetuksen)\s+uusi\s+([^§]{1,120})§", cleaned, flags=re.I):
+    for m in _INSERT_SECTION_ROOT_FALLBACK_RE.finditer(cleaned):
         clause = m.group(1)
         if _RE_CONTAINER_NOUN.search(clause):
             continue
@@ -246,12 +255,7 @@ def _extract_insert_section_ops_fallback(cleaned: str) -> List[AmendmentOp]:
                     target_unit_kind="section",
                 )
             )
-    for m in re.finditer(
-        r"\buuden\s+((?:\d+\s*[a-z]?(?:\s*[–—―-]\s*\d+\s*[a-z]?)?"
-        r"(?:\s*(?:,|ja)\s*\d+\s*[a-z]?(?:\s*[–—―-]\s*\d+\s*[a-z]?)?)*)?)\s*§",
-        cleaned,
-        flags=re.I,
-    ):
+    for m in _INSERT_SECTION_UUDEN_FALLBACK_RE.finditer(cleaned):
         clause = m.group(1)
         for sec in _expand_spaced_insert_label_list_ir(clause):
             norm = _RE_WHITESPACE.sub("", sec).lower()
@@ -267,6 +271,90 @@ def _extract_insert_section_ops_fallback(cleaned: str) -> List[AmendmentOp]:
                 )
             )
     return ops
+
+
+def _extract_insert_section_ops_fallback_with_coverage(
+    cleaned: str,
+    *,
+    source_artifact_id: str = "",
+) -> FallbackParseResult:
+    ops = _extract_insert_section_ops_fallback(cleaned)
+    coverage_rows: list[RegexRecognitionCoverage] = []
+    source_hash = regex_source_text_hash(cleaned)
+    for recognizer_id, pattern in (
+        ("fi_insert_section_root_fallback", _INSERT_SECTION_ROOT_FALLBACK_RE),
+        ("fi_insert_section_uuden_fallback", _INSERT_SECTION_UUDEN_FALLBACK_RE),
+    ):
+        for m in pattern.finditer(cleaned):
+            clause = m.group(1)
+            if recognizer_id == "fi_insert_section_root_fallback" and _RE_CONTAINER_NOUN.search(clause):
+                continue
+            target_sections = tuple(_expand_spaced_insert_label_list_ir(clause))
+            if not target_sections:
+                continue
+            ignored_spans: list[dict[str, object]] = []
+            cursor = 0
+            for section_match in _SECTION_TOKEN_RE.finditer(clause):
+                ignored_spans.extend(
+                    _regex_ignored_span_rows(
+                        cleaned,
+                        base_offset=m.start(1),
+                        clause=clause,
+                        start=cursor,
+                        end=section_match.start(),
+                    )
+                )
+                cursor = section_match.end()
+            ignored_spans.extend(
+                _regex_ignored_span_rows(
+                    cleaned,
+                    base_offset=m.start(1),
+                    clause=clause,
+                    start=cursor,
+                    end=len(clause),
+                )
+            )
+            unclassified_count = sum(
+                1 for row in ignored_spans if row.get("classification") == "unclassified"
+            )
+            coverage_rows.append(
+                RegexRecognitionCoverage(
+                    coverage_id=_regex_coverage_id(
+                        recognizer_id,
+                        source_hash,
+                        m.start(),
+                        m.end(),
+                    ),
+                    jurisdiction="fi",
+                    recognizer_id=recognizer_id,
+                    owner_phase="surface_syntax_frontend",
+                    source_artifact_id=source_artifact_id,
+                    source_text_hash=source_hash,
+                    matched_span=(m.start(), m.end()),
+                    coverage_status=(
+                        REGEX_RECOGNITION_UNCLASSIFIED_GAP
+                        if unclassified_count
+                        else REGEX_RECOGNITION_FULLY_CLASSIFIED
+                    ),
+                    semantic_slots={
+                        "action": "INSERT",
+                        "target_unit_kind": "section",
+                        "target_sections": target_sections,
+                    },
+                    ignored_spans=tuple(ignored_spans),
+                    required_proofs=(
+                        ("regex_skipped_span_classification",)
+                        if unclassified_count
+                        else ()
+                    ),
+                    detail={
+                        "matched_text_preview": cleaned[m.start():m.end()][:240],
+                        "unclassified_ignored_span_count": unclassified_count,
+                        "rule_note": "bounded regex fallback coverage only; not replay authority",
+                    },
+                )
+            )
+    return FallbackParseResult(ops=ops, regex_recognition_coverage=tuple(coverage_rows))
 
 
 def _extract_insert_subsection_ops_fallback(cleaned: str) -> List[AmendmentOp]:
@@ -1307,6 +1395,10 @@ def parse_ops_fallback_heuristic_with_coverage(
 
     ops = parse_ops_fallback_heuristic(johto)
     cleaned = _RE_WHITESPACE.sub(" ", johto).strip().lower()
+    section_coverage = _extract_insert_section_ops_fallback_with_coverage(
+        cleaned,
+        source_artifact_id=source_artifact_id,
+    ).regex_recognition_coverage
     subsection_coverage = _extract_insert_subsection_ops_fallback_with_coverage(
         cleaned,
         source_artifact_id=source_artifact_id,
@@ -1317,7 +1409,11 @@ def parse_ops_fallback_heuristic_with_coverage(
     ).regex_recognition_coverage
     return FallbackParseResult(
         ops=ops,
-        regex_recognition_coverage=(*subsection_coverage, *item_coverage),
+        regex_recognition_coverage=(
+            *section_coverage,
+            *subsection_coverage,
+            *item_coverage,
+        ),
     )
 
 

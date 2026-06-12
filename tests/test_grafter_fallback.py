@@ -6161,6 +6161,68 @@ def test_item_insert_fallback_coverage_marks_plain_connector_classified() -> Non
     assert coverage["required_proofs"] == []
 
 
+def test_section_insert_fallback_coverage_surfaces_unclassified_bounded_gap() -> None:
+    johto = "lisätään lakiin uusi 5, kuitenkin 6 § seuraavasti:"
+
+    result = parse_ops_fallback_heuristic_with_coverage(
+        johto,
+        source_artifact_id="2020/3",
+    )
+
+    got = {(op.op_type, op.target_unit_kind, op.target_section) for op in result.ops}
+    assert ("INSERT", "section", "5") in got
+    assert len(result.regex_recognition_coverage) == 1
+    coverage = result.regex_recognition_coverage[0].to_dict()
+    assert coverage["recognizer_id"] == "fi_insert_section_root_fallback"
+    assert coverage["coverage_status"] == "unclassified_gap"
+    assert coverage["semantic_slots"] == {
+        "action": "INSERT",
+        "target_unit_kind": "section",
+        "target_sections": ["5"],
+    }
+    assert coverage["ignored_spans"] == [
+        {
+            "span": [22, 34],
+            "classification": "unclassified",
+            "text_preview": ", kuitenkin ",
+            "could_alter_meaning": True,
+        }
+    ]
+    assert coverage["required_proofs"] == ["regex_skipped_span_classification"]
+
+
+def test_section_insert_fallback_coverage_marks_list_connector_classified() -> None:
+    johto = "lisätään lakiin uusi 149 a–149 c ja 211 b § seuraavasti:"
+
+    result = parse_ops_fallback_heuristic_with_coverage(johto)
+
+    got = {(op.op_type, op.target_unit_kind, op.target_section) for op in result.ops}
+    assert {
+        ("INSERT", "section", "149a"),
+        ("INSERT", "section", "149b"),
+        ("INSERT", "section", "149c"),
+        ("INSERT", "section", "211b"),
+    } <= got
+    assert len(result.regex_recognition_coverage) == 1
+    coverage = result.regex_recognition_coverage[0].to_dict()
+    assert coverage["recognizer_id"] == "fi_insert_section_root_fallback"
+    assert coverage["coverage_status"] == "fully_classified"
+    assert coverage["semantic_slots"] == {
+        "action": "INSERT",
+        "target_unit_kind": "section",
+        "target_sections": ["149a", "149b", "149c", "211b"],
+    }
+    assert coverage["ignored_spans"] == [
+        {
+            "span": [32, 36],
+            "classification": "drafting_connector",
+            "text_preview": " ja ",
+            "could_alter_meaning": False,
+        }
+    ]
+    assert coverage["required_proofs"] == []
+
+
 def test_insert_section_fallback_expands_letter_suffix_range_inside_lakiin_uusi_clause() -> None:
     johto = "lisätään lakiin uusi 149 a–149 c ja 211 b § seuraavasti:"
 
