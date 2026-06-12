@@ -533,6 +533,30 @@ def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
     assert payload["evidence_surface_report"]["summary"][
         "frontier_claim_template_kind_counts"
     ] == {"fi.v1.FAILED_OPERATION_RESOLUTION": 1}
+    potential_ops = payload["potential_operations"]
+    assert len(potential_ops) == 1
+    assert potential_ops[0]["classification"] == "failed"
+    assert potential_ops[0]["operation_family"] == "fi_failed_operation"
+    assert potential_ops[0]["target"] == "chapter:4/section:5"
+    assert potential_ops[0]["safe_default"] == (
+        "treat_failed_operation_as_non_executable_frontier_until_source_target_payload_and_boundary_are_proven"
+    )
+    operation_cue_certificate = next(
+        row
+        for row in payload["strict_report_candidate_set_certificates"]
+        if row["candidate_set_kind"] == "fi_strict_report_operation_cue_coverage"
+    )
+    assert operation_cue_certificate["candidate_ids"] == [
+        potential_ops[0]["potential_operation_id"]
+    ]
+    assert operation_cue_certificate["completeness_status"] == "partial"
+    assert operation_cue_certificate["visible_scope"] == (
+        "strict_report_potential_operation_rows"
+    )
+    assert payload["evidence_surface_report"]["summary"]["potential_operation_count"] == 1
+    assert payload["evidence_surface_report"]["summary"][
+        "potential_operation_classification_counts"
+    ] == {"failed": 1}
 
 
 def test_to_json_uses_projection_rows_when_available() -> None:
@@ -693,7 +717,11 @@ def test_to_json_exports_open_ownership_closure_certificate_without_replay_claim
         "unavailable",
         "partial",
     ]
-    assert candidate_sets[0]["candidate_ids"] == ["lo-visible-1"]
+    assert candidate_sets[0]["candidate_ids"] == ["canonical-op:lo-visible-1"]
+    assert payload["potential_operations"][0]["potential_operation_id"] == (
+        "canonical-op:lo-visible-1"
+    )
+    assert payload["potential_operations"][0]["classification"] == "compiled"
     assert candidate_sets[2]["next_promotion_allowed"] is False
     assert candidate_sets[3]["next_promotion_requires"] == [
         "independent_source_text_cue_detector",

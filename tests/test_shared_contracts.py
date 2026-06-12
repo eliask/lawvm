@@ -74,6 +74,12 @@ from lawvm.core.payload_elaboration import (
     payload_elaboration_evidence_report,
 )
 from lawvm.core.phase_replay_gate import PhaseLocalReplayGate
+from lawvm.core.potential_operation import (
+    POTENTIAL_OPERATION_COMPILED,
+    POTENTIAL_OPERATION_FAILED,
+    PotentialOperation,
+    potential_operation_evidence_report,
+)
 from lawvm.core.proof_obligations import (
     PROOF_OBLIGATION_BLOCKED,
     PROOF_OBLIGATION_COMPLETE,
@@ -2945,6 +2951,57 @@ def test_candidate_set_evidence_report_is_passive_shared_surface() -> None:
     assert row["status"] == "complete"
     assert "candidate_set_certificate_as_replay_authorization" in row["forbidden_shortcuts"]
     assert "candidate_set_certificate_as_replay_authorization" in report["forbidden_shortcuts"]
+
+
+def test_potential_operation_evidence_report_is_passive_shared_surface() -> None:
+    compiled = PotentialOperation(
+        potential_operation_id="canonical-op:lo-1",
+        jurisdiction="fi",
+        source_artifact_id="fi:2001/1234:strict-report-canonical-ops",
+        source_unit_id="lo-1",
+        owner_phase="canonical_operation_lowering",
+        classification=POTENTIAL_OPERATION_COMPILED,
+        operation_family="fi_canonical_operation",
+        refs=("lo-1",),
+        required_proofs=("source_text_operation_cue_detector",),
+        safe_default="do_not_treat_compiled_visible_ops_as_source_cue_exhaustiveness",
+    )
+    failed = PotentialOperation(
+        potential_operation_id="failed-op:abc",
+        jurisdiction="fi",
+        source_artifact_id="2020/1",
+        source_unit_id="chapter:4/section:5",
+        owner_phase="replay_apply",
+        classification=POTENTIAL_OPERATION_FAILED,
+        operation_family="fi_failed_operation",
+        target="chapter:4/section:5",
+        required_proofs=("failed_operation_reason_classification",),
+        safe_default="do_not_treat_failed_operation_as_replay_authority",
+    )
+
+    report = potential_operation_evidence_report(
+        (compiled, failed),
+        jurisdiction="fi",
+        report_kind="finland_strict_report_potential_operations",
+    ).to_dict()
+
+    assert report["schema"] == "lawvm.potential_operation_coverage.v1"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["summary"]["potential_operation_count"] == 2
+    assert report["summary"]["classification_counts"] == {
+        "compiled": 1,
+        "failed": 1,
+    }
+    assert report["summary"]["operation_family_counts"] == {
+        "fi_canonical_operation": 1,
+        "fi_failed_operation": 1,
+    }
+    assert report["rows"][0]["surface"] == "potential_operation"
+    assert report["rows"][0]["row_id"] == "canonical-op:lo-1"
+    assert report["rows"][0]["status"] == "compiled"
+    assert "potential_operation_as_replay_authorization" in report["rows"][0]["forbidden_shortcuts"]
 
 
 def test_candidate_set_report_rejects_invalid_mapping_rows() -> None:

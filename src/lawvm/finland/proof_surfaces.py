@@ -53,6 +53,12 @@ from lawvm.core.ownership_closure import (
     OwnershipClosureCertificate,
     ownership_closure_evidence_report,
 )
+from lawvm.core.potential_operation import (
+    POTENTIAL_OPERATION_COMPILED,
+    POTENTIAL_OPERATION_FAILED,
+    PotentialOperation,
+    potential_operation_evidence_report,
+)
 from lawvm.core.source_acquisition import (
     SourceAcquisitionAssertion,
     SourceBundlePolicy,
@@ -1064,6 +1070,14 @@ def finland_strict_report_evidence_surface(
     failed_operation_authorizations = _mapping_sequence(payload.get("failed_operation_execution_authorizations"))
     failed_operation_frontier_items = _mapping_sequence(payload.get("failed_operation_frontier_work_items"))
     frontier_items = (*source_pathology_frontier_items, *failed_operation_frontier_items)
+    potential_operations = _mapping_sequence(payload.get("potential_operations"))
+    potential_operation_report = potential_operation_evidence_report(
+        potential_operations,
+        jurisdiction="fi",
+        report_kind="finland_strict_report_potential_operations",
+    ).to_dict()
+    potential_operation_rows = _mapping_sequence(potential_operation_report.get("rows"))
+    potential_operation_summary = dict(potential_operation_report.get("summary") or {})
     sparse_certificates = _mapping_sequence(payload.get("sparse_slot_candidate_set_certificates"))
     source_lineage_witnesses = _mapping_sequence(payload.get("source_lineage_source_witnesses"))
     agreement_residuals = _mapping_sequence(payload.get("agreement_residuals"))
@@ -1118,6 +1132,10 @@ def finland_strict_report_evidence_surface(
                 {"surface": "failed_operation_frontier_work_item", **dict(row)}
                 for row in failed_operation_frontier_items
             ),
+            *(
+                {"surface": "potential_operation", **dict(row)}
+                for row in potential_operation_rows
+            ),
             *({"surface": "sparse_slot_candidate_set_certificate", **dict(row)} for row in sparse_certificates),
             *({"surface": "source_lineage_source_witness", **dict(row)} for row in source_lineage_witnesses),
             *({"surface": "agreement_residual", **dict(row)} for row in agreement_report_rows),
@@ -1149,6 +1167,13 @@ def finland_strict_report_evidence_surface(
         "source_pathology_frontier_work_item_count": len(source_pathology_frontier_items),
         "failed_operation_execution_authorization_count": len(failed_operation_authorizations),
         "failed_operation_frontier_work_item_count": len(failed_operation_frontier_items),
+        "potential_operation_count": len(potential_operation_rows),
+        "potential_operation_classification_counts": dict(
+            potential_operation_summary.get("classification_counts") or {}
+        ),
+        "potential_operation_family_counts": dict(
+            potential_operation_summary.get("operation_family_counts") or {}
+        ),
         "frontier_claim_template_status_counts": _frontier_claim_template_status_counts(frontier_items),
         "frontier_claim_template_kind_counts": _frontier_claim_template_kind_counts(frontier_items),
         "sparse_slot_candidate_set_certificate_count": len(sparse_certificates),
@@ -1262,11 +1287,15 @@ def finland_strict_report_candidate_set_certificates(
     canonical_count = _ops_count(payload, "canonical")
     canonical_op_ids = _string_sequence(payload.get("canonical_op_ids"))
     failed_ops = _mapping_sequence(payload.get("failed_ops"))
+    potential_operations = _mapping_sequence(payload.get("potential_operations"))
     source_lineage_witnesses = _mapping_sequence(payload.get("source_lineage_source_witnesses"))
-    visible_operation_ids = _visible_operation_candidate_ids(
-        canonical_op_ids=canonical_op_ids,
-        canonical_count=canonical_count,
-        failed_ops=failed_ops,
+    visible_operation_ids = (
+        _potential_operation_candidate_ids(potential_operations)
+        or _visible_operation_candidate_ids(
+            canonical_op_ids=canonical_op_ids,
+            canonical_count=canonical_count,
+            failed_ops=failed_ops,
+        )
     )
     source_unit_ids = _source_lineage_candidate_ids(source_lineage_witnesses)
     return [
@@ -1293,6 +1322,7 @@ def finland_strict_report_candidate_set_certificates(
             ),
             detail={
                 "visible_scope": "strict_report_canonical_and_failed_operation_rows",
+                "potential_operation_row_count": len(potential_operations),
                 "canonical_count": canonical_count,
                 "failed_count": len(failed_ops),
                 "safe_default": "do_not_treat_visible_operation_rows_as_complete_source_cue_coverage",
@@ -1378,12 +1408,80 @@ def finland_strict_report_candidate_set_certificates(
                 "parser_gap_frontier_items_for_unclassified_cues",
             ),
             detail={
-                "visible_scope": "strict_report_negative_space_operation_cues",
+                "visible_scope": "strict_report_potential_operation_rows",
                 "visible_operation_row_count": len(visible_operation_ids),
+                "potential_operation_row_count": len(potential_operations),
                 "safe_default": "do_not_treat_visible_operation_rows_as_operation_cue_closure",
             },
         ).to_dict(),
     ]
+
+
+def finland_strict_report_potential_operation_rows(
+    payload: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Potential-operation coverage rows for visible strict-report operations.
+
+    These rows are a typed census of visible canonical/failed operation rows.
+    They intentionally do not prove that all source-text operation cues were
+    independently detected.
+    """
+
+    statute_id = str(payload.get("statute_id") or "unknown")
+    canonical_count = _ops_count(payload, "canonical")
+    canonical_op_ids = _string_sequence(payload.get("canonical_op_ids"))
+    failed_ops = _mapping_sequence(payload.get("failed_ops"))
+    rows: list[dict[str, Any]] = []
+    for index, op_id in enumerate(canonical_op_ids[:canonical_count], start=1):
+        visible_id = op_id or f"canonical-op:{index}"
+        rows.append(_strict_report_canonical_potential_operation(
+            statute_id=statute_id,
+            visible_id=visible_id,
+            visible_index=index,
+            synthesized=False,
+        ))
+    for index in range(len(rows), canonical_count):
+        visible_id = f"canonical-op:{index + 1}"
+        rows.append(_strict_report_canonical_potential_operation(
+            statute_id=statute_id,
+            visible_id=visible_id,
+            visible_index=index + 1,
+            synthesized=True,
+        ))
+    for index, row in enumerate(failed_ops):
+        candidate_id = _failed_operation_candidate_id(index=index, row=row)
+        failed_row = _failed_operation_row(row)
+        rows.append(
+            PotentialOperation(
+                potential_operation_id=candidate_id,
+                jurisdiction="fi",
+                source_artifact_id=str(
+                    failed_row.get("source_statute")
+                    or failed_row.get("amendment_id")
+                    or statute_id
+                ),
+                source_unit_id=str(
+                    failed_row.get("target_label")
+                    or failed_row.get("description")
+                    or f"failed-operation:{index + 1}"
+                ),
+                owner_phase="replay_apply",
+                classification=POTENTIAL_OPERATION_FAILED,
+                operation_family="fi_failed_operation",
+                action=str(row.get("action") or ""),
+                target=str(failed_row.get("target_label") or ""),
+                refs=(),
+                required_proofs=_FAILED_OPERATION_REQUIRED_PROOFS,
+                safe_default=_FAILED_OPERATION_SAFE_DEFAULT,
+                detail={
+                    "statute_id": statute_id,
+                    "visible_index": index + 1,
+                    "failed_operation": failed_row,
+                    "projection_only": True,
+                },
+            ).to_dict()
+        )
+    return rows
 
 
 def finland_strict_report_candidate_set_execution_authorizations(
@@ -1467,6 +1565,7 @@ def finland_strict_report_ownership_closure_certificate(
     source_pathologies = _mapping_sequence(payload.get("source_pathologies"))
     source_pathology_frontier_items = _mapping_sequence(payload.get("source_pathology_frontier_work_items"))
     failed_operation_frontier_items = _mapping_sequence(payload.get("failed_operation_frontier_work_items"))
+    potential_operations = _mapping_sequence(payload.get("potential_operations"))
     sparse_certificates = _mapping_sequence(payload.get("sparse_slot_candidate_set_certificates"))
     source_lineage_witnesses = _mapping_sequence(payload.get("source_lineage_source_witnesses"))
     agreement_residuals = _mapping_sequence(payload.get("agreement_residuals"))
@@ -1598,6 +1697,7 @@ def finland_strict_report_ownership_closure_certificate(
         "canonical_ops": _ops_count(payload, "canonical"),
         "failed_ops_visible": len(failed_ops),
         "failed_operation_frontier_items": len(failed_operation_frontier_items),
+        "potential_operations": len(potential_operations),
         "projection_rows_visible": len(projection_rows),
         "source_pathology_frontier_items": len(source_pathology_frontier_items),
         "source_pathologies_visible": len(source_pathologies),
@@ -1642,6 +1742,11 @@ def finland_strict_report_ownership_closure_certificate(
                 "failed-operation-frontiers",
                 statute_id,
                 failed_operation_frontier_items,
+            ),
+            "potential_operations": _strict_report_id(
+                "potential-operations",
+                statute_id,
+                potential_operations,
             ),
             "mutation_boundary_proofs": _strict_report_id(
                 "mutation-boundary",
@@ -3517,6 +3622,52 @@ def _strict_report_candidate_set_authorization_row_id(
     return f"fi:strict-report-candidate-set-authorization:{digest}"
 
 
+def _strict_report_canonical_potential_operation(
+    *,
+    statute_id: str,
+    visible_id: str,
+    visible_index: int,
+    synthesized: bool,
+) -> dict[str, Any]:
+    detail: dict[str, Any] = {
+        "statute_id": statute_id,
+        "visible_index": visible_index,
+        "projection_only": True,
+    }
+    if synthesized:
+        detail["op_id_synthesized"] = True
+    potential_operation_id = (
+        visible_id if visible_id.startswith("canonical-op:") else f"canonical-op:{visible_id}"
+    )
+    return PotentialOperation(
+        potential_operation_id=potential_operation_id,
+        jurisdiction="fi",
+        source_artifact_id=f"fi:{statute_id}:strict-report-canonical-ops",
+        source_unit_id=visible_id,
+        owner_phase="canonical_operation_lowering",
+        classification=POTENTIAL_OPERATION_COMPILED,
+        operation_family="fi_canonical_operation",
+        refs=(visible_id,),
+        required_proofs=(
+            "source_text_operation_cue_detector",
+            "source_unit_enumeration_certificate",
+            "operation_cue_exhaustiveness_certificate",
+        ),
+        safe_default="do_not_treat_compiled_visible_ops_as_source_cue_exhaustiveness",
+        detail=detail,
+    ).to_dict()
+
+
+def _potential_operation_candidate_ids(
+    potential_operations: tuple[Mapping[str, Any], ...],
+) -> tuple[str, ...]:
+    return tuple(
+        str(row.get("potential_operation_id") or "")
+        for row in potential_operations
+        if str(row.get("potential_operation_id") or "")
+    )
+
+
 def _visible_operation_candidate_ids(
     *,
     canonical_op_ids: tuple[str, ...],
@@ -3606,6 +3757,7 @@ def _strict_report_closure_graph_payload(payload: Mapping[str, Any]) -> Mapping[
         "source_pathology_frontier_work_items",
         "failed_operation_execution_authorizations",
         "failed_operation_frontier_work_items",
+        "potential_operations",
         "sparse_slot_candidate_set_certificates",
         "source_lineage_source_witnesses",
         "agreement_residuals",

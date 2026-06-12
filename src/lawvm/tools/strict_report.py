@@ -38,6 +38,7 @@ from lawvm.core.compile_views import (
 )
 from lawvm.finland.proof_surfaces import (
     failed_operation_proof_surface_rows,
+    finland_strict_report_potential_operation_rows,
     finland_strict_report_candidate_set_execution_authorizations,
     finland_strict_report_evidence_surface,
     finland_strict_report_candidate_set_certificates,
@@ -612,6 +613,7 @@ def _to_json(cr: Any) -> dict[str, Any]:
         "failed_ops": failed_op_rows,
         **failed_operation_proof_rows,
     }
+    payload["potential_operations"] = finland_strict_report_potential_operation_rows(payload)
     payload["strict_report_candidate_set_certificates"] = (
         finland_strict_report_candidate_set_certificates(payload)
     )
