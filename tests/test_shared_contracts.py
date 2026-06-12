@@ -2981,6 +2981,12 @@ def test_potential_operation_evidence_report_is_passive_shared_surface() -> None
         jurisdiction="fi",
         source_artifact_id="2020/1",
         source_unit_id="chapter:4/section:5",
+        source_anchor={
+            "basis": "failed_operation_frontier_source_witness",
+            "frontier_work_item_id": "fi-failed-operation:2020_1:unsupported:abc",
+            "projection_only": True,
+            "does_not_claim": ["replay_authorization"],
+        },
         owner_phase="replay_apply",
         classification=POTENTIAL_OPERATION_FAILED,
         operation_family="fi_failed_operation",
@@ -3012,6 +3018,11 @@ def test_potential_operation_evidence_report_is_passive_shared_surface() -> None
     assert report["rows"][0]["row_id"] == "canonical-op:lo-1"
     assert report["rows"][0]["status"] == "compiled"
     assert "potential_operation_as_replay_authorization" in report["rows"][0]["forbidden_shortcuts"]
+    assert report["rows"][1]["source_anchor"]["basis"] == (
+        "failed_operation_frontier_source_witness"
+    )
+    assert "replay_authorization" in report["rows"][1]["source_anchor"]["does_not_claim"]
+    assert report["rows"][1]["status"] == "failed"
 
 
 def test_source_unit_coverage_evidence_report_is_passive_shared_surface() -> None:

@@ -1473,6 +1473,9 @@ def finland_strict_report_potential_operation_rows(
     canonical_count = _ops_count(payload, "canonical")
     canonical_op_ids = _string_sequence(payload.get("canonical_op_ids"))
     failed_ops = _mapping_sequence(payload.get("failed_ops"))
+    failed_operation_frontiers = _failed_operation_frontier_by_candidate_id(
+        _mapping_sequence(payload.get("failed_operation_frontier_work_items"))
+    )
     rows: list[dict[str, Any]] = []
     for index, op_id in enumerate(canonical_op_ids[:canonical_count], start=1):
         visible_id = op_id or f"canonical-op:{index}"
@@ -1493,6 +1496,9 @@ def finland_strict_report_potential_operation_rows(
     for index, row in enumerate(failed_ops):
         candidate_id = _failed_operation_candidate_id(index=index, row=row)
         failed_row = _failed_operation_row(row)
+        source_anchor = _failed_operation_potential_source_anchor(
+            failed_operation_frontiers.get(candidate_id)
+        )
         rows.append(
             PotentialOperation(
                 potential_operation_id=candidate_id,
@@ -1512,6 +1518,7 @@ def finland_strict_report_potential_operation_rows(
                 operation_family="fi_failed_operation",
                 action=str(row.get("action") or ""),
                 target=str(failed_row.get("target_label") or ""),
+                source_anchor=source_anchor,
                 refs=(),
                 required_proofs=_FAILED_OPERATION_REQUIRED_PROOFS,
                 safe_default=_FAILED_OPERATION_SAFE_DEFAULT,
@@ -1524,6 +1531,45 @@ def finland_strict_report_potential_operation_rows(
             ).to_dict()
         )
     return rows
+
+
+def _failed_operation_frontier_by_candidate_id(
+    frontier_items: tuple[Mapping[str, Any], ...],
+) -> dict[str, Mapping[str, Any]]:
+    rows: dict[str, Mapping[str, Any]] = {}
+    for index, item in enumerate(frontier_items):
+        detail = _mapping_or_empty(item.get("detail"))
+        failed_operation = _mapping_or_empty(detail.get("failed_operation"))
+        candidate_id = _failed_operation_candidate_id(index=index, row=failed_operation)
+        rows[candidate_id] = item
+    return rows
+
+
+def _failed_operation_potential_source_anchor(
+    frontier: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if frontier is None:
+        return {}
+    source_witness = _mapping_or_empty(frontier.get("source_witness"))
+    return {
+        "basis": "failed_operation_frontier_source_witness",
+        "frontier_work_item_id": str(frontier.get("work_item_id") or ""),
+        "frontier_status": str(frontier.get("frontier_status") or ""),
+        "authorization_status": str(frontier.get("authorization_status") or ""),
+        "required_claim_kind": str(frontier.get("required_claim_kind") or ""),
+        "source_artifact_id": str(frontier.get("source_artifact_id") or ""),
+        "source_unit_id": str(frontier.get("source_unit_id") or ""),
+        "source_role": str(source_witness.get("source_role") or ""),
+        "source_lane": str(source_witness.get("source_lane") or ""),
+        "preview_digest_algorithm": str(source_witness.get("preview_digest_algorithm") or ""),
+        "preview_digest": str(source_witness.get("preview_digest") or ""),
+        "projection_only": True,
+        "does_not_claim": [
+            "operation_cue_exhaustiveness",
+            "source_unit_enumeration_closure",
+            "replay_authorization",
+        ],
+    }
 
 
 def finland_strict_report_source_unit_coverage_rows(

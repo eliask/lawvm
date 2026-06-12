@@ -546,6 +546,18 @@ def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
     assert potential_ops[0]["classification"] == "failed"
     assert potential_ops[0]["operation_family"] == "fi_failed_operation"
     assert potential_ops[0]["target"] == "chapter:4/section:5"
+    assert potential_ops[0]["source_anchor"]["basis"] == (
+        "failed_operation_frontier_source_witness"
+    )
+    assert potential_ops[0]["source_anchor"]["frontier_work_item_id"] == (
+        frontier_items[0]["work_item_id"]
+    )
+    assert potential_ops[0]["source_anchor"]["source_role"] == "finland_failed_operation"
+    assert potential_ops[0]["source_anchor"]["source_lane"] == "failed_operation"
+    assert potential_ops[0]["source_anchor"]["preview_digest"] == (
+        frontier_items[0]["source_witness"]["preview_digest"]
+    )
+    assert "replay_authorization" in potential_ops[0]["source_anchor"]["does_not_claim"]
     assert potential_ops[0]["safe_default"] == (
         "treat_failed_operation_as_non_executable_frontier_until_source_target_payload_and_boundary_are_proven"
     )
