@@ -3095,12 +3095,13 @@ from lawvm.finland.vts import (
 
 # Moved to lawvm.finland.kumotaan; re-exported here for backward compat.
 from lawvm.finland.kumotaan import (
-    _extract_kumotaan_section_refs,
+    _extract_kumotaan_section_refs as _extract_kumotaan_section_refs,
     _extract_kumotaan_chapter_section_map,
     _extract_kumotaan_container_refs,
     _extract_kumotaan_subsection_refs,
-    _extract_muutetaan_section_refs,
-    _extract_muutetaan_chapter_section_map,
+    _extract_muutetaan_section_refs as _extract_muutetaan_section_refs,
+    _extract_muutetaan_chapter_section_map as _extract_muutetaan_chapter_section_map,
+    kumotaan_recycle_guard_result,
 )
 
 
@@ -7629,48 +7630,26 @@ def process_muutoslaki(
                 )
 
         if lo_ops_out is not None and amendment_effective_date is not None:
-            _kumotaan_labels = _extract_kumotaan_section_refs(johto)
+            _recycle_guard = kumotaan_recycle_guard_result(johto)
+            _kumotaan_labels = list(_recycle_guard.filtered_labels)
             _kumotaan_chap_map = _extract_kumotaan_chapter_section_map(johto)
-            # Recycle-and-rename guard: if a section appears in BOTH the
-            # kumotaan clause (repealing old text) AND the muutetaan clause
-            # (replacing with new text under the same number), the muutetaan
-            # wins — do not apply the expiry-override to that section so the
-            # new content is preserved permanently.
-            # Chapter-aware: only mark as recycled when the same section
-            # number appears in the SAME chapter in both clauses. This
-            # prevents false positives when e.g. §4 is repealed in chapter 9
-            # but §4 also appears in muutetaan in chapter 6 — those are
-            # different sections that happen to share the same number.
-            if _kumotaan_labels:
-                _muutetaan_chap_map = _extract_muutetaan_chapter_section_map(johto)
-                _kum_has_chapters = bool(
-                    _kumotaan_chap_map and any(k is not None for k in _kumotaan_chap_map)
+            if _recycle_guard.fired:
+                _replay_print(
+                    f"  [{amendment_id}] kumotaan_muutetaan_recycle_guard: "
+                    f"excluding {list(_recycle_guard.recycled_labels)} "
+                    "(appear in both kumotaan+muutetaan)"
                 )
-                _mut_has_chapters = bool(
-                    _muutetaan_chap_map and any(k is not None for k in _muutetaan_chap_map)
+                _record_process_finding(
+                    kind="PARSE.KUMOTAAN_RECYCLE_GUARD",
+                    message=(
+                        "Kumotaan repeal candidates were excluded because the "
+                        "same source also replaces those targets."
+                    ),
+                    source_statute=amendment_id,
+                    detail=_recycle_guard.finding_detail(),
+                    role="observation",
+                    blocking=False,
                 )
-                if _kum_has_chapters and _mut_has_chapters:
-                    # Both chapter-scoped: compare same chapter only
-                    _recycled: Set[str] = set()
-                    for _chap, _kum_secs in _kumotaan_chap_map.items():
-                        _mut_secs = {
-                            s.lower()
-                            for s in _muutetaan_chap_map.get(_chap, [])
-                        }
-                        for _sec in _kum_secs:
-                            if _sec.lower() in _mut_secs:
-                                _recycled.add(_sec)
-                else:
-                    # No chapter context in one or both — fall back to
-                    # chapter-unaware comparison (original behaviour).
-                    _muutetaan_secs = _extract_muutetaan_section_refs(johto)
-                    _recycled = {l for l in _kumotaan_labels if l.lower() in _muutetaan_secs}
-                if _recycled:
-                    _replay_print(
-                        f"  [{amendment_id}] kumotaan_muutetaan_recycle_guard: "
-                        f"excluding {sorted(_recycled)} (appear in both kumotaan+muutetaan)"
-                    )
-                    _kumotaan_labels = [l for l in _kumotaan_labels if l not in _recycled]
             # Build chapter-scoped set map for guards (None key = global).
             _chap_map_sets: Optional[Dict[Optional[str], Set[str]]] = None
             if _kumotaan_chap_map and any(k is not None for k in _kumotaan_chap_map):
@@ -8692,6 +8671,7 @@ _GRAFTER_COMPAT_EXPORTS = (
     _expand_section_range_vts,
     extract_voimaantulo_repeals,
     _extract_kumotaan_container_refs,
+    kumotaan_recycle_guard_result,
     _duplicate_frontend_target_observations,
     _semantic_collapse_move_or_renumber_observations,
     _scope_anchor_dependence_observations,

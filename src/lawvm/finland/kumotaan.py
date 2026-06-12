@@ -7,10 +7,105 @@ from __future__ import annotations
 
 import functools
 import re
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Set
 
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.finland.helpers import _expand_section_range
+
+
+@dataclass(frozen=True)
+class KumotaanRecycleGuardResult:
+    """Typed witness for kumotaan-vs-muutetaan recycle suppression.
+
+    ``filtered_labels`` preserves the historical executable behavior: labels
+    appearing in both the repeal and replacement surfaces are excluded from the
+    later expiry override so the replacement text is not born-expired.
+    """
+
+    original_labels: tuple[str, ...]
+    filtered_labels: tuple[str, ...]
+    recycled_labels: tuple[str, ...]
+    chapter_aware: bool
+    kumotaan_chapter_map: tuple[tuple[str | None, tuple[str, ...]], ...]
+    muutetaan_chapter_map: tuple[tuple[str | None, tuple[str, ...]], ...]
+
+    @property
+    def fired(self) -> bool:
+        return bool(self.recycled_labels)
+
+    def finding_detail(self) -> dict[str, object]:
+        return {
+            "rule_id": "fi_kumotaan_muutetaan_recycle_guard",
+            "original_kumotaan_labels": self.original_labels,
+            "filtered_kumotaan_labels": self.filtered_labels,
+            "recycled_labels": self.recycled_labels,
+            "chapter_aware": self.chapter_aware,
+            "kumotaan_chapter_map": self.kumotaan_chapter_map,
+            "muutetaan_chapter_map": self.muutetaan_chapter_map,
+        }
+
+
+def _freeze_chapter_section_map(
+    mapping: Dict[Optional[str], List[str]],
+) -> tuple[tuple[str | None, tuple[str, ...]], ...]:
+    def _sort_key(item: tuple[str | None, List[str]]) -> tuple[int, str]:
+        chapter, _ = item
+        return (0, "") if chapter is None else (1, chapter)
+
+    return tuple(
+        (chapter, tuple(sections))
+        for chapter, sections in sorted(mapping.items(), key=_sort_key)
+    )
+
+
+def kumotaan_recycle_guard_result(johto: str) -> KumotaanRecycleGuardResult:
+    """Return the owned recycle-guard decision for a kumotaan clause."""
+    kumotaan_labels = tuple(_extract_kumotaan_section_refs(johto))
+    kumotaan_chapter_map = _extract_kumotaan_chapter_section_map(johto)
+    muutetaan_chapter_map: Dict[Optional[str], List[str]] = {}
+    recycled: Set[str] = set()
+    chapter_aware = False
+
+    if kumotaan_labels:
+        muutetaan_chapter_map = _extract_muutetaan_chapter_section_map(johto)
+        kum_has_chapters = bool(
+            kumotaan_chapter_map and any(k is not None for k in kumotaan_chapter_map)
+        )
+        mut_has_chapters = bool(
+            muutetaan_chapter_map and any(k is not None for k in muutetaan_chapter_map)
+        )
+        chapter_aware = kum_has_chapters and mut_has_chapters
+        if chapter_aware:
+            for chapter, kum_sections in kumotaan_chapter_map.items():
+                mut_sections = {
+                    section.lower()
+                    for section in muutetaan_chapter_map.get(chapter, [])
+                }
+                for section in kum_sections:
+                    if section.lower() in mut_sections:
+                        recycled.add(section)
+        else:
+            muutetaan_sections = _extract_muutetaan_section_refs(johto)
+            recycled = {
+                label
+                for label in kumotaan_labels
+                if label.lower() in muutetaan_sections
+            }
+
+    filtered = tuple(
+        label
+        for label in kumotaan_labels
+        if label not in recycled
+    )
+    return KumotaanRecycleGuardResult(
+        original_labels=kumotaan_labels,
+        filtered_labels=filtered,
+        recycled_labels=tuple(sorted(recycled)),
+        chapter_aware=chapter_aware,
+        kumotaan_chapter_map=_freeze_chapter_section_map(kumotaan_chapter_map),
+        muutetaan_chapter_map=_freeze_chapter_section_map(muutetaan_chapter_map),
+    )
 
 
 def _strip_source_provenance_tail(kumotaan_text: str) -> str:

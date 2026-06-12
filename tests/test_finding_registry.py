@@ -220,6 +220,15 @@ def test_unowned_body_section_registry_code_is_strict_runtime_observation() -> N
     validate_finding_projection(spec.code, "observation", False)
 
 
+def test_kumotaan_recycle_guard_registry_code_is_runtime_observation() -> None:
+    spec = get_finding_spec("PARSE.KUMOTAAN_RECYCLE_GUARD")
+    assert spec is not None
+    assert spec.role == "observation"
+    assert spec.default_enforcement == "info"
+    assert spec.proof_categories == ("parse_witness", "preservation")
+    validate_finding_projection(spec.code, "observation", False)
+
+
 def test_failed_operation_registry_code_is_runtime_obligation() -> None:
     spec = get_finding_spec("APPLY.FAILED_OPERATION")
     assert spec is not None

@@ -1716,6 +1716,14 @@ def test_replay_xml_recycle_rename_kumotaan_muutetaan_preserves_new_section_2010
     # §44 was recycled: old §44 repealed, new §44 introduced via muutetaan
     sec44 = replay.materialized_state.find_section("44")
     assert sec44 is not None, "§44 (new Ahvenanmaa content) must be present after recycle fix"
+    recycle_findings = [
+        finding
+        for finding in replay.findings
+        if finding.kind == "PARSE.KUMOTAAN_RECYCLE_GUARD"
+        and finding.source_statute == "2019/1330"
+    ]
+    assert recycle_findings
+    assert recycle_findings[0].detail["recycled_labels"] == ("44",)
 
 
 def test_replay_xml_later_inserted_whole_section_repeal_respects_oracle_horizon(

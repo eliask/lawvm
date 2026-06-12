@@ -32,6 +32,7 @@ from lawvm.finland.kumotaan import (
     _extract_kumotaan_chapter_section_map,
     _extract_muutetaan_section_refs,
     _extract_muutetaan_chapter_section_map,
+    kumotaan_recycle_guard_result,
 )
 from lawvm.finland.ops import _build_canonical_intent
 from lawvm.finland.ops import _lo_with_path_update
@@ -5550,6 +5551,31 @@ def test_muutetaan_chap_map_does_not_cross_chapter_on_recycle_guard() -> None:
         f"False-positive recycle guard triggered for ch9 sections {recycled}; "
         "ch9 §§4–9 should all be eligible for expiry override"
     )
+    result = kumotaan_recycle_guard_result(johto)
+    assert result.chapter_aware is True
+    assert result.recycled_labels == ()
+    assert result.filtered_labels == ("4", "5", "6", "7", "8", "9")
+
+
+def test_kumotaan_recycle_guard_result_surfaces_same_chapter_exclusion() -> None:
+    johto = (
+        "Eduskunnan päätöksen mukaisesti "
+        "kumotaan lain (100/2000) 9 luvun 4–6 §, "
+        "muutetaan 9 luvun 4 § ja 10 luvun 6 § seuraavasti:"
+    )
+
+    result = kumotaan_recycle_guard_result(johto)
+
+    assert result.fired is True
+    assert result.chapter_aware is True
+    assert result.original_labels == ("4", "5", "6")
+    assert result.recycled_labels == ("4",)
+    assert result.filtered_labels == ("5", "6")
+    detail = result.finding_detail()
+    assert detail["rule_id"] == "fi_kumotaan_muutetaan_recycle_guard"
+    assert detail["recycled_labels"] == ("4",)
+    assert ("9", ("4", "5", "6")) in result.kumotaan_chapter_map
+    assert ("9", ("4",)) in result.muutetaan_chapter_map
 
 
 def test_extract_kumotaan_container_refs_keeps_trailing_history_citation() -> None:
