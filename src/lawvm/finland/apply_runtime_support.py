@@ -12,7 +12,7 @@ import datetime as dt
 from typing import TYPE_CHECKING, FrozenSet, List, Optional, cast
 
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
-from lawvm.core.ir_helpers import _kind_str
+from lawvm.core.ir_helpers import _kind_str, irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core import tree_ops as _tops
@@ -449,6 +449,66 @@ def _expired_temporary_section_merge_base_rebase_info(
     return None, None
 
 
+def _expired_temporary_subsection_slot_can_be_consumed(
+    *,
+    op: AmendmentOp | ResolvedOp,
+    section_path: Path,
+    subsection_label: str,
+    replay_history_ops: List[_LegalOperation] | None,
+) -> bool:
+    """Return whether a permanent INSERT may replace an expired temp slot.
+
+    Ordinary permanent ``INSERT subsection:N`` shifts an existing live
+    subsection:N upward.  The exception is a same-label slot whose latest
+    replay-history owner is temporary and expired by this op's effective date.
+    In that case the source-authorized operation occupies the expired slot
+    rather than preserving the dead temporary text as subsection N+1.
+    """
+    if replay_history_ops is None or temporary_signal_for_op(op):
+        return False
+    source = _op_source_for_merge_base(op)
+    current_effective = (
+        (source.effective if source is not None else "")
+        or (source.enacted if source is not None else "")
+        or ""
+    )
+    if not current_effective:
+        return False
+    subsection_norm = _norm_num_token(subsection_label)
+    target_path = tuple(section_path) + (("subsection", subsection_label),)
+
+    def _is_carried_snapshot_without_source_text(lo: _LegalOperation) -> bool:
+        if not lo.op_id.startswith("snapshot_subsection_"):
+            return False
+        if lo.payload is None or lo.source is None:
+            return False
+        payload_text = " ".join(irnode_to_text(lo.payload).split())
+        source_text = " ".join(str(lo.source.raw_text or "").split())
+        return bool(payload_text) and payload_text not in source_text
+
+    for lo in reversed(replay_history_ops):
+        if lo.target.special is not None:
+            continue
+        if not lo.target.path or lo.target.path[-1][0] != "subsection":
+            continue
+        if _norm_num_token(lo.target.path[-1][1]) != subsection_norm:
+            continue
+        if _section_snapshot_identity(lo.target.path[:-1]) != _section_snapshot_identity(section_path):
+            continue
+        if lo.source is None:
+            return False
+        lo_effective = lo.source.effective or lo.source.enacted or ""
+        if lo_effective and lo_effective > current_effective:
+            continue
+        latest_expires = lo.source.expires or ""
+        if not latest_expires and _is_carried_snapshot_without_source_text(lo):
+            continue
+        if not latest_expires:
+            return False
+        return current_effective >= latest_expires and lo.target.path == target_path
+    return False
+
+
 def _resolved_destination_path_for_rop(rop: ResolvedOp) -> Optional[Path]:
     """Best-effort full destination path for a renumbered late-waist op."""
     if not rop.is_renumber_action:
@@ -706,6 +766,471 @@ def _emit_section_snapshot(
         if target_unit_kind in {"section", "chapter", "part"}:
             return any(rop.is_repeal_action and rop.targets_whole_unit(target_unit_kind) for rop in group_rops)
         return False
+
+    def _complete_whole_section_source_payload() -> Optional[IRNode]:
+        """Return the source-owned section payload for exact whole-section replace.
+
+        Snapshot emission normally observes post-apply replay state.  If the
+        mutable apply fold failed to hit the target, that state may still carry
+        stale descendants.  A complete whole-section replacement payload is the
+        stronger witness: it owns the section child surface and should be the
+        timeline snapshot payload.
+        """
+        if target_unit_kind != "section" or _whole_target_repeal():
+            return None
+        candidates: list[IRNode] = []
+        for rop in group_rops:
+            if not rop.is_replace_action or not rop.targets_whole_unit("section"):
+                continue
+            source_payload = rop.muutos_ir
+            if source_payload is None or source_payload.kind is not IRNodeKind.SECTION:
+                continue
+            if source_payload.label and _norm_num_token(source_payload.label) != normalized_target_norm:
+                continue
+            completeness = rop.payload_completeness
+            if completeness is None:
+                continue
+            if str(completeness.tail_policy or "").strip() != "replace_if_target_scope_requires":
+                continue
+            candidates.append(_stamp_exact_section_snapshot_payload(source_payload))
+        return candidates[0] if len(candidates) == 1 else None
+
+    def _subsection_child_by_label(section: IRNode, label: str) -> IRNode | None:
+        label_norm = _norm_num_token(label)
+        for child in section.children:
+            if child.kind is IRNodeKind.SUBSECTION and child.label:
+                if _norm_num_token(child.label) == label_norm:
+                    return child
+        return None
+
+    def _rebase_section_payload_on_latest_exact_snapshot(section_path: Path, section_payload: IRNode) -> IRNode | None:
+        """Overlay source-owned subsection changes onto the prior exact section.
+
+        If a prior complete whole-section snapshot was emitted but the mutable
+        replay fold still contains older descendants, later subsection-level
+        snapshots must use the exact prior parent as their merge base.  The only
+        overlay allowed here is a same-label subsection payload owned by the
+        current typed op.
+        """
+        if section_payload.kind is not IRNodeKind.SECTION:
+            return None
+        latest = _latest_section_snapshot_payload(
+            section_path=section_path,
+            replay_history_ops=lo_ops_out,
+        )
+        if latest is None or latest.payload is None or latest.payload.kind is not IRNodeKind.SECTION:
+            return None
+        latest_payload = latest.payload
+        latest_expires = latest.source.expires if latest.source is not None else ""
+        if latest_expires and op_source.effective and op_source.effective >= latest_expires:
+            prior_payload = _prior_non_temporary_section_snapshot_payload(
+                section_path=section_path,
+                replay_history_ops=lo_ops_out,
+                current_effective=op_source.effective,
+                base_ir=base_ir,
+            )
+            if prior_payload is not None:
+                latest_payload = prior_payload
+        if latest_payload.attrs.get("lawvm_tail_policy") != "replace_if_target_scope_requires":
+            return None
+
+        replacements: dict[str, IRNode] = {}
+        for rop in group_rops:
+            if not rop.is_replace_action or not rop.targets_subsection_only():
+                continue
+            target_label = str(rop.resolved_target_subsection_label or "").strip()
+            if not target_label:
+                continue
+            replacement = _subsection_child_by_label(section_payload, target_label)
+            if replacement is None:
+                continue
+            replacements[_norm_num_token(target_label)] = replacement
+        if not replacements:
+            return None
+
+        changed = False
+        seen: set[str] = set()
+        new_children: list[IRNode] = []
+        for child in latest_payload.children:
+            if child.kind is IRNodeKind.SUBSECTION and child.label:
+                child_norm = _norm_num_token(child.label)
+                replacement = replacements.get(child_norm)
+                if replacement is not None:
+                    new_children.append(replacement)
+                    seen.add(child_norm)
+                    changed = changed or replacement != child
+                    continue
+            new_children.append(child)
+        if not changed:
+            return None
+
+        missing = sorted(set(replacements) - seen, key=default_label_sort_key)
+        for child_norm in missing:
+            new_children.append(replacements[child_norm])
+
+        if source_pathologies_out is not None:
+            source_pathologies_out.append(
+                build_destructive_shape_loss_risk_pathology(
+                    source_statute=op_source.statute_id,
+                    target_unit_kind="section",
+                    target_label=target_norm,
+                    recovery_kind="section_snapshot_rebase_on_latest_exact_parent",
+                    live_sibling_count=len(
+                        [child for child in section_payload.children if child.kind is IRNodeKind.SUBSECTION]
+                    ),
+                    payload_sibling_count=len(
+                        [child for child in latest.payload.children if child.kind is IRNodeKind.SUBSECTION]
+                    ),
+                )
+            )
+
+        return IRNode(
+            kind=latest_payload.kind,
+            label=latest_payload.label,
+            text=latest_payload.text,
+            attrs=dict(latest_payload.attrs),
+            children=tuple(new_children),
+        )
+
+    def _expired_temporary_subsection_payload(
+        section_path: Path,
+        subsection_label: str,
+    ) -> IRNode | None:
+        subsection_norm = _norm_num_token(subsection_label)
+        if not op_source.effective:
+            return None
+
+        def _is_carried_snapshot_without_source_text(lo: _LegalOperation) -> bool:
+            if not lo.op_id.startswith("snapshot_subsection_"):
+                return False
+            if lo.payload is None or lo.source is None:
+                return False
+            payload_text = " ".join(irnode_to_text(lo.payload).split())
+            source_text = " ".join(str(lo.source.raw_text or "").split())
+            return bool(payload_text) and payload_text not in source_text
+
+        for lo in reversed(lo_ops_out):
+            if lo.target.special is not None:
+                continue
+            if not lo.target.path or lo.target.path[-1][0] != "subsection":
+                continue
+            if _section_snapshot_identity(lo.target.path[:-1]) != _section_snapshot_identity(section_path):
+                continue
+            if _norm_num_token(lo.target.path[-1][1]) != subsection_norm:
+                continue
+            if lo.source is None:
+                return None
+            lo_effective = lo.source.effective or lo.source.enacted or ""
+            if lo_effective and lo_effective > op_source.effective:
+                continue
+            latest_expires = lo.source.expires or ""
+            if latest_expires and op_source.effective >= latest_expires:
+                return lo.payload if lo.payload is not None and lo.payload.kind is IRNodeKind.SUBSECTION else None
+            if not latest_expires and _is_carried_snapshot_without_source_text(lo):
+                continue
+            return None
+        return None
+
+    def _drop_shifted_expired_temporary_subsection_payload(
+        section_path: Path,
+        section_payload: IRNode,
+    ) -> IRNode | None:
+        if section_payload.kind is not IRNodeKind.SECTION:
+            return None
+        expired_payloads: list[tuple[str, IRNode]] = []
+        for rop in group_rops:
+            if not rop.is_insert_action or not rop.targets_subsection_only():
+                continue
+            target_label = str(rop.resolved_target_subsection_label or "").strip()
+            if not target_label:
+                continue
+            if not _expired_temporary_subsection_slot_can_be_consumed(
+                op=rop,
+                section_path=section_path,
+                subsection_label=target_label,
+                replay_history_ops=lo_ops_out,
+            ):
+                continue
+            expired_payload = _expired_temporary_subsection_payload(section_path, target_label)
+            if expired_payload is not None:
+                expired_payloads.append((_norm_num_token(target_label), expired_payload))
+        if not expired_payloads:
+            return None
+
+        def _norm_text(node: IRNode) -> str:
+            return " ".join(irnode_to_text(node).split())
+
+        expired_text_by_target = {
+            target_norm: _norm_text(expired_payload)
+            for target_norm, expired_payload in expired_payloads
+        }
+        new_children: list[IRNode] = []
+        removed = 0
+        for child in section_payload.children:
+            if child.kind is IRNodeKind.SUBSECTION and child.label:
+                child_norm = _norm_num_token(child.label)
+                child_text = _norm_text(child)
+                if any(
+                    child_norm != target_norm and child_text and child_text == expired_text
+                    for target_norm, expired_text in expired_text_by_target.items()
+                ):
+                    removed += 1
+                    continue
+            new_children.append(child)
+        if removed == 0:
+            return None
+
+        if source_pathologies_out is not None:
+            source_pathologies_out.append(
+                build_destructive_shape_loss_risk_pathology(
+                    source_statute=op_source.statute_id,
+                    target_unit_kind="section",
+                    target_label=target_norm,
+                    recovery_kind="section_snapshot_drop_shifted_expired_temporary_subsection",
+                    live_sibling_count=len(
+                        [child for child in section_payload.children if child.kind is IRNodeKind.SUBSECTION]
+                    ),
+                    payload_sibling_count=len(
+                        [child for child in new_children if child.kind is IRNodeKind.SUBSECTION]
+                    ),
+                )
+            )
+
+        return IRNode(
+            kind=section_payload.kind,
+            label=section_payload.label,
+            text=section_payload.text,
+            attrs=dict(section_payload.attrs),
+            children=tuple(new_children),
+        )
+
+    def _drop_absent_carried_snapshot_subsections(
+        section_path: Path,
+        section_payload: IRNode,
+    ) -> IRNode | None:
+        """Drop carried subsection fragments absent from the latest section snapshot."""
+        if section_payload.kind is not IRNodeKind.SECTION:
+            return None
+        latest = _latest_section_snapshot_payload(
+            section_path=section_path,
+            replay_history_ops=lo_ops_out,
+        )
+        if latest is None or latest.payload is None or latest.payload.kind is not IRNodeKind.SECTION:
+            return None
+        latest_labels = {
+            _norm_num_token(child.label)
+            for child in latest.payload.children
+            if child.kind is IRNodeKind.SUBSECTION and child.label
+        }
+        if not latest_labels:
+            return None
+        source_text = " ".join(str(op_source.raw_text or "").split())
+
+        def _norm_text(node: IRNode) -> str:
+            return " ".join(irnode_to_text(node).split())
+
+        new_children: list[IRNode] = []
+        removed = 0
+        for child in section_payload.children:
+            if child.kind is IRNodeKind.SUBSECTION and child.label:
+                child_norm = _norm_num_token(child.label)
+                child_text = _norm_text(child)
+                if (
+                    child_norm not in latest_labels
+                    and child.attrs.get("lawvm_in_place_merge") == "1"
+                    and child_text
+                    and child_text not in source_text
+                ):
+                    removed += 1
+                    continue
+            new_children.append(child)
+        if removed == 0:
+            return None
+        if source_pathologies_out is not None:
+            source_pathologies_out.append(
+                build_destructive_shape_loss_risk_pathology(
+                    source_statute=op_source.statute_id,
+                    target_unit_kind="section",
+                    target_label=target_norm,
+                    recovery_kind="section_snapshot_drop_absent_carried_subsection",
+                    live_sibling_count=len(
+                        [child for child in section_payload.children if child.kind is IRNodeKind.SUBSECTION]
+                    ),
+                    payload_sibling_count=len(
+                        [child for child in new_children if child.kind is IRNodeKind.SUBSECTION]
+                    ),
+                )
+            )
+        return IRNode(
+            kind=section_payload.kind,
+            label=section_payload.label,
+            text=section_payload.text,
+            attrs=dict(section_payload.attrs),
+            children=tuple(new_children),
+        )
+
+    def _latest_snapshot_for_path(target_path: Path) -> _LegalOperation | None:
+        for lo in reversed(lo_ops_out):
+            if lo.target.special is not None:
+                continue
+            if lo.target.path == target_path:
+                return lo
+        return None
+
+    def _drop_expired_temporary_paragraph_children(
+        child_path: Path,
+        subsection_payload: IRNode,
+    ) -> IRNode | None:
+        if subsection_payload.kind is not IRNodeKind.SUBSECTION:
+            return None
+        latest = _latest_snapshot_for_path(child_path)
+        if latest is None or latest.payload is None or latest.payload.kind is not IRNodeKind.SUBSECTION:
+            return None
+        if latest.source is None:
+            return None
+        latest_expires = latest.source.expires or ""
+        if op_source.effective and latest_expires and op_source.effective < latest_expires:
+            return None
+
+        def _norm_text(node: IRNode) -> str:
+            return " ".join(irnode_to_text(node).split())
+
+        source_text = " ".join(str(op_source.raw_text or "").split())
+        if not latest_expires:
+            latest_labels = {
+                _norm_num_token(child.label)
+                for child in latest.payload.children
+                if child.kind is IRNodeKind.PARAGRAPH and child.label
+            }
+            if not latest_labels:
+                return None
+            new_children: list[IRNode] = []
+            removed = 0
+            for child in subsection_payload.children:
+                if child.kind is IRNodeKind.PARAGRAPH and child.label:
+                    child_text = _norm_text(child)
+                    if (
+                        _norm_num_token(child.label) not in latest_labels
+                        and child_text
+                        and child_text not in source_text
+                    ):
+                        removed += 1
+                        continue
+                new_children.append(child)
+            if removed == 0:
+                return None
+            if source_pathologies_out is not None:
+                source_pathologies_out.append(
+                    build_destructive_shape_loss_risk_pathology(
+                        source_statute=op_source.statute_id,
+                        target_unit_kind="section",
+                        target_label=target_norm,
+                        recovery_kind="subsection_snapshot_drop_absent_carried_paragraph",
+                        live_sibling_count=len(
+                            [child for child in subsection_payload.children if child.kind is IRNodeKind.PARAGRAPH]
+                        ),
+                        payload_sibling_count=len(
+                            [child for child in new_children if child.kind is IRNodeKind.PARAGRAPH]
+                        ),
+                    )
+                )
+            return IRNode(
+                kind=subsection_payload.kind,
+                label=subsection_payload.label,
+                text=subsection_payload.text,
+                attrs=dict(subsection_payload.attrs),
+                children=tuple(new_children),
+            )
+
+        if not op_source.effective:
+            return None
+
+        prior_payload: IRNode | None = None
+        skipped_latest = False
+        for prior in reversed(lo_ops_out):
+            if prior is latest and not skipped_latest:
+                skipped_latest = True
+                continue
+            if prior.target.special is not None or prior.target.path != child_path:
+                continue
+            if prior.source is None:
+                break
+            if prior.source.expires:
+                continue
+            if prior.payload is not None and prior.payload.kind is IRNodeKind.SUBSECTION:
+                prior_payload = prior.payload
+            break
+        prior_paragraph_texts = {
+            _norm_text(child)
+            for child in (prior_payload.children if prior_payload is not None else ())
+            if child.kind is IRNodeKind.PARAGRAPH and _norm_text(child)
+        }
+        expired_paragraph_texts = {
+            _norm_text(child)
+            for child in latest.payload.children
+            if child.kind is IRNodeKind.PARAGRAPH and _norm_text(child)
+        } - prior_paragraph_texts
+        if not expired_paragraph_texts:
+            return None
+        new_children: list[IRNode] = []
+        removed = 0
+        for child in subsection_payload.children:
+            if child.kind is IRNodeKind.PARAGRAPH:
+                child_text = _norm_text(child)
+                if child_text in expired_paragraph_texts and child_text not in source_text:
+                    removed += 1
+                    continue
+            new_children.append(child)
+        if removed == 0:
+            return None
+        if source_pathologies_out is not None:
+            source_pathologies_out.append(
+                build_destructive_shape_loss_risk_pathology(
+                    source_statute=op_source.statute_id,
+                    target_unit_kind="section",
+                    target_label=target_norm,
+                    recovery_kind="subsection_snapshot_drop_expired_temporary_paragraph",
+                    live_sibling_count=len(
+                        [child for child in subsection_payload.children if child.kind is IRNodeKind.PARAGRAPH]
+                    ),
+                    payload_sibling_count=len(
+                        [child for child in new_children if child.kind is IRNodeKind.PARAGRAPH]
+                    ),
+                )
+            )
+        return IRNode(
+            kind=subsection_payload.kind,
+            label=subsection_payload.label,
+            text=subsection_payload.text,
+            attrs=dict(subsection_payload.attrs),
+            children=tuple(new_children),
+        )
+
+    def _sanitize_section_subsection_payloads(
+        section_path: Path,
+        section_payload: IRNode,
+    ) -> IRNode | None:
+        if section_payload.kind is not IRNodeKind.SECTION:
+            return None
+        changed = False
+        new_children: list[IRNode] = []
+        for child in section_payload.children:
+            if child.kind is IRNodeKind.SUBSECTION and child.label:
+                child_path = section_path + (("subsection", child.label),)
+                sanitized = _drop_expired_temporary_paragraph_children(child_path, child)
+                if sanitized is not None:
+                    child = sanitized
+                    changed = True
+            new_children.append(child)
+        if not changed:
+            return None
+        return IRNode(
+            kind=section_payload.kind,
+            label=section_payload.label,
+            text=section_payload.text,
+            attrs=dict(section_payload.attrs),
+            children=tuple(new_children),
+        )
 
     def _whole_target_renumber_without_payload() -> bool:
         if payload is not None:
@@ -1201,6 +1726,33 @@ def _emit_section_snapshot(
         and _scoped_commencement_replay_owned_address()
     ):
         action = StructuralAction.INSERT
+    complete_source_section_payload = _complete_whole_section_source_payload()
+    if (
+        action is StructuralAction.REPLACE
+        and resolved_path is not None
+        and complete_source_section_payload is not None
+    ):
+        payload = complete_source_section_payload
+        payload_from_muutos_ir = True
+    elif (
+        action is StructuralAction.REPLACE
+        and resolved_path is not None
+        and target_unit_kind == "section"
+        and payload is not None
+        and payload.kind is IRNodeKind.SECTION
+    ):
+        rebased_payload = _rebase_section_payload_on_latest_exact_snapshot(tuple(resolved_path), payload)
+        if rebased_payload is not None:
+            payload = rebased_payload
+        pruned_payload = _drop_shifted_expired_temporary_subsection_payload(tuple(resolved_path), payload)
+        if pruned_payload is not None:
+            payload = pruned_payload
+        carried_pruned_payload = _drop_absent_carried_snapshot_subsections(tuple(resolved_path), payload)
+        if carried_pruned_payload is not None:
+            payload = carried_pruned_payload
+        sanitized_payload = _sanitize_section_subsection_payloads(tuple(resolved_path), payload)
+        if sanitized_payload is not None:
+            payload = sanitized_payload
     if action is StructuralAction.REPLACE and payload is not None and base_path is None:
         # A snapshot with real payload but no base path is a newly introduced
         # structural node. Emit it as INSERT so timeline materialization can
@@ -1283,6 +1835,7 @@ def _emit_section_snapshot(
             if _norm_num_token(child.label) in explicitly_repealed_subsection_labels:
                 continue
             child_path = section_path + (("subsection", child.label),)
+            child_payload = _drop_expired_temporary_paragraph_children(child_path, child) or child
             child_base_exists = _timeline_target_exists(
                 child_path,
                 replay_history_ops=[],
@@ -1315,7 +1868,7 @@ def _emit_section_snapshot(
                         )
                     ),
                     target=LegalAddress(path=child_path),
-                    payload=child,
+                    payload=child_payload,
                     source=op_source,
                     group_id=f"finland-johto:{amendment_id or 'unknown'}",
                 )

@@ -2150,6 +2150,25 @@ def test_specimen_2014_938_section_51_failed_apply_is_governed_by_snapshot() -> 
     assert payload["status"] == "selected"
     assert "timeline_integrity" not in payload
     assert payload["source"]["statute_id"] == "2024/910"
+    assert "vuokraindeksi" not in payload["text"]["rendered"]
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_1997_1412_section_11_drops_expired_temporary_render_tails() -> None:
+    payload = resolve_provision_state(
+        statute_id="1997/1412",
+        jurisdiction="fi",
+        provision="section:11",
+        as_of="2026-06-11",
+        query_type="in_force",
+    )
+
+    rendered = payload["text"]["rendered"]
+    assert payload["status"] == "selected"
+    assert "20:tä prosenttia" not in rendered
+    assert "lapsilisälain" not in rendered
+    assert "epidemiakorvauksesta" not in rendered
+    assert "alle 18-vuotiaan tulonsaajan ansiotuloista" in rendered
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")

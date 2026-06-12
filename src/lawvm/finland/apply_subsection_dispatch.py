@@ -38,6 +38,7 @@ from lawvm.finland.apply_item_ops import (
 from lawvm.finland.apply_runtime_support import (
     _expired_temporary_section_merge_base,
     _expired_temporary_section_merge_base_rebase_info,
+    _expired_temporary_subsection_slot_can_be_consumed,
     _legacy_target_section_for_scope,
 )
 from lawvm.finland.source_pathology import (
@@ -520,6 +521,17 @@ def _apply_deterministic_subsection_op(
         ctx_label,
         source_pathologies_out,
         strict_profile=strict_profile,
+        allow_expired_temporary_duplicate_label_replace=(
+            subsection_view.op_type == "INSERT"
+            and subsection_view.target_paragraph is not None
+            and not subsection_view.target_item
+            and _expired_temporary_subsection_slot_can_be_consumed(
+                op=rop or dispatch_shell,
+                section_path=sec_path,
+                subsection_label=str(subsection_view.target_paragraph),
+                replay_history_ops=replay_history_ops,
+            )
+        ),
     )
     if result is not None:
         return _maybe_update_section_heading(result, sec_path, dispatch_op, muutos_ir, cross_ir)

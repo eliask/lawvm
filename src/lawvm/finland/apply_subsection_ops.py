@@ -1207,6 +1207,7 @@ def _apply_subsection_insert(
     ctx_label: str,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     strict_profile: Optional[StrictProfile] = None,
+    allow_expired_temporary_duplicate_label_replace: bool = False,
 ) -> Optional["ReplayState"]:
     """INSERT a new subsection (momentti). Returns updated state or None if not applicable."""
     view = _coerce_subsection_apply_view(view)
@@ -1306,6 +1307,38 @@ def _apply_subsection_insert(
                 return None
             new_sec = _tops.replace_nth(sec, "subsection", existing_idx, replacement)
             logger.debug("  %s → momentti insert-as-replace (repeal placeholder)", ctx_label)
+            return _with_preserved_provision_index(
+                state,
+                _tops.replace_at(state.ir, sec_path, new_sec),
+            )
+        if existing_idx is not None and allow_expired_temporary_duplicate_label_replace:
+            replacement = amend_sub
+            master_label = subsecs[existing_idx].label
+            if master_label and replacement.label != master_label:
+                replacement = IRNode(
+                    kind=replacement.kind,
+                    label=master_label,
+                    text=replacement.text,
+                    attrs=dict(replacement.attrs),
+                    children=tuple(replacement.children),
+                )
+            if source_pathologies_out is not None:
+                source_pathologies_out.append(
+                    build_destructive_shape_loss_risk_pathology(
+                        source_statute=view.legacy_source_statute_id,
+                        target_unit_kind="section",
+                        target_label=f"{view.target_section} § {view.target_paragraph} mom",
+                        recovery_kind="subsection_insert_expired_temporary_slot_replace",
+                        live_sibling_count=len(subsecs),
+                        payload_sibling_count=len(
+                            [c for c in amend_sub.children if c.kind == IRNodeKind.PARAGRAPH]
+                        ),
+                    )
+                )
+            if strict_profile is not None:
+                return None
+            new_sec = _tops.replace_nth(sec, "subsection", existing_idx, replacement)
+            logger.debug("  %s → momentti insert-as-replace (expired temporary slot)", ctx_label)
             return _with_preserved_provision_index(
                 state,
                 _tops.replace_at(state.ir, sec_path, new_sec),
