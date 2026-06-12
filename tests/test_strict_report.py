@@ -698,6 +698,7 @@ def test_to_json_exports_open_ownership_closure_certificate_without_replay_claim
     assert certificate["unowned_counts"] == {
         "incomplete_candidate_set_certificates": 4,
         "candidate_set_certificates_without_execution_authorization": 0,
+        "incomplete_candidate_set_certificates_without_frontier_work_item": 0,
         "failed_ops_without_frontier_work_item": 0,
         "operation_cues_without_candidate_coverage_certificate": 0,
         "source_units_without_enumeration_certificate": 0,
@@ -740,6 +741,17 @@ def test_to_json_exports_open_ownership_closure_certificate_without_replay_claim
         "fi_strict_report_operation_cue_coverage": "candidate_set_incomplete_not_replay_authority",
     }
     assert all(row["replay_authorized"] is False for row in candidate_set_authorizations)
+    candidate_set_frontier_items = payload["strict_report_candidate_set_frontier_work_items"]
+    assert len(candidate_set_frontier_items) == 4
+    assert all(row["executable"] is False for row in candidate_set_frontier_items)
+    assert all(row["replay_authorized"] is False for row in candidate_set_frontier_items)
+    assert {
+        row["frontier_status"]
+        for row in candidate_set_frontier_items
+    } == {
+        "partial_candidate_set_frontier",
+        "unavailable_candidate_set_frontier",
+    }
     assert report["report_kind"] == "finland_strict_report_ownership_closure"
     assert report["replay_claims"] is False
     assert report["canonical_effect_claims"] is False
@@ -752,6 +764,7 @@ def test_to_json_exports_open_ownership_closure_certificate_without_replay_claim
     assert surface["summary"][
         "strict_report_candidate_set_execution_authorization_status_counts"
     ] == {"candidate_set_incomplete_not_replay_authority": 4}
+    assert surface["summary"]["strict_report_candidate_set_frontier_work_item_count"] == 4
     assert surface["summary"]["ownership_closure_certificate_count"] == 1
     assert surface["summary"]["ownership_closure_status"] == "open"
     assert surface["summary"]["ownership_closure_failed_gate_counts"] == {
@@ -908,6 +921,10 @@ def test_to_json_exports_source_adjudication_agreement_residual() -> None:
         "strict_report_candidate_set_execution_authorization",
         "strict_report_candidate_set_execution_authorization",
         "strict_report_candidate_set_execution_authorization",
+        "strict_report_candidate_set_frontier_work_item",
+        "strict_report_candidate_set_frontier_work_item",
+        "strict_report_candidate_set_frontier_work_item",
+        "strict_report_candidate_set_frontier_work_item",
         "ownership_closure_certificate",
     ]
 

@@ -41,6 +41,7 @@ from lawvm.finland.proof_surfaces import (
     finland_strict_report_potential_operation_rows,
     finland_strict_report_source_unit_coverage_rows,
     finland_strict_report_candidate_set_execution_authorizations,
+    finland_strict_report_candidate_set_frontier_work_items,
     finland_strict_report_evidence_surface,
     finland_strict_report_candidate_set_certificates,
     finland_strict_report_ownership_closure_certificate,
@@ -621,6 +622,9 @@ def _to_json(cr: Any) -> dict[str, Any]:
     )
     payload["strict_report_candidate_set_execution_authorizations"] = (
         finland_strict_report_candidate_set_execution_authorizations(payload)
+    )
+    payload["strict_report_candidate_set_frontier_work_items"] = (
+        finland_strict_report_candidate_set_frontier_work_items(payload)
     )
     closure_certificate = finland_strict_report_ownership_closure_certificate(payload)
     payload["ownership_closure_certificate"] = closure_certificate

@@ -36,6 +36,7 @@ from lawvm.finland.proof_surfaces import (
     finland_frontier_proof_evidence_surface,
     finland_he_branch_evidence_surface,
     finland_strict_report_candidate_set_execution_authorizations,
+    finland_strict_report_candidate_set_frontier_work_items,
     finland_strict_report_ownership_closure_certificate,
     finland_strict_report_evidence_surface,
     finlex_editorial_witness_agreement_residual_rows,
@@ -1608,6 +1609,52 @@ def test_finland_strict_report_candidate_set_authorization_rows_have_scope_sensi
     ]
 
     assert sorted(projected_authorization_ids) == sorted(row_ids)
+
+
+def test_finland_strict_report_candidate_set_frontier_rows_are_non_executable() -> None:
+    candidate_set = CandidateSetCertificate(
+        scope_id="fi:2001/1234:fi_strict_report_operation_cue_coverage",
+        candidate_set_kind="fi_strict_report_operation_cue_coverage",
+        phase="operation_cue_detection",
+        rule_id="fi_strict_report_operation_cue_coverage_gap_certificate",
+        reason="operation cues are not independently enumerated",
+        completeness_status="partial",
+        candidate_count=1,
+        candidate_ids=("canonical-op:lo-1",),
+        missing_candidate_count=1,
+        blocker_counts={"operation_cue_exhaustiveness_unproved": 1},
+        blocker_families=("operation_cue_coverage_gap",),
+        next_promotion_allowed=False,
+        next_promotion_requires=(
+            "independent_source_text_cue_detector",
+            "operation_cue_classification_report",
+        ),
+    ).to_dict()
+
+    rows = finland_strict_report_candidate_set_frontier_work_items(
+        {
+            "statute_id": "2001/1234",
+            "strict_report_candidate_set_certificates": [candidate_set],
+        }
+    )
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["executable"] is False
+    assert row["replay_authorized"] is False
+    assert row["authorization_status"] == "candidate_set_incomplete_not_replay_authority"
+    assert row["frontier_family"] == "fi_fi_strict_report_operation_cue_coverage_coverage_gap"
+    assert row["frontier_status"] == "partial_candidate_set_frontier"
+    assert row["required_claim_kind"] == "operation_cue_exhaustiveness_certificate"
+    assert row["required_proofs"] == [
+        "independent_source_text_cue_detector",
+        "operation_cue_classification_report",
+    ]
+    assert "candidate_set_frontier_as_replay_authorization" in row["forbidden_shortcuts"]
+    assert row["suggested_claim_template_status"] == ""
+    assert row["target_witness"]["scope_id"] == (
+        "fi:2001/1234:fi_strict_report_operation_cue_coverage"
+    )
 
 
 def test_temporal_resolution_evidence_rows_project_finland_time_findings() -> None:
