@@ -587,7 +587,7 @@ def rekey_timelines_with_migration_events(
     def _split_versions_at_native_renumber_boundary(
         address: LegalAddress,
         versions: list[ProvisionVersion],
-    ) -> list[tuple[LegalAddress, list[ProvisionVersion], bool]]:
+    ) -> list[tuple[LegalAddress, list[ProvisionVersion], bool, str]]:
         matching_renumbers = [
             event
             for event in migration_events
@@ -596,12 +596,12 @@ def rekey_timelines_with_migration_events(
             and address_prefix_matches(address, event.from_address)
         ]
         if not matching_renumbers:
-            return [(address, versions, False)]
+            return [(address, versions, False, "")]
         event = sorted(matching_renumbers, key=migration_event_sort_key)[0]
         before_versions = [version for version in versions if version.effective < event.effective]
         native_versions = [version for version in versions if version.effective >= event.effective]
         if before_versions and not native_versions:
-            return [(address, versions, False)]
+            return [(address, versions, False, "")]
         if native_versions and not before_versions:
             same_wave_incoming = _has_same_wave_incoming_migration_prefix(
                 address,
@@ -611,37 +611,49 @@ def rekey_timelines_with_migration_events(
                 event.from_address,
                 at_effective=event.effective,
             )
+            force_native = (
+                _has_prior_incoming_migration_prefix(
+                    address,
+                    before_effective=event.effective,
+                )
+                or same_wave_incoming_to_source_prefix
+                or (
+                    not same_wave_incoming
+                    and _source_prefix_has_native_rebirth(
+                        event.from_address,
+                        at_effective=event.effective,
+                    )
+                )
+            )
             return [
                 (
                     address,
                     versions,
-                    _has_prior_incoming_migration_prefix(
-                        address,
-                        before_effective=event.effective,
-                    )
-                    or same_wave_incoming_to_source_prefix
-                    or (
-                        not same_wave_incoming
-                        and _source_prefix_has_native_rebirth(
-                            event.from_address,
-                            at_effective=event.effective,
-                        )
-                    ),
+                    force_native,
+                    event.effective if force_native else "",
                 )
             ]
-        buckets: list[tuple[LegalAddress, list[ProvisionVersion], bool]] = []
+        buckets: list[tuple[LegalAddress, list[ProvisionVersion], bool, str]] = []
         if before_versions:
-            buckets.append((address, before_versions, False))
+            buckets.append((address, before_versions, False, ""))
         if native_versions:
-            buckets.append((address, native_versions, True))
+            buckets.append((address, native_versions, True, event.effective))
         return buckets
 
     entries: list[tuple[bool, LegalAddress, LegalAddress, ProvisionTimeline]] = []
     for address, timeline in timelines.items():
         split_buckets = _split_versions_at_native_renumber_boundary(address, list(timeline.versions))
-        for bucket_address, bucket_versions, force_native in split_buckets:
+        for bucket_address, bucket_versions, force_native, native_boundary in split_buckets:
             migrated_address = (
-                bucket_address
+                current_address_with_prefix_migrations_fn(
+                    bucket_address,
+                    tuple(
+                        event
+                        for event in migration_events
+                        if native_boundary and event.effective and event.effective > native_boundary
+                    ),
+                    as_of_date,
+                )
                 if force_native
                 else current_address_with_prefix_migrations_fn(
                     bucket_address,

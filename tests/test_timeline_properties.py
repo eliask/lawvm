@@ -2099,6 +2099,64 @@ def test_rekey_timelines_with_migration_events_retargets_root_content_in_core() 
     assert migrated.children[0].text == "159 §"
 
 
+def test_rekey_timelines_native_rebirth_follows_later_descendant_migration() -> None:
+    born_addr = LegalAddress(path=(("part", "7"), ("chapter", "2"), ("section", "268")))
+    final_addr = LegalAddress(path=(("part", "7"), ("chapter", "32"), ("section", "268")))
+    timelines = {
+        born_addr: ProvisionTimeline(
+            address=born_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2019-04-01",
+                    enacted="2019-03-29",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="268", text="native section 268"),
+                    source=OperationSource(statute_id="2019/371", effective="2019-04-01"),
+                )
+            ],
+        ),
+    }
+    migration_events = (
+        MigrationEvent(
+            event_id="mig:test/part6-part7",
+            kind="renumber",
+            from_address=LegalAddress(path=(("part", "6"),)),
+            to_address=LegalAddress(path=(("part", "7"),)),
+            effective="2019-04-01",
+            source_statute="2019/371",
+        ),
+        MigrationEvent(
+            event_id="mig:test/part7-part8",
+            kind="renumber",
+            from_address=LegalAddress(path=(("part", "7"),)),
+            to_address=LegalAddress(path=(("part", "8"),)),
+            effective="2019-04-01",
+            source_statute="2019/371",
+        ),
+        MigrationEvent(
+            event_id="mig:test/chapter2-chapter32",
+            kind="renumber",
+            from_address=LegalAddress(path=(("part", "7"), ("chapter", "2"))),
+            to_address=LegalAddress(path=(("part", "7"), ("chapter", "32"))),
+            effective="2021-02-01",
+            source_statute="2020/1256",
+        ),
+    )
+
+    rekeyed = rekey_timelines_with_migration_events(
+        timelines,
+        migration_events,
+        as_of_date="2025-01-01",
+        current_address_with_prefix_migrations_fn=lambda address, events, as_of_date: current_address_with_prefix_migrations_from_events(
+            address,
+            events,
+            as_of_date=as_of_date,
+        ),
+        address_prefix_matches=_address_prefix_matches,
+    )
+
+    assert set(rekeyed) == {final_addr}
+
+
 def test_materialize_pit_projects_selected_versions_onto_migrated_addresses() -> None:
     base = IRStatute(
         statute_id="test/materialize-migration",

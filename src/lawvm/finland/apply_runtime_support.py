@@ -1300,6 +1300,7 @@ def _emit_section_snapshot(
             return None
 
         subsection_payloads: dict[str, IRNode] = {}
+        pending_subsection_payloads: list[tuple[str, IRNode, bool, bool, str]] = []
         repealed_item_labels_by_subsection: dict[str, set[str]] = {}
         item_target_labels_by_subsection: dict[str, set[str]] = {}
         renumber_destinations: dict[str, str] = {}
@@ -1360,15 +1361,24 @@ def _emit_section_snapshot(
             if amend_sub is None or amend_sub.kind is not IRNodeKind.SUBSECTION:
                 return None
             relabelled = _relabel_subsection_payload(amend_sub, target_norm)
-            existing = subsection_payloads.get(target_norm)
+            pending_subsection_payloads.append(
+                (target_norm, relabelled, rop.is_insert_action, bool(item_label), item_norm)
+            )
+            has_insert = has_insert or rop.is_insert_action
+
+        for target_norm, relabelled, is_insert_action, has_item_target, item_norm in pending_subsection_payloads:
+            effective_norm = target_norm
+            if not is_insert_action:
+                effective_norm = renumber_destinations.get(target_norm, target_norm)
+                relabelled = _relabel_subsection_payload(relabelled, effective_norm)
+            existing = subsection_payloads.get(effective_norm)
             if existing is not None and irnode_to_text(existing) != irnode_to_text(relabelled):
                 return None
-            subsection_payloads[target_norm] = relabelled
-            if not item_label:
-                whole_subsection_targets.add(target_norm)
+            subsection_payloads[effective_norm] = relabelled
+            if not has_item_target:
+                whole_subsection_targets.add(effective_norm)
             else:
-                item_target_labels_by_subsection.setdefault(target_norm, set()).add(item_norm)
-            has_insert = has_insert or rop.is_insert_action
+                item_target_labels_by_subsection.setdefault(effective_norm, set()).add(item_norm)
 
         if not has_insert or (len(subsection_payloads) < 2 and not renumber_destinations):
             has_item_payload = any(rop.resolved_target_item_label is not None for rop in group_rops)
