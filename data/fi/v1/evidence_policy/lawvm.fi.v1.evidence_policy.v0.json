@@ -1,7 +1,7 @@
 {
   "registry_id": "lawvm.fi.v1.evidence_policy",
   "registry_version": "v0",
-  "registry_hash": "cdf7c252de00c49b4d3568ff196391493950b2947ac20a741327f56a765d7aa4",
+  "registry_hash": "0366e48c60481429200864389cad59b26e31fb429e278618c837bdd17d6c4493",
   "predicates": [
     {
       "predicate_id": "fi.v1.INLINE_STATUTE_RESOLUTION.strict",
@@ -240,6 +240,38 @@
     {
       "predicate_id": "fi.v1.TEMPORAL_BASE_SELECTION_RESOLUTION.strict",
       "claim_kind": "fi.v1.TEMPORAL_BASE_SELECTION_RESOLUTION",
+      "required": [
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "span_verified"
+          }
+        },
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "entailment_verified"
+          }
+        },
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "reviewed"
+          }
+        }
+      ],
+      "forbidden": [
+        {
+          "op": "exists",
+          "args": {
+            "attestation_kind": "retracted"
+          }
+        }
+      ]
+    },
+    {
+      "predicate_id": "fi.v1.SOURCE_PATHOLOGY_RESOLUTION.strict",
+      "claim_kind": "fi.v1.SOURCE_PATHOLOGY_RESOLUTION",
       "required": [
         {
           "op": "exists",

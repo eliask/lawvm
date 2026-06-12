@@ -130,6 +130,16 @@ def test_v1_source_pathology_rules_have_claim_templates() -> None:
         assert item["suggested_claim_template"]["claim_target_seed"]["source_pathology_code"] == code
 
 
+def test_static_source_pathology_rules_use_registered_fi_claim_kinds() -> None:
+    legacy_claim_kinds = {
+        code: source_pathology_proof_rule(code).required_claim_kind
+        for code in registered_source_pathology_proof_rule_codes()
+        if not source_pathology_proof_rule(code).required_claim_kind.startswith("fi.v1.")
+    }
+
+    assert legacy_claim_kinds == {}
+
+
 def _consolidated_xml() -> bytes:
     return b"""<?xml version="1.0" encoding="UTF-8"?>
 <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
@@ -1083,7 +1093,7 @@ def test_source_pathology_rule_names_unregistered_other_frontiers() -> None:
     assert empty_body.owner_phase == "source_acquisition"
     assert empty_body.frontier_family == "fi_empty_operative_body"
     assert empty_body.frontier_status == "source_acquisition_frontier"
-    assert empty_body.required_claim_kind == "source_pathology_resolution"
+    assert empty_body.required_claim_kind == "fi.v1.SOURCE_PATHOLOGY_RESOLUTION"
     assert "operative_body_inventory" in empty_body.required_proofs
     assert "invent_operative_body_from_title_or_metadata" in empty_body.forbidden_shortcuts
 

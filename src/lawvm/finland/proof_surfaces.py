@@ -217,7 +217,7 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         quirks_disposition="record",
         frontier_family="fi_empty_operative_body",
         frontier_status="source_acquisition_frontier",
-        required_claim_kind="source_pathology_resolution",
+        required_claim_kind="fi.v1.SOURCE_PATHOLOGY_RESOLUTION",
         required_proofs=(
             "source_artifact_identity_proof",
             "operative_body_inventory",
@@ -350,7 +350,7 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         quirks_disposition="record",
         frontier_family="fi_section_replace_bootstrap_parent_missing",
         frontier_status="target_resolution_frontier",
-        required_claim_kind="source_pathology_resolution",
+        required_claim_kind="fi.v1.SOURCE_PATHOLOGY_RESOLUTION",
         required_proofs=(
             "source_identity_proof",
             "explicit_section_target_identity_proof",
@@ -444,7 +444,7 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         quirks_disposition="record",
         frontier_family="fi_container_replace_target_absent",
         frontier_status="target_resolution_frontier",
-        required_claim_kind="source_pathology_resolution",
+        required_claim_kind="fi.v1.SOURCE_PATHOLOGY_RESOLUTION",
         required_proofs=(
             "source_identity_proof",
             "explicit_container_target_identity_proof",

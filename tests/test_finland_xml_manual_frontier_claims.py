@@ -34,6 +34,7 @@ _XML_FRONTIER_KINDS = (
     "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
     "fi.v1.CONTAINER_MEMBERSHIP_RESOLUTION",
     "fi.v1.SOURCE_CHAIN_RESOLUTION",
+    "fi.v1.SOURCE_PATHOLOGY_RESOLUTION",
     "fi.v1.TEMPORAL_BASE_SELECTION_RESOLUTION",
     "fi.v1.MUTATION_BOUNDARY_RESOLUTION",
     "fi.v1.FAILED_OPERATION_RESOLUTION",
@@ -143,6 +144,11 @@ def test_finland_xml_manual_frontier_kinds_are_registered() -> None:
     assert failed_op.layer == "adjudication"
     assert failed_op.is_semantic_compilation_claim is True
 
+    source_pathology = get_claim_kind_spec("fi.v1.SOURCE_PATHOLOGY_RESOLUTION")
+    assert source_pathology is not None
+    assert source_pathology.layer == "adjudication"
+    assert source_pathology.is_semantic_compilation_claim is True
+
     unsupported_corrigendum = get_claim_kind_spec("fi.v1.CORRIGENDUM_UNSUPPORTED_PATCH_RESOLUTION")
     assert unsupported_corrigendum is not None
     assert unsupported_corrigendum.layer == "adjudication"
@@ -250,6 +256,25 @@ def test_failed_operation_resolution_validates_without_pathology_code() -> None:
         source_bytes=source,
     )
     spec = get_claim_kind_spec("fi.v1.FAILED_OPERATION_RESOLUTION")
+    assert spec is not None
+    assert spec.entailment_validator is not None
+    assert spec.entailment_validator(claim, source).passed is True
+
+
+def test_source_pathology_resolution_validates_grounded_quote() -> None:
+    source = b"<p>published XML has no operative body; alternative source witness reviewed</p>"
+    claim = _claim(
+        claim_kind="fi.v1.SOURCE_PATHOLOGY_RESOLUTION",
+        target=_common_target("EMPTY_OPERATIVE_BODY"),
+        value=(
+            ("source_quote", "no operative body"),
+            ("resolution_kind", "alternative_source_witness_required"),
+            ("resolution_basis", "reviewed source pathology and bounded non-executable frontier"),
+            ("mutation_boundary_proof_ref", "proof-source-pathology-1"),
+        ),
+        source_bytes=source,
+    )
+    spec = get_claim_kind_spec("fi.v1.SOURCE_PATHOLOGY_RESOLUTION")
     assert spec is not None
     assert spec.entailment_validator is not None
     assert spec.entailment_validator(claim, source).passed is True

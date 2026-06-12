@@ -888,7 +888,7 @@ def test_to_json_preserves_source_pathology_target_unit_kind() -> None:
     ] == {"fi.v1.MUTATION_BOUNDARY_RESOLUTION": 1}
 
 
-def test_to_json_counts_unregistered_source_pathology_frontiers_as_other() -> None:
+def test_to_json_counts_registered_source_pathology_frontiers_as_manual() -> None:
     payload = strict_report._to_json(
         {
             "statute_id": "2001/1234",
@@ -910,20 +910,22 @@ def test_to_json_counts_unregistered_source_pathology_frontiers_as_other() -> No
 
     proof_gates = payload["proof_gate_summary"]
     assert proof_gates["frontier_work_item_count"] == 5
-    assert proof_gates["manual_claim_frontier_count"] == 0
+    assert proof_gates["manual_claim_frontier_count"] == 1
     assert proof_gates["coverage_frontier_count"] == 4
-    assert proof_gates["other_frontier_count"] == 1
+    assert proof_gates["other_frontier_count"] == 0
     assert proof_gates["required_claim_kind_counts"] == {
         "operation_cue_exhaustiveness_certificate": 2,
-        "source_pathology_resolution": 1,
+        "fi.v1.SOURCE_PATHOLOGY_RESOLUTION": 1,
         "source_unit_enumeration_certificate": 2,
     }
-    assert proof_gates["other_frontier_required_claim_kind_counts"] == {
-        "source_pathology_resolution": 1,
+    assert proof_gates["manual_frontier_required_claim_kind_counts"] == {
+        "fi.v1.SOURCE_PATHOLOGY_RESOLUTION": 1,
     }
-    assert proof_gates["other_frontier_status_counts"] == {
+    assert proof_gates["manual_frontier_status_counts"] == {
         "source_acquisition_frontier": 1,
     }
+    assert proof_gates["other_frontier_required_claim_kind_counts"] == {}
+    assert proof_gates["other_frontier_status_counts"] == {}
 
 
 def test_to_json_exports_open_ownership_closure_certificate_without_replay_claims() -> None:

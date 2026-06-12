@@ -10,6 +10,7 @@ Currently registered:
   fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION — sparse slot-binding proof boundary
   fi.v1.CONTAINER_MEMBERSHIP_RESOLUTION — container payload ownership boundary
   fi.v1.SOURCE_CHAIN_RESOLUTION — source-chain/recodification proof boundary
+  fi.v1.SOURCE_PATHOLOGY_RESOLUTION — generic source-pathology proof boundary
   fi.v1.TEMPORAL_BASE_SELECTION_RESOLUTION — temporal base-selection boundary
   fi.v1.MUTATION_BOUNDARY_RESOLUTION — mutation-boundary proof boundary
   fi.v1.FAILED_OPERATION_RESOLUTION — failed-operation proof boundary

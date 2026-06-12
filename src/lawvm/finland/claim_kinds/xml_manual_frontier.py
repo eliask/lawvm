@@ -146,6 +146,29 @@ _SOURCE_CHAIN = _XmlClaimSpec(
     semantic=True,
 )
 
+_SOURCE_PATHOLOGY = _XmlClaimSpec(
+    claim_kind="fi.v1.SOURCE_PATHOLOGY_RESOLUTION",
+    layer="adjudication",
+    description=(
+        "Manual proof boundary for XML-present source pathologies whose target, "
+        "source, or parent-container proof does not fit a narrower Finland "
+        "manual-frontier claim kind."
+    ),
+    target_fields=("source_statute", "affected_target", "source_pathology_code"),
+    value_fields=(
+        "source_quote",
+        "resolution_kind",
+        "resolution_basis",
+        "mutation_boundary_proof_ref",
+    ),
+    allowed_pathology_codes=(
+        "EMPTY_OPERATIVE_BODY",
+        "SECTION_REPLACE_BOOTSTRAP_PARENT_MISSING",
+        "CONTAINER_REPLACE_TARGET_ABSENT",
+    ),
+    semantic=True,
+)
+
 _TEMPORAL_BASE = _XmlClaimSpec(
     claim_kind="fi.v1.TEMPORAL_BASE_SELECTION_RESOLUTION",
     layer="adjudication",
@@ -227,6 +250,7 @@ _XML_FRONTIER_SPECS: tuple[_XmlClaimSpec, ...] = (
     _SPARSE_SLOT,
     _CONTAINER_MEMBERSHIP,
     _SOURCE_CHAIN,
+    _SOURCE_PATHOLOGY,
     _TEMPORAL_BASE,
     _MUTATION_BOUNDARY,
     _FAILED_OPERATION,
