@@ -8,6 +8,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.target_kind import TargetKind
 from lawvm.finland.constraints import (
     _FilterCtx,
+    _c_child_item_insert_covered_by_parent_snapshot,
     _c_fragmentary_parent_insert_shadowed_by_item_insert_payload,
     _c_internal_list_update_not_whole_section_replace,
     _c_language_variant,
@@ -728,6 +729,52 @@ def test_c_fragmentary_parent_insert_shadowed_by_item_insert_payload_keeps_full_
     assert reason == ""
 
 
+def test_c_child_item_insert_covered_by_parent_snapshot_drops_child() -> None:
+    parent = _op(op_type="INSERT", target_section="209b", target_paragraph=1)
+    child = _op(op_type="INSERT", target_section="209b", target_paragraph=1, target_item="2a")
+    mapped = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.INTRO, text="intro"),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="one"),)),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="two"),)),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="2a", children=(IRNode(kind=IRNodeKind.CONTENT, text="two a"),)),
+        ),
+    )
+    ctx = _ctx(
+        muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="209b", children=(mapped,)),
+        slot_assignment=_assignment_for_ops((parent, mapped), (child, mapped)),
+    )
+
+    keep, reason = _c_child_item_insert_covered_by_parent_snapshot(child, [parent, child], ctx)
+
+    assert keep is False
+    assert "child item insert covered" in reason
+
+
+def test_c_child_item_insert_covered_by_parent_snapshot_keeps_fragmentary_child() -> None:
+    parent = _op(op_type="INSERT", target_section="2", target_paragraph=3)
+    child = _op(op_type="INSERT", target_section="2", target_paragraph=3, target_item="4a")
+    mapped = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="3",
+        children=(
+            IRNode(kind=IRNodeKind.INTRO, text="intro"),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="4a", children=(IRNode(kind=IRNodeKind.CONTENT, text="item"),)),
+        ),
+    )
+    ctx = _ctx(
+        muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="2", children=(mapped,)),
+        slot_assignment=_assignment_for_ops((parent, mapped), (child, mapped)),
+    )
+
+    keep, reason = _c_child_item_insert_covered_by_parent_snapshot(child, [parent, child], ctx)
+
+    assert keep is True
+    assert reason == ""
+
+
 def test_filter_ops_by_constraints_records_fragmentary_parent_insert_rejection() -> None:
     parent = _op(op_type="INSERT", target_section="2", target_paragraph=3)
     child = _op(op_type="INSERT", target_section="2", target_paragraph=3, target_item="4a")
@@ -747,6 +794,30 @@ def test_filter_ops_by_constraints_records_fragmentary_parent_insert_rejection()
     assert filtered == [child]
     assert len(rejected) == 1
     assert rejected[0].reason_code == "ELAB.REJECTED_FRAGMENTARY_PARENT_INSERT_SHADOWED_BY_ITEM_INSERT"
+
+
+def test_filter_ops_by_constraints_records_child_item_insert_covered_by_parent_snapshot() -> None:
+    parent = _op(op_type="INSERT", target_section="209b", target_paragraph=1)
+    child = _op(op_type="INSERT", target_section="209b", target_paragraph=1, target_item="2a")
+    mapped = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="one"),)),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="2a", children=(IRNode(kind=IRNodeKind.CONTENT, text="two a"),)),
+        ),
+    )
+    ctx = _ctx(
+        muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="209b", children=(mapped,)),
+        slot_assignment=_assignment_for_ops((parent, mapped), (child, mapped)),
+    )
+    rejected: list[FailedOp] = []
+
+    filtered = _filter_ops_by_constraints([parent, child], ctx, rejected_ops_out=rejected)
+
+    assert filtered == [parent]
+    assert len(rejected) == 1
+    assert rejected[0].reason_code == "ELAB.REJECTED_CHILD_ITEM_INSERT_COVERED_BY_PARENT_SNAPSHOT"
 
 
 # ---------------------------------------------------------------------------
