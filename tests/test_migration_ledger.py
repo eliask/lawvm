@@ -82,6 +82,12 @@ class TestMigrationLedgerUnit:
         assert not ledger
         assert ledger.events == ()
 
+    def test_prefix_migration_preserves_original_address_when_only_normalization_changes(self) -> None:
+        ledger = MigrationLedger()
+        wrapped = _addr(("hcontainer", ""), ("part", "2"), ("chapter", "3"), ("section", "34"))
+
+        assert ledger.current_address_with_prefix_migrations(wrapped) == wrapped
+
     def test_record_renumber(self) -> None:
         ledger = MigrationLedger()
         from_addr = _addr(("section", "1"))

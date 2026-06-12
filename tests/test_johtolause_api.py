@@ -625,6 +625,20 @@ def test_extract_legal_ops_carries_move_rider_kind_through_clause_ast() -> None:
         assert getattr(lo, "move_clause_target_unit_kind", None) is None, target_str
 
 
+def test_extract_legal_ops_distributes_trailing_otsikko_to_part_and_chapter() -> None:
+    """``II osan ja 5 luvun otsikko`` is two heading targets, not a part replace."""
+    from lawvm.core.semantic_types import FacetKind, StructuralAction
+    from lawvm.finland.johtolause import extract_legal_ops
+
+    ops = extract_legal_ops("muutetaan II osan ja 5 luvun otsikko, 15 luvun 2 §")
+
+    assert [(op.action, op.target.path, op.target.special) for op in ops] == [
+        (StructuralAction.HEADING_REPLACE, (("part", "II"),), FacetKind.HEADING),
+        (StructuralAction.HEADING_REPLACE, (("part", "II"), ("chapter", "5")), FacetKind.HEADING),
+        (StructuralAction.REPLACE, (("chapter", "15"), ("section", "2")), None),
+    ]
+
+
 def test_extract_legal_ops_move_rider_flows_into_amendment_op() -> None:
     """AmendmentOp.from_lo reads the Finland-local move-rider carrier."""
     from lawvm.finland.johtolause import extract_legal_ops

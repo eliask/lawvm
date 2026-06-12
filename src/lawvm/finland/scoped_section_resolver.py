@@ -24,6 +24,49 @@ MissingChapterInPartPolicy = Literal["part", "not_found"]
 ProvisionIndex = Mapping[tuple[str, str], Iterable[Path]]
 
 
+def _kind_name(kind: object) -> str:
+    return str(getattr(kind, "value", kind))
+
+
+def unique_chapter_scoped_section_path(
+    ir: IRNode,
+    *,
+    target_section: str,
+    target_chapter: str,
+) -> Path | None:
+    """Return the unique ``.../chapter:X/section:Y`` path, ignoring part scope.
+
+    Finnish source formulae often cite ``X luku Y §`` even when the live
+    structure nests that chapter under an ``osa``.  That is not permission to
+    drop or guess scope: this helper only succeeds when the requested
+    chapter/section pair has exactly one direct live match across the tree.
+    """
+
+    matches: list[Path] = []
+    target_chapter_norm = _norm_num_token(target_chapter)
+    target_section_norm = normalized_label_key(target_section)
+
+    def _walk(node: IRNode, path: Path, current_chapter: str | None) -> None:
+        node_kind = _kind_name(node.kind)
+        next_chapter = node.label if node_kind == "chapter" else current_chapter
+        for child in node.children:
+            child_kind = _kind_name(child.kind)
+            child_path = path + ((child_kind, child.label or ""),)
+            if (
+                child_kind == "section"
+                and next_chapter is not None
+                and _norm_num_token(next_chapter) == target_chapter_norm
+                and normalized_label_key(child.label) == target_section_norm
+            ):
+                matches.append(child_path)
+            _walk(child, child_path, next_chapter)
+
+    _walk(ir, (), None)
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
 def find_scoped_section_path(
     ir: IRNode,
     *,
@@ -65,12 +108,13 @@ def find_scoped_section_path(
             return None
         return part_path + section_path
 
-    return find_path(
-        "section",
-        target_section,
-        "chapter" if target_chapter else None,
-        target_chapter,
-    )
+    if target_chapter:
+        return unique_chapter_scoped_section_path(
+            ir,
+            target_section=target_section,
+            target_chapter=target_chapter,
+        )
+    return find_path("section", target_section, None, None)
 
 
 def find_scoped_section_insert_parent_path(

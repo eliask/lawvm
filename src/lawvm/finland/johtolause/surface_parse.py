@@ -1522,6 +1522,31 @@ def _part_ref(s: Stream, verb: SourceVerb, chapter: str = "") -> Optional[list[S
     osa_case = t.case
     s.pos += 1
 
+    # Shared heading qualifier over coordinated containers:
+    # ``II osan ja 5 luvun otsikko`` targets both the part heading and the
+    # chapter heading.  It must not first become a whole-part target, because
+    # that would also leak ``II`` as inherited part scope to later explicit
+    # chapter targets in the same target list.
+    if osa_case == "GEN" and len(nums) == 1:
+        pt = nums[0][0] + nums[0][1]
+        saved_coord = s.save()
+        if _sep(s) is not None:
+            ch_nodes = _chapter_ref(s, verb, part=pt)
+            if ch_nodes and all(
+                isinstance(node, SurfaceTargetRef)
+                and node.kind == TargetKind.CHAPTER
+                and _is_heading_only_target(node)
+                for node in ch_nodes
+            ):
+                part_heading = SurfaceTargetRef(
+                    kind=TargetKind.PART,
+                    label=pt,
+                    sub_refs=(SurfaceSubRef(facet=FacetKind.HEADING),),
+                    witness=_make_witness("fi.coordinated_part_chapter_heading_ref", saved, s.pos),
+                )
+                return [part_heading, *ch_nodes]
+        s.restore(saved_coord)
+
     # Part as context prefix: "II osan 1 luvun ..." or "II osan 1 §"
     if osa_case == "GEN" and len(nums) == 1:
         pt = nums[0][0] + nums[0][1]
@@ -2677,6 +2702,8 @@ def _extract_part_from_nodes(nodes: list[SurfaceNode], current: str) -> str:
         elif isinstance(node, SurfaceDescendantCoordination) and node.base.part:
             return node.base.part
         elif isinstance(node, SurfaceTargetRef):
+            if _is_heading_only_target(node):
+                continue
             if node.kind == TargetKind.PART and node.label and not _is_heading_only_target(node):
                 return node.label
             if node.part:

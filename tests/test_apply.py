@@ -6232,6 +6232,103 @@ def test_apply_whole_section_replace_materializes_inside_existing_chapter_for_mi
     assert mutation_events[0].outcome == "applied"
 
 
+def test_find_section_path_resolves_unique_part_wrapped_chapter_scope_without_part() -> None:
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="6",
+                        children=(_sec("7", _content("part 2 chapter 6 section 7")),),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="3",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="7",
+                        children=(_sec("7", _content("same section label, different chapter")),),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    assert state.find_section_path("7", "6") == (("part", "2"), ("chapter", "6"), ("section", "7"))
+
+
+def test_find_section_path_rejects_ambiguous_part_wrapped_chapter_scope_without_part() -> None:
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="6",
+                        children=(_sec("7", _content("part 2 chapter 6 section 7")),),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="3",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="6",
+                        children=(_sec("7", _content("part 3 chapter 6 section 7")),),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    assert state.find_section_path("7", "6") is None
+
+
+def test_apply_whole_section_replace_uses_unique_part_wrapped_chapter_scope_without_part() -> None:
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="6",
+                        children=(_sec("7", _content("old part 2 chapter 6 text")),),
+                    ),
+                ),
+            )
+        )
+    )
+    op = _op(op_type="REPLACE", target_section="7", target_chapter="6")
+    mutation_events: list[ApplyMutationEvent] = []
+
+    result = apply_op(
+        state,
+        op,
+        _ctx(state.ir),
+        muutos_ir=_sec("7", _content("new part-wrapped chapter text")),
+        replay_mode="legal_pit",
+        mutation_events_out=mutation_events,
+    )
+
+    replaced = result.find_section("7", "6")
+    assert replaced is not None
+    assert "new part-wrapped chapter text" in irnode_to_text(replaced)
+    assert mutation_events
+    assert mutation_events[0].outcome == "applied"
+
+
 def test_apply_whole_section_replace_bootstrap_respects_target_part_scope() -> None:
     state = _make_state(
         _body(

@@ -94,13 +94,17 @@ def current_address_with_prefix_migrations_from_events(
     not_before: str = "",
 ) -> LegalAddress:
     """Finland wrapper over the shared prefix/wave migration resolver."""
-    return _core_prefix_migrations(
+    normalized_original = _normalize_address(original_address)
+    migrated = _core_prefix_migrations(
         original_address,
         migration_events,
         as_of_date=as_of_date,
         not_before=not_before,
         normalize_address_fn=_normalize_address,
     )
+    if migrated == normalized_original:
+        return original_address
+    return migrated
 
 
 class MigrationLedger:
