@@ -1301,6 +1301,7 @@ def _emit_section_snapshot(
 
         subsection_payloads: dict[str, IRNode] = {}
         repealed_item_labels_by_subsection: dict[str, set[str]] = {}
+        item_target_labels_by_subsection: dict[str, set[str]] = {}
         renumber_destinations: dict[str, str] = {}
         whole_subsection_targets: set[str] = set()
         has_insert = False
@@ -1365,6 +1366,8 @@ def _emit_section_snapshot(
             subsection_payloads[target_norm] = relabelled
             if not item_label:
                 whole_subsection_targets.add(target_norm)
+            else:
+                item_target_labels_by_subsection.setdefault(target_norm, set()).add(item_norm)
             has_insert = has_insert or rop.is_insert_action
 
         if not has_insert or (len(subsection_payloads) < 2 and not renumber_destinations):
@@ -1401,6 +1404,40 @@ def _emit_section_snapshot(
         )
         if any(child.kind is not IRNodeKind.SUBSECTION for child in current_children[first_current_subsection:]):
             return None
+
+        def _subsection_covers_item_payloads(
+            current_subsection: IRNode,
+            item_payloads: dict[str, IRNode],
+        ) -> bool:
+            if not item_payloads:
+                return False
+            current_items = {
+                _norm_num_token(child.label): child
+                for child in current_subsection.children
+                if child.kind is IRNodeKind.PARAGRAPH and child.label
+            }
+            for item_label, payload_item in item_payloads.items():
+                current_item = current_items.get(item_label)
+                if current_item is None:
+                    return False
+                payload_subitems = {
+                    _norm_num_token(child.label): irnode_to_text(child)
+                    for child in payload_item.children
+                    if child.kind is IRNodeKind.SUBPARAGRAPH and child.label
+                }
+                if not payload_subitems:
+                    if irnode_to_text(payload_item) != irnode_to_text(current_item):
+                        return False
+                    continue
+                current_subitems = {
+                    _norm_num_token(child.label): irnode_to_text(child)
+                    for child in current_item.children
+                    if child.kind is IRNodeKind.SUBPARAGRAPH and child.label
+                }
+                for subitem_label, payload_text in payload_subitems.items():
+                    if current_subitems.get(subitem_label) != payload_text:
+                        return False
+            return True
 
         base_by_label: dict[str, IRNode] = {}
         for child in base_section.children:
@@ -1452,6 +1489,26 @@ def _emit_section_snapshot(
                 assert subsection_payload is not None
                 final_payloads[label] = subsection_payload
                 continue
+            if label in item_target_labels_by_subsection and label in current_by_label:
+                current_subsection = current_by_label[label]
+                if _subsection_covers_item_payloads(current_subsection, payload_items):
+                    final_payloads[label] = current_subsection
+                    if source_pathologies_out is not None:
+                        source_pathologies_out.append(
+                            build_destructive_shape_loss_risk_pathology(
+                                source_statute=op_source.statute_id,
+                                target_unit_kind="section",
+                                target_label=normalized_target_norm,
+                                recovery_kind="section_snapshot_item_payload_fold_merge",
+                                live_sibling_count=sum(
+                                    1
+                                    for child in current_subsection.children
+                                    if child.kind is IRNodeKind.PARAGRAPH
+                                ),
+                                payload_sibling_count=len(payload_items),
+                            )
+                        )
+                    continue
             first_base_item = next(
                 (idx for idx, child in enumerate(base_subsection.children) if child.kind is IRNodeKind.PARAGRAPH),
                 len(base_subsection.children),

@@ -970,6 +970,46 @@ class TestNoDuplicatesInPIT:
         assert ch_to_part.get("20") == "4a", f"chapter 20 expected in part:4a, found in {ch_to_part.get('20')!r}"
         assert ch_to_part.get("21") == "4a", f"chapter 21 expected in part:4a, found in {ch_to_part.get('21')!r}"
 
+    def test_2016_673_sparse_subitem_replace_preserves_untouched_siblings(self) -> None:
+        """2023/240 replaces 17:15(1)(1)(b) and (f), not the whole item.
+
+        The apply fold already merges the sparse alakohta payload correctly.
+        Timeline export must not rebuild subsection 1 from the sparse source
+        fragment and thereby drop untouched siblings a, c, d, and e.
+        """
+        ir = _replay("2016/673")
+        assert check_invariants(ir) == []
+        section = None
+        for part_node in ir.children:
+            if part_node.kind is not IRNodeKind.PART or part_node.label != "4":
+                continue
+            for chapter_node in part_node.children:
+                if chapter_node.kind is not IRNodeKind.CHAPTER or chapter_node.label != "17":
+                    continue
+                section = next(
+                    (
+                        child
+                        for child in chapter_node.children
+                        if child.kind is IRNodeKind.SECTION and child.label == "15"
+                    ),
+                    None,
+                )
+        assert section is not None
+        subsection = next(
+            child for child in section.children if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+        )
+        item = next(
+            child for child in subsection.children if child.kind is IRNodeKind.PARAGRAPH and child.label == "1"
+        )
+        subitems = {
+            child.label: irnode_to_text(child)
+            for child in item.children
+            if child.kind is IRNodeKind.SUBPARAGRAPH and child.label
+        }
+        assert list(subitems) == ["a", "b", "c", "d", "e", "f"]
+        assert "Kunta- ja hyvinvointialuetyönantajat KT" in subitems["b"]
+        assert "kriisinhallintatapaturma-asioista" in subitems["f"]
+
 
 # ---------------------------------------------------------------------------
 # Bug family 4: subsection-level INSERT chapter carry-forward must be stripped
