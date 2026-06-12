@@ -30,6 +30,7 @@ from lawvm.finland.apply_structure_ops import (
 )
 from lawvm.finland.apply_subsection_dispatch import (
     _apply_deterministic_subsection_op,
+    classify_subsection_dispatch_failure,
     _normalize_subsection_dispatch_inputs,
 )
 from lawvm.core.write_receipt import WriteReceipt
@@ -531,5 +532,6 @@ def _apply_legacy_dispatch(
         )
         return subsection_result
 
-    _fail("no deterministic path", reason_code="no_deterministic_path")
+    failure_reason = classify_subsection_dispatch_failure(subsection_dispatch_op, sec_node)
+    _fail(failure_reason.reason, reason_code=failure_reason.reason_code)
     return state

@@ -17,7 +17,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
-from lawvm.core.tree_ops import Path
+from lawvm.core.tree_ops import Path, normalized_label_key
 from lawvm.finland.ops import AmendmentOp, ReplayProfile, ResolvedOp, _rebind_resolved_target_address
 from lawvm.core.compile_result import StrictProfile
 from lawvm.finland.apply_subsection_ops import (
@@ -68,6 +68,94 @@ class _SubsectionRoutingView:
     target_section: str
     target_chapter: str | None
     target_part: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class SubsectionDispatchFailureReason:
+    reason: str
+    reason_code: str
+
+
+def _target_scope_for_failure_reason(
+    dispatch_op: AmendmentOp | ResolvedOp,
+) -> tuple[int | None, str | None]:
+    if isinstance(dispatch_op, ResolvedOp):
+        return dispatch_op.effective_target_paragraph, dispatch_op.effective_target_item_label
+    return dispatch_op.target_paragraph, dispatch_op.target_item
+
+
+def classify_subsection_dispatch_failure(
+    dispatch_op: AmendmentOp | ResolvedOp,
+    sec_node: IRNode,
+) -> SubsectionDispatchFailureReason:
+    """Classify a failed subsection/item dispatch using replay-time tree shape."""
+    target_paragraph, target_item = _target_scope_for_failure_reason(dispatch_op)
+    subsecs = [c for c in sec_node.children if c.kind == IRNodeKind.SUBSECTION]
+    if target_item is not None:
+        if not subsecs:
+            return SubsectionDispatchFailureReason(
+                reason="item target section has no subsection children",
+                reason_code="item_no_subsections",
+            )
+        if target_paragraph is not None and target_paragraph > len(subsecs):
+            return SubsectionDispatchFailureReason(
+                reason=(
+                    f"item target subsection {target_paragraph} out of range "
+                    f"(subsections={len(subsecs)})"
+                ),
+                reason_code="item_subsection_out_of_range",
+            )
+        target_sub = subsecs[target_paragraph - 1] if target_paragraph is not None else subsecs[0]
+        paras = [c for c in target_sub.children if c.kind == IRNodeKind.PARAGRAPH]
+        if not paras:
+            return SubsectionDispatchFailureReason(
+                reason="item target subsection has no paragraph children",
+                reason_code="item_no_paragraphs",
+            )
+        item_norm = normalized_label_key(target_item)
+        if any(normalized_label_key(p.label or "") == item_norm for p in paras):
+            return SubsectionDispatchFailureReason(
+                reason="item target exists but no deterministic apply path matched",
+                reason_code="item_target_exists_apply_failed",
+            )
+        item_label = str(target_item)
+        try:
+            want_idx = int(re.sub(r"[^\d]", "", item_label) or "0")
+        except ValueError:
+            want_idx = 0
+        if want_idx > len(paras):
+            return SubsectionDispatchFailureReason(
+                reason=f"item target label {item_label} beyond paragraph count {len(paras)}",
+                reason_code="item_label_gap",
+            )
+        return SubsectionDispatchFailureReason(
+            reason=f"item target label {item_label} missing among {len(paras)} paragraphs",
+            reason_code="item_label_missing",
+        )
+
+    if target_paragraph is not None:
+        if not subsecs:
+            return SubsectionDispatchFailureReason(
+                reason="subsection target section has no subsection children",
+                reason_code="subsection_no_subsections",
+            )
+        if target_paragraph > len(subsecs):
+            return SubsectionDispatchFailureReason(
+                reason=(
+                    f"subsection target {target_paragraph} out of range "
+                    f"(subsections={len(subsecs)})"
+                ),
+                reason_code="subsection_out_of_range",
+            )
+        return SubsectionDispatchFailureReason(
+            reason="subsection target exists but no deterministic apply path matched",
+            reason_code="subsection_target_exists_apply_failed",
+        )
+
+    return SubsectionDispatchFailureReason(
+        reason="no deterministic path",
+        reason_code="no_deterministic_path",
+    )
 
 
 def _prepare_subsection_routing(

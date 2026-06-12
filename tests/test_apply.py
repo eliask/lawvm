@@ -89,6 +89,7 @@ from lawvm.finland.apply_subsection_ops import (
 from lawvm.finland.apply_policy import _resolve_section_path_with_fallbacks
 from lawvm.finland.apply_subsection_dispatch import (
     _apply_deterministic_subsection_op,
+    classify_subsection_dispatch_failure,
     _follow_same_wave_subsection_migration,
     _normalize_subsection_dispatch_inputs,
 )
@@ -8082,6 +8083,36 @@ def test_apply_deterministic_subsection_op_does_not_singleton_fallback_missing_a
     assert result is None
 
 
+def test_classify_subsection_dispatch_failure_item_target_exists() -> None:
+    op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="2")
+    sec = _sec("1", _sub("1", _para("1", "first"), _para("2", "second")))
+
+    reason = classify_subsection_dispatch_failure(op, sec)
+
+    assert reason.reason_code == "item_target_exists_apply_failed"
+    assert reason.reason == "item target exists but no deterministic apply path matched"
+
+
+def test_classify_subsection_dispatch_failure_item_label_gap() -> None:
+    op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="4")
+    sec = _sec("1", _sub("1", _para("1", "first"), _para("2", "second")))
+
+    reason = classify_subsection_dispatch_failure(op, sec)
+
+    assert reason.reason_code == "item_label_gap"
+    assert reason.reason == "item target label 4 beyond paragraph count 2"
+
+
+def test_classify_subsection_dispatch_failure_subsection_target_exists() -> None:
+    op = _op(op_type="REPLACE", target_section="1", target_paragraph=2)
+    sec = _sec("1", _sub("1", _content("first")), _sub("2", _content("second")))
+
+    reason = classify_subsection_dispatch_failure(op, sec)
+
+    assert reason.reason_code == "subsection_target_exists_apply_failed"
+    assert reason.reason == "subsection target exists but no deterministic apply path matched"
+
+
 def test_normalize_subsection_dispatch_inputs_blocks_singleton_item_rebound_in_strict_mode() -> None:
     master_subsecs = [
         _sub("1", _para("1", "first item"), _para("2", "second item")),
@@ -8144,7 +8175,8 @@ def test_apply_op_typed_strict_blocks_singleton_item_rebound() -> None:
         p.code == "SUBSECTION_TARGET_REBOUND" and p.detail["rebound_kind"] == "single_subsection_item_fallback"
         for p in pathologies
     )
-    assert [f.reason for f in failed_ops] == ["no deterministic path"]
+    assert [f.reason_code for f in failed_ops] == ["subsection_out_of_range"]
+    assert [f.reason for f in failed_ops] == ["subsection target 3 out of range (subsections=1)"]
 
 
 def test_apply_op_prefers_slot_assignment_over_stale_amend_sub_ir() -> None:
