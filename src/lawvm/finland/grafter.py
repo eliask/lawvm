@@ -236,7 +236,6 @@ from lawvm.finland.body_pairing import (
     build_observed_body_inventory as _build_observed_body_inventory,
 )
 from lawvm.finland.restructure_plan import (
-    build_restructure_plan,
     deferred_plan_op_finding,
     execute_restructure_plan,
     move_skip_finding,
@@ -641,6 +640,7 @@ from lawvm.finland.process_result_builder import ProcessResultBuilder
 from lawvm.finland.process_route_rejection import ProcessRouteRejectionContext
 from lawvm.finland.process_compile_signals import ProcessCompileSignalsContext
 from lawvm.finland.process_apply_projection import ProcessApplyProjectionContext
+from lawvm.finland.process_structural_prepare import ProcessStructuralPrepareContext
 from lawvm.finland.process_temporal_authority import ProcessTemporalAuthorityContext
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
 
@@ -1266,7 +1266,6 @@ from lawvm.finland.chapter_seed import (
     _next_chapter_label,
     _chapters_in_gap,
     _rebuild_at_path,
-    _op_targets_chapter,
 )
 
 
@@ -5049,49 +5048,15 @@ def process_muutoslaki(
             _compat_elaboration_observations.extend(_phase2_result.elaboration_observations)
             _process_findings.extend(_phase2_result.process_findings)
 
-        # Skip ops for chapters that were already seeded from this amendment's
-        # body XML.  The seeded content is already in state.ir — re-applying
-        # the same ops would either fail (REPLACE on existing) or duplicate.
-        if chapter_seed_skip and ops:
-            seeded_labels_for_mid = {ch_label for ch_label, seed_mid in chapter_seed_skip if seed_mid == amendment_id}
-            if seeded_labels_for_mid:
-                pre_count = len(ops)
-                dropped_ops = [op for op in ops if _op_targets_chapter(op, seeded_labels_for_mid)]
-                ops = [op for op in ops if not _op_targets_chapter(op, seeded_labels_for_mid)]
-                if len(ops) < pre_count:
-                    _compat_elaboration_observations.append(
-                        {
-                            "kind": "ELAB.CHAPTER_SEED_SKIP",
-                            "source_statute": amendment_id,
-                            "seeded_chapters": sorted(seeded_labels_for_mid),
-                            "dropped_count": len(dropped_ops),
-                            "dropped_ops": [op.description() for op in dropped_ops],
-                        }
-                    )
-                    _replay_print(
-                        f"  [{amendment_id}] SEED-SKIP: dropped {pre_count - len(ops)} op(s) "
-                        f"targeting seeded chapter(s) {sorted(seeded_labels_for_mid)}"
-                    )
-
-        # Pre-seed pure relabel restructure plans before the main apply loop so
-        # same-act structural ownership is not split between the resolved-op
-        # path and the restructure executor. Coverage-aware plans may still be
-        # added later during uncovered-body analysis; exact duplicates are
-        # suppressed there.
-        if ops:
-            _early_restructure_plan = build_restructure_plan(
-                ctx.id,
-                amendment_id,
-                ops=list(ops),
-                uncov_ratio=0.0,
-                total_units=0,
-                body_unit_ids_by_chapter=None,
-            )
-            if _early_restructure_plan is not None and not any(
-                _existing.amendment_id == amendment_id and _existing.ops == _early_restructure_plan.ops
-                for _existing in _effective_restructure_plans_out
-            ):
-                _effective_restructure_plans_out.append(_early_restructure_plan)
+        ops = ProcessStructuralPrepareContext(
+            amendment_id=amendment_id,
+            target_statute=ctx.id,
+            ops=ops,
+            chapter_seed_skip=chapter_seed_skip,
+            restructure_plans=_effective_restructure_plans_out,
+            elaboration_observations=_compat_elaboration_observations,
+            replay_print=_replay_print,
+        ).prepare()
 
         _temporal_authority = ProcessTemporalAuthorityContext(
             amendment_id=amendment_id,
