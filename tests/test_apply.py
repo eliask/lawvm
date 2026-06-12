@@ -61,6 +61,7 @@ from lawvm.finland.apply_structure_ops import (
     _apply_whole_section_op,
     _insert_or_replace_same_labeled_child,
 )
+from lawvm.finland.grafter_uncovered import _apply_uncovered_kumotaan
 from lawvm.finland.apply_runtime_support import (
     _emit_section_snapshot,
     _build_subsection_slot_assignment,
@@ -5594,6 +5595,126 @@ class TestContainerPartRomanRepeal:
         op = self._part_op("X")  # part 10 doesn't exist
         result = _apply_container_op(state, op, None, _LEGAL_PIT, "[test] REPEAL X osa")
         assert _unchanged(state, result)
+
+
+class TestSameEffectiveContainerRepealShadow:
+    def _state_with_chapter_9(self) -> ReplayState:
+        chapter = IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="9",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="9 luku"),
+                _sec("42", _content("new chapter section")),
+            ),
+        )
+        return _make_state(_body(chapter))
+
+    def _chapter_repeal_op(self) -> AmendmentOp:
+        return AmendmentOp(
+            op_id="repeal_chapter_9",
+            op_type="REPEAL",
+            target_section="9",
+            target_unit_kind="chapter",
+            source_statute="2013/479",
+            source_issue_date=_DATE,
+            lo=LegalOperation(
+                op_id="repeal_chapter_9",
+                sequence=0,
+                action=StructuralAction.REPEAL,
+                target=LegalAddress(path=(("chapter", "9"),)),
+                payload=None,
+                source=OperationSource(
+                    statute_id="2013/479",
+                    effective="2013-07-01",
+                    enacted="2013-06-28",
+                ),
+            ),
+        )
+
+    def _prior_chapter_insert(self, *, effective: str = "2013-07-01") -> LegalOperation:
+        return LegalOperation(
+            op_id="snapshot_chapter_9",
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "9"),)),
+            payload=None,
+            source=OperationSource(
+                statute_id="2013/478",
+                effective=effective,
+                enacted="2013-06-28",
+            ),
+        )
+
+    def test_same_effective_prior_replacement_blocks_destructive_chapter_repeal(self) -> None:
+        state = self._state_with_chapter_9()
+        pathologies: list[SourcePathology] = []
+
+        result = _apply_container_op(
+            state,
+            self._chapter_repeal_op(),
+            None,
+            _LEGAL_PIT,
+            "[2013/479] REPEAL 9 luku",
+            source_pathologies_out=pathologies,
+            replay_history_ops=[self._prior_chapter_insert()],
+        )
+
+        assert _unchanged(state, result)
+        assert state.find("chapter", "9") is not None
+        assert [p.code for p in pathologies] == ["SAME_EFFECTIVE_CONTAINER_REPEAL_SHADOWED"]
+        assert pathologies[0].detail["prior_source_statute"] == "2013/478"
+
+    def test_different_effective_prior_replacement_does_not_block_chapter_repeal(self) -> None:
+        state = self._state_with_chapter_9()
+        pathologies: list[SourcePathology] = []
+
+        result = _apply_container_op(
+            state,
+            self._chapter_repeal_op(),
+            None,
+            _LEGAL_PIT,
+            "[2013/479] REPEAL 9 luku",
+            source_pathologies_out=pathologies,
+            replay_history_ops=[self._prior_chapter_insert(effective="2013-06-30")],
+        )
+
+        result = _modified(state, result)
+        assert result.find("chapter", "9") is None
+        assert pathologies == []
+
+    def test_uncovered_kumotaan_container_repeal_respects_same_effective_shadow(self) -> None:
+        state = self._state_with_chapter_9()
+        lo_ops = [self._prior_chapter_insert()]
+        pathologies: list[SourcePathology] = []
+        op_source = OperationSource(
+            statute_id="2013/479",
+            effective="2013-07-01",
+            enacted="2013-06-28",
+        )
+
+        result = _apply_uncovered_kumotaan(
+            state,
+            _ctx(_body()),
+            [
+                AmendmentOp(
+                    op_id="repeal_chapter_9",
+                    op_type="REPEAL",
+                    target_section="9",
+                    target_unit_kind="chapter",
+                    source_statute="2013/479",
+                    source_issue_date=_DATE,
+                )
+            ],
+            "Tällä lailla kumotaan 9 luku.",
+            "2013/479",
+            lo_ops_out=lo_ops,
+            op_source=op_source,
+            source_pathologies_out=pathologies,
+        )
+
+        assert _unchanged(state, result)
+        assert [op.op_id for op in lo_ops] == ["snapshot_chapter_9"]
+        assert [p.code for p in pathologies] == ["SAME_EFFECTIVE_CONTAINER_REPEAL_SHADOWED"]
 
 
 class TestGroupPlanRomanNormalization:

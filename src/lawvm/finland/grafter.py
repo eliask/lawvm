@@ -6085,6 +6085,7 @@ def apply_ops_to_tree(
             lo_ops_out=lo_ops_out,
             op_source=_uncov_src,
             findings_out=findings_out,
+            source_pathologies_out=source_pathologies_out,
         )
 
         # Emit chapter-part-move LO ops: tombstone old part address, insert at

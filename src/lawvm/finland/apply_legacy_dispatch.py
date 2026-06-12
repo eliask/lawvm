@@ -234,6 +234,7 @@ def _apply_legacy_dispatch(
         source_pathologies_out=source_pathologies_out,
         migration_ledger=migration_ledger,
         write_receipts_out=write_receipts,
+        replay_history_ops=replay_history_ops,
     )
     if container_result is not None:
         # Receipt-first declaration (apply contract §4): the chapter/part

@@ -906,6 +906,7 @@ def _apply_intent_container(
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     path_hint: Optional[Path] = None,
     standalone_section_targets: Optional[FrozenSet] = None,
+    replay_history_ops: Optional[List[_LegalOperation]] = None,
     migration_ledger: Optional[MigrationLedger] = None,
     write_audits_out: Optional[List[ObservedWriteAudit]] = None,
 ) -> "ReplayState":
@@ -931,6 +932,7 @@ def _apply_intent_container(
         source_pathologies_out=source_pathologies_out,
         migration_ledger=migration_ledger,
         write_receipts_out=write_receipts,
+        replay_history_ops=replay_history_ops,
     )
     if container_result is not None:
         # Receipt-first declaration (apply contract §4): when the container
@@ -1023,6 +1025,7 @@ def _apply_intent_replace(
                 mutation_events_out=mutation_events_out,
                 path_hint=path_hint,
                 standalone_section_targets=standalone_section_targets,
+                replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
                 write_audits_out=write_audits_out,
             )
@@ -1092,6 +1095,7 @@ def _apply_intent_replace(
                 mutation_events_out=mutation_events_out,
                 path_hint=path_hint,
                 standalone_section_targets=standalone_section_targets,
+                replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
                 write_audits_out=write_audits_out,
             )
@@ -1195,6 +1199,7 @@ def _apply_intent_insert(
                 mutation_events_out=mutation_events_out,
                 path_hint=path_hint,
                 standalone_section_targets=standalone_section_targets,
+                replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
                 write_audits_out=write_audits_out,
             )
@@ -1293,6 +1298,7 @@ def _apply_intent_repeal(
                 muutos_ir,
                 mutation_events_out=mutation_events_out,
                 path_hint=path_hint,
+                replay_history_ops=replay_history_ops,
                 migration_ledger=migration_ledger,
                 write_audits_out=write_audits_out,
             )

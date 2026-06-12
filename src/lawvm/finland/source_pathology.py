@@ -130,6 +130,40 @@ def build_section_replace_bootstrap_parent_missing_pathology(
     )
 
 
+def build_same_effective_container_repeal_shadowed_pathology(
+    *,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_label: str,
+    prior_source_statute: str,
+    effective: str,
+) -> SourcePathology:
+    """Build a typed record for a same-date repeal shadowed by a replacement.
+
+    This covers repeal/rebirth pairs where one act repeals an old container and
+    another same-effective-date act inserts or replaces the same container slot.
+    Literal replay must not let the repeal delete the newly inserted subtree.
+    """
+    return SourcePathology.from_scope(
+        code="SAME_EFFECTIVE_CONTAINER_REPEAL_SHADOWED",
+        message=(
+            "Whole-container repeal was skipped because replay history already "
+            "contains a same-effective-date replacement/insert for the same "
+            "container path from another source."
+        ),
+        source_statute=source_statute,
+        target_unit_kind=target_unit_kind,
+        target_label=target_label,
+        detail={
+            "prior_source_statute": prior_source_statute,
+            "effective": effective,
+            "recovery_kind": "same_effective_container_repeal_shadowed",
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+        },
+    )
+
+
 __all__ = [
     "build_container_replace_target_absent_pathology",
     "build_container_membership_mismatch_pathology",
@@ -146,6 +180,7 @@ __all__ = [
     "build_sparse_item_body_missing_pathology",
     "build_malformed_broad_replace_body_pathology",
     "build_section_replace_bootstrap_parent_missing_pathology",
+    "build_same_effective_container_repeal_shadowed_pathology",
 ]
 
 

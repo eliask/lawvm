@@ -15,7 +15,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalAddress
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.ir_helpers import irnode_to_text
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path, default_label_sort_key, normalized_label_key
 
@@ -46,6 +46,7 @@ from lawvm.finland.source_pathology import (
     build_partial_whole_section_payload_pathology,
     build_section_replace_bootstrap_parent_missing_pathology,
     build_sparse_merge_invariant_skip_pathology,
+    build_same_effective_container_repeal_shadowed_pathology,
     build_temporary_section_rebase_pathology,
     build_unique_payload_insert_under_live_duplicates_pathology,
 )
@@ -673,7 +674,11 @@ def _structure_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _StructureAppl
         op_type = op.resolved_action_type
         op_lo = getattr(op, "lo", None)
         target_address = op.resolved_target_address or (op_lo.target if op_lo is not None else None)
-        source_effective = op_lo.source.effective if op_lo is not None and op_lo.source is not None else ""
+        source_effective = (
+            op_lo.source.effective
+            if op_lo is not None and op_lo.source is not None
+            else (op.resolved_op_source.effective if op.resolved_op_source is not None else "")
+        )
         target_section = _legacy_target_section_for_scope(scope, op.target_unit_kind)
         target_paragraph = scope.target_paragraph
         target_item = scope.target_item
@@ -784,6 +789,7 @@ def _apply_container_op(
     migration_ledger=None,
     resolver_bindings_out: Optional[List[ResolverBinding]] = None,
     write_receipts_out: Optional[List[WriteReceipt]] = None,
+    replay_history_ops: Optional[List[_LegalOperation]] = None,
 ):
     """Apply container (chapter/part) operation via tree_ops."""
     def _normalized_standalone_targets() -> list[tuple[str | None, str | None, str]]:
@@ -878,6 +884,31 @@ def _apply_container_op(
         if container_binding is not None
         else container_resolution.path
     )
+
+    def _timeline_container_path(p: Path | None) -> tuple[tuple[str, str], ...]:
+        return tuple((kind, label) for kind, label in (p or ()) if kind != "hcontainer" and label)
+
+    def _same_effective_replacement_shadow() -> _LegalOperation | None:
+        if _op_type != "REPEAL" or path is None or not _op_source_effective:
+            return None
+        target_path = _timeline_container_path(path)
+        if not target_path:
+            return None
+        source_statute = view.source_statute or ""
+        for prior in reversed(replay_history_ops or []):
+            if prior.action not in (StructuralAction.INSERT, StructuralAction.REPLACE):
+                continue
+            if prior.target is None or tuple(prior.target.path) != target_path:
+                continue
+            prior_source = prior.source
+            if prior_source is None:
+                continue
+            if prior_source.effective != _op_source_effective:
+                continue
+            if source_statute and prior_source.statute_id == source_statute:
+                continue
+            return prior
+        return None
 
     def _receipt_path(p: Path) -> tuple[tuple[str, str], ...]:
         return tuple((str(step_kind), str(step_label)) for step_kind, step_label in p)
@@ -1136,6 +1167,24 @@ def _apply_container_op(
 
     if _op_type == "REPEAL" and not _target_paragraph and not _target_item:
         if path is not None:
+            shadow = _same_effective_replacement_shadow()
+            if shadow is not None:
+                if source_pathologies_out is not None:
+                    source_pathologies_out.append(
+                        build_same_effective_container_repeal_shadowed_pathology(
+                            source_statute=view.source_statute or "",
+                            target_unit_kind=_target_unit_kind,
+                            target_label=f"{section_label} {kind}",
+                            prior_source_statute=shadow.source.statute_id if shadow.source else "",
+                            effective=_op_source_effective,
+                        )
+                    )
+                logger.debug(
+                    "  %s → container repeal skipped: same-effective replacement from %s",
+                    ctx_label,
+                    shadow.source.statute_id if shadow.source else "",
+                )
+                return state
             logger.debug("  %s → container repeal", ctx_label)
             return state.with_ir(_tops.remove_at(state.ir, path))
 

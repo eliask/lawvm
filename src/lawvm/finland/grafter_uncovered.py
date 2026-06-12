@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, cast
 
 import lxml.etree as etree
 
+from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import (
     IRNode,
     LegalAddress,
@@ -88,6 +89,7 @@ from lawvm.finland.metadata import (
 from lawvm.core.payload_elaboration import PayloadCompletenessWitness
 from lawvm.finland.acquisition import build_amendment_acquisition_result
 from lawvm.finland.vts import VtsSkippedTarget, VtsSourceDiagnostic, extract_voimaantulo_repeals
+from lawvm.finland.source_pathology import build_same_effective_container_repeal_shadowed_pathology
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
 from lawvm.finland.constraints import DEBUG
@@ -1659,6 +1661,7 @@ def _apply_uncovered_kumotaan(
     lo_ops_out: Optional[List[_LegalOperation]] = None,
     op_source: Optional[OperationSource] = None,
     findings_out: Optional[List[Finding]] = None,
+    source_pathologies_out: Optional[List[SourcePathology]] = None,
 ) -> "ReplayState":
     """Apply uncovered repeals from kumotaan clauses."""
     def _same_amendment_non_repeal_section_labels() -> Set[str]:
@@ -1829,6 +1832,28 @@ def _apply_uncovered_kumotaan(
         )
 
     repealed_containers: List[str] = []
+
+    def _prior_same_effective_container_replacement(
+        *,
+        target_path: tuple[tuple[str, str], ...],
+    ) -> _LegalOperation | None:
+        if lo_ops_out is None or op_source is None or not op_source.effective:
+            return None
+        for prior in reversed(lo_ops_out):
+            if prior.action not in (StructuralAction.INSERT, StructuralAction.REPLACE):
+                continue
+            if prior.target is None or tuple(prior.target.path) != target_path:
+                continue
+            prior_source = prior.source
+            if prior_source is None:
+                continue
+            if prior_source.effective != op_source.effective:
+                continue
+            if prior_source.statute_id == amendment_id:
+                continue
+            return prior
+        return None
+
     for target_unit_kind, refs in kumotaan_containers.items():
         kind_name = "luku" if target_unit_kind == "chapter" else "osa"
         node_kind = "chapter" if target_unit_kind == "chapter" else "part"
@@ -1844,12 +1869,26 @@ def _apply_uncovered_kumotaan(
             if existing_path is None:
                 continue
 
+            tl_path = tuple((k, v) for k, v in existing_path if v)
+            shadow = _prior_same_effective_container_replacement(target_path=tl_path)
+            if shadow is not None:
+                if source_pathologies_out is not None:
+                    source_pathologies_out.append(
+                        build_same_effective_container_repeal_shadowed_pathology(
+                            source_statute=amendment_id,
+                            target_unit_kind=target_unit_kind,
+                            target_label=f"{label} {kind_name}",
+                            prior_source_statute=shadow.source.statute_id if shadow.source else "",
+                            effective=op_source.effective if op_source is not None else "",
+                        )
+                    )
+                continue
+
             state = state.with_ir(_tops.remove_at(state.ir, existing_path))
             repealed_containers.append(f"{label} {kind_name}")
 
             op_id = f"uncovered_repeal_{target_unit_kind}_{label}"
             if lo_ops_out is not None:
-                tl_path = tuple((k, v) for k, v in existing_path if v)
                 lo_ops_out.append(
                         _LegalOperation(
                             op_id=op_id,
