@@ -323,6 +323,42 @@ def test_print_detail_includes_target_statute_and_reason(capsys) -> None:
     out = capsys.readouterr().out
     assert "[2024/2] target=2024/1 REPLACE 3 §" in out
     assert "reason=section_not_found" in out
+    assert "failed_op:section_not_found" in out
+    assert "fi.v1.FAILED_OPERATION_RESOLUTION" in out
+    assert "frontier=fi_failed_operation_resolution/failed_operation_frontier" in out
+
+
+def test_print_detail_projects_source_pathology_to_claim_kind(capsys) -> None:
+    failure = FailedOp(
+        amendment_id="1995/451",
+        description="REPLACE 16 luku 9 § 1 mom 5a kohta",
+        reason="no deterministic path",
+        reason_code="no_deterministic_path",
+        target_section="9",
+        target_chapter="16",
+        target_unit_kind="section",
+        target_statute_id="1987/1250",
+    )
+    master = SimpleNamespace(find_section=lambda section, chapter=None: SimpleNamespace(children=[]))
+    pathologies = {
+        "1987/1250": {
+            ("1995/451", "ITEM_TARGET_STRUCTURE_ABSENT", "9 § 1 mom 5a kohta")
+        }
+    }
+
+    failures._print_detail(
+        [failure],
+        masters_by_sid={"1987/1250": cast(Any, master)},
+        pathologies_by_sid=pathologies,
+        pattern=None,
+        top=5,
+    )
+
+    out = capsys.readouterr().out
+    assert "source_pathology:ITEM_TARGET_STRUCTURE_ABSENT" in out
+    assert "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION" in out
+    assert "owner_phase=replay_apply" in out
+    assert "frontier=fi_item_target_structure_absent/target_resolution_frontier" in out
 
 
 def test_detail_mode_uses_cached_failures_without_full_replay(monkeypatch) -> None:

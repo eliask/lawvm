@@ -17,13 +17,14 @@ import re
 import sys
 import time
 from collections import Counter
-from dataclasses import replace as dataclass_replace
+from dataclasses import dataclass, replace as dataclass_replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.grafter import FailedOp, XMLStatute, replay_xml
+from lawvm.finland.proof_surfaces import source_pathology_proof_rule
 from lawvm.core.tree_ops import normalized_label_key
 
 
@@ -360,6 +361,21 @@ def _collect_detail_masters(
 # Detail categorisation helpers
 # ---------------------------------------------------------------------------
 
+@dataclass(frozen=True, slots=True)
+class FailureFrontierProjection:
+    required_claim_kind: str
+    owner_phase: str
+    frontier_family: str
+    frontier_status: str
+
+
+@dataclass(frozen=True, slots=True)
+class FailureDetailRow:
+    failure: FailedOp
+    category: str
+    frontier_projection: FailureFrontierProjection
+
+
 def _failure_target_label(f: FailedOp) -> str:
     target_paragraph, target_item = _parse_desc_fields(f.description)
     if target_item is not None and target_paragraph is not None:
@@ -498,6 +514,31 @@ def _categorize_failure(
     return "other"
 
 
+def _frontier_projection_for_failure_category(category: str) -> FailureFrontierProjection:
+    if category.startswith("source_pathology:"):
+        code = category.split(":", 1)[1]
+        rule = source_pathology_proof_rule(code)
+        return FailureFrontierProjection(
+            required_claim_kind=rule.required_claim_kind,
+            owner_phase=rule.owner_phase,
+            frontier_family=rule.frontier_family,
+            frontier_status=rule.frontier_status,
+        )
+    if category == "renumber":
+        return FailureFrontierProjection(
+            required_claim_kind="",
+            owner_phase="replay_apply",
+            frontier_family="",
+            frontier_status="",
+        )
+    return FailureFrontierProjection(
+        required_claim_kind="fi.v1.FAILED_OPERATION_RESOLUTION",
+        owner_phase="replay_apply",
+        frontier_family="fi_failed_operation_resolution",
+        frontier_status="failed_operation_frontier",
+    )
+
+
 def _print_detail(
     failures: List[FailedOp],
     masters_by_sid: Dict[str, XMLStatute],
@@ -522,7 +563,7 @@ def _print_detail(
                 return m
         return None
 
-    rows: List[Tuple[FailedOp, str]] = []
+    rows: List[FailureDetailRow] = []
     for fo in failures:
         master = _find_master_for(fo)
         if master is not None:
@@ -533,11 +574,23 @@ def _print_detail(
             # still categorize what we can from the description alone
             if fo.description.startswith("RENUMBER"):
                 cat = "renumber"
+            elif reason_category := _failure_reason_category(fo):
+                cat = reason_category
             else:
                 cat = "other"
-        rows.append((fo, cat))
+        projection = _frontier_projection_for_failure_category(cat)
+        rows.append(
+            FailureDetailRow(
+                failure=fo,
+                category=cat,
+                frontier_projection=projection,
+            )
+        )
 
-    cat_counts: Counter[str] = Counter(cat for _, cat in rows)
+    cat_counts: Counter[str] = Counter(row.category for row in rows)
+    claim_kind_counts: Counter[str] = Counter(
+        row.frontier_projection.required_claim_kind or "<none>" for row in rows
+    )
 
     print(f"Total failures: {len(rows)}")
     print()
@@ -545,15 +598,32 @@ def _print_detail(
     for cat, count in cat_counts.most_common():
         print(f"  {count:4d}  {cat}")
     print()
+    print("=== Required claim kinds ===")
+    for claim_kind, count in claim_kind_counts.most_common():
+        print(f"  {count:4d}  {claim_kind}")
+    print()
 
     print(f"=== Detailed failure list ({len(rows)}) ===")
-    for fo, cat in rows:
+    for row in rows:
+        fo = row.failure
+        projection = row.frontier_projection
         target_statute = f" target={fo.target_statute_id}" if fo.target_statute_id else ""
         reason = f" reason={fo.reason_code or fo.reason}" if (fo.reason_code or fo.reason) else ""
+        claim = (
+            f" claim={projection.required_claim_kind}"
+            if projection.required_claim_kind
+            else ""
+        )
+        frontier = (
+            f" frontier={projection.frontier_family}/{projection.frontier_status}"
+            if projection.frontier_family or projection.frontier_status
+            else ""
+        )
         print(
             f"  [{fo.amendment_id}]{target_statute} {fo.description}"
             f"  sec={fo.target_section} ch={fo.target_chapter}"
-            f"{reason} \u2192 {cat}"
+            f"{reason} \u2192 {row.category}"
+            f"{claim} owner_phase={projection.owner_phase}{frontier}"
         )
 
 
