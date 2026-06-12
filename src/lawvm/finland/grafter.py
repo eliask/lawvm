@@ -133,6 +133,15 @@ class RepealTargetRef:
     def part(cls, target_norm: str) -> "RepealTargetRef":
         return cls("part", target_norm, None)
 
+
+@dataclass(frozen=True, slots=True)
+class _ParentSnapshotGovernedFailure:
+    failed: "FailedOp"
+    snapshot: _LegalOperation
+    subsection: str
+    item: str
+
+
 logger = logging.getLogger(__name__)
 
 AMENDMENT_PARENTS_CSV = Path(".cache/finland/amendment_parents.csv")  # internal cache, auto-built
@@ -6493,6 +6502,121 @@ def process_muutoslaki(
                 blocking=False,
             )
 
+    def _govern_item_failures_by_parent_subsection_snapshots() -> None:
+        """Move redundant item failures behind same-source subsection snapshots.
+
+        Fallback extraction can emit both a subsection payload carrier and
+        explicit descendant item inserts for formulas like "76 §:n 1
+        momenttiin uusi 4 a ja 4 b kohta".  The subsection payload carrier may
+        be the operation that legally owns the merge, while descendant item
+        attempts fail against the mutable replay fold.  Keep that distinction
+        visible as a governed observation instead of exporting a false
+        unresolved FailedOp.
+        """
+        if not _compat_failed_ops or not lo_ops_out:
+            return
+
+        item_desc_re = re.compile(
+            r"^\s*(?:INSERT|REPLACE|REPEAL)\s+"
+            r"(?P<section>\d+\s*[a-z]?)\s*§\s+"
+            r"(?P<subsection>\d+)\s+mom\s+"
+            r"(?P<item>\d+\s*[a-z]?)\s+kohta\b",
+            flags=re.I,
+        )
+
+        def _payload_has_item(node: IRNode, item_label: str) -> bool:
+            wanted = _norm_num_token(item_label)
+            stack = [node]
+            while stack:
+                current = stack.pop()
+                if current.kind is IRNodeKind.PARAGRAPH and _norm_num_token(current.label or "") == wanted:
+                    return True
+                stack.extend(reversed(current.children))
+            return False
+
+        def _snapshot_matches_failed(lo: _LegalOperation, failed: FailedOp, subsection: str, item: str) -> bool:
+            if not lo.op_id.startswith("snapshot_subsection_"):
+                return False
+            if lo.action is not StructuralAction.REPLACE:
+                return False
+            if lo.payload is None or lo.source is None:
+                return False
+            if lo.source.statute_id != failed.amendment_id:
+                return False
+            if not lo.target.path or lo.target.path[-1][0] != "subsection":
+                return False
+            labels = {kind: label for kind, label in lo.target.path if label}
+            if _norm_num_token(labels.get("section", "")) != _norm_num_token(failed.target_section or ""):
+                return False
+            if _norm_num_token(labels.get("subsection", "")) != _norm_num_token(subsection):
+                return False
+            if failed.target_chapter and labels.get("chapter") != failed.target_chapter:
+                return False
+            if failed.target_part and labels.get("part") != failed.target_part:
+                return False
+            return _payload_has_item(lo.payload, item)
+
+        kept: list[FailedOp] = []
+        governed: list[_ParentSnapshotGovernedFailure] = []
+        for failed in _compat_failed_ops:
+            match = item_desc_re.match(failed.description)
+            if match is None:
+                kept.append(failed)
+                continue
+            if _norm_num_token(match.group("section")) != _norm_num_token(failed.target_section or ""):
+                kept.append(failed)
+                continue
+            subsection = match.group("subsection")
+            item = match.group("item")
+            snapshot = next(
+                (lo for lo in lo_ops_out if _snapshot_matches_failed(lo, failed, subsection, item)),
+                None,
+            )
+            if snapshot is None:
+                kept.append(failed)
+                continue
+            governed.append(
+                _ParentSnapshotGovernedFailure(
+                    failed=failed,
+                    snapshot=snapshot,
+                    subsection=subsection,
+                    item=item,
+                )
+            )
+
+        if not governed:
+            return
+        _compat_failed_ops[:] = kept
+        for governed_failure in governed:
+            failed = governed_failure.failed
+            snapshot = governed_failure.snapshot
+            subsection = governed_failure.subsection
+            item = governed_failure.item
+            _record_process_finding(
+                kind="APPLY.FAILED_OPERATION_GOVERNED_BY_PARENT_SNAPSHOT",
+                message=(
+                    "Descendant item apply failure is governed by a same-source "
+                    "subsection snapshot whose payload contains the item."
+                ),
+                source_statute=amendment_id,
+                detail={
+                    "failed_description": failed.description,
+                    "target_unit_kind": failed.target_unit_kind,
+                    "target_part": failed.target_part,
+                    "target_chapter": failed.target_chapter,
+                    "target_section": failed.target_section,
+                    "target_subsection": subsection,
+                    "target_item": item,
+                    "failed_reason_code": failed.reason_code,
+                    "governance_basis": "same_source_subsection_snapshot_payload_contains_item",
+                    "snapshot_op_id": snapshot.op_id,
+                    "snapshot_target": str(snapshot.target),
+                    "snapshot_source_statute": snapshot.source.statute_id if snapshot.source else "",
+                },
+                role="observation",
+                blocking=False,
+            )
+
     def _govern_repealed_section_insert_occupancy_by_timeline_snapshots() -> None:
         """Move stale insert-occupancy notes behind repealed-section snapshots.
 
@@ -7756,6 +7880,7 @@ def process_muutoslaki(
         _govern_failed_ops_by_recodification_source_chain_gap()
         _govern_failed_ops_by_same_wave_migration(_final_state)
         _govern_failed_ops_by_timeline_snapshots()
+        _govern_item_failures_by_parent_subsection_snapshots()
         _govern_repealed_section_insert_occupancy_by_timeline_snapshots()
         return _build_result(_final_state)
 

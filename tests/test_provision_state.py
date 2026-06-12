@@ -2154,6 +2154,51 @@ def test_specimen_2014_938_section_51_failed_apply_is_governed_by_snapshot() -> 
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_1992_1535_item_insert_failures_are_governed_by_parent_snapshot() -> None:
+    from lawvm.finland.grafter import FailedOp, replay_xml
+
+    failed_ops: list[FailedOp] = []
+    master = replay_xml(
+        "1992/1535",
+        mode="official_consolidation",
+        quiet=True,
+        failed_ops_out=failed_ops,
+    )
+
+    assert not [
+        failed
+        for failed in failed_ops
+        if failed.amendment_id in {"1996/431", "2004/1288"}
+        and failed.target_section == "76"
+        and "76 § 1 mom" in failed.description
+    ]
+
+    governed = [
+        finding
+        for finding in master.findings
+        if finding.kind == "APPLY.FAILED_OPERATION_GOVERNED_BY_PARENT_SNAPSHOT"
+        and finding.detail.get("target_section") == "76"
+        and finding.detail.get("target_subsection") == "1"
+    ]
+    descriptions = {finding.detail.get("failed_description") for finding in governed}
+
+    assert {
+        "INSERT 76 § 1 mom 4a kohta",
+        "INSERT 76 § 1 mom 4b kohta",
+        "INSERT 76 § 1 mom 3a kohta",
+    } <= descriptions
+    assert all(
+        finding.detail.get("governance_basis")
+        == "same_source_subsection_snapshot_payload_contains_item"
+        for finding in governed
+    )
+    assert all(
+        finding.detail.get("snapshot_op_id") == "snapshot_subsection_1_from_section_76"
+        for finding in governed
+    )
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 def test_specimen_1997_1412_section_11_drops_expired_temporary_render_tails() -> None:
     payload = resolve_provision_state(
         statute_id="1997/1412",
