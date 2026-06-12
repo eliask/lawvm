@@ -112,7 +112,6 @@ from lawvm.finland.elaborated_group import (
 )
 from lawvm.finland.replay_findings import (
     _apply_mutation_boundary_violation_finding,
-    _apply_mutation_fallback_event_finding,
     _apply_mutation_invariant_report_finding,
     _base_observation_to_finding,
     _emit_structural_dedup_warning,
@@ -640,6 +639,7 @@ from lawvm.finland.amendment_chapter_precreate import (
     _pre_create_pseudo_marker_chapters,
 )
 from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
+from lawvm.finland.process_result_builder import ProcessResultBuilder
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
 
 
@@ -4755,8 +4755,6 @@ def process_muutoslaki(
     etc.) are still populated for backward compatibility, but callers should
     prefer the PhaseResult signals.
     """
-    from lawvm.core.phase_result import PhaseResult as _PR
-
     # Accumulates executable amendment temporal authority from compile/apply phases.
     _amendment_temporal_events: list[TemporalEvent] = []
     _process_findings: list[Finding] = []
@@ -4823,165 +4821,36 @@ def process_muutoslaki(
             blocking=(stage == "pre_routing"),
         )
 
-    def _project_compat_sinks() -> None:
-        """Project local compatibility capture to caller sinks at the boundary."""
-        if failed_ops_out is not None:
-            failed_ops_out.extend(_compat_failed_ops)
-        if source_pathologies_out is not None:
-            source_pathologies_out.extend(_compat_source_pathologies)
-        if elaboration_observations_out is not None:
-            elaboration_observations_out.extend(_compat_elaboration_observations)
-        if sparse_slot_bindings_out is not None:
-            sparse_slot_bindings_out.extend(_compat_sparse_slot_bindings)
-        if sparse_leftovers_out is not None:
-            sparse_leftovers_out.extend(_compat_sparse_leftovers)
-        if commencement_expiry_overrides_out is not None:
-            commencement_expiry_overrides_out.extend(_commencement_expiry_override_notes)
-
-    def _build_result(output_state: "ReplayState") -> "_PR[ReplayState]":
-        """Build PhaseResult from local phase-owned signals, then project compat sinks."""
-        amendment_temporal_events = list(_amendment_temporal_events)
-        merged_findings: list[Finding] = list(_process_findings)
-        if _compat_source_pathologies:
-            merged_findings.extend(
-                Finding(
-                    kind="ELAB.SOURCE_PATHOLOGY",
-                    role="observation",
-                    stage="process_muutoslaki",
-                    detail=p.as_detail(),
-                    source_statute=p.source_statute or amendment_id,
-                    blocking=False,
-                )
-                for p in _compat_source_pathologies
-            )
-        if _compat_elaboration_observations:
-            merged_findings.extend(
-                Finding(
-                    kind=str(o.get("kind", "")),
-                    role=(
-                        _spec.role
-                        if (_spec := get_finding_spec(str(o.get("kind", "")).strip())) is not None
-                        and _spec.role != "barrier"
-                        else "observation"
-                    ),
-                    stage="process_muutoslaki",
-                    detail=dict(o),
-                    source_statute=str(o.get("source_statute", amendment_id)),
-                    blocking=(
-                        _spec.role != "observation"
-                        and _spec.default_enforcement in ("strict_fail", "hard_fail")
-                        if (_spec := get_finding_spec(str(o.get("kind", "")).strip())) is not None
-                        else False
-                    ),
-                )
-                for o in _compat_elaboration_observations
-                if str(o.get("kind", "")).strip()
-            )
-        if _vts_skipped_targets:
-            merged_findings.extend(
-                Finding(
-                    kind=record.rule_id,
-                    role="observation",
-                    stage=record.phase,
-                    detail=record.as_detail(),
-                    source_statute=record.source_statute or amendment_id,
-                    blocking=record.blocking,
-                )
-                for record in _vts_skipped_targets
-            )
-        if _compat_failed_ops:
-            merged_findings.extend(
-                Finding(
-                    kind="APPLY.FAILED_OPERATION",
-                    role="obligation",
-                    stage="process_muutoslaki",
-                    detail={**f.as_detail(), "barrier_code": "APPLY.FAILED_OPERATION"},
-                    blocking=True,
-                    source_statute="",
-                )
-                for f in _compat_failed_ops
-            )
-        # Only check current amendment's events — not the entire accumulated list.
-        # The full list is checked at the outer replay_xml level (line ~6788).
-        _mutation_start = getattr(_build_result, "_mutation_cursor", 0)
-        _current_events = (mutation_events_out or [])[_mutation_start:]
-        cast(Any, _build_result)._mutation_cursor = len(mutation_events_out or [])
-        mutation_invariant_reports = build_apply_mutation_invariant_reports(_current_events)
-        if mutation_invariant_reports_out is not None:
-            mutation_invariant_reports_out.extend(mutation_invariant_reports)
-        seen_apply_mutation_findings: set[tuple[str, str, str]] = set()
-        for report in mutation_invariant_reports:
-            for accounting_result in report.results:
-                finding = _apply_mutation_invariant_report_finding(
-                    report=report,
-                    result=accounting_result,
-                    source_statute=amendment_id,
-                )
-                if finding is None:
-                    continue
-                dedupe_key = (finding.kind, report.op_id, report.helper)
-                if dedupe_key in seen_apply_mutation_findings:
-                    continue
-                merged_findings.append(finding)
-                seen_apply_mutation_findings.add(dedupe_key)
-        seen_apply_fallback_findings: set[tuple[str, str, str, str]] = set()
-        for event in mutation_events_out or []:
-            for fallback_kind in (
-                "APPLY.LEGACY_DISPATCH_FALLBACK",
-                "APPLY.RELABEL_SKIPPED",
-                "APPLY.SCOPE_CONFIDENCE_GLOBAL_FALLBACK",
-            ):
-                finding = _apply_mutation_fallback_event_finding(
-                    event=event,
-                    fallback_kind=fallback_kind,
-                )
-                if finding is None:
-                    continue
-                reason_code = str(finding.detail.get("reason_code") or finding.detail.get("reason_tag") or "")
-                dedupe_key = (finding.kind, event.source_statute, event.op_id, reason_code)
-                if dedupe_key in seen_apply_fallback_findings:
-                    continue
-                merged_findings.append(finding)
-                seen_apply_fallback_findings.add(dedupe_key)
-        boundary_violations = (
-            check_apply_mutation_invariant_reports(mutation_invariant_reports)
-            if mutation_invariant_reports
-            else check_apply_mutation_accounting(mutation_events_out or [])
-        )
-        if boundary_violations and not mutation_invariant_reports:
-            merged_findings.extend(
-                _apply_mutation_boundary_violation_finding(
-                    violation=violation,
-                    source_statute=amendment_id,
-                )
-                for violation in boundary_violations
-            )
-        deduped_findings: list[Finding] = []
-        seen_finding_keys: set[tuple[str, str, str, str, bool]] = set()
-        for finding in merged_findings:
-            key = (
-                str(finding.kind or ""),
-                str(finding.role or ""),
-                str(finding.source_statute or ""),
-                repr(finding.detail),
-                bool(finding.blocking),
-            )
-            if key in seen_finding_keys:
-                continue
-            seen_finding_keys.add(key)
-            deduped_findings.append(finding)
-        _project_compat_sinks()
-        return _PR(
-            output=output_state,
-            findings=tuple(deduped_findings),
-            temporal_events=tuple(amendment_temporal_events),
-            migration_events=tuple(_migration_ledger.events[_migration_ledger_initial_len:]),
-        )
-
     if corpus is None:
         corpus = _get_corpus_store()
     _migration_ledger = MigrationLedger(prior_migration_events or ())
     _migration_ledger_initial_len = len(_migration_ledger)
+    _result_builder = ProcessResultBuilder(
+        amendment_id=amendment_id,
+        process_findings=_process_findings,
+        amendment_temporal_events=_amendment_temporal_events,
+        failed_ops=_compat_failed_ops,
+        source_pathologies=_compat_source_pathologies,
+        elaboration_observations=_compat_elaboration_observations,
+        sparse_slot_bindings=_compat_sparse_slot_bindings,
+        sparse_leftovers=_compat_sparse_leftovers,
+        commencement_expiry_override_notes=_commencement_expiry_override_notes,
+        vts_skipped_targets=_vts_skipped_targets,
+        migration_ledger=_migration_ledger,
+        migration_ledger_initial_len=_migration_ledger_initial_len,
+        failed_ops_out=failed_ops_out,
+        source_pathologies_out=source_pathologies_out,
+        elaboration_observations_out=elaboration_observations_out,
+        sparse_slot_bindings_out=sparse_slot_bindings_out,
+        sparse_leftovers_out=sparse_leftovers_out,
+        commencement_expiry_overrides_out=commencement_expiry_overrides_out,
+        mutation_events_out=mutation_events_out,
+        mutation_invariant_reports_out=mutation_invariant_reports_out,
+    )
+
+    def _build_result(output_state: "ReplayState"):
+        return _result_builder.build(output_state)
+
     try:
         xml_bytes = corpus.read_source(amendment_id)
         if xml_bytes is None:
