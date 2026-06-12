@@ -12631,7 +12631,7 @@ def test_inspect_amendment_2012_1020_2024_776_does_not_duplicate_section_1_new_s
     group1 = next(group for group in bundle["groups"] if group["target_norm"] == "1")
     group7 = next(group for group in bundle["groups"] if group["target_norm"] == "7")
 
-    assert group1["ops_final"] == ["INSERT 1 luku 1 § 5 mom", "INSERT 1 luku 1 § 6 mom"]
+    assert group1["ops_final"] == ["INSERT 1 luku 1 § 5 mom"]
     assert group7["ops_final"] == [
         "REPLACE 2 luku 7 § 1 mom 4 kohta",
         "INSERT 2 luku 7 § 1 mom 5 kohta",

@@ -1232,6 +1232,155 @@ def _emit_section_snapshot(
             children=tuple(new_children),
         )
 
+    def _relabel_subsection_payload(subsection: IRNode, label: str) -> IRNode:
+        if subsection.label == label:
+            return subsection
+        return IRNode(
+            kind=subsection.kind,
+            label=label,
+            text=subsection.text,
+            attrs=dict(subsection.attrs),
+            children=tuple(subsection.children),
+        )
+
+    def _explicit_subsection_group_snapshot_payload(
+        section_path: Path,
+        section_payload: IRNode,
+    ) -> IRNode | None:
+        """Materialize explicit subsection ops over the prior section snapshot.
+
+        Sparse Finlex amendment bodies can serialize a section as
+        ``subsection / omission / subsection...`` while the johtolause supplies
+        the true target labels.  If the mutable replay fold kept the dense body
+        labels, timeline export must prefer the elaborated source-owned
+        subsection payloads over that lossy section observation.
+        """
+        if section_payload.kind is not IRNodeKind.SECTION:
+            return None
+
+        subsection_payloads: dict[str, IRNode] = {}
+        whole_subsection_targets: set[str] = set()
+        has_insert = False
+        for rop in group_rops:
+            if rop.effective_target_special in {"otsikko", "otsikko_edella"}:
+                continue
+            if not (rop.is_insert_action or rop.is_replace_action):
+                return None
+            targets_subsection_payload = rop.targets_subsection_only() or (
+                rop.resolved_target_subsection_label is not None
+                and rop.resolved_target_item_label is not None
+            )
+            if not targets_subsection_payload:
+                return None
+            target_label = str(rop.resolved_target_subsection_label or "").strip()
+            amend_sub = rop.resolved_amend_sub_ir()
+            if not target_label or amend_sub is None or amend_sub.kind is not IRNodeKind.SUBSECTION:
+                return None
+            target_norm = _norm_num_token(target_label)
+            if not target_norm:
+                return None
+            relabelled = _relabel_subsection_payload(amend_sub, target_norm)
+            existing = subsection_payloads.get(target_norm)
+            if existing is not None and irnode_to_text(existing) != irnode_to_text(relabelled):
+                return None
+            subsection_payloads[target_norm] = relabelled
+            item_label = str(rop.resolved_target_item_label or "").strip()
+            if not item_label:
+                whole_subsection_targets.add(target_norm)
+            has_insert = has_insert or rop.is_insert_action
+
+        if not has_insert or len(subsection_payloads) < 2:
+            has_item_payload = any(rop.resolved_target_item_label is not None for rop in group_rops)
+            if not has_item_payload or not subsection_payloads:
+                return None
+
+        current_by_label = {
+            _norm_num_token(child.label): child
+            for child in section_payload.children
+            if child.kind is IRNodeKind.SUBSECTION and child.label
+        }
+        if all(
+            label in current_by_label and irnode_to_text(current_by_label[label]) == irnode_to_text(subsection_payload)
+            for label, subsection_payload in subsection_payloads.items()
+        ):
+            return None
+
+        latest = _latest_section_snapshot_payload(
+            section_path=section_path,
+            replay_history_ops=lo_ops_out,
+        )
+        if latest is not None and latest.payload is not None and latest.payload.kind is IRNodeKind.SECTION:
+            base_section = latest.payload
+        else:
+            base_section = _section_node_from_base_ir(base_ir, section_path)
+        if base_section is None or base_section.kind is not IRNodeKind.SECTION:
+            return None
+
+        current_children = list(section_payload.children)
+        first_current_subsection = next(
+            (idx for idx, child in enumerate(current_children) if child.kind is IRNodeKind.SUBSECTION),
+            len(current_children),
+        )
+        if any(child.kind is not IRNodeKind.SUBSECTION for child in current_children[first_current_subsection:]):
+            return None
+
+        base_by_label = {
+            _norm_num_token(child.label): child
+            for child in base_section.children
+            if child.kind is IRNodeKind.SUBSECTION and child.label
+        }
+        final_payloads: dict[str, IRNode] = {}
+        for label, subsection_payload in subsection_payloads.items():
+            if label in whole_subsection_targets:
+                final_payloads[label] = subsection_payload
+                continue
+            base_subsection = base_by_label.get(label)
+            if base_subsection is None:
+                final_payloads[label] = subsection_payload
+                continue
+            payload_items = {
+                _norm_num_token(child.label): child
+                for child in subsection_payload.children
+                if child.kind is IRNodeKind.PARAGRAPH and child.label
+            }
+            if not payload_items:
+                final_payloads[label] = subsection_payload
+                continue
+            first_base_item = next(
+                (idx for idx, child in enumerate(base_subsection.children) if child.kind is IRNodeKind.PARAGRAPH),
+                len(base_subsection.children),
+            )
+            if any(child.kind is not IRNodeKind.PARAGRAPH for child in base_subsection.children[first_base_item:]):
+                return None
+            base_items = {
+                _norm_num_token(child.label): child
+                for child in base_subsection.children
+                if child.kind is IRNodeKind.PARAGRAPH and child.label
+            }
+            merged_item_labels = sorted(set(base_items) | set(payload_items), key=default_label_sort_key)
+            final_payloads[label] = IRNode(
+                kind=base_subsection.kind,
+                label=base_subsection.label,
+                text=base_subsection.text,
+                attrs=dict(base_subsection.attrs),
+                children=tuple(
+                    list(base_subsection.children[:first_base_item])
+                    + [payload_items.get(item_label) or base_items[item_label] for item_label in merged_item_labels]
+                ),
+            )
+        merged_labels = sorted(set(base_by_label) | set(subsection_payloads), key=default_label_sort_key)
+        merged_subsections = [
+            final_payloads.get(label) or base_by_label[label]
+            for label in merged_labels
+        ]
+        return IRNode(
+            kind=section_payload.kind,
+            label=section_payload.label,
+            text=section_payload.text,
+            attrs=dict(section_payload.attrs),
+            children=tuple(current_children[:first_current_subsection] + merged_subsections),
+        )
+
     def _whole_target_renumber_without_payload() -> bool:
         if payload is not None:
             return False
@@ -1753,6 +1902,9 @@ def _emit_section_snapshot(
         sanitized_payload = _sanitize_section_subsection_payloads(tuple(resolved_path), payload)
         if sanitized_payload is not None:
             payload = sanitized_payload
+        explicit_group_payload = _explicit_subsection_group_snapshot_payload(tuple(resolved_path), payload)
+        if explicit_group_payload is not None:
+            payload = explicit_group_payload
     if action is StructuralAction.REPLACE and payload is not None and base_path is None:
         # A snapshot with real payload but no base path is a newly introduced
         # structural node. Emit it as INSERT so timeline materialization can

@@ -434,7 +434,7 @@ class SubsectionSlotAssignmentResult:
         mapped = self.for_stable_op_id(op_id)
         if mapped is not None:
             return mapped
-        if op is not None and not (op.op_id or "").strip():
+        if op is not None:
             mapped = self.for_op(op)
             if mapped is not None:
                 return mapped
