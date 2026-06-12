@@ -1702,6 +1702,27 @@ def test_finland_strict_report_candidate_set_authorization_rows_have_scope_sensi
             ),
         }
     )
+    assert report["summary"]["strict_report_candidate_set_certificate_count"] == 2
+    assert report["summary"]["strict_report_candidate_set_status_counts"] == {
+        "complete": 2,
+    }
+    assert report["summary"]["strict_report_candidate_set_kind_counts"] == {
+        "fi_strict_report_operation_cue_coverage": 2,
+    }
+    candidate_set_rows = [
+        row
+        for row in report["rows"]
+        if row["surface"] == "strict_report_candidate_set_certificate"
+    ]
+    assert [row["row_id"] for row in candidate_set_rows] == [
+        "fi:2001/1234:operation-cue-coverage:a",
+        "fi:2001/1234:operation-cue-coverage:b",
+    ]
+    assert {row["status"] for row in candidate_set_rows} == {"complete"}
+    assert {row["proof_ref"] for row in candidate_set_rows} == {
+        "fi_strict_report_operation_cue_coverage_complete"
+    }
+    assert all("candidate_set_certificate_as_replay_authorization" in row["forbidden_shortcuts"] for row in candidate_set_rows)
     proof_surface = proof_surface_from_evidence_report(report).to_dict()
     projected_authorization_ids = [
         row["row_id"]

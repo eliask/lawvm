@@ -35,6 +35,7 @@ from lawvm.core.candidate_set_certificate import (
     CANDIDATE_SET_PARTIAL,
     CANDIDATE_SET_UNAVAILABLE,
     CandidateSetCertificate,
+    candidate_set_evidence_report,
 )
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
@@ -1116,6 +1117,17 @@ def finland_strict_report_evidence_surface(
         statute_id=str(payload.get("statute_id") or ""),
     )
     strict_report_candidate_sets = _mapping_sequence(payload.get("strict_report_candidate_set_certificates"))
+    strict_report_candidate_set_report = candidate_set_evidence_report(
+        strict_report_candidate_sets,
+        jurisdiction="fi",
+        report_kind="finland_strict_report_candidate_sets",
+    ).to_dict()
+    strict_report_candidate_set_report_rows = _mapping_sequence(
+        strict_report_candidate_set_report.get("rows")
+    )
+    strict_report_candidate_set_report_summary = dict(
+        strict_report_candidate_set_report.get("summary") or {}
+    )
     strict_report_candidate_set_authorizations = _mapping_sequence(
         payload.get("strict_report_candidate_set_execution_authorizations")
     )
@@ -1163,7 +1175,10 @@ def finland_strict_report_evidence_surface(
             *({"surface": "source_completeness_issue", **dict(row)} for row in source_completeness_issues),
             *({"surface": "temporal_resolution_evidence", **dict(row)} for row in temporal_resolution_rows),
             *({"surface": "recovery_execution_authorization", **dict(row)} for row in recovery_authorization_rows),
-            *({"surface": "strict_report_candidate_set_certificate", **dict(row)} for row in strict_report_candidate_sets),
+            *(
+                {**dict(row), "surface": "strict_report_candidate_set_certificate"}
+                for row in strict_report_candidate_set_report_rows
+            ),
             *(
                 {"surface": "strict_report_candidate_set_execution_authorization", **dict(row)}
                 for row in strict_report_candidate_set_authorizations
@@ -1236,13 +1251,19 @@ def finland_strict_report_evidence_surface(
         "temporal_resolution_evidence_count": len(temporal_resolution_rows),
         "recovery_execution_authorization_count": len(recovery_authorization_rows),
         "strict_report_candidate_set_certificate_count": len(strict_report_candidate_sets),
-        "strict_report_candidate_set_status_counts": _count_by_field(
-            strict_report_candidate_sets,
-            "completeness_status",
+        "strict_report_candidate_set_status_counts": dict(
+            strict_report_candidate_set_report_summary.get(
+                "candidate_set_status_counts"
+            )
+            or {}
         ),
-        "strict_report_candidate_set_kind_counts": _count_by_field(
-            strict_report_candidate_sets,
-            "candidate_set_kind",
+        "strict_report_candidate_set_kind_counts": dict(
+            strict_report_candidate_set_report_summary.get("candidate_set_kind_counts")
+            or {}
+        ),
+        "strict_report_candidate_set_blocker_family_counts": dict(
+            strict_report_candidate_set_report_summary.get("blocker_family_counts")
+            or {}
         ),
         "strict_report_candidate_set_execution_authorization_count": len(
             strict_report_candidate_set_authorizations
