@@ -156,6 +156,14 @@ return rejected operations with reason, source, and blocking/strictness status.
 
 ### 1.9 avoid getattr and stringly-typed operations etc without a good reason
 
+Semantic/control-plane tuples with more than two fields should normally be a
+named typed carrier, preferably `@dataclass(frozen=True, slots=True)`. Positional
+tuples are acceptable for small mathematical pairs, coordinates, or local
+iteration keys, but not for phase-boundary evidence, operation state,
+authorization/status rows, invariant details, mutation accounting, or any value
+where field order carries legal meaning. If a tuple needs a comment explaining
+slot positions, make it a dataclass.
+
 ### 1.10 avoid try-except too particularly in non-test code
 
 ### 1.11 Hot-path performance discipline

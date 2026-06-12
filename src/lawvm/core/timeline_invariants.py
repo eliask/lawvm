@@ -344,25 +344,18 @@ def check_replay_timeline_consistency(
                 ir_preview = ir_norm[:80]
                 violations.append(f"CONTENT_MISMATCH: {address} timeline={tl_preview!r}... vs ir={ir_preview!r}...")
 
-    for (
-        address,
-        ancestor_address,
-        descendant_version,
-        _ancestor_version,
-        timeline_text,
-        materialized_text,
-    ) in _same_source_descendant_shadow_violations(
+    for violation in _same_source_descendant_shadow_violations(
         ir_nodes=ir_nodes,
         active_versions=active_versions,
         pit_date=pit_date,
     ):
         violations.append(
             _same_source_descendant_shadow_message(
-                address=address,
-                ancestor_address=ancestor_address,
-                descendant_version=descendant_version,
-                timeline_text=timeline_text,
-                materialized_text=materialized_text,
+                address=violation.address,
+                ancestor_address=violation.ancestor_address,
+                descendant_version=violation.descendant_version,
+                timeline_text=violation.timeline_text,
+                materialized_text=violation.materialized_text,
                 pit_date=pit_date,
             )
         )
@@ -503,6 +496,16 @@ def _source_statute_id(version: ProvisionVersion) -> str:
     return version.source.statute_id if version.source is not None else ""
 
 
+@dataclass(frozen=True, slots=True)
+class _SameSourceDescendantShadowViolation:
+    address: LegalAddress
+    ancestor_address: LegalAddress
+    descendant_version: ProvisionVersion
+    ancestor_version: ProvisionVersion
+    timeline_text: str
+    materialized_text: str
+
+
 def _nearest_same_source_ancestor_version(
     address: LegalAddress,
     version: ProvisionVersion,
@@ -526,10 +529,8 @@ def _same_source_descendant_shadow_violations(
     ir_nodes: Mapping[LegalAddress, IRNode],
     active_versions: Mapping[LegalAddress, ProvisionVersion],
     pit_date: str,
-) -> list[tuple[LegalAddress, LegalAddress, ProvisionVersion, ProvisionVersion, str, str]]:
-    violations: list[
-        tuple[LegalAddress, LegalAddress, ProvisionVersion, ProvisionVersion, str, str]
-    ] = []
+) -> list[_SameSourceDescendantShadowViolation]:
+    violations: list[_SameSourceDescendantShadowViolation] = []
     for address, version in active_versions.items():
         if len(address.path) <= 1:
             continue
@@ -551,13 +552,13 @@ def _same_source_descendant_shadow_violations(
         if materialized_text == timeline_text:
             continue
         violations.append(
-            (
-                address,
-                ancestor_address,
-                version,
-                ancestor_version,
-                timeline_text,
-                materialized_text,
+            _SameSourceDescendantShadowViolation(
+                address=address,
+                ancestor_address=ancestor_address,
+                descendant_version=version,
+                ancestor_version=ancestor_version,
+                timeline_text=timeline_text,
+                materialized_text=materialized_text,
             )
         )
     return violations
@@ -794,14 +795,7 @@ def check_all_timeline_invariants_typed(
                 )
             )
 
-    for (
-        address,
-        ancestor_address,
-        descendant_version,
-        ancestor_version,
-        timeline_text,
-        materialized_text,
-    ) in _same_source_descendant_shadow_violations(
+    for violation in _same_source_descendant_shadow_violations(
         ir_nodes=ir_nodes,
         active_versions=active_versions,
         pit_date=pit_date,
@@ -809,24 +803,24 @@ def check_all_timeline_invariants_typed(
         typed_violations.append(
             _typed_violation_from_address(
                 kind="same_source_descendant_shadow",
-                address=address,
+                address=violation.address,
                 message=_same_source_descendant_shadow_message(
-                    address=address,
-                    ancestor_address=ancestor_address,
-                    descendant_version=descendant_version,
-                    timeline_text=timeline_text,
-                    materialized_text=materialized_text,
+                    address=violation.address,
+                    ancestor_address=violation.ancestor_address,
+                    descendant_version=violation.descendant_version,
+                    timeline_text=violation.timeline_text,
+                    materialized_text=violation.materialized_text,
                     pit_date=pit_date,
                 ),
                 detail={
-                    "ancestor_address": str(ancestor_address),
-                    "source_statute": _source_statute_id(descendant_version),
-                    "descendant_effective": descendant_version.effective,
-                    "descendant_enacted": descendant_version.enacted,
-                    "ancestor_effective": ancestor_version.effective,
-                    "ancestor_enacted": ancestor_version.enacted,
-                    "timeline_preview": timeline_text[:120],
-                    "materialized_preview": materialized_text[:120],
+                    "ancestor_address": str(violation.ancestor_address),
+                    "source_statute": _source_statute_id(violation.descendant_version),
+                    "descendant_effective": violation.descendant_version.effective,
+                    "descendant_enacted": violation.descendant_version.enacted,
+                    "ancestor_effective": violation.ancestor_version.effective,
+                    "ancestor_enacted": violation.ancestor_version.enacted,
+                    "timeline_preview": violation.timeline_text[:120],
+                    "materialized_preview": violation.materialized_text[:120],
                 },
             )
         )

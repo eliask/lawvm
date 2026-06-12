@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from lawvm.finland.payload_normalize import SubsectionSlotMap
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class _PendingSubsectionSnapshotPayload:
     target_norm: str
     payload: IRNode
