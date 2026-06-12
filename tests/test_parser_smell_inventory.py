@@ -205,7 +205,7 @@ def test_category_rows_are_stable_and_sorted_in_markdown_snapshot(tmp_path) -> N
     detail_rows_end = next(
         idx
         for idx, line in enumerate(lines[detail_rows_start:], start=detail_rows_start)
-        if line.startswith("## ")
+        if line.startswith("## ") or line.startswith("| Bounded Wildcard Coverage Status |")
     )
     category_rows = [
         line
@@ -246,3 +246,95 @@ def test_build_inventory_reports_bounded_gap_coverage_and_text_sentinel(tmp_path
     assert inventory["category_counts"]["bounded_wildcard_gap"] == 1
     assert inventory["category_counts"]["regex_coverage_surface"] == 2
     assert inventory["category_counts"]["text_selector_sentinel"] == 1
+    assert inventory["summary"]["bounded_wildcard_coverage_status_counts"] == {
+        "coverage_function_reference": 0,
+        "file_level_coverage_surface": 0,
+        "missing_coverage_surface": 0,
+        "nearby_coverage_surface": 1,
+    }
+
+
+def test_bounded_wildcard_sensor_reports_missing_coverage_surface(tmp_path) -> None:
+    path = tmp_path / "normalize.py"
+    path.write_text(
+        "\n".join(
+            [
+                "RX = re.compile(",
+                "    r'foo .{0,240}? bar'",
+                ")",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    inventory = build_inventory([path])
+
+    hit = inventory["by_file"][str(path)][0]
+    assert hit["category"] == "bounded_wildcard_gap"
+    assert hit["coverage_sensor"] == {
+        "status": "missing_coverage_surface",
+        "recognizer_name": "RX",
+        "nearest_coverage_line": None,
+        "nearest_coverage_distance": None,
+        "nearby_line_window": 80,
+    }
+    assert inventory["summary"]["bounded_wildcard_coverage_status_counts"][
+        "missing_coverage_surface"
+    ] == 1
+
+
+def test_bounded_wildcard_sensor_detects_coverage_function_reference(tmp_path) -> None:
+    path = tmp_path / "normalize.py"
+    path.write_text(
+        "\n".join(
+            [
+                "RX = re.compile(",
+                "    r'foo .{0,240}? bar'",
+                ")",
+                "",
+                "def _extract_with_coverage(text):",
+                "    coverage_rows = []",
+                "    for match in RX.finditer(text):",
+                "        coverage_rows.append(match)",
+                "    return coverage_rows",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    inventory = build_inventory([path])
+
+    bounded_hits = [
+        hit
+        for hit in inventory["by_file"][str(path)]
+        if hit["category"] == "bounded_wildcard_gap"
+    ]
+    assert len(bounded_hits) == 1
+    assert bounded_hits[0]["coverage_sensor"]["status"] == "coverage_function_reference"
+    assert bounded_hits[0]["coverage_sensor"]["recognizer_name"] == "RX"
+    assert inventory["summary"]["bounded_wildcard_coverage_status_counts"][
+        "coverage_function_reference"
+    ] == 1
+
+
+def test_bounded_wildcard_sensor_uses_coverage_lines_under_category_filter(tmp_path) -> None:
+    path = tmp_path / "nlp_parser.py"
+    path.write_text(
+        "\n".join(
+            [
+                "RX = re.compile(r'foo .{0,240}? bar')",
+                "coverage_status = 'unclassified_gap'",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    inventory = build_inventory([path], categories={"bounded_wildcard_gap"})
+
+    hit = inventory["by_file"][str(path)][0]
+    assert hit["category"] == "bounded_wildcard_gap"
+    assert hit["coverage_sensor"]["status"] == "nearby_coverage_surface"
+    assert inventory["category_counts"] == {"bounded_wildcard_gap": 1}

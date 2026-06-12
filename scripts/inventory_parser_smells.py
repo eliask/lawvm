@@ -59,6 +59,88 @@ SMELL_MARKERS = {
 }
 
 
+_BOUND_COVERAGE_NEARBY_LINES = 80
+_RE_COMPILED_RE_ASSIGNMENT = re.compile(r"^\s*([A-Z_][A-Z0-9_]*)\s*=\s*re\.compile\(")
+_RE_COVERAGE_FUNCTION = re.compile(r"^\s*def\s+\w*coverage\w*\(")
+_RE_REGEX_COVERAGE_SENSOR_FIELD = re.compile(
+    r"\b(regex_recognition_coverage|coverage_status|ignored_spans)\b"
+)
+
+
+def _recognizer_name_for_line(lines: list[str], line_no: int) -> str:
+    """Return the module-level compiled regex name owning a pattern line."""
+    start = max(0, line_no - 8)
+    for idx in range(line_no - 1, start - 1, -1):
+        match = _RE_COMPILED_RE_ASSIGNMENT.search(lines[idx])
+        if match:
+            return match.group(1)
+    return ""
+
+
+def _is_referenced_from_coverage_function(lines: list[str], recognizer_name: str) -> bool:
+    if not recognizer_name:
+        return False
+    for idx, line in enumerate(lines):
+        if recognizer_name not in line:
+            continue
+        window_start = max(0, idx - 40)
+        if any(_RE_COVERAGE_FUNCTION.search(prev_line) for prev_line in lines[window_start:idx + 1]):
+            return True
+    return False
+
+
+def _annotate_bounded_wildcard_coverage(
+    hits: list[dict[str, Any]],
+    lines: list[str],
+) -> None:
+    coverage_lines = sorted({
+        line_no
+        for line_no, line in enumerate(lines, start=1)
+        if _RE_REGEX_COVERAGE_SENSOR_FIELD.search(line)
+    } | {
+        int(hit["line"])
+        for hit in hits
+        if hit["category"] == "regex_coverage_surface"
+    })
+
+    for hit in hits:
+        if hit["category"] != "bounded_wildcard_gap":
+            continue
+        line_no = int(hit["line"])
+        nearest_line = min(
+            coverage_lines,
+            key=lambda coverage_line: abs(coverage_line - line_no),
+            default=None,
+        )
+        nearest_distance = (
+            None
+            if nearest_line is None
+            else abs(int(nearest_line) - line_no)
+        )
+        recognizer_name = _recognizer_name_for_line(lines, line_no)
+        referenced_from_coverage = _is_referenced_from_coverage_function(
+            lines,
+            recognizer_name,
+        )
+
+        if referenced_from_coverage:
+            coverage_status = "coverage_function_reference"
+        elif nearest_distance is not None and nearest_distance <= _BOUND_COVERAGE_NEARBY_LINES:
+            coverage_status = "nearby_coverage_surface"
+        elif nearest_line is not None:
+            coverage_status = "file_level_coverage_surface"
+        else:
+            coverage_status = "missing_coverage_surface"
+
+        hit["coverage_sensor"] = {
+            "status": coverage_status,
+            "recognizer_name": recognizer_name,
+            "nearest_coverage_line": nearest_line,
+            "nearest_coverage_distance": nearest_distance,
+            "nearby_line_window": _BOUND_COVERAGE_NEARBY_LINES,
+        }
+
+
 def _collect_hits(path: Path, markers: dict[str, tuple[str, str]]) -> list[dict[str, Any]]:
     text = path.read_text(encoding="utf-8").splitlines()
     hits: list[dict[str, Any]] = []
@@ -80,6 +162,7 @@ def _collect_hits(path: Path, markers: dict[str, tuple[str, str]]) -> list[dict[
                 )
 
     hits.sort(key=lambda hit: (hit["category"], hit["line"]))
+    _annotate_bounded_wildcard_coverage(hits, text)
     return hits
 
 
@@ -123,6 +206,20 @@ def build_inventory(
     for category in marker_map:
         category_totals.setdefault(category, 0)
 
+    bounded_wildcard_coverage_status_counts: Counter[str] = Counter(
+        str(hit.get("coverage_sensor", {}).get("status") or "not_applicable")
+        for hits in by_file.values()
+        for hit in hits
+        if hit["category"] == "bounded_wildcard_gap"
+    )
+    for status in (
+        "coverage_function_reference",
+        "file_level_coverage_surface",
+        "missing_coverage_surface",
+        "nearby_coverage_surface",
+    ):
+        bounded_wildcard_coverage_status_counts.setdefault(status, 0)
+
     generated_at = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     category_count = len(marker_map)
     return {
@@ -134,6 +231,9 @@ def build_inventory(
             "category_count": category_count,
             "filtered_category_count": len(marker_map),
             "hit_count": sum(file_totals.values()),
+            "bounded_wildcard_coverage_status_counts": dict(
+                sorted(bounded_wildcard_coverage_status_counts.items())
+            ),
         },
         "file_counts": dict(sorted(file_totals.items())),
         "category_counts": dict(sorted(category_totals.items())),
@@ -173,6 +273,18 @@ def _to_markdown(inventory: dict[str, Any]) -> str:
     for category, count in inventory["category_counts"].items():
         lines.append(f"| {category} | {count} |")
 
+    coverage_status_counts = summary.get("bounded_wildcard_coverage_status_counts") or {}
+    if coverage_status_counts:
+        lines.extend(
+            [
+                "",
+                "| Bounded Wildcard Coverage Status | Count |",
+                "| --- | ---: |",
+            ]
+        )
+        for status, count in sorted(coverage_status_counts.items()):
+            lines.append(f"| {status} | {count} |")
+
     for path, hits in inventory["by_file"].items():
         lines.extend(
             [
@@ -188,6 +300,16 @@ def _to_markdown(inventory: dict[str, Any]) -> str:
             continue
         for hit in hits:
             snippet = hit["snippet"].replace("|", "\\|")
+            coverage_sensor = hit.get("coverage_sensor")
+            if isinstance(coverage_sensor, dict):
+                status = str(coverage_sensor.get("status") or "")
+                recognizer = str(coverage_sensor.get("recognizer_name") or "")
+                if status:
+                    suffix = f" [coverage={status}"
+                    if recognizer:
+                        suffix += f", recognizer={recognizer}"
+                    suffix += "]"
+                    snippet = f"{snippet}{suffix}"
             lines.append(
                 f"| {hit['line']} | {hit['category']} | {hit['label']} | {snippet} |"
             )
