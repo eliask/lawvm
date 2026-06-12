@@ -557,6 +557,28 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
             f"{proof_gate_summary.get('recovery_authorization_blocked_count', 0)} blocked"
         )
         lines.append(
+            "  source path auth statuses: "
+            + _format_count_map(
+                proof_gate_summary.get(
+                    "source_pathology_authorization_status_counts"
+                )
+            )
+        )
+        lines.append(
+            "  failed op auth statuses  : "
+            + _format_count_map(
+                proof_gate_summary.get(
+                    "failed_operation_authorization_status_counts"
+                )
+            )
+        )
+        lines.append(
+            "  recovery auth statuses   : "
+            + _format_count_map(
+                proof_gate_summary.get("recovery_authorization_status_counts")
+            )
+        )
+        lines.append(
             "  required claims  : "
             + _format_count_map(proof_gate_summary.get("required_claim_kind_counts"))
         )

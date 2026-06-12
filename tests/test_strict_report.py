@@ -800,6 +800,9 @@ def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
     assert proof_gates["other_frontier_count"] == 0
     assert proof_gates["open_gate_signal_count"] == 19
     assert proof_gates["failed_operation_authorization_blocked_count"] == 1
+    assert proof_gates["failed_operation_authorization_status_counts"] == {
+        "failed_operation_not_replay_authority": 1,
+    }
     assert proof_gates["frontier_status_counts"] == {
         "failed_operation_frontier": 1,
         "partial_candidate_set_frontier": 4,
@@ -864,6 +867,9 @@ def test_format_report_includes_compact_proof_gate_summary() -> None:
     assert "source pathology auth: 0 blocked" in out
     assert "failed op auth    : 1 blocked" in out
     assert "recovery auth     : 0 blocked" in out
+    assert "source path auth statuses: {}" in out
+    assert "failed op auth statuses  : failed_operation_not_replay_authority=1" in out
+    assert "recovery auth statuses   : {}" in out
     assert "fi.v1.FAILED_OPERATION_RESOLUTION=1" in out
     assert "manual claims    : fi.v1.FAILED_OPERATION_RESOLUTION=1" in out
     assert "coverage proofs  : fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE=2" in out
