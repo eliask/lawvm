@@ -361,6 +361,27 @@ def test_print_detail_projects_source_pathology_to_claim_kind(capsys) -> None:
     assert "frontier=fi_item_target_structure_absent/target_resolution_frontier" in out
 
 
+def test_materialization_probe_marks_final_item_present() -> None:
+    paragraph = SimpleNamespace(kind=IRNodeKind.PARAGRAPH, label="1")
+    subsection = SimpleNamespace(kind=IRNodeKind.SUBSECTION, children=[paragraph])
+    master = SimpleNamespace(find_section=lambda section, chapter=None: SimpleNamespace(children=[subsection]))
+    failure = FailedOp(
+        amendment_id="2014/190",
+        description="REPLACE 1 luku 5 § 1 mom 1 kohta",
+        reason="item target subsection has no paragraph children",
+        reason_code="item_no_paragraphs",
+        target_section="5",
+        target_chapter="1",
+        target_unit_kind="section",
+        target_statute_id="1987/1250",
+    )
+
+    probe = failures._materialization_probe_for_failure(failure, cast(Any, master))
+
+    assert probe.status == "target_item_present"
+    assert probe.target_present is True
+
+
 def test_detail_json_emits_machine_readable_proof_lane(capsys) -> None:
     failure = FailedOp(
         amendment_id="1995/451",
@@ -398,6 +419,8 @@ def test_detail_json_emits_machine_readable_proof_lane(capsys) -> None:
     assert row["owner_phase"] == "replay_apply"
     assert row["frontier_family"] == "fi_item_target_structure_absent"
     assert row["frontier_status"] == "target_resolution_frontier"
+    assert row["materialized_target_status"] == "target_subsection_absent"
+    assert row["materialized_target_present"] is False
 
 
 def test_detail_mode_uses_cached_failures_without_full_replay(monkeypatch) -> None:

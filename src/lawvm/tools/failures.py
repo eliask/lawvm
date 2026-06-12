@@ -371,10 +371,18 @@ class FailureFrontierProjection:
 
 
 @dataclass(frozen=True, slots=True)
+class FailureMaterializationProbe:
+    status: str
+    target_present: bool
+    detail: str
+
+
+@dataclass(frozen=True, slots=True)
 class FailureDetailRow:
     failure: FailedOp
     category: str
     frontier_projection: FailureFrontierProjection
+    materialization_probe: FailureMaterializationProbe
 
 
 def _failure_target_label(f: FailedOp) -> str:
@@ -536,6 +544,62 @@ def _frontier_projection_for_failure_category(category: str) -> FailureFrontierP
     )
 
 
+def _materialization_probe_for_failure(
+    failure: FailedOp,
+    master: Optional[XMLStatute],
+) -> FailureMaterializationProbe:
+    if master is None:
+        return FailureMaterializationProbe(
+            status="unavailable_no_detail_master",
+            target_present=False,
+            detail="no replayed target statute master was available for final-tree probing",
+        )
+
+    target_paragraph, target_item = _parse_desc_fields(failure.description)
+    sec_node = master.find_section(failure.target_section, failure.target_chapter)
+    if sec_node is None:
+        return FailureMaterializationProbe(
+            status="target_section_absent",
+            target_present=False,
+            detail="target section is absent from the final materialized tree",
+        )
+    if target_paragraph is None:
+        return FailureMaterializationProbe(
+            status="target_section_present",
+            target_present=True,
+            detail="target section is present in the final materialized tree",
+        )
+
+    subsecs = [c for c in sec_node.children if _node_kind_value(c) == "subsection"]
+    if target_paragraph > len(subsecs):
+        return FailureMaterializationProbe(
+            status="target_subsection_absent",
+            target_present=False,
+            detail=f"target subsection {target_paragraph} absent from {len(subsecs)} final subsections",
+        )
+    target_sub = subsecs[target_paragraph - 1]
+    if target_item is None:
+        return FailureMaterializationProbe(
+            status="target_subsection_present",
+            target_present=True,
+            detail=f"target subsection {target_paragraph} is present in the final materialized tree",
+        )
+
+    paras = [c for c in target_sub.children if _node_kind_value(c) == "paragraph"]
+    item_norm = normalized_label_key(target_item)
+    if any(normalized_label_key(p.label or "") == item_norm for p in paras):
+        return FailureMaterializationProbe(
+            status="target_item_present",
+            target_present=True,
+            detail=f"target item {target_item} is present in the final materialized tree",
+        )
+    return FailureMaterializationProbe(
+        status="target_item_absent",
+        target_present=False,
+        detail=f"target item {target_item} absent from final labels {[p.label for p in paras]}",
+    )
+
+
 def _find_master_for_failure(
     failure: FailedOp,
     masters_by_sid: Dict[str, XMLStatute],
@@ -587,6 +651,7 @@ def _detail_rows(
                 failure=fo,
                 category=cat,
                 frontier_projection=projection,
+                materialization_probe=_materialization_probe_for_failure(fo, master),
             )
         )
     return rows
@@ -610,6 +675,9 @@ def _detail_row_record(row: FailureDetailRow) -> Dict[str, Any]:
         "owner_phase": projection.owner_phase,
         "frontier_family": projection.frontier_family,
         "frontier_status": projection.frontier_status,
+        "materialized_target_status": row.materialization_probe.status,
+        "materialized_target_present": row.materialization_probe.target_present,
+        "materialized_target_detail": row.materialization_probe.detail,
     }
 
 
@@ -653,11 +721,16 @@ def _print_detail_rows(rows: List[FailureDetailRow]) -> None:
             if projection.frontier_family or projection.frontier_status
             else ""
         )
+        materialized = (
+            f" materialized={row.materialization_probe.status}"
+            if row.materialization_probe.status
+            else ""
+        )
         print(
             f"  [{fo.amendment_id}]{target_statute} {fo.description}"
             f"  sec={fo.target_section} ch={fo.target_chapter}"
             f"{reason} \u2192 {row.category}"
-            f"{claim} owner_phase={projection.owner_phase}{frontier}"
+            f"{claim} owner_phase={projection.owner_phase}{frontier}{materialized}"
         )
 
 
