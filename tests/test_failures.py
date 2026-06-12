@@ -33,6 +33,42 @@ def test_categorize_failure_prefers_typed_source_pathology_over_legacy_heuristic
     assert got == "source_pathology:ITEM_TARGET_STRUCTURE_ABSENT"
 
 
+def test_categorize_failure_prefers_failed_op_section_not_found_over_final_tree() -> None:
+    master = SimpleNamespace(
+        find_section=lambda section, chapter=None: SimpleNamespace(
+            children=[SimpleNamespace(kind="subsection")]
+        )
+    )
+    failure = FailedOp(
+        amendment_id="2024/2",
+        description="REPLACE 3 § 2 mom",
+        reason="master §3 not found",
+        reason_code="section_not_found",
+        target_section="3",
+        target_unit_kind="section",
+    )
+
+    got = failures._categorize_failure(failure, cast(Any, master))
+
+    assert got == "failed_op:section_not_found"
+
+
+def test_categorize_failure_names_absent_detail_master_section() -> None:
+    master = SimpleNamespace(find_section=lambda section, chapter=None: None)
+    failure = FailedOp(
+        amendment_id="2024/2",
+        description="REPLACE 3 § 1 mom 2 kohta",
+        reason="no deterministic path",
+        reason_code="no_deterministic_path",
+        target_section="3",
+        target_unit_kind="section",
+    )
+
+    got = failures._categorize_failure(failure, cast(Any, master))
+
+    assert got == "target_section_absent_in_detail_master"
+
+
 def test_item_level_source_pathologies_stay_section_scoped() -> None:
     sparse = build_sparse_item_body_missing_pathology(
         source_statute="1995/451",
@@ -208,6 +244,24 @@ def test_print_summary_includes_target_statute_id(capsys) -> None:
     assert "=== Target statutes" in out
     assert "2024/1" in out
     assert "[2024/2] target=2024/1 REPLACE 3 §" in out
+
+
+def test_print_detail_includes_target_statute_and_reason(capsys) -> None:
+    failure = FailedOp(
+        amendment_id="2024/2",
+        description="REPLACE 3 §",
+        reason="master §3 not found",
+        reason_code="section_not_found",
+        target_section="3",
+        target_unit_kind="section",
+        target_statute_id="2024/1",
+    )
+
+    failures._print_detail([failure], masters_by_sid={}, pathologies_by_sid={}, pattern=None, top=5)
+
+    out = capsys.readouterr().out
+    assert "[2024/2] target=2024/1 REPLACE 3 §" in out
+    assert "reason=section_not_found" in out
 
 
 def test_detail_mode_uses_cached_failures_without_full_replay(monkeypatch) -> None:

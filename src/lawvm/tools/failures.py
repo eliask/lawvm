@@ -388,6 +388,22 @@ def _parse_desc_fields(desc: str) -> Tuple[Optional[int], Optional[str]]:
     return paragraph, item
 
 
+def _failure_reason_category(f: FailedOp) -> Optional[str]:
+    """Return a replay-time category carried by the FailedOp itself.
+
+    Detail mode also inspects the final replay tree, but final-tree shape is
+    not always the same as the live state at the failed operation.  Prefer the
+    explicit failed-op reason when it names a replay-time boundary.
+    """
+    reason_code = (f.reason_code or "").strip().lower()
+    if reason_code:
+        return f"failed_op:{reason_code}"
+    reason = f.reason.strip().lower()
+    if reason.startswith("master §") and reason.endswith("not found"):
+        return "failed_op:section_not_found"
+    return None
+
+
 def _categorize_failure(
     f: FailedOp,
     master: XMLStatute,
@@ -415,18 +431,22 @@ def _categorize_failure(
     if desc.startswith("RENUMBER"):
         return "renumber"
 
+    reason_category = _failure_reason_category(f)
+    if reason_category and reason_category != "failed_op:no_deterministic_path":
+        return reason_category
+
     target_paragraph, target_item = _parse_desc_fields(desc)
 
     # Find the target section in master.ir
     sec_node = master.find_section(f.target_section, f.target_chapter)
+    if sec_node is None:
+        return "target_section_absent_in_detail_master"
 
     if target_item is not None:
         # This is a kohta op
-        if sec_node is None:
-            return "other"
         subsecs = [c for c in sec_node.children if c.kind == "subsection"]
         if not subsecs:
-            return "other"
+            return "kohta_no_subsections"
 
         # Determine which subsection to examine
         if target_paragraph is not None:
@@ -457,8 +477,6 @@ def _categorize_failure(
 
     if target_paragraph is not None:
         # This is a mom (momentti/subsection) op
-        if sec_node is None:
-            return "other"
         subsecs = [c for c in sec_node.children if c.kind == "subsection"]
         actual_count = len(subsecs)
         gap = target_paragraph - actual_count
@@ -517,9 +535,13 @@ def _print_detail(
 
     print(f"=== Detailed failure list ({len(rows)}) ===")
     for fo, cat in rows:
-        print(f"  [{fo.amendment_id}] {fo.description}"
-              f"  sec={fo.target_section} ch={fo.target_chapter}"
-              f"  \u2192 {cat}")
+        target_statute = f" target={fo.target_statute_id}" if fo.target_statute_id else ""
+        reason = f" reason={fo.reason_code or fo.reason}" if (fo.reason_code or fo.reason) else ""
+        print(
+            f"  [{fo.amendment_id}]{target_statute} {fo.description}"
+            f"  sec={fo.target_section} ch={fo.target_chapter}"
+            f"{reason} \u2192 {cat}"
+        )
 
 
 def _print_summary(failures: List[FailedOp], pattern: Optional[str], top: int) -> None:
