@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from lawvm.core.ir import LegalOperation
+from lawvm.core.proof_gate_summary import proof_gate_summary_from_surfaces
 from lawvm.core.compile_result import (
     strict_fail_reasons_from_findings_and_verdict,
 )
@@ -327,23 +328,10 @@ def _format_count_map(counts: Any) -> str:
     )
 
 
-def _count_values(values: Any) -> dict[str, int]:
-    counts: Counter[str] = Counter()
-    for value in values:
-        text = str(value or "")
-        if text:
-            counts[text] += 1
-    return dict(sorted(counts.items()))
-
-
 def _mapping_rows(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, (list, tuple)):
         return []
     return [dict(row) for row in value if isinstance(row, dict)]
-
-
-def _is_registered_finland_manual_claim_kind(value: Any) -> bool:
-    return str(value or "").startswith("fi.v1.")
 
 
 def _proof_gate_summary(payload: dict[str, Any]) -> dict[str, Any]:
@@ -364,102 +352,21 @@ def _proof_gate_summary(payload: dict[str, Any]) -> dict[str, Any]:
     candidate_set_frontiers = _mapping_rows(
         payload.get("strict_report_candidate_set_frontier_work_items")
     )
-    candidate_sets = _mapping_rows(payload.get("strict_report_candidate_set_certificates"))
-    all_frontiers = [
-        *source_pathology_frontiers,
-        *failed_operation_frontiers,
-        *candidate_set_frontiers,
-    ]
-    failed_gates = [str(gate) for gate in ownership.get("failed_gates", ()) or ()]
-    unowned_counts = {
-        str(key): int(value)
-        for key, value in dict(ownership.get("unowned_counts") or {}).items()
-        if int(value)
-    }
-    incomplete_candidate_sets = [
-        row
-        for row in candidate_sets
-        if str(row.get("completeness_status") or "") != "complete"
-    ]
-    coverage_frontiers = list(candidate_set_frontiers)
-    coverage_frontier_ids = {id(row) for row in coverage_frontiers}
-    manual_claim_frontiers = [
-        row
-        for row in all_frontiers
-        if id(row) not in coverage_frontier_ids
-        if _is_registered_finland_manual_claim_kind(row.get("required_claim_kind"))
-    ]
-    bucketed_frontier_ids = {
-        id(row) for row in (*manual_claim_frontiers, *coverage_frontiers)
-    }
-    other_frontiers = [
-        row
-        for row in all_frontiers
-        if id(row) not in bucketed_frontier_ids
-    ]
-    open_gate_signal_count = (
-        len(failed_gates)
-        + sum(unowned_counts.values())
-        + len(all_frontiers)
-        + len(incomplete_candidate_sets)
-    )
-    return {
-        "schema": "lawvm.fi.strict_report.proof_gate_summary.v1",
-        "scope": "strict_report_visible_surfaces_only",
-        "closed": bool(ownership.get("closed")),
-        "open_gate_signal_count": open_gate_signal_count,
-        "ownership_failed_gate_count": len(failed_gates),
-        "ownership_failed_gate_counts": _count_values(failed_gates),
-        "unowned_counts": unowned_counts,
-        "frontier_work_item_count": len(all_frontiers),
-        "manual_claim_frontier_count": len(manual_claim_frontiers),
-        "coverage_frontier_count": len(coverage_frontiers),
-        "other_frontier_count": len(other_frontiers),
-        "frontier_owner_phase_counts": _count_values(
-            row.get("owner_phase") for row in all_frontiers
-        ),
-        "frontier_status_counts": _count_values(
-            row.get("frontier_status") for row in all_frontiers
-        ),
-        "required_claim_kind_counts": _count_values(
-            row.get("required_claim_kind") for row in all_frontiers
-        ),
-        "manual_frontier_required_claim_kind_counts": _count_values(
-            row.get("required_claim_kind") for row in manual_claim_frontiers
-        ),
-        "manual_frontier_status_counts": _count_values(
-            row.get("frontier_status") for row in manual_claim_frontiers
-        ),
-        "coverage_frontier_required_claim_kind_counts": _count_values(
-            row.get("required_claim_kind") for row in coverage_frontiers
-        ),
-        "coverage_frontier_status_counts": _count_values(
-            row.get("frontier_status") for row in coverage_frontiers
-        ),
-        "other_frontier_required_claim_kind_counts": _count_values(
-            row.get("required_claim_kind") for row in other_frontiers
-        ),
-        "other_frontier_status_counts": _count_values(
-            row.get("frontier_status") for row in other_frontiers
-        ),
-        "incomplete_candidate_set_count": len(incomplete_candidate_sets),
-        "candidate_set_completeness_counts": _count_values(
-            row.get("completeness_status") for row in candidate_sets
-        ),
-        "source_unit_coverage_status_counts": dict(
-            evidence_summary.get("source_unit_coverage_status_counts") or {}
-        ),
-        "potential_operation_classification_counts": dict(
-            evidence_summary.get("potential_operation_classification_counts") or {}
-        ),
-        "safe_default": "treat_open_proof_gates_as_non_executable_frontier_accounting",
-        "does_not_claim": [
-            "proof_closure",
-            "source_unit_enumeration_closure",
-            "operation_cue_exhaustiveness",
-            "replay_authorization",
+    return proof_gate_summary_from_surfaces(
+        schema="lawvm.fi.strict_report.proof_gate_summary.v1",
+        scope="strict_report_visible_surfaces_only",
+        closed=bool(ownership.get("closed")),
+        failed_gates=ownership.get("failed_gates", ()) or (),
+        unowned_counts=dict(ownership.get("unowned_counts") or {}),
+        manual_or_other_frontier_work_items=[
+            *source_pathology_frontiers,
+            *failed_operation_frontiers,
         ],
-    }
+        coverage_frontier_work_items=candidate_set_frontiers,
+        candidate_set_certificates=payload.get("strict_report_candidate_set_certificates"),
+        evidence_summary=evidence_summary,
+        manual_claim_kind_prefixes=("fi.v1.",),
+    ).to_dict()
 
 
 def _effective_source_adjudication(
