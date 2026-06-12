@@ -507,6 +507,8 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
             lines.append(f"  failed gates     : {', '.join(str(gate) for gate in failed_gates)}")
         unowned_counts = ownership_closure.get("unowned_counts", {}) or {}
         lines.append(f"  unowned counts   : {_format_count_map(unowned_counts)}")
+        owned_counts = ownership_closure.get("owned_counts", {}) or {}
+        lines.append(f"  owned counts     : {_format_count_map(owned_counts)}")
         lines.append("")
 
     proof_gate_summary = proof_payload.get("proof_gate_summary", {}) or {}

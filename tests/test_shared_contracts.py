@@ -290,6 +290,7 @@ def test_ownership_closure_certificate_closes_only_zero_unowned_slice() -> None:
     assert report["candidate_effect_claims"] is False
     assert report["summary"]["closed_count"] == 1
     assert report["summary"]["unowned_counts"]["candidates_without_authorization"] == 0
+    assert report["summary"]["owned_counts"] == {"replay_authorized_operations": 3}
     assert report["rows"][0]["closed"] is True
     assert report["rows"][0]["surface"] == "ownership_closure_certificate"
     assert report["rows"][0]["row_id"] == "closure-fi-demo"
@@ -354,6 +355,7 @@ def test_ownership_closure_report_summarizes_open_slices_without_replay_claims()
         closed=False,
         failed_gates=("potential_operation_coverage",),
         unowned_counts={"potential_ops_without_status": 2},
+        owned_counts={"failed_ops_visible": 1},
     )
 
     report = ownership_closure_evidence_report(certificate, jurisdiction="fi").to_dict()
@@ -363,6 +365,7 @@ def test_ownership_closure_report_summarizes_open_slices_without_replay_claims()
     assert report["summary"]["open_count"] == 1
     assert report["summary"]["failed_gate_counts"] == {"potential_operation_coverage": 1}
     assert report["summary"]["unowned_counts"] == {"potential_ops_without_status": 2}
+    assert report["summary"]["owned_counts"] == {"failed_ops_visible": 1}
     assert report["rows"][0]["closure_status"] == "open"
     assert report["rows"][0]["status"] == "open"
     assert "open_ownership_closure_as_compile_failure" in report["forbidden_shortcuts"]

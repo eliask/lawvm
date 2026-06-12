@@ -877,6 +877,9 @@ def test_format_report_includes_compact_proof_gate_summary() -> None:
 
     out = strict_report._format_report(cr)
 
+    assert "Ownership closure" in out
+    assert "owned counts     :" in out
+    assert "failed_ops_visible=1" in out
     assert "Proof gate summary" in out
     assert "manual frontiers : 1" in out
     assert "coverage frontiers: 4" in out
@@ -1154,6 +1157,8 @@ def test_to_json_exports_open_ownership_closure_certificate_without_replay_claim
         "strict_fail_reasons_without_closure": 0,
         "unproved_mutation_boundary_proofs": 0,
     }
+    assert certificate["owned_counts"]["canonical_ops"] == 1
+    assert certificate["owned_counts"]["strict_report_candidate_set_authorizations"] == 4
     candidate_sets = payload["strict_report_candidate_set_certificates"]
     assert [row["candidate_set_kind"] for row in candidate_sets] == [
         "fi_strict_report_visible_operation_rows",
@@ -1222,6 +1227,13 @@ def test_to_json_exports_open_ownership_closure_certificate_without_replay_claim
         "candidate_set_fi_strict_report_source_unit_enumeration_unavailable": 1,
         "candidate_set_fi_strict_report_visible_operation_rows_partial": 1,
     }
+    assert surface["summary"]["ownership_closure_owned_counts"]["canonical_ops"] == 1
+    assert (
+        surface["summary"]["ownership_closure_owned_counts"][
+            "strict_report_candidate_set_authorizations"
+        ]
+        == 4
+    )
     closure_rows = [
         row
         for row in surface["rows"]

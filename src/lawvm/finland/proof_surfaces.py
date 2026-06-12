@@ -1631,6 +1631,9 @@ def finland_strict_report_evidence_surface(
         "ownership_closure_unowned_counts": dict(
             ownership_closure_summary.get("unowned_counts") or {}
         ),
+        "ownership_closure_owned_counts": dict(
+            ownership_closure_summary.get("owned_counts") or {}
+        ),
         "source_pathology_frontier_source_witness_digest_coverage_counts": (
             nested_source_witness_digest_coverage_counts(source_pathology_frontier_items)
         ),

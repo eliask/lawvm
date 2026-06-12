@@ -105,12 +105,14 @@ def ownership_closure_evidence_report(
     closed_count = sum(1 for row in rows if row.closed)
     open_count = len(rows) - closed_count
     unowned_counts = _sum_count_maps(row.unowned_counts for row in rows)
+    owned_counts = _sum_count_maps(row.owned_counts for row in rows)
     failed_gate_counts = _counts(gate for row in rows for gate in row.failed_gates)
     summary = {
         "certificate_count": len(rows),
         "closed_count": closed_count,
         "open_count": open_count,
         "unowned_counts": unowned_counts,
+        "owned_counts": owned_counts,
         "failed_gate_counts": failed_gate_counts,
         "claim_flags": {
             "replay_claims": False,
