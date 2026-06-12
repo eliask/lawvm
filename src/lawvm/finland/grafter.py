@@ -628,6 +628,7 @@ from lawvm.finland.kumotaan_replay import (
     _rewrite_kumotaan_snapshot_replaces_to_repeal as _rewrite_kumotaan_snapshot_replaces_to_repeal,
 )
 from lawvm.finland.amendment_chapter_precreate import (
+    ChapterRef,
     _pre_create_amendment_chapters,
     _pre_create_pseudo_marker_chapters,
 )
@@ -4183,8 +4184,8 @@ def apply_ops_to_tree(
     # pseudo-marker chapters in the same amendment, and both need their
     # chapter shell to exist before the section-level apply path runs.
     # Not run for VTS (cross-statute body) amendments.
-    _pre_real_chapter_refs: List[tuple[str, str]] = []
-    _pre_pseudo_chapter_refs: List[tuple[str, str]] = []
+    _pre_real_chapter_refs: tuple[ChapterRef, ...] = ()
+    _pre_pseudo_chapter_refs: tuple[ChapterRef, ...] = ()
     if not _vts_ops_enrich_done:
         _muutos_body_early = muutos_tree.find(".//{*}body")
         if _muutos_body_early is not None:
@@ -4210,15 +4211,19 @@ def apply_ops_to_tree(
                     _rop.resolved_target_chapter_label,
                 )
             }
-            state, _pre_real_chapter_refs = _pre_create_amendment_chapters(
+            _pre_real_chapters = _pre_create_amendment_chapters(
                 state,
                 _muutos_body_early,
                 amendment_id,
                 required_labels=_early_required_real_chapters,
             )
-            state, _pre_pseudo_chapter_refs = _pre_create_pseudo_marker_chapters(
+            state = _pre_real_chapters.state
+            _pre_real_chapter_refs = _pre_real_chapters.created_refs
+            _pre_pseudo_chapters = _pre_create_pseudo_marker_chapters(
                 state, _muutos_body_early, amendment_id
             )
+            state = _pre_pseudo_chapters.state
+            _pre_pseudo_chapter_refs = _pre_pseudo_chapters.created_refs
 
     # Snapshot chapter-to-part mapping before the main apply loop.
     # Used after the loop to detect chapters that moved to a genuinely NEW part,
@@ -4390,9 +4395,11 @@ def apply_ops_to_tree(
                 # Step 1: capture any late-created real chapters (normally none
                 # now that pre-creation runs before the apply loop) and keep the
                 # full label set for LO emission / uncovered routing.
-                state, _late_new_chapter_refs = _pre_create_amendment_chapters(
+                _late_new_chapters = _pre_create_amendment_chapters(
                     state, _muutos_body_el, amendment_id
                 )
+                state = _late_new_chapters.state
+                _late_new_chapter_refs = _late_new_chapters.created_refs
                 _new_chapter_refs = list(
                     dict.fromkeys((*_pre_real_chapter_refs, *_late_new_chapter_refs))
                 )
@@ -4403,7 +4410,9 @@ def apply_ops_to_tree(
                 # (the new chapter has no depth-1 or depth-2 timeline entry to anchor
                 # the body overlay).
                 if lo_ops_out is not None and _uncov_src is not None and _new_chapter_refs:
-                    for _new_ch_part, _new_ch_label in _new_chapter_refs:
+                    for _new_chapter_ref in _new_chapter_refs:
+                        _new_ch_part = _new_chapter_ref.part_label
+                        _new_ch_label = _new_chapter_ref.chapter_label
                         if _new_ch_part:
                             _part_path = state.find("part", _new_ch_part)
                             _part_node = _tops.resolve(state.ir, _part_path) if _part_path is not None else None
@@ -4435,7 +4444,9 @@ def apply_ops_to_tree(
                 # pre-created before the PEG apply loop (so PEG INSERT ops for
                 # sections like 53a → chapter 7a could land in the right place).
                 if lo_ops_out is not None and _uncov_src is not None and _pre_pseudo_chapter_refs:
-                    for _pch_part, _pch_label in _pre_pseudo_chapter_refs:
+                    for _pseudo_chapter_ref in _pre_pseudo_chapter_refs:
+                        _pch_part = _pseudo_chapter_ref.part_label
+                        _pch_label = _pseudo_chapter_ref.chapter_label
                         if _pch_part:
                             _part_path = state.find("part", _pch_part)
                             _part_node = _tops.resolve(state.ir, _part_path) if _part_path is not None else None
@@ -4461,8 +4472,8 @@ def apply_ops_to_tree(
                                 "  [%s] pseudo-chapter LO INSERT %s/%s (path=%s)",
                                 amendment_id, _pch_part or "-", _pch_label, _pch_tl_path,
                             )
-            _new_chapter_labels = [label for _, label in _new_chapter_refs]
-            _pre_pseudo_chapter_labels = [label for _, label in _pre_pseudo_chapter_refs]
+            _new_chapter_labels = [ref.chapter_label for ref in _new_chapter_refs]
+            _pre_pseudo_chapter_labels = [ref.chapter_label for ref in _pre_pseudo_chapter_refs]
             # Step 2: collect section-level ResolvedOps (no direct tree_ops).
             _uncov_rops = _recover_uncovered_body_ops(
                 state,

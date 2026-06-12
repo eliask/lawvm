@@ -8,6 +8,7 @@ operation parsing.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional
 
 import lxml.etree as etree
@@ -21,6 +22,22 @@ if TYPE_CHECKING:
     from lawvm.finland.statute import ReplayState
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class ChapterRef:
+    """Created chapter identity with optional enclosing part scope."""
+
+    part_label: str
+    chapter_label: str
+
+
+@dataclass(frozen=True, slots=True)
+class PrecreatedChaptersResult:
+    """Result of pre-creating amendment-body chapters."""
+
+    state: ReplayState
+    created_refs: tuple[ChapterRef, ...]
 
 
 def _tag(el: etree._Element) -> str:
@@ -77,14 +94,13 @@ def _pre_create_amendment_chapters(
     amendment_id: str,
     *,
     required_labels: Optional[set[tuple[str, str]]] = None,
-) -> tuple[ReplayState, list[tuple[str, str]]]:
+) -> PrecreatedChaptersResult:
     """Pre-create real chapter nodes from amendment body XML.
 
-    Returns ``(updated_state, created_chapter_refs)``. Each created ref is
-    ``(part_label, chapter_label)``; ``part_label`` is empty for body-level
-    chapters.
+    Returns the updated state and created chapter refs. ``part_label`` is
+    empty for body-level chapters.
     """
-    created_refs: List[tuple[str, str]] = []
+    created_refs: List[ChapterRef] = []
 
     for ch_el in muutos_body.findall(".//{*}chapter"):
         ch_num = ch_el.find("{*}num")
@@ -111,23 +127,23 @@ def _pre_create_amendment_chapters(
                 new_ch,
             )
         )
-        created_refs.append(chapter_ref)
+        created_refs.append(ChapterRef(part_label=part_label, chapter_label=ch_label))
         logger.debug("  [%s] uncovered chapter CREATE %s/%s", amendment_id, part_label or "-", ch_label)
-    return state, created_refs
+    return PrecreatedChaptersResult(state=state, created_refs=tuple(created_refs))
 
 
 def _pre_create_pseudo_marker_chapters(
     state: ReplayState,
     muutos_body: etree._Element,
     amendment_id: str,
-) -> tuple[ReplayState, list[tuple[str, str]]]:
+) -> PrecreatedChaptersResult:
     """Pre-create letter-suffix chapters introduced via pseudo-marker sections.
 
     Some Finland amendment XML encodes a new sub-chapter (e.g. ``7 a luku``) as
     a ``<section><num>7 a luku</num>...</section>`` inside a regular chapter
     element rather than as a proper ``<chapter>`` element.
     """
-    created_refs: List[tuple[str, str]] = []
+    created_refs: List[ChapterRef] = []
 
     for ch_el in muutos_body.findall(".//{*}chapter"):
         for child in ch_el:
@@ -157,6 +173,6 @@ def _pre_create_pseudo_marker_chapters(
                     new_ch,
                 )
             )
-            created_refs.append((part_label, pseudo_label))
+            created_refs.append(ChapterRef(part_label=part_label, chapter_label=pseudo_label))
             logger.debug("  [%s] pseudo-chapter CREATE %s/%s", amendment_id, part_label or "-", pseudo_label)
-    return state, created_refs
+    return PrecreatedChaptersResult(state=state, created_refs=tuple(created_refs))

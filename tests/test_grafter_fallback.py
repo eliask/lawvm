@@ -7460,7 +7460,7 @@ def test_uncovered_body_insert_accepts_spaced_lettered_sibling_section_refs() ->
     # MVR: use the refactored two-step API.
     muutos_body_el = muutos_tree.find(".//{http://docs.oasis-open.org/legaldocml/ns/akn/3.0}body")
     if muutos_body_el is not None:
-        state, _ = _pre_create_amendment_chapters(state, muutos_body_el, "2021/1215")
+        state = _pre_create_amendment_chapters(state, muutos_body_el, "2021/1215").state
     rops = _recover_uncovered_body_ops(
         state,
         ctx,
@@ -7532,7 +7532,7 @@ def test_uncovered_body_skips_sections_owned_by_whole_chapter_insert() -> None:
     # MVR: use the refactored two-step API.
     muutos_body_el = muutos_tree.find(".//{http://docs.oasis-open.org/legaldocml/ns/akn/3.0}body")
     if muutos_body_el is not None:
-        state, _ = _pre_create_amendment_chapters(state, muutos_body_el, "2020/1207")
+        state = _pre_create_amendment_chapters(state, muutos_body_el, "2020/1207").state
     findings_out: list[Finding] = []
     rops = _recover_uncovered_body_ops(
         state,
@@ -7640,7 +7640,7 @@ def test_uncovered_body_records_future_repeal_skip_finding_when_chapter_adopt_is
 
     muutos_body_el = muutos_tree.find(".//{http://docs.oasis-open.org/legaldocml/ns/akn/3.0}body")
     if muutos_body_el is not None:
-        state, _ = _pre_create_amendment_chapters(state, muutos_body_el, "2020/1207")
+        state = _pre_create_amendment_chapters(state, muutos_body_el, "2020/1207").state
     findings_out: list[Finding] = []
     rops = _recover_uncovered_body_ops(
         state,
@@ -9088,7 +9088,7 @@ def test_uncovered_body_insert_overrides_chapter_when_family_base_in_different_c
 
     muutos_body_el = muutos_tree.find(".//{http://docs.oasis-open.org/legaldocml/ns/akn/3.0}body")
     if muutos_body_el is not None:
-        state, _ = _pre_create_amendment_chapters(state, muutos_body_el, "2020/100")
+        state = _pre_create_amendment_chapters(state, muutos_body_el, "2020/100").state
     rops = _recover_uncovered_body_ops(
         state,
         ctx,
@@ -10553,7 +10553,7 @@ def test_uncovered_body_allows_sections_from_muutetaan_whole_chapter() -> None:
 
     muutos_body_el = muutos_tree.find(".//{http://docs.oasis-open.org/legaldocml/ns/akn/3.0}body")
     if muutos_body_el is not None:
-        state, _ = _pre_create_amendment_chapters(state, muutos_body_el, "2000/559")
+        state = _pre_create_amendment_chapters(state, muutos_body_el, "2000/559").state
     rops = _recover_uncovered_body_ops(
         state,
         ctx,
@@ -10635,7 +10635,7 @@ def test_uncovered_body_allows_sections_from_uusi_chapter_range() -> None:
 
     muutos_body_el = muutos_tree.find(".//{http://docs.oasis-open.org/legaldocml/ns/akn/3.0}body")
     if muutos_body_el is not None:
-        state, _ = _pre_create_amendment_chapters(state, muutos_body_el, "1995/578")
+        state = _pre_create_amendment_chapters(state, muutos_body_el, "1995/578").state
     rops = _recover_uncovered_body_ops(
         state,
         ctx,
@@ -11288,9 +11288,13 @@ def test_pre_create_amendment_chapters_returns_created_refs() -> None:
     muutos_body_el = muutos_tree.find(".//{http://docs.oasis-open.org/legaldocml/ns/akn/3.0}body")
     assert muutos_body_el is not None
 
-    new_state, created = _pre_create_amendment_chapters(state, muutos_body_el, "2015/303")
+    result = _pre_create_amendment_chapters(state, muutos_body_el, "2015/303")
+    new_state = result.state
+    created = result.created_refs
 
-    assert ("", "8a") in created, f"Expected root chapter ref ('', '8a'); got {created}"
+    assert any(ref.part_label == "" and ref.chapter_label == "8a" for ref in created), (
+        f"Expected root chapter ref ('', '8a'); got {created}"
+    )
     ch8a = new_state.find_chapter("8a")
     assert ch8a is not None, "Chapter 8a must be present in state after pre-creation"
 
@@ -11340,14 +11344,16 @@ def test_pre_create_amendment_chapters_keeps_part_scope_for_same_label_chapters(
     muutos_body_el = muutos_tree.find(".//{http://docs.oasis-open.org/legaldocml/ns/akn/3.0}body")
     assert muutos_body_el is not None
 
-    new_state, created = _pre_create_amendment_chapters(
+    result = _pre_create_amendment_chapters(
         state,
         muutos_body_el,
         "2018/301",
         required_labels={("5", "2")},
     )
+    new_state = result.state
+    created = result.created_refs
 
-    assert created == [("5", "2")]
+    assert tuple((ref.part_label, ref.chapter_label) for ref in created) == (("5", "2"),)
     part_5_path = new_state.find("part", "5")
     assert part_5_path is not None
     part_5 = new_state.resolve(part_5_path)
