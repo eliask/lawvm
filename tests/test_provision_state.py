@@ -2232,6 +2232,44 @@ def test_specimen_1982_182_failed_container_noops_do_not_claim_tree_touches() ->
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_1992_1535_item_replacement_does_not_mutate_section_heading() -> None:
+    from lawvm.finland.grafter import replay_xml
+
+    def path_ends_with_heading(path: object) -> bool:
+        if not isinstance(path, (list, tuple)) or not path:
+            return False
+        tail = path[-1]
+        return isinstance(tail, (list, tuple)) and bool(tail) and tail[0] == "heading"
+
+    replay_meta: dict = {}
+    master = replay_xml(
+        "1992/1535",
+        mode="official_consolidation",
+        quiet=True,
+        replay_meta_out=replay_meta,
+    )
+
+    assert not [
+        finding
+        for finding in master.findings
+        if finding.kind == "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"
+        and finding.source_statute == "2001/196"
+        and finding.detail.get("helper") == "_apply_deterministic_subsection_op"
+        and any(path_ends_with_heading(path) for path in finding.detail.get("out_of_scope_paths", ()))
+    ]
+    assert not [
+        event
+        for event in replay_meta.get("apply_mutation_events", [])
+        if event.get("source_statute") == "2001/196"
+        and event.get("helper") == "_apply_deterministic_subsection_op"
+        and (
+            any(path_ends_with_heading(path) for path in event.get("created_paths", ()))
+            or any(path_ends_with_heading(path) for path in event.get("replaced_paths", ()))
+        )
+    ]
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 def test_specimen_1997_1412_section_11_drops_expired_temporary_render_tails() -> None:
     payload = resolve_provision_state(
         statute_id="1997/1412",
