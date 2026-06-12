@@ -71,6 +71,13 @@ _INSERT_SUBSECTION_FALLBACK_RE = re.compile(
     r"|(?:\d+\s*[a-z]?\s+luvun\s+\d+\s*[a-z]?\s*§\s*:ään)|\bseuraavasti\b|$)",
     flags=re.I,
 )
+_INSERT_ITEM_FALLBACK_RE = re.compile(
+    r"(\d+\s*[a-z]?)\s*§\s*:n\s*(\d+)\s+momenttiin\s*,?\s*(?:sellaisena\s+kuin\s+[^,]+,\s*)?"
+    r"(.*?)(?=(?:\d+\s*[a-z]?\s*§\s*:n\s*\d+\s+momenttiin)"
+    r"|(?:\d+\s*[a-z]?\s*§\s*:ään)"
+    r"|(?:\blakiin\s+uusi\b)|\bseuraavasti\b|$)",
+    flags=re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -397,14 +404,7 @@ def _extract_insert_item_ops_fallback(cleaned: str) -> List[AmendmentOp]:
     """
     ops: List[AmendmentOp] = []
     seen: Set[Tuple[str, int, str]] = set()
-    for m in re.finditer(
-        r"(\d+\s*[a-z]?)\s*§\s*:n\s*(\d+)\s+momenttiin\s*,?\s*(?:sellaisena\s+kuin\s+[^,]+,\s*)?"
-        r"(.*?)(?=(?:\d+\s*[a-z]?\s*§\s*:n\s*\d+\s+momenttiin)"
-        r"|(?:\d+\s*[a-z]?\s*§\s*:ään)"
-        r"|(?:\blakiin\s+uusi\b)|\bseuraavasti\b|$)",
-        cleaned,
-        flags=re.I,
-    ):
+    for m in _INSERT_ITEM_FALLBACK_RE.finditer(cleaned):
         sec = m.group(1)
         mom = m.group(2)
         clause = m.group(3)
@@ -432,6 +432,91 @@ def _extract_insert_item_ops_fallback(cleaned: str) -> List[AmendmentOp]:
                     )
                 )
     return ops
+
+
+def _extract_insert_item_ops_fallback_with_coverage(
+    cleaned: str,
+    *,
+    source_artifact_id: str = "",
+) -> FallbackParseResult:
+    ops = _extract_insert_item_ops_fallback(cleaned)
+    coverage_rows: list[RegexRecognitionCoverage] = []
+    source_hash = regex_source_text_hash(cleaned)
+    for m in _INSERT_ITEM_FALLBACK_RE.finditer(cleaned):
+        sec_norm = _RE_WHITESPACE.sub("", m.group(1)).lower()
+        try:
+            mom_i = int(m.group(2))
+        except ValueError:
+            continue
+        clause = m.group(3)
+        matched_items: list[str] = []
+        ignored_spans: list[dict[str, object]] = []
+        cursor = 0
+        for item_match in _RE_NEW_ITEM.finditer(clause):
+            ignored_spans.extend(
+                _regex_ignored_span_rows(
+                    cleaned,
+                    base_offset=m.start(3),
+                    clause=clause,
+                    start=cursor,
+                    end=item_match.start(),
+                )
+            )
+            cursor = item_match.end()
+            matched_items.extend(_expand_spaced_insert_label_list_ir(item_match.group(1)))
+        ignored_spans.extend(
+            _regex_ignored_span_rows(
+                cleaned,
+                base_offset=m.start(3),
+                clause=clause,
+                start=cursor,
+                end=len(clause),
+            )
+        )
+        if matched_items:
+            unclassified_count = sum(
+                1 for row in ignored_spans if row.get("classification") == "unclassified"
+            )
+            coverage_rows.append(
+                RegexRecognitionCoverage(
+                    coverage_id=_regex_coverage_id(
+                        "fi_insert_item_fallback",
+                        source_hash,
+                        m.start(),
+                        m.end(),
+                    ),
+                    jurisdiction="fi",
+                    recognizer_id="fi_insert_item_fallback",
+                    owner_phase="surface_syntax_frontend",
+                    source_artifact_id=source_artifact_id,
+                    source_text_hash=source_hash,
+                    matched_span=(m.start(), m.end()),
+                    coverage_status=(
+                        REGEX_RECOGNITION_UNCLASSIFIED_GAP
+                        if unclassified_count
+                        else REGEX_RECOGNITION_FULLY_CLASSIFIED
+                    ),
+                    semantic_slots={
+                        "action": "INSERT",
+                        "target_unit_kind": "item",
+                        "target_section": sec_norm,
+                        "target_subsection": mom_i,
+                        "target_items": tuple(matched_items),
+                    },
+                    ignored_spans=tuple(ignored_spans),
+                    required_proofs=(
+                        ("regex_skipped_span_classification",)
+                        if unclassified_count
+                        else ()
+                    ),
+                    detail={
+                        "matched_text_preview": cleaned[m.start():m.end()][:240],
+                        "unclassified_ignored_span_count": unclassified_count,
+                        "rule_note": "bounded regex fallback coverage only; not replay authority",
+                    },
+                )
+            )
+    return FallbackParseResult(ops=ops, regex_recognition_coverage=tuple(coverage_rows))
 
 
 def _prune_shadowed_parent_subsection_insert_fallbacks(ops: List[AmendmentOp]) -> List[AmendmentOp]:
@@ -1222,11 +1307,18 @@ def parse_ops_fallback_heuristic_with_coverage(
 
     ops = parse_ops_fallback_heuristic(johto)
     cleaned = _RE_WHITESPACE.sub(" ", johto).strip().lower()
-    coverage = _extract_insert_subsection_ops_fallback_with_coverage(
+    subsection_coverage = _extract_insert_subsection_ops_fallback_with_coverage(
         cleaned,
         source_artifact_id=source_artifact_id,
     ).regex_recognition_coverage
-    return FallbackParseResult(ops=ops, regex_recognition_coverage=coverage)
+    item_coverage = _extract_insert_item_ops_fallback_with_coverage(
+        cleaned,
+        source_artifact_id=source_artifact_id,
+    ).regex_recognition_coverage
+    return FallbackParseResult(
+        ops=ops,
+        regex_recognition_coverage=(*subsection_coverage, *item_coverage),
+    )
 
 
 def parse_ops_title_fallback(title: str) -> List[AmendmentOp]:

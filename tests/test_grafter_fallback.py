@@ -6107,6 +6107,60 @@ def test_subsection_insert_fallback_coverage_marks_plain_connector_classified() 
     assert coverage["required_proofs"] == []
 
 
+def test_item_insert_fallback_coverage_surfaces_unclassified_bounded_gap() -> None:
+    johto = "lisätään 5 §:n 2 momenttiin kuitenkin uusi 4 kohta"
+
+    result = parse_ops_fallback_heuristic_with_coverage(
+        johto,
+        source_artifact_id="2020/2",
+    )
+
+    got = {
+        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        for op in result.ops
+    }
+    assert ("INSERT", "5", 2, "4") in got
+    assert len(result.regex_recognition_coverage) == 1
+    coverage = result.regex_recognition_coverage[0].to_dict()
+    assert coverage["recognizer_id"] == "fi_insert_item_fallback"
+    assert coverage["coverage_status"] == "unclassified_gap"
+    assert coverage["semantic_slots"] == {
+        "action": "INSERT",
+        "target_unit_kind": "item",
+        "target_section": "5",
+        "target_subsection": 2,
+        "target_items": ["4"],
+    }
+    assert coverage["ignored_spans"] == [
+        {
+            "span": [28, 38],
+            "classification": "unclassified",
+            "text_preview": "kuitenkin ",
+            "could_alter_meaning": True,
+        }
+    ]
+    assert coverage["required_proofs"] == ["regex_skipped_span_classification"]
+    assert "bounded_wildcard_as_semantic_proof" in coverage["forbidden_shortcuts"]
+
+
+def test_item_insert_fallback_coverage_marks_plain_connector_classified() -> None:
+    johto = "lisätään 5 §:n 2 momenttiin uusi 4 kohta"
+
+    result = parse_ops_fallback_heuristic_with_coverage(johto)
+
+    got = {
+        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        for op in result.ops
+    }
+    assert ("INSERT", "5", 2, "4") in got
+    assert len(result.regex_recognition_coverage) == 1
+    coverage = result.regex_recognition_coverage[0].to_dict()
+    assert coverage["recognizer_id"] == "fi_insert_item_fallback"
+    assert coverage["coverage_status"] == "fully_classified"
+    assert coverage["ignored_spans"] == []
+    assert coverage["required_proofs"] == []
+
+
 def test_insert_section_fallback_expands_letter_suffix_range_inside_lakiin_uusi_clause() -> None:
     johto = "lisätään lakiin uusi 149 a–149 c ja 211 b § seuraavasti:"
 
