@@ -404,6 +404,11 @@ def _failure_reason_category(f: FailedOp) -> Optional[str]:
     return None
 
 
+def _node_kind_value(node: object) -> str:
+    kind = getattr(node, "kind", "")
+    return str(getattr(kind, "value", kind))
+
+
 def _categorize_failure(
     f: FailedOp,
     master: XMLStatute,
@@ -444,7 +449,7 @@ def _categorize_failure(
 
     if target_item is not None:
         # This is a kohta op
-        subsecs = [c for c in sec_node.children if c.kind == "subsection"]
+        subsecs = [c for c in sec_node.children if _node_kind_value(c) == "subsection"]
         if not subsecs:
             return "kohta_no_subsections"
 
@@ -457,7 +462,7 @@ def _categorize_failure(
         else:
             target_sub = subsecs[0]
 
-        paras = [c for c in target_sub.children if c.kind == "paragraph"]
+        paras = [c for c in target_sub.children if _node_kind_value(c) == "paragraph"]
         if not paras:
             return "kohta_no_paras"
 
@@ -467,20 +472,28 @@ def _categorize_failure(
         if matching:
             return "kohta_amend_extract_fail"
 
-        # Label not found — report gap
+        # Label not found — distinguish an out-of-range numeric target from a
+        # missing/synthetic label inside an otherwise populated paragraph list.
         max_label_idx = len(paras)
+        item_label = str(target_item)
         try:
-            want_idx = int(re.sub(r'[^\d]', '', target_item) or "0")
+            want_idx = int(re.sub(r'[^\d]', '', item_label) or "0")
         except ValueError:
             want_idx = 0
-        return f"kohta_label_gap(max={max_label_idx},want={want_idx})"
+        if want_idx > max_label_idx:
+            return f"kohta_label_gap(max={max_label_idx},want={want_idx})"
+        if want_idx > 0:
+            return f"kohta_label_missing(count={max_label_idx},want={want_idx})"
+        return f"kohta_label_missing(count={max_label_idx},want={item_label})"
 
     if target_paragraph is not None:
         # This is a mom (momentti/subsection) op
-        subsecs = [c for c in sec_node.children if c.kind == "subsection"]
+        subsecs = [c for c in sec_node.children if _node_kind_value(c) == "subsection"]
         actual_count = len(subsecs)
-        gap = target_paragraph - actual_count
-        return f"mom_oor(gap={gap})"
+        if target_paragraph > actual_count:
+            gap = target_paragraph - actual_count
+            return f"mom_oor(gap={gap})"
+        return "mom_amend_extract_fail"
 
     return "other"
 

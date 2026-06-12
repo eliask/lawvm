@@ -4,6 +4,7 @@ import json
 from types import SimpleNamespace
 from typing import Any, cast
 
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.source_pathology import (
     build_item_target_structure_absent_pathology,
     build_sparse_item_body_missing_pathology,
@@ -67,6 +68,66 @@ def test_categorize_failure_names_absent_detail_master_section() -> None:
     got = failures._categorize_failure(failure, cast(Any, master))
 
     assert got == "target_section_absent_in_detail_master"
+
+
+def test_categorize_failure_accepts_irnodekind_enum_values() -> None:
+    paragraph = SimpleNamespace(kind=IRNodeKind.PARAGRAPH, label="1")
+    subsection = SimpleNamespace(kind=IRNodeKind.SUBSECTION, children=[paragraph])
+    master = SimpleNamespace(find_section=lambda section, chapter=None: SimpleNamespace(children=[subsection]))
+    failure = FailedOp(
+        amendment_id="2024/2",
+        description="REPLACE 3 § 1 mom 2 kohta",
+        reason="no deterministic path",
+        reason_code="no_deterministic_path",
+        target_section="3",
+        target_unit_kind="section",
+    )
+
+    got = failures._categorize_failure(failure, cast(Any, master))
+
+    assert got == "kohta_label_gap(max=1,want=2)"
+
+
+def test_categorize_failure_distinguishes_missing_item_label_from_gap() -> None:
+    paragraphs = [
+        SimpleNamespace(kind=IRNodeKind.PARAGRAPH, label="1"),
+        SimpleNamespace(kind=IRNodeKind.PARAGRAPH, label="3"),
+        SimpleNamespace(kind=IRNodeKind.PARAGRAPH, label="4"),
+    ]
+    subsection = SimpleNamespace(kind=IRNodeKind.SUBSECTION, children=paragraphs)
+    master = SimpleNamespace(find_section=lambda section, chapter=None: SimpleNamespace(children=[subsection]))
+    failure = FailedOp(
+        amendment_id="2024/2",
+        description="REPLACE 3 § 1 mom 2 kohta",
+        reason="no deterministic path",
+        reason_code="no_deterministic_path",
+        target_section="3",
+        target_unit_kind="section",
+    )
+
+    got = failures._categorize_failure(failure, cast(Any, master))
+
+    assert got == "kohta_label_missing(count=3,want=2)"
+
+
+def test_categorize_failure_names_existing_momentti_apply_failure() -> None:
+    subsections = [
+        SimpleNamespace(kind=IRNodeKind.SUBSECTION, children=[]),
+        SimpleNamespace(kind=IRNodeKind.SUBSECTION, children=[]),
+    ]
+    master = SimpleNamespace(find_section=lambda section, chapter=None: SimpleNamespace(children=subsections))
+    failure = FailedOp(
+        amendment_id="2024/2",
+        description="REPLACE 3 § 2 mom",
+        reason="no deterministic path",
+        reason_code="no_deterministic_path",
+        target_section="3",
+        target_unit_kind="section",
+    )
+
+    got = failures._categorize_failure(failure, cast(Any, master))
+
+    assert got == "mom_amend_extract_fail"
 
 
 def test_item_level_source_pathologies_stay_section_scoped() -> None:
