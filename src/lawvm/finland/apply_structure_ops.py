@@ -84,12 +84,22 @@ from lawvm.finland.merge import (
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass(frozen=True, slots=True)
+class LetterSuffixChapterAbsorptionResult:
+    """Result of absorbing loose wrapper sections into a realized letter chapter."""
+
+    root: IRNode
+    chapter: IRNode
+    adopted_paths: tuple[tuple[tuple[str, str], ...], ...]
+
+
 def _absorb_trailing_wrapper_sections_into_letter_suffix_chapter(
     state,
     *,
     chapter_path: Path,
     merged_chapter: IRNode,
-) -> tuple[IRNode, IRNode, tuple[tuple[tuple[str, str], ...], ...]]:
+) -> LetterSuffixChapterAbsorptionResult:
     """Move loose same-parent sections into a newly realized letter chapter.
 
     Historical Finland replay can carry sections that semantically belong to a
@@ -100,7 +110,7 @@ def _absorb_trailing_wrapper_sections_into_letter_suffix_chapter(
     """
     chapter_label = str(merged_chapter.label or "")
     if re.fullmatch(r".*[a-z]+", chapter_label, re.I) is None:
-        return state.ir, merged_chapter, ()
+        return LetterSuffixChapterAbsorptionResult(root=state.ir, chapter=merged_chapter, adopted_paths=())
 
     actual_chapter_path = _tops.find_family(state.ir, "chapter", chapter_label)
     if actual_chapter_path is not None:
@@ -109,7 +119,7 @@ def _absorb_trailing_wrapper_sections_into_letter_suffix_chapter(
     parent_path = tuple(chapter_path[:-1])
     parent_node = _tops.resolve(state.ir, parent_path) if parent_path else state.ir
     if parent_node is None:
-        return state.ir, merged_chapter, ()
+        return LetterSuffixChapterAbsorptionResult(root=state.ir, chapter=merged_chapter, adopted_paths=())
 
     chapter_index = None
     for idx, child in enumerate(parent_node.children):
@@ -117,7 +127,7 @@ def _absorb_trailing_wrapper_sections_into_letter_suffix_chapter(
             chapter_index = idx
             break
     if chapter_index is None:
-        return state.ir, merged_chapter, ()
+        return LetterSuffixChapterAbsorptionResult(root=state.ir, chapter=merged_chapter, adopted_paths=())
 
     adopted_sections: list[IRNode] = []
     adopted_paths: list[tuple[tuple[str, str], ...]] = []
@@ -145,7 +155,7 @@ def _absorb_trailing_wrapper_sections_into_letter_suffix_chapter(
             adopted_sections = list(reversed(terminal_sections))
             adopted_paths = list(reversed(terminal_paths))
         else:
-            return state.ir, merged_chapter, ()
+            return LetterSuffixChapterAbsorptionResult(root=state.ir, chapter=merged_chapter, adopted_paths=())
 
     absorbed_chapter = IRNode(
         kind=merged_chapter.kind,
@@ -175,8 +185,16 @@ def _absorb_trailing_wrapper_sections_into_letter_suffix_chapter(
         children=tuple(new_parent_children),
     )
     if parent_path:
-        return _tops.replace_at(state.ir, parent_path, new_parent), absorbed_chapter, tuple(adopted_paths)
-    return new_parent, absorbed_chapter, tuple(adopted_paths)
+        return LetterSuffixChapterAbsorptionResult(
+            root=_tops.replace_at(state.ir, parent_path, new_parent),
+            chapter=absorbed_chapter,
+            adopted_paths=tuple(adopted_paths),
+        )
+    return LetterSuffixChapterAbsorptionResult(
+        root=new_parent,
+        chapter=absorbed_chapter,
+        adopted_paths=tuple(adopted_paths),
+    )
 
 
 def _apply_section_tail_policy_marker(
@@ -2211,11 +2229,14 @@ def _apply_whole_section_op(
                 merged_for_replace = merged
                 absorbed_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
                 if not any(child.kind is IRNodeKind.SECTION for child in ch_node.children):
-                    absorbed_ir, merged_for_replace, absorbed_paths = _absorb_trailing_wrapper_sections_into_letter_suffix_chapter(
+                    absorption = _absorb_trailing_wrapper_sections_into_letter_suffix_chapter(
                         state,
                         chapter_path=_tops._as_path(ch_path),
                         merged_chapter=merged,
                     )
+                    absorbed_ir = absorption.root
+                    merged_for_replace = absorption.chapter
+                    absorbed_paths = absorption.adopted_paths
                     if absorbed_paths and source_pathologies_out is not None:
                         source_pathologies_out.append(
                             build_destructive_shape_loss_risk_pathology(
