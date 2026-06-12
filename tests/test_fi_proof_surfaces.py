@@ -1331,7 +1331,7 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
             },
             "source_pathologies": [source_pathology],
             "source_pathology_execution_authorizations": [
-                {"authorization_status": "source_pathology_not_replay_authority"}
+                source_pathology_execution_authorization(source_pathology).to_dict()
             ],
             "source_pathology_frontier_work_items": [
                 source_pathology_frontier_work_item(
@@ -1396,6 +1396,9 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     assert report["summary"]["canonical_op_count"] == 2
     assert report["summary"]["source_pathology_count"] == 1
     assert report["summary"]["source_pathology_kind_counts"] == {"DESTRUCTIVE_SHAPE_LOSS_RISK": 1}
+    assert report["summary"]["source_pathology_execution_authorization_status_counts"] == {
+        "source_pathology_not_replay_authority": 1
+    }
     assert report["summary"]["source_pathology_frontier_work_item_count"] == 1
     assert report["summary"]["frontier_work_item_family_counts"] == {
         "fi_destructive_shape_loss_risk": 1,
@@ -1446,6 +1449,13 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     source_pathology = rows_by_surface["source_pathology"]
     assert source_pathology["replay_authorized"] is False
     assert source_pathology["affected_phase"] == "replay_apply"
+    source_authorization = rows_by_surface["source_pathology_execution_authorization"]
+    assert source_authorization["row_id"]
+    assert source_authorization["subject_id"] == "fi_source_pathology_destructive_shape_loss_risk"
+    assert source_authorization["status"] == "source_pathology_not_replay_authority"
+    assert source_authorization["authorization_ref"] == "fi_source_pathology_destructive_shape_loss_risk"
+    assert source_authorization["replay_authorized"] is False
+    assert "authorization_report_as_operation_payload" in source_authorization["forbidden_shortcuts"]
     source_frontier = rows_by_surface["source_pathology_frontier_work_item"]
     assert source_frontier["row_id"] == source_frontier["work_item_id"]
     assert source_frontier["frontier_ref"] == source_frontier["work_item_id"]
@@ -1460,12 +1470,17 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
     assert temporal["strict_disposition"] == "block"
     assert temporal["source_locator"] == "2025/78"
     recovery = rows_by_surface["recovery_execution_authorization"]
+    assert recovery["row_id"]
+    assert recovery["subject_id"] == "fi_recovery_apply_uncovered_body_recovery"
+    assert recovery["status"] == "strict_recovery_blocked"
+    assert recovery["authorization_ref"] == "fi_recovery_apply_uncovered_body_recovery"
     assert recovery["authorization_status"] == "strict_recovery_blocked"
     assert recovery["replay_authorized"] is False
     assert recovery["owner_phase"] == "replay_apply"
     assert recovery["finding_kind"] == "APPLY.UNCOVERED_BODY_RECOVERY"
     assert recovery["family"] == "uncovered_body_recovery"
     assert "recovery_projection_as_replay_authorization" in recovery["forbidden_shortcuts"]
+    assert "authorization_report_as_operation_payload" in recovery["forbidden_shortcuts"]
     source_status = rows_by_surface["source_completeness_status"]
     assert source_status["status"] == "incomplete"
     assert source_status["counts"]["missing_sources"] == 1
@@ -1735,6 +1750,11 @@ def test_finland_strict_report_candidate_set_authorization_rows_have_scope_sensi
     assert report["summary"]["strict_report_candidate_set_kind_counts"] == {
         "fi_strict_report_operation_cue_coverage": 2,
     }
+    assert report["summary"][
+        "strict_report_candidate_set_execution_authorization_status_counts"
+    ] == {
+        "candidate_set_complete_not_replay_authority": 2,
+    }
     candidate_set_rows = [
         row
         for row in report["rows"]
@@ -1750,6 +1770,22 @@ def test_finland_strict_report_candidate_set_authorization_rows_have_scope_sensi
     }
     assert all("candidate_set_certificate_as_replay_authorization" in row["forbidden_shortcuts"] for row in candidate_set_rows)
     proof_surface = proof_surface_from_evidence_report(report).to_dict()
+    candidate_authorization_rows = [
+        row
+        for row in report["rows"]
+        if row["surface"] == "strict_report_candidate_set_execution_authorization"
+    ]
+    assert sorted(row["row_id"] for row in candidate_authorization_rows) == sorted(row_ids)
+    assert {row["status"] for row in candidate_authorization_rows} == {
+        "candidate_set_complete_not_replay_authority",
+    }
+    assert {
+        row["authorization_ref"] for row in candidate_authorization_rows
+    } == {"fi_strict_report_candidate_set_fi_strict_report_operation_cue_coverage"}
+    assert all(
+        "authorization_report_as_operation_payload" in row["forbidden_shortcuts"]
+        for row in candidate_authorization_rows
+    )
     projected_authorization_ids = [
         row["row_id"]
         for row in proof_surface["rows"]

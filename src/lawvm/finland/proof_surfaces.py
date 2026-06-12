@@ -39,7 +39,10 @@ from lawvm.core.candidate_set_certificate import (
 )
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
-from lawvm.core.execution_authorization import ExecutionAuthorization
+from lawvm.core.execution_authorization import (
+    ExecutionAuthorization,
+    execution_authorization_evidence_report,
+)
 from lawvm.core.frontier_work_item import (
     FrontierWorkItem,
     frontier_work_item_evidence_report,
@@ -1125,8 +1128,38 @@ def finland_strict_report_evidence_surface(
     ).to_dict()
     source_pathology_rows = _mapping_sequence(source_pathology_report.get("rows"))
     source_pathology_authorizations = _mapping_sequence(payload.get("source_pathology_execution_authorizations"))
+    source_pathology_authorization_report = execution_authorization_evidence_report(
+        source_pathology_authorizations,
+        jurisdiction="fi",
+        report_kind="finland_source_pathology_execution_authorizations",
+    ).to_dict()
+    source_pathology_authorization_report_rows = _mapping_sequence(
+        source_pathology_authorization_report.get("rows")
+    )
+    source_pathology_authorization_rows = _authorization_rows_with_report(
+        source_pathology_authorizations,
+        source_pathology_authorization_report_rows,
+    )
+    source_pathology_authorization_report_summary = dict(
+        source_pathology_authorization_report.get("summary") or {}
+    )
     source_pathology_frontier_items = _mapping_sequence(payload.get("source_pathology_frontier_work_items"))
     failed_operation_authorizations = _mapping_sequence(payload.get("failed_operation_execution_authorizations"))
+    failed_operation_authorization_report = execution_authorization_evidence_report(
+        failed_operation_authorizations,
+        jurisdiction="fi",
+        report_kind="finland_failed_operation_execution_authorizations",
+    ).to_dict()
+    failed_operation_authorization_report_rows = _mapping_sequence(
+        failed_operation_authorization_report.get("rows")
+    )
+    failed_operation_authorization_rows = _authorization_rows_with_report(
+        failed_operation_authorizations,
+        failed_operation_authorization_report_rows,
+    )
+    failed_operation_authorization_report_summary = dict(
+        failed_operation_authorization_report.get("summary") or {}
+    )
     failed_operation_frontier_items = _mapping_sequence(payload.get("failed_operation_frontier_work_items"))
     frontier_items = (*source_pathology_frontier_items, *failed_operation_frontier_items)
     frontier_work_item_report = frontier_work_item_evidence_report(
@@ -1184,6 +1217,21 @@ def finland_strict_report_evidence_surface(
         strict_fail_reasons=strict_fail_reasons,
         statute_id=str(payload.get("statute_id") or ""),
     )
+    recovery_authorization_report = execution_authorization_evidence_report(
+        recovery_authorization_rows,
+        jurisdiction="fi",
+        report_kind="finland_recovery_execution_authorizations",
+    ).to_dict()
+    recovery_authorization_report_rows = _mapping_sequence(
+        recovery_authorization_report.get("rows")
+    )
+    recovery_authorization_rows_with_report = _authorization_rows_with_report(
+        recovery_authorization_rows,
+        recovery_authorization_report_rows,
+    )
+    recovery_authorization_report_summary = dict(
+        recovery_authorization_report.get("summary") or {}
+    )
     strict_report_candidate_sets = _mapping_sequence(payload.get("strict_report_candidate_set_certificates"))
     strict_report_candidate_set_report = candidate_set_evidence_report(
         strict_report_candidate_sets,
@@ -1198,6 +1246,23 @@ def finland_strict_report_evidence_surface(
     )
     strict_report_candidate_set_authorizations = _mapping_sequence(
         payload.get("strict_report_candidate_set_execution_authorizations")
+    )
+    strict_report_candidate_set_authorization_report = (
+        execution_authorization_evidence_report(
+            strict_report_candidate_set_authorizations,
+            jurisdiction="fi",
+            report_kind="finland_strict_report_candidate_set_authorizations",
+        ).to_dict()
+    )
+    strict_report_candidate_set_authorization_report_rows = _mapping_sequence(
+        strict_report_candidate_set_authorization_report.get("rows")
+    )
+    strict_report_candidate_set_authorization_rows = _authorization_rows_with_report(
+        strict_report_candidate_set_authorizations,
+        strict_report_candidate_set_authorization_report_rows,
+    )
+    strict_report_candidate_set_authorization_report_summary = dict(
+        strict_report_candidate_set_authorization_report.get("summary") or {}
     )
     strict_report_candidate_set_frontier_items = _mapping_sequence(
         payload.get("strict_report_candidate_set_frontier_work_items")
@@ -1215,16 +1280,22 @@ def finland_strict_report_evidence_surface(
                 for row in source_pathology_rows
             ),
             *(
-                {"surface": "source_pathology_execution_authorization", **dict(row)}
-                for row in source_pathology_authorizations
+                {
+                    **dict(row),
+                    "surface": "source_pathology_execution_authorization",
+                }
+                for row in source_pathology_authorization_rows
             ),
             *(
                 {**dict(row), "surface": "source_pathology_frontier_work_item"}
                 for row in source_pathology_frontier_report_rows
             ),
             *(
-                {"surface": "failed_operation_execution_authorization", **dict(row)}
-                for row in failed_operation_authorizations
+                {
+                    **dict(row),
+                    "surface": "failed_operation_execution_authorization",
+                }
+                for row in failed_operation_authorization_rows
             ),
             *(
                 {**dict(row), "surface": "failed_operation_frontier_work_item"}
@@ -1242,14 +1313,20 @@ def finland_strict_report_evidence_surface(
             *(({"surface": "source_completeness_status", **source_completeness_row},) if source_completeness_row else ()),
             *({"surface": "source_completeness_issue", **dict(row)} for row in source_completeness_issues),
             *({"surface": "temporal_resolution_evidence", **dict(row)} for row in temporal_resolution_rows),
-            *({"surface": "recovery_execution_authorization", **dict(row)} for row in recovery_authorization_rows),
+            *(
+                {**dict(row), "surface": "recovery_execution_authorization"}
+                for row in recovery_authorization_rows_with_report
+            ),
             *(
                 {**dict(row), "surface": "strict_report_candidate_set_certificate"}
                 for row in strict_report_candidate_set_report_rows
             ),
             *(
-                {"surface": "strict_report_candidate_set_execution_authorization", **dict(row)}
-                for row in strict_report_candidate_set_authorizations
+                {
+                    **dict(row),
+                    "surface": "strict_report_candidate_set_execution_authorization",
+                }
+                for row in strict_report_candidate_set_authorization_rows
             ),
             *(
                 {"surface": "strict_report_candidate_set_frontier_work_item", **dict(row)}
@@ -1270,8 +1347,20 @@ def finland_strict_report_evidence_surface(
             source_pathology_report.get("summary", {}).get("affected_phase_counts", {})
         ),
         "source_pathology_execution_authorization_count": len(source_pathology_authorizations),
+        "source_pathology_execution_authorization_status_counts": dict(
+            source_pathology_authorization_report_summary.get(
+                "authorization_status_counts"
+            )
+            or {}
+        ),
         "source_pathology_frontier_work_item_count": len(source_pathology_frontier_items),
         "failed_operation_execution_authorization_count": len(failed_operation_authorizations),
+        "failed_operation_execution_authorization_status_counts": dict(
+            failed_operation_authorization_report_summary.get(
+                "authorization_status_counts"
+            )
+            or {}
+        ),
         "failed_operation_frontier_work_item_count": len(failed_operation_frontier_items),
         "potential_operation_count": len(potential_operation_rows),
         "potential_operation_classification_counts": dict(
@@ -1334,6 +1423,10 @@ def finland_strict_report_evidence_surface(
         ),
         "temporal_resolution_evidence_count": len(temporal_resolution_rows),
         "recovery_execution_authorization_count": len(recovery_authorization_rows),
+        "recovery_execution_authorization_status_counts": dict(
+            recovery_authorization_report_summary.get("authorization_status_counts")
+            or {}
+        ),
         "strict_report_candidate_set_certificate_count": len(strict_report_candidate_sets),
         "strict_report_candidate_set_status_counts": dict(
             strict_report_candidate_set_report_summary.get(
@@ -1352,9 +1445,11 @@ def finland_strict_report_evidence_surface(
         "strict_report_candidate_set_execution_authorization_count": len(
             strict_report_candidate_set_authorizations
         ),
-        "strict_report_candidate_set_execution_authorization_status_counts": _count_by_field(
-            strict_report_candidate_set_authorizations,
-            "authorization_status",
+        "strict_report_candidate_set_execution_authorization_status_counts": dict(
+            strict_report_candidate_set_authorization_report_summary.get(
+                "authorization_status_counts"
+            )
+            or {}
         ),
         "strict_report_candidate_set_frontier_work_item_count": len(
             strict_report_candidate_set_frontier_items
@@ -3965,6 +4060,19 @@ def _mapping_sequence(value: Any) -> tuple[Mapping[str, Any], ...]:
     if not isinstance(value, list | tuple):
         return ()
     return tuple(item for item in value if isinstance(item, Mapping))
+
+
+def _authorization_rows_with_report(
+    original_rows: tuple[Mapping[str, Any], ...],
+    report_rows: tuple[Mapping[str, Any], ...],
+) -> tuple[Mapping[str, Any], ...]:
+    """Preserve FI-local evidence fields while shared rows own control fields."""
+
+    rows: list[Mapping[str, Any]] = []
+    for index, report_row in enumerate(report_rows):
+        original = original_rows[index] if index < len(original_rows) else {}
+        rows.append({**dict(original), **dict(report_row)})
+    return tuple(rows)
 
 
 def _count_by_field(rows: tuple[Mapping[str, Any], ...], field_name: str) -> dict[str, int]:
