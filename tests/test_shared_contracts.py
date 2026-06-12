@@ -1661,6 +1661,153 @@ def test_frontier_work_item_claim_closure_report_keeps_phase_gate_closed() -> No
     assert surface["rows"][0]["frontier_ref"] == "fi-frontier-claim-closure"
 
 
+def test_frontier_work_item_claim_closure_report_consumes_matching_phase_gate() -> None:
+    item = FrontierWorkItem(
+        work_item_id="fi-frontier-claim-closure",
+        jurisdiction="fi",
+        source_artifact_id="2020/1",
+        source_unit_id="section:2",
+        owner_phase="typed_elaboration",
+        frontier_family="fi_sparse_item_body_missing",
+        frontier_status="manual_claim_needed",
+        required_claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        required_validator_checks=("validate_sparse_slot_payload_claim",),
+        required_proofs=("payload_identity_proof", "mutation_boundary_proof"),
+        safe_default="block_until_validated_claim_authorizes_replay",
+        forbidden_shortcuts=("manual_claim_as_replay_authorization",),
+        authorization_status="blocked_manual_claim_required",
+    )
+    assertion = {
+        "assertion_id": "claim-1",
+        "jurisdiction": "fi",
+        "kind": "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        "target": {"frontier_ref": "fi-frontier-claim-closure"},
+        "scope": {},
+        "value": {},
+    }
+    result = AuthorizationResult(
+        subject=ArtifactRef(
+            artifact_type="assertion",
+            artifact_id="claim-1",
+            content_hash="claim-1",
+        ),
+        policy_id="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION.strict",
+        profile_name="fi_strict",
+        authorized=True,
+        satisfied_clauses=("exists:span_verified", "exists:entailment_verified"),
+        unsatisfied_clauses=(),
+        forbidden_present=(),
+        evidence_bundle_hash="sha256:" + "a" * 64,
+    )
+    gate = PhaseLocalReplayGate(
+        gate_id="fi-gate-closure-1",
+        jurisdiction="fi",
+        claim_id="claim-1",
+        claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        frontier_ref="fi-frontier-claim-closure",
+        owner_phase="typed_elaboration",
+        authorization_rule_id="fi_sparse_slot_phase_gate_v1",
+        required_proofs=("payload_identity_proof", "mutation_boundary_proof"),
+        satisfied_proofs=("payload_identity_proof", "mutation_boundary_proof"),
+        candidate_operation_family="sparse_item_payload_resolution",
+        candidate_targets=("section:2",),
+    )
+
+    report = frontier_work_item_claim_closure_report(
+        item,
+        assertion=assertion,
+        authorization_result=result,
+        phase_replay_gate=gate,
+    )
+    data = report.to_dict()
+
+    assert data["replay_claims"] is True
+    assert data["summary"]["closure_status_counts"] == {
+        "phase_replay_gate_authorized": 1
+    }
+    assert data["summary"]["phase_gate_required_count"] == 0
+    assert data["summary"]["phase_gate_authorized_count"] == 1
+    assert data["summary"]["replay_authorized_count"] == 1
+    row = data["rows"][0]
+    assert row["closure_status"] == "phase_replay_gate_authorized"
+    assert row["phase_gate_authorized"] is True
+    assert row["executable"] is True
+    assert row["replay_authorized"] is True
+    assert row["required_proofs"] == []
+    assert row["detail"]["phase_replay_gate_evaluation"]["reason_code"] == (
+        "phase_replay_gate_authorized"
+    )
+
+
+def test_frontier_work_item_claim_closure_report_blocks_incomplete_phase_gate() -> None:
+    item = FrontierWorkItem(
+        work_item_id="fi-frontier-claim-closure",
+        jurisdiction="fi",
+        source_artifact_id="2020/1",
+        source_unit_id="section:2",
+        owner_phase="typed_elaboration",
+        frontier_family="fi_sparse_item_body_missing",
+        frontier_status="manual_claim_needed",
+        required_claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        required_proofs=("payload_identity_proof", "mutation_boundary_proof"),
+        safe_default="block_until_validated_claim_authorizes_replay",
+        forbidden_shortcuts=("manual_claim_as_replay_authorization",),
+        authorization_status="blocked_manual_claim_required",
+    )
+    assertion = {
+        "assertion_id": "claim-1",
+        "jurisdiction": "fi",
+        "kind": "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        "target": {"frontier_ref": "fi-frontier-claim-closure"},
+    }
+    result = AuthorizationResult(
+        subject=ArtifactRef(
+            artifact_type="assertion",
+            artifact_id="claim-1",
+            content_hash="claim-1",
+        ),
+        policy_id="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION.strict",
+        profile_name="fi_strict",
+        authorized=True,
+        satisfied_clauses=("exists:span_verified",),
+        unsatisfied_clauses=(),
+        forbidden_present=(),
+        evidence_bundle_hash="sha256:" + "b" * 64,
+    )
+    gate = PhaseLocalReplayGate(
+        gate_id="fi-gate-closure-2",
+        jurisdiction="fi",
+        claim_id="claim-1",
+        claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        frontier_ref="fi-frontier-claim-closure",
+        owner_phase="typed_elaboration",
+        authorization_rule_id="fi_sparse_slot_phase_gate_v1",
+        required_proofs=("payload_identity_proof", "mutation_boundary_proof"),
+        satisfied_proofs=("payload_identity_proof",),
+    )
+
+    report = frontier_work_item_claim_closure_report(
+        item,
+        assertion=assertion,
+        authorization_result=result,
+        phase_replay_gate=gate,
+    ).to_dict()
+
+    assert report["replay_claims"] is False
+    assert report["summary"]["closure_status_counts"] == {
+        "rejected_phase_replay_gate_missing_proofs": 1
+    }
+    assert report["summary"]["phase_gate_required_count"] == 1
+    assert report["summary"]["phase_gate_authorized_count"] == 0
+    row = report["rows"][0]
+    assert row["phase_gate_required"] is True
+    assert row["phase_gate_authorized"] is False
+    assert row["replay_authorized"] is False
+    assert row["detail"]["phase_replay_gate_evaluation"]["missing_proofs"] == [
+        "mutation_boundary_proof"
+    ]
+
+
 def test_frontier_work_item_claim_closure_report_exposes_mismatched_claim() -> None:
     item = FrontierWorkItem(
         work_item_id="fi-frontier-claim-closure",

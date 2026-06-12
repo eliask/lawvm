@@ -7,6 +7,7 @@ from typing import Any, Mapping, cast
 
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
+from lawvm.core.phase_replay_gate import PhaseLocalReplayGate
 
 
 _FRONTIER_WORK_ITEM_REPORT_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
@@ -399,14 +400,17 @@ def frontier_work_item_claim_closure_report(
     *,
     assertion: Any,
     authorization_result: Any,
+    phase_replay_gate: PhaseLocalReplayGate | None = None,
     jurisdiction: str = "",
     report_kind: str = "frontier_work_item_claim_closure",
 ) -> EvidenceSurfaceReport:
     """Report whether one authorized claim matches one frontier item.
 
-    This is a passive closure/read-model bridge. It proves only that an
-    assertion and evidence-policy result line up with a frontier work item; it
-    never grants replay authority or lowers the claim into an operation.
+    Without an explicit ``PhaseLocalReplayGate`` this is a passive closure/read
+    model: evidence-policy success only means the phase gate is required.  With
+    a matching gate, the report may surface replay authorization for the exact
+    assertion/kind/frontier tuple.  It still does not lower the claim into an
+    operation.
     """
 
     frontier = _frontier_mapping(work_item)
@@ -416,8 +420,11 @@ def frontier_work_item_claim_closure_report(
         frontier=frontier,
         claim=claim,
         authorization=authorization,
+        phase_replay_gate=phase_replay_gate,
     )
     closure_status = str(row.get("closure_status") or "")
+    replay_authorized = bool(row["replay_authorized"])
+    executable = bool(row["executable"])
     summary = {
         "frontier_claim_closure_count": 1,
         "closure_status_counts": _counts((closure_status,)),
@@ -426,10 +433,11 @@ def frontier_work_item_claim_closure_report(
         "frontier_ref_match_count": 1 if row["frontier_ref_matches"] else 0,
         "authorization_subject_match_count": 1 if row["authorization_subject_matches"] else 0,
         "phase_gate_required_count": 1 if row["phase_gate_required"] else 0,
-        "replay_authorized_count": 0,
-        "executable_count": 0,
+        "phase_gate_authorized_count": 1 if row["phase_gate_authorized"] else 0,
+        "replay_authorized_count": 1 if replay_authorized else 0,
+        "executable_count": 1 if executable else 0,
         "claim_flags": {
-            "replay_claims": False,
+            "replay_claims": replay_authorized,
             "canonical_effect_claims": False,
             "candidate_effect_claims": False,
             "dry_run_claims": False,
@@ -441,7 +449,7 @@ def frontier_work_item_claim_closure_report(
         report_kind=report_kind,
         schema="lawvm.frontier_work_item_claim_closure_report.v1",
         truth_claim="manual-claim authorization matched to frontier work item",
-        replay_claims=False,
+        replay_claims=replay_authorized,
         canonical_effect_claims=False,
         candidate_effect_claims=False,
         dry_run_claims=False,
@@ -464,6 +472,7 @@ def _frontier_claim_closure_row(
     frontier: Mapping[str, Any],
     claim: Mapping[str, Any],
     authorization: Mapping[str, Any],
+    phase_replay_gate: PhaseLocalReplayGate | None = None,
 ) -> Mapping[str, Any]:
     frontier_ref = str(frontier.get("work_item_id") or "")
     required_claim_kind = str(frontier.get("required_claim_kind") or "")
@@ -481,7 +490,34 @@ def _frontier_claim_closure_row(
         frontier_ref_matches=frontier_ref_matches,
         authorization_subject_matches=authorization_subject_matches,
     )
-    phase_gate_required = closure_status == "evidence_policy_satisfied_phase_gate_required"
+    phase_gate_evaluation = (
+        phase_replay_gate.evaluate_for_claim(
+            claim_id=assertion_id,
+            claim_kind=claim_kind,
+            frontier_ref=frontier_ref,
+        )
+        if phase_replay_gate is not None
+        and closure_status == "evidence_policy_satisfied_phase_gate_required"
+        else None
+    )
+    phase_gate_authorized = bool(
+        phase_gate_evaluation is not None and phase_gate_evaluation.replay_authorized
+    )
+    if phase_gate_authorized:
+        closure_status = "phase_replay_gate_authorized"
+    elif phase_gate_evaluation is not None:
+        closure_status = phase_gate_evaluation.reason_code
+    phase_gate_required = closure_status == "evidence_policy_satisfied_phase_gate_required" or (
+        phase_gate_evaluation is not None and not phase_gate_authorized
+    )
+    replay_authorized = phase_gate_authorized
+    required_proofs = (
+        []
+        if replay_authorized
+        else list(_sequence(frontier.get("required_proofs"))) + [
+            "phase_local_replay_authorization",
+        ]
+    )
     return {
         "surface": "frontier_work_item_claim_closure",
         "row_id": f"{frontier_ref}:{assertion_id}:claim-closure",
@@ -498,12 +534,15 @@ def _frontier_claim_closure_row(
         "authorization_subject_matches": authorization_subject_matches,
         "closure_status": closure_status,
         "phase_gate_required": phase_gate_required,
-        "executable": False,
-        "replay_authorized": False,
-        "required_proofs": list(_sequence(frontier.get("required_proofs"))) + [
-            "phase_local_replay_authorization",
-        ],
-        "safe_default": "do_not_replay_manual_claim_from_closure_report",
+        "phase_gate_authorized": phase_gate_authorized,
+        "executable": replay_authorized,
+        "replay_authorized": replay_authorized,
+        "required_proofs": required_proofs,
+        "safe_default": (
+            "execute_only_after_frontier_claim_and_phase_replay_gate"
+            if replay_authorized
+            else "do_not_replay_manual_claim_from_closure_report"
+        ),
         "forbidden_shortcuts": list(
             dict.fromkeys(
                 (
@@ -520,6 +559,22 @@ def _frontier_claim_closure_row(
             "satisfied_clauses": list(_sequence(authorization.get("satisfied_clauses"))),
             "unsatisfied_clauses": list(_sequence(authorization.get("unsatisfied_clauses"))),
             "forbidden_present": list(_sequence(authorization.get("forbidden_present"))),
+            "phase_replay_gate": (
+                phase_replay_gate.to_dict()
+                if phase_replay_gate is not None
+                else None
+            ),
+            "phase_replay_gate_evaluation": (
+                {
+                    "replay_authorized": phase_gate_evaluation.replay_authorized,
+                    "reason_code": phase_gate_evaluation.reason_code,
+                    "missing_proofs": list(phase_gate_evaluation.missing_proofs),
+                    "blocked_proofs": list(phase_gate_evaluation.blocked_proofs),
+                    "forbidden_present": list(phase_gate_evaluation.forbidden_present),
+                }
+                if phase_gate_evaluation is not None
+                else None
+            ),
         },
     }
 
