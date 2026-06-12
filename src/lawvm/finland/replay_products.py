@@ -25,7 +25,11 @@ from lawvm.core.timeline_results import (
     Timelines,
 )
 from lawvm.core.timeline_addresses import _retarget_version_content
-from lawvm.core.tree_ops import check_invariants, resort_children as _resort_children
+from lawvm.core.tree_ops import (
+    check_invariants,
+    default_label_sort_key,
+    resort_children as _resort_children,
+)
 from lawvm.replay_adjudication import SourceAdjudication
 from lawvm.finland.apply_ir_ops import _strip_standalone_subsection_item_prefixes_ir
 
@@ -126,6 +130,101 @@ def _fi_root_num_text(kind: IRNodeKind, label: str) -> str | None:
     if kind_value == IRNodeKind.CHAPTER.value:
         return f"{label} luku"
     return None
+
+
+def _content_is_repeal_placeholder(node: IRNode) -> bool:
+    return node.attrs.get("lawvm_repeal_placeholder") == "1"
+
+
+def _should_restore_repeal_placeholder(node: IRNode) -> bool:
+    """Return whether a replay-only placeholder is visible in FI export.
+
+    Repealed whole provisions stay absent in the materialized state. The visible
+    dotted-text convention is currently owned only for child slots inside a live
+    provision, where Finlex preserves the numbering gap.
+    """
+    return node.kind is IRNodeKind.SUBSECTION and _content_is_repeal_placeholder(node)
+
+
+def _restore_replay_fold_repeal_placeholders(materialized: IRNode, replay_fold: IRNode) -> IRNode:
+    """Carry replay-owned dotted-text placeholders through PIT export.
+
+    Core materialization treats tombstones as absence. Finland's official
+    consolidation export profile intentionally keeps repeal placeholders as
+    visible dotted-text slots. This pass is Finland-local and copies only nodes
+    that replay already marked as repeal placeholders.
+    """
+    if materialized.kind is not replay_fold.kind or materialized.label != replay_fold.label:
+        return materialized
+    if not replay_fold.children:
+        return materialized
+
+    replay_children = replay_fold.children
+    if (
+        materialized.kind is IRNodeKind.BODY
+        and len(replay_children) == 1
+        and replay_children[0].kind is IRNodeKind.HCONTAINER
+        and replay_children[0].attrs.get("name") == "statuteProvisionsWrapper"
+    ):
+        replay_children = replay_children[0].children
+
+    def _insert_missing_placeholder(children: list[IRNode], placeholder: IRNode) -> None:
+        target_key = default_label_sort_key(placeholder.label)
+        insert_at: int | None = None
+        last_same_kind: int | None = None
+        for index, child in enumerate(children):
+            if child.kind is not placeholder.kind or child.label is None:
+                continue
+            last_same_kind = index
+            if default_label_sort_key(child.label) > target_key:
+                insert_at = index
+                break
+        if insert_at is None and last_same_kind is not None:
+            insert_at = last_same_kind + 1
+        if insert_at is None:
+            children.append(placeholder)
+            return
+        children.insert(insert_at, placeholder)
+
+    source_by_key: dict[tuple[IRNodeKind, str], IRNode] = {}
+    for child in replay_children:
+        if child.label is None:
+            continue
+        source_by_key.setdefault((child.kind, child.label), child)
+
+    changed = False
+    new_children: list[IRNode] = []
+    existing_keys: set[tuple[IRNodeKind, str]] = set()
+    for child in materialized.children:
+        new_child = child
+        if child.label is not None:
+            key = (child.kind, child.label)
+            existing_keys.add(key)
+            source_child = source_by_key.get(key)
+            if source_child is not None:
+                new_child = _restore_replay_fold_repeal_placeholders(child, source_child)
+                changed = changed or new_child is not child
+        new_children.append(new_child)
+
+    for child in replay_children:
+        if child.label is None or not _should_restore_repeal_placeholder(child):
+            continue
+        key = (child.kind, child.label)
+        if key in existing_keys:
+            continue
+        _insert_missing_placeholder(new_children, child)
+        existing_keys.add(key)
+        changed = True
+
+    if not changed:
+        return materialized
+    return IRNode(
+        kind=materialized.kind,
+        label=materialized.label,
+        text=materialized.text,
+        attrs=dict(materialized.attrs),
+        children=tuple(new_children),
+    )
 
 
 def _temporal_events_from_lo_ops(
@@ -599,6 +698,10 @@ def build_replay_products(
     materialized_state = materialized_state.with_ir(
         _strip_standalone_subsection_item_prefixes_ir(materialized_state.ir)
     )
+    if synthesize_repeal_placeholders:
+        materialized_state = materialized_state.with_ir(
+            _restore_replay_fold_repeal_placeholders(materialized_state.ir, replay_fold_state.ir)
+        )
     # Sort labeled children back into canonical order.  PIT materialization can
     # produce out-of-order siblings (e.g. paragraphs within a subsection) for
     # the same reason the replay fold can — amendment ops insert at arbitrary
