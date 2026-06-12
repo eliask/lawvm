@@ -94,6 +94,15 @@ class LetterSuffixChapterAbsorptionResult:
     adopted_paths: tuple[tuple[tuple[str, str], ...], ...]
 
 
+@dataclass(frozen=True, slots=True)
+class StandaloneSectionTarget:
+    """Normalized standalone section target carried beside a container op."""
+
+    part: str | None
+    chapter: str | None
+    label: str
+
+
 def _absorb_trailing_wrapper_sections_into_letter_suffix_chapter(
     state,
     *,
@@ -810,8 +819,8 @@ def _apply_container_op(
     replay_history_ops: Optional[List[_LegalOperation]] = None,
 ):
     """Apply container (chapter/part) operation via tree_ops."""
-    def _normalized_standalone_targets() -> list[tuple[str | None, str | None, str]]:
-        normalized: list[tuple[str | None, str | None, str]] = []
+    def _normalized_standalone_targets() -> list[StandaloneSectionTarget]:
+        normalized: list[StandaloneSectionTarget] = []
         for raw_target in standalone_section_targets or frozenset():
             if not isinstance(raw_target, tuple):
                 continue
@@ -825,10 +834,10 @@ def _apply_container_op(
             if raw_label is None:
                 continue
             normalized.append(
-                (
-                    _norm_num_token(str(raw_part)) if raw_part not in (None, "") else None,
-                    _norm_num_token(str(raw_chapter)) if raw_chapter not in (None, "") else None,
-                    _norm_num_token(str(raw_label)),
+                StandaloneSectionTarget(
+                    part=_norm_num_token(str(raw_part)) if raw_part not in (None, "") else None,
+                    chapter=_norm_num_token(str(raw_chapter)) if raw_chapter not in (None, "") else None,
+                    label=_norm_num_token(str(raw_label)),
                 )
             )
         return normalized
@@ -1168,11 +1177,11 @@ def _apply_container_op(
                     if child.kind is IRNodeKind.SECTION and child.label:
                         child_label = _norm_num_token(child.label)
                         shadowed_in_same_container = any(
-                            standalone_label == child_label
-                            and standalone_chapter is not None
-                            and standalone_chapter == current_container_label
-                            and standalone_part == current_container_part
-                            for standalone_part, standalone_chapter, standalone_label in normalized_standalone_targets
+                            standalone_target.label == child_label
+                            and standalone_target.chapter is not None
+                            and standalone_target.chapter == current_container_label
+                            and standalone_target.part == current_container_part
+                            for standalone_target in normalized_standalone_targets
                         )
                         if child_label not in live_member_labels and shadowed_in_same_container:
                             filtered_shadowed = True
@@ -1380,10 +1389,10 @@ def _apply_container_op(
                     if path is None:
                         _lbl = _norm_num_token(child.label)
                         _filter_this = False
-                        for part_label, ch, lbl in normalized_standalone_targets:
-                            if lbl != _lbl:
+                        for standalone_target in normalized_standalone_targets:
+                            if standalone_target.label != _lbl:
                                 continue
-                            if ch is None:
+                            if standalone_target.chapter is None:
                                 # Root-insert sections (ch=None) are always
                                 # placed by their own standalone INSERT op.
                                 # Strip them from the chapter body so they end
@@ -1395,9 +1404,9 @@ def _apply_container_op(
                                 # body, but belonging to chapter 6).
                                 _filter_this = True
                                 break
-                            if part_label != current_container_part:
+                            if standalone_target.part != current_container_part:
                                 continue
-                            if ch == current_container_label:
+                            if standalone_target.chapter == current_container_label:
                                 _filter_this = True
                                 break
                         if _filter_this:
