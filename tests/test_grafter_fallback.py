@@ -3228,7 +3228,7 @@ def test_prune_container_payload_sections_keeps_new_sections_with_standalone_tar
 
     # Section "26" is NEW (not in live members {14,15}) — must be kept.
     assert changed is False
-    assert got is not None
+    assert isinstance(got, IRNode)
     assert pruned == []
     assert [c.label for c in got.children if c.kind is IRNodeKind.SECTION] == ["14", "15", "26"]
 
@@ -3284,7 +3284,7 @@ def test_prune_container_payload_sections_prunes_foreign_scoped_shadow_from_head
     )
 
     assert changed is True
-    assert got is not None
+    assert isinstance(got, IRNode)
     assert pruned == ["60b"]
     assert [c.label for c in got.children if c.kind is IRNodeKind.SECTION] == ["59a", "59b"]
 
@@ -3383,7 +3383,7 @@ def test_prune_container_payload_sections_shadowed_by_standalone_targets_in_new_
     )
 
     assert changed is True
-    assert got is not None
+    assert isinstance(got, IRNode)
     assert pruned == ["20a", "20h"]
     assert [c.label for c in got.children if c.kind is IRNodeKind.SECTION] == ["19j"]
 

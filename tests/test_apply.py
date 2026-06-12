@@ -2441,6 +2441,84 @@ def test_emit_section_snapshot_reuses_replay_owned_subsection_lineage_without_ba
     assert subsection_snapshot.action is StructuralAction.REPLACE
 
 
+def test_emit_section_snapshot_prefers_prior_scoped_timeline_path_over_global_homonym() -> None:
+    state = _make_state(_body(_sec("2", _sub("1", _content("wrong root section")))))
+    prior_section = _sec(
+        "2",
+        _sub("1", _content("old scoped subsection")),
+        _sub("2", _content("scoped tail")),
+    )
+    lo_ops: list[LegalOperation] = [
+        LegalOperation(
+            op_id="snapshot_section_2",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("part", "2"), ("chapter", "5"), ("section", "2"))),
+            payload=prior_section,
+            source=OperationSource(statute_id="2009/572", enacted="2009-07-24", effective="2010-01-01"),
+            group_id="finland-johto:2009/572",
+        )
+    ]
+    replacement_subsection = _sub("1", _content("new scoped subsection"))
+    source_section = _sec("2", replacement_subsection)
+    op = AmendmentOp(
+        op_id="replace_5_2_1",
+        op_type="REPLACE",
+        target_section="2",
+        target_unit_kind="section",
+        target_chapter="5",
+        target_paragraph=1,
+        source_statute="2013/922",
+        source_issue_date=_DATE,
+    )
+    slot_map = SubsectionSlotMap()
+    slot_map.assign(op, replacement_subsection)
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=source_section,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="2",
+        target_chapter="5",
+        target_address=LegalAddress(path=(("chapter", "5"), ("section", "2"), ("subsection", "1"))),
+        slot_assignment=SubsectionSlotAssignmentResult(
+            subsec_map=slot_map,
+            sparse_slot_bindings=(),
+            used_subs=(),
+            unassigned_payload_slots=(),
+        ),
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="2",
+        target_chapter="5",
+        target_part=None,
+        group_rops=[rop],
+        lo_ops_out=lo_ops,
+        amendment_id="2013/922",
+        source_title="Scoped replace",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=None,
+    )
+
+    snapshot = next(
+        op
+        for op in lo_ops
+        if op.source is not None and op.source.statute_id == "2013/922" and op.op_id == "snapshot_section_2"
+    )
+    assert snapshot.target.path == (("part", "2"), ("chapter", "5"), ("section", "2"))
+    assert snapshot.payload is not None
+    assert [irnode_to_text(child) for child in snapshot.payload.children] == ["new scoped subsection"]
+    assert all(
+        op.target.path != (("section", "2"),)
+        for op in lo_ops
+        if op.source is not None and op.source.statute_id == "2013/922"
+    )
+
+
 def test_emit_section_snapshot_prefers_complete_source_payload_over_stale_fold() -> None:
     stale_section = _sec(
         "51",

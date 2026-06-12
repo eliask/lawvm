@@ -1735,6 +1735,35 @@ def _emit_section_snapshot(
             raw_path = None
         return _timeline_path(_tops._as_path(raw_path)) if raw_path else None
 
+    def _latest_scoped_section_snapshot_path() -> Optional[Path]:
+        if target_unit_kind != "section" or not target_chapter:
+            return None
+        candidates: list[Path] = []
+        for lo in reversed(lo_ops_out):
+            if lo.target.special is not None:
+                continue
+            path = lo.target.path
+            if not path or path[-1][0] != "section":
+                continue
+            labels = {kind: label for kind, label in path if label}
+            if _norm_num_token(labels.get("section", "")) != normalized_target_norm:
+                continue
+            if _norm_num_token(labels.get("chapter", "")) != _norm_num_token(target_chapter):
+                continue
+            if target_part and _norm_num_token(labels.get("part", "")) != _norm_num_token(target_part):
+                continue
+            if path not in candidates:
+                candidates.append(path)
+        if not candidates:
+            return None
+        if target_part:
+            return candidates[0]
+        candidate_parts = {
+            next((label for kind, label in candidate if kind == "part"), "")
+            for candidate in candidates
+        }
+        return candidates[0] if len(candidate_parts) == 1 else None
+
     def _base_container_payload() -> Optional[IRNode]:
         if base_ir is None or target_unit_kind not in {"chapter", "part"}:
             return None
@@ -1792,6 +1821,7 @@ def _emit_section_snapshot(
         target_part,
         path_hint,
     )
+    raw_path_from_timeline = False
     if hinted_path is not None:
         emitted_path = _project_snapshot_path(hinted_path)
         if emitted_path is None:
@@ -1836,6 +1866,18 @@ def _emit_section_snapshot(
         if not raw_path and not target_chapter:
             raw_path = _unique_global_section_path(normalized_target_norm)
         if not raw_path and target_chapter and not target_part:
+            raw_path = _latest_scoped_section_snapshot_path()
+            raw_path_from_timeline = raw_path is not None
+        if not raw_path and target_chapter and not target_part:
+            # Explicit chapter scope outranks homonymous global fallback.  The
+            # mutable replay fold can lose a base section before a later
+            # source-direct subsection replacement, but the timeline address is
+            # still the scoped base address, not an unrelated unique live section.
+            _is_non_insert = group_rops and all(not rop.is_insert_action for rop in group_rops)
+            if _is_non_insert:
+                raw_path = _base_resolved_path()
+                raw_path_from_timeline = False
+        if not raw_path and target_chapter and not target_part:
             # Cross-chapter/root-level unique global fallback: Finnish amendments
             # sometimes group sections under a chapter heading (e.g. "5 luku") that
             # differs from where the section actually lives in the live statute
@@ -1846,18 +1888,31 @@ def _emit_section_snapshot(
             _is_non_insert = group_rops and all(not rop.is_insert_action for rop in group_rops)
             if _is_non_insert:
                 raw_path = _unique_global_section_path(normalized_target_norm)
+                raw_path_from_timeline = False
         if raw_path:
-            emitted_path = _project_snapshot_path(raw_path) or raw_path
+            emitted_path = raw_path if raw_path_from_timeline else (_project_snapshot_path(raw_path) or raw_path)
             payload = _tops.resolve(state.ir, emitted_path)
             if payload is None:
                 payload = _tops.resolve(state.ir, raw_path)
-            if payload is not None:
+            if payload is not None or raw_path_from_timeline:
                 resolved_path = _timeline_path(emitted_path)
             elif _whole_target_repeal():
                 # Section was already removed from the IR by the REPEAL op.
                 # Anchor the tombstone to the path where the section previously
                 # lived, even though payload cannot be resolved from current IR.
                 resolved_path = _timeline_path(emitted_path)
+        if resolved_path is None and target_chapter and not target_part:
+            raw_path = _latest_scoped_section_snapshot_path()
+            raw_path_from_timeline = raw_path is not None
+            if raw_path:
+                emitted_path = raw_path
+                payload = _tops.resolve(state.ir, emitted_path)
+                if payload is None:
+                    payload = _tops.resolve(state.ir, raw_path)
+                if payload is None and base_ir is not None:
+                    payload = _tops.resolve(base_ir, raw_path)
+                if payload is not None or raw_path_from_timeline:
+                    resolved_path = _timeline_path(emitted_path)
     elif target_unit_kind == "chapter":
         raw_path = _lookup_container_path_in_tree(state.ir, "chapter")
         if raw_path:
@@ -1895,21 +1950,43 @@ def _emit_section_snapshot(
             if target_norm not in raw_candidates:
                 raw_candidates.insert(0, target_norm)
             for label in raw_candidates:
+                raw_path_from_timeline = False
                 raw_path = state.find_section_path(label, target_chapter, target_part)
                 if not raw_path and not target_chapter:
                     raw_path = _unique_global_section_path(label)
                 if not raw_path and target_chapter and not target_part:
+                    raw_path = _latest_scoped_section_snapshot_path()
+                    raw_path_from_timeline = raw_path is not None
+                if not raw_path and target_chapter and not target_part:
+                    _is_non_insert = group_rops and all(not rop.is_insert_action for rop in group_rops)
+                    if _is_non_insert:
+                        raw_path = _base_resolved_path()
+                        raw_path_from_timeline = False
+                if not raw_path and target_chapter and not target_part:
                     _is_non_insert = group_rops and all(not rop.is_insert_action for rop in group_rops)
                     if _is_non_insert:
                         raw_path = _unique_global_section_path(label)
+                        raw_path_from_timeline = False
                 if raw_path:
-                    emitted_path = _project_snapshot_path(raw_path) or raw_path
+                    emitted_path = raw_path if raw_path_from_timeline else (_project_snapshot_path(raw_path) or raw_path)
                     payload = _tops.resolve(state.ir, emitted_path)
                     if payload is None:
                         payload = _tops.resolve(state.ir, raw_path)
-                    if payload is not None:
+                    if payload is not None or raw_path_from_timeline:
                         resolved_path = _timeline_path(emitted_path)
                         break
+            if resolved_path is None and target_chapter and not target_part:
+                raw_path = _latest_scoped_section_snapshot_path()
+                raw_path_from_timeline = raw_path is not None
+                if raw_path:
+                    emitted_path = raw_path
+                    payload = _tops.resolve(state.ir, emitted_path)
+                    if payload is None:
+                        payload = _tops.resolve(state.ir, raw_path)
+                    if payload is None and base_ir is not None:
+                        payload = _tops.resolve(base_ir, raw_path)
+                    if payload is not None or raw_path_from_timeline:
+                        resolved_path = _timeline_path(emitted_path)
         else:
             kind_name = "chapter" if target_unit_kind == "chapter" else "part"
             for label in _candidate_lookup_labels():
