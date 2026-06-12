@@ -127,6 +127,15 @@ def _common_target(pathology_code: str) -> tuple[tuple[str, object], ...]:
     )
 
 
+def _sparse_slot_proof_values() -> tuple[tuple[str, object], ...]:
+    return (
+        ("target_uniqueness_proof_ref", "target-proof-1"),
+        ("payload_identity_proof_ref", "payload-proof-1"),
+        ("rejected_candidate_accounting_ref", "rejected-candidates-proof-1"),
+        ("mutation_boundary_proof_ref", "mutation-proof-1"),
+    )
+
+
 def test_finland_xml_manual_frontier_kinds_are_registered() -> None:
     registered = set(list_registered_kinds())
     for kind in _XML_FRONTIER_KINDS:
@@ -239,6 +248,7 @@ def test_xml_manual_frontier_rejects_wrong_pathology_family() -> None:
             ("candidate_slots", ("section:35/subsection:1/item:5",)),
             ("selected_slot", "section:35/subsection:1/item:5"),
             ("old_text_precondition", "old text"),
+            *_sparse_slot_proof_values(),
         ),
         source_bytes=source,
     )
@@ -248,6 +258,33 @@ def test_xml_manual_frontier_rejects_wrong_pathology_family() -> None:
     result = spec.entailment_validator(claim, source)
     assert result.passed is False
     assert result.details == "source_pathology_code_mismatch"
+
+
+def test_sparse_slot_resolution_requires_phase_gate_proof_refs() -> None:
+    source = b"<p>sparse slot source quote</p>"
+    claim = _claim(
+        claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        target=_common_target("SPARSE_ITEM_BODY_MISSING"),
+        value=(
+            ("source_quote", "sparse slot source quote"),
+            ("candidate_slots", ("section:35/subsection:1/item:5",)),
+            ("selected_slot", "section:35/subsection:1/item:5"),
+            ("old_text_precondition", "old text"),
+        ),
+        source_bytes=source,
+    )
+
+    spec = get_claim_kind_spec("fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION")
+    assert spec is not None
+    assert spec.entailment_validator is not None
+    result = spec.entailment_validator(claim, source)
+
+    assert result.passed is False
+    assert result.details == "missing_required_fields"
+    assert "target_uniqueness_proof_ref" in result.reason
+    assert "payload_identity_proof_ref" in result.reason
+    assert "rejected_candidate_accounting_ref" in result.reason
+    assert "mutation_boundary_proof_ref" in result.reason
 
 
 def test_failed_operation_resolution_validates_without_pathology_code() -> None:
@@ -370,6 +407,7 @@ def test_semantic_xml_manual_frontier_claim_validates_but_composer_blocks_replay
             ("candidate_slots", ("section:35/subsection:1/item:5",)),
             ("selected_slot", "section:35/subsection:1/item:5"),
             ("old_text_precondition", "old text"),
+            *_sparse_slot_proof_values(),
         ),
         source_bytes=source,
     )
@@ -411,6 +449,7 @@ def test_semantic_xml_manual_frontier_claim_requires_matching_phase_gate() -> No
             ("candidate_slots", ("section:35/subsection:1/item:5",)),
             ("selected_slot", "section:35/subsection:1/item:5"),
             ("old_text_precondition", "old text"),
+            *_sparse_slot_proof_values(),
         ),
         source_bytes=source,
     )
@@ -475,6 +514,7 @@ def test_semantic_xml_manual_frontier_claim_rejects_mismatched_phase_gate() -> N
             ("candidate_slots", ("section:35/subsection:1/item:5",)),
             ("selected_slot", "section:35/subsection:1/item:5"),
             ("old_text_precondition", "old text"),
+            *_sparse_slot_proof_values(),
         ),
         source_bytes=source,
     )

@@ -1613,6 +1613,10 @@ def test_frontier_work_item_claim_template_is_passive_review_scaffold() -> None:
         "candidate_slots",
         "selected_slot",
         "old_text_precondition",
+        "target_uniqueness_proof_ref",
+        "payload_identity_proof_ref",
+        "rejected_candidate_accounting_ref",
+        "mutation_boundary_proof_ref",
     ]
     assert template["executable"] is False
     assert template["replay_authorized"] is False

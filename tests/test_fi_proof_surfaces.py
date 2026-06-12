@@ -1161,6 +1161,10 @@ def test_source_pathology_frontier_work_item_is_non_executable() -> None:
         "candidate_slots",
         "selected_slot",
         "old_text_precondition",
+        "target_uniqueness_proof_ref",
+        "payload_identity_proof_ref",
+        "rejected_candidate_accounting_ref",
+        "mutation_boundary_proof_ref",
     ]
     assert item["suggested_claim_template"]["claim_target_seed"] == {
         "frontier_ref": item["work_item_id"],
@@ -1201,6 +1205,10 @@ def test_real_fi_source_pathology_frontier_claim_closure_requires_phase_gate() -
             "candidate_slots": ("section:5/subsection:2/item:3",),
             "selected_slot": "section:5/subsection:2/item:3",
             "old_text_precondition": "old item text",
+            "target_uniqueness_proof_ref": "target-proof-1",
+            "payload_identity_proof_ref": "payload-proof-1",
+            "rejected_candidate_accounting_ref": "rejected-candidates-proof-1",
+            "mutation_boundary_proof_ref": "mutation-proof-1",
         },
     }
     result = AuthorizationResult(

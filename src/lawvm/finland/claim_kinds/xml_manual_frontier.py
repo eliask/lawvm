@@ -95,6 +95,10 @@ _SPARSE_SLOT = _XmlClaimSpec(
         "candidate_slots",
         "selected_slot",
         "old_text_precondition",
+        "target_uniqueness_proof_ref",
+        "payload_identity_proof_ref",
+        "rejected_candidate_accounting_ref",
+        "mutation_boundary_proof_ref",
     ),
     allowed_pathology_codes=(
         "SPARSE_ITEM_BODY_MISSING",
