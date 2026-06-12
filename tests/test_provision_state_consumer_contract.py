@@ -1,11 +1,11 @@
-"""Cross-repo regression pins for MeVM grounding evidence.
+"""Cross-repo consumer-contract pins for LawVM provision-state.
 
-MeVM (a downstream consumer in ../mevm) mints its strongest proof evidence from
-LawVM's `provision-state` resolution: verdict CONFIRMED + `derived_state_hash`.
-The contract is one-directional: LawVM may fail loudly anywhere, but it must
-NEVER return the WRONG text-state under a CONFIRMED verdict with a stable hash.
+Downstream consumers can pin LawVM's `provision-state` resolution as:
+verdict CONFIRMED + `derived_state_hash`.  The contract is one-directional:
+LawVM may fail loudly anywhere, but it must NEVER return the WRONG text-state
+under a CONFIRMED verdict with a stable hash.
 
-These pins were extracted from two MeVM fact-packs (read-only):
+The current fixture set was extracted from two MeVM fact-packs (read-only):
   ../mevm/research/state_map/TRACK2_GROUNDING_FACTPACK_2026-06-10.md
   ../mevm/research/state_map/E1_LAWVM_ROUTE_GROUNDING_HANKINTALAKI.md
 
@@ -35,10 +35,13 @@ _LAWVM_ROOT = Path(__file__).resolve().parents[1]
 _FINLEX_FARCHIVE = _LAWVM_ROOT / "data" / "finlex.farchive"
 _CORPUS_AVAILABLE = _FINLEX_FARCHIVE.exists()
 
-pytestmark = pytest.mark.skipif(
-    not _CORPUS_AVAILABLE,
-    reason=f"Finland corpus not available at {_FINLEX_FARCHIVE}",
-)
+pytestmark = [
+    pytest.mark.consumer_contract,
+    pytest.mark.skipif(
+        not _CORPUS_AVAILABLE,
+        reason=f"Finland corpus not available at {_FINLEX_FARCHIVE}",
+    ),
+]
 
 # Pin shape: (statute_id, provision, as_of, query_type, derived_state_hash).
 # as_of/query_type are uniform across both fact-packs (2026-06-10 / in_force).
@@ -131,7 +134,7 @@ def _resolve_hash(statute_id: str, provision: str, as_of: str, query_type: str) 
 
 
 def _assert_source_locator_span(payload: dict) -> None:
-    """MeVM pins need source footing, not only a stable derived state hash."""
+    """Consumer pins need source footing, not only a stable derived state hash."""
     locator = payload.get("source_locator") or {}
     detail = locator.get("detail") or {}
     assert payload.get("source_locator_status") == "canonical_document_locator"
@@ -160,10 +163,10 @@ def _assert_source_locator_span(payload: dict) -> None:
     _PINS,
     ids=[f"{p[0]}:{p[1]}@{p[2]}" for p in _PINS],
 )
-def test_mevm_grounding_pin_reproduces(
+def test_provision_state_consumer_pin_reproduces(
     statute_id: str, provision: str, as_of: str, query_type: str, pinned_hash: str
 ) -> None:
-    """A CONFIRMED MeVM pin must reproduce its derived_state_hash on the current build."""
+    """A CONFIRMED consumer pin must reproduce its hash on the current build."""
     from lawvm.provision_state import resolve_provision_state
 
     payload = resolve_provision_state(
@@ -195,7 +198,7 @@ def test_mevm_grounding_pin_reproduces(
     ids=[f"{p[0]}:{p[1]}@{p[2]}" for p in _KNOWN_DIVERGENT],
 )
 @pytest.mark.xfail(reason="known derived_state_hash divergence; see inline reason", strict=True)
-def test_mevm_grounding_pin_known_divergent(
+def test_provision_state_consumer_pin_known_divergent(
     statute_id: str, provision: str, as_of: str, query_type: str, pinned_hash: str, reason: str
 ) -> None:
     """Pins known to diverge on the current build (xfail, strict).

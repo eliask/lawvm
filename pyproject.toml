@@ -194,6 +194,7 @@ addopts = "-n 4 --tb=short"
 markers = [
     "slow: marks tests as slow (full gold corpus, 404 captures). Run with: pytest -m slow",
     "network: marks tests that require live HTTP access. Run with: pytest -m network",
+    "consumer_contract: marks corpus-backed downstream consumer contract tests for stable public seams",
 ]
 filterwarnings = [
     # ortools 9.15 cp_model.py uses ~False and ~True as integer sentinels (-1, -2).

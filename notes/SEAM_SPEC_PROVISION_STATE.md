@@ -257,8 +257,8 @@ NOT GUARANTEED:
   the hash MAY change for the same query (precedent: the enacted-date semantics
   change that populated `enacted` for base versions). Consumers MUST pin
   `spec_version` and MUST NOT assume hash stability across engine versions.
-- The change detector is the **21-pin regression suite**
-  (`tests/test_mevm_grounding_pins.py`): it re-runs the consumer's pinned
+- The change detector is the corpus-backed **consumer-contract regression suite**
+  (`tests/test_provision_state_consumer_contract.py`): it re-runs pinned
   `(address, as_of) → derived_state_hash` corpus against the live seam. Any
   semantic hash change surfaces there before reaching consumers.
 
@@ -393,9 +393,10 @@ bump `spec_version` — iff it changes any of:
 
 Non-breaking clarifications (added prose, new excluded provenance fields) MAY
 ship under the same `spec_version`. Breaking changes are announced via a
-`spec_version` bump AND will manifest as divergence in the 21-pin regression
-suite (`tests/test_mevm_grounding_pins.py`), which consumers SHOULD also run in
-their own CI. Consumers MUST pin the `spec_version` they validated against.
+`spec_version` bump AND will manifest as divergence in the consumer-contract
+regression suite (`tests/test_provision_state_consumer_contract.py`), which
+consumers SHOULD also run in their own CI. Consumers MUST pin the
+`spec_version` they validated against.
 
 ### 7.0.1 Changes within 0.2: response exposes `spec_version`
 
@@ -608,9 +609,9 @@ a. The fixed-term-expiry example specifics (statute 482/2024 valid to
    machine-readable expires bound -> eligible() expires gate never trips) is
    consistent with timeline_selection.py:155 and provision_state.py:332.
 
-b. The "21 pins" count and that tests/test_mevm_grounding_pins.py is the live
-   change detector. Copied from LAWVM_MEVM_CONTRACT_REPLY lines 64-69; the test
-   file itself was not read.
+b. The original "21 pins" count and live change-detector claim. The current
+   in-repo contract suite is `tests/test_provision_state_consumer_contract.py`;
+   the initial fixture provenance was MeVM's fact-pack pins.
 
 c. The enacted-date semantics-change precedent (commit b09e0003 populating
    enacted for base versions, causing cross-build hash divergence for pins
