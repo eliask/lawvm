@@ -17,11 +17,18 @@ grafter.py re-exports every public symbol from here for backward compatibility.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from dataclasses import replace as dc_replace
 from typing import List, Optional, Set, Tuple
 
 import lxml.etree as etree
 
+from lawvm.core.regex_recognition_coverage import (
+    REGEX_RECOGNITION_FULLY_CLASSIFIED,
+    REGEX_RECOGNITION_UNCLASSIFIED_GAP,
+    RegexRecognitionCoverage,
+    regex_source_text_hash,
+)
 from lawvm.finland.helpers import _expand_section_range, _norm_num_token
 from lawvm.finland.ops import (
     AmendmentOp,
@@ -58,6 +65,18 @@ _RE_NEW_ITEM = re.compile(
     r"\s+kohta\b"
 )
 _RE_STATUTE_CREATION_CHAPTER = re.compile(r"\blakiin\s+uusi\s+(\d+\s*[a-z]?)\s+luku\b")
+_INSERT_SUBSECTION_FALLBACK_RE = re.compile(
+    r"(\d+\s*[a-z]?)\s*§\s*:ään\s*,?\s*(?:sellaisena\s+kuin\s+[^,]+,\s*)?"
+    r"(.*?)(?=(?:\d+\s*[a-z]?\s*§\s*:ään)|(?:\d+\s*[a-z]?\s+luvun\s+\d+\s*[a-z]?\s*§\s*:)"
+    r"|(?:\d+\s*[a-z]?\s+luvun\s+\d+\s*[a-z]?\s*§\s*:ään)|\bseuraavasti\b|$)",
+    flags=re.I,
+)
+
+
+@dataclass(frozen=True)
+class FallbackParseResult:
+    ops: List[AmendmentOp]
+    regex_recognition_coverage: tuple[RegexRecognitionCoverage, ...] = ()
 
 # ---------------------------------------------------------------------------
 # LO repair chain — operate on LegalOperation lists before AmendmentOp.from_lo
@@ -286,6 +305,89 @@ def _extract_insert_subsection_ops_fallback(cleaned: str) -> List[AmendmentOp]:
     return ops
 
 
+def _extract_insert_subsection_ops_fallback_with_coverage(
+    cleaned: str,
+    *,
+    source_artifact_id: str = "",
+) -> FallbackParseResult:
+    ops = _extract_insert_subsection_ops_fallback(cleaned)
+    coverage_rows: list[RegexRecognitionCoverage] = []
+    source_hash = regex_source_text_hash(cleaned)
+    for m in _INSERT_SUBSECTION_FALLBACK_RE.finditer(cleaned):
+        sec_norm = _RE_WHITESPACE.sub("", m.group(1)).lower()
+        clause = m.group(2)
+        matched_moments: list[int] = []
+        ignored_spans: list[dict[str, object]] = []
+        cursor = 0
+        for mom_match in _RE_NEW_SUBSECTION.finditer(clause):
+            ignored_spans.extend(
+                _regex_ignored_span_rows(
+                    cleaned,
+                    base_offset=m.start(2),
+                    clause=clause,
+                    start=cursor,
+                    end=mom_match.start(),
+                )
+            )
+            cursor = mom_match.end()
+            for mom in _expand_spaced_insert_label_list_ir(mom_match.group(1)):
+                if mom.isdigit():
+                    matched_moments.append(int(mom))
+        ignored_spans.extend(
+            _regex_ignored_span_rows(
+                cleaned,
+                base_offset=m.start(2),
+                clause=clause,
+                start=cursor,
+                end=len(clause),
+            )
+        )
+        if matched_moments:
+            unclassified_count = sum(
+                1 for row in ignored_spans if row.get("classification") == "unclassified"
+            )
+            coverage_status = (
+                REGEX_RECOGNITION_UNCLASSIFIED_GAP
+                if unclassified_count
+                else REGEX_RECOGNITION_FULLY_CLASSIFIED
+            )
+            coverage_rows.append(
+                RegexRecognitionCoverage(
+                    coverage_id=_regex_coverage_id(
+                        "fi_insert_subsection_fallback",
+                        source_hash,
+                        m.start(),
+                        m.end(),
+                    ),
+                    jurisdiction="fi",
+                    recognizer_id="fi_insert_subsection_fallback",
+                    owner_phase="surface_syntax_frontend",
+                    source_artifact_id=source_artifact_id,
+                    source_text_hash=source_hash,
+                    matched_span=(m.start(), m.end()),
+                    coverage_status=coverage_status,
+                    semantic_slots={
+                        "action": "INSERT",
+                        "target_unit_kind": "subsection",
+                        "target_section": sec_norm,
+                        "target_subsections": tuple(matched_moments),
+                    },
+                    ignored_spans=tuple(ignored_spans),
+                    required_proofs=(
+                        ("regex_skipped_span_classification",)
+                        if unclassified_count
+                        else ()
+                    ),
+                    detail={
+                        "matched_text_preview": cleaned[m.start():m.end()][:240],
+                        "unclassified_ignored_span_count": unclassified_count,
+                        "rule_note": "bounded regex fallback coverage only; not replay authority",
+                    },
+                )
+            )
+    return FallbackParseResult(ops=ops, regex_recognition_coverage=tuple(coverage_rows))
+
+
 def _extract_insert_item_ops_fallback(cleaned: str) -> List[AmendmentOp]:
     """Recover explicit ``§:n N momenttiin uusi K kohta`` inserts from long johtolause.
 
@@ -354,6 +456,56 @@ def _prune_shadowed_parent_subsection_insert_fallbacks(ops: List[AmendmentOp]) -
             continue
         pruned.append(op)
     return pruned
+
+
+def _regex_ignored_span_rows(
+    source_text: str,
+    *,
+    base_offset: int,
+    clause: str,
+    start: int,
+    end: int,
+) -> list[dict[str, object]]:
+    if end <= start:
+        return []
+    text = clause[start:end]
+    if not text:
+        return []
+    classification = _classify_regex_ignored_span(text)
+    if classification == "empty":
+        return []
+    absolute_start = base_offset + start
+    absolute_end = base_offset + end
+    return [
+        {
+            "span": [absolute_start, absolute_end],
+            "classification": classification,
+            "text_preview": source_text[absolute_start:absolute_end][:160],
+            "could_alter_meaning": classification == "unclassified",
+        }
+    ]
+
+
+def _classify_regex_ignored_span(text: str) -> str:
+    cleaned = _RE_WHITESPACE.sub(" ", text or "").strip(" ,;:.-–—―")
+    if not cleaned:
+        return "empty"
+    lowered = cleaned.lower()
+    if lowered in {"lisätään", "lisää", "ja", "sekä"}:
+        return "drafting_connector"
+    if re.fullmatch(r"(?:sellaisena|sellaisina)\s+kuin\b.*", lowered):
+        return "source_version_qualifier"
+    return "unclassified"
+
+
+def _regex_coverage_id(
+    recognizer_id: str,
+    source_hash: str,
+    start: int,
+    end: int,
+) -> str:
+    digest = re.sub(r"[^0-9a-f]", "", source_hash.lower())[:16]
+    return f"{recognizer_id}:{digest}:{start}:{end}"
 
 
 def _extract_insert_container_ops_fallback(cleaned: str) -> List[AmendmentOp]:
@@ -1054,6 +1206,27 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
         ]
 
     return _dedupe_fallback_ops_ir(repeal_range_ops + fallback_insert_ops + ops)
+
+
+def parse_ops_fallback_heuristic_with_coverage(
+    johto: str,
+    *,
+    source_artifact_id: str = "",
+) -> FallbackParseResult:
+    """Return fallback ops plus passive regex span coverage diagnostics.
+
+    This is intentionally a shadow API.  It does not change which fallback ops
+    replay sees; it exposes whether bounded regex recognizers skipped text that
+    is still semantically unowned.
+    """
+
+    ops = parse_ops_fallback_heuristic(johto)
+    cleaned = _RE_WHITESPACE.sub(" ", johto).strip().lower()
+    coverage = _extract_insert_subsection_ops_fallback_with_coverage(
+        cleaned,
+        source_artifact_id=source_artifact_id,
+    ).regex_recognition_coverage
+    return FallbackParseResult(ops=ops, regex_recognition_coverage=coverage)
 
 
 def parse_ops_title_fallback(title: str) -> List[AmendmentOp]:

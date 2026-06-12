@@ -105,6 +105,7 @@ from lawvm.finland.grafter import (
     get_corpus,
     get_johtolause,
     parse_ops_fallback_heuristic,
+    parse_ops_fallback_heuristic_with_coverage,
     process_muutoslaki,
     replay_xml,
 )
@@ -6056,6 +6057,54 @@ def test_subsection_insert_fallback_stops_at_next_chapter_scoped_section_ref() -
 
     assert ("INSERT", "1", 11) in got
     assert ("INSERT", "1", 3) not in got
+
+
+def test_subsection_insert_fallback_coverage_surfaces_unclassified_bounded_gap() -> None:
+    johto = "lisätään 5 §:ään kuitenkin uusi 2 momentti"
+
+    result = parse_ops_fallback_heuristic_with_coverage(
+        johto,
+        source_artifact_id="2020/1",
+    )
+
+    assert [(op.op_type, op.target_section, op.target_paragraph) for op in result.ops] == [
+        ("INSERT", "5", 2),
+    ]
+    assert len(result.regex_recognition_coverage) == 1
+    coverage = result.regex_recognition_coverage[0].to_dict()
+    assert coverage["recognizer_id"] == "fi_insert_subsection_fallback"
+    assert coverage["coverage_status"] == "unclassified_gap"
+    assert coverage["semantic_slots"] == {
+        "action": "INSERT",
+        "target_unit_kind": "subsection",
+        "target_section": "5",
+        "target_subsections": [2],
+    }
+    assert coverage["ignored_spans"] == [
+        {
+            "span": [17, 27],
+            "classification": "unclassified",
+            "text_preview": "kuitenkin ",
+            "could_alter_meaning": True,
+        }
+    ]
+    assert coverage["required_proofs"] == ["regex_skipped_span_classification"]
+    assert "bounded_wildcard_as_semantic_proof" in coverage["forbidden_shortcuts"]
+
+
+def test_subsection_insert_fallback_coverage_marks_plain_connector_classified() -> None:
+    johto = "lisätään 5 §:ään uusi 2 momentti"
+
+    result = parse_ops_fallback_heuristic_with_coverage(johto)
+
+    assert [(op.op_type, op.target_section, op.target_paragraph) for op in result.ops] == [
+        ("INSERT", "5", 2),
+    ]
+    assert len(result.regex_recognition_coverage) == 1
+    coverage = result.regex_recognition_coverage[0].to_dict()
+    assert coverage["coverage_status"] == "fully_classified"
+    assert coverage["ignored_spans"] == []
+    assert coverage["required_proofs"] == []
 
 
 def test_insert_section_fallback_expands_letter_suffix_range_inside_lakiin_uusi_clause() -> None:

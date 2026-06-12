@@ -85,6 +85,12 @@ from lawvm.core.proof_obligations import (
     PROOF_OBLIGATION_COMPLETE,
     ProofObligationCertificate,
 )
+from lawvm.core.regex_recognition_coverage import (
+    REGEX_RECOGNITION_UNCLASSIFIED_GAP,
+    RegexRecognitionCoverage,
+    regex_recognition_coverage_evidence_report,
+    regex_source_text_hash,
+)
 from lawvm.core.proof_surfaces import (
     ProofSurface,
     ProofSurfaceRow,
@@ -3077,6 +3083,51 @@ def test_source_unit_coverage_evidence_report_is_passive_shared_surface() -> Non
     assert report["rows"][0]["status"] == "lineage_witnessed"
     assert "source_unit_coverage_as_replay_authorization" in report["rows"][0]["forbidden_shortcuts"]
     assert "source_unit_coverage_as_complete_source_enumeration" in report["forbidden_shortcuts"]
+
+
+def test_regex_recognition_coverage_reports_unclassified_skipped_spans() -> None:
+    text = "lisätään 5 §:ään kuitenkin uusi 2 momentti"
+    row = RegexRecognitionCoverage(
+        coverage_id="fi:regex:1",
+        jurisdiction="fi",
+        recognizer_id="fi_insert_subsection_fallback",
+        owner_phase="surface_syntax_frontend",
+        source_artifact_id="2020/1",
+        source_text_hash=regex_source_text_hash(text),
+        matched_span=(9, len(text)),
+        coverage_status=REGEX_RECOGNITION_UNCLASSIFIED_GAP,
+        semantic_slots={
+            "action": "INSERT",
+            "target_section": "5",
+            "target_subsections": (2,),
+        },
+        ignored_spans=(
+            {
+                "span": (17, 27),
+                "classification": "unclassified",
+                "text_preview": "kuitenkin ",
+                "could_alter_meaning": True,
+            },
+        ),
+        required_proofs=("regex_skipped_span_classification",),
+    )
+
+    report = regex_recognition_coverage_evidence_report(
+        row,
+        jurisdiction="fi",
+    ).to_dict()
+
+    assert report["schema"] == "lawvm.regex_recognition_coverage.v1"
+    assert report["replay_claims"] is False
+    assert report["summary"]["regex_recognition_coverage_count"] == 1
+    assert report["summary"]["unclassified_gap_count"] == 1
+    assert report["summary"]["coverage_status_counts"] == {"unclassified_gap": 1}
+    projected = report["rows"][0]
+    assert projected["surface"] == "regex_recognition_coverage"
+    assert projected["status"] == "unclassified_gap"
+    assert projected["ignored_spans"][0]["could_alter_meaning"] is True
+    assert "bounded_wildcard_as_semantic_proof" in projected["forbidden_shortcuts"]
+    assert "regex_coverage_as_replay_authorization" in report["forbidden_shortcuts"]
 
 
 def test_candidate_set_report_rejects_invalid_mapping_rows() -> None:

@@ -82,6 +82,7 @@ from lawvm.finland.normalize import (
     _extract_replace_ops_from_muutetaan_tail,
     _expand_numeric_section_list_ir,
     parse_ops_fallback_heuristic,
+    parse_ops_fallback_heuristic_with_coverage,
     parse_ops_title_fallback,
 )
 from lawvm.finland.johtolause import (
@@ -8594,6 +8595,7 @@ _GRAFTER_COMPAT_EXPORTS = (
     _extract_replace_ops_from_muutetaan_tail,
     _expand_numeric_section_list_ir,
     parse_ops_fallback_heuristic,
+    parse_ops_fallback_heuristic_with_coverage,
     parse_ops_title_fallback,
     extract_johtolause_legal_ops,
     _uncovered_body_recovery_finding,

@@ -42,16 +42,15 @@ SCHEMA = "lawvm.provision_state.v1"
 SPEC_VERSION = "0.3"
 DUMP_SCHEMA = "lawvm.dump.v1"
 
-_FI_PROSE_SECTION_RE = re.compile(r"^\s*(?P<number>\d+)\s*(?P<letter>[A-Za-z])?\s*§\s*$")
+_FI_PROSE_SECTION_RE = re.compile(r"^\s{0,16}(?P<number>\d{1,6})\s{0,8}(?P<letter>[A-Za-z])?\s{0,8}§\s{0,16}$")
 _FI_HYBRID_SECTION_RE = re.compile(
-    r"^\s*section\s*:\s*(?P<number>\d+)\s*(?P<letter>[A-Za-z])?\s*§\s*$"
+    r"^\s{0,16}section\s{0,8}:\s{0,8}(?P<number>\d{1,6})\s{0,8}(?P<letter>[A-Za-z])?\s{0,8}§\s{0,16}$"
 )
 _FI_SUFFIX_AS_SUBSECTION_RE = re.compile(
     r"^\s*section\s*:\s*(?P<number>\d+)\s*/\s*subsection\s*:\s*(?P<letter>[A-Za-z])\s*$"
 )
 _FI_SPACED_SECTION_LABEL_RE = re.compile(r"^(?P<number>\d+)\s+(?P<letter>[A-Za-z])$")
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-_XML_TEXT_SEQUENCE_TOKEN_RE = re.compile(r"[\w]+(?:/[\w]+)*|§")
 _QUERY_TYPES = frozenset({"governing", "in_force"})
 
 # Rollback flag (Pro §5). Fixed-term statute bounds are DEFAULT-ON since seam
@@ -2156,10 +2155,36 @@ def _operation_source_xml_text_sequence_span(
 
 
 def _xml_text_sequence_tokens(value: str) -> list[str]:
-    return [
-        match.group(0).casefold()
-        for match in _XML_TEXT_SEQUENCE_TOKEN_RE.finditer(_normalize_xml_text_for_span_match(value))
-    ]
+    text = _normalize_xml_text_for_span_match(value)
+    tokens: list[str] = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "§":
+            tokens.append(char)
+            index += 1
+            continue
+        if not _xml_text_sequence_word_char(char):
+            index += 1
+            continue
+        start = index
+        index += 1
+        while index < len(text) and _xml_text_sequence_word_char(text[index]):
+            index += 1
+        while (
+            index + 1 < len(text)
+            and text[index] == "/"
+            and _xml_text_sequence_word_char(text[index + 1])
+        ):
+            index += 2
+            while index < len(text) and _xml_text_sequence_word_char(text[index]):
+                index += 1
+        tokens.append(text[start:index].casefold())
+    return tokens
+
+
+def _xml_text_sequence_word_char(char: str) -> bool:
+    return char == "_" or char.isalnum()
 
 
 def _contains_ordered_token_sequence(candidate_tokens: list[str], quote_tokens: list[str]) -> bool:
