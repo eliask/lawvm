@@ -2866,6 +2866,41 @@ def test_candidate_set_report_projects_to_proof_surface_rows() -> None:
     assert proof_surface["rows"][0]["proof_refs"] == ["fi_source_unit_enumeration_complete"]
 
 
+def test_proof_surface_synthesizes_scope_sensitive_candidate_set_row_ids() -> None:
+    report = EvidenceSurfaceReport(
+        jurisdiction="fi",
+        report_kind="raw_candidate_set_projection",
+        schema="test.raw_candidate_set_projection.v1",
+        truth_claim="raw candidate-set rows without explicit row ids",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        rows=(
+            {
+                "surface": "candidate_set_certificate",
+                "candidate_set_kind": "fi_strict_report_operation_cue_coverage",
+                "scope_id": "fi:demo:operation-cue-coverage:a",
+                "completeness_status": "complete",
+            },
+            {
+                "surface": "candidate_set_certificate",
+                "candidate_set_kind": "fi_strict_report_operation_cue_coverage",
+                "scope_id": "fi:demo:operation-cue-coverage:b",
+                "completeness_status": "complete",
+            },
+        ),
+    )
+
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+    row_ids = [row["row_id"] for row in proof_surface["rows"]]
+
+    assert len(row_ids) == 2
+    assert len(set(row_ids)) == 2
+    assert all(row_id.startswith("candidate-set:") for row_id in row_ids)
+
+
 def test_candidate_set_certificate_rejects_partial_promotion() -> None:
     with pytest.raises(ValueError, match="next_promotion_allowed"):
         CandidateSetCertificate(

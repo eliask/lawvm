@@ -176,6 +176,10 @@ def _proof_surface_row_from_mapping(
             "proof_id",
             "work_item_id",
             "residual_id",
+        ),
+    ) or _candidate_set_scoped_row_id(row) or _first_present(
+        row,
+        (
             "authorization_rule_id",
             "candidate_set_kind",
         ),
@@ -227,6 +231,23 @@ def _row_status(row: Mapping[str, Any]) -> str:
             "strict_disposition",
         ),
     ) or "reported"
+
+
+def _candidate_set_scoped_row_id(row: Mapping[str, Any]) -> str:
+    candidate_set_kind = str(row.get("candidate_set_kind") or "")
+    scope_id = str(row.get("scope_id") or "")
+    if not candidate_set_kind or not scope_id:
+        return ""
+    completeness_status = str(row.get("completeness_status") or "")
+    digest_payload = {
+        "candidate_set_kind": candidate_set_kind,
+        "scope_id": scope_id,
+        "completeness_status": completeness_status,
+    }
+    digest = hashlib.sha256(
+        json.dumps(digest_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    ).hexdigest()[:16]
+    return f"candidate-set:{digest}"
 
 
 def _source_refs(row: Mapping[str, Any]) -> tuple[str, ...]:
