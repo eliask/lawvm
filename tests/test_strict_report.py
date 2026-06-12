@@ -845,6 +845,7 @@ def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
             "description": "replace chapter-scoped section",
             "reason": "no deterministic path",
             "reason_code": "no_deterministic_path",
+            "target_statute_id": None,
             "target_unit_kind": "section",
             "target_section": "5",
             "target_chapter": "4",
