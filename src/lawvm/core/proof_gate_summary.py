@@ -11,6 +11,20 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from lawvm.core.frozen_values import freeze_mapping
+from lawvm.core.temporal_resolution import (
+    TEMPORAL_FUTURE_EFFECTIVE_DATE,
+    TEMPORAL_UNKNOWN_EFFECTIVE_DATE,
+    TEMPORAL_UNRESOLVED_CONTINGENT,
+)
+
+
+_UNRESOLVED_TEMPORAL_STATUSES = frozenset(
+    {
+        TEMPORAL_FUTURE_EFFECTIVE_DATE,
+        TEMPORAL_UNKNOWN_EFFECTIVE_DATE,
+        TEMPORAL_UNRESOLVED_CONTINGENT,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +61,8 @@ class ProofGateSummary:
     potential_operation_unresolved_count: int = 0
     regex_recognition_coverage_status_counts: Mapping[str, int] = field(default_factory=dict)
     regex_recognition_unclassified_gap_count: int = 0
+    temporal_resolution_status_counts: Mapping[str, int] = field(default_factory=dict)
+    temporal_resolution_unresolved_count: int = 0
     safe_default: str = "treat_open_proof_gates_as_non_executable_frontier_accounting"
     does_not_claim: tuple[str, ...] = (
         "proof_closure",
@@ -56,6 +72,7 @@ class ProofGateSummary:
         "source_unit_unresolved_closure",
         "potential_operation_unresolved_closure",
         "regex_recognition_gap_closure",
+        "temporal_resolution_closure",
         "replay_authorization",
     )
 
@@ -76,6 +93,7 @@ class ProofGateSummary:
             "source_unit_unresolved_count",
             "potential_operation_unresolved_count",
             "regex_recognition_unclassified_gap_count",
+            "temporal_resolution_unresolved_count",
         ):
             _require_nonnegative_int(field_name, getattr(self, field_name))
         for field_name in (
@@ -95,6 +113,7 @@ class ProofGateSummary:
             "source_unit_coverage_status_counts",
             "potential_operation_classification_counts",
             "regex_recognition_coverage_status_counts",
+            "temporal_resolution_status_counts",
         ):
             object.__setattr__(self, field_name, freeze_mapping(_count_mapping(getattr(self, field_name))))
         object.__setattr__(self, "safe_default", _required_string("safe_default", self.safe_default))
@@ -152,6 +171,12 @@ class ProofGateSummary:
             "regex_recognition_unclassified_gap_count": (
                 self.regex_recognition_unclassified_gap_count
             ),
+            "temporal_resolution_status_counts": dict(
+                self.temporal_resolution_status_counts
+            ),
+            "temporal_resolution_unresolved_count": (
+                self.temporal_resolution_unresolved_count
+            ),
             "safe_default": self.safe_default,
             "does_not_claim": list(self.does_not_claim),
         }
@@ -178,6 +203,7 @@ def proof_gate_summary_from_surfaces(
         "source_unit_unresolved_closure",
         "potential_operation_unresolved_closure",
         "regex_recognition_gap_closure",
+        "temporal_resolution_closure",
         "replay_authorization",
     ),
 ) -> ProofGateSummary:
@@ -231,6 +257,14 @@ def proof_gate_summary_from_surfaces(
         evidence,
         "regex_recognition_unclassified_gap_count",
     )
+    temporal_resolution_counts = _summary_count_mapping(
+        evidence,
+        "temporal_resolution_status_counts",
+    )
+    temporal_resolution_unresolved_count = sum(
+        temporal_resolution_counts.get(status, 0)
+        for status in _UNRESOLVED_TEMPORAL_STATUSES
+    )
     open_gate_signal_count = (
         len(failed_gate_rows)
         + sum(unowned.values())
@@ -240,6 +274,7 @@ def proof_gate_summary_from_surfaces(
         + source_unit_unresolved_count
         + potential_operation_unresolved_count
         + regex_unclassified_gap_count
+        + temporal_resolution_unresolved_count
     )
     return ProofGateSummary(
         schema=schema,
@@ -288,6 +323,8 @@ def proof_gate_summary_from_surfaces(
             evidence.get("regex_recognition_coverage_status_counts") or {}
         ),
         regex_recognition_unclassified_gap_count=regex_unclassified_gap_count,
+        temporal_resolution_status_counts=temporal_resolution_counts,
+        temporal_resolution_unresolved_count=temporal_resolution_unresolved_count,
         safe_default=safe_default,
         does_not_claim=does_not_claim,
     )

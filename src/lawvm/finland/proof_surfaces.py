@@ -1566,6 +1566,10 @@ def finland_strict_report_evidence_surface(
             "issue_family",
         ),
         "temporal_resolution_evidence_count": len(temporal_resolution_rows),
+        "temporal_resolution_status_counts": _count_by_field(
+            temporal_resolution_rows,
+            "temporal_resolution_status",
+        ),
         "recovery_execution_authorization_count": len(recovery_authorization_rows),
         "recovery_execution_authorization_status_counts": dict(
             recovery_authorization_report_summary.get("authorization_status_counts")

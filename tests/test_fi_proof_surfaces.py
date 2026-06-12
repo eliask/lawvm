@@ -1497,6 +1497,9 @@ def test_finland_strict_report_evidence_surface_declares_claim_boundary() -> Non
         "missing_dates": 2,
     }
     assert report["summary"]["temporal_resolution_evidence_count"] == 1
+    assert report["summary"]["temporal_resolution_status_counts"] == {
+        "unknown_effective_date": 1,
+    }
     assert report["summary"]["recovery_execution_authorization_count"] == 1
     assert report["summary"]["source_pathology_frontier_source_witness_digest_coverage_counts"] == {"preview_digest": 1}
     assert [row["surface"] for row in report["rows"]] == [

@@ -60,11 +60,17 @@ def test_proof_gate_summary_buckets_frontiers_without_replay_authority() -> None
             },
             "regex_recognition_coverage_status_counts": {"unclassified_gap": 3},
             "regex_recognition_unclassified_gap_count": 3,
+            "temporal_resolution_status_counts": {
+                "fixed_date": 4,
+                "future_effective_date": 1,
+                "unknown_effective_date": 2,
+                "unresolved_contingent": 1,
+            },
         },
         manual_claim_kind_prefixes=("fi.v1.",),
     ).to_dict()
 
-    assert summary["open_gate_signal_count"] == 21
+    assert summary["open_gate_signal_count"] == 25
     assert summary["ownership_failed_gate_counts"] == {"failed_ops_present": 1}
     assert summary["unowned_counts"] == {"unproved_mutation_boundary_proofs": 2}
     assert summary["frontier_work_item_count"] == 3
@@ -110,11 +116,19 @@ def test_proof_gate_summary_buckets_frontiers_without_replay_authority() -> None
         "unclassified_gap": 3,
     }
     assert summary["regex_recognition_unclassified_gap_count"] == 3
+    assert summary["temporal_resolution_status_counts"] == {
+        "fixed_date": 4,
+        "future_effective_date": 1,
+        "unknown_effective_date": 2,
+        "unresolved_contingent": 1,
+    }
+    assert summary["temporal_resolution_unresolved_count"] == 4
     assert "replay_authorization" in summary["does_not_claim"]
     assert "source_chain_completeness" in summary["does_not_claim"]
     assert "regex_recognition_gap_closure" in summary["does_not_claim"]
     assert "source_unit_unresolved_closure" in summary["does_not_claim"]
     assert "potential_operation_unresolved_closure" in summary["does_not_claim"]
+    assert "temporal_resolution_closure" in summary["does_not_claim"]
 
 
 def test_proof_gate_summary_requires_replay_authorization_disclaimer() -> None:
@@ -197,4 +211,13 @@ def test_proof_gate_summary_rejects_boolean_count_values() -> None:
             closed=False,
             failed_gates=(),
             evidence_summary={"source_completeness": {"missing_sources": -1}},
+        )
+
+    with pytest.raises(ValueError, match="temporal_resolution_status_counts"):
+        proof_gate_summary_from_surfaces(
+            schema="lawvm.test.proof_gate_summary.v1",
+            scope="unit-test",
+            closed=False,
+            failed_gates=(),
+            evidence_summary={"temporal_resolution_status_counts": "bad"},
         )
