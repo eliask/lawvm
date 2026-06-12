@@ -41,6 +41,7 @@ from lawvm.core.provenance_graph import (
 )
 from lawvm.core.provenance_graph_storage import GraphStore
 from lawvm.core.proof_surfaces import proof_surface_from_evidence_report
+from lawvm.core.phase_replay_gate import PhaseLocalReplayGate
 
 
 # ---------------------------------------------------------------------------
@@ -442,6 +443,95 @@ def test_manual_claim_frontier_closure_report_matches_authorized_claim_without_r
         "fi.v1.INLINE_STATUTE_RESOLUTION.strict"
     )
     assert proof_surface["rows"][0]["frontier_ref"] == "fi-frontier-inline-ref"
+
+
+def test_manual_claim_frontier_closure_report_forwards_phase_replay_gate(
+    tmp_path,
+):
+    """Graph-native closure can surface an exact phase-gate evaluation."""
+    store = _make_store(tmp_path)
+    producer = _make_producer()
+    assertion = _make_test_assertion(kind="fi.v1.INLINE_STATUTE_RESOLUTION")
+
+    assertion_id = submit_assertion(store, assertion, producer)
+    attest_id = attest(store, assertion_id, "span_verified", {}, producer)
+
+    reg_hash = attestation_kind_registry_hash()
+    builder = GraphBuilder(attestation_kind_registry_hash_val=reg_hash)
+    builder.add_assertion(store.read_assertion(assertion_id))
+    builder.add_attestation(store.read_attestation(attest_id))
+    graph = builder.finalize()
+    store.write_graph(graph)
+
+    result = query_state_from_store(
+        graph_store=store,
+        snapshot_hash=graph.snapshot_hash,
+        subject_id=assertion_id,
+        policy=EvidenceGraphPredicate(
+            predicate_id="fi.v1.INLINE_STATUTE_RESOLUTION.strict",
+            claim_kind="fi.v1.INLINE_STATUTE_RESOLUTION",
+            required=(exists("span_verified"),),
+        ),
+        profile=StrictProfile(name="fi_strict"),
+        at=datetime.now(tz=timezone.utc),
+    )
+    gate = PhaseLocalReplayGate(
+        gate_id="fi-inline-gate-1",
+        jurisdiction="fi",
+        claim_id=assertion_id,
+        claim_kind="fi.v1.INLINE_STATUTE_RESOLUTION",
+        frontier_ref="fi-frontier-inline-ref",
+        owner_phase="typed_elaboration",
+        authorization_rule_id="fi_inline_reference_phase_gate_v1",
+        required_proofs=("target_identity_proof", "mutation_boundary_proof"),
+        satisfied_proofs=("target_identity_proof", "mutation_boundary_proof"),
+        candidate_operation_family="inline_reference_resolution",
+        candidate_targets=("chapter:1/section:2",),
+    )
+
+    report = manual_claim_frontier_closure_report(
+        frontier_work_item={
+            "work_item_id": "fi-frontier-inline-ref",
+            "jurisdiction": "fi",
+            "source_artifact_id": "555/2024",
+            "source_unit_id": "chapter:1/section:2",
+            "owner_phase": "surface_extraction",
+            "frontier_family": "fi_inline_statute_resolution",
+            "frontier_status": "manual_claim_needed",
+            "required_claim_kind": "fi.v1.INLINE_STATUTE_RESOLUTION",
+            "required_proofs": ["phase_local_replay_authorization"],
+            "safe_default": "do_not_use_reference_claim_as_replay_authority",
+            "forbidden_shortcuts": ["manual_claim_as_replay_authorization"],
+            "executable": False,
+            "replay_authorized": False,
+            "authorization_status": "blocked_manual_claim_required",
+        },
+        assertion={
+            "assertion_id": assertion_id,
+            "jurisdiction": assertion.jurisdiction,
+            "kind": assertion.kind,
+            "target": {"frontier_ref": "fi-frontier-inline-ref"},
+        },
+        authorization_result=result,
+        phase_replay_gate=gate,
+        jurisdiction="fi",
+    )
+    data = report.to_dict()
+
+    assert data["summary"]["closure_status_counts"] == {
+        "phase_replay_gate_authorized": 1
+    }
+    assert data["summary"]["phase_gate_authorized_count"] == 1
+    assert data["summary"]["replay_authorized_count"] == 1
+    assert data["replay_claims"] is True
+    assert data["rows"][0]["closure_status"] == "phase_replay_gate_authorized"
+    assert data["rows"][0]["detail"]["phase_replay_gate_evaluation"] == {
+        "replay_authorized": True,
+        "reason_code": "phase_replay_gate_authorized",
+        "missing_proofs": [],
+        "blocked_proofs": [],
+        "forbidden_present": [],
+    }
 
 
 # ---------------------------------------------------------------------------
