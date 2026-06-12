@@ -252,6 +252,11 @@ def test_build_inventory_reports_bounded_gap_coverage_and_text_sentinel(tmp_path
         "missing_coverage_surface": 0,
         "nearby_coverage_surface": 1,
     }
+    assert inventory["summary"]["bounded_wildcard_semantic_role_counts"] == {
+        "drafting_classifier": 1,
+        "semantic_payload_capture": 0,
+        "unknown_pattern_bound": 0,
+    }
     assert "not semantic exhaustiveness proofs" in inventory["summary"][
         "bounded_wildcard_soundness_note"
     ]
@@ -291,6 +296,7 @@ def test_bounded_wildcard_sensor_reports_missing_coverage_surface(tmp_path) -> N
     assert hit["coverage_sensor"] == {
         "status": "missing_coverage_surface",
         "recognizer_name": "RX",
+        "semantic_role": "unknown_pattern_bound",
         "nearest_coverage_line": None,
         "nearest_coverage_distance": None,
         "nearby_line_window": 80,
@@ -330,6 +336,7 @@ def test_bounded_wildcard_sensor_detects_coverage_function_reference(tmp_path) -
     assert len(bounded_hits) == 1
     assert bounded_hits[0]["coverage_sensor"]["status"] == "coverage_function_reference"
     assert bounded_hits[0]["coverage_sensor"]["recognizer_name"] == "RX"
+    assert bounded_hits[0]["coverage_sensor"]["semantic_role"] == "unknown_pattern_bound"
     assert inventory["summary"]["bounded_wildcard_coverage_status_counts"][
         "coverage_function_reference"
     ] == 1
@@ -354,3 +361,49 @@ def test_bounded_wildcard_sensor_uses_coverage_lines_under_category_filter(tmp_p
     assert hit["category"] == "bounded_wildcard_gap"
     assert hit["coverage_sensor"]["status"] == "nearby_coverage_surface"
     assert inventory["category_counts"] == {"bounded_wildcard_gap": 1}
+
+
+def test_bounded_wildcard_sensor_ignores_comment_only_mentions(tmp_path) -> None:
+    path = tmp_path / "effect_lowering_tail.py"
+    path.write_text(
+        "\n".join(
+            [
+                "# Bound each segment to .{0,400}? for backtracking safety.",
+                "RX = re.compile(r'foo .{0,240}? bar')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    inventory = build_inventory([path], categories={"bounded_wildcard_gap"})
+
+    assert inventory["category_counts"] == {"bounded_wildcard_gap": 1}
+    assert inventory["by_file"][str(path)][0]["line"] == 2
+
+
+def test_bounded_wildcard_sensor_classifies_semantic_payload_captures(tmp_path) -> None:
+    path = tmp_path / "nlp_parser.py"
+    path.write_text(
+        "\n".join(
+            [
+                "RX = re.compile(r'insert (?P<inserted>.{1,1200}?)(?:\\\\s+\\\\.)?$')",
+                "CLASSIFIER = re.compile(r'\\\\bomit\\\\b.{0,240}?\\\\bentries\\\\b')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    inventory = build_inventory([path], categories={"bounded_wildcard_gap"})
+    roles = [
+        hit["coverage_sensor"]["semantic_role"]
+        for hit in inventory["by_file"][str(path)]
+    ]
+
+    assert roles == ["semantic_payload_capture", "drafting_classifier"]
+    assert inventory["summary"]["bounded_wildcard_semantic_role_counts"] == {
+        "drafting_classifier": 1,
+        "semantic_payload_capture": 1,
+        "unknown_pattern_bound": 0,
+    }

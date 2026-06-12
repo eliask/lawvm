@@ -65,6 +65,36 @@ _RE_COVERAGE_FUNCTION = re.compile(r"^\s*def\s+\w*coverage\w*\(")
 _RE_REGEX_COVERAGE_SENSOR_FIELD = re.compile(
     r"\b(regex_recognition_coverage|coverage_status|ignored_spans)\b"
 )
+_RE_NAMED_CAPTURE = re.compile(r"\?P<([A-Za-z_][A-Za-z0-9_]*)>")
+_SEMANTIC_CAPTURE_NAMES = frozenset(
+    {
+        "anchor",
+        "inserted",
+        "items",
+        "original",
+        "payload",
+        "replacement",
+        "terms",
+        "text",
+    }
+)
+
+
+def _is_comment_only_line(line: str) -> bool:
+    return line.lstrip().startswith("#")
+
+
+def _bounded_wildcard_semantic_role(line: str) -> str:
+    capture_names = frozenset(_RE_NAMED_CAPTURE.findall(line))
+    if capture_names & _SEMANTIC_CAPTURE_NAMES:
+        return "semantic_payload_capture"
+    if "\\b" in line or re.search(
+        r"\b(?:omit|insert|substitute|replace|repeal|kumot|muut|lisät)",
+        line,
+        re.I,
+    ):
+        return "drafting_classifier"
+    return "unknown_pattern_bound"
 
 
 def _recognizer_name_for_line(lines: list[str], line_no: int) -> str:
@@ -107,6 +137,7 @@ def _annotate_bounded_wildcard_coverage(
         if hit["category"] != "bounded_wildcard_gap":
             continue
         line_no = int(hit["line"])
+        semantic_role = _bounded_wildcard_semantic_role(str(hit.get("snippet") or ""))
         nearest_line = min(
             coverage_lines,
             key=lambda coverage_line: abs(coverage_line - line_no),
@@ -135,6 +166,7 @@ def _annotate_bounded_wildcard_coverage(
         hit["coverage_sensor"] = {
             "status": coverage_status,
             "recognizer_name": recognizer_name,
+            "semantic_role": semantic_role,
             "nearest_coverage_line": nearest_line,
             "nearest_coverage_distance": nearest_distance,
             "nearby_line_window": _BOUND_COVERAGE_NEARBY_LINES,
@@ -152,6 +184,8 @@ def _collect_hits(path: Path, markers: dict[str, tuple[str, str]]) -> list[dict[
     for line_no, line in enumerate(text, start=1):
         for key, (label, regex) in compiled.items():
             if regex.search(line):
+                if key == "bounded_wildcard_gap" and _is_comment_only_line(line):
+                    continue
                 hits.append(
                     {
                         "category": key,
@@ -212,6 +246,12 @@ def build_inventory(
         for hit in hits
         if hit["category"] == "bounded_wildcard_gap"
     )
+    bounded_wildcard_semantic_role_counts: Counter[str] = Counter(
+        str(hit.get("coverage_sensor", {}).get("semantic_role") or "unknown_pattern_bound")
+        for hits in by_file.values()
+        for hit in hits
+        if hit["category"] == "bounded_wildcard_gap"
+    )
     for status in (
         "coverage_function_reference",
         "file_level_coverage_surface",
@@ -219,6 +259,12 @@ def build_inventory(
         "nearby_coverage_surface",
     ):
         bounded_wildcard_coverage_status_counts.setdefault(status, 0)
+    for role in (
+        "drafting_classifier",
+        "semantic_payload_capture",
+        "unknown_pattern_bound",
+    ):
+        bounded_wildcard_semantic_role_counts.setdefault(role, 0)
 
     generated_at = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     category_count = len(marker_map)
@@ -233,6 +279,9 @@ def build_inventory(
             "hit_count": sum(file_totals.values()),
             "bounded_wildcard_coverage_status_counts": dict(
                 sorted(bounded_wildcard_coverage_status_counts.items())
+            ),
+            "bounded_wildcard_semantic_role_counts": dict(
+                sorted(bounded_wildcard_semantic_role_counts.items())
             ),
             "bounded_wildcard_soundness_note": (
                 "bounded wildcard regexes are recognizer-local span claims, not semantic "
@@ -298,6 +347,18 @@ def _to_markdown(inventory: dict[str, Any]) -> str:
             ]
         )
 
+    semantic_role_counts = summary.get("bounded_wildcard_semantic_role_counts") or {}
+    if semantic_role_counts:
+        lines.extend(
+            [
+                "",
+                "| Bounded Wildcard Semantic Role | Count |",
+                "| --- | ---: |",
+            ]
+        )
+        for role, count in sorted(semantic_role_counts.items()):
+            lines.append(f"| {role} | {count} |")
+
     for path, hits in inventory["by_file"].items():
         lines.extend(
             [
@@ -317,10 +378,13 @@ def _to_markdown(inventory: dict[str, Any]) -> str:
             if isinstance(coverage_sensor, dict):
                 status = str(coverage_sensor.get("status") or "")
                 recognizer = str(coverage_sensor.get("recognizer_name") or "")
+                role = str(coverage_sensor.get("semantic_role") or "")
                 if status:
                     suffix = f" [coverage={status}"
                     if recognizer:
                         suffix += f", recognizer={recognizer}"
+                    if role:
+                        suffix += f", role={role}"
                     suffix += "]"
                     snippet = f"{snippet}{suffix}"
             lines.append(
