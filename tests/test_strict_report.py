@@ -673,6 +673,7 @@ def test_to_json_exports_open_ownership_closure_certificate_without_replay_claim
     ]
     assert certificate["unowned_counts"] == {
         "incomplete_candidate_set_certificates": 4,
+        "candidate_set_certificates_without_execution_authorization": 0,
         "failed_ops_without_frontier_work_item": 0,
         "operation_cues_without_candidate_coverage_certificate": 0,
         "source_units_without_enumeration_certificate": 0,

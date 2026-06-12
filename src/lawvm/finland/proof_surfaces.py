@@ -1486,6 +1486,19 @@ def finland_strict_report_ownership_closure_certificate(
         for row in candidate_set_certificates
         if str(row.get("completeness_status") or "") != "complete"
     )
+    candidate_set_kinds = tuple(
+        str(row.get("candidate_set_kind") or "")
+        for row in candidate_set_certificates
+        if str(row.get("candidate_set_kind") or "")
+    )
+    authorized_candidate_set_kinds = {
+        str(row.get("candidate_set_kind") or "")
+        for row in candidate_set_authorizations
+        if str(row.get("candidate_set_kind") or "")
+    }
+    candidate_set_kinds_without_authorization = tuple(
+        kind for kind in candidate_set_kinds if kind not in authorized_candidate_set_kinds
+    )
     failed_gates = (
         *(
             (
@@ -1499,6 +1512,10 @@ def finland_strict_report_ownership_closure_certificate(
             f"candidate_set_{str(row.get('candidate_set_kind') or 'unknown')}_{str(row.get('completeness_status') or 'unknown')}"
             for row in incomplete_candidate_sets
         ),
+        *(
+            f"candidate_set_{kind}_execution_authorization_missing"
+            for kind in candidate_set_kinds_without_authorization
+        ),
         *(() if not failed_ops else ("failed_ops_present",)),
         *(() if not strict_fail_reasons else ("strict_fail_reasons_present",)),
         *(() if not unproved_mutation_boundaries else ("unproved_mutation_boundary_present",)),
@@ -1511,6 +1528,9 @@ def finland_strict_report_ownership_closure_certificate(
         if not _has_candidate_set(candidate_set_certificates, "fi_strict_report_operation_cue_coverage")
         else 0,
         "incomplete_candidate_set_certificates": len(incomplete_candidate_sets),
+        "candidate_set_certificates_without_execution_authorization": len(
+            candidate_set_kinds_without_authorization
+        ),
         "failed_ops_without_frontier_work_item": max(
             len(failed_ops) - len(failed_operation_frontier_items),
             0,
@@ -1531,6 +1551,10 @@ def finland_strict_report_ownership_closure_certificate(
             candidate_set_kind="fi_strict_report_operation_cue_coverage",
             missing_certificate="operation_candidate_coverage_certificate",
             incomplete_certificate="complete_operation_cue_exhaustiveness_certificate",
+        ),
+        *(
+            f"candidate_set_execution_authorization:{kind}"
+            for kind in candidate_set_kinds_without_authorization
         ),
     )
     closure_dimensions = (

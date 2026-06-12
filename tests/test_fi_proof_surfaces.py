@@ -34,6 +34,7 @@ from lawvm.finland.proof_surfaces import (
     finland_evidence_bundle_evidence_surface,
     finland_frontier_proof_evidence_surface,
     finland_he_branch_evidence_surface,
+    finland_strict_report_candidate_set_execution_authorizations,
     finland_strict_report_ownership_closure_certificate,
     finland_strict_report_evidence_surface,
     finlex_editorial_witness_agreement_residual_rows,
@@ -1388,6 +1389,11 @@ def test_finland_strict_report_ownership_closure_can_close_declared_slice() -> N
         ).to_dict()
         for kind in candidate_set_kinds
     ]
+    candidate_set_authorizations = finland_strict_report_candidate_set_execution_authorizations(
+        {
+            "strict_report_candidate_set_certificates": candidate_sets,
+        }
+    )
 
     certificate = finland_strict_report_ownership_closure_certificate(
         {
@@ -1399,7 +1405,7 @@ def test_finland_strict_report_ownership_closure_can_close_declared_slice() -> N
             "source_pathologies": [],
             "strict_fail_reasons": [],
             "strict_report_candidate_set_certificates": candidate_sets,
-            "strict_report_candidate_set_execution_authorizations": [],
+            "strict_report_candidate_set_execution_authorizations": candidate_set_authorizations,
             "mutation_boundary_proofs": [],
         }
     )
@@ -1422,6 +1428,52 @@ def test_finland_strict_report_ownership_closure_can_close_declared_slice() -> N
     assert "operation_candidate_coverage_closure" not in certificate["detail"]["does_not_claim"]
     assert "full_finland_corpus_closure" in certificate["detail"]["does_not_claim"]
     assert "replay_authorization" in certificate["detail"]["does_not_claim"]
+
+
+def test_finland_strict_report_ownership_closure_requires_candidate_set_authorizations() -> None:
+    candidate_set = CandidateSetCertificate(
+        scope_id="fi:2001/1234:fi_strict_report_operation_cue_coverage",
+        candidate_set_kind="fi_strict_report_operation_cue_coverage",
+        phase="operation_cue_detection",
+        rule_id="fi_strict_report_operation_cue_coverage_complete",
+        reason="operation cues enumerated in declared test slice",
+        completeness_status=CANDIDATE_SET_COMPLETE,
+        candidate_count=1,
+        candidate_ids=("operation-cue:1",),
+        missing_candidate_count=0,
+        blocker_counts={},
+        blocker_families=(),
+        next_promotion_allowed=False,
+        next_promotion_requires=("execution_authorization",),
+    ).to_dict()
+
+    certificate = finland_strict_report_ownership_closure_certificate(
+        {
+            "statute_id": "2001/1234",
+            "profile": "strict",
+            "canonical_ops": [],
+            "failed_ops": [],
+            "projection_rows": [],
+            "source_pathologies": [],
+            "strict_fail_reasons": [],
+            "strict_report_candidate_set_certificates": [candidate_set],
+            "strict_report_candidate_set_execution_authorizations": [],
+            "mutation_boundary_proofs": [],
+        }
+    )
+
+    assert certificate["closed"] is False
+    assert certificate["closure_status"] == "open"
+    assert certificate["failed_gates"] == [
+        "candidate_set_fi_strict_report_operation_cue_coverage_execution_authorization_missing",
+    ]
+    assert certificate["unowned_counts"][
+        "candidate_set_certificates_without_execution_authorization"
+    ] == 1
+    assert certificate["detail"]["missing_required_certificates"] == [
+        "source_unit_enumeration_certificate",
+        "candidate_set_execution_authorization:fi_strict_report_operation_cue_coverage",
+    ]
 
 
 def test_temporal_resolution_evidence_rows_project_finland_time_findings() -> None:
