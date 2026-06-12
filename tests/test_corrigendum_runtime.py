@@ -899,6 +899,37 @@ def test_apply_visible_text_delta_multi_slot_recovers_two_slot_johtolause_corrig
     assert b"2 \xc2\xa7:n 2 momentti ja 9 \xc2\xa7" not in patched
 
 
+def test_apply_visible_text_delta_multi_slot_preserves_three_block_johtolause_corrigendum() -> None:
+    from lawvm.finland.corpus import get_corpus
+
+    xml_bytes = get_corpus().read_source("2018/306")
+    assert xml_bytes is not None
+    start, end = corr._johtolause_byte_range(xml_bytes)
+    fragment = xml_bytes[start:end]
+    wrong = (
+        "muutetaan 3 §:n 6 ja 30 kohta, 27 a §:n 1 momentin 7 kohta ja 94 §,\n"
+        "sellaisina kuin ne ovat, 3 §:n 6 kohta laissa 226/2009, 3 §:n 30 kohta ja 27 a §:n\n"
+        "1 momentin 7 kohta laissa 507/2017 ja 94 § laissa 961/2013, sekä\n"
+        "lisätään 27 a §:n 1 momenttiin, sellaisena kuin se on laissa 507/2017, uusi 8 kohta seuraavasti:"
+    )
+    correct = (
+        "muutetaan 3 §:n 6 ja 30 kohta, 27 a §:n 2 momentin 7 kohta ja 94 §,\n"
+        "sellaisina kuin ne ovat, 3 §:n 6 kohta laissa 226/2009, 3 §:n 30 kohta ja 27 a §:n\n"
+        "2 momentin 7 kohta laissa 507/2017 ja 94 § laissa 961/2013, sekä\n"
+        "lisätään 27 a §:n 2 momenttiin, sellaisena kuin se on laissa 507/2017, uusi 8 kohta seuraavasti:"
+    )
+
+    patched, ok = corr._apply_visible_text_delta_multi_slot(fragment, wrong, correct)
+
+    assert ok is True
+    assert b"<i>muutetaan</i>" in patched
+    assert b"<i>lis\xc3\xa4t\xc3\xa4\xc3\xa4n</i>" in patched
+    assert b"27 a \xc2\xa7:n 2 momentin 7 kohta" in patched
+    assert b"27 a \xc2\xa7:n 2 momenttiin" in patched
+    assert b"27 a \xc2\xa7:n 1 momentin 7 kohta" not in patched
+    assert b"27 a \xc2\xa7:n 1 momenttiin" not in patched
+
+
 def test_patch_source_body_xml_records_invalid_candidate_xml() -> None:
     corr.clear_misapplied_records()
     table = corr.CorrigendumPatchTable()

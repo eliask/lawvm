@@ -57,7 +57,7 @@ import difflib
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator, List, Literal, Optional, Tuple
+from typing import Any, Iterable, Iterator, List, Literal, Optional, Tuple
 
 import Levenshtein
 from lxml import etree
@@ -1099,6 +1099,48 @@ def _normalized_text_index_map(value: str) -> tuple[str, list[int], list[int]]:
     return "".join(normalized_parts), starts, ends
 
 
+def _global_normalized_text_index_map(value: str) -> tuple[str, list[int], list[int]]:
+    """Collapse whitespace across concatenated text slots while preserving offsets."""
+
+    normalized_parts: list[str] = []
+    starts: list[int] = []
+    ends: list[int] = []
+    for match in re.finditer(r"\s+|\S+", value):
+        token = match.group(0)
+        if token.isspace():
+            if normalized_parts and normalized_parts[-1] != " ":
+                normalized_parts.append(" ")
+                starts.append(match.start())
+                ends.append(match.end())
+            continue
+        token_start = match.start()
+        for idx, cp in enumerate(token):
+            normalized_parts.append(cp)
+            starts.append(token_start + idx)
+            ends.append(token_start + idx + 1)
+    while normalized_parts and normalized_parts[-1] == " ":
+        normalized_parts.pop()
+        starts.pop()
+        ends.pop()
+    return "".join(normalized_parts), starts, ends
+
+
+def _iter_text_slots_in_document_order(
+    root: etree._Element,
+) -> Iterable[tuple[etree._Element, str, str]]:
+    """Yield element text/tail slots in XML document order."""
+
+    def _walk(el: etree._Element) -> Iterable[tuple[etree._Element, str, str]]:
+        if el.text:
+            yield (el, "text", el.text)
+        for child in el:
+            yield from _walk(child)
+            if child.tail:
+                yield (child, "tail", child.tail)
+
+    yield from _walk(root)
+
+
 def _apply_visible_text_delta_single_slot(
     xml_bytes: bytes, wrong: str, correct: str
 ) -> Tuple[bytes, bool]:
@@ -1163,20 +1205,17 @@ def _apply_visible_text_delta_single_slot(
     slots: list[tuple[etree._Element, str, str]] = []
     flat_parts: list[str] = []
     flat_slot_map: list[tuple[int, int, int]] = []
-    for el in root.iter():
-        for field, value in (("text", el.text), ("tail", el.tail)):
-            if not value:
-                continue
-            slot_index = len(slots)
-            slots.append((el, field, value))
-            normalized_value, starts, ends = _normalized_text_index_map(value)
-            if not normalized_value:
-                continue
-            flat_parts.append(normalized_value)
-            for i in range(len(normalized_value)):
-                if i >= len(starts) or i >= len(ends):
-                    return xml_bytes, False
-                flat_slot_map.append((slot_index, starts[i], ends[i]))
+    for el, field, value in _iter_text_slots_in_document_order(root):
+        slot_index = len(slots)
+        slots.append((el, field, value))
+        normalized_value, starts, ends = _normalized_text_index_map(value)
+        if not normalized_value:
+            continue
+        flat_parts.append(normalized_value)
+        for i in range(len(normalized_value)):
+            if i >= len(starts) or i >= len(ends):
+                return xml_bytes, False
+            flat_slot_map.append((slot_index, starts[i], ends[i]))
 
     flat_text = "".join(flat_parts)
     pattern_parts: list[str] = []
@@ -1266,35 +1305,57 @@ def _apply_visible_text_delta_multi_slot(
     slots: list[tuple[etree._Element, str, str]] = []
     flat_parts: list[str] = []
     flat_slot_map: list[tuple[int, int, int]] = []
-    for el in root.iter():
-        for field, value in (("text", el.text), ("tail", el.tail)):
-            if not value:
-                continue
-            slot_index = len(slots)
-            slots.append((el, field, value))
-            normalized_value, starts, ends = _normalized_text_index_map(value)
-            if not normalized_value:
-                continue
-            flat_parts.append(normalized_value)
-            for i in range(len(normalized_value)):
-                if i >= len(starts) or i >= len(ends):
-                    return xml_bytes, False
-                flat_slot_map.append((slot_index, starts[i], ends[i]))
+    for el, field, value in _iter_text_slots_in_document_order(root):
+        slot_index = len(slots)
+        slots.append((el, field, value))
+        normalized_value, starts, ends = _normalized_text_index_map(value)
+        if not normalized_value:
+            continue
+        flat_parts.append(normalized_value)
+        for i in range(len(normalized_value)):
+            if i >= len(starts) or i >= len(ends):
+                return xml_bytes, False
+            flat_slot_map.append((slot_index, starts[i], ends[i]))
 
     flat_text = "".join(flat_parts)
-    hit = flat_text.find(wrong_norm)
-    if hit < 0 or flat_text.find(wrong_norm, hit + 1) >= 0:
+    flat_norm, flat_norm_starts, flat_norm_ends = _global_normalized_text_index_map(flat_text)
+    hit = flat_norm.find(wrong_norm)
+    if hit < 0 or flat_norm.find(wrong_norm, hit + 1) >= 0:
         return xml_bytes, False
 
     matcher = difflib.SequenceMatcher(None, wrong_norm, correct_norm, autojunk=False)
     per_slot_edits: dict[int, list[tuple[int, int, str]]] = {}
+
+    def _flat_span_from_normalized_span(start: int, end: int) -> tuple[int, int] | None:
+        if start < 0 or end < start:
+            return None
+        if end == start:
+            return (start, end)
+        norm_start = hit + start
+        norm_end = hit + end
+        if norm_end > len(flat_norm_starts):
+            return None
+        return flat_norm_starts[norm_start], flat_norm_ends[norm_end - 1]
+
+    def _flat_boundary_from_normalized_index(index: int) -> int | None:
+        norm_index = hit + index
+        if norm_index < 0:
+            return None
+        if norm_index < len(flat_norm_starts):
+            return flat_norm_starts[norm_index]
+        if norm_index == len(flat_norm_starts):
+            return len(flat_text)
+        return None
+
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":
             continue
         if tag not in {"replace", "delete", "insert"}:
             return xml_bytes, False
         if tag == "insert":
-            anchor_index = hit + i1
+            anchor_index = _flat_boundary_from_normalized_index(i1)
+            if anchor_index is None:
+                return xml_bytes, False
             candidates: list[tuple[int, int]] = []
             if 0 <= anchor_index - 1 < len(flat_slot_map):
                 slot_id, _start, end = flat_slot_map[anchor_index - 1]
@@ -1308,8 +1369,10 @@ def _apply_visible_text_delta_multi_slot(
             per_slot_edits.setdefault(slot_id, []).append((pos, pos, correct_norm[j1:j2]))
             continue
 
-        change_start = hit + i1
-        change_end = hit + i2
+        flat_span = _flat_span_from_normalized_span(i1, i2)
+        if flat_span is None:
+            return xml_bytes, False
+        change_start, change_end = flat_span
         if change_end > len(flat_slot_map):
             return xml_bytes, False
         affected = flat_slot_map[change_start:change_end]
