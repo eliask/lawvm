@@ -668,6 +668,43 @@ def test_execution_authorization_report_validates_mapping_rows() -> None:
         )
 
 
+def test_execution_authorization_report_preserves_distinct_same_rule_rows() -> None:
+    base = {
+        "executable": False,
+        "replay_authorized": False,
+        "authorization_status": "candidate_set_incomplete_not_replay_authority",
+        "authorization_rule_id": "fi_strict_report_candidate_set_operation_cue_coverage",
+        "owner_phase": "operation_cue_detection",
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+        "required_proofs": ("operation_cue_classification_report",),
+        "safe_default": "do_not_treat_candidate_set_certificate_as_replay_authorization",
+    }
+    report = execution_authorization_evidence_report(
+        (
+            {
+                **base,
+                "subject_id": "fi:demo:operation-cue-coverage:a",
+            },
+            {
+                **base,
+                "subject_id": "fi:demo:operation-cue-coverage:b",
+            },
+        ),
+        jurisdiction="fi",
+    )
+    data = report.to_dict()
+    proof_surface = proof_surface_from_evidence_report(report).to_dict()
+    row_ids = [row["row_id"] for row in data["rows"]]
+
+    assert [row["subject_id"] for row in data["rows"]] == [
+        "fi:demo:operation-cue-coverage:a",
+        "fi:demo:operation-cue-coverage:b",
+    ]
+    assert len(set(row_ids)) == 2
+    assert [row["row_id"] for row in proof_surface["rows"]] == row_ids
+
+
 def test_source_bundle_policy_admission_does_not_authorize_replay() -> None:
     witness = SourceWitness(
         source_role="official_source_xml",

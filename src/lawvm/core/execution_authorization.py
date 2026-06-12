@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from typing import Any, Mapping, cast
@@ -316,19 +318,13 @@ def _authorization_mapping(value: ExecutionAuthorization | Mapping[str, Any]) ->
 
 
 def _authorization_report_row(row: Mapping[str, Any], *, index: int) -> dict[str, Any]:
-    detail = row.get("detail") if isinstance(row.get("detail"), Mapping) else {}
-    evidence_kernel = (
-        detail.get("evidence_kernel")
-        if isinstance(detail, Mapping)
-        else None
+    detail_value = row.get("detail")
+    detail: Mapping[str, Any] = detail_value if isinstance(detail_value, Mapping) else {}
+    subject_id = _authorization_subject_id(row, detail=detail, index=index)
+    row_id = str(row.get("row_id") or "") or _authorization_row_id(
+        row,
+        subject_id=subject_id,
     )
-    subject = evidence_kernel.get("subject") if isinstance(evidence_kernel, Mapping) else None
-    subject_id = (
-        str(subject.get("artifact_id") or "")
-        if isinstance(subject, Mapping)
-        else str(row.get("authorization_rule_id") or f"authorization:{index}")
-    )
-    row_id = f"{subject_id}:{row.get('authorization_rule_id') or 'authorization'}"
     return {
         "surface": "execution_authorization",
         "row_id": row_id,
@@ -356,6 +352,40 @@ def _authorization_report_row(row: Mapping[str, Any], *, index: int) -> dict[str
     }
 
 
+def _authorization_subject_id(
+    row: Mapping[str, Any],
+    *,
+    detail: Mapping[str, Any],
+    index: int,
+) -> str:
+    explicit_subject_id = str(row.get("subject_id") or "")
+    if explicit_subject_id:
+        return explicit_subject_id
+    evidence_kernel = detail.get("evidence_kernel")
+    subject = evidence_kernel.get("subject") if isinstance(evidence_kernel, Mapping) else None
+    if isinstance(subject, Mapping):
+        subject_id = str(subject.get("artifact_id") or "")
+        if subject_id:
+            return subject_id
+    return str(row.get("authorization_rule_id") or f"authorization:{index}")
+
+
+def _authorization_row_id(row: Mapping[str, Any], *, subject_id: str) -> str:
+    authorization_rule_id = str(row.get("authorization_rule_id") or "authorization")
+    digest = _authorization_row_digest(row)
+    return f"{subject_id}:{authorization_rule_id}:{digest}"
+
+
+def _authorization_row_digest(row: Mapping[str, Any]) -> str:
+    payload = json.dumps(
+        _plain_jsonable(row),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:16]
+
+
 def _sequence(value: Any) -> tuple[Any, ...]:
     if isinstance(value, str):
         return (value,) if value else ()
@@ -370,3 +400,13 @@ def _counts(values: Any) -> dict[str, int]:
         key = str(value or "__blank__")
         counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+def _plain_jsonable(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _plain_jsonable(inner) for key, inner in value.items()}
+    if isinstance(value, list | tuple):
+        return [_plain_jsonable(inner) for inner in value]
+    if isinstance(value, set | frozenset):
+        return sorted((_plain_jsonable(inner) for inner in value), key=repr)
+    return value
