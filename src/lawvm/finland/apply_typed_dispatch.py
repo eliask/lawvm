@@ -855,19 +855,24 @@ def _apply_intent_container(
                 outcome="applied",
             )
             return container_result
-        resolved_target_path = _target_address_path_for_rop_event(rop, path_hint)
+        container_applied = container_result is not state
+        resolved_target_path = (
+            _target_address_path_for_rop_event(rop, path_hint)
+            if container_applied
+            else None
+        )
         _emit_apply_mutation_event_for_rop(
             mutation_events_out,
             rop=rop,
             helper="_apply_container_op",
-            outcome="applied" if container_result is not state else "failed",
+            outcome="applied" if container_applied else "failed",
             resolved_target_path=resolved_target_path,
             parent_path=_parent_path(resolved_target_path),
-            created_paths=(resolved_target_path,) if rop.resolved_action_type == "INSERT" and resolved_target_path is not None else (),
-            removed_paths=(resolved_target_path,) if rop.resolved_action_type == "REPEAL" and resolved_target_path is not None and not profile.synthesize_repeal_placeholders else (),
-            replaced_paths=(resolved_target_path,) if rop.resolved_action_type == "REPLACE" and resolved_target_path is not None else (),
+            created_paths=(resolved_target_path,) if container_applied and rop.resolved_action_type == "INSERT" and resolved_target_path is not None else (),
+            removed_paths=(resolved_target_path,) if container_applied and rop.resolved_action_type == "REPEAL" and resolved_target_path is not None and not profile.synthesize_repeal_placeholders else (),
+            replaced_paths=(resolved_target_path,) if container_applied and rop.resolved_action_type == "REPLACE" and resolved_target_path is not None else (),
             placeholder_created_paths=(
-                (resolved_target_path,) if rop.resolved_action_type == "REPEAL" and profile.synthesize_repeal_placeholders and resolved_target_path is not None else ()
+                (resolved_target_path,) if container_applied and rop.resolved_action_type == "REPEAL" and profile.synthesize_repeal_placeholders and resolved_target_path is not None else ()
             ),
         )
         return container_result

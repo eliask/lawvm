@@ -2199,6 +2199,39 @@ def test_specimen_1992_1535_item_insert_failures_are_governed_by_parent_snapshot
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_1982_182_failed_container_noops_do_not_claim_tree_touches() -> None:
+    from lawvm.finland.grafter import replay_xml
+
+    replay_meta: dict = {}
+    master = replay_xml(
+        "1982/182",
+        mode="official_consolidation",
+        quiet=True,
+        replay_meta_out=replay_meta,
+    )
+
+    assert not [
+        finding
+        for finding in master.findings
+        if finding.kind == "REPLAY_FAILED_OP_MUTATED_TREE"
+    ]
+    assert not [
+        event
+        for event in replay_meta.get("apply_mutation_events", [])
+        if event.get("helper") == "_apply_container_op"
+        and event.get("outcome") == "failed"
+        and (
+            event.get("resolved_target_path")
+            or event.get("created_paths")
+            or event.get("removed_paths")
+            or event.get("replaced_paths")
+            or event.get("placeholder_created_paths")
+            or event.get("placeholder_consumed_paths")
+        )
+    ]
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 def test_specimen_1997_1412_section_11_drops_expired_temporary_render_tails() -> None:
     payload = resolve_provision_state(
         statute_id="1997/1412",

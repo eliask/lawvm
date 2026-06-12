@@ -252,7 +252,13 @@ def _apply_legacy_dispatch(
             helper="_apply_container_op",
             outcome="applied" if container_result is not state else "failed",
             resolved_target_path=(
-                _target_address_path_for_rop_event(rop, path_hint) if rop is not None else _path_to_tuple(path_hint)
+                (
+                    _target_address_path_for_rop_event(rop, path_hint)
+                    if rop is not None
+                    else _path_to_tuple(path_hint)
+                )
+                if container_result is not state
+                else None
             ),
         )
         return container_result
