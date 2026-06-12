@@ -35,6 +35,8 @@ _XML_FRONTIER_KINDS = (
     "fi.v1.CONTAINER_MEMBERSHIP_RESOLUTION",
     "fi.v1.SOURCE_CHAIN_RESOLUTION",
     "fi.v1.SOURCE_PATHOLOGY_RESOLUTION",
+    "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE",
+    "fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE",
     "fi.v1.TEMPORAL_BASE_SELECTION_RESOLUTION",
     "fi.v1.MUTATION_BOUNDARY_RESOLUTION",
     "fi.v1.FAILED_OPERATION_RESOLUTION",
@@ -148,6 +150,16 @@ def test_finland_xml_manual_frontier_kinds_are_registered() -> None:
     assert source_pathology is not None
     assert source_pathology.layer == "adjudication"
     assert source_pathology.is_semantic_compilation_claim is True
+
+    source_unit = get_claim_kind_spec("fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE")
+    assert source_unit is not None
+    assert source_unit.layer == "adjudication"
+    assert source_unit.is_semantic_compilation_claim is False
+
+    operation_cue = get_claim_kind_spec("fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE")
+    assert operation_cue is not None
+    assert operation_cue.layer == "adjudication"
+    assert operation_cue.is_semantic_compilation_claim is False
 
     unsupported_corrigendum = get_claim_kind_spec("fi.v1.CORRIGENDUM_UNSUPPORTED_PATCH_RESOLUTION")
     assert unsupported_corrigendum is not None
@@ -275,6 +287,50 @@ def test_source_pathology_resolution_validates_grounded_quote() -> None:
         source_bytes=source,
     )
     spec = get_claim_kind_spec("fi.v1.SOURCE_PATHOLOGY_RESOLUTION")
+    assert spec is not None
+    assert spec.entailment_validator is not None
+    assert spec.entailment_validator(claim, source).passed is True
+
+
+def test_source_unit_enumeration_certificate_validates_grounded_quote() -> None:
+    source = b"<p>enumerated source units: 2020/1 section 1 and section 2</p>"
+    claim = _claim(
+        claim_kind="fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE",
+        target=(
+            ("source_statute", "2020/1"),
+            ("affected_target", "fi:1999/1:strict-report-source-unit-enumeration"),
+        ),
+        value=(
+            ("source_quote", "enumerated source units"),
+            ("enumerated_source_units", ("2020/1#section:1", "2020/1#section:2")),
+            ("coverage_basis", "declared strict-report source-unit enumeration"),
+            ("digest_coverage_ref", "digest-source-units-1"),
+        ),
+        source_bytes=source,
+    )
+    spec = get_claim_kind_spec("fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE")
+    assert spec is not None
+    assert spec.entailment_validator is not None
+    assert spec.entailment_validator(claim, source).passed is True
+
+
+def test_operation_cue_exhaustiveness_certificate_validates_grounded_quote() -> None:
+    source = b"<p>operation cue detector classified all amendment cues in the span</p>"
+    claim = _claim(
+        claim_kind="fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE",
+        target=(
+            ("source_statute", "2020/1"),
+            ("affected_target", "fi:1999/1:strict-report-operation-cue-coverage"),
+        ),
+        value=(
+            ("source_quote", "classified all amendment cues"),
+            ("operation_cue_detector", "fi.operation_cue_detector.v1"),
+            ("classified_cues", ("replace:section:1", "insert:section:2")),
+            ("coverage_basis", "declared strict-report operation-cue coverage"),
+        ),
+        source_bytes=source,
+    )
+    spec = get_claim_kind_spec("fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE")
     assert spec is not None
     assert spec.entailment_validator is not None
     assert spec.entailment_validator(claim, source).passed is True

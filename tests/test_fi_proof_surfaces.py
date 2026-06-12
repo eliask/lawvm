@@ -1948,13 +1948,17 @@ def test_finland_strict_report_candidate_set_frontier_rows_are_non_executable() 
     assert row["authorization_status"] == "candidate_set_incomplete_not_replay_authority"
     assert row["frontier_family"] == "fi_fi_strict_report_operation_cue_coverage_coverage_gap"
     assert row["frontier_status"] == "partial_candidate_set_frontier"
-    assert row["required_claim_kind"] == "operation_cue_exhaustiveness_certificate"
+    assert row["required_claim_kind"] == "fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE"
     assert row["required_proofs"] == [
         "independent_source_text_cue_detector",
         "operation_cue_classification_report",
     ]
     assert "candidate_set_frontier_as_replay_authorization" in row["forbidden_shortcuts"]
-    assert row["suggested_claim_template_status"] == ""
+    assert row["suggested_claim_template_status"] == "available"
+    assert (
+        row["suggested_claim_template"]["claim_kind"]
+        == "fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE"
+    )
     assert row["target_witness"]["scope_id"] == (
         "fi:2001/1234:fi_strict_report_operation_cue_coverage"
     )

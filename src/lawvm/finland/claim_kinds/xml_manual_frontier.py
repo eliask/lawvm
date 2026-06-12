@@ -169,6 +169,44 @@ _SOURCE_PATHOLOGY = _XmlClaimSpec(
     semantic=True,
 )
 
+_SOURCE_UNIT_ENUMERATION = _XmlClaimSpec(
+    claim_kind="fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE",
+    layer="adjudication",
+    description=(
+        "Passive proof-boundary certificate for strict-report source-unit "
+        "enumeration coverage. It can close coverage accounting, but does not "
+        "authorize replay or prove legal operation semantics."
+    ),
+    target_fields=("source_statute", "affected_target"),
+    value_fields=(
+        "source_quote",
+        "enumerated_source_units",
+        "coverage_basis",
+        "digest_coverage_ref",
+    ),
+    allowed_pathology_codes=(),
+    semantic=False,
+)
+
+_OPERATION_CUE_EXHAUSTIVENESS = _XmlClaimSpec(
+    claim_kind="fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE",
+    layer="adjudication",
+    description=(
+        "Passive proof-boundary certificate for strict-report operation-cue "
+        "exhaustiveness. It records cue coverage evidence without converting "
+        "candidate rows into executable operations."
+    ),
+    target_fields=("source_statute", "affected_target"),
+    value_fields=(
+        "source_quote",
+        "operation_cue_detector",
+        "classified_cues",
+        "coverage_basis",
+    ),
+    allowed_pathology_codes=(),
+    semantic=False,
+)
+
 _TEMPORAL_BASE = _XmlClaimSpec(
     claim_kind="fi.v1.TEMPORAL_BASE_SELECTION_RESOLUTION",
     layer="adjudication",
@@ -251,6 +289,8 @@ _XML_FRONTIER_SPECS: tuple[_XmlClaimSpec, ...] = (
     _CONTAINER_MEMBERSHIP,
     _SOURCE_CHAIN,
     _SOURCE_PATHOLOGY,
+    _SOURCE_UNIT_ENUMERATION,
+    _OPERATION_CUE_EXHAUSTIVENESS,
     _TEMPORAL_BASE,
     _MUTATION_BOUNDARY,
     _FAILED_OPERATION,

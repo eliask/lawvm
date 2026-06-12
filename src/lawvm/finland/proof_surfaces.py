@@ -2195,7 +2195,7 @@ def finland_strict_report_candidate_set_frontier_work_items(
                 ],
             },
         )
-        frontier_items.append(item.to_dict())
+        frontier_items.append(_with_finland_claim_template(item).to_dict())
     return frontier_items
 
 
@@ -4360,12 +4360,12 @@ def _candidate_set_frontier_required_claim_kind(candidate_set_kind: str) -> str:
         "fi_strict_report_source_lineage_units",
         "fi_strict_report_source_unit_enumeration",
     ):
-        return "source_unit_enumeration_certificate"
+        return "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE"
     if candidate_set_kind in (
         "fi_strict_report_visible_operation_rows",
         "fi_strict_report_operation_cue_coverage",
     ):
-        return "operation_cue_exhaustiveness_certificate"
+        return "fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE"
     return "candidate_set_completion_certificate"
 
 

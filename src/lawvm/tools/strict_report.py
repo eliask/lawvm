@@ -381,17 +381,13 @@ def _proof_gate_summary(payload: dict[str, Any]) -> dict[str, Any]:
         for row in candidate_sets
         if str(row.get("completeness_status") or "") != "complete"
     ]
+    coverage_frontiers = list(candidate_set_frontiers)
+    coverage_frontier_ids = {id(row) for row in coverage_frontiers}
     manual_claim_frontiers = [
         row
         for row in all_frontiers
+        if id(row) not in coverage_frontier_ids
         if _is_registered_finland_manual_claim_kind(row.get("required_claim_kind"))
-    ]
-    coverage_frontiers = [
-        row
-        for row in candidate_set_frontiers
-        if not _is_registered_finland_manual_claim_kind(
-            row.get("required_claim_kind")
-        )
     ]
     bucketed_frontier_ids = {
         id(row) for row in (*manual_claim_frontiers, *coverage_frontiers)

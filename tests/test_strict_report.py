@@ -161,7 +161,7 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                 "proof_gate_other_frontier_count": 2,
                 "proof_gate_required_claim_kind_counts": {
                     "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
-                    "source_unit_enumeration_certificate": 2,
+                    "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE": 2,
                     "source_pathology_resolution": 2,
                 },
                 "proof_gate_frontier_status_counts": {
@@ -176,7 +176,7 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                     "failed_operation_frontier": 1,
                 },
                 "proof_gate_coverage_claim_kind_counts": {
-                    "source_unit_enumeration_certificate": 2,
+                    "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE": 2,
                 },
                 "proof_gate_coverage_frontier_status_counts": {
                     "partial_candidate_set_frontier": 4,
@@ -245,7 +245,7 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert loaded[0]["proof_gate_required_claim_kind_counts"] == {
         "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
         "source_pathology_resolution": 2,
-        "source_unit_enumeration_certificate": 2,
+        "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE": 2,
     }
     assert loaded[0]["proof_gate_frontier_status_counts"] == {
         "failed_operation_frontier": 1,
@@ -259,7 +259,7 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
         "failed_operation_frontier": 1,
     }
     assert loaded[0]["proof_gate_coverage_claim_kind_counts"] == {
-        "source_unit_enumeration_certificate": 2,
+        "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE": 2,
     }
     assert loaded[0]["proof_gate_coverage_frontier_status_counts"] == {
         "partial_candidate_set_frontier": 4,
@@ -355,7 +355,7 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                 "proof_gate_required_claim_kind_counts": {
                     "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
                     "source_pathology_resolution": 2,
-                    "source_unit_enumeration_certificate": 2,
+                    "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE": 2,
                 },
                 "proof_gate_frontier_status_counts": {
                     "failed_operation_frontier": 1,
@@ -369,7 +369,7 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                     "failed_operation_frontier": 1,
                 },
                 "proof_gate_coverage_claim_kind_counts": {
-                    "source_unit_enumeration_certificate": 2,
+                    "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE": 2,
                 },
                 "proof_gate_coverage_frontier_status_counts": {
                     "partial_candidate_set_frontier": 4,
@@ -720,15 +720,15 @@ def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
     }
     assert proof_gates["required_claim_kind_counts"] == {
         "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
-        "operation_cue_exhaustiveness_certificate": 2,
-        "source_unit_enumeration_certificate": 2,
+        "fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE": 2,
+        "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE": 2,
     }
     assert proof_gates["manual_frontier_required_claim_kind_counts"] == {
         "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
     }
     assert proof_gates["coverage_frontier_required_claim_kind_counts"] == {
-        "operation_cue_exhaustiveness_certificate": 2,
-        "source_unit_enumeration_certificate": 2,
+        "fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE": 2,
+        "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE": 2,
     }
     assert proof_gates["manual_frontier_status_counts"] == {
         "failed_operation_frontier": 1,
@@ -772,7 +772,7 @@ def test_format_report_includes_compact_proof_gate_summary() -> None:
     assert "open gate signals: 18" in out
     assert "fi.v1.FAILED_OPERATION_RESOLUTION=1" in out
     assert "manual claims    : fi.v1.FAILED_OPERATION_RESOLUTION=1" in out
-    assert "coverage proofs  : operation_cue_exhaustiveness_certificate=2" in out
+    assert "coverage proofs  : fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE=2" in out
 
 
 def test_to_json_uses_projection_rows_when_available() -> None:
@@ -914,9 +914,9 @@ def test_to_json_counts_registered_source_pathology_frontiers_as_manual() -> Non
     assert proof_gates["coverage_frontier_count"] == 4
     assert proof_gates["other_frontier_count"] == 0
     assert proof_gates["required_claim_kind_counts"] == {
-        "operation_cue_exhaustiveness_certificate": 2,
+        "fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE": 2,
         "fi.v1.SOURCE_PATHOLOGY_RESOLUTION": 1,
-        "source_unit_enumeration_certificate": 2,
+        "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE": 2,
     }
     assert proof_gates["manual_frontier_required_claim_kind_counts"] == {
         "fi.v1.SOURCE_PATHOLOGY_RESOLUTION": 1,
