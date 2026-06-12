@@ -638,6 +638,7 @@ from lawvm.finland.process_findings import ProcessFindingRecorder
 from lawvm.finland.process_frontend_normalization import ProcessFrontendNormalizationContext
 from lawvm.finland.process_precompile_selection import ProcessPrecompileSelectionContext
 from lawvm.finland.process_result_builder import (
+    ProcessAmendmentSinks,
     ProcessCompatSinks,
     ProcessResultBuilder,
     ProcessSignalBuffers,
@@ -4739,6 +4740,7 @@ def process_muutoslaki(
     prior_migration_events: Optional[Iterable["MigrationEvent"]] = None,
     restructure_plans_out: Optional[List[StructuralTransformPlan]] = None,
     processed_amendment_titles: Optional[Dict[str, str]] = None,
+    sinks: Optional[ProcessAmendmentSinks] = None,
 ) -> "PhaseResult[ReplayState]":
     """Process one amendment statute end-to-end.
 
@@ -4766,6 +4768,55 @@ def process_muutoslaki(
     etc.) are still populated for backward compatibility, but callers should
     prefer the PhaseResult signals.
     """
+    if sinks is not None:
+        compiled_ops_out = compiled_ops_out if compiled_ops_out is not None else sinks.compiled_ops_out
+        lo_ops_out = lo_ops_out if lo_ops_out is not None else sinks.lo_ops_out
+        failed_ops_out = failed_ops_out if failed_ops_out is not None else sinks.failed_ops_out
+        source_pathologies_out = (
+            source_pathologies_out
+            if source_pathologies_out is not None
+            else sinks.source_pathologies_out
+        )
+        elaboration_observations_out = (
+            elaboration_observations_out
+            if elaboration_observations_out is not None
+            else sinks.elaboration_observations_out
+        )
+        sparse_slot_bindings_out = (
+            sparse_slot_bindings_out
+            if sparse_slot_bindings_out is not None
+            else sinks.sparse_slot_bindings_out
+        )
+        sparse_leftovers_out = (
+            sparse_leftovers_out
+            if sparse_leftovers_out is not None
+            else sinks.sparse_leftovers_out
+        )
+        regex_recognition_coverage_out = (
+            regex_recognition_coverage_out
+            if regex_recognition_coverage_out is not None
+            else sinks.regex_recognition_coverage_out
+        )
+        commencement_expiry_overrides_out = (
+            commencement_expiry_overrides_out
+            if commencement_expiry_overrides_out is not None
+            else sinks.commencement_expiry_overrides_out
+        )
+        mutation_events_out = (
+            mutation_events_out if mutation_events_out is not None else sinks.mutation_events_out
+        )
+        mutation_invariant_reports_out = (
+            mutation_invariant_reports_out
+            if mutation_invariant_reports_out is not None
+            else sinks.mutation_invariant_reports_out
+        )
+        write_audits_out = write_audits_out if write_audits_out is not None else sinks.write_audits_out
+        migration_events_out = (
+            migration_events_out if migration_events_out is not None else sinks.migration_events_out
+        )
+        restructure_plans_out = (
+            restructure_plans_out if restructure_plans_out is not None else sinks.restructure_plans_out
+        )
     # Accumulates executable temporal authority plus compatibility evidence rows
     # before the PhaseResult/result-sink projection boundary.
     _signals = ProcessSignalBuffers.empty()

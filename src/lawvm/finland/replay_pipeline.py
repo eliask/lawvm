@@ -10,6 +10,7 @@ from lawvm.core.phase_result import Finding, OBLIGATION_ROLE, OBSERVATION_ROLE, 
 from lawvm.core.replay_contracts import ReplayCheckpoint, ReplayCheckpointCallback
 from lawvm.core.tree_ops import resort_children as _resort_children
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
+from lawvm.finland.process_result_builder import ProcessAmendmentSinks
 from lawvm.finland.vts import VtsSkippedTarget, VtsSourceDiagnostic
 
 from lawvm.finland.statute import ReplayState, StatuteContext, _serialize_text_node as _serialize_text
@@ -316,26 +317,28 @@ def execute_replay_plan(
             state,
             plan.ctx,
             replay_mode=plan.replay_mode,
-            compiled_ops_out=compiled_ops_out,
-            lo_ops_out=lo_ops_out,
             parent_id=plan.parent_id,
-            failed_ops_out=failed_ops_out,
             strict_profile=strict_profile,
             chapter_seed_skip=chapter_seed_skip,
             corpus=corpus,
             future_repeals=future_repeals if future_repeals else None,
-            source_pathologies_out=source_pathologies_out,
-            elaboration_observations_out=elaboration_observations_out,
-            sparse_slot_bindings_out=sparse_slot_bindings_out,
-            sparse_leftovers_out=sparse_leftovers_out,
-            regex_recognition_coverage_out=regex_recognition_coverage_out,
-            commencement_expiry_overrides_out=commencement_expiry_overrides_out,
-            mutation_events_out=mutation_events_out,
-            write_audits_out=write_audits_out,
-            migration_events_out=effective_migration_events_out,
             prior_migration_events=tuple(effective_migration_events_out),
-            restructure_plans_out=restructure_plans_out,
             processed_amendment_titles=processed_amendment_titles,
+            sinks=ProcessAmendmentSinks(
+                compiled_ops_out=compiled_ops_out,
+                lo_ops_out=lo_ops_out,
+                failed_ops_out=failed_ops_out,
+                source_pathologies_out=source_pathologies_out,
+                elaboration_observations_out=elaboration_observations_out,
+                sparse_slot_bindings_out=sparse_slot_bindings_out,
+                sparse_leftovers_out=sparse_leftovers_out,
+                regex_recognition_coverage_out=regex_recognition_coverage_out,
+                commencement_expiry_overrides_out=commencement_expiry_overrides_out,
+                mutation_events_out=mutation_events_out,
+                write_audits_out=write_audits_out,
+                migration_events_out=effective_migration_events_out,
+                restructure_plans_out=restructure_plans_out,
+            ),
         )
         state = _pm_result.output
         processed_amendment_titles[str(mid)] = record_titles.get(str(mid), "")

@@ -12,9 +12,13 @@ from dataclasses import dataclass
 from typing import Any, List, Optional, Sequence
 
 from lawvm.core.compile_result import SourcePathology, TemporalEvent
+from lawvm.core.ir import LegalOperation
 from lawvm.core.mutation_accounting import MutationInvariantReport as ApplyMutationInvariantReport
 from lawvm.core.observation_registry import get_finding_spec
+from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.phase_result import Finding, PhaseResult
+from lawvm.core.provenance import MigrationEvent
+from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
 from lawvm.finland.apply_events import (
     ApplyMutationEvent,
     build_apply_mutation_invariant_reports,
@@ -28,6 +32,7 @@ from lawvm.finland.replay_findings import (
     _apply_mutation_fallback_event_finding,
     _apply_mutation_invariant_report_finding,
 )
+from lawvm.finland.restructure_plan import StructuralTransformPlan
 from lawvm.finland.vts import VtsSkippedTarget
 
 
@@ -72,6 +77,30 @@ class ProcessCompatSinks:
     commencement_expiry_overrides_out: Optional[List[dict[str, object]]]
     mutation_events_out: Optional[List[ApplyMutationEvent]]
     mutation_invariant_reports_out: Optional[List[ApplyMutationInvariantReport]]
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessAmendmentSinks:
+    """Typed external sinks for one ``process_muutoslaki`` invocation.
+
+    This is the call-boundary carrier. ``ProcessCompatSinks`` remains the
+    smaller PhaseResult-projection subset used by ``ProcessResultBuilder``.
+    """
+
+    compiled_ops_out: Optional[List[dict[str, object]]] = None
+    lo_ops_out: Optional[List[LegalOperation]] = None
+    failed_ops_out: Optional[List[FailedOp]] = None
+    source_pathologies_out: Optional[List[SourcePathology]] = None
+    elaboration_observations_out: Optional[List[dict[str, object]]] = None
+    sparse_slot_bindings_out: Optional[List[dict[str, object]]] = None
+    sparse_leftovers_out: Optional[List[dict[str, object]]] = None
+    regex_recognition_coverage_out: Optional[List[RegexRecognitionCoverage]] = None
+    commencement_expiry_overrides_out: Optional[List[dict[str, object]]] = None
+    mutation_events_out: Optional[List[ApplyMutationEvent]] = None
+    mutation_invariant_reports_out: Optional[List[ApplyMutationInvariantReport]] = None
+    write_audits_out: Optional[List[ObservedWriteAudit]] = None
+    migration_events_out: Optional[List[MigrationEvent]] = None
+    restructure_plans_out: Optional[List[StructuralTransformPlan]] = None
 
 
 @dataclass(slots=True)

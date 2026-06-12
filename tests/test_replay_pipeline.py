@@ -9,6 +9,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.tree_ops import check_invariants
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
+from lawvm.finland.process_result_builder import ProcessAmendmentSinks
 from lawvm.finland.replay_pipeline import ReplayPlan, execute_replay_plan, prepare_replay_plan
 from lawvm.corpus_store import CorpusStore
 from lawvm.finland.statute import ReplayState, StatuteContext
@@ -505,7 +506,9 @@ def test_execute_replay_plan_passes_mutation_events_sink_to_process_muutoslaki()
 
     def fake_process_muutoslaki(mid, state, ctx, **kwargs):
         assert mid == "1991/1"
-        assert kwargs.get("mutation_events_out") is mutation_events
+        sinks = kwargs.get("sinks")
+        assert isinstance(sinks, ProcessAmendmentSinks)
+        assert sinks.mutation_events_out is mutation_events
         mutation_events.append({"mid": mid, "kind": "fake"})
         return PhaseResult(output=state)
 
@@ -547,7 +550,9 @@ def test_execute_replay_plan_passes_sparse_leftovers_sink_to_process_muutoslaki(
 
     def fake_process_muutoslaki(mid, state, ctx, **kwargs):
         assert mid == "1991/1"
-        assert kwargs.get("sparse_leftovers_out") is leftovers
+        sinks = kwargs.get("sinks")
+        assert isinstance(sinks, ProcessAmendmentSinks)
+        assert sinks.sparse_leftovers_out is leftovers
         leftovers.append({"mid": mid, "kind": "fake_leftover"})
         return PhaseResult(output=state)
 
@@ -589,7 +594,9 @@ def test_execute_replay_plan_passes_regex_coverage_sink_to_process_muutoslaki() 
 
     def fake_process_muutoslaki(mid, state, ctx, **kwargs):
         assert mid == "1991/1"
-        assert kwargs.get("regex_recognition_coverage_out") is coverage_rows
+        sinks = kwargs.get("sinks")
+        assert isinstance(sinks, ProcessAmendmentSinks)
+        assert sinks.regex_recognition_coverage_out is coverage_rows
         coverage_rows.append({"mid": mid, "kind": "fake_regex_coverage"})
         return PhaseResult(output=state)
 
@@ -631,7 +638,9 @@ def test_execute_replay_plan_passes_sparse_slot_bindings_sink_to_process_muutosl
 
     def fake_process_muutoslaki(mid, state, ctx, **kwargs):
         assert mid == "1991/1"
-        assert kwargs.get("sparse_slot_bindings_out") is bindings
+        sinks = kwargs.get("sinks")
+        assert isinstance(sinks, ProcessAmendmentSinks)
+        assert sinks.sparse_slot_bindings_out is bindings
         bindings.append({"mid": mid, "kind": "fake_binding"})
         return PhaseResult(output=state)
 
