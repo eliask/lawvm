@@ -579,9 +579,16 @@ from lawvm.finland.process_structural_prepare import ProcessStructuralPrepareCon
 from lawvm.finland.process_temporal_authority import ProcessTemporalAuthorityContext
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
 from lawvm.finland.replay_fold_projection import ReplayFoldProjectionRequest, project_replay_fold
+from lawvm.finland.replay_horizon import (
+    ReplayHorizonRequest,
+    choose_replay_horizon,
+    oracle_version_future_repeal_only_uses_cutoff_date,
+)
 from lawvm.finland.replay_product_projection import ReplayProductProjectionRequest, project_replay_products
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir as _hoist_trailing_wrapup_ir
+
+_oracle_version_future_repeal_only_uses_cutoff_date = oracle_version_future_repeal_only_uses_cutoff_date
 
 
 def _emit_restructure_plan_renumber_legal_operations(
@@ -627,37 +634,6 @@ def _emit_restructure_plan_renumber_legal_operations(
         )
         emitted += 1
     return emitted
-
-
-def _oracle_version_future_repeal_only_uses_cutoff_date(
-    *,
-    compiled_ops: Iterable[Dict[str, object]],
-    oracle_version_amendment_id: str,
-    oracle_cutoff_iso: Optional[str],
-) -> bool:
-    """Return True when a future-effective oracle-version amendment is repeal-only.
-
-    Finlex oracle materialization usually follows the oracle-version
-    amendment's own effective date. That is correct for future-effective
-    replacement families such as ``2016/258 <- 2021/1199``.
-
-    Some oracle-version amendments are different: they are pure future repeals
-    that Finlex still shows only as editorial future notice at the consolidated
-    cutoff, without projecting the repeal into the selected XML. In that
-    bounded family, materialization must stay at the oracle cutoff.
-    """
-    if not oracle_version_amendment_id or oracle_cutoff_iso is None:
-        return False
-
-    saw_oracle_version_op = False
-    for op in compiled_ops:
-        if str(op.get("source_statute") or "") != oracle_version_amendment_id:
-            continue
-        saw_oracle_version_op = True
-        if str(op.get("action") or "").strip().lower() != "repeal":
-            return False
-
-    return saw_oracle_version_op
 
 
 def _duplicate_section_labels_across_chapters(master_ir: IRNode) -> Set[str]:
@@ -5426,171 +5402,20 @@ def replay_xml(
             oracle_suspect=plan.oracle_suspect or "",
             lineage=plan.amendment_records,
         )
-        oracle_materialize_as_of: Optional[str] = None
-        if mode == "official_consolidation":
-            # oracle_cutoff_iso is the ordering_date of the oracle version
-            # (effective_date if present, else issue_date).  It represents the
-            # date up to which the oracle XML was consolidated.
-            _oracle_cutoff_iso: Optional[str] = (
-                plan.cutoff_date.isoformat() if plan.cutoff_date is not None else None
-            )
-            _oracle_vid_id = plan.oracle_version_amendment_id or ""
-            _oracle_vid_repeal_only_future = _oracle_version_future_repeal_only_uses_cutoff_date(
+        horizon = choose_replay_horizon(
+            ReplayHorizonRequest(
+                mode=mode,
+                as_of=as_of,
+                cutoff_date=plan.cutoff_date,
+                amendment_records=plan.amendment_records,
+                oracle_version_amendment_id=plan.oracle_version_amendment_id or "",
                 compiled_ops=capture_compiled_ops_out or (),
-                oracle_version_amendment_id=_oracle_vid_id,
-                oracle_cutoff_iso=_oracle_cutoff_iso,
+                legal_operations=capture_lo_ops_out or (),
+                replay_print=_replay_print,
             )
-            oracle_dates: list[str] = []
-            for rec in plan.amendment_records:
-                if not bool(rec.get("included", True)):
-                    continue
-                _oracle_effective = rec.get("effective_date")
-                _oracle_issue = rec.get("issue_date")
-                _rec_sid = rec.get("statute_id", "")
-                # Normalise to ISO strings.
-                _eff_iso: Optional[str] = None
-                if isinstance(_oracle_effective, dt.date):
-                    _eff_iso = _oracle_effective.isoformat()
-                elif isinstance(_oracle_effective, str) and _oracle_effective:
-                    _eff_iso = _oracle_effective
-                _iss_iso: Optional[str] = None
-                if isinstance(_oracle_issue, dt.date):
-                    _iss_iso = _oracle_issue.isoformat()
-                elif isinstance(_oracle_issue, str) and _oracle_issue:
-                    _iss_iso = _oracle_issue
-                _date_for_oracle = _eff_iso or _iss_iso
-                if _date_for_oracle is None:
-                    continue
-                # Exclude non-oracle-version amendments whose issue_date is on or
-                # after the oracle cutoff AND whose effective_date is strictly after
-                # the cutoff.  These were published the same day (or later) the
-                # oracle was consolidated, so their future effects are not yet in
-                # the oracle.
-                #
-                # Exclude non-oracle-version amendments whose issue_date is on or
-                # after the oracle cutoff AND whose effective_date is strictly after
-                # the cutoff.  These were published the same day (or later) the
-                # oracle was consolidated, so their future effects are not yet in
-                # the oracle.
-                #
-                # The oracle_version_amendment itself is always included — it
-                # defines the oracle's PIT and its own future effective_date is
-                # what drives oracle_materialize_as_of in the normal case (e.g.
-                # 2019/274 for 2009/953 with eff=2020-01-01).
-                #
-                # Example (exclude): 2023/739 issued 2023-04-14 (= oracle cutoff),
-                # effective 2024-01-01.  Oracle @20230785 was consolidated on
-                # 2023-04-14 before 2023/739 took effect → exclude so §11 of
-                # 1992/785 is not stripped prematurely.
-                #
-                # Counter-example (keep): 2025/572 issued 2025-06-27 (< cutoff
-                # 2025-08-01), effective 2026-01-01.  Finlex already incorporated
-                # it into oracle @20250521 → include.
-                #
-                # Separate bounded family (defer): when the oracle-version
-                # amendment itself is a pure future-effective repeal-only act,
-                # Finlex may still expose the future repeal merely as editorial
-                # notice at the consolidated cutoff instead of applying it in
-                # the selected XML. In that family, keep official_consolidation
-                # materialization anchored to the cutoff rather than the later
-                # effective date (e.g. 2022/213 <- 2026/45).
-                if (
-                    _rec_sid != _oracle_vid_id
-                    and _oracle_cutoff_iso is not None
-                    and _iss_iso is not None
-                    and _iss_iso >= _oracle_cutoff_iso
-                    and _eff_iso is not None
-                    and _eff_iso > _oracle_cutoff_iso
-                ):
-                    continue
-                if (
-                    _rec_sid == _oracle_vid_id
-                    and _oracle_vid_repeal_only_future
-                    and _oracle_cutoff_iso is not None
-                    and _eff_iso is not None
-                    and _eff_iso > _oracle_cutoff_iso
-                ):
-                    _date_for_oracle = _oracle_cutoff_iso
-                oracle_dates.append(_date_for_oracle)
-            if oracle_dates:
-                oracle_materialize_as_of = max(oracle_dates)
-            # Save the base oracle PIT before any extension.  This value is used
-            # for expires_as_of so that temporary sections are not prematurely
-            # expired by a later as_of extension driven by kumotaan REPEAL ops.
-            _oracle_base_pit = oracle_materialize_as_of
-            # Extend oracle_materialize_as_of to cover future-dated REPEAL ops
-            # emitted by kumotaan processing for the oracle-version amendment.
-            #
-            # Background: corpus records carry the amendment's publication/issue
-            # date as ``effective_date``, but the kumotaan clause may specify a
-            # later effective date for repeals (e.g. amendment 1999/694 for
-            # 1992/1282 was published 1999-05-21 but its kumotaan clause repeals
-            # sections as of 1999-12-01).  The REPEAL lo_ops produced by the
-            # kumotaan pipeline carry the XML-derived effective date.  If
-            # ``oracle_materialize_as_of`` is anchored only to the corpus record
-            # date the REPEAL op will not be eligible at materialization time and
-            # the repealed section will incorrectly survive in the oracle surface.
-            #
-            # This extension is applied even when ``_oracle_vid_repeal_only_future``
-            # is True — that flag was designed for the case where Finlex only shows
-            # the future repeal as an editorial notice without applying it in the
-            # consolidated XML.  However, even "repeal-only" oracle amendments can
-            # incorporate the repeal into the oracle surface (Finlex's choice).
-            # Extending ``oracle_materialize_as_of`` here is safe because
-            # ``expires_as_of`` is kept at ``_oracle_base_pit`` below, so temporary
-            # sections that expire between the base cutoff and the repeal date are
-            # not incorrectly expired.
-            if _oracle_vid_id and capture_lo_ops_out:
-                for _lo in capture_lo_ops_out:
-                    _is_repeal_like = _lo.action is StructuralAction.REPEAL or (
-                        _lo.action is StructuralAction.REPLACE
-                        and _lo.payload is not None
-                        and getattr(_lo.payload, "attrs", {}).get("lawvm_repeal_placeholder") == "1"
-                    )
-                    if not _is_repeal_like:
-                        continue
-                    _lo_src = _lo.source
-                    if _lo_src is None or _lo_src.statute_id != _oracle_vid_id:
-                        continue
-                    _lo_eff = _lo_src.effective
-                    if not _lo_eff:
-                        continue
-                    if oracle_materialize_as_of is None or _lo_eff > oracle_materialize_as_of:
-                        oracle_materialize_as_of = _lo_eff
-                        _replay_print(
-                            f"  oracle_materialize_as_of extended to {_lo_eff}"
-                            f" by REPEAL op {_lo.op_id!r} from {_oracle_vid_id}"
-                        )
-        else:
-            _oracle_base_pit = oracle_materialize_as_of
-        if as_of:
-            materialize_as_of = as_of
-        elif mode == "legal_pit" and plan.cutoff_date is not None:
-            materialize_as_of = plan.cutoff_date.isoformat()
-        elif mode == "official_consolidation" and oracle_materialize_as_of is not None:
-            materialize_as_of = oracle_materialize_as_of
-        elif mode == "official_consolidation" and plan.cutoff_date is not None:
-            materialize_as_of = plan.cutoff_date.isoformat()
-        else:
-            materialize_as_of = "9999-12-31"
-        expires_as_of = ""
-        if mode == "official_consolidation":
-            # official_consolidation expiry horizon tracks oracle_materialize_as_of (which
-            # may have been extended to cover future kumotaan REPEAL dates).
-            # Finlex consolidations keyed to an amendment show the legal state
-            # ON that amendment's effective day, INCLUDING temporaries still in
-            # force through that day (witness 2016/258 @1199/2021: the oracle
-            # keeps the 1458/2019 fee-schedule texts on their last in-force
-            # day). With the exclusive kernel ``expires`` convention the plain
-            # ``eligible()`` predicate at the anchor gives exactly that
-            # semantics, so the horizon is the anchor itself — no end-of-day
-            # adjustment.
-            if oracle_materialize_as_of is not None:
-                expires_as_of = oracle_materialize_as_of
-            elif plan.cutoff_date is not None:
-                expires_as_of = plan.cutoff_date.isoformat()
-            else:
-                expires_as_of = dt.date.today().isoformat()
+        )
+        materialize_as_of = horizon.materialize_as_of
+        expires_as_of = horizon.expires_as_of
 
         # Detect chapter-scoped expiry from base statute voimaantulo.
         base_tree = etree.fromstring(plan.ctx.base_xml_bytes)
