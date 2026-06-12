@@ -55,7 +55,7 @@ _PINS: list[tuple[str, str, str, str, str]] = [
     ("2009/273", "section:6a", _AS_OF, _QT,
      "0d4b37c2f1313e7cf29563f08a56e4717ff954615071f3d3ffb5e57c6c0a36cc"),  # R4 vaalirahoituslaki 6 a § (survival witness)
     ("2009/273", "section:10", _AS_OF, _QT,
-     "39480d108e15948a219eac1746c54fd1d89519b5d0837a1c5ded4d5c553c24ec"),  # R5 vaalirahoituslaki 10 § (VTV)
+     "7efdaefb6e5175d42fb047c8c83023a00ae85d3ea384ad5e8a98325a1cada1fd"),  # R5 vaalirahoituslaki 10 §; stale carried subsection-2 text removed
     ("2024/482", "section:7", _AS_OF, _QT,
      "36b895f84d205ec6c6982363972866f7a59c2c50da14a1933c2eb5c31b02b8fd"),  # R7 laki 482/2024 7 § (voimaantulo)
     # --- E1_LAWVM_ROUTE_GROUNDING_HANKINTALAKI.md (hankintalaki 1397/2016 + kilpailulaki 948/2011) ---

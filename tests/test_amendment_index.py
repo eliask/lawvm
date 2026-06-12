@@ -163,6 +163,31 @@ def test_ensure_amendment_index_rebuilds_old_two_column_schema(tmp_path: Path) -
     assert header == "amendment_id,parent_id,edge_kind"
 
 
+def test_amendment_index_cache_writes_use_per_writer_temp_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    csv_path = tmp_path / "amendment_parents.csv"
+    replaced: list[tuple[Path, Path]] = []
+    real_replace = os.replace
+
+    def record_replace(src: str | os.PathLike[str], dst: str | os.PathLike[str]) -> None:
+        replaced.append((Path(src), Path(dst)))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(amendment_index.os, "replace", record_replace)
+
+    amendment_index._write_amendment_index_cache(
+        csv_path,
+        [("1991/806", "1986/506", "oracle_amendedBy")],
+        source_fingerprint=None,
+    )
+
+    assert [dst for _src, dst in replaced] == [csv_path, csv_path.with_suffix(".meta.json")]
+    assert all(src.name.endswith(".tmp") for src, _dst in replaced)
+    assert all(src.name != f".{dst.name}.tmp" for src, dst in replaced)
+
+
 def test_ensure_amendment_index_adopts_current_schema_csv_when_meta_missing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

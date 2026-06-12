@@ -15,6 +15,7 @@ import csv
 import json
 import os
 import re
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Set, cast
 
@@ -399,12 +400,17 @@ def _cache_meta_payload(source_fingerprint: dict[str, object] | None) -> dict[st
     }
 
 
+def _atomic_write_tmp_path(path: Path) -> Path:
+    """Return a per-writer temp path for atomic cache replacement."""
+    return path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+
+
 def _write_cache_meta_atomic(
     meta_path: Path,
     source_fingerprint: dict[str, object] | None,
 ) -> None:
     meta_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = meta_path.with_name(f".{meta_path.name}.tmp")
+    tmp_path = _atomic_write_tmp_path(meta_path)
     tmp_path.write_text(
         json.dumps(_cache_meta_payload(source_fingerprint), sort_keys=True) + "\n",
         encoding="utf-8",
@@ -419,7 +425,7 @@ def _write_amendment_index_cache(
 ) -> None:
     meta_path = csv_path.with_suffix(".meta.json")
     csv_path.parent.mkdir(parents=True, exist_ok=True)
-    csv_tmp_path = csv_path.with_name(f".{csv_path.name}.tmp")
+    csv_tmp_path = _atomic_write_tmp_path(csv_path)
     with open(csv_tmp_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(_CSV_HEADER)

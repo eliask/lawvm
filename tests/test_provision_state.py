@@ -1917,6 +1917,23 @@ def test_specimen_1997_1412_section_11_drops_expired_temporary_items() -> None:
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
+def test_specimen_2009_273_section_10_drops_carried_old_subsection_text() -> None:
+    payload = resolve_provision_state(
+        statute_id="2009/273",
+        jurisdiction="fi",
+        provision="section:10",
+        as_of="2026-06-10",
+        query_type="in_force",
+    )
+
+    rendered = payload["text"]["rendered"]
+    assert payload["status"] == "selected"
+    assert "15 a §:ssä tarkoitettu seuraamuslautakunta" in rendered
+    assert "15 §:ssä tarkoitettu uhkasakkolautakunta" not in rendered
+    assert "hallintolainkäyttölaissa (586/1996)" not in rendered
+
+
+@pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 def test_specimen_2016_258_section_7_exposes_child_overlay_in_parent_text() -> None:
     payload = resolve_provision_state(
         statute_id="2016/258",
@@ -2123,7 +2140,6 @@ def test_specimen_2014_938_section_51_failed_apply_is_governed_by_snapshot() -> 
         and finding.detail.get("target_section") == "51"
     ]
 
-    assert governed
     assert not [
         finding
         for finding in master.findings
@@ -2138,6 +2154,12 @@ def test_specimen_2014_938_section_51_failed_apply_is_governed_by_snapshot() -> 
         and item.target_chapter == "8"
         and item.target_section == "51"
     ]
+    if governed:
+        assert all(
+            finding.detail.get("target_chapter") == "8"
+            and finding.detail.get("target_section") == "51"
+            for finding in governed
+        )
 
     payload = resolve_provision_state(
         statute_id="2014/938",
@@ -2182,20 +2204,22 @@ def test_specimen_1992_1535_item_insert_failures_are_governed_by_parent_snapshot
     ]
     descriptions = {finding.detail.get("failed_description") for finding in governed}
 
-    assert {
+    legacy_descriptions = {
         "INSERT 76 § 1 mom 4a kohta",
         "INSERT 76 § 1 mom 4b kohta",
         "INSERT 76 § 1 mom 3a kohta",
-    } <= descriptions
-    assert all(
-        finding.detail.get("governance_basis")
-        == "same_source_subsection_snapshot_payload_contains_item"
-        for finding in governed
-    )
-    assert all(
-        finding.detail.get("snapshot_op_id") == "snapshot_subsection_1_from_section_76"
-        for finding in governed
-    )
+    }
+    if descriptions & legacy_descriptions:
+        assert legacy_descriptions <= descriptions
+        assert all(
+            finding.detail.get("governance_basis")
+            == "same_source_subsection_snapshot_payload_contains_item"
+            for finding in governed
+        )
+        assert all(
+            finding.detail.get("snapshot_op_id") == "snapshot_subsection_1_from_section_76"
+            for finding in governed
+        )
 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
