@@ -48,6 +48,10 @@ def test_load_strict_run_reads_source_pathology_codes(tmp_path, monkeypatch) -> 
     assert rows[0]["proof_gate_coverage_frontier_count"] == 0
     assert rows[0]["proof_gate_required_claim_kind_counts"] == {}
     assert rows[0]["proof_gate_frontier_status_counts"] == {}
+    assert rows[0]["proof_gate_manual_claim_kind_counts"] == {}
+    assert rows[0]["proof_gate_manual_frontier_status_counts"] == {}
+    assert rows[0]["proof_gate_coverage_claim_kind_counts"] == {}
+    assert rows[0]["proof_gate_coverage_frontier_status_counts"] == {}
     assert rows[0]["candidate_set_statuses"] == []
     assert rows[0]["candidate_set_blockers"] == []
     assert rows[0]["source_completeness_issue_kinds"] == []
@@ -159,6 +163,18 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                     "failed_operation_frontier": 1,
                     "partial_candidate_set_frontier": 4,
                 },
+                "proof_gate_manual_claim_kind_counts": {
+                    "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
+                },
+                "proof_gate_manual_frontier_status_counts": {
+                    "failed_operation_frontier": 1,
+                },
+                "proof_gate_coverage_claim_kind_counts": {
+                    "source_unit_enumeration_certificate": 2,
+                },
+                "proof_gate_coverage_frontier_status_counts": {
+                    "partial_candidate_set_frontier": 4,
+                },
                 "candidate_set_statuses": [
                     "fi_strict_report_operation_cue_coverage:partial"
                 ],
@@ -188,6 +204,8 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert "ownership_closure_failed_gates" in text
     assert "proof_gate_open_signal_count" in text
     assert "proof_gate_required_claim_kind_counts" in text
+    assert "proof_gate_manual_claim_kind_counts" in text
+    assert "proof_gate_coverage_claim_kind_counts" in text
     assert "fi.v1.FAILED_OPERATION_RESOLUTION" in text
     assert "partial_candidate_set_frontier" in text
     assert "candidate_set_statuses" in text
@@ -215,6 +233,18 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     }
     assert loaded[0]["proof_gate_frontier_status_counts"] == {
         "failed_operation_frontier": 1,
+        "partial_candidate_set_frontier": 4,
+    }
+    assert loaded[0]["proof_gate_manual_claim_kind_counts"] == {
+        "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
+    }
+    assert loaded[0]["proof_gate_manual_frontier_status_counts"] == {
+        "failed_operation_frontier": 1,
+    }
+    assert loaded[0]["proof_gate_coverage_claim_kind_counts"] == {
+        "source_unit_enumeration_certificate": 2,
+    }
+    assert loaded[0]["proof_gate_coverage_frontier_status_counts"] == {
         "partial_candidate_set_frontier": 4,
     }
 
@@ -306,6 +336,18 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                     "failed_operation_frontier": 1,
                     "partial_candidate_set_frontier": 4,
                 },
+                "proof_gate_manual_claim_kind_counts": {
+                    "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
+                },
+                "proof_gate_manual_frontier_status_counts": {
+                    "failed_operation_frontier": 1,
+                },
+                "proof_gate_coverage_claim_kind_counts": {
+                    "source_unit_enumeration_certificate": 2,
+                },
+                "proof_gate_coverage_frontier_status_counts": {
+                    "partial_candidate_set_frontier": 4,
+                },
                 "candidate_set_statuses": [
                     "fi_strict_report_operation_cue_coverage:partial"
                 ],
@@ -346,6 +388,8 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
     assert "fi.v1.FAILED_OPERATION_RESOLUTION" in out
     assert "partial_candidate_set_frontier" in out
     assert "1.00 signals/statute" in out
+    assert "manual frontier claim kinds" in out
+    assert "coverage proof requirements" in out
     assert "Candidate-set statuses" in out
     assert "fi_strict_report_operation_cue_coverage:partial" in out
     assert "Candidate-set blockers" in out
@@ -644,6 +688,19 @@ def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
         "operation_cue_exhaustiveness_certificate": 2,
         "source_unit_enumeration_certificate": 2,
     }
+    assert proof_gates["manual_frontier_required_claim_kind_counts"] == {
+        "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
+    }
+    assert proof_gates["coverage_frontier_required_claim_kind_counts"] == {
+        "operation_cue_exhaustiveness_certificate": 2,
+        "source_unit_enumeration_certificate": 2,
+    }
+    assert proof_gates["manual_frontier_status_counts"] == {
+        "failed_operation_frontier": 1,
+    }
+    assert proof_gates["coverage_frontier_status_counts"] == {
+        "partial_candidate_set_frontier": 4,
+    }
     assert proof_gates["candidate_set_completeness_counts"] == {"partial": 4}
     assert "replay_authorization" in proof_gates["does_not_claim"]
 
@@ -676,6 +733,8 @@ def test_format_report_includes_compact_proof_gate_summary() -> None:
     assert "coverage frontiers: 4" in out
     assert "open gate signals: 18" in out
     assert "fi.v1.FAILED_OPERATION_RESOLUTION=1" in out
+    assert "manual claims    : fi.v1.FAILED_OPERATION_RESOLUTION=1" in out
+    assert "coverage proofs  : operation_cue_exhaustiveness_certificate=2" in out
 
 
 def test_to_json_uses_projection_rows_when_available() -> None:
