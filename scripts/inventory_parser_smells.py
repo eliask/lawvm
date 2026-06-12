@@ -78,6 +78,12 @@ _SEMANTIC_CAPTURE_NAMES = frozenset(
         "text",
     }
 )
+_COVERED_BOUNDED_WILDCARD_STATUSES = frozenset(
+    {
+        "coverage_function_reference",
+        "nearby_coverage_surface",
+    }
+)
 
 
 def _is_comment_only_line(line: str) -> bool:
@@ -95,6 +101,20 @@ def _bounded_wildcard_semantic_role(line: str) -> str:
     ):
         return "drafting_classifier"
     return "unknown_pattern_bound"
+
+
+def _bounded_wildcard_soundness_risk(
+    *,
+    coverage_status: str,
+    semantic_role: str,
+) -> str:
+    if coverage_status in _COVERED_BOUNDED_WILDCARD_STATUSES:
+        return "covered_by_regex_coverage_surface"
+    if semantic_role == "semantic_payload_capture":
+        return "needs_typed_coverage_or_grammar"
+    if semantic_role == "drafting_classifier":
+        return "needs_classifier_safety_review"
+    return "needs_triage"
 
 
 def _recognizer_name_for_line(lines: list[str], line_no: int) -> str:
@@ -162,11 +182,16 @@ def _annotate_bounded_wildcard_coverage(
             coverage_status = "file_level_coverage_surface"
         else:
             coverage_status = "missing_coverage_surface"
+        soundness_risk = _bounded_wildcard_soundness_risk(
+            coverage_status=coverage_status,
+            semantic_role=semantic_role,
+        )
 
         hit["coverage_sensor"] = {
             "status": coverage_status,
             "recognizer_name": recognizer_name,
             "semantic_role": semantic_role,
+            "soundness_risk": soundness_risk,
             "nearest_coverage_line": nearest_line,
             "nearest_coverage_distance": nearest_distance,
             "nearby_line_window": _BOUND_COVERAGE_NEARBY_LINES,
@@ -252,6 +277,12 @@ def build_inventory(
         for hit in hits
         if hit["category"] == "bounded_wildcard_gap"
     )
+    bounded_wildcard_soundness_risk_counts: Counter[str] = Counter(
+        str(hit.get("coverage_sensor", {}).get("soundness_risk") or "needs_triage")
+        for hits in by_file.values()
+        for hit in hits
+        if hit["category"] == "bounded_wildcard_gap"
+    )
     for status in (
         "coverage_function_reference",
         "file_level_coverage_surface",
@@ -265,6 +296,13 @@ def build_inventory(
         "unknown_pattern_bound",
     ):
         bounded_wildcard_semantic_role_counts.setdefault(role, 0)
+    for risk in (
+        "covered_by_regex_coverage_surface",
+        "needs_classifier_safety_review",
+        "needs_triage",
+        "needs_typed_coverage_or_grammar",
+    ):
+        bounded_wildcard_soundness_risk_counts.setdefault(risk, 0)
 
     generated_at = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     category_count = len(marker_map)
@@ -282,6 +320,9 @@ def build_inventory(
             ),
             "bounded_wildcard_semantic_role_counts": dict(
                 sorted(bounded_wildcard_semantic_role_counts.items())
+            ),
+            "bounded_wildcard_soundness_risk_counts": dict(
+                sorted(bounded_wildcard_soundness_risk_counts.items())
             ),
             "bounded_wildcard_soundness_note": (
                 "bounded wildcard regexes are recognizer-local span claims, not semantic "
@@ -359,6 +400,18 @@ def _to_markdown(inventory: dict[str, Any]) -> str:
         for role, count in sorted(semantic_role_counts.items()):
             lines.append(f"| {role} | {count} |")
 
+    soundness_risk_counts = summary.get("bounded_wildcard_soundness_risk_counts") or {}
+    if soundness_risk_counts:
+        lines.extend(
+            [
+                "",
+                "| Bounded Wildcard Soundness Risk | Count |",
+                "| --- | ---: |",
+            ]
+        )
+        for risk, count in sorted(soundness_risk_counts.items()):
+            lines.append(f"| {risk} | {count} |")
+
     for path, hits in inventory["by_file"].items():
         lines.extend(
             [
@@ -379,12 +432,15 @@ def _to_markdown(inventory: dict[str, Any]) -> str:
                 status = str(coverage_sensor.get("status") or "")
                 recognizer = str(coverage_sensor.get("recognizer_name") or "")
                 role = str(coverage_sensor.get("semantic_role") or "")
+                risk = str(coverage_sensor.get("soundness_risk") or "")
                 if status:
                     suffix = f" [coverage={status}"
                     if recognizer:
                         suffix += f", recognizer={recognizer}"
                     if role:
                         suffix += f", role={role}"
+                    if risk:
+                        suffix += f", risk={risk}"
                     suffix += "]"
                     snippet = f"{snippet}{suffix}"
             lines.append(

@@ -257,6 +257,12 @@ def test_build_inventory_reports_bounded_gap_coverage_and_text_sentinel(tmp_path
         "semantic_payload_capture": 0,
         "unknown_pattern_bound": 0,
     }
+    assert inventory["summary"]["bounded_wildcard_soundness_risk_counts"] == {
+        "covered_by_regex_coverage_surface": 1,
+        "needs_classifier_safety_review": 0,
+        "needs_triage": 0,
+        "needs_typed_coverage_or_grammar": 0,
+    }
     assert "not semantic exhaustiveness proofs" in inventory["summary"][
         "bounded_wildcard_soundness_note"
     ]
@@ -272,6 +278,7 @@ def test_markdown_reports_bounded_wildcard_soundness_caveat(tmp_path) -> None:
     markdown = _to_markdown(build_inventory([path]))
 
     assert "Bounded wildcard note" in markdown
+    assert "Bounded Wildcard Soundness Risk" in markdown
     assert "not a semantic exhaustiveness proof" in markdown
 
 
@@ -297,6 +304,7 @@ def test_bounded_wildcard_sensor_reports_missing_coverage_surface(tmp_path) -> N
         "status": "missing_coverage_surface",
         "recognizer_name": "RX",
         "semantic_role": "unknown_pattern_bound",
+        "soundness_risk": "needs_triage",
         "nearest_coverage_line": None,
         "nearest_coverage_distance": None,
         "nearby_line_window": 80,
@@ -337,8 +345,37 @@ def test_bounded_wildcard_sensor_detects_coverage_function_reference(tmp_path) -
     assert bounded_hits[0]["coverage_sensor"]["status"] == "coverage_function_reference"
     assert bounded_hits[0]["coverage_sensor"]["recognizer_name"] == "RX"
     assert bounded_hits[0]["coverage_sensor"]["semantic_role"] == "unknown_pattern_bound"
+    assert bounded_hits[0]["coverage_sensor"]["soundness_risk"] == (
+        "covered_by_regex_coverage_surface"
+    )
     assert inventory["summary"]["bounded_wildcard_coverage_status_counts"][
         "coverage_function_reference"
+    ] == 1
+
+
+def test_bounded_wildcard_sensor_prioritizes_payload_capture_without_coverage(tmp_path) -> None:
+    path = tmp_path / "nlp_parser.py"
+    path.write_text(
+        "\n".join(
+            [
+                "RX = re.compile(",
+                "    r'insert (?P<payload>.{0,2000})$'",
+                ")",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    inventory = build_inventory([path])
+
+    hit = inventory["by_file"][str(path)][0]
+    assert hit["coverage_sensor"]["semantic_role"] == "semantic_payload_capture"
+    assert hit["coverage_sensor"]["soundness_risk"] == (
+        "needs_typed_coverage_or_grammar"
+    )
+    assert inventory["summary"]["bounded_wildcard_soundness_risk_counts"][
+        "needs_typed_coverage_or_grammar"
     ] == 1
 
 
