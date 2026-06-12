@@ -90,6 +90,16 @@ class ClauseClaim:
     witness: object = None  # ParseWitness | None
 
 
+@dataclass(frozen=True, slots=True)
+class ExtractedTargetFields:
+    """Normalized target fields extracted from a ClauseAST amendment node."""
+
+    kind: TargetKind | None
+    label: str
+    chapter: str
+    part: str
+
+
 @dataclass(frozen=True)
 class PayloadAssignment:
     """Assignment result for one body unit."""
@@ -415,18 +425,11 @@ _ACTION_TO_CLAIM_KIND: dict[str, str] = {
 }
 
 
-def _extract_target_fields(node: Union[RefAmend, LabelAmend]) -> tuple[TargetKind | None, str, str, str]:
-    """Extract (leaf_kind, label, chapter, part) from a RefAmend or LabelAmend target.
-
-    Returns a tuple of:
-      - typed target kind for claim filtering
-      - label: normalized target label
-      - chapter: normalized chapter label from enclosing path (or "")
-      - part: normalized part label from enclosing path (or "")
-    """
+def _extract_target_fields(node: Union[RefAmend, LabelAmend]) -> ExtractedTargetFields:
+    """Extract normalized target fields from a RefAmend or LabelAmend target."""
     target = node.target
     if not target.path:
-        return (None, "", "", "")
+        return ExtractedTargetFields(kind=None, label="", chapter="", part="")
 
     leaf_kind = target.leaf_kind()
     leaf_label = target.leaf_label()
@@ -455,7 +458,7 @@ def _extract_target_fields(node: Union[RefAmend, LabelAmend]) -> tuple[TargetKin
         if path_kind == "chapter":
             chapter = _norm_num_token(path_label).removesuffix("luku")
 
-    return (kind, label, chapter, part)
+    return ExtractedTargetFields(kind=kind, label=label, chapter=chapter, part=part)
 
 
 def _claims_from_node(
@@ -481,15 +484,15 @@ def _claims_from_node(
     if not isinstance(node, (RefAmend, LabelAmend)):
         return claims
 
-    kind, label, node_chapter, node_part = _extract_target_fields(node)
-    if not label:
+    target_fields = _extract_target_fields(node)
+    if not target_fields.label:
         return claims
 
     # Section-, chapter-, and part-level targets produce claims.  Part INSERT
     # claims are required so body pairing can adopt the full subtree of a new
     # part (for example "lisätään ... V osa seuraavasti") instead of leaving
     # all child chapters/sections unmatched as high_uncovered_body residue.
-    if kind not in (TargetKind.SECTION, TargetKind.CHAPTER, TargetKind.PART):
+    if target_fields.kind not in (TargetKind.SECTION, TargetKind.CHAPTER, TargetKind.PART):
         return claims
 
     # Determine action: node's own action if available, else verb group's action.
@@ -505,15 +508,15 @@ def _claims_from_node(
     claim_kind = _ACTION_TO_CLAIM_KIND.get(action_str, "REPLACE")
 
     # Use node-level chapter if present, else scope chapter
-    ch = node_chapter if node_chapter else scope_chapter
+    ch = target_fields.chapter if target_fields.chapter else scope_chapter
 
     claims.append(
         ClauseClaim(
             target_statute=target_statute_id,
-            target_address=label,
+            target_address=target_fields.label,
             claim_kind=claim_kind,
             chapter=ch,
-            part=node_part,
+            part=target_fields.part,
             witness=witness,
         )
     )
