@@ -83,15 +83,19 @@ class RegexRecognitionCoverage:
         if not isinstance(self.semantic_slots, Mapping):
             raise ValueError("RegexRecognitionCoverage.semantic_slots must be a mapping")
         object.__setattr__(self, "semantic_slots", freeze_mapping(self.semantic_slots))
+        ignored_spans = _validated_ignored_span_rows(self.ignored_spans, matched_span)
         object.__setattr__(
             self,
             "ignored_spans",
-            tuple(
-                freeze_mapping(row)
-                for row in _validated_ignored_span_rows(self.ignored_spans, matched_span)
-            ),
+            tuple(freeze_mapping(row) for row in ignored_spans),
         )
-        object.__setattr__(self, "required_proofs", _string_tuple("required_proofs", self.required_proofs))
+        required_proofs = _string_tuple("required_proofs", self.required_proofs)
+        _validate_gap_status(
+            coverage_status=self.coverage_status,
+            ignored_spans=ignored_spans,
+            required_proofs=required_proofs,
+        )
+        object.__setattr__(self, "required_proofs", required_proofs)
         object.__setattr__(
             self,
             "forbidden_shortcuts",
@@ -292,6 +296,40 @@ def _validated_ignored_span_rows(
             normalized["span"] = ignored_span
         validated.append(normalized)
     return tuple(validated)
+
+
+def _validate_gap_status(
+    *,
+    coverage_status: RegexRecognitionCoverageStatus,
+    ignored_spans: tuple[Mapping[str, Any], ...],
+    required_proofs: tuple[str, ...],
+) -> None:
+    meaning_gap_count = sum(1 for row in ignored_spans if _ignored_span_needs_proof(row))
+    if coverage_status == REGEX_RECOGNITION_FULLY_CLASSIFIED and meaning_gap_count:
+        raise ValueError(
+            "RegexRecognitionCoverage.coverage_status cannot be fully_classified "
+            "when ignored_spans contain unclassified or meaning-altering text"
+        )
+    if coverage_status == REGEX_RECOGNITION_UNCLASSIFIED_GAP and not meaning_gap_count:
+        raise ValueError(
+            "RegexRecognitionCoverage.coverage_status unclassified_gap requires "
+            "an unclassified or meaning-altering ignored span"
+        )
+    if (
+        coverage_status == REGEX_RECOGNITION_UNCLASSIFIED_GAP
+        and "regex_skipped_span_classification" not in required_proofs
+    ):
+        raise ValueError(
+            "RegexRecognitionCoverage.required_proofs must include "
+            "regex_skipped_span_classification for unclassified_gap rows"
+        )
+
+
+def _ignored_span_needs_proof(row: Mapping[str, Any]) -> bool:
+    return (
+        str(row.get("classification") or "") == "unclassified"
+        or row.get("could_alter_meaning") is True
+    )
 
 
 def _sequence(value: Any) -> tuple[Any, ...]:

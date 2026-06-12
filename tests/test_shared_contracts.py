@@ -3207,6 +3207,71 @@ def test_regex_recognition_coverage_rejects_ignored_span_outside_match() -> None
         )
 
 
+def test_regex_recognition_coverage_rejects_inconsistent_gap_status() -> None:
+    text = "lisätään 5 §:ään kuitenkin uusi 2 momentti"
+
+    with pytest.raises(ValueError, match="cannot be fully_classified"):
+        RegexRecognitionCoverage(
+            coverage_id="fi:regex:bad-status",
+            jurisdiction="fi",
+            recognizer_id="fi_insert_subsection_fallback",
+            owner_phase="surface_syntax_frontend",
+            source_artifact_id="2020/1",
+            source_text_hash=regex_source_text_hash(text),
+            matched_span=(0, len(text)),
+            coverage_status=REGEX_RECOGNITION_FULLY_CLASSIFIED,
+            ignored_spans=(
+                {
+                    "span": (17, 27),
+                    "classification": "unclassified",
+                    "text_preview": "kuitenkin ",
+                    "could_alter_meaning": True,
+                },
+            ),
+        )
+
+    with pytest.raises(ValueError, match="requires an unclassified"):
+        RegexRecognitionCoverage(
+            coverage_id="fi:regex:bad-empty-gap",
+            jurisdiction="fi",
+            recognizer_id="fi_insert_subsection_fallback",
+            owner_phase="surface_syntax_frontend",
+            source_artifact_id="2020/1",
+            source_text_hash=regex_source_text_hash(text),
+            matched_span=(0, len(text)),
+            coverage_status=REGEX_RECOGNITION_UNCLASSIFIED_GAP,
+            ignored_spans=(
+                {
+                    "span": (17, 21),
+                    "classification": "drafting_connector",
+                    "text_preview": "uusi",
+                    "could_alter_meaning": False,
+                },
+            ),
+            required_proofs=("regex_skipped_span_classification",),
+        )
+
+    with pytest.raises(ValueError, match="regex_skipped_span_classification"):
+        RegexRecognitionCoverage(
+            coverage_id="fi:regex:bad-missing-proof",
+            jurisdiction="fi",
+            recognizer_id="fi_insert_subsection_fallback",
+            owner_phase="surface_syntax_frontend",
+            source_artifact_id="2020/1",
+            source_text_hash=regex_source_text_hash(text),
+            matched_span=(0, len(text)),
+            coverage_status=REGEX_RECOGNITION_UNCLASSIFIED_GAP,
+            ignored_spans=(
+                {
+                    "span": (17, 27),
+                    "classification": "unclassified",
+                    "text_preview": "kuitenkin ",
+                    "could_alter_meaning": True,
+                },
+            ),
+        )
+
+
 def test_regex_recognition_coverage_normalizes_mapping_rows() -> None:
     text = "lisätään 5 §:ään uusi 2 momentti"
 
