@@ -635,6 +635,7 @@ from lawvm.finland.amendment_chapter_precreate import (
     _pre_create_pseudo_marker_chapters,
 )
 from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
+from lawvm.finland.process_findings import ProcessFindingRecorder
 from lawvm.finland.process_frontend_normalization import ProcessFrontendNormalizationContext
 from lawvm.finland.process_result_builder import ProcessResultBuilder
 from lawvm.finland.process_route_rejection import ProcessRouteRejectionContext
@@ -4767,56 +4768,8 @@ def process_muutoslaki(
     )
     _processed_amendment_titles = processed_amendment_titles or {}
 
-    def _record_process_finding(
-        *,
-        kind: str,
-        message: str,
-        source_statute: str = "",
-        detail: Optional[Dict[str, object]] = None,
-        role: Literal["observation", "obligation", "violation"] = "obligation",
-        blocking: bool = True,
-    ) -> Finding:
-        spec = get_finding_spec(kind)
-        finding_kind = kind
-        finding_role = role
-        if spec is not None and spec.role == "barrier":
-            finding_kind = "RUNTIME.VIOLATION"
-            finding_role = "violation"
-        finding = Finding(
-            kind=finding_kind,
-            role=finding_role,
-            stage="process_muutoslaki",
-            detail={
-                "message": message,
-                **(detail or {}),
-                **({"barrier_code": kind} if finding_kind == "RUNTIME.VIOLATION" else {}),
-            },
-            source_statute=source_statute,
-            blocking=blocking,
-        )
-        _process_findings.append(finding)
-        return finding
-
-    def _record_sec1_fallback(stage: str, previous_johto: str, sec1_fallback_text: str, *, applied: bool) -> None:
-        kind = "ELAB.SEC1_PRE_ROUTING_FALLBACK" if stage == "pre_routing" else "ELAB.SEC1_POST_ROUTING_FALLBACK"
-        message = (
-            "Section 1 body text replaced the parsed johtolause before routing."
-            if stage == "pre_routing"
-            else "Section 1 body text replaced the parsed johtolause after routing."
-        )
-        _record_process_finding(
-            kind=kind,
-            message=message,
-            source_statute=amendment_id,
-            detail={
-                "fallback_stage": stage,
-                "fallback_applied": applied,
-                "original_johtolause": previous_johto,
-                "sec1_fallback_text": sec1_fallback_text,
-            },
-            role="obligation" if stage == "pre_routing" else "observation",
-            blocking=(stage == "pre_routing"),
-        )
+    _finding_recorder = ProcessFindingRecorder(_process_findings)
+    _record_process_finding = _finding_recorder.record
 
     if corpus is None:
         corpus = _get_corpus_store()
@@ -4922,10 +4875,11 @@ def process_muutoslaki(
         used_sec1_fallback = acquisition.decision.pre_routing_sec1_applied or acquisition.decision.post_routing_sec1_applied
         sec1_text = acquisition.sec1_text
         if acquisition.decision.pre_routing_sec1_requested and sec1_text:
-            _record_sec1_fallback(
-                "pre_routing",
-                acquisition.preamble_text or "",
-                sec1_text,
+            _finding_recorder.record_sec1_fallback(
+                amendment_id=amendment_id,
+                stage="pre_routing",
+                previous_johto=acquisition.preamble_text or "",
+                sec1_fallback_text=sec1_text,
                 applied=acquisition.decision.pre_routing_sec1_applied,
             )
 
@@ -4975,10 +4929,11 @@ def process_muutoslaki(
             # Skip voimaantuloasetukset and other non-amendment statutes.
             # Fallback: some amendments encode the op in section 1's body.
             if acquisition.decision.post_routing_sec1_applied and sec1_text:
-                _record_sec1_fallback(
-                    "post_routing",
-                    acquisition.decision.citation_guard_johto,
-                    sec1_text,
+                _finding_recorder.record_sec1_fallback(
+                    amendment_id=amendment_id,
+                    stage="post_routing",
+                    previous_johto=acquisition.decision.citation_guard_johto,
+                    sec1_fallback_text=sec1_text,
                     applied=True,
                 )
 
