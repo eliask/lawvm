@@ -197,6 +197,15 @@ class GroupPayloadNormalizationResult:
 
 
 @dataclass(frozen=True, slots=True)
+class TableRowRewriteResult:
+    """Result of resolving named/partial table-row operations to row targets."""
+
+    group_ops: tuple[AmendmentOp, ...]
+    muutos_ir: Optional[IRNode]
+    rewritten: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class PrunedPayloadSectionWitness:
     """Evidence for one section removed from a container payload."""
 
@@ -3940,17 +3949,17 @@ def _rewrite_named_row_table_replaces(
     target_chapter: Optional[str],
     muutos_ir: Optional[IRNode],
     group_ops: List[AmendmentOp],
-) -> tuple[List[AmendmentOp], Optional[IRNode], bool]:
+) -> TableRowRewriteResult:
     """Resolve named row-table replaces into concrete row item targets.
 
     Uses ``ctx.live_node`` (Class 2: local subtree).
     """
     if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
-        return group_ops, muutos_ir, False
+        return TableRowRewriteResult(tuple(group_ops), muutos_ir, False)
 
     live_sub = _single_subsection_row_table(ctx.live_node)
     if live_sub is None:
-        return group_ops, muutos_ir, False
+        return TableRowRewriteResult(tuple(group_ops), muutos_ir, False)
     amend_sub = _single_subsection_row_table(muutos_ir)
 
     live_by_anchor = {
@@ -3971,7 +3980,7 @@ def _rewrite_named_row_table_replaces(
         child for child in muutos_ir.children if child.kind == IRNodeKind.CONTENT and irnode_to_text(child).strip()
     ]
     if not live_by_anchor or (not amend_by_anchor and len(content_only_children) != 1):
-        return group_ops, muutos_ir, False
+        return TableRowRewriteResult(tuple(group_ops), muutos_ir, False)
 
     rewritten_ops: List[AmendmentOp] = []
     relabelled_paragraphs: List[IRNode] = []
@@ -4045,7 +4054,7 @@ def _rewrite_named_row_table_replaces(
         rewritten_ops.append(op)
 
     if not changed:
-        return group_ops, muutos_ir, False
+        return TableRowRewriteResult(tuple(group_ops), muutos_ir, False)
 
     rebuilt_subsection_children = [
         child for child in (amend_sub.children if amend_sub is not None else []) if child.kind != IRNodeKind.PARAGRAPH
@@ -4070,7 +4079,7 @@ def _rewrite_named_row_table_replaces(
     if not replaced:
         rebuilt_section_children.append(rebuilt_subsection)
     rebuilt_muutos_ir = _tops._with_children(muutos_ir, rebuilt_section_children)
-    return rewritten_ops, rebuilt_muutos_ir, True
+    return TableRowRewriteResult(tuple(rewritten_ops), rebuilt_muutos_ir, True)
 
 
 def _rewrite_partial_whole_section_table_payload(
@@ -4080,7 +4089,7 @@ def _rewrite_partial_whole_section_table_payload(
     target_chapter: Optional[str],
     muutos_ir: Optional[IRNode],
     group_ops: List[AmendmentOp],
-) -> tuple[List[AmendmentOp], Optional[IRNode], bool]:
+) -> TableRowRewriteResult:
     """Rewrite partial table bodies into row-level replaces before broad-op drop.
 
     Uses ``ctx.live_node`` (Class 2: local subtree).
@@ -4093,7 +4102,7 @@ def _rewrite_partial_whole_section_table_payload(
     section replacement.
     """
     if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
-        return group_ops, muutos_ir, False
+        return TableRowRewriteResult(tuple(group_ops), muutos_ir, False)
 
     whole_ops = [
         op
@@ -4103,17 +4112,17 @@ def _rewrite_partial_whole_section_table_payload(
         )
     ]
     if len(whole_ops) != 1:
-        return group_ops, muutos_ir, False
+        return TableRowRewriteResult(tuple(group_ops), muutos_ir, False)
 
     live_sub = _single_subsection_row_table(ctx.live_node)
     amend_sub = _single_subsection_row_table(muutos_ir)
     if live_sub is None or amend_sub is None:
-        return group_ops, muutos_ir, False
+        return TableRowRewriteResult(tuple(group_ops), muutos_ir, False)
 
     live_paragraphs = [child for child in live_sub.children if child.kind == IRNodeKind.PARAGRAPH]
     amend_paragraphs = [child for child in amend_sub.children if child.kind == IRNodeKind.PARAGRAPH]
     if len(amend_paragraphs) >= len(live_paragraphs):
-        return group_ops, muutos_ir, False
+        return TableRowRewriteResult(tuple(group_ops), muutos_ir, False)
 
     live_by_anchor = {_row_anchor(paragraph): paragraph for paragraph in live_paragraphs if _row_anchor(paragraph)}
 
@@ -4152,7 +4161,7 @@ def _rewrite_partial_whole_section_table_payload(
         )
 
     if not rewritten_ops:
-        return group_ops, muutos_ir, False
+        return TableRowRewriteResult(tuple(group_ops), muutos_ir, False)
 
     rebuilt_subsection_children = [
         child for child in amend_sub.children if child.kind != IRNodeKind.PARAGRAPH
@@ -4177,7 +4186,7 @@ def _rewrite_partial_whole_section_table_payload(
     rebuilt_muutos_ir = _tops._with_children(muutos_ir, rebuilt_section_children)
 
     preserved_ops = [op for op in group_ops if op not in whole_ops]
-    return preserved_ops + rewritten_ops, rebuilt_muutos_ir, True
+    return TableRowRewriteResult(tuple(preserved_ops + rewritten_ops), rebuilt_muutos_ir, True)
 
 
 def _rewrite_named_row_table_repeals(
@@ -4186,17 +4195,17 @@ def _rewrite_named_row_table_repeals(
     target_norm: str,
     target_chapter: Optional[str],
     group_ops: List[AmendmentOp],
-) -> tuple[List[AmendmentOp], bool]:
+) -> TableRowRewriteResult:
     """Resolve named row-table repeals into concrete row item targets.
 
     Uses ``ctx.live_node`` (Class 2: local subtree).
     """
     if target_unit_kind != "section":
-        return group_ops, False
+        return TableRowRewriteResult(tuple(group_ops), None, False)
 
     live_sub = _single_subsection_row_table(ctx.live_node)
     if live_sub is None:
-        return group_ops, False
+        return TableRowRewriteResult(tuple(group_ops), None, False)
 
     live_by_anchor = {
         _row_anchor(paragraph): paragraph
@@ -4204,7 +4213,7 @@ def _rewrite_named_row_table_repeals(
         if paragraph.kind == IRNodeKind.PARAGRAPH and _row_anchor(paragraph)
     }
     if not live_by_anchor:
-        return group_ops, False
+        return TableRowRewriteResult(tuple(group_ops), None, False)
 
     rewritten_ops: List[AmendmentOp] = []
     changed = False
@@ -4253,7 +4262,7 @@ def _rewrite_named_row_table_repeals(
                 )
             )
 
-    return rewritten_ops, changed
+    return TableRowRewriteResult(tuple(rewritten_ops), None, changed)
 
 
 def _detect_sparse_subsection_tail_preservation_risk(
@@ -4365,22 +4374,15 @@ def elaborate_payload_against_live(
     target_norm = ctx.target_norm
     target_chapter = ctx.target_chapter
     observations: List[ElaborationObservation] = []
-    group_ops, table_row_repeals_rewritten = _rewrite_named_row_table_repeals(
+    table_row_repeals = _rewrite_named_row_table_repeals(
         ctx,
         target_unit_kind,
         target_norm,
         target_chapter,
         group_ops,
     )
-    group_ops, muutos_ir, table_row_named_replaces_rewritten = _rewrite_named_row_table_replaces(
-        ctx,
-        target_unit_kind,
-        target_norm,
-        target_chapter,
-        muutos_ir,
-        group_ops,
-    )
-    group_ops, muutos_ir, table_row_rewritten = _rewrite_partial_whole_section_table_payload(
+    group_ops = list(table_row_repeals.group_ops)
+    table_row_named_replaces = _rewrite_named_row_table_replaces(
         ctx,
         target_unit_kind,
         target_norm,
@@ -4388,6 +4390,18 @@ def elaborate_payload_against_live(
         muutos_ir,
         group_ops,
     )
+    group_ops = list(table_row_named_replaces.group_ops)
+    muutos_ir = table_row_named_replaces.muutos_ir
+    table_row_payload = _rewrite_partial_whole_section_table_payload(
+        ctx,
+        target_unit_kind,
+        target_norm,
+        target_chapter,
+        muutos_ir,
+        group_ops,
+    )
+    group_ops = list(table_row_payload.group_ops)
+    muutos_ir = table_row_payload.muutos_ir
     rejected_ops: List[FailedOp] = []
     group_ops, source_pathologies, partial_whole_section_rejected_ops = _drop_suspicious_partial_whole_section_replaces(
         ctx.live_node,
