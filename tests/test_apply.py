@@ -2499,6 +2499,231 @@ def test_emit_section_snapshot_prefers_complete_source_payload_over_stale_fold()
     assert "vuokraindeksi" not in rendered
 
 
+def test_emit_section_snapshot_does_not_prune_complete_child_from_prior_sparse_child_snapshot() -> None:
+    base_section = _sec(
+        "1",
+        IRNode(kind=IRNodeKind.NUM, text="1 §"),
+        _sub(
+            "1",
+            _intro("List intro"),
+            _para("1", "old one"),
+            _para("2", "old two"),
+            _para("29", "old twenty-nine"),
+        ),
+    )
+    sparse_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        attrs={
+            "lawvm_tail_policy": "preserve_unstated_tail",
+            "lawvm_payload_completeness_kind": "sparse_certified",
+        },
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="1 §"),
+            _sub("1", _intro("List intro"), _para("29", "new twenty-nine")),
+        ),
+    )
+    complete_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        attrs={
+            "lawvm_tail_policy": "replace_if_target_scope_requires",
+            "lawvm_payload_completeness_kind": "complete",
+        },
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="1 §"),
+            _sub(
+                "1",
+                _intro("List intro"),
+                _para("1", "new one"),
+                _para("2", "new two"),
+                _para("29", "newer twenty-nine"),
+            ),
+        ),
+    )
+    lo_ops: list[LegalOperation] = []
+
+    sparse_rop = ResolvedOp.from_amendment_op(
+        _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="29"),
+        muutos_ir=sparse_section,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="1",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "1"), ("subsection", "1"), ("item", "29"))),
+        payload_completeness=PayloadCompletenessWitness(
+            kind="sparse_certified",
+            reasons=("mapped_tail_omission",),
+            tail_policy="preserve_unstated_tail",
+        ),
+    )
+    _emit_section_snapshot(
+        _make_state(_body(sparse_section)),
+        "section",
+        "1",
+        None,
+        None,
+        [sparse_rop],
+        lo_ops,
+        "2020/203",
+        "sparse item source",
+        _DATE,
+        _DATE,
+        base_ir=_body(base_section),
+    )
+    sparse_child = next(op for op in lo_ops if op.op_id == "snapshot_subsection_1_from_section_1")
+    assert sparse_child.payload is not None
+    assert sparse_child.payload.attrs["lawvm_tail_policy"] == "preserve_unstated_tail"
+
+    complete_rop = ResolvedOp.from_amendment_op(
+        _op(op_type="REPLACE", target_section="1"),
+        muutos_ir=complete_section,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="1",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "1"),)),
+        payload_completeness=PayloadCompletenessWitness(
+            kind="complete",
+            reasons=("whole_section_payload",),
+            tail_policy="replace_if_target_scope_requires",
+        ),
+    )
+    _emit_section_snapshot(
+        _make_state(_body(complete_section)),
+        "section",
+        "1",
+        None,
+        None,
+        [complete_rop],
+        lo_ops,
+        "2023/1117",
+        "complete section source",
+        _DATE,
+        dt.date(2021, 1, 1),
+        base_ir=_body(base_section),
+    )
+
+    complete_child = [
+        op for op in lo_ops if op.op_id == "snapshot_subsection_1_from_section_1"
+    ][-1]
+    assert complete_child.payload is not None
+    assert [child.label for child in complete_child.payload.children if child.kind is IRNodeKind.PARAGRAPH] == [
+        "1",
+        "2",
+        "29",
+    ]
+    assert complete_child.payload.attrs["lawvm_tail_policy"] == "replace_if_target_scope_requires"
+
+
+def test_emit_section_snapshot_rebases_sparse_item_replace_and_repeal_group() -> None:
+    base_section = _sec(
+        "1",
+        IRNode(kind=IRNodeKind.NUM, text="1 §"),
+        _sub(
+            "1",
+            _intro("List intro"),
+            _para("12", "old twelve"),
+            _para("13", "old thirteen"),
+            _para("14", "old fourteen"),
+            _para("15", "old fifteen"),
+        ),
+    )
+    latest_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        attrs={
+            "lawvm_tail_policy": "replace_if_target_scope_requires",
+            "lawvm_payload_completeness_kind": "complete",
+        },
+        children=base_section.children,
+    )
+    sparse_state_section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        attrs={
+            "lawvm_tail_policy": "preserve_unstated_tail",
+            "lawvm_payload_completeness_kind": "sparse_certified",
+        },
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="1 §"),
+            _sub("1", _intro("List intro"), _para("13", "new thirteen")),
+        ),
+    )
+    lo_ops: list[LegalOperation] = [
+        LegalOperation(
+            op_id="snapshot_section_1",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            payload=latest_section,
+            source=OperationSource(
+                statute_id="2024/330",
+                enacted=_DATE.isoformat(),
+                effective=_DATE.isoformat(),
+            ),
+        )
+    ]
+    replace_rop = ResolvedOp.from_amendment_op(
+        _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="13"),
+        muutos_ir=sparse_state_section,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="1",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "1"), ("subsection", "1"), ("item", "13"))),
+        payload_completeness=PayloadCompletenessWitness(
+            kind="sparse_certified",
+            reasons=("mapped_tail_omission",),
+            tail_policy="preserve_unstated_tail",
+        ),
+    )
+    repeal_rop = ResolvedOp.from_amendment_op(
+        _op(op_type="REPEAL", target_section="1", target_paragraph=1, target_item="14"),
+        muutos_ir=None,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="1",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "1"), ("subsection", "1"), ("item", "14"))),
+        payload_completeness=PayloadCompletenessWitness(
+            kind="sparse_certified",
+            reasons=("mapped_tail_omission",),
+            tail_policy="preserve_unstated_tail",
+        ),
+    )
+
+    _emit_section_snapshot(
+        _make_state(_body(sparse_state_section)),
+        "section",
+        "1",
+        None,
+        None,
+        [replace_rop, repeal_rop],
+        lo_ops,
+        "2026/138",
+        "sparse item replace and repeal",
+        _DATE,
+        dt.date(2026, 7, 1),
+        base_ir=_body(base_section),
+    )
+
+    section_snapshot = [
+        op for op in lo_ops if op.op_id == "snapshot_section_1"
+    ][-1]
+    assert section_snapshot.payload is not None
+    subsection = next(
+        child for child in section_snapshot.payload.children if child.kind is IRNodeKind.SUBSECTION
+    )
+    labels = [child.label for child in subsection.children if child.kind is IRNodeKind.PARAGRAPH]
+    assert labels == ["12", "13", "15"]
+    rendered = irnode_to_text(subsection)
+    assert "old twelve" in rendered
+    assert "new thirteen" in rendered
+    assert "old fourteen" not in rendered
+    assert "old fifteen" in rendered
+
+
 def test_expired_temporary_subsection_slot_can_be_consumed_skips_carried_snapshot() -> None:
     section_path = (("chapter", "2"), ("section", "11"))
     subsection_path = section_path + (("subsection", "3"),)
