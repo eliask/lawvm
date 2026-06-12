@@ -274,6 +274,97 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
         frontier_status="source_pathology_frontier",
         required_claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
     ),
+    "ITEM_TARGET_STRUCTURE_ABSENT": FinlandSourcePathologyProofRule(
+        code="ITEM_TARGET_STRUCTURE_ABSENT",
+        lane="target_resolution_recovery",
+        owner_phase="replay_apply",
+        strict_disposition="block",
+        quirks_disposition="record",
+        frontier_family="fi_item_target_structure_absent",
+        frontier_status="target_resolution_frontier",
+        required_claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        required_proofs=(
+            "source_identity_proof",
+            "explicit_item_target_identity_proof",
+            "live_state_candidate_set_certificate",
+            "payload_slot_identity_proof",
+            "mutation_boundary_proof_before_replay_promotion",
+        ),
+    ),
+    "ITEM_TARGET_SLOT_OCCUPIED": FinlandSourcePathologyProofRule(
+        code="ITEM_TARGET_SLOT_OCCUPIED",
+        lane="target_resolution_recovery",
+        owner_phase="replay_apply",
+        strict_disposition="block",
+        quirks_disposition="record",
+        frontier_family="fi_item_target_slot_occupied",
+        frontier_status="target_resolution_frontier",
+        required_claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        required_proofs=(
+            "source_identity_proof",
+            "explicit_item_target_identity_proof",
+            "occupied_slot_lineage_proof",
+            "payload_slot_identity_proof",
+            "mutation_boundary_proof_before_replay_promotion",
+        ),
+    ),
+    "ITEM_TARGET_ANCHOR_ABSENT": FinlandSourcePathologyProofRule(
+        code="ITEM_TARGET_ANCHOR_ABSENT",
+        lane="target_resolution_recovery",
+        owner_phase="replay_apply",
+        strict_disposition="block",
+        quirks_disposition="record",
+        frontier_family="fi_item_target_anchor_absent",
+        frontier_status="target_resolution_frontier",
+        required_claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        required_proofs=(
+            "source_identity_proof",
+            "explicit_item_target_identity_proof",
+            "live_state_candidate_set_certificate",
+            "anchor_absence_proof",
+            "mutation_boundary_proof_before_replay_promotion",
+        ),
+    ),
+    "SUBSECTION_TARGET_ABSENT": FinlandSourcePathologyProofRule(
+        code="SUBSECTION_TARGET_ABSENT",
+        lane="target_resolution_recovery",
+        owner_phase="replay_apply",
+        strict_disposition="block",
+        quirks_disposition="record",
+        frontier_family="fi_subsection_target_absent",
+        frontier_status="target_resolution_frontier",
+        required_claim_kind="fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION",
+        required_proofs=(
+            "source_identity_proof",
+            "explicit_subsection_target_identity_proof",
+            "live_state_candidate_set_certificate",
+            "payload_slot_identity_proof",
+            "mutation_boundary_proof_before_replay_promotion",
+        ),
+    ),
+    "SECTION_REPLACE_BOOTSTRAP_PARENT_MISSING": FinlandSourcePathologyProofRule(
+        code="SECTION_REPLACE_BOOTSTRAP_PARENT_MISSING",
+        lane="target_resolution_recovery",
+        owner_phase="replay_apply",
+        strict_disposition="block",
+        quirks_disposition="record",
+        frontier_family="fi_section_replace_bootstrap_parent_missing",
+        frontier_status="target_resolution_frontier",
+        required_claim_kind="source_pathology_resolution",
+        required_proofs=(
+            "source_identity_proof",
+            "explicit_section_target_identity_proof",
+            "parent_container_identity_proof",
+            "bootstrap_rule_ownership_proof",
+            "mutation_boundary_proof_before_replay_promotion",
+        ),
+        safe_default="preserve_missing_parent_bootstrap_as_non_executable_frontier",
+        forbidden_shortcuts=(
+            "insert_section_under_unproven_parent_container",
+            "treat_missing_parent_as_permission_for_unscoped_insert",
+            "promote_bootstrap_failure_as_replay_authorization",
+        ),
+    ),
     "BASE_MISSING_CHAPTER_SPAN": FinlandSourcePathologyProofRule(
         code="BASE_MISSING_CHAPTER_SPAN",
         lane="source_pathology",
@@ -343,6 +434,29 @@ _SOURCE_PATHOLOGY_RULES: dict[str, FinlandSourcePathologyProofRule] = {
             "treat_live_unique_subsection_as_source_target_proof",
             "rebind_subsection_target_without_target_identity_proof",
             "promote_rebound_recovery_as_replay_authorization",
+        ),
+    ),
+    "CONTAINER_REPLACE_TARGET_ABSENT": FinlandSourcePathologyProofRule(
+        code="CONTAINER_REPLACE_TARGET_ABSENT",
+        lane="target_resolution_recovery",
+        owner_phase="replay_apply",
+        strict_disposition="block",
+        quirks_disposition="record",
+        frontier_family="fi_container_replace_target_absent",
+        frontier_status="target_resolution_frontier",
+        required_claim_kind="source_pathology_resolution",
+        required_proofs=(
+            "source_identity_proof",
+            "explicit_container_target_identity_proof",
+            "live_state_candidate_set_certificate",
+            "container_absence_proof",
+            "mutation_boundary_proof_before_replay_promotion",
+        ),
+        safe_default="preserve_absent_container_replace_as_non_executable_frontier",
+        forbidden_shortcuts=(
+            "replace_nearest_live_container_when_explicit_target_is_absent",
+            "insert_container_from_replace_without_target_identity_proof",
+            "promote_absent_container_recovery_as_replay_authorization",
         ),
     ),
 }
@@ -457,6 +571,12 @@ def source_pathology_proof_rule(code: str) -> FinlandSourcePathologyProofRule:
             required_claim_kind="source_pathology_resolution",
         ),
     )
+
+
+def registered_source_pathology_proof_rule_codes() -> tuple[str, ...]:
+    """Return statically registered Finland source-pathology codes."""
+
+    return tuple(sorted(_SOURCE_PATHOLOGY_RULES))
 
 
 def _with_finland_claim_template(item: FrontierWorkItem) -> FrontierWorkItem:

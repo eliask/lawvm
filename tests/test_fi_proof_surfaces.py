@@ -56,6 +56,7 @@ from lawvm.finland.proof_surfaces import (
     source_pathology_frontier_work_item,
     source_pathology_proof_rule,
     source_pathology_proof_surface_rows,
+    registered_source_pathology_proof_rule_codes,
     sparse_slot_candidate_set_certificate_rows,
     recovery_execution_authorization_rows_from_projection_rows,
     source_completeness_status_row,
@@ -76,6 +77,33 @@ def test_finland_proof_surface_required_claim_kinds_are_registered() -> None:
     }
 
     missing = required - set(list_registered_kinds())
+
+    assert missing == set()
+
+
+def test_static_finland_source_pathology_codes_are_explicitly_registered() -> None:
+    source_pathology_path = Path("src/lawvm/finland/source_pathology.py")
+    tree = ast.parse(source_pathology_path.read_text(encoding="utf-8"))
+    emitted_codes: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        call_name = ""
+        if isinstance(node.func, ast.Name):
+            call_name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            call_name = node.func.attr
+        if call_name not in {"SourcePathology", "from_scope"}:
+            continue
+        for keyword in node.keywords:
+            if (
+                keyword.arg == "code"
+                and isinstance(keyword.value, ast.Constant)
+                and isinstance(keyword.value.value, str)
+            ):
+                emitted_codes.add(keyword.value.value)
+
+    missing = emitted_codes - set(registered_source_pathology_proof_rule_codes())
 
     assert missing == set()
 

@@ -96,7 +96,13 @@ _SPARSE_SLOT = _XmlClaimSpec(
         "selected_slot",
         "old_text_precondition",
     ),
-    allowed_pathology_codes=("SPARSE_ITEM_BODY_MISSING",),
+    allowed_pathology_codes=(
+        "SPARSE_ITEM_BODY_MISSING",
+        "ITEM_TARGET_STRUCTURE_ABSENT",
+        "ITEM_TARGET_SLOT_OCCUPIED",
+        "ITEM_TARGET_ANCHOR_ABSENT",
+        "SUBSECTION_TARGET_ABSENT",
+    ),
     semantic=True,
 )
 
