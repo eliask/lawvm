@@ -55,6 +55,9 @@ def test_load_strict_run_reads_source_pathology_codes(tmp_path, monkeypatch) -> 
     assert rows[0]["proof_gate_source_pathology_authorization_blocked_count"] == 0
     assert rows[0]["proof_gate_failed_operation_authorization_blocked_count"] == 0
     assert rows[0]["proof_gate_recovery_authorization_blocked_count"] == 0
+    assert rows[0]["proof_gate_source_pathology_authorization_status_counts"] == {}
+    assert rows[0]["proof_gate_failed_operation_authorization_status_counts"] == {}
+    assert rows[0]["proof_gate_recovery_authorization_status_counts"] == {}
     assert rows[0]["proof_gate_required_claim_kind_counts"] == {}
     assert rows[0]["proof_gate_frontier_status_counts"] == {}
     assert rows[0]["proof_gate_manual_claim_kind_counts"] == {}
@@ -175,6 +178,15 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                 "proof_gate_source_pathology_authorization_blocked_count": 6,
                 "proof_gate_failed_operation_authorization_blocked_count": 7,
                 "proof_gate_recovery_authorization_blocked_count": 2,
+                "proof_gate_source_pathology_authorization_status_counts": {
+                    "source_pathology_blocked": 6,
+                },
+                "proof_gate_failed_operation_authorization_status_counts": {
+                    "failed_operation_blocked": 7,
+                },
+                "proof_gate_recovery_authorization_status_counts": {
+                    "strict_recovery_blocked": 2,
+                },
                 "proof_gate_required_claim_kind_counts": {
                     "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
                     "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE": 2,
@@ -239,6 +251,9 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert "proof_gate_source_pathology_authorization_blocked_count" in text
     assert "proof_gate_failed_operation_authorization_blocked_count" in text
     assert "proof_gate_recovery_authorization_blocked_count" in text
+    assert "proof_gate_source_pathology_authorization_status_counts" in text
+    assert "proof_gate_failed_operation_authorization_status_counts" in text
+    assert "proof_gate_recovery_authorization_status_counts" in text
     assert "proof_gate_required_claim_kind_counts" in text
     assert "proof_gate_manual_claim_kind_counts" in text
     assert "proof_gate_coverage_claim_kind_counts" in text
@@ -274,6 +289,15 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert loaded[0]["proof_gate_source_pathology_authorization_blocked_count"] == 6
     assert loaded[0]["proof_gate_failed_operation_authorization_blocked_count"] == 7
     assert loaded[0]["proof_gate_recovery_authorization_blocked_count"] == 2
+    assert loaded[0]["proof_gate_source_pathology_authorization_status_counts"] == {
+        "source_pathology_blocked": 6,
+    }
+    assert loaded[0]["proof_gate_failed_operation_authorization_status_counts"] == {
+        "failed_operation_blocked": 7,
+    }
+    assert loaded[0]["proof_gate_recovery_authorization_status_counts"] == {
+        "strict_recovery_blocked": 2,
+    }
     assert loaded[0]["proof_gate_required_claim_kind_counts"] == {
         "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
         "source_pathology_resolution": 2,
@@ -392,6 +416,15 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                 "proof_gate_source_pathology_authorization_blocked_count": 6,
                 "proof_gate_failed_operation_authorization_blocked_count": 7,
                 "proof_gate_recovery_authorization_blocked_count": 2,
+                "proof_gate_source_pathology_authorization_status_counts": {
+                    "source_pathology_blocked": 6,
+                },
+                "proof_gate_failed_operation_authorization_status_counts": {
+                    "failed_operation_blocked": 7,
+                },
+                "proof_gate_recovery_authorization_status_counts": {
+                    "strict_recovery_blocked": 2,
+                },
                 "proof_gate_required_claim_kind_counts": {
                     "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
                     "source_pathology_resolution": 2,
@@ -464,6 +497,12 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
     assert "regex unclassified gaps: 3" in out
     assert "blocked source pathology authorizations: 6" in out
     assert "blocked failed operation authorizations: 7" in out
+    assert "source pathology authorization statuses" in out
+    assert "source_pathology_blocked" in out
+    assert "failed operation authorization statuses" in out
+    assert "failed_operation_blocked" in out
+    assert "recovery authorization statuses" in out
+    assert "strict_recovery_blocked" in out
     assert "fi.v1.FAILED_OPERATION_RESOLUTION" in out
     assert "source_pathology_resolution" in out
     assert "partial_candidate_set_frontier" in out
