@@ -1570,7 +1570,9 @@ def test_frontier_work_item_claim_template_is_passive_review_scaffold() -> None:
     assert template["schema"] == "lawvm.frontier_work_item_claim_template.v1"
     assert template["frontier_ref"] == "fi-frontier-template-demo"
     assert template["claim_target_seed"] == {
-        "frontier_ref": "fi-frontier-template-demo"
+        "frontier_ref": "fi-frontier-template-demo",
+        "source_statute": "2020/1",
+        "affected_target": "section:2",
     }
     assert template["claim_kind"] == "fi.v1.SPARSE_SLOT_PAYLOAD_RESOLUTION"
     assert template["registered_claim_kind"] is True
@@ -1618,7 +1620,9 @@ def test_frontier_work_item_with_claim_template_attaches_available_template() ->
     assert item["suggested_claim_template_status"] == "available"
     assert item["suggested_claim_template"]["claim_kind"] == "fi.v1.FAILED_OPERATION_RESOLUTION"
     assert item["suggested_claim_template"]["claim_target_seed"] == {
-        "frontier_ref": "fi-frontier-template-attached"
+        "frontier_ref": "fi-frontier-template-attached",
+        "source_statute": "2020/1",
+        "affected_target": "section:2",
     }
     assert item["suggested_claim_template"]["executable"] is False
     assert item["suggested_claim_template"]["replay_authorized"] is False

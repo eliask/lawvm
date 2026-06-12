@@ -241,11 +241,12 @@ def frontier_work_item_claim_template(
             )
         )
     )
+    target_seed = _claim_target_seed(row, target_fields)
     return {
         "schema": "lawvm.frontier_work_item_claim_template.v1",
         "template_id": f"{row.get('work_item_id')}:claim-template",
         "frontier_ref": str(row.get("work_item_id") or ""),
-        "claim_target_seed": {"frontier_ref": str(row.get("work_item_id") or "")},
+        "claim_target_seed": target_seed,
         "jurisdiction": str(row.get("jurisdiction") or ""),
         "claim_kind": claim_kind,
         "claim_layer": layer,
@@ -272,6 +273,7 @@ def frontier_work_item_claim_template(
             "owner_phase": str(row.get("owner_phase") or ""),
             "source_artifact_id": str(row.get("source_artifact_id") or ""),
             "source_unit_id": str(row.get("source_unit_id") or ""),
+            "claim_target_seed_status": "partial_review_seed",
         },
     }
 
@@ -654,6 +656,67 @@ def _template_claim_kind(row: Mapping[str, Any]) -> str:
     if isinstance(template, Mapping):
         return str(template.get("claim_kind") or "")
     return ""
+
+
+def _claim_target_seed(
+    row: Mapping[str, Any],
+    target_fields: tuple[str, ...],
+) -> dict[str, Any]:
+    seed: dict[str, Any] = {"frontier_ref": str(row.get("work_item_id") or "")}
+    for field_name in target_fields:
+        value = _claim_target_seed_value(row, field_name)
+        if value not in ("", None):
+            seed[field_name] = value
+    return seed
+
+
+def _claim_target_seed_value(row: Mapping[str, Any], field_name: str) -> Any:
+    source_witness = _mapping(row.get("source_witness"))
+    target_witness = _mapping(row.get("target_witness"))
+    detail = _mapping(row.get("detail"))
+    if field_name == "source_statute":
+        return (
+            source_witness.get("source_statute")
+            or detail.get("source_statute")
+            or row.get("source_artifact_id")
+            or source_witness.get("artifact_id")
+        )
+    if field_name == "affected_target":
+        candidate_targets = _sequence(row.get("candidate_targets"))
+        return (
+            target_witness.get("affected_target")
+            or target_witness.get("target_label")
+            or target_witness.get("target")
+            or (candidate_targets[0] if candidate_targets else "")
+            or row.get("source_unit_id")
+        )
+    if field_name == "source_pathology_code":
+        pathology = _mapping(detail.get("source_pathology"))
+        return (
+            target_witness.get("source_pathology_code")
+            or source_witness.get("source_pathology_code")
+            or pathology.get("code")
+        )
+    if field_name == "failure_reason_code":
+        failed_operation = _mapping(detail.get("failed_operation"))
+        return (
+            target_witness.get("failure_reason_code")
+            or source_witness.get("failure_reason_code")
+            or failed_operation.get("reason_code")
+        )
+    if field_name == "unsupported_reason_code":
+        return (
+            target_witness.get("unsupported_reason_code")
+            or source_witness.get("unsupported_reason_code")
+            or detail.get("reason")
+        )
+    if field_name == "source_locator":
+        return source_witness.get("locator") or source_witness.get("source_path")
+    return ""
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
 
 
 def _claim_assertion_mapping(assertion: Any) -> Mapping[str, Any]:

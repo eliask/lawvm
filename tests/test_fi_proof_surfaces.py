@@ -737,6 +737,12 @@ def test_finland_corrigendum_unsupported_patch_projects_frontier_work_item() -> 
         "affected_target",
         "unsupported_reason_code",
     ]
+    assert item["suggested_claim_template"]["claim_target_seed"] == {
+        "frontier_ref": item["work_item_id"],
+        "source_statute": "corr/442/2016",
+        "affected_target": "preamble:formula",
+        "unsupported_reason_code": "FINLAND.CORRIGENDUM_ADD_UNSUPPORTED",
+    }
     assert item["suggested_claim_template"]["executable"] is False
     assert item["suggested_claim_template"]["replay_authorized"] is False
 
@@ -1067,6 +1073,12 @@ def test_source_pathology_frontier_work_item_is_non_executable() -> None:
         "selected_slot",
         "old_text_precondition",
     ]
+    assert item["suggested_claim_template"]["claim_target_seed"] == {
+        "frontier_ref": item["work_item_id"],
+        "source_statute": "2020/1",
+        "affected_target": "section 5 subsection 2 item 3",
+        "source_pathology_code": "SPARSE_ITEM_BODY_MISSING",
+    }
     assert item["suggested_claim_template"]["executable"] is False
     assert item["suggested_claim_template"]["replay_authorized"] is False
 
