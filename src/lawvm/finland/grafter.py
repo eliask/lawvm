@@ -35,12 +35,10 @@ from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.statute_validity import expires_on_from_valid_until
 from lawvm.core.phase_result import Finding
 from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
-from lawvm.core.replay_lints import build_text_duplication_findings
 
 
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import check_invariants as _check_tree_invariants
-from lawvm.core.tree_ops import iter_tree_invariant_violations as _iter_tree_invariant_violations
 from lawvm.core.tree_ops import normalized_label_key
 from lawvm.core.elaboration_context import (
     ReplayLookups,
@@ -111,8 +109,6 @@ from lawvm.finland.replay_findings import (
     _apply_mutation_boundary_violation_finding,
     _apply_mutation_invariant_report_finding,
     _base_observation_to_finding,
-    _emit_structural_dedup_warning,
-    _replay_product_invariant_finding,
     _serialize_apply_mutation_event,
     _serialize_apply_mutation_invariant_report,
     _serialize_observed_write_audit,
@@ -583,6 +579,7 @@ from lawvm.finland.process_structural_prepare import ProcessStructuralPrepareCon
 from lawvm.finland.process_temporal_authority import ProcessTemporalAuthorityContext
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
 from lawvm.finland.replay_fold_projection import ReplayFoldProjectionRequest, project_replay_fold
+from lawvm.finland.replay_product_projection import ReplayProductProjectionRequest, project_replay_products
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir as _hoist_trailing_wrapup_ir
 
@@ -1151,7 +1148,6 @@ from lawvm.finland.source_adjudication import build_source_adjudication
 from lawvm.finland.replay_products import (
     build_replay_products,
     ReplayProducts,
-    validate_replay_products,
 )
 from lawvm.finland.replay_pipeline import (
     execute_replay_plan,
@@ -5647,114 +5643,19 @@ def replay_xml(
                     products.materialized_state.ir, law_level_patches
                 )
                 products.materialized_state = products.materialized_state.with_ir(patched_ir)
-        product_violations: List[str] = []
         if build_full_products:
-            typed_product_tree_violations = {
-                "replay_fold_tree": [
-                    violation.to_dict()
-                    for violation in _iter_tree_invariant_violations(products.replay_fold_state.ir)
-                ],
-                "materialized_tree": [
-                    violation.to_dict()
-                    for violation in _iter_tree_invariant_violations(products.materialized_state.ir)
-                ],
-            }
-            product_violations = validate_replay_products(
-                plan.ctx,
-                products,
-                deep_materialization_check=logger.isEnabledFor(logging.DEBUG),
-            )
-            if replay_meta_out is not None and product_violations:
-                replay_meta_out["product_invariant_violations"] = list(product_violations)
-                replay_meta_out["typed_product_tree_invariant_violations"] = typed_product_tree_violations
-            if product_violations:
-                for violation in product_violations:
-                    replay_findings.append(
-                        _replay_product_invariant_finding(
-                            violation=violation,
-                            source_statute=parent_id,
-                        )
-                    )
-                seen_product_violations = {
-                    (
-                        finding.kind,
-                        str(finding.detail.get("violation") or ""),
-                    )
-                    for finding in replay_findings
-                    if finding.kind == "APPLY.REPLAY_PRODUCT_INVARIANT_VIOLATION"
-                }
-                for violation in product_violations:
-                    _replay_print(f"WARNING product invariant: {violation}")
-                    if ("APPLY.REPLAY_PRODUCT_INVARIANT_VIOLATION", violation) not in seen_product_violations:
-                        replay_findings.append(
-                            _replay_product_invariant_finding(
-                                violation=violation,
-                                source_statute=parent_id,
-                            )
-                        )
-                        seen_product_violations.add(("APPLY.REPLAY_PRODUCT_INVARIANT_VIOLATION", violation))
-            if logger.isEnabledFor(logging.DEBUG):
-                for violation in product_violations:
-                    logger.debug("  PRODUCT INVARIANT: %s", violation)
-            # Dedup materialized state before text-duplication linting.
-            # Materialization can create new duplicates that weren't present in
-            # the replay fold state, so dedup must run again here.
-            deduped_materialized_ir = _tops.dedup_children_by_label(products.materialized_state.ir)
-            deduped_materialized_ir = _emit_structural_dedup_warning(
-                phase="materialized",
-                before_ir=products.materialized_state.ir,
-                after_ir=deduped_materialized_ir,
-                source_statute=parent_id,
-                replay_findings=replay_findings,
-                replay_meta_out=replay_meta_out,
-            )
-            products.materialized_state = products.materialized_state.with_ir(deduped_materialized_ir)
-            materialized_text_duplication_findings = build_text_duplication_findings(
-                deduped_materialized_ir,
-                phase="materialized",
-                source_statute=parent_id,
-            )
-            if replay_meta_out is not None and materialized_text_duplication_findings:
-                warnings = replay_meta_out.setdefault("text_duplication_warnings", [])
-                cast(list[dict[str, object]], warnings).extend(
-                    {
-                        key: value
-                        for key, value in finding.detail.items()
-                        if key != "message"
-                    }
-                    for finding in materialized_text_duplication_findings
+            products = project_replay_products(
+                ReplayProductProjectionRequest(
+                    ctx=plan.ctx,
+                    products=products,
+                    parent_id=parent_id,
+                    replay_findings=replay_findings,
+                    replay_meta_out=replay_meta_out,
+                    replay_print=_replay_print,
+                    debug_enabled=logger.isEnabledFor(logging.DEBUG),
+                    debug_log=logger.debug,
                 )
-            if materialized_text_duplication_findings:
-                seen_text_warnings = {
-                    (
-                        finding.kind,
-                        str(finding.detail.get("phase") or ""),
-                        str(finding.detail.get("kind") or ""),
-                        str(finding.detail.get("left") or ""),
-                        str(finding.detail.get("right") or ""),
-                    )
-                    for finding in replay_findings
-                    if finding.kind == "text_duplication_warning"
-                }
-                for finding in materialized_text_duplication_findings:
-                    warning = {
-                        key: value
-                        for key, value in finding.detail.items()
-                        if key != "message"
-                    }
-                    _replay_print(
-                        f"WARNING text duplication: {warning['kind']} {warning['left']} <-> {warning['right']}"
-                    )
-                    key = (
-                        "text_duplication_warning",
-                        "materialized",
-                        str(warning.get("kind") or ""),
-                        str(warning.get("left") or ""),
-                        str(warning.get("right") or ""),
-                    )
-                    if key not in seen_text_warnings:
-                        replay_findings.append(finding)
-                        seen_text_warnings.add(key)
+            )
 
         # Capture oracle selector provenance when an explicit selector was used.
         # Calls select_cached_consolidated_artifact_with_info a second time so
