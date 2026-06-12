@@ -234,6 +234,11 @@ def build_inventory(
             "bounded_wildcard_coverage_status_counts": dict(
                 sorted(bounded_wildcard_coverage_status_counts.items())
             ),
+            "bounded_wildcard_soundness_note": (
+                "bounded wildcard regexes are recognizer-local span claims, not semantic "
+                "exhaustiveness proofs; coverage sensors must still classify captured "
+                "semantic slots, skipped context, and unclassified gaps"
+            ),
         },
         "file_counts": dict(sorted(file_totals.items())),
         "category_counts": dict(sorted(category_totals.items())),
@@ -284,6 +289,14 @@ def _to_markdown(inventory: dict[str, Any]) -> str:
         )
         for status, count in sorted(coverage_status_counts.items()):
             lines.append(f"| {status} | {count} |")
+        lines.extend(
+            [
+                "",
+                "> Bounded wildcard note: a bounded regex span is not a semantic "
+                "exhaustiveness proof. Coverage means the recognizer exposes owned "
+                "semantic slots, skipped context, or unclassified gaps for review.",
+            ]
+        )
 
     for path, hits in inventory["by_file"].items():
         lines.extend(

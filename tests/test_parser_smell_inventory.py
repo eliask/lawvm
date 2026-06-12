@@ -252,6 +252,22 @@ def test_build_inventory_reports_bounded_gap_coverage_and_text_sentinel(tmp_path
         "missing_coverage_surface": 0,
         "nearby_coverage_surface": 1,
     }
+    assert "not semantic exhaustiveness proofs" in inventory["summary"][
+        "bounded_wildcard_soundness_note"
+    ]
+
+
+def test_markdown_reports_bounded_wildcard_soundness_caveat(tmp_path) -> None:
+    path = tmp_path / "nlp_parser.py"
+    path.write_text(
+        "RX = re.compile(r'for .{0,240}? substitute')\n",
+        encoding="utf-8",
+    )
+
+    markdown = _to_markdown(build_inventory([path]))
+
+    assert "Bounded wildcard note" in markdown
+    assert "not a semantic exhaustiveness proof" in markdown
 
 
 def test_bounded_wildcard_sensor_reports_missing_coverage_surface(tmp_path) -> None:
