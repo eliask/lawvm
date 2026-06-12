@@ -25,6 +25,11 @@ _UNRESOLVED_TEMPORAL_STATUSES = frozenset(
         TEMPORAL_UNRESOLVED_CONTINGENT,
     }
 )
+_BLOCKED_RECOVERY_AUTHORIZATION_STATUSES = frozenset(
+    {
+        "strict_recovery_blocked",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +68,8 @@ class ProofGateSummary:
     regex_recognition_unclassified_gap_count: int = 0
     temporal_resolution_status_counts: Mapping[str, int] = field(default_factory=dict)
     temporal_resolution_unresolved_count: int = 0
+    recovery_authorization_status_counts: Mapping[str, int] = field(default_factory=dict)
+    recovery_authorization_blocked_count: int = 0
     safe_default: str = "treat_open_proof_gates_as_non_executable_frontier_accounting"
     does_not_claim: tuple[str, ...] = (
         "proof_closure",
@@ -73,6 +80,7 @@ class ProofGateSummary:
         "potential_operation_unresolved_closure",
         "regex_recognition_gap_closure",
         "temporal_resolution_closure",
+        "recovery_authorization_closure",
         "replay_authorization",
     )
 
@@ -94,6 +102,7 @@ class ProofGateSummary:
             "potential_operation_unresolved_count",
             "regex_recognition_unclassified_gap_count",
             "temporal_resolution_unresolved_count",
+            "recovery_authorization_blocked_count",
         ):
             _require_nonnegative_int(field_name, getattr(self, field_name))
         for field_name in (
@@ -114,6 +123,7 @@ class ProofGateSummary:
             "potential_operation_classification_counts",
             "regex_recognition_coverage_status_counts",
             "temporal_resolution_status_counts",
+            "recovery_authorization_status_counts",
         ):
             object.__setattr__(self, field_name, freeze_mapping(_count_mapping(getattr(self, field_name))))
         object.__setattr__(self, "safe_default", _required_string("safe_default", self.safe_default))
@@ -177,6 +187,12 @@ class ProofGateSummary:
             "temporal_resolution_unresolved_count": (
                 self.temporal_resolution_unresolved_count
             ),
+            "recovery_authorization_status_counts": dict(
+                self.recovery_authorization_status_counts
+            ),
+            "recovery_authorization_blocked_count": (
+                self.recovery_authorization_blocked_count
+            ),
             "safe_default": self.safe_default,
             "does_not_claim": list(self.does_not_claim),
         }
@@ -204,6 +220,7 @@ def proof_gate_summary_from_surfaces(
         "potential_operation_unresolved_closure",
         "regex_recognition_gap_closure",
         "temporal_resolution_closure",
+        "recovery_authorization_closure",
         "replay_authorization",
     ),
 ) -> ProofGateSummary:
@@ -265,6 +282,14 @@ def proof_gate_summary_from_surfaces(
         temporal_resolution_counts.get(status, 0)
         for status in _UNRESOLVED_TEMPORAL_STATUSES
     )
+    recovery_authorization_counts = _summary_count_mapping(
+        evidence,
+        "recovery_execution_authorization_status_counts",
+    )
+    recovery_authorization_blocked_count = sum(
+        recovery_authorization_counts.get(status, 0)
+        for status in _BLOCKED_RECOVERY_AUTHORIZATION_STATUSES
+    )
     open_gate_signal_count = (
         len(failed_gate_rows)
         + sum(unowned.values())
@@ -275,6 +300,7 @@ def proof_gate_summary_from_surfaces(
         + potential_operation_unresolved_count
         + regex_unclassified_gap_count
         + temporal_resolution_unresolved_count
+        + recovery_authorization_blocked_count
     )
     return ProofGateSummary(
         schema=schema,
@@ -325,6 +351,8 @@ def proof_gate_summary_from_surfaces(
         regex_recognition_unclassified_gap_count=regex_unclassified_gap_count,
         temporal_resolution_status_counts=temporal_resolution_counts,
         temporal_resolution_unresolved_count=temporal_resolution_unresolved_count,
+        recovery_authorization_status_counts=recovery_authorization_counts,
+        recovery_authorization_blocked_count=recovery_authorization_blocked_count,
         safe_default=safe_default,
         does_not_claim=does_not_claim,
     )

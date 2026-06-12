@@ -52,6 +52,7 @@ def test_load_strict_run_reads_source_pathology_codes(tmp_path, monkeypatch) -> 
     assert rows[0]["proof_gate_potential_operation_unresolved_count"] == 0
     assert rows[0]["proof_gate_regex_unclassified_gap_count"] == 0
     assert rows[0]["proof_gate_temporal_resolution_unresolved_count"] == 0
+    assert rows[0]["proof_gate_recovery_authorization_blocked_count"] == 0
     assert rows[0]["proof_gate_required_claim_kind_counts"] == {}
     assert rows[0]["proof_gate_frontier_status_counts"] == {}
     assert rows[0]["proof_gate_manual_claim_kind_counts"] == {}
@@ -169,6 +170,7 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                 "proof_gate_potential_operation_unresolved_count": 5,
                 "proof_gate_regex_unclassified_gap_count": 3,
                 "proof_gate_temporal_resolution_unresolved_count": 4,
+                "proof_gate_recovery_authorization_blocked_count": 2,
                 "proof_gate_required_claim_kind_counts": {
                     "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
                     "fi.v1.SOURCE_UNIT_ENUMERATION_CERTIFICATE": 2,
@@ -230,6 +232,7 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert "proof_gate_potential_operation_unresolved_count" in text
     assert "proof_gate_regex_unclassified_gap_count" in text
     assert "proof_gate_temporal_resolution_unresolved_count" in text
+    assert "proof_gate_recovery_authorization_blocked_count" in text
     assert "proof_gate_required_claim_kind_counts" in text
     assert "proof_gate_manual_claim_kind_counts" in text
     assert "proof_gate_coverage_claim_kind_counts" in text
@@ -262,6 +265,7 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert loaded[0]["proof_gate_potential_operation_unresolved_count"] == 5
     assert loaded[0]["proof_gate_regex_unclassified_gap_count"] == 3
     assert loaded[0]["proof_gate_temporal_resolution_unresolved_count"] == 4
+    assert loaded[0]["proof_gate_recovery_authorization_blocked_count"] == 2
     assert loaded[0]["proof_gate_required_claim_kind_counts"] == {
         "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
         "source_pathology_resolution": 2,
@@ -377,6 +381,7 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                 "proof_gate_potential_operation_unresolved_count": 5,
                 "proof_gate_regex_unclassified_gap_count": 3,
                 "proof_gate_temporal_resolution_unresolved_count": 4,
+                "proof_gate_recovery_authorization_blocked_count": 2,
                 "proof_gate_required_claim_kind_counts": {
                     "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
                     "source_pathology_resolution": 2,
@@ -804,6 +809,7 @@ def test_format_report_includes_compact_proof_gate_summary() -> None:
     assert "open gate signals: 18" in out
     assert "regex gaps        : 0" in out
     assert "temporal facts    : 0 unresolved" in out
+    assert "recovery auth     : 0 blocked" in out
     assert "fi.v1.FAILED_OPERATION_RESOLUTION=1" in out
     assert "manual claims    : fi.v1.FAILED_OPERATION_RESOLUTION=1" in out
     assert "coverage proofs  : fi.v1.OPERATION_CUE_EXHAUSTIVENESS_CERTIFICATE=2" in out
@@ -833,6 +839,38 @@ def test_to_json_counts_temporal_resolution_gaps_in_proof_gates() -> None:
     }
     assert proof_gates["temporal_resolution_unresolved_count"] == 1
     assert "temporal_resolution_closure" in proof_gates["does_not_claim"]
+
+
+def test_to_json_counts_blocked_recovery_authorizations_in_proof_gates() -> None:
+    payload = strict_report._to_json(
+        {
+            "statute_id": "2001/1234",
+            "replay_mode": "legal_pit",
+            "compile_mode": "strict",
+            "profile": FINLAND_INGESTION_V1,
+            "projection_rows": [
+                {
+                    "kind": "APPLY.STRICT_REJECTED_UNCOVERED_BODY",
+                    "message": "Uncovered body recovery was rejected.",
+                    "source": "2021/2",
+                },
+                {
+                    "kind": "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION",
+                    "message": "Anchor resolved from source context.",
+                    "source": "2021/3",
+                },
+            ],
+            "strict_fail_reasons": ["APPLY.STRICT_REJECTED_UNCOVERED_BODY"],
+        }
+    )
+
+    proof_gates = payload["proof_gate_summary"]
+    assert proof_gates["recovery_authorization_status_counts"] == {
+        "recovery_projection_not_replay_authority": 1,
+        "strict_recovery_blocked": 1,
+    }
+    assert proof_gates["recovery_authorization_blocked_count"] == 1
+    assert "recovery_authorization_closure" in proof_gates["does_not_claim"]
 
 
 def test_to_json_uses_projection_rows_when_available() -> None:

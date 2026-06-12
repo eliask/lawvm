@@ -545,6 +545,10 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
             f"{proof_gate_summary.get('temporal_resolution_unresolved_count', 0)} unresolved"
         )
         lines.append(
+            "  recovery auth     : "
+            f"{proof_gate_summary.get('recovery_authorization_blocked_count', 0)} blocked"
+        )
+        lines.append(
             "  required claims  : "
             + _format_count_map(proof_gate_summary.get("required_claim_kind_counts"))
         )
@@ -810,6 +814,7 @@ _STRICT_RUN_HEADER = [
     "proof_gate_potential_operation_unresolved_count",
     "proof_gate_regex_unclassified_gap_count",
     "proof_gate_temporal_resolution_unresolved_count",
+    "proof_gate_recovery_authorization_blocked_count",
     "proof_gate_required_claim_kind_counts",
     "proof_gate_frontier_status_counts",
     "proof_gate_manual_claim_kind_counts",
@@ -1002,6 +1007,9 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "proof_gate_temporal_resolution_unresolved_count": int(
                 proof_gate_summary.get("temporal_resolution_unresolved_count") or 0
             ),
+            "proof_gate_recovery_authorization_blocked_count": int(
+                proof_gate_summary.get("recovery_authorization_blocked_count") or 0
+            ),
             "proof_gate_required_claim_kind_counts": dict(
                 proof_gate_summary.get("required_claim_kind_counts") or {}
             ),
@@ -1067,6 +1075,7 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "proof_gate_potential_operation_unresolved_count": 0,
             "proof_gate_regex_unclassified_gap_count": 0,
             "proof_gate_temporal_resolution_unresolved_count": 0,
+            "proof_gate_recovery_authorization_blocked_count": 0,
             "proof_gate_required_claim_kind_counts": {},
             "proof_gate_frontier_status_counts": {},
             "proof_gate_manual_claim_kind_counts": {},
@@ -1168,6 +1177,7 @@ def _save_strict_run(results: list[dict[str, Any]], label: str, timestamp: str) 
                     int(rec.get("proof_gate_potential_operation_unresolved_count") or 0),
                     int(rec.get("proof_gate_regex_unclassified_gap_count") or 0),
                     int(rec.get("proof_gate_temporal_resolution_unresolved_count") or 0),
+                    int(rec.get("proof_gate_recovery_authorization_blocked_count") or 0),
                     json.dumps(
                         rec.get("proof_gate_required_claim_kind_counts", {}),
                         ensure_ascii=True,
@@ -1310,6 +1320,7 @@ def _load_strict_run(label: str) -> list[dict[str, Any]] | None:
                 "proof_gate_potential_operation_unresolved_count",
                 "proof_gate_regex_unclassified_gap_count",
                 "proof_gate_temporal_resolution_unresolved_count",
+                "proof_gate_recovery_authorization_blocked_count",
                 "chain_length",
                 "source_available",
             ):
@@ -1425,6 +1436,7 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     total_potential_operation_unresolved = 0
     total_regex_unclassified_gaps = 0
     total_temporal_resolution_unresolved = 0
+    total_recovery_authorization_blocked = 0
     candidate_set_status_counter: Counter[str] = Counter()
     candidate_set_blocker_counter: Counter[str] = Counter()
     for r in valid:
@@ -1444,6 +1456,9 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
         )
         total_temporal_resolution_unresolved += int(
             r.get("proof_gate_temporal_resolution_unresolved_count") or 0
+        )
+        total_recovery_authorization_blocked += int(
+            r.get("proof_gate_recovery_authorization_blocked_count") or 0
         )
         proof_gate_required_claim_counter.update(
             {
@@ -1672,6 +1687,7 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     print(f"       unresolved potential ops: {total_potential_operation_unresolved}")
     print(f"       regex unclassified gaps: {total_regex_unclassified_gaps}")
     print(f"       unresolved temporal facts: {total_temporal_resolution_unresolved}")
+    print(f"       blocked recovery authorizations: {total_recovery_authorization_blocked}")
     if proof_gate_required_claim_counter:
         print("       required claim kinds:")
         for claim_kind, cnt in proof_gate_required_claim_counter.most_common():
