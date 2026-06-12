@@ -60,7 +60,7 @@ SMELL_MARKERS = {
 
 
 _BOUND_COVERAGE_NEARBY_LINES = 80
-_RE_COMPILED_RE_ASSIGNMENT = re.compile(r"^\s*([A-Z_][A-Z0-9_]*)\s*=\s*re\.compile\(")
+_RE_MODULE_PATTERN_ASSIGNMENT = re.compile(r"^\s*([A-Z_][A-Z0-9_]*)\s*=")
 _RE_COVERAGE_FUNCTION = re.compile(r"^\s*def\s+\w*coverage\w*\(")
 _RE_REGEX_COVERAGE_SENSOR_FIELD = re.compile(
     r"\b(regex_recognition_coverage|coverage_status|ignored_spans)\b"
@@ -68,10 +68,10 @@ _RE_REGEX_COVERAGE_SENSOR_FIELD = re.compile(
 
 
 def _recognizer_name_for_line(lines: list[str], line_no: int) -> str:
-    """Return the module-level compiled regex name owning a pattern line."""
-    start = max(0, line_no - 8)
+    """Return the module-level regex recognizer/table name owning a pattern line."""
+    start = max(0, line_no - 40)
     for idx in range(line_no - 1, start - 1, -1):
-        match = _RE_COMPILED_RE_ASSIGNMENT.search(lines[idx])
+        match = _RE_MODULE_PATTERN_ASSIGNMENT.search(lines[idx])
         if match:
             return match.group(1)
     return ""

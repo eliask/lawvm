@@ -7,6 +7,10 @@ resolution from surface nodes.
 from __future__ import annotations
 
 from lawvm.core.semantic_types import FacetKind, StructuralAction
+from lawvm.finland.johtolause.clause_patterns import (
+    parse_named_table_row_mixed_clauses_with_coverage,
+    parse_named_table_row_single_clauses_with_coverage,
+)
 from lawvm.finland.johtolause.clause_surface import (
     parse_item_shift_after_repeal_clauses,
     parse_item_shift_clauses,
@@ -524,6 +528,93 @@ class TestNamedRowClauseParsing:
         assert got[0].action == StructuralAction.REPLACE
         assert got[0].named_targets == ("iisalmen",)
         assert got[0].target_section == "1"
+
+    def test_named_row_mixed_clause_coverage_records_bounded_row_slots(self) -> None:
+        result = parse_named_table_row_mixed_clauses_with_coverage(
+            "kumotaan käräjäoikeuksien kanslioiden ja istuntopaikkojen sijainnista "
+            "annetun päätöksen 1 §:n Iitin ja Juvan käräjäoikeuksia koskevat kohdat "
+            "sekä muutetaan Kouvolan ja Mikkelin käräjäoikeuksia koskevat kohdat seuraavasti:",
+            source_artifact_id="1993/1",
+        )
+
+        assert len(result.clauses) == 1
+        coverage = result.regex_recognition_coverage[0].to_dict()
+        assert coverage["recognizer_id"] == "fi_named_table_row_mixed_kohdat"
+        assert coverage["coverage_status"] == "fully_classified"
+        assert coverage["semantic_slots"] == {
+            "action": "REPEAL_AND_REPLACE",
+            "target_unit_kind": "named_table_row",
+            "target_section": "1",
+            "pattern_kind": "kohdat",
+            "repeal_rows": ["iitin", "juvan"],
+            "replace_rows": ["kouvolan", "mikkelin"],
+            "repeal_row_clause": "iitin ja juvan",
+            "replace_row_clause": "kouvolan ja mikkelin",
+        }
+        assert coverage["ignored_spans"] == []
+        assert coverage["required_proofs"] == []
+
+    def test_named_row_single_clause_coverage_records_source_context_gap(self) -> None:
+        result = parse_named_table_row_single_clauses_with_coverage(
+            "muutetaan päätöksen 1 §:n Iisalmen käräjäoikeutta koskevan kohdan seuraavasti:"
+        )
+
+        assert len(result.clauses) == 1
+        coverage = result.regex_recognition_coverage[0].to_dict()
+        assert coverage["recognizer_id"] == "fi_named_table_row_single_replace"
+        assert coverage["coverage_status"] == "fully_classified"
+        assert coverage["semantic_slots"] == {
+            "action": "REPLACE",
+            "target_unit_kind": "named_table_row",
+            "target_section": "1",
+            "rows": ["iisalmen"],
+            "row_clause": "iisalmen",
+        }
+        assert coverage["ignored_spans"] == [
+            {
+                "span": [0, 20],
+                "classification": "source_context_and_action",
+                "text_preview": "muutetaan päätöksen ",
+                "could_alter_meaning": False,
+            }
+        ]
+        assert coverage["required_proofs"] == []
+
+    def test_named_row_single_clause_coverage_surfaces_unclassified_source_context(self) -> None:
+        result = parse_named_table_row_single_clauses_with_coverage(
+            "muutetaan kuitenkin päätöksen 1 §:n Iisalmen käräjäoikeutta koskevan kohdan seuraavasti:"
+        )
+
+        assert len(result.clauses) == 1
+        coverage = result.regex_recognition_coverage[0].to_dict()
+        assert coverage["recognizer_id"] == "fi_named_table_row_single_replace"
+        assert coverage["coverage_status"] == "unclassified_gap"
+        assert coverage["semantic_slots"]["rows"] == ["iisalmen"]
+        assert coverage["ignored_spans"] == [
+            {
+                "span": [0, 30],
+                "classification": "unclassified",
+                "text_preview": "muutetaan kuitenkin päätöksen ",
+                "could_alter_meaning": True,
+            }
+        ]
+        assert coverage["required_proofs"] == ["regex_skipped_span_classification"]
+
+    def test_named_row_osalta_clause_coverage_records_two_row_slots(self) -> None:
+        result = parse_named_table_row_mixed_clauses_with_coverage(
+            "kumota käräjäoikeuksien kanslioiden ja istuntopaikkojen sijainnista "
+            "annetun päätöksen 1 §:n Pirkanmaan käräjäoikeuden osalta ja muuttaa "
+            "1 §:n Tampereen käräjäoikeuden osalta seuraavasti:"
+        )
+
+        assert len(result.clauses) == 1
+        coverage = result.regex_recognition_coverage[0].to_dict()
+        assert coverage["recognizer_id"] == "fi_named_table_row_mixed_osalta"
+        assert coverage["coverage_status"] == "fully_classified"
+        assert coverage["semantic_slots"]["repeal_rows"] == ["pirkanmaan"]
+        assert coverage["semantic_slots"]["replace_rows"] == ["tampereen"]
+        assert coverage["ignored_spans"] == []
+        assert coverage["required_proofs"] == []
 
 
 class TestLowerToAst:

@@ -4,6 +4,12 @@ import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
+from lawvm.core.regex_recognition_coverage import (
+    REGEX_RECOGNITION_FULLY_CLASSIFIED,
+    REGEX_RECOGNITION_UNCLASSIFIED_GAP,
+    RegexRecognitionCoverage,
+    regex_source_text_hash,
+)
 from lawvm.finland.helpers import _norm_row_anchor_text
 
 
@@ -35,6 +41,18 @@ class NamedTableRowSingleClause:
     action: str
     rows: NamedTargetList
     raw_text: str
+
+
+@dataclass(frozen=True)
+class NamedTableRowMixedClauseParseResult:
+    clauses: Tuple[NamedTableRowMixedClause, ...] = ()
+    regex_recognition_coverage: Tuple[RegexRecognitionCoverage, ...] = ()
+
+
+@dataclass(frozen=True)
+class NamedTableRowSingleClauseParseResult:
+    clauses: Tuple[NamedTableRowSingleClause, ...] = ()
+    regex_recognition_coverage: Tuple[RegexRecognitionCoverage, ...] = ()
 
 
 # Compiled at module scope per §1.11.  Bounded lazy quantifiers replace
@@ -140,12 +158,113 @@ def _parse_named_target_list(text: str) -> NamedTargetList:
     return NamedTargetList(targets=tuple(targets), modifiers=tuple(modifiers), raw_text=cleaned)
 
 
+def _coverage_id(
+    recognizer_id: str,
+    source_hash: str,
+    start: int,
+    end: int,
+) -> str:
+    digest = re.sub(r"[^0-9a-f]", "", source_hash.lower())[:16]
+    return f"{recognizer_id}:{digest}:{start}:{end}"
+
+
+def _classify_named_row_ignored_span(text: str) -> str:
+    cleaned = _clean_clause_text(text).strip(" ,;:.-–—―")
+    if not cleaned:
+        return "empty"
+    lowered = cleaned.lower()
+    if re.search(r"\b(kuitenkin|siltä\s+osin|lukuun\s+ottamatta|paitsi|edellyttäen)\b", lowered):
+        return "unclassified"
+    if re.fullmatch(r"(?:sekä|ja)\s+muut[a-zäöå]*", lowered):
+        return "drafting_connector_and_action"
+    if re.fullmatch(r"(?:muut[a-zäöå]*|kumot[a-zäöå]*)\b.*", lowered):
+        return "source_context_and_action"
+    if re.fullmatch(r"käräjäoikeuksien\b.*\bpäätöksen", lowered):
+        return "source_context"
+    if lowered in {"sekä", "ja"}:
+        return "drafting_connector"
+    return "unclassified"
+
+
+def _named_row_ignored_span_row(
+    source_text: str,
+    *,
+    start: int,
+    end: int,
+) -> list[dict[str, object]]:
+    if end <= start:
+        return []
+    text = source_text[start:end]
+    classification = _classify_named_row_ignored_span(text)
+    if classification == "empty":
+        return []
+    return [
+        {
+            "span": [start, end],
+            "classification": classification,
+            "text_preview": source_text[start:end][:160],
+            "could_alter_meaning": classification == "unclassified",
+        }
+    ]
+
+
+def _named_row_coverage_row(
+    *,
+    recognizer_id: str,
+    source_text: str,
+    source_hash: str,
+    source_artifact_id: str,
+    match: re.Match[str],
+    semantic_slots: dict[str, object],
+    ignored_spans: list[dict[str, object]],
+) -> RegexRecognitionCoverage:
+    unclassified_count = sum(
+        1 for row in ignored_spans if row.get("classification") == "unclassified"
+    )
+    return RegexRecognitionCoverage(
+        coverage_id=_coverage_id(recognizer_id, source_hash, match.start(), match.end()),
+        jurisdiction="fi",
+        recognizer_id=recognizer_id,
+        owner_phase="surface_syntax_frontend",
+        source_artifact_id=source_artifact_id,
+        source_text_hash=source_hash,
+        matched_span=(match.start(), match.end()),
+        coverage_status=(
+            REGEX_RECOGNITION_UNCLASSIFIED_GAP
+            if unclassified_count
+            else REGEX_RECOGNITION_FULLY_CLASSIFIED
+        ),
+        semantic_slots=semantic_slots,
+        ignored_spans=tuple(ignored_spans),
+        required_proofs=(
+            ("regex_skipped_span_classification",)
+            if unclassified_count
+            else ()
+        ),
+        detail={
+            "matched_text_preview": source_text[match.start():match.end()][:240],
+            "unclassified_ignored_span_count": unclassified_count,
+            "rule_note": "bounded regex named-row coverage only; not replay authority",
+        },
+    )
+
+
 def parse_named_table_row_mixed_clauses(johto: str) -> List[NamedTableRowMixedClause]:
+    return list(parse_named_table_row_mixed_clauses_with_coverage(johto).clauses)
+
+
+def parse_named_table_row_mixed_clauses_with_coverage(
+    johto: str,
+    *,
+    source_artifact_id: str = "",
+) -> NamedTableRowMixedClauseParseResult:
     text = _clean_clause_text(johto).lower()
     if "käräjäoikeu" not in text or "muut" not in text:
-        return []
+        return NamedTableRowMixedClauseParseResult()
 
     clauses: List[NamedTableRowMixedClause] = []
+    coverage_rows: list[RegexRecognitionCoverage] = []
+    source_hash = regex_source_text_hash(text)
     for pattern_kind, pattern in _MIXED_ROW_PATTERNS:
         for match in pattern.finditer(text):
             sec, repeal_clause, replace_clause = match.groups()
@@ -154,22 +273,59 @@ def parse_named_table_row_mixed_clauses(johto: str) -> List[NamedTableRowMixedCl
             replace_rows = _parse_named_target_list(replace_clause)
             if not repeal_rows.targets or not replace_rows.targets:
                 continue
+            raw_text = match.group(0)
             clauses.append(
                 NamedTableRowMixedClause(
                     section=section,
                     repeal_rows=repeal_rows,
                     replace_rows=replace_rows,
                     pattern_kind=pattern_kind,
-                    raw_text=match.group(0),
+                    raw_text=raw_text,
                 )
             )
-    return clauses
+            ignored_spans = _named_row_ignored_span_row(
+                text,
+                start=match.start(),
+                end=match.start(1),
+            )
+            coverage_rows.append(
+                _named_row_coverage_row(
+                    recognizer_id=f"fi_named_table_row_mixed_{pattern_kind}",
+                    source_text=text,
+                    source_hash=source_hash,
+                    source_artifact_id=source_artifact_id,
+                    match=match,
+                    semantic_slots={
+                        "action": "REPEAL_AND_REPLACE",
+                        "target_unit_kind": "named_table_row",
+                        "target_section": section,
+                        "pattern_kind": pattern_kind,
+                        "repeal_rows": repeal_rows.targets,
+                        "replace_rows": replace_rows.targets,
+                        "repeal_row_clause": repeal_rows.raw_text,
+                        "replace_row_clause": replace_rows.raw_text,
+                    },
+                    ignored_spans=ignored_spans,
+                )
+            )
+    return NamedTableRowMixedClauseParseResult(
+        clauses=tuple(clauses),
+        regex_recognition_coverage=tuple(coverage_rows),
+    )
 
 
 def parse_named_table_row_single_clauses(johto: str) -> List[NamedTableRowSingleClause]:
+    return list(parse_named_table_row_single_clauses_with_coverage(johto).clauses)
+
+
+def parse_named_table_row_single_clauses_with_coverage(
+    johto: str,
+    *,
+    source_artifact_id: str = "",
+) -> NamedTableRowSingleClauseParseResult:
     text = _clean_clause_text(johto).lower()
     if "käräjäoikeu" not in text:
-        return []
+        return NamedTableRowSingleClauseParseResult()
 
     patterns = [
         ("replace", _SINGLE_ROW_REPLACE_RE),
@@ -177,6 +333,8 @@ def parse_named_table_row_single_clauses(johto: str) -> List[NamedTableRowSingle
     ]
 
     clauses: List[NamedTableRowSingleClause] = []
+    coverage_rows: list[RegexRecognitionCoverage] = []
+    source_hash = regex_source_text_hash(text)
     for action, pattern in patterns:
         for match in pattern.finditer(text):
             raw_text = match.group(0)
@@ -194,4 +352,29 @@ def parse_named_table_row_single_clauses(johto: str) -> List[NamedTableRowSingle
                     raw_text=raw_text,
                 )
             )
-    return clauses
+            ignored_spans = _named_row_ignored_span_row(
+                text,
+                start=match.start(),
+                end=match.start(1),
+            )
+            coverage_rows.append(
+                _named_row_coverage_row(
+                    recognizer_id=f"fi_named_table_row_single_{action}",
+                    source_text=text,
+                    source_hash=source_hash,
+                    source_artifact_id=source_artifact_id,
+                    match=match,
+                    semantic_slots={
+                        "action": action.upper(),
+                        "target_unit_kind": "named_table_row",
+                        "target_section": re.sub(r"\s+", "", sec),
+                        "rows": rows.targets,
+                        "row_clause": rows.raw_text,
+                    },
+                    ignored_spans=ignored_spans,
+                )
+            )
+    return NamedTableRowSingleClauseParseResult(
+        clauses=tuple(clauses),
+        regex_recognition_coverage=tuple(coverage_rows),
+    )
