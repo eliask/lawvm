@@ -43,6 +43,11 @@ def test_load_strict_run_reads_source_pathology_codes(tmp_path, monkeypatch) -> 
     assert rows[0]["source_pathology_rows"] == []
     assert rows[0]["html_noncommensurable_reason"] == ("oracle_extra_scoped_labels:chapter:15/section:1")
     assert rows[0]["ownership_closure_failed_gates"] == []
+    assert rows[0]["proof_gate_open_signal_count"] == 0
+    assert rows[0]["proof_gate_manual_frontier_count"] == 0
+    assert rows[0]["proof_gate_coverage_frontier_count"] == 0
+    assert rows[0]["proof_gate_required_claim_kind_counts"] == {}
+    assert rows[0]["proof_gate_frontier_status_counts"] == {}
     assert rows[0]["candidate_set_statuses"] == []
     assert rows[0]["candidate_set_blockers"] == []
     assert rows[0]["source_completeness_issue_kinds"] == []
@@ -143,6 +148,17 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                 "ownership_closure_failed_gates": [
                     "candidate_set_fi_strict_report_operation_cue_coverage_partial"
                 ],
+                "proof_gate_open_signal_count": 18,
+                "proof_gate_manual_frontier_count": 1,
+                "proof_gate_coverage_frontier_count": 4,
+                "proof_gate_required_claim_kind_counts": {
+                    "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
+                    "source_unit_enumeration_certificate": 2,
+                },
+                "proof_gate_frontier_status_counts": {
+                    "failed_operation_frontier": 1,
+                    "partial_candidate_set_frontier": 4,
+                },
                 "candidate_set_statuses": [
                     "fi_strict_report_operation_cue_coverage:partial"
                 ],
@@ -170,6 +186,10 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert "source_completeness_issue_reasons" in text
     assert "html_noncommensurable_reason" in text
     assert "ownership_closure_failed_gates" in text
+    assert "proof_gate_open_signal_count" in text
+    assert "proof_gate_required_claim_kind_counts" in text
+    assert "fi.v1.FAILED_OPERATION_RESOLUTION" in text
+    assert "partial_candidate_set_frontier" in text
     assert "candidate_set_statuses" in text
     assert "candidate_set_blockers" in text
     assert "DESTRUCTIVE_SHAPE_LOSS_RISK" in text
@@ -183,6 +203,20 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert '""target_unit_kind"": ""section""' in text
     assert '""target_label"": ""6 \\u00a7""' in text
     assert "oracle_extra_scoped_labels:chapter:15/section:1" in text
+
+    loaded = strict_report._load_strict_run("demo")
+    assert loaded is not None
+    assert loaded[0]["proof_gate_open_signal_count"] == 18
+    assert loaded[0]["proof_gate_manual_frontier_count"] == 1
+    assert loaded[0]["proof_gate_coverage_frontier_count"] == 4
+    assert loaded[0]["proof_gate_required_claim_kind_counts"] == {
+        "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
+        "source_unit_enumeration_certificate": 2,
+    }
+    assert loaded[0]["proof_gate_frontier_status_counts"] == {
+        "failed_operation_frontier": 1,
+        "partial_candidate_set_frontier": 4,
+    }
 
 
 def test_load_strict_run_reads_source_pathology_rows_json(tmp_path, monkeypatch) -> None:
@@ -261,6 +295,17 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                 "ownership_closure_failed_gates": [
                     "candidate_set_fi_strict_report_operation_cue_coverage_partial"
                 ],
+                "proof_gate_open_signal_count": 18,
+                "proof_gate_manual_frontier_count": 1,
+                "proof_gate_coverage_frontier_count": 4,
+                "proof_gate_required_claim_kind_counts": {
+                    "fi.v1.FAILED_OPERATION_RESOLUTION": 1,
+                    "source_unit_enumeration_certificate": 2,
+                },
+                "proof_gate_frontier_status_counts": {
+                    "failed_operation_frontier": 1,
+                    "partial_candidate_set_frontier": 4,
+                },
                 "candidate_set_statuses": [
                     "fi_strict_report_operation_cue_coverage:partial"
                 ],
@@ -294,6 +339,13 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
     assert "2005/544" in out
     assert "Ownership closure failed gates" in out
     assert "candidate_set_fi_strict_report_operation_cue_coverage_partial" in out
+    assert "Proof-gate summary" in out
+    assert "open gate signals      : 18" in out
+    assert "manual frontiers       : 1" in out
+    assert "coverage frontiers     : 4" in out
+    assert "fi.v1.FAILED_OPERATION_RESOLUTION" in out
+    assert "partial_candidate_set_frontier" in out
+    assert "1.00 signals/statute" in out
     assert "Candidate-set statuses" in out
     assert "fi_strict_report_operation_cue_coverage:partial" in out
     assert "Candidate-set blockers" in out
