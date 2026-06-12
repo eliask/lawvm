@@ -125,6 +125,7 @@ _EMBEDDED_DOTTED_NUM_RE = re.compile(r"^\s*([0-9]+[a-zA-Z]?)\.\s+(.+)$")
 _EMBEDDED_PLAIN_NUM_RE = re.compile(r"^\s*([0-9]+[a-zA-Z]?)\s+(.+)$")
 _EMBEDDED_SECTION_MARK_RE = re.compile(r"^\s*(\d+[a-zA-Z]?)\s*§\.?\s*$")
 _FLAT_DIGIT_ITEM_RE = re.compile(r"^(\d+[a-z]?)\)\s")
+_DIGIT_ITEM_NUM_TOKEN_RE = re.compile(r"^(\d+[a-z]?)\)")
 _FLAT_DOT_ITEM_RE = re.compile(r"^(\d+[a-z]?)\.\s+(.+)$")
 _FLAT_DASH_ITEM_RE = re.compile(r"^[–—\-]\s")
 
@@ -709,7 +710,83 @@ def _apply_nest_repeated_digit_subparagraphs(children: List[IRNode]) -> List[IRN
 
 
 def _apply_fi_renest_flat_digit_item_subsections(children: List[IRNode]) -> List[IRNode]:
-    """Re-nest flat digit-item subsections as paragraph children of an intro subsection."""
+    """Re-nest flat digit-item subsections as paragraph children of an intro subsection.
+
+    Besides the simple source shape ``intro moment`` + ``1)``/``2)`` sibling
+    moments, some Finlex source sections encode the first items correctly under
+    the intro moment and then serialize later items as sibling moments.  That
+    second shape is only repaired when the sibling item labels continue the
+    existing numeric item series exactly; otherwise the sibling remains a
+    separate moment and target resolution must fail visibly.
+    """
+
+    def _digit_label_from_paragraph(para: IRNode) -> str | None:
+        for child in para.children:
+            if child.kind == IRNodeKind.NUM and child.text:
+                match = _DIGIT_ITEM_NUM_TOKEN_RE.match(child.text.strip())
+                if match is not None:
+                    label = match.group(1)
+                    if label.isdigit():
+                        return label
+        if para.label:
+            norm = _norm_num_token(para.label)
+            if norm.isdigit():
+                return norm
+        text = irnode_to_text(para).strip()
+        match = _FLAT_DIGIT_ITEM_RE.match(text)
+        if match is not None:
+            label = match.group(1)
+            if label.isdigit():
+                return label
+        return None
+
+    def _paragraph_from_standalone_digit_item(sib: IRNode, *, allow_structured: bool) -> IRNode | None:
+        if not _subsection_has_structured_children(sib):
+            sib_text = _subsection_leaf_text(sib)
+            if not sib_text:
+                return None
+            match = _FLAT_DIGIT_ITEM_RE.match(sib_text)
+            if match is None:
+                return None
+            label = match.group(1)
+            remainder = sib_text[match.end():].strip()
+            return IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label=label,
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text=f"{label})"),
+                    IRNode(kind=IRNodeKind.CONTENT, text=remainder),
+                ),
+            )
+
+        if not allow_structured:
+            return None
+        semantic_children = [child for child in sib.children if child.kind != IRNodeKind.NUM]
+        if len(semantic_children) != 1 or semantic_children[0].kind != IRNodeKind.PARAGRAPH:
+            return None
+        para = semantic_children[0]
+        label = _digit_label_from_paragraph(para)
+        if label is None:
+            return None
+        if para.label == label:
+            return para
+        return IRNode(
+            kind=para.kind,
+            label=label,
+            text=para.text,
+            attrs=para.attrs,
+            children=para.children,
+        )
+
+    def _numeric_paragraph_labels(sub: IRNode) -> List[int]:
+        labels: List[int] = []
+        for para in (child for child in sub.children if child.kind == IRNodeKind.PARAGRAPH):
+            label = _digit_label_from_paragraph(para)
+            if label is None:
+                return []
+            labels.append(int(label))
+        return labels
+
     rewritten: List[IRNode] = []
     i = 0
     while i < len(children):
@@ -723,48 +800,42 @@ def _apply_fi_renest_flat_digit_item_subsections(children: List[IRNode]) -> List
             rewritten.append(child)
             i += 1
             continue
-        if _subsection_has_structured_children(child):
+        existing_paragraph_labels = _numeric_paragraph_labels(child)
+        child_has_structured_children = _subsection_has_structured_children(child)
+        if child_has_structured_children and not existing_paragraph_labels:
             rewritten.append(child)
             i += 1
             continue
+
         digit_items: List[IRNode] = []
+        expected_next_label = existing_paragraph_labels[-1] + 1 if existing_paragraph_labels else None
         j = i + 1
         while j < len(children):
             sib = children[j]
             if sib.kind != IRNodeKind.SUBSECTION:
                 break
-            if _subsection_has_structured_children(sib):
+            item_para = _paragraph_from_standalone_digit_item(
+                sib,
+                allow_structured=bool(existing_paragraph_labels),
+            )
+            if item_para is None:
                 break
-            sib_text = _subsection_leaf_text(sib)
-            if not sib_text:
+            item_label = _digit_label_from_paragraph(item_para)
+            if item_label is None:
                 break
-            m = _FLAT_DIGIT_ITEM_RE.match(sib_text)
-            if m is None:
+            if expected_next_label is not None and int(item_label) != expected_next_label:
                 break
-            digit_items.append(sib)
+            digit_items.append(item_para)
+            expected_next_label = int(item_label) + 1
             j += 1
         if not digit_items:
             rewritten.append(child)
             i += 1
             continue
-        new_children: List[IRNode] = []
-        new_children.append(IRNode(kind=IRNodeKind.INTRO, text=intro_text.strip()))
-        for item_sub in digit_items:
-            item_text = _subsection_leaf_text(item_sub) or ""
-            m = _FLAT_DIGIT_ITEM_RE.match(item_text)
-            assert m is not None
-            label = m.group(1)
-            remainder = item_text[m.end():].strip()
-            new_children.append(
-                IRNode(
-                    kind=IRNodeKind.PARAGRAPH,
-                    label=label,
-                    children=(
-                        IRNode(kind=IRNodeKind.NUM, text=f"{label})"),
-                        IRNode(kind=IRNodeKind.CONTENT, text=remainder),
-                    ),
-                )
-            )
+        if child_has_structured_children:
+            new_children = list(child.children) + digit_items
+        else:
+            new_children = [IRNode(kind=IRNodeKind.INTRO, text=intro_text.strip()), *digit_items]
         rewritten.append(
             IRNode(
                 kind=IRNodeKind.SUBSECTION,

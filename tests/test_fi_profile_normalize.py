@@ -314,6 +314,47 @@ def test_fi_renest_flat_digit_item_subsections_fires():
     assert paras[1].label == "2"
 
 
+def test_fi_renest_flat_digit_item_subsections_extends_existing_item_series():
+    """Rule absorbs malformed sibling moments only when they continue existing items."""
+    intro_sub = _subsection(
+        label="2",
+        children=(
+            _intro("Hallintojohtaja ratkaisee asiat, jotka koskevat:"),
+            _para(label="1", children=(_num("1)"), _content("ensimmäistä asiaa;"))),
+            _para(label="2", children=(_num("2)"), _content("toista asiaa;"))),
+        ),
+    )
+    item3_sub = _subsection(children=(_content("3) kolmatta asiaa;"),))
+    item4_sub = _subsection(children=(_para(label="1", children=(_num("4)"), _content("neljättä asiaa."))),))
+
+    result = _apply_fi_renest_flat_digit_item_subsections([intro_sub, item3_sub, item4_sub])
+
+    assert len(result) == 1
+    merged = result[0]
+    paras = [c for c in merged.children if c.kind == IRNodeKind.PARAGRAPH]
+    assert [p.label for p in paras] == ["1", "2", "3", "4"]
+    irnode_texts = [c.text for p in paras for c in p.children if c.kind == IRNodeKind.CONTENT]
+    assert irnode_texts
+    assert "neljättä asiaa." in irnode_texts
+
+
+def test_fi_renest_flat_digit_item_subsections_does_not_absorb_label_gap():
+    """A non-continuing sibling may be a real moment, so leave it visible."""
+    intro_sub = _subsection(
+        label="2",
+        children=(
+            _intro("Hallintojohtaja ratkaisee asiat, jotka koskevat:"),
+            _para(label="1", children=(_num("1)"), _content("ensimmäistä asiaa;"))),
+            _para(label="2", children=(_num("2)"), _content("toista asiaa;"))),
+        ),
+    )
+    item4_sub = _subsection(children=(_content("4) neljättä asiaa."),))
+
+    result = _apply_fi_renest_flat_digit_item_subsections([intro_sub, item4_sub])
+
+    assert result == [intro_sub, item4_sub]
+
+
 def test_fi_renest_flat_digit_item_subsections_no_change_on_no_intro():
     """Rule does not fire when intro subsection text does not end with ':'."""
     sub1 = _subsection(label="1", children=(_content("Intro without colon"),))

@@ -2440,6 +2440,22 @@ def test_normalize_and_compile_ops_2018_1330_keeps_late_grouped_insert_targets()
     assert ("20", "14", 3, None) in grouped_inserts
 
 
+def test_replay_2005_966_renests_flat_digit_item_continuation_before_2020_828() -> None:
+    """2011/1271 serializes 9:52(2) items 8-9 as malformed sibling moments."""
+    before = replay_xml("2005/966", stop_before="2020/828", mode="official_consolidation", quiet=True)
+    sections = extract_ir_sections(before.materialized_state.ir)
+    section_52 = sections["chapter:9/section:52"]
+    subsection_2 = next(
+        child
+        for child in section_52.children
+        if child.kind == IRNodeKind.SUBSECTION and child.label == "2"
+    )
+
+    labels = [child.label for child in subsection_2.children if child.kind == IRNodeKind.PARAGRAPH]
+
+    assert labels == [str(i) for i in range(1, 10)]
+
+
 def test_replay_2009_1599_keeps_section_31_heading_despite_2023_280_sparse_payload() -> None:
     replay = pinned_replay("2009/1599", mode="official_consolidation", quiet=True)
     sec31 = replay.state.find_section("31", "6")

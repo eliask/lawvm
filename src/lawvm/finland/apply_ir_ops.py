@@ -24,7 +24,7 @@ from lawvm.finland.source_pathology import build_destructive_shape_loss_risk_pat
 
 
 _STANDALONE_SUBSECTION_ITEM_PREFIX_RE = re.compile(
-    r"^\s*\d+[a-z]?\s*[\).]\s+(.*)$",
+    r"^\s{0,40}\d+[a-z]?\s{0,20}[\).]\s{1,80}([\s\S]{0,20000})$",
     flags=re.I | re.DOTALL,
 )
 
