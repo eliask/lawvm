@@ -96,7 +96,6 @@ from lawvm.finland.replay_notices import (
     set_replay_verbose as _set_replay_verbose,
 )
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
-from lawvm.finland.source_pathology import build_empty_operative_body_pathology
 from lawvm.core.payload_surface import (
     GroupSurface,
     PayloadSurface,
@@ -207,7 +206,6 @@ from lawvm.finland.grafter_uncovered import (
 )
 
 from lawvm.finland.citation_routing import (
-    OP_KEYWORDS,
     _johtolause_references_parent,
     route_amendment,
 )
@@ -637,6 +635,7 @@ from lawvm.finland.amendment_chapter_precreate import (
 from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
 from lawvm.finland.process_findings import ProcessFindingRecorder
 from lawvm.finland.process_frontend_normalization import ProcessFrontendNormalizationContext
+from lawvm.finland.process_precompile_selection import ProcessPrecompileSelectionContext
 from lawvm.finland.process_result_builder import ProcessResultBuilder
 from lawvm.finland.process_route_rejection import ProcessRouteRejectionContext
 from lawvm.finland.process_compile_signals import ProcessCompileSignalsContext
@@ -4925,63 +4924,32 @@ def process_muutoslaki(
         else:
             _skip_to_compile = False
 
-        if not _skip_to_compile:
-            # Skip voimaantuloasetukset and other non-amendment statutes.
-            # Fallback: some amendments encode the op in section 1's body.
-            if acquisition.decision.post_routing_sec1_applied and sec1_text:
-                _finding_recorder.record_sec1_fallback(
-                    amendment_id=amendment_id,
-                    stage="post_routing",
-                    previous_johto=acquisition.decision.citation_guard_johto,
-                    sec1_fallback_text=sec1_text,
-                    applied=True,
-                )
-
-            _vts_ops = extract_vts_repeals_fallback(
-                johto,
-                xml_bytes,
-                parent_id,
-                ctx.title,
-                strict_profile,
-                skipped_targets_out=_vts_skipped_targets,
-            )
-            if _vts_ops:
-                ops = _enrich_ops_from_amendment_tree(
-                    _vts_ops,
-                    amendment_id,
-                    muutos_tree,
-                    johto=johto,
-                )
-                _replay_print(f"  [{amendment_id}] voimaantulo_repeal: {[op.description() for op in ops]}")
-                _vts_ops_enrich_done = True
-            elif not any(kw in johto.lower() for kw in OP_KEYWORDS):
-                # Special case: enacting-formula-only amendments with body sections
-                # lacking eId attributes may still have new letter-suffix sections to
-                # INSERT.  Let normalize_and_compile_ops handle them via the
-                # _extract_enacting_formula_body_insert_ops_fallback path.
-                _is_enacting_formula = (
-                    re.sub(r"\s+", " ", johto).strip().lower()
-                    == "eduskunnan päätöksen mukaisesti"
-                )
-                _has_eid_free_body_sections = bool(
-                    muutos_tree.findall(".//{*}section[@eId]") or
-                    muutos_tree.findall(".//{*}section")
-                ) and not any(s.get("eId") for s in muutos_tree.findall(".//{*}section"))
-                if not (_is_enacting_formula and _has_eid_free_body_sections):
-                    if lacks_operative_structure and not sec1_text.strip():
-                        _compat_source_pathologies.append(
-                            build_empty_operative_body_pathology(
-                                source_statute=amendment_id,
-                                source_title=source_title,
-                                has_sec1_fallback_text=False,
-                                operative_tags_detected=operative_tags,
-                            )
-                        )
-                    return _build_result(state)
-                # Fall through to normalize_and_compile_ops (enacting formula + eid-free sections)
-                _vts_ops_enrich_done = False
-            else:
-                _vts_ops_enrich_done = False
+        _precompile_selection = ProcessPrecompileSelectionContext(
+            amendment_id=amendment_id,
+            parent_id=parent_id,
+            parent_title=ctx.title,
+            source_title=source_title,
+            johto=johto,
+            xml_bytes=xml_bytes,
+            muutos_tree=muutos_tree,
+            strict_profile=strict_profile,
+            acquisition=acquisition,
+            skip_to_compile=_skip_to_compile,
+            ops=ops,
+            vts_ops_enrich_done=_vts_ops_enrich_done,
+            lacks_operative_structure=lacks_operative_structure,
+            operative_tags=operative_tags,
+            source_pathologies=_compat_source_pathologies,
+            vts_skipped_targets=_vts_skipped_targets,
+            finding_recorder=_finding_recorder,
+            replay_print=_replay_print,
+            extract_vts_repeals=extract_vts_repeals_fallback,
+            enrich_ops_from_amendment_tree=_enrich_ops_from_amendment_tree,
+        ).select()
+        if _precompile_selection.should_return_state:
+            return _build_result(state)
+        ops = list(_precompile_selection.ops)
+        _vts_ops_enrich_done = _precompile_selection.vts_ops_enrich_done
 
         # Phase 2: PEG extractor → LO normalization chain → AmendmentOp conversion
         # (skipped when _vts_ops_enrich_done is True — ops already populated above)
