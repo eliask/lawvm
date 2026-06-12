@@ -847,6 +847,8 @@ _STRICT_RUN_HEADER = [
     "fail_reasons",
     "ownership_closure_status",
     "ownership_closure_failed_gates",
+    "ownership_closure_unowned_counts",
+    "ownership_closure_owned_counts",
     "proof_gate_open_signal_count",
     "proof_gate_manual_frontier_count",
     "proof_gate_coverage_frontier_count",
@@ -1028,6 +1030,12 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "fail_reasons": fail_reasons,
             "ownership_closure_status": str(ownership_closure.get("closure_status") or ""),
             "ownership_closure_failed_gates": list(ownership_closure.get("failed_gates", ()) or ()),
+            "ownership_closure_unowned_counts": dict(
+                ownership_closure.get("unowned_counts") or {}
+            ),
+            "ownership_closure_owned_counts": dict(
+                ownership_closure.get("owned_counts") or {}
+            ),
             "proof_gate_open_signal_count": int(
                 proof_gate_summary.get("open_gate_signal_count") or 0
             ),
@@ -1142,6 +1150,8 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             "fail_reasons": [],
             "ownership_closure_status": "",
             "ownership_closure_failed_gates": [],
+            "ownership_closure_unowned_counts": {},
+            "ownership_closure_owned_counts": {},
             "proof_gate_open_signal_count": 0,
             "proof_gate_manual_frontier_count": 0,
             "proof_gate_coverage_frontier_count": 0,
@@ -1251,6 +1261,16 @@ def _save_strict_run(results: list[dict[str, Any]], label: str, timestamp: str) 
                     "|".join(rec["fail_reasons"]),
                     str(rec.get("ownership_closure_status", "") or ""),
                     "|".join(rec.get("ownership_closure_failed_gates", [])),
+                    json.dumps(
+                        rec.get("ownership_closure_unowned_counts", {}),
+                        ensure_ascii=True,
+                        sort_keys=True,
+                    ),
+                    json.dumps(
+                        rec.get("ownership_closure_owned_counts", {}),
+                        ensure_ascii=True,
+                        sort_keys=True,
+                    ),
                     int(rec.get("proof_gate_open_signal_count") or 0),
                     int(rec.get("proof_gate_manual_frontier_count") or 0),
                     int(rec.get("proof_gate_coverage_frontier_count") or 0),
@@ -1403,6 +1423,12 @@ def _load_strict_run(label: str) -> list[dict[str, Any]] | None:
             row["ownership_closure_failed_gates"] = [
                 r for r in row.get("ownership_closure_failed_gates", "").split("|") if r
             ]
+            row["ownership_closure_unowned_counts"] = _load_json_count_map(
+                row.get("ownership_closure_unowned_counts")
+            )
+            row["ownership_closure_owned_counts"] = _load_json_count_map(
+                row.get("ownership_closure_owned_counts")
+            )
             row["proof_gate_required_claim_kind_counts"] = _load_json_count_map(
                 row.get("proof_gate_required_claim_kind_counts")
             )
@@ -1574,6 +1600,8 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
             contingent_counter[sid] += 1
 
     ownership_gate_counter: Counter[str] = Counter()
+    ownership_unowned_counter: Counter[str] = Counter()
+    ownership_owned_counter: Counter[str] = Counter()
     proof_gate_required_claim_counter: Counter[str] = Counter()
     proof_gate_frontier_status_counter: Counter[str] = Counter()
     proof_gate_manual_claim_counter: Counter[str] = Counter()
@@ -1600,6 +1628,22 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
     for r in valid:
         for gate in r.get("ownership_closure_failed_gates", []):
             ownership_gate_counter[gate] += 1
+        ownership_unowned_counter.update(
+            {
+                str(key): int(value)
+                for key, value in dict(
+                    r.get("ownership_closure_unowned_counts") or {}
+                ).items()
+            }
+        )
+        ownership_owned_counter.update(
+            {
+                str(key): int(value)
+                for key, value in dict(
+                    r.get("ownership_closure_owned_counts") or {}
+                ).items()
+            }
+        )
         total_source_completeness_missing += int(
             r.get("proof_gate_source_completeness_missing_count") or 0
         )
@@ -1859,6 +1903,30 @@ def _show_corpus_summary(results: list[dict[str, Any]], label: str) -> None:
         for gate, cnt in ownership_gate_counter.most_common():
             pct = 100 * cnt / n_valid
             print(f"       {gate:<60s} {cnt:5d}  ({pct:.1f}%)")
+    else:
+        print("       (none)")
+    print()
+
+    print("  5h.1. Ownership closure unowned counts:")
+    if ownership_unowned_counter:
+        for key, cnt in ownership_unowned_counter.most_common():
+            per_statute = cnt / n_valid
+            print(
+                f"       {key:<60s} {cnt:5d}  "
+                f"({per_statute:.2f} signals/statute)"
+            )
+    else:
+        print("       (none)")
+    print()
+
+    print("  5h.2. Ownership closure owned counts:")
+    if ownership_owned_counter:
+        for key, cnt in ownership_owned_counter.most_common():
+            per_statute = cnt / n_valid
+            print(
+                f"       {key:<60s} {cnt:5d}  "
+                f"({per_statute:.2f} rows/statute)"
+            )
     else:
         print("       (none)")
     print()

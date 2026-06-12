@@ -43,6 +43,8 @@ def test_load_strict_run_reads_source_pathology_codes(tmp_path, monkeypatch) -> 
     assert rows[0]["source_pathology_rows"] == []
     assert rows[0]["html_noncommensurable_reason"] == ("oracle_extra_scoped_labels:chapter:15/section:1")
     assert rows[0]["ownership_closure_failed_gates"] == []
+    assert rows[0]["ownership_closure_unowned_counts"] == {}
+    assert rows[0]["ownership_closure_owned_counts"] == {}
     assert rows[0]["proof_gate_open_signal_count"] == 0
     assert rows[0]["proof_gate_manual_frontier_count"] == 0
     assert rows[0]["proof_gate_coverage_frontier_count"] == 0
@@ -168,6 +170,13 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
                 "ownership_closure_failed_gates": [
                     "candidate_set_fi_strict_report_operation_cue_coverage_partial"
                 ],
+                "ownership_closure_unowned_counts": {
+                    "incomplete_candidate_set_certificates": 4,
+                },
+                "ownership_closure_owned_counts": {
+                    "canonical_ops": 4,
+                    "failed_ops_visible": 1,
+                },
                 "proof_gate_open_signal_count": 18,
                 "proof_gate_manual_frontier_count": 1,
                 "proof_gate_coverage_frontier_count": 4,
@@ -248,6 +257,8 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     assert "source_completeness_issue_reasons" in text
     assert "html_noncommensurable_reason" in text
     assert "ownership_closure_failed_gates" in text
+    assert "ownership_closure_unowned_counts" in text
+    assert "ownership_closure_owned_counts" in text
     assert "proof_gate_open_signal_count" in text
     assert "proof_gate_source_completeness_missing_count" in text
     assert "proof_gate_source_unit_unresolved_count" in text
@@ -286,6 +297,13 @@ def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) ->
     loaded = strict_report._load_strict_run("demo")
     assert loaded is not None
     assert loaded[0]["proof_gate_open_signal_count"] == 18
+    assert loaded[0]["ownership_closure_unowned_counts"] == {
+        "incomplete_candidate_set_certificates": 4,
+    }
+    assert loaded[0]["ownership_closure_owned_counts"] == {
+        "canonical_ops": 4,
+        "failed_ops_visible": 1,
+    }
     assert loaded[0]["proof_gate_manual_frontier_count"] == 1
     assert loaded[0]["proof_gate_coverage_frontier_count"] == 4
     assert loaded[0]["proof_gate_other_frontier_count"] == 2
@@ -416,6 +434,13 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
                 "ownership_closure_failed_gates": [
                     "candidate_set_fi_strict_report_operation_cue_coverage_partial"
                 ],
+                "ownership_closure_unowned_counts": {
+                    "incomplete_candidate_set_certificates": 4,
+                },
+                "ownership_closure_owned_counts": {
+                    "canonical_ops": 4,
+                    "failed_ops_visible": 1,
+                },
                 "proof_gate_open_signal_count": 18,
                 "proof_gate_manual_frontier_count": 1,
                 "proof_gate_coverage_frontier_count": 4,
@@ -502,6 +527,11 @@ def test_show_corpus_summary_reports_source_pathology_codes(capsys) -> None:
     assert "2005/544" in out
     assert "Ownership closure failed gates" in out
     assert "candidate_set_fi_strict_report_operation_cue_coverage_partial" in out
+    assert "Ownership closure unowned counts" in out
+    assert "incomplete_candidate_set_certificates" in out
+    assert "Ownership closure owned counts" in out
+    assert "canonical_ops" in out
+    assert "failed_ops_visible" in out
     assert "Proof-gate summary" in out
     assert "open gate signals      : 18" in out
     assert "manual frontiers       : 1" in out
