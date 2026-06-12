@@ -66,6 +66,7 @@ from lawvm.finland.apply_runtime_support import (
     _build_subsection_slot_assignment,
     _expired_temporary_section_merge_base,
     _expired_temporary_section_merge_base_rebase_info,
+    _expired_temporary_subsection_slot_can_be_consumed,
     _legacy_dispatch_shell_for_rop,
     _valid_target_path_hint,
     _valid_target_group_path_hint,
@@ -2496,6 +2497,167 @@ def test_emit_section_snapshot_prefers_complete_source_payload_over_stale_fold()
     rendered = irnode_to_text(section_snapshot.payload)
     assert "source-owned final tail" in rendered
     assert "vuokraindeksi" not in rendered
+
+
+def test_expired_temporary_subsection_slot_can_be_consumed_skips_carried_snapshot() -> None:
+    section_path = (("chapter", "2"), ("section", "11"))
+    subsection_path = section_path + (("subsection", "3"),)
+    expired_text = "old temporary twenty percent text"
+    replay_history = [
+        LegalOperation(
+            op_id="snapshot_subsection_3_from_section_11",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=subsection_path),
+            payload=_sub("3", _content(expired_text)),
+            source=OperationSource(
+                statute_id="2010/1172",
+                enacted="2010-12-29",
+                effective="2011-01-01",
+                expires="2015-01-01",
+                raw_text=f"lisätään 11 §:ään väliaikaisesti uusi 3 momentti {expired_text}",
+            ),
+        ),
+        LegalOperation(
+            op_id="snapshot_subsection_3_from_section_11",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=subsection_path),
+            payload=_sub("3", _content(expired_text)),
+            source=OperationSource(
+                statute_id="2012/1006",
+                enacted="2012-12-28",
+                effective="2013-01-01",
+                raw_text="muutetaan 11 §:n 2 momentin 5 kohta",
+            ),
+        ),
+    ]
+    op = AmendmentOp(
+        op_id="insert_11_3",
+        op_type="INSERT",
+        target_section="11",
+        target_unit_kind="section",
+        target_paragraph=3,
+    )
+    op.lo = LegalOperation(
+        op_id="insert_11_3",
+        sequence=0,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=subsection_path),
+        source=OperationSource(
+            statute_id="2014/940",
+            enacted="2014-11-14",
+            effective="2015-01-01",
+            raw_text="lisätään 11 §:ään uusi 3 momentti new permanent text",
+        ),
+    )
+
+    assert _expired_temporary_subsection_slot_can_be_consumed(
+        op=op,
+        section_path=section_path,
+        subsection_label="3",
+        replay_history_ops=replay_history,
+    )
+
+
+def test_emit_section_snapshot_drops_shifted_expired_temporary_subsection() -> None:
+    section_path = (("chapter", "2"), ("section", "11"))
+    old_temp = _sub("3", _content("old temporary twenty percent text"))
+    new_permanent = _sub("3", _content("new permanent disregard text"))
+    state_section = _sec(
+        "11",
+        _sub("1", _content("sub 1")),
+        _sub("2", _content("sub 2")),
+        new_permanent,
+        IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="4",
+            attrs={"lawvm_in_place_merge": "1"},
+            children=old_temp.children,
+        ),
+    )
+    state = _make_state(_body(IRNode(kind=IRNodeKind.CHAPTER, label="2", children=(state_section,))))
+    lo_ops: list[LegalOperation] = [
+        LegalOperation(
+            op_id="snapshot_subsection_3_from_section_11",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=section_path + (("subsection", "3"),)),
+            payload=old_temp,
+            source=OperationSource(
+                statute_id="2010/1172",
+                enacted="2010-12-29",
+                effective="2011-01-01",
+                expires="2015-01-01",
+                raw_text="lisätään väliaikaisesti uusi 3 momentti old temporary twenty percent text",
+            ),
+        ),
+        LegalOperation(
+            op_id="snapshot_subsection_3_from_section_11",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=section_path + (("subsection", "3"),)),
+            payload=old_temp,
+            source=OperationSource(
+                statute_id="2012/1006",
+                enacted="2012-12-28",
+                effective="2013-01-01",
+                raw_text="muutetaan 11 §:n 2 momentin 5 kohta",
+            ),
+        ),
+    ]
+    rop = ResolvedOp.from_amendment_op(
+        AmendmentOp(
+            op_id="insert_11_3",
+            op_type="INSERT",
+            target_section="11",
+            target_unit_kind="section",
+            target_chapter="2",
+            target_paragraph=3,
+            source_statute="2014/940",
+            source_issue_date=_DATE,
+        ),
+        muutos_ir=state_section,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="11",
+        target_chapter="2",
+        target_address=LegalAddress(path=section_path + (("subsection", "3"),)),
+        op_source=OperationSource(
+            statute_id="2014/940",
+            enacted="2014-11-14",
+            effective="2015-01-01",
+            raw_text="lisätään 11 §:ään uusi 3 momentti new permanent disregard text",
+        ),
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="11",
+        target_chapter="2",
+        target_part=None,
+        group_rops=[rop],
+        lo_ops_out=lo_ops,
+        amendment_id="2014/940",
+        source_title="Insert",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=state.ir,
+    )
+
+    section_snapshot = next(
+        op for op in lo_ops if op.op_id == "snapshot_section_11" and op.source is not None and op.source.statute_id == "2014/940"
+    )
+    assert section_snapshot.payload is not None
+    assert [child.label for child in section_snapshot.payload.children if child.kind is IRNodeKind.SUBSECTION] == [
+        "1",
+        "2",
+        "3",
+    ]
+    rendered = irnode_to_text(section_snapshot.payload)
+    assert "new permanent disregard text" in rendered
+    assert "old temporary twenty percent text" not in rendered
 
 
 def test_emit_section_snapshot_uses_insert_for_scoped_commencement_on_replay_owned_address() -> None:
