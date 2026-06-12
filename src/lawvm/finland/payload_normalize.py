@@ -40,6 +40,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import normalized_label_key
 from lawvm.finland.helpers import _norm_num_token, _norm_row_anchor_text
+from lawvm.finland.labels import leaf_label_identity_key
 from lawvm.finland.source_pathology import build_container_membership_mismatch_pathology
 from lawvm.finland.source_pathology import build_destructive_shape_loss_risk_pathology
 from lawvm.finland.source_pathology import build_sparse_item_body_missing_pathology
@@ -743,20 +744,21 @@ def _obs(kind: str, stage: str, **detail: Any) -> ElaborationObservation:
 
 
 def _slot_ir_has_item(node: IRNode, target: str) -> bool:
+    target_key = leaf_label_identity_key(target)
     for child in node.children:
-        if child.kind is IRNodeKind.PARAGRAPH and child.label and _norm_num_token(child.label) == target:
+        if child.kind is IRNodeKind.PARAGRAPH and child.label and leaf_label_identity_key(child.label) == target_key:
             return True
         if child.kind is IRNodeKind.PARAGRAPH:
             for grandchild in child.children:
                 if (
                     grandchild.kind is IRNodeKind.SUBPARAGRAPH
                     and grandchild.label
-                    and _norm_num_token(grandchild.label) == target
+                    and leaf_label_identity_key(grandchild.label, "subitem") == target_key
                 ):
                     return True
     sub_text = (node.text or " ".join(child.text or "" for child in node.children)).strip()
     m = re.match(r"^(\d+[a-zA-Z]*)\)", sub_text)
-    return bool(m and _norm_num_token(m.group(1)) == target)
+    return bool(m and leaf_label_identity_key(m.group(1)) == target_key)
 
 
 def _slot_ir_has_omission(node: IRNode) -> bool:
@@ -1125,11 +1127,11 @@ def _assign_item_prefix_slot_ops(
     for op in slot_inputs.payload_subsec_ops:
         if not op.target_item:
             continue
-        item_norm = _norm_num_token(str(op.target_item))
+        item_norm = leaf_label_identity_key(str(op.target_item))
         for sub in slot_inputs.amend_subs:
             sub_text = (sub.text or " ".join(child.text or "" for child in sub.children)).strip()
             m = re.match(r"^(\d+[a-zA-Z]*)\)", sub_text)
-            if m and _norm_num_token(m.group(1)) == item_norm:
+            if m and leaf_label_identity_key(m.group(1)) == item_norm:
                 state.subsec_map.assign(op, sub)
                 break
 
@@ -3394,14 +3396,14 @@ def _drop_item_replaces_missing_from_sparse_payload(
 
     def _sub_has_item(sub: IRNode, item_norm: str) -> bool:
         for child in sub.children:
-            if child.kind == IRNodeKind.PARAGRAPH and child.label and _norm_num_token(child.label) == item_norm:
+            if child.kind == IRNodeKind.PARAGRAPH and child.label and leaf_label_identity_key(child.label) == item_norm:
                 return True
             if child.kind == IRNodeKind.PARAGRAPH:
                 for grandchild in child.children:
                     if (
                         grandchild.kind == IRNodeKind.SUBPARAGRAPH
                         and grandchild.label
-                        and _norm_num_token(grandchild.label) == item_norm
+                        and leaf_label_identity_key(grandchild.label, "subitem") == item_norm
                     ):
                         return True
         return False
@@ -3421,7 +3423,7 @@ def _drop_item_replaces_missing_from_sparse_payload(
         if not has_omission:
             filtered.append(op)
             continue
-        item_norm = _norm_num_token(str(op.target_item))
+        item_norm = leaf_label_identity_key(str(op.target_item))
         if _sub_has_item(amend_sub, item_norm):
             filtered.append(op)
             continue
@@ -3495,20 +3497,20 @@ def _drop_redundant_item_ops_claimed_by_sparse_slot(
         for child in live_sec.children:
             if child.kind == IRNodeKind.SUBSECTION and child.label == label:
                 for c in child.children:
-                    if c.kind == IRNodeKind.PARAGRAPH and c.label and _norm_num_token(c.label) == item_norm:
+                    if c.kind == IRNodeKind.PARAGRAPH and c.label and leaf_label_identity_key(c.label) == item_norm:
                         return True
         return False
 
     def _sub_has_item(sub: IRNode, item_norm: str) -> bool:
         for child in sub.children:
-            if child.kind == IRNodeKind.PARAGRAPH and child.label and _norm_num_token(child.label) == item_norm:
+            if child.kind == IRNodeKind.PARAGRAPH and child.label and leaf_label_identity_key(child.label) == item_norm:
                 return True
             if child.kind == IRNodeKind.PARAGRAPH:
                 for grandchild in child.children:
                     if (
                         grandchild.kind == IRNodeKind.SUBPARAGRAPH
                         and grandchild.label
-                        and _norm_num_token(grandchild.label) == item_norm
+                        and leaf_label_identity_key(grandchild.label, "subitem") == item_norm
                     ):
                         return True
         return False
@@ -3524,7 +3526,7 @@ def _drop_redundant_item_ops_claimed_by_sparse_slot(
             filtered.append(op)
             continue
 
-        item_norm = _norm_num_token(str(op.target_item))
+        item_norm = leaf_label_identity_key(str(op.target_item))
         if not _sub_has_item(mapped, item_norm):
             filtered.append(op)
             continue
@@ -3584,7 +3586,7 @@ def _drop_redundant_item_ops_claimed_by_sparse_slot(
                     and other.target_item is not None
                     and re.match(r"^\d+[a-z]$", item_norm)
                     and item_norm.rstrip("abcdefghijklmnopqrstuvwxyz")
-                    == _norm_num_token(str(other.target_item))
+                    == leaf_label_identity_key(str(other.target_item))
                 )
             )
             for other in group_ops

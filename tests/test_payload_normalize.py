@@ -33,6 +33,7 @@ from lawvm.finland.payload_normalize import (
     _normalize_item_like_target,
     _prune_container_payload_sections_shadowed_by_standalone_targets,
     _rebase_item_targets_to_sparse_slot_labels,
+    _slot_ir_has_item,
     SparsePayloadSlotBinding,
     SubsectionSlotAssignmentResult,
     payload_elaboration_projection_from_group_result,
@@ -890,6 +891,28 @@ def test_payload_normalize_does_not_relabel_item_only_sparse_omission_payload() 
     assert changed is False
     assert got is muutos_ir
     assert [c.label for c in got.children if c.kind == IRNodeKind.SUBSECTION] == ["1", "5"]
+
+
+def test_slot_item_matching_does_not_alias_roman_glyph_to_arabic_item() -> None:
+    slot = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="4", text="numeric item"),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="iv", text="roman-looking item"),
+        ),
+    )
+
+    assert _slot_ir_has_item(slot, "4") is True
+    assert _slot_ir_has_item(slot, "iv") is True
+    assert _slot_ir_has_item(
+        IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="1",
+            children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="4", text="numeric item"),),
+        ),
+        "iv",
+    ) is False
 
 
 def test_fold_intro_list_continuation_preserves_terminal_real_second_moment() -> None:

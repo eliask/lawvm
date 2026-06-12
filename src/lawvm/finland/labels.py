@@ -176,6 +176,7 @@ _ARABIC_SUFFIX_RE = re.compile(
 _ALPHA_SEQ_RE = re.compile(r"^([a-z]+)$")
 # Regex: detect uppercase single letter (symbolic)
 _SYMBOLIC_RE = re.compile(r"^([A-Z])$")
+_LEAF_IDENTITY_RE = re.compile(r"[^\d\w]+")
 
 
 def normalize_raw_label(raw: str, tag: str) -> str:
@@ -223,6 +224,20 @@ def normalize_raw_label(raw: str, tag: str) -> str:
     return s
 
 
+def leaf_label_identity_key(raw: str, unit_kind: str = "item") -> str:
+    """Return the identity key for Finnish ``kohta`` / ``alakohta`` labels.
+
+    This is intentionally weaker than ``_norm_num_token``: leaf labels use the
+    printed series as identity, so roman-looking glyphs such as ``iv`` remain
+    ``"iv"`` instead of aliasing numeric ``"4"``.  Roman labels may still be
+    parsed as typed ``RomanOrdinal`` in a proven subitem context, but identity
+    matching must not silently collapse distinct label families.
+    """
+    if unit_kind not in {"item", "subitem"}:
+        raise ValueError(f"leaf_label_identity_key only accepts item/subitem, got {unit_kind!r}")
+    return _LEAF_IDENTITY_RE.sub("", normalize_raw_label(raw, unit_kind)).lower()
+
+
 def parse_label(raw: str, unit_kind: str) -> AnyFinlandLabel:
     """Parse a raw Finnish label string into a typed ``FinlandLabel``.
 
@@ -266,26 +281,27 @@ def parse_label(raw: str, unit_kind: str) -> AnyFinlandLabel:
         # should be AlphaSequence (handled below).
         return InsertableArabic(base=base, suffix=suffix)
 
-    # Try Roman numeral with optional trailing token: "II A", "V", "IV"
-    # (for part, division, supplement, subitem)
-    norm_lower = norm.lower()
-    # Check for "ROMAN LETTER" pattern (e.g. "II A" for part numbering)
-    multi_match = re.match(r"^([IiVvXx]+)\s+([A-Za-z]+)$", norm)
-    if multi_match:
-        roman_part = multi_match.group(1)
-        if roman_to_arabic(roman_part) is not None:
-            # Roman + symbolic suffix: return as SymbolicLabel with full token
-            return SymbolicLabel(token=norm.upper())
+    roman_allowed = RomanOrdinal in _LABEL_SERIES.get(unit_kind, ())
+    if roman_allowed:
+        # Try Roman numeral with optional trailing token: "II A", "V", "IV"
+        # (for part, division, supplement, subitem)
+        multi_match = re.match(r"^([IiVvXx]+)\s+([A-Za-z]+)$", norm)
+        if multi_match:
+            roman_part = multi_match.group(1)
+            if roman_to_arabic(roman_part) is not None:
+                # Roman + symbolic suffix: return as SymbolicLabel with full token
+                return SymbolicLabel(token=norm.upper())
 
-    roman_value = roman_to_arabic(norm)
-    if roman_value is not None:
-        return RomanOrdinal(
-            value=roman_value,
-            token=norm,
-        )
+        roman_value = roman_to_arabic(norm)
+        if roman_value is not None:
+            return RomanOrdinal(
+                value=roman_value,
+                token=norm,
+            )
 
     # Try compound alpha sequence: "aa", "ab", "ba", etc.
     # Also single alpha "a", "b" for subitem context
+    norm_lower = norm.lower()
     if _ALPHA_SEQ_RE.match(norm_lower):
         # For item context, a single letter could be AlphaSequence
         # (when host uses lettered points) — but default to InsertableArabic

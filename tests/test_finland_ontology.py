@@ -43,6 +43,7 @@ from lawvm.finland.labels import (
     _alpha_sort_value,
     is_valid_label_for_kind,
     label_sort_key,
+    leaf_label_identity_key,
     normalize_raw_label,
     parse_label,
     render_label,
@@ -481,6 +482,17 @@ class TestParseLabel:
         lbl = parse_label("a)", "item")
         assert isinstance(lbl, AlphaSequence)
         assert lbl.token == "a"
+
+    def test_item_roman_looking_label_stays_alpha_sequence(self):
+        """Item/kohta identity must not collapse roman-looking text to arabic."""
+        lbl = parse_label("iv)", "item")
+        assert isinstance(lbl, AlphaSequence)
+        assert lbl.token == "iv"
+
+    def test_leaf_label_identity_key_preserves_roman_glyphs(self):
+        assert leaf_label_identity_key("iv)") == "iv"
+        assert leaf_label_identity_key("4)") == "4"
+        assert leaf_label_identity_key("iv)") != leaf_label_identity_key("4)")
 
 
 # ===========================================================================
