@@ -41,11 +41,14 @@ class ProofGateSummary:
     candidate_set_completeness_counts: Mapping[str, int] = field(default_factory=dict)
     source_unit_coverage_status_counts: Mapping[str, int] = field(default_factory=dict)
     potential_operation_classification_counts: Mapping[str, int] = field(default_factory=dict)
+    regex_recognition_coverage_status_counts: Mapping[str, int] = field(default_factory=dict)
+    regex_recognition_unclassified_gap_count: int = 0
     safe_default: str = "treat_open_proof_gates_as_non_executable_frontier_accounting"
     does_not_claim: tuple[str, ...] = (
         "proof_closure",
         "source_unit_enumeration_closure",
         "operation_cue_exhaustiveness",
+        "regex_recognition_gap_closure",
         "replay_authorization",
     )
 
@@ -62,6 +65,7 @@ class ProofGateSummary:
             "coverage_frontier_count",
             "other_frontier_count",
             "incomplete_candidate_set_count",
+            "regex_recognition_unclassified_gap_count",
         ):
             _require_nonnegative_int(field_name, getattr(self, field_name))
         for field_name in (
@@ -79,6 +83,7 @@ class ProofGateSummary:
             "candidate_set_completeness_counts",
             "source_unit_coverage_status_counts",
             "potential_operation_classification_counts",
+            "regex_recognition_coverage_status_counts",
         ):
             object.__setattr__(self, field_name, freeze_mapping(_count_mapping(getattr(self, field_name))))
         object.__setattr__(self, "safe_default", _required_string("safe_default", self.safe_default))
@@ -124,6 +129,12 @@ class ProofGateSummary:
             "potential_operation_classification_counts": dict(
                 self.potential_operation_classification_counts
             ),
+            "regex_recognition_coverage_status_counts": dict(
+                self.regex_recognition_coverage_status_counts
+            ),
+            "regex_recognition_unclassified_gap_count": (
+                self.regex_recognition_unclassified_gap_count
+            ),
             "safe_default": self.safe_default,
             "does_not_claim": list(self.does_not_claim),
         }
@@ -146,6 +157,7 @@ def proof_gate_summary_from_surfaces(
         "proof_closure",
         "source_unit_enumeration_closure",
         "operation_cue_exhaustiveness",
+        "regex_recognition_gap_closure",
         "replay_authorization",
     ),
 ) -> ProofGateSummary:
@@ -172,11 +184,16 @@ def proof_gate_summary_from_surfaces(
         if str(row.get("completeness_status") or "") != "complete"
     )
     evidence = dict(evidence_summary or {})
+    regex_unclassified_gap_count = _summary_count(
+        evidence,
+        "regex_recognition_unclassified_gap_count",
+    )
     open_gate_signal_count = (
         len(failed_gate_rows)
         + sum(unowned.values())
         + len(all_frontiers)
         + len(incomplete_candidate_sets)
+        + regex_unclassified_gap_count
     )
     return ProofGateSummary(
         schema=schema,
@@ -221,6 +238,10 @@ def proof_gate_summary_from_surfaces(
         potential_operation_classification_counts=dict(
             evidence.get("potential_operation_classification_counts") or {}
         ),
+        regex_recognition_coverage_status_counts=dict(
+            evidence.get("regex_recognition_coverage_status_counts") or {}
+        ),
+        regex_recognition_unclassified_gap_count=regex_unclassified_gap_count,
         safe_default=safe_default,
         does_not_claim=does_not_claim,
     )
@@ -234,8 +255,15 @@ def _required_string(field_name: str, value: Any) -> str:
 
 
 def _require_nonnegative_int(field_name: str, value: Any) -> None:
-    if not isinstance(value, int) or value < 0:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise ValueError(f"ProofGateSummary.{field_name} must be a non-negative integer")
+
+
+def _summary_count(evidence: Mapping[str, Any], field_name: str) -> int:
+    value = evidence.get(field_name, 0)
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueError(f"ProofGateSummary.{field_name} must be a non-negative integer")
+    return value
 
 
 def _count_mapping(value: Mapping[str, Any]) -> dict[str, int]:
