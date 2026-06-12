@@ -18,6 +18,7 @@ from __future__ import annotations
 from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction, TextPatchSpec, TextSelector
 
 import datetime as dt
+from types import SimpleNamespace
 from typing import Any, Iterable, List, Optional, cast
 from unittest.mock import patch
 
@@ -429,7 +430,14 @@ class TestNormalizeAndCompileOps:
         )
         monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [lo])
         monkeypatch.setattr(frontend_compile, "parse_johtolause_clause", lambda _johto, statute_id="": None)
-        monkeypatch.setattr(frontend_compile, "parse_ops_fallback_heuristic", lambda _johto: [])
+        monkeypatch.setattr(
+            frontend_compile,
+            "parse_ops_fallback_heuristic_with_coverage",
+            lambda _johto, source_artifact_id="": SimpleNamespace(
+                ops=[],
+                regex_recognition_coverage=(),
+            ),
+        )
         monkeypatch.setattr(frontend_compile, "_extract_root_replace_ops_from_body_fallback", lambda _johto, _tree: [])
         monkeypatch.setattr(
             frontend_compile,
@@ -846,7 +854,14 @@ class TestNormalizeAndCompileOps:
             source_statute="2010/400",
             source_issue_date=None,
         )
-        monkeypatch.setattr(frontend_compile, "parse_ops_fallback_heuristic", lambda _johto: [op])
+        monkeypatch.setattr(
+            frontend_compile,
+            "parse_ops_fallback_heuristic_with_coverage",
+            lambda _johto, source_artifact_id="": SimpleNamespace(
+                ops=[op],
+                regex_recognition_coverage=(),
+            ),
+        )
 
         result = normalize_and_compile_ops(
             johto="Puuttuu johtolause.",  # no op keywords → PEG finds nothing → fallback triggered

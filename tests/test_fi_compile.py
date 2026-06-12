@@ -2520,7 +2520,14 @@ def test_normalize_and_compile_ops_strictly_rejects_late_fallback_chains(
     # normalize_and_compile_ops calls extract_johtolause_legal_ops_from_parse_result
     # (the result-based variant), not the older string-based extract_johtolause_legal_ops.
     monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
-    monkeypatch.setattr(frontend_compile, "parse_ops_fallback_heuristic", lambda _johto: [])
+    monkeypatch.setattr(
+        frontend_compile,
+        "parse_ops_fallback_heuristic_with_coverage",
+        lambda _johto, source_artifact_id="": SimpleNamespace(
+            ops=[],
+            regex_recognition_coverage=(),
+        ),
+    )
     monkeypatch.setattr(
         frontend_compile,
         "_extract_root_replace_ops_from_body_fallback",
@@ -2565,6 +2572,40 @@ def test_normalize_and_compile_ops_strictly_rejects_late_fallback_chains(
     ]
     assert rejected_obs
     assert rejected_obs[0].blocking is False
+
+
+def test_normalize_and_compile_ops_forwards_fallback_regex_coverage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lawvm.finland.frontend_compile as frontend_compile
+
+    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
+    muutos_tree = etree.fromstring("<root/>")
+    master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
+    coverage_rows: list[Any] = []
+
+    phase2 = frontend_compile.normalize_and_compile_ops(
+        johto="lisätään 5 §:ään kuitenkin uusi 2 momentti",
+        muutos_tree=muutos_tree,
+        master=master,
+        amendment_id="2020/1",
+        source_title="Test title",
+        used_sec1_fallback=False,
+        parent_id="2019/1",
+        strict_profile=None,
+        parse_result=cast(Any, SimpleNamespace(findings=())),
+        regex_recognition_coverage_out=coverage_rows,
+    )
+
+    assert [
+        (op.op_type, op.target_section, op.target_paragraph)
+        for op in phase2.output
+    ] == [("INSERT", "5", 2)]
+    assert len(coverage_rows) == 1
+    coverage = coverage_rows[0].to_dict()
+    assert coverage["recognizer_id"] == "fi_insert_subsection_fallback"
+    assert coverage["coverage_status"] == "unclassified_gap"
+    assert coverage["source_artifact_id"] == "2020/1"
 
 
 def test_strip_impossible_chapter_scope_for_bare_body_section_op_clears_no_chapter_parent_leak() -> None:
@@ -2676,7 +2717,14 @@ def test_normalize_and_compile_ops_records_empty_extraction_observation(
     master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
 
     monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
-    monkeypatch.setattr(frontend_compile, "parse_ops_fallback_heuristic", lambda _johto: [])
+    monkeypatch.setattr(
+        frontend_compile,
+        "parse_ops_fallback_heuristic_with_coverage",
+        lambda _johto, source_artifact_id="": SimpleNamespace(
+            ops=[],
+            regex_recognition_coverage=(),
+        ),
+    )
     monkeypatch.setattr(frontend_compile, "_extract_root_replace_ops_from_body_fallback", lambda _johto, _tree: [])
     monkeypatch.setattr(frontend_compile, "parse_ops_title_fallback", lambda _title: [])
     monkeypatch.setattr(
@@ -2729,7 +2777,14 @@ def test_normalize_and_compile_ops_records_unowned_enacting_formula_body_section
     )
 
     monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
-    monkeypatch.setattr(frontend_compile, "parse_ops_fallback_heuristic", lambda _johto: [])
+    monkeypatch.setattr(
+        frontend_compile,
+        "parse_ops_fallback_heuristic_with_coverage",
+        lambda _johto, source_artifact_id="": SimpleNamespace(
+            ops=[],
+            regex_recognition_coverage=(),
+        ),
+    )
     monkeypatch.setattr(frontend_compile, "_extract_root_replace_ops_from_body_fallback", lambda _johto, _tree: [])
     monkeypatch.setattr(frontend_compile, "parse_ops_title_fallback", lambda _title: [])
 
@@ -2782,7 +2837,14 @@ def test_normalize_and_compile_ops_does_not_record_unowned_body_section_for_full
     master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
 
     monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
-    monkeypatch.setattr(frontend_compile, "parse_ops_fallback_heuristic", lambda _johto: [])
+    monkeypatch.setattr(
+        frontend_compile,
+        "parse_ops_fallback_heuristic_with_coverage",
+        lambda _johto, source_artifact_id="": SimpleNamespace(
+            ops=[],
+            regex_recognition_coverage=(),
+        ),
+    )
     monkeypatch.setattr(frontend_compile, "_extract_root_replace_ops_from_body_fallback", lambda _johto, _tree: [])
     monkeypatch.setattr(frontend_compile, "parse_ops_title_fallback", lambda _title: [])
 
@@ -2814,7 +2876,14 @@ def test_normalize_and_compile_ops_records_sec1_peg_skip_observation(
     master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
 
     monkeypatch.setattr(frontend_compile, "_sec1_fallback_peg_skip_required", lambda _johto, _parent_id: True)
-    monkeypatch.setattr(frontend_compile, "parse_ops_fallback_heuristic", lambda _johto: [])
+    monkeypatch.setattr(
+        frontend_compile,
+        "parse_ops_fallback_heuristic_with_coverage",
+        lambda _johto, source_artifact_id="": SimpleNamespace(
+            ops=[],
+            regex_recognition_coverage=(),
+        ),
+    )
     monkeypatch.setattr(frontend_compile, "_extract_root_replace_ops_from_body_fallback", lambda _johto, _tree: [])
     monkeypatch.setattr(frontend_compile, "parse_ops_title_fallback", lambda _title: [])
     monkeypatch.setattr(

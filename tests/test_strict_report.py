@@ -5,6 +5,10 @@ from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
 
+from lawvm.core.regex_recognition_coverage import (
+    REGEX_RECOGNITION_UNCLASSIFIED_GAP,
+    RegexRecognitionCoverage,
+)
 from lawvm.finland.ops import FailedOp
 from lawvm.finland.strict_profile import FINLAND_INGESTION_V1
 from lawvm.tools import strict_report
@@ -137,6 +141,51 @@ def test_load_strict_run_ignores_legacy_n_adjudications_column(tmp_path, monkeyp
 
     assert rows is not None
     assert rows[0]["n_projection_rows"] == 0
+
+
+def test_to_json_counts_replay_meta_regex_recognition_coverage() -> None:
+    coverage = RegexRecognitionCoverage(
+        coverage_id="fi-regex-1",
+        jurisdiction="fi",
+        recognizer_id="fi_insert_subsection_fallback",
+        owner_phase="parse",
+        source_artifact_id="2020/1",
+        source_text_hash="abc",
+        matched_span=(0, 42),
+        coverage_status=REGEX_RECOGNITION_UNCLASSIFIED_GAP,
+        semantic_slots={"action": "INSERT"},
+        ignored_spans=(
+            {
+                "span": (10, 20),
+                "classification": "unclassified",
+                "text_preview": "kuitenkin ",
+                "could_alter_meaning": True,
+            },
+        ),
+        required_proofs=("regex_skipped_span_classification",),
+    )
+
+    payload = strict_report._to_json(
+        {
+            "statute_id": "2019/1",
+            "profile": FINLAND_INGESTION_V1,
+            "canonical_ops": [],
+            "failed_ops": [],
+            "projection_rows": [],
+            "source_pathologies": [],
+            "strict_fail_reasons": [],
+            "regex_recognition_coverage": [coverage.to_dict()],
+        }
+    )
+
+    assert (
+        payload["evidence_surface_report"]["summary"][
+            "regex_recognition_coverage_count"
+        ]
+        == 1
+    )
+    assert payload["proof_gate_summary"]["regex_recognition_unclassified_gap_count"] == 1
+    assert payload["proof_gate_summary"]["open_gate_signal_count"] >= 1
 
 
 def test_save_strict_run_writes_source_pathology_codes(tmp_path, monkeypatch) -> None:

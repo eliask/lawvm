@@ -35,6 +35,7 @@ from lawvm.core.observation_registry import get_finding_spec
 from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.statute_validity import expires_on_from_valid_until
 from lawvm.core.phase_result import Finding
+from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
 from lawvm.core.replay_lints import build_text_duplication_findings
 
 
@@ -6169,6 +6170,7 @@ def process_muutoslaki(
     elaboration_observations_out: Optional[List[Dict[str, object]]] = None,
     sparse_slot_bindings_out: Optional[List[Dict[str, object]]] = None,
     sparse_leftovers_out: Optional[List[Dict[str, object]]] = None,
+    regex_recognition_coverage_out: Optional[List[RegexRecognitionCoverage]] = None,
     commencement_expiry_overrides_out: Optional[List[Dict[str, object]]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
     mutation_invariant_reports_out: Optional[List[ApplyMutationInvariantReport]] = None,
@@ -7047,6 +7049,7 @@ def process_muutoslaki(
                 parent_id=parent_id,
                 strict_profile=strict_profile,
                 parse_result=_phase2_parse_result,
+                regex_recognition_coverage_out=regex_recognition_coverage_out,
             )
             ops = _phase2_result.output
             # Propagate non-commence frontend temporal events (e.g. VÄLIAIKAINEN
@@ -7869,6 +7872,7 @@ def replay_xml(
         elaboration_observations: List[Dict[str, object]] = []
         sparse_slot_bindings: List[Dict[str, object]] = []
         sparse_leftovers: List[Dict[str, object]] = []
+        regex_recognition_coverages: List[RegexRecognitionCoverage] = []
         commencement_expiry_overrides: List[Dict[str, object]] = []
         replay_findings: List[Finding] = []
         mutation_events: List[ApplyMutationEvent] = []
@@ -7951,6 +7955,7 @@ def replay_xml(
             elaboration_observations_out=elaboration_observations,
             sparse_slot_bindings_out=sparse_slot_bindings,
             sparse_leftovers_out=sparse_leftovers,
+            regex_recognition_coverage_out=regex_recognition_coverages,
             commencement_expiry_overrides_out=commencement_expiry_overrides,
             mutation_events_out=mutation_events,
             write_audits_out=write_audits,
@@ -8118,6 +8123,10 @@ def replay_xml(
             replay_meta_out["sparse_slot_bindings"] = list(sparse_slot_bindings)
         if replay_meta_out is not None and sparse_leftovers:
             replay_meta_out["sparse_leftovers"] = list(sparse_leftovers)
+        if replay_meta_out is not None and regex_recognition_coverages:
+            replay_meta_out["regex_recognition_coverage"] = [
+                coverage.to_dict() for coverage in regex_recognition_coverages
+            ]
         if replay_meta_out is not None and commencement_expiry_overrides:
             replay_meta_out["commencement_expiry_overrides"] = list(commencement_expiry_overrides)
         if replay_meta_out is not None and write_audits:

@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from lawvm.finland.johtolause import ClauseParseResult
 
 from lawvm.core.ir import LegalOperation, OperationSource
+from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.phase_result import Finding
@@ -46,7 +47,7 @@ from lawvm.finland.normalize import (
     _sec1_fallback_peg_skip_required,
     _extract_root_replace_ops_from_body_fallback,
     _dedupe_fallback_ops_ir,
-    parse_ops_fallback_heuristic,
+    parse_ops_fallback_heuristic_with_coverage,
     parse_ops_title_fallback,
 )
 from lawvm.finland.johtolause import (
@@ -1617,6 +1618,7 @@ def normalize_and_compile_ops(
     parent_id: str = "",
     strict_profile: Optional[StrictProfile] = None,
     parse_result: "ClauseParseResult | None" = None,
+    regex_recognition_coverage_out: Optional[List[RegexRecognitionCoverage]] = None,
 ) -> "PhaseResult[List[AmendmentOp]]":
     """Normalize PEG output and compile to AmendmentOps.
 
@@ -1925,7 +1927,13 @@ def normalize_and_compile_ops(
     # Fallback paths (still AmendmentOp-based, skips LO normalization chain)
     # Heuristic #29: parse_ops_fallback_heuristic — gated by allows_target_guessing
     _allows_fallback = strict_profile is None or strict_profile.allows_target_guessing
-    fallback_ops = parse_ops_fallback_heuristic(johto)
+    fallback_result = parse_ops_fallback_heuristic_with_coverage(
+        johto,
+        source_artifact_id=amendment_id,
+    )
+    fallback_ops = fallback_result.ops
+    if regex_recognition_coverage_out is not None:
+        regex_recognition_coverage_out.extend(fallback_result.regex_recognition_coverage)
     if fallback_ops and _allows_fallback:
         logger.debug("  %s fallback_ops: %s", amendment_id, [op.description() for op in fallback_ops])
         enriched_fallback_ops = _enrich_ops_from_amendment_tree(

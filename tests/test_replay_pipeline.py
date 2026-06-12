@@ -567,6 +567,48 @@ def test_execute_replay_plan_passes_sparse_leftovers_sink_to_process_muutoslaki(
     assert leftovers == [{"mid": "1991/1", "kind": "fake_leftover"}]
 
 
+def test_execute_replay_plan_passes_regex_coverage_sink_to_process_muutoslaki() -> None:
+    plan = ReplayPlan(
+        parent_id="test/1",
+        replay_mode="legal_pit",
+        replay_profile=SimpleNamespace(normalize_replay_text=False),
+        ctx=StatuteContext(
+            id="test/1",
+            title="Test",
+            base_ir=IRNode(kind=IRNodeKind.BODY),
+            base_xml_bytes=b"<body/>",
+        ),
+        initial_state=ReplayState(ir=IRNode(kind=IRNodeKind.BODY)),
+        amendment_records=[{"statute_id": "1991/1"}],
+        amendment_ids=["1991/1"],
+        cutoff_date=None,
+        oracle_version_amendment_id="",
+        oracle_suspect="",
+    )
+    coverage_rows = []
+
+    def fake_process_muutoslaki(mid, state, ctx, **kwargs):
+        assert mid == "1991/1"
+        assert kwargs.get("regex_recognition_coverage_out") is coverage_rows
+        coverage_rows.append({"mid": mid, "kind": "fake_regex_coverage"})
+        return PhaseResult(output=state)
+
+    final_state = execute_replay_plan(
+        plan,
+        corpus=_corpus_stub(),
+        process_muutoslaki=fake_process_muutoslaki,
+        seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
+        pre_scan_repeal_targets=lambda mids, corpus, parent_id, **kwargs: [],
+        future_repeals_for_index=lambda schedule: [set() for _ in schedule],
+        post_process_tree=lambda ir, normalize: ir,
+        check_tree_invariants=check_invariants,
+        regex_recognition_coverage_out=coverage_rows,
+    )
+
+    assert final_state.ir.kind == IRNodeKind.BODY
+    assert coverage_rows == [{"mid": "1991/1", "kind": "fake_regex_coverage"}]
+
+
 def test_execute_replay_plan_passes_sparse_slot_bindings_sink_to_process_muutoslaki() -> None:
     plan = ReplayPlan(
         parent_id="test/1",

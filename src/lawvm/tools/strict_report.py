@@ -744,6 +744,9 @@ def _to_json(cr: Any) -> dict[str, Any]:
             for p in source_pathologies
         ],
         "source_completeness_issues": source_completeness_issues,
+        "regex_recognition_coverage": list(
+            _field(cr, "regex_recognition_coverage", []) or []
+        ),
         **source_pathology_proof_rows,
         "sparse_slot_candidate_set_certificates": sparse_slot_candidate_certificates,
         "source_lineage_source_witnesses": source_lineage_witnesses,
@@ -979,6 +982,10 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
                 verdict=getattr(facade, "verdict", None),
             )
         )
+        regex_coverage_raw = replay_meta.get("regex_recognition_coverage", [])
+        regex_coverage = (
+            list(regex_coverage_raw) if isinstance(regex_coverage_raw, list) else []
+        )
         proof_payload = _to_json(
             {
                 "statute_id": sid,
@@ -987,6 +994,7 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
                 "failed_ops": failed_ops,
                 "projection_rows": projection_rows,
                 "source_pathologies": source_pathologies,
+                "regex_recognition_coverage": regex_coverage,
                 "strict_fail_reasons": fail_reasons,
                 "source_adjudication": source_adjudication,
             }
@@ -2404,6 +2412,10 @@ def main(args: Any) -> None:
     report_record["apply_mutation_invariant_reports"] = [
         dict(row) for row in mutation_reports if isinstance(row, dict)
     ]
+    regex_coverage_raw = replay_meta.get("regex_recognition_coverage", [])
+    report_record["regex_recognition_coverage"] = (
+        list(regex_coverage_raw) if isinstance(regex_coverage_raw, list) else []
+    )
 
     if getattr(args, "json_output", False):
         json.dump(_to_json(report_record), sys.stdout, indent=2, ensure_ascii=False)
