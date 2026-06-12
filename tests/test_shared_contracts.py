@@ -119,6 +119,7 @@ from lawvm.core.source_witness import (
     source_witness_role_key,
 )
 from lawvm.core.source_unit_coverage import (
+    SOURCE_UNIT_FRONTIER_WITNESSED,
     SOURCE_UNIT_LINEAGE_WITNESSED,
     SourceUnitCoverage,
     source_unit_coverage_evidence_report,
@@ -3028,9 +3029,23 @@ def test_source_unit_coverage_evidence_report_is_passive_shared_surface() -> Non
         required_proofs=("source_artifact_unit_inventory",),
         safe_default="treat_lineage_source_unit_coverage_as_witnessed_only_not_full_enumeration",
     )
+    frontier_row = SourceUnitCoverage(
+        coverage_id="fi:2001/1234:source-unit-coverage:def",
+        jurisdiction="fi",
+        source_artifact_id="2020/2",
+        source_unit_id="section:2",
+        owner_phase="typed_elaboration",
+        coverage_status=SOURCE_UNIT_FRONTIER_WITNESSED,
+        unit_family="fi_sparse_item_body_missing",
+        source_role="finland_source_pathology",
+        source_lane="source_pathology",
+        refs=("2020/2",),
+        required_proofs=("source_artifact_unit_inventory",),
+        safe_default="treat_frontier_source_unit_coverage_as_witnessed_only_not_full_enumeration",
+    )
 
     report = source_unit_coverage_evidence_report(
-        lineage_row,
+        (lineage_row, frontier_row),
         jurisdiction="fi",
         report_kind="finland_strict_report_source_unit_coverage",
     ).to_dict()
@@ -3039,9 +3054,13 @@ def test_source_unit_coverage_evidence_report_is_passive_shared_surface() -> Non
     assert report["replay_claims"] is False
     assert report["canonical_effect_claims"] is False
     assert report["candidate_effect_claims"] is False
-    assert report["summary"]["source_unit_coverage_count"] == 1
-    assert report["summary"]["coverage_status_counts"] == {"lineage_witnessed": 1}
+    assert report["summary"]["source_unit_coverage_count"] == 2
+    assert report["summary"]["coverage_status_counts"] == {
+        "frontier_witnessed": 1,
+        "lineage_witnessed": 1,
+    }
     assert report["summary"]["lineage_witnessed_count"] == 1
+    assert report["summary"]["frontier_witnessed_count"] == 1
     assert report["rows"][0]["surface"] == "source_unit_coverage"
     assert report["rows"][0]["row_id"] == "fi:2001/1234:source-unit-coverage:abc"
     assert report["rows"][0]["status"] == "lineage_witnessed"

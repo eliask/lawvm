@@ -70,8 +70,10 @@ from lawvm.core.source_witness import (
     source_witness_digest_coverage_counts,
 )
 from lawvm.core.source_unit_coverage import (
+    SOURCE_UNIT_FRONTIER_WITNESSED,
     SOURCE_UNIT_LINEAGE_WITNESSED,
     SourceUnitCoverage,
+    SourceUnitCoverageStatus,
     source_unit_coverage_evidence_report,
 )
 from lawvm.core.source_pathology import (
@@ -1529,53 +1531,67 @@ def finland_strict_report_source_unit_coverage_rows(
 ) -> list[dict[str, Any]]:
     """Source-unit coverage rows visible to the Finland strict report.
 
-    This currently projects source-lineage witnesses only. It is useful
+    This projects source-lineage and frontier source witnesses. It is useful
     accounting, but it is not a full inventory of amendment-bearing XML units.
     """
 
     statute_id = str(payload.get("statute_id") or "unknown")
     source_lineage_witnesses = _mapping_sequence(payload.get("source_lineage_source_witnesses"))
+    source_pathology_frontiers = _mapping_sequence(payload.get("source_pathology_frontier_work_items"))
+    failed_operation_frontiers = _mapping_sequence(payload.get("failed_operation_frontier_work_items"))
     rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str]] = set()
     for index, witness in enumerate(source_lineage_witnesses, start=1):
         artifact_id = str(witness.get("artifact_id") or witness.get("amendment_id") or statute_id)
         source_unit_id = str(witness.get("source_unit_id") or artifact_id or f"lineage:{index}")
-        rows.append(
-            SourceUnitCoverage(
-                coverage_id=_strict_report_source_unit_coverage_id(
-                    statute_id=statute_id,
-                    artifact_id=artifact_id,
-                    source_unit_id=source_unit_id,
-                    index=index,
-                ),
-                jurisdiction="fi",
-                source_artifact_id=artifact_id,
-                source_unit_id=source_unit_id,
-                owner_phase="source_chain_elaboration",
-                coverage_status=SOURCE_UNIT_LINEAGE_WITNESSED,
-                unit_family="finland_source_lineage_amendment",
-                source_role=str(witness.get("source_role") or "finland_source_lineage_amendment"),
-                source_lane=str(witness.get("source_lane") or "finland_source_adjudication_lineage"),
-                refs=(artifact_id,),
-                required_proofs=(
-                    "source_artifact_unit_inventory",
-                    "source_unit_digest_coverage",
-                    "unclassified_source_unit_count_zero",
-                ),
-                safe_default=(
-                    "treat_lineage_source_unit_coverage_as_witnessed_only_not_full_enumeration"
-                ),
-                detail={
-                    "statute_id": statute_id,
-                    "visible_index": index,
-                    "source_witness": dict(witness),
-                    "projection_only": True,
-                    "does_not_claim": [
-                        "complete_source_unit_enumeration",
-                        "operation_cue_exhaustiveness",
-                        "replay_authorization",
-                    ],
-                },
-            ).to_dict()
+        _append_source_unit_coverage_row(
+            rows,
+            seen=seen,
+            statute_id=statute_id,
+            artifact_id=artifact_id,
+            source_unit_id=source_unit_id,
+            owner_phase="source_chain_elaboration",
+            coverage_status=SOURCE_UNIT_LINEAGE_WITNESSED,
+            unit_family="finland_source_lineage_amendment",
+            source_role=str(witness.get("source_role") or "finland_source_lineage_amendment"),
+            source_lane=str(witness.get("source_lane") or "finland_source_adjudication_lineage"),
+            witness=witness,
+            index=index,
+            safe_default="treat_lineage_source_unit_coverage_as_witnessed_only_not_full_enumeration",
+        )
+    frontier_index = len(rows)
+    for frontier in (*source_pathology_frontiers, *failed_operation_frontiers):
+        witness = frontier.get("source_witness")
+        if not isinstance(witness, Mapping):
+            continue
+        frontier_index += 1
+        artifact_id = str(
+            witness.get("artifact_id")
+            or witness.get("source_statute")
+            or frontier.get("source_artifact_id")
+            or statute_id
+        )
+        source_unit_id = str(
+            witness.get("source_unit_id")
+            or frontier.get("source_unit_id")
+            or frontier.get("work_item_id")
+            or f"frontier:{frontier_index}"
+        )
+        _append_source_unit_coverage_row(
+            rows,
+            seen=seen,
+            statute_id=statute_id,
+            artifact_id=artifact_id,
+            source_unit_id=source_unit_id,
+            owner_phase=str(frontier.get("owner_phase") or "frontier_projection"),
+            coverage_status=SOURCE_UNIT_FRONTIER_WITNESSED,
+            unit_family=str(frontier.get("frontier_family") or "finland_frontier_source_unit"),
+            source_role=str(witness.get("source_role") or "finland_frontier_source_unit"),
+            source_lane=str(witness.get("source_lane") or frontier.get("frontier_status") or "frontier"),
+            witness=witness,
+            index=frontier_index,
+            safe_default="treat_frontier_source_unit_coverage_as_witnessed_only_not_full_enumeration",
+            frontier=frontier,
         )
     return rows
 
@@ -1640,6 +1656,69 @@ def finland_strict_report_candidate_set_execution_authorizations(
         authorization["scope_id"] = str(row.get("scope_id") or "")
         authorizations.append(authorization)
     return authorizations
+
+
+def _append_source_unit_coverage_row(
+    rows: list[dict[str, Any]],
+    *,
+    seen: set[tuple[str, str, str, str]],
+    statute_id: str,
+    artifact_id: str,
+    source_unit_id: str,
+    owner_phase: str,
+    coverage_status: SourceUnitCoverageStatus,
+    unit_family: str,
+    source_role: str,
+    source_lane: str,
+    witness: Mapping[str, Any],
+    index: int,
+    safe_default: str,
+    frontier: Mapping[str, Any] | None = None,
+) -> None:
+    key = (artifact_id, source_unit_id, coverage_status, source_lane)
+    if key in seen:
+        return
+    seen.add(key)
+    detail: dict[str, Any] = {
+        "statute_id": statute_id,
+        "visible_index": index,
+        "source_witness": dict(witness),
+        "projection_only": True,
+        "does_not_claim": [
+            "complete_source_unit_enumeration",
+            "operation_cue_exhaustiveness",
+            "replay_authorization",
+        ],
+    }
+    if frontier is not None:
+        detail["frontier_work_item_id"] = str(frontier.get("work_item_id") or "")
+        detail["frontier_status"] = str(frontier.get("frontier_status") or "")
+    rows.append(
+        SourceUnitCoverage(
+            coverage_id=_strict_report_source_unit_coverage_id(
+                statute_id=statute_id,
+                artifact_id=artifact_id,
+                source_unit_id=source_unit_id,
+                index=index,
+            ),
+            jurisdiction="fi",
+            source_artifact_id=artifact_id,
+            source_unit_id=source_unit_id,
+            owner_phase=owner_phase,
+            coverage_status=coverage_status,
+            unit_family=unit_family,
+            source_role=source_role,
+            source_lane=source_lane,
+            refs=(artifact_id,),
+            required_proofs=(
+                "source_artifact_unit_inventory",
+                "source_unit_digest_coverage",
+                "unclassified_source_unit_count_zero",
+            ),
+            safe_default=safe_default,
+            detail=detail,
+        ).to_dict()
+    )
 
 
 def finland_strict_report_candidate_set_frontier_work_items(

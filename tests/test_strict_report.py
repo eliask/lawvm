@@ -533,6 +533,14 @@ def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
     assert payload["evidence_surface_report"]["summary"][
         "frontier_claim_template_kind_counts"
     ] == {"fi.v1.FAILED_OPERATION_RESOLUTION": 1}
+    source_unit_coverages = payload["source_unit_coverages"]
+    assert len(source_unit_coverages) == 1
+    assert source_unit_coverages[0]["coverage_status"] == "frontier_witnessed"
+    assert source_unit_coverages[0]["source_role"] == "finland_failed_operation"
+    assert payload["evidence_surface_report"]["summary"]["source_unit_coverage_count"] == 1
+    assert payload["evidence_surface_report"]["summary"][
+        "source_unit_coverage_status_counts"
+    ] == {"frontier_witnessed": 1}
     potential_ops = payload["potential_operations"]
     assert len(potential_ops) == 1
     assert potential_ops[0]["classification"] == "failed"
@@ -658,6 +666,12 @@ def test_to_json_preserves_source_pathology_target_unit_kind() -> None:
     assert payload["evidence_surface_report"]["summary"][
         "source_pathology_frontier_source_witness_digest_coverage_counts"
     ] == {"preview_digest": 1}
+    assert payload["source_unit_coverages"][0]["coverage_status"] == "frontier_witnessed"
+    assert payload["source_unit_coverages"][0]["source_role"] == "finland_source_pathology"
+    assert payload["evidence_surface_report"]["summary"]["source_unit_coverage_count"] == 1
+    assert payload["evidence_surface_report"]["summary"][
+        "source_unit_coverage_status_counts"
+    ] == {"frontier_witnessed": 1}
     assert payload["evidence_surface_report"]["summary"][
         "frontier_claim_template_status_counts"
     ] == {"available": 1}

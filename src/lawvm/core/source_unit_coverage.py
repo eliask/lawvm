@@ -12,12 +12,14 @@ from lawvm.core.frozen_values import freeze_mapping
 SourceUnitCoverageStatus = Literal[
     "enumerated",
     "lineage_witnessed",
+    "frontier_witnessed",
     "unclassified",
     "blocked",
 ]
 
 SOURCE_UNIT_ENUMERATED: SourceUnitCoverageStatus = "enumerated"
 SOURCE_UNIT_LINEAGE_WITNESSED: SourceUnitCoverageStatus = "lineage_witnessed"
+SOURCE_UNIT_FRONTIER_WITNESSED: SourceUnitCoverageStatus = "frontier_witnessed"
 SOURCE_UNIT_UNCLASSIFIED: SourceUnitCoverageStatus = "unclassified"
 SOURCE_UNIT_BLOCKED: SourceUnitCoverageStatus = "blocked"
 
@@ -25,6 +27,7 @@ _VALID_STATUSES = frozenset(
     {
         SOURCE_UNIT_ENUMERATED,
         SOURCE_UNIT_LINEAGE_WITNESSED,
+        SOURCE_UNIT_FRONTIER_WITNESSED,
         SOURCE_UNIT_UNCLASSIFIED,
         SOURCE_UNIT_BLOCKED,
     }
@@ -141,6 +144,7 @@ def source_unit_coverage_evidence_report(
         "owner_phase_counts": phase_counts,
         "enumerated_count": status_counts.get(SOURCE_UNIT_ENUMERATED, 0),
         "lineage_witnessed_count": status_counts.get(SOURCE_UNIT_LINEAGE_WITNESSED, 0),
+        "frontier_witnessed_count": status_counts.get(SOURCE_UNIT_FRONTIER_WITNESSED, 0),
         "unclassified_count": status_counts.get(SOURCE_UNIT_UNCLASSIFIED, 0),
         "claim_flags": {
             "replay_claims": False,
