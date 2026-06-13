@@ -16,7 +16,12 @@ from typing import Any, Mapping
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.dependencies import latest_xml_locator_for_work
 from lawvm.new_zealand.operation_surface import NZOperationSurfaceReport, build_archived_work_operation_surface
-from lawvm.new_zealand.source_tree import NZSourceDocument, NZSourceNode, parse_nz_source_document
+from lawvm.new_zealand.source_tree import (
+    NZAmendInstruction,
+    NZSourceDocument,
+    NZSourceNode,
+    parse_nz_source_document,
+)
 
 
 @dataclass(frozen=True)
@@ -27,6 +32,10 @@ class NZPayloadNodeWitness:
     label: str
     heading: str
     text: str
+    # Typed amending instructions read from this node's ``<amend.in>``/citation
+    # payload. Preferred over the flattened ``text`` prose by the instruction
+    # workqueue so multi-instruction provisions split into N keyed candidates.
+    amend_instructions: tuple[NZAmendInstruction, ...] = ()
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
@@ -36,6 +45,7 @@ class NZPayloadNodeWitness:
             "label": self.label,
             "heading": self.heading,
             "text": self.text,
+            "amend_instructions": [row.to_jsonable() for row in self.amend_instructions],
         }
 
 
@@ -307,6 +317,7 @@ def _payload_node_witness(node: NZSourceNode) -> NZPayloadNodeWitness:
         label=node.label,
         heading=node.heading,
         text=_payload_body_text(node),
+        amend_instructions=node.amend_instructions,
     )
 
 

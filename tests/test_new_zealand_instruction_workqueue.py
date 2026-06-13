@@ -2170,6 +2170,224 @@ def test_nz_instruction_workqueue_text_cli_prints_filtered_context(monkeypatch, 
     assert "candidate-row" not in output
 
 
+def _typed_amend_in_surfaces(target_xml: bytes, amendment_xml: bytes):
+    operation_surface = build_operation_surface(
+        parse_nz_source_document(target_xml),
+        work_id="act_public_2009_13",
+        archived_dependency_work_ids=frozenset({"act_public_2010_35"}),
+    )
+    payload_surface = build_payload_surface(
+        operation_surface,
+        dependency_documents={"act_public_2010_35": parse_nz_source_document(amendment_xml)},
+    )
+    effect_readiness = build_effect_readiness_surface(operation_surface, payload_surface)
+    return operation_surface, payload_surface, effect_readiness
+
+
+def test_typed_amend_in_splits_multi_instruction_provision_into_keyed_candidates() -> None:
+    # One amending provision (href A35) holds two typed instructions keyed to
+    # section 11 and section 12. Each target's history note points at the same
+    # href; the workqueue must emit one exact, target-keyed candidate per row
+    # instead of a single multiplicity blocker.
+    target_xml = b"""\
+<act>
+  <body>
+    <prov id="S11"><label>11</label><heading>Eleven</heading>
+      <prov.body><subprov id="S11-4"><label>4</label><para><text>Body of section 11.</text></para></subprov></prov.body>
+      <notes>
+        <history-note id="HN11">
+          <amended-provision>Section 11(4)</amended-provision>
+          <amending-operation>amended</amending-operation>
+          <amending-provision href="A35">section 5</amending-provision>
+          <amending-leg>Example Amendment Act 2010</amending-leg>
+          Section 11(4): amended by section 5 of the Example Amendment Act 2010 (2010 No 35).
+        </history-note>
+      </notes>
+    </prov>
+    <prov id="S12"><label>12</label><heading>Twelve</heading>
+      <prov.body><subprov id="S12-1"><label>1</label><para><text>Body of section 12.</text></para></subprov></prov.body>
+      <notes>
+        <history-note id="HN12">
+          <amended-provision>Section 12(1)</amended-provision>
+          <amending-operation>amended</amending-operation>
+          <amending-provision href="A35">section 5</amending-provision>
+          <amending-leg>Example Amendment Act 2010</amending-leg>
+          Section 12(1): amended by section 5 of the Example Amendment Act 2010 (2010 No 35).
+        </history-note>
+      </notes>
+    </prov>
+  </body>
+</act>
+"""
+    amendment_xml = b"""\
+<act>
+  <body>
+    <prov id="A35"><label>5</label><heading>Amend</heading>
+      <prov.body>
+        <subprov><label>1</label><para><text>
+          <citation jurisdiction="nz"><extref href="DLM1">Section 11(4)</extref></citation>
+          is amended by omitting <amend.in>The Schedule</amend.in> and substituting <amend.in>Schedule 1</amend.in>.
+        </text></para></subprov>
+        <subprov><label>2</label><para><text>
+          <citation jurisdiction="nz"><extref href="DLM2">Section 12(1)</extref></citation>
+          is amended by omitting <amend.in>old phrase</amend.in> and substituting <amend.in>new phrase</amend.in>.
+        </text></para></subprov>
+      </prov.body>
+    </prov>
+  </body>
+</act>
+"""
+    report = build_instruction_workqueue(*_typed_amend_in_surfaces(target_xml, amendment_xml))
+    by_target = {row.target_address: row for row in report.rows}
+
+    s11 = by_target["section:11/subsection:4"]
+    assert s11.instruction_subfamily_status == "candidate_direct_typed_amend_in_text_substitution"
+    assert s11.instruction_subfamily == "direct_single_text_substitution"
+    assert s11.old_text == "The Schedule"
+    assert s11.new_text == "Schedule 1"
+    assert s11.text_substitution_scope == "inline_text_single_occurrence"
+
+    s12 = by_target["section:12/subsection:1"]
+    assert s12.instruction_subfamily_status == "candidate_direct_typed_amend_in_text_substitution"
+    assert s12.old_text == "old phrase"
+    assert s12.new_text == "new phrase"
+
+
+def test_typed_amend_in_preferred_over_prose_for_exact_payload() -> None:
+    # The flattened prose for this provision would parse a substitution, but
+    # the typed ``<amend.in>`` payload is the authoritative exact text. The
+    # emitted candidate must come from the typed elements (here the typed new
+    # text differs from a naive prose read, proving the typed path won).
+    target_xml = b"""\
+<act>
+  <body>
+    <prov id="S11"><label>11</label><heading>Eleven</heading>
+      <prov.body><subprov id="S11-4"><label>4</label><para><text>Body.</text></para></subprov></prov.body>
+      <notes>
+        <history-note id="HN11">
+          <amended-provision>Section 11(4)</amended-provision>
+          <amending-operation>amended</amending-operation>
+          <amending-provision href="A35">section 5</amending-provision>
+          <amending-leg>Example Amendment Act 2010</amending-leg>
+          Section 11(4): amended by section 5 of the Example Amendment Act 2010 (2010 No 35).
+        </history-note>
+      </notes>
+    </prov>
+  </body>
+</act>
+"""
+    amendment_xml = b"""\
+<act>
+  <body>
+    <prov id="A35"><label>5</label><heading>Amend</heading>
+      <prov.body><subprov><para><text>
+        <citation jurisdiction="nz"><extref href="DLM1">Section 11(4)</extref></citation>
+        is amended by omitting <amend.in>section 18</amend.in>
+        and substituting <amend.in>sections 18, <citation jurisdiction="nz">18A, and 18B</citation></amend.in>.
+      </text></para></subprov></prov.body>
+    </prov>
+  </body>
+</act>
+"""
+    report = build_instruction_workqueue(*_typed_amend_in_surfaces(target_xml, amendment_xml))
+    row = [r for r in report.rows if r.target_address == "section:11/subsection:4"][0]
+
+    assert "typed_amend_in" in row.instruction_subfamily_rule_id
+    assert row.old_text == "section 18"
+    # The nested citation text is captured verbatim as part of the new payload.
+    assert row.new_text == "sections 18, 18A, and 18B"
+
+
+def test_typed_amend_in_insert_verb_stays_typed_blocker_not_guess() -> None:
+    # The matched typed instruction is an insert (one ``<amend.in>``), which is
+    # not a text-replace shape. It must surface as a typed blocker keyed to the
+    # target, never a guessed substitution candidate.
+    target_xml = b"""\
+<act>
+  <body>
+    <prov id="S17"><label>17</label><heading>Seventeen</heading>
+      <prov.body><subprov id="S17-2"><label>2</label><para><text>Body.</text></para></subprov></prov.body>
+      <notes>
+        <history-note id="HN17">
+          <amended-provision>Section 17(2)</amended-provision>
+          <amending-operation>amended</amending-operation>
+          <amending-provision href="A35">section 5</amending-provision>
+          <amending-leg>Example Amendment Act 2010</amending-leg>
+          Section 17(2): amended by section 5 of the Example Amendment Act 2010 (2010 No 35).
+        </history-note>
+      </notes>
+    </prov>
+  </body>
+</act>
+"""
+    amendment_xml = b"""\
+<act>
+  <body>
+    <prov id="A35"><label>5</label><heading>Amend</heading>
+      <prov.body><subprov><para><text>
+        <citation jurisdiction="nz"><extref href="DLM1">Section 17(2)</extref></citation>
+        is amended by inserting <amend.in>of a chief executive</amend.in> after <quote.in>required</quote.in>.
+      </text></para></subprov></prov.body>
+    </prov>
+  </body>
+</act>
+"""
+    report = build_instruction_workqueue(*_typed_amend_in_surfaces(target_xml, amendment_xml))
+    row = [r for r in report.rows if r.target_address == "section:17/subsection:2"][0]
+
+    assert row.instruction_subfamily_status == "blocked_typed_amend_in_not_substitution_verb"
+    assert row.instruction_subfamily == ""
+    assert row.old_text == ""
+    assert row.new_text == ""
+
+
+def test_typed_amend_in_ambiguous_target_stays_blocker() -> None:
+    # Two typed instructions both resolve to section 6 (different definitions
+    # inside it, which the citation cannot disambiguate). The workqueue must
+    # refuse rather than guess which instruction the row means.
+    target_xml = b"""\
+<act>
+  <body>
+    <prov id="S6"><label>6</label><heading>Interpretation</heading>
+      <prov.body><subprov id="S6-1"><label>1</label><para><text>Body.</text></para></subprov></prov.body>
+      <notes>
+        <history-note id="HN6">
+          <amended-provision>Section 6</amended-provision>
+          <amending-operation>amended</amending-operation>
+          <amending-provision href="A35">section 5</amending-provision>
+          <amending-leg>Example Amendment Act 2010</amending-leg>
+          Section 6: amended by section 5 of the Example Amendment Act 2010 (2010 No 35).
+        </history-note>
+      </notes>
+    </prov>
+  </body>
+</act>
+"""
+    amendment_xml = b"""\
+<act>
+  <body>
+    <prov id="A35"><label>5</label><heading>Amend</heading>
+      <prov.body>
+        <subprov><label>1</label><para><text>
+          <citation jurisdiction="nz"><extref href="DLM1">Section 6</extref></citation>
+          is amended by omitting <amend.in>alpha</amend.in> and substituting <amend.in>beta</amend.in>.
+        </text></para></subprov>
+        <subprov><label>2</label><para><text>
+          <citation jurisdiction="nz"><extref href="DLM1">Section 6</extref></citation>
+          is amended by omitting <amend.in>gamma</amend.in> and substituting <amend.in>delta</amend.in>.
+        </text></para></subprov>
+      </prov.body>
+    </prov>
+  </body>
+</act>
+"""
+    report = build_instruction_workqueue(*_typed_amend_in_surfaces(target_xml, amendment_xml))
+    row = [r for r in report.rows if r.target_address == "section:6"][0]
+
+    assert row.instruction_subfamily_status == "blocked_typed_amend_in_ambiguous_target"
+    assert row.instruction_subfamily == ""
+
+
 def test_nz_instruction_workqueue_cli_parse_defaults() -> None:
     parser = _build_parser()
 

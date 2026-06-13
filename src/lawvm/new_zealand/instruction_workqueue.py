@@ -289,13 +289,19 @@ def build_instruction_workqueue(
         payload_matches = payload_row.matches if payload_row is not None else ()
         payload_texts = tuple(match.text for match in payload_matches)
         payload_text_snippets = tuple(_snippet(match.text) for match in payload_matches)
-        text_substitution = _classify_direct_single_text_substitution(
+        text_substitution = _classify_typed_amend_in_text_substitution(
             operation_family=readiness_row.operation_family,
             target_address=readiness_row.target_address,
-            payload_instruction_shape=readiness_row.payload_instruction_shape,
-            amending_provision_hrefs=operation_row.amending_provision_hrefs if operation_row is not None else (),
-            payload_texts=payload_texts,
+            payload_matches=payload_matches,
         )
+        if text_substitution is None:
+            text_substitution = _classify_direct_single_text_substitution(
+                operation_family=readiness_row.operation_family,
+                target_address=readiness_row.target_address,
+                payload_instruction_shape=readiness_row.payload_instruction_shape,
+                amending_provision_hrefs=operation_row.amending_provision_hrefs if operation_row is not None else (),
+                payload_texts=payload_texts,
+            )
         structural_subfamily = _classify_report_only_structural_subfamily(
             operation_family=readiness_row.operation_family,
             target_address=readiness_row.target_address,
@@ -559,6 +565,103 @@ class _LatestOracleTargetResolution:
     node: NZSourceNode
     status: str
     rule_id: str
+
+
+def _classify_typed_amend_in_text_substitution(
+    *,
+    operation_family: str,
+    target_address: str,
+    payload_matches: tuple[Any, ...],
+) -> _TextSubstitutionCandidate | None:
+    """Classify a text substitution from typed ``<amend.in>`` instructions.
+
+    A single amending provision (one href) may hold N typed instructions, one
+    per ``<text>``; the operation-witness row identifies which by its
+    ``target_address``. We select the typed instruction whose ``target_citation``
+    matches this row's address, then emit an exact single-occurrence
+    substitution candidate from its paired ``<amend.in>`` old/new text.
+
+    Returns ``None`` (defer to the prose path) when there are no typed
+    instructions at all, or when no typed instruction targets this row — never
+    regressing the existing prose emissions. Returns a typed *blocker* (not a
+    guess) when the matched instruction is a not-yet-supported shape (insert,
+    omit-only, each-place, structural payload, missing old/new).
+    """
+    typed_instructions = tuple(
+        instruction for match in payload_matches for instruction in getattr(match, "amend_instructions", ())
+    )
+    if not typed_instructions:
+        return None
+    if operation_family != "amended":
+        # Typed text-substitution lowering is only defined for the ``amended``
+        # family; leave other families to the existing prose/structural paths.
+        return None
+    matched = tuple(
+        instruction
+        for instruction in typed_instructions
+        if _target_citation_matches(instruction.target_citation, target_address)
+    )
+    if not matched:
+        # No typed instruction is keyed to this target — defer to prose so a
+        # provision whose target is only recoverable from prose is not lost.
+        return None
+    if len(matched) > 1:
+        return _TextSubstitutionCandidate(
+            status="blocked_typed_amend_in_ambiguous_target",
+            rule_id="nz_instruction_semantics_blocked_typed_amend_in_ambiguous_target",
+            clause_count=len(matched),
+            explicit_target_citation=matched[0].target_citation,
+            target_citation_status="matched",
+        )
+    instruction = matched[0]
+    if instruction.verb not in {"omitting_substituting", "replace_with"}:
+        return _TextSubstitutionCandidate(
+            status="blocked_typed_amend_in_not_substitution_verb",
+            rule_id="nz_instruction_semantics_blocked_typed_amend_in_not_substitution_verb",
+            explicit_target_citation=instruction.target_citation,
+            target_citation_status="matched",
+        )
+    old_text = " ".join(instruction.old_text.split()).strip(" ,;.")
+    new_text = " ".join(instruction.new_text.split()).strip(" ,;.")
+    if not old_text or not new_text:
+        return _TextSubstitutionCandidate(
+            status="blocked_typed_amend_in_payload_incomplete",
+            rule_id="nz_instruction_semantics_blocked_typed_amend_in_payload_incomplete",
+            explicit_target_citation=instruction.target_citation,
+            target_citation_status="matched",
+            old_text=old_text,
+            new_text=new_text,
+        )
+    # NB: the prose path's structural-payload guard
+    # (``_looks_structural_omitting_substituting_payload``) is a defense against
+    # flattening ambiguity — it is NOT applied here. Typed ``<amend.in>``
+    # boundaries are exact, so the old/new text is the literal substitution; a
+    # payload that is genuinely structural (e.g. "the following subsection")
+    # carries no ``<amend.in>`` pair and never reaches this point. The
+    # downstream single-occurrence oracle + dry-run kernel reject anything that
+    # is not a clean single substitution, so a mis-shaped payload becomes an
+    # honest residual rather than a false agreement.
+    if instruction.each_place:
+        return _TextSubstitutionCandidate(
+            status="candidate_direct_each_place_typed_amend_in_text_substitution",
+            subfamily="direct_each_place_text_substitution",
+            rule_id="nz_instruction_semantics_direct_each_place_typed_amend_in_text_substitution_candidate",
+            explicit_target_citation=instruction.target_citation,
+            target_citation_status="matched",
+            old_text=old_text,
+            new_text=new_text,
+            scope="inline_text_each_place",
+        )
+    return _TextSubstitutionCandidate(
+        status="candidate_direct_typed_amend_in_text_substitution",
+        subfamily="direct_single_text_substitution",
+        rule_id="nz_instruction_semantics_direct_typed_amend_in_text_substitution_candidate",
+        explicit_target_citation=instruction.target_citation,
+        target_citation_status="matched",
+        old_text=old_text,
+        new_text=new_text,
+        scope="inline_text_single_occurrence",
+    )
 
 
 def _classify_direct_single_text_substitution(

@@ -9,6 +9,7 @@ from final text.
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +30,42 @@ _TEXT_EXCLUDE_TAGS = {"notes", "history", "history-note"}
 # wraps the defined term in a ``def-term`` child of the leading ``text``; we use
 # the first such term, normalized, as the addressable label.
 _DEF_TERM_TAG = "def-term"
+
+
+@dataclass(frozen=True)
+class NZAmendInstruction:
+    """One typed amending instruction read from an amending act's ``<text>``.
+
+    NZ amending provisions carry the old/new payload in paired ``<amend.in>``
+    elements and the target in a ``<citation>`` (``<extref>`` for modern acts,
+    an ``<atidlm:linkcontent>`` for older consolidated acts). A single
+    ``<text>`` element is one instruction; a multi-instruction provision has
+    several sibling ``<text>`` elements under one ``amending-provision`` href.
+
+    This is the structured alternative to scraping the flattened node prose: by
+    reading the typed elements directly we recover multi-instruction provisions
+    (one href, N instructions) and exact old/new text instead of regex guesses.
+    ``verb`` is the prose operation word (``omitting_substituting``,
+    ``inserting``, ``omitting`` …) classified from the surrounding ``<text>``;
+    only ``omitting_substituting`` with an exact old/new pair is currently a
+    single-occurrence text-replace candidate — everything else stays a typed
+    not-yet-supported instruction, never a guess.
+    """
+
+    target_citation: str
+    verb: str
+    old_text: str
+    new_text: str
+    each_place: bool
+
+    def to_jsonable(self) -> dict[str, Any]:
+        return {
+            "target_citation": self.target_citation,
+            "verb": self.verb,
+            "old_text": self.old_text,
+            "new_text": self.new_text,
+            "each_place": self.each_place,
+        }
 
 
 @dataclass(frozen=True)
@@ -79,6 +116,11 @@ class NZSourceNode:
     deletion_status: str
     text: str
     history: tuple[NZHistoryWitness, ...]
+    # Typed amending instructions read from this node's ``<amend.in>``/citation
+    # payload when the node is an amending-act provision. Empty for ordinary
+    # (non-amending) nodes and for amending nodes whose payload is not typed
+    # (e.g. schedule indirection, structural ``<amend>`` subtrees).
+    amend_instructions: tuple[NZAmendInstruction, ...] = ()
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
@@ -92,6 +134,7 @@ class NZSourceNode:
             "deletion_status": self.deletion_status,
             "text": self.text,
             "history": [row.to_jsonable() for row in self.history],
+            "amend_instructions": [row.to_jsonable() for row in self.amend_instructions],
         }
 
 
@@ -219,6 +262,7 @@ def _walk_source_nodes(
             deletion_status=_attr(node, "deletion-status"),
             text=_legal_text(node),
             history=tuple(_history_witness(note) for note in history_notes),
+            amend_instructions=_amend_instructions(node),
         )
         nodes.append(source_node)
         for child in node:
@@ -373,6 +417,105 @@ def _legal_text(node: etree._Element) -> str:
         if descendant.tail:
             texts.append(descendant.tail)
     return _normalize_text(" ".join(texts))
+
+
+def _amend_instructions(node: etree._Element) -> tuple[NZAmendInstruction, ...]:
+    """Read typed ``<amend.in>``/citation instructions from an amending node.
+
+    Each ``<text>`` descendant that carries one or more ``<amend.in>`` elements
+    is one instruction. We classify the prose verb and, for the
+    omit/substitute shape with exactly the paired ``<amend.in>`` arity, return
+    the exact old/new text and the ``<extref>``/``linkcontent`` target. Every
+    other shape (insert, omit-only, structural, odd arity) is still returned as
+    a typed instruction with its verb so the consumer can keep it a blocker
+    rather than guess. Returns ``()`` when no ``<amend.in>`` is present (the
+    common non-amending / schedule-indirection case).
+    """
+    instructions: list[NZAmendInstruction] = []
+    for text_node in node.iter():
+        if not isinstance(text_node.tag, str) or _localname(text_node) != "text":
+            continue
+        amend_ins = [child for child in text_node.iter() if isinstance(child.tag, str) and _localname(child) == "amend.in"]
+        if not amend_ins:
+            continue
+        flat = _node_text(text_node)
+        verb = _amend_instruction_verb(flat)
+        target_citation = _amend_instruction_target(text_node)
+        each_place = bool(re.search(r"\bin each place\b|\bwherever\b", flat, re.IGNORECASE))
+        if verb in {"omitting_substituting", "replace_with"} and len(amend_ins) == 2:
+            old_text = _node_text(amend_ins[0])
+            new_text = _node_text(amend_ins[1])
+        else:
+            old_text = ""
+            new_text = ""
+        instructions.append(
+            NZAmendInstruction(
+                target_citation=target_citation,
+                verb=verb,
+                old_text=old_text,
+                new_text=new_text,
+                each_place=each_place,
+            )
+        )
+    return tuple(instructions)
+
+
+def _amend_instruction_verb(flat_text: str) -> str:
+    normalized = flat_text.lower()
+    has_omit = "omitting" in normalized
+    has_subst = "substituting" in normalized
+    if has_omit and has_subst:
+        return "omitting_substituting"
+    # Modern "In <target>, replace <old> with <new>." inline substitution.
+    if re.search(r"\breplace\b.*\bwith\b", normalized) and "inserting" not in normalized:
+        return "replace_with"
+    if "inserting" in normalized:
+        return "inserting"
+    if has_omit:
+        return "omitting"
+    if "substituting" in normalized or "replac" in normalized:
+        return "substituting"
+    return "other"
+
+
+def _amend_instruction_target(text_node: etree._Element) -> str:
+    """Resolve the cited target from a ``<text>`` instruction.
+
+    The target sits in a leading ``<citation>``: modern acts wrap it in an
+    ``<extref>``; older consolidated acts wrap it in an ``atidlm:linkcontent``
+    inside the citation, prefixed by a bare ``Section``/``Clause`` word. We take
+    the first ``<extref>`` text if present, otherwise reconstruct ``<prefix>
+    <linkcontent>`` from the first citation. A target inside an ``<amend.in>``
+    is payload, not the instruction target, so we ignore citations nested in an
+    ``<amend.in>``.
+    """
+    for descendant in text_node.iter():
+        if not isinstance(descendant.tag, str):
+            continue
+        if _localname(descendant) != "extref":
+            continue
+        if any(_localname(anc) == "amend.in" for anc in descendant.iterancestors()):
+            continue
+        target = _node_text(descendant)
+        if target:
+            return target
+    for descendant in text_node.iter():
+        if not isinstance(descendant.tag, str):
+            continue
+        if _localname(descendant) != "citation":
+            continue
+        if any(_localname(anc) == "amend.in" for anc in descendant.iterancestors()):
+            continue
+        link = ""
+        for inner in descendant.iter():
+            if isinstance(inner.tag, str) and _localname(inner) == "linkcontent":
+                link = _node_text(inner)
+                break
+        if not link:
+            continue
+        prefix = _normalize_text(descendant.text or "")
+        return _normalize_text(f"{prefix} {link}")
+    return ""
 
 
 def _source_zone(xml_path: str) -> str:

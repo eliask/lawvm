@@ -139,6 +139,134 @@ def test_parse_nz_source_document_marks_end_skeleton_nodes_without_dropping_them
     assert document.nodes[1].xml_path == "/act/end/skeletons/skeleton.act/skeleton.act.body/prov"
 
 
+def test_amend_instructions_split_multi_instruction_provision() -> None:
+    # One amending provision, two ``<text>`` instructions, each an exact
+    # omit/substitute keyed to its own ``<extref>`` target. The flattened prose
+    # path would collapse this into one multi-clause blocker; the typed reader
+    # must yield two distinct exact instructions.
+    xml = b"""\
+<act>
+  <body>
+    <prov id="A5"><label>5</label><heading>Section 11 amended</heading>
+      <prov.body>
+        <subprov><label>1</label><para><text>
+          <citation jurisdiction="nz"><extref href="DLM1">Section 11(4)</extref></citation>
+          is amended by omitting <amend.in>The Schedule</amend.in>
+          and substituting <amend.in><citation jurisdiction="nz">Schedule 1</citation></amend.in>.
+        </text></para></subprov>
+        <subprov><label>2</label><para><text>
+          <citation jurisdiction="nz"><extref href="DLM1">Section 11(5)</extref></citation>
+          is amended by omitting <amend.in>old phrase</amend.in>
+          and substituting <amend.in>new phrase</amend.in>.
+        </text></para></subprov>
+      </prov.body>
+    </prov>
+  </body>
+</act>
+"""
+
+    document = parse_nz_source_document(xml)
+    node = [n for n in document.nodes if n.xml_id == "A5"][0]
+
+    assert len(node.amend_instructions) == 2
+    first, second = node.amend_instructions
+    assert first.verb == "omitting_substituting"
+    assert first.target_citation == "Section 11(4)"
+    assert first.old_text == "The Schedule"
+    # The nested ``<citation>`` text is part of the new payload, not the target.
+    assert first.new_text == "Schedule 1"
+    assert first.each_place is False
+    assert second.target_citation == "Section 11(5)"
+    assert second.old_text == "old phrase"
+    assert second.new_text == "new phrase"
+
+
+def test_amend_instructions_read_replace_with_and_linkcontent_target() -> None:
+    # Modern "replace X with Y" form, with the older ``<linkcontent>`` target
+    # carrier (no ``<extref>``). Both the verb and the reconstructed target
+    # citation must be recovered.
+    xml = b"""\
+<act>
+  <body>
+    <prov id="A6"><label>6</label><heading>Section 42 amended</heading>
+      <prov.body><subprov><para><text>
+        In <citation jurisdiction="nz">Section <linkcontent>42(3)</linkcontent></citation>,
+        replace <amend.in>old rate</amend.in> with <amend.in>new rate</amend.in>.
+      </text></para></subprov></prov.body>
+    </prov>
+  </body>
+</act>
+"""
+
+    document = parse_nz_source_document(xml)
+    node = [n for n in document.nodes if n.xml_id == "A6"][0]
+
+    assert len(node.amend_instructions) == 1
+    instruction = node.amend_instructions[0]
+    assert instruction.verb == "replace_with"
+    assert instruction.target_citation == "Section 42(3)"
+    assert instruction.old_text == "old rate"
+    assert instruction.new_text == "new rate"
+
+
+def test_amend_instructions_keep_insert_and_each_place_typed_not_guessed() -> None:
+    # An insert instruction (one ``<amend.in>``) must carry its verb but no
+    # old/new payload — it stays a typed not-yet-supported instruction, never a
+    # guessed substitution. A wherever/in-each-place omit/substitute must be
+    # flagged ``each_place`` while still carrying exact old/new.
+    xml = b"""\
+<act>
+  <body>
+    <prov id="A7"><label>7</label><heading>Mixed</heading>
+      <prov.body>
+        <subprov><label>1</label><para><text>
+          <citation jurisdiction="nz"><extref href="DLM2">Section 17(2)(b)</extref></citation>
+          is amended by inserting <amend.in>of a chief executive</amend.in> after <quote.in>required</quote.in>.
+        </text></para></subprov>
+        <subprov><label>2</label><para><text>
+          <citation jurisdiction="nz"><extref href="DLM3">Section 48(3)</extref></citation>
+          is amended by omitting <amend.in>widow</amend.in> wherever it appears
+          and substituting in each case <amend.in>spouse or partner</amend.in>.
+        </text></para></subprov>
+      </prov.body>
+    </prov>
+  </body>
+</act>
+"""
+
+    document = parse_nz_source_document(xml)
+    node = [n for n in document.nodes if n.xml_id == "A7"][0]
+
+    insert, each_place = node.amend_instructions
+    assert insert.verb == "inserting"
+    assert insert.old_text == ""
+    assert insert.new_text == ""
+    assert each_place.verb == "omitting_substituting"
+    assert each_place.each_place is True
+    assert each_place.old_text == "widow"
+    assert each_place.new_text == "spouse or partner"
+
+
+def test_amend_instructions_empty_when_no_amend_in() -> None:
+    # A global "every reference … in the principal Act" instruction carries no
+    # ``<amend.in>`` pair and no resolvable target — it must yield no typed
+    # instruction (stays a blocker downstream), not a guess.
+    xml = b"""\
+<act>
+  <body>
+    <prov id="A8"><label>8</label><heading>References</heading>
+      <prov.body><subprov><para><text>The principal Act is amended by omitting every reference to the Superintendent, and substituting a reference to the Authority.</text></para></subprov></prov.body>
+    </prov>
+  </body>
+</act>
+"""
+
+    document = parse_nz_source_document(xml)
+    node = [n for n in document.nodes if n.xml_id == "A8"][0]
+
+    assert node.amend_instructions == ()
+
+
 def test_nz_source_summary_cli_parse_defaults() -> None:
     parser = _build_parser()
 
