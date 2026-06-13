@@ -25,6 +25,7 @@ Detectors:
   label_normalization_collision same-kind sibling labels that collide under
                           the jurisdiction's slot-identity normalizer
   illegal_edge           impossible parent→child nesting
+  sort_order             out-of-order same-kind labeled siblings
   all_tree               all check_invariants violations (covers both above)
   text_duplication       large duplicated text blocks (lint-level)
   flattened_sublist_family repeated letter/roman/digit families suggesting
@@ -376,6 +377,8 @@ def build_invariant_bisect_bundle(
         process_muutoslaki,
         _resolve_applicable_amendment_records,
     )
+    from lawvm.finland.process_request import ProcessAmendmentRequest
+    from lawvm.finland.process_result_builder import ProcessAmendmentSinks
     from lawvm.finland.statute import ReplayState, StatuteContext
     from lawvm.finland.helpers import _fi_label_postprocessor
 
@@ -409,8 +412,14 @@ def build_invariant_bisect_bundle(
     state = ReplayState(ir=ctx.base_ir)
     for mid in amendment_ids[:start_idx]:
         state = process_muutoslaki(
-            mid, state, ctx,
-            replay_mode=mode, parent_id=statute_id, corpus=cs,
+            request=ProcessAmendmentRequest(
+                amendment_id=mid,
+                state=state,
+                ctx=ctx,
+                replay_mode=mode,
+                parent_id=statute_id,
+                corpus=cs,
+            ),
         ).output
 
     # Check state before scan window
@@ -425,9 +434,15 @@ def build_invariant_bisect_bundle(
         before_ir = state.ir
         step_lo_ops: list[Any] = []
         state = process_muutoslaki(
-            mid, state, ctx,
-            replay_mode=mode, parent_id=statute_id, corpus=cs,
-            lo_ops_out=step_lo_ops,
+            request=ProcessAmendmentRequest(
+                amendment_id=mid,
+                state=state,
+                ctx=ctx,
+                replay_mode=mode,
+                parent_id=statute_id,
+                corpus=cs,
+            ),
+            sinks=ProcessAmendmentSinks(lo_ops_out=step_lo_ops),
         ).output
         if detector == "descendant_sibling_loss":
             violations = [
