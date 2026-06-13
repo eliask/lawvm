@@ -9,9 +9,7 @@ import re
 
 from lawvm.finland.johtolause.affected_statute import (
     instrument_from_text,
-    parse_affected_statute_head,
-    parse_delegated_authority_lead_in,
-    target_zone,
+    parse_routing_surface,
 )
 
 # Compiled at module scope per §1.11.  Two unbounded .* with re.DOTALL would
@@ -46,28 +44,6 @@ OP_KEYWORDS = {
     'siirretään', 'siirretty', 'siirtää', 'siirtänyt',
 }
 
-def _normalize_source_citation_id(raw: str, source_year: int) -> str | None:
-    """Normalize textual source citations like ``631/2022`` or ``631/22``."""
-    raw = re.sub(r"\s+", "", (raw or ""))
-    m = re.fullmatch(r"(\d{1,4})/(\d{2,4})", raw)
-    if not m:
-        return None
-    left, right = m.groups()
-    num = int(left)
-    if len(right) == 4:
-        return f"{right}/{num}"
-    year_two = int(right)
-    source_century = (source_year // 100) * 100
-    full_year = source_century + year_two
-    if full_year > source_year:
-        full_year -= 100
-    return f"{full_year}/{num}"
-
-
-def _target_zone(johto: str) -> str:
-    return target_zone(johto)
-
-
 def _target_head_matches_parent_metadata(
     *,
     johto: str,
@@ -80,7 +56,7 @@ def _target_head_matches_parent_metadata(
     otherwise clear affected-statute head.  It deliberately ignores edit
     distance and requires matching instrument plus either issue date or title.
     """
-    head = parse_affected_statute_head(johto)
+    head = parse_routing_surface(johto).affected_head
     if head is None:
         return False
     parent_instrument = instrument_from_text(parent_title)
@@ -100,7 +76,7 @@ def _target_head_matches_parent_metadata(
 
 
 def _looks_like_nojalla_authority_clause(johto: str) -> bool:
-    return parse_delegated_authority_lead_in(johto) is not None
+    return parse_routing_surface(johto).delegated_authority is not None
 
 
 def _parent_title_reference_variants(parent_title: str) -> set[str]:
@@ -166,11 +142,9 @@ def extract_pending_amendment_target_id(
         source_year = int(str(amendment_id).split("/", 1)[0])
     except (TypeError, ValueError, IndexError):
         return None
-    johto_compact = re.sub(r"\s+", " ", johto or "")
-    cut = re.search(r"\bsellais(?:ena|ina)\s+kuin\b|\bsiihen\s+myöhemmin\b", johto_compact, re.I)
-    target_zone = johto_compact[:cut.start()] if cut else johto_compact
-    for ref_num, ref_year in re.findall(r"\(\s*(\d+)\s*/\s*(\d{2,4})\s*\)", target_zone):
-        target_id = _normalize_source_citation_id(f"{ref_num}/{ref_year}", source_year)
+    surface = parse_routing_surface(johto, source_year=source_year)
+    for citation in surface.target_citations:
+        target_id = citation.normalized_id
         if target_id and target_id != amendment_id:
             return target_id
     return None
@@ -188,23 +162,7 @@ def _johtolause_references_parent(johto: str, parent_id: str) -> bool:
     If some found and at least one matches parent_id → True.
     If some found but NONE match parent_id → False (wrong statute).
     """
-    target_zone = _target_zone(johto)
-    refs = re.findall(r'\(\s*(\d+)\s*/\s*(\d{2,4})\s*\)', target_zone)
-    if not refs:
-        return True
-    try:
-        year_str, num_str = parent_id.split("/")
-        num = int(num_str)
-    except (ValueError, AttributeError):
-        return True
-    year_short = year_str[-2:]  # "1991" → "91"
-    for ref_num, ref_year in refs:
-        try:
-            if int(ref_num) == num and ref_year in (year_str, year_short):
-                return True
-        except ValueError:
-            continue
-    return False
+    return parse_routing_surface(johto).references_statute(parent_id)
 
 
 def johtolause_cited_target_ids(johto: str, source_year: int) -> list[str]:
@@ -217,15 +175,7 @@ def johtolause_cited_target_ids(johto: str, source_year: int) -> list[str]:
     ``num_collision_skip`` diagnostics — so the message can name what the
     johtolause actually cites rather than just saying "a different statute".
     """
-    target_zone = _target_zone(johto)
-    out: list[str] = []
-    seen: set[str] = set()
-    for ref_num, ref_year in re.findall(r"\(\s*(\d+)\s*/\s*(\d{2,4})\s*\)", target_zone):
-        norm = _normalize_source_citation_id(f"{ref_num}/{ref_year}", source_year)
-        if norm and norm not in seen:
-            seen.add(norm)
-            out.append(norm)
-    return out
+    return list(parse_routing_surface(johto, source_year=source_year).normalized_target_ids())
 
 
 def _title_explicitly_targets_other_statute(source_title: str, parent_title: str) -> bool:

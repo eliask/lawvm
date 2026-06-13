@@ -59,6 +59,58 @@ class DelegatedAuthorityLeadIn:
     authority_citations: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class TargetCitation:
+    """Citation token found in the target-identifying zone of a johtolause."""
+
+    num: str
+    year: str
+    normalized_id: str | None
+
+    def matches_statute_id(self, statute_id: str) -> bool:
+        try:
+            year_str, num_str = statute_id.split("/")
+            parent_num = int(num_str)
+        except (ValueError, AttributeError):
+            return False
+        try:
+            return int(self.num) == parent_num and self.year in (year_str, year_str[-2:])
+        except ValueError:
+            return False
+
+
+@dataclass(frozen=True, slots=True)
+class JohtolauseRoutingSurface:
+    """Typed citation-routing surface extracted from one Finnish johtolause."""
+
+    target_zone: str
+    affected_head: AffectedStatuteHead | None
+    delegated_authority: DelegatedAuthorityLeadIn | None
+    target_citations: tuple[TargetCitation, ...]
+
+    def references_statute(self, statute_id: str) -> bool:
+        if not self.target_citations:
+            return True
+        try:
+            year_str, num_str = statute_id.split("/")
+            int(num_str)
+        except (ValueError, AttributeError):
+            return True
+        if not year_str:
+            return True
+        return any(citation.matches_statute_id(statute_id) for citation in self.target_citations)
+
+    def normalized_target_ids(self) -> tuple[str, ...]:
+        out: list[str] = []
+        seen: set[str] = set()
+        for citation in self.target_citations:
+            norm = citation.normalized_id
+            if norm and norm not in seen:
+                seen.add(norm)
+                out.append(norm)
+        return tuple(out)
+
+
 def target_zone(text: str) -> str:
     """Return the part of a johtolause where target-statute citations live."""
 
@@ -77,6 +129,25 @@ def _parse_finnish_date(day_s: str | None, month_s: str | None, year_s: str | No
         return date(int(year_s), month, int(day_s))
     except ValueError:
         return None
+
+
+def normalize_source_citation_id(raw: str, source_year: int) -> str | None:
+    """Normalize textual source citations like ``631/2022`` or ``631/22``."""
+
+    raw = re.sub(r"\s+", "", (raw or ""))
+    match = re.fullmatch(r"(\d{1,4})/(\d{2,4})", raw)
+    if not match:
+        return None
+    left, right = match.groups()
+    num = int(left)
+    if len(right) == 4:
+        return f"{right}/{num}"
+    year_two = int(right)
+    source_century = (source_year // 100) * 100
+    full_year = source_century + year_two
+    if full_year > source_year:
+        full_year -= 100
+    return f"{full_year}/{num}"
 
 
 def instrument_from_text(text: str) -> str:
@@ -122,3 +193,19 @@ def parse_delegated_authority_lead_in(johto: str) -> DelegatedAuthorityLeadIn | 
         return None
     citations = tuple(f"{num}/{year}" for num, year in _CITATION_RE.findall(zone))
     return DelegatedAuthorityLeadIn(text=zone, authority_citations=citations)
+
+
+def parse_routing_surface(johto: str, source_year: int | None = None) -> JohtolauseRoutingSurface:
+    """Parse the subset of johtolause grammar used by citation routing."""
+
+    zone = target_zone(johto)
+    citations: list[TargetCitation] = []
+    for num, year in _CITATION_RE.findall(zone):
+        normalized = normalize_source_citation_id(f"{num}/{year}", source_year) if source_year is not None else None
+        citations.append(TargetCitation(num=num, year=year, normalized_id=normalized))
+    return JohtolauseRoutingSurface(
+        target_zone=zone,
+        affected_head=parse_affected_statute_head(johto),
+        delegated_authority=parse_delegated_authority_lead_in(johto),
+        target_citations=tuple(citations),
+    )

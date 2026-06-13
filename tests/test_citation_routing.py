@@ -34,6 +34,7 @@ from lawvm.finland.citation_routing import (
 from lawvm.finland.johtolause.affected_statute import (
     parse_affected_statute_head,
     parse_delegated_authority_lead_in,
+    parse_routing_surface,
 )
 
 
@@ -44,6 +45,27 @@ from lawvm.finland.johtolause.affected_statute import (
 
 class TestJohtolauseCitedTargetIds:
     """johtolause_cited_target_ids names the statute(s) a preamble actually cites."""
+
+    def test_routing_surface_owns_target_zone_citations(self) -> None:
+        johto = (
+            "muutetaan jonkin lain (100/58) 5 §, sellaisena kuin se on "
+            "laissa (661/62)"
+        )
+        surface = parse_routing_surface(johto, source_year=1965)
+
+        assert surface.normalized_target_ids() == ("1958/100",)
+        assert surface.references_statute("1958/100")
+        assert not surface.references_statute("1962/661")
+
+    def test_routing_surface_owns_nojalla_authority_classification(self) -> None:
+        johto = (
+            "Opetusministerin esittelystä säädetään ammatillisista oppilaitoksista "
+            "annetun lain (487/87) 60 §:n nojalla:"
+        )
+        surface = parse_routing_surface(johto, source_year=1992)
+
+        assert surface.delegated_authority is not None
+        assert surface.normalized_target_ids() == ("1987/487",)
 
     def test_dropped_digit_typo_surfaces_cited_statute(self) -> None:
         # 1965/301 johtolause: a dropped digit makes rakennuslaki (370/58)
