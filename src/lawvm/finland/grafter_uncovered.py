@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import re
 import datetime as dt
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, cast
 
 import lxml.etree as etree
@@ -120,6 +121,41 @@ if TYPE_CHECKING:
     from lawvm.corpus_store import CorpusStore
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class UncoveredSectionKey:
+    """Part/chapter/section key used by uncovered-body replay guards."""
+
+    part: str
+    chapter: str
+    section: str
+
+
+@dataclass(frozen=True, slots=True)
+class UncoveredSkipKey:
+    """Stable de-duplication key for uncovered-body skipped-recovery findings."""
+
+    reason: str
+    part: str
+    chapter: str
+    section: str
+
+
+def _uncovered_section_key(
+    *,
+    part: str | None,
+    chapter: str | None,
+    section: str,
+) -> UncoveredSectionKey:
+    """Return a normalized key for uncovered-body section ownership checks."""
+    norm_part = _norm_num_token(part) if part else ""
+    part_arabic = _roman_label_to_arabic(norm_part) if norm_part else None
+    return UncoveredSectionKey(
+        part=str(part_arabic) if part_arabic is not None else norm_part,
+        chapter=_norm_num_token(chapter) if chapter else "",
+        section=_norm_num_token(section),
+    )
 
 
 def _uncovered_section_payload_completeness(
@@ -345,7 +381,7 @@ def _recover_uncovered_body_ops(
             return None
         return f"{base}{chr(ord(suffix) + 1)}"
 
-    _recorded_skip_keys: set[tuple[str, str, str, str]] = set()
+    _recorded_skip_keys: set[UncoveredSkipKey] = set()
 
     def _record_skip(
         reason: str,
@@ -354,7 +390,12 @@ def _recover_uncovered_body_ops(
         amend_part_label: Optional[str] = None,
     ) -> None:
         if findings_out is not None:
-            skip_key = (reason, amend_part_label or "", amend_chapter_label or "", label)
+            skip_key = UncoveredSkipKey(
+                reason=reason,
+                part=amend_part_label or "",
+                chapter=amend_chapter_label or "",
+                section=label,
+            )
             if skip_key in _recorded_skip_keys:
                 return
             _recorded_skip_keys.add(skip_key)
@@ -372,26 +413,28 @@ def _recover_uncovered_body_ops(
     # during apply_op_ir. Failed ops block uncovered body recovery but
     # didn't actually modify the tree — the fallback should still apply.
     #
-    # covered_labels is part+chapter-aware: stores (part, chapter, section)
-    # tuples. An op with chapter="" still covers the section in all chapters
-    # within the same part, and a truly unscoped op uses part="" / chapter=""
-    # as the global wildcard.
+    # covered_labels is part+chapter-aware.  An op with chapter="" still covers
+    # the section in all chapters within the same part, and a truly unscoped op
+    # uses part="" / chapter="" as the global wildcard.
     failed_sections: Set[str] = set()
     if failed_ops_out:
         for fop in failed_ops_out:
             if fop.target_unit_kind == "section" and fop.target_section:
                 failed_sections.add(_norm_num_token(fop.target_section))
-    covered_labels: Set[Tuple[str, str, str]] = set()  # (part, chapter, section)
+    covered_labels: set[UncoveredSectionKey] = set()
     covered_chapter_payloads: Set[str] = set()
     chapter_payload_section_dispositions: dict[str, dict[str, int]] = {}
     for op in ops:
         if op.target_unit_kind == "section" and op.target_section:
             label = _norm_num_token(op.target_section)
             if label not in failed_sections:
-                ch = _norm_num_token(op.target_chapter) if op.target_chapter else ""
-                pt = _norm_num_token(op.target_part) if op.target_part else ""
-                pt_arabic = _roman_label_to_arabic(pt) if pt else None
-                covered_labels.add((str(pt_arabic) if pt_arabic is not None else pt, ch, label))
+                covered_labels.add(
+                    _uncovered_section_key(
+                        part=op.target_part,
+                        chapter=op.target_chapter,
+                        section=label,
+                    )
+                )
         if (
             op.target_unit_kind == "chapter"
             and op.target_section
@@ -479,7 +522,7 @@ def _recover_uncovered_body_ops(
         for _bpf in _bp_findings:
             logger.debug("  [%s] body-pairing: %s: %s", amendment_id, _bpf.kind, _bpf.detail)
     _bp_inventory_by_id = {unit.unit_id: unit for unit in _bp_inventory}
-    chapter_payload_owned_sections: set[tuple[str, str, str]] = set()
+    chapter_payload_owned_sections: set[UncoveredSectionKey] = set()
     for _assignment in _bp_assignments:
         if _assignment.status != "claimed_current" or _assignment.claim is None:
             continue
@@ -493,7 +536,13 @@ def _recover_uncovered_body_ops(
             and _claim.chapter == ""
             and _claim.target_address == _unit.chapter_label
         ):
-            chapter_payload_owned_sections.add((_unit.part_label, _unit.chapter_label, _unit.label))
+            chapter_payload_owned_sections.add(
+                _uncovered_section_key(
+                    part=_unit.part_label,
+                    chapter=_unit.chapter_label,
+                    section=_unit.label,
+                )
+            )
     # --- end body pairing analysis ---
 
     # Build body_unit_ids_by_chapter for subtree-aware plan building.
@@ -599,14 +648,12 @@ def _recover_uncovered_body_ops(
         - (part, "", label) is in covered_labels (part-scoped op without chapter)
         - (part, chapter, label) is in covered_labels (exact part/chapter match)
         """
-        norm_part = _norm_num_token(part) if part else ""
-        part_arabic = _roman_label_to_arabic(norm_part) if norm_part else None
-        norm_part = str(part_arabic) if part_arabic is not None else norm_part
-        if ("", "", label) in covered_labels:
+        exact_key = _uncovered_section_key(part=part, chapter=chapter, section=label)
+        if _uncovered_section_key(part=None, chapter=None, section=label) in covered_labels:
             return True
-        if norm_part and (norm_part, "", label) in covered_labels:
+        if exact_key.part and _uncovered_section_key(part=exact_key.part, chapter=None, section=label) in covered_labels:
             return True
-        if chapter and (norm_part, chapter, label) in covered_labels:
+        if chapter and exact_key in covered_labels:
             return True
         return False
 
@@ -640,7 +687,7 @@ def _recover_uncovered_body_ops(
     johto_mentioned_new_chapters: Set[str] = set()
     johto_mentioned_replaced_chapters: Set[str] = set()
     moved_section_destinations: dict[str, str] = {}
-    relabel_destination_sections: Set[tuple[str, str, str]] = set()
+    relabel_destination_sections: set[UncoveredSectionKey] = set()
     owned_chapter_labels: Set[str] = set(new_chapter_labels or ())
     for op in ops:
         if (
@@ -668,7 +715,9 @@ def _recover_uncovered_body_ops(
                 dest_part = str(dest_part_arabic)
         if not dest_section or not dest_chapter:
             continue
-        relabel_destination_sections.add((dest_part, dest_chapter, dest_section))
+        relabel_destination_sections.add(
+            _uncovered_section_key(part=dest_part, chapter=dest_chapter, section=dest_section)
+        )
     johto_el = muutos_tree.find(".//{*}preamble")
     if johto_el is not None:
         johto_text = etree.tostring(johto_el, method="text", encoding="unicode")
@@ -833,7 +882,12 @@ def _recover_uncovered_body_ops(
             return
 
         if amend_chapter_label and (
-            (amend_part_label or "", amend_chapter_label, label) in relabel_destination_sections
+            _uncovered_section_key(
+                part=amend_part_label,
+                chapter=amend_chapter_label,
+                section=label,
+            )
+            in relabel_destination_sections
         ):
             if _DEBUG_RECOVERY:
                 print(
@@ -875,7 +929,12 @@ def _recover_uncovered_body_ops(
         # is still absent from master after all PEG ops ran, adopt it explicitly.
         if (
             amend_chapter_label
-            and (amend_part_label or "", amend_chapter_label, label) in chapter_payload_owned_sections
+            and _uncovered_section_key(
+                part=amend_part_label,
+                chapter=amend_chapter_label,
+                section=label,
+            )
+            in chapter_payload_owned_sections
         ):
             if _DEBUG_RECOVERY:
                 print(
@@ -890,7 +949,13 @@ def _recover_uncovered_body_ops(
                 # Adopt it now so it lands in the correct chapter.
                 if not _is_future_repealed(label, amend_chapter_label):
                     _adopt_sec_ir = fi_xml_to_ir_node(sec, _fi_label_postprocessor)
-                    covered_labels.add((amend_part_label or "", amend_chapter_label, label))
+                    covered_labels.add(
+                        _uncovered_section_key(
+                            part=amend_part_label,
+                            chapter=amend_chapter_label,
+                            section=label,
+                        )
+                    )
                     _append_recovered_rop(
                         _make_uncovered_rop(
                             "INSERT",
@@ -909,7 +974,13 @@ def _recover_uncovered_body_ops(
                 else:
                     _record_skip("future_repeal", label, amend_chapter_label)
             else:
-                covered_labels.add((amend_part_label or "", amend_chapter_label, label))
+                covered_labels.add(
+                    _uncovered_section_key(
+                        part=amend_part_label,
+                        chapter=amend_chapter_label,
+                        section=label,
+                    )
+                )
                 chapter_payload_section_dispositions.setdefault(
                     amend_chapter_label, {"adopted": 0, "owned": 0}
                 )["owned"] += 1
@@ -980,7 +1051,13 @@ def _recover_uncovered_body_ops(
                             insert_label = _next_letter_label(section_siblings[existing_idx - 1].label or "")
                     if insert_label and state.find_section_path(insert_label, amend_chapter_label) is None:
                         inserted_sec = _relabel_section_ir(sec_ir, insert_label)
-                        covered_labels.add((amend_part_label or "", amend_chapter_label or "", label))
+                        covered_labels.add(
+                            _uncovered_section_key(
+                                part=amend_part_label,
+                                chapter=amend_chapter_label,
+                                section=label,
+                            )
+                        )
                         _append_recovered_rop(
                             _make_uncovered_rop(
                                 "INSERT",
@@ -1032,7 +1109,13 @@ def _recover_uncovered_body_ops(
                         for op in ops
                     )
                     if not _has_insert_op_for_label and not _whole_ch_replace:
-                        covered_labels.add((amend_part_label or "", amend_chapter_label or "", label))
+                        covered_labels.add(
+                            _uncovered_section_key(
+                                part=amend_part_label,
+                                chapter=amend_chapter_label,
+                                section=label,
+                            )
+                        )
                         _record_skip("past_repeal_placeholder_guard", label, amend_chapter_label)
                         return
                     # Tilalle INSERT or whole-chapter replace: fall through to
@@ -1061,7 +1144,13 @@ def _recover_uncovered_body_ops(
                 if can_replace:
                     if _os.environ.get("LAWVM_DEBUG_RECOVERY") == "1":
                         print(f"  [DBG]  -> REPLACE op: label={label!r}, chapter={amend_chapter_label!r}")
-                    covered_labels.add((amend_part_label or "", amend_chapter_label or "", label))
+                    covered_labels.add(
+                        _uncovered_section_key(
+                            part=amend_part_label,
+                            chapter=amend_chapter_label,
+                            section=label,
+                        )
+                    )
                     _append_recovered_rop(
                         _make_uncovered_rop(
                             "REPLACE",
@@ -1097,7 +1186,13 @@ def _recover_uncovered_body_ops(
                         merged_labels = [c.label for c in merged.children if c.kind is IRNodeKind.SUBSECTION and c.label]
                         has_dup_labels = len(merged_labels) != len(set(merged_labels))
                         if merged_subsec_count >= master_subsec_count and text_ratio >= 0.75 and not has_dup_labels:
-                            covered_labels.add((amend_part_label or "", amend_chapter_label or "", label))
+                            covered_labels.add(
+                                _uncovered_section_key(
+                                    part=amend_part_label,
+                                    chapter=amend_chapter_label,
+                                    section=label,
+                                )
+                            )
                             # Pass the pre-merged IR as the payload so apply_op
                             # performs replace_at with the already-merged node.
                             _append_recovered_rop(
@@ -1119,7 +1214,13 @@ def _recover_uncovered_body_ops(
                             _record_skip("omission_merge_duplicate_subsection_labels", label, amend_chapter_label)
                     else:
                         _record_skip("omission_merge_failed", label, amend_chapter_label)
-                    covered_labels.add((amend_part_label or "", amend_chapter_label or "", label))
+                    covered_labels.add(
+                        _uncovered_section_key(
+                            part=amend_part_label,
+                            chapter=amend_chapter_label,
+                            section=label,
+                        )
+                    )
                 else:
                     if cross_chapter:
                         _record_skip("cross_chapter_existing_target", label, amend_chapter_label)
@@ -1127,7 +1228,13 @@ def _recover_uncovered_body_ops(
                         _record_skip("no_content_ops", label, amend_chapter_label)
                     elif effective_would_lose:
                         _record_skip("would_lose_subsections", label, amend_chapter_label)
-                    covered_labels.add((amend_part_label or "", amend_chapter_label or "", label))
+                    covered_labels.add(
+                        _uncovered_section_key(
+                            part=amend_part_label,
+                            chapter=amend_chapter_label,
+                            section=label,
+                        )
+                    )
                 return
 
         if not _label_allowed_by_johto(label, amend_chapter_label):
@@ -1149,7 +1256,13 @@ def _recover_uncovered_body_ops(
         if _is_future_repealed(label, amend_chapter_label):
             if DEBUG:
                 _replay_print(f"  [{amendment_id}] uncovered SKIP INSERT {label} § — future repeal")
-            covered_labels.add((amend_part_label or "", amend_chapter_label or "", label))
+            covered_labels.add(
+                _uncovered_section_key(
+                    part=amend_part_label,
+                    chapter=amend_chapter_label,
+                    section=label,
+                )
+            )
             _record_skip("future_repeal", label, amend_chapter_label)
             return
 
@@ -1224,7 +1337,13 @@ def _recover_uncovered_body_ops(
                                 family_chapter,
                             )
 
-        covered_labels.add((amend_part_label or "", effective_chapter or "", label))
+        covered_labels.add(
+            _uncovered_section_key(
+                part=amend_part_label,
+                chapter=effective_chapter,
+                section=label,
+            )
+        )
         # Emit INSERT ResolvedOp.  apply_op will redo the family-anchor
         # lookup against the live (post-prior-insert) state, so placement
         # is correct even when multiple new sections are inserted in sequence.
@@ -1348,11 +1467,12 @@ def _recover_uncovered_body_ops(
                         _ad_part = _normalize_source_part_num(_pnum_el.text) or None
                     break
                 _part_parent = _part_parent.getparent()
-            if _ad_ch and (_ad_part or "", _ad_ch, _ad_label) in chapter_payload_owned_sections:
-                if ((_ad_part or ""), _ad_ch, _ad_label) in covered_labels:
+            _ad_key = _uncovered_section_key(part=_ad_part, chapter=_ad_ch, section=_ad_label)
+            if _ad_ch and _ad_key in chapter_payload_owned_sections:
+                if _ad_key in covered_labels:
                     continue
                 if state.find_section_path(_ad_label, _ad_ch, _ad_part) is not None:
-                    covered_labels.add((_ad_part or "", _ad_ch, _ad_label))
+                    covered_labels.add(_ad_key)
                     _record_skip("chapter_payload_owned", _ad_label, _ad_ch)
                     continue
             if _is_section_covered(_ad_label, _ad_ch or "", _ad_part):
