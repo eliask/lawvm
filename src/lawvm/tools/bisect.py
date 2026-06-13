@@ -38,6 +38,7 @@ from lawvm.finland.grafter import (
     process_muutoslaki,
     get_ground_truth,
 )
+from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.statute import StatuteContext, ReplayState, _serialize_text_node
 from lawvm.finland.helpers import _fi_label_postprocessor
 from lawvm.tools.editorial_hygiene import normalize_finlex_oracle_comparison_text
@@ -110,7 +111,15 @@ def bisect_statute(
         mid = str(rec["statute_id"])
         score_before = prev_score
 
-        state = process_muutoslaki(mid, state, ctx, replay_mode=mode, parent_id=sid).output
+        state = process_muutoslaki(
+            request=ProcessAmendmentRequest(
+                amendment_id=mid,
+                state=state,
+                ctx=ctx,
+                replay_mode=mode,
+                parent_id=sid,
+            ),
+        ).output
 
         score_after = _score_master(state, c_truth)
         delta = score_after - score_before

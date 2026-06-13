@@ -11,6 +11,7 @@ from lawvm.finland.grafter import (
     process_muutoslaki,
 )
 from lawvm.finland.helpers import _fi_label_postprocessor
+from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.statute import ReplayState, StatuteContext
 from lawvm.tools._section_debug import render_node_text, resolve_section_key, score_text_pair
 from lawvm.tools.section_keys import extract_ir_sections, extract_oracle_sections
@@ -59,7 +60,15 @@ def build_bisect_bundle(
 
     for index, record in enumerate(records, start=1):
         source_id = str(record["statute_id"])
-        state = process_muutoslaki(source_id, state, ctx, replay_mode=mode, parent_id=statute_id).output
+        state = process_muutoslaki(
+            request=ProcessAmendmentRequest(
+                amendment_id=source_id,
+                state=state,
+                ctx=ctx,
+                replay_mode=mode,
+                parent_id=statute_id,
+            ),
+        ).output
         current_text = _section_text_from_state(state, target_key)
         current_score = score_text_pair(current_text, oracle_text)
         steps.append(
@@ -181,7 +190,15 @@ def build_bisect_bundles_batch(
     # Single replay pass — extract IR sections once per amendment, score all sections
     for index, record in enumerate(records, start=1):
         source_id = str(record["statute_id"])
-        state = process_muutoslaki(source_id, state, ctx, replay_mode=mode, parent_id=statute_id).output
+        state = process_muutoslaki(
+            request=ProcessAmendmentRequest(
+                amendment_id=source_id,
+                state=state,
+                ctx=ctx,
+                replay_mode=mode,
+                parent_id=statute_id,
+            ),
+        ).output
         # Extract once per amendment step instead of once per (amendment, section) pair.
         # This avoids O(S × A) calls to extract_ir_sections (which traverses the full IR
         # tree each time) — critical for statutes with many sections and many amendments.
