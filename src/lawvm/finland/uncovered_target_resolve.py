@@ -19,9 +19,13 @@ decisions can be audited without re-deriving them.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Optional, Protocol, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, Any, Iterable, Optional, Protocol, Sequence, Set, Tuple
+
+from lawvm.core import tree_ops as _tops
+from lawvm.finland.helpers import _norm_num_token
 
 PathStep = Tuple[str, str]
 ProvisionPath = Tuple[PathStep, ...]
@@ -169,3 +173,88 @@ def resolve_target(
         used_unscoped_fallback=used_unscoped_fallback,
         reason=reason,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class InsertChapter:
+    """Effective chapter/part for a NEW section insert, with provenance."""
+
+    effective_chapter: Optional[str]
+    effective_part: Optional[str]
+    reason: str
+
+
+def _family_base_repealed(ops: Iterable[Any], family_base_label: Optional[str]) -> bool:
+    if not family_base_label:
+        return False
+    return any(
+        op.op_type == "REPEAL"
+        and op.target_unit_kind == "section"
+        and op.target_section
+        and _norm_num_token(op.target_section) == family_base_label
+        and not op.target_paragraph
+        and not op.target_item
+        and not op.target_special
+        for op in ops
+    )
+
+
+def resolve_insert_chapter(
+    label: str,
+    amend_chapter: Optional[str],
+    amend_part: Optional[str],
+    state: "ReplayState",
+    ops: Iterable[Any],
+    new_chapter_labels: Optional[Set[str]],
+    owned_chapter_labels: Sequence[str] | Set[str],
+) -> InsertChapter:
+    """Decide the effective chapter/part for a NEW section INSERT.
+
+    When the amendment declares the section under a chapter it newly inserts, but
+    the section's numeric family base (e.g. ``5`` for ``5a``) already lives in a
+    different existing chapter — and that chapter is neither a sub-chapter of the
+    declared one nor having its base section repealed by this amendment — the
+    insert is redirected to the family's chapter. Otherwise the declared chapter
+    stands. Pure / read-only; the verdict carries its own provenance.
+    """
+    owned = set(owned_chapter_labels)
+    effective_chapter = amend_chapter
+    effective_part = amend_part
+
+    if not amend_chapter:
+        return InsertChapter(effective_chapter, effective_part, "no_chapter_context")
+
+    if new_chapter_labels is not None:
+        chapter_is_new = amend_chapter in new_chapter_labels
+    else:
+        chapter_is_new = amend_chapter not in owned
+    if not chapter_is_new:
+        return InsertChapter(effective_chapter, effective_part, "declared_chapter_not_new")
+
+    # First look for the family base within the declared chapter; if absent, look
+    # in any chapter (but never match a same-numbered base in an unrelated chapter
+    # when one exists in the declared chapter).
+    family_path = _tops.find_family(
+        state.ir, "section", label, scope_kind="chapter", scope_label=amend_chapter
+    )
+    if family_path is None:
+        family_path = _tops.find_family(state.ir, "section", label)
+    if family_path is None:
+        return InsertChapter(effective_chapter, effective_part, "no_family_base")
+
+    family_chapter = next((lbl for k, lbl in family_path if k == "chapter"), None)
+    family_part = next((lbl for k, lbl in family_path if k == "part"), None)
+    if not family_chapter or family_chapter == amend_chapter:
+        return InsertChapter(effective_chapter, effective_part, "family_base_same_chapter")
+
+    base_match = re.match(r"^(\d+)[a-z]*$", label)
+    family_base_label = base_match.group(1) if base_match else None
+    if _family_base_repealed(ops, family_base_label):
+        return InsertChapter(effective_chapter, effective_part, "family_base_repealed")
+
+    amend_ch_base = re.match(r"^(\d+)", amend_chapter)
+    is_sub_chapter = amend_ch_base is not None and amend_ch_base.group(1) == family_chapter
+    if is_sub_chapter:
+        return InsertChapter(effective_chapter, effective_part, "declared_is_sub_chapter")
+
+    return InsertChapter(family_chapter, family_part, "family_base_override")

@@ -113,7 +113,7 @@ from lawvm.finland.vts import VtsSkippedTarget, VtsSourceDiagnostic, extract_voi
 from lawvm.finland.source_pathology import build_same_effective_container_repeal_shadowed_pathology
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
-from lawvm.finland.uncovered_target_resolve import resolve_target
+from lawvm.finland.uncovered_target_resolve import resolve_insert_chapter, resolve_target
 from lawvm.finland.constraints import DEBUG
 from lawvm.finland.replay_notices import replay_print as _replay_print
 from lawvm.xml_ingest import _tag
@@ -1413,60 +1413,29 @@ def _recover_uncovered_body_ops(
         # 3. The amendment chapter was NEWLY INSERTED by this amendment (in
         #    johto_mentioned_new_chapters).  A new chapter owns all its sections;
         #    redirecting them to an existing chapter's family base is wrong.
-        effective_chapter = amend_chapter_label
-        effective_part = amend_part_label
-        chapter_is_new = False
-        if amend_chapter_label:
-            if new_chapter_labels is not None:
-                chapter_is_new = amend_chapter_label in new_chapter_labels
-            else:
-                chapter_is_new = amend_chapter_label not in owned_chapter_labels
-
-        if amend_chapter_label and chapter_is_new:
-            # First try to find family base (numeric base) within the same chapter.
-            # If not found (base doesn't exist in this chapter), fall back to
-            # un-scoped search. This prevents finding the wrong chapter's base
-            # when a label exists in multiple chapters.
-            family_path = _tops.find_family(
-                state.ir, "section", label, scope_kind="chapter", scope_label=amend_chapter_label
+        # NEW-insert chapter refinement (uncovered_target_resolve): when the
+        # declared chapter is newly inserted but the section's family base lives
+        # in an existing unrelated chapter, redirect the insert there.
+        _insert_ch = resolve_insert_chapter(
+            label,
+            amend_chapter_label,
+            amend_part_label,
+            state,
+            ops,
+            new_chapter_labels,
+            owned_chapter_labels,
+        )
+        effective_chapter = _insert_ch.effective_chapter
+        effective_part = _insert_ch.effective_part
+        if _insert_ch.reason == "family_base_override":
+            logger.debug(
+                "  [%s] uncovered INSERT %s: overriding chapter %s→%s"
+                " (family base in unrelated existing chapter)",
+                amendment_id,
+                label,
+                amend_chapter_label,
+                effective_chapter,
             )
-            if family_path is None:
-                # Base doesn't exist in amendment's chapter; try any chapter
-                family_path = _tops.find_family(state.ir, "section", label)
-            if family_path is not None:
-                family_chapter = next((lbl for k, lbl in family_path if k == "chapter"), None)
-                family_part = _part_label_from_path(family_path)
-                if family_chapter and family_chapter != amend_chapter_label:
-                    base_match = re.match(r"^(\d+)[a-z]*$", label)
-                    family_base_label = base_match.group(1) if base_match else None
-                    family_base_repealed = (
-                        any(
-                            op.op_type == "REPEAL"
-                            and op.target_unit_kind == "section"
-                            and op.target_section
-                            and _norm_num_token(op.target_section) == family_base_label
-                            and not op.target_paragraph
-                            and not op.target_item
-                            and not op.target_special
-                            for op in ops
-                        )
-                        if family_base_label
-                        else False
-                    )
-                    if not family_base_repealed:
-                        amend_ch_base = re.match(r"^(\d+)", amend_chapter_label)
-                        is_sub_chapter = amend_ch_base is not None and amend_ch_base.group(1) == family_chapter
-                        if not is_sub_chapter:
-                            effective_chapter = family_chapter
-                            effective_part = family_part
-                            logger.debug(
-                                "  [%s] uncovered INSERT %s: overriding chapter %s→%s"
-                                " (family base in unrelated existing chapter)",
-                                amendment_id,
-                                label,
-                                amend_chapter_label,
-                                family_chapter,
-                            )
 
         recovery_guards.mark_covered(
             part=amend_part_label,
