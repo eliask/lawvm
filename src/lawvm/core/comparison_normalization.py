@@ -110,3 +110,85 @@ def project_ir_comparison_text(
     if text == node.text and children == node.children:
         return node
     return IRNode(kind=node.kind, label=node.label, text=text, attrs=dict(node.attrs), children=children)
+
+
+# Default inline text-comparison rule set for Westminster / common-law frontends.
+#
+# These rules normalize edge whitespace, internal whitespace runs, and the
+# source-display spacing around inline punctuation so that witness/oracle text
+# can be compared and occurrences counted independent of presentation. They are
+# the shared default for common-law frontends (New Zealand uses them today; the
+# UK frontend can adopt them without code change). Like every rule set in this
+# module, they are comparison-only: they must not repair source text, replay
+# payloads, or legal tree state.
+INLINE_TEXT_COMPARISON_RULES: tuple[ComparisonNormalizationRule, ...] = (
+    ComparisonNormalizationRule(
+        name="inline_text_trim",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Trim edge whitespace before inline text occurrence counting.",
+        pattern=re.compile(r"^\s+|\s+$"),
+        replacement="",
+    ),
+    ComparisonNormalizationRule(
+        name="inline_text_whitespace_collapse",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Collapse XML and rendered whitespace for inline text occurrence counting.",
+        pattern=re.compile(r"\s+"),
+        replacement=" ",
+    ),
+    ComparisonNormalizationRule(
+        name="inline_text_punctuation_spacing",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Remove source-display spaces before punctuation for inline text occurrence counting.",
+        pattern=re.compile(r"\s+([,.;:])"),
+        replacement=r"\1",
+    ),
+    ComparisonNormalizationRule(
+        name="inline_text_open_paren_spacing",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Remove source-display spaces after opening parentheses for inline text occurrence counting.",
+        pattern=re.compile(r"([(])\s+"),
+        replacement=r"\1",
+    ),
+)
+
+_INLINE_TEXT_COMPARISON_RULE_ISSUES = validate_comparison_normalization_rules(
+    INLINE_TEXT_COMPARISON_RULES
+)
+if _INLINE_TEXT_COMPARISON_RULE_ISSUES:
+    raise ValueError("; ".join(_INLINE_TEXT_COMPARISON_RULE_ISSUES))
+
+
+def normalize_inline_comparison_text(text: str) -> str:
+    """Normalize inline text for witness/oracle comparison (common-law default).
+
+    Comparison-only: never use this to repair source text, replay payloads, or
+    legal tree state.
+    """
+    return normalize_comparison_text(text, INLINE_TEXT_COMPARISON_RULES).text
+
+
+def normalized_inline_occurrence_count(haystack: str, needle: str) -> int:
+    """Count comparison-normalized occurrences of ``needle`` within ``haystack``.
+
+    Comparison-only: never use this to repair source text, replay payloads, or
+    legal tree state.
+    """
+    normalized_needle = normalize_inline_comparison_text(needle)
+    if not normalized_needle:
+        return 0
+    return normalize_inline_comparison_text(haystack).count(normalized_needle)
+
+
+def normalized_inline_contains(haystack: str, needle: str) -> bool:
+    """Return whether ``haystack`` contains comparison-normalized ``needle``.
+
+    Comparison-only: never use this to repair source text, replay payloads, or
+    legal tree state.
+    """
+    normalized_needle = normalize_inline_comparison_text(needle)
+    return bool(normalized_needle) and normalized_needle in normalize_inline_comparison_text(haystack)

@@ -5,8 +5,12 @@ import re
 import pytest
 
 from lawvm.core.comparison_normalization import (
+    INLINE_TEXT_COMPARISON_RULES,
     ComparisonNormalizationRule,
     normalize_comparison_text,
+    normalize_inline_comparison_text,
+    normalized_inline_contains,
+    normalized_inline_occurrence_count,
     project_ir_comparison_text,
     validate_comparison_normalization_rule,
     validate_comparison_normalization_rules,
@@ -105,6 +109,24 @@ def test_validate_comparison_normalization_rules_rejects_duplicate_names() -> No
     )
     with pytest.raises(ValueError, match="quote_typography"):
         normalize_comparison_text("\u201cquoted\u201d", (TYPOGRAPHY_RULE, duplicate))
+
+
+def test_inline_comparison_rules_validate() -> None:
+    assert validate_comparison_normalization_rules(INLINE_TEXT_COMPARISON_RULES) == ()
+
+
+def test_normalize_inline_comparison_text_normalizes_whitespace_and_punctuation() -> None:
+    assert normalize_inline_comparison_text("  old \n text  , (  a )  ") == "old text, (a )"
+
+
+def test_normalized_inline_occurrence_count_uses_shared_normalization() -> None:
+    assert normalized_inline_occurrence_count("old \n text, and old text ,", " old text, ") == 2
+    assert normalized_inline_occurrence_count("anything", " \n\t ") == 0
+
+
+def test_normalized_inline_contains_uses_shared_normalization() -> None:
+    assert normalized_inline_contains("new text and old text", " old  text ")
+    assert not normalized_inline_contains("new text", " \n\t ")
 
 
 def test_current_comparison_rule_sets_validate() -> None:
