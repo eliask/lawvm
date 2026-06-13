@@ -59,19 +59,44 @@ _WORKER_PROJECTOR: Optional[StatuteProjector] = None
 _WORKER_PROJECTOR_REF: Optional[Tuple[str, str]] = None
 
 
-def _worker_init(projector_ref: Tuple[str, str]) -> None:
-    """Process-pool initializer: build the corpus store + resolve the projector.
+def _default_finland_store_factory() -> Any:
+    """Default per-worker store builder: the Finland corpus store.
+
+    Kept as the default so existing Finland callers need not pass a store
+    factory.  Workers call this once per process (the underlying
+    ``get_corpus_store`` is ``lru_cache``d).
+    """
+    from lawvm.finland.corpus import get_corpus_store
+
+    return get_corpus_store()
+
+
+def _worker_init(
+    projector_ref: Tuple[str, str],
+    store_factory_ref: Optional[Tuple[str, str]] = None,
+) -> None:
+    """Process-pool initializer: build the per-worker store + resolve the projector.
 
     ``projector_ref`` is a ``(module, qualname)`` pair identifying the per-statute
     projection function. We import it inside the worker rather than pickling the
     function object so the parent stays decoupled from worker import cost.
+
+    ``store_factory_ref`` is an optional ``(module, qualname)`` pair identifying a
+    zero-argument callable that builds the read-only corpus store passed to the
+    projector.  When omitted, the Finland corpus store is used (the original
+    behaviour), so this generalisation is backward-compatible.  Other
+    jurisdictions (e.g. UK, whose store is an open Farchive handle) supply their
+    own factory so the harness stays jurisdiction-neutral.
     """
     global _WORKER_STORE, _WORKER_PROJECTOR, _WORKER_PROJECTOR_REF
     import importlib
 
-    from lawvm.finland.corpus import get_corpus_store
-
-    _WORKER_STORE = get_corpus_store()
+    if store_factory_ref is None:
+        _WORKER_STORE = _default_finland_store_factory()
+    else:
+        sf_mod, sf_qualname = store_factory_ref
+        store_factory = getattr(importlib.import_module(sf_mod), sf_qualname)
+        _WORKER_STORE = store_factory()
     mod_name, qualname = projector_ref
     mod = importlib.import_module(mod_name)
     _WORKER_PROJECTOR = getattr(mod, qualname)
@@ -141,6 +166,7 @@ def project_corpus_parallel(
     serial_projector: StatuteProjector,
     store: Any,
     workers: int,
+    store_factory_ref: Optional[Tuple[str, str]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Project every statute, returning (rows, diag_rows) in corpus order.
 
@@ -153,8 +179,11 @@ def project_corpus_parallel(
                           workers<=1 fast path (and as the authoritative
                           definition the ref must resolve to).
         store:            Corpus store for the serial path. Workers build their
-                          own.
+                          own (via ``store_factory_ref`` or the Finland default).
         workers:          Number of worker processes. <=1 runs serially.
+        store_factory_ref: Optional (module, qualname) of a zero-arg store factory
+                          for worker processes. When omitted, workers build the
+                          Finland corpus store (backward-compatible default).
 
     Returns:
         (rows, diag_rows) concatenated in corpus order — byte-identical to the
@@ -194,7 +223,7 @@ def project_corpus_parallel(
     with managed_executor(
         workers,
         initializer=_worker_init,
-        initargs=(projector_ref,),
+        initargs=(projector_ref, store_factory_ref),
     ) as pool:
         futures = {pool.submit(_worker_run_shard, task): task[0] for task in shards}
         for future in as_completed(futures):
