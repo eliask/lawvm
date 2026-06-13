@@ -1415,6 +1415,11 @@ class ResolvedOp:
 
     @property
     def resolved_group_key(self) -> tuple[TargetUnitKind, str, Optional[str], Optional[str]]:
+        group = self.resolved_group_key_view
+        return (group.unit_kind, group.target_norm, group.target_chapter, group.target_part)
+
+    @property
+    def resolved_group_key_view(self) -> "ResolvedGroupKeyView":
         """Return the structural replay-group key from resolved target identity.
 
         Prefer the resolved target address once the late waist has it, because
@@ -1428,19 +1433,49 @@ class ResolvedOp:
         if address is not None and address.path:
             labels = {kind: label for kind, label in address.path}
             if self.target_unit_kind == "section" and "section" in labels:
-                return ("section", self.target_norm, labels.get("chapter"), labels.get("part"))
+                return ResolvedGroupKeyView(
+                    unit_kind="section",
+                    target_norm=self.target_norm,
+                    target_chapter=labels.get("chapter"),
+                    target_part=labels.get("part"),
+                )
             if self.target_unit_kind == "chapter" and "chapter" in labels:
-                return ("chapter", self.target_norm, None, labels.get("part"))
+                return ResolvedGroupKeyView(
+                    unit_kind="chapter",
+                    target_norm=self.target_norm,
+                    target_chapter=None,
+                    target_part=labels.get("part"),
+                )
             if self.target_unit_kind == "part" and "part" in labels:
-                return ("part", self.target_norm, None, labels["part"])
+                return ResolvedGroupKeyView(
+                    unit_kind="part",
+                    target_norm=self.target_norm,
+                    target_chapter=None,
+                    target_part=labels["part"],
+                )
         target_norm, target_chapter, target_part, _target_paragraph, _target_item, _target_special = (
             self.resolved_target_scope
         )
         if self.target_unit_kind == "section":
-            return ("section", target_norm, target_chapter, target_part)
+            return ResolvedGroupKeyView(
+                unit_kind="section",
+                target_norm=target_norm,
+                target_chapter=target_chapter,
+                target_part=target_part,
+            )
         if self.target_unit_kind == "chapter":
-            return ("chapter", target_norm, None, target_part)
-        return ("part", target_norm, None, target_part or target_norm)
+            return ResolvedGroupKeyView(
+                unit_kind="chapter",
+                target_norm=target_norm,
+                target_chapter=None,
+                target_part=target_part,
+            )
+        return ResolvedGroupKeyView(
+            unit_kind="part",
+            target_norm=target_norm,
+            target_chapter=None,
+            target_part=target_part or target_norm,
+        )
 
     def targets_whole_unit(self, unit_kind: TargetUnitKind) -> bool:
         """Return True when this target points at the whole structural unit."""
@@ -1540,7 +1575,7 @@ class FailedOp:
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ResolvedTargetScopeView:
     """Structured resolved target scope for late-waist Finland consumers."""
 
@@ -1550,6 +1585,16 @@ class ResolvedTargetScopeView:
     target_paragraph: int | None
     target_item: str | None
     target_special: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedGroupKeyView:
+    """Structured replay grouping key for resolved Finland operations."""
+
+    unit_kind: TargetUnitKind
+    target_norm: str
+    target_chapter: str | None
+    target_part: str | None
 
 
 @dataclass(frozen=True)

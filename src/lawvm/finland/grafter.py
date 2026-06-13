@@ -53,6 +53,7 @@ from lawvm.finland.ops import (
     TargetKind,
     AmendmentOp,
     ResolvedOp,
+    ResolvedGroupKeyView,
     FailedOp,
     ReplayProfile,
     ScopeConfidence,
@@ -3283,15 +3284,15 @@ def _emit_granular_subsection_timeline_ops(
         return False
 
     first = group_rops[0]
-    first_unit_kind, first_target_norm, first_target_chapter, first_target_part = first.resolved_group_key
-    if first_unit_kind != "section":
+    first_group = first.resolved_group_key_view
+    if first_group.unit_kind != "section":
         return False
-    if base_ir is None or _tops.find(base_ir, "section", first_target_norm) is None:
+    if base_ir is None or _tops.find(base_ir, "section", first_group.target_norm) is None:
         return False
 
     for rop in group_rops:
         if (
-            rop.resolved_group_key[0] != "section"
+            rop.resolved_group_key_view.unit_kind != "section"
             or not rop.targets_subsection_only()
             or not rop.is_replace_action
         ):
@@ -3308,14 +3309,18 @@ def _emit_granular_subsection_timeline_ops(
     )
     sec_path = _valid_target_group_path_hint(
         state,
-        first_unit_kind,
-        first_target_norm,
-        first_target_chapter,
-        first_target_part,
+        first_group.unit_kind,
+        first_group.target_norm,
+        first_group.target_chapter,
+        first_group.target_part,
         path_hint,
     )
     if sec_path is None:
-        sec_path = state.find_section_path(first_target_norm, first_target_chapter, first_target_part)
+        sec_path = state.find_section_path(
+            first_group.target_norm,
+            first_group.target_chapter,
+            first_group.target_part,
+        )
     if sec_path is None:
         return False
 
@@ -3349,7 +3354,7 @@ def _emit_granular_subsection_timeline_ops(
 
         lo_ops_out.append(
             _LegalOperation(
-                op_id=f"subsection_{amendment_id}_{first_target_norm}_{target_label}_{seq}",
+                op_id=f"subsection_{amendment_id}_{first_group.target_norm}_{target_label}_{seq}",
                 sequence=seq,
                 action=action,
                 target=LegalAddress(path=tl_sec_path + (("subsection", target_label),)),
@@ -3921,7 +3926,7 @@ def apply_ops_to_tree(
     (e.g. find_base_section for kumotaan placeholder decisions) and by the
     ``_apply_uncovered_*`` heuristics.
     """
-    prev_group_key: Optional[Tuple[TargetUnitKind, str, Optional[str], Optional[str]]] = None
+    prev_group_key: Optional[ResolvedGroupKeyView] = None
     group_rops: List[ResolvedOp] = []
     group_path_hint: tuple[tuple[str, str], ...] | None = None
 
@@ -4153,12 +4158,12 @@ def apply_ops_to_tree(
                             _ch_to_part_before[_snap_ch.label] = _snap_part.label
 
     for rop in resolved:
-        group_key = rop.resolved_group_key
+        group_key = rop.resolved_group_key_view
         if group_key != prev_group_key:
             # Emit snapshot for previous group (if any)
             if group_rops and lo_ops_out is not None:
                 _r = group_rops[0]
-                _r_target_unit_kind, _r_target_norm, _r_target_chapter, _r_target_part = _r.resolved_group_key
+                _r_group = _r.resolved_group_key_view
                 if not _emit_granular_subsection_timeline_ops(
                     state,
                     group_rops,
@@ -4172,10 +4177,10 @@ def apply_ops_to_tree(
                 ):
                     _emit_section_snapshot(
                         state,
-                        _r_target_unit_kind,
-                        _r_target_norm,
-                        _r_target_chapter,
-                        _r_target_part,
+                        _r_group.unit_kind,
+                        _r_group.target_norm,
+                        _r_group.target_chapter,
+                        _r_group.target_part,
                         group_rops,
                         lo_ops_out,
                         amendment_id,
@@ -4220,12 +4225,12 @@ def apply_ops_to_tree(
                         mutation_events_out[_event_cursor:],
                         observed_touch_results_out,
                     )
-                rop_target_unit_kind, rop_target_norm, rop_target_chapter, rop_target_part = rop.resolved_group_key
+                rop_group = rop.resolved_group_key_view
                 group_path_hint = _refresh_group_path_hint(
-                    rop_target_unit_kind,
-                    rop_target_norm,
-                    rop_target_chapter,
-                    rop_target_part,
+                    rop_group.unit_kind,
+                    rop_group.target_norm,
+                    rop_group.target_chapter,
+                    rop_group.target_part,
                     group_path_hint,
                     rop,
                     migration_ledger,
@@ -4240,7 +4245,7 @@ def apply_ops_to_tree(
     # Emit snapshot for the last group
     if group_rops and lo_ops_out is not None:
         _r = group_rops[0]
-        _r_target_unit_kind, _r_target_norm, _r_target_chapter, _r_target_part = _r.resolved_group_key
+        _r_group = _r.resolved_group_key_view
         if not _emit_granular_subsection_timeline_ops(
             state,
             group_rops,
@@ -4254,10 +4259,10 @@ def apply_ops_to_tree(
         ):
             _emit_section_snapshot(
                 state,
-                _r_target_unit_kind,
-                _r_target_norm,
-                _r_target_chapter,
-                _r_target_part,
+                _r_group.unit_kind,
+                _r_group.target_norm,
+                _r_group.target_chapter,
+                _r_group.target_part,
                 group_rops,
                 lo_ops_out,
                 amendment_id,
@@ -4501,13 +4506,13 @@ def apply_ops_to_tree(
                     _replay_print(f"  [{amendment_id}] uncovered rop {_rop.description()} → ERROR: {e}")
                     continue
                 if lo_ops_out is not None:
-                    snapshot_unit_kind, snapshot_target_norm, snapshot_target_chapter, snapshot_target_part = _rop.resolved_group_key
+                    snapshot_group = _rop.resolved_group_key_view
                     _emit_section_snapshot(
                         state,
-                        snapshot_unit_kind,
-                        snapshot_target_norm,
-                        snapshot_target_chapter,
-                        snapshot_target_part,
+                        snapshot_group.unit_kind,
+                        snapshot_group.target_norm,
+                        snapshot_group.target_chapter,
+                        snapshot_group.target_part,
                         [_rop],
                         lo_ops_out,
                         amendment_id,
