@@ -294,14 +294,12 @@ def _fi_label_postprocessor(tag: str, norm: str) -> str:
 
     Passed as ``label_postprocessor`` to ``xml_to_ir_node`` for all Finnish XML.
     """
-    # Strip trailing dots FIRST — old-format statutes use "3 luku." whose
-    # normalised form is "3luku.".  removesuffix("luku") fails on "3luku."
-    # because the string ends with "." not "luku", so the dot must come off
-    # before the structural keyword suffix is removed.
-    # Only for sections, chapters, parts — not paragraphs/subsections (risk of
-    # creating duplicate labels when "1." and "1" coexist).
-    if norm.endswith(".") and tag in ("section", "chapter", "part"):
-        norm = norm.rstrip(".")
+    # Strip trailing punctuation FIRST — old and noisy source labels include
+    # forms such as "3 luku.", "10 §:", and "24 §*".  The punctuation is not a
+    # legal coordinate.  Only do this for structural containers, not paragraphs
+    # or subsections, where "1." and "1" can be distinct source surfaces.
+    if tag in ("section", "chapter", "part"):
+        norm = norm.rstrip(".,:*")
     if tag == "chapter":
         norm = norm.removesuffix("luku")
     elif tag == "part":

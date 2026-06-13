@@ -101,6 +101,19 @@ def test_fi_label_postprocessor_does_not_strip_luku_from_section() -> None:
     # Sections don't use luku suffix; postprocessor should leave them alone
     result = _fi_label_postprocessor("section", "12")
     assert result == "12"
+
+
+def test_fi_label_postprocessor_strips_structural_label_trailing_punctuation() -> None:
+    assert _fi_label_postprocessor("section", "10:") == "10"
+    assert _fi_label_postprocessor("section", "24*") == "24"
+    assert _fi_label_postprocessor("chapter", "3luku,") == "3"
+    assert _fi_label_postprocessor("part", "2osasto*") == "2"
+
+
+def test_fi_label_postprocessor_does_not_strip_prose_contaminated_section_label() -> None:
+    assert _fi_label_postprocessor("section", "12soveltamisala") == "12soveltamisala"
+
+
 def test_fi_label_postprocessor_does_not_strip_dot_from_subsection() -> None:
     # Dot-stripping is only for section/chapter/part
     result = _fi_label_postprocessor("subsection", "1.")
