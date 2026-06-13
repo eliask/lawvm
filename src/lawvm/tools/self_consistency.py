@@ -428,9 +428,17 @@ def _resolve_signal_filter(args) -> set[str]:
 # ---------------------------------------------------------------------------
 
 def main(args) -> None:
+    # Jurisdiction dispatch: EE/UK frontends expose their own replay harness and
+    # self-consistency surfaces, so route to the jurisdiction-specific module
+    # rather than the Finland projector.  FI remains the default fast path.
     jurisdiction = getattr(args, "jurisdiction", "fi") or "fi"
     if jurisdiction == "uk":
         _main_uk(args)
+        return
+    if jurisdiction == "ee":
+        from lawvm.tools.ee_self_consistency import main as ee_main
+
+        ee_main(args)
         return
     _main_fi(args)
 

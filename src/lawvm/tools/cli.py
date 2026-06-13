@@ -689,6 +689,27 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         action="store_true",
         help="emit JSON with the full signal rows",
     )
+    # EE-only options (-j ee): the Estonia audit replays RT (base, oracle) pairs
+    # from a curated corpus CSV against the Riigi Teataja Farchive.
+    self_consistency_p.add_argument(
+        "--db",
+        default="",
+        metavar="PATH",
+        help="[-j ee] Riigi Teataja Farchive path (default: data/ee_riigiteataja.farchive)",
+    )
+    self_consistency_p.add_argument(
+        "--ee-corpus",
+        dest="ee_corpus",
+        default="",
+        metavar="CSV",
+        help="[-j ee] curated EE corpus CSV (default: data/estonia/current_replayable_corpus.csv)",
+    )
+    self_consistency_p.add_argument(
+        "--laws-only",
+        dest="laws_only",
+        action="store_true",
+        help="[-j ee] restrict to Riigikogu laws (tyviseadus/muutmisseadus), excluding decrees",
+    )
 
     # --- snapshot-debug ---
     snapshot_debug_p = sub.add_parser(
