@@ -117,7 +117,7 @@ from lawvm.finland.replay_findings import (
     _serialize_observed_write_audit,  # noqa: F401 - grafter compatibility re-export
     _strict_rejected_source_pathology_finding,
 )
-from lawvm.finland.future_repeal import RepealTargetRef
+from lawvm.finland.future_repeal import RepealTargetRef, build_future_repeal_suffix
 
 
 logger = logging.getLogger(__name__)
@@ -1143,40 +1143,7 @@ from lawvm.finland.chapter_seed import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Pre-scan: build future-repeal index for uncovered-body suppression
-# ---------------------------------------------------------------------------
-
-
 # _pre_scan_repeal_targets moved to grafter_uncovered; re-exported via the import block near line 319.
-
-
-def _build_future_repeal_suffix(
-    per_amendment: List[Set[RepealTargetRef]],
-) -> List[Set[RepealTargetRef]]:
-    """Pre-compute suffix unions of REPEAL targets in O(A) time.
-
-    ``result[i]`` is the union of ``per_amendment[i+1 .. N-1]``, i.e. all
-    repeal targets from amendments *after* index ``i``.  The old
-    ``_future_repeals_for_index`` recomputed this from scratch each call,
-    making the overall replay loop O(A²) in set unions.
-    """
-    n = len(per_amendment)
-    suffix: List[Set[RepealTargetRef]] = [set() for _ in range(n)]
-    for i in range(n - 2, -1, -1):
-        suffix[i] = suffix[i + 1] | per_amendment[i + 1]
-    return suffix
-
-
-def _future_repeals_for_index(
-    per_amendment: List[Set[RepealTargetRef]],
-    idx: int,
-) -> Set[RepealTargetRef]:
-    """Return the union of REPEAL targets for all amendments after ``idx``."""
-    result: Set[RepealTargetRef] = set()
-    for i in range(idx + 1, len(per_amendment)):
-        result.update(per_amendment[i])
-    return result
 
 
 # --- XML DOM Grafter ---
@@ -5172,7 +5139,7 @@ def replay_xml(
             process_muutoslaki=process_muutoslaki,
             seed_missing_chapters=_seed_missing_chapters,
             pre_scan_repeal_targets=_pre_scan_repeal_targets,
-            future_repeals_for_index=_build_future_repeal_suffix,
+            future_repeals_for_index=build_future_repeal_suffix,
             post_process_tree=post_process_tree,
             check_tree_invariants=_check_tree_invariants,
             compiled_ops_out=capture_compiled_ops_out,
