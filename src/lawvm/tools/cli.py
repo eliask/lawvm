@@ -7956,6 +7956,32 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     nz_dry_run_p.add_argument("--work-id", required=True, metavar="ID", help="archived work_id")
     nz_dry_run_p.add_argument("--summary-only", action="store_true", help="emit only dry-run summary counts")
     nz_dry_run_p.add_argument("--json", action="store_true", help="emit dry-run report JSON")
+    nz_dry_run_oracle_p = nz_corpus_sub.add_parser(
+        "dry-run-oracle",
+        help="compare the whole dry-run candidate after-tree to the archived on-or-after XML oracle",
+        description=(
+            "Materialize the full candidate after-document for each dry-run "
+            "repeal window (the immutable parsed before tree with the window's "
+            "repeal targets tombstoned), compare it node-for-node against the "
+            "archived on-or-after XML oracle, and classify every residual. "
+            "The repeal slice (mutated targets only) is reported separately from "
+            "whole-tree agreement so that source-honest unapplied non-repeal "
+            "changes in the window are not mistaken for replay-direction "
+            "divergence. This never enables actual replay and never mutates the "
+            "archive."
+        ),
+    )
+    nz_dry_run_oracle_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_dry_run_oracle_p.add_argument("--work-id", required=True, metavar="ID", help="archived work_id")
+    nz_dry_run_oracle_p.add_argument(
+        "--summary-only", action="store_true", help="emit only whole-tree comparison summary counts"
+    )
+    nz_dry_run_oracle_p.add_argument("--json", action="store_true", help="emit comparison report JSON")
     nz_evidence_pack_p = nz_corpus_sub.add_parser(
         "evidence-pack",
         help="write one report-query-compatible NZ evidence JSONL pack",
@@ -10936,6 +10962,10 @@ def _main_impl() -> None:
             from lawvm.new_zealand.dry_run import main as nz_corpus_dry_run_main
 
             nz_corpus_dry_run_main(args)
+        elif args.nz_corpus_command == "dry-run-oracle":
+            from lawvm.new_zealand.dry_run_oracle import main as nz_corpus_dry_run_oracle_main
+
+            nz_corpus_dry_run_oracle_main(args)
         elif args.nz_corpus_command == "evidence-pack":
             from lawvm.new_zealand.evidence_pack import main as nz_corpus_evidence_pack_main
 
