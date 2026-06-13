@@ -13,6 +13,7 @@ from lawvm.core.ir import ProvisionTimeline
 from lawvm.core.ir import ProvisionVersion
 from lawvm.core.invariant_profiles import TreeInvariantProfile
 from lawvm.core.invariant_profiles import collect_tree_invariant_violations
+from lawvm.core.invariant_profiles import project_tree_invariant_dicts
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.temporal import FIXED_DATE_KIND, ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.timeline_lineage import (
@@ -242,9 +243,9 @@ def fi_product_tree_invariant_dicts(
     tree: IRNode,
     profile: TreeInvariantProfile,
 ) -> tuple[dict[str, object], ...]:
-    return tuple(
-        violation.to_dict()
-        for violation in fi_product_tree_invariant_violations(tree, profile)
+    return project_tree_invariant_dicts(
+        fi_product_tree_invariant_violations(tree, profile),
+        profile,
     )
 
 

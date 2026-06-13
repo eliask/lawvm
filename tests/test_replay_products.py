@@ -8,6 +8,7 @@ from typing import cast
 import lxml.etree as etree
 import pytest
 
+from lawvm.core.invariant_profiles import structural_product_hierarchical_profile
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.ir import IRStatute
@@ -37,6 +38,7 @@ from lawvm.finland.replay_products import _classify_finland_lineage_bridge
 from lawvm.finland.replay_products import _select_pit_lineage_inputs
 from lawvm.finland.replay_products import _temporal_events_from_lo_ops
 from lawvm.finland.replay_products import build_replay_products
+from lawvm.finland.replay_products import fi_product_tree_invariant_dicts
 from lawvm.finland.replay_products import validate_replay_products
 from lawvm.core.timeline_addresses import _retarget_root_node
 from lawvm.tools.inspect_amendment import build_amendment_bundle
@@ -2066,6 +2068,13 @@ def test_validate_replay_products_detects_mixed_hierarchy_products() -> None:
         "materialized_tree:body/hcontainer:?: direct section:149 alongside chapter:15"
         in violations
     )
+    rows = fi_product_tree_invariant_dicts(
+        body,
+        structural_product_hierarchical_profile("materialized_tree"),
+    )
+    assert rows[0]["surface"] == "materialized_tree"
+    assert rows[0]["profile_id"] == "core_structural_product_hierarchical"
+    assert rows[0]["kind"] == "mixed_hierarchy_child"
 
 
 def test_validate_replay_products_allows_terminal_fi_commencement_section() -> None:

@@ -85,18 +85,29 @@ def collect_tree_invariant_messages(
     )
 
 
-def collect_tree_invariant_dicts(
-    tree: TreeInvariantNode,
+def project_tree_invariant_dicts(
+    violations: Sequence[TreeInvariantViolation],
     profile: TreeInvariantProfile,
 ) -> tuple[dict[str, object], ...]:
-    """Collect typed invariant dictionaries for JSON/report surfaces."""
+    """Project typed invariant violations with profile/surface metadata."""
     rows: list[dict[str, object]] = []
-    for violation in collect_tree_invariant_violations(tree, profile):
+    for violation in violations:
         row = violation.to_dict()
         row["surface"] = profile.surface
         row["profile_id"] = profile.profile_id
         rows.append(row)
     return tuple(rows)
+
+
+def collect_tree_invariant_dicts(
+    tree: TreeInvariantNode,
+    profile: TreeInvariantProfile,
+) -> tuple[dict[str, object], ...]:
+    """Collect typed invariant dictionaries for JSON/report surfaces."""
+    return project_tree_invariant_dicts(
+        collect_tree_invariant_violations(tree, profile),
+        profile,
+    )
 
 
 def collect_tree_invariant_messages_for_profiles(
@@ -119,6 +130,7 @@ __all__ = [
     "collect_tree_invariant_messages",
     "collect_tree_invariant_messages_for_profiles",
     "collect_tree_invariant_violations",
+    "project_tree_invariant_dicts",
     "replay_delta_minimal_profile",
     "structural_product_hierarchical_profile",
     "structural_product_strict_profile",
