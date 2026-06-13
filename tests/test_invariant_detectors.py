@@ -8,7 +8,9 @@ from lawvm.core.frozen_values import FrozenDict
 from lawvm.core.invariant_profiles import TreeInvariantProfile
 from lawvm.core.invariant_profiles import collect_tree_invariant_dicts
 from lawvm.core.invariant_profiles import collect_tree_invariant_messages
+from lawvm.core.invariant_profiles import core_replay_strict_profile
 from lawvm.core.invariant_profiles import replay_delta_minimal_profile
+from lawvm.core.invariant_profiles import replay_invariant_profile
 from lawvm.core.invariant_profiles import structural_product_hierarchical_profile
 from lawvm.core.invariant_profiles import structural_product_strict_profile
 from lawvm.core.invariant_detectors import InvariantDetectorResult
@@ -61,6 +63,49 @@ def test_core_tree_invariant_profile_presets_name_reusable_family_sets() -> None
     assert hierarchical.families == ("duplicate_label", "unexpected_child_kind", "mixed_hierarchy_child")
     assert replay_delta.profile_id == "core_replay_delta_minimal"
     assert replay_delta.families == ("duplicate_label", "sort_order")
+
+
+def test_core_replay_invariant_profile_is_declarative_and_opt_in() -> None:
+    profile = core_replay_strict_profile("after_op")
+
+    data = profile.to_dict()
+
+    assert data["profile_id"] == "core_replay_strict_v1"
+    assert data["mutation_accounting"] == "hard"
+    assert data["transition_detectors"] == (
+        "descendant_sibling_loss",
+        "same_source_descendant_snapshot_shadow",
+    )
+    assert data["timeline_invariants"] == (
+        "temporal_overlap",
+        "temporary_overlay",
+        "expiry_chain",
+        "replay_timeline",
+    )
+    assert data["warnings"] == ("text_duplication", "flattened_sublist_family")
+    assert data["local_allowance_policy"] == "frontend_required"
+    assert data["local_classifier_policy"] == "frontend_required"
+    assert data["replay_authorization_claims"] is False
+    assert data["tree_profiles"] == (
+        {
+            "surface": "after_op",
+            "profile_id": "core_replay_delta_minimal",
+            "families": ("duplicate_label", "sort_order"),
+        },
+    )
+
+
+def test_replay_invariant_profile_rejects_unknown_shared_family_names() -> None:
+    with pytest.raises(ValueError, match="transition_detectors"):
+        replay_invariant_profile(
+            profile_id="bad",
+            transition_detectors=cast(Any, ("frontend_specific_detector",)),
+        )
+    with pytest.raises(ValueError, match="mutation_accounting"):
+        replay_invariant_profile(
+            profile_id="bad",
+            mutation_accounting=cast(Any, "execute"),
+        )
 
 
 def test_run_invariant_detector_returns_typed_tree_results_with_legacy_messages() -> None:
