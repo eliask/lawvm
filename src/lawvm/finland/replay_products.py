@@ -28,6 +28,7 @@ from lawvm.core.timeline_addresses import _retarget_version_content
 from lawvm.core.tree_ops import (
     check_invariants,
     default_label_sort_key,
+    iter_tree_invariant_violations,
     resort_children as _resort_children,
 )
 from lawvm.replay_adjudication import SourceAdjudication
@@ -764,6 +765,16 @@ def validate_replay_products(
         violations.append(f"replay_fold_tree:{violation}")
     for violation in check_invariants(products.materialized_state.ir):
         violations.append(f"materialized_tree:{violation}")
+    for violation in iter_tree_invariant_violations(
+        products.replay_fold_state.ir,
+        families={"mixed_hierarchy_child"},
+    ):
+        violations.append(f"replay_fold_tree:{violation.message}")
+    for violation in iter_tree_invariant_violations(
+        products.materialized_state.ir,
+        families={"mixed_hierarchy_child"},
+    ):
+        violations.append(f"materialized_tree:{violation.message}")
 
     # Check for temporary_unresolved versions — these represent VÄLIAIKAINEN
     # amendments with no parseable expiry date and are a product-level degradation

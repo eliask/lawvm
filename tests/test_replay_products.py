@@ -2021,6 +2021,72 @@ def test_validate_replay_products_detects_materialized_tree_invariants() -> None
     assert "materialized_tree:body: duplicate section:1 (2 times)" in violations
 
 
+def test_validate_replay_products_detects_mixed_hierarchy_products() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="15",
+                        children=(IRNode(kind=IRNodeKind.SECTION, label="148"),),
+                    ),
+                    IRNode(kind=IRNodeKind.SECTION, label="149"),
+                ),
+            ),
+        ),
+    )
+    ctx = StatuteContext(
+        id="test/1",
+        title="Test",
+        base_ir=IRNode(kind=IRNodeKind.BODY),
+        base_xml_bytes=b"<body/>",
+    )
+    products = ReplayProducts(
+        replay_fold_state=ReplayState(ir=body),
+        materialized_state=ReplayState(ir=body),
+        timelines=None,
+        materialization_spec=None,
+        source_adjudication=None,
+    )
+
+    violations = validate_replay_products(
+        ctx,
+        products,
+        deep_materialization_check=False,
+    )
+
+    assert (
+        "replay_fold_tree:body/hcontainer:?: direct section:149 alongside chapter:15"
+        in violations
+    )
+    assert (
+        "materialized_tree:body/hcontainer:?: direct section:149 alongside chapter:15"
+        in violations
+    )
+
+
+def test_2014_527_legal_pit_surfaces_mixed_hierarchy_product_invariant() -> None:
+    replay = pinned_replay("2014/527", mode="legal_pit", quiet=True)
+
+    violations = validate_replay_products(
+        replay.ctx,
+        replay.products,
+        deep_materialization_check=False,
+    )
+
+    assert (
+        "replay_fold_tree:body/hcontainer:?: direct section:149 alongside chapter:21"
+        in violations
+    )
+    assert (
+        "materialized_tree:body: direct section:149a alongside chapter:21"
+        in violations
+    )
+
+
 def test_replay_fold_does_not_duplicate_temporary_section_chain_for_1995_1556() -> None:
     replay = pinned_replay("1995/1556", mode="legal_pit", stop_before="2022/439", quiet=True)
 
