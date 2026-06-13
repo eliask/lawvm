@@ -248,6 +248,41 @@ def test_parse_clause_doc_ill_provenance_keeps_subsection_insert_target():
     assert result.parsed_ops[0].witness.rule_id == "fi.insertion_sub_target"
 
 
+def test_parse_clause_kumotaan_chapter_then_reinsert_emits_repeal_and_insert():
+    """`kumotaan N luku ... lisätään kumottavan N luvun tilalle uusi N luku`.
+
+    Regression for 518/1995 <- 1997/451: the johtolause repeals chapter 5 and
+    re-inserts a new chapter 5 in its place.  The chapter-level reinstatement
+    preamble ``kumottavan 5 luvun tilalle`` previously broke the DOC:ILL insert
+    branch, so the ``lisätään ... uusi 5 luku`` INSERT was dropped and the
+    chapter was lost (a later ``REPLACE 5 luku otsikko`` then failed with
+    ``master chapter:5 not found``).  Both the REPEAL and the INSERT of
+    chapter 5 must now be emitted.
+    """
+    text = (
+        "kumotaan 7 päivänä huhtikuuta 1995 annetun sähkömarkkina-asetuksen "
+        "(518/1995) 5 luku, muutetaan 2 §:n 3 kohta sekä lisätään asetukseen "
+        "kumottavan 5 luvun tilalle uusi 5 luku seuraavasti:"
+    )
+
+    result = parse_clause(text)
+
+    assert [op.code() for op in result.parsed_ops] == [
+        "K L 5",
+        "M P 2 1 3",
+        "L L 5",
+    ]
+
+
+def test_parse_clause_chapter_reinstatement_preamble_keeps_insert_target():
+    """Bare ``lisätään ... kumottavan N luvun tilalle uusi N luku`` keeps INSERT."""
+    text = "lisätään asetukseen kumottavan 5 luvun tilalle uusi 5 luku seuraavasti:"
+
+    result = parse_clause(text)
+
+    assert [op.code() for op in result.parsed_ops] == ["L L 5"]
+
+
 def test_parse_clause_named_row_residue_does_not_truncate_later_targets():
     """A `koodi 121` residue must not truncate later ordinary targets."""
     text = "muutetaan 5 §, 6 §:n 2 momentin koodi 121, 7 §:n 2 momentti, 10 ja 10 a § sekä 3 ja 4 luku"

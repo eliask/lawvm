@@ -663,14 +663,16 @@ def annotate_reinstatement(tokens: list[Token]) -> list[Annotation]:
             if found_end:
                 continue
 
-        # Pattern 2: NUM [LETTER] PYKALA:GEN TILALLE (section-level)
+        # Pattern 2: NUM [LETTER] (PYKALA|LUKU):GEN TILALLE
+        # (section- or chapter-level reinstatement preamble, e.g.
+        #  "kumottavan 5 luvun tilalle uusi 5 luku").
         if t.cat == "NUM":
             k = i + 1
             if k < n and tokens[k].cat == "LETTER":
                 k += 1
             if (
                 k < n
-                and tokens[k].cat == "PYKALA"
+                and tokens[k].cat in ("PYKALA", "LUKU")
                 and tokens[k].case == "GEN"
                 and k + 1 < n
                 and tokens[k + 1].cat == "TILALLE"
@@ -746,6 +748,12 @@ def annotate_qualifiers(tokens: list[Token]) -> list[Annotation]:
             "kumottu",
             "kumotun",
             "kumottujen",
+            # Gerundive ("to-be-repealed") participles seen in
+            # "lisätään ... kumottavan N luvun/§:n tilalle uusi N luku/§"
+            # reinsertion johtolauseet (e.g. 518/1995 <- 1997/451).
+            "kumottava",
+            "kumottavan",
+            "kumottavien",
         }
     )
     _VALIOTSIKKO_SKIP = frozenset({"sen", "pykälän"})
