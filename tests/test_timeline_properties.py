@@ -2827,6 +2827,43 @@ def test_duplicate_child_classifier_marks_explicit_temporal_overlay() -> None:
     assert finding.classification == "valid_temporal_overlay"
 
 
+def test_duplicate_child_classifier_skips_blank_label_children_without_crashing() -> None:
+    """Empty-string-labelled siblings (e.g. EE subdivision headings whose ordinal
+    lives in ``.text``) must not collapse into a single duplicate family and
+    construct a ``DuplicateChildFinding`` with an empty ``child_label`` (which the
+    dataclass forbids). They carry no addressable label, so they are skipped."""
+    parent = LegalAddress(path=(("chapter", "IV"),))
+    findings = collect_duplicate_child_findings(
+        IRNode(
+            kind=IRNodeKind.CHAPTER,
+            label="IV",
+            children=(
+                IRNode(kind=IRNodeKind.DIVISION, label="", text="PÕHISÄTTED"),
+                IRNode(kind=IRNodeKind.DIVISION, label="", text="TEOSE KASUTAMINE"),
+                IRNode(kind=IRNodeKind.DIVISION, label="", text="MUUD SÄTTED"),
+            ),
+        ),
+        parent_address=parent,
+    )
+
+    assert findings == ()
+
+
+def test_classify_duplicate_child_family_returns_none_for_blank_label() -> None:
+    """A family whose first child carries a blank label is non-classifiable
+    (no addressable label) rather than producing an empty-label finding."""
+    parent = LegalAddress(path=(("chapter", "IV"),))
+    finding = classify_duplicate_child_family(
+        parent,
+        (
+            IRNode(kind=IRNodeKind.DIVISION, label="", text="PÕHISÄTTED"),
+            IRNode(kind=IRNodeKind.DIVISION, label="", text="TEOSE KASUTAMINE"),
+        ),
+    )
+
+    assert finding is None
+
+
 # ---------------------------------------------------------------------------
 # DuplicateChildFinding __post_init__ validation
 # ---------------------------------------------------------------------------

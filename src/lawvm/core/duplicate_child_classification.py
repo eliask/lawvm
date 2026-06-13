@@ -96,7 +96,7 @@ def classify_duplicate_child_family(
     if len(children) < 2:
         return None
     first = children[0]
-    if first.label is None:
+    if first.label is None or not first.label.strip():
         return None
     child_kind = _kind_str(first.kind)
     child_label = first.label
@@ -150,7 +150,7 @@ def collect_duplicate_child_findings(
     findings: list[DuplicateChildFinding] = []
     grouped: dict[tuple[str, str], list[IRNode]] = {}
     for child in node.children:
-        if child.label is None:
+        if child.label is None or not child.label.strip():
             continue
         grouped.setdefault((_kind_str(child.kind), child.label), []).append(child)
     for children in grouped.values():
@@ -163,7 +163,7 @@ def collect_duplicate_child_findings(
         if finding is not None:
             findings.append(finding)
     for child in node.children:
-        if child.label is None:
+        if child.label is None or not child.label.strip():
             continue
         findings.extend(
             collect_duplicate_child_findings(
