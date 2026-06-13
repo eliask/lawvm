@@ -7,14 +7,15 @@ from typing import Callable, Dict, Optional, cast
 
 from lawvm.core import tree_ops as _tops
 from lawvm.core.invariant_profiles import TreeInvariantProfile
-from lawvm.core.invariant_profiles import collect_tree_invariant_dicts
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import build_text_duplication_findings
 from lawvm.finland.replay_findings import (
     _emit_structural_dedup_warning,
     _replay_product_invariant_finding,
 )
-from lawvm.finland.replay_products import ReplayProducts, validate_replay_products
+from lawvm.finland.replay_products import ReplayProducts
+from lawvm.finland.replay_products import fi_product_tree_invariant_dicts
+from lawvm.finland.replay_products import validate_replay_products
 from lawvm.finland.statute import StatuteContext
 
 _FI_REPLAY_FOLD_PRODUCT_TREE_PROFILE = TreeInvariantProfile(
@@ -46,13 +47,13 @@ def project_replay_products(request: ReplayProductProjectionRequest) -> ReplayPr
     products = request.products
     typed_product_tree_violations = {
         "replay_fold_tree": list(
-            collect_tree_invariant_dicts(
+            fi_product_tree_invariant_dicts(
                 products.replay_fold_state.ir,
                 _FI_REPLAY_FOLD_PRODUCT_TREE_PROFILE,
             )
         ),
         "materialized_tree": list(
-            collect_tree_invariant_dicts(
+            fi_product_tree_invariant_dicts(
                 products.materialized_state.ir,
                 _FI_MATERIALIZED_PRODUCT_TREE_PROFILE,
             )

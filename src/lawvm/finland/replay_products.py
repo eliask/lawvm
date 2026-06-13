@@ -12,7 +12,7 @@ from lawvm.core.ir import LegalOperation
 from lawvm.core.ir import ProvisionTimeline
 from lawvm.core.ir import ProvisionVersion
 from lawvm.core.invariant_profiles import TreeInvariantProfile
-from lawvm.core.invariant_profiles import collect_tree_invariant_messages
+from lawvm.core.invariant_profiles import collect_tree_invariant_violations
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.temporal import FIXED_DATE_KIND, ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.timeline_lineage import (
@@ -28,6 +28,7 @@ from lawvm.core.timeline_results import (
 )
 from lawvm.core.timeline_addresses import _retarget_version_content
 from lawvm.core.tree_ops import (
+    TreeInvariantViolation,
     check_invariants,
     default_label_sort_key,
     resort_children as _resort_children,
@@ -144,6 +145,105 @@ def _fi_root_num_text(kind: IRNodeKind, label: str) -> str | None:
 
 def _content_is_repeal_placeholder(node: IRNode) -> bool:
     return node.attrs.get("lawvm_repeal_placeholder") == "1"
+
+
+def _kind_value(node: IRNode) -> str:
+    return node.kind.value if isinstance(node.kind, IRNodeKind) else str(node.kind)
+
+
+def _resolve_invariant_path(tree: IRNode, path: tuple[tuple[str, str | None], ...]) -> IRNode | None:
+    """Resolve a core tree-invariant path against a Finland IR tree."""
+    if not path:
+        return None
+    first_kind, first_label = path[0]
+    if _kind_value(tree) != first_kind or tree.label != first_label:
+        return None
+    node = tree
+    for kind, label in path[1:]:
+        match = next(
+            (
+                child
+                for child in node.children
+                if _kind_value(child) == kind and child.label == label
+            ),
+            None,
+        )
+        if match is None:
+            return None
+        node = match
+    return node
+
+
+def _has_fi_commencement_heading(section: IRNode) -> bool:
+    for child in section.children:
+        if child.kind is IRNodeKind.HEADING and "voimaantulo" in irnode_to_text(child).casefold():
+            return True
+    return "voimaantulo" in irnode_to_text(section)[:120].casefold()
+
+
+def _is_terminal_fi_commencement_section_violation(
+    tree: IRNode,
+    violation: TreeInvariantViolation,
+) -> bool:
+    """Allow source-authored final FI commencement sections outside chapters.
+
+    Some Finnish base statutes are chaptered but keep the entry-into-force
+    section as a final root-level section. That is a source shape, not replay
+    corruption. Non-terminal or non-commencement direct sections remain flagged.
+    """
+    if (
+        violation.kind != "mixed_hierarchy_child"
+        or violation.child_kind != IRNodeKind.SECTION.value
+        or violation.label is None
+    ):
+        return False
+    parent = _resolve_invariant_path(tree, violation.path)
+    if parent is None:
+        return False
+    labeled_children = [
+        child
+        for child in parent.children
+        if child.label is not None and _kind_value(child) in {"part", "chapter", "section"}
+    ]
+    for index, child in enumerate(labeled_children):
+        if child.kind is not IRNodeKind.SECTION or child.label != violation.label:
+            continue
+        has_previous_container = any(_kind_value(left) in {"part", "chapter"} for left in labeled_children[:index])
+        has_following_container = any(_kind_value(right) in {"part", "chapter"} for right in labeled_children[index + 1 :])
+        return has_previous_container and not has_following_container and _has_fi_commencement_heading(child)
+    return False
+
+
+def fi_product_tree_invariant_violations(
+    tree: IRNode,
+    profile: TreeInvariantProfile,
+) -> tuple[TreeInvariantViolation, ...]:
+    """Collect FI product tree invariants after FI source-shape allowances."""
+    return tuple(
+        violation
+        for violation in collect_tree_invariant_violations(tree, profile)
+        if not _is_terminal_fi_commencement_section_violation(tree, violation)
+    )
+
+
+def fi_product_tree_invariant_messages(
+    tree: IRNode,
+    profile: TreeInvariantProfile,
+) -> tuple[str, ...]:
+    return tuple(
+        f"{profile.surface}:{violation.message}"
+        for violation in fi_product_tree_invariant_violations(tree, profile)
+    )
+
+
+def fi_product_tree_invariant_dicts(
+    tree: IRNode,
+    profile: TreeInvariantProfile,
+) -> tuple[dict[str, object], ...]:
+    return tuple(
+        violation.to_dict()
+        for violation in fi_product_tree_invariant_violations(tree, profile)
+    )
 
 
 def _should_restore_repeal_placeholder(node: IRNode) -> bool:
@@ -775,14 +875,14 @@ def validate_replay_products(
     for violation in check_invariants(products.materialized_state.ir):
         violations.append(f"materialized_tree:{violation}")
     violations.extend(
-        collect_tree_invariant_messages(
+        fi_product_tree_invariant_messages(
             products.replay_fold_state.ir,
             _FI_REPLAY_FOLD_MIXED_HIERARCHY_PROFILE,
         )
     )
     violations.extend(
-        collect_tree_invariant_messages(
-        products.materialized_state.ir,
+        fi_product_tree_invariant_messages(
+            products.materialized_state.ir,
             _FI_MATERIALIZED_MIXED_HIERARCHY_PROFILE,
         )
     )

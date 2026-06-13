@@ -2068,6 +2068,103 @@ def test_validate_replay_products_detects_mixed_hierarchy_products() -> None:
     )
 
 
+def test_validate_replay_products_allows_terminal_fi_commencement_section() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="4",
+                        children=(IRNode(kind=IRNodeKind.SECTION, label="22"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="23",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="23 §"),
+                            IRNode(kind=IRNodeKind.HEADING, text="Voimaantulo"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    ctx = StatuteContext(
+        id="test/1",
+        title="Test",
+        base_ir=IRNode(kind=IRNodeKind.BODY),
+        base_xml_bytes=b"<body/>",
+    )
+    products = ReplayProducts(
+        replay_fold_state=ReplayState(ir=body),
+        materialized_state=ReplayState(ir=body),
+        timelines=None,
+        materialization_spec=None,
+        source_adjudication=None,
+    )
+
+    violations = validate_replay_products(
+        ctx,
+        products,
+        deep_materialization_check=False,
+    )
+
+    assert violations == []
+
+
+def test_validate_replay_products_still_flags_non_commencement_mixed_section() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="4",
+                        children=(IRNode(kind=IRNodeKind.SECTION, label="22"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="23",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="23 §"),
+                            IRNode(kind=IRNodeKind.HEADING, text="Soveltamisala"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    ctx = StatuteContext(
+        id="test/1",
+        title="Test",
+        base_ir=IRNode(kind=IRNodeKind.BODY),
+        base_xml_bytes=b"<body/>",
+    )
+    products = ReplayProducts(
+        replay_fold_state=ReplayState(ir=body),
+        materialized_state=ReplayState(ir=body),
+        timelines=None,
+        materialization_spec=None,
+        source_adjudication=None,
+    )
+
+    violations = validate_replay_products(
+        ctx,
+        products,
+        deep_materialization_check=False,
+    )
+
+    assert (
+        "replay_fold_tree:body/hcontainer:?: direct section:23 alongside chapter:4"
+        in violations
+    )
+
+
 def test_2014_527_legal_pit_does_not_leave_reinstated_section_family_at_root() -> None:
     replay = pinned_replay("2014/527", mode="legal_pit", quiet=True)
 
@@ -2080,6 +2177,18 @@ def test_2014_527_legal_pit_does_not_leave_reinstated_section_family_at_root() -
     assert not any("section:149" in violation for violation in violations)
     assert replay.materialized_state.find_section("149a", "15") is not None
     assert replay.materialized_state.find_section("211b", "20") is not None
+
+
+def test_2004_1287_legal_pit_allows_source_authored_final_commencement_section() -> None:
+    replay = pinned_replay("2004/1287", mode="legal_pit", quiet=True)
+
+    violations = validate_replay_products(
+        replay.ctx,
+        replay.products,
+        deep_materialization_check=False,
+    )
+
+    assert not any("direct section:23 alongside chapter:4" in violation for violation in violations)
 
 
 def test_replay_fold_does_not_duplicate_temporary_section_chain_for_1995_1556() -> None:
