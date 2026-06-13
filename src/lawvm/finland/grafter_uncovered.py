@@ -476,6 +476,67 @@ class RecoveryState:
                 )
 
 
+@dataclass(frozen=True, slots=True)
+class PreGuardVerdict:
+    """Outcome of the uncovered-candidate pre-guard filter phase.
+
+    The pre-guards are pure read-only filters that run before target resolution:
+    duplicate-already-recovered, moved-destination-mismatch, same-wave relabel
+    ownership, and the body-pairing (foreign/unmatched/repeal) guard. The verdict
+    says whether the candidate proceeds to resolution, and if not, the typed skip
+    reason + part scope to record — so the early-exit decision is one auditable
+    value instead of four scattered returns.
+    """
+
+    proceed: bool
+    skip_reason: Optional[str]
+    with_part: bool  # whether the skip finding should carry the part label
+
+    def __post_init__(self) -> None:
+        if self.proceed and self.skip_reason is not None:
+            raise ValueError("a proceeding pre-guard verdict must not carry a skip reason")
+        if not self.proceed and self.skip_reason is None:
+            raise ValueError("a blocking pre-guard verdict must name a skip reason")
+
+
+def _evaluate_pre_guards(
+    *,
+    label: str,
+    amend_chapter_label: Optional[str],
+    amend_part_label: Optional[str],
+    guards: UncoveredRecoveryGuards,
+    already_recovered: bool,
+    moved_section_destinations: Dict[str, str],
+    bp_assignments: object,
+) -> PreGuardVerdict:
+    """Run the read-only pre-resolution filters and return one typed verdict.
+
+    Pure: reads guard/ownership state and pairing assignments but mutates
+    nothing. Filter order is preserved from the legacy cascade (first match
+    wins), so the skip a candidate gets is identical to before.
+    """
+    if already_recovered:
+        return PreGuardVerdict(False, "duplicate_recovered_candidate", with_part=False)
+
+    move_destination = moved_section_destinations.get(label)
+    if move_destination and amend_chapter_label != move_destination:
+        return PreGuardVerdict(False, "moved_destination_mismatch", with_part=False)
+
+    if amend_chapter_label and guards.is_relabel_destination(
+        part=amend_part_label,
+        chapter=amend_chapter_label,
+        section=label,
+    ):
+        return PreGuardVerdict(False, "same_wave_relabel_destination_owned", with_part=True)
+
+    if bp_assignments and not should_use_body_section(
+        label, amend_chapter_label or "", cast("list", bp_assignments)
+    ):
+        return PreGuardVerdict(False, "body_pairing_guard", with_part=False)
+
+    return PreGuardVerdict(True, None, with_part=False)
+
+
 def _build_uncovered_rop(
     *,
     op_type: OpType,
@@ -1237,53 +1298,34 @@ def _recover_uncovered_body_ops(
 
         amend_part_label = _xml_part_label(sec)
 
-        if rstate.already_recovered(section=label, chapter=amend_chapter_label):
+        # Phase 1: pure read-only pre-guards (duplicate / moved / relabel / pairing).
+        _pre = _evaluate_pre_guards(
+            label=label,
+            amend_chapter_label=amend_chapter_label,
+            amend_part_label=amend_part_label,
+            guards=recovery_guards,
+            already_recovered=rstate.already_recovered(
+                section=label, chapter=amend_chapter_label
+            ),
+            moved_section_destinations=moved_section_destinations,
+            bp_assignments=_bp_assignments,
+        )
+        if not _pre.proceed:
+            assert _pre.skip_reason is not None  # guaranteed by PreGuardVerdict invariant
             if _DEBUG_RECOVERY:
-                print(f"  [DBG]  -> SKIP: already recovered {label!r} in chapter {amend_chapter_label!r}")
-            _record_skip("duplicate_recovered_candidate", label, amend_chapter_label)
-            return
-
-        move_destination = moved_section_destinations.get(label)
-        if move_destination and amend_chapter_label != move_destination:
-            if _DEBUG_RECOVERY:
-                print(
-                    f"  [DBG]  -> SKIP: label {label!r} moved to chapter {move_destination!r},"
-                    f" not {amend_chapter_label!r}"
-                )
-            _record_skip("moved_destination_mismatch", label, amend_chapter_label)
-            return
-
-        if amend_chapter_label and recovery_guards.is_relabel_destination(
-            part=amend_part_label,
-            chapter=amend_chapter_label,
-            section=label,
-        ):
-            if _DEBUG_RECOVERY:
-                print(
-                    "  [DBG]  -> SKIP: section "
-                    f"{label!r} in chapter {amend_chapter_label!r} already owned by same-wave relabel destination"
+                print(f"  [DBG]  -> SKIP ({_pre.skip_reason}): {label!r} in chapter {amend_chapter_label!r}")
+            if _pre.skip_reason == "body_pairing_guard":
+                logger.debug(
+                    "  [%s] uncovered SKIP %s § — body-pairing guard (foreign/unmatched/repeal)",
+                    amendment_id,
+                    label,
                 )
             _record_skip(
-                "same_wave_relabel_destination_owned",
+                _pre.skip_reason,
                 label,
                 amend_chapter_label,
-                amend_part_label,
+                amend_part_label if _pre.with_part else None,
             )
-            return
-
-        # Body-pairing guard: reject sections that are foreign-statute,
-        # unmatched, or REPEAL-claimed.  This prevents the bug where a
-        # repealing amendment's own body sections (with same labels as the
-        # repealed statute) get inserted as content.
-        if _bp_assignments and not should_use_body_section(label, amend_chapter_label or "", _bp_assignments):
-            if _DEBUG_RECOVERY:
-                print(f"  [DBG]  -> SKIP: body-pairing guard rejected {label!r}")
-            logger.debug(
-                "  [%s] uncovered SKIP %s § — body-pairing guard (foreign/unmatched/repeal)",
-                amendment_id,
-                label,
-            )
-            _record_skip("body_pairing_guard", label, amend_chapter_label)
             return
 
         # A whole-chapter INSERT/REPLACE op already owns the chapter payload.

@@ -13,13 +13,16 @@ import pytest
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.grafter_uncovered import (
+    PreGuardVerdict,
     RecoveryState,
     UncoveredCandidateAudit,
     UncoveredRecoveryGuards,
+    _evaluate_pre_guards,
     _next_letter_label,
     _part_label_from_path,
     _section_heading_text,
     _uncovered_disposition_for_op_id,
+    _uncovered_section_key,
     _xml_part_label,
 )
 
@@ -180,3 +183,101 @@ def test_chapter_disposition_mixed_finding() -> None:
     rstate.note_chapter_disposition("5", "owned")  # only owned → no mixed finding
     rstate.emit_chapter_payload_mixed_findings()
     assert len(findings) == 1  # only chapter 4 has both adopted and owned
+
+
+# --- PreGuardVerdict invariants + _evaluate_pre_guards ---
+
+
+def test_pre_guard_verdict_proceed_rejects_reason() -> None:
+    with pytest.raises(ValueError, match="must not carry"):
+        PreGuardVerdict(True, "x", with_part=False)
+
+
+def test_pre_guard_verdict_block_requires_reason() -> None:
+    with pytest.raises(ValueError, match="must name"):
+        PreGuardVerdict(False, None, with_part=False)
+
+
+def _empty_guards() -> UncoveredRecoveryGuards:
+    return UncoveredRecoveryGuards(
+        covered_sections=set(),
+        chapter_payload_owned_sections=set(),
+        relabel_destination_sections=set(),
+    )
+
+
+def test_pre_guards_proceed_when_clean() -> None:
+    verdict = _evaluate_pre_guards(
+        label="5",
+        amend_chapter_label="3",
+        amend_part_label=None,
+        guards=_empty_guards(),
+        already_recovered=False,
+        moved_section_destinations={},
+        bp_assignments=None,
+    )
+    assert verdict.proceed is True
+    assert verdict.skip_reason is None
+
+
+def test_pre_guards_block_already_recovered() -> None:
+    verdict = _evaluate_pre_guards(
+        label="5",
+        amend_chapter_label="3",
+        amend_part_label=None,
+        guards=_empty_guards(),
+        already_recovered=True,
+        moved_section_destinations={},
+        bp_assignments=None,
+    )
+    assert verdict.proceed is False
+    assert verdict.skip_reason == "duplicate_recovered_candidate"
+
+
+def test_pre_guards_block_moved_destination_mismatch() -> None:
+    verdict = _evaluate_pre_guards(
+        label="5",
+        amend_chapter_label="3",
+        amend_part_label=None,
+        guards=_empty_guards(),
+        already_recovered=False,
+        moved_section_destinations={"5": "7"},  # moved to chapter 7, not 3
+        bp_assignments=None,
+    )
+    assert verdict.proceed is False
+    assert verdict.skip_reason == "moved_destination_mismatch"
+
+
+def test_pre_guards_moved_to_declared_chapter_proceeds() -> None:
+    verdict = _evaluate_pre_guards(
+        label="5",
+        amend_chapter_label="7",
+        amend_part_label=None,
+        guards=_empty_guards(),
+        already_recovered=False,
+        moved_section_destinations={"5": "7"},  # declared chapter matches destination
+        bp_assignments=None,
+    )
+    assert verdict.proceed is True
+
+
+def test_pre_guards_block_relabel_destination_carries_part() -> None:
+    guards = UncoveredRecoveryGuards(
+        covered_sections=set(),
+        chapter_payload_owned_sections=set(),
+        relabel_destination_sections={
+            _uncovered_section_key(part=None, chapter="3", section="5")
+        },
+    )
+    verdict = _evaluate_pre_guards(
+        label="5",
+        amend_chapter_label="3",
+        amend_part_label=None,
+        guards=guards,
+        already_recovered=False,
+        moved_section_destinations={},
+        bp_assignments=None,
+    )
+    assert verdict.proceed is False
+    assert verdict.skip_reason == "same_wave_relabel_destination_owned"
+    assert verdict.with_part is True
