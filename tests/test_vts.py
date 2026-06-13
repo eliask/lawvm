@@ -361,6 +361,47 @@ def test_extract_voimaantulo_repeals_real_corpus_2018_253_does_not_false_repeal_
     assert not any(op.target_section == "3" and op.target_chapter is None for op in ops)
 
 
+def test_extract_voimaantulo_repeals_application_clause_with_same_paragraph_kumotaan_is_not_a_repeal() -> None:
+    """An application clause is not a repeal even when its OWN paragraph carries 'kumotaan'.
+
+    2018/253 (äitiyslaki) §52 "Lain soveltaminen eräissä tapauksissa" reads
+    "etu- ja sukunimilain (946/2017) 28 §:n 2 momentin 4 kohtaa sovelletaan myös,
+    jos äitiys kumotaan tämän lain nojalla." Here 'kumotaan' means a maternity is
+    annulled — it is a subordinate-clause verb, not a repeal enactment, and the
+    parent reference is the object of 'sovelletaan'. The cross-paragraph guard
+    does not catch this because the citation and 'kumotaan' share one paragraph;
+    the enactment-ordering guard must reject it. Accepting it injects a phantom
+    REPEAL of 946/2017 §28 mom 2 that strips its kohta from the fold-state IR.
+    """
+    xml = (
+        f'<act xmlns="{_AKN_NS}">'
+        f'  <preamble><formula name="enactingClause">säädetään seuraavasti:</formula></preamble>'
+        f'  <body>'
+        f'    <section eId="sec_52"><num>52 §</num>'
+        f'      <heading>Lain soveltaminen eräissä tapauksissa</heading>'
+        f'      <subsection eId="sec_52__subsec_1">'
+        f'        <intro><p>Jos lapsella tämän lain nojalla on kaksi äitiä:</p></intro>'
+        f'        <paragraph eId="sec_52__subsec_1__para_2"><num>2)</num><content>'
+        f'          <p>etu- ja sukunimilain (946/2017) 28 §:n 2 momentin 4 kohtaa sovelletaan myös, jos äitiys kumotaan tämän lain nojalla.</p>'
+        f'        </content></paragraph>'
+        f'      </subsection>'
+        f'    </section>'
+        f'  </body>'
+        f'</act>'
+    ).encode()
+    ops = extract_voimaantulo_repeals(xml, "2017/946", parent_title="etu- ja sukunimilaki")
+    assert ops == []
+
+
+def test_extract_voimaantulo_repeals_real_corpus_2018_253_does_not_false_repeal_etusukunimilaki() -> None:
+    cs = get_corpus_store()
+    xml = cs.read_source("2018/253")
+    if xml is None:
+        return
+    ops = extract_voimaantulo_repeals(xml, "2017/946", parent_title="etu- ja sukunimilaki")
+    assert ops == []
+
+
 def test_extract_voimaantulo_repeals_force_except_clause_marks_excluded_section() -> None:
     xml = (
         f'<act xmlns="{_AKN_NS}">'

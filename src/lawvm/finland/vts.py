@@ -340,6 +340,43 @@ def _classify_vts_source_diagnostic(
 # ---------------------------------------------------------------------------
 
 
+# Enacting verb of a transitional repeal clause. Genuine clauses read
+# "Tällä lailla kumotaan …" / "Sillä kumotaan …" — the verb governs the parent
+# reference that follows it. The verb "kumotaan" can also appear as an ordinary
+# subordinate-clause verb ("… sovelletaan myös, jos äitiys kumotaan …"), where it
+# is NOT a repeal enactment and the parent reference is the object of another verb
+# ("sovelletaan"). Distinguishing the two requires checking that an enacting
+# "kumotaan" precedes the parent reference within the same sentence.
+_VTS_REPEAL_ENACT_RE = re.compile(r"\bkumotaan\b", re.IGNORECASE)
+
+
+def _has_repeal_enactment_before(text: str, ref_start: int) -> bool:
+    """Return True if an enacting ``kumotaan`` governs the parent reference.
+
+    A genuine voimaantulo repeal reads ``… kumotaan … <parent ref> …``: the
+    enacting verb precedes the parent citation/title within the same sentence.
+    The false-positive shape is ``<parent ref> … sovelletaan …, jos … kumotaan
+    …`` (an application/conditional clause) where the parent reference comes
+    first and ``kumotaan`` only appears later as a subordinate-clause verb.
+
+    *ref_start* is the offset of the parent reference (citation or title) inside
+    *text*. We accept the span only if some ``kumotaan`` occurs before
+    *ref_start* with no sentence boundary (``.``) separating it from the
+    reference.
+    """
+    if ref_start <= 0:
+        return False
+    before = text[:ref_start]
+    last = None
+    for m in _VTS_REPEAL_ENACT_RE.finditer(before):
+        last = m
+    if last is None:
+        return False
+    # No sentence boundary between the enacting verb and the parent reference.
+    between = before[last.end() : ref_start]
+    return "." not in between
+
+
 def _voimaantulo_repeal_fragment_for_parent(
     xml_bytes: bytes,
     parent_id: str,
@@ -421,18 +458,22 @@ def _voimaantulo_repeal_fragment_for_parent(
                 if not under_kumotaan_intro:
                     if "kumotaan" not in para_lower and "lukuun ottamatta" not in para_lower:
                         continue
-                if citation_re.search(para_text):
-                    # Extract text after citation, before "sellaisena kuin" / ";",
-                    # stripping item prefix like "3)"
-                    # Remove leading item label "N)" or "N."
-                    para_plain = re.sub(r"^\d+\)\s*", "", para_plain)
+                # Remove leading item label "N)" or "N." before locating the
+                # parent reference, so the enactment-ordering check measures the
+                # same string the fragment extractor sees.
+                para_plain = re.sub(r"^\d+\)\s*", "", para_plain)
+                cite_match = citation_re.search(para_plain)
+                if cite_match and _has_repeal_enactment_before(para_plain, cite_match.start()):
+                    # Extract text after citation, before "sellaisena kuin" / ";".
                     fragment = _vts_extract_after_citation(para_plain, citation_re)
                     if fragment:
                         return fragment
                 if has_title:
-                    fragment = _vts_extract_after_parent_title(para_plain, title_variants)
-                    if fragment:
-                        return fragment
+                    title_pos, _ = _find_parent_title_span(para_plain, title_variants)
+                    if title_pos >= 0 and _has_repeal_enactment_before(para_plain, title_pos):
+                        fragment = _vts_extract_after_parent_title(para_plain, title_variants)
+                        if fragment:
+                            return fragment
             # Paragraphized containers keep repeal ownership within one item.
             # Do not fall back to whole-section text, or a parent citation in one
             # paragraph and "kumotaan" in a sibling can be stitched together into
@@ -442,13 +483,17 @@ def _voimaantulo_repeal_fragment_for_parent(
         # Shape 2: inline prose — the whole section text contains the citation.
         sec_plain = re.sub(r"\s+", " ", full_text).strip()
         if has_citation:
-            fragment = _vts_extract_after_citation(sec_plain, citation_re)
-            if fragment:
-                return fragment
+            cite_match = citation_re.search(sec_plain)
+            if cite_match and _has_repeal_enactment_before(sec_plain, cite_match.start()):
+                fragment = _vts_extract_after_citation(sec_plain, citation_re)
+                if fragment:
+                    return fragment
         if has_title:
-            fragment = _vts_extract_after_parent_title(sec_plain, title_variants)
-            if fragment:
-                return fragment
+            title_pos, _ = _find_parent_title_span(sec_plain, title_variants)
+            if title_pos >= 0 and _has_repeal_enactment_before(sec_plain, title_pos):
+                fragment = _vts_extract_after_parent_title(sec_plain, title_variants)
+                if fragment:
+                    return fragment
 
     return ""
 
