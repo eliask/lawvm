@@ -37,7 +37,7 @@ from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.phase_result import Finding
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.core import tree_ops as _tops
-from lawvm.core.coverage import CoverageIgnoredUnit, CoverageRejectedClaim
+from lawvm.core.coverage import CoverageIgnoredUnit, CoverageRejectedClaim, CoverageReport
 
 from lawvm.finland.ops import (
     OpType,
@@ -509,6 +509,47 @@ def _compute_has_content_ops(ops: List[AmendmentOp], muutos_tree: etree._Element
     return False
 
 
+def _emit_coverage_analysis_findings(
+    cov_report: CoverageReport,
+    findings_out: Optional[List[Finding]],
+    amendment_id: str,
+) -> None:
+    """Emit ignored-unit, rejected-claim, and unresolved-gap findings from a
+    coverage report. No-op when ``findings_out`` is None."""
+    if findings_out is None:
+        return
+    for ignored in cov_report.ignored_units:
+        findings_out.append(
+            _coverage_ignored_unit_finding(
+                source_statute=amendment_id,
+                unit_kind=ignored.unit_kind,
+                reason=ignored.reason,
+                observed_label=ignored.observed_label,
+                parent_label=ignored.parent_label,
+                evidence=ignored.evidence,
+            )
+        )
+    for rejected in cov_report.rejected_claims:
+        findings_out.append(
+            _coverage_rejected_claim_finding(
+                source_statute=amendment_id,
+                reason=rejected.reason,
+                evidence=rejected.evidence,
+            )
+        )
+    for gap in cov_report.obligations:
+        findings_out.append(
+            _coverage_unresolved_gap_finding(
+                source_statute=amendment_id,
+                disposition=gap.disposition,
+                unit_kind=gap.unit.kind,
+                observed_label=gap.unit.observed_label,
+                parent_label=gap.unit.parent_label,
+                evidence=gap.evidence,
+            )
+        )
+
+
 def _recover_uncovered_body_ops(
     state: "ReplayState",
     ctx: "StatuteContext",
@@ -608,37 +649,7 @@ def _recover_uncovered_body_ops(
         ignored_units=_ignored_units,
         rejected_claims=_rejected_claims,
     )
-    if findings_out is not None:
-        for _ignored in _cov_report.ignored_units:
-            findings_out.append(
-                _coverage_ignored_unit_finding(
-                    source_statute=amendment_id,
-                    unit_kind=_ignored.unit_kind,
-                    reason=_ignored.reason,
-                    observed_label=_ignored.observed_label,
-                    parent_label=_ignored.parent_label,
-                    evidence=_ignored.evidence,
-                )
-            )
-        for _rejected in _cov_report.rejected_claims:
-            findings_out.append(
-                _coverage_rejected_claim_finding(
-                    source_statute=amendment_id,
-                    reason=_rejected.reason,
-                    evidence=_rejected.evidence,
-                )
-            )
-        for _gap in _cov_report.obligations:
-            findings_out.append(
-                _coverage_unresolved_gap_finding(
-                    source_statute=amendment_id,
-                    disposition=_gap.disposition,
-                    unit_kind=_gap.unit.kind,
-                    observed_label=_gap.unit.observed_label,
-                    parent_label=_gap.unit.parent_label,
-                    evidence=_gap.evidence,
-                )
-            )
+    _emit_coverage_analysis_findings(_cov_report, findings_out, amendment_id)
     muutos_body = muutos_tree.find(".//{*}body")
     if muutos_body is None:
         return []
