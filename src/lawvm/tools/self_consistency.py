@@ -28,14 +28,24 @@ the per-op replay log:
                       johtolause claiming more/fewer targets than the body)
   invariant_violation post-replay structural tree invariant violations
   elaboration_finding governed ``ELAB.*`` rejection/observation findings
-  occupancy_violation typed ``APPLY.OCCUPANCY_POLICY_VIOLATION`` findings — an op
-                      that targets a slot in a structurally-wrong occupancy
-                      state (a repeal/replace of an absent section, an insert
-                      into an occupied slot), usually because an earlier create
-                      was dropped.  These fire in the per-amendment ``legal_pit``
-                      fold (the same fold ``invariant-bisect`` uses) but are
-                      absorbed by the cumulative ``official_consolidation``
-                      replay, so they need a dedicated capture.
+  occupancy_violation typed ``APPLY.OCCUPANCY_POLICY_VIOLATION`` findings from
+                      the AUTHORITATIVE cumulative ``official_consolidation``
+                      replay — an op that targets a slot in a structurally-wrong
+                      occupancy state (a repeal/replace of an absent section, an
+                      insert into an occupied slot) that *survives* the full
+                      replay's chapter-seeding and recovery.  ``_check_occupancy_policy``
+                      records these into the replay's ``findings_out`` sink; the
+                      full replay surfaces the surviving ones via
+                      ``replay_meta_out["occupancy_observations"]`` (see
+                      ``replay_evidence_projection._project_occupancy_observations``).
+                      A lightweight per-amendment fold would manufacture false
+                      positives here: e.g. ``1958/370 <- 1992/1167 REPEAL 136a §``
+                      looks like a repeal-of-absent in an unseeded fold, but
+                      §136a is INSERTed by 1973/589 and IS present in the full
+                      replay, so it is correctly NOT reported.  In practice the
+                      full replay always recovers occupancy corpus-wide, so this
+                      signal is a thin true-positive net kept for genuine future
+                      regressions, not a current finding source.
 
 The proof case is ``1958/370`` (Rakennuslaki): amendment ``1968/493`` drops its
 §111 replace (surfacing as a coverage gap), so §111 never gains its 2nd
@@ -379,7 +389,7 @@ def _project_structured(
 
 
 # ---------------------------------------------------------------------------
-# Occupancy-violation capture (per-amendment legal_pit fold)
+# Occupancy-violation capture (from the authoritative full-replay findings)
 # ---------------------------------------------------------------------------
 
 _OCCUPANCY_FINDING_KIND = "APPLY.OCCUPANCY_POLICY_VIOLATION"
@@ -396,66 +406,55 @@ def _occupancy_scope(ctx_label: str, target_label: str) -> str:
     return f"{target_label} §" if target_label else ""
 
 
-def _collect_occupancy_violations(
-    statute_id: str,
-    store: Any,
-) -> List[Dict[str, Any]]:
-    """Harvest genuine occupancy-policy violations for one statute.
+class _OccupancyObservation:
+    """Finding-like view over a serialized occupancy observation from replay meta.
 
-    The cumulative ``official_consolidation`` replay run by the main projector
-    absorbs these (an absent-slot repeal is swallowed before it reaches the
-    occupancy check), so they are recovered from a dedicated per-amendment
-    ``legal_pit`` fold — the same lightweight ``process_muutoslaki`` loop that
-    ``invariant-bisect`` uses.  Only ``APPLY.OCCUPANCY_POLICY_VIOLATION``
-    findings without the benign ``allowed_non_primary`` disposition (the
-    legitimate reenactment-on-tombstone / non-primary lane) are reported.
-
-    The fold is purely observational: it reads typed findings and never feeds a
-    sink back into materialization, so replay behaviour is unchanged.
+    ``replay_meta_out["occupancy_observations"]`` carries plain dicts
+    (``{"source_statute": str, "detail": dict}``); this adapter gives them the
+    ``.kind`` / ``.source_statute`` / ``.detail`` attribute surface that
+    ``_occupancy_rows_from_findings`` consumes, so the same projection logic
+    serves both the live ``Finding`` objects and the meta-serialized form.
     """
-    from lawvm.finland.grafter import (
-        _resolve_applicable_amendment_records,
-        process_muutoslaki,
-    )
-    from lawvm.finland.helpers import _fi_label_postprocessor
-    from lawvm.finland.process_request import ProcessAmendmentRequest
-    from lawvm.finland.process_result_builder import ProcessAmendmentSinks
-    from lawvm.finland.replay_notices import reset_replay_verbose, set_replay_verbose
-    from lawvm.finland.statute import ReplayState, StatuteContext
 
-    xml_bytes = store.read_source(statute_id)
-    if xml_bytes is None:
-        return []
-    ctx = StatuteContext.from_xml(xml_bytes, _fi_label_postprocessor)
-    records, _cutoff, _oracle = _resolve_applicable_amendment_records(
-        statute_id, "legal_pit", corpus=store
-    )
+    __slots__ = ("kind", "source_statute", "detail")
 
+    def __init__(self, source_statute: str, detail: Dict[str, Any]) -> None:
+        self.kind = _OCCUPANCY_FINDING_KIND
+        self.source_statute = source_statute
+        self.detail = detail
+
+
+def _project_occupancy_observations(
+    statute_id: str,
+    meta: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Project the full replay's occupancy observations into occupancy rows.
+
+    These come from the AUTHORITATIVE cumulative ``official_consolidation``
+    replay: ``_check_occupancy_policy`` records each
+    ``APPLY.OCCUPANCY_POLICY_VIOLATION`` into the replay's findings sink, and
+    ``replay_evidence_projection._project_occupancy_observations`` surfaces the
+    survivors into ``replay_meta_out["occupancy_observations"]``.  Because the
+    full replay has already done chapter-seeding and recovery, an observation
+    here reflects a slot that was *genuinely* in the wrong occupancy state, not
+    a lightweight-fold seeding artifact.  Only the non-benign disposition (not
+    ``allowed_non_primary``) is reported, via ``_occupancy_rows_from_findings``.
+    """
     rows: List[Dict[str, Any]] = []
-    state = ReplayState(ir=ctx.base_ir)
-    # The occupancy-violation finding is emitted regardless of verbosity; quiet
-    # the per-op replay log so the audit fold stays silent.
-    verbose_token = set_replay_verbose(False)
-    try:
-        for record in records:
-            amendment_id = str(record["statute_id"])
-            result = process_muutoslaki(
-                request=ProcessAmendmentRequest(
-                    amendment_id=amendment_id,
-                    state=state,
-                    ctx=ctx,
-                    replay_mode="legal_pit",
-                    parent_id=statute_id,
-                    corpus=store,
-                ),
-                sinks=ProcessAmendmentSinks(lo_ops_out=[]),
+    for obs in meta.get("occupancy_observations") or []:
+        if not isinstance(obs, dict):
+            continue
+        detail = obs.get("detail")
+        if not isinstance(detail, dict):
+            continue
+        source_statute = str(obs.get("source_statute", "") or "")
+        rows.extend(
+            _occupancy_rows_from_findings(
+                statute_id,
+                source_statute,
+                [_OccupancyObservation(source_statute, detail)],
             )
-            state = result.output
-            rows.extend(
-                _occupancy_rows_from_findings(statute_id, amendment_id, result.findings())
-            )
-    finally:
-        reset_replay_verbose(verbose_token)
+        )
     return rows
 
 
@@ -537,21 +536,12 @@ def _project_self_consistency(
 
     rows = _project_structured(statute_id, failed, pathologies, meta)
     rows.extend(_parse_replay_log(statute_id, log_buf.getvalue()))
-    # Occupancy-policy violations are absorbed by the cumulative consolidation
-    # replay above; harvest them from a separate, purely-observational
-    # per-amendment legal_pit fold.  A genuine violation often *also* surfaces
-    # as a target_absent row (the op then FAILs as "section not found"); the two
-    # are kept distinct deliberately — target_absent says "the op was dropped",
-    # occupancy_violation says "the slot was in the wrong structural state".
-    occupancy_log = io.StringIO()
-    try:
-        with contextlib.redirect_stdout(occupancy_log):
-            rows.extend(_collect_occupancy_violations(statute_id, store))
-    except Exception as exc:  # an occupancy fold crash is itself a finding
-        return rows, [{
-            "statute_id": statute_id,
-            "error": f"occupancy_fold {type(exc).__name__}: {exc}",
-        }]
+    # Occupancy-policy violations come from the SAME authoritative replay above:
+    # _check_occupancy_policy records each finding into the replay's findings
+    # sink, and replay_evidence_projection surfaces the survivors into
+    # replay_meta_out["occupancy_observations"].  These reflect occupancy states
+    # that survived chapter-seeding + recovery, not lightweight-fold artifacts.
+    rows.extend(_project_occupancy_observations(statute_id, meta))
     return rows, []
 
 

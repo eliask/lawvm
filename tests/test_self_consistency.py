@@ -256,16 +256,17 @@ def test_projector_row_shape_and_known_signals() -> None:
         for r in rows
     ), "1977/604 §111 momentti-not-found must stay fixed (no target_absent)"
 
-    # The occupancy proof case: 1992/1167 repeals §136a, which the per-amendment
-    # legal_pit fold sees as absent.  The cumulative consolidation replay absorbs
-    # it, so it only surfaces through the dedicated occupancy capture.
+    # Occupancy is now derived from the AUTHORITATIVE full replay, not a
+    # lightweight per-amendment fold.  1992/1167 repeals §136a, which a fold
+    # without chapter-seeding sees as absent — but §136a is INSERTed by 1973/589
+    # and IS present in the full cumulative replay, so the full replay recovers
+    # the occupancy and reports NO violation here.  The lightweight fold reported
+    # a false positive; the full-replay source must NOT.
     occupancy = [r for r in rows if r["signal_type"] == "occupancy_violation"]
-    assert any(
-        r["amendment_id"] == "1992/1167"
-        and r["category"] == "repeal-of-absent"
-        and "136a" in r["description"]
+    assert not any(
+        r["amendment_id"] == "1992/1167" and "136a" in r["description"]
         for r in occupancy
-    ), "expected 1992/1167 §136a repeal-of-absent occupancy_violation signal"
+    ), "1992/1167 §136a is present in the full replay — no occupancy_violation"
 
     # The upstream 1968/493 dropped-op coverage gap remains a self-consistency
     # signal for the same statute.

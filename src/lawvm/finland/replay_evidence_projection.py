@@ -71,6 +71,7 @@ def project_replay_evidence(
         request.source_pathologies_out.extend(request.source_pathologies)
 
     _project_replay_meta(request)
+    _project_occupancy_observations(request)
     mutation_invariant_reports = _project_mutation_reports(request)
     boundary_violations = _project_mutation_boundary_violations(
         request,
@@ -157,6 +158,33 @@ def _project_replay_meta(request: ReplayEvidenceProjectionRequest) -> None:
         replay_meta_out["apply_write_audits"] = [
             _serialize_observed_write_audit(audit) for audit in request.write_audits
         ]
+
+
+def _project_occupancy_observations(request: ReplayEvidenceProjectionRequest) -> None:
+    """Surface the full replay's occupancy-policy observations into replay meta.
+
+    ``_check_occupancy_policy`` records ``APPLY.OCCUPANCY_POLICY_VIOLATION``
+    findings into the per-amendment ``findings_out`` sink, which the replay fold
+    accumulates into ``replay_findings``. Unlike a lightweight per-amendment fold,
+    these findings reflect the AUTHORITATIVE cumulative replay — chapter-seeding
+    and recovery have already run — so a finding here is an occupancy state that
+    survived the full replay, not a fold-order artifact. This is a write-only
+    projection: it reads the already-emitted findings and does not change any
+    apply behaviour.
+    """
+    replay_meta_out = request.replay_meta_out
+    if replay_meta_out is None:
+        return
+    observations = [
+        {
+            "source_statute": finding.source_statute or "",
+            "detail": dict(finding.detail or {}),
+        }
+        for finding in request.replay_findings
+        if finding.kind == "APPLY.OCCUPANCY_POLICY_VIOLATION"
+    ]
+    if observations:
+        replay_meta_out["occupancy_observations"] = observations
 
 
 def _project_mutation_reports(
