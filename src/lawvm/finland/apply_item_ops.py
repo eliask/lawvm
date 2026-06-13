@@ -112,6 +112,47 @@ def _item_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _ItemApplyView:
     )
 
 
+_SINGLE_LETTER_ITEM_RE = re.compile(r"^[a-z]$")
+
+
+def _reconcile_letter_item_to_digit_index(
+    item_norm: str,
+    paras: List[IRNode],
+) -> Optional[int]:
+    """Map a single-letter kohta target onto a uniformly digit-labelled live list.
+
+    Some amendments author a kohta target with a *letter* scheme (``a)``, ``e)``)
+    while the live consolidation numbers the same items with *digits*
+    (``1)``..``13)``). The two schemes line up positionally: ``a`` is the first
+    item, ``e`` the fifth, etc. When the live momentti is uniformly digit-labelled
+    we can resolve the letter to its ordinal digit unambiguously.
+
+    Returns the index into ``paras`` of the matched digit-labelled item, or
+    ``None`` when reconciliation is unsafe:
+      * ``item_norm`` is not a bare ``a``-``z`` letter (compound ``4a`` etc. is
+        handled by the dedicated compound paths, never here);
+      * the live items are not *all* digit-labelled (mixed letter/digit schemes
+        are ambiguous — refuse rather than guess);
+      * the letter's ordinal falls outside the live digit range, or no live item
+        actually carries that ordinal as its digit label.
+    """
+    if not _SINGLE_LETTER_ITEM_RE.match(item_norm):
+        return None
+    if not paras:
+        return None
+    digit_labels: List[str] = []
+    for para in paras:
+        key = normalized_label_key(para.label) if para.label else ""
+        if not key.isdigit():
+            # A non-digit (letter / compound / empty) live label means the list
+            # is not a clean digit enumeration; letter→ordinal would be a guess.
+            return None
+        digit_labels.append(key)
+    ordinal = ord(item_norm) - ord("a") + 1
+    target_digit = str(ordinal)
+    return next((i for i, key in enumerate(digit_labels) if key == target_digit), None)
+
+
 def _tail_norm(text: str) -> str:
     return (
         text.replace("―", "-")
@@ -619,6 +660,24 @@ def _apply_item_replace(
                 if _matched is not None:
                     amend_sub = _matched
         amend_para = _find_amend_paragraph(item_norm, amend_sub, muutos_ir)
+        # Letter-vs-digit kohta reconciliation: an op may author the target with a
+        # letter scheme (a/e) while the live consolidation numbers the same items
+        # with digits (1..13). Resolve the letter to its ordinal digit slot only
+        # when the live list is uniformly digit-labelled, then relabel the payload
+        # to the live digit so the rewritten tree stays in the live numbering.
+        if para_idx is None and amend_para is not None:
+            reconciled_idx = _reconcile_letter_item_to_digit_index(item_norm, paras)
+            if reconciled_idx is not None:
+                live_digit_label = normalized_label_key(paras[reconciled_idx].label)
+                para_idx = reconciled_idx
+                item_norm = live_digit_label
+                amend_para = _relabel_paragraph_ir(amend_para, live_digit_label)
+                logger.debug(
+                    "  %s → kohta letter→digit reconcile (%s→%s)",
+                    ctx_label,
+                    view.target_item,
+                    live_digit_label,
+                )
         if para_idx is not None and amend_para is not None:
             if amend_sub is not None:
                 merged_para = _merge_sparse_alakohta_replace_ir(paras[para_idx], amend_sub, item_norm)

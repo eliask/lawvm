@@ -9677,6 +9677,94 @@ class TestApplyItemReplace:
         text = " ".join(c.text or "" for c in para2.children)
         assert "updated second item" in text
 
+    def test_replace_letter_item_reconciles_onto_digit_labelled_live_items(self):
+        # Provenance: 1972/484 §1 / 2011/581 — the amendment authors the target
+        # with a LETTER scheme (a/e) while the live consolidation numbers the
+        # same items with DIGITS (1..13). 'a' must resolve onto digit kohta 1,
+        # 'e' onto digit kohta 5, and the payload relabel to the live digit.
+        sec = _sec(
+            "1",
+            _sub(
+                "1",
+                _para("1", "original first item"),
+                _para("2", "second item"),
+                _para("3", "third item"),
+                _para("4", "fourth item"),
+                _para("5", "original fifth item"),
+            ),
+        )
+        state = _make_state(_body(sec))
+        sec_path = (("section", "1"),)
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+
+        op_a = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="a")
+        amend_a = _sub("1", _para("a", "updated first item"))
+        muutos_a = IRNode(kind=IRNodeKind.SECTION, children=(amend_a,))
+        result = _apply_item_replace(state, op_a, sec_path, sec, subsecs, amend_a, muutos_a, "1 § 1 mom a k")
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION)
+        labels = [c.label for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]
+        para1 = next(c for c in sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "1")
+        # Letter target reconciled to digit slot 1; label stays in the live digit
+        # frame and the payload content lands on the right item.
+        assert labels == ["1", "2", "3", "4", "5"]
+        assert "updated first item" in irnode_to_text(para1)
+
+        # 'e' → digit 5 on the same digit-labelled list.
+        op_e = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="e")
+        amend_e = _sub("1", _para("e", "updated fifth item"))
+        muutos_e = IRNode(kind=IRNodeKind.SECTION, children=(amend_e,))
+        result_e = _apply_item_replace(state, op_e, sec_path, sec, subsecs, amend_e, muutos_e, "1 § 1 mom e k")
+        result_e = _modified(state, result_e)
+        new_sec_e = next(c for c in result_e.ir.children if c.kind == IRNodeKind.SECTION)
+        sub_e = next(c for c in new_sec_e.children if c.kind == IRNodeKind.SUBSECTION)
+        para5 = next(c for c in sub_e.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "5")
+        assert "updated fifth item" in irnode_to_text(para5)
+
+    def test_replace_letter_item_refuses_reconcile_when_labels_mix_letter_and_digit(self):
+        # Conservative guard: if the live list is NOT uniformly digit-labelled
+        # (a genuine letter kohta 'a' coexists), letter→ordinal would be a guess.
+        # Refuse to reconcile; do not mutate the section.
+        sec = _sec(
+            "1",
+            _sub(
+                "1",
+                _para("a", "genuine letter item a"),
+                _para("2", "second item"),
+            ),
+        )
+        state = _make_state(_body(sec))
+        sec_path = (("section", "1"),)
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+
+        # Target 'b' (ordinal 2) must NOT silently rebind onto digit '2'.
+        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="b")
+        amend_sub = _sub("1", _para("b", "should not land on digit 2"))
+        muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
+        result = _apply_item_replace(state, op, sec_path, sec, subsecs, amend_sub, muutos_ir, "1 § 1 mom b k")
+
+        # No reconciliation (mixed labels) and no other recovery: op is not
+        # applied. The live section is left untouched.
+        assert result is None
+
+    def test_replace_letter_item_refuses_reconcile_when_ordinal_out_of_range(self):
+        # 'e' is ordinal 5 but the digit list only has 1..3; no slot exists, so
+        # reconciliation must refuse rather than fabricate a target.
+        sec = _sec(
+            "1",
+            _sub("1", _para("1", "one"), _para("2", "two"), _para("3", "three")),
+        )
+        state = _make_state(_body(sec))
+        sec_path = (("section", "1"),)
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="e")
+        amend_sub = _sub("1", _para("e", "fifth"))
+        muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
+        result = _apply_item_replace(state, op, sec_path, sec, subsecs, amend_sub, muutos_ir, "1 § 1 mom e k")
+        assert result is None
+
     def test_replace_item_on_intro_list_shape_emits_rebound_pathology(self) -> None:
         sec = _sec(
             "1",
