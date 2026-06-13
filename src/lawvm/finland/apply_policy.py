@@ -592,6 +592,40 @@ def _occupant_installer_effective(
     return None
 
 
+def _replace_installs_base_frame_section(rop: ResolvedOp) -> bool:
+    """True when a whole-section REPLACE legitimately installs into an empty base frame.
+
+    Historical codes (e.g. 1734/4-000, 1868/31-000) carry sparse base text:
+    a section the amendment REPLACE-targets simply does not exist in the base
+    IR yet, so the slot resolves ABSENT and the apply turns the REPLACE into a
+    create that installs the carried section body. That is the intended outcome
+    for these codes, not a contradicted occupancy precondition — so it is not an
+    occupancy violation. Recognised by: a whole-section REPLACE whose payload is
+    a substantive section IR (carries more than a heading/num shell). A REPLACE
+    that resolves ABSENT with no substantive payload (a genuine dropped-create)
+    is NOT gated here and remains a violation.
+    """
+    from lawvm.core.semantic_types import IRNodeKind
+
+    if rop.resolved_action_type != "REPLACE":
+        return False
+    if not rop.targets_whole_unit("section"):
+        return False
+    if (
+        rop.effective_target_paragraph is not None
+        or rop.effective_target_item_label is not None
+        or rop.effective_target_special is not None
+    ):
+        return False
+    muutos_ir = rop.muutos_ir
+    if muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
+        return False
+    return any(
+        child.kind not in {IRNodeKind.NUM, IRNodeKind.HEADING, IRNodeKind.OMISSION}
+        for child in muutos_ir.children
+    )
+
+
 def _check_occupancy_policy(
     state: "ReplayState",
     rop: ResolvedOp,
@@ -636,6 +670,24 @@ def _check_occupancy_policy(
                 ctx_label,
                 LegalAddress(path=origin_path),
             )
+    if (
+        current is OccupancyClass.ABSENT
+        and sec_path is None
+        and isinstance(intent, Replace)
+        and _replace_installs_base_frame_section(rop)
+    ):
+        # Base-frame-empty install lane: a whole-section REPLACE whose target
+        # slot never existed in the (sparse) base frame and which the apply
+        # turns into a create that installs the carried section body. The slot
+        # is legitimately absent before the op, so the same_slot_replace
+        # SUBSTANTIVE precondition is not contradicted — recording it as an
+        # occupancy violation is a false positive on historical codes.
+        logger.debug(
+            "  %s → occupancy skipped: base-frame-empty whole-section REPLACE install "
+            "(rule: replace_installs_base_frame_section)",
+            ctx_label,
+        )
+        return
     policy = intent.contract.occupancy
     if (
         current is OccupancyClass.SUBSTANTIVE

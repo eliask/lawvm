@@ -1879,16 +1879,26 @@ def _apply_canonical_intent(
 
     if cross_ir is None:
         cross_ir = rop.cross_ir
-    lookup_scope = rop.resolved_section_lookup_scope_view
-    sec_path = (
-        state.find_section_path(
-            lookup_scope.target_norm,
-            lookup_scope.target_chapter,
-            lookup_scope.target_part,
+    # Occupancy is observational and must read the SAME slot the apply lands on.
+    # Resolving the section here through the narrow scoped find_section_path
+    # diverged from the apply's real binding (the full ladder in
+    # _apply_intent_section_level), so the check reported "absent" on part-nested
+    # / live-unique-global slots the op actually resolves and writes — producing
+    # large numbers of false occupancy_violation findings. Use the same ladder so
+    # the observation tracks the binding instead of a separate, narrower lookup.
+    occupancy_resolution = (
+        _resolve_section_path_with_fallbacks(
+            state,
+            rop,
+            rop.muutos_ir,
+            path_hint,
+            ctx_label,
+            migration_ledger=migration_ledger,
         )
         if _intent_targets_section(intent)
         else None
     )
+    sec_path = occupancy_resolution.path if occupancy_resolution is not None else None
     _check_occupancy_policy(
         state,
         rop,
