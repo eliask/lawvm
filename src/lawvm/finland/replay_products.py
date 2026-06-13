@@ -14,6 +14,7 @@ from lawvm.core.ir import ProvisionVersion
 from lawvm.core.invariant_profiles import TreeInvariantProfile
 from lawvm.core.invariant_profiles import collect_tree_invariant_violations
 from lawvm.core.invariant_profiles import project_tree_invariant_dicts
+from lawvm.core.invariant_detectors import run_label_normalization_collision_detector
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.temporal import FIXED_DATE_KIND, ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.timeline_lineage import (
@@ -36,12 +37,14 @@ from lawvm.core.tree_ops import (
 )
 from lawvm.replay_adjudication import SourceAdjudication
 from lawvm.finland.apply_ir_ops import _strip_standalone_subsection_item_prefixes_ir
+from lawvm.finland.helpers import _norm_num_token
 
 if TYPE_CHECKING:
     from lawvm.finland.statute import ReplayState, StatuteContext
 
 
 _FI_LABEL_NORMALIZER_NAME = "fi_label_norm_v1"
+_FI_SLOT_IDENTITY_NORMALIZER_NAME = "fi_slot_identity_norm_v1"
 _FI_LINEAGE_MODE_REKEYED_WITH_MIGRATIONS = "rekeyed_with_migrations"
 _FI_LINEAGE_MODE_REKEYED_ONLY = "rekeyed_only"
 _FI_LINEAGE_MODE_RAW_WITH_MIGRATIONS = "raw_with_migrations"
@@ -134,6 +137,22 @@ def _assert_finland_timeline_safe_ops(lo_ops_out: list[LegalOperation]) -> None:
 def fi_label_norm(label: str) -> str:
     """Normalize Finnish legacy labels for timeline materialization."""
     return re.sub(r"[^a-zA-Z0-9äöå]+$", "", label).strip() or label
+
+
+def fi_slot_identity_norm(label: str) -> str:
+    """Normalize Finnish labels for sibling slot-collision diagnostics."""
+    return _norm_num_token(label)
+
+
+def _fi_label_collision_invariant_messages(tree: IRNode, *, surface: str) -> tuple[str, ...]:
+    return tuple(
+        f"{surface}:{result.message}"
+        for result in run_label_normalization_collision_detector(
+            tree,
+            fi_slot_identity_norm,
+            detector=_FI_SLOT_IDENTITY_NORMALIZER_NAME,
+        )
+    )
 
 
 def _fi_root_num_text(kind: IRNodeKind, label: str) -> str | None:
@@ -889,6 +908,18 @@ def validate_replay_products(
             _FI_MATERIALIZED_MIXED_HIERARCHY_PROFILE,
         )
     )
+    violations.extend(
+        _fi_label_collision_invariant_messages(
+            products.replay_fold_state.ir,
+            surface="replay_fold_tree",
+        )
+    )
+    violations.extend(
+        _fi_label_collision_invariant_messages(
+            products.materialized_state.ir,
+            surface="materialized_tree",
+        )
+    )
 
     # Check for temporary_unresolved versions — these represent VÄLIAIKAINEN
     # amendments with no parseable expiry date and are a product-level degradation
@@ -945,5 +976,6 @@ __all__ = [
     "build_replay_products",
     "validate_replay_products",
     "fi_label_norm",
+    "fi_slot_identity_norm",
     "_MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR",
 ]

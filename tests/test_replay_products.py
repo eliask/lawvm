@@ -2024,6 +2024,44 @@ def test_validate_replay_products_detects_materialized_tree_invariants() -> None
     assert "materialized_tree:body: duplicate section:1 (2 times)" in violations
 
 
+def test_validate_replay_products_detects_fi_label_identity_collisions() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.SECTION, label="4a"),
+            IRNode(kind=IRNodeKind.SECTION, label="iva"),
+        ),
+    )
+    ctx = StatuteContext(
+        id="test/1",
+        title="Test",
+        base_ir=IRNode(kind=IRNodeKind.BODY),
+        base_xml_bytes=b"<body/>",
+    )
+    products = ReplayProducts(
+        replay_fold_state=ReplayState(ir=body),
+        materialized_state=ReplayState(ir=body),
+        timelines=None,
+        materialization_spec=None,
+        source_adjudication=None,
+    )
+
+    violations = validate_replay_products(
+        ctx,
+        products,
+        deep_materialization_check=False,
+    )
+
+    assert (
+        "replay_fold_tree:body: label-normalization collision section:4a "
+        "from labels 4a, iva"
+    ) in violations
+    assert (
+        "materialized_tree:body: label-normalization collision section:4a "
+        "from labels 4a, iva"
+    ) in violations
+
+
 def test_replay_fold_projection_typed_invariants_include_profile_metadata() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,
