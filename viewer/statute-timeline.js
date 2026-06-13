@@ -68,9 +68,12 @@ const JURIS = {
       move: 'siirretty', substitute: 'korvattu', renumber: 'numeroitu uudelleen',
       expiry: 'määräaikainen voimassaolo päättyi',
     },
-    // Preparatory-works reference (HE) → search link.
+    // Preparatory-works reference (HE) → eduskunta valtiopäiväasia page.
+    // ref is the human token "HE {n}/{year} vp"; the canonical URL is that token
+    // URL-encoded under /asiat-ja-aanestykset/valtiopaivaasiat/ (matches the
+    // lawvm CLI OSC 8 link form in tools/hyperlinks.py).
     prepWorksUrl(ref) {
-      return 'https://www.eduskunta.fi/FI/search/Sivut/vaskiresults.aspx?k=' + encodeURIComponent(ref);
+      return 'https://www.eduskunta.fi/asiat-ja-aanestykset/valtiopaivaasiat/' + encodeURIComponent(ref);
     },
     fmtDate(iso) { // 2015-09-01 -> 1.9.2015 for citations; UI stays ISO
       const [y, m, d] = iso.split('-');
