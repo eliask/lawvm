@@ -28,6 +28,14 @@ the per-op replay log:
                       johtolause claiming more/fewer targets than the body)
   invariant_violation post-replay structural tree invariant violations
   elaboration_finding governed ``ELAB.*`` rejection/observation findings
+  occupancy_violation typed ``APPLY.OCCUPANCY_POLICY_VIOLATION`` findings — an op
+                      that targets a slot in a structurally-wrong occupancy
+                      state (a repeal/replace of an absent section, an insert
+                      into an occupied slot), usually because an earlier create
+                      was dropped.  These fire in the per-amendment ``legal_pit``
+                      fold (the same fold ``invariant-bisect`` uses) but are
+                      absorbed by the cumulative ``official_consolidation``
+                      replay, so they need a dedicated capture.
 
 The proof case is ``1958/370`` (Rakennuslaki): amendment ``1968/493`` drops its
 §111 replace (surfacing as a coverage gap), so §111 never gains its 2nd
@@ -77,6 +85,7 @@ ALL_SIGNAL_TYPES = (
     "coverage_gap",
     "invariant_violation",
     "elaboration_finding",
+    "occupancy_violation",
 )
 
 # ELAB finding kinds that denote a dropped / rejected / unhandled operation
@@ -112,6 +121,36 @@ def _category(reason: str, reason_code: str = "") -> str:
     cat = re.sub(r"'[^']*'", "'X'", cat)
     cat = re.sub(r"\s+", " ", cat)
     return cat.strip()
+
+
+# ---------------------------------------------------------------------------
+# Occupancy-policy violation categorisation
+# ---------------------------------------------------------------------------
+
+# Map the offending operation kind to the relation word used in the category:
+# a REPEAL/REPLACE acts *on* an absent slot, an INSERT lands *into* an occupied
+# slot.  The shorthand for the occupancy class follows.
+_OCCUPANCY_RELATION = {"INSERT": "into", "REPEAL": "of", "REPLACE": "of"}
+_OCCUPANCY_CLASS_SHORTHAND = {
+    "absent": "absent",
+    "tombstone": "tombstone",
+    "substantive": "occupied",
+    "scaffold": "scaffold",
+}
+
+
+def _occupancy_category(legacy_action: str, current_occupancy: str) -> str:
+    """Normalize an occupancy violation to a stable category key.
+
+    e.g. ``("REPEAL", "absent") -> "repeal-of-absent"`` and
+    ``("INSERT", "substantive") -> "insert-into-occupied"``.  Both inputs are
+    lower-cased; an unknown action defaults to the ``-of-`` relation.
+    """
+    action = (legacy_action or "").strip().lower()
+    occ = (current_occupancy or "").strip().lower()
+    relation = _OCCUPANCY_RELATION.get((legacy_action or "").strip().upper(), "of")
+    shorthand = _OCCUPANCY_CLASS_SHORTHAND.get(occ, occ or "unknown")
+    return f"{action or 'op'}-{relation}-{shorthand}"
 
 
 # ---------------------------------------------------------------------------
@@ -340,6 +379,125 @@ def _project_structured(
 
 
 # ---------------------------------------------------------------------------
+# Occupancy-violation capture (per-amendment legal_pit fold)
+# ---------------------------------------------------------------------------
+
+_OCCUPANCY_FINDING_KIND = "APPLY.OCCUPANCY_POLICY_VIOLATION"
+# ctx_label is e.g. "[1992/1167] REPEAL 136a §" or "[1992/1439] INSERT 2 luku 17 §".
+_OCCUPANCY_SCOPE = re.compile(r"(?P<chapter>\d+[a-z]?\s*luku)?\s*(?P<section>\d+[a-z]?\s*§)")
+
+
+def _occupancy_scope(ctx_label: str, target_label: str) -> str:
+    m = _OCCUPANCY_SCOPE.search(ctx_label or "")
+    if m is not None:
+        chapter = (m.group("chapter") or "").strip()
+        section = (m.group("section") or "").strip()
+        return " ".join(p for p in (chapter, section) if p)
+    return f"{target_label} §" if target_label else ""
+
+
+def _collect_occupancy_violations(
+    statute_id: str,
+    store: Any,
+) -> List[Dict[str, Any]]:
+    """Harvest genuine occupancy-policy violations for one statute.
+
+    The cumulative ``official_consolidation`` replay run by the main projector
+    absorbs these (an absent-slot repeal is swallowed before it reaches the
+    occupancy check), so they are recovered from a dedicated per-amendment
+    ``legal_pit`` fold — the same lightweight ``process_muutoslaki`` loop that
+    ``invariant-bisect`` uses.  Only ``APPLY.OCCUPANCY_POLICY_VIOLATION``
+    findings without the benign ``allowed_non_primary`` disposition (the
+    legitimate reenactment-on-tombstone / non-primary lane) are reported.
+
+    The fold is purely observational: it reads typed findings and never feeds a
+    sink back into materialization, so replay behaviour is unchanged.
+    """
+    from lawvm.finland.grafter import (
+        _resolve_applicable_amendment_records,
+        process_muutoslaki,
+    )
+    from lawvm.finland.helpers import _fi_label_postprocessor
+    from lawvm.finland.process_request import ProcessAmendmentRequest
+    from lawvm.finland.process_result_builder import ProcessAmendmentSinks
+    from lawvm.finland.replay_notices import reset_replay_verbose, set_replay_verbose
+    from lawvm.finland.statute import ReplayState, StatuteContext
+
+    xml_bytes = store.read_source(statute_id)
+    if xml_bytes is None:
+        return []
+    ctx = StatuteContext.from_xml(xml_bytes, _fi_label_postprocessor)
+    records, _cutoff, _oracle = _resolve_applicable_amendment_records(
+        statute_id, "legal_pit", corpus=store
+    )
+
+    rows: List[Dict[str, Any]] = []
+    state = ReplayState(ir=ctx.base_ir)
+    # The occupancy-violation finding is emitted regardless of verbosity; quiet
+    # the per-op replay log so the audit fold stays silent.
+    verbose_token = set_replay_verbose(False)
+    try:
+        for record in records:
+            amendment_id = str(record["statute_id"])
+            result = process_muutoslaki(
+                request=ProcessAmendmentRequest(
+                    amendment_id=amendment_id,
+                    state=state,
+                    ctx=ctx,
+                    replay_mode="legal_pit",
+                    parent_id=statute_id,
+                    corpus=store,
+                ),
+                sinks=ProcessAmendmentSinks(lo_ops_out=[]),
+            )
+            state = result.output
+            rows.extend(
+                _occupancy_rows_from_findings(statute_id, amendment_id, result.findings())
+            )
+    finally:
+        reset_replay_verbose(verbose_token)
+    return rows
+
+
+def _occupancy_rows_from_findings(
+    statute_id: str,
+    amendment_id: str,
+    findings: Any,
+) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for finding in findings:
+        if finding.kind != _OCCUPANCY_FINDING_KIND:
+            continue
+        detail = dict(finding.detail or {})
+        # Skip the benign "allowed but not primary expected" note (e.g. a
+        # REPLACE landing on a tombstone) — only a true allowed_from
+        # violation is a self-consistency signal.
+        if detail.get("allowed_non_primary"):
+            continue
+        legacy_action = str(detail.get("legacy_action", ""))
+        current = str(detail.get("current_occupancy", ""))
+        allowed = sorted(str(c) for c in (detail.get("allowed_from") or []))
+        ctx_label = str(detail.get("ctx_label", ""))
+        target_label = str(detail.get("target_label", ""))
+        description = _AMENDMENT_TOKEN.sub("", ctx_label).strip() or (
+            f"{legacy_action} {target_label} §".strip()
+        )
+        rows.append({
+            "statute_id": statute_id,
+            "amendment_id": str(finding.source_statute or amendment_id),
+            "signal_type": "occupancy_violation",
+            "category": _occupancy_category(legacy_action, current),
+            "description": description,
+            "target_scope": _occupancy_scope(ctx_label, target_label),
+            "reason": (
+                f"§{target_label} is {current}, "
+                f"not in allowed_from {{{', '.join(allowed)}}}"
+            ),
+        })
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # Per-statute projector (module-level: picklable for the process pool)
 # ---------------------------------------------------------------------------
 
@@ -379,6 +537,21 @@ def _project_self_consistency(
 
     rows = _project_structured(statute_id, failed, pathologies, meta)
     rows.extend(_parse_replay_log(statute_id, log_buf.getvalue()))
+    # Occupancy-policy violations are absorbed by the cumulative consolidation
+    # replay above; harvest them from a separate, purely-observational
+    # per-amendment legal_pit fold.  A genuine violation often *also* surfaces
+    # as a target_absent row (the op then FAILs as "section not found"); the two
+    # are kept distinct deliberately — target_absent says "the op was dropped",
+    # occupancy_violation says "the slot was in the wrong structural state".
+    occupancy_log = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(occupancy_log):
+            rows.extend(_collect_occupancy_violations(statute_id, store))
+    except Exception as exc:  # an occupancy fold crash is itself a finding
+        return rows, [{
+            "statute_id": statute_id,
+            "error": f"occupancy_fold {type(exc).__name__}: {exc}",
+        }]
     return rows, []
 
 

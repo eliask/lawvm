@@ -14,6 +14,9 @@ from lawvm.tools.self_consistency import (
     ALL_SIGNAL_TYPES,
     _category,
     _classify_failed_reason,
+    _occupancy_category,
+    _occupancy_rows_from_findings,
+    _occupancy_scope,
     _parse_replay_log,
 )
 
@@ -121,7 +124,88 @@ def test_all_signal_types_is_complete() -> None:
     # Guard against a signal_type string drifting out of the canonical tuple.
     assert "target_absent" in ALL_SIGNAL_TYPES
     assert "coverage_gap" in ALL_SIGNAL_TYPES
+    assert "occupancy_violation" in ALL_SIGNAL_TYPES
     assert len(set(ALL_SIGNAL_TYPES)) == len(ALL_SIGNAL_TYPES)
+
+
+# ---------------------------------------------------------------------------
+# Occupancy-violation categorisation + row projection
+# ---------------------------------------------------------------------------
+
+def test_occupancy_category_repeal_of_absent() -> None:
+    assert _occupancy_category("REPEAL", "absent") == "repeal-of-absent"
+    # Section letter / numbers in the occupancy class never appear, so the
+    # bucket is stable across statutes.
+    assert _occupancy_category("REPLACE", "absent") == "replace-of-absent"
+
+
+def test_occupancy_category_insert_into_occupied() -> None:
+    # A substantive slot normalises to the readable "occupied" shorthand and
+    # an INSERT uses the "into" relation.
+    assert _occupancy_category("INSERT", "substantive") == "insert-into-occupied"
+    assert _occupancy_category("INSERT", "tombstone") == "insert-into-tombstone"
+
+
+def test_occupancy_category_unknown_action_defaults_to_of() -> None:
+    assert _occupancy_category("", "absent") == "op-of-absent"
+
+
+def test_occupancy_scope_parses_chapter_and_section() -> None:
+    assert _occupancy_scope("[1992/1439] INSERT 2 luku 17 §", "17") == "2 luku 17 §"
+    assert _occupancy_scope("[1992/1167] REPEAL 136a §", "136a") == "136a §"
+    # Fallback to the typed target label when the ctx_label carries no §.
+    assert _occupancy_scope("[2000/1] something", "10a") == "10a §"
+
+
+def test_occupancy_rows_from_findings_projects_violation() -> None:
+    class _F:
+        kind = "APPLY.OCCUPANCY_POLICY_VIOLATION"
+        source_statute = "1992/1167"
+        detail = {
+            "ctx_label": "[1992/1167] REPEAL 136a §",
+            "legacy_action": "REPEAL",
+            "target_label": "136a",
+            "current_occupancy": "absent",
+            "allowed_from": ["substantive", "tombstone"],
+        }
+
+    rows = _occupancy_rows_from_findings("1958/370", "1992/1167", [_F()])
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["statute_id"] == "1958/370"
+    assert row["amendment_id"] == "1992/1167"
+    assert row["signal_type"] == "occupancy_violation"
+    assert row["category"] == "repeal-of-absent"
+    assert row["description"] == "REPEAL 136a §"
+    assert row["target_scope"] == "136a §"
+    assert "is absent, not in allowed_from {substantive, tombstone}" in row["reason"]
+
+
+def test_occupancy_rows_skip_allowed_non_primary_note() -> None:
+    # The "allowed but not primary expected" disposition (e.g. a REPLACE landing
+    # on a tombstone — the legitimate reenactment lane) is not a violation.
+    class _Note:
+        kind = "APPLY.OCCUPANCY_POLICY_VIOLATION"
+        source_statute = "1981/499"
+        detail = {
+            "ctx_label": "[1981/499] INSERT 11 luku 114 §",
+            "legacy_action": "INSERT",
+            "target_label": "114",
+            "current_occupancy": "tombstone",
+            "allowed_from": ["absent", "scaffold", "tombstone"],
+            "allowed_non_primary": True,
+        }
+
+    assert _occupancy_rows_from_findings("1958/370", "1981/499", [_Note()]) == []
+
+
+def test_occupancy_rows_ignore_other_finding_kinds() -> None:
+    class _Other:
+        kind = "ELAB.REJECTED_OPERATION"
+        source_statute = "x/1"
+        detail = {"current_occupancy": "absent", "legacy_action": "REPEAL"}
+
+    assert _occupancy_rows_from_findings("x/1", "x/1", [_Other()]) == []
 
 
 # ---------------------------------------------------------------------------
@@ -171,3 +255,21 @@ def test_projector_row_shape_and_known_signals() -> None:
         and "111" in r["description"]
         for r in rows
     ), "1977/604 §111 momentti-not-found must stay fixed (no target_absent)"
+
+    # The occupancy proof case: 1992/1167 repeals §136a, which the per-amendment
+    # legal_pit fold sees as absent.  The cumulative consolidation replay absorbs
+    # it, so it only surfaces through the dedicated occupancy capture.
+    occupancy = [r for r in rows if r["signal_type"] == "occupancy_violation"]
+    assert any(
+        r["amendment_id"] == "1992/1167"
+        and r["category"] == "repeal-of-absent"
+        and "136a" in r["description"]
+        for r in occupancy
+    ), "expected 1992/1167 §136a repeal-of-absent occupancy_violation signal"
+
+    # The upstream 1968/493 dropped-op coverage gap remains a self-consistency
+    # signal for the same statute.
+    coverage = [r for r in rows if r["signal_type"] == "coverage_gap"]
+    assert any(
+        r["amendment_id"] == "1968/493" for r in coverage
+    ), "expected 1968/493 coverage gap signal"
