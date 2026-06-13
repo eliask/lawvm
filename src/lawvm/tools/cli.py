@@ -7361,6 +7361,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         ),
     )
     nz_corpus_sub = nz_corpus_p.add_subparsers(dest="nz_corpus_command", metavar="<subcommand>")
+    from lawvm.new_zealand.bench_corpus import DEFAULT_SMOKE_SIZE
     nz_sync_p = nz_corpus_sub.add_parser(
         "sync",
         help="sync NZ API v0 metadata/XML into farchive",
@@ -7956,13 +7957,14 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     nz_dry_run_p.add_argument("--work-id", required=True, metavar="ID", help="archived work_id")
     nz_dry_run_p.add_argument(
         "--scope",
-        choices=("complete-set", "selected-family-repeal"),
+        choices=("complete-set", "selected-family-repeal", "selected-family-text-replace"),
         default="complete-set",
         help=(
             "'complete-set' (default) refuses the whole work unless its full candidate set is "
             "ready_for_dry_run_replay; 'selected-family-repeal' dry-runs the ready repeal operations "
-            "even when the work's full candidate set is incomplete, declaring the partial scope and "
-            "the typed not-in-scope operation-witness counts"
+            "even when the work's full candidate set is incomplete; 'selected-family-text-replace' "
+            "dry-runs the ready single-occurrence text-substitution operations instead. The selected-"
+            "family scopes declare the partial scope and the typed not-in-scope operation-witness counts"
         ),
     )
     nz_dry_run_p.add_argument("--summary-only", action="store_true", help="emit only dry-run summary counts")
@@ -8036,7 +8038,11 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         ),
     )
     nz_build_corpus_p.add_argument(
-        "--smoke-size", type=int, default=30, metavar="N", help="target smoke-slice size (default: 30)"
+        "--smoke-size",
+        type=int,
+        default=DEFAULT_SMOKE_SIZE,
+        metavar="N",
+        help=f"target smoke-slice size (default: {DEFAULT_SMOKE_SIZE})",
     )
     nz_build_corpus_p.add_argument("--quiet", action="store_true", help="suppress per-batch scan progress")
     nz_dry_run_corpus_p = nz_corpus_sub.add_parser(
@@ -8105,13 +8111,14 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     nz_dry_run_corpus_p.add_argument(
         "--scope",
-        choices=("complete-set", "selected-family-repeal"),
+        choices=("complete-set", "selected-family-repeal", "selected-family-text-replace"),
         default="complete-set",
         help=(
             "'complete-set' (default) only dry-runs works whose full candidate set is ready; "
-            "'selected-family-repeal' dry-runs the ready repeal operations in every sampled work "
-            "even when its full candidate set is incomplete, and reports the corpus-wide "
-            "repeal-witness replay-coverage scoreboard"
+            "'selected-family-repeal' dry-runs the ready repeal operations in every sampled work; "
+            "'selected-family-text-replace' dry-runs the ready single-occurrence text-substitution "
+            "operations instead. The selected-family scopes report the corpus-wide family-witness "
+            "replay-coverage scoreboard"
         ),
     )
     nz_dry_run_corpus_p.add_argument(

@@ -69,10 +69,16 @@ SMOKE_PINNED_WORK_IDS = (
     "act_public_1992_122",
     "act_public_1955_37",
     "act_public_1981_23",
+    # Single-occurrence text-substitution dry-run canaries.
+    "act_public_2006_1",
+    "act_public_2022_77",
+    "act_public_2009_13",
 )
 
-# Target smoke-slice size (pinned works + diversity picks).
-DEFAULT_SMOKE_SIZE = 30
+# Target smoke-slice size (pinned works + diversity picks). Sized so the three
+# text-substitution canary pins are additive: the prior diversity picks are
+# preserved rather than evicted.
+DEFAULT_SMOKE_SIZE = 33
 
 
 class NZBenchCorpusError(RuntimeError):

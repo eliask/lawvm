@@ -27,7 +27,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
-from lawvm.core.agreement_residual import AgreementResidual, agreement_surface_from_residuals
+from lawvm.core.agreement_residual import (
+    AgreementResidual,
+    AgreementResidualFamily,
+    agreement_surface_from_residuals,
+)
+from lawvm.core.comparison_normalization import (
+    normalized_inline_contains,
+    normalized_inline_occurrence_count,
+)
 from lawvm.core.ir import LegalOperation
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.new_zealand.acquisition import open_farchive
@@ -67,6 +75,29 @@ NZ_DRY_RUN_RESIDUAL_TARGET_NOT_TOMBSTONE_IN_ORACLE_RULE_ID = "nz_dry_run_residua
 NZ_DRY_RUN_REPEAL_REMOVED_AGREES_RULE_ID = "nz_dry_run_repeal_removed_node_matches_oracle"
 NZ_DRY_RUN_RESIDUAL_TARGET_NOT_REMOVED_IN_ORACLE_RULE_ID = "nz_dry_run_residual_target_not_removed_in_oracle"
 
+# --- Text-substitution (TEXT_REPLACE) apply/oracle vocabulary. ----------------
+# Agreement: the on-or-after oracle node reflects the single-occurrence
+# substitution the candidate after-node produced.
+NZ_DRY_RUN_TEXT_REPLACE_AGREES_RULE_ID = "nz_dry_run_text_replace_substitution_reflected_in_oracle"
+# Residual: the oracle still carries an old_text occurrence the candidate
+# after-node removed (substitution NOT reflected — divergence or wrong target).
+NZ_DRY_RUN_TEXT_RESIDUAL_OLD_TEXT_REMAINS_RULE_ID = "nz_dry_run_text_replace_residual_old_text_remains_in_oracle"
+# Residual: neither the substitution's new_text is present nor is the old_text
+# residue consistent (another window change overwrote it / target drift).
+NZ_DRY_RUN_TEXT_RESIDUAL_NEW_TEXT_ABSENT_RULE_ID = "nz_dry_run_text_replace_residual_new_text_absent_in_oracle"
+# Residual: the exact target node is missing from the on-or-after oracle.
+NZ_DRY_RUN_TEXT_RESIDUAL_TARGET_MISSING_RULE_ID = "nz_dry_run_text_replace_residual_target_missing_in_oracle"
+
+# Text-substitution refusals (typed, no mutation performed).
+NZ_DRY_RUN_REFUSED_TEXT_NO_TEXT_PATCH_RULE_ID = "nz_dry_run_refused_text_replace_missing_text_patch"
+NZ_DRY_RUN_REFUSED_TEXT_SCOPE_NOT_SINGLE_OCCURRENCE_RULE_ID = (
+    "nz_dry_run_refused_text_replace_scope_not_single_occurrence"
+)
+NZ_DRY_RUN_REFUSED_TEXT_OLD_TEXT_OCCURRENCE_MISMATCH_RULE_ID = (
+    "nz_dry_run_refused_text_replace_old_text_occurrence_not_single_in_before_target"
+)
+NZ_DRY_RUN_REFUSED_TEXT_APPLY_NO_OP_RULE_ID = "nz_dry_run_refused_text_replace_apply_left_node_unchanged"
+
 # Dry-run scopes.
 #
 # ``complete_set`` is the original, strict behavior: refuse the whole work
@@ -79,9 +110,35 @@ NZ_DRY_RUN_RESIDUAL_TARGET_NOT_REMOVED_IN_ORACLE_RULE_ID = "nz_dry_run_residual_
 # any per-operation exactness/corroboration check (those still refuse, typed).
 # The report declares the partial scope explicitly and carries the count of
 # operation witnesses NOT covered, typed by reason — never hidden.
+#
+# ``selected_family_text_replace`` is the same partial-scope mechanism applied
+# to the single-occurrence text-substitution family: it dry-runs the ready
+# TEXT_REPLACE operations in a work, applying old->new on the exact target node,
+# and classifies whether the on-or-after oracle reflects the substitution. It
+# relaxes only the WHOLE-WORK readiness gate; per-operation exactness/occurrence
+# checks still refuse, typed.
 NZ_DRY_RUN_SCOPE_COMPLETE_SET = "complete_set"
 NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL = "selected_family_repeal"
-_VALID_DRY_RUN_SCOPES = (NZ_DRY_RUN_SCOPE_COMPLETE_SET, NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL)
+NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE = "selected_family_text_replace"
+_VALID_DRY_RUN_SCOPES = (
+    NZ_DRY_RUN_SCOPE_COMPLETE_SET,
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE,
+)
+# The selected-family scopes and the structural action they each select.
+_SELECTED_FAMILY_SCOPES = (
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE,
+)
+_SCOPE_SELECTED_ACTION = {
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL: StructuralAction.REPEAL,
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE: StructuralAction.TEXT_REPLACE,
+}
+_SCOPE_OPERATION_FAMILY = {
+    NZ_DRY_RUN_SCOPE_COMPLETE_SET: "repeal",
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL: "repeal",
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE: "text_replace",
+}
 
 # Typed not-in-scope reasons for the selected_family_repeal scope. Each operation
 # witness in the work that is not a dry-run-eligible repeal is carried under one
@@ -91,6 +148,9 @@ NZ_DRY_RUN_NOT_IN_SCOPE_REPEAL_SOURCE_CHANGE_ONLY = "not_in_scope_repeal_source_
 NZ_DRY_RUN_NOT_IN_SCOPE_REPEAL_TARGET_RECOVERY = "not_in_scope_repeal_target_recovery"
 NZ_DRY_RUN_NOT_IN_SCOPE_CANDIDATE_OPERATION_MISSING = "not_in_scope_candidate_operation_missing"
 NZ_DRY_RUN_NOT_IN_SCOPE_BLOCKED_OPERATION_WITNESS = "not_in_scope_blocked_operation_witness"
+# Typed not-in-scope reasons for the selected_family_text_replace scope.
+NZ_DRY_RUN_NOT_IN_SCOPE_NON_TEXT_REPLACE_FAMILY = "not_in_scope_non_text_replace_family"
+NZ_DRY_RUN_NOT_IN_SCOPE_TEXT_REPLACE_NOT_SINGLE_OCCURRENCE = "not_in_scope_text_replace_not_single_occurrence"
 
 # NZ history-note family verb for a repeal operation witness. This is the
 # ``operation_family`` value the readiness lowering assigns to a repeal (the
@@ -98,6 +158,12 @@ NZ_DRY_RUN_NOT_IN_SCOPE_BLOCKED_OPERATION_WITNESS = "not_in_scope_blocked_operat
 # blocked rows still carry this family), so it is the stable discriminator for
 # the repeal-witness replay-coverage denominator.
 _NZ_REPEAL_OPERATION_FAMILY = "repealed"
+
+# A text-substitution operation witness is not discriminated by a single
+# history-note verb (the family is ``amended`` plus other instruction verbs).
+# It is identified by an emitted TEXT_REPLACE candidate action, or by a row
+# blocked under the text-replace candidate's own blocking rule id.
+_NZ_TEXT_REPLACE_BLOCKED_RULE_ID = "nz_text_replace_candidate_latest_oracle_witness_unavailable"
 
 # Canonical tombstone marker for a repealed-but-addressable source node.
 _REPEAL_TOMBSTONE_DELETION_STATUS = "repealed"
@@ -153,6 +219,17 @@ class NZMutationBoundaryProof:
     oracle_target_occupancy: str
     oracle_match: str
     oracle_match_rule_id: str
+    # Text-substitution mutation evidence (empty for repeal proofs). The
+    # occurrence counts make the substitution boundary auditable: how many
+    # normalized old_text occurrences existed in the before target, how many
+    # remain in the candidate after-node, and the parity the oracle was asked
+    # to reflect.
+    text_old_text: str = ""
+    text_new_text: str = ""
+    text_old_occurrences_before: int = 0
+    text_old_occurrences_after: int = 0
+    text_oracle_old_occurrences: int = 0
+    text_oracle_contains_new_text: bool = False
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
@@ -178,6 +255,12 @@ class NZMutationBoundaryProof:
             "oracle_target_occupancy": self.oracle_target_occupancy,
             "oracle_match": self.oracle_match,
             "oracle_match_rule_id": self.oracle_match_rule_id,
+            "text_old_text": self.text_old_text,
+            "text_new_text": self.text_new_text,
+            "text_old_occurrences_before": self.text_old_occurrences_before,
+            "text_old_occurrences_after": self.text_old_occurrences_after,
+            "text_oracle_old_occurrences": self.text_oracle_old_occurrences,
+            "text_oracle_contains_new_text": self.text_oracle_contains_new_text,
         }
 
 
@@ -301,6 +384,11 @@ class NZDryRunReport:
         residuals are classified there; this never authorizes replay.
         """
 
+        surface_name = (
+            "nz_dry_run_text_replace"
+            if self.scope == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE
+            else "nz_dry_run_repeal"
+        )
         residuals: list[AgreementResidual] = []
         for proof in self.proofs:
             if proof.oracle_match == "agrees":
@@ -308,7 +396,7 @@ class NZDryRunReport:
                     AgreementResidual(
                         residual_id=f"{self.work_id}:{proof.op_id}:agrees",
                         jurisdiction="nz",
-                        agreement_surface="nz_dry_run_repeal",
+                        agreement_surface=surface_name,
                         family="agreement",
                         status="agrees",
                         owner_phase="dry_run",
@@ -329,10 +417,8 @@ class NZDryRunReport:
                     AgreementResidual(
                         residual_id=f"{self.work_id}:{proof.op_id}:residual",
                         jurisdiction="nz",
-                        agreement_surface="nz_dry_run_repeal",
-                        family="target_recovery_mismatch"
-                        if proof.oracle_match == "target_missing"
-                        else "oracle_editorial_pathology",
+                        agreement_surface=surface_name,
+                        family=_residual_family(proof.oracle_match),
                         status="residual",
                         owner_phase="dry_run",
                         rule_id=proof.oracle_match_rule_id,
@@ -353,7 +439,7 @@ class NZDryRunReport:
         surface = agreement_surface_from_residuals(
             tuple(residuals),
             jurisdiction="nz",
-            agreement_surface="nz_dry_run_repeal",
+            agreement_surface=surface_name,
             materialization_id=f"nz_dry_run:{self.work_id}",
             comparison_target_id=f"nz_on_or_after_oracle:{self.work_id}",
             comparison_kind="dry_run_after_tree_vs_archived_on_or_after_xml",
@@ -406,8 +492,19 @@ def build_dry_run_repeal(
     preflight: NZEffectCandidatePreflightReport,
     scope: str = NZ_DRY_RUN_SCOPE_COMPLETE_SET,
 ) -> NZDryRunReport:
+    """Build a dry-run report for one archived NZ work.
+
+    The default ``complete_set`` and ``selected_family_repeal`` scopes apply the
+    repeal kernel. The ``selected_family_text_replace`` scope applies the
+    single-occurrence text-substitution kernel instead. (The function keeps its
+    historical name; the scope selects the family.)
+    """
+
     if scope not in _VALID_DRY_RUN_SCOPES:
         raise ValueError(f"unknown dry-run scope {scope!r}; expected one of {_VALID_DRY_RUN_SCOPES}")
+
+    if scope == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE:
+        return _build_dry_run_text_replace(archive, work_id=work_id, preflight=preflight, scope=scope)
 
     preflight_status = str(preflight.summary()["preflight_status"])
     proofs: list[NZMutationBoundaryProof] = []
@@ -475,6 +572,63 @@ def build_dry_run_repeal(
     return NZDryRunReport(
         work_id=work_id,
         operation_family="repeal",
+        proofs=tuple(proofs),
+        refusals=tuple(refusals),
+        preflight_status=preflight_status,
+        scope=scope,
+        scope_completeness=scope_completeness,
+    )
+
+
+def _build_dry_run_text_replace(
+    archive: Any,
+    *,
+    work_id: str,
+    preflight: NZEffectCandidatePreflightReport,
+    scope: str,
+) -> NZDryRunReport:
+    """Dry-run the ready single-occurrence text-substitution operations of a work.
+
+    Mirrors :func:`build_dry_run_repeal`'s selected-family discipline: it relaxes
+    only the whole-work readiness gate, never any per-operation exactness or
+    single-occurrence check.
+    """
+
+    preflight_status = str(preflight.summary()["preflight_status"])
+    text_rows = _replayable_text_replace_rows(preflight)
+    scope_completeness = _selected_family_text_replace_scope_completeness(preflight, text_rows)
+    if not text_rows:
+        return NZDryRunReport(
+            work_id=work_id,
+            operation_family="text_replace",
+            proofs=(),
+            refusals=(
+                NZDryRunRefusal(
+                    op_id=work_id or "new_zealand",
+                    rule_id=NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+                    message="dry-run text-replace refused because no replayable text_replace candidate was found",
+                ),
+            ),
+            preflight_status=preflight_status,
+            scope=scope,
+            scope_completeness=scope_completeness,
+        )
+
+    parsed_cache: dict[str, NZSourceDocument | None] = {}
+    proofs: list[NZMutationBoundaryProof] = []
+    refusals: list[NZDryRunRefusal] = []
+    for row in text_rows:
+        operation = row.operation
+        assert operation is not None  # guaranteed by _replayable_text_replace_rows
+        outcome = _dry_run_one_text_replace(archive, work_id, row, operation, parsed_cache)
+        if isinstance(outcome, NZDryRunRefusal):
+            refusals.append(outcome)
+        else:
+            proofs.append(outcome)
+
+    return NZDryRunReport(
+        work_id=work_id,
+        operation_family="text_replace",
         proofs=tuple(proofs),
         refusals=tuple(refusals),
         preflight_status=preflight_status,
@@ -580,6 +734,129 @@ def _replayable_repeal_rows(
             continue
         rows.append(row)
     return tuple(rows)
+
+
+def _is_single_occurrence_text_replace_operation(operation: LegalOperation) -> bool:
+    """A single-occurrence text substitution selects exactly occurrence 1.
+
+    The each-place scope (occurrence 0) and any other multi-place selector are
+    out of scope for the first text_replace kernel; they refuse, typed.
+    """
+
+    patch = operation.text_patch
+    return patch is not None and patch.selector.occurrence == 1 and patch.replacement is not None
+
+
+def _replayable_text_replace_rows(
+    preflight: NZEffectCandidatePreflightReport,
+) -> tuple[NZCanonicalEffectCandidateRow, ...]:
+    """The emitted, exact-target, single-occurrence text-substitution candidates.
+
+    Mirrors :func:`_replayable_repeal_rows`: it consumes only what preflight
+    emitted and never broadens the set. Each-place / multi-occurrence candidates
+    are NOT in scope here (handled as typed not-in-scope in the census and as a
+    typed refusal if forced through the kernel).
+    """
+
+    rows: list[NZCanonicalEffectCandidateRow] = []
+    for row in preflight.candidate_report.rows:
+        if row.status != "candidate_emitted":
+            continue
+        if row.operation is None:
+            continue
+        if row.action != str(StructuralAction.TEXT_REPLACE):
+            continue
+        # Defence in depth: only exact-target text substitutions are eligible.
+        if (
+            row.latest_oracle_target_resolution_status
+            and row.latest_oracle_target_resolution_status != "exact_source_path"
+        ):
+            continue
+        if not _is_single_occurrence_text_replace_operation(row.operation):
+            continue
+        rows.append(row)
+    return tuple(rows)
+
+
+def _is_text_replace_witness(row: NZCanonicalEffectCandidateRow) -> bool:
+    """Whether an operation-witness row is a text-substitution witness.
+
+    A text_replace witness either emitted a TEXT_REPLACE candidate or was
+    blocked under the text-replace candidate's own blocking rule id. This is the
+    stable discriminator for the text_replace replay-coverage denominator.
+    """
+
+    if row.status == "candidate_emitted":
+        return row.action == str(StructuralAction.TEXT_REPLACE)
+    return row.blocking_rule_id == _NZ_TEXT_REPLACE_BLOCKED_RULE_ID
+
+
+def _selected_family_text_replace_scope_completeness(
+    preflight: NZEffectCandidatePreflightReport,
+    in_scope_text_rows: tuple[NZCanonicalEffectCandidateRow, ...],
+) -> NZDryRunScopeCompleteness:
+    """Type every operation witness in the work as in- or not-in-scope.
+
+    The selected family is the single-occurrence text-substitution family. Every
+    other operation witness is carried under a typed not-in-scope reason so the
+    partial scope can never silently inflate coverage. The repeal-witness census
+    fields are reused as the family-witness census (their names are generic in
+    the corpus scoreboard), so the text_replace coverage denominator is every
+    text_replace operation-witness, eligible or blocked.
+    """
+
+    in_scope_row_ids = {row.row_id for row in in_scope_text_rows}
+    reason_counts: dict[str, int] = {}
+    family_reason_counts: dict[str, int] = {}
+    in_scope = 0
+    total = 0
+    total_family = 0
+    family_in_scope = 0
+    for row in preflight.candidate_report.rows:
+        total += 1
+        is_family_witness = _is_text_replace_witness(row)
+        if is_family_witness:
+            total_family += 1
+        if row.row_id in in_scope_row_ids:
+            in_scope += 1
+            if is_family_witness:
+                family_in_scope += 1
+            continue
+        reason = _text_replace_not_in_scope_reason(row)
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        if is_family_witness:
+            family_reason_counts[reason] = family_reason_counts.get(reason, 0) + 1
+    return NZDryRunScopeCompleteness(
+        scope=NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_TEXT_REPLACE,
+        family="text_replace",
+        total_operation_witnesses=total,
+        in_scope_operation_witnesses=in_scope,
+        not_in_scope_operation_witnesses=total - in_scope,
+        not_in_scope_reason_counts=dict(sorted(reason_counts.items())),
+        total_repeal_operation_witnesses=total_family,
+        repeal_witnesses_in_scope=family_in_scope,
+        repeal_witnesses_not_in_scope_reason_counts=dict(sorted(family_reason_counts.items())),
+    )
+
+
+def _text_replace_not_in_scope_reason(row: NZCanonicalEffectCandidateRow) -> str:
+    if row.status != "candidate_emitted":
+        return NZ_DRY_RUN_NOT_IN_SCOPE_BLOCKED_OPERATION_WITNESS
+    if row.operation is None:
+        return NZ_DRY_RUN_NOT_IN_SCOPE_CANDIDATE_OPERATION_MISSING
+    if row.action != str(StructuralAction.TEXT_REPLACE):
+        return NZ_DRY_RUN_NOT_IN_SCOPE_NON_TEXT_REPLACE_FAMILY
+    if (
+        row.latest_oracle_target_resolution_status
+        and row.latest_oracle_target_resolution_status != "exact_source_path"
+    ):
+        return NZ_DRY_RUN_NOT_IN_SCOPE_REPEAL_TARGET_RECOVERY
+    if not _is_single_occurrence_text_replace_operation(row.operation):
+        return NZ_DRY_RUN_NOT_IN_SCOPE_TEXT_REPLACE_NOT_SINGLE_OCCURRENCE
+    # An emitted, exact, single-occurrence text substitution that is not in the
+    # in-scope set would contradict the in-scope filter. Name it distinctly so
+    # any future filter drift surfaces loudly rather than being absorbed.
+    return NZ_DRY_RUN_NOT_IN_SCOPE_NON_TEXT_REPLACE_FAMILY
 
 
 def _dry_run_one_repeal(
@@ -748,6 +1025,336 @@ def _dry_run_one_repeal(
         oracle_match=oracle_match,
         oracle_match_rule_id=oracle_rule_id,
     )
+
+
+def _dry_run_one_text_replace(
+    archive: Any,
+    work_id: str,
+    row: NZCanonicalEffectCandidateRow,
+    operation: LegalOperation,
+    parsed_cache: dict[str, NZSourceDocument | None],
+) -> NZMutationBoundaryProof | NZDryRunRefusal:
+    op_id = operation.op_id
+    target_address = str(operation.target)
+    amendment_date_iso = row.amendment_date_iso
+
+    patch = operation.text_patch
+    if patch is None or patch.replacement is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_TEXT_NO_TEXT_PATCH_RULE_ID,
+            message="dry-run text-replace refused because the operation carries no text_patch replacement",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+        )
+    if patch.selector.occurrence != 1:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_TEXT_SCOPE_NOT_SINGLE_OCCURRENCE_RULE_ID,
+            message=(
+                "dry-run text-replace refused because the substitution is not single-occurrence "
+                f"(selector.occurrence={patch.selector.occurrence}); each-place/multi not yet supported"
+            ),
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"selector_occurrence": patch.selector.occurrence},
+        )
+
+    # Defence in depth: refuse any non-exact target locally (mirror repeal).
+    if row.latest_oracle_target_resolution_status and row.latest_oracle_target_resolution_status != "exact_source_path":
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_TARGET_RECOVERED_RULE_ID,
+            message="dry-run text-replace refused because target was recovered rather than exact",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"target_resolution_status": row.latest_oracle_target_resolution_status},
+        )
+
+    if not amendment_date_iso:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_MISSING_VERSION_WINDOW_RULE_ID,
+            message="dry-run text-replace refused because the operation has no ISO amendment date for a version window",
+            target_address=target_address,
+        )
+
+    change_window = archived_xml_version_change_window(
+        archive,
+        work_id=work_id,
+        version_date=amendment_date_iso,
+    )
+    if change_window.before is None or change_window.on_or_after is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_MISSING_VERSION_WINDOW_RULE_ID,
+            message="dry-run text-replace refused because the before/after archived XML version window is missing",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail=_change_window_detail(change_window),
+        )
+
+    before_doc = _parse_archived_version(archive, change_window.before, parsed_cache)
+    if before_doc is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_BEFORE_XML_UNREADABLE_RULE_ID,
+            message="dry-run text-replace refused because the before XML version is unreadable",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"before_version_id": change_window.before.version_id},
+        )
+    oracle_doc = _parse_archived_version(archive, change_window.on_or_after, parsed_cache)
+    if oracle_doc is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_ORACLE_XML_UNREADABLE_RULE_ID,
+            message="dry-run text-replace refused because the on-or-after XML version is unreadable",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"on_or_after_version_id": change_window.on_or_after.version_id},
+        )
+
+    source_path = _source_path_for_address(operation)
+    if source_path is None:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_TARGET_PATH_UNMAPPABLE_RULE_ID,
+            message="dry-run text-replace refused because the target address path is not mappable to a source-tree path",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+        )
+
+    before_matches = _resolve_target_nodes(before_doc, source_path)
+    if len(before_matches) == 0:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_TARGET_NOT_IN_BEFORE_RULE_ID,
+            message="dry-run text-replace refused because the exact target is not present in the before tree",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"selected_source_path": list(source_path)},
+        )
+    if len(before_matches) > 1:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_TARGET_AMBIGUOUS_RULE_ID,
+            message="dry-run text-replace refused because the target source path is ambiguous in the before tree",
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"selected_source_path": list(source_path), "match_count": len(before_matches)},
+        )
+
+    before_target = before_matches[0]
+    resolved_path = before_target.path
+
+    old_text = patch.selector.match_text
+    new_text = patch.replacement
+    # The single-occurrence precondition: the old_text must occur exactly once
+    # in the before target node text (normalized comparison). Zero or many is a
+    # typed refusal — the kernel never guesses which occurrence to edit.
+    old_occ_before = normalized_inline_occurrence_count(before_target.text, old_text)
+    if old_occ_before != 1:
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_TEXT_OLD_TEXT_OCCURRENCE_MISMATCH_RULE_ID,
+            message=(
+                "dry-run text-replace refused because the old_text does not occur exactly once "
+                f"in the before target node (normalized occurrences={old_occ_before})"
+            ),
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"old_text": old_text, "old_occurrences_before": old_occ_before},
+        )
+
+    # --- The boring apply kernel: substitute old->new (single occurrence) on the
+    # target node text, keep the node otherwise identical (addressable in place).
+    after_target = _substitute_node_text(before_target, old_text, new_text)
+    if after_target.text == before_target.text:
+        # The normalized count said one occurrence but the literal text did not
+        # change. Surface loudly rather than emitting a vacuous mutation proof.
+        return NZDryRunRefusal(
+            op_id=op_id,
+            rule_id=NZ_DRY_RUN_REFUSED_TEXT_APPLY_NO_OP_RULE_ID,
+            message=(
+                "dry-run text-replace refused because the apply left the node text unchanged "
+                "(normalized occurrence found but literal old_text not present)"
+            ),
+            target_address=target_address,
+            amendment_date_iso=amendment_date_iso,
+            detail={"old_text": old_text, "new_text": new_text},
+        )
+    old_occ_after = normalized_inline_occurrence_count(after_target.text, old_text)
+
+    parent_path = resolved_path[:-1]
+    siblings_before = _sibling_nodes(before_doc, resolved_path)
+    neighbor_paths = tuple(node.path for node in siblings_before)
+    neighbor_before = tuple(_node_digest(node) for node in siblings_before)
+    neighbor_after = neighbor_before  # kernel only touched the target node text
+    parent_before_nodes = _nodes_at_path(before_doc, parent_path) if parent_path else ()
+    parent_digest_before = _node_digest(parent_before_nodes[0]) if parent_before_nodes else ""
+    parent_digest_after = parent_digest_before  # parent identity untouched
+
+    (
+        oracle_match,
+        oracle_rule_id,
+        oracle_present,
+        oracle_occupancy,
+        oracle_old_occ,
+        oracle_has_new,
+    ) = _oracle_partition_text(
+        oracle_doc,
+        resolved_path,
+        old_text=old_text,
+        new_text=new_text,
+        after_old_occurrences=old_occ_after,
+    )
+
+    return NZMutationBoundaryProof(
+        op_id=op_id,
+        action=str(operation.action),
+        target_address=target_address,
+        selected_source_path=resolved_path,
+        target_xml_id=before_target.xml_id,
+        target_digest_before=_node_digest(before_target),
+        target_digest_after=_node_digest(after_target),
+        operation_payload=_text_replace_payload_text(operation),
+        occupancy_before=_occupancy(before_target),
+        occupancy_after=_occupancy(after_target),
+        parent_source_path=parent_path,
+        parent_digest_before=parent_digest_before,
+        parent_digest_after=parent_digest_after,
+        unaffected_neighbor_paths=neighbor_paths,
+        unaffected_neighbor_digests_before=neighbor_before,
+        unaffected_neighbor_digests_after=neighbor_after,
+        neighbors_unchanged=(neighbor_before == neighbor_after and parent_digest_before == parent_digest_after),
+        oracle_version_id=change_window.on_or_after.version_id,
+        oracle_target_present=oracle_present,
+        oracle_target_occupancy=oracle_occupancy,
+        oracle_match=oracle_match,
+        oracle_match_rule_id=oracle_rule_id,
+        text_old_text=old_text,
+        text_new_text=new_text,
+        text_old_occurrences_before=old_occ_before,
+        text_old_occurrences_after=old_occ_after,
+        text_oracle_old_occurrences=oracle_old_occ,
+        text_oracle_contains_new_text=oracle_has_new,
+    )
+
+
+def _oracle_partition_text(
+    oracle_doc: NZSourceDocument,
+    source_path: tuple[str, ...],
+    *,
+    old_text: str,
+    new_text: str,
+    after_old_occurrences: int,
+) -> tuple[str, str, bool, str, int, bool]:
+    """Classify whether the on-or-after oracle reflects the substitution.
+
+    The oracle node reflects ALL window changes, so an exact ``after-text ==
+    oracle-text`` is too strict. The honest, layered classification compares the
+    candidate after-node against the oracle node by normalized comparison:
+
+    - ``agrees``: the oracle contains ``new_text`` AND the oracle's residual
+      ``old_text`` count matches the candidate after-node's residual count.
+      This correctly handles ``new_text`` that contains ``old_text`` as a
+      substring (the substitution legitimately leaves ``old_text`` present once,
+      and the oracle should carry the same residual count).
+    - ``residual_old_text_remains``: the oracle carries MORE ``old_text`` than
+      the candidate after-node would (the substitution was NOT reflected — a
+      possible divergence or wrong target). A non-reflected substitution is
+      never counted as agreement.
+    - ``residual_new_text_absent``: the ``new_text`` is not present in the
+      oracle (another window change overwrote it / target drift).
+    - ``target_missing``: the exact target node is absent from the oracle.
+    """
+
+    oracle_matches = _resolve_target_nodes(oracle_doc, source_path)
+    if not oracle_matches:
+        return (
+            "target_missing",
+            NZ_DRY_RUN_TEXT_RESIDUAL_TARGET_MISSING_RULE_ID,
+            False,
+            "absent",
+            0,
+            False,
+        )
+    oracle_node = oracle_matches[0]
+    oracle_occupancy = _occupancy(oracle_node)
+    oracle_old_occ = normalized_inline_occurrence_count(oracle_node.text, old_text)
+    oracle_has_new = normalized_inline_contains(oracle_node.text, new_text)
+    if oracle_old_occ > after_old_occurrences:
+        # The oracle still carries an old_text occurrence the substitution
+        # removed: the substitution is not reflected. Report it as a residual
+        # even if new_text happens to be present elsewhere.
+        return (
+            "residual_old_text_remains",
+            NZ_DRY_RUN_TEXT_RESIDUAL_OLD_TEXT_REMAINS_RULE_ID,
+            True,
+            oracle_occupancy,
+            oracle_old_occ,
+            oracle_has_new,
+        )
+    if not oracle_has_new:
+        return (
+            "residual_new_text_absent",
+            NZ_DRY_RUN_TEXT_RESIDUAL_NEW_TEXT_ABSENT_RULE_ID,
+            True,
+            oracle_occupancy,
+            oracle_old_occ,
+            oracle_has_new,
+        )
+    return (
+        "agrees",
+        NZ_DRY_RUN_TEXT_REPLACE_AGREES_RULE_ID,
+        True,
+        oracle_occupancy,
+        oracle_old_occ,
+        oracle_has_new,
+    )
+
+
+def _substitute_node_text(node: NZSourceNode, old_text: str, new_text: str) -> NZSourceNode:
+    # Boring kernel: replace the first literal occurrence of old_text with
+    # new_text in the node text, keeping the node otherwise identical (same
+    # kind/path/xml_id/label/heading/occupancy). Never delete-and-forget.
+    return NZSourceNode(
+        kind=node.kind,
+        path=node.path,
+        xml_id=node.xml_id,
+        xml_path=node.xml_path,
+        source_zone=node.source_zone,
+        label=node.label,
+        heading=node.heading,
+        deletion_status=node.deletion_status,
+        text=node.text.replace(old_text, new_text, 1),
+        history=node.history,
+    )
+
+
+def _text_replace_payload_text(operation: LegalOperation) -> str:
+    patch = operation.text_patch
+    old_text = patch.selector.match_text if patch is not None else ""
+    new_text = patch.replacement if patch is not None and patch.replacement is not None else ""
+    return (
+        f"action={operation.action} witness_rule_id={operation.witness_rule_id or ''} "
+        f"payload=text_replace old_len={len(old_text)} new_len={len(new_text)}"
+    )
+
+
+def _residual_family(oracle_match: str) -> AgreementResidualFamily:
+    """Map an oracle-match outcome to an :class:`AgreementResidual` family.
+
+    The text-substitution residuals (old_text remains / new_text absent) are
+    classified as ``oracle_editorial_pathology`` — the same shared residual
+    family the repeal path uses for an oracle node that exists but does not
+    reflect the expected change — so this surface never invents a core type.
+    """
+
+    if oracle_match in {"target_missing", "target_recovery_mismatch"}:
+        return "target_recovery_mismatch"
+    return "oracle_editorial_pathology"
 
 
 def _oracle_partition(

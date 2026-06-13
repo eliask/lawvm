@@ -166,7 +166,12 @@ def test_build_corpus_cli_parse_defaults() -> None:
     assert args.db == "data/nz_legislation.farchive"
     assert args.out_dir == "data/nz"
     assert args.work_id_prefix == "act_public_"
-    assert args.smoke_size == 30
+    # Default tracks DEFAULT_SMOKE_SIZE (bumped to keep the text-substitution
+    # canary pins additive rather than evicting prior diversity picks).
+    from lawvm.new_zealand.bench_corpus import DEFAULT_SMOKE_SIZE
+
+    assert args.smoke_size == DEFAULT_SMOKE_SIZE
+    assert DEFAULT_SMOKE_SIZE == 33
 
 
 def test_dry_run_corpus_cli_accepts_corpus_flag() -> None:
