@@ -1479,6 +1479,59 @@ def _section_ref(s: Stream, verb: SourceVerb, chapter: str, part: str = "") -> O
     return _maybe_wrap_scope_block(nodes, scope_ch, scope_pt, saved, s.pos)
 
 
+def _pykala_prefix_section_ref(
+    s: Stream, verb: SourceVerb, chapter: str, part: str = ""
+) -> Optional[list[SurfaceNode]]:
+    """Parse the genitive-plural prefix list form: ``pykälien <numlist>``.
+
+    The suffix form places the structural noun after each number
+    (``5 §:n`` / ``5 ja 6 §``).  The prefix/postfix-genitive form puts a
+    genitive-plural ``pykälien`` BEFORE the number list:
+
+      ``pykälien 1, 9, 45, 57, 66, 93 a, 95 ja 99 suomenkielinen sanamuoto``
+
+    (the language qualifier is stripped by the annotation layer, leaving a
+    bare ``PYKALA(gen) NUM ...`` run).  Each listed number is a whole-section
+    target.
+
+    Only the genitive-plural ``pykälien`` lemma triggers this form — the
+    genitive-singular ``pykälän`` is a back-reference / descendant anchor and
+    is handled elsewhere.  If a structural noun follows the list, the last
+    number belongs to a suffix-form reference, not to this prefix list.
+    """
+    saved = s.save()
+    t = s.peek()
+    if not (t and t.cat == "PYKALA" and t.case == "GEN"):
+        return None
+    if (t.text or "").lower() != "pykälien":
+        return None
+    s.pos += 1
+    nums = _number_list(s)
+    if not nums:
+        s.restore(saved)
+        return None
+    # If a structural noun follows the list, the last number belongs to a
+    # suffix-form reference (e.g. "... 95 ja 99 §"), not to this prefix list.
+    if (nxt := s.peek()) and nxt.cat in ("PYKALA", "MOMENTTI", "KOHTA", "LUKU", "OSA"):
+        s.restore(saved)
+        return None
+    _w = _make_witness("fi.section_ref_pykala_prefix", saved, s.pos)
+    nodes: list[SurfaceNode] = []
+    for n, sf in nums:
+        for rn in _expand_range_single(n):
+            full = rn + (sf if len(_expand_range_single(n)) == 1 else "")
+            nodes.append(
+                SurfaceTargetRef(
+                    kind=TargetKind.SECTION,
+                    label=full,
+                    chapter=chapter,
+                    part=part,
+                    witness=_w,
+                )
+            )
+    return nodes
+
+
 def _chapter_ref(s: Stream, verb: SourceVerb, part: str = "") -> Optional[list[SurfaceNode]]:
     """Parse chapter reference(s): [part_ctx] number_list LUKU [otsikko] [numero N:ksi]."""
     saved = s.save()
@@ -2638,6 +2691,7 @@ def _target(
         _insertion(s, verb, chapter, part=part)
         or _section_ref(s, verb, chapter, part=part)
         or _chapter_ref(s, verb, part=part)
+        or _pykala_prefix_section_ref(s, verb, chapter, part=part)
         or _part_ref(s, verb)
         or _nimike_ref(s, verb)
         or _appendix_ref(s, verb)

@@ -240,6 +240,20 @@ CURATED_CASES = [
         },
     },
     {
+        "name": "pykalien genitive-prefix section list",
+        "text": (
+            "muutetaan pykälien 1, 9, 45, 57, 66, 93 a, 95 ja 99 "
+            "suomenkielinen sanamuoto"
+        ),
+        "expected": [
+            "M P 1", "M P 9", "M P 45", "M P 57", "M P 66",
+            "M P 93a", "M P 95", "M P 99",
+        ],
+        "features": {
+            "verb_muuttaa", "section_ref", "conj_target_list", "letter_suffix",
+        },
+    },
+    {
         "name": "edella oleva valiotsikko sanamuoto keeps later section list alive",
         "text": (
             "muutetaan 11 §:n edellä olevan väliotsikon ruotsinkielinen sanamuoto, "
