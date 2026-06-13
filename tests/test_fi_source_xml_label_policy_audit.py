@@ -1,9 +1,19 @@
 from __future__ import annotations
 
+from lawvm.finland.helpers import _normalize_source_section_num
 from lawvm.finland.source_xml_label_policy_audit import (
     audit_source_xml_label_policies,
     summarize_label_policy_rows,
 )
+
+
+def test_source_section_num_normalizer_preserves_leading_sign_labels() -> None:
+    assert _normalize_source_section_num("§ 1.") == "1"
+
+
+def test_source_section_num_normalizer_keeps_tail_stripping_policy() -> None:
+    assert _normalize_source_section_num("12 § Soveltamisala") == "12"
+    assert _normalize_source_section_num("23 § a") == "23"
 
 
 def test_source_xml_label_policy_audit_surfaces_part_suffix_divergence() -> None:

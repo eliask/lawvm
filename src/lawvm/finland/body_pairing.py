@@ -51,7 +51,7 @@ from lawvm.core.clause_ast import (
 )
 from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import FacetKind, LabelAction, StructuralAction
-from lawvm.finland.helpers import _norm_num_token, _roman_label_to_arabic
+from lawvm.finland.helpers import _normalize_source_section_num, _norm_num_token, _roman_label_to_arabic
 from lawvm.finland.johtolause.surface_model import TargetKind
 from lawvm.finland.johtolause.types import ParsedOp
 from lawvm.finland.ops import AmendmentOp
@@ -148,8 +148,7 @@ def _num_text(el: etree._Element) -> Optional[str]:
 
 def _normalize_section_label(raw: str) -> str:
     """Normalize a raw section <num> text to a canonical label."""
-    cleaned = re.sub(r"\s*§.*$", "", raw).strip()
-    return _norm_num_token(cleaned)
+    return _normalize_source_section_num(raw)
 
 
 def _normalize_chapter_label(raw: str) -> str:

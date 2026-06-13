@@ -45,6 +45,7 @@ from lawvm.finland.ops import (
 )
 from lawvm.finland.helpers import (
     _norm_num_token,
+    _normalize_source_section_num,
     _roman_label_to_arabic,
     _is_omission_ir,
     _fi_label_postprocessor,
@@ -1323,7 +1324,7 @@ def _recover_uncovered_body_ops(
             if _norm_num_token(_raw).endswith("luku"):
                 _record_skip("malformed_chapter_marker", _norm_num_token(_raw), None)
                 continue
-            _ad_label = _norm_num_token(re.sub(r"\s*§.*$", "", _raw).strip())
+            _ad_label = _normalize_source_section_num(_raw)
             if not _ad_label:
                 continue
             _ad_ch_parent = _sec.getparent()

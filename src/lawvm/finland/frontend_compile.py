@@ -79,7 +79,7 @@ from lawvm.finland.metadata import (
 )
 from lawvm.finland.corpus import get_corpus
 from lawvm.finland.fallback_op_ids import mint_fallback_op_id
-from lawvm.finland.helpers import _norm_num_token, _roman_label_to_arabic
+from lawvm.finland.helpers import _normalize_source_section_num, _norm_num_token, _roman_label_to_arabic
 from lawvm.finland.frontend_observations import (
     _duplicate_frontend_target_observations,
     _destinationless_move_or_relabel_observations,
@@ -157,7 +157,7 @@ def _section_num_label(el: "etree._Element") -> str:
     num_el = el.find("{*}num")
     if num_el is None or not num_el.text:
         return ""
-    return _norm_num_token(re.sub(r"\s*§.*$", "", num_el.text).strip())
+    return _normalize_source_section_num(num_el.text)
 
 
 def _direct_subsection_num_label(el: "etree._Element") -> str | None:
@@ -685,7 +685,7 @@ def _body_chapter_scope_for_section_op(
         num_el = sec.find("{*}num")
         if num_el is None or not num_el.text:
             continue
-        sec_label = _norm_num_token(re.sub(r"\s*§.*$", "", num_el.text).strip())
+        sec_label = _normalize_source_section_num(num_el.text)
         if sec_label != section_label:
             continue
         if op.target_part:
@@ -757,7 +757,7 @@ def _source_body_has_flat_whole_section(
         num_el = sec.find("{*}num")
         if num_el is None or not num_el.text:
             continue
-        sec_label = _norm_num_token(re.sub(r"\s*§.*$", "", num_el.text).strip())
+        sec_label = _normalize_source_section_num(num_el.text)
         if sec_label != section_norm:
             continue
         if _part_label_for_source_element(sec) != target_part:
@@ -915,7 +915,7 @@ def _body_scope_for_section_label(
         num_el = sec.find("{*}num")
         if num_el is None or not num_el.text:
             continue
-        sec_norm = _norm_num_token(re.sub(r"\s*§.*$", "", num_el.text).strip())
+        sec_norm = _normalize_source_section_num(num_el.text)
         if sec_norm != target_norm:
             continue
         scopes.add((_part_label_for_element(sec), _chapter_label_for_element(sec)))
@@ -1389,7 +1389,7 @@ def _body_text_for_temporary_op(
         num_el = section.find("{*}num")
         if num_el is None or not num_el.text:
             continue
-        section_label = _norm_num_token(re.sub(r"\s*§.*$", "", num_el.text).strip())
+        section_label = _normalize_source_section_num(num_el.text)
         if section_label != target_label:
             continue
         content_nodes = section.findall(".//{*}content")

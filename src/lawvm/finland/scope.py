@@ -18,7 +18,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.finland.body_pairing import build_observed_body_inventory
-from lawvm.finland.helpers import _norm_num_token, _roman_label_to_arabic
+from lawvm.finland.helpers import _normalize_source_section_num, _norm_num_token, _roman_label_to_arabic
 from lawvm.finland.ops import (
     ScopeConfidence,
     _lo_path_dict,
@@ -157,7 +157,7 @@ def retarget_heading_insert_body_chapter_from_close_live_sibling(
         num_el = sec.find("{*}num")
         if num_el is None or not num_el.text:
             continue
-        sec_label = _norm_num_token(re.sub(r"\s*§.*$", "", num_el.text).strip())
+        sec_label = _normalize_source_section_num(num_el.text)
         if sec_label != section_norm:
             continue
         parent = sec.getparent()
@@ -175,7 +175,7 @@ def retarget_heading_insert_body_chapter_from_close_live_sibling(
             sibling_num = sibling.find("{*}num")
             if sibling_num is None or not sibling_num.text:
                 continue
-            sibling_label = _norm_num_token(re.sub(r"\s*§.*$", "", sibling_num.text).strip())
+            sibling_label = _normalize_source_section_num(sibling_num.text)
             if not re.fullmatch(r"\d+", sibling_label):
                 continue
             distance = abs(int(sibling_label) - target_num)
@@ -238,7 +238,7 @@ def retarget_duplicate_body_section_scope_from_close_live_siblings(
         num_el = sec.find("{*}num")
         if num_el is None or not num_el.text:
             continue
-        sec_label = _norm_num_token(re.sub(r"\s*§.*$", "", num_el.text).strip())
+        sec_label = _normalize_source_section_num(num_el.text)
         if sec_label != section_norm:
             continue
 
@@ -260,7 +260,7 @@ def retarget_duplicate_body_section_scope_from_close_live_siblings(
             sibling_num = sibling.find("{*}num")
             if sibling_num is None or not sibling_num.text:
                 continue
-            sibling_label = _norm_num_token(re.sub(r"\s*§.*$", "", sibling_num.text).strip())
+            sibling_label = _normalize_source_section_num(sibling_num.text)
             sibling_match = re.fullmatch(r"(\d+)[a-z]?", sibling_label, re.I)
             if sibling_match is None:
                 continue

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable
 
 import lxml.etree as etree
 
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.constraints import _find_muutos_node
-from lawvm.finland.helpers import _norm_num_token, _roman_label_to_arabic
+from lawvm.finland.helpers import _normalize_source_section_num, _norm_num_token, _roman_label_to_arabic
 from lawvm.finland.ops import AmendmentOp, projection_scope_confidence
 
 
@@ -123,7 +122,7 @@ def source_body_scope_for_section_target(
         num_el = sec.find("{*}num")
         if num_el is None or not num_el.text:
             continue
-        sec_label = _norm_num_token(re.sub(r"\s*§.*$", "", num_el.text).strip())
+        sec_label = _normalize_source_section_num(num_el.text)
         if sec_label != target_norm:
             continue
         scopes.add((_part_label_for_element(sec), _chapter_label_for_element(sec)))

@@ -49,6 +49,26 @@ def _norm_num_token(text: str) -> str:
     return token
 
 
+_SOURCE_SECTION_SIGN_SUFFIX_RE = re.compile(r"\s*§.*$")
+
+
+@functools.lru_cache(maxsize=8192)
+def _normalize_source_section_num(raw: str) -> str:
+    """Normalize a Finland source XML ``<section><num>`` label.
+
+    Most modern source nums are shaped like ``"6 §"`` or ``"6 § Heading"``;
+    those use the legacy policy of taking the text before the section sign.
+    Some older XMLs instead encode the sign first, e.g. ``"§ 1."``.  For that
+    source shape, stripping the suffix would erase the actual label, so fall
+    back to the ordinary token normalizer.
+    """
+    stripped = raw.strip()
+    if stripped.startswith("§"):
+        return _norm_num_token(stripped)
+    cleaned = _SOURCE_SECTION_SIGN_SUFFIX_RE.sub("", stripped).strip()
+    return _norm_num_token(cleaned or stripped)
+
+
 @functools.lru_cache(maxsize=8192)
 def _norm_row_anchor_text(text: str) -> str:
     """Normalize Finland table-row anchor text for replay matching."""

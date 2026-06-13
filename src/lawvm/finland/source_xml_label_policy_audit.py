@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Iterable
 
 import lxml.etree as etree
 
-from lawvm.finland.helpers import _fi_label_postprocessor, _norm_num_token, _roman_label_to_arabic
+from lawvm.finland.helpers import (
+    _fi_label_postprocessor,
+    _normalize_source_section_num,
+    _norm_num_token,
+    _roman_label_to_arabic,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,7 +133,7 @@ def _normalize_part_strip_osasto_osa(raw_num: str) -> str:
 
 
 def _normalize_section_strip_sign_suffix(raw_num: str) -> str:
-    return _norm_num_token(re.sub(r"\s*§.*$", "", raw_num).strip())
+    return _normalize_source_section_num(raw_num)
 
 
 def _fi_postprocessed(raw_num: str, kind: str) -> str:

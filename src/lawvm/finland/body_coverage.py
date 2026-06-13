@@ -19,7 +19,6 @@ pathologies.
 
 from __future__ import annotations
 
-import re
 from typing import List, Optional
 
 import lxml.etree as etree
@@ -33,7 +32,7 @@ from lawvm.core.coverage import (
     CoverageReport,
 )
 from lawvm.finland.ops import AmendmentOp
-from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.helpers import _normalize_source_section_num, _norm_num_token
 
 
 # ---------------------------------------------------------------------------
@@ -65,8 +64,7 @@ def _normalize_section_label(raw: str) -> str:
     Strips § suffix and surrounding whitespace so ``"6 §"`` → ``"6"``.
     Delegates to ``_norm_num_token`` for full normalization.
     """
-    cleaned = re.sub(r"\s*§.*$", "", raw).strip()
-    return _norm_num_token(cleaned)
+    return _normalize_source_section_num(raw)
 
 
 def _normalize_chapter_label(raw: str) -> str:
