@@ -160,17 +160,14 @@ def test_projector_row_shape_and_known_signals() -> None:
         assert row["statute_id"] == "1958/370"
         assert row["signal_type"] in ALL_SIGNAL_TYPES
 
-    # The proof case: the 1977/604 momentti-2 repeal of an absent momentti must
-    # surface as a target_absent signal even though cumulative replay swallows
-    # it from failed_ops.
-    target_absent = [r for r in rows if r["signal_type"] == "target_absent"]
-    assert any(
-        r["amendment_id"] == "1977/604" and "111" in r["description"]
-        for r in target_absent
-    ), "expected 1977/604 §111 momentti-not-found target_absent signal"
-
-    # And the upstream 1968/493 dropped-op coverage gap.
-    coverage = [r for r in rows if r["signal_type"] == "coverage_gap"]
-    assert any(
-        r["amendment_id"] == "1968/493" for r in coverage
-    ), "expected 1968/493 coverage gap signal"
+    # Regression guard: 1958/370 once exhibited the 1968/493 §111 dropped-op and
+    # the downstream 1977/604 §111 momentti-not-found (target_absent). Both were
+    # root-caused and fixed (the johtolause provenance-comma drop in
+    # annotate_statute_citations), so the projector must NOT report a 1977/604
+    # §111 target_absent here — its presence would mean the §111 fix regressed.
+    assert not any(
+        r["signal_type"] == "target_absent"
+        and r["amendment_id"] == "1977/604"
+        and "111" in r["description"]
+        for r in rows
+    ), "1977/604 §111 momentti-not-found must stay fixed (no target_absent)"
