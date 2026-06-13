@@ -62,6 +62,7 @@ from lawvm.finland.body_coverage_findings import (
     high_uncovered_body_degraded_finding as _high_uncovered_body_degraded_finding_impl,
 )
 from lawvm.finland.johto_scope_mentions import (
+    collect_johto_chapter_scope_mentions,
     collect_johto_mentioned_section_labels as _collect_johto_mentioned_section_labels_impl,
     collect_johto_mentioned_section_labels_frozenset as _collect_johto_mentioned_section_labels_frozenset_impl,
     expand_johto_section_label_range as _expand_johto_section_label_range_impl,
@@ -759,99 +760,16 @@ def _recover_uncovered_body_ops(
         # The character class [-\u2014\u2013\u2015] covers hyphen, em-dash,
         # en-dash, and horizontal bar (U+2015, used in Finlex XML ranges).
         johto_mentioned_labels.update(_collect_johto_mentioned_section_labels(johto_text))
-        # Extract newly-inserted chapter references: require "lisätään" or "uusi"
-        # as a mandatory prefix to distinguish new chapter insertions from
-        # existing chapter modifications.  Sections inside these chapters are
-        # automatically allowed because the chapter creation implies all its
-        # sections.
-        #
-        # Matches: "lisätään uusi 2 b luku", "lisätään 2 b luku", "uusi 2 b luku"
-        # Also matches range forms: "uusi 47―49 luku", "uusi 47-49 luku"
-        # Does NOT match: "5 luvun 3 §" (genitive), "muutetaan 5 luku" (modify)
-        _DASH_CHARS = r"[-\u2013\u2014\u2015]"  # hyphen, en-dash, em-dash, horizontal bar
-        for m in re.finditer(
-            r"(?:lisätään\s+(?:lakiin\s+)?|uusi\s+)"
-            r"(\d+\s*[a-z]?)"
-            r"(?:\s*" + _DASH_CHARS + r"\s*(\d+\s*[a-z]?))?"
-            r"\s+luku",
-            johto_text,
-            re.I,
-        ):
-            start_label = _norm_num_token(m.group(1)).removesuffix("luku")
-            end_label = _norm_num_token(m.group(2)).removesuffix("luku") if m.group(2) else None
-            if start_label and end_label and start_label.isdigit() and end_label.isdigit():
-                s_int, e_int = int(start_label), int(end_label)
-                if 0 < e_int - s_int < 100:
-                    for i in range(s_int, e_int + 1):
-                        johto_mentioned_new_chapters.add(str(i))
-            elif start_label:
-                johto_mentioned_new_chapters.add(start_label)
-        # Move clauses can also create chapter ownership for the destination
-        # chapter, even when the wording uses ``siirretään`` rather than
-        # ``lisätään``.  Without this, a moved section inside a relocated
-        # chapter can be mistaken for a family-base replacement and get
-        # reanchored into an older chapter that happens to share the label.
-        for m in re.finditer(
-            r"\bsiirretään\b[^§\n]{0,200}?(?:lakiin\s+)?(\d+\s*[a-z]?)\s+lukuun",
-            johto_text,
-            re.I,
-        ):
-            dest_chapter = _norm_num_token(m.group(1)).removesuffix("luku")
-            if dest_chapter:
-                owned_chapter_labels.add(dest_chapter)
-        for m in re.finditer(
-            r"(\d+\s*[a-z]?)\s*§[^§\n]{0,120}?\bsiirretään\b[^§\n]{0,200}?(?:lakiin\s+)?(\d+\s*[a-z]?)\s+lukuun",
-            johto_text,
-            re.I,
-        ):
-            source_label = _norm_num_token(m.group(1))
-            dest_chapter = _norm_num_token(m.group(2)).removesuffix("luku")
-            if source_label and dest_chapter:
-                moved_section_destinations[source_label] = dest_chapter
-        # Extract whole-chapter replacements: "muutetaan X luku" means all
-        # sections within chapter X are being replaced and should be allowed
-        # through the johto guard.
-        #
-        # Matches: "muutetaan 45 luku", "muutetaan ... 21, 25, 34 ja 38 luku"
-        # Also matches range forms: "muutetaan ... 47―49 luku"
-        # Does NOT match: "5 luvun 3 §" (genitive reference)
-        #
-        # Strategy: when the preamble contains "muutetaan", find all
-        # <number-list> luku patterns (nominative, not genitive "luvun")
-        # and collect chapters.  The chapter list may be far from the
-        # "muutetaan" verb due to intervening section references.
-        if re.search(r"\bmuutetaan\b", johto_text, re.I):
-            # Two-step approach to avoid catastrophic regex backtracking
-            # (the previous nested-quantifier pattern caused >2min hangs
-            # on statutes like 1982/182, 2011/415, etc.):
-            # Step 1: find every "luku" word boundary position.
-            # Step 2: scan the preceding text for chapter numbers.
-            _NUM_PAT = re.compile(
-                r"(\d+\s*(?:[a-z](?![a-z]))?)(?:\s*" + _DASH_CHARS + r"\s*(\d+\s*(?:[a-z](?![a-z]))?))?",
-                re.I,
-            )
-            for luku_m in re.finditer(r"\bluku\b", johto_text, re.I):
-                # Look at up to 200 chars before "luku" for number list
-                start = max(0, luku_m.start() - 200)
-                prefix = johto_text[start : luku_m.start()]
-                # Find all number tokens in the prefix; only keep those
-                # at the tail (not separated by §, luvun, or other structure)
-                # by scanning from the end.
-                for rm in _NUM_PAT.finditer(prefix):
-                    # Only accept numbers that are close to "luku" — reject
-                    # if there's a § or "luvun" between the number and "luku"
-                    between = prefix[rm.end() :]
-                    if re.search(r"§|luvun", between, re.I):
-                        continue
-                    start_ch = _norm_num_token(rm.group(1)).removesuffix("luku")
-                    end_ch = _norm_num_token(rm.group(2)).removesuffix("luku") if rm.group(2) else None
-                    if start_ch and end_ch and start_ch.isdigit() and end_ch.isdigit():
-                        s_int, e_int = int(start_ch), int(end_ch)
-                        if 0 < e_int - s_int < 100:
-                            for i in range(s_int, e_int + 1):
-                                johto_mentioned_replaced_chapters.add(str(i))
-                    elif start_ch:
-                        johto_mentioned_replaced_chapters.add(start_ch)
+        chapter_mentions = collect_johto_chapter_scope_mentions(johto_text)
+        johto_mentioned_new_chapters.update(chapter_mentions.new_chapter_labels)
+        owned_chapter_labels.update(chapter_mentions.moved_destination_chapter_labels)
+        johto_mentioned_replaced_chapters.update(chapter_mentions.replaced_chapter_labels)
+        moved_section_destinations.update(
+            {
+                moved.section_label: moved.destination_chapter_label
+                for moved in chapter_mentions.moved_section_destinations
+            }
+        )
     owned_chapter_labels.update(johto_mentioned_new_chapters)
 
     def _label_allowed_by_johto(label: str, chapter: Optional[str] = None) -> bool:
