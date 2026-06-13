@@ -180,6 +180,65 @@ def uk_schedule_ordinal_paragraph_matches(
     return ordinal_matches
 
 
+_UK_SCHEDULE_PARTITION_TRANSPARENT_KINDS = frozenset({"part", "crossheading"})
+
+
+def uk_schedule_partition_transparent_matches(
+    curr_cands: list[UKCanonicalNodeMatch],
+    *,
+    p_kind: Optional[str],
+    p_label: Optional[str],
+    match_kind_label,
+) -> list[UKCanonicalNodeMatch]:
+    """Match a schedule ``paragraph`` step through ``Part``/``crossheading`` wrappers.
+
+    UK schedules frequently nest their paragraphs under ``Part`` partitions which
+    in turn wrap unlabelled ``crossheading`` nodes (``schedule:N -> Part -> cross-
+    heading -> paragraph:M``).  Amendment target addresses name only
+    ``schedule:N/paragraph:M`` with no ``part``/``crossheading`` step, so the
+    direct-child match fails.
+
+    This helper makes those partition wrappers *structurally transparent* for the
+    paragraph step: it descends through ``Part``/``crossheading`` nodes only and
+    collects nodes that match ``p_kind``/``p_label`` directly beneath them (or
+    directly under the schedule root).  Unlike a fully recursive descent it never
+    dives into non-partition nodes (e.g. a nested ``schedule`` or the paragraphs'
+    own children), so it cannot pick up a same-labelled paragraph buried in an
+    unrelated subtree — keeping the resolution unambiguous and clean.
+
+    The returned matches carry the *real* parent/index of the paragraph (its
+    enclosing ``crossheading``/``Part``/schedule), so apply/insert positioning is
+    unaffected.  Only paragraph-kind steps are eligible; any other step kind
+    returns no matches so the caller falls back to its existing behaviour.
+    """
+    if p_kind is None or str(p_kind).lower() not in {"paragraph", "p1"} or not p_label:
+        return []
+
+    matches: list[UKCanonicalNodeMatch] = []
+
+    def _descend(node: IRNode) -> None:
+        for i, child in enumerate(node.children):
+            child_kind = str(child.kind or "").lower()
+            if match_kind_label(child, p_kind, p_label):
+                matches.append(UKCanonicalNodeMatch(child, node, i))
+                # Stop once ambiguity is certain; the caller only needs 0/1/≥2.
+                if len(matches) >= 2:
+                    return
+                continue
+            if child_kind in _UK_SCHEDULE_PARTITION_TRANSPARENT_KINDS:
+                _descend(child)
+                if len(matches) >= 2:
+                    return
+
+    for curr_node, _, _ in curr_cands:
+        if curr_node is None:
+            continue
+        _descend(curr_node)
+        if len(matches) >= 2:
+            break
+    return matches
+
+
 def uk_compound_subsection_candidate(
     curr_node: IRNode,
     label: str,

@@ -25,6 +25,7 @@ from lawvm.uk_legislation.canonicalize import (
     uk_recursive_kind_match,
     uk_recursive_kind_match_all,
     uk_schedule_ordinal_paragraph_matches,
+    uk_schedule_partition_transparent_matches,
     uk_schedule_root_candidates,
 )
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
@@ -49,6 +50,9 @@ _UK_REPLAY_SCHEDULE_ITEM_TARGET_FROM_PARENT_SUBSTITUTION_RULE_ID = (
 )
 _UK_REPLAY_SCHEDULE_P1GROUP_PARAGRAPH_WRAPPER_RESOLVED_RULE_ID = (
     "uk_replay_schedule_p1group_paragraph_wrapper_resolved"
+)
+UK_REPLAY_SCHEDULE_PARTITION_TRANSPARENT_PARAGRAPH_RESOLVED_RULE_ID = (
+    "uk_replay_schedule_partition_transparent_paragraph_resolved"
 )
 UK_REPLAY_TARGET_RESOLVED_BY_RECURSIVE_DESCENT_RULE_ID = (
     "uk_replay_target_resolved_by_recursive_descent"
@@ -316,6 +320,80 @@ class UKReplayTargetLookupMixin:
                             next_cands.append(compound)
                 if not next_cands:
                     if container == "schedule":
+                        partition_matches = uk_schedule_partition_transparent_matches(
+                            curr_cands,
+                            p_kind=p_kind,
+                            p_label=p_label,
+                            match_kind_label=uk_match_kind_label,
+                        )
+                        if len(partition_matches) == 1:
+                            resolved_node, resolved_parent, _resolved_idx = partition_matches[0]
+                            if (
+                                target_resolution_op is not None
+                                and resolved_node is not None
+                            ):
+                                _append_uk_replay_adjudication(
+                                    self.adjudications_out,
+                                    kind=UK_REPLAY_SCHEDULE_PARTITION_TRANSPARENT_PARAGRAPH_RESOLVED_RULE_ID,
+                                    message=(
+                                        "UK replay resolved an explicit schedule paragraph "
+                                        "target by descending transparently through Part/"
+                                        "crossheading partition wrappers to the single "
+                                        "matching paragraph."
+                                    ),
+                                    op=target_resolution_op,
+                                    detail=uk_replay_action_target_detail(
+                                        target_resolution_op,
+                                        target,
+                                        blocking=False,
+                                        paragraph_label=str(p_label),
+                                        wrapper_kind=_uk_kind_value(resolved_parent.kind)
+                                        if resolved_parent is not None
+                                        else "",
+                                        family="target_resolution_recovery",
+                                        quirks_disposition="apply",
+                                        target_resolution=TargetResolutionCertificate(
+                                            rule_id=(
+                                                UK_REPLAY_SCHEDULE_PARTITION_TRANSPARENT_PARAGRAPH_RESOLVED_RULE_ID
+                                            ),
+                                            phase="replay",
+                                            reason=(
+                                                "explicit_schedule_paragraph_resolved_through_partition_wrappers"
+                                            ),
+                                            status=TARGET_RECOVERED,
+                                            source_target=str(target),
+                                            candidate_count=1,
+                                            candidates=(
+                                                TargetResolutionCandidate(
+                                                    target=str(target),
+                                                    reason="schedule_partition_transparent_single_paragraph",
+                                                    detail={
+                                                        "paragraph_label": str(p_label),
+                                                        "wrapper_kind": (
+                                                            _uk_kind_value(resolved_parent.kind)
+                                                            if resolved_parent is not None
+                                                            else ""
+                                                        ),
+                                                    },
+                                                ),
+                                            ),
+                                            selected_target=str(target),
+                                            scope_confidence=(
+                                                SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT
+                                            ),
+                                            blocking=False,
+                                            strict_disposition="record",
+                                            quirks_disposition="apply",
+                                            detail={
+                                                "action": _action_name(target_resolution_op.action),
+                                                "op_id": target_resolution_op.op_id,
+                                                "recovery_family": "target_resolution_recovery",
+                                            },
+                                        ).to_diagnostic_detail(),
+                                    ),
+                                )
+                            next_cands = partition_matches
+                    if not next_cands and container == "schedule":
                         ordinal_matches = uk_schedule_ordinal_paragraph_matches(
                             curr_cands,
                             p_kind=p_kind,
