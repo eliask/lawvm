@@ -631,6 +631,21 @@ CURATED_CASES = [
         "features": {"verb_kumota", "section_ref", "provenance_skip"},
     },
     {
+        # Provenance appositive whose only separator to the next target is a
+        # bare comma ("110 § sellaisena kuin se on ... laissa (250/66), 111 §").
+        # The citation span must not absorb that comma, or the following targets
+        # (111 §, 119 §, ...) silently drop. Mirrors 1968/493 amending 1958/370.
+        "name": "provenance_skip trailing comma preserves following targets",
+        "text": (
+            "muutetaan 110 § sellaisena kuin se on 29 päivänä huhtikuuta 1966 "
+            "annetussa laissa (250/66), 111 §, 119 §, 140 §:n 1 momentti, "
+            "sellaisena kuin se on 29 päivänä huhtikuuta 1966 annetussa laissa "
+            "(250/66), 141 §:n 1 momentti, seuraavasti:"
+        ),
+        "expected": ["M P 110", "M P 111", "M P 119", "M P 140 1", "M P 141 1"],
+        "features": {"verb_muuttaa", "section_ref", "provenance_skip"},
+    },
+    {
         "name": "statute_name_filter compact citation",
         "text": "muutetaan omaishoidon tuesta annetun lain (937/2005) 5 §",
         "expected": ["M P 5"],

@@ -304,6 +304,35 @@ def extract_target_version_bindings(tokens: list[Token]) -> tuple["SurfaceTarget
     return tuple(results)
 
 
+def _trailing_comma_precedes_structural_target(tokens: list[Token], comma_idx: int, n: int) -> bool:
+    """Return True when the comma at *comma_idx* is followed by a structural target.
+
+    A structural target is a ``NUM`` run (optionally with ``LETTER``/``DASH``/
+    ``COMMA``/``CONJ`` connectors) that resolves to a ``PYKALA``/``LUKU``/
+    ``LIITE``/``NIMIKE`` unit token.  Used to decide whether a provenance
+    appositive's trailing comma is the sole separator to the next target in the
+    list (in which case it must be preserved, not absorbed into the citation).
+    """
+    k = comma_idx + 1
+    # Skip a following conjunction ("..., ja N §"): the conjunction is itself a
+    # separator, so the comma is redundant and safe to absorb.
+    if k < n and tokens[k].cat == "CONJ":
+        return False
+    if k >= n or tokens[k].cat != "NUM":
+        return False
+    # Bounded forward scan over the NUM run to its unit token.
+    limit = min(k + 6, n)
+    while k < limit:
+        cat = tokens[k].cat
+        if cat in ("PYKALA", "LUKU", "LIITE", "NIMIKE"):
+            return True
+        if cat in ("NUM", "LETTER", "DASH", "COMMA", "CONJ"):
+            k += 1
+            continue
+        break
+    return False
+
+
 def annotate_statute_citations(tokens: list[Token]) -> list[Annotation]:
     """Produce citation annotations — annotation equivalent of strip_statute_citations.
 
@@ -364,9 +393,22 @@ def annotate_statute_citations(tokens: list[Token]) -> list[Annotation]:
         while name_start < cite_start and tokens[name_start].cat in ("CONJ", "COMMA"):
             name_start += 1
 
-        # Consume trailing comma
+        # Consume trailing comma — but NOT when this is a provenance appositive
+        # ("X §[:n N momentti] sellaisena kuin se on ... laissa (NNN/YY), Y §")
+        # whose trailing comma is the ONLY separator to the next structural
+        # target.  Absorbing it would leave the CITATION_SPAN sentinel directly
+        # adjacent to the following NUM, and the target-list separator scan
+        # would stop, silently dropping every later target (Y §, Z §, ...).
+        # A later conjunction (", ja Y §") keeps a real separator, so trailing
+        # comma absorption there stays harmless and is preserved as before.
         if cite_end < n and tokens[cite_end].cat == "COMMA":
-            cite_end += 1
+            span_is_provenance = name_start < n and tokens[name_start].cat == "PROV"
+            comma_is_sole_separator_to_target = (
+                span_is_provenance
+                and _trailing_comma_precedes_structural_target(tokens, cite_end, n)
+            )
+            if not comma_is_sole_separator_to_target:
+                cite_end += 1
 
         if name_start < cite_end:
             annotations.append(
