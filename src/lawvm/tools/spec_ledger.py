@@ -244,6 +244,8 @@ _FI_RULE_SPECS: Dict[str, str] = {
     "fi.insertion_sub_target": "An insertion's sub-target (momentti/kohta) lands inside its parent section.",
     "fi.jolloin_renumber": "A 'jolloin ... siirtyy' clause renumbers the displaced sections.",
     "fi_body_chapter_scope_from_source_body": "A body-scoped section inherits chapter scope from the amendment body container.",
+    "fi.recovery.uncovered_body": "Uncovered-body recovery synthesizes a section INSERT/REPLACE from unclaimed amendment body XML.",
+    "fi.recovery.uncovered_kumotaan": "Uncovered kumotaan recovery applies a repeal named in operative text but not emitted as a parsed structural op.",
 }
 
 
