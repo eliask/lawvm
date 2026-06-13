@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, TypeAlias, cast
 
+from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.ops import AmendmentOp
 
@@ -107,3 +108,74 @@ def build_standalone_section_targets(
                 )
             )
     return frozenset(standalone_targets)
+
+
+def group_shadow_pruning_section_targets(
+    ops: list[AmendmentOp],
+    *,
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+    target_part: str | None,
+    duplicate_section_labels: frozenset[str],
+) -> set[str]:
+    """Return standalone section labels that may shadow a container payload."""
+    if target_unit_kind not in {"chapter", "part"}:
+        return set()
+
+    out: set[str] = set()
+    for op in ops:
+        section_label = _norm_num_token(op.target_section or "")
+        if op.target_unit_kind != "section" or not section_label:
+            continue
+        if section_label in duplicate_section_labels:
+            continue
+        if op.target_part == target_part and op.target_chapter == target_norm:
+            continue
+        out.add(section_label)
+    return out
+
+
+def group_shadow_pruning_foreign_scoped_section_targets(
+    ops: list[AmendmentOp],
+    *,
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+    target_part: str | None,
+    duplicate_section_labels: frozenset[str],
+) -> set[str]:
+    """Return shadowable section labels with explicit foreign container scope.
+
+    This narrows container payload pruning for live heading-only container
+    replaces: only prune carried "new" sections when the same amendment also
+    owns the section as a standalone target in another explicit scope.
+    """
+    if target_unit_kind not in {"chapter", "part"}:
+        return set()
+
+    out: set[str] = set()
+    for op in ops:
+        section_label = _norm_num_token(op.target_section or "")
+        if op.target_unit_kind != "section" or not section_label:
+            continue
+        # Only INSERT ops can shadow carry-forward content; REPLACE ops act on
+        # already-existing sections and must not suppress container payload.
+        if op.op_type != "INSERT":
+            continue
+        # Carry-forward INSERTs have inferred/stale chapter scope; they should
+        # not shadow container payload since their chapter attribution is
+        # unreliable.
+        if (
+            op.scope_confidence is not None
+            and op.scope_confidence.source == "carry_forward"
+        ):
+            continue
+        if section_label in duplicate_section_labels:
+            continue
+        if op.target_part == target_part and op.target_chapter == target_norm:
+            continue
+        if op.target_chapter is None and target_unit_kind == "chapter":
+            continue
+        if op.target_part is None and target_unit_kind == "part":
+            continue
+        out.add(section_label)
+    return out
