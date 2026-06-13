@@ -126,7 +126,7 @@ def _consolidate_kumottu_range(ir: IRNode) -> IRNode:
         base_attr: str,
         candidate: IRNode,
     ) -> bool:
-        if candidate.kind != 'section' or not candidate.label:
+        if candidate.kind != IRNodeKind.SECTION or not candidate.label:
             return False
         cand_attr = _section_placeholder_attr(candidate)
         if cand_attr != base_attr:
@@ -179,7 +179,7 @@ def _consolidate_kumottu_range(ir: IRNode) -> IRNode:
         i = 0
         while i < len(children):
             child = children[i]
-            if child.kind != 'section' or not child.label:
+            if child.kind != IRNodeKind.SECTION or not child.label:
                 _flush_run()
                 merged.append(child)
                 i += 1
@@ -219,7 +219,7 @@ def _consolidate_kumottu_range(ir: IRNode) -> IRNode:
             attrs=node.attrs,
             children=tuple(rewritten_children),
         )
-        if node.kind in ('body', 'chapter'):
+        if node.kind in (IRNodeKind.BODY, IRNodeKind.CHAPTER):
             merged_children = _merge_repealed_sections(list(node.children))
             if merged_children != list(node.children):
                 return IRNode(
@@ -230,11 +230,11 @@ def _consolidate_kumottu_range(ir: IRNode) -> IRNode:
                     children=tuple(merged_children),
                 )
             return node
-        if node.kind != 'section':
+        if node.kind != IRNodeKind.SECTION:
             return node
 
-        subs = [c for c in node.children if c.kind == 'subsection']
-        non_subs = [c for c in node.children if c.kind != 'subsection']
+        subs = [c for c in node.children if c.kind == IRNodeKind.SUBSECTION]
+        non_subs = [c for c in node.children if c.kind != IRNodeKind.SUBSECTION]
         if len(subs) < 2:
             return node
 
@@ -265,7 +265,13 @@ def _consolidate_kumottu_range(ir: IRNode) -> IRNode:
             )
 
         for sub in subs:
-            p_nodes = [c for gc in sub.children if gc.kind == 'content' for c in gc.children if c.kind == 'p']
+            p_nodes = [
+                c
+                for gc in sub.children
+                if gc.kind == IRNodeKind.CONTENT
+                for c in gc.children
+                if c.kind == IRNodeKind.P
+            ]
             if len(p_nodes) == 1 and p_nodes[0].text:
                 m = _KUMOTTU_PLACEHOLDER_RE.match(p_nodes[0].text)
                 if m:

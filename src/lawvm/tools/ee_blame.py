@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 from dataclasses import replace
 
 from lawvm.core.ir import IRNode, LegalOperation, OperationSource
+from lawvm.core.semantic_types import IRNodeKind
 
 
 # ---------------------------------------------------------------------------
@@ -35,7 +36,7 @@ def _walk_provisions(node: IRNode, path: AddressPath = ()) -> List[tuple[Address
     """Walk the IRNode tree, yielding (address_tuple, node) for leaf provisions."""
     results = []
     current_path = path + ((str(node.kind), str(node.label or "")),) if node.label else path
-    if node.kind in ("section", "subsection", "item") and node.label:
+    if node.kind in (IRNodeKind.SECTION, IRNodeKind.SUBSECTION, IRNodeKind.ITEM) and node.label:
         results.append((current_path, node))
     for child in node.children:
         results.extend(_walk_provisions(child, current_path))
@@ -174,7 +175,7 @@ def run_ee_blame(
     blamed = []
 
     for path, node in provisions:
-        if node.kind != "section":
+        if node.kind != IRNodeKind.SECTION:
             continue  # blame at section level only for readability
         addr_display = _addr_str(path)
         key_short = _addr_key(path)
