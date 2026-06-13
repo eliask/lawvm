@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Optional, cast
 
 from lawvm.core import tree_ops as _tops
+from lawvm.core.invariant_profiles import TreeInvariantProfile
+from lawvm.core.invariant_profiles import collect_tree_invariant_dicts
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import build_text_duplication_findings
-from lawvm.core.tree_ops import iter_tree_invariant_violations
-from lawvm.core.tree_ops import TreeInvariantKind
 from lawvm.finland.replay_findings import (
     _emit_structural_dedup_warning,
     _replay_product_invariant_finding,
@@ -17,10 +17,13 @@ from lawvm.finland.replay_findings import (
 from lawvm.finland.replay_products import ReplayProducts, validate_replay_products
 from lawvm.finland.statute import StatuteContext
 
-_PRODUCT_TREE_INVARIANT_FAMILIES: tuple[TreeInvariantKind, ...] = (
-    "duplicate_label",
-    "unexpected_child_kind",
-    "mixed_hierarchy_child",
+_FI_REPLAY_FOLD_PRODUCT_TREE_PROFILE = TreeInvariantProfile(
+    surface="replay_fold_tree",
+    families=("duplicate_label", "unexpected_child_kind", "mixed_hierarchy_child"),
+)
+_FI_MATERIALIZED_PRODUCT_TREE_PROFILE = TreeInvariantProfile(
+    surface="materialized_tree",
+    families=("duplicate_label", "unexpected_child_kind", "mixed_hierarchy_child"),
 )
 
 
@@ -42,20 +45,18 @@ def project_replay_products(request: ReplayProductProjectionRequest) -> ReplayPr
     """Validate replay products, dedup materialized IR, and project diagnostics."""
     products = request.products
     typed_product_tree_violations = {
-        "replay_fold_tree": [
-            violation.to_dict()
-            for violation in iter_tree_invariant_violations(
+        "replay_fold_tree": list(
+            collect_tree_invariant_dicts(
                 products.replay_fold_state.ir,
-                families=_PRODUCT_TREE_INVARIANT_FAMILIES,
+                _FI_REPLAY_FOLD_PRODUCT_TREE_PROFILE,
             )
-        ],
-        "materialized_tree": [
-            violation.to_dict()
-            for violation in iter_tree_invariant_violations(
+        ),
+        "materialized_tree": list(
+            collect_tree_invariant_dicts(
                 products.materialized_state.ir,
-                families=_PRODUCT_TREE_INVARIANT_FAMILIES,
+                _FI_MATERIALIZED_PRODUCT_TREE_PROFILE,
             )
-        ],
+        ),
     }
     product_violations = validate_replay_products(
         request.ctx,

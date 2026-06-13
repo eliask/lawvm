@@ -11,6 +11,8 @@ from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.ir import LegalOperation
 from lawvm.core.ir import ProvisionTimeline
 from lawvm.core.ir import ProvisionVersion
+from lawvm.core.invariant_profiles import TreeInvariantProfile
+from lawvm.core.invariant_profiles import collect_tree_invariant_messages
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.temporal import FIXED_DATE_KIND, ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.timeline_lineage import (
@@ -28,7 +30,6 @@ from lawvm.core.timeline_addresses import _retarget_version_content
 from lawvm.core.tree_ops import (
     check_invariants,
     default_label_sort_key,
-    iter_tree_invariant_violations,
     resort_children as _resort_children,
 )
 from lawvm.replay_adjudication import SourceAdjudication
@@ -50,6 +51,14 @@ _FI_LINEAGE_REASON_SCOPE_CHANGING_FALLBACK = "scope_changing_migration_fallback"
 _FI_SOURCELESS_BASE_MERGE_CLEANUP_RULE = "fi_sourceless_base_merge_cleanup_v1"
 _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR = (
     "lawvm_materialize_as_absent_under_detached_horizon"
+)
+_FI_REPLAY_FOLD_MIXED_HIERARCHY_PROFILE = TreeInvariantProfile(
+    surface="replay_fold_tree",
+    families=("mixed_hierarchy_child",),
+)
+_FI_MATERIALIZED_MIXED_HIERARCHY_PROFILE = TreeInvariantProfile(
+    surface="materialized_tree",
+    families=("mixed_hierarchy_child",),
 )
 
 
@@ -765,16 +774,18 @@ def validate_replay_products(
         violations.append(f"replay_fold_tree:{violation}")
     for violation in check_invariants(products.materialized_state.ir):
         violations.append(f"materialized_tree:{violation}")
-    for violation in iter_tree_invariant_violations(
-        products.replay_fold_state.ir,
-        families={"mixed_hierarchy_child"},
-    ):
-        violations.append(f"replay_fold_tree:{violation.message}")
-    for violation in iter_tree_invariant_violations(
+    violations.extend(
+        collect_tree_invariant_messages(
+            products.replay_fold_state.ir,
+            _FI_REPLAY_FOLD_MIXED_HIERARCHY_PROFILE,
+        )
+    )
+    violations.extend(
+        collect_tree_invariant_messages(
         products.materialized_state.ir,
-        families={"mixed_hierarchy_child"},
-    ):
-        violations.append(f"materialized_tree:{violation.message}")
+            _FI_MATERIALIZED_MIXED_HIERARCHY_PROFILE,
+        )
+    )
 
     # Check for temporary_unresolved versions — these represent VÄLIAIKAINEN
     # amendments with no parseable expiry date and are a product-level degradation

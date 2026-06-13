@@ -5,6 +5,9 @@ from typing import Any, cast
 import pytest
 
 from lawvm.core.frozen_values import FrozenDict
+from lawvm.core.invariant_profiles import TreeInvariantProfile
+from lawvm.core.invariant_profiles import collect_tree_invariant_dicts
+from lawvm.core.invariant_profiles import collect_tree_invariant_messages
 from lawvm.core.invariant_detectors import InvariantDetectorResult
 from lawvm.core.invariant_detectors import SUPPORTED_INVARIANT_DETECTORS
 from lawvm.core.invariant_detectors import run_descendant_sibling_loss_detector
@@ -16,6 +19,29 @@ from lawvm.core.provenance import OperationSource
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.tools.cli import _INVARIANT_DETECTOR_CHOICES
 from lawvm.tools.invariant_bisect import _run_fi_invariant_detector_messages
+
+
+def test_tree_invariant_profile_projects_surface_messages_and_typed_rows() -> None:
+    tree = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="15",
+                children=(IRNode(kind=IRNodeKind.SECTION, label="148"),),
+            ),
+            IRNode(kind=IRNodeKind.SECTION, label="149"),
+        ),
+    )
+    profile = TreeInvariantProfile(
+        surface="materialized_tree",
+        families=("mixed_hierarchy_child",),
+    )
+
+    assert collect_tree_invariant_messages(tree, profile) == (
+        "materialized_tree:body: direct section:149 alongside chapter:15",
+    )
+    assert collect_tree_invariant_dicts(tree, profile)[0]["kind"] == "mixed_hierarchy_child"
 
 
 def test_run_invariant_detector_returns_typed_tree_results_with_legacy_messages() -> None:
