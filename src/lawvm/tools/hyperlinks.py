@@ -11,8 +11,8 @@ corrupt them. The gate is ``should_hyperlink()``; callers must consult it and
 only wrap when it returns True. When off, the plain ref token is emitted
 unchanged (byte-identical to the pre-feature output).
 
-Verified URL templates (resolve 2026-06-09; the old /FI/vaski/*.aspx is dead):
-  - HE (valtiopaivaasia):        https://www.eduskunta.fi/valtiopaivaasiat/HE+{n}/{year}
+Verified URL templates (HE re-resolved 2026-06-13; the old /FI/vaski/*.aspx is dead):
+  - HE (valtiopaivaasia):        https://www.eduskunta.fi/asiat-ja-aanestykset/valtiopaivaasiat/HE%20{n}%2F{year}%20vp
   - committee report / opinion:  https://www.eduskunta.fi/valtiopaivaasiakirjat/{TYPE}+{n}/{year}
   - EV (parliament response):    https://www.eduskunta.fi/valtiopaivaasiakirjat/EV+{n}/{year}
   - statute L {year}/{n}:        https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma/{year}/{n}
@@ -31,7 +31,13 @@ import re
 _OSC = "\033]8;;"
 _ST = "\033\\"
 
-_EDUSKUNTA_ASIA = "https://www.eduskunta.fi/valtiopaivaasiat"
+# HE: the old /valtiopaivaasiat/HE+{n}/{year} now 301-redirects to this
+# /asiat-ja-aanestykset/ path with the human "HE {n}/{year} vp" token URL-encoded
+# (HE -> "HE%20{n}%2F{year}%20vp"). Point straight at the redirect target.
+_EDUSKUNTA_ASIA = "https://www.eduskunta.fi/asiat-ja-aanestykset/valtiopaivaasiat"
+# Committee reports / EV: the old /valtiopaivaasiakirjat/{TYPE}+{n}/{year} still
+# resolves but redirects to an opaque edktunnus (EDK-YYYY-AK-NNNN) id we cannot
+# construct, so it stays the canonical constructible form for these.
 _EDUSKUNTA_ASIAKIRJA = "https://www.eduskunta.fi/valtiopaivaasiakirjat"
 _FINLEX_SAADOS = "https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma"
 # Consolidated ("ajantasainen") version of a statute, keyed by bare YEAR/NUMBER
@@ -104,7 +110,7 @@ def ref_url(kind: str, n: int | str, year: int | str, type_prefix: str | None = 
     if not (n_s.isdigit() and year_s.isdigit()):
         return None
     if kind == "he":
-        return f"{_EDUSKUNTA_ASIA}/HE+{n_s}/{year_s}"
+        return f"{_EDUSKUNTA_ASIA}/HE%20{n_s}%2F{year_s}%20vp"
     if kind == "parliament_response":
         return f"{_EDUSKUNTA_ASIAKIRJA}/EV+{n_s}/{year_s}"
     if kind == "committee_report":

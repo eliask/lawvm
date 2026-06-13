@@ -47,7 +47,7 @@ def test_hyperlink_exact_osc8_bytes() -> None:
 
 
 def test_ref_url_he() -> None:
-    assert hyperlinks.ref_url("he", 188, 2025) == "https://www.eduskunta.fi/valtiopaivaasiat/HE+188/2025"
+    assert hyperlinks.ref_url("he", 188, 2025) == "https://www.eduskunta.fi/asiat-ja-aanestykset/valtiopaivaasiat/HE%20188%2F2025%20vp"
 
 
 def test_ref_url_committee_report() -> None:
@@ -119,7 +119,7 @@ def test_should_hyperlink_auto_dumb_term_off(monkeypatch) -> None:
 def test_he_url_from_canonical() -> None:
     assert (
         hyperlinks.he_url_from_canonical("he/2025/188")
-        == "https://www.eduskunta.fi/valtiopaivaasiat/HE+188/2025"
+        == "https://www.eduskunta.fi/asiat-ja-aanestykset/valtiopaivaasiat/HE%20188%2F2025%20vp"
     )
     assert hyperlinks.he_url_from_canonical("not-an-he") is None
     assert hyperlinks.he_url_from_canonical(None) is None
@@ -229,7 +229,7 @@ def test_statute_human_on_has_escapes_for_all_ref_kinds() -> None:
     assert "https://www.finlex.fi/fi/lainsaadanto/2011/805" in on
     # statute, HE, committee, EV all linked
     assert "https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma/2026/269" in on
-    assert "https://www.eduskunta.fi/valtiopaivaasiat/HE+188/2025" in on
+    assert "https://www.eduskunta.fi/asiat-ja-aanestykset/valtiopaivaasiat/HE%20188%2F2025%20vp" in on
     assert "https://www.eduskunta.fi/valtiopaivaasiakirjat/LaVM+3/2026" in on
     assert "https://www.eduskunta.fi/valtiopaivaasiakirjat/EV+23/2026" in on
 
@@ -285,7 +285,7 @@ def test_section_human_on_links_refs() -> None:
     # header statute id -> consolidated (ajantasa) version
     assert "https://www.finlex.fi/fi/lainsaadanto/2011/805" in on
     assert "https://www.finlex.fi/fi/lainsaadanto/saadoskokoelma/2026/269" in on
-    assert "https://www.eduskunta.fi/valtiopaivaasiat/HE+188/2025" in on
+    assert "https://www.eduskunta.fi/asiat-ja-aanestykset/valtiopaivaasiat/HE%20188%2F2025%20vp" in on
     assert "https://www.eduskunta.fi/valtiopaivaasiakirjat/LaVM+3/2026" in on
     assert "https://www.eduskunta.fi/valtiopaivaasiakirjat/EV+23/2026" in on
 
