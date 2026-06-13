@@ -65,7 +65,7 @@ with sync_playwright() as p:
 
     # Document rendered with sections as rows, momentti as prose blocks
     n_sections = page.locator("#doc .node.kind-section").count()
-    n_moms = page.locator("#doc .pblock.mom").count()
+    n_moms = page.locator("#doc .pblock.kind-subsection").count()
     check("sections rendered", n_sections > 150, f"{n_sections} sections")
     check("momentti prose blocks", n_moms > 300, f"{n_moms} blocks")
 
@@ -164,35 +164,109 @@ with sync_playwright() as p:
           f"sample: {some_badge[:5]}")
 
     # Muutokset mode: localized per-provision changes
-    page.click(".mode-btn[data-mode='muutokset']")
+    page.click(".mode-btn[data-mode='amendments']")
     page.wait_for_selector(".amend-list", timeout=10000)
     page.locator(".amend-item").nth(5).click()
     page.wait_for_timeout(400)
     n_opch = page.locator(".op-change").count()
-    check("muutokset localized changes", n_opch >= 1, f"{n_opch} localized entries")
+    check("amendments localized changes", n_opch >= 1, f"{n_opch} localized entries")
 
     # Diachronic search: deep-localized hits with highlighted snippets
-    page.click(".mode-btn[data-mode='haku']")
-    page.fill("#haku-input", "biometri")
-    page.click("#haku-form button")
+    page.click(".mode-btn[data-mode='search']")
+    page.fill("#search-input", "biometri")
+    page.click("#search-form button")
     page.wait_for_timeout(2500)
-    hits = page.locator(".haku-hit").count()
+    hits = page.locator(".search-hit").count()
     check("diachronic search hits", hits >= 1, f"{hits} hits")
     deep = page.evaluate(
-        "[...document.querySelectorAll('.haku-hit-head a')].filter(a => (a.dataset.addr || '').includes('section:')).length")
+        "[...document.querySelectorAll('.search-hit-head a')].filter(a => (a.dataset.addr || '').includes('section:')).length")
     check("search hits pinpoint deep addresses", deep >= 1, f"{deep} section-or-deeper of {hits}")
-    n_marks = page.locator(".haku-snippet mark").count()
+    n_marks = page.locator(".search-snippet mark").count()
     check("search snippets highlight phrase", n_marks >= 1, f"{n_marks} marks")
 
+    # Clicking a hit lands in the reading view and paints the phrase in the main
+    # pane via the CSS Custom Highlight API (the Google "jump to highlight"
+    # analogue). Verify the highlight registry holds live ranges + q-permalink.
+    page.locator(".search-hit-head a.search-goto").first.click()
+    page.wait_for_timeout(900)
+    hl_ranges = page.evaluate(
+        "(() => { const h = CSS.highlights && CSS.highlights.get('lawvm-search');"
+        " return h ? h.size : 0; })()")
+    check("search click highlights phrase in main pane", hl_ranges >= 1, f"{hl_ranges} ranges")
+    check("highlight carries q permalink param", "q=" in page.url, page.url.split("#")[-1][:80])
+    # Manual provision pick clears the search highlight.
+    other = page.locator("#doc .hist-btn").first
+    other.scroll_into_view_if_needed()
+    other.click()
+    page.wait_for_timeout(300)
+    cleared = page.evaluate(
+        "(() => { const h = CSS.highlights && CSS.highlights.get('lawvm-search');"
+        " return !h || h.size === 0; })()")
+    check("manual pick clears search highlight", cleared)
+
+    # --- Reference-link layer: clickable source ids + dates, hovercards ---
+    page.click(".mode-btn[data-mode='search']")
+    page.fill("#search-input", "biometri")
+    page.click("#search-form button")
+    page.wait_for_timeout(2000)
+    n_refsrc = page.locator(".search-hit a.ref-link.ref-source").count()
+    n_refdate = page.locator(".search-hit a.ref-link.ref-date").count()
+    check("ref-links render (source)", n_refsrc >= 1, f"{n_refsrc} source refs")
+    check("ref-links render (date)", n_refdate >= 1, f"{n_refdate} date refs")
+
+    # Hovercard appears on source-ref hover, hides on mouse-out.
+    src_ref = page.locator(".search-hit a.ref-link.ref-source").first
+    src_ref.scroll_into_view_if_needed()
+    src_ref.hover()
+    page.wait_for_timeout(450)
+    hc_visible = page.evaluate(
+        "(() => { const h = document.querySelector('.ref-hovercard');"
+        " return !!(h && !h.hidden && h.textContent.length > 0); })()")
+    check("hovercard shows on source hover", hc_visible)
+    page.mouse.move(2, 2)
+    page.wait_for_timeout(350)
+    hc_hidden = page.evaluate(
+        "(() => { const h = document.querySelector('.ref-hovercard'); return !h || h.hidden; })()")
+    check("hovercard hides on mouse-out", hc_hidden)
+
+    # Date ref → law-in-force on that date.
+    date_ref = page.locator(".search-hit a.ref-link.ref-date").first
+    date_text = (date_ref.inner_text() or "").strip()
+    date_ref.click()
+    page.wait_for_timeout(700)
+    mode_now = page.evaluate("(() => { const b = document.querySelector('.mode-btn.active'); return b ? b.dataset.mode : null; })()")
+    check("date ref → law-in-force mode", mode_now == "law", f"mode={mode_now}")
+    sel_date = page.text_content("#sel-date") or ""
+    check("date ref jumps to that date", date_text in sel_date, f"{date_text} vs {sel_date}")
+
+    # Source ref → Amendments mode, that act selected, src= permalink, reload round-trip.
+    page.click(".mode-btn[data-mode='search']")
+    page.fill("#search-input", "biometri")
+    page.click("#search-form button")
+    page.wait_for_timeout(2000)
+    page.locator(".search-hit a.ref-link.ref-source").first.click()
+    page.wait_for_selector(".amend-list", timeout=10000)
+    page.wait_for_timeout(300)
+    active_src = page.evaluate("(() => { const li = document.querySelector('.amend-item.active'); return li ? li.dataset.src : null; })()")
+    check("source ref → amendments mode, act active", active_src is not None, f"active={active_src}")
+    check("source ref sets src= permalink", "src=" in page.url, page.url.split("#")[-1][:60])
+    murl = page.url
+    page.goto("about:blank")
+    page.goto(murl)
+    page.wait_for_selector(".amend-list", timeout=30000)
+    page.wait_for_timeout(400)
+    reloaded_src = page.evaluate("(() => { const li = document.querySelector('.amend-item.active'); return li ? li.dataset.src : null; })()")
+    check("amendments src permalink round-trip", reloaded_src == active_src, f"{reloaded_src} vs {active_src}")
+
     # Vertaa
-    page.click(".mode-btn[data-mode='vertaa']")
-    page.wait_for_selector("#vertaa-results", timeout=10000)
-    page.select_option("#vertaa-d1", "10")
-    page.select_option("#vertaa-d2", "12")
-    page.click("#vertaa-form button")
+    page.click(".mode-btn[data-mode='compare']")
+    page.wait_for_selector("#compare-results", timeout=10000)
+    page.select_option("#compare-d1", "10")
+    page.select_option("#compare-d2", "12")
+    page.click("#compare-form button")
     page.wait_for_timeout(800)
-    vrows = page.locator(".vertaa-row").count()
-    check("vertaa compare rows", vrows >= 1, f"{vrows} rows")
+    vrows = page.locator(".compare-row").count()
+    check("compare rows", vrows >= 1, f"{vrows} rows")
 
     # Diff streak coalescing: alternating word replacements must merge into
     # ONE del streak + ONE ins streak, not word-by-word red/green.
@@ -206,7 +280,7 @@ with sync_playwright() as p:
           not streak["wholesale"] and streak["dels"] == 1 and streak["inss"] == 1, str(streak))
 
     # Back to the reading view for the structural checks below.
-    page.click(".mode-btn[data-mode='oikeustila']")
+    page.click(".mode-btn[data-mode='law']")
     page.wait_for_timeout(800)
 
     # Structured prose for inserted units: a wholly inserted section renders
@@ -217,7 +291,30 @@ with sync_playwright() as p:
     page.wait_for_selector(".inline-history", timeout=10000)
     n_dp = page.locator(".inline-history .dp-block").count()
     check("inserted section renders structured prose", n_dp >= 2, f"{n_dp} dp-blocks")
+
+    # Copy UX (4b): the history head exposes a "copy text" affordance that writes
+    # labelled provision text + a provenance footer (statute, address, permalink).
+    copied = page.evaluate("""async () => {
+        const writes = [];
+        const real = navigator.clipboard && navigator.clipboard.writeText;
+        if (navigator.clipboard) navigator.clipboard.writeText = (t) => { writes.push(t); return Promise.resolve(); };
+        const btn = document.querySelector('.inline-history .copy-text');
+        if (!btn) return { ok: false, reason: 'no button' };
+        btn.click();
+        await new Promise(r => setTimeout(r, 60));
+        if (real) navigator.clipboard.writeText = real;
+        const t = writes[0] || '';
+        return { ok: true, hasAddr: t.includes('152'), hasFooter: t.includes('#') && t.includes('s='), len: t.length };
+    }""")
+    check("copy-text writes provision + provenance", bool(copied.get("ok")) and copied.get("hasFooter"), str(copied))
     page.locator(".inline-history .hist-close").click()
+
+    # Copy UX (4a): provision number labels are selectable (no user-select:none),
+    # so a drag-copy includes the "X mom." prefix.
+    label_selectable = page.evaluate(
+        "(() => { const el = document.querySelector('#doc .pblock-num');"
+        " return el ? getComputedStyle(el).userSelect !== 'none' : false; })()")
+    check("provision labels are selectable", label_selectable)
 
     # Pixel-stable scroll anchoring: scrub dates while scrolled mid-document;
     # the element at the anchor point must keep its viewport offset (~±24px).
@@ -239,8 +336,8 @@ with sync_playwright() as p:
 
     # History chips align on one vertical line across nesting levels.
     chip_drift = page.evaluate(
-        "(() => { const m = document.querySelector('#doc .pblock.mom > .hist-btn');"
-        " const k = document.querySelector('#doc .pblock.kohta > .hist-btn');"
+        "(() => { const m = document.querySelector('#doc .pblock.kind-subsection > .hist-btn');"
+        " const k = document.querySelector('#doc .pblock.kind-paragraph > .hist-btn');"
         " if (!m || !k) return null;"
         " return Math.abs(m.getBoundingClientRect().right - k.getBoundingClientRect().right); })()")
     check("history chips align across nesting", chip_drift is not None and chip_drift <= 2,
@@ -268,19 +365,39 @@ with sync_playwright() as p:
     # Language toggle: EN, SV, back to FI — full re-render in place.
     page.click("#lang-toggle button[data-lang='en']")
     page.wait_for_timeout(900)
-    check("EN toggle", page.locator(".mode-btn[data-mode='oikeustila']").text_content() == "Law in force",
-          page.locator(".mode-btn[data-mode='oikeustila']").text_content())
+    check("EN toggle", page.locator(".mode-btn[data-mode='law']").text_content() == "Law in force",
+          page.locator(".mode-btn[data-mode='law']").text_content())
     check("EN verify badge re-rendered", page.locator(".verify-badge.verify-ok").count() == 1)
     page.click("#lang-toggle button[data-lang='sv']")
     page.wait_for_timeout(900)
-    check("SV toggle", page.locator(".mode-btn[data-mode='oikeustila']").text_content() == "Gällande lydelse",
-          page.locator(".mode-btn[data-mode='oikeustila']").text_content())
+    check("SV toggle", page.locator(".mode-btn[data-mode='law']").text_content() == "Gällande lydelse",
+          page.locator(".mode-btn[data-mode='law']").text_content())
     sv_addr = page.evaluate(
         "(() => { const l = document.querySelector('#toc .toc-ch .toc-num'); return l ? l.textContent : ''; })()")
     check("SV address formatting (kap.)", "luku" in sv_addr or "kap" in sv_addr, sv_addr)
     page.click("#lang-toggle button[data-lang='fi']")
     page.wait_for_timeout(900)
-    check("FI toggle restores", page.locator(".mode-btn[data-mode='oikeustila']").text_content() == "Oikeustila")
+    check("FI toggle restores", page.locator(".mode-btn[data-mode='law']").text_content() == "Oikeustila")
+
+    # Switching statute must drop a live search highlight + its q permalink
+    # param (they belong to the previous statute).
+    page.click(".mode-btn[data-mode='search']")
+    page.fill("#search-input", "biometri")
+    page.click("#search-form button")
+    page.wait_for_timeout(2000)
+    page.locator(".search-hit-head a.search-goto").first.click()
+    page.wait_for_timeout(700)
+    assert page.evaluate(
+        "(() => { const h = CSS.highlights && CSS.highlights.get('lawvm-search'); return h ? h.size : 0; })()") >= 1
+    page.select_option("#statute-select", "423/2003")
+    page.wait_for_selector(".verify-badge.verify-ok", timeout=30000)
+    page.wait_for_timeout(400)
+    after_switch = page.evaluate(
+        "(() => { const h = CSS.highlights && CSS.highlights.get('lawvm-search'); return h ? h.size : 0; })()")
+    check("statute switch clears search highlight", after_switch == 0, f"{after_switch} ranges")
+    check("statute switch drops q permalink param", "q=" not in page.url, page.url.split("#")[-1][:60])
+    page.select_option("#statute-select", "301/2004")
+    page.wait_for_selector(".verify-badge.verify-ok", timeout=30000)
 
     # Other statutes load + verify (manifest now has five).
     for sid in ["423/2003", "1093/1996"]:
@@ -290,8 +407,8 @@ with sync_playwright() as p:
     page.select_option("#statute-select", "301/2004")
     page.wait_for_selector(".verify-badge.verify-ok", timeout=30000)
 
-    # Permalink round-trip: oikeustila + address -> reload -> verified + panel
-    page.click(".mode-btn[data-mode='oikeustila']")
+    # Permalink round-trip: law view + address -> reload -> verified + panel
+    page.click(".mode-btn[data-mode='law']")
     page.wait_for_timeout(800)
     badge2 = page.locator("#doc .chg-badge").first
     badge2.scroll_into_view_if_needed()
@@ -304,6 +421,24 @@ with sync_playwright() as p:
     check("permalink re-proof (sitaatti todennettu)", True)
     page.wait_for_selector(".inline-history", timeout=10000)
     check("permalink reopens inline history", True)
+
+    # A q-bearing permalink re-paints the phrase on cold load (text-fragment
+    # analogue). Build one from the search path, reload, expect live ranges.
+    page.click(".mode-btn[data-mode='search']")
+    page.fill("#search-input", "biometri")
+    page.click("#search-form button")
+    page.wait_for_timeout(2000)
+    page.locator(".search-hit-head a.search-goto").first.click()
+    page.wait_for_timeout(700)
+    q_url = page.url
+    page.goto("about:blank")
+    page.goto(q_url)
+    page.wait_for_selector(".inline-history", timeout=30000)
+    page.wait_for_timeout(500)
+    q_ranges = page.evaluate(
+        "(() => { const h = CSS.highlights && CSS.highlights.get('lawvm-search');"
+        " return h ? h.size : 0; })()")
+    check("q-permalink re-highlights on reload", q_ranges >= 1, f"{q_ranges} ranges; {q_url.split('#')[-1][:70]}")
 
     browser.close()
 

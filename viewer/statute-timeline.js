@@ -31,353 +31,9 @@
 // =====================================================================
 // Localization: UI strings per language
 // =====================================================================
-const STR = {
-  fi: {
-    tagline: 'Mitä laki sanoi, milloin, ja mistä muutos tuli.',
-    footer: 'Näkymä lasketaan selaimessa LawVM-moottorin varmentamista muutosaskelista ja todennetaan moottorin tarkistesummaa (SHA-256) vastaan. Todennus osoittaa: näkymä = moottorin laskema tila. Se ei väitä, että moottori vastaa virallista konsolidointia tai voimassa olevaa oikeutta. Näkymä on voimassaolon mukainen (laki sellaisena kuin se oli voimassa valittuna päivänä).',
-    statuteLabel: 'Säädös',
-    langLabel: 'Kieli',
-    chooseStatute: 'Valitse säädös…',
-    loadingStatute: 'Ladataan säädöstä…',
-    manifestFail: 'Manifestia ei voitu ladata',
-    notInManifest: 'Säädöstä ei löydy manifestista.',
-    loadFail: 'Virhe ladattaessa',
-    changeDays: (n) => `${n} muutospäivää`,
-    modeOikeustila: 'Oikeustila',
-    modeMuutokset: 'Muutokset',
-    modeHaku: 'Diakroninen haku',
-    modeVertaa: 'Vertaa',
-    hintOikeustila: 'Lain rakenne voimassaolon mukaan valittuna päivänä, hash-todennettuna moottoria vastaan.',
-    hintMuutokset: 'Mitä kukin muutossäädös konkreettisesti teki — ennen/jälkeen jokaiselle kohdalle.',
-    hintHaku: 'Hae tekstiä koko lain historiasta: milloin sanonta tuli lakiin ja millä muutossäädöksellä.',
-    hintVertaa: 'Mitä lakiin muuttui kahden päivämäärän välillä — kohta kohdalta.',
-    secJumpPlaceholder: '§ esim. 54 a',
-    prevDate: '‹ Edellinen',
-    nextDate: 'Seuraava ›',
-    inForce: 'voimassa',
-    verifyPending: 'Todennetaan…',
-    verifyOk: '✓ Näkymä vastaa LawVM-moottoria',
-    verifyTip: 'Selaimessa laskettu rakenne täsmää moottorin tarkistesummaan (SHA-256). Tämä todistaa: näkymä = moottorin laskema tila. Tämä EI väitä: moottori = virallinen konsolidointi, eikä että jompikumpi = voimassa oleva oikeus.',
-    verifyInfoAria: 'Mitä todennus tarkoittaa',
-    verifyFail: '✗ Ei täsmää moottoriin',
-    verifyFailPre: (n) => `${n} pre/post-poikkeamaa`,
-    verifyFailHash: 'tree-hash ≠ moottorin checkpoint',
-    foldFail: '✗ Taittovirhe — ei renderöidä',
-    citeProofOk: 'sitaatti todennettu',
-    citeProofFail: 'sitaatti EI täsmää',
-    citeProofOkTip: 'Linkin tree-hash täsmää uudelleenlasketun tilan kanssa',
-    topUnits: (n) => `${n} ${n === 1 ? 'ylätason yksikkö' : 'ylätason yksikköä'}`,
-    originalAct: 'alkuperäinen säädös',
-    changedToday: (n) => `${n} muuttunutta tänä päivänä`,
-    changeDayOf: (i, n) => `muutospäivä ${i}/${n}`,
-    toc: 'Sisällys',
-    tocFilter: 'Suodata § / luku…',
-    expandAll: 'Laajenna kaikki',
-    collapseAll: 'Sulje kaikki',
-    legendChanged: 'muuttunut edelliseen muutospäivään verrattuna',
-    legendTomb: 'valittuna päivänä kumottu/rauennut kohta (näytetään paikallaan)',
-    stripTip: 'Elinkaari: palkki = voimassa (vihreä) / kumottuna (punertava) / määräaika rauennut (kellertävä); pystyviiva = muutos. Klikkaa: versiohistoria.',
-    tombstone: '[kumottu]',
-    changedTag: 'muuttunut',
-    futureTag: 'tuleva muutos',
-    noProvisions: 'Ei voimassa olevia säännöksiä tällä päivällä.',
-    historyBtn: 'historia',
-    historyBtnTip: 'Näytä tämän kohdan versiohistoria',
-    historyBtnTipN: (n) => `${n} ${n === 1 ? 'muutos' : 'muutosta'} — näytä versiohistoria`,
-    historyBtnTipNone: 'Ei muutoksia alkuperäisen säädöksen jälkeen — näytä tiedot',
-    historyTitle: 'Versiohistoria',
-    historyClose: 'Sulje',
-    historyEmpty: 'Ei havaittuja muutoksia tähän kohtaan.',
-    versionN: (i, n) => `versio ${i}/${n}`,
-    currentVersion: 'voimassa valittuna päivänä',
-    notYetEnacted: 'ei vielä voimassa',
-    repealedWindow: 'poistettu/kumottu tällä välillä',
-    effectiveOn: 'Voimaantulo',
-    derivedNote: (g) => `Moottori kirjaa muutokset tarkkuudella ”${g}”. Tämän kohdan versiohistoria on laskettu vertaamalla lakitekstiä muutospäivästä toiseen.`,
-    amendingAct: 'Muutossäädös',
-    givenDate: 'annettu',
-    sourceLink: 'Lähde',
-    opUnknown: 'muutos (laji kirjaamatta)',
-    opUnknownTip: 'Muutoslaji ei kirjattu lähteessä',
-    copyCite: 'Kopioi viittaus',
-    copyLink: 'Kopioi pysyvä linkki',
-    citeCopied: 'Viittaus kopioitu',
-    linkCopied: 'Linkki kopioitu',
-    citeVerified: 'todennettu',
-    showDiff: 'Näytä muutos',
-    before: 'Ennen',
-    after: 'Jälkeen',
-    newContent: '(uusi sisältö — ei aiempaa versiota)',
-    removedContent: '(poistettu — ei sisältöä)',
-    nothingToDiff: 'Ei sisältöä vertailtavaksi.',
-    wholesale: 'Korvattu kokonaan — sanatason vertailu ei mielekäs.',
-    diffTooBig: 'Ero liian suuri sanatason korostukseen — näytetään korostamaton teksti.',
-    amendList: (n) => `Muutossäädökset (${n})`,
-    amendWhat: 'Mitä tämä säädös teki',
-    targetings: (n) => `${n} ${n === 1 ? 'kohdistus' : 'kohdistusta'}`,
-    effectiveLbl: 'Voimaantulo',
-    prepWorks: 'Esitöiden viite',
-    hakuTitle: 'Diakroninen haku — milloin sanonta tuli lakiin ja millä muutossäädöksellä',
-    hakuPlaceholder: 'esim. biometris, maasta poistaminen…',
-    hakuBtn: 'Hae',
-    hakuNote: 'Tarkka osamerkkijonohaku koko lain historiaan (kaikki versiot, ei vain valittu päivä). Tulos: kohta, voimassaolojaksot, ja se muutossäädös joka <strong>toi</strong> tai <strong>poisti</strong> sanonnan. Ei sumeaa hakua; isot/pienet kirjaimet samaistetaan.',
-    hakuGiveQuery: 'Anna hakusana.',
-    hakuNone: (p) => `Ei osumia haulle “${p}” koko lain historiassa.`,
-    hakuCount: (n, p) => `${n} ${n === 1 ? 'kohta' : 'kohtaa'} sisälsi sanonnan “${p}” jossakin vaiheessa.`,
-    hakuInForceWith: 'Voimassa sanonnan kanssa',
-    hakuIntroduced: 'Toi sanonnan',
-    hakuRemoved: 'Poisti sanonnan',
-    vertaaTitle: 'Vertaa kahta ajankohtaa',
-    vertaaFrom: 'Alkupäivä',
-    vertaaTo: 'Loppupäivä',
-    vertaaRun: 'Vertaa',
-    vertaaSame: 'Valitse kaksi eri päivää.',
-    vertaaNoDiff: 'Ei eroja valittujen päivien välillä.',
-    vertaaCount: (n, d1, d2) => `${n} muuttunutta kohtaa välillä ${d1} → ${d2}.`,
-    vertaaAdded: 'lisätty',
-    vertaaRemovedKind: 'poistettu',
-    vertaaChangedKind: 'muuttunut',
-    vertaaActs: 'Muutossäädökset välillä',
-    granChapter: 'luku',
-    granSection: 'pykälä',
-    granSubsection: 'momentti',
-    citation: (title, id, addr, vStart, vEnd, hash) =>
-      `${title} (${id}), ${addr}, voimassa ${vStart}–${vEnd || '—'}.` +
-      `\nLawVM tree-hash: ${hash} (todennettu).`,
-    citationActs: (acts) => `Muutossäädökset: ${acts}.`,
-  },
-  en: {
-    tagline: 'What the law said, when, and where the change came from.',
-    footer: 'The view is computed in the browser from LawVM-engine-verified change steps and checked against the engine’s checksum (SHA-256). Verification proves: view = engine-computed state. It does not claim the engine matches the official consolidation, nor that either matches the law in force. The view is as-in-force on the selected date.',
-    statuteLabel: 'Statute',
-    langLabel: 'Language',
-    chooseStatute: 'Choose a statute…',
-    loadingStatute: 'Loading statute…',
-    manifestFail: 'Could not load manifest',
-    notInManifest: 'Statute not found in manifest.',
-    loadFail: 'Error while loading',
-    changeDays: (n) => `${n} change dates`,
-    modeOikeustila: 'Law in force',
-    modeMuutokset: 'Amendments',
-    modeHaku: 'Diachronic search',
-    modeVertaa: 'Compare',
-    hintOikeustila: 'The statute as in force on the selected date, hash-verified against the engine.',
-    hintMuutokset: 'What each amending act concretely did — before/after for every target.',
-    hintHaku: 'Search the full history: when a phrase entered the law and by which amending act.',
-    hintVertaa: 'What changed between two dates — provision by provision.',
-    secJumpPlaceholder: 'section, e.g. 54a',
-    prevDate: '‹ Previous',
-    nextDate: 'Next ›',
-    inForce: 'in force',
-    verifyPending: 'Verifying…',
-    verifyOk: '✓ View matches the LawVM engine',
-    verifyTip: 'The structure computed in the browser matches the engine checkpoint hash (SHA-256). This proves: view = engine-computed state. It does NOT claim: engine = official consolidation, nor that either = law in force.',
-    verifyInfoAria: 'What verification means',
-    verifyFail: '✗ Does not match the engine',
-    verifyFailPre: (n) => `${n} pre/post mismatches`,
-    verifyFailHash: 'tree-hash ≠ engine checkpoint',
-    foldFail: '✗ Fold failure — not rendering',
-    citeProofOk: 'citation verified',
-    citeProofFail: 'citation does NOT match',
-    citeProofOkTip: 'The link’s tree-hash matches the freshly recomputed state',
-    topUnits: (n) => `${n} top-level unit${n === 1 ? '' : 's'}`,
-    originalAct: 'original act',
-    changedToday: (n) => `${n} changed on this date`,
-    changeDayOf: (i, n) => `change date ${i}/${n}`,
-    toc: 'Contents',
-    tocFilter: 'Filter sections…',
-    expandAll: 'Expand all',
-    collapseAll: 'Collapse all',
-    legendChanged: 'changed vs the previous change date',
-    legendTomb: 'unit repealed/lapsed on the selected date (shown in place)',
-    stripTip: 'Lifecycle: bar = in force (green) / repealed (reddish) / fixed-term lapsed (yellowish); tick = a change. Click: version history.',
-    tombstone: '[repealed]',
-    changedTag: 'changed',
-    futureTag: 'future change',
-    noProvisions: 'No provisions in force on this date.',
-    historyBtn: 'history',
-    historyBtnTip: 'Show this provision’s version history',
-    historyBtnTipN: (n) => `${n} change${n === 1 ? '' : 's'} — show version history`,
-    historyBtnTipNone: 'Unchanged since the original act — show details',
-    historyTitle: 'Version history',
-    historyClose: 'Close',
-    historyEmpty: 'No observed changes for this provision.',
-    versionN: (i, n) => `version ${i}/${n}`,
-    currentVersion: 'in force on selected date',
-    notYetEnacted: 'not yet in force',
-    repealedWindow: 'removed/repealed in this interval',
-    effectiveOn: 'Effective',
-    derivedNote: (g) => `The engine records changes at “${g}” level. This provision’s version history is computed by comparing the statute text across change dates.`,
-    amendingAct: 'Amending act',
-    givenDate: 'given',
-    sourceLink: 'Source',
-    opUnknown: 'amendment (kind unrecorded)',
-    opUnknownTip: 'Amendment kind not recorded in the source',
-    copyCite: 'Copy citation',
-    copyLink: 'Copy permalink',
-    citeCopied: 'Citation copied',
-    linkCopied: 'Link copied',
-    citeVerified: 'verified',
-    showDiff: 'Show change',
-    before: 'Before',
-    after: 'After',
-    newContent: '(new content — no previous version)',
-    removedContent: '(removed — no content)',
-    nothingToDiff: 'No content to compare.',
-    wholesale: 'Replaced wholesale — word-level comparison not meaningful.',
-    diffTooBig: 'Change too large for word-level highlighting — showing unhighlighted text.',
-    amendList: (n) => `Amending acts (${n})`,
-    amendWhat: 'What this act did',
-    targetings: (n) => `${n} target${n === 1 ? '' : 's'}`,
-    effectiveLbl: 'Effective',
-    prepWorks: 'Preparatory works',
-    hakuTitle: 'Diachronic search — when a phrase entered the law and by which act',
-    hakuPlaceholder: 'exact phrase…',
-    hakuBtn: 'Search',
-    hakuNote: 'Exact substring search across the full history (all versions, not just the selected date). Result: provision, in-force intervals, and the amending act that <strong>introduced</strong> or <strong>removed</strong> the phrase. No fuzzy matching; case-insensitive.',
-    hakuGiveQuery: 'Enter a search phrase.',
-    hakuNone: (p) => `No matches for “${p}” in the full history.`,
-    hakuCount: (n, p) => `${n} provision${n === 1 ? '' : 's'} contained “${p}” at some point.`,
-    hakuInForceWith: 'In force with the phrase',
-    hakuIntroduced: 'Introduced the phrase',
-    hakuRemoved: 'Removed the phrase',
-    vertaaTitle: 'Compare two dates',
-    vertaaFrom: 'From',
-    vertaaTo: 'To',
-    vertaaRun: 'Compare',
-    vertaaSame: 'Pick two different dates.',
-    vertaaNoDiff: 'No differences between the selected dates.',
-    vertaaCount: (n, d1, d2) => `${n} changed provision${n === 1 ? '' : 's'} between ${d1} → ${d2}.`,
-    vertaaAdded: 'added',
-    vertaaRemovedKind: 'removed',
-    vertaaChangedKind: 'changed',
-    vertaaActs: 'Amending acts in between',
-    granChapter: 'chapter',
-    granSection: 'section',
-    granSubsection: 'subsection',
-    citation: (title, id, addr, vStart, vEnd, hash) =>
-      `${title} (${id}), ${addr}, in force ${vStart}–${vEnd || '—'}.` +
-      `\nLawVM tree-hash: ${hash} (verified).`,
-    citationActs: (acts) => `Amending acts: ${acts}.`,
-  },
-  // Swedish UI (Finnish statutes have official Swedish terminology; the
-  // statute text itself stays in its source language until sv-corpus support
-  // lands engine-side).
-  sv: {
-    tagline: 'Vad lagen sade, när, och varifrån ändringen kom.',
-    footer: 'Vyn beräknas i webbläsaren ur ändringssteg som LawVM-motorn verifierat, och kontrolleras mot motorns kontrollsumma (SHA-256). Verifieringen visar: vyn = det tillstånd motorn beräknat. Den hävdar inte att motorn motsvarar den officiella konsolideringen eller gällande rätt. Vyn visas enligt ikraftträdande (lagen sådan den gällde den valda dagen).',
-    statuteLabel: 'Författning',
-    langLabel: 'Språk',
-    chooseStatute: 'Välj författning…',
-    loadingStatute: 'Laddar författning…',
-    manifestFail: 'Manifestet kunde inte laddas',
-    notInManifest: 'Författningen finns inte i manifestet.',
-    loadFail: 'Fel vid laddning',
-    changeDays: (n) => `${n} ändringsdagar`,
-    modeOikeustila: 'Gällande lydelse',
-    modeMuutokset: 'Ändringar',
-    modeHaku: 'Diakron sökning',
-    modeVertaa: 'Jämför',
-    hintOikeustila: 'Lagens struktur enligt ikraftträdande den valda dagen, hash-verifierad mot motorn.',
-    hintMuutokset: 'Vad varje ändringsförfattning konkret gjorde — före/efter för varje ställe.',
-    hintHaku: 'Sök text i lagens hela historia: när en formulering kom in i lagen och genom vilken ändringsförfattning.',
-    hintVertaa: 'Vad som ändrades i lagen mellan två datum — ställe för ställe.',
-    secJumpPlaceholder: '§ t.ex. 54 a',
-    prevDate: '‹ Föregående',
-    nextDate: 'Följande ›',
-    inForce: 'i kraft',
-    verifyPending: 'Verifierar…',
-    verifyOk: '✓ Vyn motsvarar LawVM-motorn',
-    verifyTip: 'Strukturen som beräknats i webbläsaren motsvarar motorns kontrollsumma (SHA-256). Detta bevisar: vyn = det tillstånd motorn beräknat. Detta hävdar INTE: motorn = officiell konsolidering, eller att någondera = gällande rätt.',
-    verifyInfoAria: 'Vad verifieringen betyder',
-    verifyFail: '✗ Motsvarar inte motorn',
-    verifyFailPre: (n) => `${n} pre/post-avvikelser`,
-    verifyFailHash: 'trädhash ≠ motorns kontrollpunkt',
-    foldFail: '✗ Vikningsfel — renderas inte',
-    citeProofOk: 'citatet verifierat',
-    citeProofFail: 'citatet stämmer INTE',
-    citeProofOkTip: 'Länkens trädhash motsvarar det omräknade tillståndet',
-    topUnits: (n) => `${n} ${n === 1 ? 'enhet på toppnivå' : 'enheter på toppnivå'}`,
-    originalAct: 'ursprunglig författning',
-    changedToday: (n) => `${n} ändrade denna dag`,
-    changeDayOf: (i, n) => `ändringsdag ${i}/${n}`,
-    toc: 'Innehåll',
-    tocFilter: 'Filtrera § / kapitel…',
-    expandAll: 'Expandera alla',
-    collapseAll: 'Stäng alla',
-    legendChanged: 'ändrad jämfört med föregående ändringsdag',
-    legendTomb: 'upphävt/förfallet ställe den valda dagen (visas på sin plats)',
-    stripTip: 'Livscykel: stapel = i kraft (grön) / upphävd (rödaktig) / tidsbegränsning förfallen (gulaktig); lodrätt streck = ändring. Klicka: versionshistorik.',
-    tombstone: '[upphävd]',
-    changedTag: 'ändrad',
-    futureTag: 'kommande ändring',
-    noProvisions: 'Inga gällande bestämmelser denna dag.',
-    historyBtn: 'historik',
-    historyBtnTip: 'Visa versionshistoriken för detta ställe',
-    historyBtnTipN: (n) => `${n} ${n === 1 ? 'ändring' : 'ändringar'} — visa versionshistorik`,
-    historyBtnTipNone: 'Oförändrad sedan den ursprungliga författningen — visa uppgifter',
-    historyTitle: 'Versionshistorik',
-    historyClose: 'Stäng',
-    historyEmpty: 'Inga observerade ändringar för detta ställe.',
-    versionN: (i, n) => `version ${i}/${n}`,
-    currentVersion: 'i kraft den valda dagen',
-    notYetEnacted: 'ännu inte i kraft',
-    repealedWindow: 'upphävd/förfallen under detta intervall',
-    effectiveOn: 'Ikraftträdande',
-    derivedNote: (g) => `Motorn registrerar ändringar på nivån ”${g}”. Versionshistoriken för detta ställe har beräknats genom att jämföra lagtexten från ändringsdag till ändringsdag.`,
-    amendingAct: 'Ändringsförfattning',
-    givenDate: 'utfärdad',
-    sourceLink: 'Källa',
-    opUnknown: 'ändring (typ inte registrerad)',
-    opUnknownTip: 'Ändringstypen är inte registrerad i källan',
-    copyCite: 'Kopiera hänvisning',
-    copyLink: 'Kopiera permanent länk',
-    citeCopied: 'Hänvisning kopierad',
-    linkCopied: 'Länk kopierad',
-    citeVerified: 'verifierad',
-    showDiff: 'Visa ändring',
-    before: 'Före',
-    after: 'Efter',
-    newContent: '(nytt innehåll — ingen tidigare version)',
-    removedContent: '(borttaget — inget innehåll)',
-    nothingToDiff: 'Inget innehåll att jämföra.',
-    wholesale: 'Ersatt i sin helhet — jämförelse på ordnivå är inte meningsfull.',
-    diffTooBig: 'Ändringen är för stor för markering på ordnivå — texten visas utan markeringar.',
-    amendList: (n) => `Ändringsförfattningar (${n})`,
-    amendWhat: 'Vad denna författning gjorde',
-    targetings: (n) => `${n} ${n === 1 ? 'ändringsställe' : 'ändringsställen'}`,
-    effectiveLbl: 'Ikraftträdande',
-    prepWorks: 'Förarbeten',
-    hakuTitle: 'Diakron sökning — när en formulering kom in i lagen och genom vilken författning',
-    hakuPlaceholder: 't.ex. biometris…',
-    hakuBtn: 'Sök',
-    hakuNote: 'Exakt delsträngssökning i lagens hela historia (alla versioner, inte bara den valda dagen). Resultat: ställe, giltighetsperioder, och den ändringsförfattning som <strong>införde</strong> eller <strong>strök</strong> formuleringen. Ingen luddig sökning; skiftläge ignoreras.',
-    hakuGiveQuery: 'Ange sökord.',
-    hakuNone: (p) => `Inga träffar för ”${p}” i lagens hela historia.`,
-    hakuCount: (n, p) => `${n} ${n === 1 ? 'ställe' : 'ställen'} innehöll formuleringen ”${p}” vid någon tidpunkt.`,
-    hakuInForceWith: 'I kraft med formuleringen',
-    hakuIntroduced: 'Införde formuleringen',
-    hakuRemoved: 'Strök formuleringen',
-    vertaaTitle: 'Jämför två tidpunkter',
-    vertaaFrom: 'Startdag',
-    vertaaTo: 'Slutdag',
-    vertaaRun: 'Jämför',
-    vertaaSame: 'Välj två olika dagar.',
-    vertaaNoDiff: 'Inga skillnader mellan de valda dagarna.',
-    vertaaCount: (n, d1, d2) => `${n} ändrade ställen mellan ${d1} → ${d2}.`,
-    vertaaAdded: 'tillagd',
-    vertaaRemovedKind: 'borttagen',
-    vertaaChangedKind: 'ändrad',
-    vertaaActs: 'Ändringsförfattningar däremellan',
-    granChapter: 'kapitel',
-    granSection: 'paragraf',
-    granSubsection: 'moment',
-    citation: (title, id, addr, vStart, vEnd, hash) =>
-      `${title} (${id}), ${addr}, i kraft ${vStart}–${vEnd || '—'}.` +
-      `\nLawVM trädhash: ${hash} (verifierad).`,
-    citationActs: (acts) => `Ändringsförfattningar: ${acts}.`,
-  },
-};
+// STR[lang] and OP_KINDS_BY_LANG[lang] live in statute-timeline.i18n.js, loaded
+// as a classic <script> before this one (shared top-level scope). T = STR.fi is
+// initialized below once that table is present.
 
 // =====================================================================
 // Jurisdiction profiles: presentation of legal structure + provenance links
@@ -488,23 +144,6 @@ function tr(key, ...args) {
 // authoritative when the UI language matches the jurisdiction's (it carries
 // drafting-convention nuance, e.g. UK "substituted/omitted"); otherwise fall
 // back to the UI language's generic legal vocabulary.
-const OP_KINDS_BY_LANG = {
-  fi: {
-    insert: 'lisätty', replace: 'muutettu', repeal: 'kumottu', delete: 'poistettu',
-    move: 'siirretty', substitute: 'korvattu', renumber: 'numeroitu uudelleen',
-    expiry: 'määräaikainen voimassaolo päättyi',
-  },
-  en: {
-    insert: 'inserted', replace: 'amended', repeal: 'repealed', delete: 'deleted',
-    move: 'moved', substitute: 'substituted', renumber: 'renumbered',
-    expiry: 'fixed-term validity expired',
-  },
-  sv: {
-    insert: 'tillagd', replace: 'ändrad', repeal: 'upphävd', delete: 'struken',
-    move: 'flyttad', substitute: 'ersatt', renumber: 'omnumrerad',
-    expiry: 'tidsbegränsad giltighet upphörde',
-  },
-};
 
 function opKindLabel(k) {
   if (uiLang === J.lang) return J.opKinds[k] || k;
@@ -523,7 +162,7 @@ let changeDates = [];       // sorted ISO date strings
 let sourceById = {};        // source_id -> source_artifacts row
 let metaInfo = {};          // decoded meta table
 let selectedAddress = null; // address with an open inline history panel
-let mode = 'oikeustila';    // 'oikeustila' | 'muutokset' | 'haku' | 'vertaa'
+let mode = 'law';    // 'law' | 'amendments' | 'search' | 'compare'
 let selectedSourceId = null;
 let currentStatuteId = null;
 let suppressHashUpdate = false;
@@ -536,7 +175,15 @@ let curTreeHash = '';
 let allFoldsMemo = null;        // date -> {live, tombstoned} for all change dates
 let changeIdxCache = null;      // addr -> sorted date indices where its content changed
 let pendingSearchQuery = null;
-let vertaaSel = { d1: null, d2: null };
+// Phrase to highlight in the main document pane when a diachronic-search (or a
+// q-bearing permalink) lands on a provision. {addr, phrase}. Reapplied after
+// every #doc re-render because CSS-highlight Ranges go stale on rebuild.
+// Reset matrix — cleared on: panel close (clearSelection), manual pick of a
+// different provision (toggleInlineHistory), statute switch (loadStatute).
+// Survives (by design): date scrubs and mode round-trips (reapplied on render).
+let searchHighlight = null;
+const SEARCH_HL_NAME = 'lawvm-search';
+let compareSel = { d1: null, d2: null };
 const textDecoder = new TextDecoder('utf-8');
 
 // =====================================================================
@@ -565,6 +212,185 @@ function escHtml(s) {
 }
 function escAttr(s) { return escHtml(s).replace(/"/g, '&quot;'); }
 function cssEsc(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&'); }
+
+// =====================================================================
+// Reference layer: a generic kind-keyed registry for clickable, hoverable
+// cross-references (amending acts, dates, and — later — structured inline
+// statute citations). Each kind declares:
+//   display(payload) -> { text, title, cls }   inner text + a11y title + class
+//   nav(payload)                                click action (navigation)
+//   hover(payload)   -> HTMLString | Promise<HTMLString> | null   (optional)
+// hover MAY be async (return a Promise) for future cross-statute fetches. All
+// accessors MUST degrade — never throw on missing data; fall back to plain text.
+// Adding a kind is a localized change here; render sites use refLink() and all
+// click/hover wiring is delegated, so nothing else needs to change.
+const REF_KINDS = {
+  // amending act → Amendments mode, that act selected
+  source: {
+    display(p) {
+      const src = sourceById[p.id];
+      const text = p.text || (src ? (src.canonical_id || src.title || p.id) : p.id);
+      return { text, title: src ? (src.title || src.canonical_id || p.id) : p.id, cls: 'ref-source' };
+    },
+    nav(p) { goToAmendment(p.id); },
+    hover(p) { return sourceHovercardHtml(p.id); },
+  },
+  // date → law in force on that date (optionally at a provision, carrying a
+  // search phrase so the highlight survives the jump)
+  date: {
+    display(p) { return { text: p.text || p.date, title: p.date, cls: 'ref-date' }; },
+    nav(p) { goToAddrAtDate(p.addr || null, p.date, p.phrase || undefined); },
+    hover: null,
+  },
+  // FUTURE seam (NOT built): a structured inline citation to another statute.
+  // payload {statute, addr, date?, cite?}. nav loads the foreign db; hover is
+  // ASYNC because the preview needs a different db than the one in memory.
+  // 'statute-ref': {
+  //   display(p) { return { text: p.text || p.cite, title: p.cite, cls: 'ref-statute' }; },
+  //   nav(p) { /* loadStatute(p.statute, {statute:p.statute, mode:'law', date:p.date, address:p.addr}) */ },
+  //   async hover(p) { const t = await resolveForeignProvision(p.statute, p.addr, p.date); return t ? provisionHovercardHtml(p, t) : null; },
+  // },
+};
+
+// Emit a reference as an <a>. The payload rides in a data-* attr (JSON) so the
+// DELEGATED click/hover handlers rehydrate it without per-element closures (the
+// viewer rebuilds #doc/#view constantly). title= is the no-JS/no-card fallback.
+function refLink(kind, payload, displayText) {
+  const def = REF_KINDS[kind];
+  if (!def) return escHtml(displayText != null ? displayText : (payload && (payload.id || payload.date)) || '');
+  let info = null;
+  try { info = def.display(payload); } catch (e) { /* degrade */ }
+  const text = displayText != null ? displayText : (info ? info.text : '');
+  const title = info && info.title ? info.title : '';
+  const cls = info && info.cls ? info.cls : '';
+  const hoverable = typeof def.hover === 'function' ? ' data-ref-hover="1"' : '';
+  return `<a href="#" class="ref-link ${cls}" data-ref-kind="${escAttr(kind)}"`
+    + ` data-ref-payload="${escAttr(JSON.stringify(payload))}"${hoverable}`
+    + (title ? ` title="${escAttr(title)}"` : '') + `>${escHtml(text)}</a>`;
+}
+
+function refPayloadFrom(el) {
+  try { return JSON.parse(el.getAttribute('data-ref-payload')); } catch (e) { return null; }
+}
+
+// Click delegation (installed once). Works for any present or future ref kind.
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('a.ref-link');
+  if (!a) return;
+  e.preventDefault();
+  e.stopPropagation();           // don't also toggle a row / select an amend item
+  const def = REF_KINDS[a.dataset.refKind];
+  if (!def || !def.nav) return;
+  const p = refPayloadFrom(a);
+  if (p) { try { def.nav(p); } catch (err) { console.warn('ref nav failed', err); } }
+});
+
+// ---- hovercard: a single shared popover, reused for every hover ----
+let _hcEl = null, _hcShowTimer = null, _hcHideTimer = null, _hcToken = 0;
+const _hasHover = !!(window.matchMedia && window.matchMedia('(hover: hover)').matches);
+
+function hovercardEl() {
+  if (_hcEl) return _hcEl;
+  _hcEl = document.createElement('div');
+  _hcEl.className = 'ref-hovercard';
+  _hcEl.setAttribute('role', 'tooltip');
+  _hcEl.hidden = true;
+  _hcEl.addEventListener('mouseenter', () => clearTimeout(_hcHideTimer));
+  _hcEl.addEventListener('mouseleave', hideHovercard);
+  document.body.appendChild(_hcEl);
+  return _hcEl;
+}
+
+function positionHovercard(anchor) {
+  const el = hovercardEl();
+  const r = anchor.getBoundingClientRect();
+  el.hidden = false; // measure with content present
+  const cw = el.offsetWidth, ch = el.offsetHeight;
+  let left = Math.max(window.scrollX + 8,
+    Math.min(r.left + window.scrollX, window.scrollX + document.documentElement.clientWidth - cw - 8));
+  let top = r.top + window.scrollY - ch - 8;
+  if (r.top - ch - 8 < 0) top = r.bottom + window.scrollY + 8; // flip below if clipped
+  el.style.left = left + 'px';
+  el.style.top = top + 'px';
+}
+
+async function showHovercardFor(anchor) {
+  const def = REF_KINDS[anchor.dataset.refKind];
+  if (!def || typeof def.hover !== 'function') return;
+  const p = refPayloadFrom(anchor);
+  if (!p) return;
+  const token = ++_hcToken; // guards async + re-render races: last hover wins
+  let html = null;
+  try { html = await def.hover(p); } catch (e) { html = null; }
+  if (token !== _hcToken || !html || !anchor.isConnected) return;
+  const el = hovercardEl();
+  el.innerHTML = html;
+  positionHovercard(anchor);
+}
+
+function scheduleShow(anchor) {
+  clearTimeout(_hcHideTimer); clearTimeout(_hcShowTimer);
+  _hcShowTimer = setTimeout(() => showHovercardFor(anchor), 220);
+}
+function hideHovercard() {
+  clearTimeout(_hcShowTimer);
+  _hcHideTimer = setTimeout(() => { _hcToken++; if (_hcEl) _hcEl.hidden = true; }, 120);
+}
+
+if (_hasHover) {
+  document.addEventListener('mouseover', (e) => {
+    const a = e.target.closest('a.ref-link[data-ref-hover]');
+    if (a) scheduleShow(a);
+  });
+  document.addEventListener('mouseout', (e) => {
+    const a = e.target.closest('a.ref-link[data-ref-hover]');
+    if (a && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.ref-hovercard'))) hideHovercard();
+  });
+}
+// Keyboard accessibility (always on — focus is real on touch+keyboard too).
+document.addEventListener('focusin', (e) => {
+  const a = e.target.closest('a.ref-link[data-ref-hover]');
+  if (a) showHovercardFor(a);
+});
+document.addEventListener('focusout', (e) => {
+  if (e.target.closest('a.ref-link[data-ref-hover]')) hideHovercard();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && _hcEl && !_hcEl.hidden) { _hcToken++; _hcEl.hidden = true; }
+});
+window.addEventListener('scroll', () => { if (_hcEl && !_hcEl.hidden) hideHovercard(); }, true);
+
+// Sync hovercard content for an amending act. Returns null (→ no card) if the
+// source is unknown, so the link still navigates but nothing pops.
+function sourceHovercardHtml(id) {
+  const src = sourceById[id];
+  if (!src) return null;
+  const am = amendmentList().find(a => a.source_id === id);
+  const effDates = [...new Set(transitions.filter(t => t.source_id === id).map(t => t.effective_date))].sort();
+  const heRef = (transitions.find(t => t.source_id === id && t.he_ref) || {}).he_ref;
+  let h = `<div class="hc-title">${escHtml(src.title || src.canonical_id || id)}</div><dl class="hc-meta">`;
+  if (src.canonical_id) h += `<div><dt>${escHtml(tr('amendingAct'))}</dt><dd>${escHtml(src.canonical_id)}</dd></div>`;
+  if (src.date) h += `<div><dt>${escHtml(tr('givenDate'))}</dt><dd>${escHtml(src.date)}</dd></div>`;
+  if (effDates.length) h += `<div><dt>${escHtml(tr('effectiveLbl'))}</dt><dd>${escHtml(effDates.join(', '))}</dd></div>`;
+  if (am) h += `<div><dt>${escHtml(tr('amendWhat'))}</dt><dd>${escHtml(tr('targetings', am.opCount))}</dd></div>`;
+  if (heRef) h += `<div><dt>${escHtml(tr('prepWorks'))}</dt><dd>${prepWorksHtml(heRef)}</dd></div>`;
+  return h + `</dl>`;
+}
+
+// Navigate to an amending act in the Amendments view.
+function goToAmendment(sourceId) {
+  if (!sourceId) return;
+  selectedSourceId = sourceId;
+  setMode('amendments');
+  setTimeout(() => {
+    const li = document.querySelector(`.amend-item[data-src="${cssEsc(sourceId)}"]`);
+    if (li) {
+      li.scrollIntoView({ block: 'nearest' });
+      li.classList.add('flash');
+      setTimeout(() => li.classList.remove('flash'), 1200);
+    }
+  }, 30);
+}
 
 // ---- content blob decoding (BLOB → Uint8Array → JSON) ----
 function getBlob(contentHash) {
@@ -712,10 +538,10 @@ async function rerenderAll() {
   try {
     renderShell();
     setMode(m, /*skipRender*/ true);
-    if (m === 'oikeustila') await selectDate(curDateIdx >= 0 ? curDateIdx : changeDates.length - 1);
-    else if (m === 'muutokset') renderMuutokset();
-    else if (m === 'haku') renderHaku();
-    else renderVertaa();
+    if (m === 'law') await selectDate(curDateIdx >= 0 ? curDateIdx : changeDates.length - 1);
+    else if (m === 'amendments') renderAmendments();
+    else if (m === 'search') renderSearch();
+    else renderCompare();
   } finally {
     suppressHashUpdate = false;
     updateHash();
@@ -743,7 +569,11 @@ async function loadStatute(statuteId, permalink) {
     db = new SQL.Database(new Uint8Array(buf));
     blobCache = {}; selectedAddress = null; selectedSourceId = null;
     allFoldsMemo = null; changeIdxCache = null; blobTextByHash = {};
-    vertaaSel = { d1: null, d2: null };
+    compareSel = { d1: null, d2: null };
+    // A search highlight + its `q` permalink param belong to the previous
+    // statute; drop both so they never leak across a statute switch.
+    searchHighlight = null;
+    if (window.CSS && CSS.highlights) CSS.highlights.delete(SEARCH_HL_NAME);
 
     transitions = q('SELECT * FROM transitions ORDER BY sequence ASC');
     checkpointByDate = {};
@@ -767,6 +597,9 @@ async function loadStatute(statuteId, permalink) {
     renderShell();
 
     if (permalink && permalink.statute === statuteId) {
+      // A permalink landing in a mode that doesn't pick a date (amendments/search)
+      // still needs a baseline fold so a later switch to the law view has one.
+      if (permalink.mode !== 'law') await selectDate(changeDates.length - 1, { skipRender: true });
       applyPermalink(permalink);
     } else {
       await selectDate(changeDates.length - 1);
@@ -786,17 +619,17 @@ function renderShell() {
     <div class="topbar" id="topbar">
       <div class="topbar-row">
         <div class="mode-bar">
-          <button class="mode-btn" data-mode="oikeustila">${escHtml(tr('modeOikeustila'))}</button>
-          <button class="mode-btn" data-mode="muutokset">${escHtml(tr('modeMuutokset'))}</button>
-          <button class="mode-btn" data-mode="haku">${escHtml(tr('modeHaku'))}</button>
-          <button class="mode-btn" data-mode="vertaa">${escHtml(tr('modeVertaa'))}</button>
+          <button class="mode-btn" data-mode="law">${escHtml(tr('modeLaw'))}</button>
+          <button class="mode-btn" data-mode="amendments">${escHtml(tr('modeAmendments'))}</button>
+          <button class="mode-btn" data-mode="search">${escHtml(tr('modeSearch'))}</button>
+          <button class="mode-btn" data-mode="compare">${escHtml(tr('modeCompare'))}</button>
         </div>
         <input type="search" id="sec-jump" class="sec-jump" placeholder="${escAttr(tr('secJumpPlaceholder'))}" autocomplete="off" title="${escAttr(tr('secJumpPlaceholder'))}">
         <div id="verify-slot"><span class="verify-badge verify-pending">${escHtml(tr('verifyPending'))}</span></div>
       </div>
       <div class="scrubber" id="scrubber">
         <div class="scrubber-row">
-          <div class="oikeustila"><span class="date" id="sel-date">—</span>
+          <div class="law"><span class="date" id="sel-date">—</span>
             <span class="validity" id="validity"></span></div>
           <div class="date-nav">
             <button id="prev-date">${escHtml(tr('prevDate'))}</button>
@@ -820,7 +653,7 @@ function renderShell() {
   wireTimeAxis();
   wireSecJump();
 
-  setMode('oikeustila', /*skipRender*/ true);
+  setMode('law', /*skipRender*/ true);
 }
 
 // ---- real time axis: ticks at change dates, proportional positions ----
@@ -900,7 +733,7 @@ function wireSecJump() {
     if (e.key !== 'Enter') return;
     const raw = inp.value.trim().toLowerCase().replace(/[§.\s]/g, '');
     if (!raw) return;
-    if (mode !== 'oikeustila') setMode('oikeustila');
+    if (mode !== 'law') setMode('law');
     const el = document.querySelector(`#doc .node[data-addr$="section:${cssEsc(raw)}"]`)
       || document.querySelector(`#doc [data-addr$="section:${cssEsc(raw)}"]`);
     if (el) { jumpToAddr(el.dataset.addr); inp.select(); return; }
@@ -931,14 +764,14 @@ function setMode(m, skipRender) {
   }
   const scrubber = document.getElementById('scrubber');
   const hint = document.getElementById('mode-hint');
-  scrubber.style.display = (m === 'oikeustila') ? '' : 'none';
-  const hints = { oikeustila: 'hintOikeustila', muutokset: 'hintMuutokset', haku: 'hintHaku', vertaa: 'hintVertaa' };
-  hint.textContent = tr(hints[m] || 'hintOikeustila');
+  scrubber.style.display = (m === 'law') ? '' : 'none';
+  const hints = { law: 'hintLaw', amendments: 'hintAmendments', search: 'hintSearch', compare: 'hintCompare' };
+  hint.textContent = tr(hints[m] || 'hintLaw');
   if (!skipRender) {
-    if (m === 'oikeustila') renderOikeustila();
-    else if (m === 'muutokset') renderMuutokset();
-    else if (m === 'haku') renderHaku();
-    else renderVertaa();
+    if (m === 'law') renderLaw();
+    else if (m === 'amendments') renderAmendments();
+    else if (m === 'search') renderSearch();
+    else renderCompare();
   }
   if (!suppressHashUpdate) updateHash();
 }
@@ -1011,7 +844,7 @@ async function selectDate(idx, opts) {
       + ` · ${tr('changeDayOf', idx + 1, changeDates.length)}`;
   }
 
-  if (mode === 'oikeustila' && !(opts && opts.skipRender)) renderOikeustila({ preserveScroll: true });
+  if (mode === 'law' && !(opts && opts.skipRender)) renderLaw({ preserveScroll: true });
   if (!suppressHashUpdate) updateHash();
 }
 
@@ -1162,7 +995,7 @@ function nodeAtAddress(live, addr) {
 // =====================================================================
 // Oikeustila: reading document + TOC + inline history
 // =====================================================================
-function renderOikeustila(opts) {
+function renderLaw(opts) {
   const view = document.getElementById('view');
   if (!view) return;
   const anchor = (opts && opts.preserveScroll) ? captureScrollAnchor() : null;
@@ -1197,6 +1030,7 @@ function renderOikeustila(opts) {
   buildToc();
   setupScrollSpy();
   if (selectedAddress) openInlineHistory(selectedAddress, /*scroll*/ false);
+  reapplySearchHighlight();
   if (anchor) restoreScrollAnchor(anchor);
 }
 
@@ -1333,9 +1167,9 @@ function renderNode(node, addr, depth, prevMap) {
   }
 
   // Prose block: subsection (momentti) / paragraph (kohta) / subparagraph —
-  // rendered as readable statute text, addressable + history-hoverable.
-  const blockCls = kind === 'subsection' ? 'mom' : kind === 'paragraph' ? 'kohta' : 'alakohta';
-  let html = `<div class="pblock ${blockCls}${changed ? ' changed' : ''}" data-addr="${escAttr(addr)}">`;
+  // rendered as readable statute text, addressable + history-hoverable. Class
+  // mirrors the outline-node `kind-${kind}` pattern (jurisdiction-neutral).
+  let html = `<div class="pblock kind-${kind}${changed ? ' changed' : ''}" data-addr="${escAttr(addr)}">`;
   // Block-level inner wrapper caps the reading measure; the label and text
   // flow inline within it (an inline-block text body would wrap to its own
   // line whenever the measure doesn't fit beside the label).
@@ -1413,7 +1247,8 @@ function tombstoneHtml(addr, info) {
     + `<div class="node-row spyable" data-addr="${escAttr(addr)}">`
     + `<span class="node-toggle leaf"></span>`
     + `<span class="tomb-label">${escHtml(prettyAddr(addr))} <em>${escHtml(tr('tombstone'))}</em></span>`
-    + (info && info.date ? `<span class="tomb-meta">${escHtml(info.date)}${srcLabel ? ' · ' + escHtml(srcLabel) : ''}</span>` : '')
+    + (info && info.date ? `<span class="tomb-meta">${refLink('date', { date: info.date, addr })}`
+        + (info.source_id ? ' · ' + refLink('source', { id: info.source_id }, srcLabel) : '') + `</span>` : '')
     + historyBtnHtml(addr)
     + `</div></div>`;
 }
@@ -1423,7 +1258,7 @@ function wireDoc(docEl) {
   // explicit ⌚ button — reading/selection gestures stay free for text.
   docEl.querySelectorAll('.node-row.clk').forEach(r => {
     r.addEventListener('click', (e) => {
-      if (e.target.closest('.hist-btn') || e.target.closest('.chg-badge')) return;
+      if (e.target.closest('.hist-btn') || e.target.closest('.chg-badge') || e.target.closest('a.ref-link')) return;
       toggleCollapse(r.closest('.node'));
     });
   });
@@ -1822,9 +1657,16 @@ function ghostHtml(g) {
   const src = t && t.source_id ? sourceById[t.source_id] : null;
   const srcLabel = src ? (src.canonical_id || src.title || t.source_id) : (t ? t.source_id : '');
   const [k, n] = g.addr.split('/').pop().split(':');
+  const meta = refLink('date', { date, addr: g.addr })
+    + (t && t.source_id ? ' · ' + refLink('source', { id: t.source_id }, srcLabel) : '');
+  // Label the ghost exactly as the live node would have read (kindLabel from
+  // the pre-removal fold) — same format as live rows, only the muting differs.
+  const prevDate = g.removedIdx > 0 ? changeDates[g.removedIdx - 1] : null;
+  const wasNode = prevDate ? nodeAtAddress(allFolds()[prevDate].live, g.addr) : null;
+  const label = wasNode ? kindLabel(wasNode, parseInt(n, 10) || 0) : J.addrSeg(k, n);
   return `<div class="pblock ghost-line" data-addr="${escAttr(g.addr)}">`
-    + `<span class="tomb-label">${escHtml(J.addrSeg(k, n))} <em>${escHtml(tr('tombstone'))}</em></span>`
-    + `<span class="tomb-meta">${escHtml(date)}${srcLabel ? ' · ' + escHtml(srcLabel) : ''}</span>`
+    + `<span class="tomb-label">${escHtml(label)} <em>${escHtml(tr('tombstone'))}</em></span>`
+    + `<span class="tomb-meta">${meta}</span>`
     + changeBadgeHtml(g.addr)
     // Row-style button (not the count chip): identical trailing width keeps
     // the lifecycle-strip column flush with section rows.
@@ -1943,6 +1785,7 @@ function historyHtml(addr) {
   let html = `<div class="hist-head">`
     + `<span class="hist-addr">${escHtml(prettyAddr(addr))}</span>`
     + `<span class="hist-addr-raw">${escHtml(addr)}</span>`
+    + `<button class="cite-btn copy-text" type="button">${escHtml(tr('copyText'))}</button>`
     + `<button class="cite-btn copy-cite" type="button">${escHtml(tr('copyCite'))}</button>`
     + `<button class="cite-btn copy-link" type="button">${escHtml(tr('copyLink'))}</button>`
     + `<span class="cite-status"></span>`
@@ -2018,6 +1861,8 @@ function wireHistory(container, addr) {
   const cs = container.querySelector('.cite-status');
   const cb = container.querySelector('.copy-cite');
   const cl = container.querySelector('.copy-link');
+  const ct = container.querySelector('.copy-text');
+  if (ct) ct.addEventListener('click', () => copyToClip(provisionCopyText(addr), cs, tr('textCopied')));
   if (cb) cb.addEventListener('click', () => copyToClip(citationText(addr), cs, tr('citeCopied')));
   if (cl) cl.addEventListener('click', () => copyToClip(permalinkUrl(addr), cs, tr('linkCopied')));
   const hc = container.querySelector('.hist-close');
@@ -2028,6 +1873,8 @@ function wireHistory(container, addr) {
 function toggleInlineHistory(addr) {
   if (selectedAddress === addr) { clearSelection(); return; }
   selectedAddress = addr;
+  // Manual provision pick: the search term no longer applies to this node.
+  if (searchHighlight && searchHighlight.addr !== addr) clearSearchHighlight();
   openInlineHistory(addr, /*scroll*/ false);
   if (!suppressHashUpdate) updateHash();
 }
@@ -2069,6 +1916,7 @@ function openInlineHistory(addr, scroll) {
 
 function clearSelection() {
   selectedAddress = null;
+  if (searchHighlight) clearSearchHighlight();
   removeInlinePanel();
   if (!suppressHashUpdate) updateHash();
 }
@@ -2106,7 +1954,7 @@ function provenanceHtml(t) {
     html += `<div><span class="lbl">${escHtml(tr('amendingAct'))}:</span> `;
     if (src.url) html += `<a href="${escAttr(src.url)}" target="_blank" rel="noopener">${escHtml(src.title || src.canonical_id || t.source_id)}</a>`;
     else html += escHtml(src.title || src.canonical_id || t.source_id);
-    if (src.canonical_id) html += ` (${escHtml(src.canonical_id)})`;
+    if (src.canonical_id) html += ` (${refLink('source', { id: t.source_id }, src.canonical_id)})`;
     if (src.date) html += ` <span class="ann-date">${escHtml(tr('givenDate'))} ${escHtml(src.date)}</span>`;
     html += `</div>`;
   } else if (t.source_id) {
@@ -2150,6 +1998,39 @@ function transitionsForAllDates(addr) {
   });
 }
 
+// Plain-text rendering of a provision subtree with momentti/kohta labels, for
+// the clipboard "copy text" affordance. Mirrors the on-screen structure (label
+// + text per addressable unit), without chips/badges. Depth 0 = the clicked
+// node itself; its label is omitted because the copy header carries the address.
+function labelledNodeText(node, addr, depth) {
+  depth = depth || 0;
+  const lines = [];
+  const inline = inlineContent(node).map(s => s.text).join(' ').replace(/\s+/g, ' ').trim();
+  const ordinal = parseInt((addr.split('/').pop() || '').split(':')[1] || '0', 10);
+  const lbl = depth === 0 ? '' : kindLabel(node, ordinal);
+  if (inline) lines.push((lbl ? lbl + ' ' : '') + inline);
+  else if (lbl) lines.push(lbl);
+  for (const { child, childAddr } of structChildren(node, addr)) {
+    const sub = labelledNodeText(child, childAddr, depth + 1);
+    if (sub) lines.push(sub);
+  }
+  return lines.join('\n');
+}
+
+// "Copy text" payload: the provision as it reads on the selected date, plus a
+// provenance footer (same citation + permalink as Copy citation). The opt-in
+// counterpart to a raw drag-selection — every copy is self-citing.
+function provisionCopyText(address) {
+  const node = nodeAtAddress(curLive, address);
+  const vi = validityInterval(curDateIdx);
+  const body = node ? labelledNodeText(node, address, 0) : '';
+  let out = `${prettyAddr(address)}\n${body}`.trim();
+  out += `\n\n${tr('citation', metaInfo.title, currentStatuteId, prettyAddr(address),
+    J.fmtDate(vi.start), vi.end ? J.fmtDate(vi.end) : null, `${curTreeHash.slice(0, 16)}…`)}`;
+  out += `\n${permalinkUrl(address)}`;
+  return out;
+}
+
 // =====================================================================
 // Muutokset (amendment-as-ops) view
 // =====================================================================
@@ -2167,7 +2048,7 @@ function amendmentList() {
     .sort((a, b) => (a.firstDate < b.firstDate ? -1 : a.firstDate > b.firstDate ? 1 : (a.source_id < b.source_id ? -1 : 1)));
 }
 
-function renderMuutokset() {
+function renderAmendments() {
   const view = document.getElementById('view');
   const amendments = amendmentList();
   if (!selectedSourceId && amendments.length) selectedSourceId = amendments[amendments.length - 1].source_id;
@@ -2198,7 +2079,8 @@ function renderMuutokset() {
     </div>`;
 
   for (const li of view.querySelectorAll('.amend-item')) {
-    li.addEventListener('click', () => {
+    li.addEventListener('click', (e) => {
+      if (e.target.closest('a.ref-link')) return;
       selectedSourceId = li.dataset.src;
       for (const x of view.querySelectorAll('.amend-item')) x.classList.toggle('active', x.dataset.src === selectedSourceId);
       renderAmendDetail(selectedSourceId);
@@ -2221,10 +2103,8 @@ function renderAmendDetail(sourceId) {
   if (src && src.date) html += `<span><span class="lbl">${escHtml(tr('givenDate'))}:</span> ${escHtml(src.date)}</span>`;
   if (effectiveDates.length) {
     html += `<span><span class="lbl">${escHtml(tr('effectiveLbl'))}:</span> `
-      + effectiveDates.map(d => {
-        const i = changeDates.indexOf(d);
-        return i >= 0 ? `<a href="#" class="jump-date" data-idx="${i}">${escHtml(d)}</a>` : escHtml(d);
-      }).join(', ') + `</span>`;
+      + effectiveDates.map(d => changeDates.indexOf(d) >= 0 ? refLink('date', { date: d }) : escHtml(d)).join(', ')
+      + `</span>`;
   }
   const heRef = (ops.find(o => o.he_ref) || {}).he_ref;
   if (heRef) html += `<span><span class="lbl">${escHtml(tr('prepWorks'))}:</span> ${prepWorksHtml(heRef)}</span>`;
@@ -2245,9 +2125,6 @@ function renderAmendDetail(sourceId) {
   html += `</div>`;
   el.innerHTML = html;
 
-  for (const a of el.querySelectorAll('.jump-date')) {
-    a.addEventListener('click', (e) => { e.preventDefault(); setMode('oikeustila'); selectDate(parseInt(a.dataset.idx, 10)); });
-  }
   el.querySelectorAll('.goto-addr').forEach(a => {
     a.addEventListener('click', (e) => { e.preventDefault(); goToAddrAtDate(a.dataset.addr, a.dataset.date || ''); });
   });
@@ -2280,9 +2157,9 @@ function localizedOpChangesHtml(t) {
 }
 
 function changeKindLabel(kind) {
-  return kind === 'added' ? tr('vertaaAdded')
-    : kind === 'removed' ? tr('vertaaRemovedKind')
-    : tr('vertaaChangedKind');
+  return kind === 'added' ? tr('compareAdded')
+    : kind === 'removed' ? tr('compareRemovedKind')
+    : tr('compareChangedKind');
 }
 
 // =====================================================================
@@ -2305,20 +2182,20 @@ function deepMatchAddrs(node, addr, phraseLc, out) {
   if (!foundDeeper && nodeToText(node).toLowerCase().includes(phraseLc)) out.add(addr);
 }
 
-function renderHaku() {
+function renderSearch() {
   const view = document.getElementById('view');
   view.innerHTML = `
-    <div class="haku-wrap panel">
-      <h2 class="panel-title">${escHtml(tr('hakuTitle'))}</h2>
-      <form id="haku-form" class="haku-form">
-        <input type="search" id="haku-input" placeholder="${escAttr(tr('hakuPlaceholder'))}" autocomplete="off">
-        <button type="submit">${escHtml(tr('hakuBtn'))}</button>
+    <div class="search-wrap panel">
+      <h2 class="panel-title">${escHtml(tr('searchTitle'))}</h2>
+      <form id="search-form" class="search-form">
+        <input type="search" id="search-input" placeholder="${escAttr(tr('searchPlaceholder'))}" autocomplete="off">
+        <button type="submit">${escHtml(tr('searchBtn'))}</button>
       </form>
-      <p class="haku-note">${tr('hakuNote')}</p>
-      <div id="haku-results"></div>
+      <p class="search-note">${tr('searchNote')}</p>
+      <div id="search-results"></div>
     </div>`;
-  const form = document.getElementById('haku-form');
-  const input = document.getElementById('haku-input');
+  const form = document.getElementById('search-form');
+  const input = document.getElementById('search-input');
   form.addEventListener('submit', (e) => { e.preventDefault(); runDiachronicSearch(input.value); });
   if (pendingSearchQuery) { input.value = pendingSearchQuery; runDiachronicSearch(pendingSearchQuery); pendingSearchQuery = null; }
 }
@@ -2333,9 +2210,9 @@ function blobText(hash) {
 }
 
 function runDiachronicSearch(rawQuery) {
-  const out = document.getElementById('haku-results');
+  const out = document.getElementById('search-results');
   const phrase = (rawQuery || '').trim();
-  if (!phrase) { out.innerHTML = `<p class="muted-empty">${escHtml(tr('hakuGiveQuery'))}</p>`; return; }
+  if (!phrase) { out.innerHTML = `<p class="muted-empty">${escHtml(tr('searchGiveQuery'))}</p>`; return; }
   const phraseLc = phrase.toLowerCase().replace(/\s+/g, ' ');
   const folds = allFolds();
 
@@ -2351,11 +2228,11 @@ function runDiachronicSearch(rawQuery) {
     }
   }
   if (!matchAddrs.size) {
-    out.innerHTML = `<p class="muted-empty">${tr('hakuNone', escHtml(phrase))}</p>`;
+    out.innerHTML = `<p class="muted-empty">${tr('searchNone', escHtml(phrase))}</p>`;
     return;
   }
 
-  let html = `<p class="haku-count">${tr('hakuCount', matchAddrs.size, escHtml(phrase))}</p>`;
+  let html = `<p class="search-count">${tr('searchCount', matchAddrs.size, escHtml(phrase))}</p>`;
   const sorted = [...matchAddrs].sort(addrCompare);
   for (const addr of sorted) {
     // 2) Per deep address: walk every change date, extract the node from the
@@ -2378,33 +2255,33 @@ function runDiachronicSearch(rawQuery) {
     if (open) intervals.push({ start: open, end: null });
     if (!introduced.length) continue; // defensive: blob matched but no fold did
 
-    html += `<div class="haku-hit">`;
-    html += `<div class="haku-hit-head"><a href="#" class="haku-goto" data-addr="${escAttr(addr)}" data-date="${escAttr(intervals.length ? (intervals[intervals.length - 1].start || '') : '')}">`
+    html += `<div class="search-hit">`;
+    html += `<div class="search-hit-head"><a href="#" class="search-goto" data-addr="${escAttr(addr)}" data-date="${escAttr(intervals.length ? (intervals[intervals.length - 1].start || '') : '')}">`
       + `${escHtml(prettyAddr(addr))}</a></div>`;
     if (intervals.length) {
-      html += `<div class="haku-intervals"><span class="lbl">${escHtml(tr('hakuInForceWith'))}:</span> `
+      html += `<div class="search-intervals"><span class="lbl">${escHtml(tr('searchInForceWith'))}:</span> `
         + intervals.map(iv => `${escHtml(iv.start)}–${escHtml(iv.end || '—')}`).join(', ') + `</div>`;
     }
-    for (const i of introduced) html += attributionRow(tr('hakuIntroduced'), i, addr);
-    for (const i of removed) html += attributionRow(tr('hakuRemoved'), i, addr);
+    for (const i of introduced) html += attributionRow(tr('searchIntroduced'), i, addr, phrase);
+    for (const i of removed) html += attributionRow(tr('searchRemoved'), i, addr, phrase);
     if (lastHasNode) {
       const snip = snippetAround(nodeToText(lastHasNode), phraseLc);
-      if (snip) html += `<div class="haku-snippet">…${highlightPhrase(snip, phrase)}…</div>`;
+      if (snip) html += `<div class="search-snippet">…${highlightPhrase(snip, phrase)}…</div>`;
     }
     html += `</div>`;
   }
   out.innerHTML = html;
-  out.querySelectorAll('.haku-goto').forEach(a => {
+  out.querySelectorAll('.search-goto').forEach(a => {
     a.addEventListener('click', (e) => {
       e.preventDefault();
-      goToAddrAtDate(a.dataset.addr, a.dataset.date);
+      goToAddrAtDate(a.dataset.addr, a.dataset.date, phrase);
     });
   });
 }
 
 // Attribution for a phrase entering/leaving at changeDates[idx]: the amending
 // act(s) effective that day whose certified transition covers this address.
-function attributionRow(label, idx, addr) {
+function attributionRow(label, idx, addr, phrase) {
   const date = changeDates[idx];
   const ts = transitionsFor(addr, date);
   const tSrc = ts.find(t => t.source_id) || null;
@@ -2412,8 +2289,11 @@ function attributionRow(label, idx, addr) {
   const srcLabel = src ? (src.title || src.canonical_id || tSrc.source_id)
     : (tSrc ? tSrc.source_id : tr('originalAct'));
   const heRef = (ts.find(t => t.he_ref) || {}).he_ref;
-  const dateLink = `<a href="#" class="haku-goto" data-addr="${escAttr(addr)}" data-date="${escAttr(date)}">${escHtml(date)}</a>`;
-  let html = `<div class="haku-attr"><span class="attr-label">${escHtml(label)}:</span> ${dateLink} — ${escHtml(srcLabel)}`;
+  // Date jumps to the law in force then (carrying the search phrase so the
+  // main-pane highlight repaints); the act opens in the Amendments view.
+  const dateLink = refLink('date', { date, addr, phrase });
+  const actLink = tSrc ? refLink('source', { id: tSrc.source_id }, srcLabel) : escHtml(srcLabel);
+  let html = `<div class="search-attr"><span class="attr-label">${escHtml(label)}:</span> ${dateLink} — ${actLink}`;
   if (src && src.canonical_id) html += ` (${escHtml(src.canonical_id)})`;
   if (heRef) html += ` · ${prepWorksHtml(heRef)}`;
   html += `</div>`;
@@ -2442,44 +2322,111 @@ function highlightPhrase(snippet, phrase) {
   return outHtml;
 }
 
-function goToAddrAtDate(addr, date) {
-  setMode('oikeustila', /*skipRender*/ true);
+function goToAddrAtDate(addr, date, phrase) {
+  setMode('law', /*skipRender*/ true);
   const idx = date ? changeDates.indexOf(date) : -1;
   const targetIdx = idx >= 0 ? idx : curDateIdx >= 0 ? curDateIdx : changeDates.length - 1;
   selectedAddress = addr;
+  // A bare nav (amendments/compare link, no phrase) drops any prior search mark.
+  searchHighlight = phrase ? { addr, phrase } : null;
   selectDate(targetIdx, { skipRender: true }).then(() => {
-    setMode('oikeustila');
-    setTimeout(() => openInlineHistory(addr, true), 50);
+    setMode('law');
+    setTimeout(() => { openInlineHistory(addr, true); reapplySearchHighlight(); }, 50);
   });
+}
+
+// ---- main-pane phrase highlighting (CSS Custom Highlight API) ----
+// The Google "jump to highlight" analogue: locate the phrase inside the
+// rendered provision and paint it via ::highlight(). No DOM mutation, so it
+// neither disturbs diff/derivation logic nor survives a re-render — hence
+// reapplySearchHighlight() runs after each renderDoc.
+function clearSearchHighlight() {
+  searchHighlight = null;
+  if (window.CSS && CSS.highlights) CSS.highlights.delete(SEARCH_HL_NAME);
+  if (!suppressHashUpdate) updateHash();
+}
+
+function reapplySearchHighlight() {
+  if (window.CSS && CSS.highlights) CSS.highlights.delete(SEARCH_HL_NAME);
+  if (!searchHighlight || mode !== 'law') return;
+  applySearchHighlight(searchHighlight.addr, searchHighlight.phrase);
+}
+
+function applySearchHighlight(addr, phrase) {
+  if (!window.CSS || !CSS.highlights || typeof Highlight === 'undefined' || !phrase) return;
+  const anchor = document.querySelector(`#doc .node[data-addr="${cssEsc(addr)}"]`)
+    || document.querySelector(`#doc .pblock[data-addr="${cssEsc(addr)}"]`);
+  if (!anchor) return;
+
+  // Concatenate the anchor's text nodes (skipping any open inline-history
+  // panel, whose text is a repeat) and keep an offset→node map so a match can
+  // span element/text-node boundaries.
+  const walker = document.createTreeWalker(anchor, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) {
+      if (!n.nodeValue) return NodeFilter.FILTER_REJECT;
+      for (let p = n.parentElement; p && p !== anchor; p = p.parentElement) {
+        if (p.classList && p.classList.contains('inline-history')) return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const spans = []; // {node, start, len} — start is offset into `combined`
+  let combined = '';
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    spans.push({ node: n, start: combined.length, len: n.nodeValue.length });
+    combined += n.nodeValue;
+  }
+  if (!spans.length) return;
+
+  const locate = (off) => {
+    for (const s of spans) if (off >= s.start && off <= s.start + s.len) return { node: s.node, offset: off - s.start };
+    const last = spans[spans.length - 1];
+    return { node: last.node, offset: last.len };
+  };
+  // Whitespace-tolerant, case-insensitive — mirrors the snippet highlighter.
+  const re = new RegExp(phrase.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+'), 'gi');
+  const ranges = [];
+  for (let m = re.exec(combined); m; m = re.exec(combined)) {
+    if (m.index === re.lastIndex) { re.lastIndex++; continue; }
+    const a = locate(m.index), b = locate(m.index + m[0].length);
+    try {
+      const r = document.createRange();
+      r.setStart(a.node, a.offset);
+      r.setEnd(b.node, b.offset);
+      ranges.push(r);
+    } catch (_) { /* skip unrepresentable range */ }
+  }
+  if (!ranges.length) return;
+  CSS.highlights.set(SEARCH_HL_NAME, new Highlight(...ranges));
 }
 
 // =====================================================================
 // Vertaa (two-date compare)
 // =====================================================================
-function renderVertaa() {
+function renderCompare() {
   const view = document.getElementById('view');
-  if (vertaaSel.d1 == null) vertaaSel.d1 = 0;
-  if (vertaaSel.d2 == null) vertaaSel.d2 = changeDates.length - 1;
+  if (compareSel.d1 == null) compareSel.d1 = 0;
+  if (compareSel.d2 == null) compareSel.d2 = changeDates.length - 1;
   const optHtml = (sel) => changeDates.map((d, i) =>
     `<option value="${i}"${i === sel ? ' selected' : ''}>${escHtml(d)}</option>`).join('');
   view.innerHTML = `
-    <div class="vertaa-wrap panel">
-      <h2 class="panel-title">${escHtml(tr('vertaaTitle'))}</h2>
-      <form id="vertaa-form" class="vertaa-form">
-        <label>${escHtml(tr('vertaaFrom'))} <select id="vertaa-d1">${optHtml(vertaaSel.d1)}</select></label>
-        <label>${escHtml(tr('vertaaTo'))} <select id="vertaa-d2">${optHtml(vertaaSel.d2)}</select></label>
-        <button type="submit">${escHtml(tr('vertaaRun'))}</button>
+    <div class="compare-wrap panel">
+      <h2 class="panel-title">${escHtml(tr('compareTitle'))}</h2>
+      <form id="compare-form" class="compare-form">
+        <label>${escHtml(tr('compareFrom'))} <select id="compare-d1">${optHtml(compareSel.d1)}</select></label>
+        <label>${escHtml(tr('compareTo'))} <select id="compare-d2">${optHtml(compareSel.d2)}</select></label>
+        <button type="submit">${escHtml(tr('compareRun'))}</button>
       </form>
-      <div id="vertaa-results"></div>
+      <div id="compare-results"></div>
     </div>`;
-  document.getElementById('vertaa-form').addEventListener('submit', (e) => {
+  document.getElementById('compare-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    vertaaSel.d1 = parseInt(document.getElementById('vertaa-d1').value, 10);
-    vertaaSel.d2 = parseInt(document.getElementById('vertaa-d2').value, 10);
-    runVertaa();
+    compareSel.d1 = parseInt(document.getElementById('compare-d1').value, 10);
+    compareSel.d2 = parseInt(document.getElementById('compare-d2').value, 10);
+    runCompare();
     if (!suppressHashUpdate) updateHash();
   });
-  runVertaa();
+  runCompare();
 }
 
 // Deepest changed addressable nodes between two folds: recursive fingerprint
@@ -2524,17 +2471,17 @@ function descendCompare(addr, nA, nB, results) {
   }
 }
 
-function runVertaa() {
-  const out = document.getElementById('vertaa-results');
+function runCompare() {
+  const out = document.getElementById('compare-results');
   if (!out) return;
-  let { d1, d2 } = vertaaSel;
-  if (d1 === d2) { out.innerHTML = `<p class="muted-empty">${escHtml(tr('vertaaSame'))}</p>`; return; }
+  let { d1, d2 } = compareSel;
+  if (d1 === d2) { out.innerHTML = `<p class="muted-empty">${escHtml(tr('compareSame'))}</p>`; return; }
   if (d1 > d2) { [d1, d2] = [d2, d1]; }
   const dateA = changeDates[d1], dateB = changeDates[d2];
   const folds = allFolds();
   const liveA = folds[dateA].live, liveB = folds[dateB].live;
   const changes = changedNodesBetween(liveA, liveB);
-  if (!changes.length) { out.innerHTML = `<p class="muted-empty">${escHtml(tr('vertaaNoDiff'))}</p>`; return; }
+  if (!changes.length) { out.innerHTML = `<p class="muted-empty">${escHtml(tr('compareNoDiff'))}</p>`; return; }
 
   // Amending acts effective in (dateA, dateB]
   const actsBetween = new Map();
@@ -2544,13 +2491,13 @@ function runVertaa() {
     }
   }
 
-  let html = `<p class="haku-count">${tr('vertaaCount', changes.length, escHtml(dateA), escHtml(dateB))}</p>`;
+  let html = `<p class="search-count">${tr('compareCount', changes.length, escHtml(dateA), escHtml(dateB))}</p>`;
   if (actsBetween.size) {
     const links = [...actsBetween.keys()].map(id => {
       const s = sourceById[id];
-      return escHtml(s ? (s.canonical_id || id) : id);
+      return refLink('source', { id }, s ? (s.canonical_id || id) : id);
     }).join(', ');
-    html += `<p class="vertaa-acts"><span class="lbl">${escHtml(tr('vertaaActs'))}:</span> ${links}</p>`;
+    html += `<p class="compare-acts"><span class="lbl">${escHtml(tr('compareActs'))}:</span> ${links}</p>`;
   }
   // Expose every change directly (diff visible, no toggle); collapse behind
   // <details> only for very large compares where open-all would be slow.
@@ -2566,19 +2513,19 @@ function runVertaa() {
         .map(id => { const s = sourceById[id]; return s ? (s.canonical_id || id) : id; });
       return `${escHtml(date)}${acts.length ? ' (' + escHtml(acts.join(', ')) + ')' : ''}`;
     });
-    html += `<div class="op-row vertaa-row">`;
+    html += `<div class="op-row compare-row">`;
     html += `<div class="op-row-head">`;
     html += `<span class="op-kind vk-${c.kind}">${escHtml(changeKindLabel(c.kind))}</span>`;
-    html += `<span class="op-addr"><a href="#" class="vertaa-goto" data-addr="${escAttr(c.addr)}">${escHtml(prettyAddr(c.addr))}</a></span>`;
-    if (metaBits.length) html += `<span class="vertaa-touches">${metaBits.join(' · ')}</span>`;
+    html += `<span class="op-addr"><a href="#" class="compare-goto" data-addr="${escAttr(c.addr)}">${escHtml(prettyAddr(c.addr))}</a></span>`;
+    if (metaBits.length) html += `<span class="compare-touches">${metaBits.join(' · ')}</span>`;
     html += `</div>`;
     html += diffNodeDetailsHtml(c.addr, c.nodeA, c.nodeB, openAll);
     html += `</div>`;
   }
   out.innerHTML = html;
   wireDiffDetails(out);
-  out.querySelectorAll('.vertaa-goto').forEach(a => {
-    a.addEventListener('click', (e) => { e.preventDefault(); goToAddrAtDate(a.dataset.addr, changeDates[vertaaSel.d2]); });
+  out.querySelectorAll('.compare-goto').forEach(a => {
+    a.addEventListener('click', (e) => { e.preventDefault(); goToAddrAtDate(a.dataset.addr, changeDates[compareSel.d2]); });
   });
 }
 
@@ -2752,13 +2699,16 @@ function updateHash() {
   const params = new URLSearchParams();
   params.set('s', currentStatuteId);
   params.set('m', mode);
-  if (mode === 'oikeustila') {
+  if (mode === 'law') {
     params.set('d', changeDates[curDateIdx] || '');
     if (selectedAddress) params.set('a', selectedAddress);
+    if (searchHighlight && searchHighlight.phrase) params.set('q', searchHighlight.phrase);
     if (curTreeHash) params.set('h', curTreeHash.slice(0, 16));
-  } else if (mode === 'vertaa') {
-    if (vertaaSel.d1 != null) params.set('d1', changeDates[vertaaSel.d1] || '');
-    if (vertaaSel.d2 != null) params.set('d2', changeDates[vertaaSel.d2] || '');
+  } else if (mode === 'amendments') {
+    if (selectedSourceId) params.set('src', selectedSourceId);
+  } else if (mode === 'compare') {
+    if (compareSel.d1 != null) params.set('d1', changeDates[compareSel.d1] || '');
+    if (compareSel.d2 != null) params.set('d2', changeDates[compareSel.d2] || '');
   }
   const next = '#' + params.toString();
   if (location.hash !== next) {
@@ -2771,7 +2721,7 @@ function updateHash() {
 function permalinkUrl(address) {
   const params = new URLSearchParams();
   params.set('s', currentStatuteId);
-  params.set('m', 'oikeustila');
+  params.set('m', 'law');
   params.set('d', changeDates[curDateIdx] || '');
   if (address) params.set('a', address);
   if (curTreeHash) params.set('h', curTreeHash.slice(0, 16));
@@ -2784,9 +2734,11 @@ function parseHash() {
   if (!params.get('s')) return null;
   return {
     statute: params.get('s'),
-    mode: params.get('m') || 'oikeustila',
+    mode: params.get('m') || 'law',
     date: params.get('d') || null,
     address: params.get('a') || null,
+    query: params.get('q') || null,
+    src: params.get('src') || null,
     hashPrefix: params.get('h') || null,
     d1: params.get('d1') || null,
     d2: params.get('d2') || null,
@@ -2796,24 +2748,33 @@ function parseHash() {
 async function applyPermalink(pl) {
   suppressHashUpdate = true;
   try {
-    if (pl.mode === 'muutokset') { setMode('muutokset'); return; }
-    if (pl.mode === 'haku') { setMode('haku'); return; }
-    if (pl.mode === 'vertaa') {
-      const i1 = pl.d1 ? changeDates.indexOf(pl.d1) : -1;
-      const i2 = pl.d2 ? changeDates.indexOf(pl.d2) : -1;
-      vertaaSel.d1 = i1 >= 0 ? i1 : 0;
-      vertaaSel.d2 = i2 >= 0 ? i2 : changeDates.length - 1;
-      setMode('vertaa');
+    if (pl.mode === 'amendments') {
+      if (pl.src) selectedSourceId = pl.src;   // else renderAmendments picks default
+      setMode('amendments');
+      if (pl.src) setTimeout(() => {
+        const li = document.querySelector(`.amend-item[data-src="${cssEsc(pl.src)}"]`);
+        if (li) li.scrollIntoView({ block: 'nearest' });
+      }, 40);
       return;
     }
-    setMode('oikeustila', /*skipRender*/ true);
+    if (pl.mode === 'search') { setMode('search'); return; }
+    if (pl.mode === 'compare') {
+      const i1 = pl.d1 ? changeDates.indexOf(pl.d1) : -1;
+      const i2 = pl.d2 ? changeDates.indexOf(pl.d2) : -1;
+      compareSel.d1 = i1 >= 0 ? i1 : 0;
+      compareSel.d2 = i2 >= 0 ? i2 : changeDates.length - 1;
+      setMode('compare');
+      return;
+    }
+    setMode('law', /*skipRender*/ true);
     let idx = pl.date ? changeDates.indexOf(pl.date) : -1;
     if (idx < 0) idx = changeDates.length - 1;
     selectedAddress = pl.address || null;
+    searchHighlight = (pl.query && pl.address) ? { addr: pl.address, phrase: pl.query } : null;
     await selectDate(idx, { skipRender: true });
-    renderOikeustila();
+    renderLaw();
     if (pl.hashPrefix) showPermalinkProof(pl.hashPrefix);
-    if (pl.address) setTimeout(() => openInlineHistory(pl.address, true), 60);
+    if (pl.address) setTimeout(() => { openInlineHistory(pl.address, true); reapplySearchHighlight(); }, 60);
   } finally {
     suppressHashUpdate = false;
     updateHash();

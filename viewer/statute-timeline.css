@@ -111,8 +111,8 @@ select {
 /* Scrubber row + real time axis */
 .scrubber { margin-top: 0.4rem; }
 .scrubber-row { display: flex; align-items: baseline; gap: 0.8rem; flex-wrap: wrap; }
-.oikeustila { font-size: 1.05rem; font-weight: 700; }
-.oikeustila .date { color: var(--accent); }
+.law { font-size: 1.05rem; font-weight: 700; }
+.law .date { color: var(--accent); }
 .date-meta { font-size: 0.74rem; color: var(--muted); margin-left: auto; }
 .date-nav { display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap; }
 .date-nav button { font-size: 0.78rem; padding: 0.2rem 0.55rem; border: 1px solid var(--border); border-radius: 5px; background: var(--card-bg); cursor: pointer; }
@@ -277,14 +277,14 @@ select {
 .pblock-num {
   flex: 0 0 auto;
   font-weight: 700; font-size: 0.72rem; color: var(--muted);
-  user-select: none; font-family: var(--font);
+  font-family: var(--font);
 }
-.mom > .pblock-inner > .pblock-num { min-width: 2.6rem; }
-.kohta > .pblock-inner > .pblock-num, .alakohta > .pblock-inner > .pblock-num { min-width: 1.4rem; }
+.kind-subsection > .pblock-inner > .pblock-num { min-width: 2.6rem; }
+.kind-paragraph > .pblock-inner > .pblock-num, .kind-subparagraph > .pblock-inner > .pblock-num { min-width: 1.4rem; }
 .pblock-body { line-height: 1.6; }
 .pblock-text { white-space: pre-wrap; }
-.kohta { margin-left: 1.4rem; }
-.alakohta { margin-left: 2.6rem; }
+.kind-paragraph { margin-left: 1.4rem; }
+.kind-subparagraph { margin-left: 2.6rem; }
 .pblock > .hist-btn { position: absolute; top: 0.15rem; right: 0.3rem; margin-left: 0; }
 .pblock-children { margin-top: 0.15rem; }
 .hist-anchor { outline: 1px dashed #bcd2e8; outline-offset: 2px; }
@@ -460,31 +460,64 @@ details.diff summary { font-size: 0.74rem; color: var(--accent); cursor: pointer
 .op-change { border-left: 2px solid var(--border); padding-left: 0.55rem; }
 .op-change-addr { font-weight: 600; font-size: 0.84rem; color: var(--accent); text-decoration: none; }
 .op-change-addr:hover { text-decoration: underline; }
-.vertaa-touches { font-size: 0.72rem; color: var(--muted); font-family: var(--mono); margin-left: auto; }
+.compare-touches { font-size: 0.72rem; color: var(--muted); font-family: var(--mono); margin-left: auto; }
 
 /* Diachronic search */
-.haku-form { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
-.haku-form input { flex: 1; font-size: 0.95rem; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; }
-.haku-form button { font-size: 0.9rem; font-weight: 600; padding: 0.45rem 1.1rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; }
-.haku-note { font-size: 0.78rem; color: var(--muted); margin: 0.2rem 0 0.8rem; line-height: 1.5; }
-.haku-count { font-size: 0.86rem; font-weight: 600; margin: 0.4rem 0; }
-.haku-hit { border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.8rem; margin-bottom: 0.6rem; background: #fcfcfb; }
-.haku-hit-head a { font-weight: 700; color: var(--accent); text-decoration: none; }
-.haku-hit-head a:hover { text-decoration: underline; }
-.haku-intervals { font-size: 0.78rem; color: var(--muted); margin: 0.25rem 0; }
-.haku-intervals .lbl, .haku-attr .attr-label { font-weight: 600; color: var(--fg); }
-.haku-attr { font-size: 0.82rem; margin: 0.2rem 0; }
-.haku-attr a { color: var(--accent); }
-.haku-snippet { font-family: var(--font-text); font-size: 0.88rem; color: #3a3a34; margin-top: 0.3rem; padding: 0.3rem 0.5rem; background: #f4f1ea; border-radius: 5px; line-height: 1.5; }
-.haku-snippet mark { background: #ffe9a8; border-radius: 2px; padding: 0 1px; }
+.search-form { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
+.search-form input { flex: 1; font-size: 0.95rem; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; }
+.search-form button { font-size: 0.9rem; font-weight: 600; padding: 0.45rem 1.1rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; }
+.search-note { font-size: 0.78rem; color: var(--muted); margin: 0.2rem 0 0.8rem; line-height: 1.5; }
+.search-count { font-size: 0.86rem; font-weight: 600; margin: 0.4rem 0; }
+.search-hit { border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.8rem; margin-bottom: 0.6rem; background: #fcfcfb; }
+.search-hit-head a { font-weight: 700; color: var(--accent); text-decoration: none; }
+.search-hit-head a:hover { text-decoration: underline; }
+.search-intervals { font-size: 0.78rem; color: var(--muted); margin: 0.25rem 0; }
+.search-intervals .lbl, .search-attr .attr-label { font-weight: 600; color: var(--fg); }
+.search-attr { font-size: 0.82rem; margin: 0.2rem 0; }
+.search-attr a { color: var(--accent); }
+.search-snippet { font-family: var(--font-text); font-size: 0.88rem; color: #3a3a34; margin-top: 0.3rem; padding: 0.3rem 0.5rem; background: #f4f1ea; border-radius: 5px; line-height: 1.5; }
+.search-snippet mark { background: #ffe9a8; border-radius: 2px; padding: 0 1px; }
+
+/* Main-pane phrase highlight when a diachronic-search result (or q-permalink)
+   lands on a provision. CSS Custom Highlight API — no DOM nodes, so only
+   background/color are paintable. Warmer than the snippet mark to read as "the
+   live target" against serif body text. */
+::highlight(lawvm-search) { background: #ffd866; color: #1d1d18; }
+
+/* Reference links: quiet inline affordance (source ids, dates). Underline
+   firms up on hover/focus; in mono meta contexts they inherit the muted tone. */
+.ref-link {
+  color: var(--accent); text-decoration: none; cursor: pointer;
+  border-bottom: 1px dotted rgba(43, 92, 138, 0.45);
+}
+.ref-link:hover, .ref-link:focus-visible { border-bottom-style: solid; outline: none; }
+.ref-link:focus-visible { box-shadow: 0 0 0 2px rgba(43, 92, 138, 0.35); border-radius: 2px; }
+.tomb-meta .ref-link, .amend-meta .ref-link { color: inherit; border-bottom-color: rgba(107, 107, 102, 0.5); }
+.tomb-meta .ref-link:hover { color: var(--accent); }
+.ref-date { font-variant-numeric: tabular-nums; }
+
+/* Shared hovercard popover (above the sticky topbar at z-index 40). */
+.ref-hovercard {
+  position: absolute; z-index: 60; max-width: 22rem;
+  background: var(--card-bg); border: 1px solid #bcd2e8; border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  padding: 0.55rem 0.7rem; font-size: 0.8rem; line-height: 1.4; color: var(--fg);
+}
+.ref-hovercard[hidden] { display: none; }
+.ref-hovercard .hc-title { font-weight: 700; font-size: 0.86rem; margin-bottom: 0.35rem; }
+.ref-hovercard .hc-meta { margin: 0; display: grid; gap: 0.15rem; }
+.ref-hovercard .hc-meta > div { display: flex; gap: 0.4rem; }
+.ref-hovercard .hc-meta dt { font-weight: 600; color: var(--muted); flex: 0 0 auto; min-width: 5.5rem; }
+.ref-hovercard .hc-meta dd { margin: 0; }
+.ref-hovercard a { color: var(--accent); }
 
 /* Vertaa (two-date compare) */
-.vertaa-form { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.7rem; font-size: 0.86rem; }
-.vertaa-form select { font-size: 0.84rem; }
-.vertaa-form button { font-size: 0.88rem; font-weight: 600; padding: 0.35rem 1rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; }
-.vertaa-acts { font-size: 0.8rem; color: var(--muted); }
-.vertaa-acts .lbl { font-weight: 600; color: var(--fg); }
-.vertaa-row { margin-bottom: 0.5rem; }
+.compare-form { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.7rem; font-size: 0.86rem; }
+.compare-form select { font-size: 0.84rem; }
+.compare-form button { font-size: 0.88rem; font-weight: 600; padding: 0.35rem 1rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; }
+.compare-acts { font-size: 0.8rem; color: var(--muted); }
+.compare-acts .lbl { font-weight: 600; color: var(--fg); }
+.compare-row { margin-bottom: 0.5rem; }
 .vk-added { background: var(--ins-bg); color: var(--green); }
 .vk-removed { background: var(--del-bg); color: var(--red); }
 .vk-changed { background: var(--changed-bg); color: var(--changed); }
