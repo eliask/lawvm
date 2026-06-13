@@ -106,12 +106,12 @@ from lawvm.finland.elaborated_group import (
     build_elaborated_group as _build_elaborated_group_factory,
 )
 from lawvm.finland.replay_findings import (
-    _apply_mutation_boundary_violation_finding,
-    _apply_mutation_invariant_report_finding,
-    _base_observation_to_finding,
-    _serialize_apply_mutation_event,
-    _serialize_apply_mutation_invariant_report,
-    _serialize_observed_write_audit,
+    _apply_mutation_boundary_violation_finding,  # noqa: F401 - grafter compatibility re-export
+    _apply_mutation_invariant_report_finding,  # noqa: F401 - grafter compatibility re-export
+    _base_observation_to_finding,  # noqa: F401 - grafter compatibility re-export
+    _serialize_apply_mutation_event,  # noqa: F401 - grafter compatibility re-export
+    _serialize_apply_mutation_invariant_report,  # noqa: F401 - grafter compatibility re-export
+    _serialize_observed_write_audit,  # noqa: F401 - grafter compatibility re-export
     _strict_rejected_source_pathology_finding,
 )
 from lawvm.finland.future_repeal import RepealTargetRef
@@ -578,6 +578,10 @@ from lawvm.finland.process_apply_projection import ProcessApplyProjectionContext
 from lawvm.finland.process_structural_prepare import ProcessStructuralPrepareContext
 from lawvm.finland.process_temporal_authority import ProcessTemporalAuthorityContext
 from lawvm.finland.process_temporal_postprocessing import ProcessTemporalPostprocessContext
+from lawvm.finland.replay_evidence_projection import (
+    ReplayEvidenceProjectionRequest,
+    project_replay_evidence,
+)
 from lawvm.finland.replay_fold_projection import ReplayFoldProjectionRequest, project_replay_fold
 from lawvm.finland.replay_horizon import (
     ReplayHorizonRequest,
@@ -1072,9 +1076,6 @@ from lawvm.finland.apply import (
 from lawvm.finland.apply_events import (
     ApplyMutationEvent,
     ApplyMutationInvariantReport,
-    build_apply_mutation_invariant_reports,
-    check_apply_mutation_invariant_reports,
-    check_apply_mutation_accounting,
 )
 from lawvm.core.mutation_accounting import (
     MutationAccountingResult,
@@ -5246,154 +5247,25 @@ def replay_xml(
                 replay_print=_replay_print,
             )
         )
-        # Convert base observations (from T1b) to findings.
-        # These are observations about the base statute source structure (unnumbered peers, label/eId divergences).
-        seen_base_observations: Set[tuple[str, str, str, str, str]] = set()
-        for obs_dict in elaboration_observations:
-            obs_kind = str(obs_dict.get("kind", "")).strip()
-            # Only convert base observation kinds (not other elaboration observations).
-            if obs_kind != "LABEL_EID_DIVERGENCE" and not obs_kind.startswith("BASE_"):
-                continue
-            if get_finding_spec(obs_kind) is None:
-                continue
-            source_statute = str(obs_dict.get("source_statute", "")).strip()
-            raw_detail = obs_dict.get("detail")
-            detail_dict: dict[str, Any] = {}
-            if isinstance(raw_detail, dict):
-                for k, v in raw_detail.items():
-                    detail_dict[str(k)] = v
-            # Use (kind, source_statute, section_address, label, eId) as dedup key to preserve all observations.
-            section_address = str(detail_dict.get("section_address", "")).strip()
-            if not section_address:
-                raw_path = detail_dict.get("path")
-                if isinstance(raw_path, list):
-                    section_address = "/".join(str(part) for part in raw_path)
-                elif isinstance(raw_path, tuple):
-                    section_address = "/".join(str(part) for part in raw_path)
-            label = str(detail_dict.get("label", "")).strip()
-            eId = str(detail_dict.get("eId", "")).strip()
-            key = (obs_kind, source_statute, section_address, label, eId)
-            if key in seen_base_observations:
-                continue
-            seen_base_observations.add(key)
-            finding = _base_observation_to_finding(obs_dict)
-            if finding is not None:
-                replay_findings.append(finding)
-        if source_pathologies_out is not None:
-            source_pathologies_out.extend(source_pathologies)
-        if replay_meta_out is not None and source_pathologies:
-            replay_meta_out["source_pathologies"] = [
-                {
-                    "source_statute": pathology.source_statute,
-                    **pathology.as_detail(),
-                }
-                for pathology in source_pathologies
-            ]
-        if replay_meta_out is not None and elaboration_observations:
-            replay_meta_out["elaboration_observations"] = list(elaboration_observations)
-        if replay_meta_out is not None and sparse_slot_bindings:
-            replay_meta_out["sparse_slot_bindings"] = list(sparse_slot_bindings)
-        if replay_meta_out is not None and sparse_leftovers:
-            replay_meta_out["sparse_leftovers"] = list(sparse_leftovers)
-        if replay_meta_out is not None and regex_recognition_coverages:
-            replay_meta_out["regex_recognition_coverage"] = [
-                coverage.to_dict() for coverage in regex_recognition_coverages
-            ]
-        if replay_meta_out is not None and commencement_expiry_overrides:
-            replay_meta_out["commencement_expiry_overrides"] = list(commencement_expiry_overrides)
-        if replay_meta_out is not None and write_audits:
-            replay_meta_out["apply_write_audits"] = [
-                _serialize_observed_write_audit(audit) for audit in write_audits
-            ]
-        mutation_invariant_reports: tuple[ApplyMutationInvariantReport, ...] = ()
-        if replay_meta_out is not None and mutation_events:
-            mutation_invariant_reports = build_apply_mutation_invariant_reports(mutation_events)
-            replay_meta_out["apply_mutation_events"] = [
-                _serialize_apply_mutation_event(event) for event in mutation_events
-            ]
-            replay_meta_out["apply_mutation_invariant_reports"] = [
-                _serialize_apply_mutation_invariant_report(report)
-                for report in mutation_invariant_reports
-            ]
-            seen_apply_mutation_findings: set[tuple[str, str, str, str]] = set()
-            for report in mutation_invariant_reports:
-                for accounting_result in report.results:
-                    finding = _apply_mutation_invariant_report_finding(
-                        report=report,
-                        result=accounting_result,
-                        source_statute=parent_id,
-                    )
-                    if finding is None:
-                        continue
-                    dedupe_key = (finding.kind, report.op_id, report.helper, parent_id)
-                    if dedupe_key in seen_apply_mutation_findings:
-                        continue
-                    replay_findings.append(finding)
-                    seen_apply_mutation_findings.add(dedupe_key)
-        apply_mutation_boundary_violations = (
-            check_apply_mutation_invariant_reports(mutation_invariant_reports)
-            if mutation_invariant_reports
-            else check_apply_mutation_accounting(mutation_events)
+        project_replay_evidence(
+            ReplayEvidenceProjectionRequest(
+                parent_id=parent_id,
+                replay_findings=replay_findings,
+                source_pathologies=source_pathologies,
+                elaboration_observations=elaboration_observations,
+                sparse_slot_bindings=sparse_slot_bindings,
+                sparse_leftovers=sparse_leftovers,
+                regex_recognition_coverages=regex_recognition_coverages,
+                commencement_expiry_overrides=commencement_expiry_overrides,
+                write_audits=write_audits,
+                mutation_events=mutation_events,
+                restructure_plans=_restructure_plans,
+                source_pathologies_out=source_pathologies_out,
+                replay_meta_out=replay_meta_out,
+                strict_profile=strict_profile,
+                replay_print=_replay_print,
+            )
         )
-        if replay_meta_out is not None and apply_mutation_boundary_violations:
-            replay_meta_out["apply_mutation_boundary_violations"] = list(apply_mutation_boundary_violations)
-        if apply_mutation_boundary_violations:
-            if not mutation_invariant_reports:
-                seen_apply_boundary_findings = {
-                    (
-                        finding.kind,
-                        str(finding.detail.get("violation") or ""),
-                        parent_id,
-                    )
-                    for finding in replay_findings
-                }
-                for violation in apply_mutation_boundary_violations:
-                    finding = _apply_mutation_boundary_violation_finding(
-                        violation=violation,
-                        source_statute=parent_id,
-                    )
-                    key = (
-                        finding.kind,
-                        str(finding.detail.get("violation") or ""),
-                        parent_id,
-                    )
-                    if key in seen_apply_boundary_findings:
-                        continue
-                    replay_findings.append(finding)
-                    seen_apply_boundary_findings.add(key)
-            for violation in apply_mutation_boundary_violations:
-                _replay_print(f"WARNING apply mutation boundary: {violation}")
-        if replay_meta_out is not None and _restructure_plans:
-            replay_meta_out["restructure_plans"] = [p.to_dict() for p in _restructure_plans]
-        if source_pathologies:
-            for pathology in source_pathologies:
-                _replay_print(
-                    f"WARNING source pathology: {pathology.code} {pathology.source_statute} {pathology.target_label}"
-                )
-        if strict_profile is not None and source_pathologies:
-            existing_rejections = {
-                (
-                    finding.kind,
-                    str(finding.detail.get("code") or ""),
-                    str(finding.detail.get("target_label") or ""),
-                )
-                for finding in replay_findings
-                if finding.kind == "APPLY.SOURCE_PATHOLOGY_DETECTED"
-            }
-            for pathology in source_pathologies:
-                finding = _strict_rejected_source_pathology_finding(
-                    pathology,
-                    stage="replay_xml",
-                )
-                key = (
-                    "APPLY.SOURCE_PATHOLOGY_DETECTED",
-                    pathology.code,
-                    pathology.target_label,
-                )
-                if key in existing_rejections:
-                    continue
-                replay_findings.append(finding)
-                existing_rejections.add(key)
         source_adjudication = build_source_adjudication(
             parent_id,
             mode,
