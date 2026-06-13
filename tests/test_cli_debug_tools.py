@@ -5,6 +5,7 @@ from functools import lru_cache
 from types import SimpleNamespace
 import json
 import sys
+from typing import Any
 
 import pytest
 
@@ -32,6 +33,11 @@ from lawvm.core.ir import LegalOperation
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
 from lawvm.tools.classify_result import ClassifyResult
 from tests.corpus_pin_helpers import pinned_replay
+
+
+def _replay_sink(kwargs: dict[str, Any], name: str) -> Any:
+    sinks = kwargs.get("sinks")
+    return getattr(sinks, name) if sinks is not None else kwargs.get(name)
 
 
 def test_cli_main_suppresses_broken_pipe(monkeypatch) -> None:
@@ -1191,11 +1197,11 @@ def test_trace_section_main_prints_paths_and_context(capsys, monkeypatch) -> Non
 
 def test_replay_debug_main_prints_clause_text_and_filtered_ops(capsys, monkeypatch) -> None:
     def fake_replay_xml(*args, **kwargs):
-        compiled_ops_out = kwargs.get("compiled_ops_out")
-        replay_meta_out = kwargs.get("replay_meta_out")
-        lo_ops_out = kwargs.get("lo_ops_out")
-        failed_ops_out = kwargs.get("failed_ops_out")
-        temporal_events_out = kwargs.get("temporal_events_out")
+        compiled_ops_out = _replay_sink(kwargs, "compiled_ops_out")
+        replay_meta_out = _replay_sink(kwargs, "replay_meta_out")
+        lo_ops_out = _replay_sink(kwargs, "lo_ops_out")
+        failed_ops_out = _replay_sink(kwargs, "failed_ops_out")
+        temporal_events_out = _replay_sink(kwargs, "temporal_events_out")
         assert compiled_ops_out is not None
         compiled_ops_out.extend(
             [
@@ -1338,8 +1344,8 @@ def test_replay_debug_main_prints_clause_text_and_filtered_ops(capsys, monkeypat
 
 def test_replay_debug_json_serializes_replay_op_enums(capsys, monkeypatch) -> None:
     def fake_replay_xml(*args, **kwargs):
-        compiled_ops_out = kwargs.get("compiled_ops_out")
-        lo_ops_out = kwargs.get("lo_ops_out")
+        compiled_ops_out = _replay_sink(kwargs, "compiled_ops_out")
+        lo_ops_out = _replay_sink(kwargs, "lo_ops_out")
         assert compiled_ops_out is not None
         compiled_ops_out.append(
             {
@@ -1401,11 +1407,11 @@ def test_replay_debug_json_serializes_replay_op_enums(capsys, monkeypatch) -> No
 
 def test_replay_debug_main_prints_filtered_replay_meta_and_temporal_events(capsys, monkeypatch) -> None:
     def fake_replay_xml(*args, **kwargs):
-        compiled_ops_out = kwargs.get("compiled_ops_out")
-        replay_meta_out = kwargs.get("replay_meta_out")
-        lo_ops_out = kwargs.get("lo_ops_out")
-        failed_ops_out = kwargs.get("failed_ops_out")
-        temporal_events_out = kwargs.get("temporal_events_out")
+        compiled_ops_out = _replay_sink(kwargs, "compiled_ops_out")
+        replay_meta_out = _replay_sink(kwargs, "replay_meta_out")
+        lo_ops_out = _replay_sink(kwargs, "lo_ops_out")
+        failed_ops_out = _replay_sink(kwargs, "failed_ops_out")
+        temporal_events_out = _replay_sink(kwargs, "temporal_events_out")
         assert compiled_ops_out is not None
         compiled_ops_out.extend(
             [
@@ -1485,8 +1491,8 @@ def test_replay_debug_main_prints_filtered_replay_meta_and_temporal_events(capsy
 
 def test_replay_debug_failed_only_prints_filtered_failed_ops(capsys, monkeypatch) -> None:
     def fake_replay_xml(*args, **kwargs):
-        compiled_ops_out = kwargs.get("compiled_ops_out")
-        failed_ops_out = kwargs.get("failed_ops_out")
+        compiled_ops_out = _replay_sink(kwargs, "compiled_ops_out")
+        failed_ops_out = _replay_sink(kwargs, "failed_ops_out")
         assert compiled_ops_out is not None
         compiled_ops_out.append(
             {
@@ -1554,7 +1560,7 @@ def test_replay_debug_failed_only_prints_filtered_failed_ops(capsys, monkeypatch
 
 def test_replay_debug_bundle_can_include_filtered_findings(monkeypatch) -> None:
     def fake_replay_xml(*args, **kwargs):
-        compiled_ops_out = kwargs.get("compiled_ops_out")
+        compiled_ops_out = _replay_sink(kwargs, "compiled_ops_out")
         assert compiled_ops_out is not None
         compiled_ops_out.append(
             {
