@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from typing import TYPE_CHECKING, FrozenSet, Optional, Set
 
 import lxml.etree as etree
@@ -103,6 +104,19 @@ def _collect_base_observations(ir: IRNode, statute_id: str) -> tuple["Elaboratio
     return tuple(observations)
 
 
+def _base_issue_date_iso(tree: etree._Element) -> str:
+    for name in ("dateIssued", "datePublished", "dateIssuedGenerated"):
+        for el in tree.findall('.//{*}FRBRdate'):
+            if el.get("name") != name:
+                continue
+            raw = el.get("date") or ""
+            try:
+                return date.fromisoformat(raw).isoformat()
+            except ValueError:
+                continue
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # StatuteContext — immutable context bag, built once from base XML
 # ---------------------------------------------------------------------------
@@ -136,6 +150,7 @@ class StatuteContext:
     base_xml_bytes: bytes
     base_observations: tuple["ElaborationObservation", ...] = field(default_factory=tuple)
     source_normalization_facts: tuple["SourceNormalizationFact", ...] = field(default_factory=tuple)
+    issue_date: str = ""
 
     @classmethod
     def from_xml(cls, xml_bytes: bytes, label_postprocessor=None) -> "StatuteContext":
@@ -181,6 +196,7 @@ class StatuteContext:
             base_xml_bytes=xml_bytes,
             base_observations=base_observations,
             source_normalization_facts=tuple(norm_facts),
+            issue_date=_base_issue_date_iso(tree),
         )
 
 

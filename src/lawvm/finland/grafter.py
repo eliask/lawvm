@@ -3886,6 +3886,7 @@ def process_muutoslaki(
             amendment_id=amendment_id,
             parent_id=parent_id,
             parent_title=ctx.title,
+            parent_issue_date=ctx.issue_date,
             xml_bytes=xml_bytes,
             strict_profile=strict_profile,
             processed_amendment_titles=_processed_amendment_titles,

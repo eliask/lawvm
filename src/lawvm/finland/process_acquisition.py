@@ -40,6 +40,7 @@ class ProcessAcquisitionContext:
     amendment_id: str
     parent_id: str
     parent_title: str
+    parent_issue_date: str
     xml_bytes: bytes
     strict_profile: StrictProfile | None
     processed_amendment_titles: dict[str, str]
@@ -122,6 +123,7 @@ class ProcessAcquisitionContext:
         xml_bytes: bytes,
         parent_id: str,
         source_title: str,
+        parent_issue_date: str | None = None,
         lacks_operative_structure: bool,
         operative_tags: Sequence[str],
     ) -> AmendmentAcquisitionResult:
@@ -131,6 +133,7 @@ class ProcessAcquisitionContext:
             amendment_id=self.amendment_id,
             source_title=source_title,
             parent_title=self.parent_title,
+            parent_issue_date=self.parent_issue_date if parent_issue_date is None else parent_issue_date,
             strict_profile=self.strict_profile,
             lacks_operative_structure=lacks_operative_structure,
             operative_structure_tags=operative_tags,
@@ -156,6 +159,7 @@ class ProcessAcquisitionContext:
             xml_bytes=xml_bytes,
             parent_id=pending_target_mid,
             source_title=source_title,
+            parent_issue_date="",
             lacks_operative_structure=lacks_operative_structure,
             operative_tags=operative_tags,
         )

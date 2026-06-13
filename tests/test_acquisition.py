@@ -60,6 +60,32 @@ def _operative_preamble_wins_xml() -> bytes:
     """.encode("utf-8")
 
 
+def _corrupt_citation_rewrite_xml() -> bytes:
+    return """
+    <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <preamble>
+        <formula name="enactingClause">
+          <p>Eduskunnan päätöksen mukaisesti muutetaan 16 päivänä elokuuta 1958
+          annetun rakennuslain (70/58) 11 §:n 2 momentti seuraavasti:</p>
+        </formula>
+      </preamble>
+    </akn>
+    """.encode("utf-8")
+
+
+def _nojalla_authority_xml() -> bytes:
+    return """
+    <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <preamble>
+        <formula name="enactingClause">
+          <p>Opetusministerin esittelystä säädetään ammatillisista oppilaitoksista
+          annetun lain (487/87) 60 §:n nojalla:</p>
+        </formula>
+      </preamble>
+    </akn>
+    """.encode("utf-8")
+
+
 def test_build_amendment_acquisition_result_uses_sec1_pre_routing_fallback() -> None:
     result = build_amendment_acquisition_result(
         xml_bytes=_sec1_fallback_xml(),
@@ -74,6 +100,34 @@ def test_build_amendment_acquisition_result_uses_sec1_pre_routing_fallback() -> 
     assert result.decision.pre_routing_sec1_applied is True
     assert "rakennuslain (370/1958) 3 §" in result.decision.chosen_normalized_text
     assert result.decision.should_apply is True
+
+
+def test_build_amendment_acquisition_result_accepts_parent_validated_citation_typo() -> None:
+    result = build_amendment_acquisition_result(
+        xml_bytes=_corrupt_citation_rewrite_xml(),
+        parent_id="1958/370",
+        amendment_id="1965/301",
+        source_title="Laki rakennuslain muuttamisesta",
+        parent_title="Rakennuslaki",
+        parent_issue_date="1958-08-16",
+    )
+
+    assert result.decision.should_apply is True
+    assert result.decision.route_reason == "citation_typo_rewrite_parent_validated"
+    assert result.decision.selected_lane == "preamble"
+
+
+def test_build_amendment_acquisition_result_classifies_nojalla_authority_skip() -> None:
+    result = build_amendment_acquisition_result(
+        xml_bytes=_nojalla_authority_xml(),
+        parent_id="1987/491",
+        amendment_id="1992/1314",
+        source_title="Asetus ammatillisista oppilaitoksista",
+        parent_title="Asetus ammatillisista oppilaitoksista",
+    )
+
+    assert result.decision.should_apply is False
+    assert result.decision.route_reason == "delegated_authority_nojalla_skip"
 
 
 def test_phase_witness_acquisition_projects_shared_acquisition_result() -> None:

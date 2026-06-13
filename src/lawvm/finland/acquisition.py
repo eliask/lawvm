@@ -215,6 +215,7 @@ def build_amendment_acquisition_result(
     amendment_id: str,
     source_title: str,
     parent_title: str,
+    parent_issue_date: str = "",
     strict_profile: Optional[StrictProfile] = None,
     lacks_operative_structure: Optional[bool] = None,
     operative_structure_tags: Optional[Sequence[str]] = None,
@@ -281,6 +282,7 @@ def build_amendment_acquisition_result(
         amendment_id=amendment_id,
         source_title=source_title,
         parent_title=parent_title,
+        parent_issue_date=parent_issue_date,
     )
     route_target_amendment_id = ""
     if str(route_reason or "") == "pending_amendment_of_parent_skip":

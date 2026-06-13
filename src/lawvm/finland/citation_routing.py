@@ -7,6 +7,13 @@ from __future__ import annotations
 
 import re
 
+from lawvm.finland.johtolause.affected_statute import (
+    instrument_from_text,
+    parse_affected_statute_head,
+    parse_delegated_authority_lead_in,
+    target_zone,
+)
+
 # Compiled at module scope per §1.11.  Two unbounded .* with re.DOTALL would
 # cause O(N^2) backtracking on long non-matching inputs.
 # Bounded to {0,400}? (lazy) — legitimate meta-repeal clauses are well under
@@ -39,7 +46,6 @@ OP_KEYWORDS = {
     'siirretään', 'siirretty', 'siirtää', 'siirtänyt',
 }
 
-
 def _normalize_source_citation_id(raw: str, source_year: int) -> str | None:
     """Normalize textual source citations like ``631/2022`` or ``631/22``."""
     raw = re.sub(r"\s+", "", (raw or ""))
@@ -56,6 +62,40 @@ def _normalize_source_citation_id(raw: str, source_year: int) -> str | None:
     if full_year > source_year:
         full_year -= 100
     return f"{full_year}/{num}"
+
+
+def _target_zone(johto: str) -> str:
+    return target_zone(johto)
+
+
+def _target_head_matches_parent_metadata(
+    *,
+    johto: str,
+    parent_title: str,
+    parent_issue_date: str,
+) -> bool:
+    """Return True when non-citation metadata identifies the parent statute.
+
+    This is the conservative typo gate for corrupt ``(NUM/YY)`` tokens in an
+    otherwise clear affected-statute head.  It deliberately ignores edit
+    distance and requires matching instrument plus either issue date or title.
+    """
+    head = parse_affected_statute_head(johto)
+    if head is None:
+        return False
+    parent_instrument = instrument_from_text(parent_title)
+    if not parent_instrument or head.instrument != parent_instrument:
+        return False
+    if parent_issue_date and head.issue_date is not None and head.issue_date.isoformat() == parent_issue_date:
+        return True
+
+    variants = _parent_title_reference_variants(parent_title)
+    target_norm = re.sub(r"\s+", " ", head.title_phrase.lower())
+    return bool(variants) and any(variant in target_norm for variant in variants)
+
+
+def _looks_like_nojalla_authority_clause(johto: str) -> bool:
+    return parse_delegated_authority_lead_in(johto) is not None
 
 
 def _parent_title_reference_variants(parent_title: str) -> set[str]:
@@ -143,11 +183,7 @@ def _johtolause_references_parent(johto: str, parent_id: str) -> bool:
     If some found and at least one matches parent_id → True.
     If some found but NONE match parent_id → False (wrong statute).
     """
-    johto_compact = re.sub(r'\s+', ' ', johto)
-    # Truncate at "sellaisena/sellaisina kuin" / "siihen myöhemmin" — everything
-    # after is prior-amendment references, not the target statute citation.
-    cut = re.search(r'\bsellais(?:ena|ina)\s+kuin\b|\bsiihen\s+myöhemmin\b', johto_compact, re.I)
-    target_zone = johto_compact[:cut.start()] if cut else johto_compact
+    target_zone = _target_zone(johto)
     refs = re.findall(r'\(\s*(\d+)\s*/\s*(\d{2,4})\s*\)', target_zone)
     if not refs:
         return True
@@ -176,11 +212,7 @@ def johtolause_cited_target_ids(johto: str, source_year: int) -> list[str]:
     ``num_collision_skip`` diagnostics — so the message can name what the
     johtolause actually cites rather than just saying "a different statute".
     """
-    johto_compact = re.sub(r"\s+", " ", johto or "")
-    cut = re.search(
-        r"\bsellais(?:ena|ina)\s+kuin\b|\bsiihen\s+myöhemmin\b", johto_compact, re.I
-    )
-    target_zone = johto_compact[: cut.start()] if cut else johto_compact
+    target_zone = _target_zone(johto)
     out: list[str] = []
     seen: set[str] = set()
     for ref_num, ref_year in re.findall(r"\(\s*(\d+)\s*/\s*(\d{2,4})\s*\)", target_zone):
@@ -239,6 +271,7 @@ def route_amendment(
     amendment_id: str,
     source_title: str = "",
     parent_title: str = "",
+    parent_issue_date: str = "",
 ) -> tuple[bool, str]:
     """Decide whether an amendment should be applied to this parent statute.
 
@@ -283,6 +316,12 @@ def route_amendment(
                                  johtolause targets a different statute
       "citation_mismatch_skip" — johtolause cites a different statute
                                  (meta-repeal or explicit foreign citation)
+      "delegated_authority_nojalla_skip"
+                               — johtolause cites an enabling statute in a
+                                 ``säädetään ... nojalla`` authority clause
+      "citation_typo_rewrite_parent_validated"
+                               — citation token disagrees, but parent metadata
+                                 validates the affected-statute head
     """
     # Guard condition: only run routing check when both IDs are present and
     # the amendment year is a digit string (replicates the inline condition).
@@ -315,6 +354,14 @@ def route_amendment(
     if not _refs_match:
         if _title_targets_pending_amendment_of_parent(source_title, parent_title):
             return False, "pending_amendment_of_parent_skip"
+        if _looks_like_nojalla_authority_clause(citation_guard_johto or johto):
+            return False, "delegated_authority_nojalla_skip"
+        if _target_head_matches_parent_metadata(
+            johto=citation_guard_johto or johto,
+            parent_title=parent_title,
+            parent_issue_date=parent_issue_date,
+        ):
+            return True, "citation_typo_rewrite_parent_validated"
         if amendment_num and amendment_num == parent_num:
             # Tier 1: NUM collision — high confidence misroute (same number,
             # different year → amendment_parents.csv false-mapped by NUM).

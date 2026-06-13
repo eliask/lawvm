@@ -31,6 +31,10 @@ from lawvm.finland.citation_routing import (
     extract_pending_amendment_target_id,
     johtolause_cited_target_ids,
 )
+from lawvm.finland.johtolause.affected_statute import (
+    parse_affected_statute_head,
+    parse_delegated_authority_lead_in,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +178,48 @@ class TestRouteAmendmentCitationMismatchSkip:
         )
         assert should_apply is False
         assert reason == "citation_mismatch_skip"
+
+    def test_nojalla_authority_clause_has_distinct_skip_reason(self) -> None:
+        johto_raw = (
+            "Opetusministerin esittelystä säädetään ammatillisista oppilaitoksista "
+            "annetun lain (487/87) 60 §:n nojalla:"
+        )
+        johto_norm = _normalize_johtolause_verbs(johto_raw)
+        should_apply, reason = route_amendment(
+            johto_norm,
+            "",
+            johto_raw,
+            "1987/491",
+            "1992/1314",
+            source_title="Asetus ammatillisista oppilaitoksista",
+            parent_title="Asetus ammatillisista oppilaitoksista",
+        )
+        assert should_apply is False
+        assert reason == "delegated_authority_nojalla_skip"
+        assert parse_delegated_authority_lead_in(johto_raw) is not None
+
+    def test_corrupt_citation_is_accepted_when_affected_head_matches_parent_metadata(self) -> None:
+        johto_raw = (
+            "Eduskunnan päätöksen mukaisesti muutetaan 16 päivänä elokuuta 1958 "
+            "annetun rakennuslain (70/58) 11 §:n 2 momentti"
+        )
+        johto_norm = _normalize_johtolause_verbs(johto_raw)
+        should_apply, reason = route_amendment(
+            johto_norm,
+            "",
+            johto_raw,
+            "1958/370",
+            "1965/301",
+            source_title="Laki rakennuslain muuttamisesta",
+            parent_title="Rakennuslaki",
+            parent_issue_date="1958-08-16",
+        )
+        assert should_apply is True
+        assert reason == "citation_typo_rewrite_parent_validated"
+        head = parse_affected_statute_head(johto_raw)
+        assert head is not None
+        assert head.issue_date is not None and head.issue_date.isoformat() == "1958-08-16"
+        assert head.instrument == "laki"
 
     def test_meta_repeal_pattern(self) -> None:
         # johto contains "kumotaan ... muuttamisesta ... annetun lain (NUM" pattern
@@ -340,6 +386,8 @@ class TestRouteAmendmentReturnType:
 
     _KNOWN_REASONS = frozenset({
         "references_parent",
+        "citation_typo_rewrite_parent_validated",
+        "delegated_authority_nojalla_skip",
         "pending_amendment_of_parent_skip",
         "no_guard_needed",
         "num_collision_skip",

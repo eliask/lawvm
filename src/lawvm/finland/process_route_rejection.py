@@ -146,6 +146,20 @@ class ProcessRouteRejectionContext:
             )
             return
 
+        if self.route_reason == "delegated_authority_nojalla_skip":
+            self.replay_print(
+                f"  [{self.amendment_id}] SKIPPED — delegated-authority nojalla clause: "
+                f"{self._cited_statute_phrase()} is enabling authority (not replay target {self.parent_id})"
+            )
+            self.record_finding(
+                kind="APPLY.SOURCE_INCOMPLETE",
+                message="Amendment skipped: delegated-authority nojalla lead-in cites enabling statute.",
+                source_statute=self.amendment_id,
+                detail={"route_reason": "delegated_authority_nojalla_skip"},
+                role="obligation",
+            )
+            return
+
         if _looks_like_fi_meta_repeal(self.johto):
             logger.debug("  [%s] SKIPPED — meta-repeal targets prior amendment act, not %s", self.amendment_id, self.parent_id)
         elif _title_explicitly_targets_other_statute(self.source_title, self.parent_title):
