@@ -54,7 +54,6 @@ from lawvm.finland.ops import (
     TargetKind,
     AmendmentOp,
     ResolvedOp,
-    ResolvedGroupKeyView,
     FailedOp,
     ReplayProfile,
     ScopeConfidence,
@@ -810,6 +809,7 @@ from lawvm.finland.apply_structure_ops import (
     _apply_materialization,
     _normalize_subsection_target_hint_ir,
 )
+from lawvm.finland.apply_loop_state import ApplyGroupState
 from lawvm.finland.payload_normalize import (
     ContainerPayloadPruningResult,
     GroupPayloadNormalizationResult,
@@ -3074,10 +3074,13 @@ def apply_ops_to_tree(
     (e.g. find_base_section for kumotaan placeholder decisions) and by the
     ``_apply_uncovered_*`` heuristics.
     """
-    prev_group_key: Optional[ResolvedGroupKeyView] = None
-    group_rops: List[ResolvedOp] = []
-    group_path_hint: tuple[tuple[str, str], ...] | None = None
-    group_had_failed_apply = False
+    # Group-boundary bookkeeping for the resolved-op apply fold, threaded as one
+    # typed state machine (ApplyGroupState) rather than four bare locals mutated
+    # inline. The fold accumulates ops into same-target groups and emits one
+    # timeline snapshot per group at each boundary; the typed object owns the
+    # current group key, accumulated ops, live path hint, and the
+    # failed-apply replay barrier, with explicit transition methods.
+    grp = ApplyGroupState()
 
     def _refresh_group_path_hint(
         target_unit_kind: TargetUnitKind,
@@ -3166,22 +3169,22 @@ def apply_ops_to_tree(
     base_ir = ctx.base_ir
 
     def _emit_group_snapshot_if_allowed() -> None:
-        if not group_rops or lo_ops_out is None:
+        if not grp.group_rops or lo_ops_out is None:
             return
-        if group_had_failed_apply:
+        if grp.group_had_failed_apply:
             return
-        _r = group_rops[0]
+        _r = grp.group_rops[0]
         _r_group = _r.resolved_group_key_view
         if not _emit_granular_subsection_timeline_ops(
             state,
-            group_rops,
+            grp.group_rops,
             lo_ops_out,
             amendment_id,
             source_title,
             amendment_issue_date,
             amendment_effective_date,
             base_ir,
-            path_hint=group_path_hint,
+            path_hint=grp.group_path_hint,
         ):
             _emit_section_snapshot(
                 state,
@@ -3189,14 +3192,14 @@ def apply_ops_to_tree(
                 _r_group.target_norm,
                 _r_group.target_chapter,
                 _r_group.target_part,
-                group_rops,
+                grp.group_rops,
                 lo_ops_out,
                 amendment_id,
                 source_title,
                 amendment_issue_date,
                 amendment_effective_date,
                 base_ir=base_ir,
-                path_hint=group_path_hint,
+                path_hint=grp.group_path_hint,
                 migration_ledger=migration_ledger,
                 standalone_section_targets=_standalone_section_targets,
             )
@@ -3328,17 +3331,17 @@ def apply_ops_to_tree(
 
     for rop in resolved:
         group_key = rop.resolved_group_key_view
-        if group_key != prev_group_key:
+        if grp.is_group_boundary(group_key):
             # Emit snapshot for previous group (if any). A failed apply in the
             # group is a replay barrier: its payload must not be promoted into
             # timeline/materialized state by the snapshot lane.
             _emit_group_snapshot_if_allowed()
-            group_rops = []
-            prev_group_key = group_key
-            group_path_hint = None
-            group_had_failed_apply = False
-        # Apply
+            grp.start_group(group_key)
+        # Apply. One typed disposition per op records whether it was applied,
+        # whether the apply failed, or whether no apply pass was required.
+        _disposition = "NO_APPLY_PASS"
         if rop.replay_requires_apply_pass:
+            _disposition = "APPLIED"
             try:
                 _prev_state = state
                 _event_cursor = len(mutation_events_out) if mutation_events_out is not None else 0
@@ -3353,7 +3356,7 @@ def apply_ops_to_tree(
                     source_pathologies_out=source_pathologies_out,
                     mutation_events_out=mutation_events_out,
                     findings_out=findings_out,
-                    path_hint=group_path_hint,
+                    path_hint=grp.group_path_hint,
                     rop=rop,
                     replay_history_ops=lo_ops_out,
                     standalone_section_targets=_standalone_section_targets,
@@ -3362,7 +3365,8 @@ def apply_ops_to_tree(
                     write_audits_out=write_audits_out,
                 )
                 if failed_ops_out is not None and len(failed_ops_out) > _failed_cursor:
-                    group_had_failed_apply = True
+                    grp.mark_failed_apply()
+                    _disposition = "APPLY_FAILED"
                 if mutation_events_out is not None:
                     _cross_check_observed_vs_declared(
                         _prev_state,
@@ -3372,21 +3376,24 @@ def apply_ops_to_tree(
                         observed_touch_results_out,
                     )
                 rop_group = rop.resolved_group_key_view
-                group_path_hint = _refresh_group_path_hint(
-                    rop_group.unit_kind,
-                    rop_group.target_norm,
-                    rop_group.target_chapter,
-                    rop_group.target_part,
-                    group_path_hint,
-                    rop,
-                    migration_ledger,
+                grp.set_path_hint(
+                    _refresh_group_path_hint(
+                        rop_group.unit_kind,
+                        rop_group.target_norm,
+                        rop_group.target_chapter,
+                        rop_group.target_part,
+                        grp.group_path_hint,
+                        rop,
+                        migration_ledger,
+                    )
                 )
             except (NameError, TypeError, AttributeError):
                 raise  # programming bugs — fail loud
             except Exception as e:
+                _disposition = "APPLY_FAILED"
                 logger.debug("  [%s] %s → ERROR", amendment_id, rop.description(), exc_info=True)
                 _replay_print(f"  [{amendment_id}] {rop.description()} → ERROR: {e}")
-        group_rops.append(rop)
+        grp.append_rop(rop, disposition=_disposition)
 
     # Emit snapshot for the last group
     _emit_group_snapshot_if_allowed()
