@@ -111,11 +111,11 @@ def parse_affected_statute_head(johto: str) -> AffectedStatuteHead | None:
 
 
 def parse_delegated_authority_lead_in(johto: str) -> DelegatedAuthorityLeadIn | None:
-    """Parse ``säädetään ... nojalla`` authority lead-ins used by delegated decrees."""
+    """Parse ``... nojalla`` authority lead-ins used by delegated instruments."""
 
     zone = target_zone(johto)
     lower = zone.lower()
-    if "nojalla" not in lower or re.search(r"\bsäädetään\b", lower) is None:
+    if "nojalla" not in lower:
         return None
     before_nojalla = lower.split("nojalla", 1)[0]
     if any(keyword in before_nojalla for keyword in ("muutetaan", "kumotaan", "lisätään", "siirretään")):

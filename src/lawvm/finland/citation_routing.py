@@ -86,12 +86,17 @@ def _target_head_matches_parent_metadata(
     parent_instrument = instrument_from_text(parent_title)
     if not parent_instrument or head.instrument != parent_instrument:
         return False
-    if parent_issue_date and head.issue_date is not None and head.issue_date.isoformat() == parent_issue_date:
-        return True
+    if "muuttamisesta annetun" in head.title_phrase.lower():
+        return False
 
     variants = _parent_title_reference_variants(parent_title)
     target_norm = re.sub(r"\s+", " ", head.title_phrase.lower())
-    return bool(variants) and any(variant in target_norm for variant in variants)
+    title_matches = bool(variants) and any(variant in target_norm for variant in variants)
+    if not title_matches:
+        return False
+    if parent_issue_date and head.issue_date is not None:
+        return head.issue_date.isoformat() == parent_issue_date
+    return True
 
 
 def _looks_like_nojalla_authority_clause(johto: str) -> bool:

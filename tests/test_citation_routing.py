@@ -198,6 +198,27 @@ class TestRouteAmendmentCitationMismatchSkip:
         assert reason == "delegated_authority_nojalla_skip"
         assert parse_delegated_authority_lead_in(johto_raw) is not None
 
+    def test_nojalla_maarannyt_authority_clause_preempts_typo_rewrite(self) -> None:
+        johto_raw = (
+            "Valtioneuvosto on tapaturmavakuutuslaissa säädettyjen markkamäärien "
+            "korottamisesta 20 päivänä elokuuta 1948 annetun lain (610/48) nojalla "
+            "sosiaaliministeriön esittelystä määrännyt,"
+        )
+        johto_norm = _normalize_johtolause_verbs(johto_raw)
+        should_apply, reason = route_amendment(
+            johto_norm,
+            "",
+            johto_raw,
+            "1948/608",
+            "1950/642",
+            source_title="Valtioneuvoston päätös tapaturmavakuutuslaissa säädettyjen markkamäärien korottamisesta",
+            parent_title="Tapaturmavakuutuslaki",
+            parent_issue_date="1948-08-20",
+        )
+        assert should_apply is False
+        assert reason == "delegated_authority_nojalla_skip"
+        assert parse_delegated_authority_lead_in(johto_raw) is not None
+
     def test_corrupt_citation_is_accepted_when_affected_head_matches_parent_metadata(self) -> None:
         johto_raw = (
             "Eduskunnan päätöksen mukaisesti muutetaan 16 päivänä elokuuta 1958 "
@@ -220,6 +241,44 @@ class TestRouteAmendmentCitationMismatchSkip:
         assert head is not None
         assert head.issue_date is not None and head.issue_date.isoformat() == "1958-08-16"
         assert head.instrument == "laki"
+
+    def test_same_day_sibling_title_mismatch_blocks_typo_rewrite(self) -> None:
+        johto_raw = (
+            "kumotaan 13 päivänä kesäkuuta 1929 annetun avioliittolain "
+            "(234/29) 55 §"
+        )
+        johto_norm = _normalize_johtolause_verbs(johto_raw)
+        should_apply, reason = route_amendment(
+            johto_norm,
+            "",
+            johto_raw,
+            "1929/235",
+            "1987/411",
+            source_title="Laki avioliittolain muuttamisesta",
+            parent_title="Laki avioliittolain voimaanpanosta",
+            parent_issue_date="1929-06-13",
+        )
+        assert should_apply is False
+        assert reason == "citation_mismatch_skip"
+
+    def test_amendment_of_amendment_head_blocks_typo_rewrite(self) -> None:
+        johto_raw = (
+            "muutetaan 17 päivänä helmikuuta 1989 annetun eroraha-asetuksen "
+            "muuttamisesta annetun asetuksen (191/89) voimaantulosäännös"
+        )
+        johto_norm = _normalize_johtolause_verbs(johto_raw)
+        should_apply, reason = route_amendment(
+            johto_norm,
+            "",
+            johto_raw,
+            "1987/726",
+            "1992/1346",
+            source_title="Asetus eroraha-asetuksen muuttamisesta annetun asetuksen muuttamisesta",
+            parent_title="Eroraha-asetus",
+            parent_issue_date="1987-01-01",
+        )
+        assert should_apply is False
+        assert reason == "citation_mismatch_skip"
 
     def test_meta_repeal_pattern(self) -> None:
         # johto contains "kumotaan ... muuttamisesta ... annetun lain (NUM" pattern
