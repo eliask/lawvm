@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import logging
 import re
 from dataclasses import replace as dc_replace
-from typing import TYPE_CHECKING, FrozenSet, List, Optional, cast
+from typing import TYPE_CHECKING, List, Optional, cast
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.elaboration_context import TargetUnitKind
@@ -40,6 +40,10 @@ from lawvm.finland.scoped_section_resolver import (
 )
 from lawvm.finland.helpers import _norm_num_token, _roman_label_to_arabic
 from lawvm.finland.replay_notices import replay_print
+from lawvm.finland.standalone_targets import (
+    StandaloneSectionTargetsInput,
+    normalize_standalone_section_targets,
+)
 from lawvm.finland.source_pathology import (
     build_container_replace_target_absent_pathology,
     build_destructive_shape_loss_risk_pathology,
@@ -92,15 +96,6 @@ class LetterSuffixChapterAbsorptionResult:
     root: IRNode
     chapter: IRNode
     adopted_paths: tuple[tuple[tuple[str, str], ...], ...]
-
-
-@dataclass(frozen=True, slots=True)
-class StandaloneSectionTarget:
-    """Normalized standalone section target carried beside a container op."""
-
-    part: str | None
-    chapter: str | None
-    label: str
 
 
 def _absorb_trailing_wrapper_sections_into_letter_suffix_chapter(
@@ -810,7 +805,7 @@ def _apply_container_op(
     profile: ReplayProfile,
     ctx_label: str,
     base_ir: Optional[IRNode] = None,
-    standalone_section_targets: Optional[FrozenSet] = None,
+    standalone_section_targets: StandaloneSectionTargetsInput = None,
     mixed_sparse_insert: bool = False,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     migration_ledger=None,
@@ -819,29 +814,6 @@ def _apply_container_op(
     replay_history_ops: Optional[List[_LegalOperation]] = None,
 ):
     """Apply container (chapter/part) operation via tree_ops."""
-    def _normalized_standalone_targets() -> list[StandaloneSectionTarget]:
-        normalized: list[StandaloneSectionTarget] = []
-        for raw_target in standalone_section_targets or frozenset():
-            if not isinstance(raw_target, tuple):
-                continue
-            if len(raw_target) == 2:
-                raw_part = None
-                raw_chapter, raw_label = raw_target
-            elif len(raw_target) == 3:
-                raw_part, raw_chapter, raw_label = raw_target
-            else:
-                continue
-            if raw_label is None:
-                continue
-            normalized.append(
-                StandaloneSectionTarget(
-                    part=_norm_num_token(str(raw_part)) if raw_part not in (None, "") else None,
-                    chapter=_norm_num_token(str(raw_chapter)) if raw_chapter not in (None, "") else None,
-                    label=_norm_num_token(str(raw_label)),
-                )
-            )
-        return normalized
-
     view = _coerce_structure_apply_view(op)
     _target_unit_kind = view.target_unit_kind
     _target_section = view.target_section
@@ -1117,7 +1089,9 @@ def _apply_container_op(
     if _op_type == "REPLACE" and not _target_paragraph and not _target_item and not _target_special:
         if path is not None and muutos_ir is not None:
             if _target_unit_kind in {"chapter", "part"}:
-                normalized_standalone_targets = _normalized_standalone_targets()
+                normalized_standalone_targets = normalize_standalone_section_targets(
+                    standalone_section_targets
+                )
                 node = _tops.resolve(state.ir, path)
                 assert node is not None, f"resolve failed for {path}"
                 live_section_labels = [
@@ -1380,7 +1354,9 @@ def _apply_container_op(
                 return state.with_ir(new_ir)
         placeholder_labels_to_remove: list[str] = []
         if _target_unit_kind == "chapter" and muutos_ir.kind is IRNodeKind.CHAPTER:
-            normalized_standalone_targets = _normalized_standalone_targets()
+            normalized_standalone_targets = normalize_standalone_section_targets(
+                standalone_section_targets
+            )
             new_ch_children = []
             current_container_label = _norm_num_token(muutos_ir.label or _target_section)
             current_container_part = _norm_num_token(_target_part) if _target_part else None

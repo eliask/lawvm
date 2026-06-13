@@ -39,6 +39,7 @@ from lawvm.finland.ops import _lo_with_path_update
 from lawvm.finland.ops import get_replay_profile
 from lawvm.finland.ops import ScopeConfidence
 from lawvm.finland.replay_notices import reset_replay_verbose, set_replay_verbose
+from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.payload_normalize import (
     _container_pruning_is_expected_heading_only,
     _prune_container_payload_sections_shadowed_by_standalone_targets as _prune_container_payload_sections_shadowed_by_standalone_targets_impl,
@@ -3563,7 +3564,7 @@ def test_build_standalone_section_targets_ignores_descendant_only_section_ops() 
 
     got = _build_standalone_section_targets([section_insert, subsection_insert])
 
-    assert got == frozenset({(None, "11a", "1")})
+    assert got == frozenset({StandaloneSectionTarget(part=None, chapter="11a", label="1")})
 
 
 def test_retarget_stale_body_scope_skips_whole_section_insert_when_body_matches_explicit_scope() -> None:

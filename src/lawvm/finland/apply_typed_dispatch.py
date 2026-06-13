@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, FrozenSet, List, Optional, cast
+from typing import TYPE_CHECKING, List, Optional, cast
 
 from lawvm.core.compile_result import SourcePathology, StrictProfile
 from lawvm.core.ir import IRNode, LegalAddress
@@ -26,6 +26,7 @@ from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path, default_label_sort_key, normalized_label_key
 from lawvm.finland.ops import FailedOp, ReplayProfile, ResolvedOp, _assert_intent_compat
+from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
 from lawvm.finland.apply_policy import (
     _check_occupancy_policy,
     _resolve_section_path_with_fallbacks,
@@ -905,7 +906,7 @@ def _apply_intent_container(
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     path_hint: Optional[Path] = None,
-    standalone_section_targets: Optional[FrozenSet] = None,
+    standalone_section_targets: StandaloneSectionTargetsInput = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
     migration_ledger: Optional[MigrationLedger] = None,
     write_audits_out: Optional[List[ObservedWriteAudit]] = None,
@@ -1004,7 +1005,7 @@ def _apply_intent_replace(
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
     strict_profile: Optional[StrictProfile] = None,
     path_hint: Optional[Path] = None,
-    standalone_section_targets: Optional[FrozenSet] = None,
+    standalone_section_targets: StandaloneSectionTargetsInput = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
     migration_ledger: Optional[MigrationLedger] = None,
     write_audits_out: Optional[List[ObservedWriteAudit]] = None,
@@ -1142,7 +1143,7 @@ def _apply_intent_insert(
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
     strict_profile: Optional[StrictProfile] = None,
     path_hint: Optional[Path] = None,
-    standalone_section_targets: Optional[FrozenSet] = None,
+    standalone_section_targets: StandaloneSectionTargetsInput = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
     migration_ledger: Optional[MigrationLedger] = None,
     write_audits_out: Optional[List[ObservedWriteAudit]] = None,
@@ -1843,7 +1844,7 @@ def _apply_canonical_intent(
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
     findings_out: Optional[List[Finding]] = None,
     path_hint: Optional[Path] = None,
-    standalone_section_targets: Optional[FrozenSet] = None,
+    standalone_section_targets: StandaloneSectionTargetsInput = None,
     migration_ledger: Optional[MigrationLedger] = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
     strict_profile: Optional[StrictProfile] = None,

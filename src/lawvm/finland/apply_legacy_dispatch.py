@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from typing import TYPE_CHECKING, FrozenSet, List, Literal, Optional
+from typing import TYPE_CHECKING, List, Literal, Optional
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import IRNode
@@ -19,6 +19,7 @@ from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path, normalized_label_key
 from lawvm.core.compile_result import StrictProfile
 from lawvm.finland.ops import AmendmentOp, FailedOp, ResolvedOp, TargetUnitKind, get_replay_profile
+from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
 from lawvm.finland.replay_notices import replay_print
 from lawvm.finland.apply_runtime_support import _legacy_dispatch_shell_for_rop, _valid_target_path_hint
 from lawvm.finland.apply_policy import _observe_occupancy_transition
@@ -105,7 +106,7 @@ def _apply_legacy_dispatch(
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
     path_hint: Path | None = None,
-    standalone_section_targets: Optional[FrozenSet] = None,
+    standalone_section_targets: StandaloneSectionTargetsInput = None,
     rop: Optional[ResolvedOp] = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
     migration_ledger: Optional[MigrationLedger] = None,

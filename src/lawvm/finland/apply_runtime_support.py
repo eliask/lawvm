@@ -11,7 +11,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, FrozenSet, List, Optional, cast
+from typing import TYPE_CHECKING, List, Optional, cast
 
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir_helpers import _kind_str, irnode_to_text
@@ -26,6 +26,7 @@ from lawvm.finland.apply_payload_ops import _find_amend_paragraph
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.labels import leaf_label_identity_key
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, ResolvedTargetScopeView, temporary_signal_for_op
+from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
 from lawvm.finland.source_pathology import (
     build_container_replace_target_absent_pathology,
     build_destructive_shape_loss_risk_pathology,
@@ -732,7 +733,7 @@ def _emit_section_snapshot(
     base_ir: Optional[IRNode] = None,
     path_hint: Optional[Path] = None,
     migration_ledger: Optional["MigrationLedger"] = None,
-    standalone_section_targets: "FrozenSet[tuple[str | None, str | None, str]] | None" = None,
+    standalone_section_targets: StandaloneSectionTargetsInput = None,
     source_pathologies_out: Optional[List["SourcePathology"]] = None,
 ) -> None:
     """Emit a section/chapter-level snapshot to lo_ops_out after ops are applied."""

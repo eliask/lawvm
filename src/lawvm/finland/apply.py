@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from typing import TYPE_CHECKING, FrozenSet, List, Literal, Optional
+from typing import TYPE_CHECKING, List, Literal, Optional
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import IRNode
@@ -46,6 +46,7 @@ from lawvm.finland.apply_events import (
 from lawvm.finland.apply_legacy_dispatch import _apply_legacy_dispatch
 from lawvm.finland.apply_runtime_support import _legacy_dispatch_shell_for_rop
 from lawvm.finland.migration_ledger import MigrationLedger
+from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
 
 if TYPE_CHECKING:
     from lawvm.finland.statute import StatuteContext, ReplayState
@@ -134,7 +135,7 @@ def apply_op(
     findings_out: Optional[List[Finding]] = None,
     path_hint: Optional[Path] = None,
     rop: Optional[ResolvedOp] = None,
-    standalone_section_targets: Optional[FrozenSet] = None,
+    standalone_section_targets: StandaloneSectionTargetsInput = None,
     migration_ledger: Optional[MigrationLedger] = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
     strict_profile: Optional[StrictProfile] = None,

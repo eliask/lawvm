@@ -594,6 +594,7 @@ from lawvm.finland.replay_product_projection import ReplayProductProjectionReque
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, resolve_replay_xml_call
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir as _hoist_trailing_wrapup_ir
 from lawvm.finland.relabel_identity import RelabelParentKey
+from lawvm.finland.standalone_targets import StandaloneSectionTarget
 
 _oracle_version_future_repeal_only_uses_cutoff_date = oracle_version_future_repeal_only_uses_cutoff_date
 
@@ -3723,7 +3724,7 @@ def _stabilize_chapter_relabel_order(resolved: List[ResolvedOp]) -> List[Resolve
 
 def _build_standalone_section_targets(
     ops: list[AmendmentOp],
-) -> frozenset[tuple[str | None, str | None, str]]:
+) -> frozenset[StandaloneSectionTarget]:
     """Collect standalone whole-section targets for container ownership guards.
 
     Container payload pruning and apply-time chapter-child stripping should only
@@ -3731,21 +3732,33 @@ def _build_standalone_section_targets(
     mom`` do not own the ``1 §`` shell and must not cause the parent chapter
     payload to drop that child section.
     """
-    standalone_targets: set[tuple[str | None, str | None, str]] = set()
+    standalone_targets: set[StandaloneSectionTarget] = set()
     for op in ops:
         if op.target_unit_kind != "section" or not op.target_section:
             continue
         if op.target_paragraph is not None or op.target_item or op.target_special:
             continue
         norm_label = _norm_num_token(op.target_section)
-        standalone_targets.add((op.target_part, op.target_chapter, norm_label))
+        standalone_targets.add(
+            StandaloneSectionTarget(
+                part=_norm_num_token(op.target_part) if op.target_part else None,
+                chapter=_norm_num_token(op.target_chapter) if op.target_chapter else None,
+                label=norm_label,
+            )
+        )
         if op.lo is None:
             continue
         for tag in op.lo.provenance_tags:
             if not tag.startswith("body_chapter_retargeted_from:"):
                 continue
             orig_chapter = tag.split(":", 1)[1]
-            standalone_targets.add((op.target_part, orig_chapter, norm_label))
+            standalone_targets.add(
+                StandaloneSectionTarget(
+                    part=_norm_num_token(op.target_part) if op.target_part else None,
+                    chapter=_norm_num_token(orig_chapter),
+                    label=norm_label,
+                )
+            )
     return frozenset(standalone_targets)
 
 
