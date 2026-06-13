@@ -110,6 +110,7 @@ from lawvm.finland.replay_findings import (
     _strict_rejected_source_pathology_finding,
 )
 from lawvm.finland.future_repeal import build_future_repeal_suffix
+from lawvm.finland.future_repeal import RepealTargetRef as RepealTargetRef  # re-export (used by tests)
 from lawvm.finland.lowering_scope_recovery import (
     allow_unscoped_live_section_retarget as _allow_unscoped_live_section_retarget_impl,
     group_has_scope_source as _group_has_scope_source_impl,
@@ -140,6 +141,10 @@ from lawvm.finland.grafter_uncovered import (
     KumotaanRecoverySinks,
     UncoveredBodyRecoveryRequest,
     UncoveredBodyRecoverySinks,
+)
+from lawvm.finland.grafter_uncovered import (  # re-exports (used by tests)
+    PreScanRepealTargetsRequest as PreScanRepealTargetsRequest,
+    PreScanRepealTargetsSinks as PreScanRepealTargetsSinks,
 )
 
 from lawvm.finland.citation_routing import (
