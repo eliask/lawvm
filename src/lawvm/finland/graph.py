@@ -122,6 +122,8 @@ async def build_statute_graph_fi_lightweight(sid: str) -> StatuteGraph:
     from lawvm.finland.amendment_index import get_amendment_children
     from lawvm.finland.cross_refs import extract_cross_refs, extract_eu_refs
     from lawvm.finland.delegation import extract_delegations
+    from lxml import etree
+
     from lawvm.finland.grafter import get_corpus
     from lawvm.finland.statute_id import engine_statute_id
 
@@ -135,12 +137,19 @@ async def build_statute_graph_fi_lightweight(sid: str) -> StatuteGraph:
     if base_xml is None:
         raise KeyError(f"statute {sid} not found in corpus")
 
-    # Extract title via regex
+    # Extract title from the docTitle element as plain text. Parse with lxml
+    # rather than regex-scraping markup: the prior regex captured inner markup
+    # and stripped tags afterwards, which is exactly what itertext() yields,
+    # without mishandling entities or nested tags.
     title = ""
-    m = re.search(rb'<docTitle[^>]*>(.*?)</docTitle>', base_xml, re.DOTALL)
-    if m:
-        title = re.sub(r'<[^>]+>', '', m.group(1).decode("utf-8", errors="replace")).strip()
-        title = re.sub(r'\s+', ' ', title)
+    try:
+        _base_el = etree.fromstring(base_xml)
+    except etree.XMLSyntaxError:
+        _base_el = None
+    if _base_el is not None:
+        _title_el = _base_el.find(".//{*}docTitle")
+        if _title_el is not None:
+            title = re.sub(r"\s+", " ", "".join(str(t) for t in _title_el.itertext())).strip()
 
     # Extract statute_type via regex
     statute_type = "statute"
