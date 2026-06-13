@@ -20,7 +20,7 @@ import logging
 import os
 import re
 import datetime as dt
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, cast
 
 import lxml.etree as etree
@@ -279,6 +279,219 @@ def _uncovered_section_key(
         chapter=_norm_num_token(chapter) if chapter else "",
         section=_norm_num_token(section),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class UncoveredCandidateAudit:
+    """One typed audit record per uncovered-body candidate decision.
+
+    The observable decision trail for uncovered recovery: every candidate that
+    enters ``_process_section_candidate`` produces exactly one of these, naming
+    the resolved target and the disposition taken (recover/skip + reason). This
+    is the spec-substitute for the recovery compiler — without a source spec,
+    the per-candidate verdict trail is how we know what the recovery did and can
+    locate where it is wrong.
+    """
+
+    section: str
+    chapter: str
+    part: str
+    disposition: str  # "INSERT" | "REPLACE" | "MERGE" | "ADOPT" | "OWNED" | "SKIP"
+    reason: str
+    op_id: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.section:
+            raise ValueError("UncoveredCandidateAudit requires a non-empty section label")
+        if not self.disposition:
+            raise ValueError("UncoveredCandidateAudit requires a disposition")
+        # A recovered candidate must name the op it produced; a skip must not.
+        recovered = self.disposition in ("INSERT", "REPLACE", "MERGE", "ADOPT")
+        if recovered and not self.op_id:
+            raise ValueError(
+                f"recovered disposition {self.disposition!r} requires an op_id"
+            )
+
+
+@dataclass(slots=True)
+class RecoveryState:
+    """Single typed container threading the per-candidate uncovered recovery.
+
+    Consolidates the mutable state previously shared by closure capture across
+    ~17 nested functions in ``_recover_uncovered_body_ops`` (the result list,
+    de-dup key sets, ownership guards, and chapter-payload disposition counts)
+    plus the read-only context the emit/skip methods need (findings sink,
+    amendment id, op source). Mutation is confined to the explicit methods
+    below, so the recovery's effects are auditable in one place rather than
+    scattered across closures.
+
+    The loop lives inside this stateful stage by design: a mid-loop
+    ``mark_covered`` is read by later candidates, so the per-candidate decisions
+    are genuinely sequential and cannot be a pure batch pipeline.
+    """
+
+    # --- read-only context ---
+    amendment_id: str
+    op_source: Optional[OperationSource]
+    findings_out: Optional[List[Finding]]
+    guards: UncoveredRecoveryGuards
+
+    # --- mutable accumulators ---
+    result: List[ResolvedOp] = field(default_factory=list)
+    audits: List[UncoveredCandidateAudit] = field(default_factory=list)
+    recovered_section_keys: Set[RecoveredSectionKey] = field(default_factory=set)
+    seen_recovery_findings: Set[RecoveryFindingKey] = field(default_factory=set)
+    recorded_skip_keys: Set[UncoveredSkipKey] = field(default_factory=set)
+    chapter_payload_dispositions: Dict[str, Dict[str, int]] = field(default_factory=dict)
+
+    def mark_covered(
+        self,
+        *,
+        part: str | None,
+        chapter: str | None,
+        section: str,
+    ) -> None:
+        """Mark a section as covered so later candidates skip it (sequential)."""
+        self.guards.mark_covered(part=part, chapter=chapter, section=section)
+
+    def already_recovered(self, *, section: str, chapter: str | None) -> bool:
+        """Whether this (section, chapter) was already recovered this run."""
+        return (
+            RecoveredSectionKey(
+                section=_norm_num_token(section),
+                chapter=_norm_num_token(chapter or ""),
+            )
+            in self.recovered_section_keys
+        )
+
+    def record_skip(
+        self,
+        reason: str,
+        label: str,
+        amend_chapter_label: Optional[str],
+        amend_part_label: Optional[str] = None,
+    ) -> None:
+        """Record (and de-duplicate) a skipped-recovery finding + audit record."""
+        self.audits.append(
+            UncoveredCandidateAudit(
+                section=_norm_num_token(label),
+                chapter=_norm_num_token(amend_chapter_label or ""),
+                part=_norm_num_token(amend_part_label or ""),
+                disposition="SKIP",
+                reason=reason,
+            )
+        )
+        if self.findings_out is None:
+            return
+        skip_key = UncoveredSkipKey(
+            reason=reason,
+            part=amend_part_label or "",
+            chapter=amend_chapter_label or "",
+            section=label,
+        )
+        if skip_key in self.recorded_skip_keys:
+            return
+        self.recorded_skip_keys.add(skip_key)
+        self.findings_out.append(
+            _uncovered_body_recovery_skipped_finding(
+                source_statute=self.amendment_id,
+                target_section=label,
+                target_chapter=amend_chapter_label,
+                target_part=amend_part_label,
+                reason=reason,
+            )
+        )
+
+    def append_recovered_rop(
+        self,
+        rop: ResolvedOp,
+        *,
+        disposition: str,
+        reason: str,
+    ) -> None:
+        """Append a recovered ResolvedOp, recording its key, finding and audit."""
+        target_scope = rop.resolved_target_scope_view
+        self.recovered_section_keys.add(
+            RecoveredSectionKey(
+                section=_norm_num_token(target_scope.target_norm),
+                chapter=_norm_num_token(target_scope.target_chapter or ""),
+            )
+        )
+        self.result.append(rop)
+        self.audits.append(
+            UncoveredCandidateAudit(
+                section=_norm_num_token(target_scope.target_norm),
+                chapter=_norm_num_token(target_scope.target_chapter or ""),
+                part=_norm_num_token(target_scope.target_part or ""),
+                disposition=disposition,
+                reason=reason,
+                op_id=rop.op_id or "",
+            )
+        )
+        if self.findings_out is None:
+            return
+        finding = _uncovered_body_recovery_finding(
+            op_id=rop.op_id,
+            source_statute=self.amendment_id,
+            target_unit_kind=rop.target_unit_kind,
+            target_norm=target_scope.target_norm,
+            target_chapter=target_scope.target_chapter,
+            target_part=target_scope.target_part,
+        )
+        if finding is None:
+            return
+        key = RecoveryFindingKey(
+            kind=str(finding.kind or ""),
+            target_norm=str(target_scope.target_norm or ""),
+            target_chapter=str(target_scope.target_chapter or ""),
+            target_part=str(target_scope.target_part or ""),
+            op_id=str(rop.op_id or ""),
+        )
+        if key in self.seen_recovery_findings:
+            return
+        self.seen_recovery_findings.add(key)
+        self.findings_out.append(finding)
+
+    def note_chapter_disposition(self, chapter_label: str, kind: str) -> None:
+        """Tally an adopt/own disposition for a chapter-payload section."""
+        self.chapter_payload_dispositions.setdefault(
+            chapter_label, {"adopted": 0, "owned": 0}
+        )[kind] += 1
+
+    def emit_chapter_payload_mixed_findings(self) -> None:
+        """Emit a mixed-disposition finding for any chapter with adopt+own splits."""
+        if self.findings_out is None:
+            return
+        for chapter_label, counts in sorted(self.chapter_payload_dispositions.items()):
+            adopted_count = counts.get("adopted", 0)
+            owned_count = counts.get("owned", 0)
+            if adopted_count and owned_count:
+                self.findings_out.append(
+                    _uncovered_body_chapter_payload_mixed_finding(
+                        source_statute=self.amendment_id,
+                        target_chapter=chapter_label,
+                        adopted_count=adopted_count,
+                        owned_count=owned_count,
+                    )
+                )
+
+
+def _uncovered_disposition_for_op_id(op_id: str) -> tuple[str, str]:
+    """Map a recovered op_id to its (disposition, reason) audit pair.
+
+    The op_id prefix carries the disposition the cascade took; decode it once
+    here so the audit record names the action without each call site repeating
+    it. Falls back to a generic INSERT label for unrecognized prefixes.
+    """
+    if op_id.startswith("uncov_chapter_adopt_"):
+        return "ADOPT", "chapter_payload_adopt"
+    if op_id.startswith("uncovered_replace_"):
+        return "REPLACE", "replace_existing"
+    if op_id.startswith("uncovered_merge_"):
+        return "MERGE", "omission_merge"
+    if op_id.startswith("uncovered_insert_"):
+        return "INSERT", "new_insert"
+    return "INSERT", "recovered"
 
 
 def _section_heading_text(node: IRNode) -> str:
@@ -676,38 +889,21 @@ def _recover_uncovered_body_ops(
     Note: chapter pre-creation is a separate pre-step (_pre_create_amendment_chapters)
     and must be called before this function.
     """
-    _recorded_skip_keys: set[UncoveredSkipKey] = set()
-
+    # All mutable per-candidate recovery state is consolidated in ``rstate``
+    # (RecoveryState), constructed once ``recovery_guards`` exists below. These
+    # thin forwarders preserve the call shape used throughout the candidate
+    # cascade while routing every mutation through the typed container.
     def _record_skip(
         reason: str,
         label: str,
         amend_chapter_label: Optional[str],
         amend_part_label: Optional[str] = None,
     ) -> None:
-        if findings_out is not None:
-            skip_key = UncoveredSkipKey(
-                reason=reason,
-                part=amend_part_label or "",
-                chapter=amend_chapter_label or "",
-                section=label,
-            )
-            if skip_key in _recorded_skip_keys:
-                return
-            _recorded_skip_keys.add(skip_key)
-            findings_out.append(
-                _uncovered_body_recovery_skipped_finding(
-                    source_statute=amendment_id,
-                    target_section=label,
-                    target_chapter=amend_chapter_label,
-                    target_part=amend_part_label,
-                    reason=reason,
-                )
-            )
+        rstate.record_skip(reason, label, amend_chapter_label, amend_part_label)
 
     # PEG-covered guard sets (see _build_peg_covered_sets). covered_labels is
     # aliased into recovery_guards below, so its identity must be preserved.
     covered_labels = _build_peg_covered_sets(ops, failed_ops_out)
-    chapter_payload_section_dispositions: dict[str, dict[str, int]] = {}
 
     # --- Typed coverage analysis (primary source for uncovered sections) ---
     # Coverage analysis replaces the ad-hoc per-section scan as the primary
@@ -906,6 +1102,12 @@ def _recover_uncovered_body_ops(
         chapter_payload_owned_sections=chapter_payload_owned_sections,
         relabel_destination_sections=relabel_destination_sections,
     )
+    rstate = RecoveryState(
+        amendment_id=amendment_id,
+        op_source=op_source,
+        findings_out=findings_out,
+        guards=recovery_guards,
+    )
     johto_el = muutos_tree.find(".//{*}preamble")
     if johto_el is not None:
         johto_text = etree.tostring(johto_el, method="text", encoding="unicode")
@@ -984,42 +1186,9 @@ def _recover_uncovered_body_ops(
         )
         return rop
 
-    result: List[ResolvedOp] = []
-    seen_recovery_findings: Set[RecoveryFindingKey] = set()
-    recovered_section_keys: Set[RecoveredSectionKey] = set()
-
     def _append_recovered_rop(rop: ResolvedOp) -> None:
-        target_scope = rop.resolved_target_scope_view
-        recovered_section_keys.add(
-            RecoveredSectionKey(
-                section=_norm_num_token(target_scope.target_norm),
-                chapter=_norm_num_token(target_scope.target_chapter or ""),
-            )
-        )
-        result.append(rop)
-        if findings_out is None:
-            return
-        finding = _uncovered_body_recovery_finding(
-            op_id=rop.op_id,
-            source_statute=amendment_id,
-            target_unit_kind=rop.target_unit_kind,
-            target_norm=target_scope.target_norm,
-            target_chapter=target_scope.target_chapter,
-            target_part=target_scope.target_part,
-        )
-        if finding is None:
-            return
-        key = RecoveryFindingKey(
-            kind=str(finding.kind or ""),
-            target_norm=str(target_scope.target_norm or ""),
-            target_chapter=str(target_scope.target_chapter or ""),
-            target_part=str(target_scope.target_part or ""),
-            op_id=str(rop.op_id or ""),
-        )
-        if key in seen_recovery_findings:
-            return
-        seen_recovery_findings.add(key)
-        findings_out.append(finding)
+        disposition, reason = _uncovered_disposition_for_op_id(rop.op_id or "")
+        rstate.append_recovered_rop(rop, disposition=disposition, reason=reason)
 
     def _process_section_candidate(
         sec: etree._Element,
@@ -1039,11 +1208,7 @@ def _recover_uncovered_body_ops(
 
         amend_part_label = _xml_part_label(sec)
 
-        recovered_key = RecoveredSectionKey(
-            section=_norm_num_token(label),
-            chapter=_norm_num_token(amend_chapter_label or ""),
-        )
-        if recovered_key in recovered_section_keys:
+        if rstate.already_recovered(section=label, chapter=amend_chapter_label):
             if _DEBUG_RECOVERY:
                 print(f"  [DBG]  -> SKIP: already recovered {label!r} in chapter {amend_chapter_label!r}")
             _record_skip("duplicate_recovered_candidate", label, amend_chapter_label)
@@ -1138,9 +1303,7 @@ def _recover_uncovered_body_ops(
                             f"uncov_chapter_adopt_{label}",
                         )
                     )
-                    chapter_payload_section_dispositions.setdefault(
-                        amend_chapter_label, {"adopted": 0, "owned": 0}
-                    )["adopted"] += 1
+                    rstate.note_chapter_disposition(amend_chapter_label, "adopted")
                     if _DEBUG_RECOVERY:
                         print(f"  [DBG]  -> ADOPT into chapter {amend_chapter_label!r}: INSERT {label!r}")
                 else:
@@ -1151,9 +1314,7 @@ def _recover_uncovered_body_ops(
                     chapter=amend_chapter_label,
                     section=label,
                 )
-                chapter_payload_section_dispositions.setdefault(
-                    amend_chapter_label, {"adopted": 0, "owned": 0}
-                )["owned"] += 1
+                rstate.note_chapter_disposition(amend_chapter_label, "owned")
                 _record_skip("chapter_payload_owned", label, amend_chapter_label)
             return
 
@@ -1512,7 +1673,7 @@ def _recover_uncovered_body_ops(
         #   but only for the SAME chapter (fixes namespace collision where
         #   chapter 2/§1 would incorrectly block chapter 7/§1 recovery).
         _result_labels: Set[str] = set()
-        for _rop in result:
+        for _rop in rstate.result:
             if _rop.target_unit_kind == "section" and _rop.target_norm:
                 _result_labels.add(_rop.target_norm)
         _peg_ch_labels: Set[Tuple[Optional[str], str]] = set()
@@ -1615,21 +1776,9 @@ def _recover_uncovered_body_ops(
                 _process_section_candidate(_sec, _ad_label, _ad_ch)
     # --- end dual-run fallback ---
 
-    if findings_out is not None:
-        for chapter_label, counts in sorted(chapter_payload_section_dispositions.items()):
-            adopted_count = counts.get("adopted", 0)
-            owned_count = counts.get("owned", 0)
-            if adopted_count and owned_count:
-                findings_out.append(
-                    _uncovered_body_chapter_payload_mixed_finding(
-                        source_statute=amendment_id,
-                        target_chapter=chapter_label,
-                        adopted_count=adopted_count,
-                        owned_count=owned_count,
-                    )
-                )
+    rstate.emit_chapter_payload_mixed_findings()
 
-    return result
+    return rstate.result
 
 
 def _apply_uncovered_kumotaan(

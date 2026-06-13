@@ -8,12 +8,18 @@ from __future__ import annotations
 
 import lxml.etree as etree
 
+import pytest
+
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.grafter_uncovered import (
+    RecoveryState,
+    UncoveredCandidateAudit,
+    UncoveredRecoveryGuards,
     _next_letter_label,
     _part_label_from_path,
     _section_heading_text,
+    _uncovered_disposition_for_op_id,
     _xml_part_label,
 )
 
@@ -75,3 +81,102 @@ def test_part_label_from_path_finds_part() -> None:
 def test_part_label_from_path_none_when_absent() -> None:
     assert _part_label_from_path((("chapter", "3"), ("section", "5"))) is None
     assert _part_label_from_path(None) is None
+
+
+# --- UncoveredCandidateAudit invariants ---
+
+
+def test_audit_requires_section() -> None:
+    with pytest.raises(ValueError, match="section"):
+        UncoveredCandidateAudit(section="", chapter="", part="", disposition="SKIP", reason="x")
+
+
+def test_audit_recovered_requires_op_id() -> None:
+    with pytest.raises(ValueError, match="op_id"):
+        UncoveredCandidateAudit(
+            section="5", chapter="3", part="", disposition="INSERT", reason="x", op_id=""
+        )
+
+
+def test_audit_skip_allows_empty_op_id() -> None:
+    audit = UncoveredCandidateAudit(
+        section="5", chapter="3", part="", disposition="SKIP", reason="cross_chapter"
+    )
+    assert audit.op_id == ""
+
+
+def test_audit_replace_with_op_id_ok() -> None:
+    audit = UncoveredCandidateAudit(
+        section="5", chapter="3", part="", disposition="REPLACE", reason="r", op_id="uncovered_replace_5"
+    )
+    assert audit.disposition == "REPLACE"
+
+
+# --- _uncovered_disposition_for_op_id mapping ---
+
+
+def test_disposition_for_op_id_maps_known_prefixes() -> None:
+    assert _uncovered_disposition_for_op_id("uncov_chapter_adopt_5")[0] == "ADOPT"
+    assert _uncovered_disposition_for_op_id("uncovered_replace_5")[0] == "REPLACE"
+    assert _uncovered_disposition_for_op_id("uncovered_merge_5")[0] == "MERGE"
+    assert _uncovered_disposition_for_op_id("uncovered_insert_5")[0] == "INSERT"
+
+
+def test_disposition_for_op_id_falls_back_to_insert() -> None:
+    disposition, reason = _uncovered_disposition_for_op_id("mystery_op")
+    assert disposition == "INSERT"
+    assert reason == "recovered"
+
+
+# --- RecoveryState skip + audit bookkeeping ---
+
+
+def _empty_state(findings_out: list | None) -> RecoveryState:
+    guards = UncoveredRecoveryGuards(
+        covered_sections=set(),
+        chapter_payload_owned_sections=set(),
+        relabel_destination_sections=set(),
+    )
+    return RecoveryState(
+        amendment_id="2020/1",
+        op_source=None,
+        findings_out=findings_out,
+        guards=guards,
+    )
+
+
+def test_record_skip_appends_audit_and_dedups_findings() -> None:
+    findings: list = []
+    rstate = _empty_state(findings)
+    rstate.record_skip("cross_chapter", "5", "3", None)
+    rstate.record_skip("cross_chapter", "5", "3", None)  # duplicate finding
+    # One de-duplicated finding, but both calls leave an audit trail entry.
+    assert len(findings) == 1
+    assert len(rstate.audits) == 2
+    assert all(a.disposition == "SKIP" for a in rstate.audits)
+
+
+def test_record_skip_audit_without_findings_sink() -> None:
+    rstate = _empty_state(None)
+    rstate.record_skip("johto_guard", "7", "2", None)
+    # Audit trail records even when no findings sink is provided.
+    assert len(rstate.audits) == 1
+    assert rstate.audits[0].section == "7"
+
+
+def test_mark_covered_then_already_recovered_independent() -> None:
+    rstate = _empty_state([])
+    rstate.mark_covered(part=None, chapter="3", section="5")
+    # mark_covered touches guards, not the recovered-key set.
+    assert rstate.guards.is_covered(part=None, chapter="3", section="5")
+    assert not rstate.already_recovered(section="5", chapter="3")
+
+
+def test_chapter_disposition_mixed_finding() -> None:
+    findings: list = []
+    rstate = _empty_state(findings)
+    rstate.note_chapter_disposition("4", "adopted")
+    rstate.note_chapter_disposition("4", "owned")
+    rstate.note_chapter_disposition("5", "owned")  # only owned → no mixed finding
+    rstate.emit_chapter_payload_mixed_findings()
+    assert len(findings) == 1  # only chapter 4 has both adopted and owned
