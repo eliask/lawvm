@@ -145,3 +145,127 @@ def test_slot_state_carries_tombstone_text():
 def test_valid_transitions_table_has_six_entries():
     """The canonical valid transitions table has exactly the documented cases."""
     assert len(VALID_TRANSITIONS) == 6
+
+
+# ---------------------------------------------------------------------------
+# _check_occupancy_policy: observation must track the slot the apply resolves
+# ---------------------------------------------------------------------------
+
+
+from types import SimpleNamespace
+
+from lawvm.core.ir import IRNode, LegalAddress
+from lawvm.core.phase_result import Finding
+from lawvm.core.semantic_types import IRNodeKind
+from lawvm.finland.apply_policy import _check_occupancy_policy
+from lawvm.finland.statute import ReplayState
+
+
+def _section(label: str, *children: IRNode) -> IRNode:
+    return IRNode(kind=IRNodeKind.SECTION, label=label, children=tuple(children))
+
+
+def _content(text: str) -> IRNode:
+    return IRNode(kind=IRNodeKind.CONTENT, text=text)
+
+
+def _body(*children: IRNode) -> IRNode:
+    return IRNode(kind=IRNodeKind.BODY, children=tuple(children))
+
+
+def _replace_intent():
+    from lawvm.core.canonical_intent import (
+        CoverageMode,
+        ExecutionContract,
+        IntentKind,
+        NodeTarget,
+        OccupancyPolicy,
+        Replace,
+    )
+
+    address = LegalAddress(path=(("section", "75"),))
+    return Replace(
+        kind=IntentKind.REPLACE,
+        target=NodeTarget(address=address),
+        payload=cast(Any, _section("75", _content("payload body"))),
+        contract=ExecutionContract(
+            occupancy=OccupancyPolicy.same_slot_replace(),
+            coverage=CoverageMode.EXACT,
+        ),
+    )
+
+
+def _fake_replace_rop(*, muutos_ir, target_special=None):
+    return SimpleNamespace(
+        resolved_action_type="REPLACE",
+        move_clause_target_unit_kind=None,
+        effective_target_paragraph=None,
+        effective_target_item_label=None,
+        effective_target_special=target_special,
+        muutos_ir=muutos_ir,
+        resolved_source_statute="1922/144",
+        op_id="op-test",
+        target_norm="75",
+        resolved_target_address=LegalAddress(path=(("section", "75"),)),
+        targets_whole_unit=lambda kind: kind == "section",
+    )
+
+
+def test_occupancy_skips_base_frame_empty_whole_section_replace() -> None:
+    """A whole-section REPLACE that installs into an empty base frame is not flagged.
+
+    Sparse historical codes (1734/4-000, 1868/31-000) carry a §X the amendment
+    REPLACE-targets even though the slot never existed in the base IR; the apply
+    turns that into a create. With sec_path None and a substantive section
+    payload the occupancy precondition is not contradicted, so no
+    OCCUPANCY_POLICY_VIOLATION must be recorded.
+    """
+    state = ReplayState(ir=_body())  # empty base frame: §75 absent
+    payload = _section("75", _content("installed body text"))
+    rop = _fake_replace_rop(muutos_ir=payload)
+    findings: list[Finding] = []
+    _check_occupancy_policy(
+        state, rop, _replace_intent(), None, "[1922/144] REPLACE 75 §",
+        findings_out=findings,
+    )
+    assert findings == []
+
+
+def test_occupancy_flags_replace_on_absent_with_no_substantive_payload() -> None:
+    """A REPLACE that resolves absent and carries no body is a genuine violation."""
+    state = ReplayState(ir=_body())  # §75 absent
+    # Heading/num shell only — no substantive child to install: a dropped-create,
+    # not a legitimate base-frame install.
+    shell = _section("75", IRNode(kind=IRNodeKind.HEADING, text="Otsikko"))
+    rop = _fake_replace_rop(muutos_ir=shell)
+    findings: list[Finding] = []
+    _check_occupancy_policy(
+        state, rop, _replace_intent(), None, "[1922/144] REPLACE 75 §",
+        findings_out=findings,
+    )
+    assert [f.kind for f in findings] == ["APPLY.OCCUPANCY_POLICY_VIOLATION"]
+    assert findings[0].detail["current_occupancy"] == "absent"
+
+
+def test_occupancy_not_flagged_when_apply_resolves_substantive_via_fallback() -> None:
+    """When the apply's ladder binds a substantive slot, the REPLACE is allowed.
+
+    Mirrors the part-nested / live-unique-global case: the narrow scoped lookup
+    would miss the slot, but the apply resolves it to a live substantive
+    section. The occupancy observation reads the resolved path and sees
+    SUBSTANTIVE, which is allowed_from for same_slot_replace — no violation.
+    """
+    from lawvm.core import tree_ops as _tops
+
+    live = _section("75", _content("existing body"))
+    state = ReplayState(ir=_body(live))
+    sec_path = _tops.find(state.ir, "section", "75")
+    assert sec_path is not None
+    payload = _section("75", _content("new body"))
+    rop = _fake_replace_rop(muutos_ir=payload)
+    findings: list[Finding] = []
+    _check_occupancy_policy(
+        state, rop, _replace_intent(), sec_path, "[1922/144] REPLACE 75 §",
+        findings_out=findings,
+    )
+    assert findings == []
