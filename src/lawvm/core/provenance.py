@@ -97,15 +97,37 @@ class MigrationEvent:
             raise ValueError("MigrationEvent.to_address must be a LegalAddress")
 
 
+@dataclass(frozen=True, order=True, slots=True)
+class MigrationEventSortKey:
+    """Deterministic canonical ordering key for lineage migration waves."""
+
+    effective: str
+    from_depth: int
+    from_path: "TreePath"
+    to_path: "TreePath"
+    source_statute: str
+    event_id: str
+
+    def as_tuple(self) -> tuple[str, int, "TreePath", "TreePath", str, str]:
+        return (
+            self.effective,
+            self.from_depth,
+            self.from_path,
+            self.to_path,
+            self.source_statute,
+            self.event_id,
+        )
+
+
 def migration_event_sort_key(
     event: MigrationEvent,
-) -> tuple[str, int, TreePath, TreePath, str, str]:
+) -> MigrationEventSortKey:
     """Return the deterministic canonical ordering key for lineage waves."""
-    return (
-        event.effective,
-        len(event.from_address.path),
-        event.from_address.path,
-        event.to_address.path,
-        event.source_statute,
-        event.event_id,
+    return MigrationEventSortKey(
+        effective=event.effective,
+        from_depth=len(event.from_address.path),
+        from_path=event.from_address.path,
+        to_path=event.to_address.path,
+        source_statute=event.source_statute,
+        event_id=event.event_id,
     )
