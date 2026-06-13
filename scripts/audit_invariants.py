@@ -144,6 +144,15 @@ def _coerce_typed_tree_violation_records(raw: object) -> list[dict[str, object]]
     return records
 
 
+def _phase_from_surface(surface: str) -> str:
+    """Map typed invariant row surface names to audit phase buckets."""
+    if surface == "replay_fold_tree":
+        return "replay_fold"
+    if surface == "materialized_tree":
+        return "materialized"
+    return ""
+
+
 def _append_violation_row(
     rows: list[dict[str, str]],
     seen: set[tuple[str, str, str]],
@@ -157,6 +166,8 @@ def _append_violation_row(
     phase: str,
     chain_length: str,
     oracle_suspect: str,
+    surface: str = "",
+    profile_id: str = "",
 ) -> None:
     key = (violation_type, path, detail)
     if key in seen:
@@ -170,6 +181,8 @@ def _append_violation_row(
         "source": source,
         "adj_kind": adj_kind,
         "phase": phase,
+        "surface": surface,
+        "profile_id": profile_id,
         "chain_length": chain_length,
         "oracle_suspect": oracle_suspect,
     })
@@ -345,6 +358,7 @@ def _audit_one(norm_id: str) -> list[dict[str, str]]:
         )
         for record in typed_replay_violations:
             vtype, path, detail = _classify_typed_tree_violation(record)
+            surface = str(record.get("surface") or "")
             _append_violation_row(
                 rows,
                 seen,
@@ -354,7 +368,9 @@ def _audit_one(norm_id: str) -> list[dict[str, str]]:
                 detail=detail,
                 source="replay_meta_tree",
                 adj_kind="APPLY.TREE_INVARIANT_VIOLATION",
-                phase="",
+                phase=_phase_from_surface(surface),
+                surface=surface,
+                profile_id=str(record.get("profile_id") or ""),
                 chain_length=chain_length,
                 oracle_suspect=oracle_suspect,
             )
@@ -370,6 +386,7 @@ def _audit_one(norm_id: str) -> list[dict[str, str]]:
         for record in typed_product_violations:
             vtype, path, detail = _classify_typed_tree_violation(record)
             product_phase = str(record.get("product_phase") or "")
+            surface = str(record.get("surface") or product_phase)
             _append_violation_row(
                 rows,
                 seen,
@@ -379,7 +396,9 @@ def _audit_one(norm_id: str) -> list[dict[str, str]]:
                 detail=detail,
                 source="replay_meta_product",
                 adj_kind="APPLY.REPLAY_PRODUCT_INVARIANT_VIOLATION",
-                phase="materialized" if product_phase == "materialized_tree" else "replay_fold",
+                phase=_phase_from_surface(surface) or _phase_from_surface(product_phase),
+                surface=surface,
+                profile_id=str(record.get("profile_id") or ""),
                 chain_length=chain_length,
                 oracle_suspect=oracle_suspect,
             )
@@ -580,6 +599,8 @@ def main(argv: list[str] | None = None) -> int:
         "source",
         "adj_kind",
         "phase",
+        "surface",
+        "profile_id",
         "chain_length",
         "oracle_suspect",
         "inferred_phase",

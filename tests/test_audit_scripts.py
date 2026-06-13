@@ -152,6 +152,8 @@ def test_audit_invariants_uses_replay_findings_and_meta(monkeypatch) -> None:
             "source": "finding_ledger",
             "adj_kind": "APPLY.TREE_INVARIANT_VIOLATION",
             "phase": "replay_fold",
+            "surface": "",
+            "profile_id": "",
             "chain_length": "1",
             "oracle_suspect": "",
             "inferred_phase": "replay_fold",
@@ -167,6 +169,8 @@ def test_audit_invariants_uses_replay_findings_and_meta(monkeypatch) -> None:
             "source": "replay_meta_tree",
             "adj_kind": "APPLY.TREE_INVARIANT_VIOLATION",
             "phase": "",
+            "surface": "",
+            "profile_id": "",
             "chain_length": "1",
             "oracle_suspect": "",
             "inferred_phase": "replay_fold",
@@ -182,6 +186,8 @@ def test_audit_invariants_uses_replay_findings_and_meta(monkeypatch) -> None:
             "source": "replay_meta_product",
             "adj_kind": "APPLY.REPLAY_PRODUCT_INVARIANT_VIOLATION",
             "phase": "",
+            "surface": "",
+            "profile_id": "",
             "chain_length": "1",
             "oracle_suspect": "",
             "inferred_phase": "materialized",
@@ -218,6 +224,8 @@ def test_audit_invariants_prefers_typed_replay_meta(monkeypatch) -> None:
                 "path": "body/section:1",
                 "parent_kind": "section",
                 "child_kind": "paragraph",
+                "surface": "replay_fold_tree",
+                "profile_id": "core_structural_tree_all",
             },
         ]
         replay_meta_out["invariant_violations"] = [
@@ -231,6 +239,8 @@ def test_audit_invariants_prefers_typed_replay_meta(monkeypatch) -> None:
                     "child_kind": "section",
                     "previous_label": "5",
                     "next_label": "2",
+                    "surface": "materialized_tree",
+                    "profile_id": "core_structural_product_hierarchical",
                 },
             ],
         }
@@ -254,6 +264,12 @@ def test_audit_invariants_prefers_typed_replay_meta(monkeypatch) -> None:
         ("illegal_edge", "body/section:1", "paragraph inside section", "replay_meta_tree"),
         ("sort_order", "body", "section: 5 > 2", "replay_meta_product"),
     ]
+    assert rows[0]["phase"] == "replay_fold"
+    assert rows[0]["surface"] == "replay_fold_tree"
+    assert rows[0]["profile_id"] == "core_structural_tree_all"
+    assert rows[1]["phase"] == "materialized"
+    assert rows[1]["surface"] == "materialized_tree"
+    assert rows[1]["profile_id"] == "core_structural_product_hierarchical"
     assert rows[1]["inferred_phase"] == "materialized"
 
 
