@@ -200,7 +200,8 @@ def _has_fi_commencement_heading(section: IRNode) -> bool:
     for child in section.children:
         if child.kind is IRNodeKind.HEADING and "voimaantulo" in irnode_to_text(child).casefold():
             return True
-    return "voimaantulo" in irnode_to_text(section)[:120].casefold()
+    prefix = irnode_to_text(section)[:240].casefold()
+    return "voimaantulo" in prefix or "tulee voimaan" in prefix
 
 
 def _is_terminal_fi_commencement_section_violation(
@@ -210,8 +211,10 @@ def _is_terminal_fi_commencement_section_violation(
     """Allow source-authored final FI commencement sections outside chapters.
 
     Some Finnish base statutes are chaptered but keep the entry-into-force
-    section as a final root-level section. That is a source shape, not replay
-    corruption. Non-terminal or non-commencement direct sections remain flagged.
+    section as a root-level final-provisions section. PIT materialization can
+    interleave that root section with containers, so the safe allowance is:
+    commencement text, at least one container sibling, and no following direct
+    section. Ordinary mixed direct sections remain flagged.
     """
     if (
         violation.kind != "mixed_hierarchy_child"
@@ -230,9 +233,14 @@ def _is_terminal_fi_commencement_section_violation(
     for index, child in enumerate(labeled_children):
         if child.kind is not IRNodeKind.SECTION or child.label != violation.label:
             continue
-        has_previous_container = any(_kind_value(left) in {"part", "chapter"} for left in labeled_children[:index])
-        has_following_container = any(_kind_value(right) in {"part", "chapter"} for right in labeled_children[index + 1 :])
-        return has_previous_container and not has_following_container and _has_fi_commencement_heading(child)
+        has_container_sibling = any(
+            _kind_value(sibling) in {"part", "chapter"}
+            for sibling in (*labeled_children[:index], *labeled_children[index + 1 :])
+        )
+        has_following_direct_section = any(
+            right.kind is IRNodeKind.SECTION for right in labeled_children[index + 1 :]
+        )
+        return has_container_sibling and not has_following_direct_section and _has_fi_commencement_heading(child)
     return False
 
 

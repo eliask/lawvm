@@ -2334,6 +2334,18 @@ def test_2004_1287_legal_pit_allows_source_authored_final_commencement_section()
     assert not any("direct section:23 alongside chapter:4" in violation for violation in violations)
 
 
+def test_1958_370_allows_source_authored_final_commencement_section() -> None:
+    replay = replay_xml("1958/370", mode="official_consolidation", quiet=True)
+
+    violations = validate_replay_products(
+        replay.ctx,
+        replay.products,
+        deep_materialization_check=False,
+    )
+
+    assert not any("direct section:152 alongside part" in violation for violation in violations)
+
+
 def test_replay_fold_does_not_duplicate_temporary_section_chain_for_1995_1556() -> None:
     replay = pinned_replay("1995/1556", mode="legal_pit", stop_before="2022/439", quiet=True)
 
