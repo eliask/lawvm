@@ -118,6 +118,7 @@ _INVARIANT_DETECTOR_CHOICES: tuple[str, ...] = (
     "duplicate_label",
     "label_normalization_collision",
     "illegal_edge",
+    "sort_order",
     "all_tree",
     "text_duplication",
     "flattened_sublist_family",

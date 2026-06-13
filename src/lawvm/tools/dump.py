@@ -31,9 +31,9 @@ from lawvm.finland.grafter import (
     parse_ops_fallback_heuristic,
     AmendmentOp,
     _assign_chapter_scope_from_johtolause,
-    OP_KEYWORDS,
     replay_xml,
 )
+from lawvm.finland.citation_routing import OP_KEYWORDS
 from lawvm.finland.fallback_op_ids import stamp_fallback_op_ids
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.johtolause.peg3 import extract_ops_diagnostic

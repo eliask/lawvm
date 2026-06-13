@@ -70,6 +70,70 @@ def test_default_duplicate_detector_does_not_import_jurisdiction_label_semantics
     assert run_invariant_detector(tree, "duplicate_label") == []
 
 
+def test_sort_order_detector_exposes_same_kind_child_ordering() -> None:
+    tree = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.SECTION, label="5"),
+            IRNode(kind=IRNodeKind.SECTION, label="2"),
+        ),
+    )
+
+    results = run_invariant_detector(tree, "sort_order")
+
+    assert len(results) == 1
+    assert results[0].detector == "sort_order"
+    assert results[0].kind == "sort_order"
+    assert results[0].path_text == "body"
+    assert results[0].message == "body: section out of order: 5 > 2"
+    assert results[0].detail["previous_label"] == "5"
+    assert results[0].detail["next_label"] == "2"
+
+
+def test_sort_order_detector_filters_by_parent_path() -> None:
+    tree = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.SECTION, label="3"),
+                    IRNode(kind=IRNodeKind.SECTION, label="1"),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="2",
+                children=(
+                    IRNode(kind=IRNodeKind.SECTION, label="4"),
+                    IRNode(kind=IRNodeKind.SECTION, label="2"),
+                ),
+            ),
+        ),
+    )
+
+    messages = run_invariant_detector_messages(tree, "sort_order", target_path="chapter:2")
+
+    assert messages == ["body/chapter:2: section out of order: 4 > 2"]
+
+
+def test_sort_order_detector_only_compares_same_ordered_child_kinds() -> None:
+    tree = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.CONTENT, label="z"),
+            IRNode(kind=IRNodeKind.SECTION, label="2"),
+            IRNode(kind=IRNodeKind.HEADING, label="late"),
+            IRNode(kind=IRNodeKind.SECTION, label="1"),
+        ),
+    )
+
+    messages = run_invariant_detector_messages(tree, "sort_order")
+
+    assert messages == ["body: section out of order: 2 > 1"]
+
+
 def test_fi_invariant_detector_messages_use_finland_label_normalizer() -> None:
     tree = IRNode(
         kind=IRNodeKind.BODY,
