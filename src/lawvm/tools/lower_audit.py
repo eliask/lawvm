@@ -195,8 +195,8 @@ def _run_for_statute(
         get_johtolause,
         _normalize_johtolause_verbs,
         _resolve_applicable_amendment_records,
-        OP_KEYWORDS,
     )
+    from lawvm.finland.citation_routing import OP_KEYWORDS
     from lawvm.finland.corpus import get_corpus
 
     cs = get_corpus()

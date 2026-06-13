@@ -200,8 +200,8 @@ def main(args) -> None:
     from lawvm.finland.grafter import (
         _amendment_children_by_parent,
         get_johtolause,
-        OP_KEYWORDS,
     )
+    from lawvm.finland.citation_routing import OP_KEYWORDS
     from lawvm.finland.metadata import _normalize_johtolause_verbs
     from lxml import etree
 
