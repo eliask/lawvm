@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Iterable, TypeAlias, cast
 
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.ops import AmendmentOp
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,3 +67,43 @@ def normalize_standalone_section_targets(
         if target is not None:
             normalized.append(target)
     return tuple(normalized)
+
+
+def build_standalone_section_targets(
+    ops: list[AmendmentOp],
+) -> frozenset[StandaloneSectionTarget]:
+    """Collect standalone whole-section targets for container ownership guards.
+
+    Container payload pruning and apply-time chapter-child stripping should only
+    react to whole-section claims. Descendant-only section ops like ``1 § 5
+    mom`` do not own the ``1 §`` shell and must not cause the parent chapter
+    payload to drop that child section.
+    """
+    standalone_targets: set[StandaloneSectionTarget] = set()
+    for op in ops:
+        if op.target_unit_kind != "section" or not op.target_section:
+            continue
+        if op.target_paragraph is not None or op.target_item or op.target_special:
+            continue
+        norm_label = _norm_num_token(op.target_section)
+        standalone_targets.add(
+            StandaloneSectionTarget(
+                part=_norm_num_token(op.target_part) if op.target_part else None,
+                chapter=_norm_num_token(op.target_chapter) if op.target_chapter else None,
+                label=norm_label,
+            )
+        )
+        if op.lo is None:
+            continue
+        for tag in op.lo.provenance_tags:
+            if not tag.startswith("body_chapter_retargeted_from:"):
+                continue
+            orig_chapter = tag.split(":", 1)[1]
+            standalone_targets.add(
+                StandaloneSectionTarget(
+                    part=_norm_num_token(op.target_part) if op.target_part else None,
+                    chapter=_norm_num_token(orig_chapter),
+                    label=norm_label,
+                )
+            )
+    return frozenset(standalone_targets)
