@@ -58,6 +58,32 @@ def _part_label_for_element(el: etree._Element) -> str:
     return ""
 
 
+def _globally_unique_chapter_path(
+    state: ReplayState,
+    chapter_label: str,
+) -> Optional[tuple[tuple[str, str], ...]]:
+    """Return the chapter path iff exactly one chapter carries this label tree-wide.
+
+    Statutes whose chapters are numbered continuously across parts (e.g.
+    Kirkkolaki) keep each chapter label globally unique. When an amendment
+    declares such a chapter under a relabelled part scope, the part-scoped
+    lookup misses even though the chapter already exists under its original
+    part — pre-creating it would duplicate the chapter. A single tree-wide
+    match means the part-scoped declaration refers to that same chapter, so it
+    is returned instead of seeding a duplicate.
+
+    Per-part chapter-restart statutes (the same ``1 luku`` under several osat)
+    yield more than one match and fall through to ``None``, preserving the
+    legitimately distinct per-part chapters.
+    """
+    matches = _tops.find_all(
+        state.ir, "chapter", chapter_label, label_index=state.provision_index
+    )
+    if len(matches) == 1:
+        return tuple(matches[0])
+    return None
+
+
 def _find_existing_chapter_path(
     state: ReplayState,
     chapter_label: str,
@@ -66,10 +92,15 @@ def _find_existing_chapter_path(
     if part_label:
         part_path = state.find("part", part_label)
         part_node = _tops.resolve(state.ir, part_path) if part_path is not None else None
-        if part_path is None or part_node is None:
-            return None
-        chapter_path = _tops.find(part_node, "chapter", chapter_label)
-        return part_path + chapter_path if chapter_path is not None else None
+        if part_path is not None and part_node is not None:
+            chapter_path = _tops.find(part_node, "chapter", chapter_label)
+            if chapter_path is not None:
+                return part_path + chapter_path
+        # The part-scoped lookup missed. Before seeding a duplicate, treat a
+        # globally-unique existing chapter as the same unit relocated under a
+        # relabelled part (continuous-numbering statutes); only fall through to
+        # creation when the label is genuinely absent or per-part ambiguous.
+        return _globally_unique_chapter_path(state, chapter_label)
     return state.find("chapter", chapter_label)
 
 

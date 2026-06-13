@@ -11387,7 +11387,14 @@ def test_pre_create_amendment_chapters_returns_created_refs() -> None:
 
 
 def test_pre_create_amendment_chapters_keeps_part_scope_for_same_label_chapters() -> None:
-    """Pre-create must not let chapter labels collide across different parts."""
+    """Per-part chapter-restart statutes keep distinct same-label chapters.
+
+    When the same chapter label already exists under more than one part (a
+    per-part chapter-restart statute, e.g. 2017/320 where ``2 luku`` recurs in
+    several osat), an amendment that scopes a new ``2 luku`` to a further part
+    must still seed a distinct chapter there: the tree-wide label is ambiguous,
+    so it cannot be treated as a single relocated unit.
+    """
     state = ReplayState(
         ir=IRNode(
             kind=IRNodeKind.BODY,
@@ -11397,6 +11404,18 @@ def test_pre_create_amendment_chapters_keeps_part_scope_for_same_label_chapters(
                     label="4",
                     children=(
                         IRNode(kind=IRNodeKind.NUM, text="IV OSA"),
+                        IRNode(
+                            kind=IRNodeKind.CHAPTER,
+                            label="2",
+                            children=(IRNode(kind=IRNodeKind.NUM, text="2 luku"),),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="6",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="VI OSA"),
                         IRNode(
                             kind=IRNodeKind.CHAPTER,
                             label="2",
@@ -11447,6 +11466,79 @@ def test_pre_create_amendment_chapters_keeps_part_scope_for_same_label_chapters(
     assert part_5 is not None
     part_5_chapters = [child.label for child in part_5.children if child.kind is IRNodeKind.CHAPTER]
     assert "2" in part_5_chapters
+
+
+def test_pre_create_amendment_chapters_skips_duplicate_of_relocated_unique_chapter() -> None:
+    """A globally-unique chapter scoped under a relabelled part is not duplicated.
+
+    Continuous-numbering statutes (e.g. Kirkkolaki 1993/1054) keep each chapter
+    label tree-wide unique. When an amendment re-presents such a chapter under a
+    relabelled part scope — a container for sparse section amendments, not an
+    explicit ``uusi N luku`` insert — pre-creation must recognise the existing
+    chapter and skip rather than seed a second instance under the new part.
+    """
+    state = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="5",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="V OSA"),
+                        IRNode(
+                            kind=IRNodeKind.CHAPTER,
+                            label="22",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="22 luku"),
+                                IRNode(
+                                    kind=IRNodeKind.SECTION,
+                                    label="4",
+                                    children=(IRNode(kind=IRNodeKind.NUM, text="4 §"),),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="4",
+                    children=(IRNode(kind=IRNodeKind.NUM, text="IV OSA"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <part>
+              <num>IV OSA</num>
+              <chapter>
+                <num>22 luku</num>
+                <section><num>4 §</num></section>
+              </chapter>
+            </part>
+          </body>
+        </akn>
+        """
+    )
+    muutos_body_el = muutos_tree.find(".//{http://docs.oasis-open.org/legaldocml/ns/akn/3.0}body")
+    assert muutos_body_el is not None
+
+    from lawvm.core.tree_ops import find_all as tree_find_all
+
+    result = _pre_create_amendment_chapters(state, muutos_body_el, "2003/1274")
+    new_state = result.state
+
+    assert result.created_refs == (), (
+        "Globally-unique chapter:22 must not be duplicated under the relabelled part"
+    )
+    ch22_paths = tree_find_all(new_state.ir, "chapter", "22")
+    assert len(ch22_paths) == 1, f"Expected exactly one chapter:22, got {ch22_paths}"
+    assert ch22_paths[0][0] == ("part", "5"), (
+        f"The single chapter:22 must stay under part:5; got {ch22_paths[0]}"
+    )
 
 
 def test_new_chapter_in_part_materializes_with_sections_via_lo_ops() -> None:
