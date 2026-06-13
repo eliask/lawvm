@@ -113,7 +113,7 @@ from lawvm.finland.source_pathology import build_same_effective_container_repeal
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
 from lawvm.finland.uncovered_target_resolve import resolve_insert_chapter, resolve_target
-from lawvm.finland.uncovered_dispose import compute_replace_decision, evaluate_omission_merge
+from lawvm.finland.uncovered_dispose import compute_replace_decision, evaluate_omission_merge, evaluate_past_repeal_guard
 from lawvm.finland.constraints import DEBUG
 from lawvm.finland.replay_notices import replay_print as _replay_print
 from lawvm.xml_ingest import _tag
@@ -1238,35 +1238,25 @@ def _recover_uncovered_body_ops(
                     amend_chapter_label
                     and amend_chapter_label in johto_mentioned_replaced_chapters
                 )
-                if existing.attrs.get("lawvm_repeal_placeholder") == "1":
-                    _has_insert_op_for_label = any(
-                        op.op_type == "INSERT"
-                        and op.target_unit_kind == "section"
-                        and op.target_section
-                        and _norm_num_token(op.target_section) == label
-                        and (
-                            not op.target_chapter
-                            or not amend_chapter_label
-                            or _norm_num_token(op.target_chapter) == amend_chapter_label
-                        )
-                        for op in ops
+                _prv = evaluate_past_repeal_guard(
+                    existing.attrs, ops, label, amend_chapter_label, _whole_ch_replace
+                )
+                if _prv.applies and not _prv.bypass:
+                    recovery_guards.mark_covered(
+                        part=amend_part_label,
+                        chapter=amend_chapter_label,
+                        section=label,
                     )
-                    if not _has_insert_op_for_label and not _whole_ch_replace:
-                        recovery_guards.mark_covered(
-                            part=amend_part_label,
-                            chapter=amend_chapter_label,
-                            section=label,
-                        )
-                        _record_skip("past_repeal_placeholder_guard", label, amend_chapter_label)
-                        return
-                    # Tilalle INSERT or whole-chapter replace: fall through to
-                    # REPLACE logic below so the repeal placeholder is replaced
-                    # with the new content.
+                    _record_skip("past_repeal_placeholder_guard", label, amend_chapter_label)
+                    return
+                if _prv.applies:
+                    # Tilalle INSERT or whole-chapter replace: fall through to the
+                    # REPLACE logic so the repeal placeholder is replaced.
                     logger.debug(
                         "  [%s] uncovered: bypassing past-repeal guard for %s § (%s)",
                         amendment_id,
                         label,
-                        "tilalle INSERT" if _has_insert_op_for_label else "whole-chapter replace",
+                        _prv.bypass_reason,
                     )
                 _rdec = compute_replace_decision(
                     sec_ir, existing, has_content_ops, cross_chapter, _whole_ch_replace

@@ -97,3 +97,36 @@ def test_merge_rejected_duplicate_labels() -> None:
     d = evaluate_omission_merge(merged, existing)
     assert d.accept is False
     assert d.skip_reason == "duplicate_subsection_labels"
+
+
+class _Op:
+    def __init__(self, op_type, unit_kind, section, chapter=None):
+        self.op_type = op_type
+        self.target_unit_kind = unit_kind
+        self.target_section = section
+        self.target_chapter = chapter
+
+
+def test_past_repeal_not_a_placeholder() -> None:
+    from lawvm.finland.uncovered_dispose import evaluate_past_repeal_guard
+    v = evaluate_past_repeal_guard({}, [], "5", "2", False)
+    assert v.applies is False and v.bypass is False
+
+
+def test_past_repeal_blocks_without_tilalle_or_whole_chapter() -> None:
+    from lawvm.finland.uncovered_dispose import evaluate_past_repeal_guard
+    v = evaluate_past_repeal_guard({"lawvm_repeal_placeholder": "1"}, [], "5", "2", False)
+    assert v.applies is True and v.bypass is False
+
+
+def test_past_repeal_bypassed_by_tilalle_insert() -> None:
+    from lawvm.finland.uncovered_dispose import evaluate_past_repeal_guard
+    ops = [_Op("INSERT", "section", "5", "2")]
+    v = evaluate_past_repeal_guard({"lawvm_repeal_placeholder": "1"}, ops, "5", "2", False)
+    assert v.bypass is True and v.bypass_reason == "tilalle_insert"
+
+
+def test_past_repeal_bypassed_by_whole_chapter_replace() -> None:
+    from lawvm.finland.uncovered_dispose import evaluate_past_repeal_guard
+    v = evaluate_past_repeal_guard({"lawvm_repeal_placeholder": "1"}, [], "5", "2", True)
+    assert v.bypass is True and v.bypass_reason == "whole_chapter_replace"

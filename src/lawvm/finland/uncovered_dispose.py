@@ -13,11 +13,12 @@ not REPLACE?" is answerable from the verdict alone.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Iterable, Mapping, Optional
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.merge import _has_section_omissions_ir
 
 # Minimum fraction of the master section's text the merged result must retain;
@@ -148,3 +149,46 @@ def evaluate_omission_merge(merged: IRNode, existing_section: IRNode) -> MergeDe
         has_dup_labels=has_dup_labels,
         skip_reason=skip_reason,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class PastRepealVerdict:
+    """Whether an uncovered candidate may replace a repeal-placeholder slot."""
+
+    applies: bool       # the live slot is a repeal tombstone
+    bypass: bool        # if applies: reinstate it (replace the placeholder)?
+    bypass_reason: Optional[str]  # "tilalle_insert" | "whole_chapter_replace" | None
+
+
+def evaluate_past_repeal_guard(
+    existing_attrs: Mapping[str, Any],
+    ops: Iterable[Any],
+    label: str,
+    amend_chapter: Optional[str],
+    whole_chapter_replace: bool,
+) -> PastRepealVerdict:
+    """Decide whether a repeal-placeholder slot may be reinstated. Pure.
+
+    A section whose live slot is a repeal tombstone is normally left alone; it is
+    reinstated only when this amendment explicitly inserts the same section
+    ("tilalle" INSERT) or wholly replaces the chapter.
+    """
+    if existing_attrs.get("lawvm_repeal_placeholder") != "1":
+        return PastRepealVerdict(applies=False, bypass=False, bypass_reason=None)
+    has_insert_op = any(
+        op.op_type == "INSERT"
+        and op.target_unit_kind == "section"
+        and op.target_section
+        and _norm_num_token(op.target_section) == label
+        and (
+            not op.target_chapter
+            or not amend_chapter
+            or _norm_num_token(op.target_chapter) == amend_chapter
+        )
+        for op in ops
+    )
+    if has_insert_op:
+        return PastRepealVerdict(applies=True, bypass=True, bypass_reason="tilalle_insert")
+    if whole_chapter_replace:
+        return PastRepealVerdict(applies=True, bypass=True, bypass_reason="whole_chapter_replace")
+    return PastRepealVerdict(applies=True, bypass=False, bypass_reason=None)
