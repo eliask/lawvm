@@ -644,6 +644,13 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         ),
     )
     self_consistency_p.add_argument(
+        "-j",
+        "--jurisdiction",
+        default="fi",
+        choices=["fi", "uk"],
+        help="jurisdiction to audit (default: fi). UK harvests replay adjudications + compile rejections.",
+    )
+    self_consistency_p.add_argument(
         "--statutes",
         metavar="IDS",
         default="",

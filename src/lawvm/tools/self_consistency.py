@@ -35,12 +35,22 @@ momentti; later ``1977/604`` legitimately repeals "111 §:n 2 momentti", which
 the replay reports as ``REPEAL 111 § 2 mom → FAILED (momentti 2 not found)`` —
 a ``target_absent`` finding that is invisible to ``failed_ops`` alone.
 
+The same audit runs on the UK frontend via ``-j uk`` (see
+``tools.uk_self_consistency``): it replays the UK enacted base, applies the
+compiled amendment ops with oracle alignment disabled, and harvests the replay
+adjudications + compile rejections into the same row schema / signal taxonomy.
+UK exposes ``apply_failure / target_absent / unhandled_op / source_pathology /
+skipped_amendment / invariant_violation`` (no ``coverage_gap`` — UK has no
+johtolause coverage count — and no FI-specific ``elaboration_finding``).
+
 Usage:
-    lawvm self-consistency                       # full corpus, all signal types
+    lawvm self-consistency                       # FI full corpus, all signal types
     lawvm self-consistency --statutes 1958/370
     lawvm self-consistency --signal-types target_absent,apply_failure
     lawvm self-consistency --limit 200 --workers 8
     lawvm self-consistency --json
+    lawvm self-consistency -j uk --limit 50      # UK audit (curated subset)
+    lawvm self-consistency -j uk --statutes ukpga/1961/33
 """
 from __future__ import annotations
 
@@ -418,6 +428,14 @@ def _resolve_signal_filter(args) -> set[str]:
 # ---------------------------------------------------------------------------
 
 def main(args) -> None:
+    jurisdiction = getattr(args, "jurisdiction", "fi") or "fi"
+    if jurisdiction == "uk":
+        _main_uk(args)
+        return
+    _main_fi(args)
+
+
+def _main_fi(args) -> None:
     from lawvm.finland.corpus import get_corpus_store
     from lawvm.tools._parallel_corpus import project_corpus_parallel
 
@@ -440,6 +458,64 @@ def main(args) -> None:
     if getattr(args, "json", False):
         json.dump(
             {
+                "elapsed_s": round(elapsed, 2),
+                "statutes_swept": len(statute_ids),
+                "signal_types": sorted(signal_filter),
+                "replay_errors": error_rows,
+                "signals": len(rows),
+                "rows": rows,
+            },
+            sys.stdout,
+            ensure_ascii=False,
+            indent=1,
+            default=str,
+        )
+        sys.stdout.write("\n")
+        return
+
+    _print_report(rows, error_rows, statute_ids, elapsed)
+
+
+def _main_uk(args) -> None:
+    """UK self-consistency sweep.
+
+    Replays the UK corpus in parallel through the shared jurisdiction-neutral
+    harness, building one open Farchive per worker (via the UK store factory) and
+    harvesting replay adjudications + compile rejections as self-consistency rows.
+    """
+    from lawvm.tools._parallel_corpus import project_corpus_parallel
+    from lawvm.tools.uk_self_consistency import (
+        build_uk_store,
+        project_uk_self_consistency,
+        resolve_uk_statute_ids,
+    )
+
+    statute_ids = resolve_uk_statute_ids(args)
+    signal_filter = _resolve_signal_filter(args)
+    store = build_uk_store()
+
+    t0 = time.monotonic()
+    try:
+        rows, error_rows = project_corpus_parallel(
+            statute_ids=statute_ids,
+            projector_ref=("lawvm.tools.uk_self_consistency", "project_uk_self_consistency"),
+            serial_projector=project_uk_self_consistency,
+            store=store,
+            workers=getattr(args, "workers", 0) or 0,
+            store_factory_ref=("lawvm.tools.uk_self_consistency", "build_uk_store"),
+        )
+    finally:
+        close = getattr(store, "close", None)
+        if callable(close):
+            close()
+    elapsed = time.monotonic() - t0
+
+    rows = [r for r in rows if r["signal_type"] in signal_filter]
+
+    if getattr(args, "json", False):
+        json.dump(
+            {
+                "jurisdiction": "uk",
                 "elapsed_s": round(elapsed, 2),
                 "statutes_swept": len(statute_ids),
                 "signal_types": sorted(signal_filter),
