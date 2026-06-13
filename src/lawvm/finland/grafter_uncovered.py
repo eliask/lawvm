@@ -488,6 +488,27 @@ def _build_peg_covered_sets(
     return covered_labels
 
 
+def _compute_has_content_ops(ops: List[AmendmentOp], muutos_tree: etree._Element) -> bool:
+    """Whether REPLACE/INSERT body recovery is permitted for this amendment.
+
+    True when the PEG ops carry a section-level REPLACE/INSERT. Relaxed to True
+    when there are chapter-level REPLACE/INSERT ops, or when the johtolause
+    preamble explicitly says muutetaan/lisätään (PEG truncation: parsed kumotaan
+    but missed the muutetaan clause). Downstream omission + subsection guards
+    still prevent unsafe replacements.
+    """
+    if any(op.op_type in ("REPLACE", "INSERT") and op.target_unit_kind == "section" for op in ops):
+        return True
+    if any(op.op_type in ("REPLACE", "INSERT") and op.target_unit_kind == "chapter" for op in ops):
+        return True
+    johto_el = muutos_tree.find(".//{*}preamble")
+    if johto_el is not None:
+        johto_text = etree.tostring(johto_el, method="text", encoding="unicode")
+        if re.search(r"\bmuutetaan\b|\blisätään\b", johto_text, re.IGNORECASE):
+            return True
+    return False
+
+
 def _recover_uncovered_body_ops(
     state: "ReplayState",
     ctx: "StatuteContext",
@@ -745,24 +766,7 @@ def _recover_uncovered_body_ops(
     # --- end restructure signal detection + plan ---
     # --- end typed coverage analysis ---
 
-    has_content_ops = any(op.op_type in ("REPLACE", "INSERT") and op.target_unit_kind == "section" for op in ops)
-    # Relax guard when PEG produced chapter-level ops or when the johtolause
-    # explicitly mentions muutetaan/lisätään (PEG truncation: parsed kumotaan
-    # but missed muutetaan clause). Existing omission + subsec guards still
-    # prevent unsafe replacements.
-    if not has_content_ops:
-        has_chapter_ops = any(
-            op.op_type in ("REPLACE", "INSERT") and op.target_unit_kind == "chapter" for op in ops
-        )
-        if has_chapter_ops:
-            has_content_ops = True
-        else:
-            # Check johtolause from amendment preamble
-            johto_el = muutos_tree.find(".//{*}preamble")
-            if johto_el is not None:
-                johto_text = etree.tostring(johto_el, method="text", encoding="unicode")
-                if re.search(r"\bmuutetaan\b|\blisätään\b", johto_text, re.IGNORECASE):
-                    has_content_ops = True
+    has_content_ops = _compute_has_content_ops(ops, muutos_tree)
 
     def _is_section_covered(label: str, chapter: str, part: str | None) -> bool:
         """Check if a section label is covered by PEG ops.
