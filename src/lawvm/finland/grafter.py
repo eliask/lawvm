@@ -1557,6 +1557,44 @@ def _drop_payloadless_source_replace_shadowed_by_same_group_relabel(
     return kept_ops, rejected_ops
 
 
+_REJECTED_OPERATION_MESSAGE = "operation rejected before apply"
+
+
+def _rejected_operation_findings(failed_ops: Iterable[Any], stage: str) -> list[Finding]:
+    """Paired rejected-before-apply findings for a batch of failed ops.
+
+    Each rejected op yields an ``ELAB.REJECTED_OPERATION`` observation and an
+    ``ELAB.STRICT_REJECTED_OPERATION`` obligation. All observations are emitted
+    first, then all obligations (preserves the historical emission order of the
+    two separate accumulation calls this replaces). ``stage`` names the emitting
+    pipeline phase.
+    """
+    findings: list[Finding] = []
+    for failed in failed_ops:
+        findings.append(
+            Finding(
+                kind="ELAB.REJECTED_OPERATION",
+                role="observation",
+                stage=stage,
+                detail={**failed.as_detail(), "message": _REJECTED_OPERATION_MESSAGE},
+                source_statute=failed.amendment_id,
+                blocking=False,
+            )
+        )
+    for failed in failed_ops:
+        findings.append(
+            Finding(
+                kind="ELAB.STRICT_REJECTED_OPERATION",
+                role="obligation",
+                stage=stage,
+                detail={**failed.as_detail(), "message": _REJECTED_OPERATION_MESSAGE},
+                source_statute=failed.amendment_id,
+                blocking=True,
+            )
+        )
+    return findings
+
+
 def _elaborate_group(
     target_ctx: "TargetContext",
     lookups: "ReplayLookups",
@@ -1776,29 +1814,7 @@ def _elaborate_group(
 
     b = PhaseBuilder()
 
-    b.add_findings(
-        Finding(
-            kind="ELAB.REJECTED_OPERATION",
-            role="observation",
-            stage="_elaborate_group",
-            detail={**failed.as_detail(), "message": "operation rejected before apply"},
-            source_statute=failed.amendment_id,
-            blocking=False,
-        )
-        for failed in local_rejected_ops
-    )
-
-    b.add_findings(
-        Finding(
-            kind="ELAB.STRICT_REJECTED_OPERATION",
-            role="obligation",
-            stage="_elaborate_group",
-            detail={**failed.as_detail(), "message": "operation rejected before apply"},
-            source_statute=failed.amendment_id,
-            blocking=True,
-        )
-        for failed in local_rejected_ops
-    )
+    b.add_findings(_rejected_operation_findings(local_rejected_ops, "_elaborate_group"))
 
     # Source pathologies → findings
     b.add_findings(
@@ -2363,32 +2379,7 @@ def _compile_group(
                     for op in replacement_ops
                 ]
                 compile_findings += tuple(
-                    Finding(
-                        kind="ELAB.REJECTED_OPERATION",
-                        role="observation",
-                        stage="_compile_group",
-                        detail={
-                            **failed.as_detail(),
-                            "message": "operation rejected before apply",
-                        },
-                        source_statute=failed.amendment_id,
-                        blocking=False,
-                    )
-                    for failed in strict_failed_ops
-                )
-                compile_findings += tuple(
-                    Finding(
-                        kind="ELAB.STRICT_REJECTED_OPERATION",
-                        role="obligation",
-                        stage="_compile_group",
-                        detail={
-                            **failed.as_detail(),
-                            "message": "operation rejected before apply",
-                        },
-                        source_statute=failed.amendment_id,
-                        blocking=True,
-                    )
-                    for failed in strict_failed_ops
+                    _rejected_operation_findings(strict_failed_ops, "_compile_group")
                 )
                 return PhaseResult(
                     output=[],
@@ -2565,32 +2556,7 @@ def _compile_group(
                             )
                         ]
                         compile_findings += tuple(
-                            Finding(
-                                kind="ELAB.REJECTED_OPERATION",
-                                role="observation",
-                                stage="_compile_group",
-                                detail={
-                                    **failed.as_detail(),
-                                    "message": "operation rejected before apply",
-                                },
-                                source_statute=failed.amendment_id,
-                                blocking=False,
-                            )
-                            for failed in strict_failed_ops
-                        )
-                        compile_findings += tuple(
-                            Finding(
-                                kind="ELAB.STRICT_REJECTED_OPERATION",
-                                role="obligation",
-                                stage="_compile_group",
-                                detail={
-                                    **failed.as_detail(),
-                                    "message": "operation rejected before apply",
-                                },
-                                source_statute=failed.amendment_id,
-                                blocking=True,
-                            )
-                            for failed in strict_failed_ops
+                            _rejected_operation_findings(strict_failed_ops, "_compile_group")
                         )
                         # Strict profile blocked the retarget — return early with
                         # empty output.  The retarget findings are already in
