@@ -7936,6 +7936,26 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     nz_effect_preflight_p.add_argument("--evidence-rows", action="store_true", help="include shared evidence rows in JSON output")
     nz_effect_preflight_p.add_argument("--evidence-jsonl", metavar="PATH", help="write shared preflight evidence rows as JSONL")
     nz_effect_preflight_p.add_argument("--json", action="store_true", help="emit preflight report JSON")
+    nz_dry_run_p = nz_corpus_sub.add_parser(
+        "dry-run",
+        help="dry-run NZ direct repeal candidates against the archived on-or-after XML oracle",
+        description=(
+            "Apply preflight-approved, exact-target repeal candidates to an "
+            "immutable parsed before-version source tree, producing a candidate "
+            "after-tree, and compare it to the archived on-or-after XML oracle. "
+            "Each operation emits a mutation-boundary proof. This never enables "
+            "actual replay and never mutates the archive."
+        ),
+    )
+    nz_dry_run_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_dry_run_p.add_argument("--work-id", required=True, metavar="ID", help="archived work_id")
+    nz_dry_run_p.add_argument("--summary-only", action="store_true", help="emit only dry-run summary counts")
+    nz_dry_run_p.add_argument("--json", action="store_true", help="emit dry-run report JSON")
     nz_evidence_pack_p = nz_corpus_sub.add_parser(
         "evidence-pack",
         help="write one report-query-compatible NZ evidence JSONL pack",
@@ -10912,6 +10932,10 @@ def _main_impl() -> None:
             from lawvm.new_zealand.effect_candidates import preflight_main as nz_corpus_candidate_preflight_main
 
             nz_corpus_candidate_preflight_main(args)
+        elif args.nz_corpus_command == "dry-run":
+            from lawvm.new_zealand.dry_run import main as nz_corpus_dry_run_main
+
+            nz_corpus_dry_run_main(args)
         elif args.nz_corpus_command == "evidence-pack":
             from lawvm.new_zealand.evidence_pack import main as nz_corpus_evidence_pack_main
 
