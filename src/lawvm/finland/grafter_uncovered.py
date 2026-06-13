@@ -452,6 +452,56 @@ def _collect_johto_mentioned_section_labels_frozenset(johto_text: str) -> frozen
     return _collect_johto_mentioned_section_labels_frozenset_impl(johto_text)
 
 
+def _build_peg_covered_sets(
+    ops: List[AmendmentOp],
+    failed_ops_out: Optional[List[FailedOp]],
+) -> tuple[set[UncoveredSectionKey], Set[str]]:
+    """Sections/chapters already covered by PEG ops (uncovered-recovery input).
+
+    Pure: derives the "already covered" guard sets from the compiled PEG ops,
+    excluding ops that FAILED during apply (a failed op blocks recovery but did
+    not modify the tree, so the body fallback should still apply).
+
+    ``covered_labels`` is part+chapter-aware: an op with chapter="" covers the
+    section in all chapters within the same part; a truly unscoped op uses
+    part=""/chapter="" as the global wildcard.
+
+    Returns ``(covered_labels, covered_chapter_payloads)``. The label set is
+    aliased by the caller into the recovery guard object.
+    """
+    failed_sections: Set[str] = set()
+    if failed_ops_out:
+        for fop in failed_ops_out:
+            if fop.target_unit_kind == "section" and fop.target_section:
+                failed_sections.add(_norm_num_token(fop.target_section))
+    covered_labels: set[UncoveredSectionKey] = set()
+    covered_chapter_payloads: Set[str] = set()
+    for op in ops:
+        if op.target_unit_kind == "section" and op.target_section:
+            label = _norm_num_token(op.target_section)
+            if label not in failed_sections:
+                covered_labels.add(
+                    _uncovered_section_key(
+                        part=op.target_part,
+                        chapter=op.target_chapter,
+                        section=label,
+                    )
+                )
+        if (
+            op.target_unit_kind == "chapter"
+            and op.target_section
+            and op.op_type in ("REPLACE", "INSERT")
+            and not op.target_paragraph
+            and not op.target_item
+            and not op.target_special
+        ):
+            # Strip "luku" suffix so the label matches what
+            # _process_section_candidate receives from _gap.unit.parent_label
+            # (computed via _normalize_chapter_label → removesuffix('luku')).
+            covered_chapter_payloads.add(_norm_num_token(op.target_section).removesuffix("luku"))
+    return covered_labels, covered_chapter_payloads
+
+
 def _recover_uncovered_body_ops(
     state: "ReplayState",
     ctx: "StatuteContext",
@@ -531,44 +581,10 @@ def _recover_uncovered_body_ops(
                 )
             )
 
-    # Build set of sections covered by PEG ops, excluding ops that FAILED
-    # during apply_op_ir. Failed ops block uncovered body recovery but
-    # didn't actually modify the tree — the fallback should still apply.
-    #
-    # covered_labels is part+chapter-aware.  An op with chapter="" still covers
-    # the section in all chapters within the same part, and a truly unscoped op
-    # uses part="" / chapter="" as the global wildcard.
-    failed_sections: Set[str] = set()
-    if failed_ops_out:
-        for fop in failed_ops_out:
-            if fop.target_unit_kind == "section" and fop.target_section:
-                failed_sections.add(_norm_num_token(fop.target_section))
-    covered_labels: set[UncoveredSectionKey] = set()
-    covered_chapter_payloads: Set[str] = set()
+    # PEG-covered guard sets (see _build_peg_covered_sets). covered_labels is
+    # aliased into recovery_guards below, so its identity must be preserved.
+    covered_labels, covered_chapter_payloads = _build_peg_covered_sets(ops, failed_ops_out)
     chapter_payload_section_dispositions: dict[str, dict[str, int]] = {}
-    for op in ops:
-        if op.target_unit_kind == "section" and op.target_section:
-            label = _norm_num_token(op.target_section)
-            if label not in failed_sections:
-                covered_labels.add(
-                    _uncovered_section_key(
-                        part=op.target_part,
-                        chapter=op.target_chapter,
-                        section=label,
-                    )
-                )
-        if (
-            op.target_unit_kind == "chapter"
-            and op.target_section
-            and op.op_type in ("REPLACE", "INSERT")
-            and not op.target_paragraph
-            and not op.target_item
-            and not op.target_special
-        ):
-            # Strip "luku" suffix so the label matches what _process_section_candidate
-            # receives from _gap.unit.parent_label (computed via
-            # _normalize_chapter_label → removesuffix('luku')).
-            covered_chapter_payloads.add(_norm_num_token(op.target_section).removesuffix("luku"))
 
     # --- Typed coverage analysis (primary source for uncovered sections) ---
     # Coverage analysis replaces the ad-hoc per-section scan as the primary
