@@ -40,6 +40,8 @@ def _section_bisect_support(
         replay_xml,
         process_muutoslaki,
     )
+    from lawvm.finland.process_request import ProcessAmendmentRequest
+    from lawvm.finland.process_result_builder import ProcessAmendmentSinks
     from lawvm.finland.apply_events import ApplyMutationInvariantReport
     from lawvm.finland.helpers import _fi_label_postprocessor
     from lawvm.finland.statute import ReplayState, StatuteContext
@@ -97,8 +99,14 @@ def _section_bisect_support(
                         _state_before = _snap_state
                         _pm_res = _run_quietly(
                             process_muutoslaki,
-                            _snap_mid, _snap_state, _snap_ctx,
-                            replay_mode=mode, parent_id=statute_id, corpus=corpus,
+                            request=ProcessAmendmentRequest(
+                                amendment_id=_snap_mid,
+                                state=_snap_state,
+                                ctx=_snap_ctx,
+                                replay_mode=mode,
+                                parent_id=statute_id,
+                                corpus=corpus,
+                            ),
                         )
                         _state_after = _pm_res.output if _pm_res is not None else _snap_state
                         _blame_snapshots[_snap_mid] = (_state_before, _state_after, _snap_ctx)
@@ -107,8 +115,14 @@ def _section_bisect_support(
                             break
                     _pm_res2 = _run_quietly(
                         process_muutoslaki,
-                        _snap_mid, _snap_state, _snap_ctx,
-                        replay_mode=mode, parent_id=statute_id, corpus=corpus,
+                        request=ProcessAmendmentRequest(
+                            amendment_id=_snap_mid,
+                            state=_snap_state,
+                            ctx=_snap_ctx,
+                            replay_mode=mode,
+                            parent_id=statute_id,
+                            corpus=corpus,
+                        ),
                     )
                     _snap_state = _pm_res2.output if _pm_res2 is not None else _snap_state
         except (NameError, TypeError, AttributeError):
@@ -192,18 +206,22 @@ def _section_bisect_support(
             apply_mutation_events: List[Any] = []
             apply_mutation_invariant_reports: List[ApplyMutationInvariantReport] = []
             process_muutoslaki(
-                blame_source,
-                snap_state_before,
-                snap_ctx,
-                replay_mode=mode,
-                compiled_ops_out=compiled_rows,
-                parent_id=statute_id,
-                corpus=corpus,
-                elaboration_observations_out=elaboration_observations,
-                sparse_slot_bindings_out=sparse_slot_bindings,
-                sparse_leftovers_out=sparse_leftovers,
-                mutation_events_out=apply_mutation_events,
-                mutation_invariant_reports_out=apply_mutation_invariant_reports,
+                request=ProcessAmendmentRequest(
+                    amendment_id=blame_source,
+                    state=snap_state_before,
+                    ctx=snap_ctx,
+                    replay_mode=mode,
+                    parent_id=statute_id,
+                    corpus=corpus,
+                ),
+                sinks=ProcessAmendmentSinks(
+                    compiled_ops_out=compiled_rows,
+                    elaboration_observations_out=elaboration_observations,
+                    sparse_slot_bindings_out=sparse_slot_bindings,
+                    sparse_leftovers_out=sparse_leftovers,
+                    mutation_events_out=apply_mutation_events,
+                    mutation_invariant_reports_out=apply_mutation_invariant_reports,
+                ),
             )
             amendment_support_cache[blame_source] = {
                 "body_section_labels": body_labels,
