@@ -30,6 +30,7 @@ from lawvm.finland.johtolause.lexicon import (
     _NUM_DASH_STRUCT_RE,
     _LETTER_DASH_STRUCT_RE,
     _LETTER_DASH_NUM_RE,
+    _LETTER_RANGE_RE,
     _case_from_pykala_suffix,
 )
 from lawvm.core.parse_witness import ParseWitness
@@ -261,6 +262,20 @@ def _emit_token(raw: str, out: list[Token], char_offset: int = -1) -> None:
         out.append(_tok(g1, g1, "LETTER", "", None, 0, len(g1)))
         out.append(_tok("\u2013", "\u2013", "DASH", "", None, dash_start, num_start))
         out.append(_tok(g2, g2, "NUM", "", None, num_start, num_start + len(g2)))
+        return
+
+    # a-c (letter range for item enumerations, e.g. "j-l kohta")
+    # Splits into LETTER DASH LETTER so the item-letter range grammar can
+    # expand it (j-l -> j, k, l).  Without the split it stays a single WORD and
+    # poisons the surrounding enumeration.
+    m = _LETTER_RANGE_RE.match(raw)
+    if m and not raw[0].isdigit():
+        g1, g2 = m.group(1), m.group(2)
+        dash_start = len(g1)
+        let2_start = len(raw) - len(g2)
+        out.append(_tok(g1, g1, "LETTER", "", None, 0, len(g1)))
+        out.append(_tok("\u2013", "\u2013", "DASH", "", None, dash_start, let2_start))
+        out.append(_tok(g2, g2, "LETTER", "", None, let2_start, let2_start + len(g2)))
         return
 
     # ---- NUM+LETTER compound (e.g. "14a", "5b") without § ----

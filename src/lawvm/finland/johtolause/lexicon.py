@@ -297,6 +297,9 @@ _NUM_DASH_STRUCT_RE = re.compile(
 )
 _LETTER_DASH_STRUCT_RE = re.compile(rf"^([a-z]){_DASH_CLASS}(kohta|kohdan)$", re.I)
 _LETTER_DASH_NUM_RE = re.compile(rf"^([a-z]){_DASH_CLASS}(\d+)$")
+# Letter range for item enumerations: "a-c", "j-l" → LETTER DASH LETTER.
+# Single ASCII letter, one dash, single ASCII letter (no §, no momentti).
+_LETTER_RANGE_RE = re.compile(rf"^([a-z]){_DASH_CLASS}([a-z])$")
 
 
 def _case_from_pykala_suffix(suffix: str) -> str:

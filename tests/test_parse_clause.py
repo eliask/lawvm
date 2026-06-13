@@ -1600,3 +1600,85 @@ def test_parse_clause_compound_replace_then_insert_item_via_seka_lisataan() -> N
     assert "M P 9 1 4" in codes, f"Expected 'M P 9 1 4' in {codes}"
     assert "L P 9 1 5" in codes, f"Expected 'L P 9 1 5' in {codes}"
     assert not result.is_failed
+
+
+def test_tokenize_restores_ocr_lost_dash_in_section_range() -> None:
+    """Two bare adjacent section numbers before a single § are a coalesced range.
+
+    Regression for the live 1987/320 <- 1994/1375 clause "21 23 §": the source
+    scan dropped the en-dash from "21–23 §", leaving NUM NUM PYKALA.  Without
+    repair the range parse fails and every target after it (here the trailing
+    "32 §:n 1 momentin 3, 4, 6 ja 8 kohta") is dropped on the floor.  The lexer
+    reinserts the implied DASH only for the unambiguous ascending bare pair.
+    """
+    from lawvm.finland.johtolause.lexer import tokenize
+
+    tokens = tokenize("21 23 §")
+    cats = [t.cat for t in tokens]
+    assert cats == ["NUM", "DASH", "NUM", "PYKALA"], cats
+    assert [t.text for t in tokens][:3] == ["21", "–", "23"]
+
+    # Full live clause: the range and the trailing kohta list must all compile.
+    text = (
+        "muutetaan 2 §:n 2 momentti, 21 23 § ja "
+        "32 §:n 1 momentin 3, 4, 6 ja 8 kohta seuraavasti:"
+    )
+    result = parse_clause(text, statute_id="1987/320")
+    codes = [op.code() for op in result.parsed_ops]
+    for expected in ("M P 21", "M P 22", "M P 23", "M P 32 1 3", "M P 32 1 8"):
+        assert expected in codes, f"Expected {expected!r} in {codes}"
+
+
+def test_tokenize_does_not_fabricate_range_for_separated_or_descending_numbers() -> None:
+    """The lost-dash repair must NOT coalesce legitimately separate targets.
+
+    A genuine list always carries an explicit separator (",", "ja", "sekä"),
+    and a descending or equal bare pair is not a valid range — none of these
+    may gain an implied DASH.
+    """
+    from lawvm.finland.johtolause.lexer import tokenize
+
+    # Comma- and conjunction-separated pairs keep their separator, no DASH.
+    assert [t.cat for t in tokenize("21, 23 §")] == ["NUM", "COMMA", "NUM", "PYKALA"]
+    assert [t.cat for t in tokenize("21 ja 23 §")] == ["NUM", "CONJ", "NUM", "PYKALA"]
+    # Descending and equal bare pairs are left untouched (no fabricated range).
+    assert [t.cat for t in tokenize("23 21 §")] == ["NUM", "NUM", "PYKALA"]
+    assert [t.cat for t in tokenize("21 21 §")] == ["NUM", "NUM", "PYKALA"]
+
+
+def test_tokenize_splits_item_letter_range_into_letter_dash_letter() -> None:
+    """A dashed item-letter range must split so the range grammar can expand it.
+
+    Regression for the live 1972/484 <- 1989/820 clause fragment
+    "1 §:n c ja j-l kohta": the "j-l" range used to tokenize as a single WORD,
+    which the enumeration grammar could not consume — it poisoned the parse and
+    dropped every target after it (the whole "3 §, 4 §:n 1 ja 3 momentti, ..."
+    list).  Splitting into LETTER DASH LETTER lets _letter_list expand j-l to
+    j, k, l and the rest of the enumeration survives.
+    """
+    from lawvm.finland.johtolause.lexer import tokenize
+
+    assert [t.cat for t in tokenize("j-l")] == ["LETTER", "DASH", "LETTER"]
+    assert [t.text for t in tokenize("j-l")] == ["j", "–", "l"]
+
+    text = (
+        "muutetaan 1 §:n c ja j-l kohta sekä 3 §, 4 §:n 1 ja 3 momentti, "
+        "10 §, 13 §:n 1 momentti seuraavasti:"
+    )
+    result = parse_clause(text, statute_id="1972/484")
+    codes = [op.code() for op in result.parsed_ops]
+    # The j-l range expands to items j, k, l on section 1.
+    for expected in ("M P 1 1 j", "M P 1 1 k", "M P 1 1 l"):
+        assert expected in codes, f"Expected {expected!r} in {codes}"
+    # And the downstream section targets are no longer dropped.
+    for expected in ("M P 3", "M P 4 1", "M P 4 3", "M P 10", "M P 13 1"):
+        assert expected in codes, f"Expected {expected!r} in {codes}"
+
+
+def test_tokenize_does_not_split_letter_dash_number_as_letter_range() -> None:
+    """The letter-range split must not steal letter-dash-number (a–1) forms."""
+    from lawvm.finland.johtolause.lexer import tokenize
+
+    assert [t.cat for t in tokenize("a-1")] == ["LETTER", "DASH", "NUM"]
+    # Plain compound and single section letter stay intact.
+    assert [t.cat for t in tokenize("14a")] == ["NUM", "LETTER"]
