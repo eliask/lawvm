@@ -113,6 +113,90 @@ def test_parse_ee_statute_attaches_unlabeled_loige_between_numbered_subsections(
     ]
 
 
+def test_parse_ee_statute_materializes_jaotis_subdivision_level_and_labels() -> None:
+    """chapter → jagu (division) → jaotis (subdivision) → paragrahv (section).
+
+    Divisions and subdivisions whose numeric element is empty must take their
+    ordinal from the heading text, and the jaotis level must be preserved as a
+    SUBDIVISION node so subdivision-qualified addresses resolve in the PIT.
+    """
+    statute = parse_ee_statute(
+        """
+        <akt xmlns="tyviseadus_1_10.02.2010">
+          <aktinimi><nimi><pealkiri>Test</pealkiri></nimi></aktinimi>
+          <sisu>
+            <peatykk>
+              <peatykkNr>3</peatykkNr>
+              <peatykkPealkiri>Kolmas peatükk</peatykkPealkiri>
+              <jagu>
+                <jaguNr></jaguNr>
+                <jaguPealkiri>2. Teine jagu</jaguPealkiri>
+                <jaotis>
+                  <jaotisNr>5</jaotisNr>
+                  <jaotisPealkiri>Töötutoetuse andmed</jaotisPealkiri>
+                  <paragrahv>
+                    <paragrahvNr>21</paragrahvNr>
+                    <paragrahvPealkiri>Toetus</paragrahvPealkiri>
+                  </paragrahv>
+                </jaotis>
+                <jaotis>
+                  <jaotisNr></jaotisNr>
+                  <jaotisPealkiri>6. Loa andmed</jaotisPealkiri>
+                  <paragrahv>
+                    <paragrahvNr>22</paragrahvNr>
+                    <paragrahvPealkiri>Luba</paragrahvPealkiri>
+                  </paragrahv>
+                </jaotis>
+              </jagu>
+            </peatykk>
+          </sisu>
+        </akt>
+        """.encode(),
+        "ee/test",
+    )
+
+    chapter = statute.body.children[0]
+    assert (chapter.kind, chapter.label) == (IRNodeKind.CHAPTER, "3")
+
+    division = chapter.children[0]
+    # jaguNr empty → ordinal taken from heading "2. Teine jagu".
+    assert (division.kind, division.label) == (IRNodeKind.DIVISION, "2")
+
+    subdivisions = division.children
+    assert [(c.kind, c.label) for c in subdivisions] == [
+        (IRNodeKind.SUBDIVISION, "5"),
+        # jaotisNr empty → ordinal from heading "6. Loa andmed".
+        (IRNodeKind.SUBDIVISION, "6"),
+    ]
+
+    # Sections nest under the correct subdivision (not flattened onto division).
+    section_21 = subdivisions[0].children[0]
+    assert (section_21.kind, section_21.label) == (IRNodeKind.SECTION, "21")
+    # Legacy flattened-form attr is still carried for downstream consumers.
+    assert section_21.attrs.get("jaotis") == "5"
+
+    # The subdivision node lives in the tree and is addressable, so the
+    # previously-absent chapter/division/subdivision/section target now resolves
+    # both structurally and as an address.
+    from lawvm.core import tree_ops
+
+    subdivision_path = (("chapter", "3"), ("division", "2"), ("subdivision", "5"))
+    resolved = tree_ops.resolve(statute.body, subdivision_path)
+    assert resolved is not None
+    assert resolved.kind == IRNodeKind.SUBDIVISION
+
+    from lawvm.core.timeline_addresses import _iter_nodes_with_address
+
+    addresses = {tuple(addr.path) for addr, _ in _iter_nodes_with_address(statute.body)}
+    assert subdivision_path in addresses
+    assert (
+        ("chapter", "3"),
+        ("division", "2"),
+        ("subdivision", "5"),
+        ("section", "21"),
+    ) in addresses
+
+
 def test_extract_ee_ops_keeps_rewrite_witness_on_payload_sidecar_only() -> None:
     ops = extract_ee_ops(
         (
@@ -3900,7 +3984,7 @@ def test_parse_ee_statute_skips_blank_alampunkt_editorial_placeholder() -> None:
     assert subsection.children == ()
 
 
-def test_parse_ee_statute_flattens_jaotis_sections_under_parent_division() -> None:
+def test_parse_ee_statute_nests_jaotis_sections_under_subdivision() -> None:
     xml = """
     <tyviseadus xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
       <aktinimi>
@@ -3951,13 +4035,20 @@ def test_parse_ee_statute_flattens_jaotis_sections_under_parent_division() -> No
     division = statute.body.children[0].children[0]
 
     assert division.kind == IRNodeKind.DIVISION
-    assert [(child.kind, child.label, child.text) for child in division.children] == [
+    # jaotis is preserved as its own SUBDIVISION level; sections nest under it.
+    assert [(child.kind, child.label) for child in division.children] == [
+        (IRNodeKind.SUBDIVISION, "4"),
+    ]
+    subdivision = division.children[0]
+    assert [(child.kind, child.label, child.text) for child in subdivision.children] == [
         (IRNodeKind.SECTION, "97_1", "Metoodikakomisjon"),
         (IRNodeKind.SECTION, "97_2", "Metoodikakomisjoni pädevus"),
     ]
+    # Legacy flattened-form attr is still carried on the sections.
+    assert subdivision.children[0].attrs.get("jaotis") == "4"
 
 
-def test_parse_ee_statute_flattens_alljaotis_sections_under_parent_division() -> None:
+def test_parse_ee_statute_nests_alljaotis_sections_under_subdivision() -> None:
     xml = """
     <tyviseadus xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
       <aktinimi>
@@ -3998,7 +4089,12 @@ def test_parse_ee_statute_flattens_alljaotis_sections_under_parent_division() ->
     """.encode("utf-8")
 
     statute = parse_ee_statute(xml, "ee/test")
-    section = statute.body.children[0].children[0].children[0]
+    division = statute.body.children[0].children[0]
+    assert division.kind == IRNodeKind.DIVISION
+    subdivision = division.children[0]
+    assert subdivision.kind == IRNodeKind.SUBDIVISION
+    assert subdivision.label == "3"
+    section = subdivision.children[0]
 
     assert section.kind == IRNodeKind.SECTION
     assert section.label == "37_3"

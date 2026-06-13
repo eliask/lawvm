@@ -64,6 +64,7 @@ from lawvm.core import tree_ops
 from lawvm.estonia.act_identity_registry import lookup_ee_act_identity
 from lawvm.estonia.peg import (
     _EE_DASH_CLASS,
+    _EE_SUPERSCRIPT_DIGIT_CLASS,
     _expand_ee_numeric_list,
     _instruction_preamble,
     _normalize_num,
@@ -1611,15 +1612,52 @@ def _canonicalize_singleton_empty_section_label(children: tuple[IRNode, ...]) ->
     return (replace(section, label="1", attrs=attrs),)
 
 
+# Leading container ordinal carried in a heading, e.g. "1. PÕHISÄTTED" or
+# "2¹. TEOSE KASUTAMINE ...".  Many RT divisions/subdivisions leave their
+# numeric element (jaguNr / jaotisNr) empty and place the ordinal at the start
+# of the heading text instead.  The ordinal is an arabic run optionally followed
+# by superscript digits, terminated by a period.
+_EE_HEADING_ORDINAL_RE = re.compile(
+    r"^\s*(\d+[" + _EE_SUPERSCRIPT_DIGIT_CLASS + r"]*)\s*[.]"
+)
+
+
+def _extract_heading_ordinal_label(heading_text: str) -> str:
+    """Return the normalized leading ordinal of a container heading, or "".
+
+    ``"1. PÕHISÄTTED"`` → ``"1"``; ``"2¹. ..."`` → ``"2_1"``.  Empty when the
+    heading does not begin with an ordinal (e.g. a plain titled division).
+    """
+    if not heading_text:
+        return ""
+    match = _EE_HEADING_ORDINAL_RE.match(heading_text)
+    if not match:
+        return ""
+    return _normalize_num(match.group(1))
+
+
 def _parse_division(el: XmlElement, ns_str: str, phantoms: AbstractSet[XmlElement] = frozenset()) -> IRNode:
-    """Parse a jagu (division) element → IRNode(kind=IRNodeKind.DIVISION)."""
-    nr = _extract_superscript_label(el, ns_str) or _text(_find(el, ns_str, "jaguNr"))
+    """Parse a jagu (division) element → IRNode(kind=IRNodeKind.DIVISION).
+
+    ``<jaotis>`` subdivisions are materialized as their own SUBDIVISION level so
+    that subdivision-qualified addresses (chapter/division/subdivision/section)
+    resolve in the PIT.  Sections keep the legacy ``jaotis``/``alljaotis`` attrs
+    as well, for downstream consumers that still key off the flattened form.
+    """
     title = _text(_find(el, ns_str, "jaguPealkiri"))
+    # jaguNr is frequently empty; fall back to the ordinal embedded in the
+    # heading so divisions never carry an empty label (which both blocks
+    # addressing and previously crashed duplicate-child classification).
+    nr = (
+        _extract_superscript_label(el, ns_str)
+        or _text(_find(el, ns_str, "jaguNr"))
+        or _extract_heading_ordinal_label(title)
+    )
     children: List[IRNode] = []
 
-    def _append_section(para_el: XmlElement, *, jaotis_label: str = "", alljaotis_label: str = "") -> None:
+    def _make_section(para_el: XmlElement, *, jaotis_label: str = "", alljaotis_label: str = "") -> Optional[IRNode]:
         if para_el in phantoms:
-            return
+            return None
         section = _parse_section(para_el, ns_str)
         attrs = dict(section.attrs)
         if jaotis_label:
@@ -1628,30 +1666,49 @@ def _parse_division(el: XmlElement, ns_str: str, phantoms: AbstractSet[XmlElemen
             attrs["alljaotis"] = _normalize_num(alljaotis_label)
         if attrs != section.attrs:
             section = replace(section, attrs=attrs)
-        children.append(section)
+        return section
 
     for child in el:
         local_tag = child.tag.split("}")[-1]
         if local_tag == "paragrahv":
-            _append_section(child)
+            section = _make_section(child)
+            if section is not None:
+                children.append(section)
         elif local_tag == "jaotis":
-            # EE jaotis sits below jagu, but the current shared IR has no
-            # dedicated subdivision layer. Flatten jaotis-contained sections
-            # under the parent division, preserving document order and the
-            # section labels/titles that the oracle exposes (e.g. § 97^1, § 97^2).
-            jaotis_label = _extract_superscript_label(child, ns_str) or _text(_find(child, ns_str, "jaotisNr"))
+            # EE jaotis sits below jagu — materialize it as a SUBDIVISION node
+            # nesting its sections, preserving document order and the section
+            # labels/titles that the oracle exposes (e.g. § 97^1, § 97^2).
+            jaotis_title = _text(_find(child, ns_str, "jaotisPealkiri"))
+            jaotis_label = (
+                _extract_superscript_label(child, ns_str)
+                or _text(_find(child, ns_str, "jaotisNr"))
+                or _extract_heading_ordinal_label(jaotis_title)
+            )
+            sub_children: List[IRNode] = []
             for para_el in child.findall(_ns(ns_str, "paragrahv")):
-                _append_section(para_el, jaotis_label=jaotis_label)
+                section = _make_section(para_el, jaotis_label=jaotis_label)
+                if section is not None:
+                    sub_children.append(section)
             for alljaotis_el in child.findall(_ns(ns_str, "alljaotis")):
                 alljaotis_label = _extract_superscript_label(alljaotis_el, ns_str) or _text(
                     _find(alljaotis_el, ns_str, "alljaotisNr")
                 )
                 for para_el in alljaotis_el.findall(_ns(ns_str, "paragrahv")):
-                    _append_section(
+                    section = _make_section(
                         para_el,
                         jaotis_label=jaotis_label,
                         alljaotis_label=alljaotis_label,
                     )
+                    if section is not None:
+                        sub_children.append(section)
+            children.append(
+                IRNode(
+                    kind=IRNodeKind.SUBDIVISION,
+                    label=jaotis_label,
+                    text=jaotis_title,
+                    children=tuple(sub_children),
+                )
+            )
     return IRNode(kind=IRNodeKind.DIVISION, label=nr, text=title, children=tuple(children))
 
 
@@ -7021,8 +7078,20 @@ def _ee_resolve_full_path(body: IRNode, path: tree_ops.Path) -> Optional[tree_op
             candidate = parent_full + (path[-1],)
             if tree_ops.resolve(body, candidate) is not None:
                 return candidate
-            leaf_kind, _leaf_label = path[-1]
+            leaf_kind, leaf_label = path[-1]
             parent_node = tree_ops.resolve(body, parent_full)
+            # EE jaotis (subdivision) is an addressing-transparent wrapper: a
+            # section addressed as chapter/division/section may physically sit
+            # inside a subdivision under that division. Descend through any
+            # subdivision children of the resolved parent so the op binds to the
+            # existing section instead of inserting a duplicate beside it.
+            if parent_node is not None:
+                for child in parent_node.children:
+                    if child.kind != IRNodeKind.SUBDIVISION:
+                        continue
+                    sub_path = parent_full + (("subdivision", child.label or ""), path[-1])
+                    if tree_ops.resolve(body, sub_path) is not None:
+                        return sub_path
             if (
                 leaf_kind == "item"
                 and parent_node is not None
@@ -7970,40 +8039,6 @@ def _ee_apply_op(
         return body
 
     if action == "repeal":
-        if "subdivision" in path_dict and "chapter" in path_dict and "division" in path_dict:
-            div_path = _ee_resolve_full_path(
-                body,
-                (("chapter", path_dict["chapter"]), ("division", path_dict["division"])),
-            )
-            if div_path is not None:
-                division_node = tree_ops.resolve(body, div_path)
-                if division_node is not None and division_node.kind == IRNodeKind.DIVISION:
-                    subdivision_label = path_dict["subdivision"]
-                    matched = False
-                    new_children: list[IRNode] = []
-                    for child in division_node.children:
-                        if child.kind == IRNodeKind.SECTION and child.attrs.get("jaotis") == subdivision_label:
-                            matched = True
-                            new_children.append(
-                                IRNode(
-                                    kind=IRNodeKind.SECTION,
-                                    label=child.label,
-                                    text=child.text,
-                                    attrs={**dict(child.attrs), "kehtetu": True},
-                                    children=(),
-                                )
-                            )
-                        else:
-                            new_children.append(child)
-                    if matched:
-                        new_division = IRNode(
-                            kind=IRNodeKind.DIVISION,
-                            label=division_node.label,
-                            text=division_node.text,
-                            attrs=dict(division_node.attrs),
-                            children=tuple(new_children),
-                        )
-                        return tree_ops.replace_at(body, div_path, new_division)
         full_path = _ee_resolve_full_path(body, path)
         if full_path is not None:
             target_node = tree_ops.resolve(body, full_path)
@@ -8024,6 +8059,7 @@ def _ee_apply_op(
                         IRNodeKind.PART,
                         IRNodeKind.CHAPTER,
                         IRNodeKind.DIVISION,
+                        IRNodeKind.SUBDIVISION,
                     ):
                         stub_children.append(_repealed_container_stub(descendant))
                 return IRNode(
@@ -8066,12 +8102,21 @@ def _ee_apply_op(
                     children=tuple(new_children),
                 )
                 return tree_ops.replace_at(body, full_path, new_chapter)
+            if target_node is not None and target_node.kind == IRNodeKind.SUBDIVISION:
+                # Subdivision-level repeal: stub each child section, preserving
+                # the subdivision heading surface (mirrors the division case).
+                sections = [child for child in target_node.children if child.kind == IRNodeKind.SECTION]
+                if not sections:
+                    return body
+                return tree_ops.replace_at(body, full_path, _repealed_container_stub(target_node))
             if target_node is not None and target_node.kind == IRNodeKind.DIVISION:
                 # Division-level repeal: RT keeps the division heading and
                 # preserves each child section as a bare kehtetu stub with its
-                # title surface intact, but without subsection content.
+                # title surface intact, but without subsection content.  Sections
+                # may sit directly under the division or under subdivisions.
                 sections = [child for child in target_node.children if child.kind == IRNodeKind.SECTION]
-                if not sections:
+                subdivisions = [child for child in target_node.children if child.kind == IRNodeKind.SUBDIVISION]
+                if not sections and not subdivisions:
                     return body
                 new_children = [
                     IRNode(
@@ -8081,7 +8126,9 @@ def _ee_apply_op(
                         attrs={**dict(section.attrs), "kehtetu": True},
                         children=(),
                     )
-                    for section in sections
+                    if section.kind == IRNodeKind.SECTION
+                    else _repealed_container_stub(section)
+                    for section in target_node.children
                 ]
                 new_division = IRNode(
                     kind=IRNodeKind.DIVISION,

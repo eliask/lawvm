@@ -80,6 +80,7 @@ class TestTypedOnlyEnums:
         assert StructureKind.TITLE.value == "title"
         assert StructureKind.PART.value == "part"
         assert StructureKind.DIVISION.value == "division"
+        assert StructureKind.SUBDIVISION.value == "subdivision"
         assert StructureKind.CHAPTER.value == "chapter"
         assert StructureKind.SUBCHAPTER.value == "subchapter"
         assert StructureKind.SECTION.value == "section"
@@ -92,7 +93,7 @@ class TestTypedOnlyEnums:
         assert StructureKind.ANNEX_PART.value == "annex_part"
         assert StructureKind.DOCUMENT != "document"
         assert str(StructureKind.DOCUMENT) == "document"
-        assert len(StructureKind) == 14
+        assert len(StructureKind) == 15
 
     def test_facet_kind_values_match_existing_strings(self):
         assert FacetKind.BODY.value == "body"

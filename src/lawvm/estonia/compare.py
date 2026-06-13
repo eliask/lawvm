@@ -576,7 +576,13 @@ def irnode_to_ee_comparison_text(node: IRNode) -> str:
     ):
         return ""
     parts: list[str] = []
-    if node.text:
+    # EE jaotis (subdivision) is an editorial wrapper: its own heading must not
+    # contribute to an ancestor division/chapter rollup, so that the rollup is
+    # identical whether or not a section sits inside a subdivision (a newly
+    # inserted section is placed at division level by the amendment, but the
+    # oracle nests it under a subdivision). Only the subdivision's sections
+    # contribute; its heading text is skipped.
+    if node.kind != IRNodeKind.SUBDIVISION and node.text:
         parts.append(node.text)
     for child in node.children:
         child_text = irnode_to_ee_comparison_text(child)

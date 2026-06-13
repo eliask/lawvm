@@ -2899,6 +2899,21 @@ def test_repeal_flat_part_marker_removes_owned_section_run_until_next_part() -> 
 
 
 def test_repeal_subdivision_marks_only_matching_jaotis_sections_kehtetu() -> None:
+    def _subdivision(label: str, section_label: str, section_text: str, sub_text: str) -> IRNode:
+        return IRNode(
+            kind=IRNodeKind.SUBDIVISION,
+            label=label,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label=section_label,
+                    text=section_text,
+                    attrs={"jaotis": label},
+                    children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text=sub_text),),
+                ),
+            ),
+        )
+
     body = IRNode(
         kind=IRNodeKind.BODY,
         children=(
@@ -2915,26 +2930,18 @@ def test_repeal_subdivision_marks_only_matching_jaotis_sections_kehtetu() -> Non
                                 label="3",
                                 text="Terviseameti toimingud",
                                 children=(
-                                    IRNode(
-                                        kind=IRNodeKind.SECTION,
-                                        label="278",
-                                        text="Ravimiseaduse alusel tehtavad toimingud",
-                                        attrs={"jaotis": "2"},
-                                        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Jääb alles."),),
+                                    _subdivision("2", "278", "Ravimiseaduse alusel tehtavad toimingud", "Jääb alles."),
+                                    _subdivision(
+                                        "3",
+                                        "279",
+                                        "Töötervishoiuteenuse osutajana registreerimise taotluse läbivaatamine",
+                                        "Kustub.",
                                     ),
-                                    IRNode(
-                                        kind=IRNodeKind.SECTION,
-                                        label="279",
-                                        text="Töötervishoiuteenuse osutajana registreerimise taotluse läbivaatamine",
-                                        attrs={"jaotis": "3"},
-                                        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Kustub."),),
-                                    ),
-                                    IRNode(
-                                        kind=IRNodeKind.SECTION,
-                                        label="280",
-                                        text="Rahvatervise seaduse alusel tehtavad toimingud",
-                                        attrs={"jaotis": "4"},
-                                        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Jääb samuti alles."),),
+                                    _subdivision(
+                                        "4",
+                                        "280",
+                                        "Rahvatervise seaduse alusel tehtavad toimingud",
+                                        "Jääb samuti alles.",
                                     ),
                                 ),
                             ),
@@ -2954,25 +2961,19 @@ def test_repeal_subdivision_marks_only_matching_jaotis_sections_kehtetu() -> Non
     result = _ee_apply_op(body, op)
     division = result.children[0].children[0].children[0]
 
-    assert [
-        (section.label, section.text, section.attrs.get("jaotis"), section.attrs.get("kehtetu"), section.children)
-        for section in division.children
-    ] == [
-        (
-            "278",
-            "Ravimiseaduse alusel tehtavad toimingud",
-            "2",
-            None,
-            (IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Jääb alles."),),
-        ),
-        ("279", "Töötervishoiuteenuse osutajana registreerimise taotluse läbivaatamine", "3", True, ()),
-        (
-            "280",
-            "Rahvatervise seaduse alusel tehtavad toimingud",
-            "4",
-            None,
-            (IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Jääb samuti alles."),),
-        ),
+    # Only the targeted subdivision's sections become kehtetu stubs; the other
+    # subdivisions' sections are untouched.
+    def _section_states(div: IRNode) -> list[tuple[str, str | None, object]]:
+        states: list[tuple[str, str | None, object]] = []
+        for subdivision in div.children:
+            for section in subdivision.children:
+                states.append((section.label, section.attrs.get("kehtetu"), section.children))
+        return states
+
+    assert _section_states(division) == [
+        ("278", None, (IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Jääb alles."),)),
+        ("279", True, ()),
+        ("280", None, (IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Jääb samuti alles."),)),
     ]
 
 

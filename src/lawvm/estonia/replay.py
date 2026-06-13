@@ -1112,6 +1112,33 @@ def _ee_precompose_pending_amendment_text_patches(
     return updated_ops, tuple(adjudications)
 
 
+def _collapse_subdivision_in_timelines(timelines: dict[LegalAddress, Any]) -> dict[LegalAddress, Any]:
+    """Re-key timelines so ``subdivision`` path segments are dropped.
+
+    EE jaotis (subdivision) is an editorial wrapper: a new section inserted by
+    an amendment is addressed at division level (chapter/division/section), but
+    the consolidated oracle nests it under a subdivision. Both denote the same
+    provision. Collapsing the subdivision segment for the consistency comparison
+    makes section identity insensitive to whether a section sits inside a
+    subdivision wrapper — matching ``section_key_from_path``, which already
+    skips division/subdivision. Subdivision container nodes themselves carry no
+    own comparison text once collapsed and fold into their parent division.
+    """
+    collapsed: dict[LegalAddress, Any] = {}
+    for address, timeline in timelines.items():
+        new_path = tuple((kind, label) for kind, label in address.path if kind != "subdivision")
+        if new_path == address.path:
+            collapsed[address] = timeline
+            continue
+        if not new_path:
+            # A bare subdivision container collapses away entirely.
+            continue
+        new_address = LegalAddress(path=new_path)
+        # Prefer an existing concrete (non-container) entry on collision.
+        collapsed.setdefault(new_address, timeline)
+    return collapsed
+
+
 # ---------------------------------------------------------------------------
 # Result type
 # ---------------------------------------------------------------------------
@@ -1550,8 +1577,12 @@ def replay_ee_to_pit(
     if result.oracle is not None and result.replayed is not None:
         _log("Running verify_consistency...")
         try:
-            replay_tl = ingest_consolidated(result.replayed, as_of="0000-00-00")
-            oracle_tl  = ingest_consolidated(result.oracle, as_of="0000-00-00")
+            replay_tl = _collapse_subdivision_in_timelines(
+                ingest_consolidated(result.replayed, as_of="0000-00-00")
+            )
+            oracle_tl = _collapse_subdivision_in_timelines(
+                ingest_consolidated(result.oracle, as_of="0000-00-00")
+            )
             divs = verify_consistency(
                 replay_tl,
                 oracle_tl,
