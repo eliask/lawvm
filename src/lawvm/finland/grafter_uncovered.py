@@ -1493,166 +1493,205 @@ def _recover_uncovered_body_ops(
 
         if existing_path is not None:
             existing = _tops.resolve(state.ir, existing_path)
-            if existing is None:
-                # Path is stale (tree was mutated by earlier ops in this batch);
-                # treat as new insert.
-                existing_path = None
-            else:
-                existing_heading = _section_heading_text(existing)
-                amend_heading = _section_heading_text(sec_ir)
-                if (
-                    existing_heading.startswith("voimaantulo")
-                    and amend_heading
-                    and not amend_heading.startswith("voimaantulo")
-                ):
-                    # TODO (architecture): voimaantulo-relabel is a pre-computation
-                    # that requires knowing which insert_label to use, which in turn
-                    # needs the current sibling list.  Since the sibling list changes
-                    # after each insert in the result list, this case needs sequential
-                    # state-dependent resolution and cannot be purely pre-collected.
-                    # For now, compute the insert_label against the initial state
-                    # (conservative: if the sibling was already inserted by an earlier
-                    # op in result, the insert_label may be off by one letter).
-                    parent_path = existing_path[:-1]
-                    parent = _tops.resolve(state.ir, parent_path) if parent_path else state.ir
-                    section_siblings = [c for c in parent.children if c.kind is IRNodeKind.SECTION] if parent is not None else []
-                    insert_label: Optional[str] = None
-                    if existing in section_siblings:
-                        existing_idx = section_siblings.index(existing)
-                        if existing_idx > 0:
-                            insert_label = _next_letter_label(section_siblings[existing_idx - 1].label or "")
-                    if insert_label and state.find_section_path(insert_label, amend_chapter_label) is None:
-                        inserted_sec = _relabel_section_ir(sec_ir, insert_label)
-                        recovery_guards.mark_covered(
-                            part=amend_part_label,
-                            chapter=amend_chapter_label,
-                            section=label,
-                        )
-                        _append_recovered_rop(
-                            _make_uncovered_rop(
-                                "INSERT",
-                                insert_label,
-                                amend_chapter_label,
-                                amend_part_label or _part_label_from_path(existing_path),
-                                inserted_sec,
-                                f"uncovered_insert_{insert_label}",
-                            )
-                        )
-                        return
-                if not _label_allowed_by_johto(label, amend_chapter_label):
-                    _record_skip("johto_guard", label, amend_chapter_label)
-                    return
-                # --- Past-repeal guard ---
-                # If the target section is already a repeal placeholder (from
-                # a PAST amendment), do not override it with body-coverage
-                # REPLACE.  The section was deliberately repealed; the body
-                # content in this amendment either targets a different
-                # chapter or is stale/mis-targeted.
-                #
-                # Exception: tilalle-range INSERT ops explicitly restore a
-                # previously-repealed section slot.  When the PEG-compiled ops
-                # include an INSERT for this (chapter, section) label pair, the
-                # amendment deliberately targets this repeal placeholder and
-                # the guard must be bypassed so the new content can replace it.
-                # Whole-chapter-replace flag: when the johtolause explicitly
-                # says "muutetaan X luku", the amendment body is authoritative
-                # for ALL sections in that chapter.  Two guards below are
-                # relaxed under this flag:
-                # 1. past-repeal guard — a repealed slot may be reinstated.
-                # 2. would_lose_subsections — the chapter restructure is the
-                #    new truth; a lower subsection count is intentional.
-                _whole_ch_replace = bool(
-                    amend_chapter_label
-                    and amend_chapter_label in johto_mentioned_replaced_chapters
+            if existing is not None:
+                _process_existing_section(
+                    existing,
+                    existing_path,
+                    sec_ir,
+                    label,
+                    amend_chapter_label,
+                    amend_part_label,
+                    cross_chapter,
                 )
-                _prv = evaluate_past_repeal_guard(
-                    existing.attrs, ops, label, amend_chapter_label, _whole_ch_replace
-                )
-                if _prv.applies and not _prv.bypass:
-                    recovery_guards.mark_covered(
-                        part=amend_part_label,
-                        chapter=amend_chapter_label,
-                        section=label,
-                    )
-                    _record_skip("past_repeal_placeholder_guard", label, amend_chapter_label)
-                    return
-                if _prv.applies:
-                    # Tilalle INSERT or whole-chapter replace: fall through to the
-                    # REPLACE logic so the repeal placeholder is replaced.
-                    logger.debug(
-                        "  [%s] uncovered: bypassing past-repeal guard for %s § (%s)",
-                        amendment_id,
-                        label,
-                        _prv.bypass_reason,
-                    )
-                # Terminal EXISTING-path disposition: classify the replace/merge/
-                # skip decision into one typed verdict, then commit it. The
-                # classifier is pure; the commit (mark_covered + append/skip) is
-                # the only mutation and stays here because mark_covered is read by
-                # later candidates in this sequential loop.
-                _rdec = compute_replace_decision(
-                    sec_ir, existing, has_content_ops, cross_chapter, _whole_ch_replace
-                )
-                _edisp = classify_existing_disposition(
-                    sec_ir, _rdec, has_content_ops, cross_chapter
-                )
-                if os.environ.get("LAWVM_DEBUG_RECOVERY") == "1":
-                    print(
-                        f"  [DBG]  existing disposition={_edisp.outcome.value}, "
-                        f"has_content_ops={has_content_ops}, has_omissions={_rdec.has_omissions}, "
-                        f"cross_chapter={cross_chapter}, would_lose={_rdec.would_lose_subsections}, "
-                        f"whole_ch_replace={_whole_ch_replace}, amend_ss={_rdec.amend_subsec_count}, "
-                        f"master_ss={_rdec.master_subsec_count}"
-                    )
-                # Every terminal EXISTING-path outcome marks the section covered.
+                return
+            # Path is stale (tree was mutated by earlier ops in this batch);
+            # fall through and treat the candidate as a new insert.
+
+        _process_new_section(sec_ir, label, amend_chapter_label, amend_part_label)
+
+    def _process_existing_section(
+        existing: IRNode,
+        existing_path: tuple[tuple[str, str], ...],
+        sec_ir: IRNode,
+        label: str,
+        amend_chapter_label: Optional[str],
+        amend_part_label: Optional[str],
+        cross_chapter: bool,
+    ) -> None:
+        """EXISTING-path phase: a live section resolves at ``existing_path``.
+
+        Three sub-decisions, in order: the (genuinely stateful) voimaantulo
+        relabel pre-step, the johto-guard, the past-repeal-placeholder guard
+        dispatch, and the terminal replace/merge/skip disposition. Every branch
+        marks the section covered (read by later candidates in this sequential
+        loop) and commits exactly one ResolvedOp or skip before returning.
+        """
+        existing_heading = _section_heading_text(existing)
+        amend_heading = _section_heading_text(sec_ir)
+        if (
+            existing_heading.startswith("voimaantulo")
+            and amend_heading
+            and not amend_heading.startswith("voimaantulo")
+        ):
+            # TODO (architecture): voimaantulo-relabel is a pre-computation
+            # that requires knowing which insert_label to use, which in turn
+            # needs the current sibling list.  Since the sibling list changes
+            # after each insert in the result list, this case needs sequential
+            # state-dependent resolution and cannot be purely pre-collected.
+            # For now, compute the insert_label against the initial state
+            # (conservative: if the sibling was already inserted by an earlier
+            # op in result, the insert_label may be off by one letter).
+            parent_path = existing_path[:-1]
+            parent = _tops.resolve(state.ir, parent_path) if parent_path else state.ir
+            section_siblings = [c for c in parent.children if c.kind is IRNodeKind.SECTION] if parent is not None else []
+            insert_label: Optional[str] = None
+            if existing in section_siblings:
+                existing_idx = section_siblings.index(existing)
+                if existing_idx > 0:
+                    insert_label = _next_letter_label(section_siblings[existing_idx - 1].label or "")
+            if insert_label and state.find_section_path(insert_label, amend_chapter_label) is None:
+                inserted_sec = _relabel_section_ir(sec_ir, insert_label)
                 recovery_guards.mark_covered(
                     part=amend_part_label,
                     chapter=amend_chapter_label,
                     section=label,
                 )
-                if _edisp.outcome is ExistingDisposition.REPLACE:
+                _append_recovered_rop(
+                    _make_uncovered_rop(
+                        "INSERT",
+                        insert_label,
+                        amend_chapter_label,
+                        amend_part_label or _part_label_from_path(existing_path),
+                        inserted_sec,
+                        f"uncovered_insert_{insert_label}",
+                    )
+                )
+                return
+        if not _label_allowed_by_johto(label, amend_chapter_label):
+            _record_skip("johto_guard", label, amend_chapter_label)
+            return
+        # --- Past-repeal guard ---
+        # If the target section is already a repeal placeholder (from
+        # a PAST amendment), do not override it with body-coverage
+        # REPLACE.  The section was deliberately repealed; the body
+        # content in this amendment either targets a different
+        # chapter or is stale/mis-targeted.
+        #
+        # Exception: tilalle-range INSERT ops explicitly restore a
+        # previously-repealed section slot.  When the PEG-compiled ops
+        # include an INSERT for this (chapter, section) label pair, the
+        # amendment deliberately targets this repeal placeholder and
+        # the guard must be bypassed so the new content can replace it.
+        # Whole-chapter-replace flag: when the johtolause explicitly
+        # says "muutetaan X luku", the amendment body is authoritative
+        # for ALL sections in that chapter.  Two guards below are
+        # relaxed under this flag:
+        # 1. past-repeal guard — a repealed slot may be reinstated.
+        # 2. would_lose_subsections — the chapter restructure is the
+        #    new truth; a lower subsection count is intentional.
+        _whole_ch_replace = bool(
+            amend_chapter_label
+            and amend_chapter_label in johto_mentioned_replaced_chapters
+        )
+        _prv = evaluate_past_repeal_guard(
+            existing.attrs, ops, label, amend_chapter_label, _whole_ch_replace
+        )
+        if _prv.applies and not _prv.bypass:
+            recovery_guards.mark_covered(
+                part=amend_part_label,
+                chapter=amend_chapter_label,
+                section=label,
+            )
+            _record_skip("past_repeal_placeholder_guard", label, amend_chapter_label)
+            return
+        if _prv.applies:
+            # Tilalle INSERT or whole-chapter replace: fall through to the
+            # REPLACE logic so the repeal placeholder is replaced.
+            logger.debug(
+                "  [%s] uncovered: bypassing past-repeal guard for %s § (%s)",
+                amendment_id,
+                label,
+                _prv.bypass_reason,
+            )
+        # Terminal EXISTING-path disposition: classify the replace/merge/
+        # skip decision into one typed verdict, then commit it. The
+        # classifier is pure; the commit (mark_covered + append/skip) is
+        # the only mutation and stays here because mark_covered is read by
+        # later candidates in this sequential loop.
+        _rdec = compute_replace_decision(
+            sec_ir, existing, has_content_ops, cross_chapter, _whole_ch_replace
+        )
+        _edisp = classify_existing_disposition(
+            sec_ir, _rdec, has_content_ops, cross_chapter
+        )
+        if os.environ.get("LAWVM_DEBUG_RECOVERY") == "1":
+            print(
+                f"  [DBG]  existing disposition={_edisp.outcome.value}, "
+                f"has_content_ops={has_content_ops}, has_omissions={_rdec.has_omissions}, "
+                f"cross_chapter={cross_chapter}, would_lose={_rdec.would_lose_subsections}, "
+                f"whole_ch_replace={_whole_ch_replace}, amend_ss={_rdec.amend_subsec_count}, "
+                f"master_ss={_rdec.master_subsec_count}"
+            )
+        # Every terminal EXISTING-path outcome marks the section covered.
+        recovery_guards.mark_covered(
+            part=amend_part_label,
+            chapter=amend_chapter_label,
+            section=label,
+        )
+        if _edisp.outcome is ExistingDisposition.REPLACE:
+            _append_recovered_rop(
+                _make_uncovered_rop(
+                    "REPLACE",
+                    label,
+                    amend_chapter_label,
+                    amend_part_label or _part_label_from_path(existing_path),
+                    sec_ir,
+                    f"uncovered_replace_{label}",
+                )
+            )
+        elif _edisp.outcome is ExistingDisposition.MERGE_CANDIDATE:
+            # Section-level omission — try merging amendment into master.
+            # When the amendment has fewer subsections+omissions, the merge
+            # function expands each omission across multiple master
+            # subsections; the post-merge guard still rejects real loss or
+            # text corruption.
+            merged = _merge_section_with_omission_ir(existing, sec_ir)
+            if merged is not None:
+                _mdec = evaluate_omission_merge(merged, existing)
+                if _mdec.accept:
+                    # Pass the pre-merged IR as the payload so apply_op
+                    # performs replace_at with the already-merged node.
                     _append_recovered_rop(
                         _make_uncovered_rop(
                             "REPLACE",
                             label,
                             amend_chapter_label,
                             amend_part_label or _part_label_from_path(existing_path),
-                            sec_ir,
-                            f"uncovered_replace_{label}",
+                            merged,
+                            f"uncovered_merge_{label}",
                         )
                     )
-                elif _edisp.outcome is ExistingDisposition.MERGE_CANDIDATE:
-                    # Section-level omission — try merging amendment into master.
-                    # When the amendment has fewer subsections+omissions, the merge
-                    # function expands each omission across multiple master
-                    # subsections; the post-merge guard still rejects real loss or
-                    # text corruption.
-                    merged = _merge_section_with_omission_ir(existing, sec_ir)
-                    if merged is not None:
-                        _mdec = evaluate_omission_merge(merged, existing)
-                        if _mdec.accept:
-                            # Pass the pre-merged IR as the payload so apply_op
-                            # performs replace_at with the already-merged node.
-                            _append_recovered_rop(
-                                _make_uncovered_rop(
-                                    "REPLACE",
-                                    label,
-                                    amend_chapter_label,
-                                    amend_part_label or _part_label_from_path(existing_path),
-                                    merged,
-                                    f"uncovered_merge_{label}",
-                                )
-                            )
-                        elif _mdec.skip_reason is not None:
-                            _record_skip(f"omission_merge_{_mdec.skip_reason}", label, amend_chapter_label)
-                    else:
-                        _record_skip("omission_merge_failed", label, amend_chapter_label)
-                elif _edisp.skip_reason is not None and _edisp.outcome is not ExistingDisposition.SKIP_BLOCKED:
-                    # Named skip (cross-chapter / no-content-ops / would-lose);
-                    # SKIP_BLOCKED is silent, matching the legacy fall-through.
-                    _record_skip(_edisp.skip_reason, label, amend_chapter_label)
-                return
+                elif _mdec.skip_reason is not None:
+                    _record_skip(f"omission_merge_{_mdec.skip_reason}", label, amend_chapter_label)
+            else:
+                _record_skip("omission_merge_failed", label, amend_chapter_label)
+        elif _edisp.skip_reason is not None and _edisp.outcome is not ExistingDisposition.SKIP_BLOCKED:
+            # Named skip (cross-chapter / no-content-ops / would-lose);
+            # SKIP_BLOCKED is silent, matching the legacy fall-through.
+            _record_skip(_edisp.skip_reason, label, amend_chapter_label)
 
+    def _process_new_section(
+        sec_ir: IRNode,
+        label: str,
+        amend_chapter_label: Optional[str],
+        amend_part_label: Optional[str],
+    ) -> None:
+        """NEW-path phase: the section has no resolvable existing target.
+
+        The johto-guard, the future-repeal suppression, and the family-chapter
+        INSERT placement (resolve_insert_chapter). Terminal: commits one INSERT
+        ResolvedOp or records one skip, then returns.
+        """
         if not _label_allowed_by_johto(label, amend_chapter_label):
             _record_skip("johto_guard", label, amend_chapter_label)
             return
