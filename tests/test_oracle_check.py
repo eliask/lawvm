@@ -61,6 +61,43 @@ def test_diagnose_treats_inline_future_effective_change_notes_as_editorial() -> 
     assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
 
 
+def test_diagnose_treats_trailing_figure_legend_as_editorial_convention() -> None:
+    # Oracle renders a source <block name="image"> legend as trailing
+    # "N Marking-name" caption paragraphs; replay carries the image (no text).
+    # Real shape: 1982/182 chapter:5/section:34.
+    replay = (
+        "34 § Sulkuviiva on yhtenäinen ajokaistojen välissä oleva keltainen tai "
+        "valkoinen viiva. Sulkuviiva on keltainen, kun se erottaa vastakkaiset "
+        "ajosuunnat toisistaan ja muulloin valkoinen. Ajoneuvo ei saa ylittää "
+        "ajosuunnalleen tarkoitettua sulkuviivaa eikä ajaa sen päällä."
+    )
+    oracle = replay + " 1 Keskiviiva 3 Keltainen sulkuviiva 6 Ajoradan reunaviiva"
+
+    assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_diagnose_keeps_replay_missing_when_drop_exceeds_figure_legend() -> None:
+    # A genuine mid-text drop beyond the trailing legend must stay flagged: the
+    # self-validating gate only reclassifies when replay matches oracle minus
+    # the legend.  Real shape: 1982/182 chapter:5/section:35 (replay also drops
+    # "merkitä valkoisella katkoviivalla. Viivan").
+    oracle = (
+        "35 § Ajoradan reunaviiva on yhtenäinen valkoinen viiva, joka osoittaa "
+        "ajoradan reunaa. Reunaviivan jatke voidaan risteyksien ja ajoradasta "
+        "erotettujen pysäkkien tai vastaavien alueiden kohdalla merkitä "
+        "valkoisella katkoviivalla. Viivan ja välin suhde on tällöin 1:1. "
+        "1 Keskiviiva 3 Keltainen sulkuviiva 5 Varoitusviiva 6 Ajoradan reunaviiva"
+    )
+    replay = (
+        "35 § Ajoradan reunaviiva on yhtenäinen valkoinen viiva, joka osoittaa "
+        "ajoradan reunaa. Reunaviivan jatke voidaan risteyksien ja ajoradasta "
+        "erotettujen pysäkkien tai vastaavien alueiden kohdalla ja välin suhde "
+        "on tällöin 1:1."
+    )
+
+    assert _diagnose(replay, oracle, None) == "REPLAY_MISSING"
+
+
 def test_diagnose_treats_bare_oracle_stub_as_editorial_convention() -> None:
     replay = "5 a § Jos vakuutusyhdistys purkautuu, selvitystila pannaan alulle."
     oracle = "5 a §"

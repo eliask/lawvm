@@ -34,6 +34,7 @@ from lxml import etree
 
 from lawvm.tools.editorial_hygiene import (
     strip_editorial_annotations,
+    strip_figure_legend_paragraphs,
     strip_kumottu_attribution,
     strip_temporary_residue_annotations,
 )
@@ -465,6 +466,17 @@ def _diagnose(
 
     if oracle_text_has_removable_duplicate_sentence(r_text, o_text):
         return "ORACLE_STALE"
+
+    # Figure-legend residue: the oracle renders a source image's legend as a
+    # trailing run of "N Marking-name" caption paragraphs that replay (which
+    # carries the source image, not its text) cannot produce.  Self-validating:
+    # only reclassify when removing the legend tail makes replay match the rest
+    # of the oracle, so a genuinely missing trailing clause is never masked.
+    o_legend_stripped = strip_figure_legend_paragraphs(o_text)
+    if o_legend_stripped != o_text:
+        c_o_legend = _clean(o_legend_stripped)
+        if c_r and c_o_legend and Levenshtein.ratio(c_r, c_o_legend) >= 0.95:
+            return "EDITORIAL_CONVENTION"
 
     c_diff = len(c_r) - len(c_o)
     if c_diff > 40:

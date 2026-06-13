@@ -155,6 +155,34 @@ def strip_kumottu_attribution(text: str) -> str:
     return _KUMOTTU_ATTRIBUTION_RE.sub('on kumottu.', text)
 
 
+# A figure-legend entry: a bare ordinal (1–2 digits) naming one numbered marking
+# in a road-sign / technical diagram, e.g. "1 Keskiviiva", "3 Keltainen
+# sulkuviiva", "6 Ajoradan reunaviiva".  Finlex renders the legend of a source
+# <block name="image"> as a trailing run of such short capitalised paragraphs;
+# LawVM replay carries the source image (no text), so the legend is oracle-only
+# presentation residue, not legal body text.  Each entry is a number followed by
+# 1–4 word tokens, the first capitalised.
+_FIGURE_LEGEND_ENTRY = (
+    r'\d{1,2}\s+[A-ZÄÖÅ][a-zäöåA-ZÄÖÅ-]*(?:\s+[a-zäöåA-ZÄÖÅ-]+){0,3}'
+)
+# A trailing run of one or more legend entries at the very end of the text.
+_FIGURE_LEGEND_TAIL_RE = re.compile(
+    rf'(?:\s*{_FIGURE_LEGEND_ENTRY}){{1,}}\s*$'
+)
+
+
+def strip_figure_legend_paragraphs(text: str) -> str:
+    """Strip a trailing figure-legend caption run from Finlex oracle text.
+
+    Removes the oracle-only "N Marking-name" caption paragraphs that Finlex
+    renders from a source image legend.  Tightly anchored to the END of the
+    text so interior prose is never touched.  Callers must keep this
+    self-validating: only treat the strip as benign when replay still matches
+    the stripped oracle (so a genuinely missing trailing clause is not masked).
+    """
+    return _FIGURE_LEGEND_TAIL_RE.sub('', text).rstrip()
+
+
 def normalize_kumottu_stubs(text: str) -> str:
     """Remove kumottu-stub sentences from oracle text before comparison.
 
