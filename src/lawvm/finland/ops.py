@@ -1061,30 +1061,6 @@ class ResolvedOp:
 
     @property
     def resolved_target_scope_view(self) -> "ResolvedTargetScopeView":
-        target_norm, target_chapter, target_part, target_paragraph, target_item, target_special = (
-            self.resolved_target_scope
-        )
-        return ResolvedTargetScopeView(
-            target_norm=target_norm,
-            target_chapter=target_chapter,
-            target_part=target_part,
-            target_paragraph=target_paragraph,
-            target_item=target_item,
-            target_special=target_special,
-        )
-
-    @property
-    def resolved_target_scope(self) -> tuple[str, str | None, str | None, int | None, str | None, str | None]:
-        """Return the effective late-waist target scope from resolved identity.
-
-        The tuple is:
-        ``(target_norm, target_chapter, target_part, target_paragraph, target_item, target_special)``.
-
-        Resolved target address is primary. Transitional late-waist fields are
-        only construction-time seed input; direct ``ResolvedOp(...)`` callers
-        should bind a target address explicitly instead of relying on hidden
-        seed-backed structural scope.
-        """
         address = self.resolved_target_address
         labels: Dict[str, str] = {}
         resolved_special: str | None = None
@@ -1113,13 +1089,35 @@ class ResolvedOp:
         if resolved_subsection is not None and resolved_subsection.isdigit():
             target_paragraph = int(resolved_subsection)
 
+        return ResolvedTargetScopeView(
+            target_norm=target_norm,
+            target_chapter=target_chapter,
+            target_part=target_part,
+            target_paragraph=target_paragraph,
+            target_item=labels.get("item"),
+            target_special=resolved_special,
+        )
+
+    @property
+    def resolved_target_scope(self) -> tuple[str, str | None, str | None, int | None, str | None, str | None]:
+        """Return the effective late-waist target scope from resolved identity.
+
+        The tuple is:
+        ``(target_norm, target_chapter, target_part, target_paragraph, target_item, target_special)``.
+
+        Resolved target address is primary. Transitional late-waist fields are
+        only construction-time seed input; direct ``ResolvedOp(...)`` callers
+        should bind a target address explicitly instead of relying on hidden
+        seed-backed structural scope.
+        """
+        scope = self.resolved_target_scope_view
         return (
-            target_norm,
-            target_chapter,
-            target_part,
-            target_paragraph,
-            labels.get("item"),
-            resolved_special,
+            scope.target_norm,
+            scope.target_chapter,
+            scope.target_part,
+            scope.target_paragraph,
+            scope.target_item,
+            scope.target_special,
         )
 
     @classmethod
@@ -1299,50 +1297,34 @@ class ResolvedOp:
 
     @property
     def resolved_target_label(self) -> str:
-        target_norm, _target_chapter, target_part, _target_paragraph, _target_item, _target_special = (
-            self.resolved_target_scope
-        )
+        scope = self.resolved_target_scope_view
         if self.target_unit_kind == "part":
-            return target_part or target_norm
-        return target_norm
+            return scope.target_part or scope.target_norm
+        return scope.target_norm
 
     @property
     def resolved_target_scope_chapter_label(self) -> str | None:
-        _target_norm, target_chapter, _target_part, _target_paragraph, _target_item, _target_special = (
-            self.resolved_target_scope
-        )
         if self.target_unit_kind != "section":
             return None
-        return target_chapter
+        return self.resolved_target_scope_view.target_chapter
 
     @property
     def resolved_target_scope_part_label(self) -> str | None:
-        _target_norm, _target_chapter, target_part, _target_paragraph, _target_item, _target_special = (
-            self.resolved_target_scope
-        )
         if self.target_unit_kind not in {"section", "chapter"}:
             return None
-        return target_part
+        return self.resolved_target_scope_view.target_part
 
     @property
     def effective_target_item_label(self) -> str | None:
-        _target_norm, _target_chapter, _target_part, _target_paragraph, target_item, _target_special = (
-            self.resolved_target_scope
-        )
-        return target_item
+        return self.resolved_target_scope_view.target_item
 
     @property
     def effective_target_paragraph(self) -> int | None:
-        _target_norm, _target_chapter, _target_part, target_paragraph, _target_item, _target_special = (
-            self.resolved_target_scope
-        )
-        return target_paragraph
+        return self.resolved_target_scope_view.target_paragraph
 
     @property
     def effective_target_special(self) -> str | None:
-        _target_norm, _target_chapter, _target_part, _target_paragraph, _target_item, resolved_special = (
-            self.resolved_target_scope
-        )
+        resolved_special = self.resolved_target_scope_view.target_special
         target_special = self._target_special_override
         if resolved_special == "otsikko" and target_special == "otsikko_edella":
             return target_special
@@ -1350,14 +1332,17 @@ class ResolvedOp:
 
     @property
     def resolved_section_lookup_scope(self) -> tuple[str, str | None, str | None]:
+        scope = self.resolved_section_lookup_scope_view
+        return (scope.target_norm, scope.target_chapter, scope.target_part)
+
+    @property
+    def resolved_section_lookup_scope_view(self) -> "ResolvedSectionLookupScopeView":
         """Return the neutral section lookup scope for state/path resolution."""
-        target_norm, target_chapter, target_part, _target_paragraph, _target_item, _target_special = (
-            self.resolved_target_scope
-        )
-        return (
-            target_norm,
-            target_chapter if self.target_unit_kind == "section" else None,
-            target_part if self.target_unit_kind in {"section", "chapter"} else None,
+        scope = self.resolved_target_scope_view
+        return ResolvedSectionLookupScopeView(
+            target_norm=scope.target_norm,
+            target_chapter=scope.target_chapter if self.target_unit_kind == "section" else None,
+            target_part=scope.target_part if self.target_unit_kind in {"section", "chapter"} else None,
         )
 
     @property
@@ -1453,28 +1438,26 @@ class ResolvedOp:
                     target_chapter=None,
                     target_part=labels["part"],
                 )
-        target_norm, target_chapter, target_part, _target_paragraph, _target_item, _target_special = (
-            self.resolved_target_scope
-        )
+        scope = self.resolved_target_scope_view
         if self.target_unit_kind == "section":
             return ResolvedGroupKeyView(
                 unit_kind="section",
-                target_norm=target_norm,
-                target_chapter=target_chapter,
-                target_part=target_part,
+                target_norm=scope.target_norm,
+                target_chapter=scope.target_chapter,
+                target_part=scope.target_part,
             )
         if self.target_unit_kind == "chapter":
             return ResolvedGroupKeyView(
                 unit_kind="chapter",
-                target_norm=target_norm,
+                target_norm=scope.target_norm,
                 target_chapter=None,
-                target_part=target_part,
+                target_part=scope.target_part,
             )
         return ResolvedGroupKeyView(
             unit_kind="part",
-            target_norm=target_norm,
+            target_norm=scope.target_norm,
             target_chapter=None,
-            target_part=target_part or target_norm,
+            target_part=scope.target_part or scope.target_norm,
         )
 
     def targets_whole_unit(self, unit_kind: TargetUnitKind) -> bool:
@@ -1592,6 +1575,15 @@ class ResolvedGroupKeyView:
     """Structured replay grouping key for resolved Finland operations."""
 
     unit_kind: TargetUnitKind
+    target_norm: str
+    target_chapter: str | None
+    target_part: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedSectionLookupScopeView:
+    """Structured neutral section lookup scope for resolved Finland operations."""
+
     target_norm: str
     target_chapter: str | None
     target_part: str | None

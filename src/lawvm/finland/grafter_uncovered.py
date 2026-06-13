@@ -990,29 +990,29 @@ def _recover_uncovered_body_ops(
     recovered_section_keys: Set[tuple[str, str]] = set()
 
     def _append_recovered_rop(rop: ResolvedOp) -> None:
-        target_norm, target_chapter, _target_part, _target_paragraph, _target_item, _target_special = (
-            rop.resolved_target_scope
-        )
-        recovered_section_keys.add((_norm_num_token(target_norm), _norm_num_token(target_chapter or "")))
+        target_scope = rop.resolved_target_scope_view
+        recovered_section_keys.add((
+            _norm_num_token(target_scope.target_norm),
+            _norm_num_token(target_scope.target_chapter or ""),
+        ))
         result.append(rop)
         if findings_out is None:
             return
-        target_part = rop.resolved_target_scope[2]
         finding = _uncovered_body_recovery_finding(
             op_id=rop.op_id,
             source_statute=amendment_id,
             target_unit_kind=rop.target_unit_kind,
-            target_norm=target_norm,
-            target_chapter=target_chapter,
-            target_part=target_part,
+            target_norm=target_scope.target_norm,
+            target_chapter=target_scope.target_chapter,
+            target_part=target_scope.target_part,
         )
         if finding is None:
             return
         key = (
             str(finding.kind or ""),
-            str(target_norm or ""),
-            str(target_chapter or ""),
-            str(target_part or ""),
+            str(target_scope.target_norm or ""),
+            str(target_scope.target_chapter or ""),
+            str(target_scope.target_part or ""),
             str(rop.op_id or ""),
         )
         if key in seen_recovery_findings:

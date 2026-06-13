@@ -1473,13 +1473,15 @@ def _apply_intent_relabel(
 
     if dest_label and source_unit_kind == "section":
         dest_path = intent.destination.address.path if intent.destination is not None else ()
-        source_target_norm, source_target_chapter, source_target_part = rop.resolved_section_lookup_scope
+        lookup_scope = rop.resolved_section_lookup_scope_view
+        source_target_chapter = lookup_scope.target_chapter
+        source_target_part = lookup_scope.target_part
         dest_chapter = next((lbl for kind, lbl in dest_path if kind == "chapter"), None) or rop.resolved_target_scope_chapter_label
-        dest_part = next((lbl for kind, lbl in dest_path if kind == "part"), None) or source_target_part
+        dest_part = next((lbl for kind, lbl in dest_path if kind == "part"), None) or lookup_scope.target_part
         src_path = state.find_section_path(
-            source_target_norm,
-            source_target_chapter,
-            source_target_part,
+            lookup_scope.target_norm,
+            lookup_scope.target_chapter,
+            lookup_scope.target_part,
         )
         if src_path is not None:
             node = _tops.resolve(state.ir, src_path)
@@ -1876,9 +1878,13 @@ def _apply_canonical_intent(
 
     if cross_ir is None:
         cross_ir = rop.cross_ir
-    target_norm, target_chapter, target_part = rop.resolved_section_lookup_scope
+    lookup_scope = rop.resolved_section_lookup_scope_view
     sec_path = (
-        state.find_section_path(target_norm, target_chapter, target_part)
+        state.find_section_path(
+            lookup_scope.target_norm,
+            lookup_scope.target_chapter,
+            lookup_scope.target_part,
+        )
         if _intent_targets_section(intent)
         else None
     )

@@ -222,22 +222,29 @@ def _resolve_section_path_with_fallbacks(
         fell back to a live-unique match after the scoped lookup failed.
     """
     del muutos_ir
-    target_norm, _target_chapter, _target_part = rop.resolved_section_lookup_scope
+    lookup_scope = rop.resolved_section_lookup_scope_view
+    target_norm = lookup_scope.target_norm
+    _target_chapter = lookup_scope.target_chapter
+    _target_part = lookup_scope.target_part
     _target_section = rop.resolved_target_label
     _move_clause_target_unit_kind = rop.move_clause_target_unit_kind
     taken_rung: str | None = None
     sec_path = _valid_target_path_hint(
         state,
         target_unit_kind=rop.target_unit_kind,
-        target_norm=target_norm,
-        target_chapter=_target_chapter,
-        target_part=_target_part,
+        target_norm=lookup_scope.target_norm,
+        target_chapter=lookup_scope.target_chapter,
+        target_part=lookup_scope.target_part,
         path_hint=path_hint,
     )
     if sec_path is not None:
         taken_rung = RUNG_PATH_HINT_VALIDATED
     else:
-        sec_path = state.find_section_path(target_norm, _target_chapter, _target_part)
+        sec_path = state.find_section_path(
+            lookup_scope.target_norm,
+            lookup_scope.target_chapter,
+            lookup_scope.target_part,
+        )
         if sec_path is not None:
             taken_rung = RUNG_SCOPED_FIND
     sec_path = _tops._as_path(sec_path) if sec_path is not None else None
@@ -522,10 +529,10 @@ def _move_rider_origin_path(
     ``_apply_whole_section_op`` (recovery rule
     ``section_move_replace_destination_rebind``).
     """
-    target_norm, target_chapter, target_part = rop.resolved_section_lookup_scope
-    if not target_norm:
+    lookup_scope = rop.resolved_section_lookup_scope_view
+    if not lookup_scope.target_norm:
         return None
-    label_norm = normalized_label_key(target_norm)
+    label_norm = normalized_label_key(lookup_scope.target_norm)
     matches = [
         _tops._as_path(path)
         for path in state.provision_index.get(("section", label_norm), [])
@@ -536,10 +543,10 @@ def _move_rider_origin_path(
     origin_chapter = _chapter_from_section_path(origin)
     origin_part = _part_from_section_path(origin)
     if rop.move_clause_target_unit_kind == "chapter":
-        if not target_chapter or origin_chapter == target_chapter:
+        if not lookup_scope.target_chapter or origin_chapter == lookup_scope.target_chapter:
             return None
     elif rop.move_clause_target_unit_kind == "part":
-        if not target_part or origin_part == target_part:
+        if not lookup_scope.target_part or origin_part == lookup_scope.target_part:
             return None
     else:
         return None
