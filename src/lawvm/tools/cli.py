@@ -7982,6 +7982,64 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         "--summary-only", action="store_true", help="emit only whole-tree comparison summary counts"
     )
     nz_dry_run_oracle_p.add_argument("--json", action="store_true", help="emit comparison report JSON")
+    nz_dry_run_corpus_p = nz_corpus_sub.add_parser(
+        "dry-run-corpus",
+        help="run the NZ dry-run repeal surface across a representative work population",
+        description=(
+            "Select a representative modern act_public population with the "
+            "benchmark sampler, run the per-work dry-run repeal surface over it, "
+            "and aggregate the corpus oracle agreement rate and the typed "
+            "residual/refusal taxonomy. This generalizes the single-canary "
+            "dry-run surface; it never enables actual replay and never mutates "
+            "the archive."
+        ),
+    )
+    nz_dry_run_corpus_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_dry_run_corpus_p.add_argument(
+        "--work-id",
+        action="append",
+        default=[],
+        metavar="ID",
+        help="specific work_id to include; defaults to the sampled default population",
+    )
+    nz_dry_run_corpus_p.add_argument("--max-works", type=int, default=None, metavar="N", help="maximum works")
+    nz_dry_run_corpus_p.add_argument(
+        "--work-id-prefix",
+        default="",
+        metavar="PREFIX",
+        help=(
+            "restrict the archive-wide default population to work_ids starting with PREFIX "
+            "(e.g. 'act_public_' for a representative modern slice); ignored when --work-id is given"
+        ),
+    )
+    nz_dry_run_corpus_p.add_argument(
+        "--min-version-year",
+        type=int,
+        default=None,
+        metavar="YEAR",
+        help=(
+            "restrict the default population to works whose latest archived version is from YEAR "
+            "or later; works with no parseable version date are dropped (ignored when --work-id is given)"
+        ),
+    )
+    nz_dry_run_corpus_p.add_argument(
+        "--sample-strategy",
+        choices=("head", "stride"),
+        default="head",
+        help=(
+            "how to subsample the filtered population down to --max-works: 'head' keeps the "
+            "lexicographic head; 'stride' takes an evenly-spaced deterministic sample"
+        ),
+    )
+    nz_dry_run_corpus_p.add_argument(
+        "--summary-only", action="store_true", help="emit only corpus summary counts (suppress per-work rows)"
+    )
+    nz_dry_run_corpus_p.add_argument("--json", action="store_true", help="emit corpus dry-run report JSON")
     nz_evidence_pack_p = nz_corpus_sub.add_parser(
         "evidence-pack",
         help="write one report-query-compatible NZ evidence JSONL pack",
@@ -10966,6 +11024,10 @@ def _main_impl() -> None:
             from lawvm.new_zealand.dry_run_oracle import main as nz_corpus_dry_run_oracle_main
 
             nz_corpus_dry_run_oracle_main(args)
+        elif args.nz_corpus_command == "dry-run-corpus":
+            from lawvm.new_zealand.dry_run_corpus import main as nz_corpus_dry_run_corpus_main
+
+            nz_corpus_dry_run_corpus_main(args)
         elif args.nz_corpus_command == "evidence-pack":
             from lawvm.new_zealand.evidence_pack import main as nz_corpus_evidence_pack_main
 
