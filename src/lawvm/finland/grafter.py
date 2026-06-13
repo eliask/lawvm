@@ -30,7 +30,6 @@ from lawvm.core.compile_result import (
     TemporalEvent,
 )
 from lawvm.core.elaboration_context import TargetUnitKind
-from lawvm.core.observation_registry import get_finding_spec
 from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.statute_validity import expires_on_from_valid_until
 from lawvm.core.phase_result import Finding
@@ -46,7 +45,10 @@ from lawvm.core.elaboration_context import (
     snapshot_replay_lookups,
     snapshot_target_context,
 )
-from lawvm.finland.source_normalize import normalize_source_ir
+from lawvm.finland.source_normalize import (
+    normalize_source_ir,
+    source_normalization_fact_finding_kind as _source_normalization_fact_finding_kind,
+)
 from lawvm.finland.scoped_section_resolver import find_scoped_section_path
 from lawvm.finland.ops import (
     OpType,
@@ -202,17 +204,6 @@ def _amendment_children_by_parent() -> Dict[str, List[str]]:
     from lawvm.finland.amendment_index import get_amendment_children
 
     return get_amendment_children()
-
-
-def _source_normalization_fact_finding_kind(kind_value: str) -> str | None:
-    raw = str(kind_value or "").strip()
-    if not raw:
-        return None
-    candidate = raw.upper() if raw.startswith("base_") else f"BASE_{raw.upper()}"
-    spec = get_finding_spec(candidate)
-    if spec is None or not candidate.startswith("BASE_"):
-        return None
-    return candidate
 
 
 # ---------------------------------------------------------------------------

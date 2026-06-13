@@ -26,7 +26,10 @@ from lawvm.core.semantic_types import (
 )
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
 from lawvm.finland.grafter import _fi_label_postprocessor
-from lawvm.finland.source_normalize import normalize_source_ir
+from lawvm.finland.source_normalize import (
+    normalize_source_ir,
+    source_normalization_fact_finding_kind,
+)
 from lawvm.finland.source_normalization_kinds import (
     BASE_DIGIT_RESET_SPLIT,
     BASE_INTRO_LIST_RESTART_SPLIT,
@@ -39,6 +42,13 @@ from lawvm.finland.source_normalization_kinds import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def test_source_normalization_fact_finding_kind_resolves_registered_base_codes() -> None:
+    assert source_normalization_fact_finding_kind("tail_prose_absorb") == "BASE_TAIL_PROSE_ABSORB"
+    assert source_normalization_fact_finding_kind("base_tail_prose_absorb") == "BASE_TAIL_PROSE_ABSORB"
+    assert source_normalization_fact_finding_kind("") is None
+    assert source_normalization_fact_finding_kind("not_registered") is None
 
 
 def _subsection_xml_with_item_num(label: str = "9", letter_children: int = 3) -> etree._Element:

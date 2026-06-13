@@ -82,6 +82,7 @@ from typing import List, Optional, Tuple
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.observation_registry import get_finding_spec
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import default_label_sort_key
 from lawvm.core.semantic_types import (
@@ -111,6 +112,18 @@ from lawvm.finland.source_normalization_kinds import (
 _ITEM_NUM_RE = re.compile(r"^\d+[a-z]?\)$")
 _LETTER_LABEL_RE = re.compile(r"^[a-z]$")
 _ARABIC_LABEL_RE = re.compile(r"^\d+[a-z]?$")
+
+
+def source_normalization_fact_finding_kind(kind_value: str) -> str | None:
+    """Resolve a source-normalization fact kind to its registered BASE finding kind."""
+    raw = str(kind_value or "").strip()
+    if not raw:
+        return None
+    candidate = raw.upper() if raw.startswith("base_") else f"BASE_{raw.upper()}"
+    spec = get_finding_spec(candidate)
+    if spec is None or not candidate.startswith("BASE_"):
+        return None
+    return candidate
 
 
 def _node_path_label(node: IRNode) -> str:
@@ -1874,4 +1887,4 @@ def normalize_source_ir(
     return working, facts
 
 
-__all__ = ["normalize_source_ir"]
+__all__ = ["normalize_source_ir", "source_normalization_fact_finding_kind"]
