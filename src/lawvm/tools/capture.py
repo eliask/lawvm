@@ -320,19 +320,22 @@ def build_capture(
     source_filter: str = "",
 ) -> CapturePayload:
     from lawvm.finland.grafter import get_corpus, replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
     with redirect_stdout(io.StringIO()):
         compiled_ops: list[dict[str, Any]] = []
         replay_meta: dict[str, Any] = {}
         canonical_ops: list[LegalOperation] = []
         failed_ops: list[FailedOp] = []
-        master = replay_xml(
-            statute_id,
-            mode=replay_mode,
-            compiled_ops_out=compiled_ops,
-            replay_meta_out=replay_meta,
-            lo_ops_out=canonical_ops,
-            failed_ops_out=failed_ops,
+        master = call_replay_xml(
+            replay_xml,
+            request=ReplayXmlRequest(parent_id=statute_id, mode=replay_mode),
+            sinks=ReplayXmlSinks(
+                compiled_ops_out=compiled_ops,
+                replay_meta_out=replay_meta,
+                lo_ops_out=canonical_ops,
+                failed_ops_out=failed_ops,
+            ),
         )
     projection_rows = [dict(row) for row in master.projection_rows()]
     cs = get_corpus()

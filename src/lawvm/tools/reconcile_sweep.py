@@ -156,8 +156,17 @@ def reconcile_statute(
     )
     try:
         from lawvm.finland.grafter import replay_xml
+        from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 
-        replayed = replay_xml(statute_id, mode="legal_pit", as_of=as_of, quiet=True)
+        replayed = call_replay_xml(
+            replay_xml,
+            request=ReplayXmlRequest(
+                parent_id=statute_id,
+                mode="legal_pit",
+                as_of=as_of,
+                quiet=True,
+            ),
+        )
     except Exception as exc:  # replay could not run => structural data defect
         res.replay_error = f"{type(exc).__name__}: {str(exc)[:160]}"
         return res
@@ -223,31 +232,38 @@ def _reconcile_sections(
 def _memoized_provision_replay():
     """Memoize the provision-state seam's replay_xml for one statute's loop.
 
-    reconcile_provision -> resolve_provision_state always calls
-    ``replay_xml(statute_id, quiet=True)`` with NO mutable out-params, so the
-    result is safe to cache by statute_id. We patch the name imported inside
-    resolve_provision_state's function body (it does a local import of
-    ``from lawvm.finland.grafter import replay_xml``), so we patch the grafter
-    attribute. The cache is local to this context and discarded on exit to bound
-    memory. Only the no-out-param call shape is cached; any call passing
-    *_out / stop_before / custom corpus falls through to the real function.
+    The cache is local to this context and discarded on exit to bound memory.
+    Only calls with no sinks are cached; evidence-collecting calls fall through
+    to the real function.
     """
     from lawvm.finland import grafter
 
     real = grafter.replay_xml
     mutable_grafter = cast(Any, grafter)
-    cache: dict[str, object] = {}
+    cache: dict[tuple[object, ...], object] = {}
 
-    def _wrapped(parent_id, *args, **kwargs):
+    def _wrapped(*, request, sinks=None):
         cacheable = (
-            not args
-            and set(kwargs).issubset({"quiet"})
+            sinks is None
+            and request.strict_profile is None
+            and request.corpus is None
+            and request.checkpoint_callback is None
+            and request.oracle_selector is None
         )
         if cacheable:
-            if parent_id not in cache:
-                cache[parent_id] = real(parent_id, **kwargs)
-            return cache[parent_id]
-        return real(parent_id, *args, **kwargs)
+            key = (
+                request.parent_id,
+                request.mode,
+                request.stop_before,
+                request.quiet,
+                request.build_full_products,
+                request.as_of,
+                request.strict_johto_temporal,
+            )
+            if key not in cache:
+                cache[key] = real(request=request)
+            return cache[key]
+        return real(request=request, sinks=sinks)
 
     mutable_grafter.replay_xml = _wrapped
     try:

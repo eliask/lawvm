@@ -27,6 +27,7 @@ from lawvm.tools.editorial_hygiene import (
 )
 from lawvm.tools.classify_result import ClassifyResult
 from lawvm.tools.oracle_check import (
+    _build_blame_map,
     _classify_statute,
     _classify_statute_sync,
     _corpus_selection_detail,
@@ -37,6 +38,7 @@ from lawvm.tools.oracle_check import (
     main,
     _print_corpus_summary,
     _print_statute_summary,
+    _lookup_blame_op,
     _write_db,
 )
 from lawvm.tools.section_keys import extract_oracle_sections
@@ -1172,6 +1174,82 @@ def test_classify_statute_matches_unique_unscoped_blame_to_chapter_scoped_sectio
     assert result.section_results[0]["section"] == "chapter:2/section:5"
     assert result.section_results[0]["blame_source"] == "2014/1215"
     assert result.section_results[0]["diagnosis"] == "ORACLE_STALE"
+
+
+def test_blame_map_attributes_chapter_scope_to_descendant_section() -> None:
+    compiled_ops = [
+        {
+            "action": "seed",
+            "source_statute": "1991/1",
+            "target_unit_kind": "chapter",
+            "target_norm": "7",
+            "target_chapter": "",
+            "target_part": "",
+            "witness_rule_id": "fi_chapter_seed_inserted_from_amendment_body",
+        }
+    ]
+
+    blame_map = _build_blame_map(compiled_ops)
+    blame_op = _lookup_blame_op(blame_map, "chapter:7/section:36")
+
+    assert blame_op["source_statute"] == "1991/1"
+    assert blame_op["witness_rule_id"] == "fi_chapter_seed_inserted_from_amendment_body"
+
+
+def test_blame_map_prefers_unique_matching_chapter_over_unscoped_section() -> None:
+    compiled_ops = [
+        {
+            "action": "replace",
+            "source_statute": "1977/604",
+            "target_unit_kind": "section",
+            "target_norm": "31",
+            "target_chapter": "",
+            "target_part": "",
+            "witness_rule_id": "fi.section_ref",
+        },
+        {
+            "action": "replace",
+            "source_statute": "1968/493",
+            "target_unit_kind": "section",
+            "target_norm": "31",
+            "target_chapter": "4",
+            "target_part": "",
+            "witness_rule_id": "fi_body_chapter_scope_from_source_body",
+        },
+    ]
+
+    blame_map = _build_blame_map(compiled_ops)
+    blame_op = _lookup_blame_op(blame_map, "part:2/chapter:4/section:31")
+
+    assert blame_op["source_statute"] == "1968/493"
+    assert blame_op["witness_rule_id"] == "fi_body_chapter_scope_from_source_body"
+
+
+def test_blame_map_keeps_ambiguous_section_suffix_unattributed() -> None:
+    compiled_ops = [
+        {
+            "action": "replace",
+            "source_statute": "1990/1",
+            "target_unit_kind": "section",
+            "target_norm": "5",
+            "target_chapter": "1",
+            "target_part": "",
+            "witness_rule_id": "fi.section_ref",
+        },
+        {
+            "action": "replace",
+            "source_statute": "1990/2",
+            "target_unit_kind": "section",
+            "target_norm": "5",
+            "target_chapter": "2",
+            "target_part": "",
+            "witness_rule_id": "fi.section_ref",
+        },
+    ]
+
+    blame_map = _build_blame_map(compiled_ops)
+
+    assert _lookup_blame_op(blame_map, "part:1/chapter:9/section:5") == {}
 
 
 def test_classify_statute_treats_repeal_that_moves_replay_closer_to_oracle_as_oracle_stale(

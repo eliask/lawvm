@@ -232,7 +232,6 @@ def pinned_replay(
     pass through unchanged.
     """
     from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
-    from lawvm.finland.grafter import replay_xml
 
     if oracle_version is None:
         oracle_version = ORACLE_VERSIONS.get(parent_id)
@@ -243,4 +242,35 @@ def pinned_replay(
             )
 
     selector = ConsolidatedArtifactSelector.exact_embedded_version(oracle_version)
-    return replay_xml(parent_id, oracle_selector=selector, **kwargs)
+    return replay_xml_for_test(parent_id, oracle_selector=selector, **kwargs)
+
+
+def replay_xml_for_test(parent_id: str, **kwargs):
+    """Typed replay_xml bridge for tests that still use legacy-shaped inputs."""
+    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks
+
+    request = ReplayXmlRequest(
+        parent_id=parent_id,
+        mode=kwargs.pop("mode", "official_consolidation"),
+        stop_before=kwargs.pop("stop_before", ""),
+        strict_profile=kwargs.pop("strict_profile", None),
+        corpus=kwargs.pop("corpus", None),
+        quiet=kwargs.pop("quiet", False),
+        build_full_products=kwargs.pop("build_full_products", True),
+        checkpoint_callback=kwargs.pop("checkpoint_callback", None),
+        as_of=kwargs.pop("as_of", ""),
+        strict_johto_temporal=kwargs.pop("strict_johto_temporal", False),
+        oracle_selector=kwargs.pop("oracle_selector", None),
+    )
+    sinks = ReplayXmlSinks(
+        compiled_ops_out=kwargs.pop("compiled_ops_out", None),
+        replay_meta_out=kwargs.pop("replay_meta_out", None),
+        lo_ops_out=kwargs.pop("lo_ops_out", None),
+        failed_ops_out=kwargs.pop("failed_ops_out", None),
+        temporal_events_out=kwargs.pop("temporal_events_out", None),
+        source_pathologies_out=kwargs.pop("source_pathologies_out", None),
+    )
+    if kwargs:
+        raise TypeError(f"unexpected replay_xml_for_test kwargs: {sorted(kwargs)}")
+    return replay_xml(request=request, sinks=sinks)

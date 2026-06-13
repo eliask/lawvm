@@ -71,6 +71,7 @@ from lawvm.tools.section_keys import (
 )
 from lawvm.finland.strict_profile import FINLAND_INGESTION_V1
 from lawvm.finland.helpers import _fi_label_postprocessor
+from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.statute import ReplayState, StatuteContext
 
 PRE_BLAME_IMPROVEMENT_EPS = 0.01
@@ -312,11 +313,13 @@ def _get_pre_blame_sections(
             break
         with contextlib.redirect_stdout(io.StringIO()):
             state = process_muutoslaki(
-                amendment_id,
-                state,
-                ctx,
-                replay_mode=mode,
-                parent_id=sid,
+                ProcessAmendmentRequest(
+                    amendment_id=amendment_id,
+                    state=state,
+                    ctx=ctx,
+                    replay_mode=mode,
+                    parent_id=sid,
+                )
             ).output
 
     return extract_ir_sections(state.ir)
@@ -663,17 +666,23 @@ def _explain_sync(
         get_corpus,
         replay_xml,
     )
+    from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
-    master = replay_xml(
-        sid,
-        mode=mode,
-        quiet=True,
-        compiled_ops_out=compiled_ops,
-        replay_meta_out=replay_meta,
-        strict_profile=strict_profile,
-        lo_ops_out=_dossier_canonical_ops if needs_dossier else None,
-        failed_ops_out=failed_ops,
-        oracle_selector=oracle_selector,
+    master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id=sid,
+            mode=mode,
+            quiet=True,
+            strict_profile=strict_profile,
+            oracle_selector=oracle_selector,
+        ),
+        sinks=ReplayXmlSinks(
+            compiled_ops_out=compiled_ops,
+            replay_meta_out=replay_meta,
+            lo_ops_out=_dossier_canonical_ops if needs_dossier else None,
+            failed_ops_out=failed_ops,
+        ),
     )
     oracle_ctx = get_consolidated_oracle_context(
         sid,

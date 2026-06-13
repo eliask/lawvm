@@ -64,6 +64,7 @@ def resolve_provision_state(
         )
 
     from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
     from lawvm.tools.timeline_integrity import (
         attach_effective_dates,
         timeline_breaks_from_findings,
@@ -73,11 +74,13 @@ def resolve_provision_state(
         print(f"Replaying {statute_id}...", file=status_stream)
     replay_meta: dict[str, Any] = {}
     lo_ops: list[Any] = []
-    master = replay_xml(
-        statute_id,
-        quiet=True,
-        replay_meta_out=replay_meta,
-        lo_ops_out=lo_ops,
+    master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(parent_id=statute_id, quiet=True),
+        sinks=ReplayXmlSinks(
+            replay_meta_out=replay_meta,
+            lo_ops_out=lo_ops,
+        ),
     )
     source_xml_provider = _source_xml_provider()
     base_ir = IRStatute(

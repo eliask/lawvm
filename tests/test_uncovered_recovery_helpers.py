@@ -6,6 +6,8 @@ constructing a full ReplayState.
 """
 from __future__ import annotations
 
+from typing import Any, cast
+
 import lxml.etree as etree
 
 import pytest
@@ -14,10 +16,13 @@ from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.grafter_uncovered import (
     ChapterPayloadOutcome,
+    ChapterPayloadOwnershipRequest,
+    PreGuardRequest,
     PreGuardVerdict,
     RecoveryState,
     UncoveredCandidateAudit,
     UncoveredRecoveryGuards,
+    _UncoveredRecoveryRun,
     _evaluate_chapter_payload_ownership,
     _evaluate_pre_guards,
     _next_letter_label,
@@ -27,6 +32,7 @@ from lawvm.finland.grafter_uncovered import (
     _uncovered_section_key,
     _xml_part_label,
 )
+from lawvm.finland.future_repeal import RepealTargetRef
 
 
 def _section_with_heading(text: str) -> IRNode:
@@ -187,6 +193,85 @@ def test_chapter_disposition_mixed_finding() -> None:
     assert len(findings) == 1  # only chapter 4 has both adopted and owned
 
 
+# --- _UncoveredRecoveryRun decision helpers ---
+
+
+class _MinimalRunState:
+    duplicate_section_labels: set[str] = set()
+    ir = IRNode(kind=IRNodeKind.BODY)
+
+    def find_section_path(
+        self,
+        label: str,
+        chapter_num: str | None = None,
+        *_args: object,
+    ) -> None:
+        return None
+
+
+def _empty_run(
+    *,
+    future_repeals: set[RepealTargetRef] | None = None,
+    johto_mentioned_labels: set[str] | None = None,
+    johto_mentioned_replaced_chapters: set[str] | None = None,
+    owned_chapter_labels: set[str] | None = None,
+) -> _UncoveredRecoveryRun:
+    rstate = _empty_state(None)
+    return _UncoveredRecoveryRun(
+        state=cast(Any, _MinimalRunState()),
+        ops=[],
+        amendment_id="2020/1",
+        future_repeals=future_repeals,
+        new_chapter_labels=None,
+        has_content_ops=True,
+        rstate=rstate,
+        recovery_guards=rstate.guards,
+        bp_assignments=None,
+        johto_mentioned_labels=johto_mentioned_labels or set(),
+        johto_mentioned_replaced_chapters=johto_mentioned_replaced_chapters or set(),
+        moved_section_destinations={},
+        owned_chapter_labels=owned_chapter_labels or set(),
+    )
+
+
+def test_recovery_run_future_repeal_matches_unscoped_section() -> None:
+    run = _empty_run(future_repeals={RepealTargetRef.section("5")})
+    assert run.is_future_repealed("5", None)
+    assert run.is_future_repealed("5", "3")
+
+
+def test_recovery_run_future_repeal_matches_chapter_qualified_section() -> None:
+    run = _empty_run(future_repeals={RepealTargetRef.section("5", "3")})
+    assert run.is_future_repealed("5", "3")
+    assert not run.is_future_repealed("5", "4")
+    assert not run.is_future_repealed("5", None)
+
+
+def test_recovery_run_future_repeal_ignores_whole_chapter_repeal() -> None:
+    run = _empty_run(future_repeals={RepealTargetRef.chapter("3")})
+    assert not run.is_future_repealed("5", "3")
+
+
+def test_recovery_run_label_gate_allows_base_label_suffix() -> None:
+    run = _empty_run(johto_mentioned_labels={"32"})
+    assert run.label_allowed_by_johto("32a", None)
+
+
+def test_recovery_run_label_gate_allows_owned_or_replaced_chapter() -> None:
+    run = _empty_run(
+        johto_mentioned_labels={"32"},
+        johto_mentioned_replaced_chapters={"7"},
+        owned_chapter_labels={"4"},
+    )
+    assert run.label_allowed_by_johto("99", "4")
+    assert run.label_allowed_by_johto("99", "7")
+
+
+def test_recovery_run_label_gate_blocks_unmentioned_unowned_section() -> None:
+    run = _empty_run(johto_mentioned_labels={"32"}, owned_chapter_labels={"4"})
+    assert not run.label_allowed_by_johto("99", "5")
+
+
 # --- PreGuardVerdict invariants + _evaluate_pre_guards ---
 
 
@@ -210,13 +295,15 @@ def _empty_guards() -> UncoveredRecoveryGuards:
 
 def test_pre_guards_proceed_when_clean() -> None:
     verdict = _evaluate_pre_guards(
-        label="5",
-        amend_chapter_label="3",
-        amend_part_label=None,
-        guards=_empty_guards(),
-        already_recovered=False,
-        moved_section_destinations={},
-        bp_assignments=None,
+        PreGuardRequest(
+            label="5",
+            amend_chapter_label="3",
+            amend_part_label=None,
+            guards=_empty_guards(),
+            already_recovered=False,
+            moved_section_destinations={},
+            bp_assignments=None,
+        )
     )
     assert verdict.proceed is True
     assert verdict.skip_reason is None
@@ -224,13 +311,15 @@ def test_pre_guards_proceed_when_clean() -> None:
 
 def test_pre_guards_block_already_recovered() -> None:
     verdict = _evaluate_pre_guards(
-        label="5",
-        amend_chapter_label="3",
-        amend_part_label=None,
-        guards=_empty_guards(),
-        already_recovered=True,
-        moved_section_destinations={},
-        bp_assignments=None,
+        PreGuardRequest(
+            label="5",
+            amend_chapter_label="3",
+            amend_part_label=None,
+            guards=_empty_guards(),
+            already_recovered=True,
+            moved_section_destinations={},
+            bp_assignments=None,
+        )
     )
     assert verdict.proceed is False
     assert verdict.skip_reason == "duplicate_recovered_candidate"
@@ -238,13 +327,15 @@ def test_pre_guards_block_already_recovered() -> None:
 
 def test_pre_guards_block_moved_destination_mismatch() -> None:
     verdict = _evaluate_pre_guards(
-        label="5",
-        amend_chapter_label="3",
-        amend_part_label=None,
-        guards=_empty_guards(),
-        already_recovered=False,
-        moved_section_destinations={"5": "7"},  # moved to chapter 7, not 3
-        bp_assignments=None,
+        PreGuardRequest(
+            label="5",
+            amend_chapter_label="3",
+            amend_part_label=None,
+            guards=_empty_guards(),
+            already_recovered=False,
+            moved_section_destinations={"5": "7"},  # moved to chapter 7, not 3
+            bp_assignments=None,
+        )
     )
     assert verdict.proceed is False
     assert verdict.skip_reason == "moved_destination_mismatch"
@@ -252,13 +343,15 @@ def test_pre_guards_block_moved_destination_mismatch() -> None:
 
 def test_pre_guards_moved_to_declared_chapter_proceeds() -> None:
     verdict = _evaluate_pre_guards(
-        label="5",
-        amend_chapter_label="7",
-        amend_part_label=None,
-        guards=_empty_guards(),
-        already_recovered=False,
-        moved_section_destinations={"5": "7"},  # declared chapter matches destination
-        bp_assignments=None,
+        PreGuardRequest(
+            label="5",
+            amend_chapter_label="7",
+            amend_part_label=None,
+            guards=_empty_guards(),
+            already_recovered=False,
+            moved_section_destinations={"5": "7"},  # declared chapter matches destination
+            bp_assignments=None,
+        )
     )
     assert verdict.proceed is True
 
@@ -272,13 +365,15 @@ def test_pre_guards_block_relabel_destination_carries_part() -> None:
         },
     )
     verdict = _evaluate_pre_guards(
-        label="5",
-        amend_chapter_label="3",
-        amend_part_label=None,
-        guards=guards,
-        already_recovered=False,
-        moved_section_destinations={},
-        bp_assignments=None,
+        PreGuardRequest(
+            label="5",
+            amend_chapter_label="3",
+            amend_part_label=None,
+            guards=guards,
+            already_recovered=False,
+            moved_section_destinations={},
+            bp_assignments=None,
+        )
     )
     assert verdict.proceed is False
     assert verdict.skip_reason == "same_wave_relabel_destination_owned"
@@ -300,47 +395,55 @@ def _owned_guards(section: str, chapter: str) -> UncoveredRecoveryGuards:
 
 def test_chapter_payload_not_applicable_when_not_owned() -> None:
     verdict = _evaluate_chapter_payload_ownership(
-        label="5",
-        amend_chapter_label="3",
-        amend_part_label=None,
-        guards=_empty_guards(),
-        section_present_in_chapter=False,
-        future_repealed=False,
+        ChapterPayloadOwnershipRequest(
+            label="5",
+            amend_chapter_label="3",
+            amend_part_label=None,
+            guards=_empty_guards(),
+            section_present_in_chapter=False,
+            future_repealed=False,
+        )
     )
     assert verdict.outcome is ChapterPayloadOutcome.NOT_APPLICABLE
 
 
 def test_chapter_payload_owned_when_present() -> None:
     verdict = _evaluate_chapter_payload_ownership(
-        label="5",
-        amend_chapter_label="3",
-        amend_part_label=None,
-        guards=_owned_guards("5", "3"),
-        section_present_in_chapter=True,
-        future_repealed=False,
+        ChapterPayloadOwnershipRequest(
+            label="5",
+            amend_chapter_label="3",
+            amend_part_label=None,
+            guards=_owned_guards("5", "3"),
+            section_present_in_chapter=True,
+            future_repealed=False,
+        )
     )
     assert verdict.outcome is ChapterPayloadOutcome.OWNED
 
 
 def test_chapter_payload_adopt_when_absent() -> None:
     verdict = _evaluate_chapter_payload_ownership(
-        label="5",
-        amend_chapter_label="3",
-        amend_part_label=None,
-        guards=_owned_guards("5", "3"),
-        section_present_in_chapter=False,
-        future_repealed=False,
+        ChapterPayloadOwnershipRequest(
+            label="5",
+            amend_chapter_label="3",
+            amend_part_label=None,
+            guards=_owned_guards("5", "3"),
+            section_present_in_chapter=False,
+            future_repealed=False,
+        )
     )
     assert verdict.outcome is ChapterPayloadOutcome.ADOPT
 
 
 def test_chapter_payload_future_repeal_skip_takes_precedence_over_adopt() -> None:
     verdict = _evaluate_chapter_payload_ownership(
-        label="5",
-        amend_chapter_label="3",
-        amend_part_label=None,
-        guards=_owned_guards("5", "3"),
-        section_present_in_chapter=False,
-        future_repealed=True,
+        ChapterPayloadOwnershipRequest(
+            label="5",
+            amend_chapter_label="3",
+            amend_part_label=None,
+            guards=_owned_guards("5", "3"),
+            section_present_in_chapter=False,
+            future_repealed=True,
+        )
     )
     assert verdict.outcome is ChapterPayloadOutcome.FUTURE_REPEAL_SKIP

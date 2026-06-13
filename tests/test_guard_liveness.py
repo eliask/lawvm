@@ -105,7 +105,7 @@ def _run_replay_fold(process_muutoslaki: Callable[..., PhaseResult]) -> list[Fin
         corpus=cast(Any, object()),  # not read by these drills
         process_muutoslaki=process_muutoslaki,
         seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
-        pre_scan_repeal_targets=lambda mids, corpus, parent_id, **kwargs: [],
+        pre_scan_repeal_targets=lambda request, sinks=None: [],
         future_repeals_for_index=lambda schedule: [set() for _ in schedule],
         post_process_tree=lambda ir, normalize: ir,
         check_tree_invariants=check_invariants,
@@ -152,10 +152,8 @@ def drill_tree_invariant_violation_duplicate_label() -> None:
     """
 
     def process_muutoslaki(
-        mid: str,
-        state: ReplayState,
-        ctx: StatuteContext,
-        **kwargs: Any,
+        request: Any,
+        sinks: Any,
     ) -> PhaseResult[ReplayState]:
         duplicated = IRNode(
             kind=IRNodeKind.BODY,
@@ -164,7 +162,7 @@ def drill_tree_invariant_violation_duplicate_label() -> None:
                 IRNode(kind=IRNodeKind.SECTION, label="1"),
             ),
         )
-        return PhaseResult(output=state.with_ir(duplicated))
+        return PhaseResult(output=request.state.with_ir(duplicated))
 
     findings = _run_replay_fold(process_muutoslaki)
     hits = [f for f in findings if f.kind == "APPLY.TREE_INVARIANT_VIOLATION"]
@@ -360,7 +358,7 @@ def drill_replay_unknown_mutation_outcome_apply_lane() -> None:
     from lawvm.finland.apply_events import (
         ApplyMutationEvent,
         check_apply_mutation_accounting,
-        _emit_apply_mutation_event_for_rop as _real_emit,
+        _emit_apply_mutation_event_from_receipt as _real_receipt_emit,
     )
 
     state, ctx, _op, rop = _drill_renumber_rop()
@@ -369,14 +367,25 @@ def drill_replay_unknown_mutation_outcome_apply_lane() -> None:
     def _unknown_outcome_emit(
         mutation_events_out: list[ApplyMutationEvent] | None,
         *,
+        receipt: Any,
         outcome: str,
+        rop: Any = None,
+        op: Any = None,
+        used_fallback_tags: tuple[str, ...] = (),
         **kwargs: Any,
     ) -> None:
         # Force an outcome label outside the registered outcome sets while leaving
         # the rest of the real production event construction intact.
-        return _real_emit(mutation_events_out, outcome="freshly_invented_outcome", **kwargs)
+        return _real_receipt_emit(
+            mutation_events_out,
+            receipt=receipt,
+            outcome="freshly_invented_outcome",
+            rop=rop,
+            op=op,
+            used_fallback_tags=used_fallback_tags,
+        )
 
-    with _patch.object(apply_typed_dispatch, "_emit_apply_mutation_event_for_rop", _unknown_outcome_emit):
+    with _patch.object(apply_typed_dispatch, "_emit_apply_mutation_event_from_receipt", _unknown_outcome_emit):
         apply_op(state, None, ctx, None, rop=rop, replay_mode="legal_pit", mutation_events_out=events)
 
     assert events, "production apply did not emit a mutation event"
@@ -413,6 +422,7 @@ def drill_replay_undeclared_tree_touch_apply_lane() -> None:
         ApplyMutationEvent,
         _emit_apply_mutation_event_for_rop as _real_emit,
     )
+    from lawvm.finland.apply_ops_boundary import ApplyOpsRequest, ApplyOpsSinks
 
     assert grafter.OBSERVED_MUTATION_CROSS_CHECK_ENABLED, (
         "observed-vs-declared cross-check is disabled; the K1 gate cannot observe"
@@ -433,28 +443,58 @@ def drill_replay_undeclared_tree_touch_apply_lane() -> None:
         kwargs["parent_path"] = None
         return _real_emit(mutation_events_out, **kwargs)
 
+    def _underdeclaring_receipt_emit(
+        mutation_events_out: list[ApplyMutationEvent] | None,
+        *,
+        receipt: Any,
+        outcome: str,
+        rop: Any = None,
+        op: Any = None,
+        used_fallback_tags: tuple[str, ...] = (),
+    ) -> None:
+        assert rop is not None
+        _underdeclaring_emit(
+            mutation_events_out,
+            rop=rop,
+            helper=receipt.helper,
+            outcome=outcome,
+            consumed_paths=(),
+            created_paths=(),
+            removed_paths=(),
+            replaced_paths=(),
+            renumbered_paths=(),
+            placeholder_created_paths=(),
+            placeholder_consumed_paths=(),
+            used_fallback_tags=used_fallback_tags,
+        )
+
     muutos_tree = etree.fromstring(b"<body/>")
-    with _patch.object(apply_typed_dispatch, "_emit_apply_mutation_event_for_rop", _underdeclaring_emit):
-        grafter.apply_ops_to_tree(
-            state,
-            ctx,
-            [rop],
-            [op],
-            muutos_tree,
-            "muutetaan",
-            "1994/318",
-            "Laki",
-            None,
-            None,
-            None,
-            "legal_pit",
-            None,
-            None,
-            None,
-            None,
-            True,
-            mutation_events_out=events,
-            observed_touch_results_out=observed,
+    with _patch.object(
+        apply_typed_dispatch,
+        "_emit_apply_mutation_event_from_receipt",
+        _underdeclaring_receipt_emit,
+    ):
+        grafter._apply_ops_to_tree_typed(
+            ApplyOpsRequest(
+                state=state,
+                ctx=ctx,
+                resolved=[rop],
+                ops=[op],
+                muutos_tree=muutos_tree,
+                johto="muutetaan",
+                amendment_id="1994/318",
+                source_title="Laki",
+                amendment_issue_date=None,
+                amendment_effective_date=None,
+                amendment_expiry_date=None,
+                replay_mode="legal_pit",
+                strict_profile=None,
+                vts_ops_enrich_done=True,
+            ),
+            ApplyOpsSinks(
+                mutation_events_out=events,
+                observed_touch_results_out=observed,
+            ),
         )
 
     hits = [r for r in observed if r.code == "REPLAY_UNDECLARED_TREE_TOUCH"]
@@ -849,6 +889,10 @@ NO_FIRE_DRILL_YET: frozenset[str] = frozenset({
     "APPLY.STRICT_REJECTED_CORRIGENDUM_PATCH",
     "APPLY.STRICT_REJECTED_UNCOVERED_BODY",
     "APPLY.UNCOVERED_BODY_RECOVERY",
+    # Payload-normalization strict barrier; add a dedicated production-lane
+    # drill when flattened insert-subsection tail splitting gets a small
+    # stable fixture in this harness.
+    "ELAB.SPLIT_FLATTENED_INSERT_SUBSECTION_TAIL",
     "APPLY.WORD_SUBSTITUTION",
     "COMPARE.UNADJUDICATED_ORACLE_DIVERGENCE.RESOLVED_BY_ATTESTATION",
     "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED",

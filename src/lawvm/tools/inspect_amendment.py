@@ -33,6 +33,7 @@ from lawvm.finland.grafter import (
 from lawvm.finland.citation_routing import extract_pending_amendment_target_id
 from lawvm.finland.corrigendum import extract_inline_corrections, get_patch_table
 from lawvm.finland.helpers import _norm_row_anchor_text
+from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 from lawvm.core.elaboration_context import (
     build_payload_elaboration_context,
     snapshot_replay_lookups,
@@ -286,7 +287,15 @@ def build_amendment_bundle(
     source_id: str,
     mode: Literal["official_consolidation", "legal_pit"],
 ) -> Dict[str, Any]:
-    before_master = replay_xml(statute_id, mode=mode, stop_before=source_id, quiet=True)
+    before_master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id=statute_id,
+            mode=mode,
+            stop_before=source_id,
+            quiet=True,
+        ),
+    )
     cs = get_corpus()
     xml_bytes = cs.read_source(source_id)
     if xml_bytes is None:
@@ -395,8 +404,11 @@ def build_amendment_bundle(
             master=before_master.replay_fold_state,
             muutos_tree=muutos_tree,
         )
-        for (target_unit_kind, target_norm, target_chapter, target_part), group_ops in section_groups.items():
-            target_unit_kind_value = cast(TargetUnitKind, target_unit_kind.value)
+        for group_key, group_ops in section_groups.items():
+            target_unit_kind_value = cast(TargetUnitKind, group_key.unit_kind.value)
+            target_norm = group_key.target_norm
+            target_chapter = group_key.target_chapter
+            target_part = group_key.target_part
             surface_target_chapter, surface_target_part = _resolve_group_surface_scope(
                 muutos_tree=muutos_tree,
                 target_unit_kind=target_unit_kind_value,

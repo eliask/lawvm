@@ -888,20 +888,26 @@ def compile_fi_facade(
     reconstructing a second Finland-specific dossier carrier.
     """
     from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
     compiled_ops: List[Dict[str, object]] = []
     replay_meta: Dict[str, object] = {}
     canonical_ops: List[_LegalOperation] = []
     failed_ops_list: List[FailedOp] = []
-    master = replay_xml(
-        parent_id,
-        mode=replay_mode,
-        strict_johto_temporal=(compile_mode == "strict"),
-        compiled_ops_out=compiled_ops,
-        replay_meta_out=replay_meta,
-        lo_ops_out=canonical_ops,
-        failed_ops_out=failed_ops_list,
-        strict_profile=None,
+    master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id=parent_id,
+            mode=replay_mode,
+            strict_johto_temporal=(compile_mode == "strict"),
+            strict_profile=None,
+        ),
+        sinks=ReplayXmlSinks(
+            compiled_ops_out=compiled_ops,
+            replay_meta_out=replay_meta,
+            lo_ops_out=canonical_ops,
+            failed_ops_out=failed_ops_list,
+        ),
     )
 
     return compile_fi_facade_from_replay(

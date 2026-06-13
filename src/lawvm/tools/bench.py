@@ -39,6 +39,7 @@ from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import get_ground_truth, get_ground_truth_bytes, get_ground_truth_tree
 from lawvm.finland.grafter import replay_xml
 from lawvm.finland.proof_surfaces import finland_bench_run_evidence_surface
+from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 from lawvm.finland.transparent_store import is_known_missing_source
 from lawvm.tools.editorial_hygiene import (
     count_kumottu_bytes,
@@ -144,8 +145,18 @@ def _run_replay_with_bench_warning_capture(
     diagnostic_replay: bool,
     replay_kwargs: Dict[str, Any],
 ) -> Tuple[Any, Counter[str]]:
+    unexpected_keys = set(replay_kwargs) - {"quiet", "build_full_products", "oracle_selector"}
+    if unexpected_keys:
+        raise TypeError(f"unexpected bench replay kwargs: {sorted(unexpected_keys)}")
+    request = ReplayXmlRequest(
+        parent_id=sid,
+        mode=mode,
+        quiet=bool(replay_kwargs.get("quiet", False)),
+        build_full_products=bool(replay_kwargs.get("build_full_products", True)),
+        oracle_selector=replay_kwargs.get("oracle_selector"),
+    )
     if diagnostic_replay:
-        master = replay_xml(sid, mode=mode, **replay_kwargs)
+        master = call_replay_xml(replay_xml, request=request)
         return master, Counter()
 
     stdout_buf = io.StringIO()
@@ -153,7 +164,7 @@ def _run_replay_with_bench_warning_capture(
     with py_warnings.catch_warnings(record=True) as caught:
         py_warnings.simplefilter("always")
         with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
-            master = replay_xml(sid, mode=mode, **replay_kwargs)
+            master = call_replay_xml(replay_xml, request=request)
     warning_counts = _summarize_bench_warning_diagnostics(
         stdout_buf.getvalue(),
         stderr_buf.getvalue(),

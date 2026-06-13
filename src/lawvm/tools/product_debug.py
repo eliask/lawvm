@@ -71,6 +71,7 @@ def build_product_debug_bundle(
         _resolve_applicable_amendment_records,
         replay_xml,
     )
+    from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     from lawvm.core.timeline import select_active_version_ex
     from lawvm.core.ir_helpers import irnode_to_text
 
@@ -85,9 +86,20 @@ def build_product_debug_bundle(
     # Run replay_xml stopped after source_id (before next amendment)
     next_mid = amendment_ids[source_idx + 1] if source_idx + 1 < len(amendment_ids) else ""
     if next_mid:
-        master = replay_xml(statute_id, mode=mode, stop_before=next_mid, quiet=True)
+        master = call_replay_xml(
+            replay_xml,
+            request=ReplayXmlRequest(
+                parent_id=statute_id,
+                mode=mode,
+                stop_before=next_mid,
+                quiet=True,
+            ),
+        )
     else:
-        master = replay_xml(statute_id, mode=mode, quiet=True)
+        master = call_replay_xml(
+            replay_xml,
+            request=ReplayXmlRequest(parent_id=statute_id, mode=mode, quiet=True),
+        )
 
     timelines = master.timelines or {}
     migration_events = list(master.migration_events or [])

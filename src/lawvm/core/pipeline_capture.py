@@ -6,8 +6,7 @@ enabling isolated testing and error attribution without pipeline changes.
 Usage:
     from lawvm.core.pipeline_capture import AmendmentCapture, CaptureStore
 
-    captures = []
-    replay_xml(sid, intermediates_out=captures)
+    replay_xml(request=ReplayXmlRequest(parent_id=sid))
     store = CaptureStore()
     for c in captures:
         store.save(c)

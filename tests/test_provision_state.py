@@ -2079,7 +2079,7 @@ def test_specimen_2023_71_chapter_insert_recovery_warning_is_visible() -> None:
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 def test_specimen_2014_1429_broken_timeline_is_surfaced_not_clean() -> None:
-    from lawvm.finland.grafter import replay_xml
+    from tests.corpus_pin_helpers import replay_xml_for_test
     from lawvm.tools.timeline_integrity import (
         break_governs_as_of,
         sorted_breaks,
@@ -2087,7 +2087,7 @@ def test_specimen_2014_1429_broken_timeline_is_surfaced_not_clean() -> None:
 
     as_of = "2026-06-11"
     replay_meta: dict = {}
-    master = replay_xml("2014/1429", quiet=True, replay_meta_out=replay_meta)
+    master = replay_xml_for_test("2014/1429", quiet=True, replay_meta_out=replay_meta)
     breaks = sorted_breaks(
         attach_effective_dates(
             timeline_breaks_from_findings(master.findings),
@@ -2129,9 +2129,9 @@ def test_specimen_2014_1429_broken_timeline_is_surfaced_not_clean() -> None:
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 def test_specimen_2014_938_section_51_failed_apply_is_governed_by_snapshot() -> None:
-    from lawvm.finland.grafter import replay_xml
+    from tests.corpus_pin_helpers import replay_xml_for_test
 
-    master = replay_xml("2014/938", quiet=True)
+    master = replay_xml_for_test("2014/938", quiet=True)
     governed = [
         finding
         for finding in master.findings
@@ -2177,10 +2177,11 @@ def test_specimen_2014_938_section_51_failed_apply_is_governed_by_snapshot() -> 
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 def test_specimen_1992_1535_item_insert_failures_are_governed_by_parent_snapshot() -> None:
-    from lawvm.finland.grafter import FailedOp, replay_xml
+    from lawvm.finland.grafter import FailedOp
+    from tests.corpus_pin_helpers import replay_xml_for_test
 
     failed_ops: list[FailedOp] = []
-    master = replay_xml(
+    master = replay_xml_for_test(
         "1992/1535",
         mode="official_consolidation",
         quiet=True,
@@ -2224,10 +2225,10 @@ def test_specimen_1992_1535_item_insert_failures_are_governed_by_parent_snapshot
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 def test_specimen_1982_182_failed_container_noops_do_not_claim_tree_touches() -> None:
-    from lawvm.finland.grafter import replay_xml
+    from tests.corpus_pin_helpers import replay_xml_for_test
 
     replay_meta: dict = {}
-    master = replay_xml(
+    master = replay_xml_for_test(
         "1982/182",
         mode="official_consolidation",
         quiet=True,
@@ -2257,7 +2258,7 @@ def test_specimen_1982_182_failed_container_noops_do_not_claim_tree_touches() ->
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 def test_specimen_1992_1535_item_replacement_does_not_mutate_section_heading() -> None:
-    from lawvm.finland.grafter import replay_xml
+    from tests.corpus_pin_helpers import replay_xml_for_test
 
     def path_ends_with_heading(path: object) -> bool:
         if not isinstance(path, (list, tuple)) or not path:
@@ -2266,7 +2267,7 @@ def test_specimen_1992_1535_item_replacement_does_not_mutate_section_heading() -
         return isinstance(tail, (list, tuple)) and bool(tail) and tail[0] == "heading"
 
     replay_meta: dict = {}
-    master = replay_xml(
+    master = replay_xml_for_test(
         "1992/1535",
         mode="official_consolidation",
         quiet=True,
@@ -2313,9 +2314,9 @@ def test_specimen_1997_1412_section_11_drops_expired_temporary_render_tails() ->
 
 @pytest.mark.skipif(not _FINLEX_CORPUS_AVAILABLE, reason="Finland corpus not available")
 def test_specimen_2002_1290_repealed_section_insert_occupancy_is_governed_by_snapshot() -> None:
-    from lawvm.finland.grafter import replay_xml
+    from tests.corpus_pin_helpers import replay_xml_for_test
 
-    master = replay_xml("2002/1290", quiet=True)
+    master = replay_xml_for_test("2002/1290", quiet=True)
     governed = [
         finding
         for finding in master.findings

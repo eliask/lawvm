@@ -66,6 +66,9 @@ def build_snapshot_debug_bundle(
         _resolve_applicable_amendment_records,
         replay_xml,
     )
+    from lawvm.finland.process_request import ProcessAmendmentRequest
+    from lawvm.finland.process_result_builder import ProcessAmendmentSinks
+    from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     from lawvm.finland.statute import StatuteContext
     from lawvm.finland.helpers import _fi_label_postprocessor
     from lawvm.core.ir_helpers import irnode_to_text
@@ -85,12 +88,15 @@ def build_snapshot_debug_bundle(
     source_idx = amendment_ids.index(source_id)
 
     # Build before_state
-    before_master = replay_xml(
-        statute_id,
-        mode=mode,
-        stop_before=source_id,
-        quiet=True,
-        build_full_products=False,
+    before_master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id=statute_id,
+            mode=mode,
+            stop_before=source_id,
+            quiet=True,
+            build_full_products=False,
+        ),
     )
     before_state = before_master.replay_fold_state
 
@@ -98,14 +104,18 @@ def build_snapshot_debug_bundle(
     lo_ops_out: List[Any] = []
     restructure_plans_out: List[Any] = []
     process_muutoslaki(
-        source_id,
-        before_state,
-        ctx,
-        replay_mode=mode,
-        parent_id=statute_id,
-        corpus=cs,
-        lo_ops_out=lo_ops_out,
-        restructure_plans_out=restructure_plans_out,
+        ProcessAmendmentRequest(
+            amendment_id=source_id,
+            state=before_state,
+            ctx=ctx,
+            replay_mode=mode,
+            parent_id=statute_id,
+            corpus=cs,
+        ),
+        ProcessAmendmentSinks(
+            lo_ops_out=lo_ops_out,
+            restructure_plans_out=restructure_plans_out,
+        ),
     )
 
     # Filter to target if specified

@@ -89,9 +89,9 @@ def normalize_and_compile_ops(*args: Any, **kwargs: Any) -> Any:
 
 
 def replay_xml(*args: Any, **kwargs: Any) -> Any:
-    from lawvm.finland.grafter import replay_xml as _real_replay_xml
+    from tests.corpus_pin_helpers import replay_xml_for_test
 
-    return _real_replay_xml(*args, **kwargs)
+    return replay_xml_for_test(*args, **kwargs)
 
 
 def _compile_artifacts_from_replay(*args: Any, **kwargs: Any) -> Any:

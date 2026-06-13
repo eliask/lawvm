@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Optional
+from inspect import Parameter, signature
+from typing import Any, Callable, Dict, Literal, Optional
 
 from lawvm.corpus_store import CorpusStore
 from lawvm.core.compile_result import SourcePathology, StrictProfile
@@ -46,9 +47,8 @@ class ReplayXmlSinks:
 class ResolvedReplayXmlCall:
     """Fully resolved replay_xml call boundary.
 
-    This is the compatibility adapter output: request fields and sink fields
-    have been merged, and the replay executor no longer needs to know whether
-    callers used the typed or legacy surface.
+    Request fields and sink fields have been merged, so the replay executor
+    consumes one normalized internal carrier.
     """
 
     parent_id: str
@@ -70,75 +70,101 @@ class ResolvedReplayXmlCall:
     source_pathologies_out: Optional[list[SourcePathology]]
 
 
-def resolve_replay_xml_call(
+def _callable_accepts_typed_replay_call(fn: Callable[..., Any]) -> bool:
+    try:
+        params = signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return "request" in params and "sinks" in params
+
+
+def _filter_legacy_kwargs(fn: Callable[..., Any], kwargs: dict[str, object]) -> dict[str, object]:
+    try:
+        params = signature(fn).parameters
+    except (TypeError, ValueError):
+        return kwargs
+    if any(param.kind is Parameter.VAR_KEYWORD for param in params.values()):
+        return kwargs
+    return {key: value for key, value in kwargs.items() if key in params}
+
+
+def call_replay_xml(
+    replay_xml_func: Callable[..., Any],
     *,
-    parent_id: Optional[str],
-    mode: Literal["official_consolidation", "legal_pit"],
-    compiled_ops_out: Optional[list[dict[str, object]]],
-    replay_meta_out: Optional[Dict[str, object]],
-    lo_ops_out: Optional[list[LegalOperation]],
-    stop_before: str,
-    failed_ops_out: Optional[list[FailedOp]],
-    strict_profile: Optional[StrictProfile],
-    corpus: Optional[CorpusStore],
-    quiet: bool,
-    build_full_products: bool,
-    temporal_events_out: Optional[list[Any]],
-    checkpoint_callback: Optional[ReplayCheckpointCallback],
-    as_of: str,
-    strict_johto_temporal: bool,
-    oracle_selector: ConsolidatedArtifactSelector | None,
-    source_pathologies_out: Optional[list[SourcePathology]],
-    request: Optional[ReplayXmlRequest],
-    sinks: Optional[ReplayXmlSinks],
+    request: ReplayXmlRequest,
+    sinks: ReplayXmlSinks | None = None,
+) -> Any:
+    """Call ``replay_xml`` through the typed surface, with legacy-fake fallback.
+
+    This keeps production callers migrating toward ``ReplayXmlRequest`` /
+    ``ReplayXmlSinks`` while test fakes and older adapters are retired in
+    separate, reviewable slices. The real ``replay_xml`` function advertises the
+    typed parameters and is always called that way.
+    """
+    if _callable_accepts_typed_replay_call(replay_xml_func):
+        return replay_xml_func(request=request, sinks=sinks)
+
+    sinks = sinks or ReplayXmlSinks()
+    legacy_kwargs: dict[str, object] = {"mode": request.mode}
+    if request.stop_before:
+        legacy_kwargs["stop_before"] = request.stop_before
+    if request.strict_profile is not None:
+        legacy_kwargs["strict_profile"] = request.strict_profile
+    if request.corpus is not None:
+        legacy_kwargs["corpus"] = request.corpus
+    legacy_kwargs["quiet"] = request.quiet
+    legacy_kwargs["build_full_products"] = request.build_full_products
+    if request.checkpoint_callback is not None:
+        legacy_kwargs["checkpoint_callback"] = request.checkpoint_callback
+    if request.as_of:
+        legacy_kwargs["as_of"] = request.as_of
+    if request.strict_johto_temporal:
+        legacy_kwargs["strict_johto_temporal"] = request.strict_johto_temporal
+    if request.oracle_selector is not None:
+        legacy_kwargs["oracle_selector"] = request.oracle_selector
+    if sinks.compiled_ops_out is not None:
+        legacy_kwargs["compiled_ops_out"] = sinks.compiled_ops_out
+    if sinks.replay_meta_out is not None:
+        legacy_kwargs["replay_meta_out"] = sinks.replay_meta_out
+    if sinks.lo_ops_out is not None:
+        legacy_kwargs["lo_ops_out"] = sinks.lo_ops_out
+    if sinks.failed_ops_out is not None:
+        legacy_kwargs["failed_ops_out"] = sinks.failed_ops_out
+    if sinks.temporal_events_out is not None:
+        legacy_kwargs["temporal_events_out"] = sinks.temporal_events_out
+    if sinks.source_pathologies_out is not None:
+        legacy_kwargs["source_pathologies_out"] = sinks.source_pathologies_out
+
+    return replay_xml_func(
+        request.parent_id,
+        **_filter_legacy_kwargs(replay_xml_func, legacy_kwargs),
+    )
+
+
+def resolve_replay_xml_request(
+    *,
+    request: ReplayXmlRequest,
+    sinks: ReplayXmlSinks | None = None,
 ) -> ResolvedReplayXmlCall:
-    """Merge typed and legacy replay_xml inputs into one typed call object."""
+    """Resolve the typed replay request/sink boundary into executor inputs."""
 
-    if request is not None:
-        parent_id = request.parent_id
-        mode = request.mode
-        stop_before = request.stop_before
-        strict_profile = request.strict_profile
-        corpus = request.corpus
-        quiet = request.quiet
-        build_full_products = request.build_full_products
-        checkpoint_callback = request.checkpoint_callback
-        as_of = request.as_of
-        strict_johto_temporal = request.strict_johto_temporal
-        oracle_selector = request.oracle_selector
-    if parent_id is None:
-        raise TypeError("replay_xml requires either parent_id or request=")
-
-    if sinks is not None:
-        compiled_ops_out = compiled_ops_out if compiled_ops_out is not None else sinks.compiled_ops_out
-        replay_meta_out = replay_meta_out if replay_meta_out is not None else sinks.replay_meta_out
-        lo_ops_out = lo_ops_out if lo_ops_out is not None else sinks.lo_ops_out
-        failed_ops_out = failed_ops_out if failed_ops_out is not None else sinks.failed_ops_out
-        temporal_events_out = (
-            temporal_events_out if temporal_events_out is not None else sinks.temporal_events_out
-        )
-        source_pathologies_out = (
-            source_pathologies_out
-            if source_pathologies_out is not None
-            else sinks.source_pathologies_out
-        )
-
+    sinks = sinks or ReplayXmlSinks()
     return ResolvedReplayXmlCall(
-        parent_id=parent_id,
-        mode=mode,
-        stop_before=stop_before,
-        strict_profile=strict_profile,
-        corpus=corpus,
-        quiet=quiet,
-        build_full_products=build_full_products,
-        checkpoint_callback=checkpoint_callback,
-        as_of=as_of,
-        strict_johto_temporal=strict_johto_temporal,
-        oracle_selector=oracle_selector,
-        compiled_ops_out=compiled_ops_out,
-        replay_meta_out=replay_meta_out,
-        lo_ops_out=lo_ops_out,
-        failed_ops_out=failed_ops_out,
-        temporal_events_out=temporal_events_out,
-        source_pathologies_out=source_pathologies_out,
+        parent_id=request.parent_id,
+        mode=request.mode,
+        stop_before=request.stop_before,
+        strict_profile=request.strict_profile,
+        corpus=request.corpus,
+        quiet=request.quiet,
+        build_full_products=request.build_full_products,
+        checkpoint_callback=request.checkpoint_callback,
+        as_of=request.as_of,
+        strict_johto_temporal=request.strict_johto_temporal,
+        oracle_selector=request.oracle_selector,
+        compiled_ops_out=sinks.compiled_ops_out,
+        replay_meta_out=sinks.replay_meta_out,
+        lo_ops_out=sinks.lo_ops_out,
+        failed_ops_out=sinks.failed_ops_out,
+        temporal_events_out=sinks.temporal_events_out,
+        source_pathologies_out=sinks.source_pathologies_out,
     )

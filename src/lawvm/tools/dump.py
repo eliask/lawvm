@@ -33,6 +33,7 @@ from lawvm.finland.grafter import (
     _assign_chapter_scope_from_johtolause,
     replay_xml,
 )
+from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 from lawvm.finland.citation_routing import OP_KEYWORDS
 from lawvm.finland.fallback_op_ids import stamp_fallback_op_ids
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
@@ -329,7 +330,10 @@ def dump_extract(sid: str, source_mid: str, after_normalize: bool = False,
 
 def _dump_apply(sid: str, address: Optional[str],
                             stop_before: str = "") -> None:
-    master = replay_xml(sid, stop_before=stop_before, quiet=True)
+    master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(parent_id=sid, stop_before=stop_before, quiet=True),
+    )
 
     if not address:
         print(f"Statute: {sid}")
@@ -402,7 +406,10 @@ def _dump_apply_json(
 
     from lawvm.tools.provision_state import build_statute_dump_response
 
-    master = replay_xml(sid, stop_before=stop_before, quiet=True)
+    master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(parent_id=sid, stop_before=stop_before, quiet=True),
+    )
     payload = build_statute_dump_response(
         timelines=master.timelines,
         statute_id=sid,
@@ -430,7 +437,10 @@ def _dump_apply_hashes(
     """Print the human apply read with a short per-section content_hash appended."""
     from lawvm.tools.provision_state import build_statute_dump_response
 
-    master = replay_xml(sid, stop_before=stop_before, quiet=True)
+    master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(parent_id=sid, stop_before=stop_before, quiet=True),
+    )
     payload = build_statute_dump_response(
         timelines=master.timelines,
         statute_id=sid,

@@ -54,6 +54,7 @@ from lawvm.tools.divergence_heuristics import replay_section_has_future_effectiv
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.replay_products import fi_label_norm
 from lawvm.tools.section_keys import (
+    chapter_key_from_compiled_scope_row,
     extract_ir_sections,
     extract_oracle_sections,
     norm_section_label,
@@ -70,6 +71,9 @@ from lawvm.finland.grafter import (
     replay_xml,
 )
 from lawvm.finland.corpus import get_consolidated_meta as _get_consolidated_meta
+from lawvm.finland.process_request import ProcessAmendmentRequest
+from lawvm.finland.process_result_builder import ProcessAmendmentSinks
+from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 from lawvm.finland.statute import StatuteContext, ReplayState
 from lawvm.finland.helpers import _fi_label_postprocessor
 from lawvm.tools.classify_result import ClassifyResult
@@ -380,27 +384,99 @@ def _build_blame_map(compiled_ops: list[CompiledOpRow]) -> dict[str, CompiledOpR
     blame: dict[str, CompiledOpRow] = {}
     for op in compiled_ops:
         key = section_key_from_compiled_scope_row(op)
+        if not key and isinstance(op, dict):
+            key = chapter_key_from_compiled_scope_row(op)
         if key:
             blame[key] = op
     return blame
 
 
+def _section_key_segments(key: str) -> dict[str, str]:
+    segments: dict[str, str] = {}
+    for part in key.split("/"):
+        if ":" not in part:
+            continue
+        kind, label = part.split(":", 1)
+        segments[kind] = label
+    return segments
+
+
+def _unique_blame_match(
+    pairs: list[tuple[str, CompiledOpRow]],
+) -> BlameRow:
+    if len(pairs) != 1:
+        return {}
+    match = pairs[0][1]
+    return match if isinstance(match, dict) else {}
+
+
+def _is_recovery_blame_row(op: CompiledOpRow) -> bool:
+    if not isinstance(op, dict):
+        return False
+    return str(op.get("witness_rule_id") or "").startswith("fi.recovery.")
+
+
+def _unique_non_recovery_blame_match(
+    pairs: list[tuple[str, CompiledOpRow]],
+) -> BlameRow:
+    non_recovery_pairs = [
+        (blame_key, op)
+        for blame_key, op in pairs
+        if not _is_recovery_blame_row(op)
+    ]
+    return _unique_blame_match(non_recovery_pairs)
+
+
 def _lookup_blame_op(blame_map: dict[str, CompiledOpRow], key: str) -> BlameRow:
     exact = blame_map.get(key)
-    if isinstance(exact, dict):
+    if isinstance(exact, dict) and not _is_recovery_blame_row(exact):
         return exact
     if "/" not in key:
-        return {}
-    suffix = key.split("/")[-1]
-    matches = [
+        return exact if isinstance(exact, dict) else {}
+    target_segments = _section_key_segments(key)
+    containing_matches = [
         op
         for blame_key, op in blame_map.items()
+        if key.startswith(blame_key + "/")
+    ]
+    if len(containing_matches) == 1:
+        match = containing_matches[0]
+        return match if isinstance(match, dict) else {}
+    suffix = key.split("/")[-1]
+    section_matches = [
+        (blame_key, op)
+        for blame_key, op in blame_map.items()
+        if _section_key_segments(blame_key).get("section") == target_segments.get("section")
+    ]
+    if not section_matches:
+        return exact if isinstance(exact, dict) else {}
+    chapter_matches = [
+        (blame_key, op)
+        for blame_key, op in section_matches
+        if _section_key_segments(blame_key).get("chapter")
+        == target_segments.get("chapter")
+    ]
+    scoped_chapter = _unique_non_recovery_blame_match(chapter_matches)
+    if scoped_chapter:
+        return scoped_chapter
+    part_matches = [
+        (blame_key, op)
+        for blame_key, op in section_matches
+        if _section_key_segments(blame_key).get("part")
+        == target_segments.get("part")
+    ]
+    scoped_part = _unique_non_recovery_blame_match(part_matches)
+    if scoped_part:
+        return scoped_part
+    suffix_matches = [
+        (blame_key, op)
+        for blame_key, op in section_matches
         if blame_key == suffix or blame_key.endswith("/" + suffix)
     ]
-    if len(matches) == 1:
-        match = matches[0]
-        return match if isinstance(match, dict) else {}
-    return {}
+    suffix_match = _unique_non_recovery_blame_match(suffix_matches)
+    if suffix_match:
+        return suffix_match
+    return exact if isinstance(exact, dict) else _unique_blame_match(suffix_matches)
 
 
 # Oracle issues = not caused by our replay logic
@@ -539,12 +615,14 @@ def _batch_pre_blame_sections(
             _null = io.StringIO()
             with contextlib.redirect_stdout(_null):
                 state = process_muutoslaki(
-                    amendment_id,
-                    state,
-                    ctx,
-                    replay_mode=mode,
-                    lo_ops_out=blame_lo_ops,
-                    parent_id=sid,
+                    ProcessAmendmentRequest(
+                        amendment_id=amendment_id,
+                        state=state,
+                        ctx=ctx,
+                        replay_mode=mode,
+                        parent_id=sid,
+                    ),
+                    ProcessAmendmentSinks(lo_ops_out=blame_lo_ops),
                 ).output
             last_amendment_id = amendment_id
     finally:
@@ -598,12 +676,17 @@ def _classify_statute(
         else:
             compiled_ops: list[CompiledOpRow] = precomputed_compiled_ops if precomputed_compiled_ops is not None else []
             failed_ops = []
-            master = replay_xml(
-                sid,
-                mode=mode,
-                compiled_ops_out=compiled_ops,
-                failed_ops_out=failed_ops,
-                quiet=True,
+            master = call_replay_xml(
+                replay_xml,
+                request=ReplayXmlRequest(
+                    parent_id=sid,
+                    mode=mode,
+                    quiet=True,
+                ),
+                sinks=ReplayXmlSinks(
+                    compiled_ops_out=compiled_ops,
+                    failed_ops_out=failed_ops,
+                ),
             )
         oracle_ctx = get_consolidated_oracle_context(
             sid,
@@ -1086,7 +1169,13 @@ def _classify_statute(
                 sec["diagnosis"] = "SOURCE_INCOMPLETE"
 
         for sec in section_results:
-            if sec["diagnosis"] != "UNKNOWN":
+            if sec["diagnosis"] not in (
+                "UNKNOWN",
+                "REPLAY_MISSING",
+                "REPLAY_EXTRA",
+                "MISSING",
+                "EXTRA",
+            ):
                 continue
             diagnosis = _source_pathology_diagnosis_for_blame(
                 master,

@@ -17,6 +17,7 @@ import sys
 from typing import Any, Literal, Optional
 
 from lawvm.finland.grafter import replay_xml
+from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 from lawvm.core.ir import LegalOperation
 
 
@@ -179,7 +180,16 @@ def _ops_sync(
     mode: Literal["official_consolidation", "legal_pit"],
 ) -> None:
     compiled_ops: list[dict[str, Any]] = []
-    replay_xml(sid, mode=mode, compiled_ops_out=compiled_ops, quiet=True, build_full_products=False)
+    call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id=sid,
+            mode=mode,
+            quiet=True,
+            build_full_products=False,
+        ),
+        sinks=ReplayXmlSinks(compiled_ops_out=compiled_ops),
+    )
 
     # Apply filters
     ops = compiled_ops

@@ -5,7 +5,7 @@ from functools import lru_cache
 import lxml.etree as etree
 import copy
 from pathlib import Path
-from dataclasses import replace as dc_replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Literal, Mapping, Optional, Protocol, Set, Tuple, cast
 
 if TYPE_CHECKING:
@@ -56,17 +56,13 @@ from lawvm.finland.ops import (
     ResolvedOp,
     FailedOp,
     ReplayProfile,
-    ScopeConfidence,
     get_replay_profile,
     LawLevelTextPatch,
     _apply_law_level_text_patches,
     _PATH_KINDS,
     _lo_target_fields,
     _lo_path_dict,
-    _lo_with_path_update,
     _build_canonical_intent,
-    normalize_scope_confidence,
-    projection_scope_confidence,
 )
 from lawvm.finland.normalize import (
     _extract_grouped_container_targets,
@@ -113,7 +109,7 @@ from lawvm.finland.replay_findings import (
     _serialize_observed_write_audit,  # noqa: F401 - grafter compatibility re-export
     _strict_rejected_source_pathology_finding,
 )
-from lawvm.finland.future_repeal import RepealTargetRef, build_future_repeal_suffix
+from lawvm.finland.future_repeal import build_future_repeal_suffix
 from lawvm.finland.lowering_scope_recovery import (
     allow_unscoped_live_section_retarget as _allow_unscoped_live_section_retarget_impl,
     group_has_scope_source as _group_has_scope_source_impl,
@@ -135,11 +131,15 @@ AMENDMENT_PARENTS_CSV = Path(".cache/finland/amendment_parents.csv")  # internal
 # Uncovered body recovery cluster (moved to grafter_uncovered.py; re-exported)
 # ---------------------------------------------------------------------------
 from lawvm.finland.grafter_uncovered import (
-    _recover_uncovered_body_ops,
-    _apply_uncovered_kumotaan,
+    _recover_uncovered_body_ops_typed,
+    _apply_uncovered_kumotaan_typed,
     _pre_scan_repeal_targets,
     _uncovered_body_recovery_finding,
     _strict_rejected_uncovered_body_finding,
+    KumotaanRecoveryRequest,
+    KumotaanRecoverySinks,
+    UncoveredBodyRecoveryRequest,
+    UncoveredBodyRecoverySinks,
 )
 
 from lawvm.finland.citation_routing import (
@@ -236,6 +236,131 @@ def _tag(el: etree._Element) -> str:
     return str(el.tag).split("}")[-1]
 
 
+def _subsection_intro_numeric_label_ir(sub_ir: IRNode) -> Optional[str]:
+    for child in sub_ir.children:
+        if child.kind not in {IRNodeKind.INTRO, IRNodeKind.CONTENT}:
+            continue
+        text = (child.text or "").strip()
+        m = re.match(r"^(\d+)\.\s", text)
+        if m is not None and int(m.group(1)) > 1:
+            return m.group(1)
+    return None
+
+
+def _relabel_sparse_omission_subsections_from_intro_ir(node: IRNode) -> IRNode:
+    if not node.children:
+        return node
+
+    changed = False
+    new_children: List[IRNode] = []
+    for child in node.children:
+        if child.children:
+            relabelled = _relabel_sparse_omission_subsections_from_intro_ir(child)
+            if relabelled is not child:
+                changed = True
+            new_children.append(relabelled)
+        else:
+            new_children.append(child)
+
+    if node.kind is IRNodeKind.SECTION:
+        seen_prior_omission = False
+        seen_labels = {
+            child.label
+            for child in new_children
+            if child.kind is IRNodeKind.SUBSECTION and child.label
+        }
+        adjusted_children: List[IRNode] = []
+        for child in new_children:
+            if _is_omission_ir(child):
+                seen_prior_omission = True
+                adjusted_children.append(child)
+                continue
+            if seen_prior_omission and child.kind is IRNodeKind.SUBSECTION and (child.label or "").isdigit():
+                intro_label = _subsection_intro_numeric_label_ir(child)
+                if intro_label is not None and intro_label != child.label and intro_label not in seen_labels:
+                    seen_labels.discard(child.label)
+                    child = _relabel_subsection_ir(child, intro_label)
+                    seen_labels.add(intro_label)
+                    changed = True
+            adjusted_children.append(child)
+        new_children = adjusted_children
+
+    if not changed:
+        return node
+    return _tops._with_children(node, new_children)
+
+
+def _subsection_with_flat_text_ir(sub_ir: IRNode, flat_text: str) -> IRNode:
+    content_child = IRNode(kind=IRNodeKind.CONTENT, text=flat_text.strip())
+    return IRNode(
+        kind=sub_ir.kind,
+        label=sub_ir.label,
+        text=sub_ir.text,
+        attrs=dict(sub_ir.attrs),
+        children=(content_child,),
+    )
+
+
+def _embedded_letter_suffix_section_ir(
+    sec_el: etree._Element,
+    *,
+    target_unit_kind: TargetUnitKind,
+    target_norm: str,
+) -> Optional[IRNode]:
+    if target_unit_kind != "section":
+        return None
+    num_el = sec_el.find("{*}num")
+    base_norm = _norm_num_token(num_el.text if num_el is not None and num_el.text else "")
+    if not base_norm or not base_norm.isdigit():
+        return None
+
+    subsections = sec_el.findall("./{*}subsection")
+    if len(subsections) < 2:
+        return None
+
+    first_text = " ".join("".join(str(_t) for _t in subsections[0].itertext()).split())
+    m = re.search(rf"\b{re.escape(base_norm)}\s*([a-z])\s*§\s*$", first_text, flags=re.I)
+    if not m:
+        return None
+
+    suffix = m.group(1).lower()
+    embedded_label = f"{base_norm}{suffix}"
+    if target_norm not in {base_norm, embedded_label}:
+        return None
+
+    if target_norm == base_norm:
+        # lxml elements are mutable and may be re-parented by the parser, so
+        # clone the source subsection before handing it to the IR converter.
+        first_sub_ir = fi_xml_to_ir_node(copy.deepcopy(subsections[0]), _fi_label_postprocessor)
+        trimmed_text = re.sub(
+            rf"\s*{re.escape(base_norm)}\s*{re.escape(suffix)}\s*§\s*$",
+            "",
+            " ".join(irnode_to_text(first_sub_ir).split()),
+            flags=re.I,
+        ).strip()
+        clean_first = _subsection_with_flat_text_ir(first_sub_ir, trimmed_text)
+        num_text = (num_el.text or "").strip() if num_el is not None and num_el.text else f"{base_norm} §"
+        return IRNode(
+            kind=IRNodeKind.SECTION,
+            label=base_norm,
+            children=(IRNode(kind=IRNodeKind.NUM, text=num_text), clean_first),
+        )
+
+    embedded_subs = [
+        # Same XML detachment boundary as above: each subsection is cloned before
+        # conversion so the original subtree stays untouched.
+        fi_xml_to_ir_node(copy.deepcopy(sub), _fi_label_postprocessor)
+        for sub in subsections[1:]
+    ]
+    if not embedded_subs:
+        return None
+    return IRNode(
+        kind=IRNodeKind.SECTION,
+        label=embedded_label,
+        children=(IRNode(kind=IRNodeKind.NUM, text=f"{base_norm} {suffix} §"), *embedded_subs),
+    )
+
+
 def _find_muutos_ir(
     muutos_tree: etree._Element,
     target_unit_kind: TargetUnitKind,
@@ -258,120 +383,11 @@ def _find_muutos_ir(
     if muutos_sec is None:
         return None, None
 
-    def _subsection_intro_numeric_label_ir(sub_ir: IRNode) -> Optional[str]:
-        for child in sub_ir.children:
-            if child.kind not in {IRNodeKind.INTRO, IRNodeKind.CONTENT}:
-                continue
-            text = (child.text or "").strip()
-            m = re.match(r"^(\d+)\.\s", text)
-            if m is not None and int(m.group(1)) > 1:
-                return m.group(1)
-        return None
-
-    def _relabel_sparse_omission_subsections_from_intro_ir(node: IRNode) -> IRNode:
-        if not node.children:
-            return node
-
-        changed = False
-        new_children: List[IRNode] = []
-        for child in node.children:
-            if child.children:
-                relabelled = _relabel_sparse_omission_subsections_from_intro_ir(child)
-                if relabelled is not child:
-                    changed = True
-                new_children.append(relabelled)
-            else:
-                new_children.append(child)
-
-        if node.kind is IRNodeKind.SECTION:
-            seen_prior_omission = False
-            seen_labels = {child.label for child in new_children if child.kind is IRNodeKind.SUBSECTION and child.label}
-            adjusted_children: List[IRNode] = []
-            for child in new_children:
-                if _is_omission_ir(child):
-                    seen_prior_omission = True
-                    adjusted_children.append(child)
-                    continue
-                if seen_prior_omission and child.kind is IRNodeKind.SUBSECTION and (child.label or "").isdigit():
-                    intro_label = _subsection_intro_numeric_label_ir(child)
-                    if intro_label is not None and intro_label != child.label and intro_label not in seen_labels:
-                        seen_labels.discard(child.label)
-                        child = _relabel_subsection_ir(child, intro_label)
-                        seen_labels.add(intro_label)
-                        changed = True
-                adjusted_children.append(child)
-            new_children = adjusted_children
-
-        if not changed:
-            return node
-        return _tops._with_children(node, new_children)
-
-    def _subsection_with_flat_text_ir(sub_ir: IRNode, flat_text: str) -> IRNode:
-        content_child = IRNode(kind=IRNodeKind.CONTENT, text=flat_text.strip())
-        return IRNode(
-            kind=sub_ir.kind,
-            label=sub_ir.label,
-            text=sub_ir.text,
-            attrs=dict(sub_ir.attrs),
-            children=(content_child,),
-        )
-
-    def _embedded_letter_suffix_section_ir(sec_el: etree._Element) -> Optional[IRNode]:
-        if target_unit_kind != "section":
-            return None
-        num_el = sec_el.find("{*}num")
-        base_norm = _norm_num_token(num_el.text if num_el is not None and num_el.text else "")
-        if not base_norm or not base_norm.isdigit():
-            return None
-
-        subsections = sec_el.findall("./{*}subsection")
-        if len(subsections) < 2:
-            return None
-
-        first_text = " ".join("".join(str(_t) for _t in subsections[0].itertext()).split())
-        m = re.search(rf"\b{re.escape(base_norm)}\s*([a-z])\s*§\s*$", first_text, flags=re.I)
-        if not m:
-            return None
-
-        suffix = m.group(1).lower()
-        embedded_label = f"{base_norm}{suffix}"
-        if target_norm not in {base_norm, embedded_label}:
-            return None
-
-        if target_norm == base_norm:
-            # lxml elements are mutable and may be re-parented by the parser,
-            # so clone the source subsection before handing it to the IR
-            # converter.
-            first_sub_ir = fi_xml_to_ir_node(copy.deepcopy(subsections[0]), _fi_label_postprocessor)
-            trimmed_text = re.sub(
-                rf"\s*{re.escape(base_norm)}\s*{re.escape(suffix)}\s*§\s*$",
-                "",
-                " ".join(irnode_to_text(first_sub_ir).split()),
-                flags=re.I,
-            ).strip()
-            clean_first = _subsection_with_flat_text_ir(first_sub_ir, trimmed_text)
-            num_text = (num_el.text or "").strip() if num_el is not None and num_el.text else f"{base_norm} §"
-            return IRNode(
-                kind=IRNodeKind.SECTION,
-                label=base_norm,
-                children=(IRNode(kind=IRNodeKind.NUM, text=num_text), clean_first),
-            )
-
-        embedded_subs = [
-            # Same XML detachment boundary as above: each subsection is cloned
-            # before conversion so the original subtree stays untouched.
-            fi_xml_to_ir_node(copy.deepcopy(sub), _fi_label_postprocessor)
-            for sub in subsections[1:]
-        ]
-        if not embedded_subs:
-            return None
-        return IRNode(
-            kind=IRNodeKind.SECTION,
-            label=embedded_label,
-            children=(IRNode(kind=IRNodeKind.NUM, text=f"{base_norm} {suffix} §"), *embedded_subs),
-        )
-
-    muutos_ir = _embedded_letter_suffix_section_ir(muutos_sec)
+    muutos_ir = _embedded_letter_suffix_section_ir(
+        muutos_sec,
+        target_unit_kind=target_unit_kind,
+        target_norm=target_norm,
+    )
     if muutos_ir is None:
         muutos_ir = fi_xml_to_ir_node(muutos_sec, _fi_label_postprocessor)
         muutos_ir = _relabel_sparse_omission_subsections_from_intro_ir(muutos_ir)
@@ -523,7 +539,7 @@ from lawvm.finland.amendment_chapter_precreate import (
     _pre_create_pseudo_marker_chapters,
 )
 from lawvm.finland.process_acquisition import ProcessAcquisitionContext
-from lawvm.finland.process_call import resolve_process_amendment_call
+from lawvm.finland.process_call import ResolvedProcessAmendmentCall, resolve_process_amendment_call
 from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
 from lawvm.finland.process_frontend_normalization import ProcessFrontendNormalizationContext
 from lawvm.finland.process_precompile_selection import ProcessPrecompileSelectionContext
@@ -547,13 +563,12 @@ from lawvm.finland.replay_horizon import (
     oracle_version_future_repeal_only_uses_cutoff_date,
 )
 from lawvm.finland.replay_product_projection import ReplayProductProjectionRequest, project_replay_products
-from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, resolve_replay_xml_call
+from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, resolve_replay_xml_request
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir as _hoist_trailing_wrapup_ir
 from lawvm.finland.relabel_identity import (
     stabilize_chapter_relabel_order as _stabilize_chapter_relabel_order_impl,
     stabilize_same_parent_relabel_order as _stabilize_same_parent_relabel_order_impl,
 )
-from lawvm.finland.chapter_seed_targets import ChapterSeedSkipInput
 from lawvm.finland.standalone_targets import (
     StandaloneSectionTarget,
     build_standalone_section_targets as _build_standalone_section_targets_impl,
@@ -782,7 +797,12 @@ from lawvm.finland.apply import (
 )
 from lawvm.finland.apply_events import (
     ApplyMutationEvent,
-    ApplyMutationInvariantReport,
+)
+from lawvm.finland.apply_ops_boundary import ApplyOpsRequest, ApplyOpsSinks
+from lawvm.finland.compile_group_boundary import CompileGroupRequest, CompileGroupSinks
+from lawvm.finland.compile_group_scope_recovery import (
+    CompileGroupScopeRecoveryRequest,
+    resolve_compile_group_scope_recovery,
 )
 from lawvm.core.mutation_accounting import (
     MutationAccountingResult,
@@ -865,8 +885,8 @@ from lawvm.finland.post_process import (
 )
 
 
-# _recover_uncovered_body_ops and _apply_uncovered_kumotaan moved to
-# grafter_uncovered; re-exported via the import block near line 319.
+# Uncovered recovery helpers moved to grafter_uncovered; selected typed
+# boundaries are imported above for the apply pipeline.
 
 
 # Moved to lawvm.finland.metadata; re-exported here for backward compat.
@@ -903,6 +923,24 @@ from lawvm.finland.chapter_seed import (
 
 
 # --- XML DOM Grafter ---
+
+
+_OPERATIVE_TEXT_SKIP_HCONTAINERS = frozenset(
+    {"signatures", "attachments", "conclusions", "omission"}
+)
+
+
+def _serialize_oper_body_text(node: IRNode) -> str:
+    if (
+        node.kind == IRNodeKind.HCONTAINER
+        and node.attrs.get("name") in _OPERATIVE_TEXT_SKIP_HCONTAINERS
+    ):
+        return ""
+    if node.text:
+        return node.text
+    return " ".join(
+        part for part in (_serialize_oper_body_text(child) for child in node.children) if part
+    )
 
 
 class XMLStatute:
@@ -1024,16 +1062,7 @@ class XMLStatute:
 
     def serialize_text(self) -> str:
         """Serialize operative body text from IRNode, excluding appendices."""
-        _SKIP_NAMES = frozenset({"signatures", "attachments", "conclusions", "omission"})
-
-        def _text(node: IRNode) -> str:
-            if node.kind == IRNodeKind.HCONTAINER and node.attrs.get("name") in _SKIP_NAMES:
-                return ""
-            if node.text:
-                return node.text
-            return " ".join(p for p in (_text(c) for c in node.children) if p)
-
-        return _text(self.ir)
+        return _serialize_oper_body_text(self.ir)
 
     # ------------------------------------------------------------------
     # Bridge methods: Phase 1 of StatuteContext refactor.
@@ -1051,22 +1080,13 @@ def serialize_text(ir: IRNode) -> str:
     It only walks the tree and carries no state — suitable for use with
     ReplayState.ir or any other IRNode.
     """
-    _SKIP_NAMES = frozenset({"signatures", "attachments", "conclusions", "omission"})
-
-    def _text(node: IRNode) -> str:
-        if node.kind == IRNodeKind.HCONTAINER and node.attrs.get("name") in _SKIP_NAMES:
-            return ""
-        if node.text:
-            return node.text
-        return " ".join(p for p in (_text(c) for c in node.children) if p)
-
-    return _text(ir)
+    return _serialize_oper_body_text(ir)
 
 
 # ---------------------------------------------------------------------------
 # StatuteContext + ReplayState (moved to lawvm.finland.statute; re-exported)
 # ---------------------------------------------------------------------------
-from lawvm.finland.statute import StatuteContext, ReplayState, ReplayResult, OracleSelectorInfo
+from lawvm.finland.statute import ReplayState, ReplayResult, OracleSelectorInfo
 
 
 class _ContainerLookupShim(Protocol):
@@ -1085,6 +1105,13 @@ from lawvm.finland.metadata import (
     _statute_issue_date,
     _statute_id_sort_key,
 )
+
+
+def _amendment_ordering_date(
+    eff_date: Optional[dt.date],
+    issue_date: Optional[dt.date],
+) -> dt.date:
+    return eff_date or issue_date or dt.date.min
 
 
 def _resolve_applicable_amendment_records(
@@ -1117,12 +1144,6 @@ def _resolve_applicable_amendment_records(
     min_date = dt.date.min
     selection_basis_by_amendment: Dict[str, str] = {}
 
-    def _ordering_date(
-        eff_date: Optional[dt.date],
-        issue_date: Optional[dt.date],
-    ) -> dt.date:
-        return eff_date or issue_date or min_date
-
     if mode == "legal_pit":
         # Use oracle-version filtering (same amendment set as official_consolidation)
         # but sort chronologically by effective date.  Derive PIT cutoff from
@@ -1133,13 +1154,13 @@ def _resolve_applicable_amendment_records(
             applicable = [item for item in dated_muutoslait if _oracle_mode_sort_key(item[0]) <= version_key]
             for amendment_id, eff_date, issue_date, _title in dated_muutoslait:
                 if amendment_id == oracle_version_amendment_id:
-                    cutoff_date = _ordering_date(eff_date, issue_date)
+                    cutoff_date = _amendment_ordering_date(eff_date, issue_date)
                     break
         elif cutoff_date is not None:
             applicable = [
                 (amendment_id, eff_date, issue_date, title)
                 for amendment_id, eff_date, issue_date, title in dated_muutoslait
-                if _ordering_date(eff_date, issue_date) <= cutoff_date
+                if _amendment_ordering_date(eff_date, issue_date) <= cutoff_date
             ]
         else:
             applicable = dated_muutoslait
@@ -1156,13 +1177,13 @@ def _resolve_applicable_amendment_records(
             applicable.extend(override_items)
             for amendment_id, eff_date, issue_date, _title in override_items:
                 selection_basis_by_amendment[amendment_id] = "oracle_editorial_repeal_stub_override"
-                override_date = _ordering_date(eff_date, issue_date)
+                override_date = _amendment_ordering_date(eff_date, issue_date)
                 if cutoff_date is None or override_date > cutoff_date:
                     cutoff_date = override_date
         ordered = sorted(
             applicable,
             key=lambda item: (
-                _ordering_date(item[1], item[2]),
+                _amendment_ordering_date(item[1], item[2]),
                 item[2] or min_date,
                 _statute_id_sort_key(item[0]),
             ),
@@ -1176,7 +1197,11 @@ def _resolve_applicable_amendment_records(
             # Some consolidated artifacts have a cutoff date but no usable fin@ version id.
             # In that case, fall back to effectivity filtering rather than including all
             # known amendments indiscriminately.
-            applicable = [item for item in applicable if _ordering_date(item[1], item[2]) <= cutoff_date]
+            applicable = [
+                item
+                for item in applicable
+                if _amendment_ordering_date(item[1], item[2]) <= cutoff_date
+            ]
         oracle_reflected = get_consolidated_oracle_reflected_source_vts_children(
             parent_id,
             corpus=corpus,
@@ -1190,13 +1215,13 @@ def _resolve_applicable_amendment_records(
             applicable.extend(override_items)
             for amendment_id, eff_date, issue_date, _title in override_items:
                 selection_basis_by_amendment[amendment_id] = "oracle_editorial_repeal_stub_override"
-                override_date = _ordering_date(eff_date, issue_date)
+                override_date = _amendment_ordering_date(eff_date, issue_date)
                 if cutoff_date is None or override_date > cutoff_date:
                     cutoff_date = override_date
         ordered = sorted(
             applicable,
             key=lambda item: (
-                _ordering_date(item[1], item[2]),
+                _amendment_ordering_date(item[1], item[2]),
                 item[2] or min_date,
                 _statute_id_sort_key(item[0]),
             ),
@@ -1322,14 +1347,50 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
     )
 
 
-def _build_group_surface(
-    group_ops: List[AmendmentOp],
-    muutos_tree: etree._Element,
-    target_unit_kind: TargetUnitKind,
-    target_norm: str,
-    target_chapter: Optional[str],
-    target_part: Optional[str],
-) -> "PhaseResult[GroupSurface]":
+def _renumber_destination_section_label(group_ops: List[AmendmentOp]) -> Optional[str]:
+    labels = {
+        dest_path["section"]
+        for op in group_ops
+        if op.op_type == "RENUMBER"
+        and op.lo is not None
+        and op.lo.destination is not None
+        and (dest_path := dict(op.lo.destination.path)).get("section")
+    }
+    if len(labels) != 1:
+        return None
+    return next(iter(labels))
+
+
+def _is_sparse_source_shell(node: IRNode | None) -> bool:
+    if node is None or node.kind is not IRNodeKind.SECTION:
+        return False
+    has_omission = any(_is_omission_ir(child) for child in node.children)
+    has_substantive_child = any(
+        child.kind
+        not in {
+            IRNodeKind.NUM,
+            IRNodeKind.HEADING,
+            IRNodeKind.OMISSION,
+        }
+        and bool(irnode_to_text(child).strip())
+        for child in node.children
+    )
+    return has_omission and not has_substantive_child
+
+
+@dataclass(frozen=True, slots=True)
+class _BuildGroupSurfaceRequest:
+    """Typed inputs for compile-group payload surface extraction."""
+
+    group_ops: List[AmendmentOp]
+    muutos_tree: etree._Element
+    target_unit_kind: TargetUnitKind
+    target_norm: str
+    target_chapter: Optional[str]
+    target_part: Optional[str]
+
+
+def _build_group_surface(request: _BuildGroupSurfaceRequest) -> "PhaseResult[GroupSurface]":
     """Stage 1: extract amendment-body payload. Pure of live state.
 
     Returns a PhaseResult where:
@@ -1340,40 +1401,18 @@ def _build_group_surface(
     """
     from lawvm.core.phase_result import PhaseBuilder
 
+    group_ops = request.group_ops
+    muutos_tree = request.muutos_tree
+    target_unit_kind = request.target_unit_kind
+    target_norm = request.target_norm
+    target_chapter = request.target_chapter
+    target_part = request.target_part
+
     source_statute = next(
         (str(op.source_statute or "") for op in group_ops if op.source_statute),
         "",
     )
     surface_findings: list[Finding] = []
-
-    def _renumber_destination_section_label() -> Optional[str]:
-        labels = {
-            dest_path["section"]
-            for op in group_ops
-            if op.op_type == "RENUMBER"
-            and op.lo is not None
-            and op.lo.destination is not None
-            and (dest_path := dict(op.lo.destination.path)).get("section")
-        }
-        if len(labels) != 1:
-            return None
-        return next(iter(labels))
-
-    def _is_sparse_source_shell(node: IRNode | None) -> bool:
-        if node is None or node.kind is not IRNodeKind.SECTION:
-            return False
-        has_omission = any(_is_omission_ir(child) for child in node.children)
-        has_substantive_child = any(
-            child.kind
-            not in {
-                IRNodeKind.NUM,
-                IRNodeKind.HEADING,
-                IRNodeKind.OMISSION,
-            }
-            and bool(irnode_to_text(child).strip())
-            for child in node.children
-        )
-        return has_omission and not has_substantive_child
 
     muutos_ir, cross_ir = _find_muutos_ir(
         muutos_tree,
@@ -1383,7 +1422,7 @@ def _build_group_surface(
         target_part,
     )
     if target_unit_kind == "section":
-        destination_section = _renumber_destination_section_label()
+        destination_section = _renumber_destination_section_label(group_ops)
         has_same_group_relabel = any(op.op_type == "RENUMBER" for op in group_ops)
         has_followup_payload_op = any(
             op.op_type != "RENUMBER"
@@ -1620,20 +1659,24 @@ def _emit_restructure_skip_findings(
                 findings_out.append(finding)
 
 
-def _elaborate_group(
-    target_ctx: "TargetContext",
-    lookups: "ReplayLookups",
-    group_surface: GroupSurface,
-    group_ops: List[AmendmentOp],
-    standalone_section_targets: Set[str],
-    *,
-    foreign_scoped_standalone_section_targets: Set[str],
-    target_part: str | None,
-    muutos_tree: etree._Element,
-    johto: str,
-    profile: "ReplayProfile",
-    strict_profile: Optional[StrictProfile],
-) -> "PhaseResult[ElaboratedGroup]":
+@dataclass(frozen=True, slots=True)
+class _ElaborateGroupRequest:
+    """Typed inputs for compile-group payload elaboration."""
+
+    target_ctx: "TargetContext"
+    lookups: "ReplayLookups"
+    group_surface: GroupSurface
+    group_ops: List[AmendmentOp]
+    standalone_section_targets: Set[str]
+    foreign_scoped_standalone_section_targets: Set[str]
+    effective_target_part: str | None
+    muutos_tree: etree._Element
+    johto: str
+    profile: "ReplayProfile"
+    strict_profile: Optional[StrictProfile]
+
+
+def _elaborate_group(request: _ElaborateGroupRequest) -> "PhaseResult[ElaboratedGroup]":
     """Stage 2: elaborate payload against live state.
 
     Takes a ``GroupSurface`` from Stage 1 and typed snapshots ``target_ctx``
@@ -1651,6 +1694,20 @@ def _elaborate_group(
                          sparse payload leftovers (blocking=False)
     """
     from lawvm.core.phase_result import PhaseBuilder
+
+    target_ctx = request.target_ctx
+    lookups = request.lookups
+    group_surface = request.group_surface
+    group_ops = request.group_ops
+    standalone_section_targets = request.standalone_section_targets
+    foreign_scoped_standalone_section_targets = (
+        request.foreign_scoped_standalone_section_targets
+    )
+    target_part = request.effective_target_part
+    muutos_tree = request.muutos_tree
+    johto = request.johto
+    profile = request.profile
+    strict_profile = request.strict_profile
 
     target_unit_kind = group_surface.target_unit_kind
     target_norm = group_surface.target_norm
@@ -1979,12 +2036,26 @@ def _stabilize_insert_order(ops: List[AmendmentOp], target_ctx: "TargetContext")
     return _stabilize_insert_order_impl(ops, target_ctx)
 
 
+@dataclass(frozen=True, slots=True)
+class _LowerGroupRequest:
+    """Typed inputs for lowering elaborated group ops to ResolvedOps."""
+
+    target_ctx: "TargetContext"
+    elaborated: ElaboratedGroup
+    master: Optional["ReplayState"] = None
+    lookups: Optional["ReplayLookups"] = None
+
+
+@dataclass(frozen=True, slots=True)
+class _LowerGroupSinks:
+    """Mutable evidence/output channels for compile-group lowering."""
+
+    compiled_ops_out: Optional[List[Dict[str, object]]] = None
+
+
 def _lower_group(
-    target_ctx: "TargetContext",
-    elaborated: ElaboratedGroup,
-    compiled_ops_out: Optional[List[Dict[str, object]]],
-    master: Optional["ReplayState"] = None,
-    lookups: Optional["ReplayLookups"] = None,
+    request: _LowerGroupRequest,
+    sinks: Optional[_LowerGroupSinks] = None,
 ) -> "PhaseResult[list[ResolvedOp]]":
     """Stage 3: lower elaborated ops to ResolvedOps. Pure of live state.
 
@@ -2000,6 +2071,12 @@ def _lower_group(
     - ``obligations``  — (none produced at this stage)
     """
     from lawvm.core.phase_result import PhaseBuilder
+
+    target_ctx = request.target_ctx
+    elaborated = request.elaborated
+    master = request.master
+    lookups = request.lookups
+    compiled_ops_out = sinks.compiled_ops_out if sinks is not None else None
 
     target_chapter = target_ctx.target_chapter
     group_ops = list(elaborated.group_ops)
@@ -2147,22 +2224,9 @@ def _resolve_group_surface_scope(
     )
 
 
-def _compile_group(
-    master: "ReplayState",
-    target_unit_kind: TargetUnitKind,
-    target_norm: str,
-    target_chapter: Optional[str],
-    target_part: Optional[str],
-    group_ops: List[AmendmentOp],
-    standalone_section_targets: Set[str],
-    inserted_chapter_labels: Set[str],
-    muutos_tree: etree._Element,
-    johto: str,
-    profile: "ReplayProfile",
-    compiled_ops_out: Optional[List[Dict[str, object]]],
-    strict_profile: Optional[StrictProfile],
-    foreign_scoped_standalone_section_targets: Optional[Set[str]] = None,
-    precomputed_lookups: Optional[Any] = None,
+def _compile_group_typed(
+    request: CompileGroupRequest,
+    sinks: CompileGroupSinks | None = None,
 ) -> "PhaseResult[list[ResolvedOp]]":
     """Compile one group of ops (same target section/chapter) into ResolvedOps.
 
@@ -2183,506 +2247,52 @@ def _compile_group(
     from all three stages are merged into the result.
     """
     from lawvm.core.phase_result import PhaseResult
-    foreign_scoped_standalone_section_targets = set(foreign_scoped_standalone_section_targets or ())
-
-    effective_target_chapter = target_chapter
-    effective_target_part = target_part
-    surface_target_chapter, surface_target_part = _resolve_group_surface_scope(
-        muutos_tree=muutos_tree,
-        target_unit_kind=target_unit_kind,
-        target_norm=target_norm,
-        target_chapter=target_chapter,
-        target_part=target_part,
-        group_ops=group_ops,
+    sinks = sinks or CompileGroupSinks()
+    master = request.master
+    target_unit_kind = request.target_unit_kind
+    target_norm = request.target_norm
+    target_chapter = request.target_chapter
+    target_part = request.target_part
+    group_ops = request.group_ops
+    standalone_section_targets = request.standalone_section_targets
+    inserted_chapter_labels = request.inserted_chapter_labels
+    muutos_tree = request.muutos_tree
+    johto = request.johto
+    profile = request.profile
+    strict_profile = request.strict_profile
+    foreign_scoped_standalone_section_targets = set(
+        request.foreign_scoped_standalone_section_targets
     )
-    effective_group_ops = group_ops
-    compile_findings: tuple[Finding, ...] = ()
-    carry_forward_scoped = _group_has_scope_source(group_ops, "carry_forward")
-    # Chapter-remap: correct target_chapter when the section lives in a different
-    # chapter in the master state (e.g. after a prior chapter renumbering).
-    # Guard: do NOT remap pure-INSERT groups — an INSERT creates a new section
-    # that does not yet exist in the target chapter; finding the same label in
-    # another chapter indicates a different section, not a mismatch to correct.
-    _is_pure_insert_group = all(op.op_type == "INSERT" for op in group_ops)
-    # Body-chapter correction: route INSERT ops to the chapter the amendment body
-    # places them in when the johtolause scope is absent or inaccurate.
-    #
-    # Two cases:
-    # 1. No chapter scope (target_chapter=None): base section is not inside any chapter
-    #    in master so _unique_base_section_chapter returned None.  The body inventory
-    #    (which handles pseudo-chapter-markers) is authoritative.  Only apply when the
-    #    body chapter exists in master.
-    # 2. Carry-forward scope (chapter_scope_carry_forward tag): chapter was inferred
-    #    from the base section's chapter in master, but the body places the new section
-    #    under a pseudo-marker that creates a letter-suffix sub-chapter (e.g. section
-    #    53a belongs to "7a luku" inside chapter 7 → effective chapter "7a", not "7").
-    #
-    # Also updates op.lo so resolved_target_address picks up the corrected chapter
-    # (op.lo.target.path is the primary source for that field in ResolvedOp).
-    if _is_pure_insert_group and target_unit_kind == "section":
-        _body_chapter = _find_body_section_chapter(muutos_tree, target_norm)
-        resolved_body_chapter = _body_chapter
-        if _body_chapter is not None and (not target_chapter or carry_forward_scoped):
-            sibling_consensus_scope = _retarget_duplicate_body_section_scope_from_close_live_siblings(
-                muutos_tree=muutos_tree,
-                section_norm=target_norm,
-                body_chapter=_body_chapter,
-                body_part=target_part,
-                master=master,
-            )
-            if sibling_consensus_scope is not None:
-                _sibling_part, _sibling_chapter = sibling_consensus_scope
-                if _sibling_chapter != _body_chapter:
-                    resolved_body_chapter = _sibling_chapter
-        if (
-            _body_chapter is not None
-            and all(str(op.target_special or "").strip() == "otsikko" for op in effective_group_ops)
-        ):
-            resolved_body_chapter = _retarget_heading_insert_body_chapter_from_close_live_sibling(
-                muutos_tree=muutos_tree,
-                section_norm=target_norm,
-                body_chapter=_body_chapter,
-                master=master,
-            )
-        if resolved_body_chapter is not None and resolved_body_chapter != (target_chapter or ""):
-            _apply_body_chapter_correction = False
-            if (
-                _body_chapter is not None
-                and resolved_body_chapter != _body_chapter
-                and master.find("chapter", resolved_body_chapter) is not None
-            ):
-                _apply_body_chapter_correction = True
-            elif not target_chapter:
-                # No chapter scope: route to body chapter when it exists in master
-                _apply_body_chapter_correction = master.find("chapter", resolved_body_chapter) is not None
-            elif carry_forward_scoped:
-                # Carry-forward scope: only override when body chapter is a
-                # letter-suffix sub-chapter of the inferred chapter (guards against
-                # spurious remaps for sections placed after the last pseudo-marker).
-                _apply_body_chapter_correction = (
-                    re.fullmatch(rf"{re.escape(target_chapter)}[a-z]", resolved_body_chapter, re.I) is not None
-                )
-            if _apply_body_chapter_correction:
-                logger.debug(
-                    "  body-chapter correction: %s chapter %s → %s",
-                    target_norm, target_chapter, resolved_body_chapter,
-                )
-                effective_target_chapter = resolved_body_chapter
-                effective_group_ops = [
-                    dc_replace(
-                        op,
-                        target_chapter=resolved_body_chapter,
-                        scope_confidence=normalize_scope_confidence(
-                            projection_scope_confidence(
-                                scope_confidence=op.scope_confidence,
-                                scope_provenance_tags=op.scope_provenance_tags,
-                                resolved_chapter=resolved_body_chapter,
-                            ),
-                            resolved_chapter=resolved_body_chapter,
-                        ),
-                        lo=_lo_with_path_update(op.lo, chapter=resolved_body_chapter) if op.lo is not None else op.lo,
-                    )
-                    if (
-                        op.target_unit_kind == "section"
-                        and _norm_num_token(op.target_section or "") == target_norm
-                        and op.target_chapter == target_chapter
-                    )
-                    else op
-                    for op in effective_group_ops
-                ]
-    # Body-chapter correction for REPLACE groups: structural chapter splits.
-    # When a REPLACE op's body places the section under a letter-suffix
-    # sub-chapter (e.g. §55 moved from "7" to "7c" by amendment 1996/473, or
-    # §§39–41 moved from "4" to "4a" by amendment 2016/533), convert the
-    # REPLACE to INSERT so the apply layer can MOVE the section from its
-    # current chapter to the new sub-chapter.
-    #
-    # This handles structural reorganisations such as chapter 7 → 7a/7b/7c
-    # where existing sections are both content-replaced AND structurally moved.
-    # The MOVE is performed in apply_structure_ops._apply_whole_section_op when
-    # a section already exists in the "parent" chapter.
-    if (
-        not _is_pure_insert_group
-        and target_unit_kind == "section"
-        and target_chapter
-        and any(op.op_type == "REPLACE" for op in group_ops)
-    ):
-        _replace_body_chapter = _find_body_section_chapter(muutos_tree, target_norm)
-        _replace_to_insert_trigger_evidence = tuple(
-            evidence
-            for evidence, present in (
-                (
-                    "pseudo_chapter_marker",
-                    _replace_body_chapter is not None
-                    and _body_has_pseudo_chapter_marker(muutos_tree, _replace_body_chapter),
-                ),
-                (
-                    "real_inserted_chapter",
-                    _replace_body_chapter is not None
-                    and master.find("chapter", _replace_body_chapter) is None
-                    and _body_has_real_chapter_container(muutos_tree, _replace_body_chapter),
-                ),
-                (
-                    "inserted_chapter_op",
-                    _replace_body_chapter is not None and _replace_body_chapter in inserted_chapter_labels,
-                ),
-            )
-            if present
-        )
-        if (
-            _replace_body_chapter is not None
-            and _replace_body_chapter != target_chapter
-            and re.fullmatch(rf"{re.escape(target_chapter)}[a-z]+", _replace_body_chapter, re.I) is not None
-            # Only apply for genuine chapter-split restructuring. Two known
-            # source shapes qualify:
-            # 1. a pseudo-chapter-marker section (<section><num>X luku</num>)
-            # 2. a real <chapter> container for a brand-new subchapter
-            # 3. an explicit inserted chapter op targeting the new chapter
-            # This keeps ordinary amendments operating inside an existing
-            # letter-suffix chapter from being rewritten as moves.
-            and _replace_to_insert_trigger_evidence
-        ):
-            rule_id = "LOWER.BODY_CHAPTER_REPLACE_TO_INSERT_MOVE"
-            replacement_ops = [
-                op
-                for op in effective_group_ops
-                if (
-                    op.target_unit_kind == "section"
-                    and _norm_num_token(op.target_section or "") == target_norm
-                    and op.target_chapter == target_chapter
-                    and op.op_type == "REPLACE"
-                )
-            ]
-            compile_findings += (
-                Finding(
-                    kind=rule_id,
-                    role="observation",
-                    stage="_compile_group",
-                    detail={
-                        "rule_id": rule_id,
-                        "phase": "lowering",
-                        "family": "action_family_recovery",
-                        "reason": "body_chapter_suffix_restructure_requires_move_bridge",
-                        "original_action": "REPLACE",
-                        "lowered_action": "INSERT",
-                        "target_unit_kind": target_unit_kind,
-                        "target_norm": target_norm,
-                        "target_chapter": target_chapter,
-                        "target_part": target_part or "",
-                        "body_chapter": _replace_body_chapter,
-                        "trigger_evidence": _replace_to_insert_trigger_evidence,
-                        "op_ids": tuple(str(op.op_id or "") for op in replacement_ops),
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                    },
-                    source_statute=next(
-                        (str(op.source_statute or "") for op in replacement_ops if op.source_statute),
-                        "",
-                    ),
-                    blocking=False,
-                ),
-            )
-            if (
-                strict_profile is not None
-                and not strict_profile.allows_context_dependent_anchor_resolution
-            ):
-                strict_failed_ops = [
-                    FailedOp.from_scope(
-                        amendment_id=str(op.source_statute or ""),
-                        description=op.description(),
-                        reason=(
-                            "section REPLACE was lowered to INSERT+MOVE because the amendment body "
-                            "placed the section under a new letter-suffix chapter"
-                        ),
-                        reason_code=rule_id,
-                        target_section=op.target_section or target_norm,
-                        target_unit_kind=op.target_unit_kind,
-                        target_chapter=target_chapter,
-                        target_part=target_part,
-                    )
-                    for op in replacement_ops
-                ]
-                compile_findings += tuple(
-                    _rejected_operation_findings(strict_failed_ops, "_compile_group")
-                )
-                return PhaseResult(
-                    output=[],
-                    findings=compile_findings,
-                )
-            logger.debug(
-                "  body-chapter correction (REPLACE→INSERT+MOVE): %s chapter %s → %s",
-                target_norm, target_chapter, _replace_body_chapter,
-            )
-            effective_target_chapter = _replace_body_chapter
-            # Also update surface_target_chapter so _build_group_surface looks for
-            # the section in the correct virtual chapter segment of the amendment body
-            # (e.g. §55 is in the "7c" pseudo-chapter segment inside chapter "7",
-            # so surface_target_chapter="7" would miss it).
-            surface_target_chapter = _replace_body_chapter
-            effective_group_ops = [
-                    dc_replace(
-                        op,
-                        op_type="INSERT",
-                        target_chapter=_replace_body_chapter,
-                        body_chapter_move_from=target_chapter,
-                        # Clear target_special so otsikko-only REPLACE ops become whole-section
-                        # INSERTs; the apply layer's pseudo-chapter MOVE needs a section-level
-                        # op to fire (FacetTarget heading inserts are silently skipped there).
-                        target_special=None,
-                        scope_confidence=normalize_scope_confidence(
-                            projection_scope_confidence(
-                                scope_confidence=op.scope_confidence,
-                                scope_provenance_tags=op.scope_provenance_tags,
-                                resolved_chapter=_replace_body_chapter,
-                            ),
-                            resolved_chapter=_replace_body_chapter,
-                        ),
-                        lo=(
-                        dc_replace(
-                            (_tmp_lo := _lo_with_path_update(op.lo, chapter=_replace_body_chapter)),
-                            action=StructuralAction.INSERT,
-                            # Clear the heading facet so the op is treated as a
-                            # whole-section INSERT (not FacetTarget heading).
-                            # Without this, effective_target_special reads
-                            # lo.target.special=HEADING and builds FacetTarget
-                            # which the apply layer's INSERT dispatch cannot handle.
-                            target=dc_replace(_tmp_lo.target, special=None),
-                        )
-                        if op.lo is not None else op.lo
-                    ),
-                )
-                if (
-                    op.target_unit_kind == "section"
-                    and _norm_num_token(op.target_section or "") == target_norm
-                    and op.target_chapter == target_chapter
-                    and op.op_type == "REPLACE"
-                )
-                else op
-                for op in effective_group_ops
-            ]
+    compiled_ops_out = sinks.compiled_ops_out
 
-    if target_unit_kind == "section" and (target_chapter or target_part) and not _is_pure_insert_group:
-        scoped_path = master.find_section_path(target_norm, target_chapter, target_part)
-        if scoped_path is None and target_norm not in master.duplicate_section_labels:
-            # If the amendment body already carries the payload under the scoped
-            # target chapter, preserve that scope. This covers real section-move
-            # groups like "29 e §, joka samalla siirretään 5 b lukuun" where the
-            # live tree still resolves the section under the old chapter.
-            if target_chapter:
-                source_body_chapter = _source_body_chapter_for_scoped_section_target(
-                    muutos_tree=muutos_tree,
-                    target_norm=target_norm,
-                    target_chapter=target_chapter,
-                    target_part=target_part,
-                )
-                if source_body_chapter == target_chapter:
-                    scoped_path = ()
-        retarget_scope_source = (
-            _allow_unscoped_live_section_retarget(group_ops)
-            if scoped_path is None and target_norm not in master.duplicate_section_labels
-            else None
+    recovery_result = resolve_compile_group_scope_recovery(
+        CompileGroupScopeRecoveryRequest(
+            master=master,
+            target_unit_kind=target_unit_kind,
+            target_norm=target_norm,
+            target_chapter=target_chapter,
+            target_part=target_part,
+            group_ops=group_ops,
+            inserted_chapter_labels=inserted_chapter_labels,
+            muutos_tree=muutos_tree,
+            strict_profile=strict_profile,
         )
-        sibling_consensus_live_scope: tuple[str | None, str] | None = None
-        # The duplicate-label body-consensus retarget below derives a scope from a
-        # same-numbered section in the amendment body. That only identifies *this*
-        # op's target when the op owns the whole section as a body payload (a
-        # whole-section REPLACE/INSERT that was renumbered into a live chapter).
-        # A subsection/item/special op (e.g. a momentti REPEAL) never carries a
-        # whole-section body payload, so a same-numbered whole body section belongs
-        # to an unrelated op — typically a §N inside a newly INSERTed chapter. Using
-        # it would rebind the explicitly-scoped target to the wrong chapter instance
-        # (e.g. 10 luku 11 §:n 2 mom → 2 luku 11 §), surfacing as a spurious
-        # "section/momentti not found". Restrict the retarget to whole-section ops.
-        _group_targets_whole_section = any(
-            op.target_unit_kind == "section"
-            and _norm_num_token(op.target_section or "") == target_norm
-            and op.target_chapter == target_chapter
-            and not op.target_paragraph
-            and not op.target_item
-            and not op.target_special
-            for op in group_ops
-        )
-        if (
-            scoped_path is None
-            and target_norm in master.duplicate_section_labels
-            and _group_targets_whole_section
-        ):
-            body_scope = _source_body_scope_for_section_target(
-                muutos_tree=muutos_tree,
-                target_norm=target_norm,
-            )
-            if body_scope is not None:
-                body_part, body_chapter = body_scope
-                sibling_consensus_live_scope = _retarget_duplicate_body_section_scope_from_close_live_siblings(
-                    muutos_tree=muutos_tree,
-                    section_norm=target_norm,
-                    body_chapter=body_chapter or "",
-                    body_part=body_part,
-                    master=master,
-                )
-                if sibling_consensus_live_scope is not None:
-                    retarget_scope_source = "close_live_sibling_consensus"
-        if retarget_scope_source is not None:
-            body_scope = _source_body_scope_for_section_target(
-                muutos_tree=muutos_tree,
-                target_norm=target_norm,
-            )
-            body_part = None
-            body_chapter = None
-            live_path = None
-            if body_scope is not None:
-                body_part, body_chapter = body_scope
-                if sibling_consensus_live_scope is not None:
-                    live_part_hint, live_chapter_hint = sibling_consensus_live_scope
-                    live_path = master.find_section_path(target_norm, live_chapter_hint, live_part_hint)
-                else:
-                    live_path = master.find_section_path(target_norm, body_chapter, body_part)
-            if live_path is None and sibling_consensus_live_scope is None:
-                live_path = master.find_section_path(target_norm, None, target_part)
-            if (
-                live_path is None
-                and sibling_consensus_live_scope is None
-                and retarget_scope_source == "explicit_chunk"
-            ):
-                # Some later reparenting families leave the amendment body and
-                # explicit johtolause chunk on the stale old chapter/part, even
-                # though the live statute has already moved the section to one
-                # unique new path. Keep this bounded to explicit-chunk groups
-                # and the existing duplicate-label guard.
-                live_path = master.find_section_path(target_norm, None, None)
-            if live_path is not None:
-                live_part = next((label for kind, label in live_path if kind == "part"), None)
-                live_chapter = next((label for kind, label in live_path if kind == "chapter"), None)
-                if live_chapter and (live_chapter != target_chapter or live_part != target_part):
-                    retarget_detail = {
-                        "target_unit_kind": target_unit_kind,
-                        "target_norm": target_norm,
-                        "target_chapter": target_chapter or "",
-                        "target_part": target_part or "",
-                        "body_part": body_part or "",
-                        "body_chapter": body_chapter or "",
-                        "resolved_live_part": live_part or "",
-                        "resolved_live_chapter": live_chapter,
-                        "scope_source": retarget_scope_source,
-                    }
-                    compile_findings += (
-                        Finding(
-                            kind="LOWER.CARRY_FORWARD_LIVE_SECTION_RETARGET",
-                            role="observation",
-                            stage="_compile_group",
-                            detail=retarget_detail,
-                            source_statute=next(
-                                (str(op.source_statute or "") for op in effective_group_ops if op.source_statute),
-                                "",
-                            ),
-                            blocking=False,
-                        ),
-                    )
-                    if (
-                        strict_profile is not None
-                        and not strict_profile.allows_context_dependent_anchor_resolution
-                    ):
-                        strict_failed_ops = [
-                            FailedOp.from_scope(
-                                amendment_id=str(op.source_statute or ""),
-                                description=op.description(),
-                                reason=(
-                                    "scoped section target rebounded to a body-backed unique live "
-                                    "section path outside explicit source scope"
-                                ),
-                                reason_code="LOWER.CARRY_FORWARD_LIVE_SECTION_RETARGET",
-                                target_section=op.target_section or target_norm,
-                                target_unit_kind=op.target_unit_kind,
-                                target_chapter=target_chapter,
-                            )
-                            for op in effective_group_ops
-                            if (
-                                op.target_unit_kind == "section"
-                                and _norm_num_token(op.target_section or "") == target_norm
-                                and op.target_chapter == target_chapter
-                            )
-                        ]
-                        compile_findings += tuple(
-                            _rejected_operation_findings(strict_failed_ops, "_compile_group")
-                        )
-                        # Strict profile blocked the retarget — return early with
-                        # empty output.  The retarget findings are already in
-                        # compile_findings; no Stage 1/2/3 output should be emitted.
-                        return PhaseResult(
-                            output=[],
-                            findings=compile_findings,
-                        )
-                    else:
-                        stale_part = target_part
-                        effective_target_chapter = live_chapter
-                        effective_target_part = live_part
-                        if body_scope is not None:
-                            surface_target_part = body_part
-                            surface_target_chapter = body_chapter
-                        effective_group_ops = [
-                            dc_replace(
-                                op,
-                                target_part=live_part,
-                                target_chapter=live_chapter,
-                                scope_confidence=(
-                                    ScopeConfidence(
-                                        tag="body_container_membership_rewrite",
-                                        source="explicit_scope_rewrite",
-                                        confidence="rewritten",
-                                        resolved_chapter=live_chapter,
-                                    )
-                                    if retarget_scope_source == "explicit_chunk"
-                                    else normalize_scope_confidence(
-                                        projection_scope_confidence(
-                                            scope_confidence=op.scope_confidence,
-                                            scope_provenance_tags=op.scope_provenance_tags,
-                                            resolved_chapter=live_chapter,
-                                        ),
-                                        resolved_chapter=live_chapter,
-                                    )
-                                ),
-                                lo=(
-                                    dc_replace(
-                                        _lo_with_path_update(op.lo, part=live_part, chapter=live_chapter),
-                                        provenance_tags=tuple(
-                                            _lo_with_path_update(
-                                                op.lo,
-                                                part=live_part,
-                                                chapter=live_chapter,
-                                            ).provenance_tags
-                                        )
-                                        + tuple(
-                                            tag
-                                            for tag in (
-                                                f"body_part_retargeted_from:{stale_part}" if stale_part else "",
-                                                f"body_chapter_retargeted_from:{target_chapter}" if target_chapter else "",
-                                            )
-                                            if tag
-                                        ),
-                                    )
-                                    if op.lo is not None
-                                    else (
-                                        _lo_with_path_update(op.lo, part=live_part, chapter=live_chapter)
-                                        if op.lo is not None
-                                        else op.lo
-                                    )
-                                ),
-                            )
-                            if (
-                                op.target_unit_kind == "section"
-                                and _norm_num_token(op.target_section or "") == target_norm
-                                and op.target_chapter == target_chapter
-                            )
-                            else op
-                            for op in effective_group_ops
-                        ]
+    )
+    recovery = recovery_result.output
+    compile_findings = recovery_result.findings()
+    if recovery.blocked:
+        return PhaseResult(output=[], findings=compile_findings)
+    effective_target_chapter = recovery.effective_target_chapter
+    effective_target_part = recovery.effective_target_part
+    surface_target_chapter = recovery.surface_target_chapter
+    surface_target_part = recovery.surface_target_part
+    effective_group_ops = recovery.group_ops
 
     # ── Snapshot boundary ────────────────────────────────────────────────
     # Build typed snapshots ONCE before any elaboration.  After this point,
     # no raw master access occurs — Stage 2 builds PayloadElaborationContext
     # from these snapshots, Stage 3 uses only target_ctx.
-    lookups = precomputed_lookups if precomputed_lookups is not None else snapshot_replay_lookups(cast(Any, master))
+    lookups = request.lookups if request.lookups is not None else snapshot_replay_lookups(cast(Any, master))
     target_ctx = snapshot_target_context(
         cast(Any, master),
         target_unit_kind,
@@ -2694,27 +2304,31 @@ def _compile_group(
 
     # ── Stage 1: build_group_surface (pure of live state) ────────────────
     surface_result = _build_group_surface(
-        effective_group_ops,
-        muutos_tree,
-        target_unit_kind,
-        target_norm,
-        surface_target_chapter,
-        surface_target_part,
+        _BuildGroupSurfaceRequest(
+            group_ops=effective_group_ops,
+            muutos_tree=muutos_tree,
+            target_unit_kind=target_unit_kind,
+            target_norm=target_norm,
+            target_chapter=surface_target_chapter,
+            target_part=surface_target_part,
+        )
     )
 
     # ── Stage 2: elaborate_group (live-dependent, typed snapshots only) ─────
     elab_result = _elaborate_group(
-        target_ctx,
-        lookups,
-        surface_result.output,
-        effective_group_ops,
-        standalone_section_targets,
-        foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
-        target_part=effective_target_part,
-        muutos_tree=muutos_tree,
-        johto=johto,
-        profile=profile,
-        strict_profile=strict_profile,
+        _ElaborateGroupRequest(
+            target_ctx=target_ctx,
+            lookups=lookups,
+            group_surface=surface_result.output,
+            group_ops=effective_group_ops,
+            standalone_section_targets=standalone_section_targets,
+            foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
+            effective_target_part=effective_target_part,
+            muutos_tree=muutos_tree,
+            johto=johto,
+            profile=profile,
+            strict_profile=strict_profile,
+        )
     )
     elaborated = elab_result.output
     if elaborated.was_filtered or not elaborated.group_ops:
@@ -2725,7 +2339,15 @@ def _compile_group(
         )
 
     # ── Stage 3: lower_group (pure of live state, reads target_ctx only) ──
-    lower_result = _lower_group(target_ctx, elaborated, compiled_ops_out, master, lookups)
+    lower_result = _lower_group(
+        _LowerGroupRequest(
+            target_ctx=target_ctx,
+            elaborated=elaborated,
+            master=master,
+            lookups=lookups,
+        ),
+        _LowerGroupSinks(compiled_ops_out=compiled_ops_out),
+    )
 
     return PhaseResult(
         output=lower_result.output,
@@ -2832,22 +2454,24 @@ def compile_amendment_ops(
             target_part=group_key.target_part,
             duplicate_section_labels=frozenset(getattr(master, "duplicate_section_labels", ())),
         )
-        group_result = _compile_group(
-            master=master,
-            target_unit_kind=target_unit_kind_value,
-            target_norm=group_key.target_norm,
-            target_chapter=group_key.target_chapter,
-            target_part=group_key.target_part,
-            group_ops=group_ops,
-            standalone_section_targets=standalone_section_targets,
-            foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
-            inserted_chapter_labels=inserted_chapter_labels,
-            muutos_tree=muutos_tree,
-            johto=johto,
-            profile=profile,
-            compiled_ops_out=compiled_ops_out,
-            strict_profile=strict_profile,
-            precomputed_lookups=_precomputed_lookups,
+        group_result = _compile_group_typed(
+            CompileGroupRequest(
+                master=master,
+                target_unit_kind=target_unit_kind_value,
+                target_norm=group_key.target_norm,
+                target_chapter=group_key.target_chapter,
+                target_part=group_key.target_part,
+                group_ops=group_ops,
+                standalone_section_targets=standalone_section_targets,
+                foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
+                inserted_chapter_labels=inserted_chapter_labels,
+                muutos_tree=muutos_tree,
+                johto=johto,
+                profile=profile,
+                strict_profile=strict_profile,
+                lookups=_precomputed_lookups,
+            ),
+            CompileGroupSinks(compiled_ops_out=compiled_ops_out),
         )
         resolved.extend(group_result.output)
         all_findings.extend(group_result.findings())
@@ -3037,32 +2661,200 @@ def _cross_check_observed_vs_declared(
         observed_touch_results_out.append(result)
 
 
-def apply_ops_to_tree(
+@dataclass(frozen=True, slots=True)
+class _ApplyGroupSnapshotRequest:
+    """Replay state needed to decide whether an apply group emits a timeline snapshot."""
+
+    state: "ReplayState"
+    group: ApplyGroupState
+    amendment_id: str
+    source_title: str
+    amendment_issue_date: Optional[dt.date]
+    amendment_effective_date: Optional[dt.date]
+    base_ir: IRNode
+    migration_ledger: Optional[MigrationLedger]
+    standalone_section_targets: frozenset[StandaloneSectionTarget]
+
+
+@dataclass(frozen=True, slots=True)
+class _ApplyGroupSnapshotSinks:
+    """Mutable output channels for apply-group snapshot emission."""
+
+    lo_ops_out: Optional[List[_LegalOperation]] = None
+
+
+def _emit_apply_group_snapshot_if_allowed(
+    request: _ApplyGroupSnapshotRequest,
+    sinks: Optional[_ApplyGroupSnapshotSinks] = None,
+) -> None:
+    """Emit a timeline snapshot for the current apply group when replay permits it."""
+    state = request.state
+    group = request.group
+    lo_ops_out = sinks.lo_ops_out if sinks is not None else None
+    amendment_id = request.amendment_id
+    source_title = request.source_title
+    amendment_issue_date = request.amendment_issue_date
+    amendment_effective_date = request.amendment_effective_date
+    base_ir = request.base_ir
+    migration_ledger = request.migration_ledger
+    standalone_section_targets = request.standalone_section_targets
+
+    if not group.group_rops or lo_ops_out is None:
+        return
+    if group.group_had_failed_apply:
+        return
+    first_rop = group.group_rops[0]
+    group_key = first_rop.resolved_group_key_view
+    if not _emit_granular_subsection_timeline_ops(
+        state,
+        group.group_rops,
+        lo_ops_out,
+        amendment_id,
+        source_title,
+        amendment_issue_date,
+        amendment_effective_date,
+        base_ir,
+        path_hint=group.group_path_hint,
+    ):
+        _emit_section_snapshot(
+            state,
+            group_key.unit_kind,
+            group_key.target_norm,
+            group_key.target_chapter,
+            group_key.target_part,
+            group.group_rops,
+            lo_ops_out,
+            amendment_id,
+            source_title,
+            amendment_issue_date,
+            amendment_effective_date,
+            base_ir=base_ir,
+            path_hint=group.group_path_hint,
+            migration_ledger=migration_ledger,
+            standalone_section_targets=standalone_section_targets,
+        )
+
+
+def _unique_global_section_path(
     state: "ReplayState",
-    ctx: "StatuteContext",
-    resolved: List[ResolvedOp],
-    ops: List[AmendmentOp],
-    muutos_tree: "etree._Element",
-    johto: str,
-    amendment_id: str,
-    source_title: str,
-    amendment_issue_date: Optional[dt.date],
-    amendment_effective_date: Optional[dt.date],
-    amendment_expiry_date: Optional[dt.date],
-    replay_mode: Literal["official_consolidation", "legal_pit"],
-    lo_ops_out: Optional[List[_LegalOperation]],
-    failed_ops_out: Optional[List[FailedOp]],
-    source_pathologies_out: Optional[List[SourcePathology]],
-    strict_profile: Optional[StrictProfile],
-    _vts_ops_enrich_done: bool,
-    future_repeals: Optional[Set[RepealTargetRef]] = None,
-    mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
-    migration_ledger: Optional[MigrationLedger] = None,
-    restructure_plans_out: Optional[List[StructuralTransformPlan]] = None,
-    observations_out: Optional[List[Dict[str, object]]] = None,
-    findings_out: Optional[List[Finding]] = None,
-    observed_touch_results_out: Optional[List[MutationAccountingResult]] = None,
-    write_audits_out: Optional[List[ObservedWriteAudit]] = None,
+    label: str,
+) -> tuple[tuple[str, str], ...] | None:
+    """Return a globally unique live section path for ``label``, if one exists."""
+    idx = state.provision_index
+    raw_path = _tops.find(state.ir, "section", label, label_index=idx)
+    if raw_path is None:
+        return None
+    label_norm = normalized_label_key(label)
+    if len(idx.get(("section", label_norm), [])) != 1:
+        return None
+    return raw_path
+
+
+def _state_has_scoped_chapter(
+    state: "ReplayState",
+    part_label: str,
+    chapter_label: str,
+) -> bool:
+    """Return whether ``chapter_label`` exists in ``part_label`` scope."""
+    part_path = state.find("part", part_label) if part_label else None
+    if part_path is None:
+        return state.find("chapter", chapter_label) is not None if not part_label else False
+    part_node = _tops.resolve(state.ir, part_path)
+    if part_node is None:
+        return False
+    return _tops.find(part_node, "chapter", chapter_label) is not None
+
+
+@dataclass(frozen=True, slots=True)
+class _RefreshGroupPathHintRequest:
+    """Inputs for recomputing the live target path of the current apply group."""
+
+    state: "ReplayState"
+    target_unit_kind: TargetUnitKind
+    target_norm: str
+    target_chapter: Optional[str]
+    target_part: Optional[str]
+    path_hint: tuple[tuple[str, str], ...] | None
+    rop: Optional[ResolvedOp]
+    migration_ledger: Optional[MigrationLedger]
+
+
+def _refresh_group_path_hint(
+    request: _RefreshGroupPathHintRequest,
+) -> tuple[tuple[str, str], ...] | None:
+    """Refresh the apply group's live target path after a possible mutation."""
+    state = request.state
+    target_unit_kind = request.target_unit_kind
+    target_norm = request.target_norm
+    target_chapter = request.target_chapter
+    target_part = request.target_part
+    path_hint = request.path_hint
+    rop = request.rop
+    migration_ledger = request.migration_ledger
+
+    valid_hint = _valid_target_group_path_hint(
+        state,
+        target_unit_kind,
+        target_norm,
+        target_chapter,
+        target_part,
+        path_hint,
+    )
+    if valid_hint is not None:
+        return tuple(valid_hint)
+    hint_op_effective = migration_lower_bound_for_op(rop) if rop is not None else ""
+    if rop is not None:
+        dest_path = _resolved_destination_path_for_rop(rop)
+        if dest_path is not None:
+            dest_path_tuple = tuple(dest_path)
+            if migration_ledger is not None:
+                migrated = migration_ledger.current_address_with_prefix_migrations(
+                    LegalAddress(path=dest_path_tuple), not_before=hint_op_effective
+                )
+                migrated_path = migrated.path
+                if _tops.resolve(state.ir, migrated_path) is not None:
+                    return migrated_path
+            if _tops.resolve(state.ir, dest_path_tuple) is not None:
+                return dest_path_tuple
+    if target_unit_kind == "part":
+        return state.find("part", target_norm)
+    if target_unit_kind == "chapter":
+        return state.find("chapter", target_norm)
+    if target_unit_kind == "section":
+        raw_path = state.find_section_path(target_norm, target_chapter, target_part)
+        raw_path = _prefer_unique_substantive_section_path_over_placeholder(
+            state,
+            target_norm=target_norm,
+            target_chapter=target_chapter,
+            target_part=target_part,
+            raw_path=raw_path,
+        )
+        if raw_path is None and target_chapter is None and target_part is None:
+            raw_path = _unique_global_section_path(state, target_norm)
+        if raw_path is None and target_chapter is not None and target_part is None:
+            # Cross-chapter/root-level unique global fallback for non-INSERT ops.
+            # Finnish amendments sometimes group sections under a chapter heading
+            # that differs from where the section lives in the live statute
+            # (e.g. root hcontainer level). Only applicable when no part scope is
+            # specified — a part mismatch is an authoritative scoping signal and
+            # must not be bypassed.
+            is_non_insert = rop is None or rop.resolved_action_type != "INSERT"
+            if is_non_insert:
+                raw_path = _unique_global_section_path(state, target_norm)
+        if raw_path is not None and migration_ledger is not None:
+            migrated = migration_ledger.current_address_with_prefix_migrations(
+                LegalAddress(path=tuple(raw_path)), not_before=hint_op_effective
+            )
+            migrated_path = migrated.path
+            if _tops.resolve(state.ir, migrated_path) is not None:
+                return migrated_path
+        return raw_path
+    return None
+
+
+def _apply_ops_to_tree_typed(
+    request: ApplyOpsRequest,
+    sinks: ApplyOpsSinks,
 ) -> "ReplayState":
     """Step 6: Apply resolved operations to IR tree as a pure fold.
 
@@ -3074,6 +2866,34 @@ def apply_ops_to_tree(
     (e.g. find_base_section for kumotaan placeholder decisions) and by the
     ``_apply_uncovered_*`` heuristics.
     """
+    state = request.state
+    ctx = request.ctx
+    resolved = request.resolved
+    ops = request.ops
+    muutos_tree = request.muutos_tree
+    johto = request.johto
+    amendment_id = request.amendment_id
+    source_title = request.source_title
+    amendment_issue_date = request.amendment_issue_date
+    amendment_effective_date = request.amendment_effective_date
+    amendment_expiry_date = request.amendment_expiry_date
+    replay_mode = request.replay_mode
+    strict_profile = request.strict_profile
+    _vts_ops_enrich_done = request.vts_ops_enrich_done
+    future_repeals = request.future_repeals
+
+    compiled_ops_out = sinks.compiled_ops_out
+    lo_ops_out = sinks.lo_ops_out
+    failed_ops_out = sinks.failed_ops_out
+    source_pathologies_out = sinks.source_pathologies_out
+    mutation_events_out = sinks.mutation_events_out
+    migration_ledger = sinks.migration_ledger
+    restructure_plans_out = sinks.restructure_plans_out
+    observations_out = sinks.observations_out
+    findings_out = sinks.findings_out
+    observed_touch_results_out = sinks.observed_touch_results_out
+    write_audits_out = sinks.write_audits_out
+
     # Group-boundary bookkeeping for the resolved-op apply fold, threaded as one
     # typed state machine (ApplyGroupState) rather than four bare locals mutated
     # inline. The fold accumulates ops into same-target groups and emits one
@@ -3082,84 +2902,6 @@ def apply_ops_to_tree(
     # failed-apply replay barrier, with explicit transition methods.
     grp = ApplyGroupState()
 
-    def _refresh_group_path_hint(
-        target_unit_kind: TargetUnitKind,
-        target_norm: str,
-        target_chapter: Optional[str],
-        target_part: Optional[str],
-        path_hint: tuple[tuple[str, str], ...] | None,
-        rop: Optional[ResolvedOp],
-        migration_ledger: Optional[MigrationLedger],
-    ) -> tuple[tuple[str, str], ...] | None:
-        def _unique_global_section_path(label: str) -> tuple[tuple[str, str], ...] | None:
-            idx = state.provision_index
-            raw_path = _tops.find(state.ir, "section", label, label_index=idx)
-            if raw_path is None:
-                return None
-            label_norm = normalized_label_key(label)
-            if len(idx.get(("section", label_norm), [])) != 1:
-                return None
-            return raw_path
-
-        valid_hint = _valid_target_group_path_hint(
-            state,
-            target_unit_kind,
-            target_norm,
-            target_chapter,
-            target_part,
-            path_hint,
-        )
-        if valid_hint is not None:
-            return tuple(valid_hint)
-        _hint_op_effective = migration_lower_bound_for_op(rop) if rop is not None else ""
-        if rop is not None:
-            dest_path = _resolved_destination_path_for_rop(rop)
-            if dest_path is not None:
-                dest_path_tuple = tuple(dest_path)
-                if migration_ledger is not None:
-                    migrated = migration_ledger.current_address_with_prefix_migrations(
-                        LegalAddress(path=dest_path_tuple), not_before=_hint_op_effective
-                    )
-                    migrated_path = migrated.path
-                    if _tops.resolve(state.ir, migrated_path) is not None:
-                        return migrated_path
-                if _tops.resolve(state.ir, dest_path_tuple) is not None:
-                    return dest_path_tuple
-        if target_unit_kind == "part":
-            return state.find("part", target_norm)
-        if target_unit_kind == "chapter":
-            return state.find("chapter", target_norm)
-        if target_unit_kind == "section":
-            raw_path = state.find_section_path(target_norm, target_chapter, target_part)
-            raw_path = _prefer_unique_substantive_section_path_over_placeholder(
-                state,
-                target_norm=target_norm,
-                target_chapter=target_chapter,
-                target_part=target_part,
-                raw_path=raw_path,
-            )
-            if raw_path is None and target_chapter is None and target_part is None:
-                raw_path = _unique_global_section_path(target_norm)
-            if raw_path is None and target_chapter is not None and target_part is None:
-                # Cross-chapter/root-level unique global fallback for non-INSERT ops.
-                # Finnish amendments sometimes group sections under a chapter heading
-                # that differs from where the section lives in the live statute
-                # (e.g. root hcontainer level). Only applicable when no part scope is
-                # specified — a part mismatch is an authoritative scoping signal and
-                # must not be bypassed.
-                _is_non_insert = rop is None or rop.resolved_action_type != "INSERT"
-                if _is_non_insert:
-                    raw_path = _unique_global_section_path(target_norm)
-            if raw_path is not None and migration_ledger is not None:
-                migrated = migration_ledger.current_address_with_prefix_migrations(
-                    LegalAddress(path=tuple(raw_path)), not_before=_hint_op_effective
-                )
-                migrated_path = migrated.path
-                if _tops.resolve(state.ir, migrated_path) is not None:
-                    return migrated_path
-            return raw_path
-        return None
-
     # Pre-compute standalone section targets as (chapter, label) tuples for
     # container dedup/retention guards. When a section op was retargeted away
     # from a stale body chapter to the unique live chapter, also record the
@@ -3167,42 +2909,6 @@ def apply_ops_to_tree(
     # the stale child shell around.
     _standalone_section_targets = _build_standalone_section_targets(ops)
     base_ir = ctx.base_ir
-
-    def _emit_group_snapshot_if_allowed() -> None:
-        if not grp.group_rops or lo_ops_out is None:
-            return
-        if grp.group_had_failed_apply:
-            return
-        _r = grp.group_rops[0]
-        _r_group = _r.resolved_group_key_view
-        if not _emit_granular_subsection_timeline_ops(
-            state,
-            grp.group_rops,
-            lo_ops_out,
-            amendment_id,
-            source_title,
-            amendment_issue_date,
-            amendment_effective_date,
-            base_ir,
-            path_hint=grp.group_path_hint,
-        ):
-            _emit_section_snapshot(
-                state,
-                _r_group.unit_kind,
-                _r_group.target_norm,
-                _r_group.target_chapter,
-                _r_group.target_part,
-                grp.group_rops,
-                lo_ops_out,
-                amendment_id,
-                source_title,
-                amendment_issue_date,
-                amendment_effective_date,
-                base_ir=base_ir,
-                path_hint=grp.group_path_hint,
-                migration_ledger=migration_ledger,
-                standalone_section_targets=_standalone_section_targets,
-            )
 
     # Stabilize same-parent RELABEL order: reverse forward chains so consumers
     # run before producers. Prevents both chapter chains like "10→11 then 11→12"
@@ -3275,15 +2981,6 @@ def apply_ops_to_tree(
     if not _vts_ops_enrich_done:
         _muutos_body_early = muutos_tree.find(".//{*}body")
         if _muutos_body_early is not None:
-            def _has_scoped_chapter(_part_label: str, _chapter_label: str) -> bool:
-                _part_path = state.find("part", _part_label) if _part_label else None
-                if _part_path is None:
-                    return state.find("chapter", _chapter_label) is not None if not _part_label else False
-                _part_node = _tops.resolve(state.ir, _part_path)
-                if _part_node is None:
-                    return False
-                return _tops.find(_part_node, "chapter", _chapter_label) is not None
-
             _early_required_real_chapters = {
                 (
                     _norm_num_token(_rop.resolved_target_scope_part_label or "") if _rop.resolved_target_scope_part_label else "",
@@ -3292,7 +2989,8 @@ def apply_ops_to_tree(
                 for _rop in resolved
                 if _rop.target_unit_kind == "section"
                 and _rop.resolved_target_chapter_label
-                and not _has_scoped_chapter(
+                and not _state_has_scoped_chapter(
+                    state,
                     _norm_num_token(_rop.resolved_target_scope_part_label or "") if _rop.resolved_target_scope_part_label else "",
                     _rop.resolved_target_chapter_label,
                 )
@@ -3335,7 +3033,20 @@ def apply_ops_to_tree(
             # Emit snapshot for previous group (if any). A failed apply in the
             # group is a replay barrier: its payload must not be promoted into
             # timeline/materialized state by the snapshot lane.
-            _emit_group_snapshot_if_allowed()
+            _emit_apply_group_snapshot_if_allowed(
+                _ApplyGroupSnapshotRequest(
+                    state=state,
+                    group=grp,
+                    amendment_id=amendment_id,
+                    source_title=source_title,
+                    amendment_issue_date=amendment_issue_date,
+                    amendment_effective_date=amendment_effective_date,
+                    base_ir=base_ir,
+                    migration_ledger=migration_ledger,
+                    standalone_section_targets=_standalone_section_targets,
+                ),
+                _ApplyGroupSnapshotSinks(lo_ops_out=lo_ops_out),
+            )
             grp.start_group(group_key)
         # Apply. One typed disposition per op records whether it was applied,
         # whether the apply failed, or whether no apply pass was required.
@@ -3378,13 +3089,16 @@ def apply_ops_to_tree(
                 rop_group = rop.resolved_group_key_view
                 grp.set_path_hint(
                     _refresh_group_path_hint(
-                        rop_group.unit_kind,
-                        rop_group.target_norm,
-                        rop_group.target_chapter,
-                        rop_group.target_part,
-                        grp.group_path_hint,
-                        rop,
-                        migration_ledger,
+                        _RefreshGroupPathHintRequest(
+                            state=state,
+                            target_unit_kind=rop_group.unit_kind,
+                            target_norm=rop_group.target_norm,
+                            target_chapter=rop_group.target_chapter,
+                            target_part=rop_group.target_part,
+                            path_hint=grp.group_path_hint,
+                            rop=rop,
+                            migration_ledger=migration_ledger,
+                        )
                     )
                 )
             except (NameError, TypeError, AttributeError):
@@ -3396,7 +3110,20 @@ def apply_ops_to_tree(
         grp.append_rop(rop, disposition=_disposition)
 
     # Emit snapshot for the last group
-    _emit_group_snapshot_if_allowed()
+    _emit_apply_group_snapshot_if_allowed(
+        _ApplyGroupSnapshotRequest(
+            state=state,
+            group=grp,
+            amendment_id=amendment_id,
+            source_title=source_title,
+            amendment_issue_date=amendment_issue_date,
+            amendment_effective_date=amendment_effective_date,
+            base_ir=base_ir,
+            migration_ledger=migration_ledger,
+            standalone_section_targets=_standalone_section_targets,
+        ),
+        _ApplyGroupSnapshotSinks(lo_ops_out=lo_ops_out),
+    )
 
     if ops or lo_ops_out is not None:
         if lo_ops_out is not None:
@@ -3512,20 +3239,26 @@ def apply_ops_to_tree(
             _new_chapter_labels = [ref.chapter_label for ref in _new_chapter_refs]
             _pre_pseudo_chapter_labels = [ref.chapter_label for ref in _pre_pseudo_chapter_refs]
             # Step 2: collect section-level ResolvedOps (no direct tree_ops).
-            _uncov_rops = _recover_uncovered_body_ops(
-                state,
-                ctx,
-                ops,
-                muutos_tree,
-                amendment_id,
-                future_repeals=future_repeals,
-                op_source=_uncov_src,
-                new_chapter_labels=set(_new_chapter_labels) | set(_pre_pseudo_chapter_labels),
-                failed_ops_out=failed_ops_out,
-                restructure_plans_out=restructure_plans_out,
-                observations_out=observations_out,
-                findings_out=findings_out,
+            _uncov_recovery = _recover_uncovered_body_ops_typed(
+                UncoveredBodyRecoveryRequest(
+                    state=state,
+                    ctx=ctx,
+                    ops=ops,
+                    muutos_tree=muutos_tree,
+                    amendment_id=amendment_id,
+                    future_repeals=future_repeals,
+                    op_source=_uncov_src,
+                    new_chapter_labels=set(_new_chapter_labels) | set(_pre_pseudo_chapter_labels),
+                ),
+                UncoveredBodyRecoverySinks(
+                    failed_ops_out=failed_ops_out,
+                    restructure_plans_out=restructure_plans_out,
+                    observations_out=observations_out,
+                    findings_out=findings_out,
+                ),
             )
+            _uncov_rops = list(_uncov_recovery.recovered_ops)
+            _append_compiled_group_ops(compiled_ops_out, _uncov_rops)
             # Step 2b: execute MOVE/RELABEL ops from any restructure plan
             # built during _recover_uncovered_body_ops.  These structural
             # transforms must be applied before leaf-level ops so that the
@@ -3645,17 +3378,23 @@ def apply_ops_to_tree(
             )
             if findings_out is not None:
                 findings_out.append(finding)
-        state = _apply_uncovered_kumotaan(
-            state,
-            ctx,
-            ops,
-            johto,
-            amendment_id,
-            lo_ops_out=lo_ops_out,
-            op_source=_uncov_src,
-            findings_out=findings_out,
-            source_pathologies_out=source_pathologies_out,
-        )
+        if _uncov_allowed or _vts_ops_enrich_done:
+            _kumotaan_recovery = _apply_uncovered_kumotaan_typed(
+                KumotaanRecoveryRequest(
+                    state=state,
+                    ctx=ctx,
+                    ops=ops,
+                    johto=johto,
+                    amendment_id=amendment_id,
+                    op_source=_uncov_src,
+                ),
+                KumotaanRecoverySinks(
+                    lo_ops_out=lo_ops_out,
+                    findings_out=findings_out,
+                    source_pathologies_out=source_pathologies_out,
+                ),
+            )
+            state = _kumotaan_recovery.state
 
         # Emit chapter-part-move LO ops: tombstone old part address, insert at
         # new part address.  When a new part is created and existing chapters
@@ -3735,33 +3474,17 @@ def should_use_sec1_fallback_post_routing(johto: str, sec1_text: str) -> bool:
 
 
 def process_muutoslaki(
-    amendment_id: Optional[str] = None,
-    state: Optional["ReplayState"] = None,
-    ctx: Optional["StatuteContext"] = None,
-    replay_mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
-    compiled_ops_out: Optional[List[Dict[str, object]]] = None,
-    lo_ops_out: Optional[List[_LegalOperation]] = None,
-    parent_id: str = "",
-    failed_ops_out: Optional[List[FailedOp]] = None,
-    strict_profile: Optional[StrictProfile] = None,
-    chapter_seed_skip: Optional[Set[ChapterSeedSkipInput]] = None,
-    corpus: Optional[CorpusStore] = None,
-    future_repeals: Optional[Set[RepealTargetRef]] = None,
-    source_pathologies_out: Optional[List[SourcePathology]] = None,
-    elaboration_observations_out: Optional[List[Dict[str, object]]] = None,
-    sparse_slot_bindings_out: Optional[List[Dict[str, object]]] = None,
-    sparse_leftovers_out: Optional[List[Dict[str, object]]] = None,
-    regex_recognition_coverage_out: Optional[List[RegexRecognitionCoverage]] = None,
-    commencement_expiry_overrides_out: Optional[List[Dict[str, object]]] = None,
-    mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
-    mutation_invariant_reports_out: Optional[List[ApplyMutationInvariantReport]] = None,
-    write_audits_out: Optional[List[ObservedWriteAudit]] = None,
-    migration_events_out: Optional[List["MigrationEvent"]] = None,
-    prior_migration_events: Optional[Iterable["MigrationEvent"]] = None,
-    restructure_plans_out: Optional[List[StructuralTransformPlan]] = None,
-    processed_amendment_titles: Optional[Dict[str, str]] = None,
-    request: Optional[ProcessAmendmentRequest] = None,
+    request: ProcessAmendmentRequest,
     sinks: Optional[ProcessAmendmentSinks] = None,
+) -> "PhaseResult[ReplayState]":
+    """Process one amendment through the typed amendment-processing boundary."""
+    return _process_muutoslaki_resolved(
+        resolve_process_amendment_call(request, sinks)
+    )
+
+
+def _process_muutoslaki_resolved(
+    process_call: ResolvedProcessAmendmentCall,
 ) -> "PhaseResult[ReplayState]":
     """Process one amendment statute end-to-end.
 
@@ -3789,35 +3512,6 @@ def process_muutoslaki(
     etc.) are still populated for backward compatibility, but callers should
     prefer the PhaseResult signals.
     """
-    process_call = resolve_process_amendment_call(
-        amendment_id=amendment_id,
-        state=state,
-        ctx=ctx,
-        replay_mode=replay_mode,
-        compiled_ops_out=compiled_ops_out,
-        lo_ops_out=lo_ops_out,
-        parent_id=parent_id,
-        failed_ops_out=failed_ops_out,
-        strict_profile=strict_profile,
-        chapter_seed_skip=chapter_seed_skip,
-        corpus=corpus,
-        future_repeals=future_repeals,
-        source_pathologies_out=source_pathologies_out,
-        elaboration_observations_out=elaboration_observations_out,
-        sparse_slot_bindings_out=sparse_slot_bindings_out,
-        sparse_leftovers_out=sparse_leftovers_out,
-        regex_recognition_coverage_out=regex_recognition_coverage_out,
-        commencement_expiry_overrides_out=commencement_expiry_overrides_out,
-        mutation_events_out=mutation_events_out,
-        mutation_invariant_reports_out=mutation_invariant_reports_out,
-        write_audits_out=write_audits_out,
-        migration_events_out=migration_events_out,
-        prior_migration_events=prior_migration_events,
-        restructure_plans_out=restructure_plans_out,
-        processed_amendment_titles=processed_amendment_titles,
-        request=request,
-        sinks=sinks,
-    )
     amendment_id = process_call.amendment_id
     state = process_call.state
     ctx = process_call.ctx
@@ -3825,24 +3519,14 @@ def process_muutoslaki(
     compiled_ops_out = process_call.compiled_ops_out
     lo_ops_out = process_call.lo_ops_out
     parent_id = process_call.parent_id
-    failed_ops_out = process_call.failed_ops_out
     strict_profile = process_call.strict_profile
     chapter_seed_skip = process_call.chapter_seed_skip
     corpus = process_call.corpus
     future_repeals = process_call.future_repeals
-    source_pathologies_out = process_call.source_pathologies_out
-    elaboration_observations_out = process_call.elaboration_observations_out
-    sparse_slot_bindings_out = process_call.sparse_slot_bindings_out
-    sparse_leftovers_out = process_call.sparse_leftovers_out
     regex_recognition_coverage_out = process_call.regex_recognition_coverage_out
-    commencement_expiry_overrides_out = process_call.commencement_expiry_overrides_out
     mutation_events_out = process_call.mutation_events_out
-    mutation_invariant_reports_out = process_call.mutation_invariant_reports_out
     write_audits_out = process_call.write_audits_out
     migration_events_out = process_call.migration_events_out
-    prior_migration_events = process_call.prior_migration_events
-    restructure_plans_out = process_call.restructure_plans_out
-    processed_amendment_titles = process_call.processed_amendment_titles
     _runtime = build_process_runtime(process_call)
     _amendment_temporal_events = _runtime.amendment_temporal_events
     _process_findings = _runtime.process_findings
@@ -3863,14 +3547,11 @@ def process_muutoslaki(
     _migration_ledger_initial_len = _runtime.migration_ledger_initial_len
     _result_builder = _runtime.result_builder
 
-    def _build_result(output_state: "ReplayState"):
-        return _result_builder.build(output_state)
-
     try:
         xml_bytes = corpus.read_source(amendment_id)
         if xml_bytes is None:
             _replay_print(f"  [{amendment_id}] not found in corpus — skipping")
-            return _build_result(state)
+            return _result_builder.build(state)
         _acquired = ProcessAcquisitionContext(
             amendment_id=amendment_id,
             parent_id=parent_id,
@@ -3927,7 +3608,7 @@ def process_muutoslaki(
                 replay_print=_replay_print,
             ).handle()
             if _route_rejection.should_return_state:
-                return _build_result(state)
+                return _result_builder.build(state)
             ops = list(_route_rejection.ops)
             _vts_ops_enrich_done = _route_rejection.vts_ops_enrich_done
             _skip_to_compile = _route_rejection.skip_to_compile
@@ -3957,7 +3638,7 @@ def process_muutoslaki(
             enrich_ops_from_amendment_tree=_enrich_ops_from_amendment_tree,
         ).select()
         if _precompile_selection.should_return_state:
-            return _build_result(state)
+            return _result_builder.build(state)
         ops = list(_precompile_selection.ops)
         _vts_ops_enrich_done = _precompile_selection.vts_ops_enrich_done
 
@@ -4034,32 +3715,37 @@ def process_muutoslaki(
         ).project()
 
         _observed_touch_results: List[MutationAccountingResult] = []
-        _final_state = apply_ops_to_tree(
-            state=state,
-            ctx=ctx,
-            resolved=resolved,
-            ops=ops,
-            muutos_tree=muutos_tree,
-            johto=johto,
-            amendment_id=amendment_id,
-            source_title=source_title,
-            amendment_issue_date=amendment_issue_date,
-            amendment_effective_date=amendment_effective_date,
-            amendment_expiry_date=amendment_expiry_date,
-            replay_mode=replay_mode,
-            lo_ops_out=lo_ops_out,
-            failed_ops_out=_compat_failed_ops,
-            source_pathologies_out=_compat_source_pathologies,
-            mutation_events_out=mutation_events_out,
-            strict_profile=strict_profile,
-            _vts_ops_enrich_done=_vts_ops_enrich_done,
-            future_repeals=future_repeals,
-            migration_ledger=_migration_ledger,
-            restructure_plans_out=_effective_restructure_plans_out,
-            observations_out=_compat_elaboration_observations,
-            findings_out=_process_findings,
-            observed_touch_results_out=_observed_touch_results,
-            write_audits_out=write_audits_out,
+        _final_state = _apply_ops_to_tree_typed(
+            ApplyOpsRequest(
+                state=state,
+                ctx=ctx,
+                resolved=resolved,
+                ops=ops,
+                muutos_tree=muutos_tree,
+                johto=johto,
+                amendment_id=amendment_id,
+                source_title=source_title,
+                amendment_issue_date=amendment_issue_date,
+                amendment_effective_date=amendment_effective_date,
+                amendment_expiry_date=amendment_expiry_date,
+                replay_mode=replay_mode,
+                strict_profile=strict_profile,
+                vts_ops_enrich_done=_vts_ops_enrich_done,
+                future_repeals=future_repeals,
+            ),
+            ApplyOpsSinks(
+                compiled_ops_out=compiled_ops_out,
+                lo_ops_out=lo_ops_out,
+                failed_ops_out=_compat_failed_ops,
+                source_pathologies_out=_compat_source_pathologies,
+                mutation_events_out=mutation_events_out,
+                migration_ledger=_migration_ledger,
+                restructure_plans_out=_effective_restructure_plans_out,
+                observations_out=_compat_elaboration_observations,
+                findings_out=_process_findings,
+                observed_touch_results_out=_observed_touch_results,
+                write_audits_out=write_audits_out,
+            ),
         )
         ProcessApplyProjectionContext(
             amendment_id=amendment_id,
@@ -4102,36 +3788,20 @@ def process_muutoslaki(
             migration_ledger_initial_len=_migration_ledger_initial_len,
             record_finding=_record_process_finding,
         ).govern_all(_final_state)
-        return _build_result(_final_state)
+        return _result_builder.build(_final_state)
 
     except KeyError:
         _replay_print(f"  [{amendment_id}] SKIPPED — not found in zip")
-        return _build_result(state)
+        return _result_builder.build(state)
 
 
 from lawvm.finland.post_process import post_process_tree
 
 
 def replay_xml(
-    parent_id: Optional[str] = None,
-    mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
-    compiled_ops_out: Optional[List[Dict[str, object]]] = None,
-    replay_meta_out: Optional[Dict[str, object]] = None,
-    lo_ops_out: Optional[List[_LegalOperation]] = None,
-    stop_before: str = "",
-    failed_ops_out: Optional[List[FailedOp]] = None,
-    strict_profile: Optional[StrictProfile] = None,
-    corpus: Optional[CorpusStore] = None,
-    quiet: bool = False,
-    build_full_products: bool = True,
-    temporal_events_out: Optional[List[Any]] = None,
-    checkpoint_callback: Optional[Any] = None,
-    as_of: str = "",
-    strict_johto_temporal: bool = False,
-    oracle_selector: ConsolidatedArtifactSelector | None = None,
-    source_pathologies_out: Optional[List[SourcePathology]] = None,
-    request: Optional[ReplayXmlRequest] = None,
-    sinks: Optional[ReplayXmlSinks] = None,
+    *,
+    request: ReplayXmlRequest,
+    sinks: ReplayXmlSinks | None = None,
 ):
     """Replay all applicable amendments for one parent statute.
 
@@ -4158,27 +3828,7 @@ def replay_xml(
     side-channel hook here. Replay internals no longer export a parallel
     parse-layer ``effect_intents`` rail.
     """
-    replay_call = resolve_replay_xml_call(
-        parent_id=parent_id,
-        mode=mode,
-        compiled_ops_out=compiled_ops_out,
-        replay_meta_out=replay_meta_out,
-        lo_ops_out=lo_ops_out,
-        stop_before=stop_before,
-        failed_ops_out=failed_ops_out,
-        strict_profile=strict_profile,
-        corpus=corpus,
-        quiet=quiet,
-        build_full_products=build_full_products,
-        temporal_events_out=temporal_events_out,
-        checkpoint_callback=checkpoint_callback,
-        as_of=as_of,
-        strict_johto_temporal=strict_johto_temporal,
-        oracle_selector=oracle_selector,
-        source_pathologies_out=source_pathologies_out,
-        request=request,
-        sinks=sinks,
-    )
+    replay_call = resolve_replay_xml_request(request=request, sinks=sinks)
     parent_id = replay_call.parent_id
     mode = replay_call.mode
     compiled_ops_out = replay_call.compiled_ops_out

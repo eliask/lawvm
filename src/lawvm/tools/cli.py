@@ -11030,18 +11030,22 @@ def _main_impl() -> None:
             uk_replay_main(args)
         elif j == "fi":
             from lawvm.finland.grafter import replay_xml
+            from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
             as_of = getattr(args, "as_of", "")
             verbose = getattr(args, "verbose", False)
             show_text = getattr(args, "show_text", False)
             use_json = getattr(args, "json", False)
             replay_meta: dict[str, object] = {}
-            result = replay_xml(
-                args.base_id,
-                mode="legal_pit",
-                as_of=as_of,
-                replay_meta_out=replay_meta,
-                quiet=not verbose,
+            result = call_replay_xml(
+                replay_xml,
+                request=ReplayXmlRequest(
+                    parent_id=args.base_id,
+                    mode="legal_pit",
+                    as_of=as_of,
+                    quiet=not verbose,
+                ),
+                sinks=ReplayXmlSinks(replay_meta_out=replay_meta),
             )
             if use_json:
                 import json as _json

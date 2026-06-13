@@ -10,6 +10,10 @@ from lawvm.core.phase_result import Finding, OBLIGATION_ROLE, OBSERVATION_ROLE, 
 from lawvm.core.replay_contracts import ReplayCheckpoint, ReplayCheckpointCallback
 from lawvm.core.tree_ops import resort_children as _resort_children
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
+from lawvm.finland.grafter_uncovered import (
+    PreScanRepealTargetsRequest,
+    PreScanRepealTargetsSinks,
+)
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.process_result_builder import ProcessAmendmentSinks
 from lawvm.finland.vts import VtsSkippedTarget, VtsSourceDiagnostic
@@ -227,6 +231,48 @@ def build_chapter_seed_finding(diagnostic: ChapterSeedDiagnostic) -> Finding:
     )
 
 
+def append_chapter_seed_compiled_ops(
+    compiled_ops_out: Optional[List[Dict[str, object]]],
+    diagnostics: list[ChapterSeedDiagnostic],
+) -> None:
+    """Project chapter-seed repairs onto the compiled-op witness surface."""
+    if compiled_ops_out is None:
+        return
+    for diagnostic in diagnostics:
+        if diagnostic.family == "source_pathology":
+            continue
+        chapter_label = str(diagnostic.chapter_label or "").strip()
+        if not chapter_label:
+            continue
+        sequence = len(compiled_ops_out) + 1
+        compiled_ops_out.append(
+            {
+                "sequence": sequence,
+                "op_id": (
+                    "chapter_seed:"
+                    f"{diagnostic.source_statute or ''}:"
+                    f"{chapter_label}"
+                ),
+                "action": "seed",
+                "source_statute": diagnostic.source_statute,
+                "source_title": None,
+                "extraction_provenance_tags": [],
+                "target_guessing_provenance_tags": [],
+                "scope_provenance_tags": ["chapter_seed"],
+                "witness_rule_id": diagnostic.rule_id,
+                "target_unit_kind": "chapter",
+                "target_norm": chapter_label,
+                "target_chapter": "",
+                "target_part": "",
+                "target_paragraph": "",
+                "target_item": "",
+                "target_special": "",
+                "scope_source": "chapter_seed_diagnostic",
+                "scope_confidence": "fallback",
+            }
+        )
+
+
 def build_vts_prescan_finding(record: VtsSkippedTarget | VtsSourceDiagnostic) -> Finding:
     """Project VTS pre-scan visibility records onto the governed finding ledger."""
     return Finding(
@@ -243,7 +289,10 @@ def execute_replay_plan(
     plan: ReplayPlan,
     *,
     corpus: CorpusStore,
-    process_muutoslaki: Callable[..., PhaseResult[ReplayState]],
+    process_muutoslaki: Callable[
+        [ProcessAmendmentRequest, ProcessAmendmentSinks],
+        PhaseResult[ReplayState],
+    ],
     seed_missing_chapters: Callable[..., tuple[Any, Any]],
     pre_scan_repeal_targets: Callable[..., Any],
     future_repeals_for_index: Callable[..., Any],
@@ -285,17 +334,22 @@ def execute_replay_plan(
             build_chapter_seed_finding(diagnostic)
             for diagnostic in chapter_seed_diagnostics
         )
+    append_chapter_seed_compiled_ops(compiled_ops_out, chapter_seed_diagnostics)
 
     vts_skipped_targets: list[VtsSkippedTarget] = []
     vts_source_diagnostics: list[VtsSourceDiagnostic] = []
     repeal_schedule = pre_scan_repeal_targets(
-        plan.amendment_ids,
-        corpus,
-        plan.parent_id,
-        parent_title=plan.ctx.title,
-        cutoff_date=plan.cutoff_date,
-        vts_skipped_targets_out=vts_skipped_targets,
-        vts_source_diagnostics_out=vts_source_diagnostics,
+        PreScanRepealTargetsRequest(
+            muutoslait=plan.amendment_ids,
+            corpus_store=corpus,
+            parent_id=plan.parent_id,
+            parent_title=plan.ctx.title,
+            cutoff_date=plan.cutoff_date,
+        ),
+        PreScanRepealTargetsSinks(
+            vts_skipped_targets_out=vts_skipped_targets,
+            vts_source_diagnostics_out=vts_source_diagnostics,
+        ),
     )
     if findings_out is not None:
         findings_out.extend(
@@ -314,7 +368,7 @@ def execute_replay_plan(
     for idx, mid in enumerate(plan.amendment_ids):
         future_repeals = repeal_suffix[idx] if idx < len(repeal_suffix) else set()
         _pm_result = process_muutoslaki(
-            request=ProcessAmendmentRequest(
+            ProcessAmendmentRequest(
                 amendment_id=mid,
                 state=state,
                 ctx=plan.ctx,
@@ -327,7 +381,7 @@ def execute_replay_plan(
                 prior_migration_events=tuple(effective_migration_events_out),
                 processed_amendment_titles=processed_amendment_titles,
             ),
-            sinks=ProcessAmendmentSinks(
+            ProcessAmendmentSinks(
                 compiled_ops_out=compiled_ops_out,
                 lo_ops_out=lo_ops_out,
                 failed_ops_out=failed_ops_out,
@@ -400,6 +454,7 @@ def execute_replay_plan(
 
 __all__ = [
     "ReplayPlan",
+    "append_chapter_seed_compiled_ops",
     "build_tree_invariant_finding",
     "prepare_replay_plan",
     "populate_replay_meta",

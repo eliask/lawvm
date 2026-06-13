@@ -61,7 +61,7 @@ def build_bisect_bundle(
     for index, record in enumerate(records, start=1):
         source_id = str(record["statute_id"])
         state = process_muutoslaki(
-            request=ProcessAmendmentRequest(
+            ProcessAmendmentRequest(
                 amendment_id=source_id,
                 state=state,
                 ctx=ctx,
@@ -191,7 +191,7 @@ def build_bisect_bundles_batch(
     for index, record in enumerate(records, start=1):
         source_id = str(record["statute_id"])
         state = process_muutoslaki(
-            request=ProcessAmendmentRequest(
+            ProcessAmendmentRequest(
                 amendment_id=source_id,
                 state=state,
                 ctx=ctx,

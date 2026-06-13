@@ -515,6 +515,7 @@ def _project_self_consistency(
     target-absent / coverage-gap / skipped-amendment signals.
     """
     from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
     failed: List[Any] = []
     pathologies: List[Any] = []
@@ -522,14 +523,19 @@ def _project_self_consistency(
     log_buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(log_buf):
-            replay_xml(
-                statute_id,
-                mode="official_consolidation",
-                failed_ops_out=failed,
-                source_pathologies_out=pathologies,
-                replay_meta_out=meta,
-                corpus=store,
-                quiet=False,
+            call_replay_xml(
+                replay_xml,
+                request=ReplayXmlRequest(
+                    parent_id=statute_id,
+                    mode="official_consolidation",
+                    corpus=store,
+                    quiet=False,
+                ),
+                sinks=ReplayXmlSinks(
+                    failed_ops_out=failed,
+                    source_pathologies_out=pathologies,
+                    replay_meta_out=meta,
+                ),
             )
     except Exception as exc:  # a crashing replay is itself a finding
         return [], [{"statute_id": statute_id, "error": f"{type(exc).__name__}: {exc}"}]

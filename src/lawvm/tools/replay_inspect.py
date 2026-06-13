@@ -8,6 +8,7 @@ from typing import Any, Literal, Optional
 from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.finland.grafter import replay_xml
+from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 
 
 def _format_path(path: TreePath) -> str:
@@ -39,10 +40,9 @@ def build_replay_inspect_bundle(
     part: Optional[str] = None,
 ) -> dict[str, Any]:
     """Build a replay inspection bundle for one Finnish statute section."""
-    master = replay_xml(
-        statute_id,
-        mode=mode,
-        quiet=True,
+    master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(parent_id=statute_id, mode=mode, quiet=True),
     )
     node = master.find_section(section, chapter, part)
     if node is None:

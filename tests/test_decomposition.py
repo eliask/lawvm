@@ -36,11 +36,18 @@ from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.finland.grafter import (
     AmendmentOp,
     ResolvedOp,
-    apply_ops_to_tree,
+    _apply_ops_to_tree_typed,
     compile_amendment_ops,
     normalize_and_compile_ops,
     post_process_tree,
+    process_muutoslaki,
 )
+from lawvm.finland.apply_ops_boundary import ApplyOpsRequest, ApplyOpsSinks
+from lawvm.finland.compile_group_boundary import CompileGroupRequest, CompileGroupSinks
+from lawvm.finland.process_call import ResolvedProcessAmendmentCall
+from lawvm.finland.process_request import ProcessAmendmentRequest
+from lawvm.finland.process_result_builder import ProcessAmendmentSinks
+from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 from lawvm.finland.group_ops import (
     remap_body_root_replace_group_before_terminal_voimaantulo,
     sort_group_ops_for_apply,
@@ -153,6 +160,127 @@ def test_legal_operation_target_is_primary_target() -> None:
         target=target,
     )
     assert op.target == target
+
+
+def test_process_muutoslaki_adapter_passes_resolved_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    state, ctx = _make_state_ctx(())
+    compiled_ops: list[dict[str, object]] = []
+    lo_ops: list[LegalOperation] = []
+    captured: list[ResolvedProcessAmendmentCall] = []
+
+    def fake_resolved(call: ResolvedProcessAmendmentCall) -> PhaseResult[ReplayState]:
+        captured.append(call)
+        return PhaseResult(output=call.state)
+
+    monkeypatch.setattr("lawvm.finland.grafter._process_muutoslaki_resolved", fake_resolved)
+
+    result = process_muutoslaki(
+        ProcessAmendmentRequest(
+            amendment_id="2010/100",
+            state=state,
+            ctx=ctx,
+            replay_mode="legal_pit",
+            parent_id="2000/1",
+        ),
+        ProcessAmendmentSinks(
+            compiled_ops_out=compiled_ops,
+            lo_ops_out=lo_ops,
+        ),
+    )
+
+    assert result.output is state
+    assert len(captured) == 1
+    call = captured[0]
+    assert call.amendment_id == "2010/100"
+    assert call.state is state
+    assert call.ctx is ctx
+    assert call.replay_mode == "legal_pit"
+    assert call.parent_id == "2000/1"
+    assert call.compiled_ops_out is compiled_ops
+    assert call.lo_ops_out is lo_ops
+
+
+def test_call_replay_xml_prefers_typed_surface() -> None:
+    compiled_ops: list[dict[str, object]] = []
+    captured: dict[str, object] = {}
+
+    def fake_replay_xml(*, request: ReplayXmlRequest, sinks: ReplayXmlSinks | None = None) -> str:
+        captured["request"] = request
+        captured["sinks"] = sinks
+        return "typed"
+
+    result = call_replay_xml(
+        fake_replay_xml,
+        request=ReplayXmlRequest(parent_id="2000/1", mode="legal_pit", quiet=True),
+        sinks=ReplayXmlSinks(compiled_ops_out=compiled_ops),
+    )
+
+    assert result == "typed"
+    assert captured["request"] == ReplayXmlRequest(parent_id="2000/1", mode="legal_pit", quiet=True)
+    assert captured["sinks"] == ReplayXmlSinks(compiled_ops_out=compiled_ops)
+
+
+def test_call_replay_xml_legacy_fallback_propagates_sinks() -> None:
+    compiled_ops: list[dict[str, object]] = []
+    failed_ops: list[Any] = []
+    captured: dict[str, object] = {}
+
+    def fake_replay_xml(
+        sid: str,
+        *,
+        mode: str,
+        quiet: bool = False,
+        compiled_ops_out: list[dict[str, object]] | None = None,
+        failed_ops_out: list[Any] | None = None,
+    ) -> str:
+        captured.update(
+            {
+                "sid": sid,
+                "mode": mode,
+                "quiet": quiet,
+                "compiled_ops_out": compiled_ops_out,
+                "failed_ops_out": failed_ops_out,
+            }
+        )
+        return "legacy"
+
+    result = call_replay_xml(
+        fake_replay_xml,
+        request=ReplayXmlRequest(parent_id="2000/1", mode="legal_pit", quiet=True),
+        sinks=ReplayXmlSinks(compiled_ops_out=compiled_ops, failed_ops_out=failed_ops),
+    )
+
+    assert result == "legacy"
+    assert captured == {
+        "sid": "2000/1",
+        "mode": "legal_pit",
+        "quiet": True,
+        "compiled_ops_out": compiled_ops,
+        "failed_ops_out": failed_ops,
+    }
+
+
+def test_call_replay_xml_legacy_fallback_filters_fake_signature() -> None:
+    captured: dict[str, object] = {}
+
+    def fake_replay_xml(sid: str, *, mode: str) -> str:
+        captured["sid"] = sid
+        captured["mode"] = mode
+        return "minimal"
+
+    result = call_replay_xml(
+        fake_replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2000/1",
+            mode="legal_pit",
+            quiet=True,
+            stop_before="2001/2",
+        ),
+        sinks=ReplayXmlSinks(compiled_ops_out=[]),
+    )
+
+    assert result == "minimal"
+    assert captured == {"sid": "2000/1", "mode": "legal_pit"}
 
 
 # ---------------------------------------------------------------------------
@@ -1922,7 +2050,7 @@ class TestCompileAmendmentOps:
             )
         ]
 
-        def fake_compile_group(**kwargs):
+        def fake_compile_group(request, sinks):
             return PhaseResult(
                 output=[],
                 findings=(
@@ -1937,7 +2065,7 @@ class TestCompileAmendmentOps:
                 ),
             )
 
-        monkeypatch.setattr("lawvm.finland.grafter._compile_group", fake_compile_group)
+        monkeypatch.setattr("lawvm.finland.grafter._compile_group_typed", fake_compile_group)
 
         result = compile_amendment_ops(
             master,
@@ -1951,6 +2079,61 @@ class TestCompileAmendmentOps:
         observations = _findings(result, "observation")
         assert len(observations) == 1
         assert observations[0].detail["target_norm"] == "3"
+
+    def test_compile_amendment_ops_passes_typed_compile_group_request_and_sinks(self, monkeypatch) -> None:
+        master = _make_master((_section("3 §", [_subsection("1", "Old.")]),))
+        muutos_tree = _make_muutos_tree((_section("3 §", [_subsection("1", "New.")]),))
+        ops = [
+            AmendmentOp(
+                op_id="op0",
+                op_type="REPLACE",
+                target_kind=TargetKind.SECTION,
+                target_section="3",
+                source_statute="2010/100",
+            )
+        ]
+        compiled_rows: list[dict[str, object]] = []
+        seen: dict[str, object] = {}
+
+        def fake_compile_group(request, sinks):
+            seen["request"] = request
+            seen["sinks"] = sinks
+            return PhaseResult(
+                output=[],
+                findings=(
+                    Finding(
+                        kind="ELAB.PAYLOAD_COMPLETENESS",
+                        role="observation",
+                        stage="_compile_group",
+                        detail={"target_norm": request.target_norm},
+                        source_statute="2010/100",
+                        blocking=False,
+                    ),
+                ),
+            )
+
+        monkeypatch.setattr("lawvm.finland.grafter._compile_group_typed", fake_compile_group)
+
+        result = compile_amendment_ops(
+            master,
+            ops,
+            muutos_tree,
+            "muutetaan 3 §",
+            "official_consolidation",
+            compiled_ops_out=compiled_rows,
+        )
+
+        request = seen["request"]
+        sinks = seen["sinks"]
+        assert isinstance(request, CompileGroupRequest)
+        assert request.master is master
+        assert request.muutos_tree is muutos_tree
+        assert request.johto == "muutetaan 3 §"
+        assert request.lookups is not None
+        assert request.target_norm == "3"
+        assert isinstance(sinks, CompileGroupSinks)
+        assert sinks.compiled_ops_out is compiled_rows
+        assert [finding.kind for finding in result.findings()] == ["ELAB.PAYLOAD_COMPLETENESS"]
 
     def test_collects_payload_completeness_observation_from_compile_group(self, monkeypatch) -> None:
         master = _make_master((_section("3 §", [_subsection("1", "Old.")]),))
@@ -1966,7 +2149,7 @@ class TestCompileAmendmentOps:
             )
         ]
 
-        def fake_compile_group(**kwargs):
+        def fake_compile_group(request, sinks):
             return PhaseResult(
                 output=[],
                 findings=(
@@ -1986,7 +2169,7 @@ class TestCompileAmendmentOps:
                 ),
             )
 
-        monkeypatch.setattr("lawvm.finland.grafter._compile_group", fake_compile_group)
+        monkeypatch.setattr("lawvm.finland.grafter._compile_group_typed", fake_compile_group)
 
         result = compile_amendment_ops(
             master,
@@ -2016,7 +2199,7 @@ class TestCompileAmendmentOps:
             )
         ]
 
-        def fake_compile_group(**kwargs):
+        def fake_compile_group(request, sinks):
             return PhaseResult(
                 output=[],
                 findings=(
@@ -2048,7 +2231,7 @@ class TestCompileAmendmentOps:
                 ),
             )
 
-        monkeypatch.setattr("lawvm.finland.grafter._compile_group", fake_compile_group)
+        monkeypatch.setattr("lawvm.finland.grafter._compile_group_typed", fake_compile_group)
 
         result = compile_amendment_ops(
             master,
@@ -2080,7 +2263,7 @@ class TestCompileAmendmentOps:
             )
         ]
 
-        def fake_compile_group(**kwargs):
+        def fake_compile_group(request, sinks):
             return PhaseResult(
                 output=[],
                 findings=(
@@ -2100,7 +2283,7 @@ class TestCompileAmendmentOps:
                 ),
             )
 
-        monkeypatch.setattr("lawvm.finland.grafter._compile_group", fake_compile_group)
+        monkeypatch.setattr("lawvm.finland.grafter._compile_group_typed", fake_compile_group)
 
         result = compile_amendment_ops(
             master,
@@ -2133,7 +2316,7 @@ class TestCompileAmendmentOps:
             )
         ]
 
-        def fake_compile_group(**kwargs):
+        def fake_compile_group(request, sinks):
             return PhaseResult(
                 output=[],
                 findings=(
@@ -2160,7 +2343,7 @@ class TestCompileAmendmentOps:
                 ),
             )
 
-        monkeypatch.setattr("lawvm.finland.grafter._compile_group", fake_compile_group)
+        monkeypatch.setattr("lawvm.finland.grafter._compile_group_typed", fake_compile_group)
 
         result = compile_amendment_ops(
             master,
@@ -2197,6 +2380,67 @@ class TestCompileAmendmentOps:
 
 def _make_dates() -> tuple[dt.date, dt.date]:
     return dt.date(2010, 1, 1), dt.date(2010, 3, 1)
+
+
+def apply_ops_to_tree(
+    state: ReplayState,
+    ctx: StatuteContext,
+    resolved: list[ResolvedOp],
+    ops: list[AmendmentOp],
+    muutos_tree: etree._Element,
+    johto: str,
+    amendment_id: str,
+    source_title: str,
+    amendment_issue_date: dt.date | None,
+    amendment_effective_date: dt.date | None,
+    amendment_expiry_date: dt.date | None,
+    replay_mode: str,
+    lo_ops_out: list[LegalOperation] | None,
+    failed_ops_out: list[Any] | None,
+    source_pathologies_out: list[Any] | None,
+    strict_profile: StrictProfile | None,
+    _vts_ops_enrich_done: bool,
+    *,
+    future_repeals: set[Any] | None = None,
+    mutation_events_out: list[Any] | None = None,
+    migration_ledger: Any = None,
+    restructure_plans_out: list[Any] | None = None,
+    observations_out: list[dict[str, object]] | None = None,
+    findings_out: list[Finding] | None = None,
+    observed_touch_results_out: list[Any] | None = None,
+    write_audits_out: list[Any] | None = None,
+) -> ReplayState:
+    return _apply_ops_to_tree_typed(
+        ApplyOpsRequest(
+            state=state,
+            ctx=ctx,
+            resolved=resolved,
+            ops=ops,
+            muutos_tree=muutos_tree,
+            johto=johto,
+            amendment_id=amendment_id,
+            source_title=source_title,
+            amendment_issue_date=amendment_issue_date,
+            amendment_effective_date=amendment_effective_date,
+            amendment_expiry_date=amendment_expiry_date,
+            replay_mode=cast(Any, replay_mode),
+            strict_profile=strict_profile,
+            vts_ops_enrich_done=_vts_ops_enrich_done,
+            future_repeals=future_repeals,
+        ),
+        ApplyOpsSinks(
+            lo_ops_out=lo_ops_out,
+            failed_ops_out=failed_ops_out,
+            source_pathologies_out=source_pathologies_out,
+            mutation_events_out=mutation_events_out,
+            migration_ledger=migration_ledger,
+            restructure_plans_out=restructure_plans_out,
+            observations_out=observations_out,
+            findings_out=findings_out,
+            observed_touch_results_out=observed_touch_results_out,
+            write_audits_out=write_audits_out,
+        ),
+    )
 
 
 class TestApplyOpsToTree:
@@ -2272,6 +2516,52 @@ class TestApplyOpsToTree:
 
         assert isinstance(result, ReplayState)
 
+    def test_typed_apply_boundary_matches_legacy_adapter_for_empty_fold(self) -> None:
+        state, ctx = _make_state_ctx()
+        muutos_tree = _make_muutos_tree()
+        issue, effective = _make_dates()
+        legacy = apply_ops_to_tree(
+            state=state,
+            ctx=ctx,
+            resolved=[],
+            ops=[],
+            muutos_tree=muutos_tree,
+            johto="",
+            amendment_id="2010/100",
+            source_title="Laki",
+            amendment_issue_date=issue,
+            amendment_effective_date=effective,
+            amendment_expiry_date=None,
+            replay_mode="official_consolidation",
+            lo_ops_out=None,
+            failed_ops_out=None,
+            source_pathologies_out=None,
+            strict_profile=None,
+            _vts_ops_enrich_done=False,
+        )
+        typed = _apply_ops_to_tree_typed(
+            ApplyOpsRequest(
+                state=state,
+                ctx=ctx,
+                resolved=[],
+                ops=[],
+                muutos_tree=muutos_tree,
+                johto="",
+                amendment_id="2010/100",
+                source_title="Laki",
+                amendment_issue_date=issue,
+                amendment_effective_date=effective,
+                amendment_expiry_date=None,
+                replay_mode="official_consolidation",
+                strict_profile=None,
+                vts_ops_enrich_done=False,
+            ),
+            ApplyOpsSinks(),
+        )
+
+        assert isinstance(typed, ReplayState)
+        assert _serialize_text_node(typed.ir) == _serialize_text_node(legacy.ir)
+
     def test_apply_ops_to_tree_emits_uncovered_body_strict_rejection_as_finding(self) -> None:
         state, ctx = _make_state_ctx()
         muutos_tree = _make_muutos_tree((_section("3 §", [_subsection("1", "Uusi teksti.")]),))
@@ -2313,6 +2603,47 @@ class TestApplyOpsToTree:
         assert findings[0].role == "obligation"
         assert findings[0].blocking is True
         assert findings[0].source_statute == "2010/100"
+
+    def test_apply_ops_to_tree_blocks_uncovered_kumotaan_recovery_in_strict_mode(self) -> None:
+        state, ctx = _make_state_ctx([_section("5 §", [_subsection("1", "Vanha teksti.")])])
+        muutos_tree = _make_muutos_tree(())
+        issue, effective = _make_dates()
+        findings: list[Any] = []
+
+        result = apply_ops_to_tree(
+            state=state,
+            ctx=ctx,
+            resolved=[],
+            ops=[
+                AmendmentOp(
+                    op_id="repeal_5",
+                    op_type="REPEAL",
+                    target_kind=TargetKind.SECTION,
+                    target_section="5",
+                )
+            ],
+            muutos_tree=muutos_tree,
+            johto="kumotaan 5 §.",
+            amendment_id="2010/101",
+            source_title="Laki",
+            amendment_issue_date=issue,
+            amendment_effective_date=effective,
+            amendment_expiry_date=None,
+            replay_mode="official_consolidation",
+            lo_ops_out=None,
+            failed_ops_out=[],
+            source_pathologies_out=[],
+            strict_profile=StrictProfile(
+                name="strict",
+                allows_uncovered_body_recovery=False,
+            ),
+            _vts_ops_enrich_done=False,
+            findings_out=findings,
+        )
+
+        assert result.find_section("5") is not None
+        assert [finding.kind for finding in findings] == ["APPLY.STRICT_REJECTED_UNCOVERED_BODY"]
+        assert findings[0].blocking is True
 
     def test_apply_ops_to_tree_collects_apply_mutation_events(self) -> None:
         master = _make_master((_section("3 §", [_subsection("1", "Vanha teksti.")]),))

@@ -61,7 +61,11 @@ from lawvm.finland.apply_structure_ops import (
     _apply_whole_section_op,
     _insert_or_replace_same_labeled_child,
 )
-from lawvm.finland.grafter_uncovered import _apply_uncovered_kumotaan
+from lawvm.finland.grafter_uncovered import (
+    KumotaanRecoveryRequest,
+    KumotaanRecoverySinks,
+    _apply_uncovered_kumotaan_typed,
+)
 from lawvm.finland.apply_runtime_support import (
     _emit_section_snapshot,
     _build_subsection_slot_assignment,
@@ -5692,25 +5696,29 @@ class TestSameEffectiveContainerRepealShadow:
             enacted="2013-06-28",
         )
 
-        result = _apply_uncovered_kumotaan(
-            state,
-            _ctx(_body()),
-            [
-                AmendmentOp(
-                    op_id="repeal_chapter_9",
-                    op_type="REPEAL",
-                    target_section="9",
-                    target_unit_kind="chapter",
-                    source_statute="2013/479",
-                    source_issue_date=_DATE,
-                )
-            ],
-            "Tällä lailla kumotaan 9 luku.",
-            "2013/479",
-            lo_ops_out=lo_ops,
-            op_source=op_source,
-            source_pathologies_out=pathologies,
-        )
+        result = _apply_uncovered_kumotaan_typed(
+            KumotaanRecoveryRequest(
+                state=state,
+                ctx=_ctx(_body()),
+                ops=[
+                    AmendmentOp(
+                        op_id="repeal_chapter_9",
+                        op_type="REPEAL",
+                        target_section="9",
+                        target_unit_kind="chapter",
+                        source_statute="2013/479",
+                        source_issue_date=_DATE,
+                    )
+                ],
+                johto="Tällä lailla kumotaan 9 luku.",
+                amendment_id="2013/479",
+                op_source=op_source,
+            ),
+            KumotaanRecoverySinks(
+                lo_ops_out=lo_ops,
+                source_pathologies_out=pathologies,
+            ),
+        ).state
 
         assert _unchanged(state, result)
         assert [op.op_id for op in lo_ops] == ["snapshot_chapter_9"]
@@ -8404,11 +8412,11 @@ def test_apply_op_typed_strict_blocks_singleton_item_rebound() -> None:
 
 
 def test_replay_preserves_letter_i_item_target_through_migration_following() -> None:
-    from lawvm.finland.grafter import replay_xml
+    from tests.corpus_pin_helpers import replay_xml_for_test
 
     failed_ops: list[FailedOp] = []
 
-    replay_xml("2002/1244", failed_ops_out=failed_ops, quiet=True)
+    replay_xml_for_test("2002/1244", failed_ops_out=failed_ops, quiet=True)
 
     assert [
         failed

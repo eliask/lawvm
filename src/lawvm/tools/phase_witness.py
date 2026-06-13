@@ -25,6 +25,7 @@ from lawvm.finland.grafter import (
     get_corpus,
     replay_xml,
 )
+from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 from lawvm.finland.johtolause.api import parse_clause
 from lawvm.tools._section_debug import summarize_node
 from lawvm.tools.inspect_amendment import build_amendment_bundle
@@ -316,7 +317,15 @@ def build_phase_witness_bundle(
     source_idx = amendment_ids.index(source_id)
     next_mid = amendment_ids[source_idx + 1] if source_idx + 1 < len(amendment_ids) else ""
 
-    before_master = replay_xml(statute_id, mode=mode, stop_before=source_id, quiet=True)
+    before_master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id=statute_id,
+            mode=mode,
+            stop_before=source_id,
+            quiet=True,
+        ),
+    )
     source_xml = get_corpus().read_source(source_id)
     if source_xml is None:
         raise SystemExit(f"amendment not found in corpus: {source_id!r}")
@@ -343,16 +352,21 @@ def build_phase_witness_bundle(
     lo_ops_out: list[Any] = []
     failed_ops_out: list[Any] = []
     temporal_events_out: list[Any] = []
-    after_master = replay_xml(
-        statute_id,
-        mode=mode,
-        compiled_ops_out=compiled_ops_out,
-        replay_meta_out=replay_meta_out,
-        lo_ops_out=lo_ops_out,
-        stop_before=next_mid,
-        failed_ops_out=failed_ops_out,
-        temporal_events_out=temporal_events_out,
-        quiet=True,
+    after_master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id=statute_id,
+            mode=mode,
+            stop_before=next_mid,
+            quiet=True,
+        ),
+        sinks=ReplayXmlSinks(
+            compiled_ops_out=compiled_ops_out,
+            replay_meta_out=replay_meta_out,
+            lo_ops_out=lo_ops_out,
+            failed_ops_out=failed_ops_out,
+            temporal_events_out=temporal_events_out,
+        ),
     )
 
     snapshot_bundle = build_snapshot_debug_bundle(

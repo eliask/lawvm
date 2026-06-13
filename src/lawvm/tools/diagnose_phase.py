@@ -150,6 +150,7 @@ def build_diagnose_phase_bundle(
         replay_xml,
     )
     from lawvm.finland.process_request import ProcessAmendmentRequest
+    from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     from lawvm.finland.statute import StatuteContext
     from lawvm.finland.helpers import _fi_label_postprocessor
 
@@ -180,7 +181,15 @@ def build_diagnose_phase_bundle(
         contextlib.redirect_stdout(io.StringIO()),
         contextlib.redirect_stderr(io.StringIO()),
     ):
-        before_master = replay_xml(statute_id, mode=mode, stop_before=source_id, quiet=True)
+        before_master = call_replay_xml(
+            replay_xml,
+            request=ReplayXmlRequest(
+                parent_id=statute_id,
+                mode=mode,
+                stop_before=source_id,
+                quiet=True,
+            ),
+        )
     before_state = before_master.replay_fold_state
     before_result = _phase_result(before_state.ir, detector, target_path)
 
@@ -194,7 +203,7 @@ def build_diagnose_phase_bundle(
         contextlib.redirect_stderr(io.StringIO()),
     ):
         pm = process_muutoslaki(
-            request=ProcessAmendmentRequest(
+            ProcessAmendmentRequest(
                 amendment_id=source_id,
                 state=before_state,
                 ctx=ctx,
@@ -218,9 +227,20 @@ def build_diagnose_phase_bundle(
         contextlib.redirect_stderr(io.StringIO()),
     ):
         if next_mid:
-            after_master = replay_xml(statute_id, mode=mode, stop_before=next_mid, quiet=True)
+            after_master = call_replay_xml(
+                replay_xml,
+                request=ReplayXmlRequest(
+                    parent_id=statute_id,
+                    mode=mode,
+                    stop_before=next_mid,
+                    quiet=True,
+                ),
+            )
         else:
-            after_master = replay_xml(statute_id, mode=mode, quiet=True)
+            after_master = call_replay_xml(
+                replay_xml,
+                request=ReplayXmlRequest(parent_id=statute_id, mode=mode, quiet=True),
+            )
 
     fold_result = _phase_result(after_master.replay_fold_state.ir, detector, target_path)
     materialized_result = _phase_result(after_master.state.ir, detector, target_path)

@@ -294,8 +294,12 @@ def _amendment_sources_from_replay(statute_id: str) -> dict[str, Any]:
     per-amendment replay.
     """
     from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 
-    master = replay_xml(statute_id, quiet=True)
+    master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(parent_id=statute_id, quiet=True),
+    )
     sources: dict[str, Any] = {}
     timelines = master.timelines or {}
     iterator = timelines.values() if hasattr(timelines, "values") else timelines

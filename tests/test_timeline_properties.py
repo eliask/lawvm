@@ -3474,6 +3474,7 @@ from lawvm.finland.grafter import (
     _sec1_fallback_peg_skip_required,
     process_muutoslaki,
 )
+from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.statute import StatuteContext, ReplayState
 from lawvm.finland.helpers import _fi_label_postprocessor
 from lawvm.tools.diff import _extract_sections_ir
@@ -3862,7 +3863,13 @@ def test_item_insert_renumbers_numeric_suffix_in_same_subsection() -> None:
     for rec in records:
         amendment_id = str(rec["statute_id"])
         state = process_muutoslaki(
-            amendment_id, state, ctx, replay_mode="official_consolidation", parent_id=parent_id
+            ProcessAmendmentRequest(
+                amendment_id=amendment_id,
+                state=state,
+                ctx=ctx,
+                replay_mode="official_consolidation",
+                parent_id=parent_id,
+            )
         ).output
         if amendment_id == "2016/1419":
             sec = _extract_sections_ir(state.ir)["6"]

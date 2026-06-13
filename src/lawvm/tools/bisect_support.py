@@ -42,6 +42,7 @@ def _section_bisect_support(
     )
     from lawvm.finland.process_request import ProcessAmendmentRequest
     from lawvm.finland.process_result_builder import ProcessAmendmentSinks
+    from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     from lawvm.finland.apply_events import ApplyMutationInvariantReport
     from lawvm.finland.helpers import _fi_label_postprocessor
     from lawvm.finland.statute import ReplayState, StatuteContext
@@ -99,7 +100,7 @@ def _section_bisect_support(
                         _state_before = _snap_state
                         _pm_res = _run_quietly(
                             process_muutoslaki,
-                            request=ProcessAmendmentRequest(
+                            ProcessAmendmentRequest(
                                 amendment_id=_snap_mid,
                                 state=_snap_state,
                                 ctx=_snap_ctx,
@@ -115,7 +116,7 @@ def _section_bisect_support(
                             break
                     _pm_res2 = _run_quietly(
                         process_muutoslaki,
-                        request=ProcessAmendmentRequest(
+                        ProcessAmendmentRequest(
                             amendment_id=_snap_mid,
                             state=_snap_state,
                             ctx=_snap_ctx,
@@ -190,12 +191,15 @@ def _section_bisect_support(
             if snap is not None:
                 snap_state_before, _, snap_ctx = snap
             else:
-                rr = replay_xml(
-                    statute_id,
-                    mode=mode,
-                    stop_before=blame_source,
-                    corpus=corpus,
-                    quiet=True,
+                rr = call_replay_xml(
+                    replay_xml,
+                    request=ReplayXmlRequest(
+                        parent_id=statute_id,
+                        mode=mode,
+                        stop_before=blame_source,
+                        corpus=corpus,
+                        quiet=True,
+                    ),
                 )
                 snap_state_before = rr.state
                 snap_ctx = rr.ctx
@@ -206,7 +210,7 @@ def _section_bisect_support(
             apply_mutation_events: List[Any] = []
             apply_mutation_invariant_reports: List[ApplyMutationInvariantReport] = []
             process_muutoslaki(
-                request=ProcessAmendmentRequest(
+                ProcessAmendmentRequest(
                     amendment_id=blame_source,
                     state=snap_state_before,
                     ctx=snap_ctx,
@@ -214,7 +218,7 @@ def _section_bisect_support(
                     parent_id=statute_id,
                     corpus=corpus,
                 ),
-                sinks=ProcessAmendmentSinks(
+                ProcessAmendmentSinks(
                     compiled_ops_out=compiled_rows,
                     elaboration_observations_out=elaboration_observations,
                     sparse_slot_bindings_out=sparse_slot_bindings,
@@ -397,8 +401,14 @@ def _section_bisect_support(
                         _fd_before = _fd_state
                         _fd_pm = _run_quietly(
                             process_muutoslaki,
-                            _fd_mid, _fd_state, _fd_ctx,
-                            replay_mode=mode, parent_id=statute_id, corpus=corpus,
+                            ProcessAmendmentRequest(
+                                amendment_id=_fd_mid,
+                                state=_fd_state,
+                                ctx=_fd_ctx,
+                                replay_mode=mode,
+                                parent_id=statute_id,
+                                corpus=corpus,
+                            ),
                         )
                         _fd_after = _fd_pm.output if _fd_pm is not None else _fd_state
                         _blame_snapshots[_fd_mid] = (_fd_before, _fd_after, _fd_ctx)
@@ -407,8 +417,14 @@ def _section_bisect_support(
                             break
                     _fd_pm2 = _run_quietly(
                         process_muutoslaki,
-                        _fd_mid, _fd_state, _fd_ctx,
-                        replay_mode=mode, parent_id=statute_id, corpus=corpus,
+                        ProcessAmendmentRequest(
+                            amendment_id=_fd_mid,
+                            state=_fd_state,
+                            ctx=_fd_ctx,
+                            replay_mode=mode,
+                            parent_id=statute_id,
+                            corpus=corpus,
+                        ),
                     )
                     _fd_state = _fd_pm2.output if _fd_pm2 is not None else _fd_state
         except (NameError, TypeError, AttributeError):

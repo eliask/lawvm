@@ -359,14 +359,18 @@ def _extract_section_ops(statute_id: str) -> dict[str, set[str]]:
     """
     try:
         from lawvm.finland.grafter import replay_xml
+        from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
         compiled_ops: list[dict[str, Any]] = []
-        replay_xml(
-            statute_id,
-            mode="official_consolidation",
-            compiled_ops_out=compiled_ops,
-            quiet=True,
-            build_full_products=False,
+        call_replay_xml(
+            replay_xml,
+            request=ReplayXmlRequest(
+                parent_id=statute_id,
+                mode="official_consolidation",
+                quiet=True,
+                build_full_products=False,
+            ),
+            sinks=ReplayXmlSinks(compiled_ops_out=compiled_ops),
         )
         ops_by_section: dict[str, set[str]] = {}
         for op in compiled_ops:

@@ -9,8 +9,8 @@ inlined in grafter.py.
 Functions exported:
   _strict_rejected_uncovered_body_finding
   _uncovered_body_recovery_finding
-  _recover_uncovered_body_ops
-  _apply_uncovered_kumotaan
+  _recover_uncovered_body_ops_typed
+  _apply_uncovered_kumotaan_typed
   _pre_scan_repeal_targets
 """
 
@@ -128,6 +128,9 @@ if TYPE_CHECKING:
     from lawvm.corpus_store import CorpusStore
 
 logger = logging.getLogger(__name__)
+
+FI_RECOVERY_UNCOVERED_BODY_RULE_ID = "fi.recovery.uncovered_body"
+FI_RECOVERY_UNCOVERED_KUMOTAAN_RULE_ID = "fi.recovery.uncovered_kumotaan"
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,6 +314,85 @@ class UncoveredCandidateAudit:
             )
 
 
+@dataclass(frozen=True, slots=True)
+class UncoveredBodyRecoveryRequest:
+    """Semantic inputs for uncovered-body recovery over one amendment body."""
+
+    state: "ReplayState"
+    ctx: "StatuteContext"
+    ops: List[AmendmentOp]
+    muutos_tree: etree._Element
+    amendment_id: str
+    future_repeals: Optional[Set["RepealTargetRef"]] = None
+    op_source: Optional[OperationSource] = None
+    new_chapter_labels: Optional[Set[str]] = None
+
+
+@dataclass(frozen=True, slots=True)
+class UncoveredBodyRecoverySinks:
+    """Mutable evidence/output channels for uncovered-body recovery."""
+
+    failed_ops_out: Optional[List[FailedOp]] = None
+    restructure_plans_out: Optional[List[StructuralTransformPlan]] = None
+    observations_out: Optional[List[Dict[str, object]]] = None
+    findings_out: Optional[List[Finding]] = None
+
+
+@dataclass(frozen=True, slots=True)
+class UncoveredBodyRecoveryResult:
+    """Recovered operations plus the per-candidate audit trail that produced them."""
+
+    recovered_ops: Tuple[ResolvedOp, ...]
+    candidate_audits: Tuple[UncoveredCandidateAudit, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class KumotaanRecoveryRequest:
+    """Semantic inputs for uncovered ``kumotaan`` recovery."""
+
+    state: "ReplayState"
+    ctx: "StatuteContext"
+    ops: List[AmendmentOp]
+    johto: str
+    amendment_id: str
+    op_source: Optional[OperationSource] = None
+
+
+@dataclass(frozen=True, slots=True)
+class KumotaanRecoverySinks:
+    """Mutable evidence/output channels for uncovered ``kumotaan`` recovery."""
+
+    lo_ops_out: Optional[List[_LegalOperation]] = None
+    findings_out: Optional[List[Finding]] = None
+    source_pathologies_out: Optional[List[SourcePathology]] = None
+
+
+@dataclass(frozen=True, slots=True)
+class KumotaanRecoveryResult:
+    """Result of uncovered ``kumotaan`` recovery."""
+
+    state: "ReplayState"
+
+
+@dataclass(frozen=True, slots=True)
+class PreScanRepealTargetsRequest:
+    """Inputs for lightweight future-repeal pre-scan over an amendment schedule."""
+
+    muutoslait: List[str]
+    corpus_store: "CorpusStore"
+    parent_id: str = ""
+    parent_title: str = ""
+    cutoff_date: Optional[dt.date] = None
+
+
+@dataclass(frozen=True, slots=True)
+class PreScanRepealTargetsSinks:
+    """Diagnostic channels for VTS extraction during future-repeal pre-scan."""
+
+    vts_skipped_targets_out: Optional[List[VtsSkippedTarget]] = None
+    vts_source_diagnostics_out: Optional[List[VtsSourceDiagnostic]] = None
+
+
 @dataclass(slots=True)
 class RecoveryState:
     """Single typed container threading the per-candidate uncovered recovery.
@@ -429,12 +511,14 @@ class RecoveryState:
         if self.findings_out is None:
             return
         finding = _uncovered_body_recovery_finding(
-            op_id=rop.op_id,
-            source_statute=self.amendment_id,
-            target_unit_kind=rop.target_unit_kind,
-            target_norm=target_scope.target_norm,
-            target_chapter=target_scope.target_chapter,
-            target_part=target_scope.target_part,
+            UncoveredBodyRecoveryFindingRequest(
+                op_id=rop.op_id,
+                source_statute=self.amendment_id,
+                target_unit_kind=rop.target_unit_kind,
+                target_norm=target_scope.target_norm,
+                target_chapter=target_scope.target_chapter,
+                target_part=target_scope.target_part,
+            )
         )
         if finding is None:
             return
@@ -474,6 +558,75 @@ class RecoveryState:
                 )
 
 
+@dataclass(slots=True)
+class KumotaanRecoveryFindingEmitter:
+    """Deduplicating finding emitter for uncovered ``kumotaan`` recovery."""
+
+    amendment_id: str
+    findings_out: Optional[List[Finding]]
+    seen_recovery_findings: Set[KumotaanRecoveryFindingKey] = field(default_factory=set)
+    seen_skip_findings: Set[UncoveredSkipKey] = field(default_factory=set)
+
+    def append(
+        self,
+        *,
+        op_id: str,
+        target_unit_kind: str,
+        target_norm: str,
+        target_chapter: str | None = None,
+    ) -> None:
+        if self.findings_out is None:
+            return
+        finding = _uncovered_body_recovery_finding(
+            UncoveredBodyRecoveryFindingRequest(
+                op_id=op_id,
+                source_statute=self.amendment_id,
+                target_unit_kind=target_unit_kind,
+                target_norm=target_norm,
+                target_chapter=target_chapter,
+            )
+        )
+        if finding is None:
+            return
+        key = KumotaanRecoveryFindingKey(
+            kind=str(finding.kind or ""),
+            target_unit_kind=str(target_unit_kind or ""),
+            target_norm=str(target_norm or ""),
+            target_chapter=str(target_chapter or ""),
+        )
+        if key in self.seen_recovery_findings:
+            return
+        self.seen_recovery_findings.add(key)
+        self.findings_out.append(finding)
+
+    def append_skip(
+        self,
+        *,
+        target_norm: str,
+        reason: str,
+        target_chapter: str | None = None,
+    ) -> None:
+        if self.findings_out is None:
+            return
+        key = UncoveredSkipKey(
+            reason=reason,
+            part="",
+            chapter=target_chapter or "",
+            section=target_norm,
+        )
+        if key in self.seen_skip_findings:
+            return
+        self.seen_skip_findings.add(key)
+        self.findings_out.append(
+            _uncovered_body_recovery_skipped_finding(
+                source_statute=self.amendment_id,
+                target_section=target_norm,
+                target_chapter=target_chapter,
+                reason=reason,
+            )
+        )
+
+
 class ChapterPayloadOutcome(Enum):
     """Disposition of a section whose chapter payload is owned by an INSERT op."""
 
@@ -490,14 +643,20 @@ class ChapterPayloadVerdict:
     outcome: ChapterPayloadOutcome
 
 
+@dataclass(frozen=True, slots=True)
+class ChapterPayloadOwnershipRequest:
+    """Inputs for the chapter-payload-owned section disposition decision."""
+
+    label: str
+    amend_chapter_label: Optional[str]
+    amend_part_label: Optional[str]
+    guards: UncoveredRecoveryGuards
+    section_present_in_chapter: bool
+    future_repealed: bool
+
+
 def _evaluate_chapter_payload_ownership(
-    *,
-    label: str,
-    amend_chapter_label: Optional[str],
-    amend_part_label: Optional[str],
-    guards: UncoveredRecoveryGuards,
-    section_present_in_chapter: bool,
-    future_repealed: bool,
+    request: ChapterPayloadOwnershipRequest,
 ) -> ChapterPayloadVerdict:
     """Decide how a chapter-payload-owned section is disposed of. Pure.
 
@@ -508,6 +667,13 @@ def _evaluate_chapter_payload_ownership(
     NOT_APPLICABLE when the section is not chapter-payload-owned, so the caller
     proceeds to ordinary target resolution.
     """
+    label = request.label
+    amend_chapter_label = request.amend_chapter_label
+    amend_part_label = request.amend_part_label
+    guards = request.guards
+    section_present_in_chapter = request.section_present_in_chapter
+    future_repealed = request.future_repealed
+
     if not (
         amend_chapter_label
         and guards.is_chapter_payload_owned(
@@ -547,22 +713,34 @@ class PreGuardVerdict:
             raise ValueError("a blocking pre-guard verdict must name a skip reason")
 
 
-def _evaluate_pre_guards(
-    *,
-    label: str,
-    amend_chapter_label: Optional[str],
-    amend_part_label: Optional[str],
-    guards: UncoveredRecoveryGuards,
-    already_recovered: bool,
-    moved_section_destinations: Dict[str, str],
-    bp_assignments: object,
-) -> PreGuardVerdict:
+@dataclass(frozen=True, slots=True)
+class PreGuardRequest:
+    """Inputs for the uncovered-candidate pre-resolution guard phase."""
+
+    label: str
+    amend_chapter_label: Optional[str]
+    amend_part_label: Optional[str]
+    guards: UncoveredRecoveryGuards
+    already_recovered: bool
+    moved_section_destinations: Dict[str, str]
+    bp_assignments: object
+
+
+def _evaluate_pre_guards(request: PreGuardRequest) -> PreGuardVerdict:
     """Run the read-only pre-resolution filters and return one typed verdict.
 
     Pure: reads guard/ownership state and pairing assignments but mutates
     nothing. Filter order is preserved from the legacy cascade (first match
     wins), so the skip a candidate gets is identical to before.
     """
+    label = request.label
+    amend_chapter_label = request.amend_chapter_label
+    amend_part_label = request.amend_part_label
+    guards = request.guards
+    already_recovered = request.already_recovered
+    moved_section_destinations = request.moved_section_destinations
+    bp_assignments = request.bp_assignments
+
     if already_recovered:
         return PreGuardVerdict(False, "duplicate_recovered_candidate", with_part=False)
 
@@ -585,14 +763,44 @@ def _evaluate_pre_guards(
     return PreGuardVerdict(True, None, with_part=False)
 
 
+@dataclass(frozen=True, slots=True)
+class UncoveredRopDraft:
+    """Draft fields for one synthetic uncovered-body section operation."""
+
+    op_type: OpType
+    target_label: str
+    target_chapter: Optional[str]
+    target_part: Optional[str]
+    muutos_ir: IRNode
+    op_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ExistingSectionCandidate:
+    """Live section candidate resolved for uncovered-body recovery."""
+
+    existing: IRNode
+    existing_path: tuple[tuple[str, str], ...]
+    sec_ir: IRNode
+    label: str
+    amend_chapter_label: Optional[str]
+    amend_part_label: Optional[str]
+    cross_chapter: bool
+
+
+@dataclass(frozen=True, slots=True)
+class NewSectionCandidate:
+    """Uncovered-body section candidate with no resolvable live target."""
+
+    sec_ir: IRNode
+    label: str
+    amend_chapter_label: Optional[str]
+    amend_part_label: Optional[str]
+
+
 def _build_uncovered_rop(
+    draft: UncoveredRopDraft,
     *,
-    op_type: OpType,
-    target_label: str,
-    target_chapter: Optional[str],
-    target_part: Optional[str],
-    muutos_ir: IRNode,
-    op_id: str,
     amendment_id: str,
     op_source: Optional[OperationSource],
 ) -> ResolvedOp:
@@ -605,32 +813,33 @@ def _build_uncovered_rop(
     reproducible from the audit record alone.
     """
     am_op = AmendmentOp(
-        op_id=op_id,
-        op_type=op_type,
-        target_section=target_label,
+        op_id=draft.op_id,
+        op_type=draft.op_type,
+        target_section=draft.target_label,
         target_unit_kind="section",
-        target_chapter=target_chapter,
-        target_part=target_part,
+        target_chapter=draft.target_chapter,
+        target_part=draft.target_part,
         source_statute=amendment_id,
         uncovered_body_recovery=True,
+        witness_rule_id=FI_RECOVERY_UNCOVERED_BODY_RULE_ID,
     )
     return ResolvedOp.from_amendment_op(
         am_op,
-        muutos_ir=muutos_ir,
+        muutos_ir=draft.muutos_ir,
         cross_ir=None,
         target_unit_kind="section",
-        target_norm=target_label,
-        target_chapter=target_chapter,
+        target_norm=draft.target_label,
+        target_chapter=draft.target_chapter,
         payload_completeness=_uncovered_section_payload_completeness(
-            op_type=op_type,
-            muutos_ir=muutos_ir,
+            op_type=draft.op_type,
+            muutos_ir=draft.muutos_ir,
         ),
         op_source=op_source,
         target_address=LegalAddress(
             path=(
-                ((("part", target_part),) if target_part else ())
-                + ((("chapter", target_chapter),) if target_chapter else ())
-                + (("section", target_label),)
+                ((("part", draft.target_part),) if draft.target_part else ())
+                + ((("chapter", draft.target_chapter),) if draft.target_chapter else ())
+                + (("section", draft.target_label),)
             )
         ),
     )
@@ -728,22 +937,28 @@ def _strict_rejected_uncovered_body_finding(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class UncoveredBodyRecoveryFindingRequest:
+    """Evidence fields for an uncovered-body recovery obligation finding."""
+
+    op_id: str
+    source_statute: str
+    target_unit_kind: str
+    target_norm: str
+    target_chapter: str | None = None
+    target_part: str | None = None
+
+
 def _uncovered_body_recovery_finding(
-    *,
-    op_id: str,
-    source_statute: str,
-    target_unit_kind: str,
-    target_norm: str,
-    target_chapter: str | None = None,
-    target_part: str | None = None,
+    request: UncoveredBodyRecoveryFindingRequest,
 ) -> Finding | None:
     return _uncovered_body_recovery_finding_impl(
-        op_id=op_id,
-        source_statute=source_statute,
-        target_unit_kind=target_unit_kind,
-        target_norm=target_norm,
-        target_chapter=target_chapter,
-        target_part=target_part,
+        op_id=request.op_id,
+        source_statute=request.source_statute,
+        target_unit_kind=request.target_unit_kind,
+        target_norm=request.target_norm,
+        target_chapter=request.target_chapter,
+        target_part=request.target_part,
     )
 
 
@@ -779,43 +994,55 @@ def _uncovered_body_chapter_payload_mixed_finding(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class HighUncoveredBodyDegradedFindingRequest:
+    """Evidence fields for a high-uncovered-body degraded-confidence finding."""
+
+    source_statute: str
+    uncovered_count: int
+    total_units: int
+    uncov_ratio: float
+    confidence: float
+    signals: list[str]
+
+
 def _high_uncovered_body_degraded_finding(
-    *,
-    source_statute: str,
-    uncovered_count: int,
-    total_units: int,
-    uncov_ratio: float,
-    confidence: float,
-    signals: list[str],
+    request: HighUncoveredBodyDegradedFindingRequest,
 ) -> Finding:
     """Backward-compat wrapper for body_coverage_findings."""
     return _high_uncovered_body_degraded_finding_impl(
-        source_statute=source_statute,
-        uncovered_count=uncovered_count,
-        total_units=total_units,
-        uncov_ratio=uncov_ratio,
-        confidence=confidence,
-        signals=signals,
+        source_statute=request.source_statute,
+        uncovered_count=request.uncovered_count,
+        total_units=request.total_units,
+        uncov_ratio=request.uncov_ratio,
+        confidence=request.confidence,
+        signals=request.signals,
     )
 
 
+@dataclass(frozen=True, slots=True)
+class CoverageIgnoredUnitFindingRequest:
+    """Evidence fields for a coverage ignored-unit finding."""
+
+    source_statute: str
+    unit_kind: str
+    reason: str
+    observed_label: str | None
+    parent_label: str | None
+    evidence: tuple[str, ...]
+
+
 def _coverage_ignored_unit_finding(
-    *,
-    source_statute: str,
-    unit_kind: str,
-    reason: str,
-    observed_label: str | None,
-    parent_label: str | None,
-    evidence: tuple[str, ...],
+    request: CoverageIgnoredUnitFindingRequest,
 ) -> Finding:
     """Backward-compat wrapper for body_coverage_findings."""
     return _coverage_ignored_unit_finding_impl(
-        source_statute=source_statute,
-        unit_kind=unit_kind,
-        reason=reason,
-        observed_label=observed_label,
-        parent_label=parent_label,
-        evidence=evidence,
+        source_statute=request.source_statute,
+        unit_kind=request.unit_kind,
+        reason=request.reason,
+        observed_label=request.observed_label,
+        parent_label=request.parent_label,
+        evidence=request.evidence,
     )
 
 
@@ -833,23 +1060,29 @@ def _coverage_rejected_claim_finding(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class CoverageUnresolvedGapFindingRequest:
+    """Evidence fields for a coverage unresolved-gap finding."""
+
+    source_statute: str
+    disposition: str
+    unit_kind: str
+    observed_label: str | None
+    parent_label: str | None
+    evidence: tuple[str, ...]
+
+
 def _coverage_unresolved_gap_finding(
-    *,
-    source_statute: str,
-    disposition: str,
-    unit_kind: str,
-    observed_label: str | None,
-    parent_label: str | None,
-    evidence: tuple[str, ...],
+    request: CoverageUnresolvedGapFindingRequest,
 ) -> Finding:
     """Backward-compat wrapper for body_coverage_findings."""
     return _coverage_unresolved_gap_finding_impl(
-        source_statute=source_statute,
-        disposition=disposition,
-        unit_kind=unit_kind,
-        observed_label=observed_label,
-        parent_label=parent_label,
-        evidence=evidence,
+        source_statute=request.source_statute,
+        disposition=request.disposition,
+        unit_kind=request.unit_kind,
+        observed_label=request.observed_label,
+        parent_label=request.parent_label,
+        evidence=request.evidence,
     )
 
 
@@ -934,12 +1167,14 @@ def _emit_coverage_analysis_findings(
     for ignored in cov_report.ignored_units:
         findings_out.append(
             _coverage_ignored_unit_finding(
-                source_statute=amendment_id,
-                unit_kind=ignored.unit_kind,
-                reason=ignored.reason,
-                observed_label=ignored.observed_label,
-                parent_label=ignored.parent_label,
-                evidence=ignored.evidence,
+                CoverageIgnoredUnitFindingRequest(
+                    source_statute=amendment_id,
+                    unit_kind=ignored.unit_kind,
+                    reason=ignored.reason,
+                    observed_label=ignored.observed_label,
+                    parent_label=ignored.parent_label,
+                    evidence=ignored.evidence,
+                )
             )
         )
     for rejected in cov_report.rejected_claims:
@@ -953,24 +1188,40 @@ def _emit_coverage_analysis_findings(
     for gap in cov_report.obligations:
         findings_out.append(
             _coverage_unresolved_gap_finding(
-                source_statute=amendment_id,
-                disposition=gap.disposition,
-                unit_kind=gap.unit.kind,
-                observed_label=gap.unit.observed_label,
-                parent_label=gap.unit.parent_label,
-                evidence=gap.evidence,
+                CoverageUnresolvedGapFindingRequest(
+                    source_statute=amendment_id,
+                    disposition=gap.disposition,
+                    unit_kind=gap.unit.kind,
+                    observed_label=gap.unit.observed_label,
+                    parent_label=gap.unit.parent_label,
+                    evidence=gap.evidence,
+                )
             )
         )
 
 
+@dataclass(frozen=True, slots=True)
+class HighUncoveredDegradationRequest:
+    """Inputs for high-uncovered-body degradation evidence emission."""
+
+    restructure_plan: StructuralTransformPlan
+    amendment_id: str
+    uncovered_count: int
+    total_units: int
+    uncov_ratio: float
+
+
+@dataclass(frozen=True, slots=True)
+class HighUncoveredDegradationSinks:
+    """Mutable evidence channels for high-uncovered-body degradation."""
+
+    observations_out: Optional[List[Dict[str, object]]] = None
+    findings_out: Optional[List[Finding]] = None
+
+
 def _emit_high_uncovered_degradation(
-    restructure_plan: StructuralTransformPlan,
-    amendment_id: str,
-    uncovered_count: int,
-    total_units: int,
-    uncov_ratio: float,
-    observations_out: Optional[List[Dict[str, object]]],
-    findings_out: Optional[List[Finding]],
+    request: HighUncoveredDegradationRequest,
+    sinks: Optional[HighUncoveredDegradationSinks] = None,
 ) -> None:
     """Surface a degradation observation/finding when a chapter-level INSERT plan
     still has a high uncovered-body ratio — making the gap explicit instead of
@@ -982,6 +1233,14 @@ def _emit_high_uncovered_degradation(
     that drives the plan, not the container-excluded reported metric — the
     degradation numbers must track the ratio that built the plan.
     """
+    restructure_plan = request.restructure_plan
+    amendment_id = request.amendment_id
+    uncovered_count = request.uncovered_count
+    total_units = request.total_units
+    uncov_ratio = request.uncov_ratio
+    observations_out = sinks.observations_out if sinks is not None else None
+    findings_out = sinks.findings_out if sinks is not None else None
+
     has_chapter_insert = RestructureSignal.CHAPTER_INSERT in restructure_plan.signals
     has_high_uncov = RestructureSignal.HIGH_UNCOVERED_BODY in restructure_plan.signals
     if not (has_chapter_insert and has_high_uncov and observations_out is not None):
@@ -1000,12 +1259,14 @@ def _emit_high_uncovered_degradation(
     if findings_out is not None:
         findings_out.append(
             _high_uncovered_body_degraded_finding(
-                source_statute=amendment_id,
-                uncovered_count=uncovered_count,
-                total_units=total_units,
-                uncov_ratio=uncov_ratio,
-                confidence=restructure_plan.confidence,
-                signals=signals,
+                HighUncoveredBodyDegradedFindingRequest(
+                    source_statute=amendment_id,
+                    uncovered_count=uncovered_count,
+                    total_units=total_units,
+                    uncov_ratio=uncov_ratio,
+                    confidence=restructure_plan.confidence,
+                    signals=signals,
+                )
             )
         )
     if replay_verbose_enabled():
@@ -1018,20 +1279,422 @@ def _emit_high_uncovered_degradation(
         )
 
 
-def _recover_uncovered_body_ops(
-    state: "ReplayState",
-    ctx: "StatuteContext",
-    ops: List[AmendmentOp],
-    muutos_tree: etree._Element,
-    amendment_id: str,
-    future_repeals: Optional[Set["RepealTargetRef"]] = None,
-    op_source: Optional[OperationSource] = None,
-    new_chapter_labels: Optional[Set[str]] = None,
-    failed_ops_out: Optional[List[FailedOp]] = None,
-    restructure_plans_out: Optional[List[StructuralTransformPlan]] = None,
-    observations_out: Optional[List[Dict[str, object]]] = None,
-    findings_out: Optional[List[Finding]] = None,
-) -> List[ResolvedOp]:
+@dataclass(slots=True)
+class _UncoveredRecoveryRun:
+    """Sequential uncovered-body recovery stage.
+
+    The candidate loop is intentionally stateful: each recovered or covered
+    section affects the guards seen by later body sections.  Keeping that loop
+    in one object makes the live state, johto gates, pairing verdicts, and
+    recovery ledger explicit instead of relying on closure capture.
+    """
+
+    state: "ReplayState"
+    ops: List[AmendmentOp]
+    amendment_id: str
+    future_repeals: Optional[Set["RepealTargetRef"]]
+    new_chapter_labels: Optional[Set[str]]
+    has_content_ops: bool
+    rstate: RecoveryState
+    recovery_guards: UncoveredRecoveryGuards
+    bp_assignments: object
+    johto_mentioned_labels: Set[str]
+    johto_mentioned_replaced_chapters: Set[str]
+    moved_section_destinations: Dict[str, str]
+    owned_chapter_labels: Set[str]
+
+    def record_skip(
+        self,
+        reason: str,
+        label: str,
+        amend_chapter_label: Optional[str],
+        amend_part_label: Optional[str] = None,
+    ) -> None:
+        self.rstate.record_skip(reason, label, amend_chapter_label, amend_part_label)
+
+    def is_future_repealed(self, label: str, chapter: Optional[str]) -> bool:
+        """Whether a later amendment explicitly repeals this section.
+
+        Whole-chapter future repeals are intentionally ignored: skipping all
+        section inserts would leave an empty chapter and can make the later
+        chapter REPEAL fail before it has a target.
+        """
+        if self.future_repeals is None:
+            return False
+        if RepealTargetRef.section(label) in self.future_repeals:
+            return True
+        if chapter and RepealTargetRef.section(label, chapter) in self.future_repeals:
+            return True
+        return False
+
+    def label_allowed_by_johto(self, label: str, chapter: Optional[str] = None) -> bool:
+        if not self.johto_mentioned_labels:
+            return True
+        if chapter and chapter in self.owned_chapter_labels:
+            return True
+        if chapter and chapter in self.johto_mentioned_replaced_chapters:
+            return True
+        if label in self.johto_mentioned_labels:
+            return True
+        base_label = re.match(r"^(\d+)", label)
+        return bool(base_label and base_label.group(1) in self.johto_mentioned_labels)
+
+    def make_uncovered_rop(self, draft: UncoveredRopDraft) -> ResolvedOp:
+        return _build_uncovered_rop(
+            draft,
+            amendment_id=self.amendment_id,
+            op_source=self.rstate.op_source,
+        )
+
+    def append_recovered_rop(self, rop: ResolvedOp) -> None:
+        disposition, reason = _uncovered_disposition_for_op_id(rop.op_id or "")
+        self.rstate.append_recovered_rop(rop, disposition=disposition, reason=reason)
+
+    def process_section_candidate(
+        self,
+        sec: etree._Element,
+        label: str,
+        amend_chapter_label: Optional[str],
+    ) -> None:
+        """Process one uncovered section candidate and commit a typed disposition."""
+        debug_recovery = os.environ.get("LAWVM_DEBUG_RECOVERY") == "1"
+        if debug_recovery:
+            print(
+                f"  [DBG] _process_section_candidate: "
+                f"label={label!r}, chapter={amend_chapter_label!r}"
+            )
+
+        amend_part_label = _xml_part_label(sec)
+        pre = _evaluate_pre_guards(
+            PreGuardRequest(
+                label=label,
+                amend_chapter_label=amend_chapter_label,
+                amend_part_label=amend_part_label,
+                guards=self.recovery_guards,
+                already_recovered=self.rstate.already_recovered(
+                    section=label, chapter=amend_chapter_label
+                ),
+                moved_section_destinations=self.moved_section_destinations,
+                bp_assignments=self.bp_assignments,
+            )
+        )
+        if not pre.proceed:
+            assert pre.skip_reason is not None
+            if debug_recovery:
+                print(
+                    f"  [DBG]  -> SKIP ({pre.skip_reason}): "
+                    f"{label!r} in chapter {amend_chapter_label!r}"
+                )
+            if pre.skip_reason == "body_pairing_guard":
+                logger.debug(
+                    "  [%s] uncovered SKIP %s § — body-pairing guard (foreign/unmatched/repeal)",
+                    self.amendment_id,
+                    label,
+                )
+            self.record_skip(
+                pre.skip_reason,
+                label,
+                amend_chapter_label,
+                amend_part_label if pre.with_part else None,
+            )
+            return
+
+        payload = _evaluate_chapter_payload_ownership(
+            ChapterPayloadOwnershipRequest(
+                label=label,
+                amend_chapter_label=amend_chapter_label,
+                amend_part_label=amend_part_label,
+                guards=self.recovery_guards,
+                section_present_in_chapter=(
+                    bool(amend_chapter_label)
+                    and self.state.find_section_path(label, amend_chapter_label, amend_part_label)
+                    is not None
+                ),
+                future_repealed=self.is_future_repealed(label, amend_chapter_label),
+            )
+        )
+        if payload.outcome is not ChapterPayloadOutcome.NOT_APPLICABLE:
+            assert amend_chapter_label is not None
+            if debug_recovery:
+                print(
+                    f"  [DBG]  -> chapter-payload {payload.outcome.value}: section "
+                    f"{label!r} in chapter {amend_chapter_label!r}"
+                )
+            if payload.outcome is ChapterPayloadOutcome.ADOPT:
+                adopt_sec_ir = fi_xml_to_ir_node(sec, _fi_label_postprocessor)
+                self.rstate.mark_covered(
+                    part=amend_part_label,
+                    chapter=amend_chapter_label,
+                    section=label,
+                )
+                self.append_recovered_rop(
+                    self.make_uncovered_rop(
+                        UncoveredRopDraft(
+                            op_type="INSERT",
+                            target_label=label,
+                            target_chapter=amend_chapter_label,
+                            target_part=amend_part_label,
+                            muutos_ir=adopt_sec_ir,
+                            op_id=f"uncov_chapter_adopt_{label}",
+                        )
+                    )
+                )
+                self.rstate.note_chapter_disposition(amend_chapter_label, "adopted")
+            elif payload.outcome is ChapterPayloadOutcome.OWNED:
+                self.rstate.mark_covered(
+                    part=amend_part_label,
+                    chapter=amend_chapter_label,
+                    section=label,
+                )
+                self.rstate.note_chapter_disposition(amend_chapter_label, "owned")
+                self.record_skip("chapter_payload_owned", label, amend_chapter_label)
+            else:
+                self.record_skip("future_repeal", label, amend_chapter_label)
+            return
+
+        resolved = resolve_target(
+            label,
+            amend_chapter_label,
+            amend_part_label,
+            self.state,
+            self.owned_chapter_labels,
+        )
+        if resolved.verdict is TargetVerdict.AMBIGUOUS:
+            self.record_skip("ambiguous_duplicate_label_no_chapter", label, amend_chapter_label)
+            return
+
+        sec_ir = fi_xml_to_ir_node(sec, _fi_label_postprocessor)
+        if resolved.existing_path is not None:
+            existing = _tops.resolve(self.state.ir, resolved.existing_path)
+            if existing is not None:
+                self.process_existing_section(
+                    ExistingSectionCandidate(
+                        existing=existing,
+                        existing_path=resolved.existing_path,
+                        sec_ir=sec_ir,
+                        label=label,
+                        amend_chapter_label=amend_chapter_label,
+                        amend_part_label=amend_part_label,
+                        cross_chapter=resolved.cross_chapter,
+                    )
+                )
+                return
+
+        self.process_new_section(
+            NewSectionCandidate(
+                sec_ir=sec_ir,
+                label=label,
+                amend_chapter_label=amend_chapter_label,
+                amend_part_label=amend_part_label,
+            )
+        )
+
+    def process_existing_section(self, candidate: ExistingSectionCandidate) -> None:
+        """Commit the disposition for a candidate with a resolvable live section."""
+        existing = candidate.existing
+        existing_path = candidate.existing_path
+        sec_ir = candidate.sec_ir
+        label = candidate.label
+        amend_chapter_label = candidate.amend_chapter_label
+        amend_part_label = candidate.amend_part_label
+        cross_chapter = candidate.cross_chapter
+        existing_heading = _section_heading_text(existing)
+        amend_heading = _section_heading_text(sec_ir)
+        if (
+            existing_heading.startswith("voimaantulo")
+            and amend_heading
+            and not amend_heading.startswith("voimaantulo")
+        ):
+            parent_path = existing_path[:-1]
+            parent = _tops.resolve(self.state.ir, parent_path) if parent_path else self.state.ir
+            section_siblings = (
+                [c for c in parent.children if c.kind is IRNodeKind.SECTION]
+                if parent is not None
+                else []
+            )
+            insert_label: Optional[str] = None
+            if existing in section_siblings:
+                existing_idx = section_siblings.index(existing)
+                if existing_idx > 0:
+                    insert_label = _next_letter_label(section_siblings[existing_idx - 1].label or "")
+            if (
+                insert_label
+                and self.state.find_section_path(insert_label, amend_chapter_label) is None
+            ):
+                inserted_sec = _relabel_section_ir(sec_ir, insert_label)
+                self.recovery_guards.mark_covered(
+                    part=amend_part_label,
+                    chapter=amend_chapter_label,
+                    section=label,
+                )
+                self.append_recovered_rop(
+                    self.make_uncovered_rop(
+                        UncoveredRopDraft(
+                            op_type="INSERT",
+                            target_label=insert_label,
+                            target_chapter=amend_chapter_label,
+                            target_part=amend_part_label or _part_label_from_path(existing_path),
+                            muutos_ir=inserted_sec,
+                            op_id=f"uncovered_insert_{insert_label}",
+                        )
+                    )
+                )
+                return
+
+        if not self.label_allowed_by_johto(label, amend_chapter_label):
+            self.record_skip("johto_guard", label, amend_chapter_label)
+            return
+
+        whole_ch_replace = bool(
+            amend_chapter_label
+            and amend_chapter_label in self.johto_mentioned_replaced_chapters
+        )
+        prv = evaluate_past_repeal_guard(
+            existing.attrs, self.ops, label, amend_chapter_label, whole_ch_replace
+        )
+        if prv.applies and not prv.bypass:
+            self.recovery_guards.mark_covered(
+                part=amend_part_label,
+                chapter=amend_chapter_label,
+                section=label,
+            )
+            self.record_skip("past_repeal_placeholder_guard", label, amend_chapter_label)
+            return
+        if prv.applies:
+            logger.debug(
+                "  [%s] uncovered: bypassing past-repeal guard for %s § (%s)",
+                self.amendment_id,
+                label,
+                prv.bypass_reason,
+            )
+
+        rdec = compute_replace_decision(
+            sec_ir, existing, self.has_content_ops, cross_chapter, whole_ch_replace
+        )
+        edisp = classify_existing_disposition(
+            sec_ir, rdec, self.has_content_ops, cross_chapter
+        )
+        if os.environ.get("LAWVM_DEBUG_RECOVERY") == "1":
+            print(
+                f"  [DBG]  existing disposition={edisp.outcome.value}, "
+                f"has_content_ops={self.has_content_ops}, has_omissions={rdec.has_omissions}, "
+                f"cross_chapter={cross_chapter}, would_lose={rdec.would_lose_subsections}, "
+                f"whole_ch_replace={whole_ch_replace}, amend_ss={rdec.amend_subsec_count}, "
+                f"master_ss={rdec.master_subsec_count}"
+            )
+
+        self.recovery_guards.mark_covered(
+            part=amend_part_label,
+            chapter=amend_chapter_label,
+            section=label,
+        )
+        if edisp.outcome is ExistingDisposition.REPLACE:
+            self.append_recovered_rop(
+                self.make_uncovered_rop(
+                    UncoveredRopDraft(
+                        op_type="REPLACE",
+                        target_label=label,
+                        target_chapter=amend_chapter_label,
+                        target_part=amend_part_label or _part_label_from_path(existing_path),
+                        muutos_ir=sec_ir,
+                        op_id=f"uncovered_replace_{label}",
+                    )
+                )
+            )
+        elif edisp.outcome is ExistingDisposition.MERGE_CANDIDATE:
+            merged = _merge_section_with_omission_ir(existing, sec_ir)
+            if merged is not None:
+                mdec = evaluate_omission_merge(merged, existing)
+                if mdec.accept:
+                    self.append_recovered_rop(
+                        self.make_uncovered_rop(
+                            UncoveredRopDraft(
+                                op_type="REPLACE",
+                                target_label=label,
+                                target_chapter=amend_chapter_label,
+                                target_part=amend_part_label or _part_label_from_path(existing_path),
+                                muutos_ir=merged,
+                                op_id=f"uncovered_merge_{label}",
+                            )
+                        )
+                    )
+                elif mdec.skip_reason is not None:
+                    self.record_skip(f"omission_merge_{mdec.skip_reason}", label, amend_chapter_label)
+            else:
+                self.record_skip("omission_merge_failed", label, amend_chapter_label)
+        elif (
+            edisp.skip_reason is not None
+            and edisp.outcome is not ExistingDisposition.SKIP_BLOCKED
+        ):
+            self.record_skip(edisp.skip_reason, label, amend_chapter_label)
+
+    def process_new_section(self, candidate: NewSectionCandidate) -> None:
+        """Commit the disposition for a candidate without a live target."""
+        sec_ir = candidate.sec_ir
+        label = candidate.label
+        amend_chapter_label = candidate.amend_chapter_label
+        amend_part_label = candidate.amend_part_label
+        if not self.label_allowed_by_johto(label, amend_chapter_label):
+            self.record_skip("johto_guard", label, amend_chapter_label)
+            return
+
+        if self.is_future_repealed(label, amend_chapter_label):
+            if DEBUG:
+                _replay_print(
+                    f"  [{self.amendment_id}] uncovered SKIP INSERT {label} § — future repeal"
+                )
+            self.recovery_guards.mark_covered(
+                part=amend_part_label,
+                chapter=amend_chapter_label,
+                section=label,
+            )
+            self.record_skip("future_repeal", label, amend_chapter_label)
+            return
+
+        insert_ch = resolve_insert_chapter(
+            label,
+            amend_chapter_label,
+            amend_part_label,
+            self.state,
+            self.ops,
+            self.new_chapter_labels,
+            self.owned_chapter_labels,
+        )
+        effective_chapter = insert_ch.effective_chapter
+        effective_part = insert_ch.effective_part
+        if insert_ch.reason == "family_base_override":
+            logger.debug(
+                "  [%s] uncovered INSERT %s: overriding chapter %s→%s"
+                " (family base in unrelated existing chapter)",
+                self.amendment_id,
+                label,
+                amend_chapter_label,
+                effective_chapter,
+            )
+
+        self.recovery_guards.mark_covered(
+            part=amend_part_label,
+            chapter=effective_chapter,
+            section=label,
+        )
+        self.append_recovered_rop(
+            self.make_uncovered_rop(
+                UncoveredRopDraft(
+                    op_type="INSERT",
+                    target_label=label,
+                    target_chapter=effective_chapter,
+                    target_part=effective_part,
+                    muutos_ir=sec_ir,
+                    op_id=f"uncovered_insert_{label}",
+                )
+            )
+        )
+
+
+def _recover_uncovered_body_ops_typed(
+    request: UncoveredBodyRecoveryRequest,
+    sinks: Optional[UncoveredBodyRecoverySinks] = None,
+) -> UncoveredBodyRecoveryResult:
     """Collect body-driven ResolvedOps for sections not covered by PEG ops.
 
     MVR (minimum viable refactor): this function now RETURNS a list of
@@ -1053,17 +1716,19 @@ def _recover_uncovered_body_ops(
     Note: chapter pre-creation is a separate pre-step (_pre_create_amendment_chapters)
     and must be called before this function.
     """
-    # All mutable per-candidate recovery state is consolidated in ``rstate``
-    # (RecoveryState), constructed once ``recovery_guards`` exists below. These
-    # thin forwarders preserve the call shape used throughout the candidate
-    # cascade while routing every mutation through the typed container.
-    def _record_skip(
-        reason: str,
-        label: str,
-        amend_chapter_label: Optional[str],
-        amend_part_label: Optional[str] = None,
-    ) -> None:
-        rstate.record_skip(reason, label, amend_chapter_label, amend_part_label)
+    sinks = sinks or UncoveredBodyRecoverySinks()
+    state = request.state
+    ctx = request.ctx
+    ops = request.ops
+    muutos_tree = request.muutos_tree
+    amendment_id = request.amendment_id
+    future_repeals = request.future_repeals
+    op_source = request.op_source
+    new_chapter_labels = request.new_chapter_labels
+    failed_ops_out = sinks.failed_ops_out
+    restructure_plans_out = sinks.restructure_plans_out
+    observations_out = sinks.observations_out
+    findings_out = sinks.findings_out
 
     # PEG-covered guard sets (see _build_peg_covered_sets). covered_labels is
     # aliased into recovery_guards below, so its identity must be preserved.
@@ -1087,7 +1752,7 @@ def _recover_uncovered_body_ops(
     _emit_coverage_analysis_findings(_cov_report, findings_out, amendment_id)
     muutos_body = muutos_tree.find(".//{*}body")
     if muutos_body is None:
-        return []
+        return UncoveredBodyRecoveryResult(recovered_ops=(), candidate_audits=())
     # Container-only chapters (scoping wrappers around section edits) are not
     # operative units — ops claim sections, not the wrapper — so they are
     # excluded from the REPORTED coverage metric, where counting them makes
@@ -1202,42 +1867,22 @@ def _recover_uncovered_body_ops(
         # Surface a degradation observation/finding when a chapter-level INSERT
         # plan still has a high proportion of uncovered body units.
         _emit_high_uncovered_degradation(
-            _restructure_plan,
-            amendment_id,
-            _restructure_uncov_count,
-            _total_units,
-            _uncov_ratio,
-            observations_out,
-            findings_out,
+            HighUncoveredDegradationRequest(
+                restructure_plan=_restructure_plan,
+                amendment_id=amendment_id,
+                uncovered_count=_restructure_uncov_count,
+                total_units=_total_units,
+                uncov_ratio=_uncov_ratio,
+            ),
+            HighUncoveredDegradationSinks(
+                observations_out=observations_out,
+                findings_out=findings_out,
+            ),
         )
     # --- end restructure signal detection + plan ---
     # --- end typed coverage analysis ---
 
     has_content_ops = _compute_has_content_ops(ops, muutos_tree)
-
-    def _is_future_repealed(label: str, chapter: Optional[str]) -> bool:
-        """Check if this section will be REPEALed by a later amendment.
-
-        Matches:
-        - ('P', label, None)          — section repealed without chapter context
-        - ('P', label, chapter)       — section in this chapter explicitly repealed
-
-        NOTE: whole-chapter future repeals ('L', chapter, None) are intentionally
-        NOT matched here.  Skipping a chapter's sections because the chapter will
-        be future-repealed causes the chapter to become empty; subsequent RENUMBER
-        ops then eliminate it before the actual REPEAL op can fire, making the
-        REPEAL fail with "chapter not found".  Let the REPEAL op handle removal;
-        only skip individually-targeted sections.
-        """
-        if future_repeals is None:
-            return False
-        # Section-level repeal without chapter context
-        if RepealTargetRef.section(label) in future_repeals:
-            return True
-        # Section-level repeal with matching chapter
-        if chapter and RepealTargetRef.section(label, chapter) in future_repeals:
-            return True
-        return False
 
     # Pre-extract section labels explicitly mentioned in the preamble so
     # uncovered-body fallback can stay scoped to the cited statute surface.
@@ -1308,457 +1953,21 @@ def _recover_uncovered_body_ops(
         )
     owned_chapter_labels.update(johto_mentioned_new_chapters)
 
-    def _label_allowed_by_johto(label: str, chapter: Optional[str] = None) -> bool:
-        if not johto_mentioned_labels:
-            return True
-        # If the section's chapter is a newly-inserted chapter from the johtolause,
-        # allow all its sections (the chapter creation implies all member sections).
-        if chapter and chapter in owned_chapter_labels:
-            return True
-        # If the section's chapter is a whole-chapter replacement ("muutetaan X luku"),
-        # allow all its sections — the chapter replacement implies all member sections.
-        if chapter and chapter in johto_mentioned_replaced_chapters:
-            return True
-        if label in johto_mentioned_labels:
-            return True
-        base_label = re.match(r"^(\d+)", label)
-        return bool(base_label and base_label.group(1) in johto_mentioned_labels)
-
-    def _make_uncovered_rop(
-        op_type: OpType,
-        target_label: str,
-        target_chapter: Optional[str],
-        target_part: Optional[str],
-        muutos_ir: IRNode,
-        op_id: str,
-    ) -> ResolvedOp:
-        return _build_uncovered_rop(
-            op_type=op_type,
-            target_label=target_label,
-            target_chapter=target_chapter,
-            target_part=target_part,
-            muutos_ir=muutos_ir,
-            op_id=op_id,
-            amendment_id=amendment_id,
-            op_source=op_source,
-        )
-
-    def _append_recovered_rop(rop: ResolvedOp) -> None:
-        disposition, reason = _uncovered_disposition_for_op_id(rop.op_id or "")
-        rstate.append_recovered_rop(rop, disposition=disposition, reason=reason)
-
-    def _process_section_candidate(
-        sec: etree._Element,
-        label: str,
-        amend_chapter_label: Optional[str],
-    ) -> None:
-        """Process one candidate uncovered section and append to result if warranted.
-
-        Called from the coverage-driven primary path.  Mutates
-        ``result`` and ``covered_labels`` in place.
-        """
-        import os as _os
-
-        _DEBUG_RECOVERY = _os.environ.get("LAWVM_DEBUG_RECOVERY") == "1"
-        if _DEBUG_RECOVERY:
-            print(f"  [DBG] _process_section_candidate: label={label!r}, chapter={amend_chapter_label!r}")
-
-        amend_part_label = _xml_part_label(sec)
-
-        # Phase 1: pure read-only pre-guards (duplicate / moved / relabel / pairing).
-        _pre = _evaluate_pre_guards(
-            label=label,
-            amend_chapter_label=amend_chapter_label,
-            amend_part_label=amend_part_label,
-            guards=recovery_guards,
-            already_recovered=rstate.already_recovered(
-                section=label, chapter=amend_chapter_label
-            ),
-            moved_section_destinations=moved_section_destinations,
-            bp_assignments=_bp_assignments,
-        )
-        if not _pre.proceed:
-            assert _pre.skip_reason is not None  # guaranteed by PreGuardVerdict invariant
-            if _DEBUG_RECOVERY:
-                print(f"  [DBG]  -> SKIP ({_pre.skip_reason}): {label!r} in chapter {amend_chapter_label!r}")
-            if _pre.skip_reason == "body_pairing_guard":
-                logger.debug(
-                    "  [%s] uncovered SKIP %s § — body-pairing guard (foreign/unmatched/repeal)",
-                    amendment_id,
-                    label,
-                )
-            _record_skip(
-                _pre.skip_reason,
-                label,
-                amend_chapter_label,
-                amend_part_label if _pre.with_part else None,
-            )
-            return
-
-        # A whole-chapter INSERT/REPLACE op already owns the chapter payload.
-        # Its child sections should not be double-counted as uncovered body
-        # operations just because they are visible in the amendment body.
-        #
-        # Exception: large restructure amendments sometimes produce CHAPTER INSERT
-        # ops alongside standalone SECTION ops for the new chapter's sections.
-        # apply_structure_ops filters those sections from the chapter INSERT payload
-        # (to avoid duplicating standalone ops), but if the standalone section op
-        # had no chapter context it may land in the wrong chapter.  When the section
-        # is still absent from master after all PEG ops ran, adopt it explicitly.
-        # Phase 2: chapter-payload ownership — pure classify, then commit/emit.
-        _payload = _evaluate_chapter_payload_ownership(
-            label=label,
-            amend_chapter_label=amend_chapter_label,
-            amend_part_label=amend_part_label,
-            guards=recovery_guards,
-            section_present_in_chapter=(
-                bool(amend_chapter_label)
-                and state.find_section_path(label, amend_chapter_label, amend_part_label)
-                is not None
-            ),
-            future_repealed=_is_future_repealed(label, amend_chapter_label),
-        )
-        if _payload.outcome is not ChapterPayloadOutcome.NOT_APPLICABLE:
-            assert amend_chapter_label is not None  # guaranteed by ownership predicate
-            if _DEBUG_RECOVERY:
-                print(
-                    f"  [DBG]  -> chapter-payload {_payload.outcome.value}: section "
-                    f"{label!r} in chapter {amend_chapter_label!r}"
-                )
-            if _payload.outcome is ChapterPayloadOutcome.ADOPT:
-                _adopt_sec_ir = fi_xml_to_ir_node(sec, _fi_label_postprocessor)
-                rstate.mark_covered(
-                    part=amend_part_label, chapter=amend_chapter_label, section=label
-                )
-                _append_recovered_rop(
-                    _make_uncovered_rop(
-                        "INSERT",
-                        label,
-                        amend_chapter_label,
-                        amend_part_label,
-                        _adopt_sec_ir,
-                        f"uncov_chapter_adopt_{label}",
-                    )
-                )
-                rstate.note_chapter_disposition(amend_chapter_label, "adopted")
-            elif _payload.outcome is ChapterPayloadOutcome.OWNED:
-                rstate.mark_covered(
-                    part=amend_part_label, chapter=amend_chapter_label, section=label
-                )
-                rstate.note_chapter_disposition(amend_chapter_label, "owned")
-                _record_skip("chapter_payload_owned", label, amend_chapter_label)
-            else:  # FUTURE_REPEAL_SKIP
-                _record_skip("future_repeal", label, amend_chapter_label)
-            return
-
-        # Chapter-qualified resolution (uncovered_target_resolve.resolve_target):
-        # the typed verdict drives existing_path / cross_chapter. The unscoped
-        # fallback is gated on unique-label + not-newly-owned-chapter so a
-        # same-numbered section in an unrelated chapter is never matched, and a
-        # duplicate label with no chapter context resolves to AMBIGUOUS — a found
-        # path flagged cross_chapter so the wrong chapter's section is not
-        # replaced (chapter-restart-numbering failure mode, e.g. Vesilaki).
-        _resolved = resolve_target(
-            label, amend_chapter_label, amend_part_label, state, owned_chapter_labels
-        )
-        if _resolved.verdict is TargetVerdict.AMBIGUOUS:
-            # Duplicate label with no chapter context to disambiguate: the section
-            # could belong to any of several chapters, so placing it anywhere risks
-            # the wrong chapter (chapter-restart numbering). Surface it explicitly
-            # rather than silently force it through the cross-chapter path.
-            _record_skip("ambiguous_duplicate_label_no_chapter", label, amend_chapter_label)
-            return
-        existing_path = _resolved.existing_path
-        cross_chapter = _resolved.cross_chapter
-
-        sec_ir = fi_xml_to_ir_node(sec, _fi_label_postprocessor)
-
-        if existing_path is not None:
-            existing = _tops.resolve(state.ir, existing_path)
-            if existing is not None:
-                _process_existing_section(
-                    existing,
-                    existing_path,
-                    sec_ir,
-                    label,
-                    amend_chapter_label,
-                    amend_part_label,
-                    cross_chapter,
-                )
-                return
-            # Path is stale (tree was mutated by earlier ops in this batch);
-            # fall through and treat the candidate as a new insert.
-
-        _process_new_section(sec_ir, label, amend_chapter_label, amend_part_label)
-
-    def _process_existing_section(
-        existing: IRNode,
-        existing_path: tuple[tuple[str, str], ...],
-        sec_ir: IRNode,
-        label: str,
-        amend_chapter_label: Optional[str],
-        amend_part_label: Optional[str],
-        cross_chapter: bool,
-    ) -> None:
-        """EXISTING-path phase: a live section resolves at ``existing_path``.
-
-        Three sub-decisions, in order: the (genuinely stateful) voimaantulo
-        relabel pre-step, the johto-guard, the past-repeal-placeholder guard
-        dispatch, and the terminal replace/merge/skip disposition. Every branch
-        marks the section covered (read by later candidates in this sequential
-        loop) and commits exactly one ResolvedOp or skip before returning.
-        """
-        existing_heading = _section_heading_text(existing)
-        amend_heading = _section_heading_text(sec_ir)
-        if (
-            existing_heading.startswith("voimaantulo")
-            and amend_heading
-            and not amend_heading.startswith("voimaantulo")
-        ):
-            # TODO (architecture): voimaantulo-relabel is a pre-computation
-            # that requires knowing which insert_label to use, which in turn
-            # needs the current sibling list.  Since the sibling list changes
-            # after each insert in the result list, this case needs sequential
-            # state-dependent resolution and cannot be purely pre-collected.
-            # For now, compute the insert_label against the initial state
-            # (conservative: if the sibling was already inserted by an earlier
-            # op in result, the insert_label may be off by one letter).
-            parent_path = existing_path[:-1]
-            parent = _tops.resolve(state.ir, parent_path) if parent_path else state.ir
-            section_siblings = [c for c in parent.children if c.kind is IRNodeKind.SECTION] if parent is not None else []
-            insert_label: Optional[str] = None
-            if existing in section_siblings:
-                existing_idx = section_siblings.index(existing)
-                if existing_idx > 0:
-                    insert_label = _next_letter_label(section_siblings[existing_idx - 1].label or "")
-            if insert_label and state.find_section_path(insert_label, amend_chapter_label) is None:
-                inserted_sec = _relabel_section_ir(sec_ir, insert_label)
-                recovery_guards.mark_covered(
-                    part=amend_part_label,
-                    chapter=amend_chapter_label,
-                    section=label,
-                )
-                _append_recovered_rop(
-                    _make_uncovered_rop(
-                        "INSERT",
-                        insert_label,
-                        amend_chapter_label,
-                        amend_part_label or _part_label_from_path(existing_path),
-                        inserted_sec,
-                        f"uncovered_insert_{insert_label}",
-                    )
-                )
-                return
-        if not _label_allowed_by_johto(label, amend_chapter_label):
-            _record_skip("johto_guard", label, amend_chapter_label)
-            return
-        # --- Past-repeal guard ---
-        # If the target section is already a repeal placeholder (from
-        # a PAST amendment), do not override it with body-coverage
-        # REPLACE.  The section was deliberately repealed; the body
-        # content in this amendment either targets a different
-        # chapter or is stale/mis-targeted.
-        #
-        # Exception: tilalle-range INSERT ops explicitly restore a
-        # previously-repealed section slot.  When the PEG-compiled ops
-        # include an INSERT for this (chapter, section) label pair, the
-        # amendment deliberately targets this repeal placeholder and
-        # the guard must be bypassed so the new content can replace it.
-        # Whole-chapter-replace flag: when the johtolause explicitly
-        # says "muutetaan X luku", the amendment body is authoritative
-        # for ALL sections in that chapter.  Two guards below are
-        # relaxed under this flag:
-        # 1. past-repeal guard — a repealed slot may be reinstated.
-        # 2. would_lose_subsections — the chapter restructure is the
-        #    new truth; a lower subsection count is intentional.
-        _whole_ch_replace = bool(
-            amend_chapter_label
-            and amend_chapter_label in johto_mentioned_replaced_chapters
-        )
-        _prv = evaluate_past_repeal_guard(
-            existing.attrs, ops, label, amend_chapter_label, _whole_ch_replace
-        )
-        if _prv.applies and not _prv.bypass:
-            recovery_guards.mark_covered(
-                part=amend_part_label,
-                chapter=amend_chapter_label,
-                section=label,
-            )
-            _record_skip("past_repeal_placeholder_guard", label, amend_chapter_label)
-            return
-        if _prv.applies:
-            # Tilalle INSERT or whole-chapter replace: fall through to the
-            # REPLACE logic so the repeal placeholder is replaced.
-            logger.debug(
-                "  [%s] uncovered: bypassing past-repeal guard for %s § (%s)",
-                amendment_id,
-                label,
-                _prv.bypass_reason,
-            )
-        # Terminal EXISTING-path disposition: classify the replace/merge/
-        # skip decision into one typed verdict, then commit it. The
-        # classifier is pure; the commit (mark_covered + append/skip) is
-        # the only mutation and stays here because mark_covered is read by
-        # later candidates in this sequential loop.
-        _rdec = compute_replace_decision(
-            sec_ir, existing, has_content_ops, cross_chapter, _whole_ch_replace
-        )
-        _edisp = classify_existing_disposition(
-            sec_ir, _rdec, has_content_ops, cross_chapter
-        )
-        if os.environ.get("LAWVM_DEBUG_RECOVERY") == "1":
-            print(
-                f"  [DBG]  existing disposition={_edisp.outcome.value}, "
-                f"has_content_ops={has_content_ops}, has_omissions={_rdec.has_omissions}, "
-                f"cross_chapter={cross_chapter}, would_lose={_rdec.would_lose_subsections}, "
-                f"whole_ch_replace={_whole_ch_replace}, amend_ss={_rdec.amend_subsec_count}, "
-                f"master_ss={_rdec.master_subsec_count}"
-            )
-        # Every terminal EXISTING-path outcome marks the section covered.
-        recovery_guards.mark_covered(
-            part=amend_part_label,
-            chapter=amend_chapter_label,
-            section=label,
-        )
-        if _edisp.outcome is ExistingDisposition.REPLACE:
-            _append_recovered_rop(
-                _make_uncovered_rop(
-                    "REPLACE",
-                    label,
-                    amend_chapter_label,
-                    amend_part_label or _part_label_from_path(existing_path),
-                    sec_ir,
-                    f"uncovered_replace_{label}",
-                )
-            )
-        elif _edisp.outcome is ExistingDisposition.MERGE_CANDIDATE:
-            # Section-level omission — try merging amendment into master.
-            # When the amendment has fewer subsections+omissions, the merge
-            # function expands each omission across multiple master
-            # subsections; the post-merge guard still rejects real loss or
-            # text corruption.
-            merged = _merge_section_with_omission_ir(existing, sec_ir)
-            if merged is not None:
-                _mdec = evaluate_omission_merge(merged, existing)
-                if _mdec.accept:
-                    # Pass the pre-merged IR as the payload so apply_op
-                    # performs replace_at with the already-merged node.
-                    _append_recovered_rop(
-                        _make_uncovered_rop(
-                            "REPLACE",
-                            label,
-                            amend_chapter_label,
-                            amend_part_label or _part_label_from_path(existing_path),
-                            merged,
-                            f"uncovered_merge_{label}",
-                        )
-                    )
-                elif _mdec.skip_reason is not None:
-                    _record_skip(f"omission_merge_{_mdec.skip_reason}", label, amend_chapter_label)
-            else:
-                _record_skip("omission_merge_failed", label, amend_chapter_label)
-        elif _edisp.skip_reason is not None and _edisp.outcome is not ExistingDisposition.SKIP_BLOCKED:
-            # Named skip (cross-chapter / no-content-ops / would-lose);
-            # SKIP_BLOCKED is silent, matching the legacy fall-through.
-            _record_skip(_edisp.skip_reason, label, amend_chapter_label)
-
-    def _process_new_section(
-        sec_ir: IRNode,
-        label: str,
-        amend_chapter_label: Optional[str],
-        amend_part_label: Optional[str],
-    ) -> None:
-        """NEW-path phase: the section has no resolvable existing target.
-
-        The johto-guard, the future-repeal suppression, and the family-chapter
-        INSERT placement (resolve_insert_chapter). Terminal: commits one INSERT
-        ResolvedOp or records one skip, then returns.
-        """
-        if not _label_allowed_by_johto(label, amend_chapter_label):
-            _record_skip("johto_guard", label, amend_chapter_label)
-            return
-
-        # New section — INSERT.  Use find_family to place in the same
-        # chapter as the numeric base (e.g. 39a → chapter of 39).
-        # When no chapter context from amendment, only use find_family
-        # if the base label is unique (not in multiple chapters).
-
-        # Guard: skip this INSERT if a later amendment will REPEAL this
-        # section (or its containing chapter).  Inserting such a section
-        # would create spurious content that never appears in the oracle
-        # consolidated output.  We only apply this guard to NEW inserts
-        # (existing_path is None); replacements of sections that are later
-        # repealed are allowed because the repeal placeholder needs
-        # well-formed content to reference.
-        if _is_future_repealed(label, amend_chapter_label):
-            if DEBUG:
-                _replay_print(f"  [{amendment_id}] uncovered SKIP INSERT {label} § — future repeal")
-            recovery_guards.mark_covered(
-                part=amend_part_label,
-                chapter=amend_chapter_label,
-                section=label,
-            )
-            _record_skip("future_repeal", label, amend_chapter_label)
-            return
-
-        # Family-chapter override: if the amendment placed this section in a new
-        # chapter (amend_chapter_label) but the section's numeric-base sibling
-        # lives in an UNRELATED existing chapter, use the existing chapter.
-        #
-        # Example: amendment puts §32a in new chapter 4d (as a container),
-        # but §32 lives in chapter 7 → correct target_chapter is "7", not "4d".
-        #
-        # NOT applied when:
-        # 1. The amendment chapter is a sub-chapter of the family's chapter
-        #    (e.g., §14a in chapter "4a": §14 is in chapter "4", so "4a" is a
-        #    direct sub-chapter of "4" — keep "4a").
-        # 2. The family base section is being REPEALED by THIS amendment
-        #    (the new chapter placement is intentional).
-        # 3. The amendment chapter was NEWLY INSERTED by this amendment (in
-        #    johto_mentioned_new_chapters).  A new chapter owns all its sections;
-        #    redirecting them to an existing chapter's family base is wrong.
-        # NEW-insert chapter refinement (uncovered_target_resolve): when the
-        # declared chapter is newly inserted but the section's family base lives
-        # in an existing unrelated chapter, redirect the insert there.
-        _insert_ch = resolve_insert_chapter(
-            label,
-            amend_chapter_label,
-            amend_part_label,
-            state,
-            ops,
-            new_chapter_labels,
-            owned_chapter_labels,
-        )
-        effective_chapter = _insert_ch.effective_chapter
-        effective_part = _insert_ch.effective_part
-        if _insert_ch.reason == "family_base_override":
-            logger.debug(
-                "  [%s] uncovered INSERT %s: overriding chapter %s→%s"
-                " (family base in unrelated existing chapter)",
-                amendment_id,
-                label,
-                amend_chapter_label,
-                effective_chapter,
-            )
-
-        recovery_guards.mark_covered(
-            part=amend_part_label,
-            chapter=effective_chapter,
-            section=label,
-        )
-        # Emit INSERT ResolvedOp.  apply_op will redo the family-anchor
-        # lookup against the live (post-prior-insert) state, so placement
-        # is correct even when multiple new sections are inserted in sequence.
-        _append_recovered_rop(
-            _make_uncovered_rop(
-                "INSERT",
-                label,
-                effective_chapter,
-                effective_part,
-                sec_ir,
-                f"uncovered_insert_{label}",
-            )
-        )
+    recovery_run = _UncoveredRecoveryRun(
+        state=state,
+        ops=ops,
+        amendment_id=amendment_id,
+        future_repeals=future_repeals,
+        new_chapter_labels=new_chapter_labels,
+        has_content_ops=has_content_ops,
+        rstate=rstate,
+        recovery_guards=recovery_guards,
+        bp_assignments=_bp_assignments,
+        johto_mentioned_labels=johto_mentioned_labels,
+        johto_mentioned_replaced_chapters=johto_mentioned_replaced_chapters,
+        moved_section_destinations=moved_section_destinations,
+        owned_chapter_labels=owned_chapter_labels,
+    )
 
     # --- Primary path: coverage analysis drives the loop ---
     # Iterate over supplemental_candidates from the typed coverage report.
@@ -1794,16 +2003,20 @@ def _recover_uncovered_body_ops(
         _gap_chapter = _gap.unit.parent_label  # May be None for top-level sections
         # Skip sections already targeted by PEG-compiled ops in the same chapter.
         if (_gap.unit.parent_label, _gap_label) in _peg_targeted_sections:
-            _record_skip("peg_owned_same_chapter", _gap_label, _gap_chapter)
+            recovery_run.record_skip("peg_owned_same_chapter", _gap_label, _gap_chapter)
             continue
         # Also skip when PEG already owns the same section label in a different
         # chapter. In that case the body chapter is stale/misleading, and
         # uncovered-body recovery must not manufacture a duplicate same-labeled
         # section under the body's chapter.
         if _gap_label in _peg_targeted_labels:
-            _record_skip("peg_owned_label_collision", _gap_label, _gap_chapter)
+            recovery_run.record_skip("peg_owned_label_collision", _gap_label, _gap_chapter)
             continue
-        _process_section_candidate(cast(etree._Element, _sec_el), _gap_label, _gap_chapter)
+        recovery_run.process_section_candidate(
+            cast(etree._Element, _sec_el),
+            _gap_label,
+            _gap_chapter,
+        )
 
     # The typed coverage sweep above is the sole candidate enumeration. It
     # formerly ran alongside a legacy ad-hoc raw-body section scan (the
@@ -1819,34 +2032,71 @@ def _recover_uncovered_body_ops(
 
     rstate.emit_chapter_payload_mixed_findings()
 
-    return rstate.result
+    return UncoveredBodyRecoveryResult(
+        recovered_ops=tuple(rstate.result),
+        candidate_audits=tuple(rstate.audits),
+    )
 
 
-def _apply_uncovered_kumotaan(
-    state: "ReplayState",
-    ctx: "StatuteContext",
-    ops: List[AmendmentOp],
-    johto: str,
+def _same_amendment_non_repeal_section_labels(
+    *,
+    lo_ops_out: Optional[List[_LegalOperation]],
     amendment_id: str,
-    lo_ops_out: Optional[List[_LegalOperation]] = None,
-    op_source: Optional[OperationSource] = None,
-    findings_out: Optional[List[Finding]] = None,
-    source_pathologies_out: Optional[List[SourcePathology]] = None,
-) -> "ReplayState":
-    """Apply uncovered repeals from kumotaan clauses."""
-    def _same_amendment_non_repeal_section_labels() -> Set[str]:
-        labels: Set[str] = set()
-        if lo_ops_out is None:
-            return labels
-        for lo in lo_ops_out:
-            if lo.source is None or lo.source.statute_id != amendment_id:
-                continue
-            if lo.action is StructuralAction.REPEAL:
-                continue
-            if not lo.target.path or lo.target.path[-1][0] != "section":
-                continue
-            labels.add(_norm_num_token(lo.target.path[-1][1]))
+) -> Set[str]:
+    labels: Set[str] = set()
+    if lo_ops_out is None:
         return labels
+    for lo in lo_ops_out:
+        if lo.source is None or lo.source.statute_id != amendment_id:
+            continue
+        if lo.action is StructuralAction.REPEAL:
+            continue
+        if not lo.target.path or lo.target.path[-1][0] != "section":
+            continue
+        labels.add(_norm_num_token(lo.target.path[-1][1]))
+    return labels
+
+
+def _prior_same_effective_container_replacement(
+    *,
+    lo_ops_out: Optional[List[_LegalOperation]],
+    op_source: Optional[OperationSource],
+    amendment_id: str,
+    target_path: tuple[tuple[str, str], ...],
+) -> _LegalOperation | None:
+    if lo_ops_out is None or op_source is None or not op_source.effective:
+        return None
+    for prior in reversed(lo_ops_out):
+        if prior.action not in (StructuralAction.INSERT, StructuralAction.REPLACE):
+            continue
+        if prior.target is None or tuple(prior.target.path) != target_path:
+            continue
+        prior_source = prior.source
+        if prior_source is None:
+            continue
+        if prior_source.effective != op_source.effective:
+            continue
+        if prior_source.statute_id == amendment_id:
+            continue
+        return prior
+    return None
+
+
+def _apply_uncovered_kumotaan_typed(
+    request: KumotaanRecoveryRequest,
+    sinks: Optional[KumotaanRecoverySinks] = None,
+) -> KumotaanRecoveryResult:
+    """Apply uncovered repeals from kumotaan clauses."""
+    sinks = sinks or KumotaanRecoverySinks()
+    state = request.state
+    ctx = request.ctx
+    ops = request.ops
+    johto = request.johto
+    amendment_id = request.amendment_id
+    lo_ops_out = sinks.lo_ops_out
+    op_source = request.op_source
+    findings_out = sinks.findings_out
+    source_pathologies_out = sinks.source_pathologies_out
 
     vts_section_refs = [
         _norm_num_token(op.target_section)
@@ -1879,12 +2129,12 @@ def _apply_uncovered_kumotaan(
 
     if not johto or "kumotaan" not in johto.lower():
         if not vts_section_refs and not vts_container_refs["chapter"] and not vts_container_refs["part"]:
-            return state
+            return KumotaanRecoveryResult(state=state)
 
     has_peg_repeals = any(op.op_type == "REPEAL" for op in ops)
     has_vts_repeals = bool(vts_section_refs or vts_container_refs["chapter"] or vts_container_refs["part"])
     if not has_peg_repeals and not has_vts_repeals and not re.search(r"\bkumotaan\b", johto, re.IGNORECASE):
-        return state
+        return KumotaanRecoveryResult(state=state)
 
     covered_labels: Set[str] = set()
     covered_containers: Set[CoveredContainerKey] = set()
@@ -1900,7 +2150,10 @@ def _apply_uncovered_kumotaan(
                     label=_norm_num_token(op.target_section),
                 )
             )
-    covered_labels |= _same_amendment_non_repeal_section_labels()
+    covered_labels |= _same_amendment_non_repeal_section_labels(
+        lo_ops_out=lo_ops_out,
+        amendment_id=amendment_id,
+    )
 
     kumotaan_refs = _extract_kumotaan_section_refs(johto)
     for label in vts_section_refs:
@@ -1915,47 +2168,39 @@ def _apply_uncovered_kumotaan(
                     kumotaan_containers[kind_name].append(label)
 
     repealed: List[str] = []
-    seen_recovery_findings: Set[KumotaanRecoveryFindingKey] = set()
-
-    def _append_recovery_finding(
-        *,
-        op_id: str,
-        target_unit_kind: str,
-        target_norm: str,
-        target_chapter: str | None = None,
-    ) -> None:
-        if findings_out is None:
-            return
-        finding = _uncovered_body_recovery_finding(
-            op_id=op_id,
-            source_statute=amendment_id,
-            target_unit_kind=target_unit_kind,
-            target_norm=target_norm,
-            target_chapter=target_chapter,
-        )
-        if finding is None:
-            return
-        key = KumotaanRecoveryFindingKey(
-            kind=str(finding.kind or ""),
-            target_unit_kind=str(target_unit_kind or ""),
-            target_norm=str(target_norm or ""),
-            target_chapter=str(target_chapter or ""),
-        )
-        if key in seen_recovery_findings:
-            return
-        seen_recovery_findings.add(key)
-        findings_out.append(finding)
+    finding_emitter = KumotaanRecoveryFindingEmitter(
+        amendment_id=amendment_id,
+        findings_out=findings_out,
+    )
 
     for ref in kumotaan_refs:
         label = _norm_num_token(ref)
-        if not label or label in covered_labels:
+        if not label:
+            finding_emitter.append_skip(
+                target_norm=str(ref),
+                reason="kumotaan_empty_section_ref",
+            )
+            continue
+        if label in covered_labels:
+            finding_emitter.append_skip(
+                target_norm=label,
+                reason="kumotaan_section_already_covered",
+            )
             continue
         if label in vts_granular_section_refs and label not in vts_section_refs:
+            finding_emitter.append_skip(
+                target_norm=label,
+                reason="kumotaan_granular_vts_repeal",
+            )
             continue
         covered_labels.add(label)
 
         sec_path = state.find_section_path(label)
         if sec_path is None:
+            finding_emitter.append_skip(
+                target_norm=label,
+                reason="kumotaan_missing_section_target",
+            )
             continue
 
         sec_node = _tops.resolve(state.ir, sec_path)
@@ -1998,9 +2243,10 @@ def _apply_uncovered_kumotaan(
                     payload=op_payload,
                     source=op_source,
                     group_id=f"finland-johto:{amendment_id}",
+                    witness_rule_id=FI_RECOVERY_UNCOVERED_KUMOTAAN_RULE_ID,
                 )
             )
-        _append_recovery_finding(
+        finding_emitter.append(
             op_id=op_id,
             target_unit_kind="section",
             target_norm=label,
@@ -2008,45 +2254,41 @@ def _apply_uncovered_kumotaan(
 
     repealed_containers: List[str] = []
 
-    def _prior_same_effective_container_replacement(
-        *,
-        target_path: tuple[tuple[str, str], ...],
-    ) -> _LegalOperation | None:
-        if lo_ops_out is None or op_source is None or not op_source.effective:
-            return None
-        for prior in reversed(lo_ops_out):
-            if prior.action not in (StructuralAction.INSERT, StructuralAction.REPLACE):
-                continue
-            if prior.target is None or tuple(prior.target.path) != target_path:
-                continue
-            prior_source = prior.source
-            if prior_source is None:
-                continue
-            if prior_source.effective != op_source.effective:
-                continue
-            if prior_source.statute_id == amendment_id:
-                continue
-            return prior
-        return None
-
     for target_unit_kind, refs in kumotaan_containers.items():
         kind_name = "luku" if target_unit_kind == "chapter" else "osa"
         node_kind = "chapter" if target_unit_kind == "chapter" else "part"
         for ref in refs:
             label = _norm_num_token(ref)
-            existing_path = state.find(node_kind, label)
             if not label:
+                finding_emitter.append_skip(
+                    target_norm=str(ref),
+                    reason=f"kumotaan_empty_{target_unit_kind}_ref",
+                )
                 continue
+            existing_path = state.find(node_kind, label)
             covered_key = CoveredContainerKey(target_unit_kind=target_unit_kind, label=label)
             if covered_key in covered_containers and existing_path is None:
+                finding_emitter.append_skip(
+                    target_norm=label,
+                    reason=f"kumotaan_{target_unit_kind}_covered_absent",
+                )
                 continue
             covered_containers.add(covered_key)
 
             if existing_path is None:
+                finding_emitter.append_skip(
+                    target_norm=label,
+                    reason=f"kumotaan_missing_{target_unit_kind}_target",
+                )
                 continue
 
             tl_path = tuple((k, v) for k, v in existing_path if v)
-            shadow = _prior_same_effective_container_replacement(target_path=tl_path)
+            shadow = _prior_same_effective_container_replacement(
+                lo_ops_out=lo_ops_out,
+                op_source=op_source,
+                amendment_id=amendment_id,
+                target_path=tl_path,
+            )
             if shadow is not None:
                 if source_pathologies_out is not None:
                     source_pathologies_out.append(
@@ -2074,9 +2316,10 @@ def _apply_uncovered_kumotaan(
                         payload=None,
                         source=op_source,
                         group_id=f"finland-johto:{amendment_id}",
+                        witness_rule_id=FI_RECOVERY_UNCOVERED_KUMOTAAN_RULE_ID,
                     )
                 )
-            _append_recovery_finding(
+            finding_emitter.append(
                 op_id=op_id,
                 target_unit_kind=target_unit_kind,
                 target_norm=label,
@@ -2086,17 +2329,12 @@ def _apply_uncovered_kumotaan(
         _replay_print(f"  [{amendment_id}] uncovered kumotaan: {repealed}")
     if repealed_containers:
         _replay_print(f"  [{amendment_id}] uncovered kumotaan containers: {repealed_containers}")
-    return state
+    return KumotaanRecoveryResult(state=state)
 
 
 def _pre_scan_repeal_targets(
-    muutoslait: List[str],
-    corpus_store: "CorpusStore",
-    parent_id: str = "",
-    parent_title: str = "",
-    cutoff_date: Optional[dt.date] = None,
-    vts_skipped_targets_out: Optional[List[VtsSkippedTarget]] = None,
-    vts_source_diagnostics_out: Optional[List[VtsSourceDiagnostic]] = None,
+    request: PreScanRepealTargetsRequest,
+    sinks: Optional[PreScanRepealTargetsSinks] = None,
 ) -> "List[Set[RepealTargetRef]]":
     """Scan amendment schedule and return per-amendment REPEAL target sets.
 
@@ -2114,6 +2352,18 @@ def _pre_scan_repeal_targets(
     (missed repeals) are also acceptable: they result in the pre-existing
     over-insertion behaviour.
     """
+    muutoslait = request.muutoslait
+    corpus_store = request.corpus_store
+    parent_id = request.parent_id
+    parent_title = request.parent_title
+    cutoff_date = request.cutoff_date
+    vts_skipped_targets_out = (
+        sinks.vts_skipped_targets_out if sinks is not None else None
+    )
+    vts_source_diagnostics_out = (
+        sinks.vts_source_diagnostics_out if sinks is not None else None
+    )
+
     per_amendment: List[Set[RepealTargetRef]] = []
 
     for amendment_id in muutoslait:

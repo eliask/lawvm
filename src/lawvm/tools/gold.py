@@ -293,7 +293,11 @@ def _cmd_verify(sid: str, mode: Literal["official_consolidation", "legal_pit"]) 
 
     # Re-run replay
     from lawvm.finland.grafter import replay_xml
-    master = replay_xml(sid, mode=mode, quiet=True)
+    from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
+    master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(parent_id=sid, mode=mode, quiet=True),
+    )
     from lawvm.tools.diff import _extract_sections_ir
     from lawvm.core.ir_helpers import irnode_to_text
     replay_secs_ir = _extract_sections_ir(master.ir)

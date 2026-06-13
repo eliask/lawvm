@@ -35,12 +35,17 @@ async def _main(args) -> None:
     from lawvm.core.timeline import materialize_pit
     from lawvm.core.ir_helpers import irnode_to_text as _irnode_to_text
     from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
     sid = args.statute_id
     print(f"Replaying {sid}...", file=sys.stderr)
 
     lo_ops_out: List = []
-    master = replay_xml(sid, quiet=True, lo_ops_out=lo_ops_out)
+    master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(parent_id=sid, quiet=True),
+        sinks=ReplayXmlSinks(lo_ops_out=lo_ops_out),
+    )
     timelines = master.timelines
     base_ir = IRStatute(statute_id=sid, title=master.title, body=master.ctx.base_ir)
 

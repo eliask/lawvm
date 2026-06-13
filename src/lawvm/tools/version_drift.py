@@ -144,6 +144,7 @@ def detect_content_version_drift(
         get_ground_truth_tree,
         replay_xml,
     )
+    from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     from lxml import etree
 
     if corpus is None:
@@ -163,12 +164,15 @@ def detect_content_version_drift(
     collector = VersionDriftCollector(oracle_text)
 
     try:
-        replay_xml(
-            statute_id,
-            mode="legal_pit",
-            corpus=corpus,
-            quiet=True,
-            checkpoint_callback=collector,
+        call_replay_xml(
+            replay_xml,
+            request=ReplayXmlRequest(
+                parent_id=statute_id,
+                mode="legal_pit",
+                corpus=corpus,
+                quiet=True,
+                checkpoint_callback=collector,
+            ),
         )
     except Exception:
         return None

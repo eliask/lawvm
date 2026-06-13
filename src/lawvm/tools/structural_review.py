@@ -659,6 +659,7 @@ def dump_single_side(
     from lawvm.core.ir_helpers import irnode_to_text
     from lawvm.finland.corpus import get_corpus, get_ground_truth_tree
     from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     from lawvm.tools.section_keys import extract_ir_sections, extract_oracle_sections
     from typing import cast, Literal
 
@@ -669,12 +670,15 @@ def dump_single_side(
     out: list[str] = [f"=== {statute_id} — {title} ({side}) ==="]
 
     if side == "replay":
-        replay_master = replay_xml(
-            statute_id,
-            mode=cast(Literal["official_consolidation", "legal_pit"], mode),
-            quiet=True,
-            corpus=corpus,
-            oracle_selector=_selector_from_mode(oracle_selector_mode),
+        replay_master = call_replay_xml(
+            replay_xml,
+            request=ReplayXmlRequest(
+                parent_id=statute_id,
+                mode=cast(Literal["official_consolidation", "legal_pit"], mode),
+                quiet=True,
+                corpus=corpus,
+                oracle_selector=_selector_from_mode(oracle_selector_mode),
+            ),
         )
         if replay_master is None or getattr(replay_master, "materialized_state", None) is None:
             return f"=== {statute_id} — replay failed ===\n"
@@ -799,18 +803,22 @@ def compute_statute_section_diffs(
         extract_oracle_sections,
         reconcile_unique_unscoped_aliases,
     )
+    from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     from typing import cast, Literal
 
     if corpus is None:
         corpus = get_corpus()
 
     if replay_master is None:
-        replay_master = replay_xml(
-            statute_id,
-            mode=cast(Literal["official_consolidation", "legal_pit"], mode),
-            quiet=True,
-            corpus=corpus,
-            oracle_selector=_selector_from_mode(oracle_selector_mode),
+        replay_master = call_replay_xml(
+            replay_xml,
+            request=ReplayXmlRequest(
+                parent_id=statute_id,
+                mode=cast(Literal["official_consolidation", "legal_pit"], mode),
+                quiet=True,
+                corpus=corpus,
+                oracle_selector=_selector_from_mode(oracle_selector_mode),
+            ),
         )
     oracle_root = get_ground_truth_tree(
         statute_id,
@@ -1265,17 +1273,21 @@ def dump_triple_view(
         leaf_section_label,
         section_key_sort_key,
     )
+    from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     from typing import cast, Literal
 
     corpus = get_corpus()
 
     # --- Replay ---
-    replay_master = replay_xml(
-        statute_id,
-        mode=cast(Literal["official_consolidation", "legal_pit"], "official_consolidation"),
-        quiet=True,
-        corpus=corpus,
-        oracle_selector=_selector_from_mode(oracle_selector_mode),
+    replay_master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id=statute_id,
+            mode=cast(Literal["official_consolidation", "legal_pit"], "official_consolidation"),
+            quiet=True,
+            corpus=corpus,
+            oracle_selector=_selector_from_mode(oracle_selector_mode),
+        ),
     )
     oracle_root = get_ground_truth_tree(
         statute_id,

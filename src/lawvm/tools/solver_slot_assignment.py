@@ -476,10 +476,15 @@ def cli_solver_diag(args: object) -> None:
 
     # Replay and capture binding data
     from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
     replay_meta: dict[str, Any] = {}
     try:
-        replay_xml(sid, replay_meta_out=replay_meta, quiet=True)
+        call_replay_xml(
+            replay_xml,
+            request=ReplayXmlRequest(parent_id=sid, quiet=True),
+            sinks=ReplayXmlSinks(replay_meta_out=replay_meta),
+        )
     except Exception as exc:
         print(f"error: replay failed for {sid}: {exc}", file=sys.stderr)
         sys.exit(1)

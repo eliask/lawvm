@@ -26,6 +26,7 @@ from lawvm.core.compile_result import SourcePathology
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.grafter import FailedOp, XMLStatute, replay_xml
 from lawvm.finland.proof_surfaces import source_pathology_proof_rule
+from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 from lawvm.core.tree_ops import normalized_label_key
 
 
@@ -173,7 +174,11 @@ def _replay_one_for_failures(sid: str) -> List[Dict[str, Any]]:
     """
     failed: List[FailedOp] = []
     try:
-        replay_xml(sid, failed_ops_out=failed, quiet=True)
+        call_replay_xml(
+            replay_xml,
+            request=ReplayXmlRequest(parent_id=sid, quiet=True),
+            sinks=ReplayXmlSinks(failed_ops_out=failed),
+        )
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs — fail loud
     except Exception:
@@ -227,11 +232,13 @@ def _collect_failures(
         try:
             failed: List[FailedOp] = []
             source_pathologies: List[SourcePathology] = []
-            master = replay_xml(
-                sid,
-                failed_ops_out=failed,
-                quiet=True,
-                source_pathologies_out=source_pathologies,
+            master = call_replay_xml(
+                replay_xml,
+                request=ReplayXmlRequest(parent_id=sid, quiet=True),
+                sinks=ReplayXmlSinks(
+                    failed_ops_out=failed,
+                    source_pathologies_out=source_pathologies,
+                ),
             )
             all_failures.extend(dataclass_replace(f, target_statute_id=sid) for f in failed)
             if need_masters and failed:
@@ -343,11 +350,13 @@ def _collect_detail_masters(
     for sid in target_sids:
         try:
             source_pathologies: List[SourcePathology] = []
-            master = replay_xml(
-                sid,
-                failed_ops_out=[],
-                quiet=True,
-                source_pathologies_out=source_pathologies,
+            master = call_replay_xml(
+                replay_xml,
+                request=ReplayXmlRequest(parent_id=sid, quiet=True),
+                sinks=ReplayXmlSinks(
+                    failed_ops_out=[],
+                    source_pathologies_out=source_pathologies,
+                ),
             )
             masters_by_sid[sid] = master
             pathologies_by_sid[sid] = _source_pathology_keys(source_pathologies)

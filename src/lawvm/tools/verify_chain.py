@@ -40,6 +40,7 @@ from lawvm.finland.grafter import (
     process_muutoslaki,
 )
 from lawvm.finland.corpus import list_cached_consolidated_pit_locators
+from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.statute import StatuteContext, ReplayState
 from lawvm.finland.helpers import _fi_label_postprocessor
 from lawvm.tools.editorial_hygiene import normalize_finlex_oracle_comparison_text
@@ -468,9 +469,13 @@ def verify_chain(
             contextlib.redirect_stderr(io.StringIO()),
         ):
             state = process_muutoslaki(
-                mid, state, ctx,
-                replay_mode=mode,
-                parent_id=sid,
+                ProcessAmendmentRequest(
+                    amendment_id=mid,
+                    state=state,
+                    ctx=ctx,
+                    replay_mode=mode,
+                    parent_id=sid,
+                )
             ).output
 
         # Snapshot the replay state after this amendment

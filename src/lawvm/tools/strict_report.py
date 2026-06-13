@@ -900,6 +900,7 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             compile_fi_facade_from_replay,
         )
         from lawvm.finland.grafter import replay_xml
+        from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
         from lawvm.finland.strict_profile import default_finland_strict_profile
 
         compiled_ops: list[dict[str, object]] = []
@@ -907,15 +908,20 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
         canonical_ops: list[LegalOperation] = []
         failed_ops: list[FailedOp] = []
         strict_profile = default_finland_strict_profile()
-        master = replay_xml(
-            sid,
-            quiet=True,
-            compiled_ops_out=compiled_ops,
-            replay_meta_out=replay_meta,
-            lo_ops_out=canonical_ops,
-            failed_ops_out=failed_ops,
-            strict_profile=strict_profile,
-            strict_johto_temporal=True,
+        master = call_replay_xml(
+            replay_xml,
+            request=ReplayXmlRequest(
+                parent_id=sid,
+                quiet=True,
+                strict_profile=strict_profile,
+                strict_johto_temporal=True,
+            ),
+            sinks=ReplayXmlSinks(
+                compiled_ops_out=compiled_ops,
+                replay_meta_out=replay_meta,
+                lo_ops_out=canonical_ops,
+                failed_ops_out=failed_ops,
+            ),
         )
         facade = compile_fi_facade_from_replay(
             parent_id=sid,
@@ -2372,6 +2378,7 @@ def main(args: Any) -> None:
     show_facade = getattr(args, "facade", False)
     from lawvm.finland.compile import compile_fi_facade_from_replay
     from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
     from lawvm.finland.strict_profile import default_finland_strict_profile
 
     compiled_ops: list[dict[str, object]] = []
@@ -2379,16 +2386,21 @@ def main(args: Any) -> None:
     canonical_ops: list[LegalOperation] = []
     failed_ops: list[FailedOp] = []
     strict_profile = default_finland_strict_profile()
-    master = replay_xml(
-        statute_id,
-        mode=mode,
-        quiet=True,
-        compiled_ops_out=compiled_ops,
-        replay_meta_out=replay_meta,
-        lo_ops_out=canonical_ops,
-        failed_ops_out=failed_ops,
-        strict_profile=strict_profile,
-        strict_johto_temporal=True,
+    master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id=statute_id,
+            mode=mode,
+            quiet=True,
+            strict_profile=strict_profile,
+            strict_johto_temporal=True,
+        ),
+        sinks=ReplayXmlSinks(
+            compiled_ops_out=compiled_ops,
+            replay_meta_out=replay_meta,
+            lo_ops_out=canonical_ops,
+            failed_ops_out=failed_ops,
+        ),
     )
     facade = compile_fi_facade_from_replay(
         parent_id=statute_id,

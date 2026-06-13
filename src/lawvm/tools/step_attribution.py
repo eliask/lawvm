@@ -215,18 +215,24 @@ def _run_single(
     try:
         with redirect_stdout(buf):
             from lawvm.finland.grafter import replay_xml, get_ground_truth_tree
+            from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
             compiled_ops: list[dict[str, object]] = []
             replay_meta: dict[str, object] = {}
             canonical_ops: list[Any] = []
             failed_ops: list[Any] = []
-            master = replay_xml(
-                statute_id,
-                mode="official_consolidation",
-                compiled_ops_out=compiled_ops,
-                replay_meta_out=replay_meta,
-                lo_ops_out=canonical_ops,
-                failed_ops_out=failed_ops,
+            master = call_replay_xml(
+                replay_xml,
+                request=ReplayXmlRequest(
+                    parent_id=statute_id,
+                    mode="official_consolidation",
+                ),
+                sinks=ReplayXmlSinks(
+                    compiled_ops_out=compiled_ops,
+                    replay_meta_out=replay_meta,
+                    lo_ops_out=canonical_ops,
+                    failed_ops_out=failed_ops,
+                ),
             )
 
         oracle_root = get_ground_truth_tree(statute_id)

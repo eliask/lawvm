@@ -11,6 +11,7 @@ from lawvm.finland.grafter import (
     get_ground_truth_tree,
     replay_xml,
 )
+from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 from lawvm.tools._section_debug import (
     render_node_text,
     resolve_section_key,
@@ -66,8 +67,24 @@ def build_trace_bundle(
     oracle_root: Optional[Any] = None,
 ) -> Dict[str, Any]:
     next_source = _next_amendment_id(statute_id, source_id, mode)
-    before_master = replay_xml(statute_id, mode=mode, stop_before=source_id, quiet=True)
-    after_master = replay_xml(statute_id, mode=mode, stop_before=next_source or "", quiet=True)
+    before_master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id=statute_id,
+            mode=mode,
+            stop_before=source_id,
+            quiet=True,
+        ),
+    )
+    after_master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id=statute_id,
+            mode=mode,
+            stop_before=next_source or "",
+            quiet=True,
+        ),
+    )
 
     before_sections = extract_ir_sections(before_master.materialized_state.ir)
     after_sections = extract_ir_sections(after_master.materialized_state.ir)

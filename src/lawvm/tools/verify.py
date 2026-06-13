@@ -44,6 +44,8 @@ from lawvm.finland.grafter import (
 )
 from lawvm.finland.citation_routing import OP_KEYWORDS
 from lawvm.finland.fallback_op_ids import stamp_fallback_op_ids
+from lawvm.finland.process_request import ProcessAmendmentRequest
+from lawvm.finland.process_result_builder import ProcessAmendmentSinks
 from lawvm.finland.statute import StatuteContext, ReplayState
 from lawvm.finland.helpers import _fi_label_postprocessor
 from lawvm.core.observation_registry import finding_codes_by_role
@@ -395,8 +397,14 @@ def _verify_full(sid: str, mode: Literal["official_consolidation", "legal_pit"] 
             contextlib.redirect_stderr(io.StringIO()),
         ):
             phase_result = process_muutoslaki(
-                amendment_id, state, ctx, replay_mode=mode, parent_id=sid,
-                lo_ops_out=lo_ops_out,
+                ProcessAmendmentRequest(
+                    amendment_id=amendment_id,
+                    state=state,
+                    ctx=ctx,
+                    replay_mode=mode,
+                    parent_id=sid,
+                ),
+                ProcessAmendmentSinks(lo_ops_out=lo_ops_out),
             )
         phase_results.append(phase_result)
         state = phase_result.output
@@ -501,7 +509,13 @@ def verify_observations(
             contextlib.redirect_stderr(io.StringIO()),
         ):
             phase_result = process_muutoslaki(
-                amendment_id, state, ctx, replay_mode=mode, parent_id=sid
+                ProcessAmendmentRequest(
+                    amendment_id=amendment_id,
+                    state=state,
+                    ctx=ctx,
+                    replay_mode=mode,
+                    parent_id=sid,
+                )
             )
         state = phase_result.output
 

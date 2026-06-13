@@ -119,6 +119,21 @@ def section_key_from_compiled_scope_row(row: dict[str, Any]) -> str:
     return "/".join(parts)
 
 
+def chapter_key_from_compiled_scope_row(row: dict[str, Any]) -> str:
+    """Return a chapter scope key from one flat compiled-op row."""
+    if str(row.get("target_unit_kind") or "") != "chapter":
+        return ""
+    part = row.get("target_part")
+    chapter = row.get("target_norm") or row.get("target_chapter")
+    if not chapter:
+        return ""
+    parts = []
+    if part:
+        parts.append(f"part:{_normalize_container_label('part', str(part))}")
+    parts.append(f"chapter:{_normalize_container_label('chapter', str(chapter))}")
+    return "/".join(parts)
+
+
 def section_key_from_compile_failure(failure: Any) -> str:
     parts = []
     chapter = getattr(failure, "target_chapter", "") or ""

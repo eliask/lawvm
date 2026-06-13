@@ -371,15 +371,19 @@ def run_engine_replay(statute_id_yearnum: str) -> ReplayBundle:
     and timeline graph are available for re-materialization at earlier dates.
     """
     from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 
     lo_ops: List[Any] = []
     # Materialize far in the future first to collect the complete timeline set.
-    far_result = replay_xml(
-        statute_id_yearnum,
-        mode="legal_pit",
-        as_of="9999-12-31",
-        lo_ops_out=lo_ops,
-        quiet=True,
+    far_result = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id=statute_id_yearnum,
+            mode="legal_pit",
+            as_of="9999-12-31",
+            quiet=True,
+        ),
+        sinks=ReplayXmlSinks(lo_ops_out=lo_ops),
     )
     timelines = far_result.timelines or {}
     change_dates = compute_change_dates(timelines)

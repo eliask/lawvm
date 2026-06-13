@@ -116,7 +116,7 @@ def _scan_tree_detector_steps_authoritative(
     is the detector result on the state immediately before the window.
     """
     from lawvm.finland.grafter import replay_xml
-    from lawvm.finland.replay_request import ReplayXmlRequest
+    from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 
     # Detector result per amendment id, in chain order.
     per_step_violations: dict[str, list[str]] = {}
@@ -134,7 +134,8 @@ def _scan_tree_detector_steps_authoritative(
         per_step_violations[mid] = _run_fi_invariant_detector_messages(ir, detector, target_path)
         step_order.append(mid)
 
-    replay_xml(
+    call_replay_xml(
+        replay_xml,
         request=ReplayXmlRequest(
             parent_id=statute_id,
             mode=mode,
@@ -196,7 +197,7 @@ def _scan_transition_detector_steps(
     state = ReplayState(ir=ctx.base_ir)
     for mid in amendment_ids[:start_idx]:
         state = process_muutoslaki(
-            request=ProcessAmendmentRequest(
+            ProcessAmendmentRequest(
                 amendment_id=mid,
                 state=state,
                 ctx=ctx,
@@ -213,7 +214,7 @@ def _scan_transition_detector_steps(
         before_ir = state.ir
         step_lo_ops: list[Any] = []
         state = process_muutoslaki(
-            request=ProcessAmendmentRequest(
+            ProcessAmendmentRequest(
                 amendment_id=mid,
                 state=state,
                 ctx=ctx,
@@ -221,7 +222,7 @@ def _scan_transition_detector_steps(
                 parent_id=statute_id,
                 corpus=corpus,
             ),
-            sinks=ProcessAmendmentSinks(lo_ops_out=step_lo_ops),
+            ProcessAmendmentSinks(lo_ops_out=step_lo_ops),
         ).output
         if detector == "descendant_sibling_loss":
             violations = [

@@ -44,6 +44,7 @@ from lawvm.finland.grafter import (
     get_corpus,
     replay_xml,
 )
+from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 from lawvm.finland.strict_profile import FINLAND_INGESTION_V1
 
 
@@ -534,15 +535,20 @@ def _diff_sync(
         replay_meta: dict[str, object] = {}
         canonical_ops: list[Any] = []
         failed_ops: list[Any] = []
-        master = replay_xml(
-            sid,
-            mode=mode,
-            quiet=True,
-            strict_profile=strict_profile,
-            compiled_ops_out=compiled_ops,
-            replay_meta_out=replay_meta,
-            lo_ops_out=canonical_ops,
-            failed_ops_out=failed_ops,
+        master = call_replay_xml(
+            replay_xml,
+            request=ReplayXmlRequest(
+                parent_id=sid,
+                mode=mode,
+                quiet=True,
+                strict_profile=strict_profile,
+            ),
+            sinks=ReplayXmlSinks(
+                compiled_ops_out=compiled_ops,
+                replay_meta_out=replay_meta,
+                lo_ops_out=canonical_ops,
+                failed_ops_out=failed_ops,
+            ),
         )
         facade = compile_fi_facade_from_replay(
             parent_id=sid,
@@ -590,7 +596,15 @@ def _diff_sync(
         _diff_sections_ir_vs_xml(master.ir, oracle_root, address_filter, threshold, show_all, show_text=show_text)
         return
 
-    master = replay_xml(sid, mode=mode, quiet=True, strict_profile=strict_profile)
+    master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id=sid,
+            mode=mode,
+            quiet=True,
+            strict_profile=strict_profile,
+        ),
+    )
     oracle_ctx = get_consolidated_oracle_context(
         sid,
         selector=_LATEST_CONSOLIDATED_SELECTOR,

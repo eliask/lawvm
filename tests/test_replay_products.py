@@ -22,7 +22,8 @@ from lawvm.core.provenance import MigrationEvent
 from lawvm.core.compile_result import TemporalEvent, TemporalScope
 from lawvm.finland.apply import apply_op
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
-from lawvm.finland.grafter import compile_amendment_ops, get_corpus, get_johtolause, replay_xml
+from lawvm.finland.grafter import compile_amendment_ops, get_corpus, get_johtolause
+from tests.corpus_pin_helpers import replay_xml_for_test
 from lawvm.core.timeline import compile_timelines
 from lawvm.core.timeline import materialize_pit_ex
 from lawvm.core.timeline import select_active_version
@@ -918,7 +919,7 @@ def test_normalize_and_compile_ops_1997_1339_rejects_ambiguous_unscoped_fallback
 
 def test_normalize_and_compile_ops_2007_626_rejects_single_payload_fallback_reuse() -> None:
     with redirect_stdout(StringIO()):
-        base_replay = replay_xml(
+        base_replay = replay_xml_for_test(
             "1972/66",
             mode="legal_pit",
             stop_before="2007/626",
@@ -962,7 +963,7 @@ def test_normalize_and_compile_ops_2007_626_rejects_single_payload_fallback_reus
 
 def test_replay_xml_1972_66_repeals_live_suffix_section_in_numeric_range() -> None:
     with redirect_stdout(StringIO()):
-        replay = replay_xml("1972/66", mode="official_consolidation", quiet=True)
+        replay = replay_xml_for_test("1972/66", mode="official_consolidation", quiet=True)
     addr = LegalAddress(path=(("chapter", "4"), ("section", "27a")))
     timeline = replay.timelines[addr]
     selected = select_active_version(timeline, "2020-12-11", query_type="in_force")
@@ -1652,7 +1653,7 @@ def test_replay_xml_1958_370_retargets_143b_away_from_stale_chapter_scope() -> N
     from lawvm.finland.ops import FailedOp
 
     failed: list[FailedOp] = []
-    replay = replay_xml(
+    replay = replay_xml_for_test(
         "1958/370",
         mode="official_consolidation",
         quiet=True,
@@ -2334,7 +2335,7 @@ def test_2004_1287_legal_pit_allows_source_authored_final_commencement_section()
 
 
 def test_1958_370_allows_source_authored_final_commencement_section() -> None:
-    replay = replay_xml("1958/370", mode="official_consolidation", quiet=True)
+    replay = replay_xml_for_test("1958/370", mode="official_consolidation", quiet=True)
 
     violations = validate_replay_products(
         replay.ctx,
@@ -2346,7 +2347,7 @@ def test_1958_370_allows_source_authored_final_commencement_section() -> None:
 
 
 def test_1958_370_reinstated_114_keeps_prior_chapter_scope() -> None:
-    replay = replay_xml("1958/370", mode="legal_pit", quiet=True)
+    replay = replay_xml_for_test("1958/370", mode="legal_pit", quiet=True)
 
     def has_root_section_114(node: IRNode, chapter_seen: bool = False) -> bool:
         next_chapter_seen = chapter_seen or node.kind is IRNodeKind.CHAPTER
@@ -2361,7 +2362,7 @@ def test_1958_370_reinstated_114_keeps_prior_chapter_scope() -> None:
 
 def test_1958_370_retargets_1968_493_stale_body_chapter_scope() -> None:
     failed_ops = []
-    replay = replay_xml("1958/370", mode="legal_pit", quiet=True, failed_ops_out=failed_ops)
+    replay = replay_xml_for_test("1958/370", mode="legal_pit", quiet=True, failed_ops_out=failed_ops)
 
     assert failed_ops == []
     for state in (replay.replay_fold_state, replay.materialized_state):

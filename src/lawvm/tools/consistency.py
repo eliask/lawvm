@@ -268,13 +268,17 @@ def check_one(sid: str) -> ConsistencyResult:
 
     try:
         from lawvm.finland.grafter import replay_xml, get_ground_truth_tree
+        from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
         import io
         import contextlib
 
         # Suppress verbose replay output so corpus mode stays readable
         _null = io.StringIO()
         with contextlib.redirect_stdout(_null):
-            master = replay_xml(sid)
+            master = call_replay_xml(
+                replay_xml,
+                request=ReplayXmlRequest(parent_id=sid),
+            )
 
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs — fail loud

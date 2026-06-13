@@ -403,14 +403,17 @@ def _build_blame_result(
     source_filter: Optional[str],
     mode: Literal["official_consolidation", "legal_pit"],
 ) -> Tuple[str, "_BlameResult"]:
+    from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
+
     compiled_ops: list[dict[str, Any]] = []
     replay_meta: dict[str, Any] = {}
-    master = replay_xml(
-        sid,
-        mode=mode,
-        quiet=True,
-        compiled_ops_out=compiled_ops,
-        replay_meta_out=replay_meta,
+    master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(parent_id=sid, mode=mode, quiet=True),
+        sinks=ReplayXmlSinks(
+            compiled_ops_out=compiled_ops,
+            replay_meta_out=replay_meta,
+        ),
     )
     timeline_breaks = sorted_breaks(
         attach_effective_dates(

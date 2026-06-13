@@ -17,7 +17,7 @@ from lxml import etree
 
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir_helpers import irnode_to_text
-from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks
+from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 from lawvm.finland.grafter import replay_xml
 from lawvm.tools.inspect_amendment import build_amendment_bundle
 from lawvm.tools.ops import _fmt_target, _matches_source, _matches_target
@@ -149,7 +149,8 @@ def build_replay_debug_bundle(
     replay_meta_out: dict[str, Any] | None = {} if show_replay_meta else None
     temporal_events_out: list[Any] | None = [] if show_temporal_events else None
     failed_ops_out: list[Any] | None = [] if show_failed_ops else None
-    master = replay_xml(
+    master = call_replay_xml(
+        replay_xml,
         request=ReplayXmlRequest(
             parent_id=statute_id,
             mode=mode,

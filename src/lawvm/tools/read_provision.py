@@ -158,10 +158,19 @@ def _run_xml(args: Any, selector: str) -> None:
 def _run_statute_scope(args: Any) -> None:
     """No selector → whole-statute replay (== replay --as-of --show-text)."""
     from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     from lawvm.core.ir_helpers import irnode_to_text
 
     as_of = getattr(args, "as_of", "") or _today_iso()
-    result = replay_xml(args.statute_id, mode="legal_pit", as_of=as_of, quiet=True)
+    result = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id=args.statute_id,
+            mode="legal_pit",
+            as_of=as_of,
+            quiet=True,
+        ),
+    )
 
     if getattr(args, "json", False):
         # Reuse the statute-level replay JSON shape the replay command emits.

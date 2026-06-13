@@ -127,6 +127,7 @@ def _project_one_statute(
         get_ground_truth,
         replay_xml,
     )
+    from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
     from lawvm.tools.section_keys import (
         extract_ir_sections,
         extract_oracle_sections,
@@ -142,12 +143,15 @@ def _project_one_statute(
 
     compiled_ops: list[Any] = []
     try:
-        master = replay_xml(
-            statute_id,
-            mode=cast(Literal["official_consolidation", "legal_pit"], mode),
-            quiet=True,
-            compiled_ops_out=compiled_ops,
-            build_full_products=True,
+        master = call_replay_xml(
+            replay_xml,
+            request=ReplayXmlRequest(
+                parent_id=statute_id,
+                mode=cast(Literal["official_consolidation", "legal_pit"], mode),
+                quiet=True,
+                build_full_products=True,
+            ),
+            sinks=ReplayXmlSinks(compiled_ops_out=compiled_ops),
         )
     except (NameError, TypeError, AttributeError):
         raise

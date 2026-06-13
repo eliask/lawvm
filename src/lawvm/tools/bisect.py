@@ -112,7 +112,7 @@ def bisect_statute(
         score_before = prev_score
 
         state = process_muutoslaki(
-            request=ProcessAmendmentRequest(
+            ProcessAmendmentRequest(
                 amendment_id=mid,
                 state=state,
                 ctx=ctx,
