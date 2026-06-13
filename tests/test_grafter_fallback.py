@@ -9468,6 +9468,92 @@ def test_body_chapter_scope_for_section_op_overrides_carry_forward_with_unique_e
     assert got == "6"
 
 
+def test_flat_body_insert_chapter_scope_uses_bracketing_live_siblings() -> None:
+    from lawvm.finland.frontend_compile import (
+        _infer_flat_body_insert_chapter_from_bracketing_live_siblings,
+    )
+
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="15",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="148"),
+                        IRNode(kind=IRNodeKind.SECTION, label="150"),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="20",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="211"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <section><num>149 §</num><content><p>new section</p></content></section>
+        </body>
+        """
+    )
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="149",
+    )
+
+    got = _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
+        op=op,
+        muutos_tree=muutos_tree,
+        master=master,
+    )
+
+    assert got == "15"
+
+
+def test_flat_body_insert_chapter_scope_rejects_one_sided_live_sibling() -> None:
+    from lawvm.finland.frontend_compile import (
+        _infer_flat_body_insert_chapter_from_bracketing_live_siblings,
+    )
+
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="15",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="148"),),
+                ),
+            ),
+        )
+    )
+    muutos_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <section><num>149 §</num><content><p>new section</p></content></section>
+        </body>
+        """
+    )
+    op = AmendmentOp(
+        op_type="INSERT",
+        target_unit_kind="section",
+        target_section="149",
+    )
+
+    got = _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
+        op=op,
+        muutos_tree=muutos_tree,
+        master=master,
+    )
+
+    assert got is None
+
+
 def test_enrich_ops_keeps_live_carry_forward_subsection_scope_over_stale_body_chapter() -> None:
     master = ReplayState(
         ir=IRNode(
@@ -12456,13 +12542,14 @@ def test_inspect_amendment_2005_579_2014_751_drops_language_variant_plain_replac
 
 
 def test_inspect_amendment_2014_527_2019_49_keeps_section_149b_between_149a_and_149c() -> None:
-    bundle = build_amendment_bundle("2014/527", "2019/49", mode="official_consolidation")
-    targets = [group["target_norm"] for group in bundle["groups"]]
+    bundle = build_amendment_bundle("2014/527", "2019/49", mode="legal_pit")
+    groups = {group["target_norm"]: group for group in bundle["groups"]}
 
-    assert "149" in targets
-    assert "149a" in targets
-    assert "149b" in targets
-    assert "149c" in targets
+    assert groups["149"]["target_chapter"] == "15"
+    assert groups["149a"]["target_chapter"] == "15"
+    assert groups["149b"]["target_chapter"] == "15"
+    assert groups["149c"]["target_chapter"] == "15"
+    assert groups["211b"]["target_chapter"] == "20"
 
 
 def test_inspect_amendment_2014_527_2022_490_reports_pre_merge_whole_section_constraint_shape() -> None:

@@ -715,6 +715,162 @@ def _body_chapter_scope_for_section_op(
     return chapter_label
 
 
+def _is_whole_section_insert(op: AmendmentOp) -> bool:
+    return (
+        op.op_type == "INSERT"
+        and op.target_unit_kind == "section"
+        and bool(op.target_section)
+        and op.target_paragraph is None
+        and op.target_item is None
+        and op.target_special is None
+    )
+
+
+def _part_label_for_source_element(el: etree._Element) -> str | None:
+    parent = el.getparent()
+    while parent is not None:
+        if str(parent.tag).rsplit("}", 1)[-1] == "part":
+            part_num = parent.find("{*}num")
+            if part_num is None or not part_num.text:
+                return None
+            raw = _norm_num_token(part_num.text).removesuffix("osa")
+            arabic = _roman_label_to_arabic(raw.lower()) if raw else None
+            return str(arabic) if arabic is not None else (raw or None)
+        parent = parent.getparent()
+    return None
+
+
+def _source_body_has_flat_whole_section(
+    *,
+    muutos_tree: etree._Element,
+    section_norm: str,
+    target_part: str | None,
+) -> bool:
+    body = (
+        muutos_tree
+        if etree.QName(muutos_tree.tag).localname == "body"
+        else muutos_tree.find(".//{*}body")
+    )
+    if body is None:
+        return False
+    for sec in body.findall(".//{*}section"):
+        num_el = sec.find("{*}num")
+        if num_el is None or not num_el.text:
+            continue
+        sec_label = _norm_num_token(re.sub(r"\s*§.*$", "", num_el.text).strip())
+        if sec_label != section_norm:
+            continue
+        if _part_label_for_source_element(sec) != target_part:
+            continue
+        parent = sec.getparent()
+        if parent is None:
+            continue
+        if etree.QName(parent.tag).localname in {"body", "hcontainer"}:
+            return True
+    return False
+
+
+def _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
+    *,
+    op: AmendmentOp,
+    muutos_tree: etree._Element,
+    master: "ReplayState",
+) -> str | None:
+    """Infer a flat source-body section insert's chapter from bracketing live siblings."""
+    if not _is_whole_section_insert(op) or op.target_chapter is not None:
+        return None
+    section_norm = _norm_num_token(op.target_section)
+    if re.fullmatch(r"\d+", section_norm) is None:
+        return None
+    if not _source_body_has_flat_whole_section(
+        muutos_tree=muutos_tree,
+        section_norm=section_norm,
+        target_part=op.target_part,
+    ):
+        return None
+
+    target_num = int(section_norm)
+    lower_by_distance: dict[int, set[tuple[str | None, str]]] = {}
+    upper_by_distance: dict[int, set[tuple[str | None, str]]] = {}
+
+    def _walk(node: object, current_part: str | None, current_chapter: str | None) -> None:
+        kind = getattr(node, "kind", None)
+        label = getattr(node, "label", None)
+        next_part = current_part
+        next_chapter = current_chapter
+        if kind is IRNodeKind.PART:
+            next_part = _norm_num_token(str(label or ""))
+        elif kind is IRNodeKind.CHAPTER:
+            next_chapter = _norm_num_token(str(label or ""))
+        elif kind is IRNodeKind.SECTION and label and next_chapter:
+            sibling_norm = _norm_num_token(str(label))
+            if re.fullmatch(r"\d+", sibling_norm) is not None and (
+                op.target_part is None or next_part == op.target_part
+            ):
+                sibling_num = int(sibling_norm)
+                distance = abs(sibling_num - target_num)
+                if 0 < distance <= 2:
+                    bucket = lower_by_distance if sibling_num < target_num else upper_by_distance
+                    bucket.setdefault(distance, set()).add((next_part, next_chapter))
+        for child in getattr(node, "children", ()):
+            _walk(child, next_part, next_chapter)
+
+    _walk(master.ir, None, None)
+    if not lower_by_distance or not upper_by_distance:
+        return None
+    lower_scopes = lower_by_distance[min(lower_by_distance)]
+    upper_scopes = upper_by_distance[min(upper_by_distance)]
+    if len(lower_scopes) != 1 or lower_scopes != upper_scopes:
+        return None
+    _part, chapter = next(iter(lower_scopes))
+    return chapter
+
+
+def _is_letter_suffix_section_family_continuation(previous_label: str | None, current_label: str) -> bool:
+    if not previous_label:
+        return False
+    previous_match = re.fullmatch(r"(\d+)([a-z]?)", _norm_num_token(previous_label), flags=re.I)
+    current_match = re.fullmatch(r"(\d+)([a-z])", _norm_num_token(current_label), flags=re.I)
+    if previous_match is None or current_match is None:
+        return False
+    previous_stem, previous_suffix = previous_match.groups()
+    current_stem, current_suffix = current_match.groups()
+    if previous_stem != current_stem:
+        return False
+    if not previous_suffix:
+        return current_suffix.lower() == "a"
+    return ord(current_suffix.lower()) == ord(previous_suffix.lower()) + 1
+
+
+def _add_inferred_section_chapter_scope(
+    op: AmendmentOp,
+    *,
+    chapter: str,
+    rule_id: str,
+) -> AmendmentOp:
+    tags = tuple(dict.fromkeys((*op.scope_provenance_tags, "chapter_scope_carry_forward")))
+    scoped_lo = _lo_with_path_update(op.lo, chapter=chapter) if op.lo is not None else op.lo
+    if scoped_lo is not None:
+        scoped_lo = dc_replace(
+            scoped_lo,
+            provenance_tags=tuple(dict.fromkeys((*scoped_lo.provenance_tags, "chapter_scope_carry_forward"))),
+            witness_rule_id=rule_id,
+        )
+    return dc_replace(
+        op,
+        target_chapter=chapter,
+        scope_provenance_tags=tags,
+        scope_confidence=ScopeConfidence(
+            tag="chapter_scope_carry_forward",
+            source="carry_forward",
+            confidence="inferred",
+            resolved_chapter=chapter,
+        ),
+        lo=scoped_lo,
+        witness_rule_id=rule_id,
+    )
+
+
 def _body_scope_for_section_label(
     *,
     muutos_tree: "etree._Element",
@@ -950,6 +1106,9 @@ def _enrich_ops_from_amendment_tree(
         ),
     )
     enriched = []
+    last_inferred_section_norm: str | None = None
+    last_inferred_section_chapter: str | None = None
+    last_inferred_section_part: str | None = None
     for op in ops:
         scoped_op = op
         body_scoped = False
@@ -1008,6 +1167,7 @@ def _enrich_ops_from_amendment_tree(
                         resolved_chapter=scoped_op.target_chapter,
                     )
             inferred_chapter = None
+            inferred_rule_id = "fi_body_chapter_scope_from_source_body"
             if scoped_op.target_chapter is None or (
                 scoped_op.op_type == "INSERT"
                 and scoped_op.target_unit_kind == "section"
@@ -1022,20 +1182,37 @@ def _enrich_ops_from_amendment_tree(
                     muutos_tree=muutos_tree,
                     master=master,
                 )
+                if inferred_chapter is None:
+                    inferred_chapter = _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
+                        op=scoped_op,
+                        muutos_tree=muutos_tree,
+                        master=master,
+                    )
+                    inferred_rule_id = "fi_flat_body_insert_scope_from_bracketing_live_siblings"
+                if (
+                    inferred_chapter is None
+                    and _is_whole_section_insert(scoped_op)
+                    and scoped_op.target_chapter is None
+                    and scoped_op.target_part == last_inferred_section_part
+                    and last_inferred_section_chapter is not None
+                    and _source_body_has_flat_whole_section(
+                        muutos_tree=muutos_tree,
+                        section_norm=_norm_num_token(scoped_op.target_section),
+                        target_part=scoped_op.target_part,
+                    )
+                    and _is_letter_suffix_section_family_continuation(
+                        last_inferred_section_norm,
+                        _norm_num_token(scoped_op.target_section),
+                    )
+                ):
+                    inferred_chapter = last_inferred_section_chapter
+                    inferred_rule_id = "fi_flat_body_insert_scope_from_base_family_continuation"
             if inferred_chapter is not None:
                 body_scoped = True
-                scoped_op = dc_replace(
+                scoped_op = _add_inferred_section_chapter_scope(
                     scoped_op,
-                    target_chapter=inferred_chapter,
-                    scope_confidence=normalize_scope_confidence(
-                        projection_scope_confidence(
-                            scope_confidence=scoped_op.scope_confidence,
-                            scope_provenance_tags=scoped_op.scope_provenance_tags,
-                            resolved_chapter=inferred_chapter,
-                        ),
-                        resolved_chapter=inferred_chapter,
-                    ),
-                    lo=_lo_with_path_update(op.lo, chapter=inferred_chapter) if op.lo is not None else op.lo,
+                    chapter=inferred_chapter,
+                    rule_id=inferred_rule_id,
                 )
             elif scope_witness is not None and scope_witness.source in {"explicit_scope_rewrite", "explicit_chunk"}:
                 body_scoped = True
@@ -1106,6 +1283,14 @@ def _enrich_ops_from_amendment_tree(
         )
         if enriched[-1].op_id == "":
             enriched[-1] = dc_replace(enriched[-1], op_id=mint_fallback_op_id(amendment_id, enriched[-1]))
+        if _is_whole_section_insert(enriched[-1]) and enriched[-1].target_chapter:
+            last_inferred_section_norm = _norm_num_token(enriched[-1].target_section)
+            last_inferred_section_chapter = enriched[-1].target_chapter
+            last_inferred_section_part = enriched[-1].target_part
+        elif _is_whole_section_insert(enriched[-1]):
+            last_inferred_section_norm = None
+            last_inferred_section_chapter = None
+            last_inferred_section_part = None
     patched = enriched
     for _target_mid, labels, section_expiry in section_expiry_overrides:
         if _target_mid != amendment_id:

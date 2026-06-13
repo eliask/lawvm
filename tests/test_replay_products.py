@@ -2068,7 +2068,7 @@ def test_validate_replay_products_detects_mixed_hierarchy_products() -> None:
     )
 
 
-def test_2014_527_legal_pit_surfaces_mixed_hierarchy_product_invariant() -> None:
+def test_2014_527_legal_pit_does_not_leave_reinstated_section_family_at_root() -> None:
     replay = pinned_replay("2014/527", mode="legal_pit", quiet=True)
 
     violations = validate_replay_products(
@@ -2077,14 +2077,9 @@ def test_2014_527_legal_pit_surfaces_mixed_hierarchy_product_invariant() -> None
         deep_materialization_check=False,
     )
 
-    assert (
-        "replay_fold_tree:body/hcontainer:?: direct section:149 alongside chapter:21"
-        in violations
-    )
-    assert (
-        "materialized_tree:body: direct section:149a alongside chapter:21"
-        in violations
-    )
+    assert not any("section:149" in violation for violation in violations)
+    assert replay.materialized_state.find_section("149a", "15") is not None
+    assert replay.materialized_state.find_section("211b", "20") is not None
 
 
 def test_replay_fold_does_not_duplicate_temporary_section_chain_for_1995_1556() -> None:
