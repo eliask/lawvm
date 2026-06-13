@@ -28,6 +28,7 @@ def test_parse_target_hint_extracts_bounded_structural_hints() -> None:
         "paragraphs": [],
         "facet": "",
         "raw": "Section 12(3)",
+        "definition": "",
     }
     assert parse_target_hint("Section 78B(1)\ufeff(a)\ufeff(viii)").to_jsonable()["paragraphs"] == ["a", "viii"]
     assert parse_target_hint("Section 1 heading").to_jsonable()["facet"] == "heading"
@@ -43,8 +44,17 @@ def test_parse_target_hint_extracts_bounded_structural_hints() -> None:
         "paragraphs": [],
         "facet": "",
         "raw": "Section 2(1) and (2)",
+        "definition": "",
     }
     assert parse_target_hint("Sections 1 and 2").to_jsonable()["status"] == "compound_target_unparsed"
+    # A definition note carries its defined term as a refining segment.
+    definition_hint = parse_target_hint("Section 2(1)", defined_term="Commission")
+    assert definition_hint.kind == "section"
+    assert definition_hint.subsection == "1"
+    assert definition_hint.definition == "Commission"
+    # A defined term is not carried when a finer paragraph or a facet is present.
+    assert parse_target_hint("Section 2(1)(a)", defined_term="Commission").definition == ""
+    assert parse_target_hint("Section 2(1) heading", defined_term="Commission").definition == ""
 
 
 def test_build_operation_surface_extracts_history_witness_rows() -> None:

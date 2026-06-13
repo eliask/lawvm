@@ -14,8 +14,11 @@ from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_REFUSED_MISSING_VERSION_WINDOW_RULE_ID,
     NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
     NZ_DRY_RUN_REFUSED_PREFLIGHT_NOT_READY_RULE_ID,
+    NZ_DRY_RUN_REFUSED_TARGET_NOT_IN_BEFORE_RULE_ID,
     NZ_DRY_RUN_REFUSED_TARGET_RECOVERED_RULE_ID,
+    NZ_DRY_RUN_REPEAL_REMOVED_AGREES_RULE_ID,
     NZ_DRY_RUN_REPEAL_TOMBSTONE_AGREES_RULE_ID,
+    NZ_DRY_RUN_RESIDUAL_TARGET_NOT_REMOVED_IN_ORACLE_RULE_ID,
     NZ_DRY_RUN_SCOPE_COMPLETE_SET,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
     build_dry_run_repeal,
@@ -455,3 +458,174 @@ def test_dry_run_canary_agrees_against_archived_oracle() -> None:
     assert summary["dry_run_oracle_residuals"] == 0
     assert summary["neighbors_unchanged_all"] is True
     assert all(proof.oracle_match == "agrees" for proof in report.proofs)
+
+
+# --- Finer-granularity definition (def-para) target resolution -------------
+#
+# Definition repeals carry their defined term ("Section 2(1) Commission:
+# repealed, ...") and target an exact ``def-para`` inside the interpretation
+# subsection, which NZ REMOVES from the consolidated text on repeal (rather
+# than tombstoning it). The address omits the enclosing part; resolution must
+# tolerate the leading ``part:`` segment and land on the exact named node.
+
+_DEF_WORK_ID = "act_public_1992_1"
+_DEF_BEFORE_VERSION = "act_public_1992_1_en_2010-08-06"
+_DEF_AFTER_VERSION = "act_public_1992_1_en_2010-11-01"
+
+# Interpretation subsection nested under a part. Two definitions: "Commission"
+# (repealed -> removed in oracle) and "Board" (retained). A lettered paragraph
+# inside the retained definition exists to confirm distinct addressing.
+_DEF_BEFORE_XML = b"""\
+<act>
+  <body>
+    <part id="DLM100"><label>1</label><heading>Preliminary</heading>
+      <prov id="DLM281866"><label>2</label><heading>Interpretation</heading>
+        <prov.body><subprov><label>1</label>
+          <para><text>In this Act,&#8212;</text>
+            <def-para id="DLM3374353"><para><text><def-term id="DT1">Commission</def-term> means the Commission</text></para></def-para>
+            <def-para id="DLM281876"><para><text><def-term id="DT2">Board</def-term> means the Board</text>
+              <label-para><label>a</label><para><text>established under section 148</text></para></label-para>
+            </para></def-para>
+          </para>
+        </subprov></prov.body>
+      </prov>
+    </part>
+  </body>
+</act>
+"""
+
+# Oracle: "Commission" def-para REMOVED entirely; "Board" retained.
+_DEF_AFTER_XML = b"""\
+<act>
+  <body>
+    <part id="DLM100"><label>1</label><heading>Preliminary</heading>
+      <prov id="DLM281866"><label>2</label><heading>Interpretation</heading>
+        <prov.body><subprov><label>1</label>
+          <para><text>In this Act,&#8212;</text>
+            <def-para id="DLM281876"><para><text><def-term id="DT2">Board</def-term> means the Board</text>
+              <label-para><label>a</label><para><text>established under section 148</text></para></label-para>
+            </para></def-para>
+          </para>
+        </subprov></prov.body>
+      </prov>
+    </part>
+  </body>
+</act>
+"""
+
+
+def _def_version_detail(version_id: str, date: str) -> bytes:
+    return json.dumps(
+        {
+            "version_id": version_id,
+            "formats": [
+                {"type": "xml", "url": f"https://www.legislation.govt.nz/act/public/1992/1/en/{date}.xml"}
+            ],
+        }
+    ).encode()
+
+
+def _def_archive() -> _FakeArchive:
+    return _FakeArchive(
+        {
+            f"https://api.legislation.govt.nz/v0/versions/{_DEF_BEFORE_VERSION}/": _def_version_detail(
+                _DEF_BEFORE_VERSION, "2010-08-06"
+            ),
+            "https://www.legislation.govt.nz/act/public/1992/1/en/2010-08-06.xml": _DEF_BEFORE_XML,
+            f"https://api.legislation.govt.nz/v0/versions/{_DEF_AFTER_VERSION}/": _def_version_detail(
+                _DEF_AFTER_VERSION, "2010-11-01"
+            ),
+            "https://www.legislation.govt.nz/act/public/1992/1/en/2010-11-01.xml": _DEF_AFTER_XML,
+        }
+    )
+
+
+def _def_repeal_row(*, term: str, row_index: int = 1) -> NZCanonicalEffectCandidateRow:
+    operation = LegalOperation(
+        op_id=f"nz:{_DEF_WORK_ID}:nz-opw-{row_index}:repeal",
+        sequence=row_index,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("section", "2"), ("subsection", "1"), ("definition", term))),
+        payload=None,
+        source=OperationSource(statute_id="act_public_2010_116", effective="2010-11-01"),
+        provenance_tags=("new_zealand", "history_note", "candidate_only", "not_replayed"),
+        witness_rule_id="nz_repeal_candidate_from_history_note_payload_witness",
+    )
+    return NZCanonicalEffectCandidateRow(
+        row_id=f"nz-effect-candidate-{row_index}",
+        operation_row_id=f"nz-opw-{row_index}",
+        effect_readiness_row_id=f"nz-readiness-{row_index}",
+        status="candidate_emitted",
+        action=str(StructuralAction.REPEAL),
+        target_address=f"section:2/subsection:1/definition:{term}",
+        operation=operation,
+        source_path=("part:1", "prov:2", "subprov:1", f"def-para:{term}"),
+        amendment_date_iso="2010-11-01",
+        operation_family="repealed",
+        repeal_payload_corroboration_status="not_required_non_direct_repeal_payload",
+        latest_oracle_target_resolution_status="exact_source_path",
+    )
+
+
+def test_dry_run_definition_repeal_resolves_exact_def_para_and_agrees_by_removal() -> None:
+    # "Section 2(1) Commission: repealed" must resolve to the exact def-para,
+    # tolerating the omitted leading part, and agree because the oracle REMOVED
+    # the definition (def-para removal semantics, not tombstone).
+    preflight = _preflight_from_rows((_def_repeal_row(term="Commission"),))
+    report = build_dry_run_repeal(archive := _def_archive(), work_id=_DEF_WORK_ID, preflight=preflight)
+    del archive
+
+    summary = report.summary()
+    assert summary["operations_dry_run"] == 1
+    assert summary["operations_refused"] == 0
+    assert summary["dry_run_oracle_agreements"] == 1
+    assert summary["dry_run_oracle_residuals"] == 0
+    assert summary["neighbors_unchanged_all"] is True
+
+    proof = report.proofs[0]
+    # Exact node, with the part the witness omitted resolved in.
+    assert proof.selected_source_path == ("part:1", "prov:2", "subprov:1", "def-para:Commission")
+    assert proof.target_xml_id == "DLM3374353"
+    assert proof.occupancy_before == "substantive"
+    # Removal-on-repeal: oracle node is absent, and that is the agreeing outcome.
+    assert proof.oracle_match == "agrees"
+    assert proof.oracle_match_rule_id == NZ_DRY_RUN_REPEAL_REMOVED_AGREES_RULE_ID
+    assert proof.oracle_target_present is False
+    assert proof.oracle_target_occupancy == "absent"
+
+
+def test_dry_run_definition_still_present_in_oracle_is_typed_residual_not_collapse() -> None:
+    # A definition repeal whose def-para is still present-substantive in the
+    # oracle is an honest typed residual (the definition was not in fact
+    # removed) -- never silently agreed by collapsing to the parent subsection.
+    preflight = _preflight_from_rows((_def_repeal_row(term="Board"),))
+    report = build_dry_run_repeal(_def_archive(), work_id=_DEF_WORK_ID, preflight=preflight)
+
+    summary = report.summary()
+    assert summary["operations_dry_run"] == 1
+    assert summary["dry_run_oracle_agreements"] == 0
+    assert summary["dry_run_oracle_residuals"] == 1
+
+    proof = report.proofs[0]
+    assert proof.selected_source_path == ("part:1", "prov:2", "subprov:1", "def-para:Board")
+    assert proof.oracle_match == "target_not_removed"
+    assert proof.oracle_match_rule_id == NZ_DRY_RUN_RESIDUAL_TARGET_NOT_REMOVED_IN_ORACLE_RULE_ID
+    # It did NOT resolve to (or agree as) the coarse parent subsection.
+    assert proof.selected_source_path[-1].startswith("def-para:")
+
+
+def test_dry_run_unresolvable_definition_is_refused_not_collapsed_to_parent() -> None:
+    # A defined term absent from the before tree must refuse as target-not-in-
+    # before, never fall back to the substantive parent subsection.
+    preflight = _preflight_from_rows((_def_repeal_row(term="phantom term"),))
+    report = build_dry_run_repeal(_def_archive(), work_id=_DEF_WORK_ID, preflight=preflight)
+
+    summary = report.summary()
+    assert summary["operations_dry_run"] == 0
+    assert summary["dry_run_oracle_agreements"] == 0
+    assert len(report.refusals) == 1
+    refusal = report.refusals[0]
+    assert refusal.rule_id == NZ_DRY_RUN_REFUSED_TARGET_NOT_IN_BEFORE_RULE_ID
+    # The refusal records the address-derived path (no body node was bound),
+    # never a coarse-parent substitution.
+    assert refusal.detail["selected_source_path"] == ["prov:2", "subprov:1", "def-para:phantom term"]

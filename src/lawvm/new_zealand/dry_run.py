@@ -63,6 +63,9 @@ NZ_DRY_RUN_REFUSED_TARGET_PATH_UNMAPPABLE_RULE_ID = "nz_dry_run_refused_target_a
 # Oracle residual rule ids.
 NZ_DRY_RUN_RESIDUAL_TARGET_MISSING_IN_ORACLE_RULE_ID = "nz_dry_run_residual_target_missing_in_oracle"
 NZ_DRY_RUN_RESIDUAL_TARGET_NOT_TOMBSTONE_IN_ORACLE_RULE_ID = "nz_dry_run_residual_target_not_tombstone_in_oracle"
+# Removal-on-repeal (definition) oracle outcomes.
+NZ_DRY_RUN_REPEAL_REMOVED_AGREES_RULE_ID = "nz_dry_run_repeal_removed_node_matches_oracle"
+NZ_DRY_RUN_RESIDUAL_TARGET_NOT_REMOVED_IN_ORACLE_RULE_ID = "nz_dry_run_residual_target_not_removed_in_oracle"
 
 # Dry-run scopes.
 #
@@ -105,9 +108,17 @@ _ADDRESS_KIND_TO_SOURCE_KIND = {
     "section": "prov",
     "subsection": "subprov",
     "paragraph": "label-para",
+    "definition": "def-para",
     "part": "part",
     "schedule": "schedule",
 }
+
+# Source-tree node kind whose repeal NZ effects by REMOVING the node from the
+# consolidated text rather than leaving a repealed-but-addressable tombstone.
+# When a definition (``def-para``) is repealed, the whole def-para disappears
+# from the on-or-after XML; the agreeing oracle outcome is therefore an absent
+# node, not a tombstone. (Ordinary provisions are tombstoned in place.)
+_REMOVAL_ON_REPEAL_SOURCE_KIND = "def-para"
 
 
 @dataclass(frozen=True)
@@ -656,7 +667,7 @@ def _dry_run_one_repeal(
             amendment_date_iso=amendment_date_iso,
         )
 
-    before_matches = _nodes_at_path(before_doc, source_path)
+    before_matches = _resolve_target_nodes(before_doc, source_path)
     if len(before_matches) == 0:
         return NZDryRunRefusal(
             op_id=op_id,
@@ -677,6 +688,10 @@ def _dry_run_one_repeal(
         )
 
     before_target = before_matches[0]
+    # The resolved node may carry a leading ``part:`` segment the address omitted;
+    # everything downstream (proof, neighbours, oracle partition) uses the
+    # resolved path so the surface reports the exact node it actually touched.
+    resolved_path = before_target.path
     occupancy_before = _occupancy(before_target)
     if occupancy_before != "substantive":
         return NZDryRunRefusal(
@@ -693,8 +708,8 @@ def _dry_run_one_repeal(
     occupancy_after = _occupancy(after_target)
 
     # Mutation-boundary proof: digests + unaffected neighbours.
-    parent_path = source_path[:-1]
-    siblings_before = _sibling_nodes(before_doc, source_path)
+    parent_path = resolved_path[:-1]
+    siblings_before = _sibling_nodes(before_doc, resolved_path)
     # In the candidate after-tree only the target changed; siblings are the same
     # immutable nodes from the before tree, so their digests are unchanged by
     # construction. We still record both sides to make the boundary explicit.
@@ -706,14 +721,14 @@ def _dry_run_one_repeal(
     parent_digest_after = parent_digest_before  # parent identity untouched
 
     oracle_match, oracle_rule_id, oracle_present, oracle_occupancy = _oracle_partition(
-        oracle_doc, source_path
+        oracle_doc, resolved_path, target_kind=_leaf_source_kind(resolved_path)
     )
 
     return NZMutationBoundaryProof(
         op_id=op_id,
         action=str(operation.action),
         target_address=target_address,
-        selected_source_path=source_path,
+        selected_source_path=resolved_path,
         target_xml_id=before_target.xml_id,
         target_digest_before=_node_digest(before_target),
         target_digest_after=_node_digest(after_target),
@@ -738,8 +753,28 @@ def _dry_run_one_repeal(
 def _oracle_partition(
     oracle_doc: NZSourceDocument,
     source_path: tuple[str, ...],
+    *,
+    target_kind: str = "",
 ) -> tuple[str, str, bool, str]:
-    oracle_matches = _nodes_at_path(oracle_doc, source_path)
+    oracle_matches = _resolve_target_nodes(oracle_doc, source_path)
+    if target_kind == _REMOVAL_ON_REPEAL_SOURCE_KIND:
+        # NZ removes a repealed definition (``def-para``) from the consolidated
+        # text rather than tombstoning it. An absent node is therefore the
+        # agreeing outcome; a still-present node is the residual.
+        if not oracle_matches:
+            return (
+                "agrees",
+                NZ_DRY_RUN_REPEAL_REMOVED_AGREES_RULE_ID,
+                False,
+                "absent",
+            )
+        oracle_occupancy = _occupancy(oracle_matches[0])
+        return (
+            "target_not_removed",
+            NZ_DRY_RUN_RESIDUAL_TARGET_NOT_REMOVED_IN_ORACLE_RULE_ID,
+            True,
+            oracle_occupancy,
+        )
     if not oracle_matches:
         # NZ consolidations preserve repealed-but-addressable tombstones, so a
         # missing node is a residual, not an agreement.
@@ -761,6 +796,16 @@ def _oracle_partition(
     )
 
 
+def _leaf_source_kind(source_path: tuple[str, ...]) -> str:
+    if not source_path:
+        return ""
+    leaf = source_path[-1]
+    for separator in (":", "@", "#"):
+        if separator in leaf:
+            return leaf.split(separator, 1)[0]
+    return leaf
+
+
 def _source_path_for_address(operation: LegalOperation) -> tuple[str, ...] | None:
     segments: list[str] = []
     for kind, label in operation.target.path:
@@ -775,6 +820,42 @@ def _source_path_for_address(operation: LegalOperation) -> tuple[str, ...] | Non
 
 def _nodes_at_path(document: NZSourceDocument, path: tuple[str, ...]) -> tuple[NZSourceNode, ...]:
     return tuple(node for node in document.nodes if node.path == path)
+
+
+# Source zones that are NOT the live consolidated text: end-of-document
+# amendment skeletons and front/end history. A repeal target must resolve into
+# the live body (or a schedule), never into a skeleton copy.
+_NON_BODY_SOURCE_ZONES = frozenset({"end_skeleton", "front_history", "end_history"})
+
+
+def _resolve_target_nodes(
+    document: NZSourceDocument,
+    source_path: tuple[str, ...],
+) -> tuple[NZSourceNode, ...]:
+    """Resolve an address-derived source path to live-body node(s).
+
+    History-note ``amended-provision`` references omit the enclosing ``part``
+    (e.g. "Section 2(1)"), while the parsed body nests provisions under their
+    part (``part:1/prov:2/subprov:1``). We therefore accept a node whose path
+    equals the address path exactly OR equals it with one extra leading
+    ``part:`` segment, but only in the live body — never an end-of-document
+    skeleton copy, which would resolve substantively for a node that is in fact
+    repealed in the body. The caller still requires exactly one match; an empty
+    or ambiguous result is a typed refusal, never a coarse-parent fallback.
+    """
+    matches: list[NZSourceNode] = []
+    for node in document.nodes:
+        if node.source_zone in _NON_BODY_SOURCE_ZONES:
+            continue
+        if node.path == source_path:
+            matches.append(node)
+        elif (
+            len(node.path) == len(source_path) + 1
+            and node.path[0].split(":", 1)[0] == "part"
+            and node.path[1:] == source_path
+        ):
+            matches.append(node)
+    return tuple(matches)
 
 
 def _sibling_nodes(document: NZSourceDocument, path: tuple[str, ...]) -> tuple[NZSourceNode, ...]:

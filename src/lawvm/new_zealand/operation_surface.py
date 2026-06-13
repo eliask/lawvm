@@ -72,6 +72,9 @@ class NZTargetHint:
     paragraphs: tuple[str, ...] = ()
     facet: str = ""
     raw: str = ""
+    # Defined term carried by a definition-level note; resolves to the exact
+    # ``def-para`` node inside the subsection rather than the coarse subsection.
+    definition: str = ""
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
@@ -82,6 +85,7 @@ class NZTargetHint:
             "paragraphs": list(self.paragraphs),
             "facet": self.facet,
             "raw": self.raw,
+            "definition": self.definition,
         }
 
 
@@ -346,7 +350,7 @@ def build_operation_surface(
             source_zone=node.source_zone if node is not None else "document",
             duplicate_path_statuses=duplicate_path_statuses,
         )
-        target_hint = parse_target_hint(witness.amended_provision)
+        target_hint = parse_target_hint(witness.amended_provision, defined_term=witness.defined_term)
         target_address_candidate = _target_address_candidate(
             target_surface_status=target_status,
             target_hint=target_hint,
@@ -532,9 +536,10 @@ def classify_operation_family(operation: str) -> str:
     return "__unclassified__"
 
 
-def parse_target_hint(amended_provision: str) -> NZTargetHint:
+def parse_target_hint(amended_provision: str, *, defined_term: str = "") -> NZTargetHint:
     raw = " ".join(amended_provision.replace("\ufeff", "").split())
     normalized = raw.lower()
+    definition = " ".join(defined_term.replace("\ufeff", "").split())
     if not raw:
         return NZTargetHint(status="missing", raw=raw)
     if normalized in {"title", "long title"}:
@@ -553,6 +558,7 @@ def parse_target_hint(amended_provision: str) -> NZTargetHint:
             subsection=subsection,
             paragraphs=paragraphs,
             raw=raw,
+            definition=definition,
         )
     section_match = _SECTION_TARGET_RE.match(raw)
     if section_match is not None:
@@ -560,6 +566,11 @@ def parse_target_hint(amended_provision: str) -> NZTargetHint:
         components = tuple(re.findall(r"\(([0-9A-Za-z]+)\)", section_match.group("components") or ""))
         subsection = components[0] if components else ""
         paragraphs = components[1:] if len(components) > 1 else ()
+        # A definition note carries its defined term in addition to the section
+        # reference. The term refines the target to the exact def-para; it is
+        # only meaningful when no finer paragraph segment is already present and
+        # the note is not a heading facet.
+        carried_definition = definition if (definition and not paragraphs and not facet) else ""
         return NZTargetHint(
             status="parsed",
             kind="section",
@@ -568,6 +579,7 @@ def parse_target_hint(amended_provision: str) -> NZTargetHint:
             paragraphs=paragraphs,
             facet=facet,
             raw=raw,
+            definition=carried_definition,
         )
     schedule_match = _SCHEDULE_TARGET_RE.match(raw)
     if schedule_match is not None:
@@ -655,6 +667,10 @@ def _target_address_candidate(
         if target_hint.subsection:
             path_parts.append(("subsection", target_hint.subsection))
         path_parts.extend(("paragraph", paragraph) for paragraph in target_hint.paragraphs)
+        # A definition target refines the (sub)section to the exact def-para
+        # identified by its defined term.
+        if target_hint.definition:
+            path_parts.append(("definition", target_hint.definition))
         path = tuple(path_parts)
     elif target_hint.kind == "schedule":
         path = (("schedule", target_hint.label),)
@@ -711,6 +727,8 @@ def _address_part_from_source_segment(segment: str) -> tuple[str, str] | None:
         return ("subsection", label)
     if kind == "label-para":
         return ("paragraph", label)
+    if kind == "def-para":
+        return ("definition", label)
     if kind in {"part", "schedule"}:
         return (kind, label)
     return (kind, label)

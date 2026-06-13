@@ -21,8 +21,14 @@ from lawvm.new_zealand.dates import nz_date_text_to_iso
 from lawvm.new_zealand.dependencies import latest_xml_locator_for_work, parse_public_act_citation
 
 
-_STRUCTURAL_TAGS = {"label-para", "part", "prov", "schedule", "subprov"}
+_STRUCTURAL_TAGS = {"def-para", "label-para", "part", "prov", "schedule", "subprov"}
 _TEXT_EXCLUDE_TAGS = {"notes", "history", "history-note"}
+
+# A ``def-para`` (a single definition in an interpretation/definitions
+# provision) is addressed by its defined term rather than a numeric label. NZ
+# wraps the defined term in a ``def-term`` child of the leading ``text``; we use
+# the first such term, normalized, as the addressable label.
+_DEF_TERM_TAG = "def-term"
 
 
 @dataclass(frozen=True)
@@ -38,6 +44,11 @@ class NZHistoryWitness:
     amending_provision_hrefs: tuple[str, ...]
     amending_legislation: str
     amending_work_id: str
+    # Defined term targeted by a definition-level note ("Section 2(1) <term>:
+    # repealed, ..."), taken from the bold ``emphasis`` between the
+    # ``amended-provision`` reference and the operation. Empty for ordinary
+    # (non-definition) targets.
+    defined_term: str = ""
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
@@ -52,6 +63,7 @@ class NZHistoryWitness:
             "amending_provision_hrefs": list(self.amending_provision_hrefs),
             "amending_legislation": self.amending_legislation,
             "amending_work_id": self.amending_work_id,
+            "defined_term": self.defined_term,
         }
 
 
@@ -188,7 +200,10 @@ def _walk_source_nodes(
         return
     kind = _localname(node)
     if kind in _STRUCTURAL_TAGS:
-        label = _direct_child_text(node, "label")
+        if kind == "def-para":
+            label = _first_def_term(node)
+        else:
+            label = _direct_child_text(node, "label")
         segment = _path_segment(kind, label, _attr(node, "id"), len(nodes) + 1)
         current_path = (*path, segment)
         history_notes = tuple(_direct_history_notes(node))
@@ -237,6 +252,25 @@ def _document_metadata(root: etree._Element) -> dict[str, str]:
         metadata["title"] = title
     metadata["root_tag"] = _localname(root)
     return metadata
+
+
+def _first_def_term(node: etree._Element) -> str:
+    """Return the first defined term inside a ``def-para`` as an addressable label.
+
+    The label is the normalized text of the first ``def-term`` descendant. Path
+    segments use ``/`` and ``:`` as separators, so a term carrying either is not
+    a clean addressable label; we drop it (the segment then falls back to the
+    XML id) rather than corrupt the path.
+    """
+    for descendant in node.iter():
+        if descendant is node:
+            continue
+        if isinstance(descendant.tag, str) and _localname(descendant) == _DEF_TERM_TAG:
+            term = _normalize_text(descendant.text or "")
+            if term and "/" not in term and ":" not in term:
+                return term
+            return ""
+    return ""
 
 
 def _path_segment(kind: str, label: str, xml_id: str, ordinal: int) -> str:
@@ -289,7 +323,38 @@ def _history_witness(node: etree._Element) -> NZHistoryWitness:
         amending_provision_hrefs=tuple(_descendant_attrs(node, "amending-provision", "href")),
         amending_legislation=_first_descendant_text(node, "amending-leg"),
         amending_work_id=work_id,
+        defined_term=_history_note_defined_term(node),
     )
+
+
+def _history_note_defined_term(node: etree._Element) -> str:
+    """Extract the defined term a definition-level history note targets.
+
+    NZ writes definition notes as ``<amended-provision>Section 2(1)</amended-
+    provision> <emphasis style="bold">term</emphasis>: <amending-operation>
+    repealed</amending-operation>, ...``. The defined term is the bold
+    ``emphasis`` that is a direct child of the note. We require the emphasis to
+    sit between the ``amended-provision`` and the ``amending-operation`` so an
+    incidental emphasis elsewhere in the note text is not mistaken for a term.
+    Terms carrying the path separators ``/`` or ``:`` are dropped (cannot be a
+    clean addressable label).
+    """
+    saw_amended_provision = False
+    for child in node:
+        if not isinstance(child.tag, str):
+            continue
+        local = _localname(child)
+        if local == "amended-provision":
+            saw_amended_provision = True
+            continue
+        if local == "amending-operation":
+            break
+        if local == "emphasis" and saw_amended_provision:
+            term = _normalize_text(child.text or "")
+            if term and "/" not in term and ":" not in term:
+                return term
+            return ""
+    return ""
 
 
 def _legal_text(node: etree._Element) -> str:
