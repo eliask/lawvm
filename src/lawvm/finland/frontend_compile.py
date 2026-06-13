@@ -30,7 +30,7 @@ import lxml.etree as etree
 if TYPE_CHECKING:
     from lawvm.finland.johtolause import ClauseParseResult
 
-from lawvm.core.ir import LegalOperation, OperationSource
+from lawvm.core.ir import IRNode, LegalOperation, OperationSource
 from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.core.compile_result import StrictProfile
@@ -501,6 +501,7 @@ def _lift_explicit_scopes_from_cited_version_ops(
             johto=cited_johto,
             muutos_tree=cited_tree,
             master=master,
+            base_ir=None,
             amendment_id=cited_id,
             source_title=cited_title,
             used_sec1_fallback=False,
@@ -822,6 +823,118 @@ def _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
     return chapter
 
 
+def _johto_says_repealed_section_replaced_by_new_section(johto: str, section_norm: str) -> bool:
+    """Narrow witness for ``kumotun N §:n tilalle uusi N §`` reinsertion clauses."""
+    normalized = _normalize_fi_parse_text(johto)
+    if not normalized or "kumot" not in normalized or "tilalle" not in normalized or "uusi" not in normalized:
+        return False
+    section_pattern = re.escape(section_norm)
+    return (
+        re.search(
+            rf"kumot\w*\s+{section_pattern}\s*§\s*:\s*n\s+tilalle\s+uusi\s+{section_pattern}\s*§",
+            normalized,
+        )
+        is not None
+    )
+
+
+def _base_section_scope_for_unique_section(
+    *,
+    base_ir: IRNode,
+    section_norm: str,
+) -> tuple[str | None, str | None] | None:
+    """Return the unique original (part, chapter) scope for a section label."""
+    scopes: set[tuple[str | None, str | None]] = set()
+
+    def _walk(node: IRNode, current_part: str | None, current_chapter: str | None) -> None:
+        next_part = current_part
+        next_chapter = current_chapter
+        if node.kind is IRNodeKind.PART:
+            next_part = _norm_num_token(str(node.label or "")) or None
+        elif node.kind is IRNodeKind.CHAPTER:
+            next_chapter = _norm_num_token(str(node.label or "")) or None
+        elif node.kind is IRNodeKind.SECTION and _norm_num_token(str(node.label or "")) == section_norm:
+            scopes.add((next_part, next_chapter))
+        for child in node.children:
+            _walk(child, next_part, next_chapter)
+
+    _walk(base_ir, None, None)
+    if len(scopes) != 1:
+        return None
+    return next(iter(scopes))
+
+
+def _container_path_exists_in_master(
+    *,
+    master: "ReplayState",
+    part: str | None,
+    chapter: str | None,
+) -> bool:
+    if chapter is None:
+        return part is None or master.find_part(part) is not None
+
+    found = False
+
+    def _walk(node: object, current_part: str | None) -> None:
+        nonlocal found
+        if found:
+            return
+        kind = getattr(node, "kind", None)
+        label = getattr(node, "label", None)
+        next_part = current_part
+        if kind is IRNodeKind.PART:
+            next_part = _norm_num_token(str(label or "")) or None
+        elif kind is IRNodeKind.CHAPTER and _norm_num_token(str(label or "")) == chapter:
+            if part is None or next_part == part:
+                found = True
+                return
+        for child in getattr(node, "children", ()):
+            _walk(child, next_part)
+
+    _walk(master.ir, None)
+    return found
+
+
+def _infer_flat_reinstated_section_scope_from_base(
+    *,
+    op: AmendmentOp,
+    muutos_tree: etree._Element,
+    master: "ReplayState",
+    base_ir: IRNode | None,
+    johto: str,
+) -> tuple[str | None, str] | None:
+    """Infer scope for flat source-body insertion of a new section replacing a repealed one.
+
+    Finnish amendment XML sometimes serializes ``lisätään ... kumotun 114 §:n
+    tilalle uusi 114 §`` as a flat body-level section even though the repealed
+    section had an owned original chapter address.  The source phrase supplies
+    the rebirth semantics; the base tree supplies the prior address.  This rule
+    only fires when that prior address is unique and its container still exists.
+    """
+    if not _is_whole_section_insert(op) or op.target_chapter is not None or base_ir is None:
+        return None
+    section_norm = _norm_num_token(op.target_section)
+    if not _source_body_has_flat_whole_section(
+        muutos_tree=muutos_tree,
+        section_norm=section_norm,
+        target_part=op.target_part,
+    ):
+        return None
+    if not _johto_says_repealed_section_replaced_by_new_section(johto, section_norm):
+        return None
+    base_scope = _base_section_scope_for_unique_section(base_ir=base_ir, section_norm=section_norm)
+    if base_scope is None:
+        return None
+    base_part, base_chapter = base_scope
+    if base_chapter is None:
+        return None
+    if op.target_part is not None and base_part != op.target_part:
+        return None
+    if not _container_path_exists_in_master(master=master, part=base_part, chapter=base_chapter):
+        return None
+    return (base_part, base_chapter)
+
+
 def _is_letter_suffix_section_family_continuation(previous_label: str | None, current_label: str) -> bool:
     if not previous_label:
         return False
@@ -841,11 +954,12 @@ def _is_letter_suffix_section_family_continuation(previous_label: str | None, cu
 def _add_inferred_section_chapter_scope(
     op: AmendmentOp,
     *,
+    part: str | None = None,
     chapter: str,
     rule_id: str,
 ) -> AmendmentOp:
     tags = tuple(dict.fromkeys((*op.scope_provenance_tags, "chapter_scope_carry_forward")))
-    scoped_lo = _lo_with_path_update(op.lo, chapter=chapter) if op.lo is not None else op.lo
+    scoped_lo = _lo_with_path_update(op.lo, part=part, chapter=chapter) if op.lo is not None else op.lo
     if scoped_lo is not None:
         scoped_lo = dc_replace(
             scoped_lo,
@@ -854,6 +968,7 @@ def _add_inferred_section_chapter_scope(
         )
     return dc_replace(
         op,
+        target_part=part if part is not None else op.target_part,
         target_chapter=chapter,
         scope_provenance_tags=tags,
         scope_confidence=ScopeConfidence(
@@ -1066,6 +1181,7 @@ def _enrich_ops_from_amendment_tree(
     muutos_tree: "etree._Element",
     master: "ReplayState | None" = None,
     johto: str = "",
+    base_ir: IRNode | None = None,
 ) -> List[AmendmentOp]:
     """Stamp source-statute metadata (date, title, expiry) onto every op.
 
@@ -1160,6 +1276,7 @@ def _enrich_ops_from_amendment_tree(
                         scope_provenance_tags=scoped_op.scope_provenance_tags,
                         resolved_chapter=scoped_op.target_chapter,
                     )
+            inferred_part = None
             inferred_chapter = None
             inferred_rule_id = "fi_body_chapter_scope_from_source_body"
             if scoped_op.target_chapter is None or (
@@ -1176,6 +1293,17 @@ def _enrich_ops_from_amendment_tree(
                     muutos_tree=muutos_tree,
                     master=master,
                 )
+                if inferred_chapter is None:
+                    reinstated_scope = _infer_flat_reinstated_section_scope_from_base(
+                        op=scoped_op,
+                        muutos_tree=muutos_tree,
+                        master=master,
+                        base_ir=base_ir,
+                        johto=johto,
+                    )
+                    if reinstated_scope is not None:
+                        inferred_part, inferred_chapter = reinstated_scope
+                        inferred_rule_id = "fi_flat_reinstated_section_scope_from_base_prior_address"
                 if inferred_chapter is None:
                     inferred_chapter = _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
                         op=scoped_op,
@@ -1205,6 +1333,7 @@ def _enrich_ops_from_amendment_tree(
                 body_scoped = True
                 scoped_op = _add_inferred_section_chapter_scope(
                     scoped_op,
+                    part=inferred_part,
                     chapter=inferred_chapter,
                     rule_id=inferred_rule_id,
                 )
@@ -1798,6 +1927,7 @@ def normalize_and_compile_ops(
     strict_profile: Optional[StrictProfile] = None,
     parse_result: "ClauseParseResult | None" = None,
     regex_recognition_coverage_out: Optional[List[RegexRecognitionCoverage]] = None,
+    base_ir: IRNode | None = None,
 ) -> "PhaseResult[List[AmendmentOp]]":
     """Normalize PEG output and compile to AmendmentOps.
 
@@ -1812,6 +1942,7 @@ def normalize_and_compile_ops(
         johto:              Normalized johtolause text.
         muutos_tree:        Parsed amendment lxml tree (read-only).
         master:             Master statute being replayed (read for chapter structure).
+        base_ir:            Original parent statute IR, used only as a read-only prior-address witness.
         amendment_id:                Amendment statute id (for enrichment + logging).
         source_title:       Amendment title (for title-fallback path).
         used_sec1_fallback: True when ``johto`` came from sec_1 body text.
@@ -2036,7 +2167,14 @@ def normalize_and_compile_ops(
         )
 
     # Metadata enrichment (source statute/date/title) on all AmendmentOps
-    ops = _enrich_ops_from_amendment_tree(ops, amendment_id, muutos_tree, master, johto=johto)
+    ops = _enrich_ops_from_amendment_tree(
+        ops,
+        amendment_id,
+        muutos_tree,
+        master,
+        johto=johto,
+        base_ir=base_ir,
+    )
     ops = _retime_ops_from_cited_version_effective_dates(ops)
     ops = _dedupe_fallback_ops_ir(ops)
     ops = _tag_explicit_item_shift_after_repeal_hints(ops, johto)
@@ -2121,6 +2259,7 @@ def normalize_and_compile_ops(
             muutos_tree,
             master,
             johto=johto,
+            base_ir=base_ir,
         )
         fallback_plain_insert_count = sum(
             1
@@ -2207,6 +2346,7 @@ def normalize_and_compile_ops(
                     muutos_tree,
                     master,
                     johto=johto,
+                    base_ir=base_ir,
                 )
                 for op in ops:
                     op.body_root_replace_fallback = True
@@ -2236,6 +2376,7 @@ def normalize_and_compile_ops(
                     muutos_tree,
                     master,
                     johto=johto,
+                    base_ir=base_ir,
                 )
                 for op in ops:
                     op.fallback_provenance = True
@@ -2265,6 +2406,7 @@ def normalize_and_compile_ops(
                     muutos_tree,
                     master,
                     johto=johto,
+                    base_ir=base_ir,
                 )
                 for op in ops:
                     op.fallback_provenance = True
@@ -2303,6 +2445,7 @@ def normalize_and_compile_ops(
                     muutos_tree,
                     master,
                     johto=johto,
+                    base_ir=base_ir,
                 )
                 for op in ops:
                     op.fallback_provenance = True

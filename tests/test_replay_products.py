@@ -2346,6 +2346,20 @@ def test_1958_370_allows_source_authored_final_commencement_section() -> None:
     assert not any("direct section:152 alongside part" in violation for violation in violations)
 
 
+def test_1958_370_reinstated_114_keeps_prior_chapter_scope() -> None:
+    replay = replay_xml("1958/370", mode="legal_pit", quiet=True)
+
+    def has_root_section_114(node: IRNode, chapter_seen: bool = False) -> bool:
+        next_chapter_seen = chapter_seen or node.kind is IRNodeKind.CHAPTER
+        if node.kind is IRNodeKind.SECTION and node.label == "114":
+            return not chapter_seen
+        return any(has_root_section_114(child, next_chapter_seen) for child in node.children)
+
+    for state in (replay.replay_fold_state, replay.materialized_state):
+        assert state.find_section("114", chapter_num="11", part_num="3") is not None
+        assert not has_root_section_114(state.ir)
+
+
 def test_replay_fold_does_not_duplicate_temporary_section_chain_for_1995_1556() -> None:
     replay = pinned_replay("1995/1556", mode="legal_pit", stop_before="2022/439", quiet=True)
 

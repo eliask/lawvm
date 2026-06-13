@@ -3978,6 +3978,7 @@ def process_muutoslaki(
                 johto=johto,
                 muutos_tree=muutos_tree,
                 state=state,
+                base_ir=ctx.base_ir,
                 amendment_id=amendment_id,
                 source_title=source_title,
                 used_sec1_fallback=used_sec1_fallback,

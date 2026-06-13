@@ -13,6 +13,7 @@ from typing import Any, Callable, List, Optional
 from lxml import etree
 
 from lawvm.core.compile_result import StrictProfile, TemporalEvent
+from lawvm.core.ir import IRNode
 from lawvm.core.phase_result import Finding
 from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
 from lawvm.finland.johtolause import parse_clause as _parse_johtolause_clause
@@ -33,6 +34,7 @@ class ProcessFrontendNormalizationContext:
     johto: str
     muutos_tree: etree._Element
     state: Any
+    base_ir: IRNode | None
     amendment_id: str
     source_title: str
     used_sec1_fallback: bool
@@ -47,6 +49,7 @@ class ProcessFrontendNormalizationContext:
             johto=self.johto,
             muutos_tree=self.muutos_tree,
             master=self.state,
+            base_ir=self.base_ir,
             amendment_id=self.amendment_id,
             source_title=self.source_title,
             used_sec1_fallback=self.used_sec1_fallback,
