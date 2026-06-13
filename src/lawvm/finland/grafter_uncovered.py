@@ -142,6 +142,43 @@ class UncoveredSkipKey:
     section: str
 
 
+@dataclass(frozen=True, slots=True)
+class RecoveredSectionKey:
+    """Section recovered by uncovered-body synthesis, scoped by chapter."""
+
+    section: str
+    chapter: str
+
+
+@dataclass(frozen=True, slots=True)
+class RecoveryFindingKey:
+    """Stable de-duplication key for uncovered-body recovery findings."""
+
+    kind: str
+    target_norm: str
+    target_chapter: str
+    target_part: str
+    op_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class KumotaanRecoveryFindingKey:
+    """Stable de-duplication key for uncovered kumotaan recovery findings."""
+
+    kind: str
+    target_unit_kind: str
+    target_norm: str
+    target_chapter: str
+
+
+@dataclass(frozen=True, slots=True)
+class CoveredContainerKey:
+    """Container already owned by a parsed repeal operation."""
+
+    target_unit_kind: str
+    label: str
+
+
 @dataclass(slots=True)
 class UncoveredRecoveryGuards:
     """Mutable guard state for uncovered-body section recovery."""
@@ -872,15 +909,17 @@ def _recover_uncovered_body_ops(
         return rop
 
     result: List[ResolvedOp] = []
-    seen_recovery_findings: Set[tuple[str, str, str, str, str]] = set()
-    recovered_section_keys: Set[tuple[str, str]] = set()
+    seen_recovery_findings: Set[RecoveryFindingKey] = set()
+    recovered_section_keys: Set[RecoveredSectionKey] = set()
 
     def _append_recovered_rop(rop: ResolvedOp) -> None:
         target_scope = rop.resolved_target_scope_view
-        recovered_section_keys.add((
-            _norm_num_token(target_scope.target_norm),
-            _norm_num_token(target_scope.target_chapter or ""),
-        ))
+        recovered_section_keys.add(
+            RecoveredSectionKey(
+                section=_norm_num_token(target_scope.target_norm),
+                chapter=_norm_num_token(target_scope.target_chapter or ""),
+            )
+        )
         result.append(rop)
         if findings_out is None:
             return
@@ -894,12 +933,12 @@ def _recover_uncovered_body_ops(
         )
         if finding is None:
             return
-        key = (
-            str(finding.kind or ""),
-            str(target_scope.target_norm or ""),
-            str(target_scope.target_chapter or ""),
-            str(target_scope.target_part or ""),
-            str(rop.op_id or ""),
+        key = RecoveryFindingKey(
+            kind=str(finding.kind or ""),
+            target_norm=str(target_scope.target_norm or ""),
+            target_chapter=str(target_scope.target_chapter or ""),
+            target_part=str(target_scope.target_part or ""),
+            op_id=str(rop.op_id or ""),
         )
         if key in seen_recovery_findings:
             return
@@ -939,7 +978,10 @@ def _recover_uncovered_body_ops(
 
         amend_part_label = _xml_part_label(sec)
 
-        recovered_key = (_norm_num_token(label), _norm_num_token(amend_chapter_label or ""))
+        recovered_key = RecoveredSectionKey(
+            section=_norm_num_token(label),
+            chapter=_norm_num_token(amend_chapter_label or ""),
+        )
         if recovered_key in recovered_section_keys:
             if _DEBUG_RECOVERY:
                 print(f"  [DBG]  -> SKIP: already recovered {label!r} in chapter {amend_chapter_label!r}")
@@ -1654,14 +1696,19 @@ def _apply_uncovered_kumotaan(
         return state
 
     covered_labels: Set[str] = set()
-    covered_containers: Set[tuple[str, str]] = set()
+    covered_containers: Set[CoveredContainerKey] = set()
     for op in ops:
         if op.voimaantulo_repeal:
             continue
         if op.target_unit_kind == "section" and op.target_section:
             covered_labels.add(_norm_num_token(op.target_section))
         elif op.target_unit_kind in {"chapter", "part"} and op.target_section:
-            covered_containers.add((op.target_unit_kind, _norm_num_token(op.target_section)))
+            covered_containers.add(
+                CoveredContainerKey(
+                    target_unit_kind=op.target_unit_kind,
+                    label=_norm_num_token(op.target_section),
+                )
+            )
     covered_labels |= _same_amendment_non_repeal_section_labels()
 
     kumotaan_refs = _extract_kumotaan_section_refs(johto)
@@ -1677,7 +1724,7 @@ def _apply_uncovered_kumotaan(
                     kumotaan_containers[kind_name].append(label)
 
     repealed: List[str] = []
-    seen_recovery_findings: Set[tuple[str, str, str, str]] = set()
+    seen_recovery_findings: Set[KumotaanRecoveryFindingKey] = set()
 
     def _append_recovery_finding(
         *,
@@ -1697,11 +1744,11 @@ def _apply_uncovered_kumotaan(
         )
         if finding is None:
             return
-        key = (
-            str(finding.kind or ""),
-            str(target_unit_kind or ""),
-            str(target_norm or ""),
-            str(target_chapter or ""),
+        key = KumotaanRecoveryFindingKey(
+            kind=str(finding.kind or ""),
+            target_unit_kind=str(target_unit_kind or ""),
+            target_norm=str(target_norm or ""),
+            target_chapter=str(target_chapter or ""),
         )
         if key in seen_recovery_findings:
             return
@@ -1799,9 +1846,10 @@ def _apply_uncovered_kumotaan(
             existing_path = state.find(node_kind, label)
             if not label:
                 continue
-            if (target_unit_kind, label) in covered_containers and existing_path is None:
+            covered_key = CoveredContainerKey(target_unit_kind=target_unit_kind, label=label)
+            if covered_key in covered_containers and existing_path is None:
                 continue
-            covered_containers.add((target_unit_kind, label))
+            covered_containers.add(covered_key)
 
             if existing_path is None:
                 continue
