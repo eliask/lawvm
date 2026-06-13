@@ -113,6 +113,7 @@ from lawvm.finland.vts import VtsSkippedTarget, VtsSourceDiagnostic, extract_voi
 from lawvm.finland.source_pathology import build_same_effective_container_repeal_shadowed_pathology
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
+from lawvm.finland.uncovered_target_resolve import resolve_target
 from lawvm.finland.constraints import DEBUG
 from lawvm.finland.replay_notices import replay_print as _replay_print
 from lawvm.xml_ingest import _tag
@@ -1148,35 +1149,18 @@ def _recover_uncovered_body_ops(
                 _record_skip("chapter_payload_owned", label, amend_chapter_label)
             return
 
-        # Find in state.ir (READ-ONLY — no mutations here)
-        existing_path = state.find_section_path(label, amend_chapter_label)
-        if existing_path is None and amend_chapter_label:
-            # Only fall back to un-scoped lookup when the label is unique
-            # across chapters.  When duplicate labels exist (e.g. Vesilaki
-            # where every chapter has "1 §"), the un-scoped lookup resolves
-            # to a random chapter's section, producing wrong-chapter content
-            # application (Pattern E cross-chapter collision).
-            #
-            # Also skip the fallback when the chapter is newly inserted by this
-            # amendment.  A new chapter's sections do not exist anywhere in the
-            # master yet; the un-scoped fallback would find a same-numbered
-            # section in an existing chapter and trigger a false cross-chapter
-            # hit, silently dropping the INSERT.
-            if label not in state.duplicate_section_labels and amend_chapter_label not in owned_chapter_labels:
-                existing_path = state.find_section_path(label)
-
-        # Check cross-chapter mismatch
-        cross_chapter = False
-        if existing_path is not None and amend_chapter_label is not None:
-            path_chapter = next((lbl for k, lbl in existing_path if k == "chapter"), None)
-            if path_chapter is None or path_chapter != amend_chapter_label:
-                cross_chapter = True
-        # When the amendment body has NO chapter context but the label is
-        # duplicated across chapters, the un-scoped lookup resolved to an
-        # arbitrary chapter.  Treat this as an ambiguous cross-chapter hit
-        # to prevent replacing the wrong chapter's section (Pattern E).
-        if existing_path is not None and amend_chapter_label is None and label in state.duplicate_section_labels:
-            cross_chapter = True
+        # Chapter-qualified resolution (uncovered_target_resolve.resolve_target):
+        # the typed verdict drives existing_path / cross_chapter. The unscoped
+        # fallback is gated on unique-label + not-newly-owned-chapter so a
+        # same-numbered section in an unrelated chapter is never matched, and a
+        # duplicate label with no chapter context resolves to AMBIGUOUS — a found
+        # path flagged cross_chapter so the wrong chapter's section is not
+        # replaced (chapter-restart-numbering failure mode, e.g. Vesilaki).
+        _resolved = resolve_target(
+            label, amend_chapter_label, amend_part_label, state, owned_chapter_labels
+        )
+        existing_path = _resolved.existing_path
+        cross_chapter = _resolved.cross_chapter
 
         sec_ir = fi_xml_to_ir_node(sec, _fi_label_postprocessor)
 
