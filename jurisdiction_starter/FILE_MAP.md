@@ -6,6 +6,32 @@ Do not cram everything into one `grafter.py`.
 
 ---
 
+## 0. Reuse shared core before writing local modules
+
+The modules below are the **jurisdiction-local plugin** layer. They sit on top
+of the shared LawVM core, which already owns the proof-surface object grammar
+(`notes/LAWVM_PROOF_SURFACES.md` §2). Before adding a local report, agreement,
+replay-result, evidence-pack, or residual shape, check whether a shared core
+object already exists and reuse it:
+
+| Need | Reuse from core, do not reinvent |
+|---|---|
+| source witness / claim envelope | `core/source_witness.py`, `core/evidence_surface_report.py` |
+| permission to mutate | `core/execution_authorization.py` |
+| proof a mutation stayed in bounds | `core/mutation_boundary_proof.py` |
+| candidate-vs-oracle residual taxonomy | `core/agreement_residual.py`, `core/comparison_normalization.py` |
+| frontier / next-work items | `core/frontier_work_item.py` |
+| phase artifact + authority | `core/frontend_phase_surface.py` |
+| legal address / op / structural action | `core/ir.py` |
+| dates / windows | `core/temporal.py` |
+| cross-jurisdiction self-consistency, witness-attribution ledger | `tools/self_consistency.py`, `tools/spec_ledger.py` (jurisdiction-neutral core + per-jurisdiction adapter) |
+
+The New Zealand frontend (`src/lawvm/new_zealand/`) imports these directly. The
+local modules listed below should be thin adapters and jurisdiction-specific
+lowering, not a second copy of the core.
+
+---
+
 ## 1. Recommended module layout
 
 ```text
@@ -21,6 +47,7 @@ src/lawvm/<code>/
     source_tree.py          # source structural parse before IR/replay claims
     version_diff.py         # consolidated snapshot diffs as witness reports
     grafter.py              # parse current / official artifacts into IR or intermediate surfaces
+    dry_run.py              # per-family dry-run-vs-oracle proof BEFORE actual replay (see README §2)
     replay.py
     verify.py
     commencement.py         # if commencement is a meaningful separate lane
@@ -146,6 +173,21 @@ Must not become:
 - an unreviewable everything-module.
 When it gets too large, split by phase surface, not by random helper accumulation.
 
+### `dry_run.py`
+Owns:
+- per-operation-family dry-run application to an immutable parsed *before* tree,
+- candidate *after*-tree materialization,
+- candidate-vs-oracle comparison with a mutation-boundary proof (reuse
+  `core/mutation_boundary_proof.py` and `core/agreement_residual.py`),
+- typed refusals and a typed residual taxonomy,
+- a witness-anchored coverage north-star.
+
+Must not own:
+- actual replay execution (that is `replay.py`, and it stays blocked for a
+  family until this surface agrees with the oracle),
+- silently repairing state to match the oracle (the oracle is a witness, not
+  ground truth).
+
 ### `commencement.py`
 Owns:
 - commencement sidecars,
@@ -195,10 +237,13 @@ Recommended order:
 7. `version_diff.py` if consolidated versions are available as witnesses
 8. `grafter.py` current IR
 9. official-act / structured-amendment parse in `grafter.py` or split module
-10. `replay.py`
-11. `verify.py`
-12. `commencement.py`
-13. `source_adjudication.py` refinement and partitioning helpers
+10. `dry_run.py` — earn replay one family at a time against a before/after oracle
+    with a mutation-boundary proof and typed refusals; actual replay stays blocked
+    until this agrees with the oracle
+11. `replay.py`
+12. `verify.py`
+13. `commencement.py`
+14. `source_adjudication.py` refinement and partitioning helpers
 
 ---
 

@@ -13,6 +13,10 @@ Use this before merging any meaningful frontend work.
 - [ ] Unsupported phenomena became typed adjudications or blocked capability.
 - [ ] Skipped and rejected rows remain visible with reasons.
 - [ ] Provenance is still recoverable.
+- [ ] Shared core proof-surface objects were reused where they exist (witness,
+      evidence-surface report, authorization, mutation-boundary proof,
+      agreement-residual, frontier-work-item, IR, temporal) rather than
+      re-implemented locally. See `notes/LAWVM_PROOF_SURFACES.md` §2.
 
 ---
 
@@ -66,9 +70,23 @@ Use this before merging any meaningful frontend work.
 
 ---
 
+## E2. Replay-readiness checks
+
+- [ ] For any newly-claimed replay family, a dry-run-vs-oracle surface was proved
+      first (mutation-boundary proof + typed refusals), and actual replay was
+      blocked until that dry-run agreed with the oracle.
+- [ ] The oracle was treated as a witness, not ground truth: residuals carry a
+      disposition (`lawvm_wrong` / `oracle_suspect` / `missing_source`); no
+      silent repair-to-oracle.
+- [ ] Coverage was reported against a witness-anchored (monotone) north-star,
+      not a candidate-derived denominator.
+
+---
+
 ## F. Readiness checks
 
 Do not claim:
-- “replay supported” unless P8 is real and typed,
+- “replay supported” unless a dry-run-vs-oracle surface for the family agrees
+  with the oracle AND P8 is real and typed,
 - “verified replay supported” unless P9 is real,
 - “historical replay supported” unless contamination/recovery is addressed.

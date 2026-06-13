@@ -42,8 +42,19 @@ Examples:
 - 429 or quota-reset behavior,
 - unresolved dependency rows.
 
+### Layer C0. Dry-run-vs-oracle tests (earn replay before doing replay)
+For one operation family, does the dry-run surface apply candidate operations to
+an immutable *before* tree, materialize a candidate *after* tree, and agree with
+the archived before/after oracle — with a mutation-boundary proof and typed
+refusals — WITHOUT mutating real legal state? Actual replay for a family must
+stay blocked until its dry-run agrees with the oracle. The oracle is a witness,
+not ground truth: residuals carry a disposition (`lawvm_wrong` / `oracle_suspect`
+/ `missing_source`). See `src/lawvm/new_zealand/dry_run*.py`.
+
 ### Layer C. End-to-end replay tests
 Given a base seed and amending source, does replay reach the expected post-state?
+Only families whose Layer C0 dry-run already agrees with the oracle should be
+exercised here.
 
 ### Layer D. Oracle verification tests
 Does replay agree with an independent oracle, and if not, is the divergence classified correctly?
@@ -93,6 +104,7 @@ Recommended:
 - inventory coverage count,
 - artifact parse pass rate,
 - canonical-effect compilation pass rate,
+- dry-run-vs-oracle agreement rate per family,
 - replay success rate,
 - verified end-state match rate,
 - divergence partition counts,
@@ -100,6 +112,20 @@ Recommended:
 - blocking findings count.
 
 Do not use a single vanity metric.
+
+### Pinned coverage north-star (monotone)
+
+Define one north-star whose **denominator is a fact of the source** — the count
+of ground-truth operation witnesses (e.g. provision history-note amendment
+witnesses), NOT a candidate-derived count that grows as extraction improves. A
+candidate-derived denominator makes the fraction fall as you improve extraction,
+so it is not comparable across cycles. A witness-anchored denominator makes
+progress monotone and comparable. The tight loop is:
+diagnose-the-dominant-blocker -> build one family/lever -> re-measure against the
+pinned north-star. See `src/lawvm/new_zealand/dry_run_north_star.py` and the
+witness-attribution / discovered-spec frame in `src/lawvm/tools/spec_ledger.py`
+("every transformation the compiler makes is a named, falsifiable hypothesis
+about the spec, carried as a per-op witness rule id").
 
 ---
 

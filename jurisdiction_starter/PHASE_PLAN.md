@@ -18,6 +18,7 @@ Do not merely say “supported” or “TODO”. State what artifact exists, who
 | P5 Clause surface |  |  |  |  |
 | P6 Payload surface |  |  |  |  |
 | P7 Canonical effects |  |  |  |  |
+| P7.5 Dry-run vs oracle |  | per-family dry-run-vs-oracle proof + typed refusals |  |  |
 | P8 Replay/materialization |  |  |  |  |
 | P9 Verification |  |  |  |  |
 | P10 Recovery/historical rebuild |  |  |  |  |
@@ -54,6 +55,16 @@ For each phase, answer:
 ### P5
 ### P6
 ### P7
+### P7.5
+Dry-run gate (proved mandatory by the New Zealand build). Before actual replay
+of an operation family, apply the family's candidate operations to an immutable
+parsed *before* tree, materialize a candidate *after* tree, and compare it to
+the archived before/after oracle with a mutation-boundary proof and typed
+refusals. Reuse `core/mutation_boundary_proof.py` and `core/agreement_residual.py`.
+The oracle is a witness, not ground truth: residuals carry a disposition
+(`lawvm_wrong` / `oracle_suspect` / `missing_source`); never silently repair to
+match the oracle. Actual replay (P8) for a family stays `blocked` until this
+surface agrees with the oracle. See `src/lawvm/new_zealand/dry_run*.py`.
 ### P8
 ### P9
 ### P10
@@ -144,6 +155,8 @@ The jurisdiction cannot claim the following until these are true.
 - adjudications separate unsupported from supported
 
 ### “Replay supported”
+- P7.5 dry-run-vs-oracle surface exists for the family and agrees with the oracle
+  (mutation-boundary proof + typed refusals) BEFORE actual replay is unblocked
 - P8 exists
 - replay skips are typed
 - invariants are enforced

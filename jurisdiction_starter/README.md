@@ -14,13 +14,71 @@ It exists to stop new frontends from beginning as a pile of parser experiments. 
 This starter is downstream of:
 
 - `notes/LAWVM_CONSTITUTION.md`
+- `notes/THEORY_OF_LAWVM.md`
 - `notes/CROSS_JURISDICTION_ARCHITECTURE.md`
+- `notes/LAWVM_PROOF_SURFACES.md` (the shared object grammar + core modules a
+  frontend must reuse — see the next section)
 - `notes/SOURCE_PATHOLOGY_AND_ADJUDICATION_SPEC.md`
 - `notes/CORPUS_REPLAY_EVIDENCE_CONTRACT.md`
 - `notes/JURISDICTION_CLI_TOOLING_CONTRACT.md`
 
 Those documents govern this starter. If this starter conflicts with them, the
 current LawVM constitution and cross-jurisdiction contracts win.
+
+The freshest worked exemplar of this whole path is the New Zealand frontend
+under `src/lawvm/new_zealand/`. When in doubt about *how a step is actually
+done now*, read NZ before improvising. NZ is archetype 4 below
+("API/feed-backed corpus").
+
+---
+
+## Reuse the shared core, and prove replay with dry-run first
+
+Two lessons from the New Zealand build are not yet baked into the older files in
+this folder. They are the highest-leverage things to get right.
+
+### 1. Reuse the shared core proof-surface objects before writing local ones
+
+`notes/LAWVM_PROOF_SURFACES.md` §2 defines the object grammar every frontend
+flows through:
+
+```text
+SourceWitness -> Claim/Assertion -> ExecutionAuthorization -> Proof
+             -> Materialization -> Agreement -> Residual/FrontierWorkItem
+```
+
+These are concrete shared modules under `src/lawvm/core/` (e.g.
+`source_witness.py`, `evidence_surface_report.py`, `proof_surfaces.py`,
+`execution_authorization.py`, `mutation_boundary_proof.py`,
+`agreement_residual.py`, `frontier_work_item.py`, `frontend_phase_surface.py`,
+`ir.py`, `temporal.py`, plus `comparison_normalization.py` and jurisdiction-
+neutral tools `tools/spec_ledger.py`, `tools/self_consistency.py`,
+`tools/_parallel_corpus.py`). NZ imports these directly. A new frontend should
+**reuse these objects before inventing local report/agreement/replay shapes**.
+`FILE_MAP.md`'s module layout is for the *jurisdiction-local plugin* on top of
+this core, not a license to rebuild the core.
+
+### 2. Dry-run before actual replay
+
+A new frontend earns replay one operation family at a time. Each family is first
+proven in a **dry-run surface**: apply the candidate operation to an immutable
+parsed *before* tree, materialize a candidate *after* tree, and compare it
+against the archived before/after oracle with a **mutation-boundary proof** and
+**typed refusals**. Actual replay stays *blocked* until the dry-run surface
+agrees with the oracle. NZ shipped `repeal` and `text_replace` exactly this way
+(`src/lawvm/new_zealand/dry_run*.py`). The oracle is a *witness, not ground
+truth*: residuals carry a typed disposition (`lawvm_wrong` vs `oracle_suspect`
+vs `missing_source`); never silently repair to match an oracle (Constitution §9).
+
+### 3. Pin a monotone coverage north-star
+
+Measure coverage against a denominator that is a **fact of the source** (count
+of ground-truth operation witnesses, e.g. from provision history notes), not a
+candidate-derived count that grows as extraction improves. A witness-anchored
+denominator makes progress monotone and comparable across cycles. See
+`src/lawvm/new_zealand/dry_run_north_star.py` and `tools/spec_ledger.py`
+("the deliverable is the discovered spec; every behaviour is a named, falsifiable
+rule hypothesis carried as a witness rule id").
 
 ---
 

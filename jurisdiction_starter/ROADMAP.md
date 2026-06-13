@@ -96,14 +96,28 @@ Deliverables:
 Exit gate:
 - replay inputs are typed and inspectable.
 
-## M5. Replay MVP
+## M5a. Dry-run MVP (earn replay before doing replay)
 Deliverables:
-- P8 replay for the smallest honest supported family
+- P7.5 per-family dry-run-vs-oracle surface for the smallest honest family
+- mutation-boundary proof + typed refusals (reuse `core/mutation_boundary_proof.py`,
+  `core/agreement_residual.py`)
+- typed residual taxonomy with oracle-as-witness dispositions
+  (`lawvm_wrong` / `oracle_suspect` / `missing_source`)
+- a witness-anchored coverage north-star (denominator = ground-truth operation
+  witnesses, not candidate count)
+
+Exit gate:
+- one operation family is proven to agree with the before/after oracle in dry-run
+  without mutating real legal state. Actual replay for that family is still blocked.
+
+## M5b. Replay MVP
+Deliverables:
+- P8 replay for a family whose M5a dry-run already agrees with the oracle
 - invariant checks
 - replay adjudications
 
 Exit gate:
-- the frontend can replay a narrow supported subset end-to-end.
+- the frontend can replay a narrow dry-run-verified subset end-to-end.
 
 ## M6. Verification
 Deliverables:
@@ -177,6 +191,9 @@ The frontend is near LawVM ideal when all are true:
 - [ ] payload surface exists
 - [ ] canonical effects exist
 - [ ] unsupported, skipped, and rejected rows remain visible
+- [ ] shared core proof-surface objects are reused, not re-implemented locally
+- [ ] each replay family was dry-run-verified against a before/after oracle first
+- [ ] coverage is measured against a witness-anchored (monotone) denominator
 - [ ] replay exists with invariants and typed skips
 - [ ] verification exists with partitions
 - [ ] findings JSONL uses stable rule ids
