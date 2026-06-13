@@ -142,6 +142,83 @@ class UncoveredSkipKey:
     section: str
 
 
+@dataclass(slots=True)
+class UncoveredRecoveryGuards:
+    """Mutable guard state for uncovered-body section recovery."""
+
+    covered_sections: set[UncoveredSectionKey]
+    chapter_payload_owned_sections: set[UncoveredSectionKey]
+    relabel_destination_sections: set[UncoveredSectionKey]
+
+    def mark_covered(
+        self,
+        *,
+        part: str | None,
+        chapter: str | None,
+        section: str,
+    ) -> None:
+        self.covered_sections.add(
+            _uncovered_section_key(part=part, chapter=chapter, section=section)
+        )
+
+    def is_covered(
+        self,
+        *,
+        part: str | None,
+        chapter: str | None,
+        section: str,
+    ) -> bool:
+        exact_key = _uncovered_section_key(part=part, chapter=chapter, section=section)
+        if (
+            _uncovered_section_key(part=None, chapter=None, section=section)
+            in self.covered_sections
+        ):
+            return True
+        if (
+            exact_key.part
+            and _uncovered_section_key(part=exact_key.part, chapter=None, section=section)
+            in self.covered_sections
+        ):
+            return True
+        return bool(chapter and exact_key in self.covered_sections)
+
+    def is_exact_covered(
+        self,
+        *,
+        part: str | None,
+        chapter: str | None,
+        section: str,
+    ) -> bool:
+        return (
+            _uncovered_section_key(part=part, chapter=chapter, section=section)
+            in self.covered_sections
+        )
+
+    def is_relabel_destination(
+        self,
+        *,
+        part: str | None,
+        chapter: str | None,
+        section: str,
+    ) -> bool:
+        return (
+            _uncovered_section_key(part=part, chapter=chapter, section=section)
+            in self.relabel_destination_sections
+        )
+
+    def is_chapter_payload_owned(
+        self,
+        *,
+        part: str | None,
+        chapter: str | None,
+        section: str,
+    ) -> bool:
+        return (
+            _uncovered_section_key(part=part, chapter=chapter, section=section)
+            in self.chapter_payload_owned_sections
+        )
+
+
 def _uncovered_section_key(
     *,
     part: str | None,
@@ -648,14 +725,7 @@ def _recover_uncovered_body_ops(
         - (part, "", label) is in covered_labels (part-scoped op without chapter)
         - (part, chapter, label) is in covered_labels (exact part/chapter match)
         """
-        exact_key = _uncovered_section_key(part=part, chapter=chapter, section=label)
-        if _uncovered_section_key(part=None, chapter=None, section=label) in covered_labels:
-            return True
-        if exact_key.part and _uncovered_section_key(part=exact_key.part, chapter=None, section=label) in covered_labels:
-            return True
-        if chapter and exact_key in covered_labels:
-            return True
-        return False
+        return recovery_guards.is_covered(part=part, chapter=chapter, section=label)
 
     def _is_future_repealed(label: str, chapter: Optional[str]) -> bool:
         """Check if this section will be REPEALed by a later amendment.
@@ -718,6 +788,11 @@ def _recover_uncovered_body_ops(
         relabel_destination_sections.add(
             _uncovered_section_key(part=dest_part, chapter=dest_chapter, section=dest_section)
         )
+    recovery_guards = UncoveredRecoveryGuards(
+        covered_sections=covered_labels,
+        chapter_payload_owned_sections=chapter_payload_owned_sections,
+        relabel_destination_sections=relabel_destination_sections,
+    )
     johto_el = muutos_tree.find(".//{*}preamble")
     if johto_el is not None:
         johto_text = etree.tostring(johto_el, method="text", encoding="unicode")
@@ -881,13 +956,10 @@ def _recover_uncovered_body_ops(
             _record_skip("moved_destination_mismatch", label, amend_chapter_label)
             return
 
-        if amend_chapter_label and (
-            _uncovered_section_key(
-                part=amend_part_label,
-                chapter=amend_chapter_label,
-                section=label,
-            )
-            in relabel_destination_sections
+        if amend_chapter_label and recovery_guards.is_relabel_destination(
+            part=amend_part_label,
+            chapter=amend_chapter_label,
+            section=label,
         ):
             if _DEBUG_RECOVERY:
                 print(
@@ -929,12 +1001,11 @@ def _recover_uncovered_body_ops(
         # is still absent from master after all PEG ops ran, adopt it explicitly.
         if (
             amend_chapter_label
-            and _uncovered_section_key(
+            and recovery_guards.is_chapter_payload_owned(
                 part=amend_part_label,
                 chapter=amend_chapter_label,
                 section=label,
             )
-            in chapter_payload_owned_sections
         ):
             if _DEBUG_RECOVERY:
                 print(
@@ -949,12 +1020,10 @@ def _recover_uncovered_body_ops(
                 # Adopt it now so it lands in the correct chapter.
                 if not _is_future_repealed(label, amend_chapter_label):
                     _adopt_sec_ir = fi_xml_to_ir_node(sec, _fi_label_postprocessor)
-                    covered_labels.add(
-                        _uncovered_section_key(
-                            part=amend_part_label,
-                            chapter=amend_chapter_label,
-                            section=label,
-                        )
+                    recovery_guards.mark_covered(
+                        part=amend_part_label,
+                        chapter=amend_chapter_label,
+                        section=label,
                     )
                     _append_recovered_rop(
                         _make_uncovered_rop(
@@ -974,12 +1043,10 @@ def _recover_uncovered_body_ops(
                 else:
                     _record_skip("future_repeal", label, amend_chapter_label)
             else:
-                covered_labels.add(
-                    _uncovered_section_key(
-                        part=amend_part_label,
-                        chapter=amend_chapter_label,
-                        section=label,
-                    )
+                recovery_guards.mark_covered(
+                    part=amend_part_label,
+                    chapter=amend_chapter_label,
+                    section=label,
                 )
                 chapter_payload_section_dispositions.setdefault(
                     amend_chapter_label, {"adopted": 0, "owned": 0}
@@ -1051,12 +1118,10 @@ def _recover_uncovered_body_ops(
                             insert_label = _next_letter_label(section_siblings[existing_idx - 1].label or "")
                     if insert_label and state.find_section_path(insert_label, amend_chapter_label) is None:
                         inserted_sec = _relabel_section_ir(sec_ir, insert_label)
-                        covered_labels.add(
-                            _uncovered_section_key(
-                                part=amend_part_label,
-                                chapter=amend_chapter_label,
-                                section=label,
-                            )
+                        recovery_guards.mark_covered(
+                            part=amend_part_label,
+                            chapter=amend_chapter_label,
+                            section=label,
                         )
                         _append_recovered_rop(
                             _make_uncovered_rop(
@@ -1109,12 +1174,10 @@ def _recover_uncovered_body_ops(
                         for op in ops
                     )
                     if not _has_insert_op_for_label and not _whole_ch_replace:
-                        covered_labels.add(
-                            _uncovered_section_key(
-                                part=amend_part_label,
-                                chapter=amend_chapter_label,
-                                section=label,
-                            )
+                        recovery_guards.mark_covered(
+                            part=amend_part_label,
+                            chapter=amend_chapter_label,
+                            section=label,
                         )
                         _record_skip("past_repeal_placeholder_guard", label, amend_chapter_label)
                         return
@@ -1144,12 +1207,10 @@ def _recover_uncovered_body_ops(
                 if can_replace:
                     if _os.environ.get("LAWVM_DEBUG_RECOVERY") == "1":
                         print(f"  [DBG]  -> REPLACE op: label={label!r}, chapter={amend_chapter_label!r}")
-                    covered_labels.add(
-                        _uncovered_section_key(
-                            part=amend_part_label,
-                            chapter=amend_chapter_label,
-                            section=label,
-                        )
+                    recovery_guards.mark_covered(
+                        part=amend_part_label,
+                        chapter=amend_chapter_label,
+                        section=label,
                     )
                     _append_recovered_rop(
                         _make_uncovered_rop(
@@ -1186,12 +1247,10 @@ def _recover_uncovered_body_ops(
                         merged_labels = [c.label for c in merged.children if c.kind is IRNodeKind.SUBSECTION and c.label]
                         has_dup_labels = len(merged_labels) != len(set(merged_labels))
                         if merged_subsec_count >= master_subsec_count and text_ratio >= 0.75 and not has_dup_labels:
-                            covered_labels.add(
-                                _uncovered_section_key(
-                                    part=amend_part_label,
-                                    chapter=amend_chapter_label,
-                                    section=label,
-                                )
+                            recovery_guards.mark_covered(
+                                part=amend_part_label,
+                                chapter=amend_chapter_label,
+                                section=label,
                             )
                             # Pass the pre-merged IR as the payload so apply_op
                             # performs replace_at with the already-merged node.
@@ -1214,12 +1273,10 @@ def _recover_uncovered_body_ops(
                             _record_skip("omission_merge_duplicate_subsection_labels", label, amend_chapter_label)
                     else:
                         _record_skip("omission_merge_failed", label, amend_chapter_label)
-                    covered_labels.add(
-                        _uncovered_section_key(
-                            part=amend_part_label,
-                            chapter=amend_chapter_label,
-                            section=label,
-                        )
+                    recovery_guards.mark_covered(
+                        part=amend_part_label,
+                        chapter=amend_chapter_label,
+                        section=label,
                     )
                 else:
                     if cross_chapter:
@@ -1228,12 +1285,10 @@ def _recover_uncovered_body_ops(
                         _record_skip("no_content_ops", label, amend_chapter_label)
                     elif effective_would_lose:
                         _record_skip("would_lose_subsections", label, amend_chapter_label)
-                    covered_labels.add(
-                        _uncovered_section_key(
-                            part=amend_part_label,
-                            chapter=amend_chapter_label,
-                            section=label,
-                        )
+                    recovery_guards.mark_covered(
+                        part=amend_part_label,
+                        chapter=amend_chapter_label,
+                        section=label,
                     )
                 return
 
@@ -1256,12 +1311,10 @@ def _recover_uncovered_body_ops(
         if _is_future_repealed(label, amend_chapter_label):
             if DEBUG:
                 _replay_print(f"  [{amendment_id}] uncovered SKIP INSERT {label} § — future repeal")
-            covered_labels.add(
-                _uncovered_section_key(
-                    part=amend_part_label,
-                    chapter=amend_chapter_label,
-                    section=label,
-                )
+            recovery_guards.mark_covered(
+                part=amend_part_label,
+                chapter=amend_chapter_label,
+                section=label,
             )
             _record_skip("future_repeal", label, amend_chapter_label)
             return
@@ -1337,12 +1390,10 @@ def _recover_uncovered_body_ops(
                                 family_chapter,
                             )
 
-        covered_labels.add(
-            _uncovered_section_key(
-                part=amend_part_label,
-                chapter=effective_chapter,
-                section=label,
-            )
+        recovery_guards.mark_covered(
+            part=amend_part_label,
+            chapter=effective_chapter,
+            section=label,
         )
         # Emit INSERT ResolvedOp.  apply_op will redo the family-anchor
         # lookup against the live (post-prior-insert) state, so placement
@@ -1467,12 +1518,23 @@ def _recover_uncovered_body_ops(
                         _ad_part = _normalize_source_part_num(_pnum_el.text) or None
                     break
                 _part_parent = _part_parent.getparent()
-            _ad_key = _uncovered_section_key(part=_ad_part, chapter=_ad_ch, section=_ad_label)
-            if _ad_ch and _ad_key in chapter_payload_owned_sections:
-                if _ad_key in covered_labels:
+            if _ad_ch and recovery_guards.is_chapter_payload_owned(
+                part=_ad_part,
+                chapter=_ad_ch,
+                section=_ad_label,
+            ):
+                if recovery_guards.is_exact_covered(
+                    part=_ad_part,
+                    chapter=_ad_ch,
+                    section=_ad_label,
+                ):
                     continue
                 if state.find_section_path(_ad_label, _ad_ch, _ad_part) is not None:
-                    covered_labels.add(_ad_key)
+                    recovery_guards.mark_covered(
+                        part=_ad_part,
+                        chapter=_ad_ch,
+                        section=_ad_label,
+                    )
                     _record_skip("chapter_payload_owned", _ad_label, _ad_ch)
                     continue
             if _is_section_covered(_ad_label, _ad_ch or "", _ad_part):
