@@ -10959,7 +10959,7 @@ def test_dedup_children_by_label_removes_duplicate_subsections_in_section() -> N
 
 def test_emit_structural_dedup_warning_records_warning_and_finding() -> None:
     from lawvm.core.ir import IRNode
-    from lawvm.finland.grafter import _emit_structural_dedup_warning
+    from lawvm.finland.replay_findings import _emit_structural_dedup_warning
 
     before_ir = IRNode(
         kind=IRNodeKind.BODY,
@@ -11014,7 +11014,7 @@ def test_emit_structural_dedup_warning_records_warning_and_finding() -> None:
 
 def test_emit_structural_dedup_warning_noop_when_tree_unchanged() -> None:
     from lawvm.core.ir import IRNode
-    from lawvm.finland.grafter import _emit_structural_dedup_warning
+    from lawvm.finland.replay_findings import _emit_structural_dedup_warning
 
     tree = IRNode(kind=IRNodeKind.BODY, label=None, text="", attrs={}, children=())
     replay_findings = []
