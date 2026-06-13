@@ -114,13 +114,9 @@ def _policy_values(kind: str, raw_num: str) -> tuple[LabelPolicyValue, ...]:
             LabelPolicyValue("fi_label_postprocessor", _fi_postprocessed(raw_num, "chapter")),
         )
     return (
-        LabelPolicyValue("section_strip_sign_suffix", _normalize_section_strip_sign_suffix(raw_num)),
+        LabelPolicyValue("source_section_num", _normalize_source_section_num(raw_num)),
         LabelPolicyValue("fi_label_postprocessor", _fi_postprocessed(raw_num, "section")),
     )
-
-
-def _normalize_section_strip_sign_suffix(raw_num: str) -> str:
-    return _normalize_source_section_num(raw_num)
 
 
 def _fi_postprocessed(raw_num: str, kind: str) -> str:

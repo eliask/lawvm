@@ -13,7 +13,12 @@ def test_source_section_num_normalizer_preserves_leading_sign_labels() -> None:
 
 def test_source_section_num_normalizer_keeps_tail_stripping_policy() -> None:
     assert _normalize_source_section_num("12 § Soveltamisala") == "12"
-    assert _normalize_source_section_num("23 § a") == "23"
+    assert _normalize_source_section_num("4 §,") == "4"
+    assert _normalize_source_section_num("24 §*") == "24"
+
+
+def test_source_section_num_normalizer_preserves_suffix_split_by_sign() -> None:
+    assert _normalize_source_section_num("23 § a") == "23a"
 
 
 def test_source_part_num_normalizer_strips_osa_and_osasto_labels() -> None:
@@ -58,7 +63,7 @@ def test_source_xml_label_policy_audit_surfaces_section_tail_divergence() -> Non
     section_rows = [row for row in rows if row.element_kind == "section"]
     assert len(section_rows) == 1
     policies = {item.policy: item.value for item in section_rows[0].policies}
-    assert policies["section_strip_sign_suffix"] == "12"
+    assert policies["source_section_num"] == "12"
     assert policies["fi_label_postprocessor"] == "12soveltamisala"
 
 

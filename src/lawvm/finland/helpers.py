@@ -50,6 +50,10 @@ def _norm_num_token(text: str) -> str:
 
 
 _SOURCE_SECTION_SIGN_SUFFIX_RE = re.compile(r"\s*§.*$")
+_SOURCE_SECTION_SIGN_SUFFIX_LETTER_RE = re.compile(
+    r"^\s*(?P<base>\d+\s*[a-z]?)\s*§\s+(?P<suffix>[a-z])\s*$",
+    flags=re.I,
+)
 
 
 @functools.lru_cache(maxsize=8192)
@@ -65,6 +69,9 @@ def _normalize_source_section_num(raw: str) -> str:
     stripped = raw.strip()
     if stripped.startswith("§"):
         return _norm_num_token(stripped)
+    suffix_match = _SOURCE_SECTION_SIGN_SUFFIX_LETTER_RE.match(stripped)
+    if suffix_match is not None:
+        return _norm_num_token(f"{suffix_match.group('base')}{suffix_match.group('suffix')}")
     cleaned = _SOURCE_SECTION_SIGN_SUFFIX_RE.sub("", stripped).strip()
     return _norm_num_token(cleaned or stripped)
 
