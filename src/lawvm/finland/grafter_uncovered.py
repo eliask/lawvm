@@ -16,7 +16,6 @@ Functions exported:
 
 from __future__ import annotations
 
-import functools
 import logging
 import re
 import datetime as dt
@@ -61,6 +60,11 @@ from lawvm.finland.body_coverage_findings import (
     coverage_rejected_claim_finding as _coverage_rejected_claim_finding_impl,
     coverage_unresolved_gap_finding as _coverage_unresolved_gap_finding_impl,
     high_uncovered_body_degraded_finding as _high_uncovered_body_degraded_finding_impl,
+)
+from lawvm.finland.johto_scope_mentions import (
+    collect_johto_mentioned_section_labels as _collect_johto_mentioned_section_labels_impl,
+    collect_johto_mentioned_section_labels_frozenset as _collect_johto_mentioned_section_labels_frozenset_impl,
+    expand_johto_section_label_range as _expand_johto_section_label_range_impl,
 )
 from lawvm.finland.body_pairing import (
     build_observed_body_inventory,
@@ -359,72 +363,16 @@ def _coverage_unresolved_gap_finding(
     )
 
 
-@functools.lru_cache(maxsize=8192)
 def _expand_johto_section_label_range(start: str, end: str) -> tuple[str, ...]:
-    """Expand a johto-mentioned section range into normalized labels.
-
-    Supports:
-    - purely numeric ranges, e.g. ``17-21 §``
-    - same-base alpha suffix ranges, e.g. ``21 a-21 d §``
-
-    Falls back to returning the normalized endpoints when the range shape is not
-    safely expandable.
-    """
-    start_norm = _norm_num_token(start)
-    end_norm = _norm_num_token(end)
-    if not start_norm or not end_norm:
-        return tuple(label for label in (start_norm, end_norm) if label)
-
-    if start_norm.isdigit() and end_norm.isdigit():
-        s_int, e_int = int(start_norm), int(end_norm)
-        if 0 < e_int - s_int < 500:
-            return tuple(str(i) for i in range(s_int, e_int + 1))
-        return (start_norm, end_norm)
-
-    start_match = re.fullmatch(r"(\d+)([a-z])", start_norm)
-    end_match = re.fullmatch(r"(\d+)([a-z])", end_norm)
-    if start_match and end_match and start_match.group(1) == end_match.group(1):
-        start_ord = ord(start_match.group(2))
-        end_ord = ord(end_match.group(2))
-        if 0 <= end_ord - start_ord < 26:
-            base = start_match.group(1)
-            return tuple(f"{base}{chr(code)}" for code in range(start_ord, end_ord + 1))
-
-    return (start_norm, end_norm)
+    return _expand_johto_section_label_range_impl(start, end)
 
 
 def _collect_johto_mentioned_section_labels(johto_text: str) -> set[str]:
-    return set(_collect_johto_mentioned_section_labels_frozenset(johto_text))
+    return _collect_johto_mentioned_section_labels_impl(johto_text)
 
 
-@functools.lru_cache(maxsize=8192)
 def _collect_johto_mentioned_section_labels_frozenset(johto_text: str) -> frozenset[str]:
-    labels: set[str] = set()
-    for m in re.finditer(r"(\d+\s*[a-z]?)(?:[-\u2014\u2013\u2015](\d+\s*[a-z]?))?\s*§", johto_text, re.I):
-        start = m.group(1)
-        end = m.group(2)
-        if end:
-            labels.update(_expand_johto_section_label_range(start, end))
-        else:
-            norm = _norm_num_token(start)
-            if norm:
-                labels.add(norm)
-    for m in re.finditer(
-        r"((?:\d+\s*[a-z]?(?:[-\u2014\u2013\u2015]\d+\s*[a-z]?)?)"
-        r"(?:\s*(?:,|ja|sekä)\s*(?:\d+\s*[a-z]?(?:[-\u2014\u2013\u2015]\d+\s*[a-z]?)?))+)\s*§",
-        johto_text,
-        re.I,
-    ):
-        for seg in re.split(r"\s*(?:,|ja|sekä)\s*", m.group(1)):
-            seg = seg.strip()
-            if not seg:
-                continue
-            range_match = re.fullmatch(r"(\d+\s*[a-z]?)[-\u2014\u2013\u2015](\d+\s*[a-z]?)", seg, re.I)
-            if range_match:
-                labels.update(_expand_johto_section_label_range(range_match.group(1), range_match.group(2)))
-                continue
-            labels.add(_norm_num_token(seg))
-    return frozenset(labels)
+    return _collect_johto_mentioned_section_labels_frozenset_impl(johto_text)
 
 
 def _recover_uncovered_body_ops(
