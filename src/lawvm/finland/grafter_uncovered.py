@@ -49,7 +49,6 @@ from lawvm.finland.ops import (
 from lawvm.finland.helpers import (
     _norm_num_token,
     _normalize_source_part_num,
-    _normalize_source_section_num,
     _roman_label_to_arabic,
     _fi_label_postprocessor,
 )
@@ -129,13 +128,6 @@ if TYPE_CHECKING:
     from lawvm.corpus_store import CorpusStore
 
 logger = logging.getLogger(__name__)
-
-# Legacy pre-typed-coverage "ad-hoc section scan" inside _recover_uncovered_body_ops.
-# Default-ON: it is still load-bearing for some statutes (e.g. 1996/1093 recovers
-# section 18 item, asserted by tests), so the typed coverage path does not yet
-# fully subsume it. Exposed as a toggle (LAWVM_DUAL_UNCOVERED=0 to disable) for
-# A/B comparison against typed coverage analysis while that gap is closed.
-_DUAL_UNCOVERED_ENABLED = os.environ.get("LAWVM_DUAL_UNCOVERED", "1") != "0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -1223,16 +1215,6 @@ def _recover_uncovered_body_ops(
 
     has_content_ops = _compute_has_content_ops(ops, muutos_tree)
 
-    def _is_section_covered(label: str, chapter: str, part: str | None) -> bool:
-        """Check if a section label is covered by PEG ops.
-
-        A section is covered if:
-        - ("", "", label) is in covered_labels (fully unscoped op)
-        - (part, "", label) is in covered_labels (part-scoped op without chapter)
-        - (part, chapter, label) is in covered_labels (exact part/chapter match)
-        """
-        return recovery_guards.is_covered(part=part, chapter=chapter, section=label)
-
     def _is_future_repealed(label: str, chapter: Optional[str]) -> bool:
         """Check if this section will be REPEALed by a later amendment.
 
@@ -1823,126 +1805,17 @@ def _recover_uncovered_body_ops(
             continue
         _process_section_candidate(cast(etree._Element, _sec_el), _gap_label, _gap_chapter)
 
-    # --- Dual-run fallback: old ad-hoc section scan (legacy, still load-bearing) ---
-    # The pre-typed-coverage primary path. The typed coverage analysis above is
-    # meant to subsume it, but does not yet: this scan still recovers real
-    # content the typed path misses on some statutes (e.g. 1996/1093 section 18
-    # item; corpus-wide it is otherwise score-neutral and mostly emits its own
-    # peg-owned skip findings). Kept ON by default; gated behind a toggle so the
-    # remaining gap can be closed in the typed path and this can then be deleted.
-    # Disable for A/B with LAWVM_DUAL_UNCOVERED=0.
-    if _DUAL_UNCOVERED_ENABLED:
-        # Two guard sets:
-        # - _result_labels: bare labels from already-resolved ops — prevents
-        #   the dual-run from duplicating coverage-driven recovery (which may
-        #   have resolved to a different chapter than the body XML's nesting).
-        # - _peg_ch_labels: chapter-qualified labels from PEG-compiled ops —
-        #   prevents whole-section clobber of fine-grained subsection/item ops,
-        #   but only for the SAME chapter (fixes namespace collision where
-        #   chapter 2/§1 would incorrectly block chapter 7/§1 recovery).
-        _result_labels: Set[str] = set()
-        for _rop in rstate.result:
-            if _rop.target_unit_kind == "section" and _rop.target_norm:
-                _result_labels.add(_rop.target_norm)
-        _peg_ch_labels: Set[Tuple[Optional[str], str]] = set()
-        _peg_labels: Set[str] = set()
-        for _op in ops:
-            if _op.target_unit_kind == "section" and _op.target_section:
-                _norm_label = _norm_num_token(_op.target_section)
-                _peg_ch_labels.add((_op.target_chapter, _norm_label))
-                _peg_labels.add(_norm_label)
-
-        for _sec in muutos_body.findall(".//{*}section"):
-            _num_el = _sec.find("{*}num")
-            if _num_el is None or not _num_el.text:
-                continue
-            _raw = _num_el.text.strip()
-            # Some malformed Finland sources encode a new chapter heading as a
-            # section like "16 b luku". Body coverage already treats these as
-            # chapter markers; the legacy ad-hoc uncovered-section sweep must
-            # not resurrect them as bogus section inserts.
-            if _norm_num_token(_raw).endswith("luku"):
-                _record_skip("malformed_chapter_marker", _norm_num_token(_raw), None)
-                continue
-            _ad_label = _normalize_source_section_num(_raw)
-            if not _ad_label:
-                continue
-            _ad_ch_parent = _sec.getparent()
-            _ad_ch: Optional[str] = None
-            if _ad_ch_parent is not None and _tag(_ad_ch_parent) == "chapter":
-                _cnum_el = _ad_ch_parent.find("{*}num")
-                if _cnum_el is not None and _cnum_el.text:
-                    _ad_ch = _norm_num_token(_cnum_el.text).removesuffix("luku")
-            if _ad_label in _result_labels:
-                continue  # Already resolved by coverage-driven path
-            if (_ad_ch, _ad_label) in _peg_ch_labels:
-                _record_skip("peg_owned_same_chapter", _ad_label, _ad_ch)
-                continue  # PEG-compiled ops target this section in the same chapter
-            if _ad_label in _peg_labels:
-                _record_skip("peg_owned_label_collision", _ad_label, _ad_ch)
-                continue  # PEG already owns this section label in another chapter
-            _ad_part: Optional[str] = None
-            _part_parent = _ad_ch_parent.getparent() if _ad_ch_parent is not None else None
-            while _part_parent is not None:
-                if _tag(_part_parent) == "part":
-                    _pnum_el = _part_parent.find("{*}num")
-                    if _pnum_el is not None and _pnum_el.text:
-                        _ad_part = _normalize_source_part_num(_pnum_el.text) or None
-                    break
-                _part_parent = _part_parent.getparent()
-            if _ad_ch and recovery_guards.is_chapter_payload_owned(
-                part=_ad_part,
-                chapter=_ad_ch,
-                section=_ad_label,
-            ):
-                if recovery_guards.is_exact_covered(
-                    part=_ad_part,
-                    chapter=_ad_ch,
-                    section=_ad_label,
-                ):
-                    continue
-                if state.find_section_path(_ad_label, _ad_ch, _ad_part) is not None:
-                    recovery_guards.mark_covered(
-                        part=_ad_part,
-                        chapter=_ad_ch,
-                        section=_ad_label,
-                    )
-                    _record_skip("chapter_payload_owned", _ad_label, _ad_ch)
-                    continue
-            if _is_section_covered(_ad_label, _ad_ch or "", _ad_part):
-                continue
-            # Check voimaantulo/provenance via heading (mirrors existing noise filter)
-            _ad_heading = ""
-            _ad_heading_el = _sec.find("{*}heading")
-            if _ad_heading_el is not None:
-                _ad_heading = " ".join("".join(str(_t) for _t in _ad_heading_el.itertext()).split()).lower()
-            _is_nonoperative = any(
-                _ad_heading.startswith(p)
-                for p in ("voimaantulo", "siirtymä", "kumottavat", "kumoaminen", "soveltaminen", "voimassaolo")
-            )
-            # When there is no heading, also inspect text content: a section whose
-            # first content paragraph starts with "Tällä lailla/asetuksella/päätöksellä
-            # kumotaan" is the amending act's own repeal provision (e.g. 2015/640 §1 that
-            # repeal-lists sections from 1994/1466).  It must not be grafted into the base
-            # act as a replacement for the identically-numbered section.
-            if not _is_nonoperative and not _ad_heading:
-                for _ad_sub in _sec.iter():
-                    if _tag(_ad_sub) in ("p", "content"):
-                        _ad_sub_text = " ".join(str(t) for t in _ad_sub.itertext()).split()
-                        _ad_sub_lower = " ".join(_ad_sub_text).lower()
-                        if re.match(
-                            r"tällä\s+(?:lailla|asetuksella|päätöksellä|säädöksellä)\s+kumotaan\b",
-                            _ad_sub_lower,
-                        ):
-                            _is_nonoperative = True
-                        break
-            if not _is_nonoperative:
-                _replay_print(
-                    f"  [{amendment_id}] Dual-run ad-hoc: uncovered section {_ad_label!r}"
-                    f"{' (ch=' + _ad_ch + ')' if _ad_ch else ''} — not in coverage result"
-                )
-                _process_section_candidate(_sec, _ad_label, _ad_ch)
-    # --- end dual-run fallback ---
+    # The typed coverage sweep above is the sole candidate enumeration. It
+    # formerly ran alongside a legacy ad-hoc raw-body section scan (the
+    # "dual-run", LAWVM_DUAL_UNCOVERED) that re-walked every body <section>.
+    # A full A/B across the bench corpus showed the raw scan was strictly
+    # score-neutral — zero per-statute differences — while emitting ~23k
+    # redundant peg-owned skip findings that polluted the audit trail. Its two
+    # unique filters (malformed "X luku" chapter markers and the amending act's
+    # own "Tällä lailla kumotaan" self-repeal provision) are already excluded
+    # from supplemental_candidates by extract_body_coverage's nonoperative
+    # tagging, so removing the raw scan changes no recovered op and only drops
+    # the spurious findings.
 
     rstate.emit_chapter_payload_mixed_findings()
 

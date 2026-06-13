@@ -7758,7 +7758,12 @@ def test_uncovered_body_surfaces_unresolved_coverage_gap_obligations(monkeypatch
         findings_out=findings_out,
     )
 
-    assert len(rops) == 1
+    # The gap is ambiguous and carries no payload_ref, so the typed candidate
+    # sweep recovers nothing — but the obligation is still surfaced. (The legacy
+    # raw-body dual-run formerly resurrected this section from the body XML; that
+    # scan was removed as score-neutral, so the ambiguous gap now produces only
+    # the unresolved-gap obligation, not a forced recovery op.)
+    assert rops == []
     obligations = [f for f in findings_out if f.kind == "COVERAGE.UNRESOLVED_BODY_GAP"]
     assert len(obligations) == 1
     assert obligations[0].detail.get("disposition") == "ambiguous_uncovered"
@@ -7815,7 +7820,13 @@ def test_uncovered_body_records_peg_owned_label_collision_skip_finding() -> None
     assert skipped[0].detail.get("target_chapter") == "7a"
 
 
-def test_uncovered_body_records_malformed_chapter_marker_skip_finding() -> None:
+def test_uncovered_body_ignores_malformed_chapter_marker_section() -> None:
+    # A malformed source encodes a chapter heading as a section ("16 b luku").
+    # The typed coverage sweep classifies it as a chapter unit, not a section, so
+    # it never enters the section-candidate path and produces no bogus INSERT.
+    # (The legacy raw-body dual-run instead emitted a malformed_chapter_marker
+    # skip finding; that scan was removed as score-neutral, and the chapter
+    # classification subsumes the guard.)
     state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
     ctx = _statute_context(state.ir)
     muutos_tree = etree.fromstring(
@@ -7843,10 +7854,10 @@ def test_uncovered_body_records_malformed_chapter_marker_skip_finding() -> None:
     )
 
     assert rops == []
-    skipped = [f for f in findings_out if f.kind == "APPLY.UNCOVERED_BODY_RECOVERY_SKIPPED"]
-    assert len(skipped) == 1
-    assert skipped[0].detail.get("reason") == "malformed_chapter_marker"
-    assert skipped[0].detail.get("target_section") == "16bluku"
+    # No section was recovered or skipped: the unit is a chapter marker.
+    assert not any(
+        f.detail.get("target_section") == "16bluku" for f in findings_out
+    )
 
 
 def test_uncovered_body_skip_helper_maps_peg_owned_same_chapter_reason() -> None:
@@ -7983,183 +7994,6 @@ def test_uncovered_body_chapter_payload_ownership_requires_subtree_claim(monkeyp
         ]
 
     monkeypatch.setattr("lawvm.finland.grafter_uncovered.assign_body_units_subtree_aware", _fake_assignments)
-
-    findings_out: list[Finding] = []
-    rops = _recover_uncovered_body_ops(
-        state,
-        ctx,
-        ops,
-        muutos_tree,
-        "2015/303",
-        failed_ops_out=[],
-        findings_out=findings_out,
-    )
-
-    assert [rop.target_norm for rop in rops] == ["20"]
-    assert not any(f.kind == "APPLY.UNCOVERED_BODY_CHAPTER_PAYLOAD_OWNED" for f in findings_out)
-
-
-def test_uncovered_body_dual_run_records_chapter_payload_owned_from_subtree_claim(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from lawvm.finland.body_pairing import ClauseClaim, PayloadAssignment
-
-    state = ReplayState(
-        ir=IRNode(
-            kind=IRNodeKind.BODY,
-            children=(
-                IRNode(
-                    kind=IRNodeKind.CHAPTER,
-                    label="5",
-                    children=(
-                        IRNode(kind=IRNodeKind.NUM, text="5 luku"),
-                        IRNode(
-                            kind=IRNodeKind.SECTION,
-                            label="20",
-                            children=(IRNode(kind=IRNodeKind.NUM, text="20 §"),),
-                        ),
-                    ),
-                ),
-            ),
-        )
-    )
-    ctx = _statute_context(state.ir)
-    ops = [AmendmentOp(op_id="ch5_insert", op_type="INSERT", target_kind=TargetKind.CHAPTER, target_section="5luku")]
-    muutos_tree = etree.fromstring(
-        """
-        <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
-          <preamble>
-            <formula>
-              <blockContainer>
-                <block name="insertions">
-                  lisätään lakiin uusi 5 luku seuraavasti:
-                </block>
-              </blockContainer>
-            </formula>
-          </preamble>
-          <body>
-            <chapter>
-              <num>5 luku</num>
-              <heading>Uusi luku</heading>
-              <section>
-                <num>20 §</num>
-                <subsection><content><p>Section 20 text.</p></content></subsection>
-              </section>
-            </chapter>
-          </body>
-        </akn>
-        """
-    )
-
-    def _fake_assignments(*_args, **_kwargs):
-        return [
-            PayloadAssignment(
-                body_unit_id="section:5/20",
-                status="claimed_current",
-                claim=ClauseClaim(
-                    target_statute=ctx.id,
-                    target_address="5",
-                    claim_kind="INSERT",
-                    chapter="",
-                ),
-            )
-        ]
-
-    def _fake_analyze_coverage(_units: list[CoverageUnit], _claims: list[CoverageClaim], **_kwargs: object) -> CoverageReport:
-        return CoverageReport(units=(), claims=(), gaps=())
-
-    monkeypatch.setattr("lawvm.finland.grafter_uncovered.assign_body_units_subtree_aware", _fake_assignments)
-    monkeypatch.setattr("lawvm.finland.grafter_uncovered.analyze_coverage", _fake_analyze_coverage)
-
-    findings_out: list[Finding] = []
-    rops = _recover_uncovered_body_ops(
-        state,
-        ctx,
-        ops,
-        muutos_tree,
-        "2015/303",
-        failed_ops_out=[],
-        findings_out=findings_out,
-    )
-
-    assert rops == []
-    owned = [f for f in findings_out if f.kind == "APPLY.UNCOVERED_BODY_CHAPTER_PAYLOAD_OWNED"]
-    assert len(owned) == 1
-    assert owned[0].detail.get("target_section") == "20"
-    assert owned[0].detail.get("target_chapter") == "5"
-
-
-def test_uncovered_body_dual_run_does_not_blanket_skip_covered_chapter_without_subtree_claim(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from lawvm.finland.body_pairing import ClauseClaim, PayloadAssignment
-
-    state = ReplayState(
-        ir=IRNode(
-            kind=IRNodeKind.BODY,
-            children=(
-                IRNode(
-                    kind=IRNodeKind.CHAPTER,
-                    label="5",
-                    children=(
-                        IRNode(kind=IRNodeKind.NUM, text="5 luku"),
-                        IRNode(
-                            kind=IRNodeKind.SECTION,
-                            label="20",
-                            children=(IRNode(kind=IRNodeKind.NUM, text="20 §"),),
-                        ),
-                    ),
-                ),
-            ),
-        )
-    )
-    ctx = _statute_context(state.ir)
-    ops = [AmendmentOp(op_id="ch5_insert", op_type="INSERT", target_kind=TargetKind.CHAPTER, target_section="5luku")]
-    muutos_tree = etree.fromstring(
-        """
-        <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
-          <preamble>
-            <formula>
-              <blockContainer>
-                <block name="insertions">
-                  lisätään lakiin uusi 5 luku seuraavasti:
-                </block>
-              </blockContainer>
-            </formula>
-          </preamble>
-          <body>
-            <chapter>
-              <num>5 luku</num>
-              <heading>Uusi luku</heading>
-              <section>
-                <num>20 §</num>
-                <subsection><content><p>Section 20 text.</p></content></subsection>
-              </section>
-            </chapter>
-          </body>
-        </akn>
-        """
-    )
-
-    def _fake_assignments(*_args, **_kwargs):
-        return [
-            PayloadAssignment(
-                body_unit_id="section:5/20",
-                status="claimed_current",
-                claim=ClauseClaim(
-                    target_statute=ctx.id,
-                    target_address="20",
-                    claim_kind="REPLACE",
-                    chapter="5",
-                ),
-            )
-        ]
-
-    def _fake_analyze_coverage(_units: list[CoverageUnit], _claims: list[CoverageClaim], **_kwargs: object) -> CoverageReport:
-        return CoverageReport(units=(), claims=(), gaps=())
-
-    monkeypatch.setattr("lawvm.finland.grafter_uncovered.assign_body_units_subtree_aware", _fake_assignments)
-    monkeypatch.setattr("lawvm.finland.grafter_uncovered.analyze_coverage", _fake_analyze_coverage)
 
     findings_out: list[Finding] = []
     rops = _recover_uncovered_body_ops(
@@ -12299,13 +12133,14 @@ def test_replay_xml_2011_715_applies_corrigendum_label_fix_for_2024_33() -> None
     assert "Oikeudenkäyntiavustajalautakunnan henkilöstö" in irnode_to_text(sec_5a)
 
 
-def test_dual_run_skips_tällä_lailla_kumotaan_repeal_clause_section() -> None:
-    """Dual-run ad-hoc must NOT process a repealing statute's own repeal provision.
+def test_uncovered_skips_tällä_lailla_kumotaan_repeal_clause_section() -> None:
+    """Uncovered recovery must NOT process a repealing statute's own repeal provision.
 
     Regression test for the 2015/640 bug: the amending act 2015/640 had section 1
     starting with 'Tällä lailla kumotaan tullilain (1466/1994) 21 §:n...' — its own
-    repeal clause.  Without the fix, the dual-run would try to replace section 1 of
-    the base act (1994/1466) with this repeal-clause text.
+    repeal clause.  Without the fix, recovery would try to replace section 1 of the
+    base act (1994/1466) with this repeal-clause text. The typed coverage sweep
+    tags the self-repeal section nonoperative, so it never becomes a candidate.
     """
     ns = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
 
