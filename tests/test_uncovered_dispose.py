@@ -130,3 +130,75 @@ def test_past_repeal_bypassed_by_whole_chapter_replace() -> None:
     from lawvm.finland.uncovered_dispose import evaluate_past_repeal_guard
     v = evaluate_past_repeal_guard({"lawvm_repeal_placeholder": "1"}, [], "5", "2", True)
     assert v.bypass is True and v.bypass_reason == "whole_chapter_replace"
+
+
+# ---------------------------------------------------------------------------
+# classify_existing_disposition — EXISTING-path terminal verdict
+# ---------------------------------------------------------------------------
+
+import pytest
+
+from lawvm.finland.uncovered_dispose import (
+    ExistingDisposition,
+    ExistingDispositionVerdict,
+    classify_existing_disposition,
+)
+
+
+def _section_with_omission(n_subs: int) -> IRNode:
+    """A section carrying a leading omission marker plus ``n_subs`` subsections."""
+    children = (
+        IRNode(kind=IRNodeKind.OMISSION, label=None, text="— —", attrs={}, children=()),
+        *(
+            IRNode(kind=IRNodeKind.SUBSECTION, label=str(i + 1), text="x", attrs={}, children=())
+            for i in range(n_subs)
+        ),
+    )
+    return IRNode(kind=IRNodeKind.SECTION, label="5", text="", attrs={}, children=children)
+
+
+def test_existing_disposition_replace_wins() -> None:
+    d = compute_replace_decision(_section(3), _section(3), has_content_ops=True, cross_chapter=False, whole_chapter_replace=False)
+    v = classify_existing_disposition(_section(3), d, has_content_ops=True, cross_chapter=False)
+    assert v.outcome is ExistingDisposition.REPLACE
+    assert v.skip_reason is None
+
+
+def test_existing_disposition_merge_candidate_on_omission() -> None:
+    amend = _section_with_omission(2)
+    d = compute_replace_decision(amend, _section(3), has_content_ops=True, cross_chapter=False, whole_chapter_replace=False)
+    # has_omissions blocks REPLACE; same-chapter omission → merge candidate.
+    assert d.can_replace is False
+    v = classify_existing_disposition(amend, d, has_content_ops=True, cross_chapter=False)
+    assert v.outcome is ExistingDisposition.MERGE_CANDIDATE
+    assert v.skip_reason is None
+
+
+def test_existing_disposition_cross_chapter_skip_beats_merge() -> None:
+    amend = _section_with_omission(2)
+    d = compute_replace_decision(amend, _section(3), has_content_ops=True, cross_chapter=True, whole_chapter_replace=False)
+    v = classify_existing_disposition(amend, d, has_content_ops=True, cross_chapter=True)
+    assert v.outcome is ExistingDisposition.SKIP_CROSS_CHAPTER
+    assert v.skip_reason == "cross_chapter_existing_target"
+
+
+def test_existing_disposition_no_content_ops_skip() -> None:
+    d = compute_replace_decision(_section(3), _section(3), has_content_ops=False, cross_chapter=False, whole_chapter_replace=False)
+    v = classify_existing_disposition(_section(3), d, has_content_ops=False, cross_chapter=False)
+    assert v.outcome is ExistingDisposition.SKIP_NO_CONTENT_OPS
+    assert v.skip_reason == "no_content_ops"
+
+
+def test_existing_disposition_would_lose_subsections_skip() -> None:
+    # Fewer subsections, no omission marker → not a merge candidate → would-lose skip.
+    d = compute_replace_decision(_section(2), _section(4), has_content_ops=True, cross_chapter=False, whole_chapter_replace=False)
+    v = classify_existing_disposition(_section(2), d, has_content_ops=True, cross_chapter=False)
+    assert v.outcome is ExistingDisposition.SKIP_WOULD_LOSE_SUBSECTIONS
+    assert v.skip_reason == "would_lose_subsections"
+
+
+def test_existing_disposition_verdict_invariants() -> None:
+    with pytest.raises(ValueError):
+        ExistingDispositionVerdict(ExistingDisposition.REPLACE, "x")
+    with pytest.raises(ValueError):
+        ExistingDispositionVerdict(ExistingDisposition.SKIP_BLOCKED, None)

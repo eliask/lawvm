@@ -13,12 +13,13 @@ not REPLACE?" is answerable from the verdict alone.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Iterable, Mapping, Optional
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.helpers import _is_omission_ir, _norm_num_token
 from lawvm.finland.merge import _has_section_omissions_ir
 
 # Minimum fraction of the master section's text the merged result must retain;
@@ -192,3 +193,89 @@ def evaluate_past_repeal_guard(
     if whole_chapter_replace:
         return PastRepealVerdict(applies=True, bypass=True, bypass_reason="whole_chapter_replace")
     return PastRepealVerdict(applies=True, bypass=False, bypass_reason=None)
+
+
+class ExistingDisposition(Enum):
+    """Terminal action for an uncovered candidate that resolved to a live section.
+
+    The single outcome of the EXISTING-path's replace/merge/skip cascade, once the
+    voimaantulo-relabel, johto, and past-repeal guards have been cleared. Naming
+    the terminal action as one enum makes the disposition of every EXISTING-path
+    candidate inspectable from one value instead of a scattered if/elif chain.
+    """
+
+    REPLACE = "replace"              # whole-section REPLACE is allowed
+    MERGE_CANDIDATE = "merge"        # section-level omission → attempt an omission merge
+    SKIP_CROSS_CHAPTER = "skip_cross_chapter"
+    SKIP_NO_CONTENT_OPS = "skip_no_content_ops"
+    SKIP_WOULD_LOSE_SUBSECTIONS = "skip_would_lose_subsections"
+    SKIP_BLOCKED = "skip_blocked"    # blocked for none of the named reasons above
+
+
+@dataclass(frozen=True, slots=True)
+class ExistingDispositionVerdict:
+    """Typed terminal verdict for the EXISTING-path disposition cascade.
+
+    ``skip_reason`` is the bare finding reason for the SKIP_* outcomes (None for
+    REPLACE / MERGE_CANDIDATE). MERGE_CANDIDATE still requires the caller to run
+    the omission merge and re-check via :func:`evaluate_omission_merge`; the merge
+    can still be rejected, but the decision to *attempt* it is captured here.
+    """
+
+    outcome: ExistingDisposition
+    skip_reason: Optional[str]
+
+    def __post_init__(self) -> None:
+        committing = self.outcome in (
+            ExistingDisposition.REPLACE,
+            ExistingDisposition.MERGE_CANDIDATE,
+        )
+        if committing and self.skip_reason is not None:
+            raise ValueError(
+                f"{self.outcome.value} disposition must not carry a skip_reason"
+            )
+        if not committing and self.skip_reason is None:
+            raise ValueError(
+                f"{self.outcome.value} disposition requires a skip_reason"
+            )
+
+
+def classify_existing_disposition(
+    amend_section_ir: IRNode,
+    replace_decision: ReplaceDecision,
+    has_content_ops: bool,
+    cross_chapter: bool,
+) -> ExistingDispositionVerdict:
+    """Classify the terminal action for an EXISTING-path uncovered candidate. Pure.
+
+    Mirrors the legacy cascade's first-match order: a permitted whole-section
+    REPLACE wins; otherwise a same-chapter section-level omission is a merge
+    candidate; otherwise the candidate is skipped with the most specific reason
+    the replace decision surfaced (cross-chapter, no content ops, subsection
+    loss), defaulting to a generic blocked skip.
+    """
+    if replace_decision.can_replace:
+        return ExistingDispositionVerdict(ExistingDisposition.REPLACE, None)
+
+    is_merge_candidate = (
+        has_content_ops
+        and replace_decision.has_omissions
+        and not cross_chapter
+        and any(_is_omission_ir(c) for c in amend_section_ir.children)
+    )
+    if is_merge_candidate:
+        return ExistingDispositionVerdict(ExistingDisposition.MERGE_CANDIDATE, None)
+
+    if cross_chapter:
+        return ExistingDispositionVerdict(
+            ExistingDisposition.SKIP_CROSS_CHAPTER, "cross_chapter_existing_target"
+        )
+    if not has_content_ops:
+        return ExistingDispositionVerdict(
+            ExistingDisposition.SKIP_NO_CONTENT_OPS, "no_content_ops"
+        )
+    if replace_decision.effective_would_lose:
+        return ExistingDispositionVerdict(
+            ExistingDisposition.SKIP_WOULD_LOSE_SUBSECTIONS, "would_lose_subsections"
+        )
+    return ExistingDispositionVerdict(ExistingDisposition.SKIP_BLOCKED, "blocked")

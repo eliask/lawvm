@@ -51,7 +51,6 @@ from lawvm.finland.helpers import (
     _normalize_source_part_num,
     _normalize_source_section_num,
     _roman_label_to_arabic,
-    _is_omission_ir,
     _fi_label_postprocessor,
 )
 from lawvm.finland.body_coverage import (
@@ -114,7 +113,13 @@ from lawvm.finland.source_pathology import build_same_effective_container_repeal
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
 from lawvm.finland.uncovered_target_resolve import TargetVerdict, resolve_insert_chapter, resolve_target
-from lawvm.finland.uncovered_dispose import compute_replace_decision, evaluate_omission_merge, evaluate_past_repeal_guard
+from lawvm.finland.uncovered_dispose import (
+    ExistingDisposition,
+    classify_existing_disposition,
+    compute_replace_decision,
+    evaluate_omission_merge,
+    evaluate_past_repeal_guard,
+)
 from lawvm.finland.constraints import DEBUG
 from lawvm.finland.replay_notices import replay_print as _replay_print
 from lawvm.xml_ingest import _tag
@@ -1580,29 +1585,32 @@ def _recover_uncovered_body_ops(
                         label,
                         _prv.bypass_reason,
                     )
+                # Terminal EXISTING-path disposition: classify the replace/merge/
+                # skip decision into one typed verdict, then commit it. The
+                # classifier is pure; the commit (mark_covered + append/skip) is
+                # the only mutation and stays here because mark_covered is read by
+                # later candidates in this sequential loop.
                 _rdec = compute_replace_decision(
                     sec_ir, existing, has_content_ops, cross_chapter, _whole_ch_replace
                 )
-                amend_subsec_count = _rdec.amend_subsec_count
-                master_subsec_count = _rdec.master_subsec_count
-                would_lose_subsections = _rdec.would_lose_subsections
-                has_omissions = _rdec.has_omissions
-                effective_would_lose = _rdec.effective_would_lose
-                can_replace = _rdec.can_replace
-                import os as _os
-
-                if _os.environ.get("LAWVM_DEBUG_RECOVERY") == "1":
+                _edisp = classify_existing_disposition(
+                    sec_ir, _rdec, has_content_ops, cross_chapter
+                )
+                if os.environ.get("LAWVM_DEBUG_RECOVERY") == "1":
                     print(
-                        f"  [DBG]  existing, can_replace={can_replace}, has_content_ops={has_content_ops}, has_omissions={has_omissions}, cross_chapter={cross_chapter}, would_lose={would_lose_subsections}, whole_ch_replace={_whole_ch_replace}, amend_ss={amend_subsec_count}, master_ss={master_subsec_count}"
+                        f"  [DBG]  existing disposition={_edisp.outcome.value}, "
+                        f"has_content_ops={has_content_ops}, has_omissions={_rdec.has_omissions}, "
+                        f"cross_chapter={cross_chapter}, would_lose={_rdec.would_lose_subsections}, "
+                        f"whole_ch_replace={_whole_ch_replace}, amend_ss={_rdec.amend_subsec_count}, "
+                        f"master_ss={_rdec.master_subsec_count}"
                     )
-                if can_replace:
-                    if _os.environ.get("LAWVM_DEBUG_RECOVERY") == "1":
-                        print(f"  [DBG]  -> REPLACE op: label={label!r}, chapter={amend_chapter_label!r}")
-                    recovery_guards.mark_covered(
-                        part=amend_part_label,
-                        chapter=amend_chapter_label,
-                        section=label,
-                    )
+                # Every terminal EXISTING-path outcome marks the section covered.
+                recovery_guards.mark_covered(
+                    part=amend_part_label,
+                    chapter=amend_chapter_label,
+                    section=label,
+                )
+                if _edisp.outcome is ExistingDisposition.REPLACE:
                     _append_recovered_rop(
                         _make_uncovered_rop(
                             "REPLACE",
@@ -1613,27 +1621,16 @@ def _recover_uncovered_body_ops(
                             f"uncovered_replace_{label}",
                         )
                     )
-                elif (
-                    has_content_ops
-                    and has_omissions
-                    and not cross_chapter
-                    and any(_is_omission_ir(c) for c in sec_ir.children)
-                ):
-                    # Omission at section level — try merging amendment into
-                    # master.  When would_lose_subsections is True (amendment
-                    # has fewer subsections+omissions than master), the merge
-                    # function expands each omission to cover multiple master
-                    # subsections.  The post-merge guards below still reject
-                    # actual subsection loss or text corruption.
+                elif _edisp.outcome is ExistingDisposition.MERGE_CANDIDATE:
+                    # Section-level omission — try merging amendment into master.
+                    # When the amendment has fewer subsections+omissions, the merge
+                    # function expands each omission across multiple master
+                    # subsections; the post-merge guard still rejects real loss or
+                    # text corruption.
                     merged = _merge_section_with_omission_ir(existing, sec_ir)
                     if merged is not None:
                         _mdec = evaluate_omission_merge(merged, existing)
                         if _mdec.accept:
-                            recovery_guards.mark_covered(
-                                part=amend_part_label,
-                                chapter=amend_chapter_label,
-                                section=label,
-                            )
                             # Pass the pre-merged IR as the payload so apply_op
                             # performs replace_at with the already-merged node.
                             _append_recovered_rop(
@@ -1646,28 +1643,14 @@ def _recover_uncovered_body_ops(
                                     f"uncovered_merge_{label}",
                                 )
                             )
-                            return
-                        if _mdec.skip_reason is not None:
+                        elif _mdec.skip_reason is not None:
                             _record_skip(f"omission_merge_{_mdec.skip_reason}", label, amend_chapter_label)
                     else:
                         _record_skip("omission_merge_failed", label, amend_chapter_label)
-                    recovery_guards.mark_covered(
-                        part=amend_part_label,
-                        chapter=amend_chapter_label,
-                        section=label,
-                    )
-                else:
-                    if cross_chapter:
-                        _record_skip("cross_chapter_existing_target", label, amend_chapter_label)
-                    elif not has_content_ops:
-                        _record_skip("no_content_ops", label, amend_chapter_label)
-                    elif effective_would_lose:
-                        _record_skip("would_lose_subsections", label, amend_chapter_label)
-                    recovery_guards.mark_covered(
-                        part=amend_part_label,
-                        chapter=amend_chapter_label,
-                        section=label,
-                    )
+                elif _edisp.skip_reason is not None and _edisp.outcome is not ExistingDisposition.SKIP_BLOCKED:
+                    # Named skip (cross-chapter / no-content-ops / would-lose);
+                    # SKIP_BLOCKED is silent, matching the legacy fall-through.
+                    _record_skip(_edisp.skip_reason, label, amend_chapter_label)
                 return
 
         if not _label_allowed_by_johto(label, amend_chapter_label):
