@@ -30,10 +30,34 @@ def _normalize_heading_for_diff(text: str) -> str:
     return text.rstrip(". ")
 
 
-def _normalize_wording_for_diff(text: str) -> str:
+def _strip_momentti_ordinal_prefix(text: str, label: str) -> str:
+    """Strip a leading momentti ordinal prefix that duplicates the unit's own label.
+
+    Finlex renders a momentti's wording with its own ordinal number prefixed
+    (``"1. <text>"``) while LawVM replay carries that number only in the label /
+    badge.  The prefix is therefore presentational noise redundant with the
+    momentti label, which is compared separately.
+
+    Label-aware on purpose: strips only when the leading ``N.`` (or ``N a.``)
+    exactly equals ``label``.  This avoids masking a genuine leading number — a
+    date like ``"1. tammikuuta"`` or a list item ``"3. kohta"`` under a
+    differently-numbered momentti — which would NOT match the unit's own label.
+    """
+    if not label:
+        return text
+    m = re.match(r"^\s*([0-9]+[a-zäöå]?)\.\s+", text, re.IGNORECASE)
+    if m and m.group(1).lower() == label.lower():
+        return text[m.end():]
+    return text
+
+
+def _normalize_wording_for_diff(text: str, label: str = "") -> str:
     """Normalize encoding artifacts for wording comparison.
 
     Normalizes:
+    - Leading momentti ordinal prefix that duplicates the unit's own ``label``
+      (Finlex renders ``"1. <text>"``; LawVM carries the number in the badge only).
+      Label-aware: stripped only when the leading number equals ``label``.
     - Unicode dash variants → ASCII hyphen (em-dash, en-dash, etc. are equivalent)
     - Space around § signs (5§:ssä vs 5 §:ssä)
     - Presentation spaces in § inflection suffixes and numeric citations
@@ -49,6 +73,7 @@ def _normalize_wording_for_diff(text: str) -> str:
 
     Preserves verbatim text in emitted diff events.
     """
+    text = _strip_momentti_ordinal_prefix(text, label)
     text = _DASH_VARIANTS_RE.sub("-", text)
     text = re.sub(r"\s*§\s*", " § ", text)
     text = re.sub(r"§\s*:\s+([A-Za-zÅÄÖåäö]+)", r"§:\1", text)
@@ -150,8 +175,8 @@ def semantic_diff_stats(
                 lt = _normalize_heading_for_diff(lt)
                 rt = _normalize_heading_for_diff(rt)
             else:
-                lt = _normalize_wording_for_diff(lt)
-                rt = _normalize_wording_for_diff(rt)
+                lt = _normalize_wording_for_diff(lt, lhs.label)
+                rt = _normalize_wording_for_diff(rt, rhs.label)
             if lt != rt:
                 text += 1
         left_wording = _node_wording_facet(lhs)
@@ -161,8 +186,8 @@ def semantic_diff_stats(
         elif (
             left_wording is not None
             and right_wording is not None
-            and _normalize_wording_for_diff(left_wording.text)
-            != _normalize_wording_for_diff(right_wording.text)
+            and _normalize_wording_for_diff(left_wording.text, lhs.label)
+            != _normalize_wording_for_diff(right_wording.text, rhs.label)
         ):
             text += 1
         for child in node.children:
@@ -418,8 +443,8 @@ def semantic_diff_events(
                 lt = _normalize_heading_for_diff(lt)
                 rt = _normalize_heading_for_diff(rt)
             else:
-                lt = _normalize_wording_for_diff(lt)
-                rt = _normalize_wording_for_diff(rt)
+                lt = _normalize_wording_for_diff(lt, node.left.label)
+                rt = _normalize_wording_for_diff(rt, node.right.label)
             if lt != rt:
                 events.append(
                     SemanticDiffEvent(
@@ -441,8 +466,8 @@ def semantic_diff_events(
             or (
                 left_wording is not None
                 and right_wording is not None
-                and _normalize_wording_for_diff(left_wording.text)
-                != _normalize_wording_for_diff(right_wording.text)
+                and _normalize_wording_for_diff(left_wording.text, node.left.label)
+                != _normalize_wording_for_diff(right_wording.text, node.right.label)
             )
         ):
             events.append(
