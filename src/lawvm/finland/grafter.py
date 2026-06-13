@@ -2484,7 +2484,30 @@ def _compile_group(
             else None
         )
         sibling_consensus_live_scope: tuple[str | None, str] | None = None
-        if scoped_path is None and target_norm in master.duplicate_section_labels:
+        # The duplicate-label body-consensus retarget below derives a scope from a
+        # same-numbered section in the amendment body. That only identifies *this*
+        # op's target when the op owns the whole section as a body payload (a
+        # whole-section REPLACE/INSERT that was renumbered into a live chapter).
+        # A subsection/item/special op (e.g. a momentti REPEAL) never carries a
+        # whole-section body payload, so a same-numbered whole body section belongs
+        # to an unrelated op — typically a §N inside a newly INSERTed chapter. Using
+        # it would rebind the explicitly-scoped target to the wrong chapter instance
+        # (e.g. 10 luku 11 §:n 2 mom → 2 luku 11 §), surfacing as a spurious
+        # "section/momentti not found". Restrict the retarget to whole-section ops.
+        _group_targets_whole_section = any(
+            op.target_unit_kind == "section"
+            and _norm_num_token(op.target_section or "") == target_norm
+            and op.target_chapter == target_chapter
+            and not op.target_paragraph
+            and not op.target_item
+            and not op.target_special
+            for op in group_ops
+        )
+        if (
+            scoped_path is None
+            and target_norm in master.duplicate_section_labels
+            and _group_targets_whole_section
+        ):
             body_scope = _source_body_scope_for_section_target(
                 muutos_tree=muutos_tree,
                 target_norm=target_norm,
