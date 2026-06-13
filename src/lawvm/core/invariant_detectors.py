@@ -49,12 +49,82 @@ LabelNormalizer = Callable[[str], str]
 
 
 @dataclass(frozen=True, slots=True)
+class LabelNormalizationCollisionDetail:
+    """Typed detail for labels that collide under a normalizer."""
+
+    parent_path: str
+    child_kind: str
+    normalized_label: str
+    labels: tuple[str, ...]
+    count: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "parent_path": self.parent_path,
+            "child_kind": self.child_kind,
+            "normalized_label": self.normalized_label,
+            "labels": self.labels,
+            "count": self.count,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class MissingSiblingGroup:
     """Descendant sibling labels missing from a sparse replacement payload."""
 
     parent_path: tuple[tuple[str, str], ...]
     child_kind: str
     labels: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DescendantSiblingLossDetail:
+    """Typed detail for sparse snapshots that drop live descendant siblings."""
+
+    op_id: str
+    op_target: str
+    payload_kind: str
+    payload_label: str | None
+    parent_relative_path: str
+    missing_child_kind: str
+    missing_count: int
+    missing_labels_sample: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "op_id": self.op_id,
+            "op_target": self.op_target,
+            "payload_kind": self.payload_kind,
+            "payload_label": self.payload_label,
+            "parent_relative_path": self.parent_relative_path,
+            "missing_child_kind": self.missing_child_kind,
+            "missing_count": self.missing_count,
+            "missing_labels_sample": self.missing_labels_sample,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class SameSourceDescendantSnapshotShadowDetail:
+    """Typed detail for ancestor snapshots shadowing same-source descendant ops."""
+
+    ancestor_op_id: str
+    ancestor_target: str
+    descendant_op_id: str
+    descendant_target: str
+    source_statute: str
+    ancestor_descendant_hash: str
+    descendant_payload_hash: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "ancestor_op_id": self.ancestor_op_id,
+            "ancestor_target": self.ancestor_target,
+            "descendant_op_id": self.descendant_op_id,
+            "descendant_target": self.descendant_target,
+            "source_statute": self.source_statute,
+            "ancestor_descendant_hash": self.ancestor_descendant_hash,
+            "descendant_payload_hash": self.descendant_payload_hash,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,13 +233,13 @@ def run_label_normalization_collision_detector(
                     kind="label_normalization_collision",
                     path_text=parent_path,
                     message=message,
-                    detail={
-                        "parent_path": parent_path,
-                        "child_kind": child_kind,
-                        "normalized_label": normalized,
-                        "labels": distinct_labels,
-                        "count": len(labels),
-                    },
+                    detail=LabelNormalizationCollisionDetail(
+                        parent_path=parent_path,
+                        child_kind=child_kind,
+                        normalized_label=normalized,
+                        labels=distinct_labels,
+                        count=len(labels),
+                    ).to_dict(),
                 )
             )
 
@@ -331,16 +401,16 @@ def run_descendant_sibling_loss_detector(
                     kind="descendant_sibling_loss",
                     path_text=path_text,
                     message=message,
-                    detail={
-                        "op_id": op.op_id,
-                        "op_target": _address_part_text(op.target.path),
-                        "payload_kind": _kind_str(op.payload.kind),
-                        "payload_label": op.payload.label,
-                        "parent_relative_path": _address_part_text(group.parent_path),
-                        "missing_child_kind": group.child_kind,
-                        "missing_count": len(group.labels),
-                        "missing_labels_sample": tuple(sample),
-                    },
+                    detail=DescendantSiblingLossDetail(
+                        op_id=str(op.op_id or ""),
+                        op_target=_address_part_text(op.target.path),
+                        payload_kind=_kind_str(op.payload.kind),
+                        payload_label=op.payload.label,
+                        parent_relative_path=_address_part_text(group.parent_path),
+                        missing_child_kind=group.child_kind,
+                        missing_count=len(group.labels),
+                        missing_labels_sample=tuple(sample),
+                    ).to_dict(),
                 )
             )
     return results
@@ -409,15 +479,15 @@ def run_same_source_descendant_snapshot_shadow_detector(
                     kind="same_source_descendant_snapshot_shadow",
                     path_text=path_text,
                     message=message,
-                    detail={
-                        "ancestor_op_id": ancestor.op_id,
-                        "ancestor_target": _address_part_text(ancestor.target.path),
-                        "descendant_op_id": descendant.op_id,
-                        "descendant_target": _address_part_text(descendant.target.path),
-                        "source_statute": ancestor_source,
-                        "ancestor_descendant_hash": ancestor_hash,
-                        "descendant_payload_hash": descendant_hash,
-                    },
+                    detail=SameSourceDescendantSnapshotShadowDetail(
+                        ancestor_op_id=str(ancestor.op_id or ""),
+                        ancestor_target=_address_part_text(ancestor.target.path),
+                        descendant_op_id=str(descendant.op_id or ""),
+                        descendant_target=_address_part_text(descendant.target.path),
+                        source_statute=ancestor_source,
+                        ancestor_descendant_hash=ancestor_hash,
+                        descendant_payload_hash=descendant_hash,
+                    ).to_dict(),
                 )
             )
     return results
