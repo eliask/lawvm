@@ -593,6 +593,7 @@ from lawvm.finland.replay_horizon import (
 from lawvm.finland.replay_product_projection import ReplayProductProjectionRequest, project_replay_products
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, resolve_replay_xml_call
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir as _hoist_trailing_wrapup_ir
+from lawvm.finland.relabel_identity import RelabelParentKey
 
 _oracle_version_future_repeal_only_uses_cutoff_date = oracle_version_future_repeal_only_uses_cutoff_date
 
@@ -3632,7 +3633,7 @@ def _stabilize_same_parent_relabel_order(resolved: List[ResolvedOp]) -> List[Res
     """
     from lawvm.core.canonical_intent import Relabel
 
-    def _relabel_key(rop: ResolvedOp) -> tuple[str, tuple[tuple[str, str], ...]] | None:
+    def _relabel_key(rop: ResolvedOp) -> RelabelParentKey | None:
         if rop.resolved_action_type != "RENUMBER":
             return None
         intent = rop.intent
@@ -3647,7 +3648,7 @@ def _stabilize_same_parent_relabel_order(resolved: List[ResolvedOp]) -> List[Res
         dest_parent = intent.destination.address.path[:-1]
         if source_parent != dest_parent:
             return None
-        return unit_kind, source_parent
+        return RelabelParentKey(unit_kind=unit_kind, parent_path=source_parent)
 
     def _relabel_dest(rop: ResolvedOp) -> Optional[str]:
         intent = rop.intent
@@ -3655,9 +3656,9 @@ def _stabilize_same_parent_relabel_order(resolved: List[ResolvedOp]) -> List[Res
             return None
         return intent.destination.address.leaf_label()
 
-    keyed_positions: dict[tuple[str, tuple[tuple[str, str], ...]], list[int]] = {}
-    keyed_ops: dict[tuple[str, tuple[tuple[str, str], ...]], list[ResolvedOp]] = {}
-    keyed_dests: dict[tuple[str, tuple[tuple[str, str], ...]], list[str]] = {}
+    keyed_positions: dict[RelabelParentKey, list[int]] = {}
+    keyed_ops: dict[RelabelParentKey, list[ResolvedOp]] = {}
+    keyed_dests: dict[RelabelParentKey, list[str]] = {}
     for idx, rop in enumerate(resolved):
         key = _relabel_key(rop)
         dest = _relabel_dest(rop)

@@ -34,6 +34,7 @@ from lawvm.finland.source_pathology import build_recodification_source_chain_gap
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.relabel_identity import RelabelParentKey
 from lawvm.finland.ops import AmendmentOp
 
 if TYPE_CHECKING:
@@ -1073,7 +1074,7 @@ def _stabilize_same_parent_relabel_exec_order(
     stay in their original positions.
     """
 
-    def _relabel_key(op: StructuralTransformOp) -> tuple[str, tuple[tuple[str, str], ...]] | None:
+    def _relabel_key(op: StructuralTransformOp) -> RelabelParentKey | None:
         if op.kind is not TransformOpKind.RELABEL or op.destination is None:
             return None
         target_path = _parse_address(op.target)
@@ -1084,7 +1085,13 @@ def _stabilize_same_parent_relabel_exec_order(
             return None
         if target_path[-1][0] != dest_path[-1][0]:
             return None
-        return target_path[-1][0], tuple(target_path[:-1])
+        unit_kind = target_path[-1][0]
+        if unit_kind not in {"section", "chapter", "part"}:
+            return None
+        return RelabelParentKey(
+            unit_kind=cast(TargetUnitKind, unit_kind),
+            parent_path=tuple(target_path[:-1]),
+        )
 
     def _source_label(op: StructuralTransformOp) -> str | None:
         target_path = _parse_address(op.target)
@@ -1096,8 +1103,8 @@ def _stabilize_same_parent_relabel_exec_order(
         dest_path = _parse_address(op.destination)
         return dest_path[-1][1] if dest_path else None
 
-    keyed_positions: dict[tuple[str, tuple[tuple[str, str], ...]], list[int]] = {}
-    keyed_ops: dict[tuple[str, tuple[tuple[str, str], ...]], list[StructuralTransformOp]] = {}
+    keyed_positions: dict[RelabelParentKey, list[int]] = {}
+    keyed_ops: dict[RelabelParentKey, list[StructuralTransformOp]] = {}
     for idx, op in enumerate(ops):
         key = _relabel_key(op)
         if key is None:
