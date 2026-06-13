@@ -589,7 +589,7 @@ from lawvm.finland.replay_horizon import (
     oracle_version_future_repeal_only_uses_cutoff_date,
 )
 from lawvm.finland.replay_product_projection import ReplayProductProjectionRequest, project_replay_products
-from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks
+from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, resolve_replay_xml_call
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir as _hoist_trailing_wrapup_ir
 
 _oracle_version_future_repeal_only_uses_cutoff_date = oracle_version_future_repeal_only_uses_cutoff_date
@@ -5073,33 +5073,44 @@ def replay_xml(
     side-channel hook here. Replay internals no longer export a parallel
     parse-layer ``effect_intents`` rail.
     """
-    if request is not None:
-        parent_id = request.parent_id
-        mode = request.mode
-        stop_before = request.stop_before
-        strict_profile = request.strict_profile
-        corpus = request.corpus
-        quiet = request.quiet
-        build_full_products = request.build_full_products
-        checkpoint_callback = request.checkpoint_callback
-        as_of = request.as_of
-        strict_johto_temporal = request.strict_johto_temporal
-        oracle_selector = request.oracle_selector
-    if parent_id is None:
-        raise TypeError("replay_xml requires either parent_id or request=")
-    if sinks is not None:
-        compiled_ops_out = compiled_ops_out if compiled_ops_out is not None else sinks.compiled_ops_out
-        replay_meta_out = replay_meta_out if replay_meta_out is not None else sinks.replay_meta_out
-        lo_ops_out = lo_ops_out if lo_ops_out is not None else sinks.lo_ops_out
-        failed_ops_out = failed_ops_out if failed_ops_out is not None else sinks.failed_ops_out
-        temporal_events_out = (
-            temporal_events_out if temporal_events_out is not None else sinks.temporal_events_out
-        )
-        source_pathologies_out = (
-            source_pathologies_out
-            if source_pathologies_out is not None
-            else sinks.source_pathologies_out
-        )
+    replay_call = resolve_replay_xml_call(
+        parent_id=parent_id,
+        mode=mode,
+        compiled_ops_out=compiled_ops_out,
+        replay_meta_out=replay_meta_out,
+        lo_ops_out=lo_ops_out,
+        stop_before=stop_before,
+        failed_ops_out=failed_ops_out,
+        strict_profile=strict_profile,
+        corpus=corpus,
+        quiet=quiet,
+        build_full_products=build_full_products,
+        temporal_events_out=temporal_events_out,
+        checkpoint_callback=checkpoint_callback,
+        as_of=as_of,
+        strict_johto_temporal=strict_johto_temporal,
+        oracle_selector=oracle_selector,
+        source_pathologies_out=source_pathologies_out,
+        request=request,
+        sinks=sinks,
+    )
+    parent_id = replay_call.parent_id
+    mode = replay_call.mode
+    compiled_ops_out = replay_call.compiled_ops_out
+    replay_meta_out = replay_call.replay_meta_out
+    lo_ops_out = replay_call.lo_ops_out
+    stop_before = replay_call.stop_before
+    failed_ops_out = replay_call.failed_ops_out
+    strict_profile = replay_call.strict_profile
+    corpus = replay_call.corpus
+    quiet = replay_call.quiet
+    build_full_products = replay_call.build_full_products
+    temporal_events_out = replay_call.temporal_events_out
+    checkpoint_callback = replay_call.checkpoint_callback
+    as_of = replay_call.as_of
+    strict_johto_temporal = replay_call.strict_johto_temporal
+    oracle_selector = replay_call.oracle_selector
+    source_pathologies_out = replay_call.source_pathologies_out
     if corpus is None:
         corpus = _get_corpus_store()
     verbose_token = _set_replay_verbose(not quiet)
