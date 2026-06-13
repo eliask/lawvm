@@ -93,7 +93,6 @@ from lawvm.finland.restructure_plan import (
 from lawvm.finland.replay_notices import replay_verbose_enabled
 from lawvm.finland.future_repeal import RepealTargetRef
 from lawvm.finland.merge import (
-    _has_section_omissions_ir,
     _merge_section_with_omission_ir,
 )
 from lawvm.finland.apply_ir_ops import (
@@ -114,6 +113,7 @@ from lawvm.finland.source_pathology import build_same_effective_container_repeal
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
 from lawvm.finland.uncovered_target_resolve import resolve_insert_chapter, resolve_target
+from lawvm.finland.uncovered_dispose import compute_replace_decision
 from lawvm.finland.constraints import DEBUG
 from lawvm.finland.replay_notices import replay_print as _replay_print
 from lawvm.xml_ingest import _tag
@@ -1268,14 +1268,15 @@ def _recover_uncovered_body_ops(
                         label,
                         "tilalle INSERT" if _has_insert_op_for_label else "whole-chapter replace",
                     )
-                amend_subsec_count = len([c for c in sec_ir.children if c.kind is IRNodeKind.SUBSECTION])
-                master_subsec_count = len([c for c in existing.children if c.kind is IRNodeKind.SUBSECTION])
-                would_lose_subsections = amend_subsec_count < master_subsec_count
-                has_omissions = _has_section_omissions_ir(sec_ir)
-                # For whole-chapter replacements, the amendment body is
-                # authoritative even when the section shrinks subsection count.
-                effective_would_lose = would_lose_subsections and not _whole_ch_replace
-                can_replace = has_content_ops and not has_omissions and not cross_chapter and not effective_would_lose
+                _rdec = compute_replace_decision(
+                    sec_ir, existing, has_content_ops, cross_chapter, _whole_ch_replace
+                )
+                amend_subsec_count = _rdec.amend_subsec_count
+                master_subsec_count = _rdec.master_subsec_count
+                would_lose_subsections = _rdec.would_lose_subsections
+                has_omissions = _rdec.has_omissions
+                effective_would_lose = _rdec.effective_would_lose
+                can_replace = _rdec.can_replace
                 import os as _os
 
                 if _os.environ.get("LAWVM_DEBUG_RECOVERY") == "1":
