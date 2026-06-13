@@ -21,6 +21,7 @@ import os
 import re
 import datetime as dt
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, cast
 
 import lxml.etree as etree
@@ -474,6 +475,56 @@ class RecoveryState:
                         owned_count=owned_count,
                     )
                 )
+
+
+class ChapterPayloadOutcome(Enum):
+    """Disposition of a section whose chapter payload is owned by an INSERT op."""
+
+    NOT_APPLICABLE = "not_applicable"  # not chapter-payload-owned → continue to resolution
+    ADOPT = "adopt"                    # absent from the new chapter → adopt it as INSERT
+    OWNED = "owned"                    # already placed in the new chapter → mark covered
+    FUTURE_REPEAL_SKIP = "future_repeal_skip"  # absent but a later amendment repeals it
+
+
+@dataclass(frozen=True, slots=True)
+class ChapterPayloadVerdict:
+    """Typed outcome of the chapter-payload ownership phase (pure decision)."""
+
+    outcome: ChapterPayloadOutcome
+
+
+def _evaluate_chapter_payload_ownership(
+    *,
+    label: str,
+    amend_chapter_label: Optional[str],
+    amend_part_label: Optional[str],
+    guards: UncoveredRecoveryGuards,
+    section_present_in_chapter: bool,
+    future_repealed: bool,
+) -> ChapterPayloadVerdict:
+    """Decide how a chapter-payload-owned section is disposed of. Pure.
+
+    A whole-chapter INSERT/REPLACE op already owns its child sections; this phase
+    decides whether such a section must be explicitly adopted (it was filtered
+    from the chapter payload and is still absent from master), is already owned
+    (present), or is skipped because a later amendment will repeal it. Returns
+    NOT_APPLICABLE when the section is not chapter-payload-owned, so the caller
+    proceeds to ordinary target resolution.
+    """
+    if not (
+        amend_chapter_label
+        and guards.is_chapter_payload_owned(
+            part=amend_part_label,
+            chapter=amend_chapter_label,
+            section=label,
+        )
+    ):
+        return ChapterPayloadVerdict(ChapterPayloadOutcome.NOT_APPLICABLE)
+    if section_present_in_chapter:
+        return ChapterPayloadVerdict(ChapterPayloadOutcome.OWNED)
+    if future_repealed:
+        return ChapterPayloadVerdict(ChapterPayloadOutcome.FUTURE_REPEAL_SKIP)
+    return ChapterPayloadVerdict(ChapterPayloadOutcome.ADOPT)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1338,55 +1389,50 @@ def _recover_uncovered_body_ops(
         # (to avoid duplicating standalone ops), but if the standalone section op
         # had no chapter context it may land in the wrong chapter.  When the section
         # is still absent from master after all PEG ops ran, adopt it explicitly.
-        if (
-            amend_chapter_label
-            and recovery_guards.is_chapter_payload_owned(
-                part=amend_part_label,
-                chapter=amend_chapter_label,
-                section=label,
-            )
-        ):
+        # Phase 2: chapter-payload ownership — pure classify, then commit/emit.
+        _payload = _evaluate_chapter_payload_ownership(
+            label=label,
+            amend_chapter_label=amend_chapter_label,
+            amend_part_label=amend_part_label,
+            guards=recovery_guards,
+            section_present_in_chapter=(
+                bool(amend_chapter_label)
+                and state.find_section_path(label, amend_chapter_label, amend_part_label)
+                is not None
+            ),
+            future_repealed=_is_future_repealed(label, amend_chapter_label),
+        )
+        if _payload.outcome is not ChapterPayloadOutcome.NOT_APPLICABLE:
+            assert amend_chapter_label is not None  # guaranteed by ownership predicate
             if _DEBUG_RECOVERY:
                 print(
-                    f"  [DBG]  -> SKIP: section {label!r} owned by chapter payload"
-                    f" in chapter {amend_chapter_label!r}"
+                    f"  [DBG]  -> chapter-payload {_payload.outcome.value}: section "
+                    f"{label!r} in chapter {amend_chapter_label!r}"
                 )
-            # Check whether the section was actually placed into the new chapter.
-            _adopt_path = state.find_section_path(label, amend_chapter_label, amend_part_label)
-            if _adopt_path is None:
-                # Section still absent from the new chapter — the chapter INSERT op
-                # filtered it (standalone_section_targets guard) or never included it.
-                # Adopt it now so it lands in the correct chapter.
-                if not _is_future_repealed(label, amend_chapter_label):
-                    _adopt_sec_ir = fi_xml_to_ir_node(sec, _fi_label_postprocessor)
-                    recovery_guards.mark_covered(
-                        part=amend_part_label,
-                        chapter=amend_chapter_label,
-                        section=label,
+            if _payload.outcome is ChapterPayloadOutcome.ADOPT:
+                _adopt_sec_ir = fi_xml_to_ir_node(sec, _fi_label_postprocessor)
+                rstate.mark_covered(
+                    part=amend_part_label, chapter=amend_chapter_label, section=label
+                )
+                _append_recovered_rop(
+                    _make_uncovered_rop(
+                        "INSERT",
+                        label,
+                        amend_chapter_label,
+                        amend_part_label,
+                        _adopt_sec_ir,
+                        f"uncov_chapter_adopt_{label}",
                     )
-                    _append_recovered_rop(
-                        _make_uncovered_rop(
-                            "INSERT",
-                            label,
-                            amend_chapter_label,
-                            amend_part_label,
-                            _adopt_sec_ir,
-                            f"uncov_chapter_adopt_{label}",
-                        )
-                    )
-                    rstate.note_chapter_disposition(amend_chapter_label, "adopted")
-                    if _DEBUG_RECOVERY:
-                        print(f"  [DBG]  -> ADOPT into chapter {amend_chapter_label!r}: INSERT {label!r}")
-                else:
-                    _record_skip("future_repeal", label, amend_chapter_label)
-            else:
-                recovery_guards.mark_covered(
-                    part=amend_part_label,
-                    chapter=amend_chapter_label,
-                    section=label,
+                )
+                rstate.note_chapter_disposition(amend_chapter_label, "adopted")
+            elif _payload.outcome is ChapterPayloadOutcome.OWNED:
+                rstate.mark_covered(
+                    part=amend_part_label, chapter=amend_chapter_label, section=label
                 )
                 rstate.note_chapter_disposition(amend_chapter_label, "owned")
                 _record_skip("chapter_payload_owned", label, amend_chapter_label)
+            else:  # FUTURE_REPEAL_SKIP
+                _record_skip("future_repeal", label, amend_chapter_label)
             return
 
         # Chapter-qualified resolution (uncovered_target_resolve.resolve_target):

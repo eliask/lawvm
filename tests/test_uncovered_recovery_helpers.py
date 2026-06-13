@@ -13,10 +13,12 @@ import pytest
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.grafter_uncovered import (
+    ChapterPayloadOutcome,
     PreGuardVerdict,
     RecoveryState,
     UncoveredCandidateAudit,
     UncoveredRecoveryGuards,
+    _evaluate_chapter_payload_ownership,
     _evaluate_pre_guards,
     _next_letter_label,
     _part_label_from_path,
@@ -281,3 +283,64 @@ def test_pre_guards_block_relabel_destination_carries_part() -> None:
     assert verdict.proceed is False
     assert verdict.skip_reason == "same_wave_relabel_destination_owned"
     assert verdict.with_part is True
+
+
+# --- _evaluate_chapter_payload_ownership ---
+
+
+def _owned_guards(section: str, chapter: str) -> UncoveredRecoveryGuards:
+    return UncoveredRecoveryGuards(
+        covered_sections=set(),
+        chapter_payload_owned_sections={
+            _uncovered_section_key(part=None, chapter=chapter, section=section)
+        },
+        relabel_destination_sections=set(),
+    )
+
+
+def test_chapter_payload_not_applicable_when_not_owned() -> None:
+    verdict = _evaluate_chapter_payload_ownership(
+        label="5",
+        amend_chapter_label="3",
+        amend_part_label=None,
+        guards=_empty_guards(),
+        section_present_in_chapter=False,
+        future_repealed=False,
+    )
+    assert verdict.outcome is ChapterPayloadOutcome.NOT_APPLICABLE
+
+
+def test_chapter_payload_owned_when_present() -> None:
+    verdict = _evaluate_chapter_payload_ownership(
+        label="5",
+        amend_chapter_label="3",
+        amend_part_label=None,
+        guards=_owned_guards("5", "3"),
+        section_present_in_chapter=True,
+        future_repealed=False,
+    )
+    assert verdict.outcome is ChapterPayloadOutcome.OWNED
+
+
+def test_chapter_payload_adopt_when_absent() -> None:
+    verdict = _evaluate_chapter_payload_ownership(
+        label="5",
+        amend_chapter_label="3",
+        amend_part_label=None,
+        guards=_owned_guards("5", "3"),
+        section_present_in_chapter=False,
+        future_repealed=False,
+    )
+    assert verdict.outcome is ChapterPayloadOutcome.ADOPT
+
+
+def test_chapter_payload_future_repeal_skip_takes_precedence_over_adopt() -> None:
+    verdict = _evaluate_chapter_payload_ownership(
+        label="5",
+        amend_chapter_label="3",
+        amend_part_label=None,
+        guards=_owned_guards("5", "3"),
+        section_present_in_chapter=False,
+        future_repealed=True,
+    )
+    assert verdict.outcome is ChapterPayloadOutcome.FUTURE_REPEAL_SKIP
