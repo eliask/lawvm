@@ -1641,14 +1641,13 @@ def test_replay_xml_1977_603_realizes_section_72c_only_under_chapter_8a(
     assert "72c" not in root_section_labels
 
 
-def test_replay_xml_1958_370_failed_scoped_replace_does_not_emit_root_143b_snapshot() -> None:
-    """A failed scoped replacement must not promote its payload into PIT timelines.
+def test_replay_xml_1958_370_retargets_143b_away_from_stale_chapter_scope() -> None:
+    """A stale carried scope must not promote its payload into root PIT timelines.
 
     1995/1062 says "2 a luvun otsikko, 17 § ja 143 b §:n 1 momentti";
-    §143b actually lives under part 4 / chapter 17 in the replay fold. Apply
-    correctly records the scoped 2a/143b replacement as failed. The snapshot
-    lane must therefore not create a new root ``section:143b`` timeline bucket
-    or materialized root section from that failed group.
+    §143b actually lives under part 4 / chapter 17 in the replay fold. The
+    frontend must retarget the stale carried 2a scope to the unique live
+    section, not create a root ``section:143b`` timeline bucket.
     """
     from lawvm.finland.ops import FailedOp
 
@@ -1660,17 +1659,17 @@ def test_replay_xml_1958_370_failed_scoped_replace_does_not_emit_root_143b_snaps
         failed_ops_out=failed,
     )
 
-    assert any(
+    assert not any(
         op.amendment_id == "1995/1062"
         and op.reason_code == "section_not_found"
         and op.target_section == "143b"
-        and op.target_chapter == "2a"
         for op in failed
     )
 
     assert replay.timelines is not None
     timeline_keys = {str(address) for address in replay.timelines}
     assert "part:4/chapter:17/section:143b" in timeline_keys
+    assert "part:4/chapter:17/section:143b/subsection:1" in timeline_keys
     assert "section:143b" not in timeline_keys
     assert "section:143b/subsection:1" not in timeline_keys
 
@@ -2358,6 +2357,22 @@ def test_1958_370_reinstated_114_keeps_prior_chapter_scope() -> None:
     for state in (replay.replay_fold_state, replay.materialized_state):
         assert state.find_section("114", chapter_num="11", part_num="3") is not None
         assert not has_root_section_114(state.ir)
+
+
+def test_1958_370_retargets_1968_493_stale_body_chapter_scope() -> None:
+    failed_ops = []
+    replay = replay_xml("1958/370", mode="legal_pit", quiet=True, failed_ops_out=failed_ops)
+
+    assert failed_ops == []
+    for state in (replay.replay_fold_state, replay.materialized_state):
+        assert state.find_section("56", chapter_num="7", part_num="2") is not None
+        assert state.find_section("58", chapter_num="7", part_num="2") is not None
+        assert state.find_section("70", chapter_num="8", part_num="2") is not None
+        assert state.find_section("110", chapter_num="11", part_num="3") is not None
+        assert state.find_section("56", chapter_num="5", part_num="2") is None
+        assert state.find_section("58", chapter_num="5", part_num="2") is None
+        assert state.find_section("70", chapter_num="5", part_num="2") is None
+        assert state.find_section("110", chapter_num="5", part_num="2") is None
 
 
 def test_replay_fold_does_not_duplicate_temporary_section_chain_for_1995_1556() -> None:

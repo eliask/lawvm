@@ -1100,7 +1100,8 @@ def _retarget_stale_body_scope_for_section_op(
     even though the live statute has already rehomed those sections elsewhere.
     Only retarget when:
     - the op already carries chapter scope,
-    - the scope came from a bounded explicit source or rewrite lane,
+    - the scope came from a bounded explicit source, rewrite lane, or body-scope
+      carry-forward lane,
     - the scoped live section does not exist, and
     - the amendment body uniquely places the section under a different part /
       chapter family that resolves to one live section path.
@@ -1116,7 +1117,7 @@ def _retarget_stale_body_scope_for_section_op(
         or not op.target_chapter
         or (
             scope_witness is not None
-            and scope_witness.source not in {"explicit_scope_rewrite", "explicit_chunk"}
+            and scope_witness.source not in {"carry_forward", "explicit_scope_rewrite", "explicit_chunk"}
         )
     ):
         return None
