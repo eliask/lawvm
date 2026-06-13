@@ -125,6 +125,9 @@ from lawvm.finland.lowering_scope_recovery import (
     source_body_chapter_for_scoped_section_target as _source_body_chapter_for_scoped_section_target_impl,
     source_body_scope_for_section_target as _source_body_scope_for_section_target_impl,
 )
+from lawvm.finland.replay_history_emission import (
+    emit_granular_subsection_timeline_ops as _emit_granular_subsection_timeline_ops_impl,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -854,7 +857,6 @@ from lawvm.finland.apply_payload_ops import (
 # Runtime-support helpers (moved to lawvm.finland.apply_runtime_support)
 # ---------------------------------------------------------------------------
 from lawvm.finland.apply_runtime_support import (
-    _snapshot_op_source,
     _emit_section_snapshot,
     _prefer_unique_substantive_section_path_over_placeholder,
     _resolved_destination_path_for_rop,
@@ -2818,99 +2820,18 @@ def _emit_granular_subsection_timeline_ops(
     base_ir: Optional[IRNode],
     path_hint: tuple[tuple[str, str], ...] | None = None,
 ) -> bool:
-    """Emit subsection-addressed timeline ops for eligible pure moment-level groups.
-
-    We only do this when the normal section-snapshot export would otherwise
-    inherit a live temporary section expiry from an earlier snapshot. Without
-    that guard, subsection-only export can lose older stable sibling moments
-    that currently still depend on section snapshots.
-    """
-    if not group_rops:
-        return False
-    if len(group_rops) != 1:
-        return False
-
-    first = group_rops[0]
-    first_group = first.resolved_group_key_view
-    if first_group.unit_kind != "section":
-        return False
-    if base_ir is None or _tops.find(base_ir, "section", first_group.target_norm) is None:
-        return False
-
-    for rop in group_rops:
-        if (
-            rop.resolved_group_key_view.unit_kind != "section"
-            or not rop.targets_subsection_only()
-            or not rop.is_replace_action
-        ):
-            return False
-        if not rop.has_assigned_subsection_payload():
-            return False
-
-    op_source = _snapshot_op_source(
+    """Backward-compat wrapper for replay_history_emission granular emitters."""
+    return _emit_granular_subsection_timeline_ops_impl(
+        state,
         group_rops,
+        lo_ops_out,
         amendment_id,
         source_title,
         amendment_issue_date,
         amendment_effective_date,
-    )
-    sec_path = _valid_target_group_path_hint(
-        state,
-        first_group.unit_kind,
-        first_group.target_norm,
-        first_group.target_chapter,
-        first_group.target_part,
+        base_ir,
         path_hint,
     )
-    if sec_path is None:
-        sec_path = state.find_section_path(
-            first_group.target_norm,
-            first_group.target_chapter,
-            first_group.target_part,
-        )
-    if sec_path is None:
-        return False
-
-    tl_sec_path = tuple((k, v) for k, v in sec_path if v)
-    if not tl_sec_path:
-        return False
-    if op_source.expires:
-        return False
-
-    effective_iso = amendment_effective_date.isoformat() if amendment_effective_date else ""
-    prior_section_version = None
-    for lo in reversed(lo_ops_out):
-        if lo.target.path == tl_sec_path:
-            prior_section_version = lo
-            break
-    if prior_section_version is None:
-        return False
-    prior_expires = (prior_section_version.source.expires if prior_section_version.source else "") or ""
-    if not prior_expires or (effective_iso and prior_expires <= effective_iso):
-        return False
-
-    for seq, rop in enumerate(group_rops, start=1):
-        payload: Optional[IRNode]
-        action = StructuralAction.REPLACE
-        amend_sub = rop.resolved_amend_sub_ir()
-        assert amend_sub is not None
-        target_subsection_label = rop.resolved_target_subsection_label
-        assert target_subsection_label is not None
-        target_label = str(target_subsection_label)
-        payload = amend_sub if amend_sub.label == target_label else _relabel_subsection_ir(amend_sub, target_label)
-
-        lo_ops_out.append(
-            _LegalOperation(
-                op_id=f"subsection_{amendment_id}_{first_group.target_norm}_{target_label}_{seq}",
-                sequence=seq,
-                action=action,
-                target=LegalAddress(path=tl_sec_path + (("subsection", target_label),)),
-                payload=payload,
-                source=op_source,
-                group_id=f"finland-johto:{amendment_id}",
-            )
-        )
-    return True
 
 
 def compile_amendment_ops(
