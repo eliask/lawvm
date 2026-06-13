@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, List, Optional, Tuple, cast
 
+from lawvm.core.canonical_intent import Relabel
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.core.phase_result import Finding
@@ -35,12 +36,17 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.relabel_identity import RelabelParentKey
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import AmendmentOp, ResolvedOp
 
 if TYPE_CHECKING:
     from lawvm.finland.migration_ledger import MigrationLedger
 
 logger = logging.getLogger(__name__)
+
+OwnedRelabelSignature = tuple[
+    tuple[tuple[str, str], ...],
+    tuple[tuple[str, str], ...],
+]
 
 
 # ---------------------------------------------------------------------------
@@ -1196,6 +1202,128 @@ def _prioritize_descendant_relabels(
     for pos, op in zip(relabel_positions, ordered_relabels, strict=True):
         result[pos] = op
     return tuple(result)
+
+
+def restructure_plan_owned_renumber_signatures(
+    plan: "StructuralTransformPlan",
+) -> set[OwnedRelabelSignature]:
+    """Return exact relabel signatures owned by one active restructure plan.
+
+    StructuralTransformPlan execution is only authoritative for the relabels it
+    actually encodes. Descendant renumbers produced by the ordinary lowering
+    path must continue through typed/apply dispatch even when the same
+    amendment also has a section/chapter relabel plan.
+    """
+    owned: set[OwnedRelabelSignature] = set()
+    for op in plan.ops:
+        if op.kind != TransformOpKind.RELABEL or op.destination is None:
+            continue
+        target_path = tuple(_parse_address(op.target))
+        dest_path = tuple(_parse_address(op.destination))
+        if not target_path or not dest_path:
+            continue
+        owned.add((target_path, dest_path))
+    return owned
+
+
+def resolved_op_is_owned_by_restructure_plan(
+    rop: ResolvedOp,
+    owned_relabels: set[OwnedRelabelSignature],
+) -> bool:
+    """True when the active restructure plan already owns this renumber op."""
+    if rop.resolved_action_type != "RENUMBER":
+        return False
+    if not isinstance(rop.intent, Relabel):
+        return False
+    destination = rop.intent.destination
+    if destination is None:
+        return False
+
+    if not owned_relabels:
+        return False
+
+    def _path_scope_label(
+        path: tuple[tuple[str, str], ...],
+        kind: str,
+    ) -> str | None:
+        for seg_kind, seg_label in path:
+            if seg_kind == kind:
+                return seg_label
+        return None
+
+    def _trim_leading_part_scope(
+        path: tuple[tuple[str, str], ...],
+    ) -> tuple[tuple[str, str], ...]:
+        if path and path[0][0] == "part":
+            return path[1:]
+        return path
+
+    def _matches_legacy_scope(
+        owned_source: tuple[tuple[str, str], ...],
+        owned_destination: tuple[tuple[str, str], ...],
+    ) -> bool:
+        if not owned_source or not owned_destination:
+            return False
+        source_leaf_kind, source_leaf_label = owned_source[-1]
+        dest_leaf_kind, dest_leaf_label = owned_destination[-1]
+        if rop.target_unit_kind != source_leaf_kind or source_leaf_kind != dest_leaf_kind:
+            return False
+        if _norm_num_token(rop.target_norm) != source_leaf_label:
+            return False
+        if source_leaf_kind == "section":
+            owned_chapter = _path_scope_label(owned_source, "chapter")
+            owned_part = _path_scope_label(owned_source, "part")
+            rop_chapter = (
+                _norm_num_token(rop.resolved_target_scope_chapter_label or "")
+                if rop.resolved_target_scope_chapter_label
+                else None
+            )
+            rop_part = (
+                _norm_num_token(rop.resolved_target_scope_part_label or "")
+                if rop.resolved_target_scope_part_label
+                else None
+            )
+            if rop_chapter != owned_chapter:
+                return False
+            if owned_part is not None and rop_part != owned_part:
+                return False
+        elif source_leaf_kind == "chapter":
+            owned_part = _path_scope_label(owned_source, "part")
+            rop_part = (
+                _norm_num_token(rop.resolved_target_scope_part_label or "")
+                if rop.resolved_target_scope_part_label
+                else None
+            )
+            if owned_part is not None and rop_part != owned_part:
+                return False
+        resolved_destination = rop.resolved_destination_address
+        if resolved_destination is None:
+            return False
+        return _norm_num_token(resolved_destination.leaf_label()) == dest_leaf_label
+
+    source_path = tuple(rop.intent.source.address.path)
+    destination_path = tuple(destination.address.path)
+    for owned_source, owned_destination in owned_relabels:
+        if _matches_legacy_scope(owned_source, owned_destination):
+            return True
+        candidate_pairs = (
+            (source_path, destination_path, owned_source, owned_destination),
+            (
+                _trim_leading_part_scope(source_path),
+                _trim_leading_part_scope(destination_path),
+                _trim_leading_part_scope(owned_source),
+                _trim_leading_part_scope(owned_destination),
+            ),
+        )
+        for cand_source, cand_destination, cand_owned_source, cand_owned_destination in candidate_pairs:
+            if len(cand_source) < len(cand_owned_source) or len(cand_destination) < len(cand_owned_destination):
+                continue
+            if cand_source[-len(cand_owned_source):] != cand_owned_source:
+                continue
+            if cand_destination[-len(cand_owned_destination):] != cand_owned_destination:
+                continue
+            return True
+    return False
 
 
 def _execute_same_parent_relabel_group(
