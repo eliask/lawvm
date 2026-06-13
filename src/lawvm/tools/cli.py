@@ -471,6 +471,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     # --- inspect-amendment ---
     inspect_amendment_p = sub.add_parser(
         "inspect-amendment",
+        parents=_P,
         help="inspect one amendment's compile and payload-normalization path",
         description=(
             "Show the working johtolause, compiled ops, per-target payload "
@@ -714,6 +715,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     # --- snapshot-debug ---
     snapshot_debug_p = sub.add_parser(
         "snapshot-debug",
+        parents=_P,
         help="inspect timeline snapshots emitted by one amendment",
         description=(
             "Show the LegalOperation snapshots that process_muutoslaki emits for "
@@ -752,6 +754,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     # --- product-debug ---
     product_debug_p = sub.add_parser(
         "product-debug",
+        parents=_P,
         help="inspect timeline entries and materialization for one amendment",
         description=(
             "For one statute and one amendment, show the ProvisionTimeline entries "
@@ -974,6 +977,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     # --- trace-section ---
     trace_section_p = sub.add_parser(
         "trace-section",
+        parents=_P,
         help="show one section immediately before and after one amendment",
         description=(
             "Replay the parent statute to the boundary before one amendment and "
@@ -1446,6 +1450,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     # --- classify ---
     classify_p = sub.add_parser(
         "classify",
+        parents=_P,
         help="typed replay-vs-oracle classification for one statute",
         description=(
             "Public one-statute wrapper over oracle-check classification. "
@@ -3123,6 +3128,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     # --- diff ---
     diff_p = sub.add_parser(
         "diff",
+        parents=_P,
         help="provision-level diff: replay vs oracle",
         description=(
             "Show which specific sections diverge between the replayed statute and "
@@ -3231,6 +3237,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     # --- replay-debug ---
     replay_debug_p = sub.add_parser(
         "replay-debug",
+        parents=_P,
         help="inspect replay ops, replay metadata, and event logs with optional source-clause context",
         description=(
             "Replay one Finnish statute, filter compiled ops by source amendment "
@@ -3315,6 +3322,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     # --- replay-inspect ---
     replay_inspect_p = sub.add_parser(
         "replay-inspect",
+        parents=_P,
         help="inspect one replayed section subtree, text, and metadata",
         description=(
             "Replay one Finland statute and print the resolved section path, "
@@ -3353,6 +3361,7 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     # --- oracle-check ---
     ocheck_p = sub.add_parser(
         "oracle-check",
+        parents=_P,
         help="classify divergences as replay bugs vs oracle issues",
         description=(
             "For each diverging provision, classify as ORACLE_STALE, "
@@ -10846,8 +10855,8 @@ def _main_impl() -> None:
 
     elif args.command == "inspect-amendment":
         j = getattr(args, "jurisdiction", "fi")
-        if j == "uk":
-            print("ERROR: lawvm inspect-amendment does not yet support -j uk", file=sys.stderr)
+        if j != "fi":
+            print(f"ERROR: lawvm inspect-amendment does not yet support -j {j}", file=sys.stderr)
             raise SystemExit(2)
         from lawvm.tools.inspect_amendment import main as inspect_amendment_main
 
@@ -10870,8 +10879,8 @@ def _main_impl() -> None:
 
     elif args.command == "snapshot-debug":
         j = getattr(args, "jurisdiction", "fi")
-        if j == "uk":
-            print("ERROR: lawvm snapshot-debug does not yet support -j uk", file=sys.stderr)
+        if j != "fi":
+            print(f"ERROR: lawvm snapshot-debug does not yet support -j {j}", file=sys.stderr)
             raise SystemExit(2)
         from lawvm.tools.snapshot_debug import main as snapshot_debug_main
 
@@ -10879,8 +10888,8 @@ def _main_impl() -> None:
 
     elif args.command == "product-debug":
         j = getattr(args, "jurisdiction", "fi")
-        if j == "uk":
-            print("ERROR: lawvm product-debug does not yet support -j uk", file=sys.stderr)
+        if j != "fi":
+            print(f"ERROR: lawvm product-debug does not yet support -j {j}", file=sys.stderr)
             raise SystemExit(2)
         from lawvm.tools.product_debug import main as product_debug_main
 
@@ -10908,8 +10917,8 @@ def _main_impl() -> None:
 
     elif args.command == "trace-section":
         j = getattr(args, "jurisdiction", "fi")
-        if j == "uk":
-            print("ERROR: lawvm trace-section does not yet support -j uk", file=sys.stderr)
+        if j != "fi":
+            print(f"ERROR: lawvm trace-section does not yet support -j {j}", file=sys.stderr)
             raise SystemExit(2)
         from lawvm.tools.trace_section import main as trace_section_main
 
@@ -10943,10 +10952,13 @@ def _main_impl() -> None:
             from lawvm.tools.uk_oracle_check import main as uk_classify_main
 
             uk_classify_main(args)
-        else:
+        elif j == "fi":
             from lawvm.tools.classify import main as classify_main
 
             classify_main(args)
+        else:
+            print(f"ERROR: lawvm classify does not yet support -j {j}", file=sys.stderr)
+            raise SystemExit(2)
 
     elif args.command == "bench":
         j = getattr(args, "jurisdiction", "fi")
@@ -10973,10 +10985,13 @@ def _main_impl() -> None:
                 file=sys.stderr,
             )
             raise SystemExit(2)
-        else:
+        elif j == "fi":
             from lawvm.tools.bench import main as bench_main
 
             bench_main(args)
+        else:
+            print(f"ERROR: lawvm bench does not yet support -j {j}", file=sys.stderr)
+            raise SystemExit(2)
 
     elif args.command == "blame":
         j = getattr(args, "jurisdiction", "fi")
@@ -10984,13 +10999,13 @@ def _main_impl() -> None:
             from lawvm.tools.ee_blame import main as ee_blame_main
 
             ee_blame_main(args)
-        elif j == "uk":
-            print("ERROR: lawvm blame does not yet support -j uk", file=sys.stderr)
-            raise SystemExit(2)
-        else:
+        elif j == "fi":
             from lawvm.tools.blame import main as blame_main
 
             blame_main(args)
+        else:
+            print(f"ERROR: lawvm blame does not yet support -j {j}", file=sys.stderr)
+            raise SystemExit(2)
 
     elif args.command == "replay":
         j = getattr(args, "jurisdiction", "fi")
@@ -11349,10 +11364,13 @@ def _main_impl() -> None:
             _db_path = _Path(_db_arg) if _db_arg else None
             _sid = getattr(args, "statute_id", "")
             print(dump_uk_statute(_sid, compact=True, db_path=_db_path), end="")
-        else:
+        elif j == "fi":
             from lawvm.tools.diff import main as diff_main
 
             diff_main(args)
+        else:
+            print(f"ERROR: lawvm diff does not yet support -j {j}", file=sys.stderr)
+            raise SystemExit(2)
 
     elif args.command == "ops":
         from lawvm.tools.ops import main as ops_main
@@ -11361,8 +11379,8 @@ def _main_impl() -> None:
 
     elif args.command == "replay-debug":
         j = getattr(args, "jurisdiction", "fi")
-        if j == "uk":
-            print("ERROR: lawvm replay-debug does not yet support -j uk", file=sys.stderr)
+        if j != "fi":
+            print(f"ERROR: lawvm replay-debug does not yet support -j {j}", file=sys.stderr)
             raise SystemExit(2)
         from lawvm.tools.replay_debug import main as replay_debug_main
 
@@ -11370,8 +11388,8 @@ def _main_impl() -> None:
 
     elif args.command == "replay-inspect":
         j = getattr(args, "jurisdiction", "fi")
-        if j == "uk":
-            print("ERROR: lawvm replay-inspect does not yet support -j uk", file=sys.stderr)
+        if j != "fi":
+            print(f"ERROR: lawvm replay-inspect does not yet support -j {j}", file=sys.stderr)
             raise SystemExit(2)
         from lawvm.tools.replay_inspect import main as replay_inspect_main
 
@@ -11383,10 +11401,13 @@ def _main_impl() -> None:
             from lawvm.tools.uk_oracle_check import main as uk_oracle_check_main
 
             uk_oracle_check_main(args)
-        else:
+        elif j == "fi":
             from lawvm.tools.oracle_check import main as oracle_check_main
 
             oracle_check_main(args)
+        else:
+            print(f"ERROR: lawvm oracle-check does not yet support -j {j}", file=sys.stderr)
+            raise SystemExit(2)
 
     elif args.command == "gold":
         from lawvm.tools.gold import main as gold_main
