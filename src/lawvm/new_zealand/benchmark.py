@@ -35,6 +35,18 @@ from lawvm.new_zealand.version_diff import diff_source_documents, previous_archi
 NZ_REPLAY_BLOCKED_RULE_ID = "nz_replay_canonical_effects_not_implemented"
 NZ_ORACLE_AGREEMENT_BLOCKED_RULE_ID = "nz_oracle_agreement_candidate_replay_missing"
 
+NZ_BENCHMARK_SAMPLE_STRATEGIES = ("head", "stride")
+
+
+class NZBenchmarkSelectionError(ValueError):
+    """Raised when a benchmark work-id selection filter yields no works.
+
+    This is a loud failure on purpose: a filter that matches nothing must not
+    silently fall back to the lexicographic head (ancient imperial acts), which
+    is exactly the anti-representative sampling this selection layer exists to
+    avoid.
+    """
+
 
 @dataclass(frozen=True)
 class NZBenchmarkWorkReport:
@@ -516,14 +528,32 @@ def build_nz_benchmark_report(
     db_path: Path,
     work_ids: tuple[str, ...] = (),
     max_works: int | None = None,
+    work_id_prefix: str = "",
+    min_version_year: int | None = None,
+    sample_strategy: str = "head",
     include_diffs: bool = False,
     include_payloads: bool = False,
 ) -> NZBenchmarkReport:
     archived_work_ids = tuple(_archived_work_ids(archive))
     requested_work_ids = tuple(dict.fromkeys(work_ids))
-    selected_work_ids = list(requested_work_ids or archived_work_ids)
-    if max_works is not None:
-        selected_work_ids = selected_work_ids[: max(max_works, 0)]
+    if requested_work_ids:
+        # Explicit caller-supplied work ids bypass the representative sampler:
+        # the prefix/year/strategy filters only shape the archive-wide default
+        # population, never an explicit list. --max-works still truncates.
+        selected_work_ids = list(requested_work_ids)
+        if max_works is not None:
+            selected_work_ids = selected_work_ids[: max(max_works, 0)]
+    else:
+        selected_work_ids = list(
+            select_benchmark_work_ids(
+                archive,
+                archived_work_ids=archived_work_ids,
+                work_id_prefix=work_id_prefix,
+                min_version_year=min_version_year,
+                sample_strategy=sample_strategy,
+                max_works=max_works,
+            )
+        )
     reports = tuple(
         _benchmark_work(archive, work_id=work_id, include_diffs=include_diffs, include_payloads=include_payloads)
         for work_id in selected_work_ids
@@ -936,14 +966,107 @@ def _snapshot_diff_summary(
 
 
 def _archived_work_ids(archive: ArchiveReader) -> tuple[str, ...]:
-    work_ids: set[str] = set()
+    return tuple(_archived_work_max_version_year(archive))
+
+
+def _archived_work_max_version_year(archive: ArchiveReader) -> dict[str, int | None]:
+    """Map each archived work id to its latest archived version year (or None).
+
+    The version year is the calendar year of the version-date suffix on the
+    version id (``..._en_YYYY-MM-DD``). Works without a parseable date map to
+    ``None`` so callers can decide how to treat them under a year filter.
+    """
+
+    max_year: dict[str, int | None] = {}
     prefix = "https://api.legislation.govt.nz/v0/versions/"
     for locator in archive.locators(prefix + "%"):
         version_id = locator.rstrip("/").rsplit("/", 1)[-1]
         work_id = _work_id_from_version_id(version_id)
-        if work_id:
-            work_ids.add(work_id)
-    return tuple(sorted(work_ids))
+        if not work_id:
+            continue
+        year = _version_year_from_version_id(version_id)
+        previous = max_year.get(work_id, "__absent__")
+        if previous == "__absent__":
+            max_year[work_id] = year
+        elif year is not None and (previous is None or year > previous):
+            max_year[work_id] = year
+    return dict(sorted(max_year.items()))
+
+
+def _version_year_from_version_id(version_id: str) -> int | None:
+    """Extract the 4-digit year from a ``..._YYYY-MM-DD`` version-date suffix."""
+
+    suffix = version_id.rsplit("_", 1)[-1]
+    head = suffix.split("-", 1)[0]
+    if len(head) == 4 and head.isdigit():
+        return int(head)
+    return None
+
+
+def select_benchmark_work_ids(
+    archive: ArchiveReader,
+    *,
+    archived_work_ids: tuple[str, ...] | None = None,
+    work_id_prefix: str = "",
+    min_version_year: int | None = None,
+    sample_strategy: str = "head",
+    max_works: int | None = None,
+) -> tuple[str, ...]:
+    """Select archive-wide benchmark works deterministically.
+
+    Selection order:
+      1. start from all archived work ids (lexicographic),
+      2. keep only ids beginning with ``work_id_prefix`` (if given),
+      3. keep only works whose latest archived version year is
+         ``>= min_version_year`` (if given); works with no parseable version
+         date are dropped under a year filter,
+      4. order by ``sample_strategy`` — ``head`` keeps lexicographic order,
+         ``stride`` takes an evenly-spaced deterministic subsample,
+      5. truncate to ``max_works``.
+
+    A filter combination that matches no works raises
+    :class:`NZBenchmarkSelectionError` rather than silently sampling the head.
+    """
+
+    if sample_strategy not in NZ_BENCHMARK_SAMPLE_STRATEGIES:
+        raise NZBenchmarkSelectionError(
+            f"unknown sample_strategy {sample_strategy!r}; "
+            f"expected one of {', '.join(NZ_BENCHMARK_SAMPLE_STRATEGIES)}"
+        )
+
+    max_year = _archived_work_max_version_year(archive)
+    population = tuple(archived_work_ids) if archived_work_ids is not None else tuple(max_year)
+
+    filtered = [
+        work_id
+        for work_id in population
+        if (not work_id_prefix or work_id.startswith(work_id_prefix))
+        and _passes_min_year(max_year.get(work_id), min_version_year)
+    ]
+    if not filtered:
+        raise NZBenchmarkSelectionError(
+            "benchmark work-id selection matched zero works "
+            f"(work_id_prefix={work_id_prefix!r}, min_version_year={min_version_year}, "
+            f"available_work_count={len(population)}); refusing to fall back to the "
+            "lexicographic head"
+        )
+
+    if sample_strategy == "stride" and max_works is not None and 0 < max_works < len(filtered):
+        step = len(filtered) / max_works
+        ordered = [filtered[int(index * step)] for index in range(max_works)]
+    else:
+        ordered = filtered
+        if max_works is not None:
+            ordered = ordered[: max(max_works, 0)]
+    return tuple(ordered)
+
+
+def _passes_min_year(year: int | None, min_version_year: int | None) -> bool:
+    if min_version_year is None:
+        return True
+    if year is None:
+        return False
+    return year >= min_version_year
 
 
 def _dependency_archived_count(archive: ArchiveReader, refs: tuple[Any, ...]) -> int:
@@ -1067,9 +1190,14 @@ def main(args: Any) -> None:
             db_path=Path(args.db),
             work_ids=tuple(args.work_id or ()),
             max_works=args.max_works,
+            work_id_prefix=getattr(args, "work_id_prefix", "") or "",
+            min_version_year=getattr(args, "min_version_year", None),
+            sample_strategy=getattr(args, "sample_strategy", "head") or "head",
             include_diffs=args.include_diffs,
             include_payloads=args.include_payloads,
         )
+    except NZBenchmarkSelectionError as exc:
+        raise SystemExit(f"nz-corpus benchmark: {exc}") from exc
     finally:
         archive.close()
 

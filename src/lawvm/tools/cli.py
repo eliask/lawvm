@@ -7994,6 +7994,35 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
     )
     nz_benchmark_p.add_argument("--max-works", type=int, default=None, metavar="N", help="maximum works")
     nz_benchmark_p.add_argument(
+        "--work-id-prefix",
+        default="",
+        metavar="PREFIX",
+        help=(
+            "restrict the archive-wide default population to work_ids starting with PREFIX "
+            "(e.g. 'act_public_' for a representative modern slice); ignored when --work-id is given"
+        ),
+    )
+    nz_benchmark_p.add_argument(
+        "--min-version-year",
+        type=int,
+        default=None,
+        metavar="YEAR",
+        help=(
+            "restrict the default population to works whose latest archived version is from YEAR "
+            "or later; works with no parseable version date are dropped (ignored when --work-id is given)"
+        ),
+    )
+    nz_benchmark_p.add_argument(
+        "--sample-strategy",
+        choices=("head", "stride"),
+        default="head",
+        help=(
+            "how to subsample the filtered population down to --max-works: 'head' keeps the "
+            "lexicographic head (legacy default); 'stride' takes an evenly-spaced deterministic "
+            "sample across the filtered range"
+        ),
+    )
+    nz_benchmark_p.add_argument(
         "--include-diffs",
         action="store_true",
         help="compare latest archived XML to previous archived XML where available",

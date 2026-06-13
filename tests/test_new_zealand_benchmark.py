@@ -504,3 +504,131 @@ def test_nz_benchmark_cli_parse_defaults() -> None:
     assert args.work_id == ["act_public_2020_1"]
     assert args.include_diffs is False
     assert args.include_payloads is False
+    assert args.work_id_prefix == ""
+    assert args.min_version_year is None
+    assert args.sample_strategy == "head"
+
+
+def test_nz_benchmark_cli_parse_representative_flags() -> None:
+    parser = _build_parser()
+
+    args = parser.parse_args(
+        [
+            "nz-corpus",
+            "benchmark",
+            "--work-id-prefix",
+            "act_public_",
+            "--min-version-year",
+            "2008",
+            "--sample-strategy",
+            "stride",
+            "--max-works",
+            "60",
+        ]
+    )
+
+    assert args.work_id_prefix == "act_public_"
+    assert args.min_version_year == 2008
+    assert args.sample_strategy == "stride"
+    assert args.max_works == 60
+
+
+def _selection_archive() -> _FakeArchive:
+    rows: dict[str, bytes] = {}
+    base = "https://api.legislation.govt.nz/v0/versions/"
+    # Ancient imperial acts sort to the lexicographic head.
+    for num in (1, 2, 3):
+        rows[f"{base}act_imperial_1267_{num}_en_1900-01-01/"] = b"{}"
+    # Modern act_public works, one version each, spanning two years.
+    for year, count in ((2008, 6), (2020, 6)):
+        for num in range(1, count + 1):
+            rows[f"{base}act_public_{year}_{num}_en_{year}-06-01/"] = b"{}"
+    # A pre-filter act_public that must be excluded by min_version_year.
+    rows[f"{base}act_public_1990_1_en_1995-01-01/"] = b"{}"
+    return _FakeArchive(rows)
+
+
+def test_select_benchmark_work_ids_prefix_and_year_filter() -> None:
+    from lawvm.new_zealand.benchmark import select_benchmark_work_ids
+
+    selected = select_benchmark_work_ids(
+        _selection_archive(),
+        work_id_prefix="act_public_",
+        min_version_year=2008,
+    )
+
+    assert all(work_id.startswith("act_public_") for work_id in selected)
+    assert "act_imperial_1267_1" not in selected
+    assert "act_public_1990_1" not in selected
+    assert len(selected) == 12
+
+
+def test_select_benchmark_work_ids_stride_is_deterministic_and_representative() -> None:
+    from lawvm.new_zealand.benchmark import select_benchmark_work_ids
+
+    archive = _selection_archive()
+
+    first = select_benchmark_work_ids(
+        archive, work_id_prefix="act_public_", min_version_year=2008, sample_strategy="stride", max_works=4
+    )
+    second = select_benchmark_work_ids(
+        archive, work_id_prefix="act_public_", min_version_year=2008, sample_strategy="stride", max_works=4
+    )
+
+    assert first == second  # deterministic
+    assert len(first) == 4
+    # A stride sample spans both eras instead of clustering on the head.
+    assert any(work_id.startswith("act_public_2008_") for work_id in first)
+    assert any(work_id.startswith("act_public_2020_") for work_id in first)
+
+
+def test_select_benchmark_work_ids_head_keeps_lexicographic_prefix() -> None:
+    from lawvm.new_zealand.benchmark import select_benchmark_work_ids
+
+    selected = select_benchmark_work_ids(
+        _selection_archive(),
+        work_id_prefix="act_public_",
+        min_version_year=2008,
+        sample_strategy="head",
+        max_works=3,
+    )
+
+    assert selected == ("act_public_2008_1", "act_public_2008_2", "act_public_2008_3")
+
+
+def test_select_benchmark_work_ids_empty_match_raises_not_silent_fallback() -> None:
+    import pytest
+
+    from lawvm.new_zealand.benchmark import NZBenchmarkSelectionError, select_benchmark_work_ids
+
+    with pytest.raises(NZBenchmarkSelectionError):
+        select_benchmark_work_ids(_selection_archive(), work_id_prefix="bill_government_")
+
+
+def test_build_nz_benchmark_report_explicit_work_ids_bypass_filters(tmp_path) -> None:
+    # Explicit work ids must be honoured even if they fail the prefix/year filters.
+    report = build_nz_benchmark_report(
+        _selection_archive(),
+        db_path=tmp_path / "nz.farchive",
+        work_ids=("act_imperial_1267_1",),
+        work_id_prefix="act_public_",
+        min_version_year=2008,
+        sample_strategy="stride",
+    )
+
+    assert report.selected_work_ids == ("act_imperial_1267_1",)
+
+
+def test_build_nz_benchmark_report_representative_default_population(tmp_path) -> None:
+    report = build_nz_benchmark_report(
+        _selection_archive(),
+        db_path=tmp_path / "nz.farchive",
+        work_id_prefix="act_public_",
+        min_version_year=2008,
+        sample_strategy="stride",
+        max_works=4,
+    )
+
+    assert len(report.selected_work_ids) == 4
+    assert all(work_id.startswith("act_public_") for work_id in report.selected_work_ids)
+    assert report.available_work_count == 16
