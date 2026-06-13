@@ -33,7 +33,6 @@ from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.phase_result import Finding
-from lawvm.core.observation_registry import get_finding_spec
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.coverage import CoverageIgnoredUnit, CoverageRejectedClaim
@@ -60,6 +59,12 @@ from lawvm.finland.body_coverage_findings import (
     coverage_rejected_claim_finding as _coverage_rejected_claim_finding_impl,
     coverage_unresolved_gap_finding as _coverage_unresolved_gap_finding_impl,
     high_uncovered_body_degraded_finding as _high_uncovered_body_degraded_finding_impl,
+)
+from lawvm.finland.uncovered_body_findings import (
+    strict_rejected_uncovered_body_finding as _strict_rejected_uncovered_body_finding_impl,
+    uncovered_body_chapter_payload_mixed_finding as _uncovered_body_chapter_payload_mixed_finding_impl,
+    uncovered_body_recovery_finding as _uncovered_body_recovery_finding_impl,
+    uncovered_body_recovery_skipped_finding as _uncovered_body_recovery_skipped_finding_impl,
 )
 from lawvm.finland.johto_scope_mentions import (
     collect_johto_chapter_scope_mentions,
@@ -144,19 +149,9 @@ def _strict_rejected_uncovered_body_finding(
     source_statute: str,
     stage: str,
 ) -> Finding:
-    """Build the blocking finding for strict-profile uncovered-body rejection."""
-    return Finding(
-        kind="APPLY.STRICT_REJECTED_UNCOVERED_BODY",
-        role="obligation",
-        stage=stage,
-        blocking=True,
+    return _strict_rejected_uncovered_body_finding_impl(
         source_statute=source_statute,
-        detail={
-            "message": (
-                "Uncovered body recovery rejected by strict profile "
-                "(allows_uncovered_body_recovery=False)"
-            ),
-        },
+        stage=stage,
     )
 
 
@@ -169,57 +164,13 @@ def _uncovered_body_recovery_finding(
     target_chapter: str | None = None,
     target_part: str | None = None,
 ) -> Finding | None:
-    """Build the replay-owned finding for one uncovered-body recovery action."""
-    if op_id.startswith("uncovered_replace_"):
-        kind = "APPLY.FALLBACK_WHOLE_SECTION_REPLACE"
-        message = "Fallback whole-section replacement was used."
-    elif op_id.startswith("uncovered_insert_"):
-        kind = "APPLY.UNCOVERED_BODY_RECOVERY"
-        message = "Uncovered-body insertion supplement was used."
-    elif op_id.startswith("uncovered_merge_"):
-        kind = "ELAB.OMISSION_EXPANSION"
-        message = "Omission-expansion merge was used."
-    elif op_id.startswith("uncovered_repeal_"):
-        kind = "APPLY.UNCOVERED_BODY_RECOVERY"
-        message = "Uncovered-body repeal recovery was used."
-    else:
-        return None
-
-    detail: dict[str, object] = {
-        "message": message,
-        "op_id": op_id,
-        "target_unit_kind": target_unit_kind,
-        "target_norm": target_norm,
-    }
-    if target_chapter:
-        detail["target_chapter"] = target_chapter
-    if target_part:
-        detail["target_part"] = target_part
-
-    spec = get_finding_spec(kind)
-    if spec is not None and spec.role == "obligation":
-        return Finding(
-            kind=kind,
-            role="obligation",
-            stage="apply",
-            blocking=True,
-            source_statute=source_statute,
-            detail={
-                **detail,
-                "barrier_code": kind,
-            },
-        )
-
-    return Finding(
-        kind="RUNTIME.VIOLATION",
-        role="violation",
-        stage="apply",
-        blocking=True,
+    return _uncovered_body_recovery_finding_impl(
+        op_id=op_id,
         source_statute=source_statute,
-        detail={
-            **detail,
-            "barrier_code": kind,
-        },
+        target_unit_kind=target_unit_kind,
+        target_norm=target_norm,
+        target_chapter=target_chapter,
+        target_part=target_part,
     )
 
 
@@ -231,40 +182,12 @@ def _uncovered_body_recovery_skipped_finding(
     target_chapter: str | None = None,
     target_part: str | None = None,
 ) -> Finding:
-    specific_kind = {
-        "duplicate_recovered_candidate": "APPLY.UNCOVERED_BODY_DUPLICATE_CANDIDATE",
-        "cross_chapter_existing_target": "APPLY.UNCOVERED_BODY_CROSS_CHAPTER_COLLISION",
-        "moved_destination_mismatch": "APPLY.UNCOVERED_BODY_MOVED_DESTINATION_MISMATCH",
-        "same_wave_relabel_destination_owned": "APPLY.UNCOVERED_BODY_RELABEL_DESTINATION_OWNED",
-        "body_pairing_guard": "APPLY.UNCOVERED_BODY_BODY_PAIRING_GUARD",
-        "no_content_ops": "APPLY.UNCOVERED_BODY_NO_CONTENT_OPS",
-        "would_lose_subsections": "APPLY.UNCOVERED_BODY_WOULD_LOSE_SUBSECTIONS",
-        "past_repeal_placeholder_guard": "APPLY.UNCOVERED_BODY_PAST_REPEAL_GUARD",
-        "johto_guard": "APPLY.UNCOVERED_BODY_JOHTO_GUARD",
-        "omission_merge_failed": "APPLY.UNCOVERED_BODY_OMISSION_MERGE_FAILED",
-        "omission_merge_low_text_ratio": "APPLY.UNCOVERED_BODY_OMISSION_MERGE_LOW_TEXT_RATIO",
-        "omission_merge_duplicate_subsection_labels": "APPLY.UNCOVERED_BODY_OMISSION_MERGE_DUPLICATE_LABELS",
-        "omission_merge_would_lose_subsections": "APPLY.UNCOVERED_BODY_OMISSION_MERGE_WOULD_LOSE_SUBSECTIONS",
-        "peg_owned_same_chapter": "APPLY.UNCOVERED_BODY_PEG_SAME_CHAPTER_OWNED",
-        "peg_owned_label_collision": "APPLY.UNCOVERED_BODY_PEG_LABEL_COLLISION",
-        "future_repeal": "APPLY.UNCOVERED_BODY_FUTURE_REPEAL_SKIP",
-        "chapter_payload_owned": "APPLY.UNCOVERED_BODY_CHAPTER_PAYLOAD_OWNED",
-    }.get(reason, "APPLY.UNCOVERED_BODY_RECOVERY_SKIPPED")
-    detail: dict[str, object] = {
-        "message": "Uncovered-body recovery skipped a candidate section",
-        "target_section": target_section,
-        "target_chapter": target_chapter or "",
-        "reason": reason,
-    }
-    if target_part:
-        detail["target_part"] = target_part
-    return Finding(
-        kind=specific_kind,
-        role="observation",
-        stage="grafter_uncovered",
-        blocking=False,
+    return _uncovered_body_recovery_skipped_finding_impl(
         source_statute=source_statute,
-        detail=detail,
+        target_section=target_section,
+        reason=reason,
+        target_chapter=target_chapter,
+        target_part=target_part,
     )
 
 
@@ -275,18 +198,11 @@ def _uncovered_body_chapter_payload_mixed_finding(
     adopted_count: int,
     owned_count: int,
 ) -> Finding:
-    return Finding(
-        kind="APPLY.UNCOVERED_BODY_CHAPTER_PAYLOAD_MIXED",
-        role="observation",
-        stage="grafter_uncovered",
-        blocking=False,
+    return _uncovered_body_chapter_payload_mixed_finding_impl(
         source_statute=source_statute,
-        detail={
-            "message": "Covered chapter payload mixed owned child sections with explicit uncovered-body adoptions",
-            "target_chapter": target_chapter,
-            "adopted_count": adopted_count,
-            "owned_count": owned_count,
-        },
+        target_chapter=target_chapter,
+        adopted_count=adopted_count,
+        owned_count=owned_count,
     )
 
 
