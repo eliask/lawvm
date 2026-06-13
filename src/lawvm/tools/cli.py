@@ -8125,6 +8125,49 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         "--summary-only", action="store_true", help="emit only corpus summary counts (suppress per-work rows)"
     )
     nz_dry_run_corpus_p.add_argument("--json", action="store_true", help="emit corpus dry-run report JSON")
+    nz_dry_run_north_star_p = nz_corpus_sub.add_parser(
+        "dry-run-north-star",
+        help="report the stable combined replay-coverage north-star over all supported dry-run families",
+        description=(
+            "Pin the replay-coverage denominator to ground-truth amendment "
+            "operation witnesses (history notes via the operation surface), run "
+            "every supported dry-run family (repeal + text_replace) over a work "
+            "population, and report the combined coverage fraction = the true "
+            "percentage of NZ amendment operations we can replay-and-oracle-confirm. "
+            "Non-executable-by-design operations (brought-into-force/editorial/"
+            "expired) are reported separately, and the unsupported executable "
+            "families are reported as the explicit remaining frontier. The "
+            "denominator does not grow when candidate extraction improves, so this "
+            "fraction is comparable across cycles. Measurement only: never enables "
+            "actual replay and never mutates the archive."
+        ),
+    )
+    nz_dry_run_north_star_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_dry_run_north_star_p.add_argument(
+        "--work-id",
+        action="append",
+        default=[],
+        metavar="ID",
+        help="specific work_id to include; defaults to the --corpus population",
+    )
+    nz_dry_run_north_star_p.add_argument(
+        "--corpus",
+        default=None,
+        metavar="CSV",
+        help=(
+            "read the work population from a curated bench-corpus CSV (work_id column), "
+            "e.g. data/nz/bench_corpus_smoke.csv. An explicit --work-id list still wins."
+        ),
+    )
+    nz_dry_run_north_star_p.add_argument("--max-works", type=int, default=None, metavar="N", help="maximum works")
+    nz_dry_run_north_star_p.add_argument(
+        "--json", action="store_true", help="emit the north-star report JSON"
+    )
     nz_evidence_pack_p = nz_corpus_sub.add_parser(
         "evidence-pack",
         help="write one report-query-compatible NZ evidence JSONL pack",
@@ -11141,6 +11184,10 @@ def _main_impl() -> None:
             from lawvm.new_zealand.dry_run_corpus import main as nz_corpus_dry_run_corpus_main
 
             nz_corpus_dry_run_corpus_main(args)
+        elif args.nz_corpus_command == "dry-run-north-star":
+            from lawvm.new_zealand.dry_run_north_star import main as nz_corpus_dry_run_north_star_main
+
+            nz_corpus_dry_run_north_star_main(args)
         elif args.nz_corpus_command == "evidence-pack":
             from lawvm.new_zealand.evidence_pack import main as nz_corpus_evidence_pack_main
 
