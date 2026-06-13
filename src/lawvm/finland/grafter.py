@@ -564,17 +564,12 @@ from lawvm.finland.amendment_chapter_precreate import (
 from lawvm.finland.process_acquisition import ProcessAcquisitionContext
 from lawvm.finland.process_call import resolve_process_amendment_call
 from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
-from lawvm.finland.process_findings import ProcessFindingRecorder
 from lawvm.finland.process_frontend_normalization import ProcessFrontendNormalizationContext
 from lawvm.finland.process_precompile_selection import ProcessPrecompileSelectionContext
 from lawvm.finland.process_request import ProcessAmendmentRequest
-from lawvm.finland.process_result_builder import (
-    ProcessAmendmentSinks,
-    ProcessCompatSinks,
-    ProcessResultBuilder,
-    ProcessSignalBuffers,
-)
+from lawvm.finland.process_result_builder import ProcessAmendmentSinks
 from lawvm.finland.process_route_rejection import ProcessRouteRejectionContext
+from lawvm.finland.process_runtime import build_process_runtime
 from lawvm.finland.process_compile_signals import ProcessCompileSignalsContext
 from lawvm.finland.process_apply_projection import ProcessApplyProjectionContext
 from lawvm.finland.process_structural_prepare import ProcessStructuralPrepareContext
@@ -4757,46 +4752,25 @@ def process_muutoslaki(
     prior_migration_events = process_call.prior_migration_events
     restructure_plans_out = process_call.restructure_plans_out
     processed_amendment_titles = process_call.processed_amendment_titles
-    # Accumulates executable temporal authority plus compatibility evidence rows
-    # before the PhaseResult/result-sink projection boundary.
-    _signals = ProcessSignalBuffers.empty()
-    _amendment_temporal_events = _signals.amendment_temporal_events
-    _process_findings = _signals.process_findings
-    _compat_failed_ops = _signals.failed_ops
-    _compat_source_pathologies = _signals.source_pathologies
-    _compat_elaboration_observations = _signals.elaboration_observations
-    _compat_sparse_slot_bindings = _signals.sparse_slot_bindings
-    _compat_sparse_leftovers = _signals.sparse_leftovers
-    _commencement_expiry_override_notes = _signals.commencement_expiry_override_notes
-    _vts_skipped_targets = _signals.vts_skipped_targets
-    _effective_restructure_plans_out: list[StructuralTransformPlan] = (
-        restructure_plans_out if restructure_plans_out is not None else []
-    )
-    _processed_amendment_titles = processed_amendment_titles or {}
+    _runtime = build_process_runtime(process_call)
+    _amendment_temporal_events = _runtime.amendment_temporal_events
+    _process_findings = _runtime.process_findings
+    _compat_failed_ops = _runtime.compat_failed_ops
+    _compat_source_pathologies = _runtime.compat_source_pathologies
+    _compat_elaboration_observations = _runtime.compat_elaboration_observations
+    _compat_sparse_slot_bindings = _runtime.compat_sparse_slot_bindings
+    _compat_sparse_leftovers = _runtime.compat_sparse_leftovers
+    _commencement_expiry_override_notes = _runtime.commencement_expiry_override_notes
+    _vts_skipped_targets = _runtime.vts_skipped_targets
+    _effective_restructure_plans_out = _runtime.effective_restructure_plans_out
+    _processed_amendment_titles = _runtime.processed_amendment_titles
 
-    _finding_recorder = ProcessFindingRecorder(_process_findings)
-    _record_process_finding = _finding_recorder.record
-
-    if corpus is None:
-        corpus = _get_corpus_store()
-    _migration_ledger = MigrationLedger(prior_migration_events or ())
-    _migration_ledger_initial_len = len(_migration_ledger)
-    _result_builder = ProcessResultBuilder(
-        amendment_id=amendment_id,
-        buffers=_signals,
-        migration_ledger=_migration_ledger,
-        migration_ledger_initial_len=_migration_ledger_initial_len,
-        sinks=ProcessCompatSinks(
-            failed_ops_out=failed_ops_out,
-            source_pathologies_out=source_pathologies_out,
-            elaboration_observations_out=elaboration_observations_out,
-            sparse_slot_bindings_out=sparse_slot_bindings_out,
-            sparse_leftovers_out=sparse_leftovers_out,
-            commencement_expiry_overrides_out=commencement_expiry_overrides_out,
-            mutation_events_out=mutation_events_out,
-            mutation_invariant_reports_out=mutation_invariant_reports_out,
-        ),
-    )
+    _finding_recorder = _runtime.finding_recorder
+    _record_process_finding = _runtime.record_process_finding
+    corpus = _runtime.corpus
+    _migration_ledger = _runtime.migration_ledger
+    _migration_ledger_initial_len = _runtime.migration_ledger_initial_len
+    _result_builder = _runtime.result_builder
 
     def _build_result(output_state: "ReplayState"):
         return _result_builder.build(output_state)
