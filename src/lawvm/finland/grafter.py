@@ -139,6 +139,7 @@ from lawvm.finland.citation_routing import (
     route_amendment,
 )
 from lawvm.finland.acquisition import (
+    amendment_lacks_operative_structure as _amendment_lacks_operative_structure,
     should_use_sec1_fallback_pre_routing as _should_use_sec1_fallback_pre_routing_impl,
     should_use_sec1_fallback_post_routing as _should_use_sec1_fallback_post_routing_impl,
 )
@@ -491,43 +492,6 @@ from lawvm.finland.frontend_compile import (
     _enrich_ops_from_amendment_tree,
     normalize_and_compile_ops,
 )
-
-
-_OPERATIVE_BODY_TAGS = {
-    "section",
-    "chapter",
-    "part",
-    "article",
-    "subsection",
-    "paragraph",
-    "point",
-    "subparagraph",
-    "table",
-    "blocklist",
-    "item",
-}
-
-
-def _localname(node: etree._Element) -> str:
-    return node.tag.rsplit("}", 1)[-1] if isinstance(node.tag, str) else ""
-
-
-def _amendment_operative_structure_tags(tree: etree._Element) -> list[str]:
-    body = tree.find(".//{*}body")
-    root = body if body is not None else tree
-    found: list[str] = []
-    seen: set[str] = set()
-    for node in root.iter():
-        tag = _localname(node)
-        if tag in _OPERATIVE_BODY_TAGS and tag not in seen:
-            seen.add(tag)
-            found.append(tag)
-    return found
-
-
-def _amendment_lacks_operative_structure(tree: etree._Element) -> tuple[bool, list[str]]:
-    tags = _amendment_operative_structure_tags(tree)
-    return (len(tags) == 0, tags)
 
 
 def _target_group_key(op: AmendmentOp) -> "GroupTargetKey":
