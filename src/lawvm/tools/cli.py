@@ -631,6 +631,53 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="emit JSON (includes full per-step detail)",
     )
 
+    # --- self-consistency ---
+    self_consistency_p = sub.add_parser(
+        "self-consistency",
+        help="enumerate amendment-chain self-consistency violations across the corpus",
+        description=(
+            "Replay every curated statute in parallel and harvest every "
+            "self-consistency signal: typed apply-failures, silently-swallowed "
+            "target-absent ops, unhandled/dropped ops, source pathologies, "
+            "skipped amendments, coverage gaps, structural invariant violations, "
+            "and governed ELAB findings.  Grouped by signal type then category."
+        ),
+    )
+    self_consistency_p.add_argument(
+        "--statutes",
+        metavar="IDS",
+        default="",
+        help="comma-separated statute IDs to sweep (default: full curated corpus)",
+    )
+    self_consistency_p.add_argument(
+        "--signal-types",
+        dest="signal_types",
+        metavar="TYPES",
+        default="",
+        help=(
+            "comma-separated signal types to keep (default: all). Choices: "
+            "apply_failure,target_absent,unhandled_op,source_pathology,"
+            "skipped_amendment,coverage_gap,invariant_violation,elaboration_finding"
+        ),
+    )
+    self_consistency_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="cap the corpus to the first N statutes (default: no cap)",
+    )
+    self_consistency_p.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        help="worker process count (default: cpu-2, capped at 8)",
+    )
+    self_consistency_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit JSON with the full signal rows",
+    )
+
     # --- snapshot-debug ---
     snapshot_debug_p = sub.add_parser(
         "snapshot-debug",
@@ -10511,6 +10558,11 @@ def _main_impl() -> None:
         from lawvm.tools.invariant_bisect import main as invariant_bisect_main
 
         invariant_bisect_main(args)
+
+    elif args.command == "self-consistency":
+        from lawvm.tools.self_consistency import main as self_consistency_main
+
+        self_consistency_main(args)
 
     elif args.command == "snapshot-debug":
         j = getattr(args, "jurisdiction", "fi")
