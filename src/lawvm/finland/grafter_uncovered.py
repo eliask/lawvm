@@ -17,6 +17,7 @@ Functions exported:
 from __future__ import annotations
 
 import logging
+import os
 import re
 import datetime as dt
 from dataclasses import dataclass
@@ -121,6 +122,13 @@ if TYPE_CHECKING:
     from lawvm.corpus_store import CorpusStore
 
 logger = logging.getLogger(__name__)
+
+# Legacy pre-typed-coverage "ad-hoc section scan" inside _recover_uncovered_body_ops.
+# Default-ON: it is still load-bearing for some statutes (e.g. 1996/1093 recovers
+# section 18 item, asserted by tests), so the typed coverage path does not yet
+# fully subsume it. Exposed as a toggle (LAWVM_DUAL_UNCOVERED=0 to disable) for
+# A/B comparison against typed coverage analysis while that gap is closed.
+_DUAL_UNCOVERED_ENABLED = os.environ.get("LAWVM_DUAL_UNCOVERED", "1") != "0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -1496,12 +1504,15 @@ def _recover_uncovered_body_ops(
             continue
         _process_section_candidate(cast(etree._Element, _sec_el), _gap_label, _gap_chapter)
 
-    # --- Dual-run fallback: old ad-hoc section scan (promoted to always-on) ---
-    # Previously feature-flagged behind LAWVM_DUAL_UNCOVERED=1.
-    # Regression hunting confirmed 3 improvements, 0 regressions when enabled.
-    # Key wins: 1990/650 -2.80pp, 1978/38 -0.26pp, 1993/1055 -0.24pp.
-    # See notes/PRO_RESPONSE3_4_regression_hunting.md §2.
-    if True:
+    # --- Dual-run fallback: old ad-hoc section scan (legacy, still load-bearing) ---
+    # The pre-typed-coverage primary path. The typed coverage analysis above is
+    # meant to subsume it, but does not yet: this scan still recovers real
+    # content the typed path misses on some statutes (e.g. 1996/1093 section 18
+    # item; corpus-wide it is otherwise score-neutral and mostly emits its own
+    # peg-owned skip findings). Kept ON by default; gated behind a toggle so the
+    # remaining gap can be closed in the typed path and this can then be deleted.
+    # Disable for A/B with LAWVM_DUAL_UNCOVERED=0.
+    if _DUAL_UNCOVERED_ENABLED:
         # Two guard sets:
         # - _result_labels: bare labels from already-resolved ops — prevents
         #   the dual-run from duplicating coverage-driven recovery (which may
