@@ -476,6 +476,57 @@ class RecoveryState:
                 )
 
 
+def _build_uncovered_rop(
+    *,
+    op_type: OpType,
+    target_label: str,
+    target_chapter: Optional[str],
+    target_part: Optional[str],
+    muutos_ir: IRNode,
+    op_id: str,
+    amendment_id: str,
+    op_source: Optional[OperationSource],
+) -> ResolvedOp:
+    """Build a ResolvedOp for an uncovered-body section operation.
+
+    Pure constructor: assembles the synthetic AmendmentOp + ResolvedOp for a
+    section recovered from the amendment body, stamping the whole-section
+    completeness witness and the part/chapter/section target address. No state
+    capture — every input is an explicit argument so the synthesized op is
+    reproducible from the audit record alone.
+    """
+    am_op = AmendmentOp(
+        op_id=op_id,
+        op_type=op_type,
+        target_section=target_label,
+        target_unit_kind="section",
+        target_chapter=target_chapter,
+        target_part=target_part,
+        source_statute=amendment_id,
+        uncovered_body_recovery=True,
+    )
+    return ResolvedOp.from_amendment_op(
+        am_op,
+        muutos_ir=muutos_ir,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm=target_label,
+        target_chapter=target_chapter,
+        payload_completeness=_uncovered_section_payload_completeness(
+            op_type=op_type,
+            muutos_ir=muutos_ir,
+        ),
+        op_source=op_source,
+        target_address=LegalAddress(
+            path=(
+                ((("part", target_part),) if target_part else ())
+                + ((("chapter", target_chapter),) if target_chapter else ())
+                + (("section", target_label),)
+            )
+        ),
+    )
+
+
 def _uncovered_disposition_for_op_id(op_id: str) -> tuple[str, str]:
     """Map a recovered op_id to its (disposition, reason) audit pair.
 
@@ -1153,38 +1204,16 @@ def _recover_uncovered_body_ops(
         muutos_ir: IRNode,
         op_id: str,
     ) -> ResolvedOp:
-        """Build a ResolvedOp for an uncovered-body section operation."""
-        am_op = AmendmentOp(
-            op_id=op_id,
+        return _build_uncovered_rop(
             op_type=op_type,
-            target_section=target_label,
-            target_unit_kind="section",
+            target_label=target_label,
             target_chapter=target_chapter,
             target_part=target_part,
-            source_statute=amendment_id,
-            uncovered_body_recovery=True,
-        )
-        rop = ResolvedOp.from_amendment_op(
-            am_op,
             muutos_ir=muutos_ir,
-            cross_ir=None,
-            target_unit_kind="section",
-            target_norm=target_label,
-            target_chapter=target_chapter,
-            payload_completeness=_uncovered_section_payload_completeness(
-                op_type=op_type,
-                muutos_ir=muutos_ir,
-            ),
+            op_id=op_id,
+            amendment_id=amendment_id,
             op_source=op_source,
-            target_address=LegalAddress(
-                path=(
-                    ((("part", target_part),) if target_part else ())
-                    + ((("chapter", target_chapter),) if target_chapter else ())
-                    + (("section", target_label),)
-                )
-            ),
         )
-        return rop
 
     def _append_recovered_rop(rop: ResolvedOp) -> None:
         disposition, reason = _uncovered_disposition_for_op_id(rop.op_id or "")
