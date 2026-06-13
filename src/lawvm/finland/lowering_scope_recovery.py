@@ -8,7 +8,7 @@ import lxml.etree as etree
 
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.constraints import _find_muutos_node
-from lawvm.finland.helpers import _normalize_source_section_num, _norm_num_token, _roman_label_to_arabic
+from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_section_num, _norm_num_token
 from lawvm.finland.ops import AmendmentOp, projection_scope_confidence
 
 
@@ -100,9 +100,7 @@ def source_body_scope_for_section_target(
                 part_num = parent.find("{*}num")
                 if part_num is None or not part_num.text:
                     return None
-                raw = _norm_num_token(part_num.text).removesuffix("osa")
-                arabic = _roman_label_to_arabic(raw.lower()) if raw else None
-                return str(arabic) if arabic is not None else (raw or None)
+                return _normalize_source_part_num(part_num.text) or None
             parent = parent.getparent()
         return None
 

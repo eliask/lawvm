@@ -45,6 +45,7 @@ from lawvm.finland.ops import (
 )
 from lawvm.finland.helpers import (
     _norm_num_token,
+    _normalize_source_part_num,
     _normalize_source_section_num,
     _roman_label_to_arabic,
     _is_omission_ir,
@@ -797,10 +798,7 @@ def _recover_uncovered_body_ops(
                 if _tag(parent) == "part":
                     num_el = parent.find("{*}num")
                     if num_el is not None and num_el.text:
-                        part_label = _norm_num_token(num_el.text).removesuffix("osa")
-                        arabic = _roman_label_to_arabic(part_label)
-                        part_label = str(arabic) if arabic is not None else part_label
-                        return part_label or None
+                        return _normalize_source_part_num(num_el.text) or None
                 parent = parent.getparent()
             return None
 
@@ -1347,9 +1345,7 @@ def _recover_uncovered_body_ops(
                 if _tag(_part_parent) == "part":
                     _pnum_el = _part_parent.find("{*}num")
                     if _pnum_el is not None and _pnum_el.text:
-                        _part_norm = _norm_num_token(_pnum_el.text).removesuffix("osa")
-                        _part_arabic = _roman_label_to_arabic(_part_norm)
-                        _ad_part = str(_part_arabic) if _part_arabic is not None else (_part_norm or None)
+                        _ad_part = _normalize_source_part_num(_pnum_el.text) or None
                     break
                 _part_parent = _part_parent.getparent()
             if _ad_ch and (_ad_part or "", _ad_ch, _ad_label) in chapter_payload_owned_sections:

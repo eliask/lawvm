@@ -18,7 +18,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.finland.body_pairing import build_observed_body_inventory
-from lawvm.finland.helpers import _normalize_source_section_num, _norm_num_token, _roman_label_to_arabic
+from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_section_num, _norm_num_token
 from lawvm.finland.ops import (
     ScopeConfidence,
     _lo_path_dict,
@@ -228,9 +228,7 @@ def retarget_duplicate_body_section_scope_from_close_live_siblings(
                 part_num = parent.find("{*}num")
                 if part_num is None or not part_num.text:
                     return None
-                raw = _norm_num_token(part_num.text).removesuffix("osa")
-                arabic = _roman_label_to_arabic(raw.lower()) if raw else None
-                return str(arabic) if arabic is not None else (raw or None)
+                return _normalize_source_part_num(part_num.text) or None
             parent = parent.getparent()
         return None
 

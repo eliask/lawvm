@@ -51,7 +51,7 @@ from lawvm.core.clause_ast import (
 )
 from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import FacetKind, LabelAction, StructuralAction
-from lawvm.finland.helpers import _normalize_source_section_num, _norm_num_token, _roman_label_to_arabic
+from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_section_num, _norm_num_token
 from lawvm.finland.johtolause.surface_model import TargetKind
 from lawvm.finland.johtolause.types import ParsedOp
 from lawvm.finland.ops import AmendmentOp
@@ -158,9 +158,7 @@ def _normalize_chapter_label(raw: str) -> str:
 
 def _normalize_part_label(raw: str) -> str:
     """Normalize a part label to the live-tree form used by Finland replay."""
-    norm = _norm_num_token(raw).removesuffix("osasto").removesuffix("osa")
-    arabic = _roman_label_to_arabic(norm.lower()) if norm else None
-    return str(arabic) if arabic is not None else norm
+    return _normalize_source_part_num(raw)
 
 
 _PART_CROSS_HEADING_RE = re.compile(

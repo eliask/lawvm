@@ -70,6 +70,19 @@ def _normalize_source_section_num(raw: str) -> str:
 
 
 @functools.lru_cache(maxsize=8192)
+def _normalize_source_part_num(raw: str) -> str:
+    """Normalize a Finland source XML ``<part><num>`` label.
+
+    Historical sources use both ``osa`` and ``osasto`` for part containers.
+    Live-tree part labels are the bare structural label, so both suffixes are
+    source syntax and must be stripped before scope comparison.
+    """
+    label = _norm_num_token(raw).removesuffix("osasto").removesuffix("osa")
+    arabic = _roman_label_to_arabic(label.lower()) if label else None
+    return str(arabic) if arabic is not None else label
+
+
+@functools.lru_cache(maxsize=8192)
 def _norm_row_anchor_text(text: str) -> str:
     """Normalize Finland table-row anchor text for replay matching."""
     cleaned = text.lower().replace("\xa0", " ")

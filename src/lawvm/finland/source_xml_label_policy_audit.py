@@ -9,9 +9,9 @@ import lxml.etree as etree
 
 from lawvm.finland.helpers import (
     _fi_label_postprocessor,
+    _normalize_source_part_num,
     _normalize_source_section_num,
     _norm_num_token,
-    _roman_label_to_arabic,
 )
 
 
@@ -105,8 +105,7 @@ def summarize_label_policy_rows(rows: Iterable[SourceXmlLabelAuditRow]) -> dict[
 def _policy_values(kind: str, raw_num: str) -> tuple[LabelPolicyValue, ...]:
     if kind == "part":
         return (
-            LabelPolicyValue("norm_strip_osa", _normalize_part_strip_osa(raw_num)),
-            LabelPolicyValue("norm_strip_osasto_osa", _normalize_part_strip_osasto_osa(raw_num)),
+            LabelPolicyValue("source_part_num", _normalize_source_part_num(raw_num)),
             LabelPolicyValue("fi_label_postprocessor", _fi_postprocessed(raw_num, "part")),
         )
     if kind == "chapter":
@@ -118,18 +117,6 @@ def _policy_values(kind: str, raw_num: str) -> tuple[LabelPolicyValue, ...]:
         LabelPolicyValue("section_strip_sign_suffix", _normalize_section_strip_sign_suffix(raw_num)),
         LabelPolicyValue("fi_label_postprocessor", _fi_postprocessed(raw_num, "section")),
     )
-
-
-def _normalize_part_strip_osa(raw_num: str) -> str:
-    label = _norm_num_token(raw_num).removesuffix("osa")
-    arabic = _roman_label_to_arabic(label)
-    return str(arabic) if arabic is not None else label
-
-
-def _normalize_part_strip_osasto_osa(raw_num: str) -> str:
-    label = _norm_num_token(raw_num).removesuffix("osasto").removesuffix("osa")
-    arabic = _roman_label_to_arabic(label)
-    return str(arabic) if arabic is not None else label
 
 
 def _normalize_section_strip_sign_suffix(raw_num: str) -> str:

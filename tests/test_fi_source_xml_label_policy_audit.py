@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lawvm.finland.helpers import _normalize_source_section_num
+from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_section_num
 from lawvm.finland.source_xml_label_policy_audit import (
     audit_source_xml_label_policies,
     summarize_label_policy_rows,
@@ -16,7 +16,12 @@ def test_source_section_num_normalizer_keeps_tail_stripping_policy() -> None:
     assert _normalize_source_section_num("23 § a") == "23"
 
 
-def test_source_xml_label_policy_audit_surfaces_part_suffix_divergence() -> None:
+def test_source_part_num_normalizer_strips_osa_and_osasto_labels() -> None:
+    assert _normalize_source_part_num("II osa") == "2"
+    assert _normalize_source_part_num("II OSASTO.") == "2"
+
+
+def test_source_xml_label_policy_audit_collapses_part_suffix_variants() -> None:
     xml = b"""
     <akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
       <act>
@@ -34,11 +39,7 @@ def test_source_xml_label_policy_audit_surfaces_part_suffix_divergence() -> None
     rows = audit_source_xml_label_policies("2000/1", xml)
 
     part_rows = [row for row in rows if row.element_kind == "part"]
-    assert len(part_rows) == 1
-    policies = {item.policy: item.value for item in part_rows[0].policies}
-    assert policies["norm_strip_osa"] == "1osasto"
-    assert policies["norm_strip_osasto_osa"] == "1"
-    assert policies["fi_label_postprocessor"] == "1"
+    assert part_rows == []
 
 
 def test_source_xml_label_policy_audit_surfaces_section_tail_divergence() -> None:
