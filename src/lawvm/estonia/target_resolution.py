@@ -2581,6 +2581,7 @@ def old_format_lower_op_texts(
                 op.action == StructuralAction.META
                 and (op.payload is None or _is_unparsed_operation_meta(op))
                 and op.op_id.startswith("ee-unknown-")
+                and not out_of_body_appendix_or_note_clause
             ):
                 _record_ee_old_format_unparsed_meta_rejection(
                     adjudications_out,

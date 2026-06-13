@@ -11661,6 +11661,37 @@ def test_old_format_lower_op_texts_records_rejected_unparsed_meta() -> None:
     assert detail["strict_disposition"] == "block"
 
 
+def test_old_format_lower_op_texts_does_not_reject_out_of_body_appendix_clause() -> None:
+    """An old-format appendix (lisa) op must route to its typed out-of-body
+    appendix classification rather than being dropped as unparsed META."""
+    adjudications: list[CompileAdjudication] = []
+
+    ops, next_seq, last_section = old_format_lower_op_texts(
+        ["2) määruse lisa 1 kehtestatakse uues sõnastuses (lisatud);"],
+        OperationSource(statute_id="ee/test", title="Sihtmäärus"),
+        seq_start=7,
+        target_title="Sihtmäärus",
+        adjudications_out=adjudications,
+    )
+
+    # No unparsed-meta rejection: the appendix clause is not silently dropped.
+    assert [adjudication.kind for adjudication in adjudications] == []
+    # The op is retained and typed as an out-of-body appendix META op.
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.META
+    assert ops[0].target.path == ()
+    assert (
+        _payload(ops[0]).attrs["source_family"]
+        == "ee_old_format_out_of_body_appendix_clause_not_section_scoped"
+    )
+    assert (
+        "ee_old_format_out_of_body_appendix_clause_not_section_scoped"
+        in ops[0].provenance_tags
+    )
+    assert next_seq == 8
+    assert last_section is None
+
+
 def test_extract_ee_ops_targeted_unparsed_clause_has_source_family_payload() -> None:
     ops = extract_ee_ops(
         "1) § 1 lõike 3 punktis 3;",
