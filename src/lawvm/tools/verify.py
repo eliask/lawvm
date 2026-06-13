@@ -41,8 +41,8 @@ from lawvm.finland.grafter import (
     get_johtolause,
     parse_ops_fallback_heuristic,
     process_muutoslaki,
-    OP_KEYWORDS,
 )
+from lawvm.finland.citation_routing import OP_KEYWORDS
 from lawvm.finland.fallback_op_ids import stamp_fallback_op_ids
 from lawvm.finland.statute import StatuteContext, ReplayState
 from lawvm.finland.helpers import _fi_label_postprocessor
