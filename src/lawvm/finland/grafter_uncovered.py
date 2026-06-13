@@ -112,7 +112,7 @@ from lawvm.finland.vts import VtsSkippedTarget, VtsSourceDiagnostic, extract_voi
 from lawvm.finland.source_pathology import build_same_effective_container_repeal_shadowed_pathology
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
-from lawvm.finland.uncovered_target_resolve import resolve_insert_chapter, resolve_target
+from lawvm.finland.uncovered_target_resolve import TargetVerdict, resolve_insert_chapter, resolve_target
 from lawvm.finland.uncovered_dispose import compute_replace_decision, evaluate_omission_merge, evaluate_past_repeal_guard
 from lawvm.finland.constraints import DEBUG
 from lawvm.finland.replay_notices import replay_print as _replay_print
@@ -1159,6 +1159,13 @@ def _recover_uncovered_body_ops(
         _resolved = resolve_target(
             label, amend_chapter_label, amend_part_label, state, owned_chapter_labels
         )
+        if _resolved.verdict is TargetVerdict.AMBIGUOUS:
+            # Duplicate label with no chapter context to disambiguate: the section
+            # could belong to any of several chapters, so placing it anywhere risks
+            # the wrong chapter (chapter-restart numbering). Surface it explicitly
+            # rather than silently force it through the cross-chapter path.
+            _record_skip("ambiguous_duplicate_label_no_chapter", label, amend_chapter_label)
+            return
         existing_path = _resolved.existing_path
         cross_chapter = _resolved.cross_chapter
 
