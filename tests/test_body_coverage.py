@@ -369,6 +369,85 @@ def test_chapter_and_nested_section() -> None:
     assert section_gap[0].disposition == "supplemental_candidate"
 
 
+def test_container_chapters_scoping_section_edits_are_not_dropped_ops() -> None:
+    """Container-only chapters that merely scope section edits must not count
+    as uncovered operative units (the 2004/1224 ← 2005/155 counting artifact).
+
+    Each <chapter> here carries only <num>/<heading> plus one edited <section>;
+    it has no operative whole-chapter payload of its own. The amendment compiles
+    one section op per chapter, so coverage must be exact: the container chapters
+    are tagged 'container' and dispositioned non-actionable, never flagged as
+    supplemental_candidate (a false "dropped op?" signal).
+    """
+    tree = _body(
+        """
+        <chapter>
+          <num>11 luku</num>
+          <heading>Päivärahaetuuksien määrä</heading>
+          <section>
+            <num>4 §</num>
+            <subsection><content><p>A.</p></content></subsection>
+          </section>
+        </chapter>
+        <chapter>
+          <num>18 luku</num>
+          <heading>Sairausvakuutusrahasto</heading>
+          <section>
+            <num>2 §</num>
+            <subsection><content><p>B.</p></content></subsection>
+          </section>
+        </chapter>
+        """
+    )
+    units = extract_body_coverage(tree)
+
+    chapter_units = [u for u in units if u.kind == "chapter"]
+    assert {u.observed_label for u in chapter_units} == {"11", "18"}
+    for u in chapter_units:
+        assert "container" in u.tags
+
+    ops = [
+        _op("op_11_4", target_section="4", target_chapter="11"),
+        _op("op_18_2", target_section="2", target_chapter="18"),
+    ]
+    claims = collect_coverage_claims(ops)
+    report = analyze_coverage(units, claims)
+
+    # No false "dropped op?" — container chapters are not actionable gaps.
+    assert report.uncovered_count == 0
+    assert report.supplemental_candidates == ()
+    chapter_dispositions = {
+        g.unit.observed_label: g.disposition for g in report.gaps if g.unit.kind == "chapter"
+    }
+    assert chapter_dispositions == {"11": "covered_by_broad_scope", "18": "covered_by_broad_scope"}
+
+
+def test_whole_chapter_replacement_with_direct_payload_stays_operative() -> None:
+    """A chapter that carries its own direct operative payload (not just nested
+    sections) is a genuine operative unit and must NOT be tagged 'container'."""
+    tree = _body(
+        """
+        <chapter>
+          <num>5 luku</num>
+          <heading>Uusi luku</heading>
+          <subsection><content><p>Whole-chapter body text.</p></content></subsection>
+          <section>
+            <num>1 §</num>
+            <subsection><content><p>Member section.</p></content></subsection>
+          </section>
+        </chapter>
+        """
+    )
+    units = extract_body_coverage(tree)
+    chapter_unit = next(u for u in units if u.kind == "chapter")
+    assert "container" not in chapter_unit.tags
+
+    # Unclaimed chapter with direct payload remains an actionable gap.
+    report = analyze_coverage(units, [])
+    chapter_gap = next(g for g in report.gaps if g.unit.kind == "chapter")
+    assert chapter_gap.disposition == "supplemental_candidate"
+
+
 def test_extract_body_coverage_reanchors_sections_after_malformed_chapter_marker() -> None:
     tree = _body(
         """

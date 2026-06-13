@@ -969,7 +969,7 @@ def _emit_coverage_analysis_findings(
 def _emit_high_uncovered_degradation(
     restructure_plan: StructuralTransformPlan,
     amendment_id: str,
-    cov_report: CoverageReport,
+    uncovered_count: int,
     total_units: int,
     uncov_ratio: float,
     observations_out: Optional[List[Dict[str, object]]],
@@ -980,6 +980,10 @@ def _emit_high_uncovered_degradation(
     silently proceeding via permissive fallback. No-op unless both the
     chapter-insert and high-uncovered signals are present and observations_out
     is provided.
+
+    ``uncovered_count`` is the restructure (container-inclusive) uncovered tally
+    that drives the plan, not the container-excluded reported metric — the
+    degradation numbers must track the ratio that built the plan.
     """
     has_chapter_insert = RestructureSignal.CHAPTER_INSERT in restructure_plan.signals
     has_high_uncov = RestructureSignal.HIGH_UNCOVERED_BODY in restructure_plan.signals
@@ -990,7 +994,7 @@ def _emit_high_uncovered_degradation(
         "kind": "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED",
         "stage": "coverage_analysis",
         "amendment_id": amendment_id,
-        "uncovered_count": cov_report.uncovered_count,
+        "uncovered_count": uncovered_count,
         "total_units": total_units,
         "uncov_ratio": round(uncov_ratio, 4),
         "confidence": restructure_plan.confidence,
@@ -1000,7 +1004,7 @@ def _emit_high_uncovered_degradation(
         findings_out.append(
             _high_uncovered_body_degraded_finding(
                 source_statute=amendment_id,
-                uncovered_count=cov_report.uncovered_count,
+                uncovered_count=uncovered_count,
                 total_units=total_units,
                 uncov_ratio=uncov_ratio,
                 confidence=restructure_plan.confidence,
@@ -1012,7 +1016,7 @@ def _emit_high_uncovered_degradation(
             "  [%s] COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED: "
             "%d/%d units uncovered (ratio=%.2f, confidence=%.2f) — "
             "chapter-level INSERT plan proceeding with degraded confidence",
-            amendment_id, cov_report.uncovered_count, total_units,
+            amendment_id, uncovered_count, total_units,
             uncov_ratio, restructure_plan.confidence,
         )
 
@@ -1087,17 +1091,42 @@ def _recover_uncovered_body_ops(
     muutos_body = muutos_tree.find(".//{*}body")
     if muutos_body is None:
         return []
+    # Container-only chapters (scoping wrappers around section edits) are not
+    # operative units — ops claim sections, not the wrapper — so they are
+    # excluded from the REPORTED coverage metric, where counting them makes
+    # claimed<units a spurious "dropped op?" signal. Restructure detection below
+    # must stay byte-identical, so it keeps the historical container-inclusive
+    # uncovered count via _restructure_uncov_count.
+    _container_chapter_gaps = sum(
+        1
+        for _g in _cov_report.gaps
+        if "container" in _g.unit.tags
+        and _g.unit.kind == "chapter"
+        and _g.disposition == "covered_by_broad_scope"
+    )
+    _restructure_uncov_count = _cov_report.uncovered_count + _container_chapter_gaps
     if _cov_report.uncovered_count > 0:
+        _operative_unit_count = sum(
+            1
+            for _u in _cov_units
+            if not ("container" in _u.tags and _u.kind == "chapter")
+        )
         _replay_print(
-            f"  [{amendment_id}] Coverage: {len(_cov_units)} units, "
+            f"  [{amendment_id}] Coverage: {_operative_unit_count} units, "
             f"{len(_cov_claims)} claimed, "
             f"{_cov_report.uncovered_count} uncovered"
         )
     # --- Restructure signal detection + StructuralTransformPlan ---
     # Detect large-restructure amendments: chapter/part inserts + high uncovered ratio.
     # When signals are present, build a typed plan for auditing and future execution.
+    #
+    # Restructure detection deliberately keeps the historical uncovered count,
+    # which treated unmatched container-only chapters as uncovered. The
+    # uncov_ratio that drives plan building — which mutates the replay tree —
+    # must stay byte-identical, so it uses _restructure_uncov_count, not the
+    # container-excluded reported count.
     _total_units = len(_cov_units)
-    _uncov_ratio = _cov_report.uncovered_count / _total_units if _total_units > 0 else 0.0
+    _uncov_ratio = _restructure_uncov_count / _total_units if _total_units > 0 else 0.0
 
     # --- Body pairing analysis (guards foreign/unmatched body use) ---
     _bp_inventory = build_observed_body_inventory(muutos_tree)
@@ -1178,7 +1207,7 @@ def _recover_uncovered_body_ops(
         _emit_high_uncovered_degradation(
             _restructure_plan,
             amendment_id,
-            _cov_report,
+            _restructure_uncov_count,
             _total_units,
             _uncov_ratio,
             observations_out,

@@ -88,6 +88,49 @@ def _heading_lower(el: etree._Element) -> str:
     return " ".join("".join(parts).split()).lower()
 
 
+# Direct chapter children that constitute the chapter's own operative payload.
+# A chapter carrying any of these (rather than just <num>/<heading> plus nested
+# <section>/<chapter> wrappers) is replacing/holding whole-chapter content and
+# therefore is itself an operative unit.
+_CHAPTER_OPERATIVE_PAYLOAD_TAGS = frozenset(
+    {
+        "content",
+        "subsection",
+        "paragraph",
+        "list",
+        "blockList",
+        "block",
+        "p",
+        "intro",
+        "wrapUp",
+        "hcontainer",
+    }
+)
+
+
+def _chapter_is_container_only(el: etree._Element) -> bool:
+    """Return True when a ``<chapter>`` is a pure scoping container.
+
+    A container-only chapter wraps section (or nested chapter) edits but carries
+    no operative whole-chapter payload of its own — its direct children are only
+    ``<num>``/``<heading>`` metadata plus ``<section>``/``<chapter>`` units. Such
+    a chapter exists solely to locate the section edits nested inside it; it is
+    not a separate operative coverage unit (only a whole-chapter REPLACE/INSERT/
+    REPEAL targets a chapter as a unit, and that body carries direct payload).
+    """
+    has_nested_unit = False
+    for child in el:
+        local = _localname(child)
+        if local in ("section", "chapter"):
+            has_nested_unit = True
+            continue
+        if local in ("num", "heading"):
+            continue
+        if local in _CHAPTER_OPERATIVE_PAYLOAD_TAGS:
+            return False
+    return has_nested_unit
+
+
 # ---------------------------------------------------------------------------
 # Tag classifiers
 # ---------------------------------------------------------------------------
@@ -114,8 +157,12 @@ def _classify_tags(el: etree._Element, kind: str) -> frozenset[str]:
     - ``'nonoperative'`` — voimaantulo/siirtymä headings, or sections that
       carry transitional/commencement material by heading convention.
     - ``'provenance'`` — sellaisena-kuin blocks that record prior form.
+    - ``'container'`` — a ``<chapter>`` that only scopes nested section edits
+      and carries no operative whole-chapter payload of its own.
     """
     tags: set[str] = set()
+    if kind == "chapter" and _chapter_is_container_only(el):
+        tags.add("container")
     heading = _heading_lower(el)
     for prefix in _NONOPERATIVE_HEADING_PREFIXES:
         if heading.startswith(prefix):
@@ -465,9 +512,16 @@ def analyze_coverage(
             continue
 
         # Unit is unclaimed — classify disposition
-        if "nonoperative" in unit.tags or "provenance" in unit.tags:
+        if "container" in unit.tags and unit.kind == "chapter":
+            # Container-only chapter: it carries no operative whole-chapter
+            # payload of its own and exists solely to scope the section edits
+            # nested inside it (which are the real units). It is therefore not
+            # a dropped op — its content is covered by its child section claims.
+            disposition = "covered_by_broad_scope"
+            evidence: tuple[str, ...] = ("tag:container",)
+        elif "nonoperative" in unit.tags or "provenance" in unit.tags:
             disposition = "ignore_nonoperative"
-            evidence: tuple[str, ...] = ("tag:nonoperative" if "nonoperative" in unit.tags else "tag:provenance",)
+            evidence = ("tag:nonoperative" if "nonoperative" in unit.tags else "tag:provenance",)
         else:
             disposition = "supplemental_candidate"
             evidence = (f"unit_id={unit.unit_id}", "no_matching_claim")
