@@ -122,6 +122,126 @@ def test_build_amendment_index_ignores_bare_citation_without_vts_effect() -> Non
     assert ("2024/1049", "1986/506", "source_vts_explicit") not in edges
 
 
+def _amendedby_oracle(amend_id: str) -> bytes:
+    year, num = amend_id.split("/")
+    return (
+        '<act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        "<meta><references>"
+        f'<amendedBy><ref href="/akn/fi/act/statute/{year}/{num}"/></amendedBy>'
+        "</references></meta></act>"
+    ).encode("utf-8")
+
+
+def _enacting_clause_oracle(clause_text: str) -> bytes:
+    return (
+        '<act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        "<preface>"
+        '<formula name="enactingClause"><p>'
+        f"{clause_text}"
+        "</p></formula>"
+        "</preface></act>"
+    ).encode("utf-8")
+
+
+def test_oracle_edge_dropped_when_johtolause_cites_other_statute() -> None:
+    # Parent 1901/15-001 claims 1987/411 amended it, but 1987/411's johtolause
+    # names a different statute (avioliittolaki 234/29). The spurious edge must
+    # be dropped while the correctly-cited parent 1929/234 keeps the edge.
+    diagnostics: list[dict[str, object]] = []
+    corpus = _FakeCorpus(
+        oracle_map={
+            "1901/15-001": _amendedby_oracle("1987/411"),
+            "1929/234": _amendedby_oracle("1987/411"),
+            "1987/411": _enacting_clause_oracle(
+                "Eduskunnan päätöksen mukaisesti kumotaan 13 päivänä kesäkuuta "
+                "1929 annetun avioliittolain (234/29) 55 § seuraavasti:"
+            ),
+        },
+        source_map={},
+    )
+
+    edges = build_amendment_index(cs=corpus, diagnostics_out=diagnostics)
+
+    assert ("1987/411", "1929/234", "oracle_amendedBy") in edges
+    assert ("1987/411", "1901/15-001", "oracle_amendedBy") not in edges
+    rejected = [
+        d
+        for d in diagnostics
+        if d["rule_id"] == "fi_amendment_index_oracle_edge_rejected_by_johtolause"
+    ]
+    assert len(rejected) == 1
+    assert rejected[0]["amendment_id"] == "1987/411"
+    assert rejected[0]["parent_id"] == "1901/15-001"
+    assert rejected[0]["johtolause_cited_parents"] == ["1929/234"]
+
+
+def test_oracle_edge_kept_when_johtolause_is_sparse() -> None:
+    # A fresh act whose enacting clause names no statute (only "säädetään:")
+    # must keep its oracle edge — the clause being uninformative is not a
+    # contradiction, so a legitimate amendment is never dropped.
+    corpus = _FakeCorpus(
+        oracle_map={
+            "2021/612": _amendedby_oracle("2023/741"),
+            "2023/741": _enacting_clause_oracle(
+                "Eduskunnan päätöksen mukaisesti säädetään:"
+            ),
+        },
+        source_map={},
+    )
+
+    edges = build_amendment_index(cs=corpus)
+
+    assert ("2023/741", "2021/612", "oracle_amendedBy") in edges
+
+
+def test_oracle_edge_kept_when_cited_numbers_are_uncorroborated_provenance() -> None:
+    # A malformed provenance clause ("sellaisna kuin" — a real typo for
+    # "sellaisina") can make the routing surface mistake prior-amendment numbers
+    # for targets. The parent here is named by date/name only and the "cited"
+    # numbers are not oracle candidate parents of the amendment, so the edge must
+    # be KEPT rather than dropping a legitimate amendment.
+    corpus = _FakeCorpus(
+        oracle_map={
+            "1929/234": _amendedby_oracle("1983/362"),
+            "1983/362": _enacting_clause_oracle(
+                "muutetaan 13 päivänä kesäkuuta 1929 annetun avioliittolain 80 §, "
+                "sellaisna kuin se on 23 päivänä syyskuuta 1948 annetussa laissa "
+                "(681/48) ja 23 päivänä toukokuuta 1975 annetussa laissa (705/75)"
+            ),
+        },
+        source_map={},
+    )
+
+    edges = build_amendment_index(cs=corpus)
+
+    assert ("1983/362", "1929/234", "oracle_amendedBy") in edges
+
+
+def test_oracle_edges_kept_for_legitimate_multi_target_amendment() -> None:
+    # One amendment validly amending several statutes cites each of them; every
+    # cited target keeps its edge, and a non-cited parent that wrongly claims the
+    # amendment is dropped.
+    clause = (
+        "Eduskunnan päätöksen mukaisesti muutetaan ensimmäisen lain (111/2000) 1 § "
+        "sekä toisen lain (222/2001) 2 § seuraavasti:"
+    )
+    corpus = _FakeCorpus(
+        oracle_map={
+            "2000/111": _amendedby_oracle("2010/500"),
+            "2001/222": _amendedby_oracle("2010/500"),
+            "2099/999": _amendedby_oracle("2010/500"),
+            "2010/500": _enacting_clause_oracle(clause),
+        },
+        source_map={},
+    )
+
+    edges = build_amendment_index(cs=corpus)
+
+    assert ("2010/500", "2000/111", "oracle_amendedBy") in edges
+    assert ("2010/500", "2001/222", "oracle_amendedBy") in edges
+    assert ("2010/500", "2099/999", "oracle_amendedBy") not in edges
+
+
 def test_build_amendment_index_records_skipped_source_artifacts() -> None:
     corpus = _FakeCorpus(
         oracle_map={"1986/506": b"<act>"},

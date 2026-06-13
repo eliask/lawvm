@@ -26,6 +26,8 @@ from lawvm.corpus_store import (
     CorpusStore,
     get_corpus_store,
 )
+from lawvm.finland.citation_routing import johtolause_cited_target_ids
+from lawvm.finland.metadata import get_johtolause
 from lawvm.finland.vts import extract_voimaantulo_repeals
 
 # Pattern for /akn/fi/act/statute-consolidated/YEAR/NUMBER...
@@ -174,6 +176,71 @@ def _extract_explicit_cross_statute_vts_parents(
             continue
     return candidates
 
+def _johtolause_cited_parents(xml_data: bytes, amendment_id: str) -> Set[str]:
+    """Target statute IDs named by an amendment's johtolause (enacting clause).
+
+    An amendment's enacting clause names the statute it operates on, e.g.
+    ``muutetaan ... annetun avioliittolain (234/29) 55 §``. The consolidated
+    ``amendedBy`` metadata is occasionally over-broad — it attributes an
+    amendment to a statute its enacting clause never names — so this set is used
+    to reject contradicting oracle edges.
+
+    The cited set is the *target-zone* citation set from
+    :func:`johtolause_cited_target_ids`: only statute numbers cited as the
+    operation's target, excluding ``sellaisena kuin ne ovat ... (NNN/YY)``
+    provenance citations (which name prior amendments, not the parent). A naive
+    "all parenthesised numbers" scan would mistake those provenance numbers for
+    the parent and wrongly drop legitimate edges whose parent is named by name
+    or date (``13 päivänä kesäkuuta 1929 annetun avioliittolain``) rather than
+    number.
+
+    Returns an empty set when the johtolause names no target statute *number*
+    (sparse clause, or a parent named only by name/date) so the caller falls
+    back to the oracle edge rather than dropping it.
+    """
+    try:
+        source_year = int(str(amendment_id).split("/", 1)[0])
+    except (ValueError, IndexError):
+        return set()
+    try:
+        johtolause = get_johtolause(xml_data)
+    except etree.XMLSyntaxError:
+        return set()
+    cited: Set[str] = set()
+    for target_id in johtolause_cited_target_ids(johtolause, source_year):
+        if target_id and target_id != amendment_id:
+            cited.add(target_id)
+    return cited
+
+
+def _johtolause_contradicts_parent(
+    cited_parents: Set[str],
+    parent_id: str,
+    candidate_parents: Set[str],
+) -> bool:
+    """True when a johtolause names another corroborated parent, not ``parent_id``.
+
+    The edge ``amendment → parent_id`` is rejected only when ALL hold:
+
+    * the johtolause names at least one target statute *number*
+      (``cited_parents`` non-empty);
+    * ``parent_id`` is not among those cited numbers; and
+    * at least one cited number is *itself* an oracle ``amendedBy`` candidate
+      parent of the same amendment (``candidate_parents``), i.e. the citation is
+      corroborated by the consolidated metadata.
+
+    The corroboration requirement guards against unreliable citation extraction
+    — e.g. a malformed ``sellaisna kuin`` (typo for ``sellaisina``) provenance
+    clause whose prior-amendment numbers get mistaken for targets. In that case
+    the "cited" numbers are not real candidate parents, so the edge is kept
+    rather than a legitimate amendment (whose parent is named by name/date only)
+    being dropped. An empty cited set is never a contradiction.
+    """
+    if not cited_parents or parent_id in cited_parents:
+        return False
+    return bool(cited_parents & candidate_parents)
+
+
 def build_amendment_index(
     cs: CorpusStore | None = None,
     consolidated_zip_path: Path | None = None,
@@ -192,12 +259,27 @@ def build_amendment_index(
         cs = get_corpus_store()
 
     edges: Set[Tuple[str, str, str]] = set()
+    # Candidate oracle edges, gated below by the amendment's johtolause-cited
+    # parent so an over-broad ``amendedBy`` entry cannot attach an amendment to
+    # a statute its enacting clause never names.
+    oracle_candidates: Set[Tuple[str, str]] = set()
 
     # Use oracle_path_index() to enumerate sids, then read each statute via
     # its already-selected locator. Calling read_oracle(sid) here instead
     # would re-scan the locator table per statute, making this loop quadratic
     # over the corpus (~hours on the full Finlex corpus).
     oracle_index = cs.oracle_path_index()
+    # Normalized-id → locator map so the johtolause gate can resolve an
+    # amendment by its REF_PATTERN-normalized id (e.g. ``1889/39-001``) even when
+    # the oracle index key uses a different spelling.
+    normalized_locator_index: Dict[str, str] = {}
+    for raw_sid, locator in oracle_index.items():
+        sid_parts = raw_sid.split("/", 1)
+        if len(sid_parts) != 2:
+            continue
+        normalized_locator_index.setdefault(
+            _make_statute_id(sid_parts[0], sid_parts[1]), locator
+        )
     print(f"Scanning {len(oracle_index)} consolidated statutes for amendment metadata...")
 
     for n, sid in enumerate(sorted(oracle_index), start=1):
@@ -233,7 +315,7 @@ def build_amendment_index(
                 if m:
                     amend_id = _make_statute_id(m.group(1), m.group(2))
                     if amend_id != parent_id:
-                        edges.add((amend_id, parent_id, "oracle_amendedBy"))
+                        oracle_candidates.add((amend_id, parent_id))
         except (KeyError, OSError, etree.XMLSyntaxError, etree.XPathError) as exc:
             _append_amendment_index_diagnostic(
                 diagnostics_out,
@@ -250,6 +332,66 @@ def build_amendment_index(
                 },
             )
             continue
+
+    # Gate oracle amendedBy edges by the amendment's johtolause-cited parent.
+    # When an amendment's enacting clause names a different target statute (and
+    # that target is corroborated by another oracle candidate edge), the
+    # consolidated amendedBy entry for this parent is over-broad and the edge is
+    # dropped — it would otherwise apply the amendment's ops to a parent the
+    # clause never names. The johtolause is read once per distinct amendment and
+    # the cited target set is reused across that amendment's candidate parents.
+    # An empty/uncorroborated cited set falls back to the oracle edge so a
+    # correct edge is never dropped merely because the clause is sparse or its
+    # parent is named only by name/date.
+    candidate_parents_by_amend: Dict[str, Set[str]] = {}
+    for amend_id, parent_id in oracle_candidates:
+        candidate_parents_by_amend.setdefault(amend_id, set()).add(parent_id)
+
+    johtolause_cited_cache: Dict[str, Set[str]] = {}
+    for amend_id, parent_id in oracle_candidates:
+        cited = johtolause_cited_cache.get(amend_id)
+        if cited is None:
+            amend_xml: bytes | None = None
+            try:
+                # Prefer the already-selected oracle locator (read_locator) over
+                # a per-sid read_oracle() to keep this pass linear; fall back to
+                # the source artifact only when the amendment is absent from the
+                # consolidated oracle index.
+                locator = normalized_locator_index.get(amend_id)
+                if locator is not None:
+                    amend_xml = cs.read_locator(locator)
+                if amend_xml is None:
+                    amend_xml = cs.read_source(amend_id)
+            except (KeyError, OSError, etree.XMLSyntaxError):
+                amend_xml = None
+            cited = (
+                _johtolause_cited_parents(amend_xml, amend_id)
+                if amend_xml is not None
+                else set()
+            )
+            johtolause_cited_cache[amend_id] = cited
+        if _johtolause_contradicts_parent(
+            cited, parent_id, candidate_parents_by_amend.get(amend_id, set())
+        ):
+            _append_amendment_index_diagnostic(
+                diagnostics_out,
+                rule_id="fi_amendment_index_oracle_edge_rejected_by_johtolause",
+                phase="resolution",
+                family="cross_statute_misattribution",
+                reason=(
+                    "Finland amendment index rejected an oracle amendedBy edge "
+                    "because the amendment's johtolause names other parent "
+                    "statute(s) and not this one."
+                ),
+                detail={
+                    "amendment_id": amend_id,
+                    "parent_id": parent_id,
+                    "edge_kind": "oracle_amendedBy",
+                    "johtolause_cited_parents": sorted(cited),
+                },
+            )
+            continue
+        edges.add((amend_id, parent_id, "oracle_amendedBy"))
 
     # Supplement from source VTS clauses. These are not represented by
     # consolidated amendedBy metadata when an amendment touches another statute
