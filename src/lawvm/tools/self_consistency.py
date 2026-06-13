@@ -380,9 +380,19 @@ def _resolve_statute_ids(args) -> List[str]:
     explicit = getattr(args, "statutes", None)
     if explicit:
         return [s.strip() for s in explicit.split(",") if s.strip()]
+    from pathlib import Path
+
     from lawvm.tools.bench import _default_corpus_path, _load_corpus
 
-    ids = [sid for _, sid in _load_corpus(_default_corpus_path())]
+    if getattr(args, "full", False):
+        # The full ~3545-statute curated corpus (coverage-wide confidence),
+        # rather than the ~690 bench_core representative subset.
+        full = Path(_default_corpus_path()).parent / "bench_corpus.csv"
+        corpus_path = str(full) if full.exists() else _default_corpus_path()
+    else:
+        corpus_path = _default_corpus_path()
+
+    ids = [sid for _, sid in _load_corpus(corpus_path)]
     limit = getattr(args, "limit", None)
     if limit:
         ids = ids[:limit]

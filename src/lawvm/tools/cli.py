@@ -661,6 +661,11 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         ),
     )
     self_consistency_p.add_argument(
+        "--full",
+        action="store_true",
+        help="sweep the full ~3545 curated corpus (bench_corpus.csv) instead of the ~690 bench_core subset",
+    )
+    self_consistency_p.add_argument(
         "--limit",
         type=int,
         default=0,
