@@ -154,6 +154,7 @@ def test_audit_invariants_uses_replay_findings_and_meta(monkeypatch) -> None:
             "phase": "replay_fold",
             "surface": "",
             "profile_id": "",
+            "replay_profile_id": "",
             "chain_length": "1",
             "oracle_suspect": "",
             "inferred_phase": "replay_fold",
@@ -171,6 +172,7 @@ def test_audit_invariants_uses_replay_findings_and_meta(monkeypatch) -> None:
             "phase": "",
             "surface": "",
             "profile_id": "",
+            "replay_profile_id": "",
             "chain_length": "1",
             "oracle_suspect": "",
             "inferred_phase": "replay_fold",
@@ -188,6 +190,7 @@ def test_audit_invariants_uses_replay_findings_and_meta(monkeypatch) -> None:
             "phase": "",
             "surface": "",
             "profile_id": "",
+            "replay_profile_id": "",
             "chain_length": "1",
             "oracle_suspect": "",
             "inferred_phase": "materialized",
@@ -244,6 +247,15 @@ def test_audit_invariants_prefers_typed_replay_meta(monkeypatch) -> None:
                 },
             ],
         }
+        replay_meta_out["replay_invariant_profiles"] = [
+            {
+                "profile_id": "core_replay_strict_v1",
+                "tree_profiles": [
+                    {"surface": "replay_fold_tree"},
+                    {"surface": "materialized_tree"},
+                ],
+            },
+        ]
         replay_meta_out["product_invariant_violations"] = [
             "materialized_tree:body/section:99: duplicate section:6 (2 times)",
         ]
@@ -267,9 +279,11 @@ def test_audit_invariants_prefers_typed_replay_meta(monkeypatch) -> None:
     assert rows[0]["phase"] == "replay_fold"
     assert rows[0]["surface"] == "replay_fold_tree"
     assert rows[0]["profile_id"] == "core_structural_tree_all"
+    assert rows[0]["replay_profile_id"] == "core_replay_strict_v1"
     assert rows[1]["phase"] == "materialized"
     assert rows[1]["surface"] == "materialized_tree"
     assert rows[1]["profile_id"] == "core_structural_product_hierarchical"
+    assert rows[1]["replay_profile_id"] == "core_replay_strict_v1"
     assert rows[1]["inferred_phase"] == "materialized"
 
 

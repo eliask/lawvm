@@ -34,6 +34,7 @@ import sys
 import time
 import traceback
 from collections import Counter
+from collections.abc import Mapping
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from types import SimpleNamespace
@@ -144,6 +145,34 @@ def _coerce_typed_tree_violation_records(raw: object) -> list[dict[str, object]]
     return records
 
 
+def _replay_profile_ids_by_surface(raw: object) -> dict[str, str]:
+    """Return replay-invariant profile ids keyed by tree surface name."""
+    if not isinstance(raw, list):
+        return {}
+    grouped: dict[str, list[str]] = {}
+    for profile in raw:
+        if not isinstance(profile, Mapping):
+            continue
+        profile_record = {str(key): value for key, value in profile.items()}
+        profile_id = str(profile_record.get("profile_id") or "")
+        if not profile_id:
+            continue
+        tree_profiles = profile_record.get("tree_profiles")
+        if not isinstance(tree_profiles, list | tuple):
+            continue
+        for tree_profile in tree_profiles:
+            if not isinstance(tree_profile, Mapping):
+                continue
+            tree_profile_record = {str(key): value for key, value in tree_profile.items()}
+            surface = str(tree_profile_record.get("surface") or "")
+            if not surface:
+                continue
+            ids = grouped.setdefault(surface, [])
+            if profile_id not in ids:
+                ids.append(profile_id)
+    return {surface: ",".join(ids) for surface, ids in grouped.items()}
+
+
 def _phase_from_surface(surface: str) -> str:
     """Map typed invariant row surface names to audit phase buckets."""
     if surface == "replay_fold_tree":
@@ -168,6 +197,7 @@ def _append_violation_row(
     oracle_suspect: str,
     surface: str = "",
     profile_id: str = "",
+    replay_profile_id: str = "",
 ) -> None:
     key = (violation_type, path, detail)
     if key in seen:
@@ -183,6 +213,7 @@ def _append_violation_row(
         "phase": phase,
         "surface": surface,
         "profile_id": profile_id,
+        "replay_profile_id": replay_profile_id,
         "chain_length": chain_length,
         "oracle_suspect": oracle_suspect,
     })
@@ -322,6 +353,9 @@ def _audit_one(norm_id: str) -> list[dict[str, str]]:
         )
 
         rows: list[dict[str, str]] = []
+        replay_profile_by_surface = _replay_profile_ids_by_surface(
+            replay_meta.get("replay_invariant_profiles")
+        )
 
         # Signal 1: replay-owned runtime invariant findings
         seen: set[tuple[str, str, str]] = set()
@@ -371,6 +405,7 @@ def _audit_one(norm_id: str) -> list[dict[str, str]]:
                 phase=_phase_from_surface(surface),
                 surface=surface,
                 profile_id=str(record.get("profile_id") or ""),
+                replay_profile_id=replay_profile_by_surface.get(surface, ""),
                 chain_length=chain_length,
                 oracle_suspect=oracle_suspect,
             )
@@ -399,6 +434,7 @@ def _audit_one(norm_id: str) -> list[dict[str, str]]:
                 phase=_phase_from_surface(surface) or _phase_from_surface(product_phase),
                 surface=surface,
                 profile_id=str(record.get("profile_id") or ""),
+                replay_profile_id=replay_profile_by_surface.get(surface, ""),
                 chain_length=chain_length,
                 oracle_suspect=oracle_suspect,
             )
@@ -601,6 +637,7 @@ def main(argv: list[str] | None = None) -> int:
         "phase",
         "surface",
         "profile_id",
+        "replay_profile_id",
         "chain_length",
         "oracle_suspect",
         "inferred_phase",
