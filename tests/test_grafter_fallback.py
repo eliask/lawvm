@@ -12789,8 +12789,12 @@ def test_replay_xml_1996_1093_drops_stale_section_18_item_6_after_2013_1085() ->
 
     assert sec is not None
 
+    # 2013/1085 replaces §18 momentti 2 (dropping the stale item 6) and inserts a
+    # new momentti 3; momentti 1 is untouched. The resulting section therefore has
+    # exactly three subsections, matching the Finlex consolidated oracle, with the
+    # rewritten momentti 2 carrying items 1–5.
     subsections = [child for child in sec.children if child.kind is IRNodeKind.SUBSECTION]
-    assert [child.label for child in subsections] == ["1", "2", "3", "4"]
+    assert [child.label for child in subsections] == ["1", "2", "3"]
     assert [child.label for child in subsections[1].children if child.kind is IRNodeKind.PARAGRAPH] == ["1", "2", "3", "4", "5"]
 
     text = " ".join(irnode_to_text(sec).split())
