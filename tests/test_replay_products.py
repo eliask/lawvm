@@ -40,6 +40,7 @@ from lawvm.finland.replay_products import _temporal_events_from_lo_ops
 from lawvm.finland.replay_products import build_replay_products
 from lawvm.finland.replay_products import fi_product_tree_invariant_dicts
 from lawvm.finland.replay_products import validate_replay_products
+from lawvm.finland.replay_fold_projection import ReplayFoldProjectionRequest, project_replay_fold
 from lawvm.core.timeline_addresses import _retarget_root_node
 from lawvm.tools.inspect_amendment import build_amendment_bundle
 from tests.corpus_pin_helpers import pinned_replay
@@ -2021,6 +2022,35 @@ def test_validate_replay_products_detects_materialized_tree_invariants() -> None
     )
 
     assert "materialized_tree:body: duplicate section:1 (2 times)" in violations
+
+
+def test_replay_fold_projection_typed_invariants_include_profile_metadata() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CHAPTER, label="1"),),
+            ),
+        ),
+    )
+    meta: dict[str, object] = {}
+
+    project_replay_fold(
+        ReplayFoldProjectionRequest(
+            state=ReplayState(ir=body),
+            parent_id="test/1",
+            replay_findings=[],
+            replay_meta_out=meta,
+            replay_print=lambda _message: None,
+        )
+    )
+
+    rows = cast(list[dict[str, object]], meta["typed_invariant_violations"])
+    assert rows[0]["surface"] == "replay_fold_tree"
+    assert rows[0]["profile_id"] == "core_structural_tree_all"
+    assert rows[0]["kind"] == "unexpected_child_kind"
 
 
 def test_validate_replay_products_detects_mixed_hierarchy_products() -> None:

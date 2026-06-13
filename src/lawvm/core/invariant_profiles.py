@@ -20,6 +20,13 @@ CORE_REPLAY_DELTA_MINIMAL_FAMILIES: tuple[TreeInvariantKind, ...] = (
     "duplicate_label",
     "sort_order",
 )
+CORE_STRUCTURAL_TREE_ALL_FAMILIES: tuple[TreeInvariantKind, ...] = (
+    "duplicate_label",
+    "normalized_duplicate_label",
+    "sort_order",
+    "unexpected_child_kind",
+    "mixed_hierarchy_child",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +70,15 @@ def replay_delta_minimal_profile(surface: str) -> TreeInvariantProfile:
         surface=surface,
         families=CORE_REPLAY_DELTA_MINIMAL_FAMILIES,
         profile_id="core_replay_delta_minimal",
+    )
+
+
+def structural_tree_all_profile(surface: str) -> TreeInvariantProfile:
+    """Return the core profile matching the default tree-invariant scanner."""
+    return TreeInvariantProfile(
+        surface=surface,
+        families=CORE_STRUCTURAL_TREE_ALL_FAMILIES,
+        profile_id="core_structural_tree_all",
     )
 
 
@@ -125,6 +141,7 @@ __all__ = [
     "CORE_REPLAY_DELTA_MINIMAL_FAMILIES",
     "CORE_STRUCTURAL_PRODUCT_HIERARCHICAL_FAMILIES",
     "CORE_STRUCTURAL_PRODUCT_STRICT_FAMILIES",
+    "CORE_STRUCTURAL_TREE_ALL_FAMILIES",
     "TreeInvariantProfile",
     "collect_tree_invariant_dicts",
     "collect_tree_invariant_messages",
@@ -134,4 +151,5 @@ __all__ = [
     "replay_delta_minimal_profile",
     "structural_product_hierarchical_profile",
     "structural_product_strict_profile",
+    "structural_tree_all_profile",
 ]

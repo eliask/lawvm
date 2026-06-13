@@ -6,14 +6,18 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Optional
 
 from lawvm.core import tree_ops as _tops
+from lawvm.core.invariant_profiles import collect_tree_invariant_violations
+from lawvm.core.invariant_profiles import project_tree_invariant_dicts
+from lawvm.core.invariant_profiles import structural_tree_all_profile
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import build_text_duplication_findings
-from lawvm.core.tree_ops import iter_tree_invariant_violations
 from lawvm.finland.apply_ir_ops import _strip_standalone_subsection_item_prefixes_ir
 from lawvm.finland.replay_findings import _emit_structural_dedup_warning
 from lawvm.finland.replay_pipeline import build_tree_invariant_finding
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir
 from lawvm.finland.statute import ReplayState
+
+_FI_REPLAY_FOLD_TREE_PROFILE = structural_tree_all_profile("replay_fold_tree")
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,13 +50,19 @@ def project_replay_fold(request: ReplayFoldProjectionRequest) -> ReplayState:
     replay_fold_state = replay_fold_state.with_ir(deduped_replay_fold_ir)
     replay_fold_state = replay_fold_state.with_ir(_tops.resort_children(replay_fold_state.ir))
 
-    typed_invariant_violations = tuple(iter_tree_invariant_violations(replay_fold_state.ir))
+    typed_invariant_violations = collect_tree_invariant_violations(
+        replay_fold_state.ir,
+        _FI_REPLAY_FOLD_TREE_PROFILE,
+    )
     invariant_violations = [violation.message for violation in typed_invariant_violations]
     if request.replay_meta_out is not None and invariant_violations:
         request.replay_meta_out["invariant_violations"] = list(invariant_violations)
-        request.replay_meta_out["typed_invariant_violations"] = [
-            violation.to_dict() for violation in typed_invariant_violations
-        ]
+        request.replay_meta_out["typed_invariant_violations"] = list(
+            project_tree_invariant_dicts(
+                typed_invariant_violations,
+                _FI_REPLAY_FOLD_TREE_PROFILE,
+            )
+        )
     if invariant_violations:
         for violation in invariant_violations:
             request.replay_findings.append(
