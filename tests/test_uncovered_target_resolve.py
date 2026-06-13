@@ -9,12 +9,32 @@ from typing import Optional, Set
 
 import pytest
 
+import lawvm.finland.uncovered_target_resolve as utr
 from lawvm.finland.uncovered_target_resolve import (
     ProvisionPath,
     ResolvedTarget,
     TargetVerdict,
+    resolve_insert_chapter,
     resolve_target,
 )
+
+
+class FakeOp:
+    """Minimal duck-typed op for the family-base-repeal check."""
+
+    def __init__(self, op_type: str, section: Optional[str]) -> None:
+        self.op_type = op_type
+        self.target_unit_kind = "section"
+        self.target_section = section
+        self.target_paragraph = None
+        self.target_item = None
+        self.target_special = None
+
+
+class FakeIRState:
+    """Carries only ``.ir`` (an opaque sentinel); find_family is monkeypatched."""
+
+    ir = object()
 
 
 class FakeState:
@@ -104,3 +124,57 @@ def test_invariant_rejects_malformed_existing() -> None:
             used_unscoped_fallback=False,
             reason="x",
         )
+
+
+# ---------------------------------------------------------------------------
+# resolve_insert_chapter — NEW-insert family-base chapter override
+# ---------------------------------------------------------------------------
+
+
+def _patch_find_family(monkeypatch, result: Optional[ProvisionPath]) -> None:
+    monkeypatch.setattr(utr._tops, "find_family", lambda *a, **k: result)
+
+
+def test_insert_no_chapter_context_keeps_declared(monkeypatch) -> None:
+    r = resolve_insert_chapter("5a", None, "1", FakeIRState(), [], None, set())
+    assert (r.effective_chapter, r.effective_part) == (None, "1")
+    assert r.reason == "no_chapter_context"
+
+
+def test_insert_chapter_not_new_keeps_declared(monkeypatch) -> None:
+    # chapter 2 is owned (not new) → no override.
+    r = resolve_insert_chapter("5a", "2", None, FakeIRState(), [], None, owned_chapter_labels={"2"})
+    assert r.effective_chapter == "2"
+    assert r.reason == "declared_chapter_not_new"
+
+
+def test_insert_no_family_base_keeps_declared(monkeypatch) -> None:
+    _patch_find_family(monkeypatch, None)
+    r = resolve_insert_chapter("5a", "9", None, FakeIRState(), [], new_chapter_labels={"9"}, owned_chapter_labels=set())
+    assert r.effective_chapter == "9"
+    assert r.reason == "no_family_base"
+
+
+def test_insert_family_in_other_chapter_overrides(monkeypatch) -> None:
+    # Family base "5" lives in chapter 3; declared new chapter is "9"; not a
+    # sub-chapter, base not repealed → redirect to chapter 3.
+    _patch_find_family(monkeypatch, (("chapter", "3"), ("section", "5")))
+    r = resolve_insert_chapter("5a", "9", None, FakeIRState(), [], new_chapter_labels={"9"}, owned_chapter_labels=set())
+    assert r.effective_chapter == "3"
+    assert r.reason == "family_base_override"
+
+
+def test_insert_family_base_repealed_keeps_declared(monkeypatch) -> None:
+    _patch_find_family(monkeypatch, (("chapter", "3"), ("section", "5")))
+    ops = [FakeOp("REPEAL", "5")]
+    r = resolve_insert_chapter("5a", "9", None, FakeIRState(), ops, new_chapter_labels={"9"}, owned_chapter_labels=set())
+    assert r.effective_chapter == "9"
+    assert r.reason == "family_base_repealed"
+
+
+def test_insert_sub_chapter_keeps_declared(monkeypatch) -> None:
+    # Declared chapter "3a" is a sub-chapter of the family's chapter "3" → keep.
+    _patch_find_family(monkeypatch, (("chapter", "3"), ("section", "5")))
+    r = resolve_insert_chapter("5a", "3a", None, FakeIRState(), [], new_chapter_labels={"3a"}, owned_chapter_labels=set())
+    assert r.effective_chapter == "3a"
+    assert r.reason == "declared_is_sub_chapter"
