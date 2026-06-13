@@ -7954,6 +7954,17 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help="Farchive DB path (default: data/nz_legislation.farchive)",
     )
     nz_dry_run_p.add_argument("--work-id", required=True, metavar="ID", help="archived work_id")
+    nz_dry_run_p.add_argument(
+        "--scope",
+        choices=("complete-set", "selected-family-repeal"),
+        default="complete-set",
+        help=(
+            "'complete-set' (default) refuses the whole work unless its full candidate set is "
+            "ready_for_dry_run_replay; 'selected-family-repeal' dry-runs the ready repeal operations "
+            "even when the work's full candidate set is incomplete, declaring the partial scope and "
+            "the typed not-in-scope operation-witness counts"
+        ),
+    )
     nz_dry_run_p.add_argument("--summary-only", action="store_true", help="emit only dry-run summary counts")
     nz_dry_run_p.add_argument("--json", action="store_true", help="emit dry-run report JSON")
     nz_dry_run_oracle_p = nz_corpus_sub.add_parser(
@@ -8034,6 +8045,17 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         help=(
             "how to subsample the filtered population down to --max-works: 'head' keeps the "
             "lexicographic head; 'stride' takes an evenly-spaced deterministic sample"
+        ),
+    )
+    nz_dry_run_corpus_p.add_argument(
+        "--scope",
+        choices=("complete-set", "selected-family-repeal"),
+        default="complete-set",
+        help=(
+            "'complete-set' (default) only dry-runs works whose full candidate set is ready; "
+            "'selected-family-repeal' dry-runs the ready repeal operations in every sampled work "
+            "even when its full candidate set is incomplete, and reports the corpus-wide "
+            "repeal-witness replay-coverage scoreboard"
         ),
     )
     nz_dry_run_corpus_p.add_argument(

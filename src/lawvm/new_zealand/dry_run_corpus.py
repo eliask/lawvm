@@ -34,8 +34,11 @@ from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.benchmark import NZBenchmarkSelectionError, select_benchmark_work_ids
 from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_NOT_REPLAY_AUTHORIZED_RULE_ID,
+    NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+    NZ_DRY_RUN_SCOPE_COMPLETE_SET,
     NZDryRunReport,
     build_archived_work_dry_run_repeal,
+    scope_from_arg,
 )
 
 
@@ -63,6 +66,7 @@ class NZDryRunRepealCorpusReport:
     selected_work_ids: tuple[str, ...] = ()
     available_work_count: int = 0
     max_works: int | None = None
+    scope: str = NZ_DRY_RUN_SCOPE_COMPLETE_SET
 
     def works_with_ready_preflight(self) -> tuple[NZDryRunReport, ...]:
         return tuple(report for report in self.work_reports if report.preflight_status == _READY_PREFLIGHT_STATUS)
@@ -84,6 +88,74 @@ class NZDryRunRepealCorpusReport:
             "max_works": self.max_works,
             # No silent truncation: state the cap and whether it actually bit.
             "truncated_by_max_works": self.max_works is not None and len(selected) < base_count,
+        }
+
+    def _repeal_witness_coverage(self) -> dict[str, Any]:
+        """Corpus-wide repeal-family replay-coverage scoreboard.
+
+        The denominator is every repeal operation-witness in the sampled
+        corpus (dry-run-eligible, not-in-scope, or still blocked). The key loop
+        metric is the fraction of those witnesses that are dry-run-agreeing.
+        Witnesses that are not agreeing are accounted for by typed reason
+        (residual, per-op refusal, not-in-scope, or blocked), never hidden.
+
+        This is only meaningful in the selected_family_repeal scope, where each
+        work carries a repeal-witness census. In complete_set scope no work
+        carries the census, so the fraction is reported as unavailable rather
+        than misleadingly high.
+        """
+
+        total_repeal_witnesses = 0
+        repeal_in_scope = 0
+        not_in_scope_reason_counts: dict[str, int] = {}
+        per_op_refusals = 0
+        dry_run_agreeing = 0
+        dry_run_residual = 0
+        census_available = False
+
+        for report in self.work_reports:
+            completeness = report.scope_completeness
+            if completeness is None:
+                continue
+            census_available = True
+            total_repeal_witnesses += completeness.total_repeal_operation_witnesses
+            repeal_in_scope += completeness.repeal_witnesses_in_scope
+            for reason, count in completeness.repeal_witnesses_not_in_scope_reason_counts.items():
+                not_in_scope_reason_counts[reason] = not_in_scope_reason_counts.get(reason, 0) + count
+            for proof in report.proofs:
+                if proof.oracle_match == "agrees":
+                    dry_run_agreeing += 1
+                else:
+                    dry_run_residual += 1
+            for refusal in report.refusals:
+                # The whole-work "no replayable repeal candidate" refusal is
+                # keyed by the work id, not a repeal witness, so it must not be
+                # subtracted from the repeal-witness denominator.
+                if refusal.rule_id == NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID:
+                    continue
+                per_op_refusals += 1
+
+        not_in_scope_total = sum(not_in_scope_reason_counts.values())
+        blocked_or_unready = max(
+            total_repeal_witnesses - dry_run_agreeing - dry_run_residual - per_op_refusals - not_in_scope_total,
+            0,
+        )
+        coverage_fraction = (
+            (dry_run_agreeing / total_repeal_witnesses) if (census_available and total_repeal_witnesses) else None
+        )
+        return {
+            "census_available": census_available,
+            "total_repeal_operation_witnesses": total_repeal_witnesses,
+            "repeal_witnesses_in_scope": repeal_in_scope,
+            "dry_run_agreeing": dry_run_agreeing,
+            "dry_run_residual": dry_run_residual,
+            "per_op_refused": per_op_refusals,
+            "not_in_scope": not_in_scope_total,
+            "not_in_scope_reason_counts": dict(sorted(not_in_scope_reason_counts.items())),
+            "blocked_or_unready": blocked_or_unready,
+            # The loop metric: fraction of all repeal operation-witnesses
+            # corpus-wide that are dry-run-agreeing.
+            "dry_run_agreeing_fraction": coverage_fraction,
         }
 
     def summary(self) -> dict[str, Any]:
@@ -129,8 +201,11 @@ class NZDryRunRepealCorpusReport:
 
         agreement_rate = (total_agreements / total_ops) if total_ops else None
 
+        repeal_coverage = self._repeal_witness_coverage()
+
         return {
             "db_path": self.db_path,
+            "scope": self.scope,
             "selection_context": self.selection_context(),
             "operation_family": "repeal",
             "works_attempted": len(self.work_reports),
@@ -140,6 +215,7 @@ class NZDryRunRepealCorpusReport:
             "dry_run_oracle_agreements": total_agreements,
             "dry_run_oracle_residuals": total_residuals,
             "dry_run_oracle_agreement_rate": agreement_rate,
+            "repeal_witness_coverage": repeal_coverage,
             "neighbors_unchanged_all": neighbors_unchanged_all,
             "oracle_match_family_counts": _sorted_int_map(oracle_match_counts),
             "oracle_match_family_rule_ids": {
@@ -167,6 +243,7 @@ class NZDryRunRepealCorpusReport:
             "truth_claim": "dry_run_after_tree_vs_archived_on_or_after_xml_not_actual_replay",
             "replay_claims": False,
             "dry_run_claims": True,
+            "scope": self.scope,
             "actual_replay_blocking_rule_id": NZ_DRY_RUN_NOT_REPLAY_AUTHORIZED_RULE_ID,
             "selection_context": self.selection_context(),
             "summary": self.summary(),
@@ -185,6 +262,7 @@ def build_nz_dry_run_repeal_corpus_report(
     work_id_prefix: str = "",
     min_version_year: int | None = None,
     sample_strategy: str = "head",
+    scope: str = NZ_DRY_RUN_SCOPE_COMPLETE_SET,
 ) -> NZDryRunRepealCorpusReport:
     """Run the dry-run repeal surface across a selected NZ work population.
 
@@ -223,7 +301,7 @@ def build_nz_dry_run_repeal_corpus_report(
     # Each per-work dry-run opens its own archive handle (the single-work
     # surface owns its preflight build + archive lifecycle). Serial iteration
     # over the deterministic selection keeps the aggregate reproducible.
-    reports = tuple(build_archived_work_dry_run_repeal(db_path, work_id) for work_id in selected)
+    reports = tuple(build_archived_work_dry_run_repeal(db_path, work_id, scope=scope) for work_id in selected)
 
     return NZDryRunRepealCorpusReport(
         db_path=str(db_path),
@@ -232,6 +310,7 @@ def build_nz_dry_run_repeal_corpus_report(
         selected_work_ids=tuple(selected),
         available_work_count=available_work_count,
         max_works=max_works,
+        scope=scope,
     )
 
 
@@ -273,6 +352,7 @@ def main(args: Any) -> None:
             work_id_prefix=getattr(args, "work_id_prefix", "") or "",
             min_version_year=getattr(args, "min_version_year", None),
             sample_strategy=getattr(args, "sample_strategy", "head") or "head",
+            scope=scope_from_arg(getattr(args, "scope", None)),
         )
     except NZBenchmarkSelectionError as exc:
         raise SystemExit(f"nz-corpus dry-run-corpus: {exc}") from exc
@@ -291,6 +371,7 @@ def main(args: Any) -> None:
     selection = summary["selection_context"]
     rate = summary["dry_run_oracle_agreement_rate"]
     rate_text = f"{rate:.4f}" if rate is not None else "n/a"
+    print(f"scope={summary['scope']}")
     print(
         f"works_attempted={summary['works_attempted']} "
         f"works_with_ready_preflight={summary['works_with_ready_preflight']} "
@@ -307,6 +388,21 @@ def main(args: Any) -> None:
         f"max_works={selection['max_works']} "
         f"truncated_by_max_works={selection['truncated_by_max_works']}"
     )
+    coverage = summary["repeal_witness_coverage"]
+    if coverage["census_available"]:
+        frac = coverage["dry_run_agreeing_fraction"]
+        frac_text = f"{frac:.4f}" if frac is not None else "n/a"
+        print(
+            f"repeal_witness_coverage total_repeal_witnesses={coverage['total_repeal_operation_witnesses']} "
+            f"dry_run_agreeing={coverage['dry_run_agreeing']} "
+            f"dry_run_agreeing_fraction={frac_text} "
+            f"residual={coverage['dry_run_residual']} "
+            f"per_op_refused={coverage['per_op_refused']} "
+            f"not_in_scope={coverage['not_in_scope']} "
+            f"blocked_or_unready={coverage['blocked_or_unready']}"
+        )
+        if coverage["not_in_scope_reason_counts"]:
+            print(f"repeal_not_in_scope_reason_counts={coverage['not_in_scope_reason_counts']}")
     print(f"preflight_status_counts={summary['preflight_status_counts']}")
     print(f"oracle_match_family_counts={summary['oracle_match_family_counts']}")
     if summary["residual_oracle_match_family_counts"]:

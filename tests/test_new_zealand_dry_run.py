@@ -9,12 +9,17 @@ from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.provenance import OperationSource
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.new_zealand.dry_run import (
+    NZ_DRY_RUN_NOT_IN_SCOPE_BLOCKED_OPERATION_WITNESS,
+    NZ_DRY_RUN_NOT_IN_SCOPE_NON_REPEAL_FAMILY,
     NZ_DRY_RUN_REFUSED_MISSING_VERSION_WINDOW_RULE_ID,
     NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
     NZ_DRY_RUN_REFUSED_PREFLIGHT_NOT_READY_RULE_ID,
     NZ_DRY_RUN_REFUSED_TARGET_RECOVERED_RULE_ID,
     NZ_DRY_RUN_REPEAL_TOMBSTONE_AGREES_RULE_ID,
+    NZ_DRY_RUN_SCOPE_COMPLETE_SET,
+    NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
     build_dry_run_repeal,
+    scope_from_arg,
 )
 from lawvm.new_zealand.effect_candidates import (
     NZCanonicalEffectCandidateReport,
@@ -126,8 +131,22 @@ def _repeal_row(
         operation=operation if operation is not None else _repeal_operation(),
         source_path=("prov:108",),
         amendment_date_iso=amendment_date_iso,
+        operation_family="repealed",
         repeal_payload_corroboration_status="not_required_non_direct_repeal_payload",
         latest_oracle_target_resolution_status=target_resolution_status,
+    )
+
+
+def _blocked_repeal_row() -> NZCanonicalEffectCandidateRow:
+    # A repeal operation witness that did not reach a candidate (still blocked).
+    return NZCanonicalEffectCandidateRow(
+        row_id="nz-effect-candidate-2",
+        operation_row_id="nz-opw-2",
+        effect_readiness_row_id="nz-readiness-2",
+        status="blocked",
+        target_address="section:200",
+        blocking_rule_id="nz_effect_candidate_not_ready",
+        operation_family="repealed",
     )
 
 
@@ -272,6 +291,151 @@ def test_dry_run_refuses_when_no_repeal_candidate_present() -> None:
     assert report.proofs == ()
     assert len(report.refusals) == 1
     assert report.refusals[0].rule_id == NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID
+
+
+def test_default_scope_is_complete_set_and_unchanged() -> None:
+    # The default (no scope arg) must keep the original strict whole-work gate:
+    # a blocked sibling refuses the whole work without any per-op proof.
+    preflight = _preflight_from_rows((_repeal_row(), _blocked_repeal_row()))
+    assert preflight.summary()["preflight_status"] != "ready_for_dry_run_replay"
+
+    archive = _archive_with_before_after()
+    report = build_dry_run_repeal(archive, work_id=_WORK_ID, preflight=preflight)
+
+    assert report.scope == NZ_DRY_RUN_SCOPE_COMPLETE_SET
+    assert report.scope_completeness is None
+    assert report.proofs == ()
+    assert len(report.refusals) == 1
+    assert report.refusals[0].rule_id == NZ_DRY_RUN_REFUSED_PREFLIGHT_NOT_READY_RULE_ID
+    summary = report.summary()
+    assert summary["scope"] == NZ_DRY_RUN_SCOPE_COMPLETE_SET
+    assert summary["scope_completeness"] is None
+
+
+def test_selected_family_repeal_dry_runs_ready_repeal_despite_blocked_sibling() -> None:
+    # Same incomplete work, partial scope: the ready repeal is dry-run and
+    # agrees, while the blocked repeal witness is carried as not-in-scope.
+    preflight = _preflight_from_rows((_repeal_row(), _blocked_repeal_row()))
+    assert preflight.summary()["preflight_status"] != "ready_for_dry_run_replay"
+
+    archive = _archive_with_before_after()
+    report = build_dry_run_repeal(
+        archive,
+        work_id=_WORK_ID,
+        preflight=preflight,
+        scope=NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
+    )
+
+    # The whole-work gate is relaxed: the ready repeal is dry-run and agrees.
+    summary = report.summary()
+    assert report.scope == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL
+    assert summary["operations_dry_run"] == 1
+    assert summary["dry_run_oracle_agreements"] == 1
+    assert summary["operations_refused"] == 0
+    assert report.proofs[0].oracle_match == "agrees"
+
+    # Replay is still blocked; the relaxation is scope-only, never replay.
+    assert summary["replay_claims"] is False
+    assert summary["actual_replay_agreements"] == 0
+
+    # The partial scope is declared honestly, with the not-in-scope blocked
+    # repeal witness counted, never hidden.
+    completeness = report.scope_completeness
+    assert completeness is not None
+    assert completeness.is_partial is True
+    assert completeness.family == "repeal"
+    assert completeness.in_scope_operation_witnesses == 1
+    assert completeness.not_in_scope_operation_witnesses == 1
+    assert completeness.not_in_scope_reason_counts == {
+        NZ_DRY_RUN_NOT_IN_SCOPE_BLOCKED_OPERATION_WITNESS: 1
+    }
+    # Repeal-witness census: 2 repeal witnesses (1 dry-run, 1 blocked).
+    assert completeness.total_repeal_operation_witnesses == 2
+    assert completeness.repeal_witnesses_in_scope == 1
+    assert completeness.repeal_witnesses_not_in_scope_reason_counts == {
+        NZ_DRY_RUN_NOT_IN_SCOPE_BLOCKED_OPERATION_WITNESS: 1
+    }
+    # The disclosure round-trips into the summary and JSON.
+    assert summary["scope_completeness"]["is_partial"] is True
+    assert report.to_jsonable()["scope_completeness"]["not_in_scope_operation_witnesses"] == 1
+
+
+def test_selected_family_repeal_does_not_relax_per_op_checks() -> None:
+    # Partial scope only relaxes the WHOLE-WORK gate. A recovered (non-exact)
+    # target still refuses per-op, even though the work would now be attempted.
+    row = _repeal_row(target_resolution_status="via_unlabeled_source_carrier")
+    preflight = _preflight_from_rows((row, _blocked_repeal_row()))
+    archive = _archive_with_before_after()
+
+    report = build_dry_run_repeal(
+        archive,
+        work_id=_WORK_ID,
+        preflight=preflight,
+        scope=NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
+    )
+
+    assert report.proofs == ()
+    assert len(report.refusals) == 1
+    assert report.refusals[0].rule_id == NZ_DRY_RUN_REFUSED_TARGET_RECOVERED_RULE_ID
+    # The recovered repeal was in-scope (a ready candidate row) but refused
+    # per-op; the blocked sibling is still carried as not-in-scope.
+    completeness = report.scope_completeness
+    assert completeness is not None
+    assert completeness.repeal_witnesses_in_scope == 1
+    assert completeness.repeal_witnesses_not_in_scope_reason_counts == {
+        NZ_DRY_RUN_NOT_IN_SCOPE_BLOCKED_OPERATION_WITNESS: 1
+    }
+
+
+def test_selected_family_repeal_counts_non_repeal_family_as_not_in_scope() -> None:
+    # A candidate text-replace alongside a ready repeal: the repeal is dry-run,
+    # the text-replace is carried as not-in-scope (non-repeal family).
+    text_replace = NZCanonicalEffectCandidateRow(
+        row_id="nz-effect-candidate-3",
+        operation_row_id="nz-opw-3",
+        effect_readiness_row_id="nz-readiness-3",
+        status="candidate_emitted",
+        action=str(StructuralAction.TEXT_REPLACE),
+        target_address="section:109",
+        operation=LegalOperation(
+            op_id="nz:text:1",
+            sequence=2,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "109"),)),
+            text_patch=None,
+            witness_rule_id="nz_text_replace_candidate_from_direct_instruction_workqueue",
+        ),
+        operation_family="amended",
+        latest_oracle_target_resolution_status="exact_source_path",
+    )
+    preflight = _preflight_from_rows((_repeal_row(), text_replace))
+    archive = _archive_with_before_after()
+
+    report = build_dry_run_repeal(
+        archive,
+        work_id=_WORK_ID,
+        preflight=preflight,
+        scope=NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
+    )
+
+    assert report.summary()["operations_dry_run"] == 1
+    completeness = report.scope_completeness
+    assert completeness is not None
+    assert completeness.not_in_scope_reason_counts == {
+        NZ_DRY_RUN_NOT_IN_SCOPE_NON_REPEAL_FAMILY: 1
+    }
+    # The text-replace is not a repeal witness, so it is not in the repeal census.
+    assert completeness.total_repeal_operation_witnesses == 1
+    assert completeness.repeal_witnesses_in_scope == 1
+
+
+def test_scope_from_arg_normalizes_and_rejects_unknown() -> None:
+    assert scope_from_arg(None) == NZ_DRY_RUN_SCOPE_COMPLETE_SET
+    assert scope_from_arg("") == NZ_DRY_RUN_SCOPE_COMPLETE_SET
+    assert scope_from_arg("complete-set") == NZ_DRY_RUN_SCOPE_COMPLETE_SET
+    assert scope_from_arg("selected-family-repeal") == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL
+    with pytest.raises(ValueError):
+        scope_from_arg("everything")
 
 
 _REAL_DB = Path("<DATA_ROOT>/data/nz_legislation.farchive")

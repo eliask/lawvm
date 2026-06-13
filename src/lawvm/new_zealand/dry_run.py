@@ -64,6 +64,38 @@ NZ_DRY_RUN_REFUSED_TARGET_PATH_UNMAPPABLE_RULE_ID = "nz_dry_run_refused_target_a
 NZ_DRY_RUN_RESIDUAL_TARGET_MISSING_IN_ORACLE_RULE_ID = "nz_dry_run_residual_target_missing_in_oracle"
 NZ_DRY_RUN_RESIDUAL_TARGET_NOT_TOMBSTONE_IN_ORACLE_RULE_ID = "nz_dry_run_residual_target_not_tombstone_in_oracle"
 
+# Dry-run scopes.
+#
+# ``complete_set`` is the original, strict behavior: refuse the whole work
+# unless its full candidate set reached ``ready_for_dry_run_replay``. This is
+# the default and its semantics must never change.
+#
+# ``selected_family_repeal`` is the partial-scope mode: it dry-runs the ready
+# repeal operations in a work EVEN WHEN the work's full candidate set is
+# incomplete. It relaxes only the WHOLE-WORK readiness gate; it never relaxes
+# any per-operation exactness/corroboration check (those still refuse, typed).
+# The report declares the partial scope explicitly and carries the count of
+# operation witnesses NOT covered, typed by reason — never hidden.
+NZ_DRY_RUN_SCOPE_COMPLETE_SET = "complete_set"
+NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL = "selected_family_repeal"
+_VALID_DRY_RUN_SCOPES = (NZ_DRY_RUN_SCOPE_COMPLETE_SET, NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL)
+
+# Typed not-in-scope reasons for the selected_family_repeal scope. Each operation
+# witness in the work that is not a dry-run-eligible repeal is carried under one
+# of these reasons so the partial scope can never silently inflate coverage.
+NZ_DRY_RUN_NOT_IN_SCOPE_NON_REPEAL_FAMILY = "not_in_scope_non_repeal_family"
+NZ_DRY_RUN_NOT_IN_SCOPE_REPEAL_SOURCE_CHANGE_ONLY = "not_in_scope_repeal_source_change_only"
+NZ_DRY_RUN_NOT_IN_SCOPE_REPEAL_TARGET_RECOVERY = "not_in_scope_repeal_target_recovery"
+NZ_DRY_RUN_NOT_IN_SCOPE_CANDIDATE_OPERATION_MISSING = "not_in_scope_candidate_operation_missing"
+NZ_DRY_RUN_NOT_IN_SCOPE_BLOCKED_OPERATION_WITNESS = "not_in_scope_blocked_operation_witness"
+
+# NZ history-note family verb for a repeal operation witness. This is the
+# ``operation_family`` value the readiness lowering assigns to a repeal (the
+# candidate ``action`` is ``str(StructuralAction.REPEAL)`` only on emitted rows;
+# blocked rows still carry this family), so it is the stable discriminator for
+# the repeal-witness replay-coverage denominator.
+_NZ_REPEAL_OPERATION_FAMILY = "repealed"
+
 # Canonical tombstone marker for a repealed-but-addressable source node.
 _REPEAL_TOMBSTONE_DELETION_STATUS = "repealed"
 
@@ -161,6 +193,53 @@ class NZDryRunRefusal:
 
 
 @dataclass(frozen=True)
+class NZDryRunScopeCompleteness:
+    """Honest declaration of how much of a work this dry-run report covers.
+
+    In ``complete_set`` scope the report only runs when the work's full
+    candidate set is ready, so the scope is the whole work. In
+    ``selected_family_repeal`` scope only the ready repeal operations are
+    dry-run while the work's other operation witnesses are explicitly carried
+    here as typed not-in-scope counts. The scope is partial whenever any
+    operation witness is left uncovered; this surface never hides that.
+    """
+
+    scope: str
+    family: str
+    total_operation_witnesses: int
+    in_scope_operation_witnesses: int
+    not_in_scope_operation_witnesses: int
+    not_in_scope_reason_counts: Mapping[str, int] = field(default_factory=dict)
+    # Repeal-family witness census. ``total_repeal_operation_witnesses`` is the
+    # denominator of the family replay-coverage loop metric: every operation
+    # witness in the work whose family is repeal, whether dry-run-eligible,
+    # not-in-scope (source-change-only / target-recovery), or still blocked.
+    total_repeal_operation_witnesses: int = 0
+    repeal_witnesses_in_scope: int = 0
+    repeal_witnesses_not_in_scope_reason_counts: Mapping[str, int] = field(default_factory=dict)
+
+    @property
+    def is_partial(self) -> bool:
+        return self.not_in_scope_operation_witnesses > 0
+
+    def to_jsonable(self) -> dict[str, Any]:
+        return {
+            "scope": self.scope,
+            "family": self.family,
+            "is_partial": self.is_partial,
+            "total_operation_witnesses": self.total_operation_witnesses,
+            "in_scope_operation_witnesses": self.in_scope_operation_witnesses,
+            "not_in_scope_operation_witnesses": self.not_in_scope_operation_witnesses,
+            "not_in_scope_reason_counts": dict(sorted(self.not_in_scope_reason_counts.items())),
+            "total_repeal_operation_witnesses": self.total_repeal_operation_witnesses,
+            "repeal_witnesses_in_scope": self.repeal_witnesses_in_scope,
+            "repeal_witnesses_not_in_scope_reason_counts": dict(
+                sorted(self.repeal_witnesses_not_in_scope_reason_counts.items())
+            ),
+        }
+
+
+@dataclass(frozen=True)
 class NZDryRunReport:
     """Typed dry-run replay report for direct corroborated repeal.
 
@@ -173,6 +252,8 @@ class NZDryRunReport:
     proofs: tuple[NZMutationBoundaryProof, ...]
     refusals: tuple[NZDryRunRefusal, ...]
     preflight_status: str
+    scope: str = NZ_DRY_RUN_SCOPE_COMPLETE_SET
+    scope_completeness: NZDryRunScopeCompleteness | None = None
 
     def matched_proofs(self) -> tuple[NZMutationBoundaryProof, ...]:
         return tuple(proof for proof in self.proofs if proof.oracle_match == "agrees")
@@ -186,6 +267,8 @@ class NZDryRunReport:
         return {
             "work_id": self.work_id,
             "operation_family": self.operation_family,
+            "scope": self.scope,
+            "scope_completeness": self.scope_completeness.to_jsonable() if self.scope_completeness else None,
             "preflight_status": self.preflight_status,
             "operations_dry_run": len(self.proofs),
             "operations_refused": len(self.refusals),
@@ -276,6 +359,8 @@ class NZDryRunReport:
             "truth_claim": "dry_run_after_tree_vs_archived_on_or_after_xml_not_actual_replay",
             "replay_claims": False,
             "dry_run_claims": True,
+            "scope": self.scope,
+            "scope_completeness": self.scope_completeness.to_jsonable() if self.scope_completeness else None,
             "actual_replay_blocking_rule_id": NZ_DRY_RUN_NOT_REPLAY_AUTHORIZED_RULE_ID,
             "summary": self.summary(),
         }
@@ -287,13 +372,18 @@ class NZDryRunReport:
         return payload
 
 
-def build_archived_work_dry_run_repeal(db_path: Path, work_id: str) -> NZDryRunReport:
+def build_archived_work_dry_run_repeal(
+    db_path: Path,
+    work_id: str,
+    *,
+    scope: str = NZ_DRY_RUN_SCOPE_COMPLETE_SET,
+) -> NZDryRunReport:
     """Build the dry-run repeal report for one archived NZ work."""
 
     preflight = build_archived_work_effect_candidate_preflight(db_path, work_id)
     archive = open_farchive(db_path)
     try:
-        return build_dry_run_repeal(archive, work_id=work_id, preflight=preflight)
+        return build_dry_run_repeal(archive, work_id=work_id, preflight=preflight, scope=scope)
     finally:
         archive.close()
 
@@ -303,12 +393,18 @@ def build_dry_run_repeal(
     *,
     work_id: str,
     preflight: NZEffectCandidatePreflightReport,
+    scope: str = NZ_DRY_RUN_SCOPE_COMPLETE_SET,
 ) -> NZDryRunReport:
+    if scope not in _VALID_DRY_RUN_SCOPES:
+        raise ValueError(f"unknown dry-run scope {scope!r}; expected one of {_VALID_DRY_RUN_SCOPES}")
+
     preflight_status = str(preflight.summary()["preflight_status"])
     proofs: list[NZMutationBoundaryProof] = []
     refusals: list[NZDryRunRefusal] = []
 
-    if preflight_status != "ready_for_dry_run_replay":
+    # The selected_family_repeal scope relaxes ONLY the whole-work readiness
+    # gate. The complete_set scope keeps the original strict refusal.
+    if scope == NZ_DRY_RUN_SCOPE_COMPLETE_SET and preflight_status != "ready_for_dry_run_replay":
         # The whole candidate set is not dry-run ready. Refuse without mutating.
         return NZDryRunReport(
             work_id=work_id,
@@ -326,9 +422,15 @@ def build_dry_run_repeal(
                 ),
             ),
             preflight_status=preflight_status,
+            scope=scope,
         )
 
     repeal_rows = _replayable_repeal_rows(preflight)
+    scope_completeness = (
+        _selected_family_repeal_scope_completeness(preflight, repeal_rows)
+        if scope == NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL
+        else None
+    )
     if not repeal_rows:
         return NZDryRunReport(
             work_id=work_id,
@@ -342,6 +444,8 @@ def build_dry_run_repeal(
                 ),
             ),
             preflight_status=preflight_status,
+            scope=scope,
+            scope_completeness=scope_completeness,
         )
 
     # Cache parsed source documents per XML locator so a work with multiple
@@ -363,7 +467,84 @@ def build_dry_run_repeal(
         proofs=tuple(proofs),
         refusals=tuple(refusals),
         preflight_status=preflight_status,
+        scope=scope,
+        scope_completeness=scope_completeness,
     )
+
+
+def _selected_family_repeal_scope_completeness(
+    preflight: NZEffectCandidatePreflightReport,
+    in_scope_repeal_rows: tuple[NZCanonicalEffectCandidateRow, ...],
+) -> NZDryRunScopeCompleteness:
+    """Type every operation witness in the work as in- or not-in-scope.
+
+    The selected family is the replayable repeal family. Every other operation
+    witness in the work is carried under a typed not-in-scope reason so the
+    partial scope can never silently inflate coverage. The total is over all
+    operation-witness rows in the work (blocked rows included), because a
+    blocked witness is still an operation the work owns that this scope does
+    not cover.
+    """
+
+    from lawvm.new_zealand.effect_candidates import (
+        _source_change_only_candidate,
+        _target_recovery_candidate,
+    )
+
+    in_scope_row_ids = {row.row_id for row in in_scope_repeal_rows}
+    reason_counts: dict[str, int] = {}
+    repeal_reason_counts: dict[str, int] = {}
+    in_scope = 0
+    total = 0
+    total_repeal = 0
+    repeal_in_scope = 0
+    for row in preflight.candidate_report.rows:
+        total += 1
+        is_repeal_witness = row.operation_family == _NZ_REPEAL_OPERATION_FAMILY
+        if is_repeal_witness:
+            total_repeal += 1
+        if row.row_id in in_scope_row_ids:
+            in_scope += 1
+            if is_repeal_witness:
+                repeal_in_scope += 1
+            continue
+        reason = _not_in_scope_reason(row, _source_change_only_candidate, _target_recovery_candidate)
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        if is_repeal_witness:
+            repeal_reason_counts[reason] = repeal_reason_counts.get(reason, 0) + 1
+    return NZDryRunScopeCompleteness(
+        scope=NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
+        family="repeal",
+        total_operation_witnesses=total,
+        in_scope_operation_witnesses=in_scope,
+        not_in_scope_operation_witnesses=total - in_scope,
+        not_in_scope_reason_counts=dict(sorted(reason_counts.items())),
+        total_repeal_operation_witnesses=total_repeal,
+        repeal_witnesses_in_scope=repeal_in_scope,
+        repeal_witnesses_not_in_scope_reason_counts=dict(sorted(repeal_reason_counts.items())),
+    )
+
+
+def _not_in_scope_reason(
+    row: NZCanonicalEffectCandidateRow,
+    source_change_only: Any,
+    target_recovery: Any,
+) -> str:
+    if row.status != "candidate_emitted":
+        return NZ_DRY_RUN_NOT_IN_SCOPE_BLOCKED_OPERATION_WITNESS
+    if row.operation is None:
+        return NZ_DRY_RUN_NOT_IN_SCOPE_CANDIDATE_OPERATION_MISSING
+    if row.action != str(StructuralAction.REPEAL):
+        return NZ_DRY_RUN_NOT_IN_SCOPE_NON_REPEAL_FAMILY
+    if source_change_only(row):
+        return NZ_DRY_RUN_NOT_IN_SCOPE_REPEAL_SOURCE_CHANGE_ONLY
+    if target_recovery(row):
+        return NZ_DRY_RUN_NOT_IN_SCOPE_REPEAL_TARGET_RECOVERY
+    # A candidate_emitted, exact-target, corroborated repeal that is not in the
+    # in-scope set would be a contradiction (the in-scope filter is exactly that
+    # predicate). Fall back to a distinct named reason rather than silently
+    # absorbing it, so any future filter drift surfaces loudly.
+    return NZ_DRY_RUN_NOT_IN_SCOPE_NON_REPEAL_FAMILY
 
 
 def _replayable_repeal_rows(
@@ -683,14 +864,42 @@ def _counts(values: Any) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def scope_from_arg(value: str | None) -> str:
+    """Normalize a CLI scope token (dash form) to the internal scope constant.
+
+    ``None`` / empty -> the default ``complete_set`` so the existing behavior is
+    preserved. An unknown token raises so it can never silently degrade to the
+    relaxed scope.
+    """
+
+    if not value:
+        return NZ_DRY_RUN_SCOPE_COMPLETE_SET
+    normalized = value.replace("-", "_")
+    if normalized not in _VALID_DRY_RUN_SCOPES:
+        raise ValueError(f"unknown dry-run scope {value!r}; expected one of {_VALID_DRY_RUN_SCOPES}")
+    return normalized
+
+
 def main(args: Any) -> None:
     import json
 
-    report = build_archived_work_dry_run_repeal(Path(args.db), args.work_id)
+    scope = scope_from_arg(getattr(args, "scope", None))
+    report = build_archived_work_dry_run_repeal(Path(args.db), args.work_id, scope=scope)
     if args.json:
         print(json.dumps(report.to_jsonable(summary_only=args.summary_only), ensure_ascii=False, indent=2))
         return
     summary = report.summary()
+    completeness = summary.get("scope_completeness")
+    print(f"scope={summary['scope']}")
+    if completeness:
+        print(
+            f"scope_completeness is_partial={completeness['is_partial']} "
+            f"family={completeness['family']} "
+            f"in_scope={completeness['in_scope_operation_witnesses']} "
+            f"not_in_scope={completeness['not_in_scope_operation_witnesses']} "
+            f"of_total={completeness['total_operation_witnesses']} "
+            f"not_in_scope_reasons={completeness['not_in_scope_reason_counts']}"
+        )
     print(
         f"work_id={summary['work_id']} preflight_status={summary['preflight_status']} "
         f"operations_dry_run={summary['operations_dry_run']} "
