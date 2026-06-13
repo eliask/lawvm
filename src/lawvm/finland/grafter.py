@@ -594,6 +594,7 @@ from lawvm.finland.replay_product_projection import ReplayProductProjectionReque
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, resolve_replay_xml_call
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir as _hoist_trailing_wrapup_ir
 from lawvm.finland.relabel_identity import RelabelParentKey
+from lawvm.finland.chapter_seed_targets import ChapterSeedSkipInput
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
 
 _oracle_version_future_repeal_only_uses_cutoff_date = oracle_version_future_repeal_only_uses_cutoff_date
@@ -4651,7 +4652,7 @@ def process_muutoslaki(
     parent_id: str = "",
     failed_ops_out: Optional[List[FailedOp]] = None,
     strict_profile: Optional[StrictProfile] = None,
-    chapter_seed_skip: Optional[Set[Tuple[str, str]]] = None,
+    chapter_seed_skip: Optional[Set[ChapterSeedSkipInput]] = None,
     corpus: Optional[CorpusStore] = None,
     future_repeals: Optional[Set[RepealTargetRef]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,

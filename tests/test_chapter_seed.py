@@ -18,6 +18,7 @@ from lawvm.finland.chapter_seed import (
     _strip_trailing_missing_span_notice,
     seed_missing_chapters,
 )
+from lawvm.finland.chapter_seed_targets import ChapterSeedSkip
 from lawvm.finland.ops import AmendmentOp
 
 # ---------------------------------------------------------------------------
@@ -343,7 +344,10 @@ def test_seed_missing_chapters_seeds_textual_gap_notice() -> None:
 
     chapters = [child for child in updated.children if child.kind == IRNodeKind.CHAPTER]
     assert [child.label for child in chapters] == ["6", "7", "8", "11"]
-    assert seeded == {("7", "1993/700"), ("8", "1993/701")}
+    assert seeded == {
+        ChapterSeedSkip(chapter_label="7", amendment_id="1993/700"),
+        ChapterSeedSkip(chapter_label="8", amendment_id="1993/701"),
+    }
     assert [diagnostic.rule_id for diagnostic in diagnostics] == [
         "fi_chapter_seed_inserted_from_amendment_body",
         "fi_chapter_seed_inserted_from_amendment_body",

@@ -8,8 +8,8 @@ This module provides ``seed_missing_chapters``, called from ``replay_xml``
 before the amendment loop, plus the pure helper functions it relies on.
 
 ``seed_missing_chapters`` is pure: it takes an IRNode and returns the
-updated IRNode together with the set of (chapter_label, amendment_id) pairs
-that were seeded.  The caller is responsible for propagating the new IR.
+updated IRNode together with the set of chapter-seed skip records that were
+seeded.  The caller is responsible for propagating the new IR.
 """
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ from lawvm.core.tree_ops import default_label_sort_key
 from lawvm.finland.helpers import _fi_label_postprocessor
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.replay_notices import replay_print
+from lawvm.finland.chapter_seed_targets import ChapterSeedSkip
 from lawvm.corpus_store import CorpusStore
 
 DEBUG = False
@@ -286,7 +287,7 @@ def seed_missing_chapters(
     muutoslait: List[str],
     corpus_store: CorpusStore,
     diagnostics_out: Optional[List[ChapterSeedDiagnostic]] = None,
-) -> Tuple[IRNode, Set[Tuple[str, str]]]:
+) -> Tuple[IRNode, Set[ChapterSeedSkip]]:
     """Seed missing chapters from amendment bodies for partial-base statutes.
 
     Some pre-1900 statutes have partial base XML where entire chapters are
@@ -302,7 +303,7 @@ def seed_missing_chapters(
     IRNode; the input is never mutated.
 
     Returns (updated_ir, seeded_set) where seeded_set is a set of
-    ``(chapter_label, amendment_id)`` pairs.  The caller should skip the
+    ``ChapterSeedSkip`` records.  The caller should skip the
     seeding amendment's chapter-scoped ops for that chapter to avoid
     double-application.
     """
@@ -375,7 +376,7 @@ def seed_missing_chapters(
     # Strategy: for each container that has omissions, rebuild its children
     # list by inserting seeded chapters at sorted positions and removing
     # omission nodes that are now covered.
-    seeded_set: Set[Tuple[str, str]] = set()
+    seeded_set: Set[ChapterSeedSkip] = set()
     current_ir = ir
     for container_path, container in containers:
         new_children: List[IRNode] = []
@@ -394,7 +395,12 @@ def seed_missing_chapters(
                     for label in sorted(gap_seeds, key=_chapter_sort_key):
                         amendment_id, ch_ir = seedable[label]
                         new_children.append(ch_ir)
-                        seeded_set.add((label, amendment_id))
+                        seeded_set.add(
+                            ChapterSeedSkip(
+                                chapter_label=label,
+                                amendment_id=amendment_id,
+                            )
+                        )
                         _record_chapter_seed_diagnostic(
                             diagnostics_out,
                             rule_id="fi_chapter_seed_inserted_from_amendment_body",
@@ -431,7 +437,12 @@ def seed_missing_chapters(
                 for label in sorted(gap_seeds, key=_chapter_sort_key):
                     amendment_id, ch_ir = seedable[label]
                     new_children.append(ch_ir)
-                    seeded_set.add((label, amendment_id))
+                    seeded_set.add(
+                        ChapterSeedSkip(
+                            chapter_label=label,
+                            amendment_id=amendment_id,
+                        )
+                    )
                     _record_chapter_seed_diagnostic(
                         diagnostics_out,
                         rule_id="fi_chapter_seed_inserted_from_amendment_body",
@@ -454,7 +465,8 @@ def seed_missing_chapters(
 
     if seeded_set:
         labels_str = ", ".join(
-            f"ch{l} (from {m})" for l, m in sorted(seeded_set, key=lambda x: _chapter_sort_key(x[0]))
+            f"ch{skip.chapter_label} (from {skip.amendment_id})"
+            for skip in sorted(seeded_set, key=lambda x: _chapter_sort_key(x.chapter_label))
         )
         replay_print(f"  SEED: inserted {len(seeded_set)} chapter(s): {labels_str}")
 

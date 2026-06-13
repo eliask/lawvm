@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from lawvm.finland.chapter_seed import _op_targets_chapter
+from lawvm.finland.chapter_seed_targets import (
+    ChapterSeedSkipInput,
+    normalize_chapter_seed_skips,
+)
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.restructure_plan import (
     StructuralTransformPlan,
@@ -20,7 +24,7 @@ class ProcessStructuralPrepareContext:
     amendment_id: str
     target_statute: str
     ops: list[AmendmentOp]
-    chapter_seed_skip: Optional[set[tuple[str, str]]]
+    chapter_seed_skip: Optional[set[ChapterSeedSkipInput]]
     restructure_plans: list[StructuralTransformPlan]
     elaboration_observations: list[dict[str, object]]
     replay_print: ReplayPrint
@@ -37,9 +41,9 @@ class ProcessStructuralPrepareContext:
             return ops
 
         seeded_labels = {
-            chapter_label
-            for chapter_label, seed_mid in self.chapter_seed_skip
-            if seed_mid == self.amendment_id
+            skip.chapter_label
+            for skip in normalize_chapter_seed_skips(self.chapter_seed_skip)
+            if skip.amendment_id == self.amendment_id
         }
         if not seeded_labels:
             return ops

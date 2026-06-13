@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, Literal, Optional, Set, Tuple
+from typing import Dict, Iterable, Literal, Optional, Set
 
 from lawvm.corpus_store import CorpusStore
 from lawvm.core.compile_result import SourcePathology, StrictProfile
@@ -13,6 +13,7 @@ from lawvm.core.observed_write_audit import ObservedWriteAudit
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
 from lawvm.finland.apply_events import ApplyMutationEvent
+from lawvm.finland.chapter_seed_targets import ChapterSeedSkipInput
 from lawvm.finland.future_repeal import RepealTargetRef
 from lawvm.finland.ops import FailedOp
 from lawvm.finland.process_request import ProcessAmendmentRequest
@@ -34,7 +35,7 @@ class ResolvedProcessAmendmentCall:
     parent_id: str
     failed_ops_out: Optional[list[FailedOp]]
     strict_profile: Optional[StrictProfile]
-    chapter_seed_skip: Optional[Set[Tuple[str, str]]]
+    chapter_seed_skip: Optional[Set[ChapterSeedSkipInput]]
     corpus: Optional[CorpusStore]
     future_repeals: Optional[Set[RepealTargetRef]]
     source_pathologies_out: Optional[list[SourcePathology]]
@@ -63,7 +64,7 @@ def resolve_process_amendment_call(
     parent_id: str,
     failed_ops_out: Optional[list[FailedOp]],
     strict_profile: Optional[StrictProfile],
-    chapter_seed_skip: Optional[Set[Tuple[str, str]]],
+    chapter_seed_skip: Optional[Set[ChapterSeedSkipInput]],
     corpus: Optional[CorpusStore],
     future_repeals: Optional[Set[RepealTargetRef]],
     source_pathologies_out: Optional[list[SourcePathology]],
