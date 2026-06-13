@@ -1361,7 +1361,7 @@ class TestPartLevelInsertionViaSeka:
         assert any(
             op.op_type == "INSERT"
             and op.target_unit_kind == "part"
-            and op.target_section == "iia"
+            and op.target_section == "2a"
             for op in ops
         )
 
