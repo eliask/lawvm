@@ -128,6 +128,9 @@ _FLAT_DIGIT_ITEM_RE = re.compile(r"^(\d+[a-z]?)\)\s")
 _DIGIT_ITEM_NUM_TOKEN_RE = re.compile(r"^(\d+[a-z]?)\)")
 _FLAT_DOT_ITEM_RE = re.compile(r"^(\d+[a-z]?)\.\s+(.+)$")
 _FLAT_DASH_ITEM_RE = re.compile(r"^[–—\-]\s")
+# Leading ``N)`` marker on an inline kohta item, where the body may be empty
+# (the marker sits alone in its own table cell) or follow immediately.
+_INLINE_KOHTA_MARKER_RE = re.compile(r"^\s*(\d+[a-z]?)\)\s*(.*)$", re.DOTALL)
 
 
 # ---------------------------------------------------------------------------
@@ -990,6 +993,122 @@ def _apply_fi_renest_flat_dot_item_subsections(children: List[IRNode]) -> List[I
     return rewritten
 
 
+def _row_marker_and_body(row: IRNode) -> Optional[tuple[str, str]]:
+    """Split a table row into its leading ``N)`` kohta marker and body text.
+
+    The marker may sit alone in the row's first cell (``"1)"``) or prefix that
+    cell's text (``"1) maatilan hankinta"``); the remaining cells carry the
+    rest of the item body (e.g. a trailing duration/price column).  Returns
+    ``(label, body)`` with ``label`` the bare digit token and ``body`` the
+    full item text with the marker stripped, or ``None`` when the row does not
+    begin with a kohta marker.
+    """
+    row_text = irnode_to_text(row).strip()
+    match = _INLINE_KOHTA_MARKER_RE.match(row_text)
+    if match is None:
+        return None
+    label = match.group(1)
+    if not label.isdigit():
+        return None
+    body = re.sub(r"\s+", " ", match.group(2)).strip()
+    return label, body
+
+
+def _apply_fi_split_inline_table_kohta_list(children: List[IRNode]) -> List[IRNode]:
+    """Split an inline ``N)`` kohta list table inside one moment's CONTENT.
+
+    Source witness family (1991/248 §45, 2002/1126 §6): a single moment whose
+    content is an intro sentence ending in ``:`` followed by a table that
+    serializes a genuine ``1) … N)`` kohta enumeration — each row's first cell
+    carries the ``N)`` marker and the remaining cells the item body.  The raw
+    parse leaves this as one flat CONTENT node with a nested TABLE and zero
+    item children, so item-target resolution (``… mom K kohta``) fails.
+
+    This rewrites the moment to the canonical kohta shape — an ``INTRO`` node
+    carrying the lead-in sentence followed by one ``PARAGRAPH`` per kohta — so
+    that item targets resolve exactly as for a properly-parsed kohta list.
+
+    Conservative trigger: fires only when the moment has a single CONTENT child
+    whose text ends with ``:``, that CONTENT has exactly one TABLE child, every
+    table row begins with a ``N)`` marker, and the markers form the exact
+    sequential series ``1, 2, …, N`` with ``N >= 2``.  Anything else is left
+    untouched so prose that merely contains an incidental ``1)`` is not split.
+
+    Formula matrices (rows carrying LaTeX math, ``$ … $``) are genuine tabular
+    data — a category paired with a pricing/computation formula — rather than a
+    pure enumeration layout, so they are deliberately left as a table for the
+    structured table projection to model and are never split here.
+    """
+    semantic_children = [c for c in children if c.kind != IRNodeKind.NUM]
+    if len(semantic_children) != 1:
+        return children
+    content = semantic_children[0]
+    if content.kind != IRNodeKind.CONTENT:
+        return children
+    intro_text = (content.text or "").strip()
+    if not intro_text or not intro_text.endswith(":"):
+        return children
+    tables = [c for c in content.children if c.kind == IRNodeKind.TABLE]
+    if len(tables) != 1:
+        return children
+    if any(c.kind != IRNodeKind.TABLE for c in content.children):
+        return children
+    table = tables[0]
+    rows = [c for c in table.children if c.kind == IRNodeKind.ROW]
+    if len(rows) != len(table.children):
+        return children
+    if "$" in irnode_to_text(table):
+        # LaTeX-bearing formula/data table — preserve as a table, do not split.
+        return children
+
+    # Group rows into kohta items: a row beginning with the next expected
+    # ``N)`` marker opens a new item; following marker-less rows are
+    # continuation text appended to the current item; fully empty rows are
+    # ignored (layout spacers).  Numbering must form the exact series 1..N.
+    items: List[tuple[str, str]] = []
+    expected = 1
+    for row in rows:
+        parsed = _row_marker_and_body(row)
+        row_text = re.sub(r"\s+", " ", irnode_to_text(row)).strip()
+        if parsed is not None and int(parsed[0]) == expected:
+            label, body = parsed
+            items.append((label, body))
+            expected += 1
+        elif parsed is not None:
+            # A marker that breaks the expected sequence (e.g. an out-of-order
+            # or restarted ``N)``) is ambiguous — decline rather than guess.
+            return children
+        elif not row_text:
+            continue
+        elif items:
+            # Continuation fragment of the current item.
+            prev_label, prev_body = items[-1]
+            joined = (prev_body + " " + row_text).strip() if prev_body else row_text
+            items[-1] = (prev_label, joined)
+        else:
+            # Non-marker, non-empty row before any item — not a kohta list.
+            return children
+
+    if len(items) < 2:
+        return children
+    if any(not body for _label, body in items):
+        return children
+
+    new_children: List[IRNode] = [IRNode(kind=IRNodeKind.INTRO, text=intro_text)]
+    for label, body in items:
+        new_children.append(
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label=label,
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text=f"{label})"),
+                    IRNode(kind=IRNodeKind.CONTENT, text=body),
+                ),
+            )
+        )
+    return new_children
+
+
 def _apply_hoist_trailing_wrapup_paragraph(children: List[IRNode]) -> List[IRNode]:
     """Promote trailing prose after numbered items to wrapUp."""
     numbered_positions = [
@@ -1594,6 +1713,12 @@ SECTION_RULES: List[NormalizationRule] = [
 
 # Applied to children of SUBSECTION nodes, BEFORE the positional-label counter.
 SUBSECTION_PRE_RULES: List[NormalizationRule] = [
+    NormalizationRule(
+        name="fi.split_inline_table_kohta_list",
+        apply=_apply_fi_split_inline_table_kohta_list,
+        description="Split an inline N) kohta-list table inside one moment's CONTENT into intro + item paragraphs.",
+        family="ontology_normalization",
+    ),
     NormalizationRule(
         name="fi.recover_intro_labeled_paragraphs",
         apply=_apply_recover_intro_labeled_paragraphs,

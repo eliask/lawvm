@@ -26,6 +26,7 @@ from lawvm.finland.profile.normalize import (
     _apply_fi_renest_flat_digit_item_subsections,
     _apply_fi_renest_flat_dot_item_subsections,
     _apply_fi_split_intro_then_numbered_list_subsections,
+    _apply_fi_split_inline_table_kohta_list,
     _apply_fi_split_inner_omission_paragraph_subsections,
     _apply_fi_split_subsection_at_numbered_list_restart,
     _apply_hoist_inline_content_omissions,
@@ -94,6 +95,7 @@ def test_section_rules_order():
 def test_subsection_pre_rules_order():
     """SUBSECTION_PRE_RULES must be in the original xml_ir.py call order."""
     expected_names = [
+        "fi.split_inline_table_kohta_list",
         "fi.recover_intro_labeled_paragraphs",
         "fi.hoist_inline_content_omissions",
     ]
@@ -138,8 +140,8 @@ def test_all_rules_have_family_tags():
     Item 7 of the post-wave-5 follow-up batch.
     """
     all_rules = SECTION_RULES + SUBSECTION_PRE_RULES + SUBSECTION_POST_RULES
-    assert len(all_rules) == 15, (
-        f"Expected 15 rules, got {len(all_rules)}. Update this test if rules are added."
+    assert len(all_rules) == 16, (
+        f"Expected 16 rules, got {len(all_rules)}. Update this test if rules are added."
     )
     for rule in all_rules:
         assert isinstance(rule.family, str) and rule.family, (
@@ -399,6 +401,140 @@ def test_fi_renest_flat_dot_item_requires_at_least_two_items():
     children = [header_sub, item1]
     result = _apply_fi_renest_flat_dot_item_subsections(children)
     assert len(result) == 2
+
+
+def _table(rows) -> IRNode:
+    return IRNode(kind=IRNodeKind.TABLE, children=tuple(rows))
+
+
+def _row(cells) -> IRNode:
+    cell_nodes = tuple(IRNode(kind=IRNodeKind.CELL, text=c) for c in cells)
+    return IRNode(kind=IRNodeKind.ROW, children=cell_nodes)
+
+
+def test_fi_split_inline_table_kohta_list_fires_marker_with_body():
+    """An inline N) kohta-list table (marker+body in first cell) splits into items."""
+    table = _table([
+        _row(["1) maatilan hankinta", "10-25 vuotta"]),
+        _row(["2) lisäalueen hankinta", "5-25 vuotta"]),
+        _row(["3) kotieläintuotantorakennus", "5-25 vuotta"]),
+    ])
+    content = IRNode(
+        kind=IRNodeKind.CONTENT,
+        text="Valtionlainojen laina-aika porrastetaan seuraavasti:",
+        children=(table,),
+    )
+    result = _apply_fi_split_inline_table_kohta_list([content])
+    assert result[0].kind == IRNodeKind.INTRO
+    paras = [c for c in result if c.kind == IRNodeKind.PARAGRAPH]
+    assert [p.label for p in paras] == ["1", "2", "3"]
+    first = paras[0]
+    assert any(c.kind == IRNodeKind.NUM and c.text == "1)" for c in first.children)
+    body = next(c for c in first.children if c.kind == IRNodeKind.CONTENT)
+    assert body.text == "maatilan hankinta 10-25 vuotta"
+
+
+def test_fi_split_inline_table_kohta_list_fires_marker_alone_cell():
+    """Marker alone in first cell with body in following cells still splits."""
+    table = _table([
+        _row(["1)", "radioamatöörilähetin", "16,00 euroa"]),
+        _row(["2)", "VHF/UHF-lähetin", "18,50 euroa"]),
+    ])
+    content = IRNode(
+        kind=IRNodeKind.CONTENT,
+        text="Lupamaksua peritään seuraavasti:",
+        children=(table,),
+    )
+    result = _apply_fi_split_inline_table_kohta_list([content])
+    paras = [c for c in result if c.kind == IRNodeKind.PARAGRAPH]
+    assert [p.label for p in paras] == ["1", "2"]
+    body = next(c for c in paras[0].children if c.kind == IRNodeKind.CONTENT)
+    assert body.text == "radioamatöörilähetin 16,00 euroa"
+
+
+def test_fi_split_inline_table_kohta_list_joins_continuation_rows():
+    """Continuation rows (no marker) and empty spacer rows fold into the item."""
+    table = _table([
+        _row([""]),  # layout spacer
+        _row(["1) maatilan hankinta", "10-25 vuotta"]),
+        _row(["2) muu maatilan investointi, yhteismetsän"]),
+        _row(["osakaskunnan lisämaan ja osuuden osto"]),
+        _row(["sekä pienyritystoiminta", "5-15 vuotta"]),
+    ])
+    content = IRNode(
+        kind=IRNodeKind.CONTENT,
+        text="Laina-aika porrastetaan seuraavasti:",
+        children=(table,),
+    )
+    result = _apply_fi_split_inline_table_kohta_list([content])
+    paras = [c for c in result if c.kind == IRNodeKind.PARAGRAPH]
+    assert [p.label for p in paras] == ["1", "2"]
+    body2 = next(c for c in paras[1].children if c.kind == IRNodeKind.CONTENT)
+    assert body2.text == (
+        "muu maatilan investointi, yhteismetsän osakaskunnan "
+        "lisämaan ja osuuden osto sekä pienyritystoiminta 5-15 vuotta"
+    )
+
+
+def test_fi_split_inline_table_kohta_list_no_change_without_colon_intro():
+    """Rule does not fire when the lead-in content does not end with ':'."""
+    table = _table([_row(["1) item"]), _row(["2) item"])])
+    content = IRNode(
+        kind=IRNodeKind.CONTENT,
+        text="A complete sentence with no colon.",
+        children=(table,),
+    )
+    result = _apply_fi_split_inline_table_kohta_list([content])
+    assert result == [content]
+
+
+def test_fi_split_inline_table_kohta_list_no_change_on_non_sequential():
+    """Rule does not fire when markers are not the exact 1..N series."""
+    table = _table([_row(["1) item"]), _row(["3) item"])])
+    content = IRNode(
+        kind=IRNodeKind.CONTENT,
+        text="Lead-in seuraavasti:",
+        children=(table,),
+    )
+    result = _apply_fi_split_inline_table_kohta_list([content])
+    assert result == [content]
+
+
+def test_fi_split_inline_table_kohta_list_no_change_on_prose_with_incidental_marker():
+    """Prose containing an incidental '1)' but no kohta-list table is not split."""
+    # A colon-ended content with a stray parenthetical, no TABLE child.
+    content = _content(
+        "Korvaus lasketaan 1) momentin mukaan ja maksetaan seuraavasti:"
+    )
+    result = _apply_fi_split_inline_table_kohta_list([content])
+    assert result == [content]
+
+
+def test_fi_split_inline_table_kohta_list_no_change_on_latex_formula_table():
+    """A formula/data table (rows carry LaTeX math) is preserved, not split."""
+    table = _table([
+        _row(["1) radioamatöörilähetin", r"$ S \cdot 1295,50 \, \text{€} $"]),
+        _row(["2) korotetun lähetystehon asema", r"$ B_0 \cdot S \cdot 1295,50 $"]),
+    ])
+    content = IRNode(
+        kind=IRNodeKind.CONTENT,
+        text="Taajuusmaksu määräytyy seuraavan kaavan mukaisesti:",
+        children=(table,),
+    )
+    result = _apply_fi_split_inline_table_kohta_list([content])
+    assert result == [content]
+
+
+def test_fi_split_inline_table_kohta_list_no_change_single_item():
+    """A one-item table is not a genuine enumeration and is left untouched."""
+    table = _table([_row(["1) only item", "value"])])
+    content = IRNode(
+        kind=IRNodeKind.CONTENT,
+        text="Lead-in seuraavasti:",
+        children=(table,),
+    )
+    result = _apply_fi_split_inline_table_kohta_list([content])
+    assert result == [content]
 
 
 def test_hoist_trailing_wrapup_paragraph_fires():
