@@ -330,6 +330,104 @@ def sort_group_ops_for_apply(
     return sorted(group_ops, key=lambda o: (-(o.target_paragraph or 0), _item_target_sort_key(o.target_item)))
 
 
+def mixed_subsection_group_requires_insert_first(
+    ops: List[AmendmentOp],
+    target_ctx: TargetContext,
+) -> bool:
+    """Return true when mixed subsection ops become valid only after inserts."""
+    live_numeric_labels = {
+        int(slot.label)
+        for slot in target_ctx.subsection_slots
+        if slot.label is not None and str(slot.label).isdigit()
+    }
+    if not live_numeric_labels:
+        return False
+
+    subsec_inserts = [
+        o
+        for o in ops
+        if o.op_type == "INSERT" and o.target_paragraph is not None and not o.target_item and not o.target_special
+    ]
+    subsec_replaces = [
+        o
+        for o in ops
+        if o.op_type == "REPLACE" and o.target_paragraph is not None and not o.target_item and not o.target_special
+    ]
+    subsec_renumbers = [
+        o
+        for o in ops
+        if o.op_type == "RENUMBER" and o.target_paragraph is not None and not o.target_item and not o.target_special
+    ]
+    if not subsec_inserts or not subsec_replaces:
+        return False
+
+    insert_targets = {int(o.target_paragraph or 0) for o in subsec_inserts}
+    renumber_targets = {int(o.target_paragraph or 0) for o in subsec_renumbers}
+    if insert_targets & renumber_targets:
+        for replace_op in subsec_replaces:
+            if "rebase_duplicate_target_shifted_replace" not in replace_op.target_guessing_provenance_tags:
+                continue
+            replace_target = int(replace_op.target_paragraph or 0)
+            if any(insert_target + 1 == replace_target for insert_target in insert_targets):
+                return True
+
+    max_live_label = max(live_numeric_labels)
+    for replace_op in subsec_replaces:
+        replace_target = int(replace_op.target_paragraph or 0)
+        if replace_target in live_numeric_labels:
+            continue
+        insert_count_before_target = sum(
+            1 for insert_op in subsec_inserts if int(insert_op.target_paragraph or 0) <= replace_target
+        )
+        if insert_count_before_target <= 0:
+            continue
+        if replace_target <= max_live_label + insert_count_before_target:
+            return True
+    return False
+
+
+def stabilize_insert_order(ops: List[AmendmentOp], target_ctx: TargetContext) -> List[AmendmentOp]:
+    """Stabilize mixed subsection apply order using the live target snapshot."""
+    subsec_inserts = [
+        o
+        for o in ops
+        if o.op_type == "INSERT" and o.target_paragraph is not None and not o.target_item and not o.target_special
+    ]
+    subsec_replaces = [
+        o
+        for o in ops
+        if o.op_type == "REPLACE" and o.target_paragraph is not None and not o.target_item and not o.target_special
+    ]
+    if not subsec_inserts or not subsec_replaces:
+        return ops
+
+    other_ops = [o for o in ops if o not in subsec_inserts and o not in subsec_replaces]
+    ordered_replaces = [o for o in ops if o in subsec_replaces]
+    ascending_inserts = sorted(
+        subsec_inserts,
+        key=lambda o: (o.target_paragraph or 0, o.target_item or ""),
+    )
+    same_wave_shift_renumbers = [
+        o
+        for o in other_ops
+        if (
+            o.op_type == "RENUMBER"
+            and o.target_paragraph is not None
+            and not o.target_item
+            and not o.target_special
+            and any(int(ins.target_paragraph or 0) == int(o.target_paragraph or 0) for ins in subsec_inserts)
+            and any(
+                "rebase_duplicate_target_shifted_replace" in rep.target_guessing_provenance_tags
+                for rep in subsec_replaces
+            )
+        )
+    ]
+    retained_other_ops = [o for o in other_ops if o not in same_wave_shift_renumbers]
+    if mixed_subsection_group_requires_insert_first(ops, target_ctx):
+        return retained_other_ops + ascending_inserts + ordered_replaces + same_wave_shift_renumbers
+    return retained_other_ops + ordered_replaces + ascending_inserts + same_wave_shift_renumbers
+
+
 def append_compiled_group_ops(
     compiled_ops_out: Optional[List[Dict[str, object]]],
     resolved_ops: List[ResolvedOp],
