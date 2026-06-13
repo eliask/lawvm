@@ -134,6 +134,71 @@ def test_sort_order_detector_only_compares_same_ordered_child_kinds() -> None:
     assert messages == ["body: section out of order: 2 > 1"]
 
 
+def test_mixed_hierarchy_detector_flags_direct_section_alongside_chapter() -> None:
+    tree = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.CHAPTER, label="15"),
+            IRNode(kind=IRNodeKind.SECTION, label="149a"),
+        ),
+    )
+
+    results = run_invariant_detector(tree, "mixed_hierarchy")
+
+    assert len(results) == 1
+    assert results[0].kind == "mixed_hierarchy_child"
+    assert results[0].message == "body: direct section:149a alongside chapter:15"
+    assert results[0].detail["parent_kind"] == "body"
+    assert results[0].detail["child_kind"] == "section"
+    assert results[0].detail["label"] == "149a"
+    assert results[0].detail["container_kind"] == "chapter"
+    assert results[0].detail["container_label"] == "15"
+
+
+def test_mixed_hierarchy_detector_flags_direct_section_alongside_part() -> None:
+    tree = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.PART, label="1"),
+            IRNode(kind=IRNodeKind.SECTION, label="2"),
+        ),
+    )
+
+    messages = run_invariant_detector_messages(tree, "mixed_hierarchy")
+
+    assert messages == ["body: direct section:2 alongside part:1"]
+
+
+def test_mixed_hierarchy_detector_allows_section_subsections() -> None:
+    tree = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="1"),
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="2"),
+                ),
+            ),
+        ),
+    )
+
+    assert run_invariant_detector(tree, "mixed_hierarchy") == []
+
+
+def test_mixed_hierarchy_detector_is_not_part_of_default_tree_invariants() -> None:
+    tree = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.CHAPTER, label="15"),
+            IRNode(kind=IRNodeKind.SECTION, label="149a"),
+        ),
+    )
+
+    assert run_invariant_detector(tree, "all_tree") == []
+
+
 def test_fi_invariant_detector_messages_use_finland_label_normalizer() -> None:
     tree = IRNode(
         kind=IRNodeKind.BODY,

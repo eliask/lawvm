@@ -270,6 +270,7 @@ TreeInvariantKind = Literal[
     "normalized_duplicate_label",
     "sort_order",
     "unexpected_child_kind",
+    "mixed_hierarchy_child",
 ]
 
 
@@ -1082,6 +1083,8 @@ class TreeInvariantViolation:
     count: Optional[int] = None
     previous_label: Optional[str] = None
     next_label: Optional[str] = None
+    container_kind: Optional[str] = None
+    container_label: Optional[str] = None
 
     @property
     def path_text(self) -> str:
@@ -1095,6 +1098,14 @@ class TreeInvariantViolation:
             return f"{self.path_text}: normalized-duplicate {self.child_kind}:{self.normalized_label}"
         if self.kind == "sort_order":
             return f"{self.path_text}: {self.child_kind} out of order: {self.previous_label} > {self.next_label}"
+        if self.kind == "mixed_hierarchy_child":
+            container = self.container_kind or "container"
+            if self.container_label:
+                container = f"{container}:{self.container_label}"
+            child = self.child_kind or "child"
+            if self.label:
+                child = f"{child}:{self.label}"
+            return f"{self.path_text}: direct {child} alongside {container}"
         return f"{self.path_text}: unexpected {self.child_kind} inside {self.parent_kind}"
 
     def to_dict(self) -> dict[str, object]:
@@ -1110,6 +1121,8 @@ class TreeInvariantViolation:
             "count": self.count,
             "previous_label": self.previous_label,
             "next_label": self.next_label,
+            "container_kind": self.container_kind,
+            "container_label": self.container_label,
         }
 
 
@@ -1253,6 +1266,47 @@ def iter_tree_invariant_violations(
                             parent_kind=parent_kind,
                             child_kind=child_kind,
                         )
+
+        if selected is not None and "mixed_hierarchy_child" in selected:
+            child_entries = [
+                (index, _kind_str(child.kind), child.label)
+                for index, child in enumerate(node.children)
+                if child.label
+            ]
+            container_rank = {"part": 0, "chapter": 1, "section": 2}
+            ranked_children = [
+                (index, kind, label, container_rank[kind])
+                for index, kind, label in child_entries
+                if kind in container_rank
+            ]
+            for child_index, child_kind, child_label, child_rank in ranked_children:
+                previous_containers = [
+                    (container_index, container_kind, container_label)
+                    for container_index, container_kind, container_label, container_rank_value in ranked_children
+                    if container_index < child_index and container_rank_value < child_rank
+                ]
+                following_containers = [
+                    (container_index, container_kind, container_label)
+                    for container_index, container_kind, container_label, container_rank_value in ranked_children
+                    if container_index > child_index and container_rank_value < child_rank
+                ]
+                container = (
+                    previous_containers[-1]
+                    if previous_containers
+                    else (following_containers[0] if following_containers else None)
+                )
+                if container is None:
+                    continue
+                _container_index, container_kind, container_label = container
+                yield TreeInvariantViolation(
+                    kind="mixed_hierarchy_child",
+                    path=path,
+                    parent_kind=_kind_str(node.kind),
+                    child_kind=child_kind,
+                    label=child_label,
+                    container_kind=container_kind,
+                    container_label=container_label,
+                )
 
         for child in node.children:
             child_path = path + ((_kind_str(child.kind), child.label),)

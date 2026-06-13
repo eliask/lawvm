@@ -25,6 +25,7 @@ InvariantDetectorName = Literal[
     "label_normalization_collision",
     "illegal_edge",
     "sort_order",
+    "mixed_hierarchy",
     "all_tree",
     "text_duplication",
     "flattened_sublist_family",
@@ -36,6 +37,7 @@ SUPPORTED_INVARIANT_DETECTORS: tuple[InvariantDetectorName, ...] = (
     "label_normalization_collision",
     "illegal_edge",
     "sort_order",
+    "mixed_hierarchy",
     "all_tree",
     "text_duplication",
     "flattened_sublist_family",
@@ -430,7 +432,7 @@ def run_invariant_detector(
     if detector == "label_normalization_collision":
         return run_label_normalization_collision_detector(ir, target_path=target_path)
 
-    if detector in ("duplicate_label", "illegal_edge", "sort_order", "all_tree"):
+    if detector in ("duplicate_label", "illegal_edge", "sort_order", "mixed_hierarchy", "all_tree"):
         selected_families: set[TreeInvariantKind] | None = None
         if detector == "duplicate_label":
             selected_families = {"duplicate_label", "normalized_duplicate_label"}
@@ -438,6 +440,8 @@ def run_invariant_detector(
             selected_families = {"unexpected_child_kind"}
         elif detector == "sort_order":
             selected_families = {"sort_order"}
+        elif detector == "mixed_hierarchy":
+            selected_families = {"mixed_hierarchy_child"}
         return [
             InvariantDetectorResult(
                 detector=detector,
@@ -452,6 +456,8 @@ def run_invariant_detector(
                     "count": violation.count,
                     "previous_label": violation.previous_label,
                     "next_label": violation.next_label,
+                    "container_kind": violation.container_kind,
+                    "container_label": violation.container_label,
                 },
             )
             for violation in iter_tree_invariant_violations(ir, families=selected_families)

@@ -26,6 +26,7 @@ Detectors:
                           the jurisdiction's slot-identity normalizer
   illegal_edge           impossible parent→child nesting
   sort_order             out-of-order same-kind labeled siblings
+  mixed_hierarchy        direct lower-level provisions alongside higher containers
   all_tree               all check_invariants violations (covers both above)
   text_duplication       large duplicated text blocks (lint-level)
   flattened_sublist_family repeated letter/roman/digit families suggesting
