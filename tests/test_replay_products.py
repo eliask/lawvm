@@ -2051,6 +2051,35 @@ def test_replay_fold_projection_typed_invariants_include_profile_metadata() -> N
     assert rows[0]["surface"] == "replay_fold_tree"
     assert rows[0]["profile_id"] == "core_structural_tree_all"
     assert rows[0]["kind"] == "unexpected_child_kind"
+    profiles = cast(list[dict[str, object]], meta["replay_invariant_profiles"])
+    assert profiles == [
+        {
+            "profile_id": "core_replay_strict_v1",
+            "tree_profiles": (
+                {
+                    "surface": "replay_fold_tree",
+                    "profile_id": "core_replay_delta_minimal",
+                    "families": ("duplicate_label", "sort_order"),
+                },
+            ),
+            "mutation_accounting": "hard",
+            "transition_detectors": (
+                "descendant_sibling_loss",
+                "same_source_descendant_snapshot_shadow",
+            ),
+            "timeline_invariants": (
+                "temporal_overlap",
+                "temporary_overlay",
+                "expiry_chain",
+                "replay_timeline",
+            ),
+            "warnings": ("text_duplication", "flattened_sublist_family"),
+            "local_allowance_policy": "frontend_required",
+            "local_classifier_policy": "frontend_required",
+            "safe_default": "profile_is_declarative_not_replay_authorization",
+            "replay_authorization_claims": False,
+        }
+    ]
 
 
 def test_validate_replay_products_detects_mixed_hierarchy_products() -> None:

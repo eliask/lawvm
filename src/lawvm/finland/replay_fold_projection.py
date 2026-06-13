@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, cast
 
 from lawvm.core import tree_ops as _tops
 from lawvm.core.invariant_profiles import collect_tree_invariant_violations
+from lawvm.core.invariant_profiles import core_replay_strict_profile
 from lawvm.core.invariant_profiles import project_tree_invariant_dicts
 from lawvm.core.invariant_profiles import structural_tree_all_profile
 from lawvm.core.phase_result import Finding
@@ -18,6 +19,7 @@ from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir
 from lawvm.finland.statute import ReplayState
 
 _FI_REPLAY_FOLD_TREE_PROFILE = structural_tree_all_profile("replay_fold_tree")
+_FI_REPLAY_FOLD_INVARIANT_PROFILE = core_replay_strict_profile("replay_fold_tree")
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,8 +33,19 @@ class ReplayFoldProjectionRequest:
     replay_print: Callable[[str], None]
 
 
+def _record_replay_invariant_profile(replay_meta_out: Dict[str, object]) -> None:
+    profiles = replay_meta_out.setdefault("replay_invariant_profiles", [])
+    rows = cast(list[dict[str, object]], profiles)
+    profile_row = _FI_REPLAY_FOLD_INVARIANT_PROFILE.to_dict()
+    if profile_row not in rows:
+        rows.append(profile_row)
+
+
 def project_replay_fold(request: ReplayFoldProjectionRequest) -> ReplayState:
     """Normalize replay-fold IR and project invariant/lint diagnostics."""
+    if request.replay_meta_out is not None:
+        _record_replay_invariant_profile(request.replay_meta_out)
+
     replay_fold_state = request.state.with_ir(
         _strip_standalone_subsection_item_prefixes_ir(request.state.ir)
     )
