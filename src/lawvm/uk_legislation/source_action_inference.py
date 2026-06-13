@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from lawvm.uk_legislation.effects import UKEffectRecord
+from lawvm.uk_legislation.lowering_actions import (
+    is_uk_benign_application_overlay_effect_type,
+)
 from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
     _append_uk_effect_lowering_rejection,
@@ -44,6 +47,26 @@ def append_no_supported_action_rejection(
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
     """Record the terminal missing-action lane after source inference fails."""
+    if is_uk_benign_application_overlay_effect_type(effect_type):
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_application_overlay_no_textual_action_observed",
+            family="applicability_scope",
+            reason_code="application_overlay_no_textual_action",
+            reason=(
+                "UK effect is a non-textual application/extent overlay "
+                "(applied / modified / excluded / extended / power conferred / "
+                "transfer of functions / earlier-affecting-provision housekeeping); "
+                "it does not mutate the affected Act's consolidated text, so "
+                "lowering correctly produces no replay operation. Recorded as a "
+                "non-blocking observation rather than a missing-action rejection."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={"effect_type_normalized": effect_type},
+        )
+        return
     unsupported_renumber = _uk_unsupported_metadata_renumber_rejection(effect)
     if unsupported_renumber is not None:
         _append_uk_effect_lowering_rejection(

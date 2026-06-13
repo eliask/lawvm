@@ -3564,7 +3564,10 @@ def classify_uk_manual_compile_frontier(
         }
 
     if (
-        "uk_effect_lowering_no_supported_action_rejected" in all_rules
+        (
+            "uk_effect_lowering_no_supported_action_rejected" in all_rules
+            or "uk_effect_application_overlay_no_textual_action_observed" in all_rules
+        )
         and _is_uk_non_textual_modification_effect_type(effect_type_norm)
     ):
         return {
@@ -3579,7 +3582,10 @@ def classify_uk_manual_compile_frontier(
             ),
         }
 
-    if "uk_effect_lowering_no_supported_action_rejected" in all_rules:
+    if (
+        "uk_effect_lowering_no_supported_action_rejected" in all_rules
+        or "uk_effect_application_overlay_no_textual_action_observed" in all_rules
+    ):
         return {
             "status": "non_textual_or_out_of_scope",
             "rule_id": "uk_manual_frontier_unsupported_effect_family",
