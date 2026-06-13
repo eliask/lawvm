@@ -7,14 +7,18 @@ apply, so they belong in their own module rather than inside grafter.py.
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from dataclasses import replace as dc_replace
 from functools import lru_cache
 from typing import TYPE_CHECKING, List, Optional, Set, Tuple
 
+import lxml.etree as etree
+
 from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
-from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.body_pairing import build_observed_body_inventory
+from lawvm.finland.helpers import _norm_num_token, _roman_label_to_arabic
 from lawvm.finland.ops import (
     ScopeConfidence,
     _lo_path_dict,
@@ -115,6 +119,205 @@ def chapter_chunks_from_johtolause(johto: str) -> List[Tuple[str, str]]:
         end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
         chunks.append((labels[-1], text[start:end]))
     return chunks
+
+
+def find_body_section_chapter(
+    muutos_tree: etree._Element,
+    section_norm: str,
+) -> str | None:
+    """Return the amendment-body chapter label for *section_norm*, if present."""
+    inventory = build_observed_body_inventory(muutos_tree)
+    for bpu in inventory:
+        if bpu.kind == "section" and _norm_num_token(bpu.label) == section_norm and bpu.chapter_label:
+            return bpu.chapter_label
+    return None
+
+
+def retarget_heading_insert_body_chapter_from_close_live_sibling(
+    *,
+    muutos_tree: etree._Element,
+    section_norm: str,
+    body_chapter: str,
+    master: "ReplayState",
+) -> str:
+    """Retarget a stale heading-only insert wrapper from a very close live sibling."""
+    if not re.fullmatch(r"\d+", section_norm):
+        return body_chapter
+
+    body = (
+        muutos_tree
+        if etree.QName(muutos_tree.tag).localname == "body"
+        else muutos_tree.find(".//{*}body")
+    )
+    if body is None:
+        return body_chapter
+
+    target_num = int(section_norm)
+    for sec in body.findall(".//{*}section"):
+        num_el = sec.find("{*}num")
+        if num_el is None or not num_el.text:
+            continue
+        sec_label = _norm_num_token(re.sub(r"\s*§.*$", "", num_el.text).strip())
+        if sec_label != section_norm:
+            continue
+        parent = sec.getparent()
+        if parent is None or etree.QName(parent.tag).localname != "chapter":
+            return body_chapter
+        chapter_num = parent.find("{*}num")
+        if chapter_num is None or not chapter_num.text:
+            return body_chapter
+        parent_label = _norm_num_token(chapter_num.text).removesuffix("luku")
+        if parent_label != body_chapter:
+            return body_chapter
+
+        close_live_chapters: dict[int, set[str]] = defaultdict(set)
+        for sibling in parent.findall("./{*}section"):
+            sibling_num = sibling.find("{*}num")
+            if sibling_num is None or not sibling_num.text:
+                continue
+            sibling_label = _norm_num_token(re.sub(r"\s*§.*$", "", sibling_num.text).strip())
+            if not re.fullmatch(r"\d+", sibling_label):
+                continue
+            distance = abs(int(sibling_label) - target_num)
+            if distance == 0 or distance > 2:
+                continue
+            live_path = master.find_section_path(sibling_label, None, None)
+            if live_path is None:
+                continue
+            live_chapter = next((label for kind, label in live_path if kind == "chapter"), None)
+            if live_chapter:
+                close_live_chapters[distance].add(live_chapter)
+        if close_live_chapters:
+            nearest_distance = min(close_live_chapters)
+            nearest_live_chapters = close_live_chapters[nearest_distance]
+            if len(nearest_live_chapters) == 1:
+                return next(iter(nearest_live_chapters))
+        return body_chapter
+
+    return body_chapter
+
+
+def retarget_duplicate_body_section_scope_from_close_live_siblings(
+    *,
+    muutos_tree: etree._Element,
+    section_norm: str,
+    body_chapter: str,
+    body_part: str | None,
+    master: "ReplayState",
+) -> tuple[str | None, str] | None:
+    """Retarget stale duplicate-labelled body scope from nearby live siblings."""
+    target_match = re.fullmatch(r"(\d+)[a-z]?", section_norm, re.I)
+    if target_match is None:
+        return None
+
+    body = (
+        muutos_tree
+        if etree.QName(muutos_tree.tag).localname == "body"
+        else muutos_tree.find(".//{*}body")
+    )
+    if body is None:
+        return None
+
+    target_num = int(target_match.group(1))
+    is_letter_suffix_section = section_norm != str(target_num)
+
+    def _part_label_for_element(el: etree._Element) -> str | None:
+        parent = el.getparent()
+        while parent is not None:
+            if str(parent.tag).rsplit("}", 1)[-1] == "part":
+                part_num = parent.find("{*}num")
+                if part_num is None or not part_num.text:
+                    return None
+                raw = _norm_num_token(part_num.text).removesuffix("osa")
+                arabic = _roman_label_to_arabic(raw.lower()) if raw else None
+                return str(arabic) if arabic is not None else (raw or None)
+            parent = parent.getparent()
+        return None
+
+    for sec in body.findall(".//{*}section"):
+        num_el = sec.find("{*}num")
+        if num_el is None or not num_el.text:
+            continue
+        sec_label = _norm_num_token(re.sub(r"\s*§.*$", "", num_el.text).strip())
+        if sec_label != section_norm:
+            continue
+
+        parent = sec.getparent()
+        if parent is None or etree.QName(parent.tag).localname != "chapter":
+            continue
+        chapter_num = parent.find("{*}num")
+        if chapter_num is None or not chapter_num.text:
+            continue
+        parent_label = _norm_num_token(chapter_num.text).removesuffix("luku")
+        if parent_label != body_chapter:
+            continue
+
+        if _part_label_for_element(sec) != body_part:
+            continue
+
+        close_live_scopes: dict[int, set[tuple[str | None, str]]] = defaultdict(set)
+        for sibling in parent.findall("./{*}section"):
+            sibling_num = sibling.find("{*}num")
+            if sibling_num is None or not sibling_num.text:
+                continue
+            sibling_label = _norm_num_token(re.sub(r"\s*§.*$", "", sibling_num.text).strip())
+            sibling_match = re.fullmatch(r"(\d+)[a-z]?", sibling_label, re.I)
+            if sibling_match is None:
+                continue
+            if sibling_label != sibling_match.group(1):
+                continue
+            distance = abs(int(sibling_match.group(1)) - target_num)
+            if distance > 2:
+                continue
+            if distance == 0 and not is_letter_suffix_section:
+                continue
+            live_path = master.find_section_path(sibling_match.group(1), None, body_part)
+            if live_path is None:
+                continue
+            live_part = next((label for kind, label in live_path if kind == "part"), None)
+            live_chapter = next((label for kind, label in live_path if kind == "chapter"), None)
+            if not live_chapter:
+                continue
+            if live_chapter == body_chapter and live_part == body_part:
+                continue
+            close_live_scopes[distance].add((live_part, live_chapter))
+
+        if close_live_scopes:
+            nearest_distance = min(close_live_scopes)
+            nearest_live_scopes = close_live_scopes[nearest_distance]
+            if len(nearest_live_scopes) == 1:
+                return next(iter(nearest_live_scopes))
+        return None
+
+    return None
+
+
+def body_has_pseudo_chapter_marker(
+    muutos_tree: etree._Element,
+    chapter_label: str,
+) -> bool:
+    """Return True if the amendment body contains a pseudo-chapter marker."""
+    inventory = build_observed_body_inventory(muutos_tree)
+    for bpu in inventory:
+        if bpu.kind == "chapter" and bpu.label == chapter_label and bpu.xml_element is not None:
+            tag = getattr(bpu.xml_element, "tag", None)
+            if tag is not None and etree.QName(tag).localname == "section":
+                return True
+    return False
+
+
+def body_has_real_chapter_container(
+    muutos_tree: etree._Element,
+    chapter_label: str,
+) -> bool:
+    """Return True when the amendment body contains a real <chapter> container."""
+    inventory = build_observed_body_inventory(muutos_tree)
+    for bpu in inventory:
+        if bpu.kind == "chapter" and bpu.label == chapter_label and bpu.xml_element is not None:
+            tag = getattr(bpu.xml_element, "tag", None)
+            if tag is not None and etree.QName(tag).localname == "chapter":
+                return True
+    return False
 
 
 def _iter_part_scoped_chapters(

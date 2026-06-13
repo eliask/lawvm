@@ -162,7 +162,6 @@ from lawvm.finland.johtolause_supplements import (
 # ---------------------------------------------------------------------------
 from lawvm.finland.body_pairing import (
     assign_body_units,
-    build_observed_body_inventory as _build_observed_body_inventory,
 )
 from lawvm.finland.restructure_plan import (
     deferred_plan_op_finding,
@@ -625,21 +624,8 @@ def _find_body_section_chapter(
     muutos_tree: "etree._Element",
     section_norm: str,
 ) -> Optional[str]:
-    """Return the chapter label for *section_norm* in the amendment body.
-
-    Uses the body inventory (which handles pseudo-chapter-markers) to find
-    which chapter a section belongs to in the amendment body.  Returns None
-    if the section is not found or has no chapter context.
-
-    Used to correct chapter scope when ``chapter_scope_carry_forward`` was
-    applied and the amendment body places the section in a letter-suffix
-    chapter created via pseudo-marker (e.g. "7 a luku" inside chapter 7).
-    """
-    inventory = _build_observed_body_inventory(muutos_tree)
-    for bpu in inventory:
-        if bpu.kind == "section" and _norm_num_token(bpu.label) == section_norm and bpu.chapter_label:
-            return bpu.chapter_label
-    return None
+    """Backward-compat wrapper for scope.find_body_section_chapter."""
+    return _find_body_section_chapter_impl(muutos_tree, section_norm)
 
 
 def _retarget_heading_insert_body_chapter_from_close_live_sibling(
@@ -649,67 +635,13 @@ def _retarget_heading_insert_body_chapter_from_close_live_sibling(
     body_chapter: str,
     master: "ReplayState",
 ) -> str:
-    """Retarget a stale heading-only insert wrapper from a very close live sibling.
-
-    This is intentionally narrow. It only applies to numeric section-heading
-    inserts where the amendment body chapter wrapper is stale after a nearby
-    chapter relabeling, such as `1962/420` + `2024/247` (`22 §` under stale
-    `3 luku`, while the live neighbor `20 §` already lives under chapter `4`).
-    """
-    if not re.fullmatch(r"\d+", section_norm):
-        return body_chapter
-
-    body = (
-        muutos_tree
-        if etree.QName(muutos_tree.tag).localname == "body"
-        else muutos_tree.find(".//{*}body")
+    """Backward-compat wrapper for scope.retarget_heading_insert_body_chapter_from_close_live_sibling."""
+    return _retarget_heading_insert_body_chapter_from_close_live_sibling_impl(
+        muutos_tree=muutos_tree,
+        section_norm=section_norm,
+        body_chapter=body_chapter,
+        master=master,
     )
-    if body is None:
-        return body_chapter
-
-    target_num = int(section_norm)
-    for sec in body.findall(".//{*}section"):
-        num_el = sec.find("{*}num")
-        if num_el is None or not num_el.text:
-            continue
-        sec_label = _norm_num_token(re.sub(r"\s*§.*$", "", num_el.text).strip())
-        if sec_label != section_norm:
-            continue
-        parent = sec.getparent()
-        if parent is None or etree.QName(parent.tag).localname != "chapter":
-            return body_chapter
-        chapter_num = parent.find("{*}num")
-        if chapter_num is None or not chapter_num.text:
-            return body_chapter
-        parent_label = _norm_num_token(chapter_num.text).removesuffix("luku")
-        if parent_label != body_chapter:
-            return body_chapter
-
-        close_live_chapters: dict[int, set[str]] = defaultdict(set)
-        for sibling in parent.findall("./{*}section"):
-            sibling_num = sibling.find("{*}num")
-            if sibling_num is None or not sibling_num.text:
-                continue
-            sibling_label = _norm_num_token(re.sub(r"\s*§.*$", "", sibling_num.text).strip())
-            if not re.fullmatch(r"\d+", sibling_label):
-                continue
-            distance = abs(int(sibling_label) - target_num)
-            if distance == 0 or distance > 2:
-                continue
-            live_path = master.find_section_path(sibling_label, None, None)
-            if live_path is None:
-                continue
-            live_chapter = next((label for kind, label in live_path if kind == "chapter"), None)
-            if live_chapter:
-                close_live_chapters[distance].add(live_chapter)
-        if close_live_chapters:
-            nearest_distance = min(close_live_chapters)
-            nearest_live_chapters = close_live_chapters[nearest_distance]
-            if len(nearest_live_chapters) == 1:
-                return next(iter(nearest_live_chapters))
-        return body_chapter
-
-    return body_chapter
 
 
 def _retarget_duplicate_body_section_scope_from_close_live_siblings(
@@ -720,141 +652,30 @@ def _retarget_duplicate_body_section_scope_from_close_live_siblings(
     body_part: str | None,
     master: "ReplayState",
 ) -> tuple[str | None, str] | None:
-    """Retarget stale duplicate-labelled body scope from nearby live siblings.
-
-    This is intentionally narrow. It only applies when the amendment body places
-    a numeric section under one chapter, that section label is duplicated in the
-    live tree, and close numeric siblings in the same body chapter unanimously
-    resolve to one different live chapter. This covers stale body wrappers like
-    `1999/488 <- 2021/984`, where body chapter `3` carries sections `16–20`
-    even though the live statute keeps that family in chapter `4`.
-    """
-    target_match = re.fullmatch(r"(\d+)[a-z]?", section_norm, re.I)
-    if target_match is None:
-        return None
-
-    body = (
-        muutos_tree
-        if etree.QName(muutos_tree.tag).localname == "body"
-        else muutos_tree.find(".//{*}body")
+    """Backward-compat wrapper for scope.retarget_duplicate_body_section_scope_from_close_live_siblings."""
+    return _retarget_duplicate_body_section_scope_from_close_live_siblings_impl(
+        muutos_tree=muutos_tree,
+        section_norm=section_norm,
+        body_chapter=body_chapter,
+        body_part=body_part,
+        master=master,
     )
-    if body is None:
-        return None
-
-    target_num = int(target_match.group(1))
-    # For letter-suffix sections (e.g. "16a", "16b", "17a"), the base-number
-    # sibling (e.g. "16") at distance 0 is a *different* section and is the
-    # most relevant anchor for chapter routing.  Allow distance-0 in that case.
-    # For plain numeric sections, distance-0 would be self-reference — still excluded.
-    is_letter_suffix_section = section_norm != str(target_num)
-
-    def _part_label_for_element(el: etree._Element) -> str | None:
-        parent = el.getparent()
-        while parent is not None:
-            if str(parent.tag).rsplit("}", 1)[-1] == "part":
-                part_num = parent.find("{*}num")
-                if part_num is None or not part_num.text:
-                    return None
-                raw = _norm_num_token(part_num.text).removesuffix("osa")
-                arabic = _roman_label_to_arabic(raw.lower()) if raw else None
-                return str(arabic) if arabic is not None else (raw or None)
-            parent = parent.getparent()
-        return None
-
-    for sec in body.findall(".//{*}section"):
-        num_el = sec.find("{*}num")
-        if num_el is None or not num_el.text:
-            continue
-        sec_label = _norm_num_token(re.sub(r"\s*§.*$", "", num_el.text).strip())
-        if sec_label != section_norm:
-            continue
-
-        parent = sec.getparent()
-        if parent is None or etree.QName(parent.tag).localname != "chapter":
-            continue
-        chapter_num = parent.find("{*}num")
-        if chapter_num is None or not chapter_num.text:
-            continue
-        parent_label = _norm_num_token(chapter_num.text).removesuffix("luku")
-        if parent_label != body_chapter:
-            continue
-
-        if _part_label_for_element(sec) != body_part:
-            continue
-
-        close_live_scopes: dict[int, set[tuple[str | None, str]]] = defaultdict(set)
-        for sibling in parent.findall("./{*}section"):
-            sibling_num = sibling.find("{*}num")
-            if sibling_num is None or not sibling_num.text:
-                continue
-            sibling_label = _norm_num_token(re.sub(r"\s*§.*$", "", sibling_num.text).strip())
-            sibling_match = re.fullmatch(r"(\d+)[a-z]?", sibling_label, re.I)
-            if sibling_match is None:
-                continue
-            if sibling_label != sibling_match.group(1):
-                continue
-            distance = abs(int(sibling_match.group(1)) - target_num)
-            if distance > 2:
-                continue
-            # For plain numeric sections exclude self (distance 0 = same number).
-            # For letter-suffix sections the base section at distance 0 is a
-            # different section and the best chapter anchor — include it.
-            if distance == 0 and not is_letter_suffix_section:
-                continue
-            live_path = master.find_section_path(sibling_match.group(1), None, body_part)
-            if live_path is None:
-                continue
-            live_part = next((label for kind, label in live_path if kind == "part"), None)
-            live_chapter = next((label for kind, label in live_path if kind == "chapter"), None)
-            if not live_chapter:
-                continue
-            if live_chapter == body_chapter and live_part == body_part:
-                continue
-            close_live_scopes[distance].add((live_part, live_chapter))
-
-        if close_live_scopes:
-            nearest_distance = min(close_live_scopes)
-            nearest_live_scopes = close_live_scopes[nearest_distance]
-            if len(nearest_live_scopes) == 1:
-                return next(iter(nearest_live_scopes))
-        return None
-
-    return None
 
 
 def _body_has_pseudo_chapter_marker(
     muutos_tree: "etree._Element",
     chapter_label: str,
 ) -> bool:
-    """Return True if the amendment body contains a pseudo-chapter-marker for *chapter_label*.
-
-    A pseudo-chapter-marker is a ``<section><num>X luku</num>...</section>`` element
-    inside a ``<chapter>`` XML element, acting as a sub-chapter boundary.  This
-    distinguishes structural reorganisation amendments (like 1996/473, which moves
-    sections between sub-chapters via pseudo-markers) from ordinary amendments that
-    happen to operate on a letter-suffix chapter (like 2008/732 operating on chapter 2a).
-    """
-    inventory = _build_observed_body_inventory(muutos_tree)
-    for bpu in inventory:
-        if bpu.kind == "chapter" and bpu.label == chapter_label and bpu.xml_element is not None:
-            tag = getattr(bpu.xml_element, "tag", None)
-            if tag is not None and etree.QName(tag).localname == "section":
-                return True
-    return False
+    """Backward-compat wrapper for scope.body_has_pseudo_chapter_marker."""
+    return _body_has_pseudo_chapter_marker_impl(muutos_tree, chapter_label)
 
 
 def _body_has_real_chapter_container(
     muutos_tree: "etree._Element",
     chapter_label: str,
 ) -> bool:
-    """Return True when the amendment body contains a real <chapter> for *chapter_label*."""
-    inventory = _build_observed_body_inventory(muutos_tree)
-    for bpu in inventory:
-        if bpu.kind == "chapter" and bpu.label == chapter_label and bpu.xml_element is not None:
-            tag = getattr(bpu.xml_element, "tag", None)
-            if tag is not None and etree.QName(tag).localname == "chapter":
-                return True
-    return False
+    """Backward-compat wrapper for scope.body_has_real_chapter_container."""
+    return _body_has_real_chapter_container_impl(muutos_tree, chapter_label)
 
 
 def _group_ops_by_target(
@@ -1078,6 +899,11 @@ from lawvm.finland.group_plan import (
 from lawvm.finland.scope import (
     duplicate_section_labels_across_chapters as _duplicate_section_labels_across_chapters_impl,
     chapter_chunks_from_johtolause as _chapter_chunks_from_johtolause_impl,
+    find_body_section_chapter as _find_body_section_chapter_impl,
+    retarget_heading_insert_body_chapter_from_close_live_sibling as _retarget_heading_insert_body_chapter_from_close_live_sibling_impl,
+    retarget_duplicate_body_section_scope_from_close_live_siblings as _retarget_duplicate_body_section_scope_from_close_live_siblings_impl,
+    body_has_pseudo_chapter_marker as _body_has_pseudo_chapter_marker_impl,
+    body_has_real_chapter_container as _body_has_real_chapter_container_impl,
     strip_unjustified_chapter_scope_from_unique_sections as _strip_unjustified_chapter_scope_from_unique_sections_impl,
     assign_chapter_scope_from_johtolause as _assign_chapter_scope_from_johtolause_impl,
     restrict_sec1_fallback_to_parent as _restrict_sec1_fallback_to_parent_impl,
