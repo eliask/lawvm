@@ -763,3 +763,72 @@ def test_extract_voimaantulo_repeals_ignores_repealed_amendment_act_reference() 
     )
 
     assert ops == []
+
+
+def test_extract_voimaantulo_repeals_ignores_amending_law_title_cited_by_number() -> None:
+    """A repeal of an amending law (``laki <master> N §:n muuttamisesta (XXXX/YY)``)
+    must not emit a phantom ``REPEAL N §`` against the master statute.
+
+    Mirrors 2022/939, which repeals two amending laws of 2018/53:
+      "Tällä lailla kumotaan laki tulotietojärjestelmästä annetun lain 13 §:n
+       muuttamisesta (679/2022) ja laki tulotietojärjestelmästä annetun lain 13 §:n
+       väliaikaisesta muuttamisesta annettu laki (22/2022)."
+
+    The ``13 §`` belongs to each amending law's *own title* (terminated by its own
+    "(XXXX/YYYY)" citation), not to section 13 of the master statute. Extracting a
+    ``REPEAL 13 §`` here gutted the master's §13 content.
+    """
+    xml = (
+        f'<act xmlns="{_AKN_NS}">'
+        f'  <preamble><formula name="enactingClause">säädetään:</formula></preamble>'
+        f'  <body>'
+        f'    <section eId="sec_1"><num>1 §</num>'
+        f'      <subsection><content>'
+        f'        Tällä lailla kumotaan laki tulotietojärjestelmästä annetun lain 13 §:n'
+        f'        muuttamisesta (679/2022) ja laki tulotietojärjestelmästä annetun lain'
+        f'        13 §:n väliaikaisesta muuttamisesta annettu laki (22/2022).'
+        f'      </content></subsection>'
+        f'    </section>'
+        f'    <section eId="sec_2"><num>2 §</num>'
+        f'      <subsection><content>Tämä laki tulee voimaan 1 päivänä tammikuuta 2023.</content></subsection>'
+        f'    </section>'
+        f'  </body>'
+        f'</act>'
+    ).encode()
+
+    ops = extract_voimaantulo_repeals(
+        xml,
+        "2018/53",
+        parent_title="Laki tulotietojärjestelmästä",
+    )
+
+    assert ops == [], f"phantom master repeal emitted: {[(o.op_type, o.target_section) for o in ops]}"
+
+
+def test_extract_voimaantulo_repeals_still_extracts_genuine_master_section_repeal() -> None:
+    """The amending-law guard must not suppress a genuine master-section repeal.
+
+    ``Tällä lailla kumotaan <master title> N §`` (no "muuttamisesta" amending-law
+    title around the §) still repeals section N of the master statute.
+    """
+    xml = (
+        f'<act xmlns="{_AKN_NS}">'
+        f'  <preamble><formula name="enactingClause">säädetään:</formula></preamble>'
+        f'  <body>'
+        f'    <section eId="sec_1"><num>1 §</num>'
+        f'      <subsection><content>'
+        f'        Tällä lailla kumotaan tulotietojärjestelmästä annetun lain 13 §.'
+        f'      </content></subsection>'
+        f'    </section>'
+        f'  </body>'
+        f'</act>'
+    ).encode()
+
+    ops = extract_voimaantulo_repeals(
+        xml,
+        "2018/53",
+        parent_title="Laki tulotietojärjestelmästä",
+    )
+
+    labels = {(op.op_type, op.target_section) for op in ops}
+    assert ("REPEAL", "13") in labels, f"genuine master §13 repeal lost: {labels}"

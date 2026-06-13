@@ -585,6 +585,21 @@ def _vts_extract_after_parent_title(text: str, title_variants: List[str]) -> str
         re.IGNORECASE,
     ):
         return ""
+    # The matched parent title can be embedded inside the *name of an amending
+    # law* that the clause repeals, e.g.
+    #   "kumotaan laki <parent title> annetun lain 13 §:n muuttamisesta (679/2022)".
+    # Here the matched title is in genitive ("<parent> annetun lain") and the
+    # "N §:n muuttamisesta" belongs to the amending law's own title, terminated
+    # by that amending law's separate citation "(XXXX/YYYY)" (or by the literal
+    # "annettu laki" form). The "§" is part of the repealed law's name, not a
+    # master section, so this is NOT a repeal of the master statute's section N.
+    if re.match(
+        r"\s+(?:annetun\s+lain\s+)?\d+\s*[a-z]?\s*§(?::n|\b)"
+        r"[^.;]{0,80}\bmuuttamisesta\s+(?:\(\s*\d+\s*/\s*\d{2,4}\s*\)|annettu\s+laki)",
+        after,
+        re.IGNORECASE,
+    ):
+        return ""
     cut_pos = len(after)
 
     c1 = re.search(r"\bsellais(?:ena|ina)\s+kuin\b", after, re.IGNORECASE)
