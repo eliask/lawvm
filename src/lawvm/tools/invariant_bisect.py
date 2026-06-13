@@ -11,11 +11,21 @@ Reports:
   transient_failure     — fires for some amendments but clears later
   failure_count         — number of steps in the scan window where detector fires
 
-Uses the lightweight process_muutoslaki loop (same as lawvm bisect-section)
-rather than a full replay_xml per step.  For statutes with chapter-seeding or
-repeal pre-scanning the results may differ slightly from a full replay, but
-for duplicate_label and illegal_edge detectors the difference is usually
-negligible.
+Tree detectors (duplicate_label, label_normalization_collision, illegal_edge,
+sort_order, mixed_hierarchy, all_tree, text_duplication,
+flattened_sublist_family) replay the statute ONCE through the authoritative
+full path (replay_xml) and run the detector after each amendment via a
+checkpoint callback.  This is O(N) and matches the full replay exactly,
+including chapter-seeding and repeal pre-scan, so a unit that the full replay
+materializes (e.g. a section inserted into a seeded chapter) is no longer
+reported as a false structural violation.
+
+The two transition detectors (descendant_sibling_loss,
+same_source_descendant_snapshot_shadow) need each step's compiled ops and the
+pre-step tree, which the checkpoint hook does not expose; they keep the
+lightweight process_muutoslaki loop (same as lawvm bisect-section).  These
+detectors compare ops against snapshots rather than querying absolute unit
+presence, so they are not affected by the seeding gap.
 
 The scan window can be bounded with --after / --before to focus on a suspected
 region of the amendment chain.
@@ -80,6 +90,163 @@ def _run_fi_invariant_detector_messages(
             )
         ]
     return run_invariant_detector_messages(ir, detector, target_path)
+
+
+def _scan_tree_detector_steps_authoritative(
+    *,
+    statute_id: str,
+    mode: Literal["official_consolidation", "legal_pit"],
+    detector: str,
+    target_path: str,
+    ctx: Any,
+    corpus: Any,
+    amendment_ids: List[str],
+    start_idx: int,
+    end_idx: int,
+) -> tuple[list[str], List[Dict[str, Any]]]:
+    """Replay the statute ONCE authoritatively and run a tree detector per step.
+
+    Drives ``replay_xml`` with a checkpoint callback so chapter-seeding and
+    repeal pre-scan happen exactly as in the full replay.  After each amendment
+    the selected tree detector runs against the authoritative per-step IR
+    (``checkpoint.ir_snapshot()``).  This is O(N) over the amendment chain.
+
+    Returns ``(initial_violations, steps)`` where ``steps`` covers only the
+    scan window ``amendment_ids[start_idx:end_idx]`` and ``initial_violations``
+    is the detector result on the state immediately before the window.
+    """
+    from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest
+
+    # Detector result per amendment id, in chain order.
+    per_step_violations: dict[str, list[str]] = {}
+    step_order: List[str] = []
+
+    def _collect(checkpoint: Any) -> None:
+        snapshot = checkpoint.ir_snapshot
+        if snapshot is None:
+            raise SystemExit(
+                "invariant-bisect: replay checkpoint did not expose ir_snapshot; "
+                "cannot run tree detector authoritatively"
+            )
+        ir = snapshot()
+        mid = str(checkpoint.amendment_id)
+        per_step_violations[mid] = _run_fi_invariant_detector_messages(ir, detector, target_path)
+        step_order.append(mid)
+
+    replay_xml(
+        request=ReplayXmlRequest(
+            parent_id=statute_id,
+            mode=mode,
+            corpus=corpus,
+            quiet=True,
+            build_full_products=False,
+            checkpoint_callback=_collect,
+        ),
+    )
+
+    # Pre-window state: detector result immediately before the scan window.
+    # For start_idx == 0 the pre-window state is the base statute tree (no
+    # amendments applied yet); otherwise it is the snapshot after the amendment
+    # at start_idx - 1.
+    if start_idx == 0:
+        initial_violations = _run_fi_invariant_detector_messages(ctx.base_ir, detector, target_path)
+    else:
+        prev_mid = amendment_ids[start_idx - 1]
+        initial_violations = per_step_violations.get(prev_mid, [])
+
+    steps: List[Dict[str, Any]] = []
+    for mid in amendment_ids[start_idx:end_idx]:
+        violations = per_step_violations.get(mid, [])
+        steps.append({
+            "source_id": mid,
+            "clean": len(violations) == 0,
+            "violation_count": len(violations),
+            "violations": violations[:10],
+        })
+    return initial_violations, steps
+
+
+def _scan_transition_detector_steps(
+    *,
+    statute_id: str,
+    mode: Literal["official_consolidation", "legal_pit"],
+    detector: str,
+    target_path: str,
+    ctx: Any,
+    corpus: Any,
+    amendment_ids: List[str],
+    start_idx: int,
+    scan_ids: List[str],
+) -> tuple[list[str], List[Dict[str, Any]]]:
+    """Lightweight per-step loop for the ops/snapshot transition detectors.
+
+    ``descendant_sibling_loss`` and ``same_source_descendant_snapshot_shadow``
+    inspect each step's compiled ops against pre-step snapshots — information
+    the authoritative checkpoint hook does not surface — so they keep the
+    ``process_muutoslaki`` fold (same as ``lawvm bisect-section``).  They are
+    not affected by the chapter-seeding gap because they compare ops to
+    snapshots rather than querying absolute unit presence.
+    """
+    from lawvm.finland.grafter import process_muutoslaki
+    from lawvm.finland.process_request import ProcessAmendmentRequest
+    from lawvm.finland.process_result_builder import ProcessAmendmentSinks
+    from lawvm.finland.statute import ReplayState
+
+    state = ReplayState(ir=ctx.base_ir)
+    for mid in amendment_ids[:start_idx]:
+        state = process_muutoslaki(
+            request=ProcessAmendmentRequest(
+                amendment_id=mid,
+                state=state,
+                ctx=ctx,
+                replay_mode=mode,
+                parent_id=statute_id,
+                corpus=corpus,
+            ),
+        ).output
+
+    initial_violations: list[str] = []
+
+    steps: List[Dict[str, Any]] = []
+    for mid in scan_ids:
+        before_ir = state.ir
+        step_lo_ops: list[Any] = []
+        state = process_muutoslaki(
+            request=ProcessAmendmentRequest(
+                amendment_id=mid,
+                state=state,
+                ctx=ctx,
+                replay_mode=mode,
+                parent_id=statute_id,
+                corpus=corpus,
+            ),
+            sinks=ProcessAmendmentSinks(lo_ops_out=step_lo_ops),
+        ).output
+        if detector == "descendant_sibling_loss":
+            violations = [
+                result.message
+                for result in run_descendant_sibling_loss_detector(
+                    before_ir,
+                    step_lo_ops,
+                    target_path,
+                )
+            ]
+        else:  # same_source_descendant_snapshot_shadow
+            violations = [
+                result.message
+                for result in run_same_source_descendant_snapshot_shadow_detector(
+                    step_lo_ops,
+                    target_path,
+                )
+            ]
+        steps.append({
+            "source_id": mid,
+            "clean": len(violations) == 0,
+            "violation_count": len(violations),
+            "violations": violations[:10],
+        })
+    return initial_violations, steps
 
 
 # ---------------------------------------------------------------------------
@@ -375,12 +542,9 @@ def build_invariant_bisect_bundle(
     """
     from lawvm.finland.grafter import (
         get_corpus,
-        process_muutoslaki,
         _resolve_applicable_amendment_records,
     )
-    from lawvm.finland.process_request import ProcessAmendmentRequest
-    from lawvm.finland.process_result_builder import ProcessAmendmentSinks
-    from lawvm.finland.statute import ReplayState, StatuteContext
+    from lawvm.finland.statute import StatuteContext
     from lawvm.finland.helpers import _fi_label_postprocessor
 
     cs = get_corpus()
@@ -389,7 +553,7 @@ def build_invariant_bisect_bundle(
         raise SystemExit(f"statute not found in corpus: {statute_id!r}")
 
     ctx = StatuteContext.from_xml(xml_bytes, _fi_label_postprocessor)
-    records, cutoff_date, _oracle_version = _resolve_applicable_amendment_records(statute_id, mode)
+    records, _cutoff_date, _oracle_version = _resolve_applicable_amendment_records(statute_id, mode)
     amendment_ids = [str(r["statute_id"]) for r in records]
 
     # Resolve scan window bounds
@@ -409,67 +573,39 @@ def build_invariant_bisect_bundle(
     else:
         end_idx = len(amendment_ids)
 
-    # Build fold state up to start of scan window
-    state = ReplayState(ir=ctx.base_ir)
-    for mid in amendment_ids[:start_idx]:
-        state = process_muutoslaki(
-            request=ProcessAmendmentRequest(
-                amendment_id=mid,
-                state=state,
-                ctx=ctx,
-                replay_mode=mode,
-                parent_id=statute_id,
-                corpus=cs,
-            ),
-        ).output
-
-    # Check state before scan window
-    initial_violations = _run_fi_invariant_detector_messages(state.ir, detector, target_path)
-    initial_clean = len(initial_violations) == 0
-
-    # Scan window
     scan_ids = amendment_ids[start_idx:end_idx]
-    steps: List[Dict[str, Any]] = []
 
-    for mid in scan_ids:
-        before_ir = state.ir
-        step_lo_ops: list[Any] = []
-        state = process_muutoslaki(
-            request=ProcessAmendmentRequest(
-                amendment_id=mid,
-                state=state,
-                ctx=ctx,
-                replay_mode=mode,
-                parent_id=statute_id,
-                corpus=cs,
-            ),
-            sinks=ProcessAmendmentSinks(lo_ops_out=step_lo_ops),
-        ).output
-        if detector == "descendant_sibling_loss":
-            violations = [
-                result.message
-                for result in run_descendant_sibling_loss_detector(
-                    before_ir,
-                    step_lo_ops,
-                    target_path,
-                )
-            ]
-        elif detector == "same_source_descendant_snapshot_shadow":
-            violations = [
-                result.message
-                for result in run_same_source_descendant_snapshot_shadow_detector(
-                    step_lo_ops,
-                    target_path,
-                )
-            ]
-        else:
-            violations = _run_fi_invariant_detector_messages(state.ir, detector, target_path)
-        steps.append({
-            "source_id": mid,
-            "clean": len(violations) == 0,
-            "violation_count": len(violations),
-            "violations": violations[:10],
-        })
+    _TRANSITION_DETECTORS = {
+        "descendant_sibling_loss",
+        "same_source_descendant_snapshot_shadow",
+    }
+
+    if detector in _TRANSITION_DETECTORS:
+        initial_violations, steps = _scan_transition_detector_steps(
+            statute_id=statute_id,
+            mode=mode,
+            detector=detector,
+            target_path=target_path,
+            ctx=ctx,
+            corpus=cs,
+            amendment_ids=amendment_ids,
+            start_idx=start_idx,
+            scan_ids=scan_ids,
+        )
+    else:
+        initial_violations, steps = _scan_tree_detector_steps_authoritative(
+            statute_id=statute_id,
+            mode=mode,
+            detector=detector,
+            target_path=target_path,
+            ctx=ctx,
+            corpus=cs,
+            amendment_ids=amendment_ids,
+            start_idx=start_idx,
+            end_idx=end_idx,
+        )
+
+    initial_clean = len(initial_violations) == 0
 
     # Find first bad step where state transitioned from clean.
     # If the pre-window state was already bad, we look for the first step where

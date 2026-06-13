@@ -354,6 +354,7 @@ def execute_replay_plan(
                 step_index=idx,
                 total_steps=len(plan.amendment_ids),
                 serialize_text=lambda _s=_cp_state: _serialize_text(_s.ir),
+                ir_snapshot=lambda _s=_cp_state: _s.ir,
             ))
         if temporal_events_out is not None:
             temporal_events_out.extend(_pm_result.temporal_events)

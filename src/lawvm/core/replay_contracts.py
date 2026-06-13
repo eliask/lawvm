@@ -155,6 +155,14 @@ class ReplayCheckpoint:
     ``serialize_text`` is a callable rather than a pre-computed string because
     serializing the full IR tree is expensive; callers that don't need text
     (e.g. progress bars) can ignore it.
+
+    ``ir_snapshot`` (optional) is a callable returning the live replay IR root
+    at this step.  It lets structural consumers (e.g. ``invariant-bisect``) run
+    tree detectors against the authoritative per-step tree — the same tree the
+    full replay builds, including chapter-seeding and repeal pre-scan — instead
+    of re-deriving it from a lightweight fold.  It is a callable for the same
+    laziness reason as ``serialize_text``; consumers that only need text or
+    progress can ignore it.
     """
 
     parent_id: str
@@ -162,6 +170,7 @@ class ReplayCheckpoint:
     step_index: int
     total_steps: int
     serialize_text: Callable[[], str]
+    ir_snapshot: Callable[[], Any] | None = None
 
     def __post_init__(self) -> None:
         _require_non_empty(self.parent_id, "ReplayCheckpoint.parent_id")
@@ -174,6 +183,8 @@ class ReplayCheckpoint:
             raise ValueError("ReplayCheckpoint.step_index must be less than total_steps")
         if not callable(self.serialize_text):
             raise ValueError("ReplayCheckpoint.serialize_text must be callable")
+        if self.ir_snapshot is not None and not callable(self.ir_snapshot):
+            raise ValueError("ReplayCheckpoint.ir_snapshot must be callable or None")
 
 
 class ReplayCheckpointCallback(Protocol):
