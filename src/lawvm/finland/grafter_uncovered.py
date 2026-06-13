@@ -550,6 +550,57 @@ def _emit_coverage_analysis_findings(
         )
 
 
+def _emit_high_uncovered_degradation(
+    restructure_plan: StructuralTransformPlan,
+    amendment_id: str,
+    cov_report: CoverageReport,
+    total_units: int,
+    uncov_ratio: float,
+    observations_out: Optional[List[Dict[str, object]]],
+    findings_out: Optional[List[Finding]],
+) -> None:
+    """Surface a degradation observation/finding when a chapter-level INSERT plan
+    still has a high uncovered-body ratio — making the gap explicit instead of
+    silently proceeding via permissive fallback. No-op unless both the
+    chapter-insert and high-uncovered signals are present and observations_out
+    is provided.
+    """
+    has_chapter_insert = RestructureSignal.CHAPTER_INSERT in restructure_plan.signals
+    has_high_uncov = RestructureSignal.HIGH_UNCOVERED_BODY in restructure_plan.signals
+    if not (has_chapter_insert and has_high_uncov and observations_out is not None):
+        return
+    signals = [s.value for s in restructure_plan.signals]
+    observations_out.append({
+        "kind": "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED",
+        "stage": "coverage_analysis",
+        "amendment_id": amendment_id,
+        "uncovered_count": cov_report.uncovered_count,
+        "total_units": total_units,
+        "uncov_ratio": round(uncov_ratio, 4),
+        "confidence": restructure_plan.confidence,
+        "signals": signals,
+    })
+    if findings_out is not None:
+        findings_out.append(
+            _high_uncovered_body_degraded_finding(
+                source_statute=amendment_id,
+                uncovered_count=cov_report.uncovered_count,
+                total_units=total_units,
+                uncov_ratio=uncov_ratio,
+                confidence=restructure_plan.confidence,
+                signals=signals,
+            )
+        )
+    if replay_verbose_enabled():
+        logger.warning(
+            "  [%s] COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED: "
+            "%d/%d units uncovered (ratio=%.2f, confidence=%.2f) — "
+            "chapter-level INSERT plan proceeding with degraded confidence",
+            amendment_id, cov_report.uncovered_count, total_units,
+            uncov_ratio, restructure_plan.confidence,
+        )
+
+
 def _recover_uncovered_body_ops(
     state: "ReplayState",
     ctx: "StatuteContext",
@@ -739,41 +790,17 @@ def _recover_uncovered_body_ops(
                 for _existing in restructure_plans_out
             ):
                 restructure_plans_out.append(_restructure_plan)
-        # Emit degradation observation when a chapter-level INSERT plan still
-        # has a high proportion of uncovered body units.  This surfaces the gap
-        # explicitly instead of silently proceeding via permissive fallback.
-        _has_chapter_insert_signal = RestructureSignal.CHAPTER_INSERT in _restructure_plan.signals
-        _has_high_uncov = RestructureSignal.HIGH_UNCOVERED_BODY in _restructure_plan.signals
-        if _has_chapter_insert_signal and _has_high_uncov and observations_out is not None:
-            observations_out.append({
-                "kind": "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED",
-                "stage": "coverage_analysis",
-                "amendment_id": amendment_id,
-                "uncovered_count": _cov_report.uncovered_count,
-                "total_units": _total_units,
-                "uncov_ratio": round(_uncov_ratio, 4),
-                "confidence": _restructure_plan.confidence,
-                "signals": [s.value for s in _restructure_plan.signals],
-            })
-            if findings_out is not None:
-                findings_out.append(
-                    _high_uncovered_body_degraded_finding(
-                        source_statute=amendment_id,
-                        uncovered_count=_cov_report.uncovered_count,
-                        total_units=_total_units,
-                        uncov_ratio=_uncov_ratio,
-                        confidence=_restructure_plan.confidence,
-                        signals=[s.value for s in _restructure_plan.signals],
-                    )
-                )
-            if replay_verbose_enabled():
-                logger.warning(
-                    "  [%s] COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED: "
-                    "%d/%d units uncovered (ratio=%.2f, confidence=%.2f) — "
-                    "chapter-level INSERT plan proceeding with degraded confidence",
-                    amendment_id, _cov_report.uncovered_count, _total_units,
-                    _uncov_ratio, _restructure_plan.confidence,
-                )
+        # Surface a degradation observation/finding when a chapter-level INSERT
+        # plan still has a high proportion of uncovered body units.
+        _emit_high_uncovered_degradation(
+            _restructure_plan,
+            amendment_id,
+            _cov_report,
+            _total_units,
+            _uncov_ratio,
+            observations_out,
+            findings_out,
+        )
     # --- end restructure signal detection + plan ---
     # --- end typed coverage analysis ---
 
