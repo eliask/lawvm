@@ -32,6 +32,7 @@ from lawvm.tools.oracle_check import (
     _corpus_selection_detail,
     _diagnose,
     _el_text,
+    _extract_attachment_info_ir,
     _ir_node_has_repeal_placeholder,
     main,
     _print_corpus_summary,
@@ -184,6 +185,88 @@ def test_classify_statute_1901_15_001_raw_master_gap_wave_is_source_incomplete()
     for label in ("part:1/chapter:2/section:4", "part:1/chapter:2/section:5"):
         assert by_section[label]["diagnosis"] == "REPLAY_MISSING"
         assert by_section[label]["blame_source"] == "1975/351"
+
+
+def test_extract_attachment_info_ir_counts_materialized_annex() -> None:
+    """An operative Liite annex materialized into the replay IR must be counted.
+
+    ``IRNode.kind`` is an ``IRNodeKind`` enum; comparing it to the bare string
+    ``"hcontainer"`` always failed, so the helper reported zero attachments and
+    the classifier raised a spurious ``LIITE_DIFF`` against an oracle that
+    carried the same annex.  This pins the enum-based comparison: the fee-table
+    annex is counted and its title is recovered from the CONTENT body, while
+    non-operative trailing matter (signatures / conclusions) is not counted.
+    """
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "statuteProvisionsWrapper"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="1",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="1 § Operative."),),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "conclusions"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.HCONTAINER,
+                        attrs={"name": "signatures"},
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="Helsingissä 2015"),),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "attachments"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.HCONTAINER,
+                        attrs={"name": "attachment"},
+                        children=(
+                            IRNode(kind=IRNodeKind.CONTENT, text="Liite Maksutaulukko"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    count, titles = _extract_attachment_info_ir(body)
+
+    assert count == 1
+    assert titles == ["Liite Maksutaulukko"]
+
+
+def test_extract_attachment_info_ir_ignores_non_attachment_containers() -> None:
+    """Signatures / conclusions hcontainers must never be counted as annexes."""
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                attrs={"name": "conclusions"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.HCONTAINER,
+                        attrs={"name": "signatures"},
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="Allekirjoitus"),),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    count, titles = _extract_attachment_info_ir(body)
+
+    assert count == 0
+    assert titles == []
 
 
 def test_classify_statute_demotes_unknown_to_source_pathology_when_blame_is_already_owned(

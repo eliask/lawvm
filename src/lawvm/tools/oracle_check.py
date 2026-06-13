@@ -32,6 +32,8 @@ if TYPE_CHECKING:
 import Levenshtein
 from lxml import etree
 
+from lawvm.core.semantic_types import IRNodeKind
+
 from lawvm.tools.editorial_hygiene import (
     strip_editorial_annotations,
     strip_figure_legend_paragraphs,
@@ -310,23 +312,33 @@ def _extract_attachment_info(root: etree._Element) -> tuple[int, list[str]]:
 
 
 def _extract_attachment_info_ir(body: "IRNode") -> tuple[int, list[str]]:
-    """Return (count, [title_str]) of attachment hcontainers from an IRNode tree."""
+    """Return (count, [title_str]) of attachment hcontainers from an IRNode tree.
+
+    ``IRNode.kind`` is an ``IRNodeKind`` enum (a plain ``Enum``, not a
+    ``str``-mixin), so it must be compared against enum members.  Comparing it
+    to bare strings such as ``"hcontainer"`` always evaluates False, which made
+    this helper silently report zero replay attachments and produced a spurious
+    ``LIITE_DIFF`` whenever the oracle carried a materialized annex (Liite / fee
+    table) that replay had in fact materialized correctly.
+    """
+    def _node_text(n: IRNode) -> str:
+        parts = [n.text] if n.text else []
+        for c in n.children:
+            parts.append(_node_text(c))
+        return "".join(parts)
+
     def _collect(node: IRNode, results: list[str]) -> None:
-        if node.kind == "hcontainer" and node.attrs.get("name") == "attachment":
+        if node.kind == IRNodeKind.HCONTAINER and node.attrs.get("name") == "attachment":
             title = ""
             for child in node.children:
-                if child.kind == "heading" and child.text.strip():
+                if child.kind == IRNodeKind.HEADING and child.text.strip():
                     title = child.text.strip()[:60]
                     break
             if not title:
                 for child in node.children:
-                    if child.kind == "p":
-                        # Gather all text from p node (including nested children)
-                        def _node_text(n: IRNode) -> str:
-                            parts = [n.text] if n.text else []
-                            for c in n.children:
-                                parts.append(_node_text(c))
-                            return "".join(parts)
+                    # Replay materializes the annex body under a CONTENT node;
+                    # oracle AKN uses <p>.  Accept either as the title source.
+                    if child.kind in (IRNodeKind.P, IRNodeKind.CONTENT):
                         title = _node_text(child).strip()[:60]
                         break
             results.append(title)
