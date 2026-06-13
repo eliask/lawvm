@@ -166,6 +166,23 @@ CURATED_CASES = [
         },
     },
     {
+        # Real source: 1994/1471 amendment 2010/1128.  The deep-nested
+        # "5 kohdan johdantokappaleen ... sanamuoto ja c alakohta" qualifier
+        # leaves a dangling "CONJ COMMA" after the alakohta tail is stripped;
+        # before the fix the whole remaining list was silently truncated.
+        "name": "section_ref kohta johdantokappale ja alakohta keeps later sections alive",
+        "text": (
+            "muutetaan 3 §:n 1 momentin 5 kohdan johdantokappaleen suomenkielinen "
+            "sanamuoto ja c alakohta, 5 §:n 1 momentti, 8 §:n 1 momentin 1 kohta "
+            "sekä 9 §:n 1 momentin johdantokappale"
+        ),
+        "expected": ["M P 3 1 5 j", "M P 5 1", "M P 8 1 1", "M P 9 1 j"],
+        "features": {
+            "verb_muuttaa", "section_ref", "sub_ref_momentti",
+            "sub_ref_kohta", "sub_ref_johd", "conj_target_list",
+        },
+    },
+    {
         "name": "section_ref johdantolause keeps trailing section refs alive",
         "text": "muutetaan 48 §:n 1 momentin johdantolause ja 5 momentti, 49 ja 50 §, 51 §:n 3 momentti sekä 53 §",
         "expected": ["M P 48 1 j", "M P 48 5", "M P 49", "M P 50", "M P 51 3", "M P 53"],

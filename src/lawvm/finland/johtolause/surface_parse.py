@@ -528,6 +528,17 @@ def _sep(s: Stream) -> Optional[Token]:
         s.pos += 1
         while (t2 := s.peek()) and t2.cat == "CONJ":
             s.pos += 1
+        # Stripping an alakohta tail such as "... ja c alakohta," leaves a
+        # dangling "CONJ COMMA" before the next list item.  The conjunction
+        # coordinated the now-removed alakohta with its parent unit, so the
+        # surviving comma is the real separator to the next target.  Absorb
+        # it (and any following conjunctions) so the remaining list items are
+        # not silently dropped.
+        if (t2 := s.peek()) and t2.cat == "COMMA":
+            s.pos += 1
+            while (t3 := s.peek()) and t3.cat == "CONJ":
+                s.pos += 1
+            return t2
         return t
     # Archaic 'a' as conjunction
     if (
