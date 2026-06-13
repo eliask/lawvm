@@ -1595,6 +1595,31 @@ def _rejected_operation_findings(failed_ops: Iterable[Any], stage: str) -> list[
     return findings
 
 
+def _emit_restructure_skip_findings(
+    exec_ops: Iterable[Any],
+    findings_out: Optional[List[Finding]],
+    amendment_id: str,
+) -> None:
+    """Emit skip findings for restructure-plan ops that did not execute.
+
+    For each exec op, appends any of the relabel-skip, relabel-skip source
+    pathology, move-skip, and deferred-plan-op findings that apply (in that
+    order). No-op when ``findings_out`` is None.
+    """
+    if findings_out is None:
+        return
+    for exec_op in exec_ops:
+        for builder in (
+            relabel_skip_finding,
+            relabel_skip_source_pathology_finding,
+            move_skip_finding,
+            deferred_plan_op_finding,
+        ):
+            finding = builder(exec_op, source_statute=amendment_id)
+            if finding is not None:
+                findings_out.append(finding)
+
+
 def _elaborate_group(
     target_ctx: "TargetContext",
     lookups: "ReplayLookups",
@@ -3212,23 +3237,7 @@ def apply_ops_to_tree(
                 "  [%s] early restructure_plan skipped ops: %s",
                 amendment_id, _skipped_labels,
             )
-            if findings_out is not None:
-                for _exec_op in _exec_ops:
-                    finding = relabel_skip_finding(_exec_op, source_statute=amendment_id)
-                    if finding is not None:
-                        findings_out.append(finding)
-                    finding = relabel_skip_source_pathology_finding(
-                        _exec_op,
-                        source_statute=amendment_id,
-                    )
-                    if finding is not None:
-                        findings_out.append(finding)
-                    finding = move_skip_finding(_exec_op, source_statute=amendment_id)
-                    if finding is not None:
-                        findings_out.append(finding)
-                    finding = deferred_plan_op_finding(_exec_op, source_statute=amendment_id)
-                    if finding is not None:
-                        findings_out.append(finding)
+            _emit_restructure_skip_findings(_exec_ops, findings_out, amendment_id)
 
     # Pre-create chapters introduced by the amendment body before the main
     # apply loop. Section INSERT ops can target both real new chapters and
@@ -3533,23 +3542,7 @@ def apply_ops_to_tree(
                                     "  [%s] restructure_plan skipped ops: %s",
                                     amendment_id, _skipped_labels,
                                 )
-                                if findings_out is not None:
-                                    for _exec_op in _exec_ops:
-                                        finding = relabel_skip_finding(_exec_op, source_statute=amendment_id)
-                                        if finding is not None:
-                                            findings_out.append(finding)
-                                        finding = relabel_skip_source_pathology_finding(
-                                            _exec_op,
-                                            source_statute=amendment_id,
-                                        )
-                                        if finding is not None:
-                                            findings_out.append(finding)
-                                        finding = move_skip_finding(_exec_op, source_statute=amendment_id)
-                                        if finding is not None:
-                                            findings_out.append(finding)
-                                        finding = deferred_plan_op_finding(_exec_op, source_statute=amendment_id)
-                                        if finding is not None:
-                                            findings_out.append(finding)
+                                _emit_restructure_skip_findings(_exec_ops, findings_out, amendment_id)
 
             # Step 3: apply each ResolvedOp through the normal apply_op path,
             # emitting section snapshots via _emit_section_snapshot.
