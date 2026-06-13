@@ -51,7 +51,7 @@ def _norm_num_token(text: str) -> str:
 
 _SOURCE_SECTION_SIGN_SUFFIX_RE = re.compile(r"\s*§.*$")
 _SOURCE_SECTION_SIGN_SUFFIX_LETTER_RE = re.compile(
-    r"^\s*(?P<base>\d+\s*[a-z]?)\s*§\s+(?P<suffix>[a-z])\s*$",
+    r"^\s{0,4}(?P<base>\d{1,4}\s{0,3}[a-z]?)\s{0,3}§\s{1,3}(?P<suffix>[a-z])\s{0,4}$",
     flags=re.I,
 )
 

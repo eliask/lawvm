@@ -17,8 +17,8 @@ _TARGET_ZONE_CUT_RE = re.compile(
     re.IGNORECASE,
 )
 _AFFECTED_HEAD_RE = re.compile(
-    r"(?:(?P<day>\d{1,2})\s+päivänä\s+(?P<month>[a-zäöå]+)\s+(?P<year>\d{4})\s+)?"
-    r"annetun\s+(?P<title>[^()]{1,220}?)\s*\(\s*(?P<num>\d+)\s*/\s*(?P<cite_year>\d{2,4})\s*\)",
+    r"(?:(?P<day>\d{1,2})\s{1,4}+päivänä\s{1,4}+(?P<month>[a-zäöå]{1,15})\s{1,4}+(?P<year>\d{4})\s{1,4}+)?"
+    r"annetun\s{1,4}+(?P<title>[^()]{1,220}?)\s{0,4}+\(\s{0,4}+(?P<num>\d{1,5})\s{0,4}+/\s{0,4}+(?P<cite_year>\d{2,4})\s{0,4}+\)",
     re.IGNORECASE,
 )
 _CITATION_RE = re.compile(r"\(\s*(\d+)\s*/\s*(\d{2,4})\s*\)")

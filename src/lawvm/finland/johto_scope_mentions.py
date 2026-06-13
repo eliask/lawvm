@@ -14,34 +14,34 @@ from lawvm.finland.helpers import _norm_num_token
 
 _DASH_CHARS = r"[-\u2013\u2014\u2015]"  # hyphen, en-dash, em-dash, horizontal bar
 _SECTION_REF_RE = re.compile(
-    r"(\d+\s*[a-z]?)(?:[-\u2014\u2013\u2015](\d+\s*[a-z]?))?\s*§",
+    r"(\d{1,4}+\s{0,3}+[a-z]?)(?:[-\u2014\u2013\u2015](\d{1,4}+\s{0,3}+[a-z]?))?\s*§",
     re.I,
 )
 _SECTION_LIST_RE = re.compile(
-    r"((?:\d+\s*[a-z]?(?:[-\u2014\u2013\u2015]\d+\s*[a-z]?)?)"
-    r"(?:\s*(?:,|ja|sekä)\s*(?:\d+\s*[a-z]?(?:[-\u2014\u2013\u2015]\d+\s*[a-z]?)?))+)\s*§",
+    r"((?:\d{1,4}+\s{0,3}+[a-z]?(?:[-\u2014\u2013\u2015]\d{1,4}+\s{0,3}+[a-z]?)?)"
+    r"(?:\s*(?:,|ja|sekä)\s*(?:\d{1,4}+\s{0,3}+[a-z]?(?:[-\u2014\u2013\u2015]\d{1,4}+\s{0,3}+[a-z]?)?))+)\s*§",
     re.I,
 )
 _SECTION_LIST_SPLIT_RE = re.compile(r"\s*(?:,|ja|sekä)\s*")
 _SECTION_RANGE_SEGMENT_RE = re.compile(
-    r"(\d+\s*[a-z]?)[-\u2014\u2013\u2015](\d+\s*[a-z]?)",
+    r"(\d{1,4}+\s{0,3}+[a-z]?)[-\u2014\u2013\u2015](\d{1,4}+\s{0,3}+[a-z]?)",
     re.I,
 )
 _ALPHA_SUFFIX_LABEL_RE = re.compile(r"(\d+)([a-z])")
 _NEW_CHAPTER_RE = re.compile(
     r"(?:lisätään\s+(?:lakiin\s+)?|uusi\s+)"
-    r"(\d+\s*[a-z]?)"
-    r"(?:\s*" + _DASH_CHARS + r"\s*(\d+\s*[a-z]?))?"
+    r"(\d{1,4}+\s{0,3}+[a-z]?)"
+    r"(?:\s*" + _DASH_CHARS + r"\s*(\d{1,4}+\s{0,3}+[a-z]?))?"
     r"\s+luku",
     re.I,
 )
 _MOVE_DESTINATION_CHAPTER_RE = re.compile(
-    r"\bsiirretään\b[^§\n]{0,200}?(?:lakiin\s+)?(\d+\s*[a-z]?)\s+lukuun",
+    r"\bsiirretään\b[^§\n]{0,200}?(?:lakiin\s+)?(\d{1,4}+\s{0,3}+[a-z]?)\s+lukuun",
     re.I,
 )
 _MOVE_SECTION_TO_CHAPTER_RE = re.compile(
-    r"(\d+\s*[a-z]?)\s*§[^§\n]{0,120}?\bsiirretään\b[^§\n]{0,200}?"
-    r"(?:lakiin\s+)?(\d+\s*[a-z]?)\s+lukuun",
+    r"(\d{1,4}+\s{0,3}+[a-z]?)\s*§[^§\n]{0,120}?\bsiirretään\b[^§\n]{0,200}?"
+    r"(?:lakiin\s+)?(\d{1,4}+\s{0,3}+[a-z]?)\s+lukuun",
     re.I,
 )
 _MUUTETAAN_RE = re.compile(r"\bmuutetaan\b", re.I)

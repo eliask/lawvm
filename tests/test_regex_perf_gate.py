@@ -147,6 +147,19 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "keyword guards; adjacent repeats at boundary positions flagged by AST "
         "lint even though pattern was already fixed. Pre-existing baseline."
     ),
+    "src/lawvm/finland/johto_scope_mentions.py": (
+        "Section-label atoms bounded and possessive (\\d{1,4}+\\s{0,3}+[a-z]?), "
+        "so no unbounded backtracking remains. Residual flag is the intrinsic "
+        "nested quantifier of the comma-list/range groups ((?:...)+ / (?:...)?), "
+        "which the parser genuinely needs and which only ever runs on short "
+        "johtolause clauses."
+    ),
+    "src/lawvm/finland/johtolause/affected_statute.py": (
+        "_AFFECTED_HEAD_RE date/title/citation quantifiers bounded and possessive; "
+        "residual flag is the optional leading date group ((?:...)?) wrapping the "
+        "bounded body, intrinsic to the statute-head shape and run only on short "
+        "johtolause heads."
+    ),
     "src/lawvm/finland/consolidated_artifacts.py": (
         "Pre-existing baseline: _CONSOLIDATED_LOCATOR_RE has nested quantifiers "
         "and adjacent .{0,N} repeats. Pre-existing baseline."
