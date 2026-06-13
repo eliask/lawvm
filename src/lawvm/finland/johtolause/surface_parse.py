@@ -2025,6 +2025,100 @@ def _heading_placement_after_uusi(
     ]
 
 
+def _postfix_chapter_section_inserts(
+    s: Stream, part: str = ""
+) -> Optional[list[SurfaceNode]]:
+    """Parse a list of ``<num> § lukuun <chap>`` postfix-chapter insert arms.
+
+    After ``lisätään ... uusi`` the new section can carry its destination
+    chapter AFTER the section, named for the section it joins:
+
+      ``uusi 35 a § lukuun 5, 104 a § lukuun 6 ja 133 b § lukuun 7``   (§ lukuun N)
+      ``uusi 35 c § 5 lukuun``                                         (§ N lukuun)
+
+    Each arm yields a ``SurfaceInsertion`` of kind SECTION whose ``chapter`` is
+    the named chapter.  Without this the generic insert path consumed only the
+    bare ``§`` of the first arm, dropping the chapter destination and truncating
+    the remaining arms.
+
+    Returns None (restoring the stream) unless at least one full
+    ``<num> § lukuun <chap>`` arm is present, so the generic insert path keeps
+    handling section inserts that have no postfix chapter.
+    """
+    saved = s.save()
+
+    def _arm() -> Optional[list[tuple[str, str]]]:
+        """Parse one arm; return [(section_label, chapter_label), ...] or None.
+
+        An arm is a (possibly coordinated) section list sharing one postfix
+        chapter, e.g. ``103 a, 103 b ja 104 b § 6 lukuun`` -> three sections
+        all in chapter 6.
+        """
+        arm_saved = s.save()
+        nums = _number_list(s)
+        if not nums:
+            return None
+        t = s.peek()
+        if not (t and t.cat == "PYKALA" and t.case != "GEN"):
+            s.restore(arm_saved)
+            return None
+        s.pos += 1  # consume §
+        t = s.peek()
+        chap: Optional[str] = None
+        # Shape A: § lukuun N  (LUKU:ILL precedes its number)
+        if t and t.cat == "LUKU" and t.case == "ILL":
+            s.pos += 1
+            cnum = _number_with_suffix(s)
+            if cnum is not None:
+                chap = cnum[0] + cnum[1]
+        # Shape B: § N lukuun  (number precedes LUKU:ILL)
+        elif t and t.cat == "NUM":
+            saved_b = s.save()
+            cnum = _number_with_suffix(s)
+            t2 = s.peek()
+            if cnum is not None and t2 and t2.cat == "LUKU" and t2.case == "ILL":
+                s.pos += 1
+                chap = cnum[0] + cnum[1]
+            else:
+                s.restore(saved_b)
+        if chap is None:
+            s.restore(arm_saved)
+            return None
+        labels: list[tuple[str, str]] = []
+        for n, sf in nums:
+            for rn in _expand_range_single(n):
+                full = rn + (sf if len(_expand_range_single(n)) == 1 else "")
+                labels.append((full, chap))
+        return labels
+
+    first = _arm()
+    if first is None:
+        s.restore(saved)
+        return None
+    arms: list[tuple[str, str]] = list(first)
+    while True:
+        sep_saved = s.save()
+        if _sep(s) is None:
+            break
+        _uusi(s)  # optional repeated "uusi" before each arm
+        nxt = _arm()
+        if nxt is None:
+            s.restore(sep_saved)
+            break
+        arms.extend(nxt)
+    _w = _make_witness("fi.insertion_section_postfix_chapter", saved, s.pos)
+    return [
+        SurfaceInsertion(
+            kind=TargetKind.SECTION,
+            label=sec,
+            chapter=chap,
+            part=part,
+            witness=_w,
+        )
+        for sec, chap in arms
+    ]
+
+
 def _insertion(s: Stream, verb: SourceVerb, chapter: str, part: str = "") -> Optional[list[SurfaceNode]]:
     """Parse all insertion patterns. Returns SurfaceNode list."""
     saved = s.save()
@@ -2346,6 +2440,12 @@ def _insertion(s: Stream, verb: SourceVerb, chapter: str, part: str = "") -> Opt
                 if post_nums:
                     return [SurfaceInsertion(kind=TargetKind.APPENDIX, label=n + sf) for n, sf in post_nums]
                 return [SurfaceInsertion(kind=TargetKind.APPENDIX, label="")]
+            # DOC:ILL uusi <num> § lukuun <chap> [, <num> § lukuun <chap>]...
+            # The new section's destination chapter follows the section
+            # (postfix), named for the section it joins.
+            postfix_chapter_nodes = _postfix_chapter_section_inserts(s, part=part)
+            if postfix_chapter_nodes:
+                return postfix_chapter_nodes
             nums2 = _number_list(s)
             if nums2:
                 # Collect chained "sekä/ja uusi range" groups before final §
@@ -2380,7 +2480,24 @@ def _insertion(s: Stream, verb: SourceVerb, chapter: str, part: str = "") -> Opt
                         s.pos += 1
                         if malformed_chapter_insert:
                             s.pos += 1
-                        return [SurfaceInsertion(kind=kind, label=n + sf, chapter="") for n, sf in all_nums]
+                        insert_nodes: list[SurfaceNode] = [
+                            SurfaceInsertion(kind=kind, label=n + sf, chapter="") for n, sf in all_nums
+                        ]
+                        # Continuation: a plain-§ insert group may be followed by
+                        # a "sekä/ja [uusi] <num> § lukuun <chap>" postfix-chapter
+                        # group ("uusi 21 a ja 21 b § sekä 35 c § 5 lukuun ...").
+                        if kind == TargetKind.SECTION and not malformed_chapter_insert:
+                            cont_saved = s.save()
+                            if _sep(s) is not None:
+                                _uusi(s)
+                                tail = _postfix_chapter_section_inserts(s, part=part)
+                                if tail:
+                                    insert_nodes.extend(tail)
+                                else:
+                                    s.restore(cont_saved)
+                            else:
+                                s.restore(cont_saved)
+                        return insert_nodes
                     # Extended: uusi N §:n M momentti/kohta (subsection insertion)
                     if pt is not None and pt.cat == "PYKALA" and pt.case == "GEN":
                         s.pos += 1  # consume §:n

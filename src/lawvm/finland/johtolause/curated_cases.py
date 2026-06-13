@@ -351,6 +351,21 @@ CURATED_CASES = [
         },
     },
     {
+        "name": "lisataan section list with postfix chapter destinations",
+        "text": ("lisätään asetukseen uusi 35 a § lukuun 5, 104 a § lukuun 6 ja 133 b § lukuun 7 seuraavasti"),
+        "expected": [
+            "L P L:5 35a",
+            "L P L:6 104a",
+            "L P L:7 133b",
+        ],
+        "features": {
+            "verb_lisata",
+            "section_ref",
+            "conj_target_list",
+            "letter_suffix",
+        },
+    },
+    {
         "name": "edella oleva valiotsikko sanamuoto keeps later section list alive",
         "text": (
             "muutetaan 11 §:n edellä olevan väliotsikon ruotsinkielinen sanamuoto, "
