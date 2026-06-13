@@ -1183,12 +1183,25 @@ def _finding(
 
 
 def main(args: Any) -> None:
+    work_ids = tuple(args.work_id or ())
+    corpus_path = getattr(args, "corpus", None)
+    if corpus_path:
+        from lawvm.new_zealand.bench_corpus import NZBenchCorpusError, read_corpus_work_ids
+
+        try:
+            corpus_work_ids = read_corpus_work_ids(Path(corpus_path))
+        except NZBenchCorpusError as exc:
+            raise SystemExit(f"nz-corpus benchmark: {exc}") from exc
+        # Explicit --work-id wins; otherwise the curated corpus is the population.
+        if not work_ids:
+            work_ids = corpus_work_ids
+
     archive = open_farchive(Path(args.db))
     try:
         report = build_nz_benchmark_report(
             archive,
             db_path=Path(args.db),
-            work_ids=tuple(args.work_id or ()),
+            work_ids=work_ids,
             max_works=args.max_works,
             work_id_prefix=getattr(args, "work_id_prefix", "") or "",
             min_version_year=getattr(args, "min_version_year", None),

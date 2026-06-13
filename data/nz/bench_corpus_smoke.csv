@@ -1,0 +1,31 @@
+work_id,work_type,year,n_amendment_operations,n_history_witnesses,operation_families,latest_version_id
+act_public_1858_38,act_public,2007,5,5,substituted:5,act_public_1858_38_en_2007-09-03
+act_public_1858_51,act_public,2007,2,2,substituted:2,act_public_1858_51_en_2007-09-03
+act_public_1871_23,act_public,2017,2,2,repealed:2,act_public_1871_23_en_2017-06-03
+act_public_1871_24,act_public,2007,17,17,__missing__:1;substituted:16,act_public_1871_24_en_2007-09-03
+act_public_1872_13,act_public,2017,12,12,repealed:12,act_public_1872_13_en_2017-06-03
+act_public_1872_64,act_public,2007,6,6,repealed:3;substituted:3,act_public_1872_64_en_2007-09-03
+act_public_1873_21,act_public,2007,2,2,substituted:2,act_public_1873_21_en_2007-09-03
+act_public_1873_49,act_public,2007,8,8,amended:1;substituted:7,act_public_1873_49_en_2007-09-03
+act_public_1874_34,act_public,2007,6,6,repealed:2;substituted:4,act_public_1874_34_en_2007-09-03
+act_public_1874_41,act_public,2007,2,2,substituted:2,act_public_1874_41_en_2007-09-03
+act_public_1874_44,act_public,2007,2,2,substituted:2,act_public_1874_44_en_2007-09-03
+act_public_1875_27,act_public,2007,2,2,repealed:2,act_public_1875_27_en_2007-09-03
+act_public_1875_34,act_public,2007,12,12,__missing__:1;amended:1;repealed:9;substituted:1,act_public_1875_34_en_2007-09-03B
+act_public_1875_45,act_public,2007,2,2,repealed:2,act_public_1875_45_en_2007-09-03
+act_public_1875_56,act_public,2007,31,31,repealed:28;substituted:3,act_public_1875_56_en_2007-09-03
+act_public_1875_62,act_public,2007,1,1,substituted:1,act_public_1875_62_en_2007-09-03
+act_public_1876_10,act_public,2007,1,1,substituted:1,act_public_1876_10_en_2007-09-03
+act_public_1876_23,act_public,2007,2,2,substituted:2,act_public_1876_23_en_2007-09-03
+act_public_1876_24,act_public,2007,5,5,amended:2;repealed:1;substituted:2,act_public_1876_24_en_2007-09-03
+act_public_1876_31,act_public,2007,3,3,amended:1;repealed:2,act_public_1876_31_en_2007-09-03
+act_public_1876_57,act_public,2007,3,3,amended:1;repealed:2,act_public_1876_57_en_2007-09-03
+act_public_1876_72,act_public,2007,7,7,repealed:6;substituted:1,act_public_1876_72_en_2007-09-03
+act_public_1876_79,act_public,2007,7,7,__missing__:1;inserted:3;substituted:3,act_public_1876_79_en_2007-09-03
+act_public_1955_37,act_public,2024,106,106,__unclassified__:1;amended:27;editorial change:1;inserted:39;repealed:21;replaced:17,act_public_1955_37_en_2024-06-05
+act_public_1956_47,act_public,2025,1790,1790,__missing__:6;amended:1029;editorial change:8;expired:1;inserted:387;repealed:197;replaced:162,act_public_1956_47_en_2025-11-13
+act_public_1981_23,act_public,2026,231,231,amended:71;inserted:85;repealed:40;replaced:35,act_public_1981_23_en_2026-02-21
+act_public_1992_122,act_public,2025,710,710,added:9;amended:204;brought into force:1;inserted:131;repealed:209;replaced:33;substituted:123,act_public_1992_122_en_2025-03-30
+act_public_1993_110,act_public,2013,1,1,repealed:1,act_public_1993_110_en_2013-12-05
+act_public_2005_87,act_public,2019,5,5,repealed:5,act_public_2005_87_en_2019-10-24
+act_public_2009_38,act_public,2012,1,1,repealed:1,act_public_2009_38_en_2012-02-13

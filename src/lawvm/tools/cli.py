@@ -7993,6 +7993,52 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         "--summary-only", action="store_true", help="emit only whole-tree comparison summary counts"
     )
     nz_dry_run_oracle_p.add_argument("--json", action="store_true", help="emit comparison report JSON")
+    nz_build_corpus_p = nz_corpus_sub.add_parser(
+        "build-corpus",
+        help="generate curated NZ bench corpora (large + smoke) of works with >0 amendments",
+        description=(
+            "Scan the farchive, keep only works carrying at least one amendment "
+            "operation witness (>0 amendments), and write two deterministic CSVs "
+            "under data/nz/: bench_corpus.csv (every amendment-bearing work) and "
+            "bench_corpus_smoke.csv (a small curated dev slice pinning the dry-run "
+            "canaries and spanning operation families). No clock, no randomness; "
+            "counts are stated, never silently truncated."
+        ),
+    )
+    nz_build_corpus_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_build_corpus_p.add_argument(
+        "--out-dir",
+        default="data/nz",
+        metavar="DIR",
+        help="output directory for the curated CSVs (default: data/nz)",
+    )
+    nz_build_corpus_p.add_argument(
+        "--large-out", default=None, metavar="PATH", help="override large corpus path (default: <out-dir>/bench_corpus.csv)"
+    )
+    nz_build_corpus_p.add_argument(
+        "--smoke-out",
+        default=None,
+        metavar="PATH",
+        help="override smoke corpus path (default: <out-dir>/bench_corpus_smoke.csv)",
+    )
+    nz_build_corpus_p.add_argument(
+        "--work-id-prefix",
+        default="act_public_",
+        metavar="PREFIX",
+        help=(
+            "scan only work_ids beginning with PREFIX (default: 'act_public_', the amendment-bearing "
+            "public-act class); pass an empty string to scan the full archive"
+        ),
+    )
+    nz_build_corpus_p.add_argument(
+        "--smoke-size", type=int, default=30, metavar="N", help="target smoke-slice size (default: 30)"
+    )
+    nz_build_corpus_p.add_argument("--quiet", action="store_true", help="suppress per-batch scan progress")
     nz_dry_run_corpus_p = nz_corpus_sub.add_parser(
         "dry-run-corpus",
         help="run the NZ dry-run repeal surface across a representative work population",
@@ -8017,6 +8063,16 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         default=[],
         metavar="ID",
         help="specific work_id to include; defaults to the sampled default population",
+    )
+    nz_dry_run_corpus_p.add_argument(
+        "--corpus",
+        default=None,
+        metavar="CSV",
+        help=(
+            "read the work population from a curated bench-corpus CSV (work_id column), "
+            "e.g. data/nz/bench_corpus_smoke.csv; overrides the sampler. An explicit "
+            "--work-id list still takes precedence."
+        ),
     )
     nz_dry_run_corpus_p.add_argument("--max-works", type=int, default=None, metavar="N", help="maximum works")
     nz_dry_run_corpus_p.add_argument(
@@ -8117,6 +8173,16 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         default=[],
         metavar="ID",
         help="specific work_id to include; defaults to all archived version details",
+    )
+    nz_benchmark_p.add_argument(
+        "--corpus",
+        default=None,
+        metavar="CSV",
+        help=(
+            "read the work population from a curated bench-corpus CSV (work_id column), "
+            "e.g. data/nz/bench_corpus.csv; overrides the sampler. An explicit "
+            "--work-id list still takes precedence."
+        ),
     )
     nz_benchmark_p.add_argument("--max-works", type=int, default=None, metavar="N", help="maximum works")
     nz_benchmark_p.add_argument(
@@ -10843,6 +10909,20 @@ def _main_impl() -> None:
             from lawvm.tools.uk_bench import main as uk_bench_main
 
             uk_bench_main(args)
+        elif j == "nz":
+            # NZ has no actual-replay oracle yet (every effect is dry-run /
+            # replay-blocked), so the FI-style replay benchmark does not apply.
+            # Fail loudly here rather than silently scoring the Finland corpus.
+            print(
+                "error: 'lawvm bench -j nz' is not a replay benchmark — NZ replay is dry-run only.\n"
+                "Use the NZ surfaces over a curated corpus instead:\n"
+                "  lawvm nz-corpus build-corpus            # generate data/nz/bench_corpus{,_smoke}.csv\n"
+                "  lawvm nz-corpus dry-run-corpus --corpus data/nz/bench_corpus_smoke.csv "
+                "--scope selected-family-repeal --summary-only\n"
+                "  lawvm nz-corpus benchmark --corpus data/nz/bench_corpus.csv",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
         else:
             from lawvm.tools.bench import main as bench_main
 
@@ -11046,6 +11126,10 @@ def _main_impl() -> None:
             from lawvm.new_zealand.dry_run_oracle import main as nz_corpus_dry_run_oracle_main
 
             nz_corpus_dry_run_oracle_main(args)
+        elif args.nz_corpus_command == "build-corpus":
+            from lawvm.new_zealand.bench_corpus import main as nz_corpus_build_corpus_main
+
+            nz_corpus_build_corpus_main(args)
         elif args.nz_corpus_command == "dry-run-corpus":
             from lawvm.new_zealand.dry_run_corpus import main as nz_corpus_dry_run_corpus_main
 
