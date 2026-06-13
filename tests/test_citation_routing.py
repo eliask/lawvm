@@ -26,12 +26,45 @@ from lawvm.finland.grafter import (
     route_amendment,
     _normalize_johtolause_verbs,
 )
-from lawvm.finland.citation_routing import OP_KEYWORDS, extract_pending_amendment_target_id
+from lawvm.finland.citation_routing import (
+    OP_KEYWORDS,
+    extract_pending_amendment_target_id,
+    johtolause_cited_target_ids,
+)
 
 
 # ---------------------------------------------------------------------------
 # Section 1: Unit tests — hand-crafted inputs
 # ---------------------------------------------------------------------------
+
+
+class TestJohtolauseCitedTargetIds:
+    """johtolause_cited_target_ids names the statute(s) a preamble actually cites."""
+
+    def test_dropped_digit_typo_surfaces_cited_statute(self) -> None:
+        # 1965/301 johtolause: a dropped digit makes rakennuslaki (370/58)
+        # read as (70/58). The helper must surface the 1958/70 it cites so the
+        # skip diagnostic can show it against the real parent 1958/370.
+        johto = (
+            "Eduskunnan päätöksen mukaisesti muutetaan 16 päivänä elokuuta 1958 "
+            "annetun rakennuslain (70/58) 11 §:n 2 momentti"
+        )
+        assert johtolause_cited_target_ids(johto, 1965) == ["1958/70"]
+
+    def test_four_digit_year_citation(self) -> None:
+        johto = "muutetaan jonkin lain (1234/2001) 1 §"
+        assert johtolause_cited_target_ids(johto, 2010) == ["2001/1234"]
+
+    def test_prior_amendment_citations_after_sellaisena_excluded(self) -> None:
+        # Citations after "sellaisena kuin se on" are prior-amendment refs,
+        # not the target statute — they must not be reported.
+        johto = (
+            "muutetaan jonkin lain (100/58) 5 §, sellaisena kuin se on laissa (661/62)"
+        )
+        assert johtolause_cited_target_ids(johto, 1965) == ["1958/100"]
+
+    def test_no_citation_returns_empty(self) -> None:
+        assert johtolause_cited_target_ids("muutetaan 5 § seuraavasti:", 1965) == []
 
 
 class TestRouteAmendmentNoGuard:

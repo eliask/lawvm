@@ -166,6 +166,31 @@ def _johtolause_references_parent(johto: str, parent_id: str) -> bool:
     return False
 
 
+def johtolause_cited_target_ids(johto: str, source_year: int) -> list[str]:
+    """Normalized ``YEAR/NUM`` statute ids cited in a johtolause target zone.
+
+    Mirrors the scan in :func:`_johtolause_references_parent`: only citations
+    before a ``sellaisena kuin`` / ``siihen myöhemmin`` clause are considered
+    target citations (the rest are prior-amendment references). Returns ids in
+    first-seen order. Used to self-evidence ``citation_mismatch_skip`` /
+    ``num_collision_skip`` diagnostics — so the message can name what the
+    johtolause actually cites rather than just saying "a different statute".
+    """
+    johto_compact = re.sub(r"\s+", " ", johto or "")
+    cut = re.search(
+        r"\bsellais(?:ena|ina)\s+kuin\b|\bsiihen\s+myöhemmin\b", johto_compact, re.I
+    )
+    target_zone = johto_compact[: cut.start()] if cut else johto_compact
+    out: list[str] = []
+    seen: set[str] = set()
+    for ref_num, ref_year in re.findall(r"\(\s*(\d+)\s*/\s*(\d{2,4})\s*\)", target_zone):
+        norm = _normalize_source_citation_id(f"{ref_num}/{ref_year}", source_year)
+        if norm and norm not in seen:
+            seen.add(norm)
+            out.append(norm)
+    return out
+
+
 def _title_explicitly_targets_other_statute(source_title: str, parent_title: str) -> bool:
     """Return True when an amendment title clearly names another single target statute.
 

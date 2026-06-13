@@ -17,7 +17,11 @@ from lxml import etree
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.phase_result import Finding
-from lawvm.finland.citation_routing import _looks_like_fi_meta_repeal, _title_explicitly_targets_other_statute
+from lawvm.finland.citation_routing import (
+    _looks_like_fi_meta_repeal,
+    _title_explicitly_targets_other_statute,
+    johtolause_cited_target_ids,
+)
 from lawvm.finland.frontend_compile import _enrich_ops_from_amendment_tree
 from lawvm.finland.metadata import _commencement_expiry_override
 from lawvm.finland.ops import AmendmentOp
@@ -58,6 +62,22 @@ class ProcessRouteRejectionContext:
     record_finding: RecordProcessFinding
     replay_print: ReplayPrint
 
+    def _cited_statute_phrase(self) -> str:
+        """Name the statute(s) the johtolause actually cites, for diagnostics.
+
+        Returns e.g. ``"johtolause cites 1958/70"`` so a reader can see the
+        dropped/garbled citation against ``parent_id`` directly, or a generic
+        phrase when no statute citation is parseable from the working clause.
+        """
+        try:
+            source_year = int(self.amendment_id.split("/", 1)[0])
+        except (ValueError, IndexError):
+            source_year = 0
+        cited = johtolause_cited_target_ids(self.johto, source_year) if source_year else []
+        if cited:
+            return f"johtolause cites {', '.join(cited)}"
+        return "johtolause cites no parseable statute"
+
     def handle(self) -> RouteRejectionResult:
         self._record_source_incomplete()
         self._apply_skipped_amendment_expiry_override()
@@ -97,7 +117,7 @@ class ProcessRouteRejectionContext:
         if self.route_reason == "num_collision_skip":
             self.replay_print(
                 f"  [{self.amendment_id}] SKIPPED — NUM-collision false mapping: "
-                f"johtolause targets a different statute (not {self.parent_id})"
+                f"{self._cited_statute_phrase()} (not {self.parent_id})"
             )
             self.record_finding(
                 kind="APPLY.SOURCE_INCOMPLETE",
@@ -133,7 +153,7 @@ class ProcessRouteRejectionContext:
         else:
             self.replay_print(
                 f"  [{self.amendment_id}] SKIPPED — citation mismatch: "
-                f"johtolause targets different statute (not {self.parent_id})"
+                f"{self._cited_statute_phrase()} (not {self.parent_id})"
             )
         self.record_finding(
             kind="APPLY.SOURCE_INCOMPLETE",
