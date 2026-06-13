@@ -105,6 +105,26 @@ def _skip_archaic_nain_kuuluva(s: Stream) -> None:
 # scan.annotate_provenance to compute provenance span boundaries.
 
 
+def _has_citation_before_hard_boundary(tokens: list[Token], start: int, n: int) -> bool:
+    """Return True if a CITATION_SPAN appears before the next hard boundary.
+
+    Scans from ``start`` until a VERB / END / UUSI token (the boundaries that
+    terminate a provenance span).  Used to distinguish a provenance phrase's
+    closing citation (no further citation ahead) from an interior citation in a
+    multi-arm "ovat ... laissa X, ... laissa Y" enumeration (more citations
+    ahead).
+    """
+    j = start
+    while j < n:
+        cat = tokens[j].cat
+        if cat in ("VERB", "END", "UUSI"):
+            return False
+        if cat == "CITATION_SPAN":
+            return True
+        j += 1
+    return False
+
+
 def _skip_prov_span(tokens: list[Token], start: int, n: int) -> int:
     """Skip a provenance span starting at `start`, return index after it."""
     _PROV_CONTINUATION = frozenset(
@@ -127,6 +147,14 @@ def _skip_prov_span(tokens: list[Token], start: int, n: int) -> int:
     # "4 ja 6 §:n" enumerates WHAT was changed, not targets for this amendment.
     _PROV_INTERNAL_VERBS = frozenset({"ovat", "on", "olla"})
     seen_internal_verb = False
+    # Distinct from seen_internal_verb: True only when a SURVIVING ovat/on token
+    # was seen (not when the internal verb was merely inferred from a leading
+    # CITATION_SPAN).  In the surviving-verb shape the appositive is a single
+    # "ovat <provenance section-refs> laissa (NNN/YY)" phrase whose closing
+    # citation truly ends the provenance; in the inferred shape the phrase is a
+    # repeating "<section> laissa <cite>" enumeration where each citation is
+    # internal, so its closure must NOT resume the target list.
+    seen_surviving_internal_verb = False
 
     # When citation stripping runs before provenance detection (the normal
     # pipeline), the "kuin ne/se ovat/on ... laissa NNN/YYYY" words between
@@ -179,6 +207,32 @@ def _skip_prov_span(tokens: list[Token], start: int, n: int) -> int:
             break
         if t.text.lower() in _PROV_INTERNAL_VERBS:
             seen_internal_verb = True
+            seen_surviving_internal_verb = True
+        # The appositive's closing citation ("... laissa (NNN/YY)") collapses
+        # into a CITATION_SPAN sentinel.  Once we pass it, an "ovat ... laissa"
+        # provenance phrase whose internal verb survived as a real token can be
+        # complete: a subsequent separator + structural reference is then a REAL
+        # target resuming the list, not a continuation of the provenance
+        # enumeration.  Clearing the internal-verb flag re-enables the
+        # COMMA/CONJ → structural exits below so the resuming target is
+        # preserved instead of silently swallowed.
+        #
+        # Two guards keep this from misfiring on legitimate provenance:
+        #   1. seen_surviving_internal_verb — only the surviving-verb shape.
+        #      In the inferred shape (leading CITATION_SPAN absorbed the verb)
+        #      the phrase is a repeating "<section> laissa <cite>" enumeration
+        #      where each citation is internal.
+        #   2. No further CITATION_SPAN before the hard boundary (VERB/END/UUSI).
+        #      A multi-arm provenance ("ovat ... laissa X, ... laissa Y") still
+        #      has citations ahead, so this one is NOT the closing citation and
+        #      the enumeration after it is still provenance.
+        if (
+            t.cat == "CITATION_SPAN"
+            and seen_surviving_internal_verb
+            and not _has_citation_before_hard_boundary(tokens, i + 1, n)
+        ):
+            seen_internal_verb = False
+            seen_surviving_internal_verb = False
         # Comma followed by UUSI or structural = end of provenance
         # BUT: after an internal verb (ovat/on), structural tokens are part
         # of the provenance enumeration, not real targets.

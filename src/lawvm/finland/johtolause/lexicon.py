@@ -188,6 +188,7 @@ _v("uutta", "uusi", "UUSI", "NOM")
 # Conjunctions
 _v("ja", "ja", "CONJ")
 _v("sekä", "sekä", "CONJ")
+_v("ynnä", "ynnä", "CONJ")  # archaic "and also", coordinates target arms
 
 # End sentinels
 _v("seuraavasti", "seuraavasti", "END")

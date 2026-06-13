@@ -1031,6 +1031,18 @@ CURATED_CASES = [
         "expected": ["M P 3", "M P 32 1", "M P 32 3", "M P 34 3 2", "M P 34 5"],
         "features": {"provenance_skip", "ovat_internal"},
     },
+    {
+        # Mid-list provenance appositive: the "sellaisina kuin ne ovat ...
+        # laissa (NNN/YY)" phrase encloses provenance section-refs (4, 6 §) and
+        # must NOT swallow the real target (9 §) that resumes after it.
+        "name": "mid_list_provenance_does_not_swallow_resuming_target",
+        "text": (
+            "Muutetaan lain 5 §, sellaisina kuin ne ovat 4 ja 6 §:n osalta "
+            "laissa (250/66), ja 9 §, seuraavasti:"
+        ),
+        "expected": ["M P 5", "M P 9"],
+        "features": {"provenance_skip", "ovat_internal", "mid_list_resume"},
+    },
     # ==================================================================
     # Back-reference forms: all declensions
     # ==================================================================
