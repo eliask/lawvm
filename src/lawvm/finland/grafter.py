@@ -561,6 +561,7 @@ from lawvm.finland.amendment_chapter_precreate import (
     _pre_create_pseudo_marker_chapters,
 )
 from lawvm.finland.process_acquisition import ProcessAcquisitionContext
+from lawvm.finland.process_call import resolve_process_amendment_call
 from lawvm.finland.process_failed_op_governance import ProcessFailedOpGovernance
 from lawvm.finland.process_findings import ProcessFindingRecorder
 from lawvm.finland.process_frontend_normalization import ProcessFrontendNormalizationContext
@@ -4676,69 +4677,60 @@ def process_muutoslaki(
     etc.) are still populated for backward compatibility, but callers should
     prefer the PhaseResult signals.
     """
-    if request is not None:
-        amendment_id = request.amendment_id
-        state = request.state
-        ctx = request.ctx
-        replay_mode = request.replay_mode
-        parent_id = request.parent_id
-        strict_profile = request.strict_profile
-        chapter_seed_skip = request.chapter_seed_skip
-        corpus = request.corpus
-        future_repeals = request.future_repeals
-        prior_migration_events = request.prior_migration_events
-        processed_amendment_titles = request.processed_amendment_titles
-    if amendment_id is None or state is None or ctx is None:
-        raise TypeError("process_muutoslaki requires either amendment_id/state/ctx or request=")
-    if sinks is not None:
-        compiled_ops_out = compiled_ops_out if compiled_ops_out is not None else sinks.compiled_ops_out
-        lo_ops_out = lo_ops_out if lo_ops_out is not None else sinks.lo_ops_out
-        failed_ops_out = failed_ops_out if failed_ops_out is not None else sinks.failed_ops_out
-        source_pathologies_out = (
-            source_pathologies_out
-            if source_pathologies_out is not None
-            else sinks.source_pathologies_out
-        )
-        elaboration_observations_out = (
-            elaboration_observations_out
-            if elaboration_observations_out is not None
-            else sinks.elaboration_observations_out
-        )
-        sparse_slot_bindings_out = (
-            sparse_slot_bindings_out
-            if sparse_slot_bindings_out is not None
-            else sinks.sparse_slot_bindings_out
-        )
-        sparse_leftovers_out = (
-            sparse_leftovers_out
-            if sparse_leftovers_out is not None
-            else sinks.sparse_leftovers_out
-        )
-        regex_recognition_coverage_out = (
-            regex_recognition_coverage_out
-            if regex_recognition_coverage_out is not None
-            else sinks.regex_recognition_coverage_out
-        )
-        commencement_expiry_overrides_out = (
-            commencement_expiry_overrides_out
-            if commencement_expiry_overrides_out is not None
-            else sinks.commencement_expiry_overrides_out
-        )
-        mutation_events_out = (
-            mutation_events_out if mutation_events_out is not None else sinks.mutation_events_out
-        )
-        mutation_invariant_reports_out = (
-            mutation_invariant_reports_out
-            if mutation_invariant_reports_out is not None
-            else sinks.mutation_invariant_reports_out
-        )
-        write_audits_out = write_audits_out if write_audits_out is not None else sinks.write_audits_out
-        migration_events_out = (
-            migration_events_out if migration_events_out is not None else sinks.migration_events_out
-        )
-        restructure_plans_out = (
-            restructure_plans_out if restructure_plans_out is not None else sinks.restructure_plans_out
-        )
+    process_call = resolve_process_amendment_call(
+        amendment_id=amendment_id,
+        state=state,
+        ctx=ctx,
+        replay_mode=replay_mode,
+        compiled_ops_out=compiled_ops_out,
+        lo_ops_out=lo_ops_out,
+        parent_id=parent_id,
+        failed_ops_out=failed_ops_out,
+        strict_profile=strict_profile,
+        chapter_seed_skip=chapter_seed_skip,
+        corpus=corpus,
+        future_repeals=future_repeals,
+        source_pathologies_out=source_pathologies_out,
+        elaboration_observations_out=elaboration_observations_out,
+        sparse_slot_bindings_out=sparse_slot_bindings_out,
+        sparse_leftovers_out=sparse_leftovers_out,
+        regex_recognition_coverage_out=regex_recognition_coverage_out,
+        commencement_expiry_overrides_out=commencement_expiry_overrides_out,
+        mutation_events_out=mutation_events_out,
+        mutation_invariant_reports_out=mutation_invariant_reports_out,
+        write_audits_out=write_audits_out,
+        migration_events_out=migration_events_out,
+        prior_migration_events=prior_migration_events,
+        restructure_plans_out=restructure_plans_out,
+        processed_amendment_titles=processed_amendment_titles,
+        request=request,
+        sinks=sinks,
+    )
+    amendment_id = process_call.amendment_id
+    state = process_call.state
+    ctx = process_call.ctx
+    replay_mode = process_call.replay_mode
+    compiled_ops_out = process_call.compiled_ops_out
+    lo_ops_out = process_call.lo_ops_out
+    parent_id = process_call.parent_id
+    failed_ops_out = process_call.failed_ops_out
+    strict_profile = process_call.strict_profile
+    chapter_seed_skip = process_call.chapter_seed_skip
+    corpus = process_call.corpus
+    future_repeals = process_call.future_repeals
+    source_pathologies_out = process_call.source_pathologies_out
+    elaboration_observations_out = process_call.elaboration_observations_out
+    sparse_slot_bindings_out = process_call.sparse_slot_bindings_out
+    sparse_leftovers_out = process_call.sparse_leftovers_out
+    regex_recognition_coverage_out = process_call.regex_recognition_coverage_out
+    commencement_expiry_overrides_out = process_call.commencement_expiry_overrides_out
+    mutation_events_out = process_call.mutation_events_out
+    mutation_invariant_reports_out = process_call.mutation_invariant_reports_out
+    write_audits_out = process_call.write_audits_out
+    migration_events_out = process_call.migration_events_out
+    prior_migration_events = process_call.prior_migration_events
+    restructure_plans_out = process_call.restructure_plans_out
+    processed_amendment_titles = process_call.processed_amendment_titles
     # Accumulates executable temporal authority plus compatibility evidence rows
     # before the PhaseResult/result-sink projection boundary.
     _signals = ProcessSignalBuffers.empty()
