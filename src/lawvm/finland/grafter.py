@@ -7,7 +7,7 @@ import lxml.etree as etree
 import copy
 from pathlib import Path
 from dataclasses import replace as dc_replace
-from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Literal, Optional, Protocol, Set, Tuple, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Literal, Mapping, Optional, Protocol, Set, Tuple, Union, cast
 
 if TYPE_CHECKING:
     from lawvm.core.phase_result import PhaseResult
@@ -530,7 +530,7 @@ def _amendment_lacks_operative_structure(tree: etree._Element) -> tuple[bool, li
     return (len(tags) == 0, tags)
 
 
-def _target_group_key(op: AmendmentOp) -> Tuple[IRNodeKind, str, Optional[str], Optional[str]]:
+def _target_group_key(op: AmendmentOp) -> "GroupTargetKey":
     """Backward-compat wrapper for group_plan.target_group_key."""
     return _target_group_key_impl(op)
 
@@ -909,17 +909,17 @@ def _body_has_real_chapter_container(
 
 def _group_ops_by_target(
     ops: List[AmendmentOp],
-) -> Dict[Tuple[IRNodeKind, str, Optional[str], Optional[str]], List[AmendmentOp]]:
+) -> Dict["GroupTargetKey", List[AmendmentOp]]:
     """Backward-compat wrapper for group_plan.group_ops_by_target."""
     return _group_ops_by_target_impl(ops)
 
 
 def _coalesce_same_target_mixed_scope_section_groups(
-    section_groups: Dict[Tuple[IRNodeKind, str, Optional[str], Optional[str]], List[AmendmentOp]],
+    section_groups: Mapping[Any, List[AmendmentOp]],
     *,
     master: "ReplayState",
     muutos_tree: "etree._Element",
-) -> Dict[Tuple[IRNodeKind, str, Optional[str], Optional[str]], List[AmendmentOp]]:
+) -> Dict["GroupTargetKey", List[AmendmentOp]]:
     """Merge mixed-scope section groups, but tag inherited scoped ownership.
 
     A bare section group must not silently inherit scoped ownership from a
@@ -927,9 +927,14 @@ def _coalesce_same_target_mixed_scope_section_groups(
     coherent, inherited bare ops are tagged so the scope upgrade survives as a
     first-class witness instead of disappearing inside group formation.
     """
-    merged = dict(section_groups)
-    section_keys = [key for key in merged if key[0] is IRNodeKind.SECTION]
-    buckets: dict[tuple[str, Optional[str]], list[Tuple[IRNodeKind, str, Optional[str], Optional[str]]]] = defaultdict(list)
+    merged = {
+        normalize_group_target_key(
+            cast(Union[GroupTargetKey, Tuple[IRNodeKind, str, Optional[str], Optional[str]]], key)
+        ): value
+        for key, value in section_groups.items()
+    }
+    section_keys = [key for key in merged if key.unit_kind is IRNodeKind.SECTION]
+    buckets: dict[tuple[str, Optional[str]], list[GroupTargetKey]] = defaultdict(list)
 
     def _op_merge_signature(op: AmendmentOp) -> tuple[object, ...]:
         return (
@@ -944,16 +949,15 @@ def _coalesce_same_target_mixed_scope_section_groups(
         )
 
     for key in section_keys:
-        _unit_kind, target_norm, _target_chapter, target_part = key
-        buckets[(target_norm, target_part)].append(key)
+        buckets[(key.target_norm, key.target_part)].append(key)
 
     for (target_norm, target_part), keys in buckets.items():
-        unscoped_key = next((key for key in keys if not key[2]), None)
-        scoped_keys = [key for key in keys if key[2]]
+        unscoped_key = next((key for key in keys if not key.target_chapter), None)
+        scoped_keys = [key for key in keys if key.target_chapter]
         if unscoped_key is None or len(scoped_keys) != 1:
             continue
         scoped_key = scoped_keys[0]
-        scoped_chapter = scoped_key[2]
+        scoped_chapter = scoped_key.target_chapter
         if scoped_chapter is None:
             continue
 
@@ -1116,6 +1120,8 @@ from lawvm.finland.payload_normalize import (
     _prune_container_payload_sections_shadowed_by_standalone_targets as _prune_container_payload_sections_shadowed_by_standalone_targets_impl,
 )
 from lawvm.finland.group_plan import (
+    GroupTargetKey,
+    normalize_group_target_key,
     target_group_key as _target_group_key_impl,
     group_ops_by_target as _group_ops_by_target_impl,
 )
@@ -3427,28 +3433,28 @@ def compile_amendment_ops(
     # amendment since the master IR is not mutated between groups.
     _precomputed_lookups = snapshot_replay_lookups(cast(Any, master))
 
-    for (target_unit_kind, target_norm, target_chapter, target_part), group_ops in section_groups.items():
-        target_unit_kind_value = cast(TargetUnitKind, target_unit_kind.value)
+    for group_key, group_ops in section_groups.items():
+        target_unit_kind_value = cast(TargetUnitKind, group_key.unit_kind.value)
         standalone_section_targets = _group_shadow_pruning_section_targets(
             ops,
             target_unit_kind=target_unit_kind_value,
-            target_norm=target_norm,
-            target_part=target_part,
+            target_norm=group_key.target_norm,
+            target_part=group_key.target_part,
             duplicate_section_labels=frozenset(getattr(master, "duplicate_section_labels", ())),
         )
         foreign_scoped_standalone_section_targets = _group_shadow_pruning_foreign_scoped_section_targets(
             ops,
             target_unit_kind=target_unit_kind_value,
-            target_norm=target_norm,
-            target_part=target_part,
+            target_norm=group_key.target_norm,
+            target_part=group_key.target_part,
             duplicate_section_labels=frozenset(getattr(master, "duplicate_section_labels", ())),
         )
         group_result = _compile_group(
             master=master,
             target_unit_kind=target_unit_kind_value,
-            target_norm=target_norm,
-            target_chapter=target_chapter,
-            target_part=target_part,
+            target_norm=group_key.target_norm,
+            target_chapter=group_key.target_chapter,
+            target_part=group_key.target_part,
             group_ops=group_ops,
             standalone_section_targets=standalone_section_targets,
             foreign_scoped_standalone_section_targets=foreign_scoped_standalone_section_targets,
