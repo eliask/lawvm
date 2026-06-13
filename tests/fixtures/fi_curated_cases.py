@@ -1308,8 +1308,11 @@ CURATED_CASES = [
         #  sellaisena kuin se on 24 päivänä marraskuuta 1994 annetussa
         #  valtioneuvoston päätöksessä (1017/94), seuraavasti:"
         #
-        # The duplicate 5§4mom comes from "näistä 5 §:n 4 momentti" being re-parsed
-        # as a target (same as pre-tag-not-delete behaviour; dedup handles it).
+        # "näistä 5 §:n 4 momentti sellaisena kuin se on ..." is a provenance
+        # back-reference ("of these, §5 mom 4 is as it appears in ..."), not a
+        # fresh target.  _skip_provenance_anaphor_backref consumes the anaphor +
+        # its reference + the closing citation span, so no duplicate 5§4mom op is
+        # emitted.
         "text": (
             "muutetaan yritystuesta 30 päivänä joulukuuta 1993 annetun "
             "valtioneuvoston päätöksen (1689/93) 4 §:n 2 momentin sekä 5 §:n 1, "
@@ -1317,10 +1320,26 @@ CURATED_CASES = [
             "24 päivänä marraskuuta 1994 annetussa valtioneuvoston päätöksessä "
             "(1017/94), seuraavasti:"
         ),
-        "expected": ["M P 4 2", "M P 5 1", "M P 5 2", "M P 5 4", "M P 5 4"],
+        "expected": ["M P 4 2", "M P 5 1", "M P 5 2", "M P 5 4"],
         "features": {
             "verb_muuttaa", "section_ref", "subsection_ref", "conj_target_list",
             "citation_span", "provenance_skip",
+        },
+    },
+    {
+        # The "näistä <ref> sellaisena kuin ..." back-reference must be skipped
+        # WITHOUT swallowing a genuine continuation target that follows the
+        # closing provenance citation.  Here "7 §" after the appositive is a
+        # real target and must survive.
+        "name": "naista_provenance_backref_keeps_following_target_alive",
+        "text": (
+            "muutetaan 5 §:n 1 ja 4 momentti, näistä 5 §:n 4 momentti sellaisena "
+            "kuin se on laissa 100/2000, sekä 7 §, seuraavasti:"
+        ),
+        "expected": ["M P 5 1", "M P 5 4", "M P 7"],
+        "features": {
+            "verb_muuttaa", "section_ref", "subsection_ref", "conj_target_list",
+            "provenance_skip",
         },
     },
     # ------------------------------------------------------------------

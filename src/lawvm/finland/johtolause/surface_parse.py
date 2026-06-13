@@ -3168,6 +3168,67 @@ def _skip_named_row_residue(s: Stream) -> bool:
     return False
 
 
+_PROV_ANAPHOR_WORDS = frozenset({"näistä", "niistä"})
+
+
+def _skip_provenance_anaphor_backref(s: Stream) -> bool:
+    """Consume a ``näistä/niistä <ref> sellaisena kuin ...`` provenance back-ref.
+
+    Finnish amendment preambles attribute the source version of *already
+    listed* targets with an anaphoric appositive::
+
+        ... 5 §:n 1, 2 ja 4 momentti, näistä 5 §:n 4 momentti sellaisena
+        kuin se on laissa 1017/1994, seuraavasti:
+
+    Here ``näistä 5 §:n 4 momentti`` ("of these, the 4th subsection of §5")
+    is a back-reference to a previously enumerated target, NOT a fresh target.
+    Without this skip the section reference following the anaphor is re-parsed
+    as a duplicate op, over-claiming the amendment.
+
+    The anaphor is only consumed when it is followed by a structural reference
+    AND that reference is closed by a provenance trigger (PROV span or the
+    CITATION_SPAN that absorbs ``sellaisena kuin ... laissa NNN/YYYY``).  That
+    closing trigger is what marks the run as an attribution clause rather than
+    a genuine continuation of the target list.
+    """
+    saved = s.save()
+    t = s.peek()
+    if not (t and t.cat == "WORD" and t.text.lower() in _PROV_ANAPHOR_WORDS):
+        return False
+    s.pos += 1
+
+    saw_structural = False
+    while (t := s.peek()) and t.cat in (
+        "NUM",
+        "LETTER",
+        "DASH",
+        "CONJ",
+        "COMMA",
+        "PYKALA",
+        "MOMENTTI",
+        "KOHTA",
+        "ALAKOHTA",
+        "JOHD",
+        "OTSIKKO",
+    ):
+        if t.cat in ("PYKALA", "MOMENTTI", "KOHTA"):
+            saw_structural = True
+        s.pos += 1
+
+    # Require the run to be closed by a provenance trigger.  Without it the
+    # anaphor would be a malformed fragment; bail out and leave the stream
+    # untouched so normal target parsing can retry.
+    if saw_structural and (t := s.peek()) and t.cat in ("PROV", "CITATION_SPAN"):
+        if t.cat == "PROV":
+            s.pos = _skip_prov_span(s.tokens, s.pos, len(s.tokens))
+        else:
+            s.skip_sentinels()
+        return True
+
+    s.restore(saved)
+    return False
+
+
 def _skip_named_heading_anchor_before_insert(s: Stream) -> bool:
     """Consume a named heading anchor before a doc-level insert target.
 
@@ -3477,6 +3538,10 @@ def _target_list(
         if s.at_end() or ((t := s.peek()) and t.cat == "VERB"):
             s.restore(saved)
             break
+        # "näistä/niistä <ref> sellaisena kuin ..." after a separator is a
+        # provenance back-reference to an already-listed target, not a new one.
+        if _skip_provenance_anaphor_backref(s):
+            continue
         _pre_t = s.pos
         nodes = _target(s, verb, chapter, part=part)
         if nodes:
