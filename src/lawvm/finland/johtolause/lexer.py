@@ -169,7 +169,62 @@ def _tokenize_tuple(text: str) -> tuple[Token, ...]:
             continue
         _emit_token(raw, tokens, char_off)
         i += 1
-    return tuple(tokens)
+    return tuple(_repair_lost_dash_section_range(tokens))
+
+
+def _repair_lost_dash_section_range(tokens: list[Token]) -> list[Token]:
+    """Restore an OCR-dropped dash in a bare two-number section range.
+
+    Source pathology (e.g. 1987/320 ← 1994/1375 "21 23 §"): a section range
+    "21–23 §" loses its dash in the scan, leaving two adjacent bare NUM tokens
+    immediately before a single PYKALA.  A genuine list of separate targets
+    always carries an explicit separator (",", "ja", "sekä") between the
+    numbers, which tokenizes to a COMMA/CONJ token — so two *adjacent* plain
+    NUM tokens before "§" with no separator can only be a coalesced range.
+
+    Conservative guard: fire ONLY for the exact shape NUM NUM PYKALA where both
+    numbers are plain digits (no LETTER suffix, no case) and strictly ascending.
+    A descending or equal pair is left untouched (not a valid range; do not
+    fabricate one).  Inserts a DASH token between the two numbers, producing the
+    canonical NUM DASH NUM PYKALA shape the range grammar already consumes.
+    """
+    n = len(tokens)
+    if n < 3:
+        return tokens
+    out: list[Token] = []
+    i = 0
+    while i < n:
+        if (
+            i + 2 < n
+            and tokens[i].cat == "NUM"
+            and tokens[i + 1].cat == "NUM"
+            and tokens[i + 2].cat == "PYKALA"
+            and tokens[i].text.isdigit()
+            and tokens[i + 1].text.isdigit()
+            and int(tokens[i].text) < int(tokens[i + 1].text)
+        ):
+            first = tokens[i]
+            second = tokens[i + 1]
+            dash_start = first.char_end if first.char_end >= 0 else -1
+            dash_end = second.char_start if second.char_start >= 0 else -1
+            out.append(first)
+            out.append(
+                Token(
+                    text="–",
+                    lemma="–",
+                    cat="DASH",
+                    case="",
+                    verb_code=None,
+                    char_start=dash_start,
+                    char_end=dash_end,
+                )
+            )
+            out.append(second)
+            i += 2
+            continue
+        out.append(tokens[i])
+        i += 1
+    return out
 
 
 def _emit_token(raw: str, out: list[Token], char_offset: int = -1) -> None:
