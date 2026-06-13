@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.invariant_profiles import CORE_REPLAY_DELTA_MINIMAL_FAMILIES
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.core.temporal import TemporalEvent
 from lawvm.core.timeline import Timelines, compile_timelines, materialize_pit
 from lawvm.core import tree_ops
-from lawvm.core.tree_ops import TreeInvariantKind
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import build_text_duplication_findings
 from lawvm.eu.grafter import parse_eu_regulation_ir
@@ -196,7 +196,7 @@ def apply_eu_ops(
     skipped = 0
     seen_invariant_violations: set[str] = set()
     seen_duplication_warnings: set[tuple[tuple[str, object], ...]] = set()
-    replay_tree_invariant_families: tuple[TreeInvariantKind, ...] = ("duplicate_label", "sort_order")
+    replay_tree_invariant_families = CORE_REPLAY_DELTA_MINIMAL_FAMILIES
 
     def _duplication_warning_key(warning: dict[str, object]) -> tuple[tuple[str, object], ...]:
         return tuple(sorted(warning.items()))

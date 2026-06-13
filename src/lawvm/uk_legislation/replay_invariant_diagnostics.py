@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import NamedTuple, Optional, Protocol, cast
 
 from lawvm.core import tree_ops
+from lawvm.core.invariant_profiles import CORE_REPLAY_DELTA_MINIMAL_FAMILIES
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.mutation_accounting import build_mutation_invariant_reports
 from lawvm.core.mutation_boundary import TreePathStep, TreePaths
@@ -86,10 +87,7 @@ def _invariant_replay_self(replay: object) -> _InvariantReplaySelf:
 
 
 _DUPLICATE_ORDER_INVARIANT_FAMILIES: frozenset[tree_ops.TreeInvariantKind] = frozenset(
-    {
-        "duplicate_label",
-        "sort_order",
-    }
+    CORE_REPLAY_DELTA_MINIMAL_FAMILIES
 )
 
 

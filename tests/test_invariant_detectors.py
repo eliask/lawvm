@@ -8,6 +8,9 @@ from lawvm.core.frozen_values import FrozenDict
 from lawvm.core.invariant_profiles import TreeInvariantProfile
 from lawvm.core.invariant_profiles import collect_tree_invariant_dicts
 from lawvm.core.invariant_profiles import collect_tree_invariant_messages
+from lawvm.core.invariant_profiles import replay_delta_minimal_profile
+from lawvm.core.invariant_profiles import structural_product_hierarchical_profile
+from lawvm.core.invariant_profiles import structural_product_strict_profile
 from lawvm.core.invariant_detectors import InvariantDetectorResult
 from lawvm.core.invariant_detectors import SUPPORTED_INVARIANT_DETECTORS
 from lawvm.core.invariant_detectors import run_descendant_sibling_loss_detector
@@ -41,7 +44,23 @@ def test_tree_invariant_profile_projects_surface_messages_and_typed_rows() -> No
     assert collect_tree_invariant_messages(tree, profile) == (
         "materialized_tree:body: direct section:149 alongside chapter:15",
     )
-    assert collect_tree_invariant_dicts(tree, profile)[0]["kind"] == "mixed_hierarchy_child"
+    row = collect_tree_invariant_dicts(tree, profile)[0]
+    assert row["kind"] == "mixed_hierarchy_child"
+    assert row["surface"] == "materialized_tree"
+    assert row["profile_id"] == "custom"
+
+
+def test_core_tree_invariant_profile_presets_name_reusable_family_sets() -> None:
+    strict = structural_product_strict_profile("replay_fold_tree")
+    hierarchical = structural_product_hierarchical_profile("materialized_tree")
+    replay_delta = replay_delta_minimal_profile("after_op")
+
+    assert strict.profile_id == "core_structural_product_strict"
+    assert strict.families == ("duplicate_label", "unexpected_child_kind")
+    assert hierarchical.profile_id == "core_structural_product_hierarchical"
+    assert hierarchical.families == ("duplicate_label", "unexpected_child_kind", "mixed_hierarchy_child")
+    assert replay_delta.profile_id == "core_replay_delta_minimal"
+    assert replay_delta.families == ("duplicate_label", "sort_order")
 
 
 def test_run_invariant_detector_returns_typed_tree_results_with_legacy_messages() -> None:

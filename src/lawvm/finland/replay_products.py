@@ -56,10 +56,12 @@ _MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR = (
 _FI_REPLAY_FOLD_MIXED_HIERARCHY_PROFILE = TreeInvariantProfile(
     surface="replay_fold_tree",
     families=("mixed_hierarchy_child",),
+    profile_id="fi_product_mixed_hierarchy",
 )
 _FI_MATERIALIZED_MIXED_HIERARCHY_PROFILE = TreeInvariantProfile(
     surface="materialized_tree",
     families=("mixed_hierarchy_child",),
+    profile_id="fi_product_mixed_hierarchy",
 )
 
 

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Optional, cast
 
 from lawvm.core import tree_ops as _tops
-from lawvm.core.invariant_profiles import TreeInvariantProfile
+from lawvm.core.invariant_profiles import structural_product_hierarchical_profile
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import build_text_duplication_findings
 from lawvm.finland.replay_findings import (
@@ -18,14 +18,8 @@ from lawvm.finland.replay_products import fi_product_tree_invariant_dicts
 from lawvm.finland.replay_products import validate_replay_products
 from lawvm.finland.statute import StatuteContext
 
-_FI_REPLAY_FOLD_PRODUCT_TREE_PROFILE = TreeInvariantProfile(
-    surface="replay_fold_tree",
-    families=("duplicate_label", "unexpected_child_kind", "mixed_hierarchy_child"),
-)
-_FI_MATERIALIZED_PRODUCT_TREE_PROFILE = TreeInvariantProfile(
-    surface="materialized_tree",
-    families=("duplicate_label", "unexpected_child_kind", "mixed_hierarchy_child"),
-)
+_FI_REPLAY_FOLD_PRODUCT_TREE_PROFILE = structural_product_hierarchical_profile("replay_fold_tree")
+_FI_MATERIALIZED_PRODUCT_TREE_PROFILE = structural_product_hierarchical_profile("materialized_tree")
 
 
 @dataclass(frozen=True, slots=True)

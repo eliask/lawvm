@@ -24,7 +24,7 @@ from lxml import etree
 
 from lawvm.core import tree_ops
 from lawvm.core.diagnostic_records import diagnostic_detail
-from lawvm.core.tree_ops import TreeInvariantKind
+from lawvm.core.invariant_profiles import CORE_REPLAY_DELTA_MINIMAL_FAMILIES
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.roman import roman_to_arabic as _shared_roman_to_int
 from lawvm.core.ir import (
@@ -3025,7 +3025,7 @@ def apply_no_ops(
             )
         )
 
-    no_replay_tree_invariant_families: tuple[TreeInvariantKind, ...] = ("duplicate_label", "sort_order")
+    no_replay_tree_invariant_families = CORE_REPLAY_DELTA_MINIMAL_FAMILIES
 
     def _assert_no_invariant_violations(op: LegalOperation) -> None:
         typed_violations = tuple(
