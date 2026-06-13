@@ -5,6 +5,7 @@ Subcommands:
     bisect-section <statute_id>  Find which amendment damages one section.
     dump      <statute_id>  Inspect pipeline state at a named stage.
     source-dump <statute_id>  Inspect raw archived source XML with line numbers.
+    fi-source-label-audit     Compare Finland source XML label normalization policies.
     inspect-amendment <statute_id>  Inspect one amendment's compile/payload path.
     diagnose-phase <statute_id>  Attribute a structural violation to its first bad pipeline phase.
     invariant-bisect <statute_id>  Find the first amendment that introduces a structural violation.
@@ -85,6 +86,7 @@ Usage:
     lawvm dump ukpga/2002/30 --db data/uk_legislation.farchive
     lawvm dump 2006/1299 --after extract --source 2017/794
     lawvm source-dump 2006/1299 --address 'chapter:3/section:12'
+    lawvm fi-source-label-audit 2006/1299 --json
     lawvm inspect-amendment 2006/1299 --source 2017/794
     lawvm phase-witness 2006/1299 --source 2017/794 --json
     lawvm oracle-context 2006/1299
@@ -423,6 +425,47 @@ examples (-j selects jurisdiction, default fi; statute IDs below are Finnish):
         "--db",
         metavar="PATH",
         help="UK farchive path for UK source dumps (default: data/uk_legislation.farchive)",
+    )
+
+    # --- fi-source-label-audit ---
+    fi_source_label_audit_p = sub.add_parser(
+        "fi-source-label-audit",
+        parents=_P,
+        help="compare Finland source XML label normalization policies",
+        description=(
+            "Non-mutating audit for Finland source XML labels. Compares current "
+            "candidate part/chapter/section label normalization policies and "
+            "reports real source labels where they diverge. Does not affect replay."
+        ),
+    )
+    fi_source_label_audit_p.add_argument(
+        "statute_id",
+        nargs="?",
+        help="optional statute ID, e.g. 2006/1299; omit to scan a corpus prefix",
+    )
+    fi_source_label_audit_p.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        metavar="N",
+        help="when statute_id is omitted, scan first N statutes sorted by ID (0 = all)",
+    )
+    fi_source_label_audit_p.add_argument(
+        "--include-agreeing",
+        action="store_true",
+        help="emit rows even when all compared policies agree",
+    )
+    fi_source_label_audit_p.add_argument(
+        "--examples",
+        type=int,
+        default=10,
+        metavar="N",
+        help="human output: max divergent example rows to print",
+    )
+    fi_source_label_audit_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit JSON",
     )
 
     # --- inspect-amendment ---
@@ -11565,6 +11608,11 @@ def _main_impl() -> None:
         from lawvm.tools.parse_johto import main as parse_johto_main
 
         parse_johto_main(args)
+
+    elif args.command == "fi-source-label-audit":
+        from lawvm.tools.fi_source_label_audit import main as fi_source_label_audit_main
+
+        fi_source_label_audit_main(args)
 
     elif args.command == "topic":
         from lawvm.tools.cmd_topic import main as topic_main
