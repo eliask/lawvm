@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.finland.uncovered_dispose import compute_replace_decision
+from lawvm.finland.uncovered_dispose import compute_replace_decision, evaluate_omission_merge
 
 
 def _section(n_subsections: int) -> IRNode:
@@ -16,6 +16,14 @@ def _section(n_subsections: int) -> IRNode:
         for i in range(n_subsections)
     )
     return IRNode(kind=IRNodeKind.SECTION, label="5", text="", attrs={}, children=subs)
+
+
+def _section_with(subs: list[tuple[str, str]]) -> IRNode:
+    children = tuple(
+        IRNode(kind=IRNodeKind.SUBSECTION, label=lbl, text=txt, attrs={}, children=())
+        for lbl, txt in subs
+    )
+    return IRNode(kind=IRNodeKind.SECTION, label="5", text="", attrs={}, children=children)
 
 
 def test_replace_allowed_when_clean() -> None:
@@ -57,3 +65,35 @@ def test_counts_reported_for_audit() -> None:
     d = compute_replace_decision(_section(2), _section(5), has_content_ops=True, cross_chapter=False, whole_chapter_replace=False)
     assert d.amend_subsec_count == 2
     assert d.master_subsec_count == 5
+
+
+def test_merge_accepted_when_clean() -> None:
+    existing = _section_with([("1", "aaaa"), ("2", "bbbb")])
+    merged = _section_with([("1", "aaaa"), ("2", "bbbb")])
+    d = evaluate_omission_merge(merged, existing)
+    assert d.accept is True
+    assert d.skip_reason is None
+
+
+def test_merge_rejected_would_lose_subsections() -> None:
+    existing = _section_with([("1", "aaaa"), ("2", "bbbb"), ("3", "cccc")])
+    merged = _section_with([("1", "aaaa"), ("2", "bbbb")])
+    d = evaluate_omission_merge(merged, existing)
+    assert d.accept is False
+    assert d.skip_reason == "would_lose_subsections"
+
+
+def test_merge_rejected_low_text_ratio() -> None:
+    existing = _section_with([("1", "a" * 100), ("2", "b" * 100)])
+    merged = _section_with([("1", "a"), ("2", "b")])  # same count, far less text
+    d = evaluate_omission_merge(merged, existing)
+    assert d.accept is False
+    assert d.skip_reason == "low_text_ratio"
+
+
+def test_merge_rejected_duplicate_labels() -> None:
+    existing = _section_with([("1", "aaaa"), ("2", "bbbb")])
+    merged = _section_with([("1", "aaaa"), ("1", "bbbb")])  # duplicate label "1"
+    d = evaluate_omission_merge(merged, existing)
+    assert d.accept is False
+    assert d.skip_reason == "duplicate_subsection_labels"

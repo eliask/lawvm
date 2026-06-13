@@ -13,10 +13,16 @@ not REPLACE?" is answerable from the verdict alone.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 from lawvm.core.ir import IRNode
+from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.merge import _has_section_omissions_ir
+
+# Minimum fraction of the master section's text the merged result must retain;
+# below this, the omission-merge is treated as text corruption and rejected.
+_MERGE_MIN_TEXT_RATIO = 0.75
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,4 +90,61 @@ def compute_replace_decision(
         has_omissions=has_omissions,
         effective_would_lose=effective_would_lose,
         reason=reason,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class MergeDecision:
+    """Whether an omission-merged section may be accepted as the new content.
+
+    ``skip_reason`` is None when accepted; otherwise the bare reason (the caller
+    prefixes it for the finding stream). Post-merge guards reject merges that
+    shed subsections, corrupt text, or duplicate subsection labels.
+    """
+
+    accept: bool
+    merged_subsec_count: int
+    master_subsec_count: int
+    text_ratio: float
+    has_dup_labels: bool
+    skip_reason: Optional[str]
+
+
+def evaluate_omission_merge(merged: IRNode, existing_section: IRNode) -> MergeDecision:
+    """Decide whether an omission-merged section is safe to adopt. Pure.
+
+    Accept only when the merge keeps at least as many subsections as the master
+    (additions allowed), retains enough text (``_MERGE_MIN_TEXT_RATIO``), and
+    introduces no duplicate subsection labels (a merge-corruption signal).
+    """
+    merged_subsec_count = sum(1 for c in merged.children if c.kind is IRNodeKind.SUBSECTION)
+    master_subsec_count = sum(1 for c in existing_section.children if c.kind is IRNodeKind.SUBSECTION)
+    master_text = irnode_to_text(existing_section)
+    merged_text = irnode_to_text(merged)
+    text_ratio = len(merged_text) / len(master_text) if master_text else 1.0
+    merged_labels = [c.label for c in merged.children if c.kind is IRNodeKind.SUBSECTION and c.label]
+    has_dup_labels = len(merged_labels) != len(set(merged_labels))
+
+    accept = (
+        merged_subsec_count >= master_subsec_count
+        and text_ratio >= _MERGE_MIN_TEXT_RATIO
+        and not has_dup_labels
+    )
+    if accept:
+        skip_reason: Optional[str] = None
+    elif merged_subsec_count < master_subsec_count:
+        skip_reason = "would_lose_subsections"
+    elif text_ratio < _MERGE_MIN_TEXT_RATIO:
+        skip_reason = "low_text_ratio"
+    elif has_dup_labels:
+        skip_reason = "duplicate_subsection_labels"
+    else:
+        skip_reason = "blocked"
+    return MergeDecision(
+        accept=accept,
+        merged_subsec_count=merged_subsec_count,
+        master_subsec_count=master_subsec_count,
+        text_ratio=text_ratio,
+        has_dup_labels=has_dup_labels,
+        skip_reason=skip_reason,
     )

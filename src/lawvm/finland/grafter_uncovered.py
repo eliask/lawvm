@@ -113,7 +113,7 @@ from lawvm.finland.source_pathology import build_same_effective_container_repeal
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
 from lawvm.finland.uncovered_target_resolve import resolve_insert_chapter, resolve_target
-from lawvm.finland.uncovered_dispose import compute_replace_decision
+from lawvm.finland.uncovered_dispose import compute_replace_decision, evaluate_omission_merge
 from lawvm.finland.constraints import DEBUG
 from lawvm.finland.replay_notices import replay_print as _replay_print
 from lawvm.xml_ingest import _tag
@@ -1315,17 +1315,8 @@ def _recover_uncovered_body_ops(
                     # actual subsection loss or text corruption.
                     merged = _merge_section_with_omission_ir(existing, sec_ir)
                     if merged is not None:
-                        merged_subsec_count = len([c for c in merged.children if c.kind is IRNodeKind.SUBSECTION])
-                        # Guards: merged must have at least as many subsections
-                        # as master (allows additions), must not lose significant
-                        # text content, and must not have duplicate subsection
-                        # labels (merge corruption).
-                        master_text = irnode_to_text(existing)
-                        merged_text = irnode_to_text(merged)
-                        text_ratio = len(merged_text) / len(master_text) if master_text else 1.0
-                        merged_labels = [c.label for c in merged.children if c.kind is IRNodeKind.SUBSECTION and c.label]
-                        has_dup_labels = len(merged_labels) != len(set(merged_labels))
-                        if merged_subsec_count >= master_subsec_count and text_ratio >= 0.75 and not has_dup_labels:
+                        _mdec = evaluate_omission_merge(merged, existing)
+                        if _mdec.accept:
                             recovery_guards.mark_covered(
                                 part=amend_part_label,
                                 chapter=amend_chapter_label,
@@ -1344,12 +1335,8 @@ def _recover_uncovered_body_ops(
                                 )
                             )
                             return
-                        if merged_subsec_count < master_subsec_count:
-                            _record_skip("omission_merge_would_lose_subsections", label, amend_chapter_label)
-                        elif text_ratio < 0.75:
-                            _record_skip("omission_merge_low_text_ratio", label, amend_chapter_label)
-                        elif has_dup_labels:
-                            _record_skip("omission_merge_duplicate_subsection_labels", label, amend_chapter_label)
+                        if _mdec.skip_reason is not None:
+                            _record_skip(f"omission_merge_{_mdec.skip_reason}", label, amend_chapter_label)
                     else:
                         _record_skip("omission_merge_failed", label, amend_chapter_label)
                     recovery_guards.mark_covered(
