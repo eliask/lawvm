@@ -130,6 +130,7 @@ from tests.corpus_pin_helpers import pinned_replay
 from lawvm.finland.apply import apply_op
 from lawvm.finland.constraints import _find_muutos_node
 from lawvm.finland.group_ops import append_compiled_group_ops, normalize_group_ops_for_repeal_reenact
+from lawvm.finland.group_plan import GroupTargetKey
 from lawvm.finland.normalize import (
     _extract_insert_section_ops_fallback,
     _merge_missing_insert_supplements,
@@ -9544,7 +9545,7 @@ def test_coalesce_same_target_mixed_scope_section_groups_tags_bare_ops_on_merge(
     )
 
     assert set(got) == {(IRNodeKind.SECTION, "8", "2", None)}
-    merged_ops = got[(IRNodeKind.SECTION, "8", "2", None)]
+    merged_ops = got[GroupTargetKey(IRNodeKind.SECTION, "8", "2", None)]
     assert [op.op_id for op in merged_ops] == ["bare", "scoped"]
     assert merged_ops[0].scope_provenance_tags[-1] == "mixed_scope_group_merge"
     assert merged_ops[0].target_chapter == "2"
@@ -9629,7 +9630,7 @@ def test_coalesce_same_target_mixed_scope_section_groups_drops_covered_bare_dupl
     )
 
     assert set(got) == {(IRNodeKind.SECTION, "4", "1", None)}
-    assert [op.op_id for op in got[(IRNodeKind.SECTION, "4", "1", None)]] == [
+    assert [op.op_id for op in got[GroupTargetKey(IRNodeKind.SECTION, "4", "1", None)]] == [
         "scoped_replace",
         "scoped_insert",
     ]
@@ -9686,7 +9687,7 @@ def test_coalesce_same_target_mixed_scope_section_groups_does_not_alias_roman_it
     )
 
     assert set(got) == {(IRNodeKind.SECTION, "4", "1", None)}
-    merged_ops = got[(IRNodeKind.SECTION, "4", "1", None)]
+    merged_ops = got[GroupTargetKey(IRNodeKind.SECTION, "4", "1", None)]
     assert [op.op_id for op in merged_ops] == ["scoped_insert_4", "bare_insert_iv"]
     assert merged_ops[1].target_chapter == "1"
     assert merged_ops[1].scope_provenance_tags[-1] == "mixed_scope_group_merge"
