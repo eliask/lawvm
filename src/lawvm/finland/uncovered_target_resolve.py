@@ -54,6 +54,17 @@ class StateLookup(Protocol):
     def find_section_path(self, label: str, chapter_num: Optional[str] = ...) -> Optional[ProvisionPath]: ...
 
 
+class IRStateLookup(Protocol):
+    """The read-only slice of ReplayState ``resolve_insert_chapter`` depends on.
+
+    Only the materialized IR tree is consulted (via ``find_family``); declaring it
+    as an explicit protocol keeps the family-base resolution testable with a tiny
+    fake rather than a full ReplayState.
+    """
+
+    ir: Any
+
+
 @dataclass(frozen=True, slots=True)
 class ResolvedTarget:
     """Typed, auditable verdict for where an uncovered body section belongs.
@@ -203,7 +214,7 @@ def resolve_insert_chapter(
     label: str,
     amend_chapter: Optional[str],
     amend_part: Optional[str],
-    state: "ReplayState",
+    state: "ReplayState | IRStateLookup",
     ops: Iterable[Any],
     new_chapter_labels: Optional[Set[str]],
     owned_chapter_labels: Sequence[str] | Set[str],
