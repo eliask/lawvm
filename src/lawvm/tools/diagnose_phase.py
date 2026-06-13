@@ -25,6 +25,7 @@ Detectors:
   label_normalization_collision same-kind sibling labels that collide under
                           the Finnish slot-identity normalizer
   illegal_edge             impossible parent→child nesting
+  sort_order               out-of-order same-kind labeled siblings
   all_tree                 all check_invariants violations (covers both above)
   text_duplication         large duplicated text blocks (lint-level)
   flattened_sublist_family repeated letter/roman/digit families suggesting nested
@@ -147,6 +148,7 @@ def build_diagnose_phase_bundle(
         _resolve_applicable_amendment_records,
         replay_xml,
     )
+    from lawvm.finland.process_request import ProcessAmendmentRequest
     from lawvm.finland.statute import StatuteContext
     from lawvm.finland.helpers import _fi_label_postprocessor
 
@@ -191,12 +193,14 @@ def build_diagnose_phase_bundle(
         contextlib.redirect_stderr(io.StringIO()),
     ):
         pm = process_muutoslaki(
-            source_id,
-            before_state,
-            ctx,
-            replay_mode=mode,
-            parent_id=statute_id,
-            corpus=cs,
+            request=ProcessAmendmentRequest(
+                amendment_id=source_id,
+                state=before_state,
+                ctx=ctx,
+                replay_mode=mode,
+                parent_id=statute_id,
+                corpus=cs,
+            ),
         )
     direct_applied_state = pm.output
     direct_result = _phase_result(direct_applied_state.ir, detector, target_path)
