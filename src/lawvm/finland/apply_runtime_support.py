@@ -47,6 +47,13 @@ class _PendingSubsectionSnapshotPayload:
     target_already_rebased: bool
 
 
+@dataclass(frozen=True, slots=True)
+class SectionSnapshotIdentity:
+    part: str
+    chapter: str
+    section: str
+
+
 def _normalize_snapshot_item_label(label: str | None) -> str:
     """Normalize FI item labels without Roman-to-Arabic conversion.
 
@@ -264,18 +271,18 @@ def _section_node_from_base_ir(base_ir: IRNode | None, section_path: Path) -> IR
     return None
 
 
-def _section_snapshot_identity(path: Path) -> tuple[str, str, str]:
+def _section_snapshot_identity(path: Path) -> SectionSnapshotIdentity:
     labels = {kind: label for kind, label in path}
-    return (
-        _norm_num_token(labels.get("part") or ""),
-        _norm_num_token(labels.get("chapter") or ""),
-        _norm_num_token(labels.get("section") or ""),
+    return SectionSnapshotIdentity(
+        part=_norm_num_token(labels.get("part") or ""),
+        chapter=_norm_num_token(labels.get("chapter") or ""),
+        section=_norm_num_token(labels.get("section") or ""),
     )
 
 
 def _snapshot_section_los_for_identity(
     replay_history_ops: List[_LegalOperation] | None,
-    target_identity: tuple[str, str, str],
+    target_identity: SectionSnapshotIdentity,
 ) -> list[_LegalOperation]:
     """Return all snapshot_section_ LOs matching *target_identity*, in order.
 
@@ -290,7 +297,7 @@ def _snapshot_section_los_for_identity(
     # automatically invalidated when a new list is created.
     _IDX_ATTR = "_snapshot_section_index"
     _LEN_ATTR = "_snapshot_section_index_len"
-    idx: dict[tuple[str, str, str], list[int]] | None = getattr(
+    idx: dict[SectionSnapshotIdentity, list[int]] | None = getattr(
         replay_history_ops, _IDX_ATTR, None
     )
     idx_len: int = getattr(replay_history_ops, _LEN_ATTR, 0)
