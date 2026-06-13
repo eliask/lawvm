@@ -49,6 +49,15 @@ LabelNormalizer = Callable[[str], str]
 
 
 @dataclass(frozen=True, slots=True)
+class MissingSiblingGroup:
+    """Descendant sibling labels missing from a sparse replacement payload."""
+
+    parent_path: tuple[tuple[str, str], ...]
+    child_kind: str
+    labels: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class InvariantDetectorResult:
     """Typed detector result with a legacy message projection."""
 
@@ -243,7 +252,7 @@ def _labelled_descendant_paths(node: IRNode) -> set[tuple[tuple[str, str], ...]]
 def _missing_sibling_groups(
     live_node: IRNode,
     payload: IRNode,
-) -> list[tuple[tuple[tuple[str, str], ...], str, list[str]]]:
+) -> tuple[MissingSiblingGroup, ...]:
     live_paths = _labelled_descendant_paths(live_node)
     payload_paths = _labelled_descendant_paths(payload)
     missing_paths = sorted(live_paths - payload_paths)
@@ -256,11 +265,15 @@ def _missing_sibling_groups(
         if parent_path and parent_path not in payload_paths:
             continue
         groups.setdefault((parent_path, child_kind), []).append(child_label)
-    return [
-        (parent_path, child_kind, sorted(labels, key=default_label_sort_key))
+    return tuple(
+        MissingSiblingGroup(
+            parent_path=parent_path,
+            child_kind=child_kind,
+            labels=tuple(sorted(labels, key=default_label_sort_key)),
+        )
         for (parent_path, child_kind), labels in groups.items()
         if len(labels) >= 2
-    ]
+    )
 
 
 def _has_descendant_companion_op(
@@ -301,16 +314,16 @@ def run_descendant_sibling_loss_detector(
         live_node = _resolve_address_path(before_ir, op.target.path)
         if live_node is None:
             continue
-        for parent_path, child_kind, labels in _missing_sibling_groups(live_node, op.payload):
-            issue_path = op.target.path + parent_path
+        for group in _missing_sibling_groups(live_node, op.payload):
+            issue_path = op.target.path + group.parent_path
             path_text = _path_text(issue_path)
             if not path_matches_target(path_text, target_path):
                 continue
-            sample = labels[:8]
+            sample = group.labels[:8]
             sample_text = ", ".join(sample)
             message = (
-                f"{path_text}: descendant sibling loss in {child_kind} "
-                f"children after {op.op_id} ({len(labels)} missing: {sample_text})"
+                f"{path_text}: descendant sibling loss in {group.child_kind} "
+                f"children after {op.op_id} ({len(group.labels)} missing: {sample_text})"
             )
             results.append(
                 InvariantDetectorResult(
@@ -323,9 +336,9 @@ def run_descendant_sibling_loss_detector(
                         "op_target": _address_part_text(op.target.path),
                         "payload_kind": _kind_str(op.payload.kind),
                         "payload_label": op.payload.label,
-                        "parent_relative_path": _address_part_text(parent_path),
-                        "missing_child_kind": child_kind,
-                        "missing_count": len(labels),
+                        "parent_relative_path": _address_part_text(group.parent_path),
+                        "missing_child_kind": group.child_kind,
+                        "missing_count": len(group.labels),
                         "missing_labels_sample": tuple(sample),
                     },
                 )
