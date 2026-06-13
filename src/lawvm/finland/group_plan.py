@@ -5,11 +5,27 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, Iterator, List, Optional, Tuple, cast, overload
+from dataclasses import replace as dc_replace
+from typing import Callable, Dict, Iterator, List, Mapping, Optional, Protocol, Tuple, cast, overload
 
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.labels import leaf_label_identity_key
+from lawvm.finland.ops import (
+    AmendmentOp,
+    _lo_with_path_update,
+    normalize_scope_confidence,
+    scope_confidence_from_tags,
+)
 from lawvm.finland.helpers import _norm_num_token
+
+
+class SectionPathLookup(Protocol):
+    def find_section_path(
+        self,
+        target_norm: str,
+        target_chapter: Optional[str] = None,
+        target_part: Optional[str] = None,
+    ) -> Tuple[Tuple[str, str], ...] | None: ...
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -97,8 +113,108 @@ def group_ops_by_target(ops: List[AmendmentOp]) -> Dict[GroupTargetKey, List[Ame
     return section_groups
 
 
+def coalesce_same_target_mixed_scope_section_groups(
+    section_groups: Mapping[
+        GroupTargetKey | Tuple[IRNodeKind, str, Optional[str], Optional[str]],
+        List[AmendmentOp],
+    ],
+    *,
+    master: SectionPathLookup,
+    find_body_section_chapter: Callable[[str], str | None],
+) -> Dict[GroupTargetKey, List[AmendmentOp]]:
+    """Merge mixed-scope section groups while preserving scope-upgrade evidence.
+
+    A bare section group must not silently inherit scoped ownership from a
+    sibling group. When coalescing is needed to keep one sparse section payload
+    coherent, inherited bare ops are tagged so the scope upgrade survives as a
+    first-class witness instead of disappearing inside group formation.
+    """
+    merged = {normalize_group_target_key(key): value for key, value in section_groups.items()}
+    section_keys = [key for key in merged if key.unit_kind is IRNodeKind.SECTION]
+    buckets: dict[tuple[str, Optional[str]], list[GroupTargetKey]] = defaultdict(list)
+
+    def _op_merge_signature(op: AmendmentOp) -> tuple[object, ...]:
+        return (
+            op.op_type,
+            op.target_unit_kind,
+            _norm_num_token(op.target_section or ""),
+            _norm_num_token(op.target_chapter or "") if op.target_chapter else "",
+            _norm_num_token(op.target_part or "") if op.target_part else "",
+            op.target_paragraph,
+            leaf_label_identity_key(op.target_item or "") if op.target_item else "",
+            str(op.target_special or "").strip(),
+        )
+
+    for key in section_keys:
+        buckets[(key.target_norm, key.target_part)].append(key)
+
+    for (target_norm, target_part), keys in buckets.items():
+        unscoped_key = next((key for key in keys if not key.target_chapter), None)
+        scoped_keys = [key for key in keys if key.target_chapter]
+        if unscoped_key is None or len(scoped_keys) != 1:
+            continue
+        scoped_key = scoped_keys[0]
+        scoped_chapter = scoped_key.target_chapter
+        if scoped_chapter is None:
+            continue
+
+        live_path = master.find_section_path(target_norm, None, target_part)
+        if live_path is None:
+            continue
+        live_chapter = next((label for kind, label in live_path if kind == "chapter"), None)
+        if live_chapter != scoped_chapter:
+            continue
+
+        body_chapter = find_body_section_chapter(target_norm)
+        if body_chapter not in (None, scoped_chapter):
+            continue
+
+        scoped_ops = merged.get(scoped_key)
+        unscoped_ops = merged.get(unscoped_key)
+        if not scoped_ops or not unscoped_ops:
+            continue
+
+        scoped_signatures = {_op_merge_signature(op) for op in scoped_ops}
+        unique_tagged_unscoped_ops: list[AmendmentOp] = []
+        for op in unscoped_ops:
+            merged_scope_confidence = normalize_scope_confidence(
+                scope_confidence_from_tags(
+                    (*op.scope_provenance_tags, "mixed_scope_group_merge"),
+                    resolved_chapter=scoped_chapter,
+                ),
+                resolved_chapter=scoped_chapter,
+            )
+            tagged_op = dc_replace(
+                op,
+                target_chapter=scoped_chapter,
+                scope_provenance_tags=tuple(op.scope_provenance_tags) + ("mixed_scope_group_merge",),
+                scope_confidence=merged_scope_confidence,
+                lo=_lo_with_path_update(op.lo, chapter=scoped_chapter) if op.lo is not None else op.lo,
+            )
+            object.__setattr__(tagged_op, "scope_confidence", merged_scope_confidence)
+            if _op_merge_signature(tagged_op) not in scoped_signatures:
+                unique_tagged_unscoped_ops.append(tagged_op)
+
+        if not unique_tagged_unscoped_ops:
+            del merged[unscoped_key]
+            continue
+
+        merged[scoped_key] = sorted(
+            [*scoped_ops, *unique_tagged_unscoped_ops],
+            key=lambda op: (
+                op.lo.sequence if op.lo is not None else 10**9,
+                op.target_paragraph or 0,
+            ),
+        )
+        del merged[unscoped_key]
+
+    return merged
+
+
 __all__ = [
     "GroupTargetKey",
+    "SectionPathLookup",
+    "coalesce_same_target_mixed_scope_section_groups",
     "target_group_key",
     "normalize_group_target_key",
     "group_ops_by_target",
