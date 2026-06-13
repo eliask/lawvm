@@ -281,6 +281,45 @@ def _uncovered_section_key(
     )
 
 
+def _section_heading_text(node: IRNode) -> str:
+    """Normalized lowercase heading text of a section IR node (or "")."""
+    heading = next((c for c in node.children if c.kind is IRNodeKind.HEADING), None)
+    return " ".join(irnode_to_text(heading).split()).strip().lower() if heading is not None else ""
+
+
+def _next_letter_label(label: str) -> Optional[str]:
+    """Next letter-suffixed sibling label (e.g. ``18`` → ``18a``, ``18a`` → ``18b``)."""
+    norm = _norm_num_token(label)
+    m = re.fullmatch(r"(\d+)([a-z]?)", norm)
+    if not m:
+        return None
+    base, suffix = m.groups()
+    if not suffix:
+        return f"{base}a"
+    if suffix == "z":
+        return None
+    return f"{base}{chr(ord(suffix) + 1)}"
+
+
+def _xml_part_label(section_el: etree._Element) -> Optional[str]:
+    """Normalized part label of the nearest <part> ancestor of a section element."""
+    parent = section_el.getparent()
+    while parent is not None:
+        if _tag(parent) == "part":
+            num_el = parent.find("{*}num")
+            if num_el is not None and num_el.text:
+                return _normalize_source_part_num(num_el.text) or None
+        parent = parent.getparent()
+    return None
+
+
+def _part_label_from_path(path: tuple[tuple[str, str], ...] | None) -> Optional[str]:
+    """First part label in a resolved provision path, if any."""
+    if not path:
+        return None
+    return next((lbl for kind, lbl in path if kind == "part"), None)
+
+
 def _uncovered_section_payload_completeness(
     *,
     op_type: OpType,
@@ -637,22 +676,6 @@ def _recover_uncovered_body_ops(
     Note: chapter pre-creation is a separate pre-step (_pre_create_amendment_chapters)
     and must be called before this function.
     """
-    def _heading_text(node: IRNode) -> str:
-        heading = next((c for c in node.children if c.kind is IRNodeKind.HEADING), None)
-        return " ".join(irnode_to_text(heading).split()).strip().lower() if heading is not None else ""
-
-    def _next_letter_label(label: str) -> Optional[str]:
-        norm = _norm_num_token(label)
-        m = re.fullmatch(r"(\d+)([a-z]?)", norm)
-        if not m:
-            return None
-        base, suffix = m.groups()
-        if not suffix:
-            return f"{base}a"
-        if suffix == "z":
-            return None
-        return f"{base}{chr(ord(suffix) + 1)}"
-
     _recorded_skip_keys: set[UncoveredSkipKey] = set()
 
     def _record_skip(
@@ -1008,21 +1031,6 @@ def _recover_uncovered_body_ops(
         Called from the coverage-driven primary path.  Mutates
         ``result`` and ``covered_labels`` in place.
         """
-        def _xml_part_label(section_el: etree._Element) -> Optional[str]:
-            parent = section_el.getparent()
-            while parent is not None:
-                if _tag(parent) == "part":
-                    num_el = parent.find("{*}num")
-                    if num_el is not None and num_el.text:
-                        return _normalize_source_part_num(num_el.text) or None
-                parent = parent.getparent()
-            return None
-
-        def _part_label_from_path(path: tuple[tuple[str, str], ...] | None) -> Optional[str]:
-            if not path:
-                return None
-            return next((lbl for kind, lbl in path if kind == "part"), None)
-
         import os as _os
 
         _DEBUG_RECOVERY = _os.environ.get("LAWVM_DEBUG_RECOVERY") == "1"
@@ -1178,8 +1186,8 @@ def _recover_uncovered_body_ops(
                 # treat as new insert.
                 existing_path = None
             else:
-                existing_heading = _heading_text(existing)
-                amend_heading = _heading_text(sec_ir)
+                existing_heading = _section_heading_text(existing)
+                amend_heading = _section_heading_text(sec_ir)
                 if (
                     existing_heading.startswith("voimaantulo")
                     and amend_heading
