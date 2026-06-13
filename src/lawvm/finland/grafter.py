@@ -3063,6 +3063,7 @@ def apply_ops_to_tree(
     prev_group_key: Optional[ResolvedGroupKeyView] = None
     group_rops: List[ResolvedOp] = []
     group_path_hint: tuple[tuple[str, str], ...] | None = None
+    group_had_failed_apply = False
 
     def _refresh_group_path_hint(
         target_unit_kind: TargetUnitKind,
@@ -3149,6 +3150,42 @@ def apply_ops_to_tree(
     # the stale child shell around.
     _standalone_section_targets = _build_standalone_section_targets(ops)
     base_ir = ctx.base_ir
+
+    def _emit_group_snapshot_if_allowed() -> None:
+        if not group_rops or lo_ops_out is None:
+            return
+        if group_had_failed_apply:
+            return
+        _r = group_rops[0]
+        _r_group = _r.resolved_group_key_view
+        if not _emit_granular_subsection_timeline_ops(
+            state,
+            group_rops,
+            lo_ops_out,
+            amendment_id,
+            source_title,
+            amendment_issue_date,
+            amendment_effective_date,
+            base_ir,
+            path_hint=group_path_hint,
+        ):
+            _emit_section_snapshot(
+                state,
+                _r_group.unit_kind,
+                _r_group.target_norm,
+                _r_group.target_chapter,
+                _r_group.target_part,
+                group_rops,
+                lo_ops_out,
+                amendment_id,
+                source_title,
+                amendment_issue_date,
+                amendment_effective_date,
+                base_ir=base_ir,
+                path_hint=group_path_hint,
+                migration_ledger=migration_ledger,
+                standalone_section_targets=_standalone_section_targets,
+            )
 
     # Stabilize same-parent RELABEL order: reverse forward chains so consumers
     # run before producers. Prevents both chapter chains like "10→11 then 11→12"
@@ -3294,45 +3331,20 @@ def apply_ops_to_tree(
     for rop in resolved:
         group_key = rop.resolved_group_key_view
         if group_key != prev_group_key:
-            # Emit snapshot for previous group (if any)
-            if group_rops and lo_ops_out is not None:
-                _r = group_rops[0]
-                _r_group = _r.resolved_group_key_view
-                if not _emit_granular_subsection_timeline_ops(
-                    state,
-                    group_rops,
-                    lo_ops_out,
-                    amendment_id,
-                    source_title,
-                    amendment_issue_date,
-                    amendment_effective_date,
-                    base_ir,
-                    path_hint=group_path_hint,
-                ):
-                    _emit_section_snapshot(
-                        state,
-                        _r_group.unit_kind,
-                        _r_group.target_norm,
-                        _r_group.target_chapter,
-                        _r_group.target_part,
-                        group_rops,
-                        lo_ops_out,
-                        amendment_id,
-                        source_title,
-                        amendment_issue_date,
-                        amendment_effective_date,
-                        base_ir=base_ir,
-                        path_hint=group_path_hint,
-                        standalone_section_targets=_standalone_section_targets,
-                    )
+            # Emit snapshot for previous group (if any). A failed apply in the
+            # group is a replay barrier: its payload must not be promoted into
+            # timeline/materialized state by the snapshot lane.
+            _emit_group_snapshot_if_allowed()
             group_rops = []
             prev_group_key = group_key
             group_path_hint = None
+            group_had_failed_apply = False
         # Apply
         if rop.replay_requires_apply_pass:
             try:
                 _prev_state = state
                 _event_cursor = len(mutation_events_out) if mutation_events_out is not None else 0
+                _failed_cursor = len(failed_ops_out) if failed_ops_out is not None else 0
                 state = apply_op(
                     state,
                     None,
@@ -3351,6 +3363,8 @@ def apply_ops_to_tree(
                     strict_profile=strict_profile,
                     write_audits_out=write_audits_out,
                 )
+                if failed_ops_out is not None and len(failed_ops_out) > _failed_cursor:
+                    group_had_failed_apply = True
                 if mutation_events_out is not None:
                     _cross_check_observed_vs_declared(
                         _prev_state,
@@ -3377,37 +3391,7 @@ def apply_ops_to_tree(
         group_rops.append(rop)
 
     # Emit snapshot for the last group
-    if group_rops and lo_ops_out is not None:
-        _r = group_rops[0]
-        _r_group = _r.resolved_group_key_view
-        if not _emit_granular_subsection_timeline_ops(
-            state,
-            group_rops,
-            lo_ops_out,
-            amendment_id,
-            source_title,
-            amendment_issue_date,
-            amendment_effective_date,
-            base_ir,
-            path_hint=group_path_hint,
-        ):
-            _emit_section_snapshot(
-                state,
-                _r_group.unit_kind,
-                _r_group.target_norm,
-                _r_group.target_chapter,
-                _r_group.target_part,
-                group_rops,
-                lo_ops_out,
-                amendment_id,
-                source_title,
-                amendment_issue_date,
-                amendment_effective_date,
-                base_ir=base_ir,
-                path_hint=group_path_hint,
-                migration_ledger=migration_ledger,
-                standalone_section_targets=_standalone_section_targets,
-            )
+    _emit_group_snapshot_if_allowed()
 
     if ops or lo_ops_out is not None:
         if lo_ops_out is not None:
@@ -4256,6 +4240,9 @@ def replay_xml(
         capture_lo_ops_out = lo_ops_out
         if capture_lo_ops_out is None and build_full_products:
             capture_lo_ops_out = []
+        capture_failed_ops_out = failed_ops_out
+        if capture_failed_ops_out is None and build_full_products:
+            capture_failed_ops_out = []
         capture_compiled_ops_out = compiled_ops_out
         if capture_compiled_ops_out is None and build_full_products:
             capture_compiled_ops_out = []
@@ -4340,7 +4327,7 @@ def replay_xml(
             check_tree_invariants=_check_tree_invariants,
             compiled_ops_out=capture_compiled_ops_out,
             lo_ops_out=capture_lo_ops_out,
-            failed_ops_out=failed_ops_out,
+            failed_ops_out=capture_failed_ops_out,
             findings_out=replay_findings,
             source_pathologies_out=source_pathologies,
             elaboration_observations_out=elaboration_observations,

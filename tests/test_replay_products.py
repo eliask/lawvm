@@ -1641,6 +1641,43 @@ def test_replay_xml_1977_603_realizes_section_72c_only_under_chapter_8a(
     assert "72c" not in root_section_labels
 
 
+def test_replay_xml_1958_370_failed_scoped_replace_does_not_emit_root_143b_snapshot() -> None:
+    """A failed scoped replacement must not promote its payload into PIT timelines.
+
+    1995/1062 says "2 a luvun otsikko, 17 § ja 143 b §:n 1 momentti";
+    §143b actually lives under part 4 / chapter 17 in the replay fold. Apply
+    correctly records the scoped 2a/143b replacement as failed. The snapshot
+    lane must therefore not create a new root ``section:143b`` timeline bucket
+    or materialized root section from that failed group.
+    """
+    from lawvm.finland.ops import FailedOp
+
+    failed: list[FailedOp] = []
+    replay = replay_xml(
+        "1958/370",
+        mode="official_consolidation",
+        quiet=True,
+        failed_ops_out=failed,
+    )
+
+    assert any(
+        op.amendment_id == "1995/1062"
+        and op.reason_code == "section_not_found"
+        and op.target_section == "143b"
+        and op.target_chapter == "2a"
+        for op in failed
+    )
+
+    assert replay.timelines is not None
+    timeline_keys = {str(address) for address in replay.timelines}
+    assert "part:4/chapter:17/section:143b" in timeline_keys
+    assert "section:143b" not in timeline_keys
+    assert "section:143b/subsection:1" not in timeline_keys
+
+    root_section_labels = [child.label for child in replay.materialized_state.ir.children if child.kind == IRNodeKind.SECTION]
+    assert "143b" not in root_section_labels
+
+
 def test_replay_xml_1996_1260_orphaned_uusi_multi_target_lisataan() -> None:
     """Regression: 2022/958 lisätään clause with three targets where the first
     sub-target qualifier ('c alakohta') is removed by annotate_qualifiers,
