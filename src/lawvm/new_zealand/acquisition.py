@@ -1012,11 +1012,24 @@ def _version_date_from_version_id(version_id: str) -> str:
     return candidate if candidate else ""
 
 
-def open_farchive(path: Path) -> ArchiveStore:
+def _open_farchive_uncached(path: Path) -> ArchiveStore:
     from farchive import Farchive
 
     path.parent.mkdir(parents=True, exist_ok=True)
     return cast(ArchiveStore, Farchive(path))
+
+
+def open_farchive(path: Path) -> ArchiveStore:
+    # When a corpus/north-star run has activated a run-scoped cache, share one
+    # opened archive handle per path for the whole run instead of re-opening (and
+    # re-loading the compression dictionary) on every per-work call. Outside a run
+    # the cache is inactive and this is a plain open.
+    from lawvm.new_zealand.corpus_cache import active_corpus_run_cache
+
+    cache = active_corpus_run_cache()
+    if cache is not None:
+        return cast(ArchiveStore, cache.open_archive(path, _open_farchive_uncached))
+    return _open_farchive_uncached(path)
 
 
 def main(args: Any) -> None:

@@ -253,11 +253,158 @@ def test_measurement_only_never_claims_replay() -> None:
     assert jsonable["report_kind"] == "dry_run_north_star"
 
 
+def test_corpus_run_cache_memoizes_parse_locators_and_bytes() -> None:
+    # DB-free unit test of the run-scoped cache mechanics: one parse per
+    # (locator, version_id), one locators() SQL scan per pattern, bytes memoized
+    # per locator, and the shared archive's close() is a no-op (the cache owns
+    # the lifecycle).
+    from lawvm.new_zealand.corpus_cache import (
+        active_corpus_run_cache,
+        corpus_run_cache,
+    )
+
+    class _FakeArchive:
+        def __init__(self) -> None:
+            self.locator_calls: list[str] = []
+            self.get_calls: list[str] = []
+            self.closed = 0
+
+        def locators(self, pattern: str = "%") -> list[str]:
+            self.locator_calls.append(pattern)
+            return ["loc-a", "loc-b"]
+
+        def get(self, locator: str, *, at: object = None) -> bytes:
+            self.get_calls.append(locator)
+            return b"<xml/>"
+
+        def close(self) -> None:
+            self.closed += 1
+
+    real = _FakeArchive()
+    parse_calls: list[tuple[str, str]] = []
+
+    def _fake_parser(xml_bytes: bytes, *, xml_locator: str, version_id: str) -> object:
+        parse_calls.append((xml_locator, version_id))
+        return object()
+
+    assert active_corpus_run_cache() is None
+    with corpus_run_cache() as cache:
+        assert cache is not None
+        shared = cache.open_archive(Path("data/nz_legislation.farchive"), lambda _p: real)
+        # Same path returns the same shared handle (no re-open).
+        again = cache.open_archive(Path("data/nz_legislation.farchive"), lambda _p: real)
+        assert shared is again
+
+        # locators() memoized per pattern.
+        assert shared.locators("pre%") == ["loc-a", "loc-b"]
+        assert shared.locators("pre%") == ["loc-a", "loc-b"]
+        assert real.locator_calls == ["pre%"]
+
+        # bytes memoized per locator.
+        assert shared.get("loc-a") == b"<xml/>"
+        assert shared.get("loc-a") == b"<xml/>"
+        assert real.get_calls == ["loc-a"]
+
+        # parse memoized per (locator, version_id) and returns the SAME object.
+        doc1 = cache.parse_document(b"<xml/>", xml_locator="loc-a", version_id="v1", parser=_fake_parser)
+        doc2 = cache.parse_document(b"<xml/>", xml_locator="loc-a", version_id="v1", parser=_fake_parser)
+        assert doc1 is doc2
+        assert parse_calls == [("loc-a", "v1")]
+
+        # reset_parsed drops parses + bytes + the locator memo (distinct works use
+        # disjoint prefixes/locators) while keeping the shared archive handle.
+        cache.reset_parsed()
+        assert shared.get("loc-a") == b"<xml/>"
+        assert real.get_calls == ["loc-a", "loc-a"]  # bytes re-fetched after reset
+        assert shared.locators("pre%") == ["loc-a", "loc-b"]
+        assert real.locator_calls == ["pre%", "pre%"]  # locator memo also reset
+        cache.parse_document(b"<xml/>", xml_locator="loc-a", version_id="v1", parser=_fake_parser)
+        assert parse_calls == [("loc-a", "v1"), ("loc-a", "v1")]  # re-parsed after reset
+
+        # The shared handle's close() is a no-op while the run is active.
+        shared.close()
+        assert real.closed == 0
+
+    # The owning context closes the real archive exactly once on exit.
+    assert real.closed == 1
+    assert active_corpus_run_cache() is None
+
+
+def test_corpus_run_cache_is_reentrant() -> None:
+    from lawvm.new_zealand.corpus_cache import active_corpus_run_cache, corpus_run_cache
+
+    with corpus_run_cache() as outer:
+        with corpus_run_cache() as inner:
+            # A nested activation reuses the outer cache (does not shadow it).
+            assert inner is outer
+        # The inner exit must not tear down the outer cache.
+        assert active_corpus_run_cache() is outer
+    assert active_corpus_run_cache() is None
+
+
+def test_parse_uncached_when_locator_empty() -> None:
+    # An empty locator is not an identity, so it must never be memoized (it would
+    # risk collapsing distinct byte payloads under the same key).
+    from lawvm.new_zealand.corpus_cache import corpus_run_cache
+
+    calls: list[bytes] = []
+
+    def _parser(xml_bytes: bytes, *, xml_locator: str, version_id: str) -> object:
+        calls.append(xml_bytes)
+        return object()
+
+    with corpus_run_cache() as cache:
+        a = cache.parse_document(b"AAA", xml_locator="", version_id="", parser=_parser)
+        b = cache.parse_document(b"BBB", xml_locator="", version_id="", parser=_parser)
+        assert a is not b
+        assert calls == [b"AAA", b"BBB"]
+
+
 _REAL_DB = (
     Path(os.environ.get("LAWVM_CANONICAL_DATA_ROOT", "<DATA_ROOT>"))
     / "data"
     / "nz_legislation.farchive"
 )
+
+
+_DETERMINISM_WORK_IDS = (
+    "act_public_1871_23",
+    "act_public_1872_13",
+    "act_public_2005_87",
+    "act_public_2010_1",
+)
+
+
+@pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+def test_run_cache_produces_identical_report_to_uncached_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The run-scoped parse/archive cache is a pure performance layer: the report
+    # built with the cache active must be byte-identical (same JSON) to the report
+    # built with the cache disabled. Any difference would be a semantic change.
+    import json as _json
+    from contextlib import contextmanager
+
+    import lawvm.new_zealand.corpus_cache as cache_mod
+
+    # The cached path is the default builder.
+    cached = build_nz_dry_run_north_star_report(_REAL_DB, work_ids=_DETERMINISM_WORK_IDS)
+
+    # Disable the cache everywhere it is consulted, then rebuild.
+    @contextmanager
+    def _noop_cache():  # type: ignore[no-untyped-def]
+        yield None
+
+    monkeypatch.setattr(cache_mod, "corpus_run_cache", _noop_cache)
+    monkeypatch.setattr(cache_mod, "active_corpus_run_cache", lambda: None)
+    import lawvm.new_zealand.dry_run_north_star as ns_mod
+
+    monkeypatch.setattr(ns_mod, "corpus_run_cache", _noop_cache)
+    monkeypatch.setattr(ns_mod, "active_corpus_run_cache", lambda: None)
+
+    uncached = build_nz_dry_run_north_star_report(_REAL_DB, work_ids=_DETERMINISM_WORK_IDS)
+
+    assert _json.dumps(cached.to_jsonable(), ensure_ascii=False, sort_keys=True) == _json.dumps(
+        uncached.to_jsonable(), ensure_ascii=False, sort_keys=True
+    )
 
 
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")

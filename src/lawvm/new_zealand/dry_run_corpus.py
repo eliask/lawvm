@@ -32,6 +32,7 @@ from typing import Any
 
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.benchmark import NZBenchmarkSelectionError, select_benchmark_work_ids
+from lawvm.new_zealand.corpus_cache import active_corpus_run_cache, corpus_run_cache
 from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_NOT_REPLAY_AUTHORIZED_RULE_ID,
     NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
@@ -276,33 +277,45 @@ def build_nz_dry_run_repeal_corpus_report(
     order, so the aggregate tallies are reproducible from farchive bytes.
     """
 
-    archive = open_farchive(db_path)
-    try:
-        archived_work_ids = _archived_work_ids(archive)
-        available_work_count = len(archived_work_ids)
-        requested_work_ids = tuple(dict.fromkeys(work_ids))
-        if requested_work_ids:
-            selected = list(requested_work_ids)
-            if max_works is not None:
-                selected = selected[: max(max_works, 0)]
-        else:
-            selected = list(
-                select_benchmark_work_ids(
-                    archive,
-                    archived_work_ids=archived_work_ids,
-                    work_id_prefix=work_id_prefix,
-                    min_version_year=min_version_year,
-                    sample_strategy=sample_strategy,
-                    max_works=max_works,
+    # Share one parsed-document/archive cache across the whole run so each
+    # archived version XML is parsed at most once across families and works. Pure
+    # performance: per-work reports stay byte-identical (frozen, input-addressed
+    # parses) and the selection order is unchanged.
+    with corpus_run_cache():
+        archive = open_farchive(db_path)
+        try:
+            archived_work_ids = _archived_work_ids(archive)
+            available_work_count = len(archived_work_ids)
+            requested_work_ids = tuple(dict.fromkeys(work_ids))
+            if requested_work_ids:
+                selected = list(requested_work_ids)
+                if max_works is not None:
+                    selected = selected[: max(max_works, 0)]
+            else:
+                selected = list(
+                    select_benchmark_work_ids(
+                        archive,
+                        archived_work_ids=archived_work_ids,
+                        work_id_prefix=work_id_prefix,
+                        min_version_year=min_version_year,
+                        sample_strategy=sample_strategy,
+                        max_works=max_works,
+                    )
                 )
-            )
-    finally:
-        archive.close()
+        finally:
+            archive.close()
 
-    # Each per-work dry-run opens its own archive handle (the single-work
-    # surface owns its preflight build + archive lifecycle). Serial iteration
-    # over the deterministic selection keeps the aggregate reproducible.
-    reports = tuple(build_archived_work_dry_run_repeal(db_path, work_id, scope=scope) for work_id in selected)
+        # The per-work dry-run surfaces reuse the run-shared archive handle and
+        # parsed-document cache. Serial iteration over the deterministic selection
+        # keeps the aggregate reproducible. Within-work parses are dropped between
+        # works to bound memory (distinct works share ~no archived XML).
+        run_cache = active_corpus_run_cache()
+        work_reports: list[Any] = []
+        for work_id in selected:
+            work_reports.append(build_archived_work_dry_run_repeal(db_path, work_id, scope=scope))
+            if run_cache is not None:
+                run_cache.reset_parsed()
+        reports = tuple(work_reports)
 
     return NZDryRunRepealCorpusReport(
         db_path=str(db_path),

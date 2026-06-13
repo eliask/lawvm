@@ -191,6 +191,30 @@ def parse_nz_source_document(
     xml_locator: str = "",
     version_id: str = "",
 ) -> NZSourceDocument:
+    # Inside a corpus/north-star run, memoize parsed documents by their
+    # (xml_locator, version_id) identity so the same archived version XML is parsed
+    # at most once across families/works. The parse is pure and the result frozen,
+    # so a cache hit is byte-identical to a fresh parse. Outside a run this is a
+    # plain parse.
+    from lawvm.new_zealand.corpus_cache import active_corpus_run_cache
+
+    cache = active_corpus_run_cache()
+    if cache is not None:
+        return cache.parse_document(
+            xml_bytes,
+            xml_locator=xml_locator,
+            version_id=version_id,
+            parser=_parse_nz_source_document_uncached,
+        )
+    return _parse_nz_source_document_uncached(xml_bytes, xml_locator=xml_locator, version_id=version_id)
+
+
+def _parse_nz_source_document_uncached(
+    xml_bytes: bytes,
+    *,
+    xml_locator: str = "",
+    version_id: str = "",
+) -> NZSourceDocument:
     root = etree.fromstring(xml_bytes)
     metadata = _document_metadata(root)
     nodes: list[NZSourceNode] = []

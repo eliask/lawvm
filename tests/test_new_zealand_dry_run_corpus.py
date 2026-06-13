@@ -479,3 +479,40 @@ def test_corpus_selected_family_scope_unblocks_incomplete_work() -> None:
     assert coverage["dry_run_agreeing_fraction"] is not None
     # Replay is never authorized by the relaxed scope.
     assert summary["replay_claims"] is False
+
+
+@pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+def test_corpus_run_cache_produces_identical_report_to_uncached_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The run-scoped parse/archive cache is a pure performance layer: the corpus
+    # report built with the cache active must be byte-identical (same JSON) to the
+    # report built with the cache disabled.
+    import json as _json
+    from contextlib import contextmanager
+
+    import lawvm.new_zealand.corpus_cache as cache_mod
+
+    work_ids = ("act_public_1871_23", "act_public_1872_13", "act_public_2005_87")
+    cached = build_nz_dry_run_repeal_corpus_report(
+        _REAL_DB, work_ids=work_ids, scope=NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL
+    )
+
+    @contextmanager
+    def _noop_cache():  # type: ignore[no-untyped-def]
+        yield None
+
+    monkeypatch.setattr(cache_mod, "corpus_run_cache", _noop_cache)
+    monkeypatch.setattr(cache_mod, "active_corpus_run_cache", lambda: None)
+    import lawvm.new_zealand.dry_run_corpus as dc_mod
+
+    monkeypatch.setattr(dc_mod, "corpus_run_cache", _noop_cache)
+    monkeypatch.setattr(dc_mod, "active_corpus_run_cache", lambda: None)
+
+    uncached = build_nz_dry_run_repeal_corpus_report(
+        _REAL_DB, work_ids=work_ids, scope=NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL
+    )
+
+    assert _json.dumps(cached.to_jsonable(), ensure_ascii=False, sort_keys=True) == _json.dumps(
+        uncached.to_jsonable(), ensure_ascii=False, sort_keys=True
+    )

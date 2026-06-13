@@ -44,11 +44,15 @@ is measurement only.
 
 from __future__ import annotations
 
+import os
 import re
+import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
+from lawvm.new_zealand.corpus_cache import active_corpus_run_cache, corpus_run_cache
 from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_NOT_REPLAY_AUTHORIZED_RULE_ID,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
@@ -298,6 +302,41 @@ def build_nz_work_north_star_census(db_path: Path, work_id: str) -> NZWorkNorthS
     )
 
 
+def _progress_enabled() -> bool:
+    # Opt-in stderr progress for long full-corpus runs. Never touches stdout, so
+    # the report output is unaffected.
+    return bool(os.environ.get("NZ_NORTH_STAR_PROGRESS")) and sys.stderr.isatty()
+
+
+def _census_with_progress(db_path: Path, selected: list[str]) -> Iterator[NZWorkNorthStarCensus]:
+    """Census each selected work in order, emitting optional stderr progress.
+
+    Yielding in the given order keeps the aggregate byte-identical to the serial
+    comprehension it replaces; the progress line goes to stderr only.
+    """
+
+    show_progress = _progress_enabled()
+    total = len(selected)
+    started = time.monotonic()
+    cache = active_corpus_run_cache()
+    for index, work_id in enumerate(selected, start=1):
+        census = build_nz_work_north_star_census(db_path, work_id)
+        # Within-work parses are shared across families and lookups; drop them
+        # before the next work to bound memory (distinct works share ~no XML).
+        if cache is not None:
+            cache.reset_parsed()
+        if show_progress and (index == total or index % 25 == 0):
+            elapsed = time.monotonic() - started
+            rate = index / elapsed if elapsed > 0 else 0.0
+            eta = (total - index) / rate if rate > 0 else 0.0
+            print(
+                f"north-star {index}/{total} works  elapsed={elapsed:.0f}s  eta={eta:.0f}s",
+                file=sys.stderr,
+                flush=True,
+            )
+        yield census
+
+
 def build_nz_dry_run_north_star_report(
     db_path: Path,
     *,
@@ -315,7 +354,13 @@ def build_nz_dry_run_north_star_report(
     if max_works is not None:
         selected = selected[: max(max_works, 0)]
 
-    censuses = tuple(build_nz_work_north_star_census(db_path, work_id) for work_id in selected)
+    # Share one parsed-document/archive cache across every work in the run so each
+    # archived version XML is parsed at most once across families and works. This
+    # is a pure performance layer: the per-work census results are byte-identical
+    # to the uncached path (frozen, input-addressed parses), and the works are
+    # still processed in the given deterministic order.
+    with corpus_run_cache():
+        censuses = tuple(_census_with_progress(db_path, selected))
     return NZDryRunNorthStarReport(
         db_path=str(db_path),
         work_censuses=censuses,
