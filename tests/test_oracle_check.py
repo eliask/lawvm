@@ -258,6 +258,39 @@ def test_classify_statute_1901_15_001_raw_master_gap_wave_is_source_incomplete()
         assert by_section[label]["blame_source"] == "1975/351"
 
 
+def test_classify_statute_1990_1295_abridged_chapter_missing_is_source_incomplete() -> None:
+    # 1990/1295 ships an abridged base witness whose chapters 7-9 are replaced by
+    # a "Puuttuu luvut" notice and never restated by any amendment body, so replay
+    # emits SOURCE.ABRIDGED_BASE_CHAPTER_UNRECONSTRUCTABLE for those chapters.
+    # Sections the oracle places under them cannot be materialized from replay
+    # inputs — they are a source limit, so they must classify as SOURCE_INCOMPLETE
+    # rather than MISSING (which the ledger counts as a real-bug suspect).
+    result = _classify_statute("1990/1295", "official_consolidation")
+
+    assert result is not None
+
+    by_section = {item["section"]: item for item in result.section_results}
+    # Sections inside the abridged chapter span are reclassified off MISSING.
+    for label in (
+        "chapter:7/section:34",
+        "chapter:8/section:36",
+        "chapter:8/section:39",
+        "chapter:8/section:40",
+        "chapter:9/section:47",
+        "chapter:9/section:48",
+    ):
+        assert by_section[label]["diagnosis"] == "SOURCE_INCOMPLETE"
+
+    # Chapter 11 is outside the abridged span (chapters 10 and 11 are present in
+    # the base), so its genuine drops stay MISSING — they are real-bug suspects.
+    for label in (
+        "chapter:11/section:56",
+        "chapter:11/section:58",
+        "chapter:11/section:60",
+    ):
+        assert by_section[label]["diagnosis"] == "MISSING"
+
+
 def test_extract_attachment_info_ir_counts_materialized_annex() -> None:
     """An operative Liite annex materialized into the replay IR must be counted.
 

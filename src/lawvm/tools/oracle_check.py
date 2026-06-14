@@ -807,6 +807,18 @@ def _classify_statute(
                 and getattr(finding, "source_statute", "")
             }
         )
+        # Chapters the replay flagged as unreconstructable from an abridged base
+        # witness (the source XML omits a whole chapter span, e.g. "Puuttuu luvut
+        # 7-11", and no amendment body restates them). Sections the oracle places
+        # under these chapters cannot be materialized by replay — they are a
+        # SOURCE limit, not a replay bug. Used below to reclassify still-MISSING
+        # sections off the real-bug-suspect ledger.
+        abridged_unreconstructable_chapters = {
+            str((getattr(finding, "detail", {}) or {}).get("chapter_label") or "").strip()
+            for finding in master.findings
+            if getattr(finding, "kind", "") == "SOURCE.ABRIDGED_BASE_CHAPTER_UNRECONSTRUCTABLE"
+            and str((getattr(finding, "detail", {}) or {}).get("chapter_label") or "").strip()
+        }
         blame_map = _build_blame_map(compiled_ops)
 
         # Overall score (full body text)
@@ -1217,6 +1229,25 @@ def _classify_statute(
             )
             if diagnosis is not None:
                 sec["diagnosis"] = diagnosis
+
+        # Abridged-base unreconstructable chapters.  When the base witness omits a
+        # whole chapter span (replay emits SOURCE.ABRIDGED_BASE_CHAPTER_-
+        # UNRECONSTRUCTABLE for each absent chapter), the oracle still carries
+        # sections under those chapters but replay cannot materialize them: the
+        # amendments only ever carried deltas, never the original section bodies
+        # that lived in the omitted base.  A still-MISSING section under such a
+        # chapter is therefore a SOURCE limit, not a replay bug, so it belongs on
+        # the ledger's missing_source disposition rather than as a real-bug
+        # suspect.  This runs after the oracle-staleness / source-pathology passes
+        # so only sections those passes left bare MISSING are re-attributed here;
+        # MISSING sections outside the abridged span (genuine drops) are untouched.
+        if abridged_unreconstructable_chapters:
+            for sec in section_results:
+                if sec["diagnosis"] != "MISSING":
+                    continue
+                chapter_label = _section_key_segments(str(sec["section"])).get("chapter", "")
+                if chapter_label in abridged_unreconstructable_chapters:
+                    sec["diagnosis"] = "SOURCE_INCOMPLETE"
 
         # Oracle repeal-stub vs surviving replay section.  When the oracle shows a
         # whole-section repeal stub ("<N> § on kumottu L:lla MMMM/NN") but replay
