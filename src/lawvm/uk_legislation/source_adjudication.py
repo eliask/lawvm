@@ -1816,6 +1816,44 @@ def _looks_like_application_by_reference_effect_source(text: str) -> bool:
     )
 
 
+def _looks_like_application_by_reference_deixis_source(text: str) -> bool:
+    """True when *text* is an ``applied by … (as inserted)`` deixis effect (N4).
+
+    This is the narrow N4 frontier shape: an application-by-reference effect whose
+    *applying* provision is identified deictically — e.g. the effect type
+    ``applied by SSI 2005/467 reg. 33(2) (as inserted)``. It is a strict subset of
+    ``_looks_like_application_by_reference_effect_source``'s family: the surface
+    both APPLIES the affected provision by reference AND carries an ``(as
+    inserted)`` (or ``as inserted``) deixis on the applying provision. The M6
+    deixis-in-application claim binds against this shape; resolving the deixis
+    requires an amendment program in the third (applying) instrument.
+    """
+    norm = _normalize_effect_text(text)
+    if not norm:
+        return False
+    if "as inserted" not in norm:
+        return False
+    # The application surface: an "applied by <instrument> <provision>" feed verb
+    # phrase, or a prose "applies/shall apply ... by/under ..." application clause.
+    applies = bool(
+        re.match(r"^applied\s+by\b", norm)
+        or re.search(r"\bappl(?:ies|y|ied)\b", norm)
+    )
+    if not applies:
+        return False
+    # The deixis must qualify a referenced provision, not merely appear loose:
+    # "<unit ref> (as inserted)" or "<unit ref> as inserted".
+    return bool(
+        re.search(
+            r"(?:reg(?:ulation)?\.?|para(?:graph)?\.?|sub-?paragraph|section|"
+            r"subsection|article|rule|art\.?|s\.|ss\.)\s*"
+            r"[0-9A-Za-z]+(?:\([0-9A-Za-z]+\))*\s*"
+            r"(?:\(\s*as\s+inserted[^)]*\)|as\s+inserted\b)",
+            norm,
+        )
+    )
+
+
 def _looks_like_conditional_temporal_repeal_source(text: str) -> bool:
     norm = " ".join((text or "").split()).strip().lower()
     if not norm:

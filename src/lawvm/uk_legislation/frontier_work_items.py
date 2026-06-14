@@ -76,6 +76,15 @@ _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
             "claim_preserves_affected_statute_text_state",
         ),
     },
+    "uk_manual_frontier_application_by_reference_deixis_resolution_candidate": {  # FLAG(union-merge)
+        "candidate_operation_family": "application_by_reference_deixis_resolution",
+        "required_validator_checks": (
+            "claim_binds_source_snippet_to_real_application_by_reference_deixis_effect",
+            "claim_names_applying_instrument_and_deictic_provision",
+            "claim_resolves_as_inserted_reference_via_cited_inserting_program",
+            "claim_emits_non_replayable_finding_without_base_text_mutation",
+        ),
+    },
     "uk_manual_frontier_application_modification_payload_out_of_scope": {
         "candidate_operation_family": "non_textual_or_out_of_scope",
         "required_validator_checks": (

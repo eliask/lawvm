@@ -93,6 +93,7 @@ def test_uk_replay_timeline_uses_witness_temporal_event_builder() -> None:
 
 def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
     expected_rule_ids = {
+        "uk_manual_frontier_application_by_reference_deixis_resolution_candidate",  # FLAG(union-merge)
         "uk_manual_frontier_appropriate_place_candidate",
         "uk_manual_frontier_appropriate_place_definition_entry_candidate",
         "uk_manual_frontier_appropriate_place_index_entry_candidate",

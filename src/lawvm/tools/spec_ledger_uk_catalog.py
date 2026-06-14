@@ -716,6 +716,20 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A repeal-table feed row whose source/target linkage has a gap, left to manual review.",
     "uk_manual_frontier_application_by_reference_out_of_scope":
         "An 'applies ... by reference' modification treated as out of current replay scope.",
+    "uk_manual_frontier_application_by_reference_deixis_resolution_candidate":  # FLAG(union-merge)
+        "An application-by-reference effect whose applying provision is identified deictically ('applied by SI ... (as inserted)') that an owned deixis-in-application claim can resolve by naming the concrete applying provision via the cited inserting program.",
+    "uk_deixis_in_application_claim_validated":  # FLAG(union-merge)
+        "A deixis-in-application claim's owned resolution is well-formed, bound to a real N4 application-by-reference-with-deixis effect, and reachable via the cited inserting program, so it may emit a non-replayable resolved-reference finding.",
+    "uk_deixis_in_application_claim_rejected_schema":  # FLAG(union-merge)
+        "A deixis-in-application claim is rejected because its kind/ids/applying-instrument/deictic-provision/resolved-provision/basis schema is malformed.",
+    "uk_deixis_in_application_claim_rejected_source_mismatch":  # FLAG(union-merge)
+        "A deixis-in-application claim is rejected because its source snippet or bound effect is not a real application-by-reference-with-deixis effect, blocking free-form or non-deictic overrides.",
+    "uk_deixis_in_application_claim_rejected_resolution":  # FLAG(union-merge)
+        "A deixis-in-application claim is rejected because its claimed resolution is not reachable via the cited inserting program or is not label-consistent with the deictic provision the effect names.",
+    "uk_deixis_in_application_resolved_reference_finding":  # FLAG(union-merge)
+        "A validated deixis-in-application claim emits a non-replayable typed finding resolving the '(as inserted)' reference to a concrete applying provision, leaving the affected base text intact (the safe N4 under-application default).",
+    "uk_deixis_in_application_finding_withheld_unvalidated":  # FLAG(union-merge)
+        "An unvalidated deixis-in-application claim withholds its resolved-reference finding, so the N4 effect stays on the manual frontier byte-unchanged.",
     "uk_manual_frontier_as_if_application_modification_out_of_scope":
         "An 'as if' application/modification effect treated as out of current replay scope.",
     "uk_manual_frontier_application_modification_payload_out_of_scope":

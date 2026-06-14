@@ -3,6 +3,7 @@ from __future__ import annotations
 
 UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS = frozenset(
     {
+        "uk_manual_frontier_application_by_reference_deixis_resolution_candidate",  # FLAG(union-merge)
         "uk_manual_frontier_appropriate_place_candidate",
         "uk_manual_frontier_appropriate_place_definition_entry_candidate",
         "uk_manual_frontier_appropriate_place_index_entry_candidate",

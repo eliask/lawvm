@@ -94,6 +94,11 @@ from lawvm.uk_legislation.contingent_commencement_claim import (
 from lawvm.uk_legislation.same_moment_precedence_claim import (
     SameMomentPrecedenceClaim,
 )
+from lawvm.uk_legislation.deixis_application_claim import (
+    DeixisInApplicationClaim,
+    gate_deixis_in_application_claim,
+    validate_deixis_in_application_claim,
+)
 from lawvm.uk_legislation.appropriate_place_claim import (
     AppropriatePlaceInsertClaim,
     gate_appropriate_place_insert,
@@ -285,6 +290,9 @@ class UKReplayPipeline:
         appropriate_place_claims: Optional[
             "Sequence[AppropriatePlaceInsertClaim]"
         ] = None,
+        deixis_application_claims: Optional[
+            "Sequence[DeixisInApplicationClaim]"
+        ] = None,
     ) -> list[LegalOperation]:
         """Compile IR ops for *affected_act_id*.
 
@@ -378,6 +386,33 @@ class UKReplayPipeline:
                     effect_diagnostics_out.append(ap_validation.to_dict())
                 if ap_validation.validated:
                     validated_appropriate_place_claims[str(ap_claim.effect_id)] = ap_claim
+
+        # §deixis_application (M6): build an index of VALIDATED deixis-in-
+        # application claims by bound effect_id. Opt-in and symmetric with the
+        # indices above: with no claims authored the index is empty and the loop
+        # below emits no finding — the N4 application-by-reference-with-deixis
+        # effect stays on the manual frontier byte-unchanged. Each claim is
+        # validated against the bound effect (N4 deixis source-binding + the
+        # cat-4 inserted-anchor resolution check applied to the applying
+        # instrument) before it can emit. The gate emits ONLY a non-replayable
+        # typed finding (never a text op): M6 owns the deixis-resolution half; the
+        # application overlay is the deferred M5.
+        validated_deixis_application_claims: dict[str, DeixisInApplicationClaim] = {}
+        if deixis_application_claims:
+            effect_by_id_dx = {
+                str(e.effect_id): e for e in effects if str(e.effect_id or "")
+            }
+            for dx_claim in deixis_application_claims:
+                if dx_claim.statute_id and dx_claim.statute_id != affected_act_id:
+                    continue
+                bound_effect = effect_by_id_dx.get(str(dx_claim.effect_id))
+                dx_validation = validate_deixis_in_application_claim(
+                    dx_claim, effect=bound_effect
+                )
+                if effect_diagnostics_out is not None:
+                    effect_diagnostics_out.append(dx_validation.to_dict())
+                if dx_validation.validated:
+                    validated_deixis_application_claims[str(dx_claim.effect_id)] = dx_claim
 
         replayable = list(effects)
         if pit_date:
@@ -555,6 +590,20 @@ class UKReplayPipeline:
                         effect_diagnostics_out.append(ap_gate.to_dict())
                     if ap_gate.emitted and ap_gate.operation is not None:
                         compiled = [*compiled, ap_gate.operation]
+                # §deixis_application (M6): a validated, bound deixis-in-
+                # application claim resolves the "(as inserted)" reference of an
+                # N4 application-by-reference effect and emits a NON-replayable
+                # typed finding to the diagnostics stream. It NEVER mutates
+                # ``compiled`` (no text op): the base text is left intact, the safe
+                # N4 under-application default. Absent a claim the index is empty
+                # and nothing is emitted, so replay is byte-unchanged.
+                dx_claim = validated_deixis_application_claims.get(str(e.effect_id))
+                if dx_claim is not None:
+                    dx_gate = gate_deixis_in_application_claim(dx_claim, validated=True)
+                    if effect_diagnostics_out is not None:
+                        effect_diagnostics_out.append(dx_gate.to_dict())
+                        if dx_gate.emitted and dx_gate.finding is not None:
+                            effect_diagnostics_out.append(dx_gate.finding.to_dict())
                 compile_recorded_lowering_rejection = (
                     lowering_rejections_out is not None
                     and len(lowering_rejections_out) > lowering_rejection_count_before

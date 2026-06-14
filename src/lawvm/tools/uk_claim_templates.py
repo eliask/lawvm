@@ -714,6 +714,8 @@ def _required_operation_family_proof_semantics(
         return ("contingent_commencement_resolution",)
     if action_family == "same_moment_cross_act_precedence_resolution":
         return ("same_moment_cross_act_precedence_resolution",)
+    if action_family == "application_by_reference_deixis_resolution":  # FLAG(union-merge)
+        return ("application_by_reference_deixis_resolution",)
     if action_family == "sentence_scoped_repeated_insert":
         return ("sentence_scoped_text_insert_boundary_claim",)
     if action_family == "source_carried_multi_subunit_text_rewrite":
@@ -809,6 +811,29 @@ def manual_compile_suggested_claim_template(
                 "claim_names_exactly_the_conflicting_affecting_acts",
                 "claim_winner_is_one_of_the_conflicting_acts",
                 "claim_basis_is_a_recognized_precedence_kind",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_application_by_reference_deixis_resolution_candidate"  # FLAG(union-merge)
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="application_by_reference_deixis_resolution",
+            placement_family="application_by_reference_deixis_requires_inserting_program_resolution",
+            required_ownership=[
+                "source_named_application_by_reference_with_deixis_effect",
+                "applying_instrument_and_deictic_provision_identity",
+                "resolved_concrete_applying_provision",
+                "cited_inserting_amendment_program_in_applying_instrument",
+                "non_replayable_finding_leaving_base_text_intact",
+            ],
+            required_validator_checks=[
+                "claim_binds_source_snippet_to_real_application_by_reference_deixis_effect",
+                "claim_names_applying_instrument_and_deictic_provision",
+                "claim_resolves_as_inserted_reference_via_cited_inserting_program",
+                "claim_emits_non_replayable_finding_without_base_text_mutation",
             ],
         )
     if summary.manual_compile_rule_id == "uk_manual_frontier_heading_facet_candidate":
