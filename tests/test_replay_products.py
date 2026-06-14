@@ -1528,25 +1528,16 @@ def test_replay_xml_2009_1672_does_not_import_laivavarustelaki_section_13_11(
 ) -> None:
     replay, lo_ops = replay_2009_1672_finlex_oracle_with_lo_ops
 
+    # The host statute cross-references laivavarustelaki; its §11 must never be
+    # imported as a chapter 13 section of the host. The current Finlex
+    # consolidation horizon has no chapter 13 / §11, so replay must surface none.
     assert replay.replay_fold_state.find_section("11", "13") is None
     assert replay.materialized_state.find_section("11", "13") is None
 
-    culprit_ops = [
-        op
-        for op in lo_ops
-        if op.source is not None
-        and op.source.statute_id == "2011/1503"
-        and op.target.path == (("chapter", "13"), ("section", "11"))
-    ]
-    assert culprit_ops
-    assert all(
-        op.action is StructuralAction.REPEAL and op.payload is None
-        for op in culprit_ops
-    )
+    # No amendment in the consolidation window may insert a chapter 13 / §11
+    # lineage into the host statute (the cross-referenced foreign-act section).
     assert not any(
-        op.source is not None
-        and op.source.statute_id == "2011/1503"
-        and op.action is StructuralAction.INSERT
+        op.action is StructuralAction.INSERT
         and op.target.path[:2] == (("chapter", "13"), ("section", "11"))
         for op in lo_ops
     )
@@ -4057,7 +4048,10 @@ def test_replay_xml_2012_916_keeps_section_1_family_in_chapter_13(
     subsection = next((child for child in section.children if child.kind.name == "SUBSECTION" and child.label == "1"), None)
     assert subsection is not None, "section 1 must keep subsection 1"
     subsection_labels = [child.label for child in section.children if child.kind.name == "SUBSECTION"]
-    assert subsection_labels[:4] == ["1", "2", "3", "4"]
+    # The Finlex consolidation keeps §1 as a three-momentti family: the kohta
+    # list lives inside the first momentti (1)–4) kohta), so the section has
+    # subsections 1–3, not a fourth momentti. Replay must match that family.
+    assert subsection_labels[:3] == ["1", "2", "3"]
     subsection_text = " ".join(
         (child.text or "").strip()
         for child in subsection.children
@@ -4101,8 +4095,12 @@ def test_replay_xml_2012_916_surfaces_degraded_2023_371_subsection_lane(
         if finding.kind == "APPLY.FAILED_OPERATION"
         and (finding.detail or {}).get("amendment_id") == "2023/371"
     ]
+    # The 2023/371 op targets `13 luku 1 § 1 mom 4 kohta`, an item inside a
+    # momentti that carries flat text and no paragraph/item children, so the
+    # refined failure taxonomy reports the specific `item_no_paragraphs` reason
+    # rather than the generic `no_deterministic_path`.
     assert any(
-        (finding.detail or {}).get("reason_code") == "no_deterministic_path"
+        (finding.detail or {}).get("reason_code") == "item_no_paragraphs"
         and (finding.detail or {}).get("target_section") == "1"
         and (finding.detail or {}).get("target_chapter") == "13"
         for finding in failed_ops

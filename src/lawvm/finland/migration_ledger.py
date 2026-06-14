@@ -93,7 +93,19 @@ def current_address_with_prefix_migrations_from_events(
     as_of_date: str = "",
     not_before: str = "",
 ) -> LegalAddress:
-    """Finland wrapper over the shared prefix/wave migration resolver."""
+    """Finland wrapper over the shared prefix/wave migration resolver.
+
+    When a migration applies, the resolved (normalized) address is returned.
+    When none applies the original address is preserved, except for a pure
+    label canonicalization (Roman/Arabic equivalence) that leaves the path
+    shape unchanged: a provision already sitting at its current address —
+    including one born directly into a recodified container labelled with a
+    Roman numeral — must key onto the same canonical address as a provision
+    that migrates there, otherwise the two lineages split across a Roman/Arabic
+    label mismatch (``part:I`` vs ``part:1``) and the destination occupant is
+    duplicated instead of merged. Path-reshaping normalizations (e.g. dropping
+    an empty ``hcontainer`` wrapper) are not applied to an unmigrated address.
+    """
     normalized_original = _normalize_address(original_address)
     migrated = _core_prefix_migrations(
         original_address,
@@ -103,6 +115,8 @@ def current_address_with_prefix_migrations_from_events(
         normalize_address_fn=_normalize_address,
     )
     if migrated == normalized_original:
+        if len(normalized_original.path) == len(original_address.path):
+            return normalized_original
         return original_address
     return migrated
 

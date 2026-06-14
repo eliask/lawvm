@@ -617,7 +617,29 @@ def rekey_timelines_with_migration_events(
         ]
         if not matching_renumbers:
             return [TimelineSplitBucket(address=address, versions=versions, force_native=False)]
-        event = sorted(matching_renumbers, key=migration_event_sort_key)[0]
+        # A same-label slot can be vacated and re-occupied across the statute's
+        # life: an outgoing renumber frees the label, and a later wave authors a
+        # brand-new container into the freed slot. Renumbers enacted before this
+        # lineage's own content existed relabeled a *prior* occupant of the
+        # slot, so they must not anchor this lineage's boundary (otherwise the
+        # newly-born container inherits the prior occupant's forward renumber
+        # chain and is relocated off its freed label). Anchor on the first
+        # matching renumber at or after the lineage's birth. Birth is the
+        # earliest *enacted* date, not effective: a delayed-commencement version
+        # (enacted early, effective late) already existed when an intervening
+        # renumber took effect and must still follow it, so anchoring on
+        # effective would wrongly treat delayed sections as freshly born.
+        lineage_birth = min(
+            (version.enacted for version in versions if version.enacted),
+            default="",
+        )
+        renumbers_from_birth = [
+            event
+            for event in matching_renumbers
+            if not lineage_birth or event.effective >= lineage_birth
+        ]
+        boundary_renumbers = renumbers_from_birth or matching_renumbers
+        event = sorted(boundary_renumbers, key=migration_event_sort_key)[0]
         before_versions = [version for version in versions if version.effective < event.effective]
         native_versions = [version for version in versions if version.effective >= event.effective]
         if before_versions and not native_versions:

@@ -429,11 +429,14 @@ class TestNoDuplicatesInPIT:
         )
         source_pathologies = replay_meta.get("source_pathologies", [])
         assert isinstance(source_pathologies, list)
+        # 2018/731's delayed §268 insert lands in a chapter that already carries
+        # a live §268, so the recovery absorbs the insert into the live chapter
+        # rather than preserving a separate duplicate payload.
         assert any(
             cast(dict[str, Any], pathology).get("source_statute") == "2018/731"
             and cast(dict[str, Any], pathology).get("target_label") == "268 §"
             and cast(dict[str, Any], pathology).get("recovery_kind")
-            == "section_insert_chapter_merge_live_duplicates_preserve_unique_payload"
+            == "section_insert_chapter_merge_absorb"
             for pathology in source_pathologies
             if isinstance(pathology, dict)
         )
