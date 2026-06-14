@@ -8,6 +8,7 @@ from typing import cast
 import pytest
 
 from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row
+from lawvm.core.ir_helpers import ir_statute_from_dict
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core.ir import (
     TextPatchKindEnum,
@@ -23,6 +24,7 @@ from lawvm.core.ir import (
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.sweden.fetch import (
     _ArchiveLike,
+    _migrate_legacy_se_ir_blob,
     _normalize_compare_text,
     _reverse_patch_se_available_later_chain,
     analyze_se_official_replay_feasibility,
@@ -43,6 +45,7 @@ from lawvm.sweden.fetch import (
     load_se_current_ir_from_archive,
     load_se_backfill_official_history_from_archive,
     load_se_official_act_from_archive,
+    load_se_official_base_ir_from_archive,
     load_se_official_ops_adjudications_from_archive,
     load_se_official_clause_surface_from_archive,
     load_se_official_elaboration_from_archive,
@@ -153,6 +156,93 @@ class _FakeArchive(_ArchiveLike):
 @pytest.fixture(autouse=True)
 def _disable_sweden_fetch_retry_sleep(monkeypatch) -> None:
     monkeypatch.setattr("lawvm.sweden.fetch.time.sleep", lambda seconds: None)
+
+
+def _se_appendix_supplement_blob() -> dict[str, object]:
+    """A bare SE IR statute payload carrying one appendix supplement node."""
+    return {
+        "statute_id": "2015:284",
+        "title": "Testlag",
+        "body": {
+            "kind": "body",
+            "children": [{"kind": "section", "label": "1", "text": "Text."}],
+        },
+        "metadata": {},
+        "supplements": [
+            {
+                "kind": "appendix",
+                "label": "1",
+                "text": "Bilaga",
+                "attrs": {},
+                "children": [{"kind": "heading", "text": "Rubrik", "attrs": {}}],
+            }
+        ],
+    }
+
+
+def test_migrate_legacy_se_ir_blob_renames_schedules_to_supplements() -> None:
+    current = _se_appendix_supplement_blob()
+    legacy = dict(current)
+    legacy["schedules"] = legacy.pop("supplements")
+
+    migrated = _migrate_legacy_se_ir_blob(legacy)
+
+    assert "schedules" not in migrated
+    assert migrated["supplements"] == current["supplements"]
+    # Faithful rename: nothing else changed, no data dropped.
+    assert {k: v for k, v in migrated.items() if k != "supplements"} == {
+        k: v for k, v in current.items() if k != "supplements"
+    }
+    # The legacy supplement node survives deserialization into core.
+    statute = ir_statute_from_dict(migrated)
+    assert len(statute.supplements) == 1
+    assert statute.supplements[0].kind.value == "appendix"
+
+
+def test_migrate_legacy_se_ir_blob_passes_through_current_supplements() -> None:
+    current = _se_appendix_supplement_blob()
+
+    migrated = _migrate_legacy_se_ir_blob(current)
+
+    assert migrated is current
+    statute = ir_statute_from_dict(migrated)
+    assert len(statute.supplements) == 1
+
+
+def test_migrate_legacy_se_ir_blob_refuses_ambiguous_both_keys() -> None:
+    ambiguous = _se_appendix_supplement_blob()
+    ambiguous["schedules"] = []
+
+    with pytest.raises(ValueError, match="both legacy 'schedules'"):
+        _migrate_legacy_se_ir_blob(ambiguous)
+
+
+def test_load_se_official_base_ir_migrates_legacy_schedules_on_read() -> None:
+    legacy = _se_appendix_supplement_blob()
+    legacy["schedules"] = legacy.pop("supplements")
+    archive = _FakeArchive(
+        stored={se_official_base_ir_locator("2015:284"): json.dumps(legacy).encode("utf-8")}
+    )
+
+    blob = load_se_official_base_ir_from_archive(archive, "2015:284")
+    assert blob is not None
+    assert "schedules" not in blob
+    # The blob now feeds core's bare-statute deserializer without rejection.
+    statute = ir_statute_from_dict(blob)
+    assert len(statute.supplements) == 1
+    assert statute.supplements[0].label == "1"
+
+
+def test_load_se_current_ir_passes_through_modern_supplements_blob() -> None:
+    current = _se_appendix_supplement_blob()
+    archive = _FakeArchive(
+        stored={se_current_ir_locator("2015:284"): json.dumps(current).encode("utf-8")}
+    )
+
+    blob = load_se_current_ir_from_archive(archive, "2015:284")
+    assert blob is not None
+    assert "schedules" not in blob
+    assert blob["supplements"] == current["supplements"]
 
 
 def test_se_statute_invariant_violations_include_typed_records() -> None:

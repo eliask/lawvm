@@ -1216,12 +1216,48 @@ def _read_json_locator(archive: _ArchiveLike, locator: str) -> Optional[JsonObje
     return data
 
 
+def _migrate_legacy_se_ir_blob(blob: JsonObject) -> JsonObject:
+    """Normalize a legacy Sweden IR blob to the current core schema on read.
+
+    Some archived Sweden ``current.ir.json`` / ``official.base.ir.json`` blobs
+    predate the core rename of the bare-statute ``schedules`` field to
+    ``supplements``. Core's ``ir_statute_from_dict`` now rejects the legacy
+    ``schedules`` key outright, so the rename must happen SE-locally before the
+    payload reaches core. The two fields hold the identical shape — a list of
+    serialized ``IRNode`` supplements (appendices/transition containers) — so
+    this is a faithful key rename, not a lossy restructure.
+
+    If a blob already carries ``supplements`` it is returned untouched. If a
+    legacy blob somehow carries both keys, that is an ambiguous half-migrated
+    payload and we refuse to guess rather than silently drop data.
+    """
+    if "schedules" not in blob:
+        return blob
+    if "supplements" in blob:
+        raise ValueError(
+            "Sweden IR blob carries both legacy 'schedules' and current "
+            "'supplements' keys; refusing to guess which holds the live "
+            "supplements. Re-derive the archived IR for this act."
+        )
+    migrated = dict(blob)
+    migrated["supplements"] = migrated.pop("schedules")
+    return migrated
+
+
+def _read_se_ir_blob(archive: _ArchiveLike, locator: str) -> Optional[JsonObject]:
+    """Read a Sweden IR blob, migrating the legacy ``schedules`` key on read."""
+    blob = _read_json_locator(archive, locator)
+    if blob is None:
+        return None
+    return _migrate_legacy_se_ir_blob(blob)
+
+
 def load_se_source_record_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[JsonObject]:
     return _read_json_locator(archive, se_source_record_locator(sfs_id))
 
 
 def load_se_current_ir_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[JsonObject]:
-    return _read_json_locator(archive, se_current_ir_locator(sfs_id))
+    return _read_se_ir_blob(archive, se_current_ir_locator(sfs_id))
 
 
 def load_se_bundle_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[JsonObject]:
@@ -1233,7 +1269,7 @@ def load_se_official_act_from_archive(archive: _ArchiveLike, sfs_id: str) -> Opt
 
 
 def load_se_official_base_ir_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[JsonObject]:
-    return _read_json_locator(archive, se_official_base_ir_locator(sfs_id))
+    return _read_se_ir_blob(archive, se_official_base_ir_locator(sfs_id))
 
 
 def load_se_official_clause_surface_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[JsonObject]:
