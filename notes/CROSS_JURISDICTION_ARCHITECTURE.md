@@ -150,3 +150,41 @@ The best near-term use of this split is:
   portable
 - introduce more typed interfaces between those layers instead of letting
   local heuristics leak into shared execution
+
+## 6. UK / New Zealand Commonality
+
+The UK and New Zealand are both Westminster, common-law jurisdictions, which
+invites a premature "shared common-law layer". That layer is not justified yet.
+The two frontends are operationally divergent at exactly the place that matters
+for replay:
+
+- UK reconstructs amendments primarily from an effects feed (typed effects plus
+  extent, commencement, and a version graph).
+- NZ reconstructs amendments from official-XML history notes plus the
+  amending-act `<amend>` payload nodes the history notes point at.
+
+Those are different witness shapes that resolve to different claim-production
+code. A shared "common-law amendment model" would have to abstract over feed-vs
+-history-note acquisition before either frontend is mature, so it stays local
+for now.
+
+What is actually shared, and should stay shared, is the discipline, not the
+acquisition code:
+
+- comparison normalization (`comparison_normalization`) for oracle-vs-candidate
+  text equality;
+- the source-version-window selection that pins which archived version is the
+  before/after oracle, so `/latest` never becomes replay identity;
+- the object grammar both frontends are typed against:
+  `witness -> claim -> authorization -> proof -> materialization -> agreement
+  -> residual`;
+- the dry-run-before-replay discipline: emit a candidate after-tree and confirm
+  it against the archived oracle before any actual mutation is authorized. NZ is
+  currently dry-run-only under this rule; actual replay stays blocked
+  (`nz_replay_canonical_effects_not_implemented`) until dry-run proof exists per
+  family.
+
+So the commonality is the portable kernel/contracts and the epistemic pipeline
+above, not a Westminster-specific shared layer. If a future shared layer earns
+its place, it should be driven by per-jurisdiction declaration in zone 1.2, not
+by hardcoding either UK or NZ acquisition shape.
