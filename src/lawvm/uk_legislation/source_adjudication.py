@@ -1854,6 +1854,69 @@ def _looks_like_application_by_reference_deixis_source(text: str) -> bool:
     )
 
 
+def _looks_like_non_textual_application_modification_source(text: str) -> bool:
+    """True when *text* is a non-textual application/modification overlay (M5).
+
+    The OPC Drafting Guidance Part 6.9 family LawVM already *names* via
+    ``_is_uk_non_textual_modification_effect_type`` /
+    ``uk_non_textual_modification_out_of_scope``: an instrument APPLIES, MODIFIES,
+    EXCLUDES, DISAPPLIES or RESTRICTS a provision for a scope/context/window
+    WITHOUT editing its printed text — e.g. the effect types ``modified``,
+    ``modified (temp.)``, ``excluded (temp.)``, ``restricted``, ``applied``,
+    ``applied (with modifications)`` (witnesses: ``ukpga/2006/46`` s. 1297 ←
+    ``uksi/2007/1093`` art. 10 ``modified``; ss. 182-186 ← ``uksi/2008/432``
+    ``modified (temp.)``; s. 232 ← ``uksi/2008/432`` ``excluded (temp.)``; s. 754
+    ← ``uksi/2008/346`` ``restricted``).
+
+    This is the narrow *source-snippet* recognizer the application-overlay
+    RESOLUTION claim (M5) binds against, kept consistent with that classified
+    family. It accepts both the bare effect-type head (``modified (temp.)``) and a
+    prose application/modification clause (``... is modified by SI ... in relation
+    to ...``). It does NOT decide the scope/window the overlay reads onto — that is
+    the owned claim — it only confirms the source genuinely names a non-textual
+    application/modification, and it REJECTS textual-amendment verbs (insert /
+    substitute / omit / repeal / renumber) so the claim can never re-skin a real
+    text mutation as an overlay.
+    """
+    norm = _normalize_effect_text(text)
+    if not norm:
+        return False
+    # Strip an M6 "(as inserted)" / "as inserted" deixis before the textual-
+    # amendment-verb guard: that "inserted" denotes an inserted *applying*
+    # provision (the N4 deixis M5 reuses M6 to resolve), NOT a textual amendment
+    # of the affected text, so it must not disqualify the overlay.
+    guard_norm = re.sub(r"\(\s*as\s+inserted[^)]*\)|\bas\s+inserted\b", " ", norm)
+    # A textual-amendment verb anywhere disqualifies: the overlay is non-textual.
+    if re.search(r"\b(?:insert|substitut|omit|repeal|renumber)\w*\b", guard_norm):
+        return False
+    # The bare effect-type head form: the leading verb is a recognized non-textual
+    # modification verb (reuse the existing classifier so the two stay in lockstep).
+    if _is_uk_non_textual_modification_effect_type(norm):
+        return True
+    # A prose application/modification clause: a recognized overlay verb in its
+    # passive/active surface qualified by a scope/relation/window connective.
+    overlay = re.search(
+        r"\b(?:is|are|be|shall\s+be|to\s+be|has|have|having)\s+"
+        r"(?:applied|modified|excluded|disapplied|restricted)\b",
+        norm,
+    ) or re.search(
+        r"\b(?:applies|apply|modifies|modify|excludes|exclude|disapplies|"
+        r"disapply|restricts|restrict)\b",
+        norm,
+    )
+    if not overlay:
+        return False
+    return bool(
+        re.search(
+            r"\b(?:in\s+relation\s+to|for\s+the\s+purposes?\s+of|in\s+its\s+"
+            r"application|as\s+(?:it\s+)?appl(?:y|ies)|with\s+modifications?|"
+            r"by\s+(?:virtue\s+of|reason\s+of)|in\s+respect\s+of|"
+            r"as\s+if|until|during|while|for\s+(?:so\s+long|the\s+period)|temp)\b",
+            norm,
+        )
+    )
+
+
 def _looks_like_conditional_temporal_repeal_source(text: str) -> bool:
     norm = " ".join((text or "").split()).strip().lower()
     if not norm:

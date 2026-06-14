@@ -108,6 +108,7 @@ UK_OPERATION_FAMILY_PROOF_SEMANTICS = frozenset(
         "whole_act_listed_enactments_scope_and_exclusions",
         "whole_act_repeal_exception_set_and_boundary_claim",
         "range_to_container_member_resolution",
+        "non_textual_application_modification_overlay",  # FLAG(union-merge)
     }
 )
 _FAMILY_PROOF_DUPLICATE_SENSITIVE_FIELDS = (

@@ -114,6 +114,11 @@ from lawvm.uk_legislation.range_to_container_claim import (
     gate_range_to_container_claim,
     validate_range_to_container_claim,
 )
+from lawvm.uk_legislation.application_overlay_claim import (
+    ApplicationOverlayClaim,
+    gate_application_overlay_claim,
+    validate_application_overlay_claim,
+)
 from lawvm.uk_legislation.ordering import (
     _order_uk_effects_for_replay,
     _order_uk_text_patch_preimage_chains,
@@ -309,6 +314,9 @@ class UKReplayPipeline:
         range_to_container_claims: Optional[
             "Sequence[RangeToContainerClaim]"
         ] = None,
+        application_overlay_claims: Optional[
+            "Sequence[ApplicationOverlayClaim]"
+        ] = None,
     ) -> list[LegalOperation]:
         """Compile IR ops for *affected_act_id*.
 
@@ -478,6 +486,31 @@ class UKReplayPipeline:
                     effect_diagnostics_out.append(rng_validation.to_dict())
                 if rng_validation.validated:
                     validated_range_to_container_claims[str(rng_claim.effect_id)] = rng_claim
+
+        # §application_overlay (M5): VALIDATED non-textual application/modification
+        # overlay claims by bound effect_id, symmetric with the indices above.
+        # Opt-in; with no claims authored the index is empty and the gate emits
+        # nothing, so the application/modification frontier item stays byte-
+        # unchanged. The gate emits a non-replayable typed overlay finding only
+        # (never a text op): the scoped reading is recorded, base text left intact
+        # (the application dimension is an overlay relation, not a coordinate —
+        # under-application default).
+        validated_application_overlay_claims: dict[str, ApplicationOverlayClaim] = {}
+        if application_overlay_claims:
+            effect_by_id_ao = {
+                str(e.effect_id): e for e in effects if str(e.effect_id or "")
+            }
+            for ao_claim in application_overlay_claims:
+                if ao_claim.statute_id and ao_claim.statute_id != affected_act_id:
+                    continue
+                bound_effect = effect_by_id_ao.get(str(ao_claim.effect_id))
+                ao_validation = validate_application_overlay_claim(
+                    ao_claim, effect=bound_effect
+                )
+                if effect_diagnostics_out is not None:
+                    effect_diagnostics_out.append(ao_validation.to_dict())
+                if ao_validation.validated:
+                    validated_application_overlay_claims[str(ao_claim.effect_id)] = ao_claim
 
         replayable = list(effects)
         if pit_date:
@@ -697,6 +730,23 @@ class UKReplayPipeline:
                         effect_diagnostics_out.append(rng_gate.to_dict())
                         if rng_gate.emitted and rng_gate.finding is not None:
                             effect_diagnostics_out.append(rng_gate.finding.to_dict())
+                # §application_overlay (M5): a validated, bound application/
+                # modification overlay claim records the scoped reading (target,
+                # scope, window, kind, applying instrument) and emits a NON-
+                # replayable typed overlay finding to the diagnostics stream. It
+                # NEVER mutates ``compiled`` (no text op): the base text is left
+                # intact, the safe under-application default — the application
+                # dimension is an overlay relation, not a coordinate. Where the
+                # applying provision is deictic the claim reuses M6's resolution
+                # (it does not re-resolve the deixis). Absent a claim the index is
+                # empty and nothing is emitted, so replay is byte-unchanged.
+                ao_claim = validated_application_overlay_claims.get(str(e.effect_id))
+                if ao_claim is not None:
+                    ao_gate = gate_application_overlay_claim(ao_claim, validated=True)
+                    if effect_diagnostics_out is not None:
+                        effect_diagnostics_out.append(ao_gate.to_dict())
+                        if ao_gate.emitted and ao_gate.finding is not None:
+                            effect_diagnostics_out.append(ao_gate.finding.to_dict())
                 compile_recorded_lowering_rejection = (
                     lowering_rejections_out is not None
                     and len(lowering_rejections_out) > lowering_rejection_count_before

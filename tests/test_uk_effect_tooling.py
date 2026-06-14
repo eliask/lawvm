@@ -152,6 +152,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_table_entry_placement_insert",
         "uk_manual_frontier_whole_act_word_level_text_patch_candidate",
         "uk_manual_frontier_range_to_container_resolution_candidate",
+        "uk_manual_frontier_non_textual_modification_overlay_candidate",  # FLAG(union-merge)
     }
     assert UK_CLAIM_TEMPLATE_RULE_IDS == expected_rule_ids
     assert UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS == expected_rule_ids

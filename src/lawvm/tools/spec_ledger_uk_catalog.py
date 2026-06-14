@@ -904,4 +904,18 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "A validated savings-scoped omission claim emits a non-replayable typed finding recording the saving's preserved scope, leaving the affected base text intact (the safe under-application default; never a silent over-omission).",
     "uk_savings_scoped_omission_finding_withheld_unvalidated":
         "An unvalidated savings-scoped omission claim withholds its preserved-scope finding, so the omission stays on the manual frontier byte-unchanged.",
+    "uk_manual_frontier_non_textual_modification_overlay_candidate":  # FLAG(union-merge)
+        "A non-textual application/modification overlay (OPC Guidance 6.9) — an instrument applies/modifies/excludes/disapplies/restricts a provision for a scope/window without editing its text ('modified', 'excluded (temp.)', 'restricted') — that an owned application-overlay claim (M5) can record as a typed non-replayable overlay finding.",  # FLAG(union-merge)
+    "uk_application_overlay_claim_validated":  # FLAG(union-merge)
+        "An application-overlay claim's owned determination is well-formed, bound to a real out-of-scope non-textual application/modification effect, and scope-consistent (predicate matches the recorded scope kind; window coherent), so it may emit a non-replayable recorded-overlay finding.",  # FLAG(union-merge)
+    "uk_application_overlay_claim_rejected_schema":  # FLAG(union-merge)
+        "An application-overlay claim is rejected because its kind/ids/target/overlay-kind/scope-kind/applying-instrument/scope-predicate schema is malformed.",  # FLAG(union-merge)
+    "uk_application_overlay_claim_rejected_source_mismatch":  # FLAG(union-merge)
+        "An application-overlay claim is rejected because its source snippet or bound effect is not a real non-textual application/modification effect (blocking free-form and textual-amendment overrides), or it claims an M6 deixis resolution for a non-deictic source.",  # FLAG(union-merge)
+    "uk_application_overlay_claim_rejected_scope_consistency":  # FLAG(union-merge)
+        "An application-overlay claim is rejected because its scope predicate does not match the recorded scope kind, an unconditional overlay wrongly carries a predicate, or its temporal window is not a coherent bounded window.",  # FLAG(union-merge)
+    "uk_application_overlay_recorded_overlay_finding":  # FLAG(union-merge)
+        "A validated application-overlay claim emits a non-replayable typed finding recording the scoped application/modification reading (target, overlay kind, scope predicate, temporal window, applying instrument), leaving the affected base text intact (the application dimension is an overlay relation, not a coordinate; the safe under-application default).",  # FLAG(union-merge)
+    "uk_application_overlay_finding_withheld_unvalidated":  # FLAG(union-merge)
+        "An unvalidated application-overlay claim withholds its recorded-overlay finding, so the application/modification effect stays on the manual frontier byte-unchanged.",  # FLAG(union-merge)
 }
