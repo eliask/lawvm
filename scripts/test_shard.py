@@ -401,6 +401,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_spec_ledger.py",
         "test_spec_ledger_uk.py",
         "test_spec_ledger_uk_catalog.py",
+        "test_spec_ledger_uk_catalog_supplement.py",
         "test_spec_ledger_report.py",
         "test_spec_ledger_ee_catalog.py",
         "test_spec_ledger_ee.py",
