@@ -47,6 +47,7 @@ from lawvm.finland.apply_structure_ops import _apply_container_op
 from lawvm.finland.apply_runtime_support import (
     _emit_section_snapshot,
     _find_chapter_insert_parent_path,
+    _stamp_exact_section_snapshot_payload,
 )
 from lawvm.finland.johtolause.compat import parse_clause
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, get_replay_profile
@@ -839,6 +840,165 @@ class TestRepealSnapshotExpiryStripping:
             source = lo.source
             assert source is not None
             assert source.expires == "", f"Expects empty expires, got {source.expires!r}."
+
+    def test_section_snapshot_rebase_carries_sibling_subsection_repeal(self):
+        """A subsection REPEAL in the same group as a subsection REPLACE must
+        flow into the rebased section-level snapshot.
+
+        Regression (2002/1090 §78, §17; 2005/966 §39): when one amendment both
+        REPLACEs one momentti and REPEALs another, the section snapshot is
+        rebased on the prior exact whole-section snapshot.  Rebasing only the
+        REPLACE overlay resurrected the repealed momentti's substantive text in
+        the section-level timeline version, which then masked the correct
+        subsection-level repeal placeholder during PIT materialization.  The
+        repealed momentti must appear as a repeal placeholder (or be absent),
+        never as its pre-repeal substantive text.
+        """
+        # Prior exact whole-section snapshot: §10 with 5 substantive momentit.
+        prior_section = _stamp_exact_section_snapshot_payload(
+            _sec(
+                "10",
+                _sub("1", _content("momentti 1 original")),
+                _sub("2", _content("momentti 2 original")),
+                _sub("3", _content("momentti 3 original")),
+                _sub("4", _content("momentti 4 original")),
+                _sub("5", _content("momentti 5 original")),
+            )
+        )
+        prior_snapshot = LegalOperation(
+            op_id="snapshot_section_10",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "10"),)),
+            payload=prior_section,
+            source=OperationSource(
+                statute_id="2009/100",
+                title="Prior",
+                enacted="2009-01-01",
+                effective="2009-06-01",
+                expires="",
+            ),
+            group_id="finland-johto:2009/100",
+        )
+        lo_ops: List[LegalOperation] = [prior_snapshot]
+
+        # Live post-apply state: momentti 2 replaced, momentti 5 a repeal
+        # placeholder (consolidation-profile tombstone).
+        repeal_placeholder = IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="5",
+            attrs={"lawvm_repeal_placeholder": "1"},
+        )
+        live_section = _sec(
+            "10",
+            _sub("1", _content("momentti 1 original")),
+            _sub("2", _content("momentti 2 NEW")),
+            _sub("3", _content("momentti 3 original")),
+            _sub("4", _content("momentti 4 original")),
+            repeal_placeholder,
+        )
+        state = _make_state(_body(live_section))
+
+        replace_rop = ResolvedOp.from_amendment_op(
+            op=AmendmentOp(
+                op_id="replace_10_2",
+                op_type="REPLACE",
+                target_section="10",
+                target_kind=TargetKind.SECTION,
+                target_paragraph=2,
+                source_statute="2017/507",
+                source_issue_date=_DATE,
+            ),
+            muutos_ir=_sub("2", _content("momentti 2 NEW")),
+            cross_ir=None,
+            target_unit_kind="section",
+            target_norm="10",
+            target_chapter=None,
+            op_source=OperationSource(
+                statute_id="2017/507",
+                title="Amend",
+                enacted="2017-06-28",
+                effective="2017-08-28",
+                expires="",
+            ),
+        )
+        repeal_rop = ResolvedOp.from_amendment_op(
+            op=AmendmentOp(
+                op_id="repeal_10_5",
+                op_type="REPEAL",
+                target_section="10",
+                target_kind=TargetKind.SECTION,
+                target_paragraph=5,
+                source_statute="2017/507",
+                source_issue_date=_DATE,
+            ),
+            muutos_ir=None,
+            cross_ir=None,
+            target_unit_kind="section",
+            target_norm="10",
+            target_chapter=None,
+            op_source=OperationSource(
+                statute_id="2017/507",
+                title="Amend",
+                enacted="2017-06-28",
+                effective="2017-08-28",
+                expires="",
+            ),
+        )
+
+        _emit_section_snapshot(
+            state=state,
+            target_unit_kind="section",
+            target_norm="10",
+            target_chapter=None,
+            target_part=None,
+            group_rops=[replace_rop, repeal_rop],
+            lo_ops_out=lo_ops,
+            amendment_id="2017/507",
+            source_title="Amend",
+            source_issue_date=_DATE,
+            source_effective_date=dt.date(2017, 8, 28),
+            base_ir=None,
+        )
+
+        new_snapshots = [
+            lo
+            for lo in lo_ops
+            if lo is not prior_snapshot
+            and lo.payload is not None
+            and lo.payload.kind is IRNodeKind.SECTION
+        ]
+        assert new_snapshots, "Expected a new section-level snapshot."
+        snapshot = new_snapshots[-1]
+        snapshot_payload = snapshot.payload
+        assert snapshot_payload is not None
+        mom5 = next(
+            (
+                child
+                for child in snapshot_payload.children
+                if child.kind is IRNodeKind.SUBSECTION and child.label == "5"
+            ),
+            None,
+        )
+        # The repealed momentti 5 must NOT carry its pre-repeal substantive text.
+        if mom5 is not None:
+            assert mom5.attrs.get("lawvm_repeal_placeholder") == "1", (
+                "Rebased section snapshot resurrected repealed momentti 5 as "
+                f"substantive content: {mom5!r}. Regression: sibling subsection "
+                "REPEAL not carried into section snapshot rebase."
+            )
+        # The surviving REPLACE overlay must still be present.
+        mom2 = next(
+            (
+                child
+                for child in snapshot_payload.children
+                if child.kind is IRNodeKind.SUBSECTION and child.label == "2"
+            ),
+            None,
+        )
+        assert mom2 is not None and "NEW" in mom2.children[0].text, (
+            "Rebased snapshot lost the momentti 2 REPLACE overlay."
+        )
 
     def test_container_repeal_snapshot_emits_repeal_not_payloadless_replace(self):
         """Whole-container repeal groups must emit explicit repeal semantics."""
