@@ -652,19 +652,29 @@ def _materialize_one(
             # anchor in the WRONG sub-section (a whole-section string replace would
             # hit the first occurrence anywhere).
             node_text = _locate_subsection_text(before_section, operation.target)
-            if node_text is None or node_text not in before_text:
-                return (
-                    "",
-                    US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
-                    DISPOSITION_LAWVM_WRONG,
-                )
-            if match_text not in node_text:
+            if node_text is not None and node_text in before_text:
+                if match_text not in node_text:
+                    return ("", US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID, DISPOSITION_LAWVM_WRONG)
+                new_node_text = node_text.replace(match_text, replacement or "", count)
+                # Substitute the patched node text back into the running section text
+                # (first occurrence — the node text is unique enough to anchor on).
+                materialized = before_text.replace(node_text, new_node_text, 1)
+                return (materialized, "", "")
+            # Sub-section node not locatable (the split did not expose it cleanly).
+            # Fall back to a section-level string replace when the anchor is
+            # UNAMBIGUOUS — each-place, or a single occurrence in the section: a
+            # precise match_text needs no node location. Only a multi-occurrence
+            # anchor we cannot place stays a typed residual (genuinely ambiguous).
+            if match_text in before_text and (count == -1 or before_text.count(match_text) == 1):
+                materialized = before_text.replace(match_text, replacement or "", count)
+                return (materialized, "", "")
+            if match_text not in before_text:
                 return ("", US_DRY_RUN_RESIDUAL_MATCH_TEXT_NOT_FOUND_RULE_ID, DISPOSITION_LAWVM_WRONG)
-            new_node_text = node_text.replace(match_text, replacement or "", count)
-            # Substitute the patched node text back into the running section text
-            # (first occurrence — the node text is unique enough to anchor on).
-            materialized = before_text.replace(node_text, new_node_text, 1)
-            return (materialized, "", "")
+            return (
+                "",
+                US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID,
+                DISPOSITION_LAWVM_WRONG,
+            )
 
         if match_text not in before_text:
             # Honest gap: the strike anchor is not literally present. Never
