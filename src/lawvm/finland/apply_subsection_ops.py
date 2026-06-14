@@ -526,19 +526,28 @@ def _strip_context_carried_omission_for_complete_numbered_replace(
     - intro/context prose
     - omission marker
     - explicit new numbered items
-    - optional wrap-up
+    - optional wrap-up OR a trailing editorial omission marker
 
-    For a whole-subsection REPLACE carrying a full numbered list plus wrap-up,
-    that omission is not a claim to preserve unmatched old item tail. It only
-    marks that the intro was carried in the amendment body. When the numbered
-    payload is explicit and contiguous, keep the amendment intro plus its
-    explicit trailing children and drop the omission before the generic
-    omission-merge lane can splice stale master items back in.
+    For a whole-subsection REPLACE carrying a full numbered list, that leading
+    omission is not a claim to preserve unmatched old item tail. It only marks
+    that the intro was carried in the amendment body. When the numbered payload
+    is explicit and contiguous from 1, the list is closed either by an explicit
+    wrap-up clause or by a trailing editorial ``<hcontainer name="omission"/>``
+    that brackets this moment off from its sibling moments within the section
+    (e.g. ``muutetaan N §:n M momentti seuraavasti`` restating the whole moment
+    with fewer items than the prior law). In both closures, keep the amendment
+    intro plus its explicit numbered items and drop the omissions before the
+    generic omission-merge lane can splice stale master items back in.
     """
     children = replacement_subsection.children
     omission_idx = next((i for i, child in enumerate(children) if _is_omission_ir(child)), None)
     if omission_idx is None:
         return None
+
+    # A trailing editorial omission (last child) closes the moment the same way
+    # an explicit wrap-up does: it brackets the replaced moment off from sibling
+    # moments rather than claiming an unstated old item tail.
+    has_trailing_omission = _is_omission_ir(children[-1])
 
     pre_omission = children[:omission_idx]
     trailing = tuple(child for child in children[omission_idx + 1 :] if not _is_omission_ir(child))
@@ -557,7 +566,8 @@ def _strip_context_carried_omission_for_complete_numbered_replace(
         return None
     if numbered_labels != [str(i) for i in range(1, len(numbered_labels) + 1)]:
         return None
-    if not any(child.kind is IRNodeKind.WRAP_UP for child in trailing):
+    has_wrap_up = any(child.kind is IRNodeKind.WRAP_UP for child in trailing)
+    if not has_wrap_up and not has_trailing_omission:
         return None
 
     return IRNode(
