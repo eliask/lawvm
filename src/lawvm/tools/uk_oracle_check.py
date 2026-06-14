@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import sys
 from collections import Counter
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -225,6 +226,248 @@ def _classify_divergences(
         result["text_diff"].append(eid)
 
     return result
+
+
+@dataclass(frozen=True)
+class UKDivergenceRow:
+    """One per-EID UK replay-vs-oracle divergence, already classified.
+
+    Additive sibling of the summary surface: the summary reports *counts* per
+    bucket; this is the finest-grained per-EID list the classifier already
+    builds internally. ``diagnosis`` is the §2.1 bucket name
+    (``deterministic_gap`` / ``manual_frontier`` / ``oracle_suspect`` /
+    ``text_diff``); ``blame_source`` is the affecting-act id of the covering
+    compile rejection/diagnostic when one is attributable. ``phase_owner`` and
+    ``authority_layer`` let UK blind-spots be bucketed by owning phase / source
+    purity; they are "" when not attributable.
+    """
+
+    eid: str
+    diagnosis: str
+    blame_source: str = ""
+    phase_owner: str = ""
+    authority_layer: str = ""
+    rule_id: str = ""
+
+
+@dataclass
+class UKDivergenceState:
+    """Shared compute carrier: the classified per-EID buckets plus the rejection/
+    diagnostic rows that explain them. Read-only product of compile+classify."""
+
+    error: str = ""
+    buckets: dict[str, list[str]] = field(default_factory=dict)
+    lowering_rejections: list[dict[str, Any]] = field(default_factory=list)
+    effect_feed_parse_rejections: list[dict[str, Any]] = field(default_factory=list)
+    authority_rejections: list[dict[str, Any]] = field(default_factory=list)
+    effect_diagnostics: list[dict[str, Any]] = field(default_factory=list)
+    n_ops: int = 0
+
+
+def _diagnostic_rows_for_state(state: UKDivergenceState) -> list[dict[str, Any]]:
+    """All compile rejection + diagnostic rows that may explain a divergence."""
+    return (
+        list(state.lowering_rejections)
+        + list(state.effect_feed_parse_rejections)
+        + list(state.authority_rejections)
+        + list(state.effect_diagnostics)
+    )
+
+
+def _covering_diagnostic_row(eid: str, rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Return the first rejection/diagnostic row whose affected_provisions
+    substring-matches ``eid`` (same loose matching the bucket classifier uses)."""
+    eid_lower = eid.lower()
+    for row in rows:
+        ap = str(row.get("affected_provisions") or "")
+        if not ap:
+            continue
+        ap_lower = ap.lower()
+        if ap_lower in eid_lower or eid_lower in ap_lower:
+            return row
+    return None
+
+
+def uk_divergence_rows_for_statute(
+    statute_id: str,
+    *,
+    db_path: Path | None = None,
+) -> list[UKDivergenceRow]:
+    """Additive per-EID divergence surface for one UK statute.
+
+    Returns one ``UKDivergenceRow`` per divergent EID, mirroring the Finland
+    ledger adapter's per-section ``DivergenceRow`` shape. The diagnosis is the
+    §2.1 bucket the existing classifier already assigns; where a covering
+    compile rejection/diagnostic exists, the row also carries that row's
+    affecting-act blame, owning phase, and authority layer.
+
+    This does not change the summary surface (``oracle_check_uk_statute``); both
+    consume the same ``_compute_uk_divergence_state`` core.
+    """
+    state = _compute_uk_divergence_state(statute_id, db_path=db_path)
+    if state.error:
+        return []
+    diag_rows = _diagnostic_rows_for_state(state)
+    rows: list[UKDivergenceRow] = []
+    for bucket_name, eids in state.buckets.items():
+        for eid in eids:
+            cover = _covering_diagnostic_row(eid, diag_rows)
+            blame = ""
+            phase_owner = ""
+            authority_layer = ""
+            rule_id = ""
+            if cover is not None:
+                blame = str(cover.get("affecting_act_id") or "")
+                phase_owner = str(cover.get("owner_phase") or "")
+                authority_layer = str(cover.get("authority_layer") or "")
+                rule_id = str(cover.get("rule_id") or "")
+            rows.append(
+                UKDivergenceRow(
+                    eid=eid,
+                    diagnosis=bucket_name,
+                    blame_source=blame,
+                    phase_owner=phase_owner,
+                    authority_layer=authority_layer,
+                    rule_id=rule_id,
+                )
+            )
+    return rows
+
+
+def _compute_uk_divergence_state(
+    statute_id: str,
+    *,
+    db_path: Path | None = None,
+) -> UKDivergenceState:
+    """Compile + replay + classify a UK statute into per-EID divergence buckets.
+
+    Shared read-only core for both the human summary and the per-EID surface.
+    On any acquisition error returns a state carrying ``error`` (callers decide
+    how to surface it); never raises for a missing archive/source.
+    """
+    from farchive import Farchive
+    from lawvm.tools.uk_replay import _archive_url_for_statute
+    from lawvm.uk_legislation.uk_grafter import (
+        extract_eid_map_bytes,
+        parse_uk_statute_ir_bytes,
+    )
+    from lawvm.uk_legislation import uk_amendment_replay as uk_replay_module
+    from lawvm.uk_legislation.source_adjudication import normalize_uk_replay_compare_eids
+    from lawvm.tools.uk_structural_review import (
+        _collect_replay_eid_texts,
+        _build_norm_to_raw,
+        _build_oracle_norm_text_map,
+        _classify_eids,
+        _CLASS_ONLY_REPLAY,
+        _CLASS_ONLY_ORACLE,
+        _CLASS_TEXT_DIFF,
+    )
+
+    resolved_db = db_path if db_path is not None else _DEFAULT_DB
+    if not resolved_db.exists():
+        return UKDivergenceState(error=f"Archive not found at {resolved_db}")
+
+    effect_feed_parse_rejections: list[dict[str, Any]] = []
+    effect_diagnostics: list[dict[str, Any]] = []
+    lowering_rejections: list[dict[str, Any]] = []
+    authority_rejections: list[dict[str, Any]] = []
+
+    with Farchive(resolved_db) as archive:
+        enacted_url = _archive_url_for_statute(statute_id, pit_date=None, enacted=True)
+        base_bytes = archive.get(enacted_url)
+        if base_bytes is None:
+            return UKDivergenceState(error=f"Enacted XML missing: {enacted_url}")
+        base_ir = parse_uk_statute_ir_bytes(
+            base_bytes,
+            statute_id=statute_id,
+            version_label="enacted",
+            source_path=enacted_url,
+        )
+
+        oracle_url = _archive_url_for_statute(statute_id, pit_date=None, enacted=False)
+        oracle_bytes = archive.get(oracle_url)
+        if oracle_bytes is None:
+            return UKDivergenceState(error=f"Oracle XML missing: {oracle_url}")
+        oracle_data = extract_eid_map_bytes(oracle_bytes, pit_date=None)
+        eid_map: dict[str, str] = oracle_data.get("eid_map", {})
+        text_map: dict[str, str] = oracle_data.get("text_map", {})
+        oracle_physical_eid_aliases: dict[str, str] = oracle_data.get(
+            "physical_eid_aliases", {}
+        )
+        oracle_visible_number_eid_aliases: dict[str, str] = oracle_data.get(
+            "visible_number_eid_aliases", {}
+        )
+        current_eids: set[str] = set(eid_map.values())
+
+        pipeline = uk_replay_module.UKReplayPipeline(_REPO_ROOT)
+        ops = pipeline.compile_ops_for_statute(
+            statute_id,
+            pit_date=None,
+            archive=archive,
+            allow_metadata_backfill=True,
+            applicability_mode="effective_date_plus_feed_applied",
+            authority_mode="current_mixed",
+            allow_metadata_only_effects=True,
+            effect_feed_parse_rejections_out=effect_feed_parse_rejections,
+            effect_diagnostics_out=effect_diagnostics,
+            lowering_rejections_out=lowering_rejections,
+            authority_rejections_out=authority_rejections,
+        )
+
+        alignment_events: list[dict[str, Any]] = []
+        replayed_ir = pipeline.apply_ops(
+            base_ir,
+            ops,
+            eid_map=eid_map,
+            text_map=text_map,
+            allow_oracle_alignment=True,
+            oracle_alignment_events_out=alignment_events,
+        )
+
+    replay_eid_texts, replay_leaf_eids = _collect_replay_eid_texts(replayed_ir)
+    replayed_eids: set[str] = set(replay_eid_texts)
+
+    replay_compare_eids, oracle_compare_eids = normalize_uk_replay_compare_eids(
+        replayed_eids,
+        current_eids,
+        oracle_physical_eid_aliases=oracle_physical_eid_aliases,
+        oracle_visible_number_eid_aliases=oracle_visible_number_eid_aliases,
+    )
+
+    replay_norm_to_raw = _build_norm_to_raw(replayed_eids)
+    oracle_norm_text_map = _build_oracle_norm_text_map(text_map)
+
+    classified = _classify_eids(
+        replay_eid_texts,
+        oracle_norm_text_map,
+        replay_norm_set=frozenset(replay_compare_eids),
+        oracle_norm_set=frozenset(oracle_compare_eids),
+        replay_norm_to_raw=replay_norm_to_raw,
+        replay_leaf_eids=frozenset(replay_leaf_eids),
+    )
+
+    only_replay_eids = {e for e, v in classified.items() if v["kind"] == _CLASS_ONLY_REPLAY}
+    only_oracle_eids = {e for e, v in classified.items() if v["kind"] == _CLASS_ONLY_ORACLE}
+    text_diff_eids = {e for e, v in classified.items() if v["kind"] == _CLASS_TEXT_DIFF}
+
+    buckets = _classify_divergences(
+        only_replay=only_replay_eids,
+        only_oracle=only_oracle_eids,
+        text_diff=text_diff_eids,
+        lowering_rejections=lowering_rejections,
+        effect_diagnostics=effect_diagnostics,
+        effect_feed_parse_rejections=effect_feed_parse_rejections,
+        authority_rejections=authority_rejections,
+    )
+
+    return UKDivergenceState(
+        buckets=buckets,
+        lowering_rejections=lowering_rejections,
+        effect_feed_parse_rejections=effect_feed_parse_rejections,
+        authority_rejections=authority_rejections,
+        effect_diagnostics=effect_diagnostics,
+        n_ops=len(ops),
+    )
 
 
 def oracle_check_uk_statute(
