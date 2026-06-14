@@ -45,7 +45,7 @@ from lawvm.estonia.grafter import (
     parse_ee_amendment_ops,
     parse_ee_statute,
 )
-from lawvm.estonia.peg import parse_html_op_items
+from lawvm.estonia.peg import _attribute_generic_structural_ops, parse_html_op_items
 from lawvm.estonia.pair_planning import EEOraclePairPlan, plan_ee_oracle_pair
 from lawvm.estonia.compare import irnode_to_ee_comparison_text, normalize_ee_comparison_text
 from lawvm.estonia.fetch import (
@@ -1442,6 +1442,14 @@ def replay_ee_to_pit(
     )
     if precomposition_adjudications:
         _log(f"Pending amendment precompositions: {len(precomposition_adjudications)}")
+
+    # FINAL back-fill: attribute any GENERIC structural op (replace/insert/
+    # repeal/text_replace minted directly from the amending act's content) that
+    # every upstream parse/grafter/target-resolution pass left without a
+    # witness_rule_id. ADDITIVE METADATA ONLY — never overwrites an existing id
+    # and never changes op identity/payload/action/order, so materialization,
+    # divergences, and consistency are byte-identical apart from the field.
+    all_ops = _attribute_generic_structural_ops(all_ops)
 
     result.n_ops = len(all_ops)
     result.compiled_ops = tuple(all_ops)

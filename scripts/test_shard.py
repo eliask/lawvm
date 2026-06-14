@@ -56,6 +56,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "estonia_replay_logic": (
         "test_ee_replay_logic.py",
+        "test_ee_structural_op_witness_tagging.py",
         "test_ee_witness_attribution.py",
     ),
     "norway": (

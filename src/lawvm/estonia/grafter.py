@@ -2961,6 +2961,15 @@ def _parse_parenthesized_target_html_block_ops(
     return ops
 
 
+# Generic ministerial/ministry substitution acts mint global text_replace ops
+# directly from a named amending mechanism (§107³ ministerial-title harmonisation
+# and §105¹⁹/ministry-reorganisation name substitution).  They are real,
+# specifically-owned families — give them stable witness ids so they are not
+# ledger blind-spots.  ADDITIVE METADATA ONLY: assigned where the op otherwise
+# carried no witness_rule_id; nothing else about the op changes.
+_EE_GENERIC_MINISTER_TITLE_SUBSTITUTION_RULE = "ee_generic_minister_title_substitution"
+_EE_GENERIC_MINISTRY_REORGANIZATION_RULE = "ee_generic_ministry_reorganization"
+
 _GENERIC_MINISTER_TITLES: tuple[str, ...] = (
     "haridus- ja teadusminister",
     "justiitsminister",
@@ -3028,6 +3037,7 @@ def _parse_generic_minister_rename_ops(
             ),
             source=source,
             provenance_tags=("§ 107^3 ministrite ametinimetuste asendamine", "plural list collapse"),
+            witness_rule_id=_EE_GENERIC_MINISTER_TITLE_SUBSTITUTION_RULE,
         )
     )
     for seq, old_title in enumerate(_GENERIC_MINISTER_TITLES, start=2):
@@ -3050,6 +3060,7 @@ def _parse_generic_minister_rename_ops(
                 text_patch=_typed_text_replace_patch(old_title, "valdkonna eest vastutav minister"),
                 source=source,
                 provenance_tags=("§ 107^3 ministrite ametinimetuste asendamine",),
+                witness_rule_id=_EE_GENERIC_MINISTER_TITLE_SUBSTITUTION_RULE,
             )
         )
     return ops
@@ -3124,6 +3135,7 @@ def _parse_generic_ministry_reorganization_ops(
                 text_patch=_typed_text_replace_patch(old_title, new_title),
                 source=source,
                     provenance_tags=("§ 105^19 ministeeriumide ümberkorraldamine",),
+                witness_rule_id=_EE_GENERIC_MINISTRY_REORGANIZATION_RULE,
             )
         )
     return ops
