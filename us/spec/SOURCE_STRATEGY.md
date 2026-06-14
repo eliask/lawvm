@@ -24,14 +24,42 @@ What is **acquired and archived today** (the unblocked half):
   see `src/lawvm/us_federal/import_plaw.py` and `src/lawvm/us_federal/sources.py`,
   archive `data/us_federal.farchive`. Inventory: `src/lawvm/us_federal/inventory.py`.
 
+- **USC verification oracle = govinfo USCODE annual-edition `.htm` (KEYLESS).**
+  The govinfo USCODE annual editions are reachable without any key at
+  `https://www.govinfo.gov/content/pkg/USCODE-{year}-title{N}/html/USCODE-{year}-title{N}.htm`
+  (`application/xhtml+xml`, well-formed XHTML 1.0 Transitional). There is **no
+  USLM-USC** here (USLM-USC is OLRC-only and geo-blocked). Each annual edition is
+  stored at canonical locator **`us://usc/{year}/title{N}.htm`** (storage_class
+  `html`) with metadata `{year, title, source_url, sha256, laws_enacted_through,
+  publication_name}`. Ingest mirrors `import_plaw`: see
+  `src/lawvm/us_federal/import_usc.py`. The xhtml is parsed into a typed
+  per-section source tree (`src/lawvm/us_federal/source_tree.py`) and the
+  per-section `source-credit` amendment lineage into typed Public Law witnesses
+  (`src/lawvm/us_federal/usc_witness.py`).
+
+  - **Granularity: per-annual-edition** (not per-Public-Law). The oracle is the
+    annual edition's section-level surface (section address + normalized
+    statutory text); the dry-run compares a materialized after-tree against it.
+  - **Coverage denominator = `source-credit` witnesses.** Each section's
+    `source-credit` enumerates every Public Law that enacted/amended it; this is
+    the witness-anchored denominator, with **no OLRC classification tables
+    needed** (those remain geo-blocked). `usc_witness.count_in_window` counts
+    (section, Public Law) witnesses in a Congress/PL window.
+  - **Address convention** (shared with op-lowering):
+    `(("title","11"),("section","362"),("subsection","c"),("paragraph","1"),
+    ("subparagraph","A"),("clause","i"))`. Sections are title-global; chapters/
+    subchapters are structural containers only (recorded from the `expcite`
+    comment, not in the replay address).
+  - **Editorial exclusion.** Only `statutory-body*` paragraphs between the
+    `field-start:statute`/`field-end:statute` markers are statutory text;
+    `note-*`/`analysis`/`subchapter-head` and the `source-credit` itself are
+    editorial and excluded from the comparison surface.
+
 What is **NOT built (blocked / deferred)**:
 
-- **USC verification oracle.** The govinfo USCODE collection (annual editions) is
-  reachable via `api.govinfo.gov`, but requires a **free `api.data.gov` key**
-  (not configured). Whether the USCODE oracle is served as USLM or only `.htm`,
-  and whether it is per-Public-Law or only per-annual-edition, is an **explicit
-  open decision** (see §7). The OLRC release-point endpoint in §3 is geo-blocked
-  and not the acquisition path from here.
+- **OLRC USC release points (USLM).** The OLRC release-point endpoint in §3 is
+  geo-blocked from here and is not the acquisition path; the keyless govinfo
+  annual `.htm` edition above is the substitute oracle surface.
 - **OLRC classification tables** (PL § → USC §) are geo-blocked and unreachable.
   They were the intended witness-anchored coverage denominator. Until/unless
   reachable, the coverage denominator must instead come from the **USLM

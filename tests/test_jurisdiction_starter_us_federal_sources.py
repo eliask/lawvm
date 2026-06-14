@@ -21,9 +21,9 @@ from lawvm.us_federal.sources import (
     plaw_locator_glob,
     read_plaw,
     read_plaw_locator,
-    reserved_usc_annual_locator,
     reserved_usc_release_point_locator,
     resolve_us_federal_farchive_path,
+    usc_annual_locator,
 )
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "us_federal"
@@ -136,13 +136,15 @@ def test_archive_store_and_resolution_round_trip(tmp_path: Path) -> None:
         archive.close()
 
 
-def test_reserved_usc_locators_documented_not_acquired() -> None:
-    # These only describe the reserved oracle namespace; nothing is fetched.
-    assert reserved_usc_annual_locator(2018, 11) == "us://usc/2018/title11"
-    assert (
-        reserved_usc_annual_locator(2018, 11, "section101")
-        == "us://usc/2018/title11/section101"
-    )
+def test_usc_annual_locator_implemented_form() -> None:
+    # The annual-edition htm namespace is now implemented (see import_usc).
+    assert usc_annual_locator(2023, 11) == "us://usc/2023/title11.htm"
+    assert usc_annual_locator(2024, 18) == "us://usc/2024/title18.htm"
+
+
+def test_reserved_usc_release_point_locator_documented_not_acquired() -> None:
+    # The OLRC release-point namespace remains reserved (geo-blocked); nothing
+    # is fetched here.
     assert (
         reserved_usc_release_point_locator(119, 95, 11)
         == "us://usc/release/pl119-95/title11.xml"

@@ -19,16 +19,26 @@ Locator namespaces
   Private laws would be ``us://plaw/{congress}/pvtl{N}.xml`` but the public
   bulkdata zips contain no private-law members; acquisition filters to public.
 
-- USC oracle (RESERVED, not implemented): the OLRC/govinfo USC release-point or
-  annual-edition title XML used as a verification witness::
+- USC oracle (IMPLEMENTED, annual edition htm): the govinfo USCODE annual
+  edition title document used as a verification witness::
 
-      us://usc/{year}/title{N}/...                      (annual edition)
+      us://usc/{year}/title{N}.htm                      (annual edition, htm)
+
+  Content is KEYLESS from govinfo:
+  ``https://www.govinfo.gov/content/pkg/USCODE-{year}-title{N}/html/USCODE-{year}-title{N}.htm``
+  and is ``application/xhtml+xml`` (XHTML 1.0 Transitional, well-formed).
+  Ingest via :mod:`lawvm.us_federal.import_usc`; parse via
+  :mod:`lawvm.us_federal.source_tree`. See :func:`usc_annual_locator`.
+
+- USC release point (RESERVED, not implemented): the OLRC USC release-point
+  title XML::
+
       us://usc/release/pl{congress}-{num}/title{N}.xml  (release point)
 
-  This namespace is documented for the future oracle only. The USC oracle is
-  blocked here: ``uscode.house.gov`` (OLRC) is geo-blocked, and the govinfo
-  USCODE collection needs an ``api.data.gov`` key. See ``reserved_usc_*`` below
-  and ``us/spec/SOURCE_STRATEGY.md``.
+  This release-point namespace is documented for a future oracle only:
+  ``uscode.house.gov`` (OLRC) is geo-blocked, and the USLM-USC release points are
+  OLRC-only. See ``reserved_usc_release_point_locator`` below and
+  ``us/spec/SOURCE_STRATEGY.md``.
 
 Content identity is the SHA-256 of the stored bytes (see :func:`content_digest`).
 """
@@ -71,6 +81,24 @@ GOVINFO_PLAW_ZIP_URL = (
 GOVINFO_PLAW_MEMBER_URL = (
     "https://www.govinfo.gov/bulkdata/PLAW/{congress}/public/"
     "PLAW-{congress}publ{number}.xml"
+)
+
+# govinfo USCODE annual-edition title htm URL (keyless /content/pkg/ form). One
+# document per (year, title); ``application/xhtml+xml``, well-formed XHTML 1.0.
+GOVINFO_USCODE_HTM_URL = (
+    "https://www.govinfo.gov/content/pkg/USCODE-{year}-title{title}/html/"
+    "USCODE-{year}-title{title}.htm"
+)
+# Staged govinfo USCODE member filename (download artifact name).
+GOVINFO_USCODE_MEMBER_NAME = "USCODE-{year}-title{title}.htm"
+
+# Canonical USC oracle locator: us://usc/{year}/title{N}.htm
+_USC_ANNUAL_LOCATOR_RE = re.compile(
+    r"^us://usc/(?P<year>\d{4})/title(?P<title>\d+)\.htm$"
+)
+# Staged/govinfo member name: USCODE-2023-title11.htm
+_USC_MEMBER_RE = re.compile(
+    r"^USCODE-(?P<year>\d{4})-title(?P<title>\d+)\.htm$"
 )
 
 # A zip member name: PLAW-118publ5.xml  (publ = public law). The public bulkdata
@@ -246,24 +274,136 @@ def list_plaw_identities(
 
 
 # ---------------------------------------------------------------------------
-# Reserved (not implemented): USC oracle namespace
+# USC oracle namespace (annual-edition htm)
 # ---------------------------------------------------------------------------
 
-# The USC oracle is out of scope and blocked. These helpers document the
-# reserved namespace and fail loud rather than pretend the oracle exists.
+
+@dataclass(frozen=True, slots=True)
+class UscAnnualIdentity:
+    """Parsed identity of one USC annual-edition title document.
+
+    Identifies a single govinfo USCODE annual edition (one ``year`` × one USC
+    ``title``), the unit ingested at locator :pyattr:`locator`.
+    """
+
+    year: int
+    title: int
+
+    @property
+    def locator(self) -> str:
+        return usc_annual_locator(self.year, self.title)
+
+    @property
+    def member_name(self) -> str:
+        return GOVINFO_USCODE_MEMBER_NAME.format(year=self.year, title=self.title)
+
+    @property
+    def source_url(self) -> str:
+        return GOVINFO_USCODE_HTM_URL.format(year=self.year, title=self.title)
+
+
+def usc_annual_locator(year: int, title: int) -> str:
+    """Canonical USC oracle locator for one annual-edition title htm document."""
+    return f"us://usc/{int(year)}/title{int(title)}.htm"
+
+
+def parse_usc_annual_locator(locator: str) -> UscAnnualIdentity | None:
+    """Parse a canonical ``us://usc/{year}/title{N}.htm`` locator, or None."""
+    match = _USC_ANNUAL_LOCATOR_RE.match(locator.strip())
+    if match is None:
+        return None
+    return UscAnnualIdentity(
+        year=int(match.group("year")), title=int(match.group("title"))
+    )
+
+
+def parse_usc_member_name(name: str) -> UscAnnualIdentity | None:
+    """Parse a staged ``USCODE-{year}-title{N}.htm`` member filename, or None."""
+    match = _USC_MEMBER_RE.match(name.strip())
+    if match is None:
+        return None
+    return UscAnnualIdentity(
+        year=int(match.group("year")), title=int(match.group("title"))
+    )
+
+
+def usc_annual_locator_glob(year: int | None = None, title: int | None = None) -> str:
+    """SQL-LIKE pattern for ``archive.locators`` over USC annual locators."""
+    year_part = "%" if year is None else str(int(year))
+    title_part = "%" if title is None else str(int(title))
+    return f"us://usc/{year_part}/title{title_part}.htm"
+
+
+def read_usc_annual(archive: UsArchiveReader, year: int, title: int) -> bytes | None:
+    """Read one USC annual-edition title htm from the archive, or None."""
+    return archive.get(usc_annual_locator(year, title))
+
+
+def list_usc_annual_locators(
+    archive: UsArchiveReader, year: int | None = None, title: int | None = None
+) -> list[str]:
+    """All USC annual locators present in the archive (optionally narrowed)."""
+    return list(archive.locators(usc_annual_locator_glob(year, title)))
+
+
+def list_usc_annual_identities(
+    archive: UsArchiveReader, year: int | None = None, title: int | None = None
+) -> list[UscAnnualIdentity]:
+    """Typed identities for all USC annual editions present, sorted (year, title)."""
+    identities: list[UscAnnualIdentity] = []
+    for locator in list_usc_annual_locators(archive, year, title):
+        identity = parse_usc_annual_locator(locator)
+        if identity is not None:
+            identities.append(identity)
+    identities.sort(key=lambda i: (i.year, i.title))
+    return identities
+
+
+# Marker for the "current through" edition-currency comment in the USCODE htm
+# header: ``<!-- SEARCHABLE-LAWS-ENACTED-THROUGH-DATE:January 3rd, 2024 -->`` and
+# ``<!-- AUTHORITIES-LAWS-ENACTED-THROUGH-DATE:20240103 -->``.
+_USC_ENACTED_THROUGH_RE = re.compile(
+    rb"<!--\s*AUTHORITIES-LAWS-ENACTED-THROUGH-DATE:\s*(?P<date>\d{8})\s*-->"
+)
+_USC_ENACTED_THROUGH_TEXT_RE = re.compile(
+    rb"<!--\s*SEARCHABLE-LAWS-ENACTED-THROUGH-DATE:\s*(?P<date>[^>]*?)\s*-->"
+)
+_USC_PUBLICATION_NAME_RE = re.compile(
+    rb"<!--\s*AUTHORITIES-PUBLICATION-NAME:\s*(?P<name>[^>]*?)\s*-->"
+)
+
+
+def extract_usc_edition_currency(data: bytes) -> dict[str, str]:
+    """Extract the edition-currency markers from a USCODE htm header.
+
+    Returns a (possibly empty) mapping with any of ``laws_enacted_through``
+    (``YYYYMMDD``), ``laws_enacted_through_text`` (human form), and
+    ``publication_name`` that are present in the document header comments. These
+    pin which Public Laws the edition incorporates (the witness denominator's
+    upper bound). Absence is silent (returns no key) — the caller decides.
+    """
+    head = data[:8192]
+    out: dict[str, str] = {}
+    m = _USC_ENACTED_THROUGH_RE.search(head)
+    if m is not None:
+        out["laws_enacted_through"] = m.group("date").decode("ascii")
+    m2 = _USC_ENACTED_THROUGH_TEXT_RE.search(head)
+    if m2 is not None:
+        out["laws_enacted_through_text"] = m2.group("date").decode("latin-1").strip()
+    m3 = _USC_PUBLICATION_NAME_RE.search(head)
+    if m3 is not None:
+        out["publication_name"] = m3.group("name").decode("latin-1").strip()
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Reserved (not implemented): USC release-point namespace
+# ---------------------------------------------------------------------------
+
+# The USC release-point oracle is out of scope and blocked. This helper documents
+# the reserved namespace and fails loud rather than pretend the oracle exists.
 
 USC_ORACLE_BLOCKED_RULE_ID = "us_usc_oracle_unavailable"
-
-
-def reserved_usc_annual_locator(year: int, title: int, rest: str = "") -> str:
-    """Reserved logical locator for a USC annual-edition title artifact.
-
-    NOT YET ACQUIRABLE. Documents the future oracle namespace only. The govinfo
-    USCODE collection needs an ``api.data.gov`` key (out of scope here) and the
-    USLM-vs-htm format / per-PL-vs-annual granularity is an open decision.
-    """
-    tail = f"/{rest.lstrip('/')}" if rest else ""
-    return f"us://usc/{int(year)}/title{int(title)}{tail}"
 
 
 def reserved_usc_release_point_locator(
