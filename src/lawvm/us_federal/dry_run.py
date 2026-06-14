@@ -42,6 +42,7 @@ Two honest proofs are produced and projected onto the shared core objects:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
@@ -119,6 +120,53 @@ _BOUNDARY_FORBIDDEN_SHORTCUTS = (
 
 def _norm(text: str) -> str:
     return normalize_inline_comparison_text(text)
+
+
+# The OLRC consolidation strips the quotation marks USLM wraps a quoted-inserted
+# statutory block in (the enacted text reads ``"(1) ...; "(2) ...``; the published
+# Code reads ``(1) ...; (2) ...``) and adds courtesy spacing after the em-dash that
+# introduces the inserted block. These are editorial normalizations on the oracle
+# side, not lowering defects: when our composed text matches the oracle after this
+# editorial projection (but NOT before it), the residual is ``oracle_suspect``, the
+# generalized F1 class — we never repair our materialized text to the oracle.
+_EDITORIAL_QUOTE_CHARS = "“”‘’„‚«»"
+# The OLRC re-spaces the boundary where a quoted block is spliced in: the enacted
+# text wraps the inserted matter in quotes (``if—“(1) ...``) and, with the quotes
+# stripped, the published Code inserts a courtesy space after the introductory
+# dash/colon (``if— (1) ...``). Collapse that boundary space for classification.
+_EDITORIAL_DASH_PAREN_SPACE_RE = re.compile(r"([—–:])\s+\(")
+
+
+def _norm_editorial(text: str) -> str:
+    """Comparison projection that additionally undoes OLRC editorial splicing.
+
+    Drops the quote marks the USLM amendment wraps inserted statutory matter in and
+    the courtesy space the OLRC inserts after the introductory dash/colon of an
+    inserted block. Used only to CLASSIFY a residual (lawvm_wrong vs
+    oracle_suspect); never to repair the materialized text. A residual that vanishes
+    under this projection but not under :func:`_norm` is editorial on the oracle
+    side — the generalized F1 class.
+    """
+    stripped = text.translate({ord(ch): None for ch in _EDITORIAL_QUOTE_CHARS})
+    respaced = _EDITORIAL_DASH_PAREN_SPACE_RE.sub(r"\1(", stripped)
+    return _norm(respaced)
+
+
+def _is_subsection_target(address: LegalAddress) -> bool:
+    """True when the op target is deeper than ``section`` (paragraph/clause/...).
+
+    A REPLACE/INSERT whose payload is a sub-section body cannot be faithfully
+    materialized at the section-text surface (it would substitute the whole section
+    with a fragment). Such ops are typed-refused, not wrong-materialized.
+    """
+    seen_section = False
+    for kind, _label in address.path:
+        if kind == "section":
+            seen_section = True
+            continue
+        if seen_section and kind not in ("title",):
+            return True
+    return False
 
 
 def _section_key_from_address(address: LegalAddress) -> tuple[str, str] | None:
@@ -461,6 +509,20 @@ def _materialize_one(
         # section-text surface we can only faithfully represent these when the
         # payload is plain text appended/substituted; a structural redesign of the
         # section body is NOT section-text representable -> typed refusal.
+        if _is_subsection_target(operation.target):
+            # The payload is a SUB-section body (paragraph/clause/...): substituting
+            # or appending it to the whole-section text would be a wrong
+            # materialization (a fragment masquerading as the section). Refuse.
+            return USDryRunRefusal(
+                op_id=op_id,
+                rule_id=US_DRY_RUN_REFUSED_STRUCTURAL_NOT_SECTION_REPRESENTABLE_RULE_ID,
+                message=(
+                    f"{action.value} op targets a sub-section node "
+                    f"({str(operation.target)}); a sub-section payload is not "
+                    "representable at section-text granularity"
+                ),
+                target_address=str(operation.target),
+            )
         if operation.payload is None or not operation.payload.text:
             return USDryRunRefusal(
                 op_id=op_id,
@@ -538,6 +600,13 @@ def build_us_dry_run(
     refusals: list[USDryRunRefusal] = []
     claimed_sections: set[str] = set()
 
+    # Phase 1: route every op to a typed refusal or to its section's materializing
+    # queue. A section amended by several window laws (e.g. Title 11 §101 in
+    # 2018->2020) gets ALL its text ops composed in source order before a single
+    # comparison against the oracle — comparing each op independently against the
+    # fully-amended oracle would spuriously fail every section with more than one
+    # amendment.
+    section_ops: dict[str, list[LegalOperation]] = {}
     for statute_id, blob in sorted(plaw_blobs.items()):
         report = lower_plaw_amendatory(blob, statute_id=statute_id, enacted=enacted)
         for operation in report.operations():
@@ -556,7 +625,6 @@ def build_us_dry_run(
                 )
                 continue
             _op_title, section = key
-            section_key = f"{title}:{section}"
 
             if section not in before_text_by_section:
                 refusals.append(
@@ -573,86 +641,142 @@ def build_us_dry_run(
                 )
                 continue
 
-            before_text = before_text_by_section[section]
-            outcome = _materialize_one(operation, before_text)
+            section_ops.setdefault(section, []).append(operation)
+
+    # Phase 2: compose each section's ops onto its before-text in source order, then
+    # compare the composed result against the oracle once.
+    for section, operations in section_ops.items():
+        section_key = f"{title}:{section}"
+        before_text = before_text_by_section[section]
+        oracle_text = after_text_by_section.get(section, "")
+        oracle_changed_here = _norm(before_text) != _norm(oracle_text)
+
+        running = before_text
+        op_ids: list[str] = []
+        actions: list[str] = []
+        match_texts: list[str] = []
+        replacements: list[str] = []
+        composed_refused = False
+        residual_signal: tuple[str, str] | None = None
+        for operation in operations:
+            outcome = _materialize_one(operation, running)
             if isinstance(outcome, USDryRunRefusal):
                 refusals.append(outcome)
+                composed_refused = True
                 continue
-
             materialized, signal_rule_id, signal_disposition = outcome
-            claimed_sections.add(section_key)
-            oracle_text = after_text_by_section.get(section, "")
-            oracle_changed_here = _norm(before_text) != _norm(oracle_text)
-
+            op_ids.append(operation.op_id)
+            actions.append(operation.action.value)
             patch = operation.text_patch
-            match_text = patch.selector.match_text if patch else ""
-            replacement = (patch.replacement or "") if patch else ""
-
+            match_texts.append(patch.selector.match_text if patch else "")
+            replacements.append((patch.replacement or "") if patch else "")
             if signal_rule_id:
-                # match_text-not-found: a residual against this section, no
-                # materialized text was produced (we refuse to fuzzy-match).
-                rows.append(
-                    USDryRunSectionRow(
-                        op_id=operation.op_id,
-                        action=operation.action.value,
-                        target_address=str(operation.target),
-                        section_key=section_key,
-                        status="residual",
-                        rule_id=signal_rule_id,
-                        disposition=signal_disposition,
-                        match_text=match_text,
-                        replacement=replacement,
-                        before_text=before_text,
-                        materialized_text="",
-                        oracle_text=oracle_text,
-                        oracle_changed=oracle_changed_here,
-                    )
-                )
-                continue
+                # match_text-not-found against the running text: a residual for the
+                # whole section (we refuse to fuzzy-match and cannot faithfully
+                # continue composing past an anchor the source does not carry).
+                residual_signal = (signal_rule_id, signal_disposition)
+                break
+            running = materialized
 
-            if _norm(materialized) == _norm(oracle_text):
-                rows.append(
-                    USDryRunSectionRow(
-                        op_id=operation.op_id,
-                        action=operation.action.value,
-                        target_address=str(operation.target),
-                        section_key=section_key,
-                        status="agree",
-                        rule_id=US_DRY_RUN_SECTION_AGREES_RULE_ID,
-                        match_text=match_text,
-                        replacement=replacement,
-                        before_text=before_text,
-                        materialized_text=materialized,
-                        oracle_text=oracle_text,
-                        oracle_changed=oracle_changed_here,
-                    )
+        if not op_ids and composed_refused:
+            # Every op for this section was a typed refusal (e.g. all sub-section
+            # structural redesigns): no section-text row is produced.
+            continue
+
+        claimed_sections.add(section_key)
+        row_op_id = "+".join(op_ids) if op_ids else section_key
+        row_action = "+".join(dict.fromkeys(actions)) if actions else ""
+        row_match = " | ".join(m for m in match_texts if m)
+        row_replacement = " | ".join(r for r in replacements if r)
+        target_address = str(operations[0].target)
+
+        if residual_signal is not None:
+            rule_id, disposition = residual_signal
+            rows.append(
+                USDryRunSectionRow(
+                    op_id=row_op_id,
+                    action=row_action,
+                    target_address=target_address,
+                    section_key=section_key,
+                    status="residual",
+                    rule_id=rule_id,
+                    disposition=disposition,
+                    match_text=row_match,
+                    replacement=row_replacement,
+                    before_text=before_text,
+                    materialized_text="",
+                    oracle_text=oracle_text,
+                    oracle_changed=oracle_changed_here,
                 )
+            )
+            continue
+
+        materialized = running
+        if _norm(materialized) == _norm(oracle_text):
+            rows.append(
+                USDryRunSectionRow(
+                    op_id=row_op_id,
+                    action=row_action,
+                    target_address=target_address,
+                    section_key=section_key,
+                    status="agree",
+                    rule_id=US_DRY_RUN_SECTION_AGREES_RULE_ID,
+                    match_text=row_match,
+                    replacement=row_replacement,
+                    before_text=before_text,
+                    materialized_text=materialized,
+                    oracle_text=oracle_text,
+                    oracle_changed=oracle_changed_here,
+                )
+            )
+        elif _norm_editorial(materialized) == _norm_editorial(oracle_text):
+            # The residual vanishes once the OLRC quote-stripping/spacing editorial
+            # projection is applied: our materialization is faithful to the enacted
+            # instruction; the gap is on the oracle's editorial side. Disposition
+            # oracle_suspect (generalized F1). We do NOT repair our text to match.
+            rows.append(
+                USDryRunSectionRow(
+                    op_id=row_op_id,
+                    action=row_action,
+                    target_address=target_address,
+                    section_key=section_key,
+                    status="residual",
+                    rule_id=US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID,
+                    disposition=DISPOSITION_ORACLE_SUSPECT,
+                    match_text=row_match,
+                    replacement=row_replacement,
+                    before_text=before_text,
+                    materialized_text=materialized,
+                    oracle_text=oracle_text,
+                    oracle_changed=oracle_changed_here,
+                )
+            )
+        else:
+            # Our composed text disagrees with the oracle after-text. We do NOT
+            # repair to the oracle. Disposition lawvm_wrong; the rule id
+            # distinguishes "claimed a section the oracle never changed" from
+            # "materialization wrong vs a genuine oracle change".
+            if not oracle_changed_here:
+                rule_id = US_DRY_RUN_RESIDUAL_CLAIMED_BUT_ORACLE_UNCHANGED_RULE_ID
             else:
-                # Our materialized text disagrees with the oracle after-text. We do
-                # NOT repair to the oracle. Disposition lawvm_wrong; the rule id
-                # distinguishes "claimed a section the oracle never changed" from
-                # "materialization wrong vs a genuine oracle change".
-                if not oracle_changed_here:
-                    rule_id = US_DRY_RUN_RESIDUAL_CLAIMED_BUT_ORACLE_UNCHANGED_RULE_ID
-                else:
-                    rule_id = US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
-                rows.append(
-                    USDryRunSectionRow(
-                        op_id=operation.op_id,
-                        action=operation.action.value,
-                        target_address=str(operation.target),
-                        section_key=section_key,
-                        status="residual",
-                        rule_id=rule_id,
-                        disposition=DISPOSITION_LAWVM_WRONG,
-                        match_text=match_text,
-                        replacement=replacement,
-                        before_text=before_text,
-                        materialized_text=materialized,
-                        oracle_text=oracle_text,
-                        oracle_changed=oracle_changed_here,
-                    )
+                rule_id = US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
+            rows.append(
+                USDryRunSectionRow(
+                    op_id=row_op_id,
+                    action=row_action,
+                    target_address=target_address,
+                    section_key=section_key,
+                    status="residual",
+                    rule_id=rule_id,
+                    disposition=DISPOSITION_LAWVM_WRONG,
+                    match_text=row_match,
+                    replacement=row_replacement,
+                    before_text=before_text,
+                    materialized_text=materialized,
+                    oracle_text=oracle_text,
+                    oracle_changed=oracle_changed_here,
                 )
+            )
 
     claimed_tuple = tuple(sorted(claimed_sections, key=_section_sort_key))
     boundary = _build_boundary_proof(
