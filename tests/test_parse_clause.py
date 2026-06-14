@@ -1780,3 +1780,106 @@ def test_tokenize_does_not_split_letter_dash_number_as_letter_range() -> None:
     assert [t.cat for t in tokenize("a-1")] == ["LETTER", "DASH", "NUM"]
     # Plain compound and single section letter stay intact.
     assert [t.cat for t in tokenize("14a")] == ["NUM", "LETTER"]
+
+
+def test_parse_clause_anaphoric_sanottu_pykala_keeps_downstream_arms() -> None:
+    """1982/106: ``sanottuun pykälään`` insert arm must not abort the target list.
+
+    The clause inserts items into ``8 §:n 3 momentti``, then ``sanottuun
+    pykälään uusi 5 ja 6 momentti`` (anaphoric backref to §8), then ``sekä lakiin
+    uusi 11 a, 15 a ja 15 b §``.  The anaphoric determiner ``sanottuun`` lexes as
+    a bare WORD; previously the continuation loop aborted at it and dropped both
+    the §8 subsection inserts and the downstream law-level section inserts.
+    """
+    text = (
+        "muutetaan rintamasotilaseläkelain (119/77) 3 §:n 1 momentti, 6 §, "
+        "8 §:n 2 ja 4 momentti, 12 §, 13 §:n 1 momentti ja 17 §, "
+        "lisätään 8 §:n 3 momenttiin uusi 10 ja 11 kohta ja "
+        "sanottuun pykälään uusi 5 ja 6 momentti sekä lakiin uusi "
+        "11 a, 15 a ja 15 b § seuraavasti:"
+    )
+
+    result = parse_clause(text, statute_id="1982/106")
+    codes = [op.code() for op in result.parsed_ops]
+
+    assert result.parse_error is None
+    # 8 §:n 3 momentti item inserts.
+    assert "L P 8 3 10" in codes
+    assert "L P 8 3 11" in codes
+    # sanottuun pykälään -> §8 subsection inserts (previously dropped).
+    assert "L P 8 5" in codes
+    assert "L P 8 6" in codes
+    # Downstream law-level section inserts (previously dropped with the arm).
+    assert "L P 11a" in codes
+    assert "L P 15a" in codes
+    assert "L P 15b" in codes
+
+
+def test_parse_clause_anaphoric_saman_pykala_momentti_resolves_section() -> None:
+    """``saman pykälän M momenttiin uusi K kohta`` resolves to the last section."""
+    text = (
+        "lisätään 5 §:n 2 momenttiin uusi 3 kohta ja "
+        "saman pykälän 2 momenttiin uusi 4 kohta seuraavasti:"
+    )
+
+    result = parse_clause(text)
+    codes = [op.code() for op in result.parsed_ops]
+
+    assert result.parse_error is None
+    assert codes == ["L P 5 2 3", "L P 5 2 4"]
+
+
+def test_parse_clause_anaphoric_mainittu_momentti_resolves_momentti() -> None:
+    """``mainittuun momenttiin uusi K kohta`` resolves to the last momentti."""
+    text = (
+        "lisätään 5 §:ään uusi 2 momentti ja "
+        "mainittuun momenttiin uusi 1 kohta seuraavasti:"
+    )
+
+    result = parse_clause(text)
+    codes = [op.code() for op in result.parsed_ops]
+
+    assert result.parse_error is None
+    assert codes == ["L P 5 2", "L P 5 2 1"]
+
+
+def test_parse_clause_anaphoric_sanottu_lakiin_resolves_root_section_insert() -> None:
+    """``sanottuun lakiin uusi N §`` continues a law-level section insert list."""
+    text = "lisätään lakiin uusi 5 § ja sanottuun lakiin uusi 6 § seuraavasti:"
+
+    result = parse_clause(text)
+    codes = [op.code() for op in result.parsed_ops]
+
+    assert result.parse_error is None
+    assert codes == ["L P 5", "L P 6"]
+
+
+def test_parse_clause_anaphoric_mainittu_lukuun_carries_chapter() -> None:
+    """``mainittuun lukuun uusi N §`` inserts into the last-mentioned chapter."""
+    text = (
+        "lisätään 5 lukuun uusi 10 § ja "
+        "mainittuun lukuun uusi 11 § seuraavasti:"
+    )
+
+    result = parse_clause(text)
+    codes = [op.code() for op in result.parsed_ops]
+
+    assert result.parse_error is None
+    assert codes == ["L P L:5 10", "L P L:5 11"]
+
+
+def test_parse_clause_doc_ill_prefix_chapter_keeps_section_insert() -> None:
+    """``lisätään lakiin N lukuun uusi M §`` must insert section M into chapter N.
+
+    The chapter named between the document and ``uusi`` is the destination scope
+    for the new section.  Previously this mis-routed to a whole-chapter insert
+    (``L L 1``) and the trailing ``uusi 20 a §`` was dropped.
+    """
+    result = parse_clause("lisätään lakiin 1 lukuun uusi 20 a § seuraavasti:")
+
+    assert result.parse_error is None
+    assert [op.code() for op in result.parsed_ops] == ["L P L:1 20a"]
+
+    # Plain whole-chapter insert still routes to a chapter insertion.
+    chapter_result = parse_clause("lisätään lakiin uusi 3 luku seuraavasti:")
+    assert [op.code() for op in chapter_result.parsed_ops] == ["L L 3"]
