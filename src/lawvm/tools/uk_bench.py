@@ -62,6 +62,7 @@ from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir_helpers import is_zombie
 from lawvm.replay_adjudication import CompileAdjudication
 from farchive import Farchive
+from lawvm.uk_legislation.canonicalize import canonicalize_compare_eid
 from lawvm.uk_legislation.uk_grafter import (
     extract_eid_map_bytes,
     parse_uk_statute_ir_bytes,
@@ -411,10 +412,33 @@ def _collect_eids(nodes: Sequence[IRNode], pit_date: Optional[str] = None) -> Se
     return eids
 
 
+def _canonical_compare_index(eids: Set[str]) -> Dict[str, str]:
+    """Map each eId's numbering-scheme-canonical form → a raw representative.
+
+    Roman section/part ordinals collapse onto their Arabic form so the oracle
+    comparison is numbering-scheme invariant (see ``canonicalize_compare_eid``).
+    On an already-Arabic set this is the identity. First raw wins on the rare
+    intra-side collision (a set never legitimately holds both ``section-II`` and
+    ``section-2``).
+    """
+    index: Dict[str, str] = {}
+    for eid in eids:
+        index.setdefault(canonicalize_compare_eid(eid), eid)
+    return index
+
+
 def _score_eids(enacted_eids: Set[str], oracle_eids: Set[str]) -> float:
-    """Jaccard-style EID similarity score."""
-    common = enacted_eids & oracle_eids
-    denom = max(len(enacted_eids), len(oracle_eids), 1)
+    """Jaccard-style EID similarity score, numbering-scheme invariant.
+
+    Compared on the Roman→Arabic-canonical form so an old Act's Roman section
+    eIds (``section-II``) score as common with the oracle's Arabic (``section-2``)
+    rather than as zero overlap. Comparison-layer only — compiled eIds are
+    unchanged.
+    """
+    left = set(_canonical_compare_index(enacted_eids))
+    right = set(_canonical_compare_index(oracle_eids))
+    common = left & right
+    denom = max(len(left), len(right), 1)
     return len(common) / denom
 
 
@@ -445,10 +469,20 @@ def _build_eid_score_witness_rows(
     right_eids: Set[str],
     sample_limit: int = _SCORE_WITNESS_LIMIT,
 ) -> tuple[_BenchScoreWitnessRow, ...]:
-    common = left_eids & right_eids
-    left_only = sorted(left_eids - right_eids)
-    right_only = sorted(right_eids - left_eids)
-    score_value = _score_eids(left_eids, right_eids)
+    # Match on the numbering-scheme-canonical form (Roman↔Arabic), but display the
+    # RAW eIds in the only-in samples — so the witness CSV shows what is *genuinely*
+    # unmatched after normalization (a `section-II` that aliases the oracle's
+    # `section-2` no longer appears as a spurious only-in-enacted residual).
+    left_index = _canonical_compare_index(left_eids)
+    right_index = _canonical_compare_index(right_eids)
+    common_canon = set(left_index) & set(right_index)
+    left_only = sorted(raw for canon, raw in left_index.items() if canon not in right_index)
+    right_only = sorted(raw for canon, raw in right_index.items() if canon not in left_index)
+    left_count = len(left_index)
+    right_count = len(right_index)
+    score_value = (
+        len(common_canon) / max(left_count, right_count, 1)
+    )
     rows: list[_BenchScoreWitnessRow] = []
     for side, eids in ((left_side, left_only), ("only_in_oracle", right_only)):
         category_total = len(eids)
@@ -462,9 +496,9 @@ def _build_eid_score_witness_rows(
                     category_total=category_total,
                     sample_limit=sample_limit,
                     truncated=category_total > sample_limit,
-                    left_count=len(left_eids),
-                    right_count=len(right_eids),
-                    common_count=len(common),
+                    left_count=left_count,
+                    right_count=right_count,
+                    common_count=len(common_canon),
                     score_value=score_value,
                 )
             )
@@ -1913,7 +1947,14 @@ def _score_statute(
             enacted_eids.update(_collect_eids([s]))
         _mark_phase("collect_enacted_eids")
 
-        common = enacted_eids & oracle_eids
+        # Align eId sets on their numbering-scheme-canonical form (Roman↔Arabic),
+        # so an old Act's Roman ``section-II`` is counted common with the oracle's
+        # Arabic ``section-2`` rather than as zero overlap. ``common`` holds the raw
+        # ENACTED eIds that aligned (needed to walk the enacted IR for text).
+        enacted_canon_index = _canonical_compare_index(enacted_eids)
+        oracle_canon_index = _canonical_compare_index(oracle_eids)
+        common_canon = set(enacted_canon_index) & set(oracle_canon_index)
+        common = {enacted_canon_index[c] for c in common_canon}
         score = _score_eids(enacted_eids, oracle_eids)
         score_witness_rows = list(
             _build_eid_score_witness_rows(
@@ -1928,8 +1969,17 @@ def _score_statute(
         # ── Text similarity: enacted vs oracle ─────────────────────────
         oracle_text_map: Dict[str, str] = oracle_eid_data.get("text_map", {})
         if score_text:
-            enacted_texts = _extract_eid_texts(enacted_ir, common)
-            text_similarity_score = _text_similarity_score(enacted_texts, oracle_text_map)
+            # Compare text by canonical eId so Roman↔Arabic provisions align.
+            enacted_texts = {
+                canonicalize_compare_eid(k): v
+                for k, v in _extract_eid_texts(enacted_ir, common).items()
+            }
+            oracle_texts_canon = {
+                canonicalize_compare_eid(k): v for k, v in oracle_text_map.items()
+            }
+            text_similarity_score = _text_similarity_score(
+                enacted_texts, oracle_texts_canon
+            )
             text_score = text_similarity_score.score
             n_text_compared = text_similarity_score.compared_count
             _mark_phase("text_score_enacted")

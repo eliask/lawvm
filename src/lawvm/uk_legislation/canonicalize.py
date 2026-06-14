@@ -62,6 +62,65 @@ def _clean_num(s: str) -> str:
     return str(s or "").strip().strip("()").replace("\u00a0", " ").lower()
 
 
+# Structural container kinds that UK legislation numbers with an *ordinal* scheme
+# (Roman in the original enrolled text of older Acts, Arabic in the modern
+# consolidation). These are the levels where a Roman label and an Arabic label
+# denote the SAME provision. Deliberately EXCLUDES: schedules (lettered \u2014
+# "Schedule A", "Schedule C" \u2014 where "C" is the letter C, not Roman 100), and all
+# leaf levels (paragraph / subsection / subparagraph / item / point) where a label
+# like "(iv)" is a genuine distinct printed series, not an alias for "4"
+# (mirrors finland/labels.py `leaf_label_identity_key`, which keeps `iv` as `iv`).
+_COMPARE_ROMAN_NUMBERED_KINDS = frozenset(
+    {"section", "part", "chapter", "article", "rule", "regulation", "subpart"}
+)
+
+
+def _roman_compare_token(token: str) -> Optional[str]:
+    """Return the Arabic form of *token* iff it is an UPPERCASE canonical Roman
+    numeral (a structural ordinal), else None.
+
+    Upper-case is required because lowercase ``i``/``ii``/``iv`` are leaf
+    paragraph labels whose identity must be preserved; ``roman_to_arabic`` is
+    case-insensitive, so the case guard is what keeps leaf labels intact.
+    """
+    core = token[:-1] if token.endswith(".") else token
+    if not core or core != core.upper() or core == core.lower():
+        return None
+    value = roman_to_arabic(core)
+    return str(value) if value is not None else None
+
+
+def canonicalize_compare_eid(eid: str) -> str:
+    """Numeral-scheme-canonicalize a UK eId for oracle COMPARISON only.
+
+    Older enacted Acts number sections/parts in Roman (``section-II``); the modern
+    consolidated oracle uses Arabic (``section-2``). A raw string intersection
+    then scores these as zero common eIds despite identical provisions. This
+    canonicalizes the Roman ordinal of a Roman-numbered structural container kind
+    to Arabic so the comparison is numbering-scheme invariant \u2014 per hierarchy
+    level (only the token immediately after a kind in
+    ``_COMPARE_ROMAN_NUMBERED_KINDS``, only when UPPERCASE), so leaf labels like a
+    paragraph ``(iv)`` and lettered schedules (``schedule-C``) are left untouched.
+
+    Comparison-layer only: this never changes compiled or materialized eIds, only
+    how two eId sets are matched when scoring against the oracle.
+    """
+    tokens = eid.split("-")
+    out: list[str] = []
+    i = 0
+    n = len(tokens)
+    while i < n:
+        out.append(tokens[i])
+        if tokens[i] in _COMPARE_ROMAN_NUMBERED_KINDS and i + 1 < n:
+            converted = _roman_compare_token(tokens[i + 1])
+            if converted is not None:
+                out.append(converted)
+                i += 2
+                continue
+        i += 1
+    return "-".join(out)
+
+
 def uk_addr_container(addr: LegalAddress) -> str:
     if addr.path and addr.path[0][0] == "schedule":
         return "schedule"
