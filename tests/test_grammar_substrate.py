@@ -7,10 +7,13 @@ diagnostics survive backtracking, the ledger accounts every token.
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from lawvm.finland.johtolause.grammar.combinators import (
     Cursor,
+    Parser,
     Span,
     cat,
     choice,
@@ -45,7 +48,7 @@ def test_span_join_and_empty() -> None:
 def test_token_success_advances_one() -> None:
     r = cat("NUM")(_cur("NUM", "PYKALA"))
     assert r.ok and r.next is not None and r.next.pos == 1
-    assert r.value.cat == "NUM"
+    assert r.value is not None and r.value.cat == "NUM"
 
 
 def test_token_recoverable_failure_does_not_advance() -> None:
@@ -58,8 +61,8 @@ def test_token_recoverable_failure_does_not_advance() -> None:
 # --- seq ---
 def test_seq_collects_in_order() -> None:
     r = seq(cat("NUM"), cat("PYKALA"))(_cur("NUM", "PYKALA"))
-    assert r.ok and [t.cat for t in r.value] == ["NUM", "PYKALA"]
-    assert r.next.pos == 2
+    assert r.ok and r.value is not None and [t.cat for t in r.value] == ["NUM", "PYKALA"]
+    assert r.next is not None and r.next.pos == 2
 
 
 def test_seq_failure_is_recoverable_before_commit() -> None:
@@ -70,13 +73,15 @@ def test_seq_failure_is_recoverable_before_commit() -> None:
 # --- choice + commit: the no-silent-drop contract ---
 def test_choice_first_match_wins() -> None:
     r = choice(cat("NUM"), cat("PYKALA"))(_cur("PYKALA"))
-    assert r.ok and r.value.cat == "PYKALA"
+    assert r.ok and r.value is not None and r.value.cat == "PYKALA"
 
 
 def test_choice_recoverable_failure_tries_next() -> None:
     # first branch fails recoverably -> second is tried
-    r = choice(seq(cat("NUM"), cat("LUKU")), cat("PYKALA"))(_cur("PYKALA"))
-    assert r.ok and r.value.cat == "PYKALA"
+    a = cast(Parser[object], seq(cat("NUM"), cat("LUKU")))
+    b = cast(Parser[object], cat("PYKALA"))
+    r = choice(a, b)(_cur("PYKALA"))
+    assert r.ok and isinstance(r.value, Token) and r.value.cat == "PYKALA"
 
 
 def test_committed_failure_is_not_recovered_by_choice() -> None:
@@ -91,9 +96,11 @@ def test_committed_failure_is_not_recovered_by_choice() -> None:
 # --- optional ---
 def test_optional_present_and_absent() -> None:
     present = optional(cat("NUM"))(_cur("NUM"))
-    assert present.ok and present.value is not None and present.next.pos == 1
+    assert present.ok and present.value is not None
+    assert present.next is not None and present.next.pos == 1
     absent = optional(cat("NUM"))(_cur("PYKALA"))
-    assert absent.ok and absent.value is None and absent.next.pos == 0
+    assert absent.ok and absent.value is None
+    assert absent.next is not None and absent.next.pos == 0
 
 
 def test_optional_propagates_committed_failure() -> None:
@@ -105,7 +112,8 @@ def test_optional_propagates_committed_failure() -> None:
 # --- many ---
 def test_many_collects_until_failure() -> None:
     r = many(cat("NUM"))(_cur("NUM", "NUM", "NUM", "PYKALA"))
-    assert r.ok and len(r.value) == 3 and r.next.pos == 3
+    assert r.ok and r.value is not None and len(r.value) == 3
+    assert r.next is not None and r.next.pos == 3
 
 
 def test_many_min_count_enforced() -> None:
@@ -123,8 +131,8 @@ def test_many_guards_against_nonconsuming_loop() -> None:
 def test_furthest_expectation_survives_recovered_branch() -> None:
     # Branch A reaches pos 2 before failing recoverably; branch B fails at pos 0.
     # The furthest expectation (pos 2) must survive for diagnostics.
-    branch_a = seq(cat("NUM"), cat("PYKALA"), cat("LUKU"))
-    branch_b = cat("OSA")
+    branch_a = cast(Parser[object], seq(cat("NUM"), cat("PYKALA"), cat("LUKU")))
+    branch_b = cast(Parser[object], cat("OSA"))
     r = choice(branch_a, branch_b)(_cur("NUM", "PYKALA", "COMMA"))
     assert not r.ok
     assert r.furthest is not None and r.furthest.pos == 2
